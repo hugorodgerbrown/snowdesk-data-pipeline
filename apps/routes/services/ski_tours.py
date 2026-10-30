@@ -66,20 +66,24 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from django.core.cache import cache
-from django.db.models import Count, Max, Q, QuerySet
-from django.utils import timezone
+from django.db.models import Count, F, Max, Q, QuerySet
+from django.db.models.fields.json import KT
 from django.utils.text import slugify
 from django.utils.translation import get_language
 
 from apps.routes.models import Route, SkiTour
 from apps.routes.services.drawn import draft_route
-from apps.routes.services.leg_wire import wire_legs
 from apps.routes.services.shares import write_route_copy
 from apps.routes.services.slope_segments import (
     build_slope_samples,
     enqueue_route_slope_sampling,
 )
-from apps.routes.services.terrain_heights import terrain_points
+from apps.routes.services.track_render import (
+    is_current,
+    leg_lines,
+    stale_q,
+    store_terrain,
+)
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -473,10 +477,9 @@ def tour_overview() -> list[dict[str, Any]]:
     cached: list[dict[str, Any]] | None = cache.get(key)
     if cached is None:
         cached = []
-        tours = SkiTour.objects.order_by("sac_id").only(
+        tours = drawn_tours(SkiTour.objects.order_by("sac_id")).only(
             "source_uuid",
             "geometry",
-            "legs",
             "name",
             "names",
             "target_name",
@@ -486,7 +489,7 @@ def tour_overview() -> list[dict[str, Any]]:
         )
         for tour in tours.iterator(chunk_size=200):
             # SNOW-1310: a Feature per leg, each thinned on its own.
-            for climbing, line in leg_parts(tour):
+            for climbing, line in leg_parts(layer_render(tour), tour.geometry):
                 geometry = overview_geometry(
                     {"type": "LineString", "coordinates": line}
                 )
@@ -662,30 +665,30 @@ def tours_to_sample() -> QuerySet[SkiTour]:
 
     Never walked, walked over SNOW-1286's doubled line (the record
     ``tour_slope_samples`` does not hold), or walked before SNOW-1306 and
-    not yet known to match the line's order, or with its legs not yet cut
-    (SNOW-1310).
+    not yet known to match the line's order, or with no current render
+    (SNOW-1309).
     """
     return SkiTour.objects.filter(
         Q(slope_samples__isnull=True)
         | Q(slope_samples__has_key=_THERE_AND_BACK)
         | ~Q(slope_samples__has_key=_WALKED_REVERSED)
-        | Q(legs__isnull=True)
+        | stale_q()
     )
 
 
 def needs_only_marking(tour: SkiTour) -> bool:
-    """Return whether ``tour``'s record is current but for a mark or its legs.
+    """Return whether ``tour``'s record is current but for a mark or its render.
 
     Walked in SAC's order before a way down ran from its top, on a tour
-    whose order does not change, or walked before SNOW-1310 stored legs:
-    ``tour_slope_samples(sample=True)`` marks it and cuts its legs without
-    walking again, so the nightly backfill need not pause for it.
+    whose order does not change, or with no current render (SNOW-1309):
+    ``tour_slope_samples(sample=True)`` marks it and builds its render
+    without walking again, so the nightly backfill need not pause for it.
     """
     held = _usable(tour.slope_samples)
     return (
         held is not None
         and bool(held.get(_WALKED_REVERSED, False)) == runs_reversed(tour)
-        and (_WALKED_REVERSED not in held or tour.legs is None)
+        and (_WALKED_REVERSED not in held or not is_current(tour.track_render))
     )
 
 
@@ -716,8 +719,10 @@ def tour_slope_samples(tour: SkiTour, *, sample: bool) -> dict[str, Any] | None:
         if bool(held.get(_WALKED_REVERSED, False)) != reverse:
             # Walked in the other order: its indices are not the line's.
             held = None
-        elif sample and (_WALKED_REVERSED not in held or tour.legs is None):
-            # Marked, and its legs cut (SNOW-1310), without a walk.
+        elif sample and (
+            _WALKED_REVERSED not in held or not is_current(tour.track_render)
+        ):
+            # Marked, and its render built (SNOW-1309), without a walk.
             held = {**held, _WALKED_REVERSED: reverse}
             _keep(tour, held)
     if held is not None or not sample:
@@ -736,78 +741,97 @@ def tour_slope_samples(tour: SkiTour, *, sample: bool) -> dict[str, Any] | None:
 
 
 def _keep(tour: SkiTour, record: dict[str, Any]) -> None:
-    """Store ``record`` on ``tour``, in memory and in the row."""
+    """Store ``record`` on ``tour``, in memory and in the row, with its render.
+
+    SNOW-1309: through ``store_terrain``, so the tour holds its line drawn
+    as a route's is, cut into legs along the line in the order the tour
+    goes. ``updated_at`` moves with it, which the overview's cache key reads.
+    """
     tour.slope_samples = record
-    # SNOW-1310: its legs are cut with it, and updated_at moves so the
-    # overview's cache key reads them.
-    tour.legs = cut_legs(tour)
-    SkiTour.objects.filter(pk=tour.pk).update(
-        slope_samples=record, legs=tour.legs, updated_at=timezone.now()
-    )
+    store_terrain(tour, record, points=tour_points(tour))
 
 
-def cut_legs(tour: SkiTour) -> list[dict[str, Any]]:
-    """Return ``tour``'s line cut into its legs, as a route's is (SNOW-1310).
+def rebuild_tour_render(tour: SkiTour) -> bool:
+    """Rebuild ``tour``'s render from the record it holds, walking nothing.
 
-    Hugo, 2026-10-30: "The SAC routes should behave the same as user
-    routes, but in a blue colour scheme". So the tours layer draws what
-    the terrain says, climb by climb and descent by descent, not a label
-    on the whole tour. The legs are those the open panel shows: cut from
-    the held terrain record along the line in the order the tour goes.
-    Stored on the tour by ``_keep`` with every record, so no request cuts.
+    For ``rebuild_track_renders``: a tour holding no record for its line's
+    order has no render to build — the tours layer draws SAC's line — and
+    is left for the panel or the nightly backfill to walk.
 
     Args:
-        tour: The tour, holding the record to cut from.
+        tour: The tour.
 
     Returns:
-        ``[{"climbing": bool, "line": [[lon, lat], …]}, …]`` in line
-        order; empty when no record is held or no leg is found in it.
+        Whether a render was stored.
 
     """
     record = tour_slope_samples(tour, sample=False)
-    points = tour_points(tour)
-    if record is None or len(points) < 2:
-        return []
-    track = terrain_points(points, record)
-    return [
-        {
-            "climbing": bool(leg["climbing"]),
-            "line": [
-                [float(lon), float(lat)]  # type: ignore[arg-type]
-                for lon, lat, *_ in track[leg["point_from"] : leg["point_to"] + 1]
-            ],
-        }
-        for leg in wire_legs(track, record) or []
-    ]
+    if record is None:
+        return False
+    _keep(tour, record)
+    return True
 
 
-def leg_parts(tour: SkiTour) -> list[tuple[bool | None, list[list[float]]]]:
-    """Return what the tours layer draws of ``tour``: its legs (SNOW-1310).
+def leg_parts(
+    render: dict[str, Any] | None, geometry: dict[str, Any] | None
+) -> list[tuple[bool | None, list[list[float]]]]:
+    """Return what the tours layer draws of one tour: its legs (SNOW-1310).
 
-    The legs stored on it (``cut_legs``); a tour with none, its terrain
-    not walked yet, is SAC's line as it is, ``climbing`` None: no
-    direction is claimed for it.
+    Hugo, 2026-10-30: "The SAC routes should behave the same as user
+    routes, but in a blue colour scheme". So the layer draws the legs the
+    open panel shows, read from the tour's stored render (``leg_lines``,
+    SNOW-1309). A tour with none — its terrain not walked yet — is SAC's
+    own stored line, ``climbing`` None: no direction is claimed for it.
+    Both are reads; nothing is cut per request.
 
     Args:
-        tour: The tour, with ``legs`` and ``geometry`` loaded.
+        render: The tour's ``track_render``, or None.
+        geometry: The tour's stored GeoJSON line.
 
     Returns:
         ``[(climbing, [[lon, lat], …]), …]``.
 
     """
-    if tour.legs:
-        return [(bool(leg["climbing"]), leg["line"]) for leg in tour.legs]
+    legs: list[tuple[bool | None, list[list[float]]]] = list(leg_lines(render))
+    if legs:
+        return legs
     # SAC's stored parts as published, spurs included: not ``_lines``,
     # which chains them into one route and drops a branch.
-    geometry = tour.geometry or {}
-    coordinates = geometry.get("coordinates") or []
-    if geometry.get("type") == "LineString":
+    coordinates = (geometry or {}).get("coordinates") or []
+    if (geometry or {}).get("type") == "LineString":
         coordinates = [coordinates]
     return [
         (None, [[float(lon), float(lat)] for lon, lat, *_ in line])
         for line in coordinates
         if isinstance(line, list) and len(line) >= 2
     ]
+
+
+def drawn_tours(tours: QuerySet[SkiTour]) -> QuerySet[SkiTour]:
+    """Return ``tours`` carrying only what the tours layer draws of their render.
+
+    The render's ``v``, ``geometry`` and ``legs`` as ``render_v``,
+    ``render_geometry`` and ``render_legs``, and the full render deferred:
+    its slope record and point-card rows are most of its size, and the
+    layer reads neither. Read back with ``layer_render``.
+    """
+    return tours.defer("track_render", "slope_samples").annotate(
+        render_v=KT("track_render__v"),
+        render_geometry=F("track_render__geometry"),
+        render_legs=F("track_render__legs"),
+    )
+
+
+def layer_render(tour: SkiTour) -> dict[str, Any] | None:
+    """Return the slice of a ``drawn_tours`` row's render that the layer reads."""
+    version = getattr(tour, "render_v", None)
+    if version is None:
+        return None
+    return {
+        "v": int(version),
+        "geometry": getattr(tour, "render_geometry", None) or [],
+        "legs": getattr(tour, "render_legs", None) or [],
+    }
 
 
 def tour_properties(tour: SkiTour) -> dict[str, Any]:

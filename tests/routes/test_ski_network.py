@@ -220,9 +220,12 @@ def test_a_rewritten_tour_forgets_its_terrain() -> None:
     """A newer document clears the sampled terrain SNOW-1278 kept on it."""
     source = SourceSkiTourFactory.create()
     apply_ski_items("ski-tours", [serialise_source_document(source)], commit=True)
-    SkiTour.objects.update(slope_samples={"v": 1})
+    SkiTour.objects.update(slope_samples={"v": 1}, track_render={"v": 1})
     item = serialise_source_document(source)
     item["updated_at"] = (timezone.now() + dt.timedelta(days=1)).isoformat()
     counts = apply_ski_items("ski-tours", [item], commit=True)
     assert counts[UPDATED] == 1
-    assert SkiTour.objects.get().slope_samples is None
+    # SNOW-1309: both together, never one without the other.
+    tour = SkiTour.objects.get()
+    assert tour.slope_samples is None
+    assert tour.track_render is None

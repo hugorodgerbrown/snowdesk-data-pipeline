@@ -21,7 +21,8 @@ from django.test import Client, override_settings
 from django.urls import reverse
 from waffle.testutils import override_flag
 
-from apps.routes.models import Route
+from apps.routes.models import Route, SkiTour
+from apps.routes.services.track_render import TRACK_RENDER_VERSION
 from tests.factories import RouteFactory, SkiTourFactory, UserFactory
 
 pytestmark = pytest.mark.django_db
@@ -118,9 +119,34 @@ class TestFeature:
             {"i": 1, "from": 0, "to": 0, "climbing": False},
             {"i": 2, "from": 1, "to": 1, "climbing": True},
         ]
-        with patch("apps.routes.views.wire_legs", return_value=detected):
+        with patch(
+            "apps.routes.services.track_render.wire_legs", return_value=detected
+        ):
             props = client.get(_feature_url(tour)).json()["feature"]["properties"]
         assert props["legs"] == detected
+
+    def test_a_tour_with_a_stored_render_is_read_not_built(
+        self, client: Client
+    ) -> None:
+        """SNOW-1309: the panel reads the tour's render, as the map a route's."""
+        tour = SkiTourFactory.create(slope_samples=RECORD)
+        stored = {
+            "v": TRACK_RENDER_VERSION,
+            "geometry": [[10.0, 46.0, 1800.0], [10.0, 46.01, 2400.0]],
+            "ascent_m": 600.0,
+            "descent_m": 0.0,
+            "legs": [{"i": 1, "from": 0, "to": 0, "climbing": True}],
+            "rows": [],
+        }
+        SkiTour.objects.filter(pk=tour.pk).update(track_render=stored)
+        with patch(
+            "apps.routes.services.track_render.build_track_render",
+            side_effect=AssertionError("built per request"),
+        ):
+            feature = client.get(_feature_url(tour)).json()["feature"]
+        assert feature["geometry"]["coordinates"] == stored["geometry"]
+        assert feature["properties"]["legs"] == stored["legs"]
+        assert feature["properties"]["ascent_m"] == 600.0
 
     def test_sample_walks_the_grid_and_keeps_the_record(self, client: Client) -> None:
         """``?sample=1`` answers with the terrain and stores it."""
@@ -171,13 +197,29 @@ class TestTerrain:
         """The held record and the tour's own points make the rows."""
         tour = SkiTourFactory.create(slope_samples=RECORD)
         rows = [{"index": 0, "ground_deg": 31.0}]
-        with patch("apps.routes.views.terrain_detail", return_value=rows) as detail:
+        with patch(
+            "apps.routes.services.track_render.terrain_detail", return_value=rows
+        ) as detail:
             response = client.get(_terrain_url(tour))
         assert response.status_code == 200
         assert response.json() == {"rows": rows}
         samples, points = detail.call_args.args
         assert samples == RECORD
         assert points and points[0][2] is None
+
+    def test_a_stored_render_answers_its_rows(self, client: Client) -> None:
+        """SNOW-1309: the rows are read from the render, never computed."""
+        tour = SkiTourFactory.create(slope_samples=RECORD)
+        rows = [{"index": 0, "ground_deg": 31.0}]
+        SkiTour.objects.filter(pk=tour.pk).update(
+            track_render={"v": TRACK_RENDER_VERSION, "geometry": [], "rows": rows}
+        )
+        with patch(
+            "apps.routes.services.track_render.terrain_detail",
+            side_effect=AssertionError("computed per request"),
+        ):
+            response = client.get(_terrain_url(tour))
+        assert response.json() == {"rows": rows}
 
     def test_an_unsampled_tour_answers_no_rows_and_walks_no_grid(
         self, client: Client

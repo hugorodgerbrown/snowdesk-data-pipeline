@@ -611,8 +611,11 @@ def _worker_sample_route_slopes(route_pk: int) -> None:
         # run that learned nothing leaves true. See the module docstring.
         return
 
-    route.slope_samples = samples
-    route.save(update_fields=["slope_samples", "updated_at"])
+    # SNOW-1309: the record and its render, written together. Imported
+    # here: the render's builders import this module's stride walk.
+    from apps.routes.services.track_render import store_terrain  # noqa: PLC0415
+
+    store_terrain(route, samples)
     logger.info(
         "route slopes sampled: pk=%s uuid=%s segments=%d unknown=%d",
         route.pk,

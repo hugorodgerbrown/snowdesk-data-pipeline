@@ -304,6 +304,19 @@ class Route(BaseModel):
             "it."
         ),
     )
+    track_render = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Everything the map, the route panel and the point card draw "
+            "this track from — the terrain track, ascent and descent, "
+            "slope classes, legs, terrain figures and point-card rows — "
+            "built once by apps/routes/services/track_render.py whenever "
+            "slope_samples is written, and only read after (SNOW-1309). "
+            "Null or an old 'v' means not built yet: readers build it in "
+            "memory until rebuild_track_renders --commit runs."
+        ),
+    )
 
     objects = RouteQuerySet.as_manager()
 
@@ -375,8 +388,17 @@ class Route(BaseModel):
         """
         # Imported here rather than at module scope: the service imports
         # the slope sampler, which imports ``apps.routes.models``.
-        from apps.routes.services.terrain_heights import climb_figures  # noqa: PLC0415
+        from apps.routes.services.terrain_heights import (  # noqa: PLC0415
+            ClimbFigures,
+            climb_figures,
+        )
+        from apps.routes.services.track_render import is_current  # noqa: PLC0415
 
+        # SNOW-1309: the stored render's figures, which the map reads too.
+        if is_current(self.track_render):
+            return ClimbFigures(
+                self.track_render["ascent_m"], self.track_render["descent_m"]
+            )
         return climb_figures(
             self.points, self.slope_samples, self.ascent_m, self.descent_m
         )
@@ -773,16 +795,15 @@ class SkiTour(_SkiLine):
             "that rewrites the tour clears it."
         ),
     )
-    legs = models.JSONField(
+    track_render = models.JSONField(
         null=True,
         blank=True,
         help_text=(
-            "The line cut into its legs where the ground turns, as a "
-            "route's are (SNOW-1310): [{climbing, line: [[lon, lat], …]}, …] "
-            "in the order the tour goes. Cut from slope_samples whenever it "
-            "is stored, so the tours layer reads it rather than cutting "
-            "2,941 tours per request. Null means not cut yet; [] means the "
-            "terrain holds no leg. A sync that rewrites the tour clears it."
+            "The tour's line drawn as a route's is, in Route.track_render's "
+            "shape (SNOW-1309), built with every slope_samples it holds; "
+            "the tours layer draws its legs from it. Null means never "
+            "walked: the layer draws SAC's own line. A sync that rewrites "
+            "the tour clears it with slope_samples."
         ),
     )
 

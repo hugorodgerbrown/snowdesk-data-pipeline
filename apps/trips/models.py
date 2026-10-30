@@ -322,6 +322,16 @@ class Trip(BaseModel):
             "unknown reason."
         ),
     )
+    track_render = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The snapshot drawn as the map draws a route, in "
+            "Route.track_render's shape (SNOW-1309): built from points and "
+            "slope_samples whenever either is written, and only read "
+            "after. Null or an old 'v' means not built yet."
+        ),
+    )
 
     # --- Sharing (SNOW-821) ------------------------------------------------
     #
@@ -444,8 +454,17 @@ class Trip(BaseModel):
         """
         # Imported here rather than at module scope: the service imports
         # the slope sampler, which imports ``apps.routes.models``.
-        from apps.routes.services.terrain_heights import climb_figures  # noqa: PLC0415
+        from apps.routes.services.terrain_heights import (  # noqa: PLC0415
+            ClimbFigures,
+            climb_figures,
+        )
+        from apps.routes.services.track_render import is_current  # noqa: PLC0415
 
+        # SNOW-1309: the stored render's figures, which the map reads too.
+        if is_current(self.track_render):
+            return ClimbFigures(
+                self.track_render["ascent_m"], self.track_render["descent_m"]
+            )
         return climb_figures(
             self.points, self.slope_samples, self.ascent_m, self.descent_m
         )

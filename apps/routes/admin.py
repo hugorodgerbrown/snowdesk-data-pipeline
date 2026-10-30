@@ -87,6 +87,9 @@ class RouteAdmin(admin.ModelAdmin):
         # answer, and an edited copy would claim a steepness no terrain
         # tile ever reported.
         "slope_samples",
+        # SNOW-1309: built from the two above, by the one writer; an edit
+        # here would draw a line its terrain does not describe.
+        "track_render",
         "terrain_detail_link",
         "created_at",
         "updated_at",

@@ -55,6 +55,7 @@ from django.utils import timezone
 from apps.routes.models import Route, RouteShare
 from apps.routes.services.routes import _assert_under_cap, _locked_cap_recheck
 from apps.routes.services.slope_segments import enqueue_route_slope_sampling
+from apps.routes.services.track_render import stamped_fields
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -232,7 +233,9 @@ def write_route_copy(user: "User", fields: dict[str, object]) -> Route:
 
     with transaction.atomic():
         _locked_cap_recheck(user)
-        return Route.objects.create(user=user, **fields)
+        # SNOW-1309: the copy's render is built from what it copies, never
+        # taken from the source, so it cannot arrive stale.
+        return Route.objects.create(user=user, **stamped_fields(fields))
 
 
 def claim_route_share(user: "User", token: str) -> Route:

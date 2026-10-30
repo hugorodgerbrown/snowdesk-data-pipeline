@@ -9,6 +9,7 @@ endpoint has; and the cap.
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from django.core.cache import cache
@@ -16,6 +17,8 @@ from django.test import Client
 from django.urls import reverse
 
 from apps.public import api
+from apps.routes.models import SkiTour
+from apps.routes.services.track_render import TRACK_RENDER_VERSION
 from tests.factories import SkiTourFactory
 
 pytestmark = pytest.mark.django_db
@@ -139,19 +142,34 @@ def test_the_overview_serves_every_tour_thinned(client: Client) -> None:
     assert summits == {"summit:piz-buin-3312", "summit:far-3312"}
 
 
-def test_a_tour_with_terrain_is_served_as_its_legs(
-    client: Client, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """SNOW-1310: one Feature per leg, climbing or not, as a route is drawn."""
+def test_a_tour_with_terrain_is_served_as_its_legs(client: Client) -> None:
+    """SNOW-1310/1309: one Feature per stored leg, climbing or not, as a
+    route is drawn — sliced from the stored render, never cut per request.
+    """
     tour = SkiTourFactory.create()
-    parts = [
-        (True, [[10.0, 46.0], [10.01, 46.01]]),
-        (False, [[10.01, 46.01], [10.02, 46.0]]),
-    ]
-    monkeypatch.setattr(api, "leg_parts", lambda row: parts)
-    tours = [
-        f for f in _get(client).json()["features"] if f["properties"]["kind"] == "tour"
-    ]
+    SkiTour.objects.filter(pk=tour.pk).update(
+        track_render={
+            "v": TRACK_RENDER_VERSION,
+            "geometry": [[10.0, 46.0, 1800], [10.01, 46.01, 2400], [10.02, 46.0, 2000]],
+            "legs": [
+                {"i": 1, "climbing": True, "point_from": 0, "point_to": 1},
+                {"i": 2, "climbing": False, "point_from": 1, "point_to": 2},
+            ],
+            "rows": [],
+        }
+    )
+    with patch(
+        "apps.routes.services.track_render.build_track_render",
+        side_effect=AssertionError("built per request"),
+    ):
+        tours = [
+            f
+            for f in _get(client).json()["features"]
+            if f["properties"]["kind"] == "tour"
+        ]
     assert [f["properties"]["climbing"] for f in tours] == [True, False]
     assert {f["properties"]["uuid"] for f in tours} == {str(tour.source_uuid)}
-    assert [f["geometry"]["coordinates"] for f in tours] == [line for _, line in parts]
+    assert [f["geometry"]["coordinates"] for f in tours] == [
+        [[10.0, 46.0], [10.01, 46.01]],
+        [[10.01, 46.01], [10.02, 46.0]],
+    ]

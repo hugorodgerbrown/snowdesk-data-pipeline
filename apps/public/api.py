@@ -138,6 +138,8 @@ from apps.regions.services.resort_pin import set_resort_pin
 from apps.routes.models import SkiSegment, SkiTour
 from apps.routes.services.ski_tours import (
     Summit,
+    drawn_tours,
+    layer_render,
     leg_parts,
     localised,
     sac_time,
@@ -1476,8 +1478,9 @@ def ski_tours_geojson(request: HttpRequest) -> HttpResponse:
     ``climbing``, with every summit as above. ``truncated`` is always false.
 
     A tour is one Feature per leg (SNOW-1310, ``leg_parts``): ``climbing``
-    is the leg's direction, cut from the tour's held terrain as a route's
-    legs are, and null for a tour with no terrain yet, drawn as one line.
+    is the leg's direction, read from the tour's stored render as a
+    route's legs are (SNOW-1309), and null for a tour with no terrain yet,
+    drawn as SAC's own line.
 
     Args:
         request: The incoming HTTP request.
@@ -1503,9 +1506,9 @@ def ski_tours_geojson(request: HttpRequest) -> HttpResponse:
     ):
         return JsonResponse({"error": "bbox_too_large"}, status=400)
     rows = list(
-        SkiTour.objects.intersecting(west, south, east, north).order_by("sac_id")[
-            : SKI_TOURS_MAX_FEATURES + 1
-        ]
+        drawn_tours(
+            SkiTour.objects.intersecting(west, south, east, north).order_by("sac_id")
+        )[: SKI_TOURS_MAX_FEATURES + 1]
     )
     # SNOW-1310: a Feature per leg, as a route is drawn.
     features: list[dict[str, Any]] = [
@@ -1527,7 +1530,7 @@ def ski_tours_geojson(request: HttpRequest) -> HttpResponse:
             },
         }
         for row in rows[:SKI_TOURS_MAX_FEATURES]
-        for climbing, line in leg_parts(row)
+        for climbing, line in leg_parts(layer_render(row), row.geometry)
     ]
     features.extend(
         _summit_features(

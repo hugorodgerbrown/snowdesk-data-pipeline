@@ -73,7 +73,7 @@ from __future__ import annotations
 
 import datetime
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 import waffle
@@ -95,11 +95,8 @@ from apps.core.http import client_ip
 from apps.ingest.public import convert_to_3wa
 from apps.locations.services.what3words import fill_what3words, what3words_map_url
 from apps.routes.models import Route
-from apps.routes.services.leg_wire import wire_legs
 from apps.routes.services.routes import RouteLimitReached
-from apps.routes.services.slope_summary import summarise_record
-from apps.routes.services.slope_wire import compact_slope
-from apps.routes.services.terrain_heights import terrain_points
+from apps.routes.services.track_render import current_render
 from apps.trips.forms import TripForm
 from apps.trips.models import Trip
 from apps.trips.services import meeting_place
@@ -235,8 +232,11 @@ def _trip_map_payload(trip: Trip) -> dict[str, Any]:
 
     """
     meeting = trip.meeting_point
-    ascent_m, descent_m = trip.climb
-    points, drawing = _route_drawing(trip.points, trip.slope_samples)
+    # SNOW-1309: the snapshot's stored render, read as the routes feed
+    # reads a route's.
+    render = current_render(trip)
+    ascent_m, descent_m = render["ascent_m"], render["descent_m"]
+    points, drawing = _route_drawing(render)
     return {
         "route": {
             "type": "Feature",
@@ -246,11 +246,7 @@ def _trip_map_payload(trip: Trip) -> dict[str, Any]:
                 "ascent_m": ascent_m,
                 "descent_m": descent_m,
                 **drawing,
-                **(
-                    {"terrain": terrain}
-                    if (terrain := summarise_record(trip.slope_samples)) is not None
-                    else {}
-                ),
+                **({"terrain": render["terrain"]} if "terrain" in render else {}),
             },
         },
         "meeting": {
@@ -269,7 +265,7 @@ def _trip_map_payload(trip: Trip) -> dict[str, Any]:
 
 
 def _route_drawing(
-    raw_points: list[list[float | None]], slope_samples: dict[str, Any] | None
+    render: dict[str, Any],
 ) -> tuple[list[list[float | None]], dict[str, Any]]:
     """Return a track and the properties the shared route drawing reads.
 
@@ -277,9 +273,10 @@ def _route_drawing(
     legs below z14 and in slope classes from z14, as the map does, and it
     reads two keys off the route Feature to do it: ``slope`` (the classes)
     and ``legs`` (the legs, with ``point_from``/``point_to`` into the
-    geometry). Both are built here exactly as the routes feed builds them
-    (``apps.routes.views._route_feature``), over the terrain track, so the
-    two indices and the geometry describe one series.
+    geometry). Both come from the stored render (SNOW-1309,
+    ``apps.routes.services.track_render``), exactly as the routes feed
+    reads them, over the terrain track, so the two indices and the
+    geometry describe one series.
 
     Each key is OMITTED rather than nulled when there is none, for the
     reason the feed gives: the drawing reads a key's PRESENCE. A trip
@@ -290,24 +287,15 @@ def _route_drawing(
     picker draws the route the trip page will.
 
     Args:
-        raw_points: The stored track, ``[[lon, lat, ele], …]``.
-        slope_samples: The stored slope record, or None if never sampled.
+        render: The track's ``track_render`` (``current_render``).
 
     Returns:
         ``(points, properties)`` — the terrain track to send as the
         geometry, and the ``slope`` and ``legs`` keys that apply.
 
     """
-    points = terrain_points(raw_points, slope_samples)
-    # SNOW-1053: ``seams`` index into this geometry, so the class segments
-    # follow the track rather than chording across it.
-    slope = compact_slope(slope_samples, coordinates=points)
-    # The record is passed only when ``slope`` is sent, as the feed does:
-    # with no ``angles`` on the wire the legs must index the stride walk.
-    legs = wire_legs(points, slope_samples if slope is not None else None)
-    return points, {
-        **({"slope": slope} if slope is not None else {}),
-        **({"legs": legs} if legs else {}),
+    return render["geometry"], {
+        key: render[key] for key in ("slope", "legs") if key in render
     }
 
 
@@ -496,11 +484,13 @@ def _trip_route_collection(trip: Trip, page_url: str) -> dict[str, Any]:
 
     """
     meeting = trip.meeting_point
-    ascent_m, descent_m = trip.climb
     # SNOW-1213: the slope record and the legs ride along, so the map draws
     # the trip as it draws a route (legs, slope classes from z14) and a tap
-    # opens the route panel with its profile and point card.
-    points, drawing = _route_drawing(trip.points, trip.slope_samples)
+    # opens the route panel with its profile and point card — all read
+    # from the snapshot's stored render (SNOW-1309).
+    render = current_render(trip)
+    ascent_m, descent_m = render["ascent_m"], render["descent_m"]
+    points, drawing = _route_drawing(render)
     return {
         "type": "FeatureCollection",
         "features": [
@@ -569,7 +559,7 @@ def _picker_payload(
     bounds: list[float],
     latitude: float,
     longitude: float,
-    slope_samples: dict[str, Any] | None = None,
+    render: dict[str, Any] | None = None,
     distance_m: float | None = None,
 ) -> dict[str, Any]:
     """Build the payload ``static/js/trip_meeting_picker.js`` draws.
@@ -594,8 +584,10 @@ def _picker_payload(
         bounds: The GeoJSON bbox ``[min_lon, min_lat, max_lon, max_lat]``.
         latitude: The pin's starting latitude.
         longitude: The pin's starting longitude.
-        slope_samples: The track's slope record, so the picker draws the
-            route's legs and slope classes as the map does (SNOW-1212).
+        render: The track's stored render (``current_render``), so the
+            picker draws the route's legs and slope classes as the map
+            does (SNOW-1212); None for a route that is gone, drawn as
+            ``points``.
         distance_m: The route's length, which the Plan page's profile
             scales its ticks to (SNOW-1215), as the map's panel does.
 
@@ -603,11 +595,7 @@ def _picker_payload(
         A JSON-serialisable dict with ``route``, ``meeting`` and ``bounds``.
 
     """
-    # A list of floats IS a list of optional floats to read; mypy's list
-    # invariance only guards writes, and _route_drawing writes nothing.
-    track, drawing = _route_drawing(
-        cast("list[list[float | None]]", points), slope_samples
-    )
+    track, drawing = _route_drawing(render or {"geometry": points})
     return {
         "route": {
             "type": "Feature",
@@ -628,7 +616,7 @@ def _submitted_picker_payload(
     request: HttpRequest,
     points: list[list[float]],
     bounds: list[float],
-    slope_samples: dict[str, Any] | None = None,
+    render: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the picker payload for a form that failed validation.
 
@@ -644,7 +632,7 @@ def _submitted_picker_payload(
         request: The POST request, read for the submitted coordinates.
         points: The source track, or empty when the route is unavailable.
         bounds: The source bbox, or empty on the same condition.
-        slope_samples: The source's slope record, for the route drawing.
+        render: The source's stored render, for the route drawing.
 
     Returns:
         The picker payload.
@@ -656,7 +644,7 @@ def _submitted_picker_payload(
         longitude = float(request.POST.get("longitude", ""))
     except TypeError, ValueError:
         latitude, longitude = first[1], first[0]
-    return _picker_payload(points, bounds, latitude, longitude, slope_samples)
+    return _picker_payload(points, bounds, latitude, longitude, render)
 
 
 def _meeting_place(trip: Trip) -> dict[str, str]:
@@ -837,7 +825,7 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
                 trip.bounds,
                 trip.meeting_point.latitude,
                 trip.meeting_point.longitude,
-                trip.slope_samples,
+                current_render(trip),
                 trip.distance_m,
             )
             if is_organiser
@@ -929,7 +917,7 @@ def trip_new(request: HttpRequest) -> HttpResponse:
                 route.bounds,
                 first[1],
                 first[0],
-                route.slope_samples,
+                current_render(route),
                 route.distance_m,
             ),
             **_plan_context(form, route.points),
@@ -1101,7 +1089,7 @@ def trip_create(request: HttpRequest) -> HttpResponse:
                     request,
                     route.points if route else [],
                     route.bounds if route else [],
-                    route.slope_samples if route else None,
+                    current_render(route) if route else None,
                 ),
                 **_plan_context(form, route.points if route else []),
                 **_basemap_context(),
@@ -1208,7 +1196,7 @@ def trip_edit(request: HttpRequest, uuid: UUID) -> HttpResponse:
                     request,
                     trip.points if trip else [],
                     trip.bounds if trip else [],
-                    trip.slope_samples if trip else None,
+                    current_render(trip) if trip else None,
                 ),
                 **_plan_context(form, trip.points if trip else []),
                 **_basemap_context(),

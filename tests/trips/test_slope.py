@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
@@ -34,6 +34,7 @@ from django.utils import timezone
 
 from apps.locations.services.terrain import TerrainSlope
 from apps.locations.services.terrain_grid import TerrainGrid, grid_from_payload
+from apps.routes.services.track_render import build_track_render
 from apps.trips.models import Trip
 from apps.trips.services.shares import mint_trip_share
 from apps.trips.services.slope import (
@@ -442,8 +443,14 @@ class TestPickerPayload:
     """SNOW-1212: the meeting picker draws the route as the trip page will."""
 
     def test_carries_the_slope_and_legs_the_drawing_reads(self) -> None:
+        render = build_track_render(
+            cast("list[list[float | None]]", MERIDIAN_TRACK),
+            _record(41.0),
+            ascent_m=None,
+            descent_m=None,
+        )
         payload = _picker_payload(
-            MERIDIAN_TRACK, [7.0, 46.0, 7.0, 46.01], 46.0, 7.0, _record(41.0)
+            MERIDIAN_TRACK, [7.0, 46.0, 7.0, 46.01], 46.0, 7.0, render
         )
 
         properties = payload["route"]["properties"]
@@ -452,7 +459,15 @@ class TestPickerPayload:
         assert [leg["climbing"] for leg in properties["legs"]] == [True]
 
     def test_an_unsampled_route_carries_legs_alone(self) -> None:
-        payload = _picker_payload(MERIDIAN_TRACK, [7.0, 46.0, 7.0, 46.01], 46.0, 7.0)
+        render = build_track_render(
+            cast("list[list[float | None]]", MERIDIAN_TRACK),
+            None,
+            ascent_m=None,
+            descent_m=None,
+        )
+        payload = _picker_payload(
+            MERIDIAN_TRACK, [7.0, 46.0, 7.0, 46.01], 46.0, 7.0, render
+        )
 
         properties = payload["route"]["properties"]
 

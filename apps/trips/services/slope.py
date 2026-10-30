@@ -33,6 +33,7 @@ import logging
 from django_tasks import task
 
 from apps.routes.services.slope_segments import build_slope_samples
+from apps.routes.services.track_render import store_terrain
 from apps.trips.models import Trip
 
 logger = logging.getLogger(__name__)
@@ -76,8 +77,8 @@ def _worker_sample_trip_slopes(trip_pk: int) -> None:
         # run that learned nothing leaves true.
         return
 
-    trip.slope_samples = samples
-    trip.save(update_fields=["slope_samples", "updated_at"])
+    # SNOW-1309: the record and its render, written together.
+    store_terrain(trip, samples)
     logger.info(
         "trip slopes sampled: pk=%s uuid=%s segments=%d unknown=%d",
         trip.pk,

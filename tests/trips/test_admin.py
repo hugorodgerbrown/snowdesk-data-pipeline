@@ -94,6 +94,10 @@ class TestEverySnapshotFieldIsReadOnly:
             "Add them to TripAdmin.readonly_fields."
         )
 
+    def test_the_stored_render_is_not_editable(self) -> None:
+        """SNOW-1309: built from the snapshot by the one writer, never typed."""
+        assert "track_render" in admin.site._registry[Trip].readonly_fields
+
 
 def _trip_admin() -> TripAdmin:
     """Return the registered TripAdmin instance."""

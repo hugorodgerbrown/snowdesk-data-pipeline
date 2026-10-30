@@ -172,6 +172,8 @@ class TestBackfillDescent:
             ascent_m=None,
             descent_m=None,
             points=[[7.4, 46.1], [7.41, 46.11]],
+            # A pre-migration row: no render, which nothing here reads.
+            track_render=None,
         )
 
         _run_backfill()

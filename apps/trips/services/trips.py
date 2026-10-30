@@ -41,6 +41,7 @@ from django.db import transaction
 from apps.locations.models import Location
 from apps.locations.services.orphans import delete_location_if_orphaned
 from apps.routes.models import Route
+from apps.routes.services.track_render import stamped_fields
 from apps.trips.models import Trip, TripParticipant
 from apps.trips.services.slope import enqueue_trip_slope_sampling
 
@@ -280,7 +281,11 @@ def create_trip(
             name=name[:_NAME_MAX_LENGTH],
             description=description,
             route_name=route.name[:_NAME_MAX_LENGTH],
-            **{field: getattr(route, field) for field in _SNAPSHOT_FIELDS},
+            # SNOW-1309: with the snapshot's render, built from the
+            # snapshot itself.
+            **stamped_fields(
+                {field: getattr(route, field) for field in _SNAPSHOT_FIELDS}
+            ),
         )
         # The organiser is ON the trip, from the first moment it exists.
         # See TripParticipant's docstring for why this is a row rather than

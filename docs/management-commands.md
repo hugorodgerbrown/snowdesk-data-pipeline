@@ -1240,6 +1240,23 @@ uv run python manage.py backfill_ski_tour_slope_samples --commit         # apply
 uv run python manage.py backfill_ski_tour_slope_samples --commit --limit 20
 ```
 
+### `rebuild_track_renders` — store a current render on every track
+
+SNOW-1309. Every `Route`, `Trip` and walked `SkiTour` stores its
+`track_render`, written by `store_terrain` with its terrain. This rebuilds
+every row whose render is missing or was built below
+`TRACK_RENDER_VERSION`. It is pure computation, with no request to any
+origin. A tour holding no terrain record for its line is left alone and
+counted `tours_unwalked`, because the tours layer draws SAC's own line
+for it. Run after a deploy that changes the builder, as a
+`Deploy-Step: rebuild_track_renders --commit` trailer. Tallies `routes`,
+`trips`, `tours`, `tours_unwalked` and `failed`.
+
+```bash
+uv run python manage.py rebuild_track_renders            # preview
+uv run python manage.py rebuild_track_renders --commit   # apply
+```
+
 ### `sync_waffle_switches` — reconcile waffle.Switch rows to the manifest
 
 SNOW-1201. The switch counterpart of `sync_waffle_flags` below: reconciles

@@ -106,3 +106,8 @@ model's.
   tests pin real-data behaviour without reaching the network.
 - Related: [a-slope-segment-is-the-shared-record.md](a-slope-segment-is-the-shared-record.md)
   (the angle is still never read from the track).
+
+Since SNOW-1309 the terrain track, the totals and the legs read here are
+built once, when the terrain is written, and stored in `track_render`
+([a-track-is-rendered-once-and-stored](a-track-is-rendered-once-and-stored.md)).
+The rule is unchanged; only where it runs moved.

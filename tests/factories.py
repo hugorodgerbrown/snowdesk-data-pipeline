@@ -67,6 +67,7 @@ from apps.regions.models import (
 from apps.regions.services.basemap_tiles import MICRO_BAND, build_blob
 from apps.routes.models import Route, RouteShare, SkiSegment, SkiTour
 from apps.routes.services.slope_segments import stride_coordinates
+from apps.routes.services.track_render import build_track_render
 from apps.trips.models import Trip, TripParticipant
 from apps.weather.models import Weather
 
@@ -834,6 +835,21 @@ class FavouriteFactory(factory.django.DjangoModelFactory[Favourite]):
     resort = None
 
 
+def _stored_render(o: Any) -> dict[str, Any]:
+    """The render the one writer would store for a factory row (SNOW-1309).
+
+    Built from the row's own points and terrain, so a test that passes a
+    ``slope_samples`` gets a route or trip whose stored drawing matches it,
+    as every real write path guarantees.
+    """
+    return build_track_render(
+        o.points,
+        getattr(o, "slope_samples", None),
+        ascent_m=o.ascent_m,
+        descent_m=o.descent_m,
+    )
+
+
 class RouteFactory(factory.django.DjangoModelFactory[Route]):
     """Factory for Route instances (SNOW-685).
 
@@ -897,6 +913,7 @@ class RouteFactory(factory.django.DjangoModelFactory[Route]):
     # larger value; one for a pre-SNOW-988 row sets None.
     source_point_count = 3
     bounds = factory.LazyFunction(lambda: [7.4, 46.1, 7.42, 46.12])
+    track_render = factory.LazyAttribute(_stored_render)
 
 
 class SkiSegmentFactory(factory.django.DjangoModelFactory[SkiSegment]):
@@ -1076,6 +1093,7 @@ class TripFactory(factory.django.DjangoModelFactory[Trip]):
     ascent_m = 100.0
     descent_m = 0.0
     point_count = 3
+    track_render = factory.LazyAttribute(_stored_render)
     # 4h05m exactly — the canonical span in duration_hm's own docstring,
     # so a rendered figure reads as the documented example. A test that
     # needs the untimed case passes ``duration=None``, which is what the

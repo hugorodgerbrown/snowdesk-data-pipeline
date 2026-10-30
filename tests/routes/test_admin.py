@@ -62,6 +62,8 @@ class TestRouteAdminRegistration:
         assert "user" in registered.readonly_fields
         assert "points" in registered.readonly_fields
         assert "bounds" in registered.readonly_fields
+        # SNOW-1309: built by the one writer, never typed.
+        assert "track_render" in registered.readonly_fields
 
     def test_search_fields_includes_user_email(self) -> None:
         """search_fields includes user__email for lookup by email."""

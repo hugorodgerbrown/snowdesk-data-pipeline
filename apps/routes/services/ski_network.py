@@ -47,6 +47,7 @@ from apps.ingest.public import (
     serialise_source_document,
 )
 from apps.routes.models import SkiSegment, SkiTour
+from apps.routes.services.track_render import cleared_terrain
 
 logger = logging.getLogger(__name__)
 
@@ -129,8 +130,8 @@ def _tour_values(document: dict[str, Any]) -> dict[str, Any]:
         "source": str(document.get("source") or "")[:64],
         # A rewritten tour may have a new line: the terrain under the old
         # one is sampled afresh the next time it is opened (SNOW-1278).
-        "slope_samples": None,
-        "legs": None,
+        # Both together, through the one rule (SNOW-1309).
+        **cleared_terrain(),
     }
 
 
