@@ -739,8 +739,36 @@ class OfflineMapPage:
             *(f"console  {line}" for line in self.console_errors[-15:]),
             *(f"rejected {line}" for line in rejections[-5:]),
             *(f"maplibre {line}" for line in self.tile_errors()[-10:]),
+            *(f"fonts    {line}" for line in self.style_fonts()),
         ]
         return "\n  ".join(lines) if lines else "(console clean)"
+
+    def style_fonts(self) -> list[str]:
+        """Return each fontstack in the live style, with the layers using it.
+
+        A download pins the glyphs of every ``text-font`` in the live style
+        against the basemap's own glyph server (``glyphURLs``), so a layer
+        carrying a font that server does not host fails the download. This
+        names the layers, which the 404 in the console does not.
+        """
+        fonts: list[str] = self.page.evaluate(
+            """() => {
+                if (typeof MAP === 'undefined' || !MAP) return [];
+                const style = MAP.getStyle();
+                const byFont = new Map();
+                for (const layer of (style && style.layers) || []) {
+                    const font = layer.layout && layer.layout['text-font'];
+                    if (!font) continue;
+                    const key = JSON.stringify(font).slice(0, 80);
+                    if (!byFont.has(key)) byFont.set(key, []);
+                    byFont.get(key).push(layer.id);
+                }
+                return [`glyphs ${style && style.glyphs}`].concat(
+                    [...byFont].map(([f, ids]) =>
+                        `${f} <- ${ids.length} layers: ${ids.slice(0, 6).join(', ')}`));
+            }"""
+        )
+        return fonts
 
     def tile_errors(self) -> list[str]:
         """Return basemap tile errors MapLibre has reported since page load.
