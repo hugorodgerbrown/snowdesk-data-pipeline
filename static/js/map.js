@@ -2133,6 +2133,18 @@
       if (!favouritedResortIds.includes(slug)) favouritedResortIds.push(slug);
     }
     applyFavouritedResortColour();
+    announceFavouritedResorts();
+  };
+
+  /**
+   * Say that the pinned resorts may have changed (SNOW-1318), for the
+   * place sheet's Save star, which paints from
+   * ``window.pwaFavouritedResorts`` rather than from its body.
+   *
+   * @returns {void}
+   */
+  const announceFavouritedResorts = () => {
+    document.dispatchEvent(new CustomEvent('snowdesk:favourited-resorts-changed'));
   };
 
   let favouritesFeedLoading = null;
@@ -7532,6 +7544,7 @@
         favouritedResortIds = favouritedResortIds.concat([detail.resortSlug]);
         applyFavouritedResortColour();
       }
+      announceFavouritedResorts();
       return;
     }
     const lat = Number(detail.lat);
@@ -7681,6 +7694,33 @@
   // So: status indicators (the roundel's data-overlay-shown and composed
   // label) read isVisible(); controls that state what the user asked for
   // (the layers-menu rows and the panel switches) read isEnabled().
+
+  // SNOW-1318: the reader's pinned resorts, read-only, for the place
+  // sheet's Save star. The sheet's body names nobody — one copy serves
+  // every reader, and a download keeps it for offline — so the star is
+  // painted from the favourites feed this module already holds, which
+  // works offline from the overlay cache. ``stateFor`` is null until a
+  // feed has been read (the star stays a disabled outline); ``load`` asks
+  // for one when nothing has. A change is announced as
+  // ``snowdesk:favourited-resorts-changed``.
+  window.pwaFavouritedResorts = Object.freeze({
+    /** @returns {boolean} Whether this reader can save a resort at all. */
+    eligible: () => FAVOURITES_ELIGIBLE && !!FAVOURITES_URL,
+    /**
+     * @param {string} slug
+     * @returns {?{favourited: boolean, uuid: string}} ``uuid`` is "" for a
+     *   save still queued; null while no feed has been read.
+     */
+    stateFor: (slug) => {
+      const pending = pendingResortSlugs.includes(slug);
+      if (favouritesFeedProps === null) return pending ? { favourited: true, uuid: '' } : null;
+      const saved = favouritesFeedProps.find((props) => props.resort_slug === slug);
+      if (saved) return { favourited: true, uuid: String(saved.uuid || '') };
+      return { favourited: pending, uuid: '' };
+    },
+    /** @returns {Promise<void>} Settles once a feed has been asked for. */
+    load: () => loadFavouritesFeed(),
+  });
 
   window.pwaFavouritesOverlay = Object.freeze({
     show() {
