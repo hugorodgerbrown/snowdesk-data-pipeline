@@ -56,6 +56,11 @@ ALLOWED_EVENTS: frozenset[str] = frozenset(
         "pwa.sw.update_available",
         "pwa.sw.update_applied",
         "pwa.sw.fetch_undefined",
+        # SNOW-1311: activate carried the user's downloaded content out of
+        # the old shell caches. {cache_version, result, copied, failed};
+        # result "incomplete" means the old caches were kept for the next
+        # activation. Not emitted when there was no old cache to carry from.
+        "pwa.sw.content_carried",
         # Kill switch + forced update (spec §6, §16.2).
         "pwa.kill_switch.activated",
         "pwa.forced_update.triggered",
