@@ -50,10 +50,15 @@ See "Going public" before turning either on.
   tomorrow is the message and today is logged `SKIPPED`.
 - **Night hold.** 22:00–06:30 Europe/Zurich nothing is sent; the 06:30
   run picks up what was held.
-- **Reach.** Push to every active `PushSubscription`. Email when
-  `alert_email` is `ALWAYS`, or `FALLBACK` with no device; never to an
-  unverified account. With no channel the rows are logged `SKIPPED`, so
-  the state still advances.
+- **Reach.** `deliver` writes the rows `PENDING` and queues one worker
+  (`_worker_deliver_alert`). It pushes to every active `PushSubscription`
+  first, then emails from what actually happened: `ALWAYS` emails anyway,
+  `FALLBACK` emails when no push was accepted (no device, or every one
+  refused — an expired device's 410 included), `NEVER` never does, and
+  never to an unverified account. The rows become `SENT`, or `FAILED` when
+  nothing reached the person. A `FAILED` row is not counted as told, so the
+  next run sends again. With no possible channel at all the rows are
+  logged `SKIPPED`, so the state still advances.
 
 ## Going public
 

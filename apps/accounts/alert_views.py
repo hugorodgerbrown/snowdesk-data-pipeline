@@ -10,7 +10,8 @@ Four endpoints behind the ``bulletin_alerts`` flag:
                          (``Favourite.alerts``). Returns the Alerts group.
 - ``alert_test``         POST JSON — push one test alert to every active
                          subscription on the account, so the person sees one
-                         land on the device they just turned on.
+                         land on the device they just turned on. Sent while
+                         they wait, so the answer says whether it went.
 - ``alert_unsubscribe``  GET confirms, POST stops alert EMAIL (sets
                          ``alert_email`` to NEVER) — the signed link in every
                          alert email, and the RFC 8058 one-click target, so
@@ -35,7 +36,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from apps.accounts.models import Account
-from apps.accounts.push_service import enqueue_push
+from apps.accounts.push_service import dispatch_push
 from apps.accounts.services.alert_email import account_for_unsubscribe
 from apps.core.decorators import require_htmx
 from apps.favourites.models import Favourite
@@ -162,18 +163,29 @@ def alert_place(request: HttpRequest, favourite_uuid: str) -> HttpResponse:
 @login_required
 @require_POST
 def alert_test(request: HttpRequest) -> HttpResponse:
-    """Push one test alert to every active subscription on the account."""
+    """Push one test alert to every active subscription on the account.
+
+    Sent inline rather than enqueued: the button exists to tell the person
+    whether alerts reach this device, so the answer has to say what the push
+    service did. ``devices`` is how many subscriptions were tried and
+    ``delivered`` how many the push service accepted; ``ok`` is true only
+    when at least one was.
+    """
     account = _account_or_404(request)
     payload = {
         "title": _("Snowdesk alerts are on"),
         "body": _("This is how a bulletin alert will look on this device."),
         "url": "/account/settings/",
     }
-    count = 0
+    client_version = request.headers.get("X-Client-Version", "")
+    devices = delivered = 0
     for sub in account.push_subscriptions.active():
-        enqueue_push(sub, payload, request.headers.get("X-Client-Version", ""))
-        count += 1
-    return JsonResponse({"ok": True, "enqueued": count})
+        devices += 1
+        if dispatch_push(sub, payload, client_version).get("ok"):
+            delivered += 1
+    return JsonResponse(
+        {"ok": delivered > 0, "devices": devices, "delivered": delivered}
+    )
 
 
 # RFC 8058 one-click unsubscribe: the mail provider POSTs with no session

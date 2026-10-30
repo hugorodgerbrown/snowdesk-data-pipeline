@@ -24,6 +24,7 @@
  *   pushSupport(env)          → 'available' | 'needs-home-screen' | 'denied' | 'unsupported'
  *   mechanismFor(env)         → 'DECLARATIVE' | 'SW'
  *   urlBase64ToUint8Array(s)  → Uint8Array (the VAPID key for subscribe())
+ *   testOutcome(body)         → 'test-sent' | 'test-no-device' | 'test-failed'
  */
 
 (function () {
@@ -77,9 +78,24 @@
     return out;
   }
 
+  /**
+   * Which line the Send a test button shows, from /account/alerts/test/'s
+   * answer: sent when the push service took it for a device, otherwise why
+   * not — no device on the account, or every send failed.
+   *
+   * @param {{ok?: boolean, devices?: number}} body
+   * @returns {'test-sent' | 'test-no-device' | 'test-failed'}
+   */
+  function testOutcome(body) {
+    if (body && body.ok) return 'test-sent';
+    if (body && body.devices === 0) return 'test-no-device';
+    return 'test-failed';
+  }
+
   self.pwaAlertsOptinCore = Object.freeze({
     pushSupport: pushSupport,
     mechanismFor: mechanismFor,
     urlBase64ToUint8Array: urlBase64ToUint8Array,
+    testOutcome: testOutcome,
   });
 })();

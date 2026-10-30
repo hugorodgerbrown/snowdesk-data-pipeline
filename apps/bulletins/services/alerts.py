@@ -26,10 +26,16 @@ one message (A3) and delivers it by push and, as the fallback, email.
 **Night hold.** Nothing is evaluated 22:00–06:30 Europe/Zurich, so an
 issue landing overnight is picked up by the first run of the morning.
 
-**Delivery.** Push goes to every active subscription on the account. Email
-goes when ``alert_email`` is ALWAYS, or FALLBACK with no active push, to a
-verified address only; never when NEVER. A message with no channel is
-logged ``SKIPPED`` so the state still advances.
+**Delivery.** :func:`deliver` writes the rows ``PENDING`` and queues one
+worker per account (:func:`_worker_deliver_alert`), which pushes to every
+active subscription and then decides email from what actually happened:
+ALWAYS emails anyway, FALLBACK emails when no push was accepted (none
+active, or every one failed — a 410 from an expired device included),
+NEVER never does, and only ever to a verified address. The rows then
+become ``SENT``, or ``FAILED`` when nothing reached the person. A FAILED
+row is not "told": the next run compares against the last row that was,
+and sends again. A message with no possible channel at all is logged
+``SKIPPED`` so the state still advances.
 
 Rows are written only with ``commit=True``; without it the run reports what
 it would send.
@@ -44,9 +50,10 @@ from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from django.db import transaction
+from django_tasks import task
 
 from apps.accounts.models import Account
-from apps.accounts.push_service import enqueue_push
+from apps.accounts.push_service import dispatch_push
 from apps.accounts.services.alert_email import send_alert_email
 from apps.bulletins.models import Bulletin, BulletinAlert, RegionDayRating
 from apps.bulletins.services.alert_wording import (
@@ -347,9 +354,13 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
                 continue
             current = bulletin_state(bulletin.render_model)
             fingerprint = current.fingerprint()
-            last = BulletinAlert.objects.for_day(
-                account.pk, place.region.pk, day
-            ).first()
+            # A FAILED row reached nobody, so it is not what the person was
+            # last told: compare against the row before it, and send again.
+            last = (
+                BulletinAlert.objects.for_day(account.pk, place.region.pk, day)
+                .exclude(outcome=BulletinAlert.Outcome.FAILED)
+                .first()
+            )
             if last is not None and last.fingerprint == fingerprint:
                 continue
             enabled_at = account.alerts_enabled_at
@@ -393,39 +404,46 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
 
 def deliver(run: AccountRun) -> AccountRun:
     """
-    Send an account's message and write its rows, in one transaction.
+    Write an account's rows and queue its message, in one transaction.
+
+    The rows that send are written ``PENDING``; the worker settles them as
+    ``SENT`` or ``FAILED`` once it knows what reached the person. With no
+    possible channel (no active push, and email off or unverified) they are
+    written ``SKIPPED`` and nothing is queued.
 
     Args:
         run: An evaluated run.
 
     Returns:
-        The run, with ``push_count`` and ``emailed`` filled in.
+        The run, with ``push_count`` (devices tried) and ``emailed`` (email
+        planned before any push result) filled in.
 
     """
     account = run.account
     message = run.message
-    if message is not None:
-        subscriptions = list(account.push_subscriptions.active())
-        for sub in subscriptions:
-            enqueue_push(sub, message.as_push())
+    subscriptions = list(account.push_subscriptions.active()) if message else []
+    can_email = _can_email(account)
+    reachable = message is not None and (bool(subscriptions) or can_email)
+    if reachable:
         run.push_count = len(subscriptions)
-        email_on = account.alert_email == Account.AlertEmail.ALWAYS or (
-            account.alert_email == Account.AlertEmail.FALLBACK and not subscriptions
+        run.emailed = can_email and (
+            account.alert_email == Account.AlertEmail.ALWAYS or not subscriptions
         )
-        if email_on and account.is_verified and account.user.email:
-            send_alert_email(account, message.title, message.body, message.url)
-            run.emailed = True
-    reached = run.push_count > 0 or run.emailed
+    pending: list[int] = []
     with transaction.atomic():
         for row in run.rows:
             outcome = row.decision.outcome
-            if row.decision.sends and not reached:
-                outcome = BulletinAlert.Outcome.SKIPPED
-            sends = row.decision.sends and reached
+            sends = row.decision.sends and reachable
+            if row.decision.sends:
+                outcome = (
+                    BulletinAlert.Outcome.PENDING
+                    if reachable
+                    else BulletinAlert.Outcome.SKIPPED
+                )
             # update_or_create, not get_or_create: a state that recurs on
             # the same day rewrites its row, which bumps updated_at and so
             # makes it the latest again (BulletinAlertQuerySet.for_day).
-            BulletinAlert.objects.update_or_create(
+            alert, _ = BulletinAlert.objects.update_or_create(
                 account=account,
                 region=row.place.region,
                 target_date=row.day,
@@ -435,14 +453,93 @@ def deliver(run: AccountRun) -> AccountRun:
                     "state": row.state.to_json(),
                     "kind": _KIND_TO_ROW[row.decision.kind],
                     "outcome": outcome,
-                    "sent_push": sends and run.push_count > 0,
-                    "sent_email": sends and run.emailed,
+                    "sent_push": False,
+                    "sent_email": False,
                     "title": message.title if sends and message else "",
                     "body": message.body if sends and message else "",
                     "url": message.url if sends and message else "",
                 },
             )
+            if sends:
+                pending.append(alert.pk)
+    if message is not None and pending:
+        _worker_deliver_alert.enqueue(
+            account.pk,
+            pending,
+            message.as_push(),
+            message.title,
+            message.body,
+            message.url,
+        )
     return run
+
+
+def _can_email(account: Account) -> bool:
+    """Return True when alert email may go to this account at all."""
+    return (
+        account.alert_email != Account.AlertEmail.NEVER
+        and account.is_verified
+        and bool(account.user.email)
+    )
+
+
+@task()
+def _worker_deliver_alert(
+    account_id: int,
+    alert_ids: list[int],
+    push: dict[str, str],
+    title: str,
+    body: str,
+    url: str,
+) -> None:
+    """
+    Background worker: push, fall back to email, and settle the rows.
+
+    Push is tried on every active device first, synchronously, so email can
+    follow what actually happened rather than what was queued: FALLBACK
+    emails when no push was accepted. The rows become ``SENT`` when either
+    channel reached the person and ``FAILED`` when neither did, which the
+    next run retries. Only ``PENDING`` rows are touched, so a replayed task
+    never undoes a later run's rows.
+
+    Args:
+        account_id: The account's pk.
+        alert_ids: The ``BulletinAlert`` rows this message carries.
+        push: The push payload (``AlertMessage.as_push``).
+        title: The email subject.
+        body: The email body.
+        url: Where the alert lands.
+
+    """
+    account = Account.objects.select_related("user").filter(pk=account_id).first()
+    if account is None:
+        logger.info("Bulletin alert for account %s: account gone", account_id)
+        return
+    pushed = False
+    for sub in account.push_subscriptions.active():
+        pushed = dispatch_push(sub, push)["ok"] or pushed
+    emailed = False
+    wants_email = account.alert_email == Account.AlertEmail.ALWAYS or (
+        account.alert_email == Account.AlertEmail.FALLBACK and not pushed
+    )
+    if wants_email and _can_email(account):
+        send_alert_email(account, title, body, url)
+        emailed = True
+    reached = pushed or emailed
+    if not reached:
+        logger.warning(
+            "Bulletin alert for account %s reached no channel; retrying next run",
+            account_id,
+        )
+    BulletinAlert.objects.filter(
+        pk__in=alert_ids, outcome=BulletinAlert.Outcome.PENDING
+    ).update(
+        outcome=(
+            BulletinAlert.Outcome.SENT if reached else BulletinAlert.Outcome.FAILED
+        ),
+        sent_push=pushed,
+        sent_email=emailed,
+    )
 
 
 # ---------------------------------------------------------------------------
