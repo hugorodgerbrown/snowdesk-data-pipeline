@@ -79,7 +79,15 @@ stored, how many saved places there are is not a question anyone has.
 | Getting in | Offline support is installed · The app may use the network · The app opens · The app looks right |
 | The map | Danger ratings · Region outlines · one row per basemap the device holds anything for |
 | Map downloads | one row per download, by name — its answer is about the TILES, with the content age riding in the summary (SNOW-926) |
-| Your content | Bulletins you have opened · Your saved places · Your routes · Community reports · Weather |
+| Your content | Bulletins you have opened · Region details for downloaded days · Your saved places · Your routes · Community reports · Weather |
+
+**Region details for downloaded days** (SNOW-1312) is Yes when the shell
+cache holds any map region sheet (`/partials/region-sheet/<id>/?d=<day>`,
+the key the worker keeps a downloaded sheet under), No when an area is
+downloaded and none is held, and unknown with nothing downloaded — there
+is nothing to have saved. A `/partials/` entry is classified `'partial'`,
+not `'page'`, so the report reads no response per sheet. See
+[a-download-looks-forward-and-carries-the-region-sheet.md](decisions/a-download-looks-forward-and-carries-the-region-sheet.md).
 
 `ROWS` in `offline_audit_core.js` is a constant, declared before
 anything is read, so a device with nothing stored produces the same rows
@@ -521,7 +529,21 @@ and the only one the worker answers offline; the device clock would miss it
 across a timezone or a midnight, so bulletins alone keep the press-time
 rule below), and an items endpoint that was asked and did not answer
 makes the run short. A signed-out reader is rendered no items endpoint
-and asks for nothing. See
+and asks for nothing.
+
+**The days are the map's (SNOW-1312): today and forward only.** The
+ceiling is `pwaCalendarCore.latestKnownDate` over the season ratings
+(`data-ratings-url?country=ch`, the map's own read — `calendar_core.js` is
+loaded on `/offline/` for it), and the window is the shared
+`pwaBasemapDownloadCore.forwardContentDays`, so an Update saves the same
+days as a map download: nothing from before today. For those days it also
+warms each region's map sheet (`data-region-sheet-url`) and the dated
+ratings feed (`/api/ratings/?d=<day>&country=ch`), plus each country's
+season ratings — the scrubber's payload, which the map's download warms
+with its feeds. A sheet or a feed that fails to warm is a failure in the
+run's tally, so the area is not stamped complete over it. See
+[a-download-looks-forward-and-carries-the-region-sheet.md](decisions/a-download-looks-forward-and-carries-the-region-sheet.md)
+and
 [an-area-download-carries-your-trips-and-borrowed-forecasts.md](decisions/an-area-download-carries-your-trips-and-borrowed-forecasts.md). Everything goes
 through `self.pwaWarmCache` — the worker's own warm path — because the
 worker stamps a same-origin HTML response with the principal its body
@@ -542,7 +564,8 @@ item.
 The endpoints the plan is built from — `regions.geojson` per country,
 `weather.geojson`, the weather-detail template, the four feeds,
 `area-content` and (SNOW-965) `area-items` with the trip page and route
-templates, and today's date — are rendered onto the panel root by
+templates, (SNOW-1312) the ratings feed and the region-sheet template, and
+today's date — are rendered onto the panel root by
 `apps.public.views.offline_page`. The map reads the same endpoints off
 `#map`'s own dataset; this page has no `#map`, and re-deriving them
 client-side would be a second copy of routing only the server can answer

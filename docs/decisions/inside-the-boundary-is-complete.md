@@ -2,7 +2,7 @@
 name: inside-the-boundary-is-complete
 description: Why an area download picks its content by crude rectangle, server-side (/api/area-content/, bboxes_overlap, areaBBox), never real geometry
 status: current
-last-reviewed: 2026-10-16
+last-reviewed: 2026-10-30
 ---
 
 # Inside the boundary, everything. Outside, whatever is there.
@@ -157,17 +157,14 @@ real boundary rather than a hand-built one.
 ## The day window
 
 A download takes each region's bulletin for a window of days, not one day.
-Forwards it runs to the last published day, resolved from the season
+It runs from today to the last published day, resolved from the season
 payload the scrubber already holds (`latestKnownDate`, SNOW-927) — "is
 tomorrow's bulletin out yet" is a fact about the pipeline, not a
-preference. Backwards it runs `OFFLINE_CONTENT_PAST_DAYS` days (SNOW-953,
-default 3), rendered onto the page as `data-content-past-days`.
+preference.
 
-Backwards is a setting because it is a judgement: yesterday's bulletin says
-what the snowpack has just been through, and forward-only carried tomorrow
-but not yesterday. It is safe to be generous — a region with no bulletin
-for a day renders a 200 empty state, so a day too far cannot fail a
-download, only cost a page.
+SNOW-953 added a reach backwards (`OFFLINE_CONTENT_PAST_DAYS`); SNOW-1312
+removed it with its setting — a download looks forward only. See
+[a-download-looks-forward-and-carries-the-region-sheet.md](a-download-looks-forward-and-carries-the-region-sheet.md).
 
 ## What would have to change first
 
