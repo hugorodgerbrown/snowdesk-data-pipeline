@@ -116,6 +116,21 @@
  * silently dropped. Rename and delete are online-only too, matching every
  * other panel's edits.
  *
+ * A ROUTE DRAWN OFFLINE (SNOW-1262) is the exception to "online-only": its
+ * save is a JSON body, so static/js/route_draw.js queues it when there is
+ * no signal. This panel lists those saves from window.pwaMutationQueue
+ * (`paintPending`) in [data-routes-pending], ABOVE and outside the
+ * server's rows — a list load or a cached repaint replaces
+ * [data-routes-rows] wholesale, and the queue is on this device, so the
+ * rows show with or without a signal and over either. A save still
+ * waiting is "Waiting to sync" with the sync badge and no menu; one the
+ * server refused for good shows "Couldn't sync", the reason from its
+ * stored status and error (`failureReason`), and a "…" menu with Edit and
+ * Discard, both handed to window.pwaRouteDraw. They are repainted on every
+ * `pwa:mutation-queue-changed`; once a save lands, the drain's
+ * `snowdesk:routes-changed` re-reads the list below and it appears there
+ * as the route itself.
+ *
  * THE LIST DOES READ OFFLINE, as of SNOW-950. Every successful load's rows
  * are persisted by static/js/routes_offline.js, and a failed load repaints
  * them before this module falls back to its "couldn't be loaded" line —
@@ -171,7 +186,20 @@
     'upload-failed': "That route couldn't be uploaded. Try again.",
     'share-copied': 'Link copied.',
     'share-failed': "That link couldn't be created. Try again.",
+    'failed-invalid': "The line couldn't be saved as a route. Edit it and try again.",
+    'failed-limit': "You've reached your saved-route limit. Delete one, then edit this to save it.",
+    'failed-conflict': 'This clashed with an earlier save. Edit it and save it again.',
+    'failed-signed-out': 'You were signed out when it synced. Edit it to save it again.',
+    'failed-unavailable': "Saving a drawn route isn't available right now.",
+    'failed-other': "This route couldn't be saved.",
+    'discard-confirm': 'Discard %(name)s? The line you drew will be lost.',
   });
+
+  // SNOW-1262: the queue `kind` route_draw.js saves a drawn route under
+  // (route_draw_core.js's ROUTE_CREATE_KIND, not read from there because
+  // that module is loaded only with the route_drawing flag, and a route
+  // queued before the flag went off must still be listed).
+  const ROUTE_CREATE_KIND = 'route-create';
 
   // ``%(name)s`` substitution by name, the shape every translated string
   // with a value in it uses (see static/js/i18n_strings.js).
@@ -289,6 +317,8 @@
     sheet.appendChild(listTemplate.content.cloneNode(true));
     // A cloned switch starts unchecked; seed it from the overlay's setting.
     window.pwaPanelOverlaySwitch?.sync();
+    // SNOW-1262: routes drawn offline, from this device's queue.
+    paintPending().catch(function () {});
 
     if (!UPLOAD_ELIGIBLE) {
       // Uploading needs an account either way, so the add CTA goes.
@@ -464,6 +494,7 @@
   sheet.addEventListener('click', function (event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return;
+    if (handlePendingClick(event)) return;
     if (handleFocusClick(event)) return;
     if (handleShareClick(event)) return;
     if (handleRenameClick(event)) return;
@@ -900,6 +931,153 @@
       time: formatStamp(record.cached_at),
     });
     rows.appendChild(line);
+    // SNOW-1262: the routes drawn offline sit above these, from the queue
+    // rather than the cache; repainted here too so an offline repaint
+    // never shows the cached rows without them.
+    paintPending().catch(function () {});
+    return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Routes drawn offline (SNOW-1262) — see the header.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Why a refused save couldn't sync, from the status and the
+   * endpoint's `error` its row kept (routes:create_drawn's own answers).
+   *
+   * @param {{last_status: ?number, last_error: ?string}} row
+   * @returns {string}
+   */
+  function failureReason(row) {
+    const status = row.last_status;
+    if (status === 400) return STRINGS['failed-invalid'];
+    if (status === 409) {
+      // The cap answers with its own code; a bare 409 is the server's
+      // Idempotency-Key guard (core/idempotency.py) — the same key
+      // re-sent with a different body.
+      return row.last_error === 'route_limit_reached'
+        ? STRINGS['failed-limit']
+        : STRINGS['failed-conflict'];
+    }
+    if (status === 401 || status === 403) return STRINGS['failed-signed-out'];
+    if (status === 404) return STRINGS['failed-unavailable'];
+    return STRINGS['failed-other'];
+  }
+
+  /**
+   * The name a queued save was sent with, or null when its body is not
+   * the JSON route_draw.js sends.
+   *
+   * @param {*} body The row's body.
+   * @returns {?string}
+   */
+  function pendingName(body) {
+    try {
+      const value = JSON.parse(body);
+      return value && typeof value.name === 'string' && value.name ? value.name : null;
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  /**
+   * One row for a queued save, cloned from its template.
+   *
+   * @param {{idempotency_key: string, status: string, body: *,
+   *   last_status: ?number, last_error: ?string}} row
+   * @returns {?Element}
+   */
+  function buildPendingRow(row) {
+    const failed = row.status === 'failed';
+    const template = /** @type {HTMLTemplateElement|null} */ (
+      document.getElementById(failed ? 'route-failed-row-template' : 'route-pending-row-template')
+    );
+    if (!template) return null;
+    const fragment = /** @type {DocumentFragment} */ (template.content.cloneNode(true));
+    const li = fragment.querySelector('li');
+    if (!li) return null;
+    const key = row.idempotency_key;
+    li.setAttribute('data-route-pending-key', key);
+    li.setAttribute('data-route-pending-status', failed ? 'failed' : 'queued');
+    const name = pendingName(row.body);
+    const label = li.querySelector('[data-row-label]');
+    if (label && name) label.textContent = name;
+    if (failed) {
+      const meta = li.querySelector('[data-row-meta]');
+      if (meta) meta.textContent = failureReason(row);
+      // Per-clone ids, as includes/_overflow_menu.html asks of a caller
+      // that clones it: the trigger's aria-controls must name one menu.
+      const trigger = li.querySelector('[data-overflow-trigger]');
+      const menu = li.querySelector('[role="menu"]');
+      if (trigger && menu) {
+        trigger.id = 'route-failed-actions-' + key;
+        menu.id = 'route-failed-actions-menu-' + key;
+        trigger.setAttribute('aria-controls', menu.id);
+      }
+      // Edit opens draw mode, which exists only with the route_drawing
+      // flag; without it the row can still be discarded.
+      if (!window.pwaRouteDraw) li.querySelector('[data-route-pending-edit-item]')?.remove();
+    }
+    return li;
+  }
+
+  /**
+   * Paint this device's queued route saves above the server's rows.
+   *
+   * @returns {Promise<void>}
+   */
+  async function paintPending() {
+    const container = /** @type {HTMLElement|null} */ (sheet.querySelector('[data-routes-pending]'));
+    const queue = window.pwaMutationQueue;
+    if (!container) return;
+    const rows = UPLOAD_ELIGIBLE && queue && queue.list
+      ? await queue.list({ kind: ROUTE_CREATE_KIND })
+      : [];
+    // Newest first, like the server's own list.
+    const built = rows
+      .slice()
+      .reverse()
+      .map(buildPendingRow)
+      .filter(Boolean);
+    container.replaceChildren(.../** @type {Array<Element>} */ (built));
+    container.hidden = built.length === 0;
+  }
+
+  // Every change to the queue: a save queued, replayed, refused or
+  // discarded. Only while the panel is open, for the reason the
+  // routes-changed listener above gives.
+  document.addEventListener('pwa:mutation-queue-changed', function () {
+    if (!controller.isOpen()) return;
+    paintPending().catch(function () {});
+  });
+
+  /**
+   * Handle Edit or Discard on a refused save's row.
+   *
+   * @param {MouseEvent} event
+   * @returns {boolean} Whether the click was one of them.
+   */
+  function handlePendingClick(event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    const edit = target.closest('[data-route-pending-edit]');
+    const discard = target.closest('[data-route-pending-discard]');
+    if (!edit && !discard) return false;
+    const row = target.closest('[data-route-pending-key]');
+    const key = row ? row.getAttribute('data-route-pending-key') : null;
+    if (!key) return true;
+    if (edit) {
+      // Draw mode opens over the map this panel covers.
+      closeSheet();
+      window.pwaRouteDraw?.edit(key);
+      return true;
+    }
+    const label = row ? row.querySelector('[data-row-label]') : null;
+    const name = label ? (label.textContent || '').trim() : '';
+    if (!window.confirm(interpolate(STRINGS['discard-confirm'], { name: name }))) return true;
+    const routeDraw = window.pwaRouteDraw;
+    const done = routeDraw ? routeDraw.discard(key) : window.pwaMutationQueue?.discard(key);
+    Promise.resolve(done).catch(function () {});
     return true;
   }
 

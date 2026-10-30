@@ -80,7 +80,15 @@
     </div>
     {% if not static %}
         <template id="mutation-queue-strings-template">
-            <span data-string="failed">{% trans "Some changes couldn't be saved and won't be retried." %}</span>
+            {# The failure line is the banner's own body, so a reveal after a  #}
+            {# discard notice writes back exactly what was rendered above.      #}
+            <span data-string="failed">
+                {% if body %}
+                    {{ body }}
+                {% else %}
+                    {% trans "Some changes couldn't be saved and won't be retried." %}
+                {% endif %}
+            </span>
             <span
                 data-string="route-discarded"
             >{% trans "A route drawn offline under another account was discarded." %}</span>
