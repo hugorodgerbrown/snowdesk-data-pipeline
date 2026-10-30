@@ -3432,7 +3432,16 @@
     // a closed tour drawn whenever the panel shut during a load.
     if (!map.getSource(ids.route)) {
       if (!tourRouteFeature || !map.isStyleLoaded()) return;
-      core.install(map, collection, { prefix: TOUR_ROUTE_SOURCE, textFont: overlayTextFont });
+      // SNOW-1307: in SAC's colours, so a tour reads as SAC's and the
+      // reader's own routes stand apart from it; and undashed, because a
+      // dash on SAC's maps means "take extra care".
+      const legs = self.pwaRouteLegsCore;
+      core.install(map, collection, {
+        prefix: TOUR_ROUTE_SOURCE,
+        textFont: overlayTextFont,
+        colours: legs ? { climb: legs.SAC_CLIMB_COLOUR, descent: legs.SAC_DESCENT_COLOUR } : undefined,
+        solidClimb: true,
+      });
       installRouteCursorLayers(TOUR_ROUTE_CURSOR_SOURCE, TOUR_ROUTE_SOURCE, true);
       raiseMarkerLayers();
       return;

@@ -105,6 +105,30 @@ describe('lineLayers', () => {
     expect(descent.paint).not.toHaveProperty('line-dasharray');
   });
 
+  it('draws an SAC tour in the colours it is given, the climb solid (SNOW-1307)', () => {
+    const colours = { climb: '#1d4ed8', descent: '#38bdf8' };
+    const layers = core.lineLayers(options({ colours, solidClimb: true }));
+    const climb = layers.find((layer) => layer.id === 'p-leg-climb');
+    const descent = layers.find((layer) => layer.id === 'p-leg-descent');
+    const marks = core.markLayers(options({ colours }));
+
+    expect(climb.paint['line-color']).toBe('#1d4ed8');
+    expect(climb.paint).not.toHaveProperty('line-dasharray');
+    expect(climb.layout['line-cap']).toBe('round');
+    expect(descent.paint['line-color']).toBe('#38bdf8');
+    expect(marks[0].paint['circle-color']).toEqual(['case', ['get', 'climbing'], '#1d4ed8', '#38bdf8']);
+  });
+
+  it('keeps a route\'s own colours when given none', () => {
+    const layers = core.lineLayers(options());
+    const legs = self.pwaRouteLegsCore;
+
+    expect(layers.find((layer) => layer.id === 'p-leg-climb').paint['line-color'])
+      .toBe(legs.LEG_CLIMB_COLOUR);
+    expect(layers.find((layer) => layer.id === 'p-leg-descent').paint['line-color'])
+      .toBe(legs.LEG_DESCENT_COLOUR);
+  });
+
   it('keeps a legged route off the flat line by default', () => {
     const [casing, line] = core.lineLayers(options());
 

@@ -295,4 +295,16 @@ describe('the colours', () => {
     expect(core.LEG_CLIMB_COLOUR).toBe('#64748b');
     expect(core.LEG_DESCENT_COLOUR).toBe('#c026d3');
   });
+
+  it('give an SAC tour its own blues, mirrored in main.css (SNOW-1307)', () => {
+    // A tour's line and its profile are one drawing too, and neither may
+    // share a colour with the reader's own routes, which they drowned out.
+    const css = readFileSync(MAIN_CSS, 'utf8');
+
+    expect(css).toMatch(new RegExp(`--color-sac-climb:\\s*${core.SAC_CLIMB_COLOUR}`));
+    expect(css).toMatch(new RegExp(`--color-sac-descent:\\s*${core.SAC_DESCENT_COLOUR}`));
+    const own = [core.LEG_CLIMB_COLOUR, core.LEG_DESCENT_COLOUR];
+    expect(own).not.toContain(core.SAC_CLIMB_COLOUR);
+    expect(own).not.toContain(core.SAC_DESCENT_COLOUR);
+  });
 });

@@ -663,6 +663,10 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             # the pair: a slate climb, a fuchsia descent).
             Token("--color-route-rail-climb", "Rail leg — climb", "#64748b", None),
             Token("--color-route-rail-descent", "Rail leg — descent", "#c026d3", None),
+            # SNOW-1307: an SAC tour not yet saved, on the map and in its
+            # profile, in SAC's own blue so a reader's routes stand apart.
+            Token("--color-sac-climb", "SAC tour — way up", "#1d4ed8", None),
+            Token("--color-sac-descent", "SAC tour — way down", "#38bdf8", None),
         ),
     ),
     FoundationCategory(

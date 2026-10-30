@@ -572,6 +572,11 @@
      ————————————————————————————————————————— */
   --color-route-rail-climb:   #64748b;   /* slate-500                    */
   --color-route-rail-descent: #c026d3;   /* the route line's own fuchsia */
+  /* An SAC tour not yet saved (SNOW-1307): SAC's own blue, so a reader's
+     routes stand apart from the tours layer. Mirrored as SAC_CLIMB_COLOUR
+     and SAC_DESCENT_COLOUR in static/js/route_legs_core.js. */
+  --color-sac-climb:          #1d4ed8;   /* blue-700                     */
+  --color-sac-descent:        #38bdf8;   /* sky-400                      */
 
   /* Muted tint backgrounds for danger band strips */
   --color-eaws-low-tint:          #e8ffb8;
@@ -1633,6 +1638,11 @@ a.season-day:focus-visible {
 .route-rail-leg { fill-opacity: 0.22; }
 .route-rail-leg[data-climbing="true"]  { fill: var(--color-route-rail-climb); }
 .route-rail-leg[data-climbing="false"] { fill: var(--color-route-rail-descent); }
+/* An SAC tour not yet saved (SNOW-1307): the outline in SAC's blue and a
+   descent banded sky blue, as the tour is drawn on the map. route_rail.js
+   marks the panel `data-route-tour`. */
+[data-route-tour] .route-rail-lane { color: var(--color-sac-climb); }
+[data-route-tour] .route-rail-leg[data-climbing="false"] { fill: var(--color-sac-descent); }
 
 /* —— The route profile's lane and readout (moved from map.css, SNOW-1215)
    The profile is one component on three pages (templates/includes/

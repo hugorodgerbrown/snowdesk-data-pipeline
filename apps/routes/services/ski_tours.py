@@ -18,7 +18,7 @@ caught by taking, for each tour, whichever end lies nearer that median.
 Measured on the 2,941 tours: half the summits with two or more tours have
 their target ends within 30 m of each other.
 
-A TOUR IS ONE LEG (Hugo, SNOW-1304): SAC publishes the ways up and the
+A TOUR IS A WAY UP OR A WAY DOWN (Hugo, SNOW-1304): SAC publishes the ways up and the
 ways down to a summit separately, so a reader can climb one and ski
 another. A WAY DOWN is a tour SAC itself calls one: named "Abfahrt …",
 "Descente …", "Discesa …" or "Descent …" in any of its languages, or given
@@ -30,6 +30,8 @@ from the valley to the summit, whichever way the tour goes. The panel infers
 nothing beyond that (Hugo, SNOW-1302): it says the line shows the ascent
 only or the descent only, and points at SAC's guide for the rest. SAC's own
 height figures are not shown; the panel's figures are the line's own.
+Once sampled, the open tour splits into legs where the ground turns, as a
+route does (SNOW-1307); ``one_leg`` stands in only until it has heights.
 
 SAC'S POINTS ARE NEVER EDITED (Hugo, SNOW-1287). A tour that stops at the
 top stops there here too: nothing is added for the way back down, though
@@ -163,11 +165,11 @@ def is_descent(tour: SkiTour) -> bool:
 def one_leg(
     points: list[list[float | None]], slope: dict[str, Any] | None, tour: SkiTour
 ) -> list[dict[str, Any]] | None:
-    """Return a tour as the one leg it is (SNOW-1304).
+    """Return a tour as one leg in its direction (SNOW-1304).
 
-    A tour is a way up or a way down, never both, so it is drawn and
-    profiled as one leg in that direction: the line's own rises and dips
-    are not legs of it. The leg needs no heights, so it is built from the
+    The stand-in for a tour with no heights yet: a sampled tour's legs are
+    detected from its terrain, as a route's are (SNOW-1307). The leg
+    needs no heights, so it is built from the
     geometry alone and an unsampled tour, or one off the terrain grid,
     still gets one. Its segment indices are those the client reads: the
     ``slope.angles`` it was sent, or the stride walk an unsampled route's

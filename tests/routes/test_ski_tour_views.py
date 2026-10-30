@@ -85,6 +85,23 @@ class TestFeature:
         assert (leg["from"], leg["point_from"]) == (0, 0)
         assert leg["point_to"] == len(feature["geometry"]["coordinates"]) - 1
 
+    def test_a_sampled_tour_splits_into_legs_as_a_route_does(
+        self, client: Client
+    ) -> None:
+        """With heights, the detected legs stand: up and down where the ground turns.
+
+        SNOW-1307 (Hugo, 2026-10-30: "display up and down as a user route
+        does"); the one leg is only the stand-in for a tour with no heights.
+        """
+        tour = SkiTourFactory.create()
+        detected = [
+            {"i": 1, "from": 0, "to": 0, "climbing": False},
+            {"i": 2, "from": 1, "to": 1, "climbing": True},
+        ]
+        with patch("apps.routes.views.wire_legs", return_value=detected):
+            props = client.get(_feature_url(tour)).json()["feature"]["properties"]
+        assert props["legs"] == detected
+
     def test_sample_walks_the_grid_and_keeps_the_record(self, client: Client) -> None:
         """``?sample=1`` answers with the terrain and stores it."""
         tour = SkiTourFactory.create()

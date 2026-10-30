@@ -342,6 +342,14 @@ describe('open', () => {
     expect(slot.children).toHaveLength(0);
   });
 
+  it('marks an SAC tour not yet saved for its colours, and nothing else (SNOW-1307)', () => {
+    window.pwaRouteRail.open(feature({ uuid: undefined, tour: true, tour_uuid: 'abc' }));
+    expect(rail.hasAttribute('data-route-tour')).toBe(true);
+
+    window.pwaRouteRail.open(feature());
+    expect(rail.hasAttribute('data-route-tour')).toBe(false);
+  });
+
   describe('a copy of an SAC tour (SNOW-1303)', () => {
     const sacBlock = () => {
       const node = document.createElement('div');

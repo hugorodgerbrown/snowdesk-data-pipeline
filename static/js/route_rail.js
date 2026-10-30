@@ -453,6 +453,9 @@
     }
     paintState(cursor ? cursor.state() : null);
 
+    // SNOW-1307: an SAC tour not yet saved draws its profile in SAC's
+    // colours (main.css), as the map draws its line.
+    rail.toggleAttribute('data-route-tour', Boolean(current.tour));
     rail.hidden = false;
     if (mapEl) mapEl.setAttribute('data-route-rail-open', '');
     resetTerrain();
