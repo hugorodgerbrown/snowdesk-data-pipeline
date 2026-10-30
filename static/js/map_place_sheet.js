@@ -25,8 +25,24 @@
  *
  * THE ACTIONS. A resort's Save star is favourites.js's own [data-resort-star]
  * handler, unchanged; this module turns the star at once (the create is
- * queued, possibly offline) and repaints the body when the favourites
- * change. A saved pin's "…" menu carries the panel row's items: Share hands
+ * queued, possibly offline).
+ *
+ * A RESORT'S STAR IS PAINTED HERE (SNOW-1318). The body names nobody, so
+ * one copy serves every reader and a download keeps it for offline; it
+ * renders the star as a disabled outline beside a hidden sign-in link.
+ * `paintStar` reads the reader's pinned resorts from map.js
+ * (`window.pwaFavouritedResorts`, the favourites feed, offline from the
+ * overlay cache): a reader who cannot save gets the link; a signed-in one
+ * gets the star, filled or not, once the feed is read — until then it
+ * stays the disabled outline. It is repainted whenever map.js announces
+ * `snowdesk:favourited-resorts-changed` and on `snowdesk:favourites-changed`,
+ * so a resort's body is no longer re-read when the favourites change; a
+ * saved pin's still is. OFFLINE, a resort's sheet is the one a download
+ * kept for that day ('public-partial'); a day it did not take says so.
+ * If the feed cannot be read at all (network and overlay cache both
+ * fail), the star is enabled unfilled rather than left disabled for ever.
+ *
+ * A saved pin's "…" menu carries the panel row's items: Share hands
  * the server-composed "<name> - <what3words link>" to window.pwaShare, as
  * the panel does; Rename edits the name in place through
  * window.pwaRowRenameCommit, as the panel does; Delete confirms and posts,
@@ -139,6 +155,61 @@
     sheet.replaceChildren(wrap);
   };
 
+  /**
+   * Paint a resort body's Save star from the reader's pinned resorts
+   * (SNOW-1318).
+   *
+   * Without map.js's accessor the star stays as rendered, a disabled
+   * outline. A reader who cannot save sees the sign-in link instead; a
+   * signed-in one sees the star once the feed is read — filled with its
+   * uuid when saved, filled and still disabled while a save is queued.
+   * Unread, it asks for the feed, which announces itself when it lands.
+   *
+   * @returns {void}
+   */
+  const paintStar = () => {
+    const resorts = window.pwaFavouritedResorts;
+    const star = /** @type {?HTMLButtonElement} */ (sheet.querySelector('[data-resort-star]'));
+    const signIn = /** @type {?HTMLElement} */ (sheet.querySelector('[data-resort-star-signin]'));
+    if (!resorts || (!star && !signIn)) return;
+    if (!resorts.eligible()) {
+      if (star) star.remove();
+      if (signIn) signIn.hidden = false;
+      return;
+    }
+    if (signIn) signIn.remove();
+    if (!star) return;
+    const state = resorts.stateFor(star.getAttribute('data-resort-slug') || '');
+    if (!state) {
+      star.disabled = true;
+      // A feed that lands announces itself and repaints. One that cannot be
+      // read (network and overlay cache both failed) leaves no state: the
+      // star is enabled as an outline then, so a tap saves through
+      // favourites.js, which re-asks — not a disabled outline for ever.
+      Promise.resolve(resorts.load())
+        .catch(() => {})
+        .then(() => {
+          if (!star.isConnected || resorts.stateFor(star.getAttribute('data-resort-slug') || '')) return;
+          star.disabled = false;
+        });
+      return;
+    }
+    const favourited = !!state.favourited;
+    const queued = favourited && !state.uuid;
+    star.setAttribute('data-favourited', favourited ? 'true' : 'false');
+    star.setAttribute('data-favourite-uuid', state.uuid || '');
+    star.setAttribute('aria-pressed', favourited ? 'true' : 'false');
+    const label = star.getAttribute(favourited ? 'data-label-remove' : 'data-label-save') || '';
+    if (label) {
+      star.setAttribute('aria-label', label);
+      star.setAttribute('title', label);
+    }
+    star.querySelector('svg')?.setAttribute('fill', favourited ? 'currentColor' : 'none');
+    if (queued) star.setAttribute('aria-busy', 'true');
+    else star.removeAttribute('aria-busy');
+    star.disabled = queued;
+  };
+
   /** @returns {string} The body's URL for the open place, or "". */
   const urlFor = () => {
     if (!place) return '';
@@ -186,6 +257,7 @@
       .then((html) => {
         if (!ask.isCurrent() || !controller.isOpen()) return;
         sheet.innerHTML = html;
+        paintStar();
       })
       .catch((err) => {
         if (!ask.isCurrent() || !controller.isOpen() || playback.isAbort(err)) return;
@@ -195,6 +267,12 @@
           const saved = window.snowdeskMapFormat?.relativeTime?.(current.createdAt || '') || '';
           const note = err && err.notDownloaded ? STRINGS.notDownloaded : '';
           paintLines(current.name || '', saved || (note ? '' : STRINGS.failed), note);
+          return;
+        }
+        // SNOW-1318: a resort's sheet is kept by a download for each day it
+        // took; a day it did not take says so, under the resort's name.
+        if (current && current.kind === 'resort' && err && err.notDownloaded) {
+          paintLines(current.name || '', '', STRINGS.notDownloaded);
           return;
         }
         paintLines('', STRINGS.failed);
@@ -302,11 +380,10 @@
 
     // A resort's star: favourites.js owns the write (a document listener,
     // which runs after this one). Turn the star now, since the create is
-    // queued and the body cannot be re-read until it lands — but only when
-    // that handler will queue it (on a device that cannot, it toasts and
-    // saves nothing). The star stays disabled until the drained queue's
-    // `snowdesk:favourites-changed` repaints the body, so a second tap
-    // cannot queue a second create.
+    // queued — but only when that handler will queue it (on a device that
+    // cannot, it toasts and saves nothing). The star stays disabled until
+    // map.js reads the saved favourite back and `paintStar` gives it its
+    // uuid (SNOW-1318), so a second tap cannot queue a second create.
     const star = /** @type {?HTMLButtonElement} */ (target.closest?.('[data-resort-star]'));
     if (star && star.getAttribute('data-favourited') !== 'true') {
       if (!window.MapSheet.canQueueMutations?.()) return;
@@ -385,15 +462,28 @@
       .catch(() => toast(STRINGS['delete-failed']));
   });
 
-  // A queued resort save lands, or a pin changes elsewhere: re-read —
-  // when the timeline stops, if it is playing.
+  // A pin changes elsewhere: re-read — when the timeline stops, if it is
+  // playing. A resort's body says nothing about the favourites (SNOW-1318),
+  // so its star is repainted instead — now, and again when map.js has read
+  // the change (`snowdesk:favourited-resorts-changed`, below).
   document.addEventListener('snowdesk:favourites-changed', () => {
     if (!controller.isOpen() || !place) return;
+    if (place.kind === 'resort') {
+      paintStar();
+      return;
+    }
     if (playback.isPlaying()) {
       pendingRefresh = true;
       return;
     }
     load();
+  });
+
+  // SNOW-1318: map.js has read the favourites (its feed landed, a refetch
+  // after a save or a removal, or a star queued offline): repaint the star.
+  document.addEventListener('snowdesk:favourited-resorts-changed', () => {
+    if (!controller.isOpen() || !place || place.kind !== 'resort') return;
+    paintStar();
   });
 
   document.addEventListener('snowdesk:date-changed', (ev) => {

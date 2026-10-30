@@ -1,6 +1,6 @@
 ---
 name: a-download-looks-forward-and-carries-the-region-sheet
-description: Why an area download saves forward days only and carries the region sheet ('public-partial', path + d key, X-SW-Offline-Miss)
+description: Why an area download saves forward days only and carries the region and resort sheets ('public-partial', path + d key, X-SW-Offline-Miss)
 status: current
 last-reviewed: 2026-10-30
 ---
@@ -46,6 +46,25 @@ also lost its colours offline on any day but the one the map last booted on.
 5. **`/offline/` lists the sheets** as their own row, "Region details for
    downloaded days", and treats a `/partials/` entry as a fragment rather
    than a page.
+
+## Amended by SNOW-1318: a resort's place sheet joins it
+
+A resort tapped offline in a downloaded area said "Place details are
+unavailable offline": its sheet (`/partials/place-sheet/resort/<slug>/`)
+was `'network'`, because the server rendered the reader's Save star into
+it. The sheet now reads no `request.user` at all — the star renders as a
+disabled outline beside a hidden sign-in link, and `map_place_sheet.js`
+paints it from the favourites feed `map.js` already holds
+(`window.pwaFavouritedResorts`, offline from the overlay cache) — so its
+body is byte-identical for every reader (`TestResortOfflineCopy` in
+`tests/public/test_place_sheet.py`) and it answers `private, max-age` on
+the region sheet's policy. It joins `PUBLIC_PARTIAL_PATH` in both copies,
+so it takes point 3 above whole: path + `d`, unstamped, `HX-Request` on
+the warm, the offline-miss 504 and its "This day isn't downloaded" line.
+`/api/area-content/` gains `resorts` (the map's resort pins inside the
+box), both validators require it, and `areaContentURLs` composes
+`resortSheetUrls`, one per resort and forward day, which the run tallies
+like the region sheets.
 
 ## Why path + `d`, and only for this sheet
 

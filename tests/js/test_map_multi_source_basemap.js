@@ -378,7 +378,7 @@ beforeAll(async () => {
       // This fixture is about tiles and bytes, so the answer is empty —
       // but it has to BE an answer: an endpoint that cannot be read makes
       // the plan short, which is a failed run rather than a quiet one.
-      if (href.includes('area-content')) body = { regions: [], weather: [] };
+      if (href.includes('area-content')) body = { regions: [], weather: [], resorts: [] };
       if (href.includes('region-basemap-tiles')) body = REGION_BLOB;
       return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
     }),

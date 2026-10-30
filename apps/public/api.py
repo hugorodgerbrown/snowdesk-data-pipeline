@@ -133,9 +133,11 @@ from apps.regions.models import (
 )
 from apps.regions.services.area_content import (
     RegionBox,
+    ResortPoint,
     WeatherPoint,
     area_content as build_area_content,
     micro_region_index,
+    resort_index,
     weather_location_index,
 )
 from apps.regions.services.basemap_tiles import blob_summary
@@ -1231,7 +1233,12 @@ def area_content(request: HttpRequest) -> HttpResponse:
     Response shape::
 
         {"regions": [{"id": "CH-4115", "slug": "brunig-lungern"}, ...],
-         "weather": [{"short_id": "Ab3dE_fGh1J"}, ...]}
+         "weather": [{"short_id": "Ab3dE_fGh1J"}, ...],
+         "resorts": [{"slug": "verbier"}, ...]}
+
+    SNOW-1318 added ``resorts``: each resort the map pins inside the
+    rectangle, by the same point rule as ``weather``, so a download warms
+    each one's place sheet for every forward day.
 
     The selection rule is unchanged by the move and is the one
     ``docs/decisions/inside-the-boundary-is-complete.md`` states: an
@@ -1273,7 +1280,13 @@ def area_content(request: HttpRequest) -> HttpResponse:
         "list[WeatherPoint]",
         _cached_area_content_index("weather", weather_location_index),
     )
-    payload = build_area_content(bbox, regions=regions, locations=locations)
+    resorts = cast(
+        "list[ResortPoint]",
+        _cached_area_content_index("resorts", resort_index),
+    )
+    payload = build_area_content(
+        bbox, regions=regions, locations=locations, resorts=resorts
+    )
     # The empty branch turns on the INDEX, not on the answer. An area over
     # open water legitimately contains nothing, and that is a durable fact
     # about the rectangle; an estate with no regions in it at all is a fact
@@ -1354,7 +1367,7 @@ def _cached_area_content_index(name: str, build: Callable[[], list[Any]]) -> lis
     fetched, and stamp the area complete for the day the entry lived.
 
     Args:
-        name: ``regions`` or ``weather`` — the index to memoise.
+        name: ``regions``, ``weather`` or ``resorts`` — the index to memoise.
         build: Builds the index on a miss.
 
     Returns:

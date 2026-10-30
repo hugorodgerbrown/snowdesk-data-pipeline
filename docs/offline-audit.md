@@ -574,8 +574,10 @@ item.
 The endpoints the plan is built from — `regions.geojson` per country,
 `weather.geojson`, the weather-detail template, the four feeds,
 `area-content` and (SNOW-965) `area-items` with the trip page and route
-templates, (SNOW-1312) the ratings feed and the region-sheet template, and
-today's date — are rendered onto the panel root by
+templates, (SNOW-1312) the ratings feed and the region-sheet template,
+(SNOW-1318) the resort-sheet template — each resort `area-content` names
+is warmed per forward day, and an answer without `resorts` is a short
+plan — and today's date — are rendered onto the panel root by
 `apps.public.views.offline_page`. The map reads the same endpoints off
 `#map`'s own dataset; this page has no `#map`, and re-deriving them
 client-side would be a second copy of routing only the server can answer

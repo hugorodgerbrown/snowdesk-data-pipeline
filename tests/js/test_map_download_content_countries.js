@@ -130,6 +130,7 @@ const AREA_CONTENT = {
     { id: FR_REGION_ID, slug: FR_REGION_SLUG },
   ],
   weather: [],
+  resorts: [],
 };
 
 const WEATHER_GEOJSON = { type: 'FeatureCollection', features: [] };

@@ -315,7 +315,7 @@ beforeAll(async () => {
       const href = String(url);
       let body = {};
       if (href.includes('regions.geojson')) body = REGIONS_GEOJSON;
-      if (href.includes('area-content')) body = { regions: [], weather: [] };
+      if (href.includes('area-content')) body = { regions: [], weather: [], resorts: [] };
       if (href.includes('region-basemap-tiles')) {
         body = regionBlob(new URL(href, 'https://x.invalid').searchParams.get('id'));
       }

@@ -212,6 +212,17 @@ class TestContentEndpoints:
         sheet = reverse("public:region_sheet_partial", kwargs={"region_id": "XX-0000"})
         assert f'data-region-sheet-url="{sheet}"' in html
 
+    def test_it_renders_the_resort_sheet_template(self) -> None:
+        """
+        SNOW-1318: each resort's place sheet, per forward day, composed from
+        the ``__SLUG__`` template ``#map`` carries — for every reader, since
+        the sheet names nobody.
+        """
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
+        sheet = reverse("public:resort_sheet_partial", kwargs={"slug": "__SLUG__"})
+        assert f'data-resort-sheet-url="{sheet}"' in html
+
     def test_it_renders_the_favourite_sheet_template_signed_in(self) -> None:
         """
         SNOW-1313: the Update warms each pin's own place sheet, composed
