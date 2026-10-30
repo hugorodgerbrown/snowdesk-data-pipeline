@@ -50,6 +50,11 @@ function healthy(overrides) {
           url: 'https://snowdesk.info/api/regions.geojson?country=ch',
           isPage: false,
         },
+        // SNOW-1312: the region's sheet, saved by its download for the day.
+        {
+          url: 'https://snowdesk.info/partials/region-sheet/ch-4115/?d=2026-09-11',
+          isPage: false,
+        },
       ],
       currentPrincipal: null,
       mapPath: '/map/',
@@ -924,6 +929,45 @@ describe('the rows that answer about what the user will see', () => {
 
       expect(row(report, 'bulletins').status, path).toBe('yes');
     }
+  });
+
+  it('lists the region sheets a download saved (SNOW-1312)', () => {
+    const report = core.buildReport(healthy(), {});
+
+    expect(row(report, 'region-sheets').status).toBe('yes');
+    // Under "Your content", beside the bulletins.
+    const content = report.sections.find((section) => section.id === 'content');
+    expect(content.checks.map((check) => check.id)).toContain('region-sheets');
+  });
+
+  it('says No for a downloaded area with no region sheet saved (SNOW-1312)', () => {
+    const entries = healthy().shellEntries.filter(
+      (entry) => !entry.url.includes('/partials/region-sheet/'),
+    );
+    const report = core.buildReport(
+      healthy({ shellEntries: entries }),
+      { 'note-no-region-sheets': 'no sheets' },
+    );
+
+    expect(row(report, 'region-sheets').status).toBe('no');
+    expect(row(report, 'region-sheets').note).toBe('no sheets');
+  });
+
+  it('claims nothing about region sheets with nothing downloaded (SNOW-1312)', () => {
+    const report = core.buildReport(
+      healthy({
+        shellEntries: [],
+        areas: healthy().areas.filter((area) => area.kind === 'base'),
+      }),
+      {},
+    );
+
+    expect(row(report, 'region-sheets').status).toBe('unknown');
+  });
+
+  it('classifies a saved fragment as a partial, not a page (SNOW-1312)', () => {
+    expect(core.classifyEntry('https://snowdesk.info/partials/region-sheet/ch-4115/?d=2026-01-06'))
+      .toBe('partial');
   });
 
   it('refuses an overlay stamped for another account', () => {

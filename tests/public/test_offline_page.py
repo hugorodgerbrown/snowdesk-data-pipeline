@@ -200,6 +200,27 @@ class TestContentEndpoints:
 
         assert f'data-area-content-url="{reverse("api:area_content")}"' in html
 
+    def test_it_renders_the_forward_day_feeds(self) -> None:
+        """
+        SNOW-1312: the dated ratings feed and the map's region sheet, so an
+        Update from here warms what the map's download does. The sheet
+        template is the one ``#map`` carries.
+        """
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
+        assert f'data-ratings-url="{reverse("api:ratings")}"' in html
+        sheet = reverse("public:region_sheet_partial", kwargs={"region_id": "XX-0000"})
+        assert f'data-region-sheet-url="{sheet}"' in html
+
+    def test_it_loads_the_calendar_core_for_the_forward_window(self) -> None:
+        """
+        SNOW-1312: ``latestKnownDate`` is how the Update reaches the last
+        published day, as the map's download does.
+        """
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
+        assert "js/calendar_core" in html
+
     def test_it_renders_no_reach_backwards(self) -> None:
         """
         SNOW-1312: a download looks forward only, from the map and from

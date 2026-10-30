@@ -3723,10 +3723,13 @@ function _offlineMissResponse() {
  * was classified ``'network'``, so a region tapped offline said its
  * details were unavailable over a device that could have held them.
  *
- * Public, so unstamped: the body reads no ``request.user``
- * (``region_sheet_partial``; ``tests/public/test_region_sheet.py`` holds
- * it identical for an anonymous and a signed-in reader). It is rendered
- * in the reader's language and kept in the one it was saved in.
+ * Public, so unstamped: the body names nothing about the reader. One
+ * element does depend on who asks — "On the ground"'s call to report is
+ * a button signed in and a sign-in link signed out — and
+ * ``tests/public/test_region_sheet.py``'s ``TestOfflineCopy`` holds it to
+ * being the only one, so a copy saved under one account serves the other
+ * at worst that button. It is rendered in the reader's language and kept
+ * in the one it was saved in.
  *
  * Online, an ok, ``basic``, non-``no-store`` answer is kept under
  * ``_publicPartialKey`` — path and ``d`` — and anything else (a 400 for a

@@ -620,3 +620,68 @@ class TestOnTheGround:
         )
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert f'data-observation-submission="{report.submission}"' in content
+
+
+# SNOW-1312: the call to report, as the sheet renders it for each kind of
+# reader — the one element of the body that depends on who is asking.
+_REPORT_CTA = re.compile(
+    r'<a\b[^>]*href="[^"]*/sign-in/[^"]*"[^>]*>.*?</a>'
+    r'|<button\b[^>]*data-action="open-report"[^>]*>.*?</button>',
+    re.DOTALL,
+)
+
+
+# The EAWS glossary popovers number their ids from a counter that runs on
+# across renders (``g-lee-slope-1`` here, ``-5`` the next time), which says
+# nothing about the reader.
+_GLOSSARY_ID = re.compile(r"\b(g-[a-z0-9-]+?)-\d+\b")
+
+
+def _comparable(body: str) -> str:
+    """Return ``body`` without its call to report, ids and spacing evened."""
+    return " ".join(_GLOSSARY_ID.sub(r"\1-N", _REPORT_CTA.sub("", body)).split())
+
+
+@pytest.mark.django_db
+class TestOfflineCopy:
+    """SNOW-1312: an area download keeps this body unstamped, so the worker
+    serves the copy it saved to whoever opens the sheet offline. That is
+    sound only while the body carries nothing about the reader.
+
+    It is not byte-identical: "On the ground"'s call to report is a report
+    button for a signed-in reader and a sign-in link otherwise (SNOW-1291),
+    so a copy saved under one serves the other's button. These pin that
+    this button is the ONLY difference, so anything else about the reader
+    reaching the body fails here.
+    """
+
+    def _bodies(self, client: Client, django_user_model: Any) -> tuple[str, str]:
+        """Render one region's sheet signed out, then signed in."""
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        FieldObservationFactory.create(region=region, observed_at=timezone.now())
+        url = _url(region.region_id.lower(), timezone.localdate().isoformat())
+        anonymous = _get(client, url).content.decode()
+        user = django_user_model.objects.create_user(
+            "reader", "reader@example.com", first_name="Zebedee"
+        )
+        client.force_login(user)
+        signed_in = _get(client, url).content.decode()
+        return anonymous, signed_in
+
+    def test_the_body_is_the_same_for_every_reader_but_the_call_to_report(
+        self, client: Client, django_user_model: Any
+    ) -> None:
+        anonymous, signed_in = self._bodies(client, django_user_model)
+
+        assert len(_REPORT_CTA.findall(anonymous)) == 1
+        assert len(_REPORT_CTA.findall(signed_in)) == 1
+        assert _comparable(anonymous) == _comparable(signed_in)
+
+    def test_the_body_names_nothing_about_the_reader(
+        self, client: Client, django_user_model: Any
+    ) -> None:
+        _anonymous, signed_in = self._bodies(client, django_user_model)
+
+        for detail in ("reader@example.com", "Zebedee", 'name="csrfmiddlewaretoken"'):
+            assert detail not in signed_in

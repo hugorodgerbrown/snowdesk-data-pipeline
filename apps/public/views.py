@@ -1425,6 +1425,16 @@ def offline_page(request: HttpRequest) -> HttpResponse:
                 if request.user.is_authenticated
                 else "",
                 **_trip_item_templates(),
+                # SNOW-1312: the dated ratings feed the map boots its
+                # colours from, and the map's region sheet — the two
+                # forward-day families the map's download warms besides
+                # the bulletin pages, so an area updated from here holds
+                # what one updated from the map does. The sheet template
+                # is the one `_map_embed.html` renders onto `#map`.
+                "ratings": reverse("api:ratings"),
+                "region_sheet": reverse(
+                    "public:region_sheet_partial", kwargs={"region_id": "XX-0000"}
+                ),
             },
             # The countries whose region geometry a boundary may overlap.
             # SNOW-931's lesson, applied where there is no

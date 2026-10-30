@@ -77,6 +77,8 @@ of a page nobody came here to audit.
     data-trip-route-url-template="{{ content_feeds.trip_route|default:'' }}"
     data-weather-url="{{ content_feeds.weather|default:'' }}"
     data-weather-detail-url="{{ content_feeds.weather_detail|default:'' }}"
+    data-ratings-url="{{ content_feeds.ratings|default:'' }}"
+    data-region-sheet-url="{{ content_feeds.region_sheet|default:'' }}"
     data-favourites-url="{{ content_feeds.favourites|default:'' }}"
     data-routes-url="{{ content_feeds.routes|default:'' }}"
     data-community-reports-url="{{ content_feeds.community_reports|default:'' }}"
@@ -185,6 +187,7 @@ of a page nobody came here to audit.
         <span data-string="label-custom">{% translate "%(name)s (area you drew)" %}</span>
         <span data-string="default-custom-name">{% blocktrans %}Custom area %(n)s{% endblocktrans %}</span>
         <span data-string="row-bulletins">{% translate "Bulletins you have opened" %}</span>
+        <span data-string="row-region-sheets">{% translate "Region details for downloaded days" %}</span>
         <span data-string="row-saved-places">{% translate "Your saved places" %}</span>
         <span data-string="row-routes">{% translate "Your routes" %}</span>
         <span data-string="row-reports">{% translate "Community reports" %}</span>
@@ -262,6 +265,9 @@ of a page nobody came here to audit.
             data-string="note-area-unreadable"
         >{% translate "%(name)s could not be checked because this device’s storage did not answer" %}</span>
         <span data-string="note-no-bulletins">{% translate "no bulletin has been opened on this device yet" %}</span>
+        <span
+            data-string="note-no-region-sheets"
+        >{% translate "no downloaded area has saved its region details yet" %}</span>
         <span
             data-string="note-no-favourites"
         >{% translate "none of your saved places has been loaded here yet" %}</span>
