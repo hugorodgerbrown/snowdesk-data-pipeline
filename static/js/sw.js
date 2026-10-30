@@ -4104,6 +4104,14 @@ async function _carryShellContentRun(tally, state) {
       tally.copied += 1;
       tally.bytes += bytes;
     } catch (err) {
+      // A TypeError is ``put`` refusing the entry itself (a ``Vary: *``
+      // answer, a non-GET key) — it would refuse it on every activation,
+      // so counting it a failure would keep the old caches for ever and
+      // let them pile up across deploys. It is skipped instead.
+      if (err && err.name === 'TypeError') {
+        tally.skipped += 1;
+        continue;
+      }
       tally.failed += 1;
       tally.result = 'incomplete';
       if (err && err.name === 'QuotaExceededError') return;

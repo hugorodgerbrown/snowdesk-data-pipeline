@@ -4543,6 +4543,31 @@ describe('activate carries the old shell caches into the new one (SNOW-1311)', (
     expect(caches.has(OLD)).toBe(true);
   });
 
+  it('skips an entry put refuses outright, so the old caches are still reaped', async () => {
+    // A TypeError is the entry itself being unstorable; it would fail on
+    // every activation, and counting it a failure would keep the old
+    // caches for ever.
+    const caches = interceptPuts(makeCaches(), (request, response, put) => {
+      if (request.url === SHEET) return Promise.reject(new TypeError('Vary: *'));
+      return put(request, response);
+    });
+    caches.seed(OLD, PAGE, bulletinPage('acct-a'));
+    caches.seed(OLD, SHEET, stored('{"html":"x"}', { 'Content-Type': 'application/json' }));
+    const client = makeClient();
+    const sw = await offlineSw(caches, client);
+
+    await activate(sw);
+    await flush();
+
+    expect(caches.has(OLD)).toBe(false);
+    expect(await (await caches.open(SHELL)).match(PAGE)).toBeTruthy();
+    expect(events(client, 'pwa.sw.content_carried')[0].properties).toMatchObject({
+      result: 'complete',
+      copied: 1,
+      failed: 0,
+    });
+  });
+
   it('keeps every old cache on a timeout, and reaps only once a later carry completes', async () => {
     const gate = { hang: true };
     const caches = interceptPuts(makeCaches(), (request, response, put) =>
