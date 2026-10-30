@@ -243,6 +243,26 @@ class TestContentEndpoints:
         assert 'data-favourites-url=""' not in html
         assert 'data-routes-url=""' not in html
 
+    def test_the_area_items_endpoint_is_for_a_signed_in_reader(self) -> None:
+        """
+        SNOW-965: the Update carries the reader's own trips and pins'
+        forecasts, so it is asked only for somebody who can have them.
+        """
+        signed_out = Client().get(reverse("public:offline_page")).content.decode()
+        signed_in = (
+            _signed_in_client().get(reverse("public:offline_page")).content.decode()
+        )
+
+        assert 'data-area-items-url=""' in signed_out
+        assert f'data-area-items-url="{reverse("api:area_items")}"' in signed_in
+
+    def test_it_renders_the_trip_templates_an_item_is_composed_from(self) -> None:
+        """SNOW-965: the same ``__UUID__`` templates ``#map`` carries."""
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
+        assert 'data-trip-page-url-template="/trips/__UUID__/"' in html
+        assert 'data-trip-route-url-template="/trips/__UUID__/route.geojson"' in html
+
 
 @pytest.mark.django_db
 class TestTerrainClassTiles:

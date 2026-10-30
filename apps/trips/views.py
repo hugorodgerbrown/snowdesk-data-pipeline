@@ -538,29 +538,33 @@ def _trip_route_collection(trip: Trip, page_url: str) -> dict[str, Any]:
     }
 
 
-def _trip_route_response(trip: Trip, page_url: str) -> JsonResponse:
-    """Answer one trip's route as GeoJSON, uncacheable.
+def _trip_route_response(
+    trip: Trip, page_url: str, *, cache_control: str = "no-store"
+) -> JsonResponse:
+    """Answer one trip's route as GeoJSON.
 
     Shared by the uuid- and token-addressed endpoints so the two cannot
     drift about what a trip's geometry is — the difference between them is
-    who may ask, never what comes back.
+    who may ask, and (SNOW-965) how the answer may be kept.
 
-    ``no-store`` for the reason ``trip_share_page`` carries it: the payload
-    is per-recipient in the sense that matters, and an intermediate cache
-    holding one visitor's answer and handing it to another would hand out
-    a route its holder was never sent.
+    ``no-store`` by default, for the reason ``trip_share_page`` carries it:
+    the payload is per-recipient in the sense that matters, and an
+    intermediate cache holding one visitor's answer and handing it to
+    another would hand out a route its holder was never sent. The token
+    endpoint keeps it.
 
     Args:
         trip: The trip to serve.
         page_url: The banner's link back, as ``_trip_route_collection``
             takes it.
+        cache_control: The ``Cache-Control`` value to answer with.
 
     Returns:
         A JsonResponse carrying the FeatureCollection.
 
     """
     response = JsonResponse(_trip_route_collection(trip, page_url))
-    response["Cache-Control"] = "no-store"
+    response["Cache-Control"] = cache_control
     return response
 
 
@@ -1593,7 +1597,17 @@ def trip_route_geojson(request: HttpRequest, uuid: UUID) -> JsonResponse:
     except Trip.DoesNotExist:
         return JsonResponse({"error": "not_found"}, status=404)
 
-    return _trip_route_response(trip, reverse("trips:detail", args=[trip.uuid]))
+    # SNOW-965: ``private, no-cache`` rather than ``no-store``, so the
+    # service worker may keep a participant's copy for an offline read of
+    # a downloaded area — stamped with their principal and served back to
+    # them alone. ``private`` still keeps it out of every shared cache, and
+    # ``no-cache`` makes an online read revalidate, so a trip someone has
+    # left stops drawing the moment the network can say so.
+    return _trip_route_response(
+        trip,
+        reverse("trips:detail", args=[trip.uuid]),
+        cache_control="private, no-cache",
+    )
 
 
 @require_GET

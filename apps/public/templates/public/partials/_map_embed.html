@@ -65,6 +65,10 @@ Optional context:
     {# SNOW-953: which regions and weather locations a download's boundary #}
     {# contains, answered server-side. Read by map_basemap_downloads.js.   #}
     data-area-content-url="{% url 'api:area_content' %}"
+    {# SNOW-965: the reader's own trips and pins inside a download's      #}
+    {# boundary, each pin with the forecast it borrows. Private, never     #}
+    {# cached; read by map_basemap_downloads.js.                           #}
+    data-area-items-url="{% url 'api:area_items' %}"
     data-major-regions-url="{% url 'api:major_regions_geojson' %}"
     data-sub-regions-url="{% url 'api:sub_regions_geojson' %}"
     data-ratings-url="{% url 'api:ratings' %}"
@@ -171,6 +175,8 @@ Optional context:
     {# no trips overlay whose visibility these would gate.                  #}
     data-trip-route-url-template="{{ trip_route_url_template }}"
     data-trip-share-route-url-template="{{ trip_share_route_url_template }}"
+    {# SNOW-965: a trip inside a downloaded area carries its page too.     #}
+    data-trip-page-url-template="{{ trip_page_url_template }}"
 >
     {# SNOW-893: the state this page falls back to when MapLibre cannot get a #}
     {# WebGL context and its constructor throws — an old device, a GPU        #}

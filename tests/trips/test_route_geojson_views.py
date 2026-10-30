@@ -19,7 +19,10 @@ source route's deletion, carrying the terrain model's heights where the
 snapshot's slope record has them (SNOW-1043) — as does the trip page's own
 inline payload; a ``page_url`` addressed the way its own caller
 may address the trip (uuid for a participant, token for a link-holder);
-and ``Cache-Control: no-store``.
+and a ``Cache-Control`` that keeps it out of every shared cache —
+``private, no-cache`` on the uuid endpoint, so the service worker may keep
+a participant's own copy for a downloaded area (SNOW-965), and
+``no-store`` on the token endpoint.
 
 The rate-limit test patches ``is_ratelimited`` rather than spending a real
 budget, for the reason ``test_share_views.py`` states: ``RATELIMIT_ENABLE``
@@ -120,14 +123,18 @@ class TestTripRouteGeojson:
             "trips:detail", args=[trip.uuid]
         )
 
-    def test_it_is_never_cached(self, client: Client) -> None:
-        """Per-recipient in the sense that matters — see trip_share_page."""
+    def test_it_is_private_and_revalidated(self, client: Client) -> None:
+        """Never shared, always revalidated, but keepable by its own reader.
+
+        SNOW-965: ``private, no-cache`` rather than ``no-store``, so the
+        service worker can carry a participant's route offline.
+        """
         trip = TripFactory.create()
         client.force_login(trip.created_by)
 
         response = client.get(reverse("trips:route_geojson", args=[trip.uuid]))
 
-        assert response["Cache-Control"] == "no-store"
+        assert response["Cache-Control"] == "private, no-cache"
 
 
 @freeze_time(_NOW)
@@ -156,6 +163,18 @@ class TestTripShareRouteGeojson:
             trip.meeting_point.longitude,
             trip.meeting_point.latitude,
         ]
+
+    def test_it_is_never_stored(self, client: Client) -> None:
+        """A link-holder's answer is never kept — SNOW-965 left this alone."""
+        trip = TripFactory.create()
+        mint_trip_share(trip.created_by, trip.uuid)
+        trip.refresh_from_db()
+
+        response = client.get(
+            reverse("trips:share_route_geojson", args=[trip.share_token])
+        )
+
+        assert response["Cache-Control"] == "no-store"
 
     def test_somebody_without_the_link_cannot_guess_it(self, client: Client) -> None:
         """An unknown token is a 404, like every other dead link."""
