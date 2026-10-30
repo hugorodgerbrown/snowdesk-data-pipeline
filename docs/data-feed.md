@@ -2,7 +2,7 @@
 name: data-feed
 description: Data feed /api/data/v1/ + v2, from/to windows, service clients, pull_reference_data, pull_production_data, DATA_FEED_*, mint_feed_token
 status: current
-last-reviewed: 2026-10-28
+last-reviewed: 2026-10-30
 ---
 
 # The production data feed
@@ -369,6 +369,14 @@ The job reads the same three `DATA_FEED_*` variables as the web service,
 set on the job in the dashboard. Any failed item makes it exit non-zero,
 which Render shows as a failed run; the item and its error are in the log,
 and the run's counts are in the `CommandRun` register.
+
+A v2 feed that cannot be read at all — refused, unreachable, or not yet
+served because production is on an older release than staging's `main` —
+stops only that feed: the ones after it are still pulled, and the run
+exits non-zero naming it (`feeds_unread` in the register). Only the
+estate (`locations`, `passes`, `resorts`) is fatal, since the series
+resolve their places against it. Before this, `ski-network` answering 404
+from production's release cut staging's weather off from 29 October 2026.
 
 A first dry run on an empty client reports what a commit would do: a
 location it would create counts as present for the weather and resorts

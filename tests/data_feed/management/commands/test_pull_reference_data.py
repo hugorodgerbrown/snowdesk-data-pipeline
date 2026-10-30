@@ -23,6 +23,7 @@ import datetime as dt
 import uuid
 from io import StringIO
 from typing import Any
+from urllib.parse import urlsplit
 
 import pytest
 from django.core.management import call_command
@@ -529,3 +530,50 @@ def test_a_day_of_weather_is_described_by_its_place() -> None:
     assert describe({"observed_on": "2026-10-28", "location": "u-9"}) == (
         "2026-10-28 at u-9"
     )
+
+
+class _Refusing(_ReplaySession):
+    """Answers like a service on an older release: one feed is not served."""
+
+    def __init__(
+        self, capture: dict[tuple[str, str | None], dict], missing: str
+    ) -> None:
+        """Hold the captured pages and the path that answers 404."""
+        super().__init__(capture)
+        self.missing = missing
+
+    def get(self, url: str, *, params: dict, **kwargs: Any) -> Any:
+        """Answer 404 for the missing feed, the capture for the rest."""
+        if urlsplit(url).path == self.missing:
+            return type(
+                "R",
+                (),
+                {"status_code": 404, "text": '{"error": "not_found"}', "json": None},
+            )()
+        return super().get(url, params=params, **kwargs)
+
+
+@pytest.mark.django_db
+@override_settings(**FEED_SETTINGS)
+def test_an_unread_feed_costs_only_itself(
+    service_client: Application, estate: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A service that does not serve ski-network yet still sends its weather.
+
+    Staging on ``main`` pulled from a production on an older release: the
+    ski-network 404 aborted the run before the weather, so staging's days
+    stopped. The feed is named and the run fails, but the rest arrive.
+    """
+    capture = _capture()
+    Weather.objects.all().delete()
+    monkeypatch.setattr(
+        "apps.data_feed.client.requests.Session",
+        lambda: _Refusing(capture, "/api/data/v2/ski-network/"),
+    )
+    with pytest.raises(CommandError, match=r"could not read ski-network \(.*404"):
+        _run("--commit")
+    assert Weather.objects.exists()
+    counts = _counts()
+    assert counts["feeds_unread"] == 1
+    assert counts["weather_created"] == Weather.objects.count()
+    assert counts["ski-tours_unchanged"] == 1
