@@ -4,8 +4,9 @@ apps/public/templates/public/home.html — the marketing homepage at /.
 
 A static page: the headline, then four cards — current conditions, route
 planning, weather, trips — each a screenshot of the app above a short
-description, then a supporting line (offline), the authority caveat, the links
-out and one button into the app at /map/. Cross-border coverage is a
+description, then a supporting line (offline), the authority caveat and one
+button into the app at /map/. The Help, Compare apps and build-blog panels that
+sat under the caveat were taken off until they are reworked. Cross-border coverage is a
 footnote, not the lead: a reader is in one place.
 
 It loads no map JavaScript and no MapLibre CSS. The screenshots are JPEGs
@@ -252,7 +253,7 @@ parameters never reaches this template — views.home 301s it to /map/.
         </div>
 
         {# ---------------------------------------------------------------- #}
-        {# The caveat, coverage, and where to read more                     #}
+        {# The caveat and coverage                                          #}
         {# ---------------------------------------------------------------- #}
         <section class="max-w-wide mx-auto mb-8" aria-labelledby="home-authority-heading">
             <h2 id="home-authority-heading" class="text-sheet-subhead font-semibold text-text-1 mb-2">
@@ -267,47 +268,12 @@ parameters never reaches this template — views.home 301s it to /map/.
                     use theirs.
                 {% endblocktrans %}
             </p>
-            <p class="text-sm leading-prose text-text-2 mb-6" data-testid="home-coverage">
+            <p class="text-sm leading-prose text-text-2" data-testid="home-coverage">
                 {% blocktrans trimmed %}
                     Avalanche bulletins from SLF (Switzerland), Météo-France (French Alps) and ALBINA (Tyrol, South
                     Tyrol, Trentino). Weather forecasts from Open-Meteo.
                 {% endblocktrans %}
             </p>
-            <ul class="grid gap-3 sm:grid-cols-3 text-sm" data-testid="home-links">
-                <li>
-                    <a
-                        href="{% url 'public:help' %}"
-                        class="block h-full rounded-card border border-border bg-card p-4 hover:bg-card-hover"
-                    >
-                        <span class="block font-semibold text-text-1 mb-1">{% trans "Help" %}</span>
-                        <span
-                            class="block text-text-2"
-                        >{% trans "How to use the map, and what every control does." %}</span>
-                    </a>
-                </li>
-                <li>
-                    <a
-                        href="{% url 'public:compare' %}"
-                        class="block h-full rounded-card border border-border bg-card p-4 hover:bg-card-hover"
-                    >
-                        <span class="block font-semibold text-text-1 mb-1">{% trans "Compare apps" %}</span>
-                        <span
-                            class="block text-text-2"
-                        >{% trans "Which avalanche app to use for where you ski — including when it is not this one." %}</span>
-                    </a>
-                </li>
-                <li>
-                    <a
-                        href="https://build.snowdesk.info/"
-                        class="block h-full rounded-card border border-border bg-card p-4 hover:bg-card-hover"
-                    >
-                        <span class="block font-semibold text-text-1 mb-1">{% trans "The build blog" %}</span>
-                        <span
-                            class="block text-text-2"
-                        >{% trans "Notes on how Snowdesk is made, and why it works the way it does." %}</span>
-                    </a>
-                </li>
-            </ul>
         </section>
 
         <div class="text-center">

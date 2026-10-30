@@ -57,13 +57,13 @@ class TestHomepage:
         assert "js/map.js" not in content
         assert 'id="map"' not in content
 
-    def test_links_to_help_compare_and_the_build_blog(self, client: Client) -> None:
-        """The homepage links out to help, compare and the build blog."""
+    def test_has_no_help_compare_or_blog_panels(self, client: Client) -> None:
+        """The Help, Compare apps and build-blog panels are off until reworked."""
         content = client.get("/").content.decode()
 
-        assert f'href="{reverse("public:help")}"' in content
-        assert f'href="{reverse("public:compare")}"' in content
-        assert 'href="https://build.snowdesk.info/"' in content
+        assert 'data-testid="home-links"' not in content
+        assert f'href="{reverse("public:compare")}"' not in content
+        assert 'href="https://build.snowdesk.info/"' not in content
 
     @pytest.mark.parametrize(
         "query", ["utm_source=newsletter&utm_medium=email", "ref=producthunt"]
