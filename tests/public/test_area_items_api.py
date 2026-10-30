@@ -7,11 +7,15 @@ Covers:
                    user's.
   pins           — kept when the point sits in the box, on all four edges;
                    region pins never; never another user's.
+  names          — each trip and pin carries the label it is listed under
+                   on the /offline/ panels (SNOW-1308).
   forecasts      — each pin names the curated point it borrows, even one
                    outside the box; ``null`` when no point has a row today.
   anonymous      — 200, empty, zero queries.
   bbox validation — a bad box is a 400 that is still ``no-store``.
   response policy — ``private``, ``no-store``, ``Vary: Cookie``, no ETag.
+  attestation    — names its viewer in ``X-Snowdesk-Principal`` (SNOW-1308);
+                   anonymous sends none.
   query cost     — flat: one pin and five pins cost the same.
 """
 
@@ -29,12 +33,15 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.accounts.identity import PRINCIPAL_RESPONSE_HEADER
 from apps.trips.services.participants import join_trip
 from apps.trips.services.shares import mint_trip_share
 from tests.factories import (
+    AccountFactory,
     FavouriteFactory,
     LocationFactory,
     MicroRegionFactory,
+    ResortFactory,
     ResortLocationFactory,
     TripFactory,
     UserFactory,
@@ -115,7 +122,9 @@ class TestTrips:
         response = client.get(_url())
 
         assert response.status_code == 200
-        assert response.json()["trips"] == [{"uuid": str(trip.uuid)}]
+        assert response.json()["trips"] == [
+            {"uuid": str(trip.uuid), "name": trip.display_name}
+        ]
 
     def test_a_trip_clear_of_the_box_is_left_out(self, client: Client) -> None:
         """A trip a millidegree past the edge is not in the area."""
@@ -220,6 +229,59 @@ class TestBorrowedForecasts:
 
 
 @pytest.mark.django_db
+class TestNames:
+    """Each trip and pin carries the name the /offline/ panels list it by."""
+
+    def test_a_trip_is_named_by_its_own_label(self, client: Client) -> None:
+        """A trip's own name wins over its route's."""
+        user = _signed_in(client)
+        TripFactory.create(created_by=user, name="Saturday tour", route_name="Route")
+
+        trips = client.get(_url()).json()["trips"]
+
+        assert trips[0]["name"] == "Saturday tour"
+
+    def test_an_unnamed_trip_falls_back_to_its_route(self, client: Client) -> None:
+        """``Trip.display_name``'s fallback, read in the same query."""
+        user = _signed_in(client)
+        TripFactory.create(created_by=user, name="", route_name="Haute Route")
+
+        trips = client.get(_url()).json()["trips"]
+
+        assert trips[0]["name"] == "Haute Route"
+
+    def test_a_pin_is_named_by_its_own_label(self, client: Client) -> None:
+        """The label the reader gave the pin."""
+        user = _signed_in(client)
+        FavouriteFactory.create(user=user, latitude=46.5, longitude=7.5, name="Hut")
+
+        pins = client.get(_url()).json()["pins"]
+
+        assert pins[0]["name"] == "Hut"
+
+    def test_a_saved_resort_is_named_by_its_resort(self, client: Client) -> None:
+        """An unnamed resort favourite reads as the resort."""
+        user = _signed_in(client)
+        resort = ResortFactory.create(name="Verbier")
+        FavouriteFactory.create(
+            user=user, latitude=46.5, longitude=7.5, name="", resort=resort
+        )
+
+        pins = client.get(_url()).json()["pins"]
+
+        assert pins[0]["name"] == "Verbier"
+
+    def test_an_unnamed_pin_has_an_empty_name(self, client: Client) -> None:
+        """The client words an unnamed pin itself."""
+        user = _signed_in(client)
+        FavouriteFactory.create(user=user, latitude=46.5, longitude=7.5, name="")
+
+        pins = client.get(_url()).json()["pins"]
+
+        assert pins[0]["name"] == ""
+
+
+@pytest.mark.django_db
 class TestAnonymous:
     """Someone signed out has nothing of their own to carry."""
 
@@ -264,6 +326,25 @@ class TestValidationAndPolicy:
         assert {"private", "no-store"} <= directives
         assert "Cookie" in response["Vary"]
         assert not response.has_header("ETag")
+
+    def test_the_answer_names_its_viewer(self, client: Client) -> None:
+        """SNOW-1308: the client stamps names with the account that answered.
+
+        Not the page's render-time ``pwa-user-id``, which a sign-in in
+        another tab can leave stale — so the answer itself says whose it is.
+        """
+        account = AccountFactory.create()
+        client.force_login(account.user)
+
+        response = client.get(_url())
+
+        assert response[PRINCIPAL_RESPONSE_HEADER] == str(account.uuid)
+
+    def test_an_anonymous_answer_names_nobody(self, client: Client) -> None:
+        """No viewer, no header — read as "do not attribute"."""
+        response = client.get(_url())
+
+        assert not response.has_header(PRINCIPAL_RESPONSE_HEADER)
 
     def test_a_post_is_refused(self, client: Client) -> None:
         """Read-only."""

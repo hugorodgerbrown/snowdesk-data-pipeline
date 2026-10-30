@@ -21,6 +21,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 
 let core;
+let journey;
 
 /** Readings with every capability in its healthiest state. */
 function healthy(overrides) {
@@ -137,9 +138,26 @@ function ids(report) {
   return report.sections.flatMap((section) => section.checks.map((check) => check.id));
 }
 
+/**
+ * SNOW-1308: one area's answer, which is its `/offline/` panel's map
+ * stage now rather than a report row. The tile reading is passed as
+ * verified, so what is under test is `areaState` — the same rule the row
+ * answered from.
+ */
+function areaAnswer(area) {
+  return journey.mapStage(area, true);
+}
+
+/** SNOW-1308: the panels for a set of readings. */
+function panels(readings, t) {
+  return journey.buildPanels(readings, t || {}, { canFetch: true });
+}
+
 beforeAll(async () => {
   await import('../../static/js/offline_audit_core.js');
+  await import('../../static/js/offline_journey_core.js');
   core = window.pwaOfflineAuditCore;
+  journey = window.pwaOfflineJourneyCore;
 });
 
 describe('the row list', () => {
@@ -180,22 +198,24 @@ describe('the row list', () => {
 });
 
 describe('the downloads', () => {
-  it('gets one named row per download, all under one heading', () => {
+  // SNOW-1308: the report's "Map downloads" section moved to the
+  // `/offline/` panels — one per area, above the report. What each row
+  // used to say, the panel says; these cases hold it there.
+  it('lists no download in the report at all', () => {
+    const report = core.buildReport(healthy(), {});
+    expect(report.sections.map((section) => section.id)).not.toContain('downloads');
+    expect(ids(report).some((id) => id.indexOf('area:') === 0)).toBe(false);
+    expect(ids(report)).not.toContain('no-downloads');
+  });
+
+  it('gets one named panel per download, regions first', () => {
     // A single row saying the map draws is no use to someone whose
-    // Verbier download is the broken one — but three headings for three
-    // kinds put an empty-looking section between every pair of rows, so
-    // the kind rides along in the label instead.
-    const report = core.buildReport(
+    // Verbier download is the broken one, so every download gets its own
+    // panel, with the kind riding in the label rather than a heading.
+    const list = panels(
       healthy({
         areas: [
-          {
-            id: 'r1',
-            kind: 'region',
-            name: 'Martigny',
-            deps: [],
-            bucketPresent: true,
-            entries: ['a'],
-          },
+          { id: 'c2', kind: 'custom', name: 'Area 2', deps: [], bucketPresent: true, entries: ['a'] },
           {
             id: 'c1',
             kind: 'custom',
@@ -205,33 +225,19 @@ describe('the downloads', () => {
             bucketPresent: true,
             entries: ['a'],
           },
-          {
-            id: 'c2',
-            kind: 'custom',
-            name: 'Area 2',
-            deps: [],
-            bucketPresent: true,
-            entries: ['a'],
-          },
+          { id: 'r1', kind: 'region', name: 'Martigny', deps: [], bucketPresent: true, entries: ['a'] },
         ],
       }),
-      {
-        'label-dropzone': '%(name)s (drop zone)',
-        'label-custom': '%(name)s (area you drew)',
-      },
     );
-    const downloads = report.sections.filter((section) => section.id === 'downloads')[0];
-    // Regions first: a region is what most people download, and the ones
-    // they drew themselves are the exceptions.
-    expect(downloads.checks.map((check) => check.label)).toEqual([
-      'Martigny',
-      'La Chaux (drop zone)',
-      'Area 2 (area you drew)',
+    expect(list.map((panel) => [panel.name, panel.kind])).toEqual([
+      ['Martigny', 'region'],
+      ['La Chaux', 'dropzone'],
+      ['Area 2', 'custom'],
     ]);
   });
 
   it('names an unrenamed custom area by its ordinal, not its id (SNOW-1133)', () => {
-    const report = core.buildReport(
+    const list = panels(
       healthy({
         areas: [
           {
@@ -245,91 +251,61 @@ describe('the downloads', () => {
           },
         ],
       }),
-      {
-        'label-custom': '%(name)s (area you drew)',
-        'default-custom-name': 'Custom area %(n)s',
-      },
+      { 'default-custom-name': 'Custom area %(n)s' },
     );
-    expect(row(report, 'area:custom-9b1e').label).toBe('Custom area 3 (area you drew)');
+    expect(list[0].name).toBe('Custom area 3');
   });
 
-  it('names a region by name alone, because a place reads as one', () => {
-    const report = core.buildReport(healthy(), {});
-    expect(row(report, 'area:region-ch-4115').label).toBe('Martigny');
-  });
-
-  it('says so on one row when there is nothing downloaded at all', () => {
-    const report = core.buildReport(healthy({ areas: [] }), {});
-    expect(row(report, 'no-downloads').status).toBe('no');
+  it('still says there is no map when nothing is downloaded', () => {
+    // The row is gone; the verdict it fed is not — whether the map has
+    // ground to draw is still the report's to say.
+    const report = core.buildReport(healthy({ areas: [], selectedBasemap: null }), {});
+    expect(report.verdict.text).toBe('verdict-no-map');
+    expect(panels(healthy({ areas: [] }))).toEqual([]);
   });
 
   it('answers No for an area whose tiles are there and whose TileJSON is not', () => {
     // SNOW-843's whole bug class: without it MapLibre cannot learn a
-    // single tile URL, so a perfect pinned tile set is unreachable and
-    // the map draws nothing.
-    const report = core.buildReport(
-      healthy({
-        areas: [
-          {
-            id: 'r1',
-            kind: 'region',
-            name: 'Martigny',
-            deps: ['https://t/style.json', 'https://t/source.json'],
-            bucketPresent: true,
-            entries: ['https://t/style.json', 'https://t/1/1/1.pbf'],
-          },
-        ],
-      }),
-      {},
-    );
-    expect(row(report, 'area:r1').status).toBe('no');
-    expect(row(report, 'area:r1').reason).toBe('incomplete');
+    // single tile URL, so a perfect pinned tile set is unreachable.
+    const answer = areaAnswer({
+      id: 'r1',
+      kind: 'region',
+      name: 'Martigny',
+      deps: ['https://t/style.json', 'https://t/source.json'],
+      bucketPresent: true,
+      entries: ['https://t/style.json', 'https://t/1/1/1.pbf'],
+    });
+    expect(answer).toEqual({ status: 'no', reason: 'incomplete' });
   });
 
   it('answers No for a record whose bucket is gone', () => {
-    const report = core.buildReport(
-      healthy({
-        areas: [
-          {
-            id: 'r1',
-            kind: 'region',
-            name: 'M',
-            deps: [],
-            bucketPresent: false,
-            entries: [],
-          },
-        ],
-      }),
-      {},
-    );
-    expect(row(report, 'area:r1').reason).toBe('missing');
+    const answer = areaAnswer({
+      id: 'r1',
+      kind: 'region',
+      name: 'M',
+      deps: [],
+      bucketPresent: false,
+      entries: [],
+    });
+    expect(answer.reason).toBe('missing');
   });
 
   it('leaves a pre-SNOW-844 record unknown rather than claiming either way', () => {
-    const report = core.buildReport(
-      healthy({
-        areas: [
-          {
-            id: 'r1',
-            kind: 'region',
-            name: 'M',
-            deps: [],
-            bucketPresent: true,
-            entries: ['a'],
-          },
-        ],
-      }),
-      {},
-    );
-    expect(row(report, 'area:r1').status).toBe('unknown');
+    const answer = areaAnswer({
+      id: 'r1',
+      kind: 'region',
+      name: 'M',
+      deps: [],
+      bucketPresent: true,
+      entries: ['a'],
+    });
+    expect(answer.status).toBe('unknown');
   });
 
-  it('keeps the shared overview out of the downloads list entirely', () => {
-    // Stored, real, and not a place the user chose: it is the zoomed-out
-    // tiles the app fetched for itself, so it is answered as half of the
-    // basemap's own row rather than as a download of its own.
-    const report = core.buildReport(healthy(), {});
-    expect(row(report, 'area:base-openfreemap')).toBeNull();
+  it('keeps the shared overview off the panels entirely', () => {
+    // Stored, real, and not a place the user chose: it is answered as
+    // half of the basemap's own row rather than as a download.
+    expect(panels(healthy()).map((panel) => panel.id)).toEqual(['region-ch-4115']);
   });
 });
 
@@ -359,51 +335,43 @@ describe("an area's content age (SNOW-926)", () => {
     'group-content-never-remedy': 'Download %(count)s.',
   };
 
-  it('keeps the Yes for an area whose content is from today', () => {
-    const report = core.buildReport(
-      withArea({ contentAt: '2026-09-11T06:00:00.000Z' }),
-      STRINGS,
-    );
+  // SNOW-1308: an area's content age is its panel's second stage now —
+  // "Bulletins and weather" — and, on the panel, a No: the panel's
+  // question is whether the area is ready, and yesterday's bulletin is
+  // not. The map stage keeps its own answer, which is the caveat-on-a-Yes
+  // SNOW-926 drew between the two halves.
+  it('answers Yes for an area whose content is from today', () => {
+    const [panel] = panels(withArea({ contentAt: '2026-09-11T06:00:00.000Z' }), STRINGS);
 
-    expect(row(report, 'area:r1').status).toBe('yes');
-    expect(row(report, 'area:r1').group).toBeUndefined();
+    expect(panel.stages.conditions).toEqual({ status: 'yes' });
   });
 
-  it('keeps the Yes for an area whose content is three days old', () => {
+  it('answers No for content three days old, and leaves the map stage alone', () => {
     // THE point of the reading. An area can go from complete to
     // incomplete overnight with nothing deleted and nothing broken, and
-    // that must not read as a fault — the map draws, which is what the
-    // row asks. Same treatment as the shared base layer: a caveat on a
-    // Yes, not a No of its own.
-    const report = core.buildReport(
-      withArea({ contentAt: '2026-09-08T06:00:00.000Z' }),
-      STRINGS,
-    );
+    // the map half must not read as broken for it.
+    const readings = withArea({ contentAt: '2026-09-08T06:00:00.000Z' });
+    const [panel] = panels(readings, STRINGS);
 
-    expect(row(report, 'area:r1').status).toBe('yes');
-    expect(row(report, 'area:r1').reason).toBe('content-stale');
+    expect(panel.stages.conditions).toEqual({ status: 'no', reason: 'stale' });
+    expect(areaAnswer(readings.areas[0]).status).toBe('yes');
+    expect(panel.contentAt).toBe('2026-09-08T06:00:00.000Z');
   });
 
-  it('treats an area with tiles and no content at all as a Yes with a caveat', () => {
-    // Every area on every device on the day SNOW-924 shipped. The map
-    // draws; there is nothing on it. That is a real caveat, and it is not
-    // a No.
-    const report = core.buildReport(withArea({}), STRINGS);
+  it('answers No for an area with tiles and no content at all', () => {
+    // Every area on every device on the day SNOW-924 shipped.
+    const [panel] = panels(withArea({}), STRINGS);
 
-    expect(row(report, 'area:r1').status).toBe('yes');
-    expect(row(report, 'area:r1').reason).toBe('content-never');
+    expect(panel.stages.conditions).toEqual({ status: 'no', reason: 'never' });
   });
 
   it('says nothing about content for an area whose tiles do not verify', () => {
-    // The row is already saying something stronger, and "and its
-    // bulletins are old" over an area that draws nothing is noise.
-    const report = core.buildReport(
-      withArea({ entries: ['https://t/12/1/1.pbf'], contentAt: null }),
-      STRINGS,
-    );
+    // The map stage is already saying something stronger.
+    const readings = withArea({ entries: ['https://t/12/1/1.pbf'], contentAt: null });
+    const [panel] = panels(readings, STRINGS);
 
-    expect(row(report, 'area:r1').status).toBe('no');
-    expect(row(report, 'area:r1').reason).toBe('incomplete');
+    expect(areaAnswer(readings.areas[0])).toEqual({ status: 'no', reason: 'incomplete' });
+    expect(panel.stages.conditions.status).toBe('unknown');
   });
 
   it('says nothing about content for the shared base layer', () => {
@@ -449,103 +417,74 @@ describe("an area's content age (SNOW-926)", () => {
     expect(core.areaContentState(area, '2026-09-11T08:00:00.000Z')).toBe('none');
   });
 
-  it('folds every stale area into ONE sentence with one remedy', () => {
-    // A note per row would fill the summary's three-clause cap with the
-    // same fact restated, over rows the table already lists. The rule
-    // that a row never carries its own explanation is unchanged.
-    const report = core.buildReport(
-      healthy({
-        areas: [
-          {
-            id: 'r1',
-            kind: 'region',
-            name: 'Martigny',
-            basemapKey: 'openfreemap',
-            deps: ['https://t/style.json'],
-            bucketPresent: true,
-            entries: ['https://t/style.json', 'https://t/12/1/1.pbf'],
-            contentAt: '2026-09-08T06:00:00.000Z',
-          },
-          {
-            id: 'r2',
-            kind: 'region',
-            name: 'Zermatt',
-            basemapKey: 'openfreemap',
-            deps: ['https://t/style.json'],
-            bucketPresent: true,
-            entries: ['https://t/style.json', 'https://t/12/1/1.pbf'],
-            contentAt: '2026-09-07T06:00:00.000Z',
-          },
-        ],
-      }),
-      { ...STRINGS, 'list-pair': '%(first)s and %(last)s', 'count-two': 'both' },
-    );
+  it('dates each stale area on its own panel, and the report says none of it', () => {
+    // The report folded every stale area into one summary sentence; each
+    // panel now carries its own area's day (SNOW-1139's dated note, painted
+    // by offline_journey.js from `contentAt`).
+    const area = (id, name, contentAt) => ({
+      id,
+      kind: 'region',
+      name,
+      basemapKey: 'openfreemap',
+      deps: ['https://t/style.json'],
+      bucketPresent: true,
+      entries: ['https://t/style.json', 'https://t/12/1/1.pbf'],
+      contentAt,
+    });
+    const readings = healthy({
+      areas: [
+        area('r1', 'Martigny', '2026-09-08T06:00:00.000Z'),
+        area('r2', 'Zermatt', '2026-09-07T06:00:00.000Z'),
+      ],
+    });
 
-    expect(report.summary).toContain('Stale inside Martigny and Zermatt.');
-    expect(report.summary).toContain('Refresh both.');
-    // One sentence pair, not two.
-    expect(report.summary.split('Stale inside').length).toBe(2);
+    const list = panels(readings, STRINGS);
+    const report = core.buildReport(readings, STRINGS);
+
+    expect(list.map((panel) => [panel.name, panel.stages.conditions.reason, panel.contentAt])).toEqual([
+      ['Martigny', 'stale', '2026-09-08T06:00:00.000Z'],
+      ['Zermatt', 'stale', '2026-09-07T06:00:00.000Z'],
+    ]);
+    expect(report.summary).not.toContain('Martigny');
   });
 
-  it('carries the area id and a has-something-to-fetch flag (SNOW-925)', () => {
-    // What a control needs in order to act, beside the readout rather
-    // than folded into it — the row's answer is still the same three
-    // words, and why the area is behind is still said once in the
-    // summary.
-    const stale = row(
-      core.buildReport(withArea({ contentAt: '2026-09-08T06:00:00.000Z' }), STRINGS),
-      'area:r1',
-    );
+  it('offers Sync now on a stale area (SNOW-925)', () => {
+    const [stale] = panels(withArea({ contentAt: '2026-09-08T06:00:00.000Z' }), STRINGS);
 
-    expect(stale.areaId).toBe('r1');
-    expect(stale.completable).toBe(true);
-    // Unchanged: the readout is the readout.
-    expect(stale.value).toBe(
-      row(
-        core.buildReport(withArea({ contentAt: '2026-09-11T06:00:00.000Z' }), STRINGS),
-        'area:r1',
-      ).value,
-    );
+    expect(stale.canSync).toBe(true);
+    expect(stale.verdict).toBe('refresh');
   });
 
-  it('offers the control on an area that is already fresh (SNOW-951)', () => {
-    // SNOW-925 withheld it, reasoning that re-fetching content already
-    // here spends a connection on nothing. That held for a passive
-    // report; it does not for a user who has explicitly asked for this
-    // area before losing signal, to whom "fresh" is an inference from a
-    // stamp and a press that silently does nothing is the failure they
-    // took the action to rule out.
-    const fresh = row(
-      core.buildReport(withArea({ contentAt: '2026-09-11T06:00:00.000Z' }), STRINGS),
-      'area:r1',
-    );
+  it('offers it on an area that is already fresh (SNOW-951)', () => {
+    // A user about to lose signal who has asked for this area: "fresh" is
+    // an inference from a stamp, and a press that silently does nothing is
+    // the failure they took the action to rule out.
+    const [fresh] = panels(withArea({ contentAt: '2026-09-11T06:00:00.000Z' }), STRINGS);
 
-    expect(fresh.completable).toBe(true);
+    expect(fresh.canSync).toBe(true);
   });
 
   it('offers nothing on an area whose TILES do not verify', () => {
     // The boundary of what a page with no map can honestly offer: the
-    // tile half needs the loaded basemap style. Such a row keeps the
-    // Repair remedy the report already points it at.
-    const broken = row(
-      core.buildReport(
-        withArea({ entries: ['https://t/12/1/1.pbf'], contentAt: null }),
-        STRINGS,
-      ),
-      'area:r1',
+    // tile half needs the loaded basemap style. Its verdict sends the
+    // reader to the map instead.
+    const [broken] = panels(
+      withArea({ entries: ['https://t/12/1/1.pbf'], contentAt: null }),
+      STRINGS,
     );
 
-    expect(broken.completable).toBe(false);
+    expect(broken.canSync).toBe(false);
+    expect(broken.verdict).toBe('open-map');
   });
 
-  it('carries neither field on a row that is not a download', () => {
+  it('carries neither field on a report row', () => {
     const check = row(core.buildReport(healthy(), {}), 'app-opens');
 
     expect(check.areaId).toBeUndefined();
     expect(check.completable).toBeUndefined();
   });
 
-  it('adds no row of its own', () => {
+  it('adds no row to the report', () => {
     const stale = core.buildReport(
       withArea({ contentAt: '2026-09-08T06:00:00.000Z' }),
       STRINGS,
@@ -1620,7 +1559,9 @@ describe('the text form', () => {
     });
     expect(text).toContain(report.verdict.text);
     expect(text).toContain('available offline');
-    expect(text).toContain('Martigny');
+    // A row's label, from the log. (An area name was asserted here until
+    // SNOW-1308 moved the per-area rows to the panels.)
+    expect(text).toContain(row(report, 'app-opens').label);
     // Spelled out rather than coloured: a pasted report has no CSS, and
     // this is the only way the data leaves the device.
     expect(text).toContain('[yes]');
@@ -1708,9 +1649,35 @@ describe('readings that could not be taken', () => {
       {},
     );
 
-    const area = row(report, 'area:region-ch-4115');
+    // SNOW-1308: the area's answer is its panel's map stage now.
+    expect(report.sections.length).toBeGreaterThan(0);
+    const area = areaAnswer({
+      id: 'region-ch-4115',
+      kind: 'region',
+      deps: ['https://t/style.json'],
+      bucketPresent: false,
+      bucketReadable: false,
+      entries: [],
+    });
     expect(area.status).toBe('unknown');
     expect(area.reason).toBe('unreadable');
+    // And the panel's verdict is "Can't tell", never a remedy.
+    const [panel] = panels(
+      healthy({
+        areas: [
+          {
+            id: 'region-ch-4115',
+            kind: 'region',
+            name: 'Martigny',
+            deps: ['https://t/style.json'],
+            bucketPresent: false,
+            bucketReadable: false,
+            entries: [],
+          },
+        ],
+      }),
+    );
+    expect(panel.verdict).toBe('unknown');
   });
 
   it('still calls a genuinely empty bucket missing', () => {
@@ -1734,7 +1701,17 @@ describe('readings that could not be taken', () => {
       {},
     );
 
-    expect(row(report, 'area:region-ch-4115').reason).toBe('missing');
+    expect(report.sections.length).toBeGreaterThan(0);
+    expect(
+      areaAnswer({
+        id: 'region-ch-4115',
+        kind: 'region',
+        deps: ['https://t/style.json'],
+        bucketPresent: false,
+        bucketReadable: true,
+        entries: [],
+      }).reason,
+    ).toBe('missing');
   });
 
   it('says in the summary why some rows are dashes', () => {
@@ -2302,16 +2279,30 @@ describe('agreeing with the Manage downloads sheet (SNOW-1138)', () => {
       }),
       STRINGS,
     );
-    const orphan = row(report, 'area:region-CH-9999');
-    expect(orphan.label).toBe('region-CH-9999');
-    expect(orphan.status).toBe('no');
-    expect(orphan.reason).toBe('orphaned');
-    expect(orphan.note).toBe(
-      'region-CH-9999 is an unfinished download taking up space, so remove it from the map’s Manage downloads sheet',
-    );
-    // No Sync control: there is no record to sync from.
-    expect(orphan.completable).toBe(false);
-    expect(report.summary).toContain('remove it from the map’s Manage downloads sheet');
+    // SNOW-1308: on its own panel, not a report row. Named by its id, as
+    // on the sheet; a No; and no Sync — there is no record to sync from.
+    expect(ids(report)).not.toContain('area:region-CH-9999');
+    const orphan = panels(
+      healthy({
+        areas: [
+          {
+            id: 'region-CH-9999',
+            kind: 'region',
+            type: 'custom',
+            orphaned: true,
+            name: '',
+            basemapKey: null,
+            deps: [],
+            bucketPresent: true,
+            entries: ['https://t/12/9/9.pbf'],
+          },
+        ],
+      }),
+    )[0];
+    expect(orphan.name).toBe('region-CH-9999');
+    expect(orphan.orphaned).toBe(true);
+    expect(orphan.stages.map).toEqual({ status: 'no', reason: 'orphaned' });
+    expect(orphan.canSync).toBe(false);
   });
 
   it('never rolls an orphan up into a basemap row', () => {
@@ -2343,12 +2334,12 @@ describe('agreeing with the Manage downloads sheet (SNOW-1138)', () => {
       }),
       STRINGS,
     );
-    const check = row(report, 'area:region-ch-4115');
-    expect(check.status).toBe('no');
-    expect(check.reason).toBe('incomplete');
-    expect(check.note).toBe(
-      'Martigny will not draw until you sync it from the map’s Manage downloads sheet',
-    );
+    expect(report.sections.length).toBeGreaterThan(0);
+    // SNOW-1308: the panel's map stage, and its verdict sends the reader to
+    // the map's Manage downloads sheet, where class tiles can be fetched.
+    const area = region({ terrain: true, terrainTiles: CLASS_TILES });
+    expect(areaAnswer(area)).toEqual({ status: 'no', reason: 'incomplete' });
+    expect(panels(healthy({ areas: [area] }))[0].verdict).toBe('open-map');
   });
 
   it('still reads Yes once every class tile is there', () => {
@@ -2358,7 +2349,8 @@ describe('agreeing with the Manage downloads sheet (SNOW-1138)', () => {
       healthy({ areas: [healthy().areas[0], area] }),
       STRINGS,
     );
-    expect(row(report, 'area:region-ch-4115').status).toBe('yes');
+    expect(report.sections.length).toBeGreaterThan(0);
+    expect(areaAnswer(area).status).toBe('yes');
   });
 
   it('judges the class tiles even when the record names no dependencies', () => {
@@ -2380,6 +2372,22 @@ describe('agreeing with the Manage downloads sheet (SNOW-1138)', () => {
       }),
       STRINGS,
     );
-    expect(row(report, 'area:region-ch-4115').status).toBe('yes');
+    expect(report.sections.length).toBeGreaterThan(0);
+    expect(areaAnswer(region({ terrain: true, terrainTiles: null })).status).toBe('yes');
+  });
+});
+
+describe('which cached urls need a matching stamp (SNOW-1308 review)', () => {
+  it.each([
+    ['https://snowdesk.info/trips/11111111-1111-4111-8111-111111111111/', true],
+    ['https://snowdesk.info/trips/11111111-1111-4111-8111-111111111111/route.geojson', true],
+    [
+      'https://snowdesk.info/partials/place-sheet/favourite/22222222-2222-4222-8222-222222222222/?d=2026-09-11',
+      true,
+    ],
+    ['https://snowdesk.info/api/weather/W1/detail/?date=2026-09-11', false],
+    ['https://snowdesk.info/partials/region-sheet/ch-4115/?d=2026-09-11', false],
+  ])('%s → %s', (url, expected) => {
+    expect(core.isPrincipalScoped(url)).toBe(expected);
   });
 });

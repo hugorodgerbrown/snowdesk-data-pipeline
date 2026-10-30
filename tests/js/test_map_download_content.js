@@ -418,6 +418,13 @@ let areaContentStalls = false;
  */
 let areaItemsAnswer = () => AREA_ITEMS;
 
+/**
+ * Whose `/api/area-items/` answer it is (SNOW-1308): its
+ * `X-Snowdesk-Principal`. The page's own account by default.
+ */
+let areaItemsViewer = () =>
+  document.querySelector('meta[name="pwa-user-id"]')?.getAttribute('content') || '';
+
 /** The `AbortSignal` the last `/api/area-content/` request carried, if any. */
 let lastAreaContentSignal = null;
 
@@ -477,7 +484,15 @@ beforeAll(async () => {
         const items = areaItemsAnswer();
         return Promise.resolve(
           items
-            ? { ok: true, json: () => Promise.resolve(items) }
+            ? {
+              ok: true,
+              // SNOW-1308: the viewer the server answered for — the
+              // signed-in account unless a test says otherwise.
+              headers: {
+                get: (name) => (name === 'X-Snowdesk-Principal' ? areaItemsViewer() : null),
+              },
+              json: () => Promise.resolve(items),
+            }
             : { ok: false, status: 500, json: () => Promise.resolve({}) },
         );
       }
@@ -1424,5 +1439,134 @@ describe('a region record carries its principal (SNOW-1142)', () => {
     await waitFor(() => btn.dataset.downloadState === 'done');
 
     expect('principal' in (await recordedRegion())).toBe(false);
+  });
+});
+
+// SNOW-1308: every sync stamps the reader's own things it expected onto
+// the area record, by name with their urls, so the /offline/ panels can
+// list them offline whichever surface synced the area. The map's three
+// entry points — the first download, the region roundel's refresh and the
+// Manage downloads sheet's Sync now — all stamp the composition
+// `areaItemExpectation` makes, which is the one /offline/'s Sync now
+// stamps (tests/js/test_offline_audit.js) and the one `areaItemURLs`
+// fetches from.
+describe("the map's syncs stamp what they expected of your things (SNOW-1308)", () => {
+  /** What the map's templates compose `AREA_ITEMS` into. */
+  function expected() {
+    // With the principal of the session that synced (SNOW-1308 review) —
+    // the page's `pwa-user-id`.
+    const principal = document.querySelector('meta[name="pwa-user-id"]').getAttribute('content');
+    return {
+      principal,
+      ...window.pwaBasemapDownloadCore.areaItemExpectation(AREA_ITEMS, {
+      tripPage: '/trips/__UUID__/',
+      tripRoute: '/trips/__UUID__/route.geojson',
+      weatherDetail: '/api/weather/__SHORTID__/detail/',
+      weatherDay: TODAY,
+      favouriteSheet: '/partials/place-sheet/favourite/00000000-0000-0000-0000-000000000000/',
+      }),
+    };
+  }
+
+  it('stamps it on the first download', async () => {
+    const row = await window.pwaDb.get('meta:app', 'basemap.regions');
+    await window.pwaDb.put('meta:app', {
+      key: 'basemap.regions',
+      value: row.value.filter((entry) => entry && entry.region_id !== REGION_ID),
+    });
+    await clickControl();
+
+    const record = await recordedRegion();
+    expect(record.items).toEqual(expected());
+    expect(record.items.trips[0].urls).toEqual([
+      `/trips/${TRIP_UUID}/`,
+      `/trips/${TRIP_UUID}/route.geojson`,
+    ]);
+  });
+
+  it("stamps it on the region roundel's refresh", async () => {
+    const btn = document.getElementById('map-download-control');
+    await waitFor(() => btn.dataset.downloadState === 'done');
+    await window.pwaDb.readModifyWrite('meta:app', 'basemap.regions', (stored) => ({
+      key: 'basemap.regions',
+      value: stored.value.map((entry) => {
+        if (!entry || entry.region_id !== REGION_ID) return entry;
+        const { items: _gone, ...rest } = entry;
+        return rest;
+      }),
+    }));
+    window.pwaWarmCache.mockClear();
+
+    btn.click();
+    await waitFor(() => window.pwaWarmCache.mock.calls.length > 0);
+    await waitFor(() => btn.dataset.downloadState !== 'busy');
+
+    expect((await recordedRegion()).items).toEqual(expected());
+  });
+
+  it("stamps it on the Manage downloads sheet's Sync now", async () => {
+    await window.pwaDb.put('meta:app', {
+      key: 'basemap.customAreas',
+      value: [
+        {
+          id: 'custom-a9',
+          ordinal: 9,
+          bbox: [7.0, 46.0, 7.2, 46.2],
+          band: [10, 14],
+          template: TEMPLATE,
+          basemapKey: 'openfreemap_liberty',
+          bytes: 4096,
+          savedAt: '2026-01-05T10:00:00.000Z',
+        },
+      ],
+    });
+
+    expect(await window.pwaBasemapDownloads.refreshAreaContent('custom-a9')).toBe(true);
+
+    const row = await window.pwaDb.get('meta:app', 'basemap.customAreas');
+    expect(row.value[0].items).toEqual(expected());
+  });
+
+  it("never attributes another account's answer to this page's (SNOW-1308 review)", async () => {
+    // A signed in elsewhere as B: the cookie answers for B while this page
+    // still says A. The names are stamped with no principal, so the
+    // /offline/ panels name nothing.
+    areaItemsViewer = () => 'someone-else';
+    try {
+      expect(await window.pwaBasemapDownloads.refreshAreaContent(`region-${REGION_ID}`)).toBe(true);
+    } finally {
+      areaItemsViewer = () =>
+        document.querySelector('meta[name="pwa-user-id"]')?.getAttribute('content') || '';
+    }
+
+    const record = await recordedRegion();
+    expect(record.items.principal).toBe('');
+    expect(record.items.trips.length).toBeGreaterThan(0);
+  });
+
+  it('stamps no principal from an answer that names nobody', async () => {
+    areaItemsViewer = () => '';
+    try {
+      await window.pwaBasemapDownloads.refreshAreaContent(`region-${REGION_ID}`);
+    } finally {
+      areaItemsViewer = () =>
+        document.querySelector('meta[name="pwa-user-id"]')?.getAttribute('content') || '';
+    }
+
+    expect((await recordedRegion()).items.principal).toBe('');
+  });
+
+  it('leaves the old expectation alone when the items could not be asked', async () => {
+    const before = (await recordedRegion()).items;
+    areaItemsAnswer = () => null;
+    try {
+      await window.pwaBasemapDownloads.refreshAreaContent(`region-${REGION_ID}`);
+    } finally {
+      areaItemsAnswer = () => AREA_ITEMS;
+    }
+
+    const record = await recordedRegion();
+    expect(record.contentIncomplete).toBe(true);
+    expect(record.items).toEqual(before);
   });
 });

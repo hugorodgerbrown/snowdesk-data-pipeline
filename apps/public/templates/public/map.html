@@ -503,6 +503,12 @@ in addition to the shared map assets.
     {# reads nothing from another file's lexical scope), and before it,     #}
     {# because map_basemap_downloads.js calls into it.                      #}
     <script defer src="{% static 'js/basemap_downloaded_areas.js' %}"></script>
+    {# SNOW-1308: the one removal of a downloaded area                      #}
+    {# (window.pwaBasemapAreaRemoval) — map_basemap_downloads.js's          #}
+    {# evictBasemapAreas delegates to it, and /offline/'s panels load the   #}
+    {# same file, so Remove has one implementation. Reached only at call    #}
+    {# time, so outside the map bundle's contiguous run.                    #}
+    <script defer src="{% static 'js/basemap_area_removal.js' %}"></script>
     {# SNOW-611: the one ordered pinned-download run both map download      #}
     {# controls share (window.pwaBasemapDownloadRunner). Must load before   #}
     {# map.js, whose runPinnedDownload delegates to it.                     #}

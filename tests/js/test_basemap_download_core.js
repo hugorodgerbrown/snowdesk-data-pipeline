@@ -2074,6 +2074,103 @@ describe('areaItemURLs (SNOW-965)', () => {
   });
 });
 
+describe('areaItemExpectation and stampContentRecord (SNOW-1308)', () => {
+  const TEMPLATES = {
+    tripPage: '/trips/__UUID__/',
+    tripRoute: '/trips/__UUID__/route.geojson',
+    weatherDetail: '/api/weather/__SHORTID__/detail/',
+    weatherDay: '2026-01-06',
+    favouriteSheet: '/partials/place-sheet/favourite/00000000-0000-0000-0000-000000000000/',
+  };
+  const ITEMS = {
+    trips: [{ uuid: 'trip-1', name: 'Saturday tour' }, { name: 'no uuid' }],
+    pins: [
+      { uuid: 'pin-1', name: 'Hut', forecast: { short_id: 'OUT1' } },
+      { uuid: 'pin-2', forecast: null },
+    ],
+  };
+
+  it('keeps each item by name with its own urls', () => {
+    expect(core.areaItemExpectation(ITEMS, TEMPLATES)).toEqual({
+      trips: [
+        {
+          uuid: 'trip-1',
+          name: 'Saturday tour',
+          urls: ['/trips/trip-1/', '/trips/trip-1/route.geojson'],
+        },
+      ],
+      pins: [
+        {
+          uuid: 'pin-1',
+          name: 'Hut',
+          urls: [
+            '/partials/place-sheet/favourite/pin-1/?d=2026-01-06',
+            '/api/weather/OUT1/detail/?date=2026-01-06',
+          ],
+        },
+        { uuid: 'pin-2', name: '', urls: ['/partials/place-sheet/favourite/pin-2/?d=2026-01-06'] },
+      ],
+    });
+  });
+
+  it('is the composition areaItemURLs fetches, so the two cannot drift', () => {
+    const expected = core.areaItemExpectation(ITEMS, TEMPLATES);
+    const flat = [...expected.trips, ...expected.pins].flatMap((item) => item.urls);
+    expect(core.areaItemURLs(ITEMS, TEMPLATES)).toEqual(flat);
+  });
+
+  it('a successful sync stamps contentAt and the expectation, and clears the flag', () => {
+    const expectation = core.areaItemExpectation(ITEMS, TEMPLATES);
+    const next = core.stampContentRecord(
+      { id: 'custom-a', contentIncomplete: true },
+      true,
+      expectation,
+      '2026-01-06T08:00:00.000Z',
+    );
+    expect(next).toEqual({
+      id: 'custom-a',
+      contentAt: '2026-01-06T08:00:00.000Z',
+      // No principal on the expectation, so none on the stamp.
+      items: { ...expectation, principal: null },
+    });
+    expect('contentIncomplete' in next).toBe(false);
+  });
+
+  it('attributes the names only when the answer is the page\'s account', () => {
+    // `X-Snowdesk-Principal` against the page's `pwa-user-id`: agreeing,
+    // disagreeing (a sign-in in another tab), and absent (anonymous).
+    const expectation = core.areaItemExpectation(ITEMS, TEMPLATES);
+
+    expect(core.attestedExpectation(expectation, 'acct-A', 'acct-A').principal).toBe('acct-A');
+    expect(core.attestedExpectation(expectation, 'acct-B', 'acct-A').principal).toBe('');
+    expect(core.attestedExpectation(expectation, '', 'acct-A').principal).toBe('');
+    expect(core.attestedExpectation(expectation, null, '').principal).toBe('');
+    expect(core.attestedExpectation(null, 'acct-A', 'acct-A')).toBeNull();
+  });
+
+  it("stamps the syncing session's principal with the names (SNOW-1308 review)", () => {
+    // Not the area's own: an area A downloaded can be synced by B, and the
+    // names written are B's.
+    const expectation = { ...core.areaItemExpectation(ITEMS, TEMPLATES), principal: 'acct-B' };
+    const next = core.stampContentRecord({ id: 'a', principal: 'acct-A' }, true, expectation, 'x');
+
+    expect(next.principal).toBe('acct-A');
+    expect(next.items.principal).toBe('acct-B');
+  });
+
+  it('a sync that did not ask for items leaves the old expectation alone', () => {
+    const old = { trips: [], pins: [] };
+    const next = core.stampContentRecord({ id: 'a', items: old }, true, null, 'x');
+    expect(next.items).toBe(old);
+  });
+
+  it('a short sync flags the record and touches neither stamp', () => {
+    const entry = { id: 'a', contentAt: 'old', items: { trips: [], pins: [] } };
+    const next = core.stampContentRecord(entry, false, { trips: [{ uuid: 'n' }], pins: [] });
+    expect(next).toEqual({ ...entry, contentIncomplete: true });
+  });
+});
+
 describe('weatherDetailURL (SNOW-965)', () => {
   it('is undated without a day and dated with one', () => {
     const template = '/api/weather/__SHORTID__/detail/';

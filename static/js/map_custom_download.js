@@ -1394,6 +1394,11 @@
             // flag, never the class-tile URLs it implies, which the
             // probe derives again from `bbox` + `band`.
             ...(terrain ? { terrain: true } : {}),
+            // SNOW-1308: the reader's own things this run's content plan
+            // expected, by name with their urls, so the `/offline/` panels
+            // name them — written with a complete content run only, the
+            // rule `stampContentRecord` applies to every later sync.
+            ...(outcome.complete && content && content.items ? { items: content.items } : {}),
             savedAt: new Date().toISOString(),
           };
           await _appendCustomArea(area);
@@ -1723,6 +1728,8 @@
               ...(outcome.complete ? { contentAt: new Date().toISOString() } : {}),
               ...(outcome.incomplete ? { contentIncomplete: true } : {}),
               ...(terrain ? { terrain: true } : {}),
+              // SNOW-1308: see `handleConfirm`'s record.
+              ...(outcome.complete && content && content.items ? { items: content.items } : {}),
               savedAt: new Date().toISOString(),
             };
             await _appendCustomArea(area);

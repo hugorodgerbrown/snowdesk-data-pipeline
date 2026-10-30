@@ -2046,7 +2046,10 @@ bucket (`caches.delete(pinnedCacheName(areaId))`) AND its `meta:app`
 record together, so an eviction can never leave a stale "downloaded" ring
 or a budget entry with nothing behind it — then refreshes the
 "Downloaded areas" overlay immediately rather than waiting for the next
-trigger.
+trigger. Since SNOW-1308 the deletion itself is
+`pwaBasemapAreaRemoval.evict` (`static/js/basemap_area_removal.js`),
+which the `/offline/` area panels share; `evictBasemapAreas` keeps the
+map's own follow-ups.
 
 **Recording what a run actually cost.** `_warmCache` (`sw.js`) sums each
 successful write's byte size (`basemap_cache_core.js`'s `responseBytes` —

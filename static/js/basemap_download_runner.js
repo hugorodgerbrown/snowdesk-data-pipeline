@@ -365,6 +365,11 @@
       ? contentReply
       : contentReply.urls || [];
     const contentShort = Array.isArray(contentReply) ? false : !!contentReply.short;
+    // SNOW-1308: the reader's own things the plan expected, by name, for
+    // the caller to stamp onto the record it writes — so an area fresh
+    // from its first download names them on `/offline/` as one synced
+    // later does. Null from a bare array or a signed-out plan.
+    const contentItems = Array.isArray(contentReply) ? null : contentReply.items || null;
     const urls = [
       ...contentUrls,
       ...feedUrls,
@@ -457,7 +462,12 @@
         // arrived to be listed; `ok === total` cannot see that, so it
         // travels beside the tally. Every reader goes through
         // `core.contentOutcome`, which weighs the two together.
-        content: { ok: contentOk, total: contentUrls.length, short: contentShort },
+        content: {
+          ok: contentOk,
+          total: contentUrls.length,
+          short: contentShort,
+          items: contentItems,
+        },
       });
 
     // SNOW-521: `pinned: true` routes the basemap-origin writes into a

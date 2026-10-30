@@ -212,6 +212,8 @@ interface Window {
   pwaBasemapDownloadCore: any;
   /** static/js/offline_audit_core.js — the offline-content report model. */
   pwaOfflineAuditCore: any;
+  /** SNOW-1308: static/js/offline_journey_core.js — one /offline/ panel per downloaded area: stages and verdict. */
+  pwaOfflineJourneyCore: any;
   /** static/js/zoom_control_core.js — the zoom scale, ticks and bounds. */
   pwaZoomControlCore: any;
 
@@ -224,8 +226,12 @@ interface Window {
   pwaStrings: any;
   /** static/js/telemetry.js — the first-party event buffer. */
   pwaTelemetry: any;
-  /** static/js/offline_audit.js — the collector and DOM half of the report. */
+  /** static/js/offline_audit.js — the collector and DOM half of the report; SNOW-1308 adds latest/refresh/syncArea/syncAll. */
   pwaOfflineAudit: any;
+  /** SNOW-1308: static/js/basemap_area_removal.js — available(), evict(areaIds, {onBucketDeleted}): the one removal of a downloaded area. */
+  pwaBasemapAreaRemoval: any;
+  /** static/js/basemap_downloaded_areas.js — the one reader of what this device has downloaded. */
+  pwaBasemapAreas: any;
   /** static/js/sw_register.js — asks the worker to warm a URL list. */
   pwaWarmCache: any;
   /** static/js/db.js — the IndexedDB layer (schema version, upgrades). */
