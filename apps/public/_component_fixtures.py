@@ -1452,6 +1452,30 @@ SEGMENTED_OPTION_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# Since strip -----------------------------------------------------------------
+# SNOW-1328: what moved in a region's bulletin since the day before.
+SINCE_STRIP_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Moved",
+        "context": {
+            "heading": "Since Friday’s bulletin",
+            "sentences": [
+                "Up from Moderate (2).",
+                "Wind slab added on N–E above 2,400 m.",
+            ],
+        },
+    },
+    {
+        "caption": "Quiet",
+        "context": {
+            "heading": "Since Friday’s bulletin",
+            "sentences": [],
+            "quiet_text": "No change to the level or the problems.",
+        },
+    },
+)
+
+
 # Terrain filter key ----------------------------------------------------------
 # SNOW-978: the map's terrain-filter colour key. No parameters — one variant.
 TERRAIN_FILTER_KEY_VARIANTS: tuple[dict[str, Any], ...] = (

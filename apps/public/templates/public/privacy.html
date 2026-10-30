@@ -163,8 +163,9 @@ Two rules for editing this file:
                 </li>
                 <li>
                     {% blocktrans trimmed %}
-                        <strong>Push notifications</strong> — consent. Your browser asks you before a subscription is
-                        created, and turning notifications off removes it.
+                        <strong>Push notifications and bulletin alerts</strong> — consent. Alerts are off until you turn
+                        them on in Settings, your browser asks you before a subscription is created, and turning either
+                        off stops them. Alert emails carry a one-click unsubscribe link.
                     {% endblocktrans %}
                 </li>
                 <li>
@@ -325,8 +326,10 @@ Two rules for editing this file:
                     {% blocktrans trimmed %}
                         <strong>Your browser's push service</strong> (Google, Mozilla or Apple, depending on your
                         browser) — if you turn on push notifications, your browser creates a subscription on its
-                        vendor's service and we send notifications through it. We never include bulletin content or your
-                        email address in a notification payload.
+                        vendor's service and we send notifications through it. A bulletin alert carries the names of
+                        your places and what their bulletin says, encrypted so that only your browser can read it; the
+                        push service sees that a message was sent, not what it says. We never include your email address
+                        in a notification payload.
                     {% endblocktrans %}
                 </li>
                 <li>

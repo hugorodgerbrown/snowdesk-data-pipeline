@@ -94,6 +94,10 @@ LOAD_ORDER=(
 # Listed children-first, and deleted before anything in LOAD_ORDER, because
 # every one of them points into it.
 CLEAR_ONLY=(
+    # SNOW-942. Staging's own alert send log points at the bulletins it
+    # compared against; production's accounts are never copied, so neither
+    # is their log.
+    bulletins_bulletinalert
     bulletins_bulletinshareclick
     bulletins_bulletinshare
     favourites_favourite

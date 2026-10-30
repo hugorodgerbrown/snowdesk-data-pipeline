@@ -2,17 +2,20 @@
 name: push-notifications
 description: Web Push — mint_vapid_keypair, VAPID secret on Render, /_push-demo/, Declarative Web Push, mechanism/inactive_at, icon vs badge-96.png
 status: current
-last-reviewed: 2026-10-24
+last-reviewed: 2026-10-30
 ---
 
 # Web Push notifications
 
 ## Status
 
-**Spike / staff-only.** Web Push delivery is wired and working end-to-end
-but is not yet exposed to subscribers. The code lives behind
-`@staff_member_required` on `/_push-demo/`. The subscriber-facing CTA,
-fan-out, and ingestion trigger are tracked in SNOW-226.
+**Used by bulletin alerts (SNOW-937), dark-launched.** Any signed-in account
+can register and unregister its own device (`accounts:push_register`,
+`accounts:push_unregister`); the opt-in lives in the Alerts group on
+`/account/settings/`, and `send_bulletin_alerts` fans out to every active
+subscription. Both are behind the `bulletin_alerts` flag and the
+`schedule_send_bulletin_alerts` switch — see [`alerts.md`](alerts.md). The
+test send and subscription list stay staff-only on `/_push-demo/`.
 
 ---
 

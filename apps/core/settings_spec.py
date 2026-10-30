@@ -397,6 +397,7 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         "SMTP_PASSWORD", secret=True, note="SMTP password, env EMAIL_HOST_PASSWORD"
     ),
     SettingSpec("DEFAULT_FROM_EMAIL", note="From: on outbound mail"),
+    SettingSpec("ALERTS_FROM_EMAIL", note="From: on bulletin alert emails"),
     SettingSpec(
         "SMTP_USE_TLS", note="STARTTLS on the SMTP connection, env EMAIL_USE_TLS"
     ),

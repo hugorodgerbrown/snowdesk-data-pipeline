@@ -8,7 +8,8 @@ sidebar. Also hosts the Web Push demo (``/_push-demo/``), the SW
 shell-version page (``/_sw-version/``, SNOW-517), the icon-set
 comparison grid (``/_icon-sets/``, SNOW-791), one route's terrain
 per segment (``/_route-terrain/<uuid>/``, SNOW-1020), and the error-page
-previews (``/_errors/<kind>/``, SNOW-1151).
+previews (``/_errors/<kind>/``, SNOW-1151) and the bulletin alert season
+replay (``/_alerts-replay/``, SNOW-949).
 
 Auth: ``staff_member_required`` only — no DEBUG gate. Every page here is
 reachable in production by any staff user, by design (everyone with
@@ -21,7 +22,9 @@ under the Components group.
 """
 
 import csv
+import datetime
 import uuid
+from typing import Any
 
 from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
@@ -35,6 +38,9 @@ from django.http import (
 from django.shortcuts import get_object_or_404, render
 
 from apps.accounts.push_config import VAPID_PUBLIC_KEY
+from apps.bulletins.services.alerts import ALERT_TZ
+from apps.bulletins.services.golden_week import SOURCES
+from apps.bulletins.services.replay import DEFAULT_REGION, replay_archive
 from apps.core.decorators import require_htmx
 from apps.core.sw_shell import cache_version
 from apps.public.design_tokens import LIBRARY_GROUPS, get_category
@@ -119,6 +125,51 @@ def push_demo(request: HttpRequest) -> HttpResponse:
         request,
         "_debug/push_demo.html",
         {"vapid_public_key": VAPID_PUBLIC_KEY},
+    )
+
+
+@staff_member_required
+def alerts_replay(request: HttpRequest) -> HttpResponse:
+    """Render a season of bulletin alerts for one region (SNOW-949).
+
+    The same engine as ``replay_bulletin_alerts``: the committed archive,
+    replayed through the live decision and wording, read-only. Query
+    parameters pick the region (``region``, default CH-4115), provider
+    (``source``), mode (``mode``) and whether the decisions that sent
+    nothing are shown (``all=1``). Messages are grouped by week so a
+    season reads as it would have arrived.
+    """
+    source = request.GET.get("source", "SLF").upper()
+    if source not in SOURCES:
+        source = "SLF"
+    mode = request.GET.get("mode", "NEW_BULLETIN")
+    if mode not in ("NEW_BULLETIN", "CHANGES"):
+        mode = "NEW_BULLETIN"
+    region_id = request.GET.get("region", DEFAULT_REGION).strip() or DEFAULT_REGION
+    show_all = request.GET.get("all") == "1"
+    alerts = replay_archive(source=source, region_id=region_id, mode=mode)
+    weeks: dict[str, list[dict[str, Any]]] = {}
+    for alert in alerts:
+        if not alert.sent and not show_all:
+            continue
+        local = alert.delivered_at.astimezone(ALERT_TZ)
+        monday = local.date() - datetime.timedelta(days=local.weekday())
+        weeks.setdefault(monday.isoformat(), []).append(
+            {"alert": alert, "when": local.strftime("%a %d %b %H:%M")}
+        )
+    return render(
+        request,
+        "_debug/alerts_replay.html",
+        {
+            "weeks": weeks,
+            "region_id": region_id,
+            "source": source,
+            "mode": mode,
+            "show_all": show_all,
+            "sources": SOURCES,
+            "sent": sum(1 for a in alerts if a.sent),
+            "skipped": sum(1 for a in alerts if not a.sent),
+        },
     )
 
 

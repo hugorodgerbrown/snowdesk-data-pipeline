@@ -3,7 +3,7 @@ tests/test_schedule.py — Unit tests for schedule.py.
 
 Covers:
   - ``build_scheduler()`` returns a :class:`BlockingScheduler` with exactly
-    eleven jobs.
+    thirteen jobs.
   - The jobs have the expected IDs, one per wrapped command in
     ``schedule.py``.
   - Their ``CronTrigger``s have the correct non-default field expressions.
@@ -50,15 +50,16 @@ def test_build_scheduler_returns_blocking_scheduler(
     assert isinstance(scheduler, BlockingScheduler)
 
 
-def test_scheduler_has_exactly_eleven_jobs(scheduler: BlockingScheduler) -> None:
-    """The scheduler has exactly eleven registered jobs."""
-    assert len(scheduler.get_jobs()) == 12
+def test_scheduler_has_exactly_thirteen_jobs(scheduler: BlockingScheduler) -> None:
+    """The scheduler has exactly thirteen registered jobs."""
+    assert len(scheduler.get_jobs()) == 13
 
 
 def test_job_ids(jobs: dict) -> None:
     """The expected job IDs are registered."""
     assert set(jobs) == {
         "fetch_bulletins",
+        "send_bulletin_alerts",
         "fetch_weather",
         "backfill_weather",
         "mirror_reference_data",
@@ -71,6 +72,20 @@ def test_job_ids(jobs: dict) -> None:
         "reconcile_slope_samples",
         "render_ski_tours",
     }
+
+
+def test_send_bulletin_alerts_runs_hourly_at_ten_past(jobs: dict) -> None:
+    """:10 every hour — after both bulletin fetches (SNOW-942)."""
+    trigger = jobs["send_bulletin_alerts"].trigger
+    assert str(_get_field(trigger, "hour")) == "*"
+    assert str(_get_field(trigger, "minute")) == "10"
+
+
+def test_send_bulletin_alerts_commits() -> None:
+    """Firing the job sends with --commit."""
+    with mock.patch("django.core.management.call_command") as mock_cc:
+        schedule_module._run_send_bulletin_alerts()
+    mock_cc.assert_called_once_with("send_bulletin_alerts", "--commit")
 
 
 def test_backfill_weather_runs_hourly_at_twenty_past(jobs: dict) -> None:

@@ -29,6 +29,7 @@ from oauth2_provider.models import (
 from apps.accounts.models import Account, PasskeyCredential, PushSubscription
 from apps.bulletins.models import (
     Bulletin,
+    BulletinAlert,
     BulletinGrouping,
     BulletinShare,
     BulletinShareClick,
@@ -729,6 +730,30 @@ class PushSubscriptionFactory(factory.django.DjangoModelFactory[PushSubscription
     last_used_at = None
     mechanism = PushSubscription.Mechanism.SW
     inactive_at = None
+
+
+class BulletinAlertFactory(factory.django.DjangoModelFactory[BulletinAlert]):
+    """Factory for BulletinAlert send-log rows (SNOW-942).
+
+    Defaults to a SENT push for an unrated, problem-free state; pass
+    ``state=`` and ``fingerprint=`` together to record a real one.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = BulletinAlert
+
+    account = factory.SubFactory(AccountFactory)
+    region = factory.SubFactory(MicroRegionFactory)
+    target_date = factory.LazyFunction(lambda: datetime.date.today())
+    bulletin = None
+    fingerprint = factory.Sequence(lambda n: f"fp{n:014d}")
+    state = factory.LazyFunction(dict)
+    kind = BulletinAlert.Kind.NEW
+    outcome = BulletinAlert.Outcome.SENT
+    sent_push = True
+    sent_email = False
 
 
 class BulletinGroupingFactory(factory.django.DjangoModelFactory[BulletinGrouping]):

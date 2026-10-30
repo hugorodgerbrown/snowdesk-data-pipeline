@@ -1,7 +1,7 @@
 """
 apps/bulletins/models.py — Bulletin-derived database models.
 
-Owns the seven bulletin-driven models:
+Owns the eight bulletin-driven models:
   - PipelineRun: records each execution of the data pipeline (scheduled or
     manual), its status, and timing metadata.
   - Bulletin: stores SLF avalanche bulletins fetched from the CAAML API,
@@ -23,6 +23,8 @@ Owns the seven bulletin-driven models:
   - BulletinGrouping: dissolved outer boundary of all L4 micro-regions
     sharing a bulletin on a given day, computed at ingest time. Provides
     the "L3" dynamic overlay on the map (SNOW-323).
+  - BulletinAlert: the bulletin-alert send log (SNOW-942) — one row per
+    state an account was told, or deliberately not told, about.
 
 Region hierarchy (MicroRegion, MajorRegion, SubRegion, Resort) lives
 in ``apps.regions.models`` — those are stable lookup tables shared across the
@@ -1095,6 +1097,139 @@ class BulletinGrouping(BaseModel):
         return (
             f"BulletinGrouping({self.bulletin.bulletin_id},"
             f" {self.target_date}, {self.countries})"
+        )
+
+    def __str__(self) -> str:
+        """Return a human-readable representation."""
+        return self.to_string()
+
+
+# ---------------------------------------------------------------------------
+# BulletinAlert
+# ---------------------------------------------------------------------------
+
+
+class BulletinAlertQuerySet(models.QuerySet["BulletinAlert"]):
+    """Custom queryset for BulletinAlert."""
+
+    def for_day(
+        self, account_id: int, region_id: int, target_date: _date
+    ) -> "BulletinAlertQuerySet":
+        """
+        Return the rows for one account, region and day, latest first.
+
+        Ordered by ``updated_at``: a state that recurs (A, then B, then A
+        again) rewrites its original row, which must then read as the
+        latest, or every run would compare A against B and resend it.
+
+        Args:
+            account_id: The account's pk.
+            region_id: The MicroRegion's pk.
+            target_date: The day the bulletin forecasts.
+
+        Returns:
+            The filtered queryset.
+
+        """
+        return self.filter(
+            account_id=account_id, region_id=region_id, target_date=target_date
+        ).order_by("-updated_at", "-id")
+
+    def sent(self) -> "BulletinAlertQuerySet":
+        """Return the rows that reached the account (push or email)."""
+        return self.filter(outcome=BulletinAlert.Outcome.SENT)
+
+
+class BulletinAlert(BaseModel):
+    """
+    The send log for bulletin alerts (SNOW-942).
+
+    One row per state an account was told about, or deliberately not told
+    about, for one region and day.
+
+    The row's ``state`` is the "previous" side of the next comparison (A1's
+    ``BulletinState.to_json``), so the send log and the change signal cannot
+    disagree. ``fingerprint`` is the idempotency key: the same state for the
+    same account, region and day is never written, or sent, twice.
+
+    ``outcome`` records why the row exists:
+
+    - ``SENT``: the account was told, by push, email or both.
+    - ``SKIPPED``: a CHANGES-mode account's establishing issue that moved
+      nothing; logged so the next issue compares against it.
+    - ``BASELINE``: a day already under way when alerts were turned on;
+      recorded silently so the first message is about the next change.
+    - ``FAILED``: every channel failed; the next run tries again.
+    """
+
+    class Outcome(models.TextChoices):
+        """Why the row exists."""
+
+        SENT = "SENT", "Sent"
+        SKIPPED = "SKIPPED", "Skipped (no change)"
+        BASELINE = "BASELINE", "Baseline (day under way)"
+        FAILED = "FAILED", "Failed"
+
+    class Kind(models.TextChoices):
+        """Which kind of message the state was."""
+
+        NEW = "NEW", "New day"
+        UPDATE = "UPDATE", "Update to a day"
+        SEASON_START = "SEASON_START", "First bulletin of the season"
+
+    account = models.ForeignKey(
+        "accounts.Account",
+        on_delete=CASCADE,
+        related_name="bulletin_alerts",
+    )
+    region = models.ForeignKey(
+        "regions.MicroRegion",
+        on_delete=CASCADE,
+        related_name="bulletin_alerts",
+    )
+    target_date = models.DateField(help_text="The day the bulletin forecasts.")
+    bulletin = models.ForeignKey(
+        Bulletin,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="alerts",
+        help_text="The authoritative bulletin whose state this row records.",
+    )
+    fingerprint = models.CharField(max_length=32)
+    state = models.JSONField(help_text="BulletinState.to_json() at send time.")
+    kind = models.CharField(max_length=16, choices=Kind.choices, default=Kind.NEW)
+    outcome = models.CharField(max_length=16, choices=Outcome.choices)
+    sent_push = models.BooleanField(default=False)
+    sent_email = models.BooleanField(default=False)
+    title = models.CharField(max_length=255, blank=True)
+    body = models.TextField(blank=True)
+    url = models.CharField(max_length=255, blank=True)
+
+    objects = BulletinAlertQuerySet.as_manager()
+
+    class Meta(BaseModel.Meta):
+        """Model metadata."""
+
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["account", "region", "target_date", "fingerprint"],
+                name="bulletin_alert_unique_state",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["account", "region", "target_date"],
+                name="bulletin_alert_day",
+            ),
+        ]
+
+    def to_string(self) -> str:
+        """Return ``BulletinAlert(<account pk>, <region_id>, <day>, <outcome>)``."""
+        return (
+            f"BulletinAlert({self.account_id}, {self.region_id},"
+            f" {self.target_date}, {self.outcome})"
         )
 
     def __str__(self) -> str:

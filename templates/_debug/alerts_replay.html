@@ -1,0 +1,82 @@
+{% extends "public/base.html" %}
+{% comment %}
+templates/_debug/alerts_replay.html — a season of bulletin alerts, replayed
+(SNOW-949).
+
+Every message a subscriber to one region would have received, grouped by
+week, each drawn as a notification: title, body, when it arrived. Staff
+only (apps/public/debug_views.py::alerts_replay); the same schedule as
+``manage.py replay_bulletin_alerts``.
+{% endcomment %}
+{% load components %}
+
+{# sharing=False. Staff-only debug page, mounted everywhere and gated on #}
+{# staff, not DEBUG. Nothing here is for a link-unfurl card.             #}
+{% block page_meta %}
+    {% include "includes/_page_meta.html" with title="Alerts replay" description="Staff-only bulletin alert season replay." sharing=False %}
+{% endblock page_meta %}
+
+{% block content %}
+    <main class="max-w-narrow mx-auto px-4 py-8 space-y-6">
+        <header class="space-y-2">
+            {% include "includes/_eyebrow.html" with text="staff" tag="p" only %}
+            <h1 class="text-2xl font-semibold text-text-1">Bulletin alerts, replayed</h1>
+            <p class="text-sm text-text-2">
+                {{ sent }} sent, {{ skipped }} skipped. {{ mode }} for {{ region_id }} ({{ source }}), from the
+                committed archive.
+            </p>
+        </header>
+
+        <form method="get" class="flex flex-wrap items-end gap-3 text-sm">
+            <label class="flex flex-col gap-1 text-text-2">
+                Region
+                <input
+                    name="region"
+                    value="{{ region_id }}"
+                    class="rounded-sm border border-border bg-card px-2 py-1 font-mono text-text-1"
+                >
+            </label>
+            <label class="flex flex-col gap-1 text-text-2">
+                Source
+                <select name="source" class="rounded-sm border border-border bg-card px-2 py-1 text-text-1">
+                    {% for s in sources %}
+                        <option value="{{ s }}" {% if s == source %}selected{% endif %}>{{ s }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="flex flex-col gap-1 text-text-2">
+                Mode
+                <select name="mode" class="rounded-sm border border-border bg-card px-2 py-1 text-text-1">
+                    <option value="NEW_BULLETIN" {% if mode == "NEW_BULLETIN" %}selected{% endif %}>
+                        Every new bulletin
+                    </option>
+                    <option value="CHANGES" {% if mode == "CHANGES" %}selected{% endif %}>Only changes</option>
+                </select>
+            </label>
+            <label class="flex items-center gap-2 text-text-2">
+                <input type="checkbox" name="all" value="1" {% if show_all %}checked{% endif %}>
+                Show skipped
+            </label>
+            {% include "includes/_button.html" with label="Replay" variant="ghost" size="compact" %}
+        </form>
+
+        {% for monday, items in weeks.items %}
+            <section class="space-y-2" data-testid="replay-week">
+                {% include "includes/_eyebrow.html" with text=monday tag="h2" only %}
+                {% for item in items %}
+                    {% card padding="p-3" %}
+                    <div class="flex items-baseline justify-between gap-3">
+                        <p class="text-sm font-semibold text-text-1 min-w-0">{{ item.alert.title }}</p>
+                        <p class="font-mono text-xs text-text-3 shrink-0">
+                            {{ item.when }}{% if not item.alert.sent %} · {{ item.alert.outcome }}{% endif %}
+                        </p>
+                    </div>
+                    <p class="mt-1 text-sm text-text-2 leading-prose">{{ item.alert.body }}</p>
+                    {% endcard %}
+                {% endfor %}
+            </section>
+        {% empty %}
+            <p class="text-sm text-text-2">No bulletins for {{ region_id }} in the {{ source }} archive.</p>
+        {% endfor %}
+    </main>
+{% endblock %}

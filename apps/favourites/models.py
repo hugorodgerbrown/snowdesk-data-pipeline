@@ -87,6 +87,31 @@ class FavouriteQuerySet(models.QuerySet["Favourite"]):
             location__isnull=True, latitude__isnull=True, region__isnull=False
         )
 
+    def alertable(self) -> "FavouriteQuerySet":
+        """Return the favourites that CAN earn bulletin alerts (SNOW-939).
+
+        Region pins and saved resorts with a region, whatever their switch
+        says. A dropped pin never alerts: it marks a spot, not a
+        subscription.
+
+        Returns:
+            Filtered queryset.
+
+        """
+        return self.filter(
+            models.Q(location__isnull=True, latitude__isnull=True, region__isnull=False)
+            | models.Q(resort__isnull=False, resort__region__isnull=False)
+        )
+
+    def alert_places(self) -> "FavouriteQuerySet":
+        """Return the alertable favourites whose alerts are switched on.
+
+        Returns:
+            Filtered queryset.
+
+        """
+        return self.alertable().filter(alerts=True)
+
 
 # ---------------------------------------------------------------------------
 # Favourite
@@ -204,6 +229,13 @@ class Favourite(BaseModel):
         help_text=(
             "The public Resort this favourite was created from, when "
             "created via the resort-pin popup rather than a dropped pin."
+        ),
+    )
+    alerts = models.BooleanField(
+        default=True,
+        help_text=(
+            "Whether this place earns bulletin alerts (SNOW-939). Only read "
+            "for region pins and saved resorts; a dropped pin never alerts."
         ),
     )
 

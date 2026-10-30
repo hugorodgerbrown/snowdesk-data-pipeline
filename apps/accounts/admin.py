@@ -153,10 +153,11 @@ class AccountAdmin(admin.ModelAdmin):
         "display_name",
         "is_verified",
         "verified_at",
+        "notify_when",
         "acquisition_request",
         "created_at",
     ]
-    list_filter = ["is_verified"]
+    list_filter = ["is_verified", "notify_when", "alert_email"]
     list_select_related = ["user", "acquisition_request"]
     search_fields = ["user__email", "display_name"]
     ordering = ["-created_at"]

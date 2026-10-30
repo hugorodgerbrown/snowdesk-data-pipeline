@@ -1,0 +1,26 @@
+{% comment %}
+templates/includes/_since_strip.html — what moved since the day before
+(SNOW-1328).
+
+One quiet strip at the top of a region's bulletin body: "Since Friday's
+bulletin" and the movements, in the same words a bulletin alert uses
+(apps/bulletins/services/alert_wording.py::change_sentences), so a person
+who taps an alert lands on the sentence that sent it. A day that moved
+nothing says so in one line rather than rendering an empty box.
+
+Parameters:
+    heading    : str        — "Since Friday's bulletin".
+    sentences  : list[str]  — the movements, most important first; empty
+                              for a day that moved nothing.
+    quiet_text : str        — what to say when ``sentences`` is empty.
+{% endcomment %}
+<div class="mb-4 rounded-card border border-border bg-card px-4 py-3" data-testid="since-strip">
+    {% include "includes/_eyebrow.html" with text=heading tag="p" only %}
+    {% if sentences %}
+        <ul class="mt-1 text-sm text-text-1 leading-prose">
+            {% for sentence in sentences %}<li>{{ sentence }}</li>{% endfor %}
+        </ul>
+    {% else %}
+        <p class="mt-1 text-sm text-text-2">{{ quiet_text }}</p>
+    {% endif %}
+</div>

@@ -1,0 +1,49 @@
+{% extends "public/base.html" %}
+{% comment %}
+apps/accounts/templates/accounts/alert_unsubscribe.html — stop alert emails
+(SNOW-1327).
+
+The page behind the link in every bulletin alert email. GET shows one
+button; POST (that button, or a mail client's RFC 8058 one-click POST)
+turns alert email off and shows the done state. Push alerts are not
+touched, and the page says where to change the rest.
+{% endcomment %}
+{% load i18n %}
+
+{# sharing=False: the URL carries a personal signed token and the page is #}
+{# one person's unsubscribe; it must never produce a link-unfurl card.    #}
+{% block page_meta %}
+    {% trans "Stop alert emails — Snowdesk" as page_title %}
+    {% trans "Stop bulletin alert emails from Snowdesk." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
+{% endblock page_meta %}
+
+{% block content %}
+    <div class="px-4 pt-3 pb-10">
+        <div class="max-w-narrow mx-auto">
+            {% trans "Alert emails" as page_heading %}
+            {% include "includes/_page_title.html" with text=page_heading %}
+            {% if done %}
+                <p class="text-sm text-text-2" data-testid="alert-unsubscribe-done">
+                    {% trans "Done. Snowdesk will not email you bulletin alerts. Notifications on your devices are unchanged." %}
+                </p>
+            {% else %}
+                <p class="text-sm text-text-2 mb-4">
+                    {% trans "Stop bulletin alert emails? Notifications on your devices are unchanged." %}
+                </p>
+                <form method="post" action="{% url 'accounts:alert_unsubscribe' token=token %}">
+                    {# The view is csrf_exempt for RFC 8058's one-click POST; the page's own form still carries a token. #}
+                    {% csrf_token %}
+                    {% trans "Stop alert emails" as stop_label %}
+                    {% include "includes/_button.html" with label=stop_label button_type="submit" %}
+                </form>
+            {% endif %}
+            <p class="text-sm text-text-3 mt-6">
+                <a
+                    href="{% url 'accounts:settings' %}"
+                    class="underline"
+                >{% trans "Change what you get in Settings" %}</a>
+            </p>
+        </div>
+    </div>
+{% endblock %}

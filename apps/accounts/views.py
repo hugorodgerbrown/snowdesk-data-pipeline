@@ -59,7 +59,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
 from django.conf import settings
@@ -87,6 +87,7 @@ from apps import analytics
 from apps.core.decorators import require_htmx
 from apps.core.services.request_log import capture as capture_request_log
 
+from . import alert_views
 from .forms import (
     ChangeEmailForm,
     EmailForm,
@@ -97,6 +98,7 @@ from .forms import (
 from .identity import user_identity
 from .logging_utils import mask_email
 from .models import Account
+from .push_config import VAPID_PUBLIC_KEY
 from .redirects import safe_next
 from .services.active_user import user_may_sign_in
 from .services.deletion import erase_account
@@ -1219,14 +1221,17 @@ def settings_view(request: HttpRequest) -> HttpResponse:
     if not request.user.is_authenticated:
         return redirect("accounts:sign_in")
 
-    return render(
-        request,
-        "accounts/settings.html",
-        {
-            "account": _get_account(request),
-            "connected_apps": _connected_app_rows(request.user),
-        },
-    )
+    account = _get_account(request)
+    context: dict[str, Any] = {
+        "account": account,
+        "connected_apps": _connected_app_rows(request.user),
+    }
+    # SNOW-939: the Alerts group, flag-gated and only for a user with an
+    # Account profile (the preferences live on it).
+    if account is not None and alert_views.alerts_enabled(request):
+        context["alerts"] = alert_views.alert_settings_context(request, account)
+        context["vapid_public_key"] = VAPID_PUBLIC_KEY
+    return render(request, "accounts/settings.html", context)
 
 
 def _connected_app_rows(user: UserType) -> list[dict[str, object]]:

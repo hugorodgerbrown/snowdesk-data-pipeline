@@ -20,6 +20,9 @@ This half is everything the user can change about the account itself:
   - Sync log (SNOW-482) — flag-gated, painted client-side.
   - Anonymous usage data (SNOW-387) — the telemetry opt-in switch.
   - Delete account — the sole hard-delete path, under a danger heading.
+  - Alerts (SNOW-939) — bulletin alert mode, email fallback, this device's
+    push opt-in and one switch per place; flag-gated, in
+    partials/_alert_settings.html.
 
 The delete control read "Unsubscribe from all alerts" until SNOW-667. It
 POSTs to accounts:delete_account, which deletes the User and cascades
@@ -65,6 +68,12 @@ because the repository is the authority and the mock is a drawing:
 
 {% block extra_head %}
     <script src="{% static 'js/htmx.min.js' %}"></script>
+    {# SNOW-1325: the Alerts group's push opt-in, only when the group renders. #}
+    {% if alerts %}
+        <meta name="vapid-public-key" content="{{ vapid_public_key }}">
+        <script src="{% static 'js/alerts_optin_core.js' %}" defer></script>
+        <script src="{% static 'js/alerts_optin.js' %}" defer></script>
+    {% endif %}
 {% endblock %}
 
 {% block content %}
@@ -394,6 +403,19 @@ because the repository is the authority and the mock is a drawing:
                     </div>
                     {% endcard %}
                 </section>
+
+                {% comment %}
+                    —— Alerts ————————————————————————————————
+
+                    SNOW-939: behind the bulletin_alerts flag, and only for
+                    a user with an Account (the preferences live on it).
+                    Between Account and This device because it is about the
+                    account's places, but its device row is about this
+                    browser — it reads as the hinge between the two.
+                {% endcomment %}
+                {% if alerts %}
+                    {% include "accounts/partials/_alert_settings.html" with account=alerts.account alert_places=alerts.alert_places notify_choices=alerts.notify_choices email_choices=alerts.email_choices %}
+                {% endif %}
 
                 {% comment %}
                     —— This device ————————————————————————————

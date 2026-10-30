@@ -242,6 +242,23 @@ def _iter_source_records(source: str) -> Iterator[dict[str, Any]]:
         yield properties
 
 
+def iter_archive_records(source: str) -> Iterator[dict[str, Any]]:
+    """
+    Yield one provider's committed archive as CAAML payloads.
+
+    The public name for :func:`_iter_source_records`, for readers outside
+    the golden week (the bulletin alert replay, SNOW-949).
+
+    Args:
+        source: One of the ``SOURCE_*`` constants.
+
+    Yields:
+        CAAML payload dicts, Météo-France already unwrapped.
+
+    """
+    yield from _iter_source_records(source)
+
+
 def target_day(source: str, raw: dict[str, Any]) -> datetime.date | None:
     """
     Return the day a record forecasts, using that provider's own day key.

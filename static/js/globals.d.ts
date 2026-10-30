@@ -161,6 +161,8 @@ interface Window {
   pwaRouteDrawingCore: any;
   /** static/js/meeting_place_core.js — a meeting point placed against its route. */
   pwaMeetingPlaceCore: any;
+  /** static/js/alerts_optin_core.js — can this device take a bulletin alert (SNOW-1325). */
+  pwaAlertsOptinCore: any;
   /** static/js/route_profile.js — the route profile, on the map and the trip pages. */
   pwaRouteProfile: any;
   /** static/js/trip_form.js — the Plan form's day tiles and read-back. */

@@ -21,6 +21,11 @@
       "name": "route_drawing",
       "note": "Gates drawing a route on the map (SNOW-1255/1256/1257/1259), the draft preview and save endpoints, the routes panel's Draw on the map CTA, the swisstopo ski-routes overlay shown while drawing (SNOW-1261) and the row menu's Download GPX (SNOW-1260). A rollout gate: superusers while it is a prototype. It sits on the surfaces that MAKE a drawn route and never on the ones that read one, so a drawn route shared with, or planned as a trip for, someone outside the flag still works for them.",
       "superusers": true
+    },
+    {
+      "name": "bulletin_alerts",
+      "note": "Gates bulletin alerts (SNOW-937): the Alerts group on /account/settings/, its endpoints, the region-pin prompt and the /alerts/<date>/ landing page. A rollout gate: superusers while the send is proven on staging. The send command reads Account.notify_when, not this flag, so an account that opted in keeps its alerts if the flag is narrowed; the flag decides who can turn them on.",
+      "superusers": true
     }
   ]
 }

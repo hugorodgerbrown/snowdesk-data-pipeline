@@ -1293,6 +1293,14 @@ MAILERS = {
 
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@snowdesk.ch")
 
+# SNOW-1327: bulletin alerts go from their own address, so a person can
+# filter them, and so a complaint about an alert never lands on the address
+# that carries sign-in links. Its domain must pass SPF/DKIM/DMARC alongside
+# DEFAULT_FROM_EMAIL's before the first send (docs/alerts.md).
+ALERTS_FROM_EMAIL = config(
+    "ALERTS_FROM_EMAIL", default="Snowdesk alerts <alerts@snowdesk.ch>"
+)
+
 # ---------------------------------------------------------------------------
 # Map — basemap style JSON URL consumed by MapLibre on /map/
 # ---------------------------------------------------------------------------

@@ -35,12 +35,16 @@ URL map
 /account/push/unregister/             push_unregister        POST
 /account/push/test/                   push_test              POST
 /account/push/subscriptions/          push_subscriptions     GET
+/account/partials/alerts/             alert_settings         POST HTMX (SNOW-939)
+/account/partials/alerts/<uuid>/      alert_place            POST HTMX, one place
+/account/alerts/test/                 alert_test             POST (SNOW-1325)
+/account/alerts/unsubscribe/<token>/  alert_unsubscribe      GET/POST — stop alert email
 """
 
 from django.urls import path
 from django.views.generic import RedirectView
 
-from . import push_views, views, views_passkey
+from . import alert_views, push_views, views, views_passkey
 
 app_name = "accounts"
 
@@ -141,6 +145,22 @@ urlpatterns = [
     path("push/register/", push_views.push_register, name="push_register"),
     path("push/unregister/", push_views.push_unregister, name="push_unregister"),
     path("push/test/", push_views.push_test, name="push_test"),
+    path(
+        "partials/alerts/",
+        alert_views.alert_settings,
+        name="alert_settings",
+    ),
+    path(
+        "partials/alerts/<uuid:favourite_uuid>/",
+        alert_views.alert_place,
+        name="alert_place",
+    ),
+    path("alerts/test/", alert_views.alert_test, name="alert_test"),
+    path(
+        "alerts/unsubscribe/<str:token>/",
+        alert_views.alert_unsubscribe,
+        name="alert_unsubscribe",
+    ),
     path(
         "push/subscriptions/",
         push_views.push_subscriptions,

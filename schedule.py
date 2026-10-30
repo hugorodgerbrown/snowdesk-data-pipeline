@@ -6,6 +6,11 @@ pre-loaded with the recurring data-pipeline jobs:
 
 - **fetch_bulletins** — fires at ``:00`` and ``:05`` of every hour,
   running ``fetch_bulletins --source SLF ALBINA METEOFRANCE --commit``.
+- **send_bulletin_alerts** — fires at ``:10`` of every hour, running
+  ``send_bulletin_alerts --commit``. After both bulletin fetches, so a new
+  issue is announced the hour it lands; it sends only when a place's
+  bulletin moved since the send log last recorded it (SNOW-942), and holds
+  overnight on its own clock.
 - **fetch_weather** — fires at 00:00, 06:00, 12:00 and 18:00 UTC, running
   ``fetch_weather --commit``. Four times a day because a location has no
   live on-demand fetch behind its page render the way a bulletin region
@@ -191,6 +196,16 @@ def _run_fetch_bulletins() -> None:
     )
 
 
+def _run_send_bulletin_alerts() -> None:
+    """Invoke the ``send_bulletin_alerts`` management command."""
+    from django.core.management import (
+        call_command,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
+    )
+
+    logger.info("schedule: firing send_bulletin_alerts")
+    call_command("send_bulletin_alerts", "--commit")
+
+
 def _run_fetch_weather() -> None:
     """Invoke the ``fetch_weather`` management command for every active location."""
     from django.core.management import (
@@ -336,10 +351,12 @@ def build_scheduler() -> BlockingScheduler:
     Returns
     -------
     BlockingScheduler
-        A scheduler with eleven jobs pre-registered:
+        A scheduler with thirteen jobs pre-registered:
 
         ``fetch_bulletins``
             Cron: ``minute=0,5`` (every hour at :00 and :05 UTC).
+        ``send_bulletin_alerts``
+            Cron: ``minute=10`` (every hour, after the fetches, SNOW-942).
         ``fetch_weather``
             Cron: ``hour=0,6,12,18`` (four times a day, on the hour UTC).
         ``backfill_weather``
@@ -376,6 +393,14 @@ def build_scheduler() -> BlockingScheduler:
         switched("fetch_bulletins", _run_fetch_bulletins),
         trigger=CronTrigger(minute="0,5", timezone="UTC"),
         id="fetch_bulletins",
+        **_common,
+    )
+
+    # SNOW-942: at :10, after both bulletin fetches have landed.
+    scheduler.add_job(
+        switched("send_bulletin_alerts", _run_send_bulletin_alerts),
+        trigger=CronTrigger(minute=10, timezone="UTC"),
+        id="send_bulletin_alerts",
         **_common,
     )
 
