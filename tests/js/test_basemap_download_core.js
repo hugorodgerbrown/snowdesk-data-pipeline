@@ -2136,6 +2136,18 @@ describe('areaItemExpectation and stampContentRecord (SNOW-1308)', () => {
     expect('contentIncomplete' in next).toBe(false);
   });
 
+  it('attributes the names only when the answer is the page\'s account', () => {
+    // `X-Snowdesk-Principal` against the page's `pwa-user-id`: agreeing,
+    // disagreeing (a sign-in in another tab), and absent (anonymous).
+    const expectation = core.areaItemExpectation(ITEMS, TEMPLATES);
+
+    expect(core.attestedExpectation(expectation, 'acct-A', 'acct-A').principal).toBe('acct-A');
+    expect(core.attestedExpectation(expectation, 'acct-B', 'acct-A').principal).toBe('');
+    expect(core.attestedExpectation(expectation, '', 'acct-A').principal).toBe('');
+    expect(core.attestedExpectation(expectation, null, '').principal).toBe('');
+    expect(core.attestedExpectation(null, 'acct-A', 'acct-A')).toBeNull();
+  });
+
   it("stamps the syncing session's principal with the names (SNOW-1308 review)", () => {
     // Not the area's own: an area A downloaded can be synced by B, and the
     // names written are B's.

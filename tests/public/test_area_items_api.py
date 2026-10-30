@@ -14,6 +14,8 @@ Covers:
   anonymous      — 200, empty, zero queries.
   bbox validation — a bad box is a 400 that is still ``no-store``.
   response policy — ``private``, ``no-store``, ``Vary: Cookie``, no ETag.
+  attestation    — names its viewer in ``X-Snowdesk-Principal`` (SNOW-1308);
+                   anonymous sends none.
   query cost     — flat: one pin and five pins cost the same.
 """
 
@@ -31,9 +33,11 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.accounts.identity import PRINCIPAL_RESPONSE_HEADER
 from apps.trips.services.participants import join_trip
 from apps.trips.services.shares import mint_trip_share
 from tests.factories import (
+    AccountFactory,
     FavouriteFactory,
     LocationFactory,
     MicroRegionFactory,
@@ -322,6 +326,25 @@ class TestValidationAndPolicy:
         assert {"private", "no-store"} <= directives
         assert "Cookie" in response["Vary"]
         assert not response.has_header("ETag")
+
+    def test_the_answer_names_its_viewer(self, client: Client) -> None:
+        """SNOW-1308: the client stamps names with the account that answered.
+
+        Not the page's render-time ``pwa-user-id``, which a sign-in in
+        another tab can leave stale — so the answer itself says whose it is.
+        """
+        account = AccountFactory.create()
+        client.force_login(account.user)
+
+        response = client.get(_url())
+
+        assert response[PRINCIPAL_RESPONSE_HEADER] == str(account.uuid)
+
+    def test_an_anonymous_answer_names_nobody(self, client: Client) -> None:
+        """No viewer, no header — read as "do not attribute"."""
+        response = client.get(_url())
+
+        assert not response.has_header(PRINCIPAL_RESPONSE_HEADER)
 
     def test_a_post_is_refused(self, client: Client) -> None:
         """Read-only."""

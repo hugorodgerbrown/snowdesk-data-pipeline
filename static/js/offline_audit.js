@@ -647,7 +647,17 @@
         var url = requests[j].url;
         var isPage = looksLikePage(url);
         var principal = null;
-        if (isPage) {
+        // SNOW-1308: a trip's route.geojson and a pin's place sheet are
+        // served offline only under the stamp of the account they were
+        // cached for, as a page is — so the area panels need their stamp
+        // too. Read in the same pass: one walk, one bounded `match` each.
+        var scopedCore = self.pwaOfflineAuditCore;
+        var scoped =
+          isPage ||
+          !!(scopedCore && typeof scopedCore.isPrincipalScoped === 'function' &&
+            scopedCore.isPrincipalScoped(url));
+        var stampUnread = false;
+        if (scoped) {
           // One bounded `match` per page. This is the loop that made the
           // panel unusable on the reported device: a shell cache holds
           // every page the user has visited, and an unbounded `match`
@@ -669,7 +679,12 @@
           // timed-out `match` read as an unstamped page would tell the
           // user "the saved copy belongs to another account" about a page
           // stamped for them all along.
-          if (response === null) pagesComplete = false;
+          if (response === null) {
+            stampUnread = true;
+            // Only a PAGE's unread stamp costs the report's page rows; a
+            // route's or a sheet's costs that one item its answer.
+            if (isPage) pagesComplete = false;
+          }
           // The same header ``sw.js``'s ``_principalMatches`` reads.
           try {
             principal = response ? response.headers.get('X-SW-Principal') : null;
@@ -723,7 +738,13 @@
             }
           }
         }
-        entries.push({ url: url, isPage: isPage, principal: principal });
+        entries.push(
+          scoped && !isPage
+            ? { url: url, isPage: false, principal: principal, scoped: true, stampUnread: stampUnread }
+            : isPage
+              ? { url: url, isPage: true, principal: principal, stampUnread: stampUnread }
+              : { url: url, isPage: false, principal: principal },
+        );
         // The latch, checked inside the hot loop rather than only between
         // caches: a shell cache can hold hundreds of pages, and a device
         // whose Cache Storage has stopped answering must not pay
@@ -1560,9 +1581,12 @@
    *   documented shape — "cannot say".
    */
   async function fetchAreaItems(endpoint, bbox) {
-    var data = await fetchJson(endpoint + '?bbox=' + encodeURIComponent(bbox.join(',')));
+    // SNOW-1308: `meta` collects the answer's `X-Snowdesk-Principal` —
+    // whose things these are, as the server answered — for the stamp.
+    var meta = {};
+    var data = await fetchJson(endpoint + '?bbox=' + encodeURIComponent(bbox.join(',')), meta);
     if (!data || !Array.isArray(data.trips) || !Array.isArray(data.pins)) return null;
-    return data;
+    return Object.assign({}, data, { attestedPrincipal: meta.principal || '' });
   }
 
   /**
@@ -1752,14 +1776,19 @@
     // SNOW-1308: the same things by name, for the stamp — the composition
     // the map's own syncs stamp, so a panel names them whichever surface
     // synced the area.
-    // SNOW-1308 review: stamped with the principal of the session that
-    // synced, so another account's names are never shown back to the
-    // area's downloader (`thingsStage`).
+    // SNOW-1308 review: stamped with the account the SERVER answered for
+    // (`X-Snowdesk-Principal`), and only where that is the account this
+    // page was rendered for — so another account's names are never shown
+    // back as this one's (`attestedExpectation`, `thingsStage`).
     var expectation =
-      items && typeof core.areaItemExpectation === 'function'
-        ? Object.assign(core.areaItemExpectation(items, itemTemplates), {
-            principal: sessionPrincipal(),
-          })
+      items &&
+      typeof core.areaItemExpectation === 'function' &&
+      typeof core.attestedExpectation === 'function'
+        ? core.attestedExpectation(
+            core.areaItemExpectation(items, itemTemplates),
+            items.attestedPrincipal,
+            sessionPrincipal(),
+          )
         : null;
 
     var urls = regionUrls
@@ -1971,9 +2000,11 @@
    * (SNOW-918).
    *
    * @param {string} url
+   * @param {{principal?: string}} [meta] SNOW-1308: filled with the
+   *   answer's `X-Snowdesk-Principal`, where the caller asks.
    * @returns {Promise<Object|null>}
    */
-  async function fetchJson(url) {
+  async function fetchJson(url, meta) {
     var controller =
       typeof AbortController === 'function' ? new AbortController() : null;
     var timer = null;
@@ -1985,6 +2016,15 @@
       }
       var response = await fetch(url, controller ? { signal: controller.signal } : {});
       if (!response || !response.ok) return null;
+      if (meta) {
+        // SNOW-1308: the viewer a private answer names (`attest_principal`).
+        try {
+          meta.principal =
+            (response.headers && response.headers.get('X-Snowdesk-Principal')) || '';
+        } catch (_err) {
+          meta.principal = '';
+        }
+      }
       return await response.json();
     } catch (_err) {
       return null;

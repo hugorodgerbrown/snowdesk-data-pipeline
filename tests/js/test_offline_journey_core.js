@@ -15,6 +15,8 @@ let journey;
 
 const NOW = '2026-09-11T08:00:00.000Z';
 const ORIGIN = 'https://snowdesk.info';
+const TRIP = '11111111-1111-4111-8111-111111111111';
+const PIN = '22222222-2222-4222-8222-222222222222';
 
 /** A region area whose bucket verifies and whose content is today's. */
 function area(overrides) {
@@ -31,8 +33,23 @@ function area(overrides) {
     entries: ['https://t/style.json', 'https://t/14/8510/5815.pbf'],
     contentAt: '2026-09-11T07:00:00.000Z',
     items: {
-      trips: [{ uuid: 't1', name: 'Saturday tour', urls: ['/trips/t1/', '/trips/t1/route.geojson'] }],
-      pins: [{ uuid: 'p1', name: 'Hut', urls: ['/partials/place-sheet/favourite/p1/?d=2026-09-11'] }],
+      trips: [
+        {
+          uuid: TRIP,
+          name: 'Saturday tour',
+          urls: ['/trips/' + TRIP + '/', '/trips/' + TRIP + '/route.geojson'],
+        },
+      ],
+      pins: [
+        {
+          uuid: PIN,
+          name: 'Hut',
+          urls: [
+            '/partials/place-sheet/favourite/' + PIN + '/?d=2026-09-11',
+            '/api/weather/W1/detail/?date=2026-09-11',
+          ],
+        },
+      ],
       // The account whose sync wrote these names (SNOW-1308 review).
       principal: 'acct-1',
     },
@@ -46,10 +63,13 @@ function readings(areas, overrides) {
     now: NOW,
     currentPrincipal: 'acct-1',
     cachesReadable: true,
+    // Each stamped for this reader, as the worker keeps them (SNOW-1308
+    // review: presence alone is not enough for these families).
     shellEntries: [
-      { url: ORIGIN + '/trips/t1/' },
-      { url: ORIGIN + '/trips/t1/route.geojson' },
-      { url: ORIGIN + '/partials/place-sheet/favourite/p1/?d=2026-09-11' },
+      { url: ORIGIN + '/trips/' + TRIP + '/', isPage: true, principal: 'acct-1' },
+      { url: ORIGIN + '/trips/' + TRIP + '/route.geojson', principal: 'acct-1', scoped: true },
+      { url: ORIGIN + '/partials/place-sheet/favourite/' + PIN + '/?d=2026-09-11', principal: 'acct-1', scoped: true },
+      { url: ORIGIN + '/api/weather/W1/detail/?date=2026-09-11' },
     ],
     areas: areas || [area()],
     ...(overrides || {}),
@@ -290,6 +310,45 @@ describe('your things', () => {
 
       expect(p.stages.things).toEqual({ status: 'unknown', reason: 'other-account', rows: [] });
     }
+  });
+
+  it("counts a trip cached under another account's stamp as No (SNOW-1308 review)", () => {
+    // The worker refuses it (`_principalMatches`), so it will not open.
+    const r = readings();
+    r.shellEntries = r.shellEntries.map((entry) =>
+      entry.url.endsWith('route.geojson') ? { ...entry, principal: 'acct-2' } : entry,
+    );
+    const p = panel(r);
+
+    expect(p.stages.things.rows[0]).toEqual({ kind: 'trip', name: 'Saturday tour', status: 'no' });
+    expect(p.verdict).toBe('refresh');
+  });
+
+  it('counts a place sheet or trip page with another stamp, or none, as No', () => {
+    for (const stamp of ['acct-2', null]) {
+      const r = readings();
+      r.shellEntries = r.shellEntries.map((entry) =>
+        entry.url.includes('place-sheet') || entry.isPage ? { ...entry, principal: stamp } : entry,
+      );
+      const p = panel(r);
+
+      expect(p.stages.things.rows.map((row) => row.status)).toEqual(['no', 'no']);
+    }
+  });
+
+  it('reads an unread stamp as unknown, never Yes', () => {
+    const r = readings();
+    r.shellEntries = r.shellEntries.map((entry) =>
+      entry.url.includes('place-sheet') ? { ...entry, principal: null, stampUnread: true } : entry,
+    );
+    const p = panel(r);
+
+    expect(p.stages.things.rows[1]).toEqual({ kind: 'pin', name: 'Hut', status: 'unknown' });
+  });
+
+  it('needs no stamp on a public weather sheet', () => {
+    // The fixture's weather sheet carries none and still counts.
+    expect(panel(readings()).stages.things.rows[1].status).toBe('yes');
   });
 
   it('lists an item with no urls as unknown', () => {

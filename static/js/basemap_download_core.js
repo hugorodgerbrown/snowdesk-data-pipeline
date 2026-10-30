@@ -2917,6 +2917,31 @@
   }
 
   /**
+   * Whose names an expectation is (SNOW-1308).
+   *
+   * `/api/area-items/` names its viewer in `X-Snowdesk-Principal`
+   * (`attest_principal`), and that — not the page's render-time
+   * `pwa-user-id` — is whose trips and pins it listed: a sign-in in
+   * another tab leaves a page's meta stale while its cookie answers for
+   * the new account. The names are attributed only when the answer's
+   * account IS the page's; a missing header (anonymous) or a mismatch
+   * stamps no principal, which the `/offline/` panels read as unknown and
+   * name nothing. Never attributed to the wrong account.
+   *
+   * @param {{trips: Array<Object>, pins: Array<Object>}|null} expectation
+   *   From `areaItemExpectation`.
+   * @param {string|null|undefined} attested The answer's
+   *   `X-Snowdesk-Principal`.
+   * @param {string|null|undefined} pagePrincipal The page's `pwa-user-id`.
+   * @returns {{trips: Array<Object>, pins: Array<Object>, principal: string}|null}
+   */
+  function attestedExpectation(expectation, attested, pagePrincipal) {
+    if (!expectation) return null;
+    const agreed = !!attested && attested === pagePrincipal;
+    return Object.assign({}, expectation, { principal: agreed ? String(attested) : '' });
+  }
+
+  /**
    * One area record after a content sync — the ONE stamping rule
    * (SNOW-1308).
    *
@@ -3427,6 +3452,7 @@
     regionSheetURL: regionSheetURL,
     areaItemURLs: areaItemURLs,
     areaItemExpectation: areaItemExpectation,
+    attestedExpectation: attestedExpectation,
     stampContentRecord: stampContentRecord,
     favouriteSheetURL: favouriteSheetURL,
     weatherDetailURL: weatherDetailURL,

@@ -129,7 +129,11 @@
    *   than an asset — decided by the collector, which is the half that
    *   can afford to look.
    * @property {string|null} [principal] The ``X-SW-Principal`` stamp, on
-   *   pages only. Null where there is none, which is never servable.
+   *   pages and (SNOW-1308) the principal-scoped families
+   *   ``isPrincipalScoped`` names. Null where there is none, which is
+   *   never servable.
+   * @property {boolean} [stampUnread] SNOW-1308: the stamp's read did not
+   *   come back — unknown, never "another account's".
    */
 
   /**
@@ -368,6 +372,35 @@
     if (/\.(png|jpe?g|svg|webp|ico|avif)$/.test(path)) return 'image';
     if (/\.[a-z0-9]{2,5}$/i.test(path)) return 'other';
     return 'page';
+  }
+
+  // SNOW-1308: the two non-page families the worker serves offline only
+  // under a matching `X-SW-Principal` — a trip's route (`'private-json'`)
+  // and a saved pin's place sheet (`'private-partial'`). Restated from
+  // sw.js's PRIVATE_JSON_PATH / PRIVATE_PARTIAL_PATH, for the reason this
+  // module restates `missingRenderDependencies`: it runs on
+  // static/offline.html, where nothing else is loaded. Changing one copy
+  // means changing the other.
+  var PRIVATE_JSON_PATH =
+    /^\/trips\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/route\.geojson$/i;
+  var PRIVATE_PARTIAL_PATH =
+    /^\/partials\/place-sheet\/favourite\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/$/i;
+
+  /**
+   * Whether a cached url is served offline only to the account it was
+   * stamped for (SNOW-1308): any page, a trip's route, a pin's sheet.
+   * Public feeds and weather sheets are not.
+   *
+   * @param {string} url
+   * @returns {boolean}
+   */
+  function isPrincipalScoped(url) {
+    var path = pathOf(url);
+    return (
+      classifyEntry(url) === 'page' ||
+      PRIVATE_JSON_PATH.test(path) ||
+      PRIVATE_PARTIAL_PATH.test(path)
+    );
   }
 
   /**
@@ -2196,6 +2229,8 @@
     countChecks: countChecks,
     missingFrom: missingFrom,
     classifyEntry: classifyEntry,
+    // SNOW-1308: which cached urls need a matching stamp to be served.
+    isPrincipalScoped: isPrincipalScoped,
     pageDependencies: pageDependencies,
     pageDay: pageDay,
     pageBasemaps: pageBasemaps,

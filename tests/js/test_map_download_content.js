@@ -418,6 +418,13 @@ let areaContentStalls = false;
  */
 let areaItemsAnswer = () => AREA_ITEMS;
 
+/**
+ * Whose `/api/area-items/` answer it is (SNOW-1308): its
+ * `X-Snowdesk-Principal`. The page's own account by default.
+ */
+let areaItemsViewer = () =>
+  document.querySelector('meta[name="pwa-user-id"]')?.getAttribute('content') || '';
+
 /** The `AbortSignal` the last `/api/area-content/` request carried, if any. */
 let lastAreaContentSignal = null;
 
@@ -477,7 +484,15 @@ beforeAll(async () => {
         const items = areaItemsAnswer();
         return Promise.resolve(
           items
-            ? { ok: true, json: () => Promise.resolve(items) }
+            ? {
+              ok: true,
+              // SNOW-1308: the viewer the server answered for — the
+              // signed-in account unless a test says otherwise.
+              headers: {
+                get: (name) => (name === 'X-Snowdesk-Principal' ? areaItemsViewer() : null),
+              },
+              json: () => Promise.resolve(items),
+            }
             : { ok: false, status: 500, json: () => Promise.resolve({}) },
         );
       }
@@ -1510,6 +1525,35 @@ describe("the map's syncs stamp what they expected of your things (SNOW-1308)", 
 
     const row = await window.pwaDb.get('meta:app', 'basemap.customAreas');
     expect(row.value[0].items).toEqual(expected());
+  });
+
+  it("never attributes another account's answer to this page's (SNOW-1308 review)", async () => {
+    // A signed in elsewhere as B: the cookie answers for B while this page
+    // still says A. The names are stamped with no principal, so the
+    // /offline/ panels name nothing.
+    areaItemsViewer = () => 'someone-else';
+    try {
+      expect(await window.pwaBasemapDownloads.refreshAreaContent(`region-${REGION_ID}`)).toBe(true);
+    } finally {
+      areaItemsViewer = () =>
+        document.querySelector('meta[name="pwa-user-id"]')?.getAttribute('content') || '';
+    }
+
+    const record = await recordedRegion();
+    expect(record.items.principal).toBe('');
+    expect(record.items.trips.length).toBeGreaterThan(0);
+  });
+
+  it('stamps no principal from an answer that names nobody', async () => {
+    areaItemsViewer = () => '';
+    try {
+      await window.pwaBasemapDownloads.refreshAreaContent(`region-${REGION_ID}`);
+    } finally {
+      areaItemsViewer = () =>
+        document.querySelector('meta[name="pwa-user-id"]')?.getAttribute('content') || '';
+    }
+
+    expect((await recordedRegion()).items.principal).toBe('');
   });
 
   it('leaves the old expectation alone when the items could not be asked', async () => {

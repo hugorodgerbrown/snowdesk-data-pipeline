@@ -56,7 +56,7 @@ function readings(areas, overrides) {
   return {
     now: NOW,
     currentPrincipal: 'acct-1',
-    shellEntries: [{ url: window.location.origin + '/trips/t1/' }],
+    shellEntries: [{ url: window.location.origin + '/trips/t1/', isPage: true, principal: 'acct-1' }],
     areas: areas || [area()],
     ...(overrides || {}),
   };

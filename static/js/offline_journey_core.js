@@ -243,17 +243,43 @@
    * Every url the shell cache holds, or null where it could not be read.
    *
    * @param {any} readings
-   * @returns {Set<string>|null}
+   * @returns {Map<string, any>|null} By url, each to its entry.
    */
   function shellUrls(readings) {
     if (!readings || readings.cachesReadable === false || readings.failure) return null;
-    var urls = new Set();
+    /** @type {Map<string, any>} */
+    var urls = new Map();
     (Array.isArray(readings.shellEntries) ? readings.shellEntries : []).forEach(
       /** @param {any} entry */ function (entry) {
-        if (entry && entry.url) urls.add(entry.url);
+        if (entry && entry.url) urls.set(entry.url, entry);
       },
     );
     return urls;
+  }
+
+  /**
+   * Whether one of your things' urls will open offline for this reader.
+   *
+   * Presence is not enough for the principal-scoped families — a trip page,
+   * its route, a pin's place sheet (`isPrincipalScoped`): the worker
+   * serves those only under a matching `X-SW-Principal`
+   * (`_principalMatches`), so one cached for another account is a No. A
+   * stamp whose read did not come back is unknown. Public weather sheets
+   * need only be there (SNOW-1308 review).
+   *
+   * @param {string} url Absolute.
+   * @param {Map<string, any>} held
+   * @param {string|null} principal
+   * @returns {StageStatus}
+   */
+  function urlState(url, held, principal) {
+    var entry = held.get(url);
+    if (!entry) return 'no';
+    var core = audit();
+    if (!core || typeof core.isPrincipalScoped !== 'function') return 'unknown';
+    if (!core.isPrincipalScoped(url)) return 'yes';
+    if (entry.stampUnread) return 'unknown';
+    return core.principalMatches(entry.principal, principal) ? 'yes' : 'no';
   }
 
   /**
@@ -276,7 +302,7 @@
    * it needs is cached.
    *
    * @param {any} area
-   * @param {{signedIn: boolean, urls: Set<string>|null, origin: string,
+   * @param {{signedIn: boolean, urls: Map<string, any>|null, origin: string,
    *   principal?: string|null}} ctx
    * @returns {Stage|null} Null for a signed-out reader: no stage at all.
    */
@@ -307,12 +333,12 @@
       /** @type {StageStatus} */
       var status = 'unknown';
       if (urls.length > 0 && ctx.urls) {
-        var held = /** @type {Set<string>} */ (ctx.urls);
-        status = urls.every(function (/** @type {string} */ url) {
-          return held.has(absolute(url, ctx.origin));
-        })
-          ? 'yes'
-          : 'no';
+        var held = /** @type {Map<string, any>} */ (ctx.urls);
+        var states = urls.map(function (/** @type {string} */ url) {
+          return urlState(absolute(url, ctx.origin), held, ctx.principal || null);
+        });
+        status =
+          states.indexOf('no') >= 0 ? 'no' : states.indexOf('unknown') >= 0 ? 'unknown' : 'yes';
       }
       rows.push({ kind: kind, name: typeof item.name === 'string' ? item.name : '', status: status });
     };

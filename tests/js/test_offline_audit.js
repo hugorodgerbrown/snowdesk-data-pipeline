@@ -163,6 +163,31 @@ describe('the shell-cache reading', () => {
     expect(asset.principal).toBeNull();
   });
 
+  it("reads the stamp off a trip's route and a pin's sheet, not off a public sheet (SNOW-1308)", async () => {
+    // The worker serves those two families only under a matching stamp, so
+    // the area panels need it — read in the same walk.
+    const route = 'https://snowdesk.info/trips/11111111-1111-4111-8111-111111111111/route.geojson';
+    const sheet =
+      'https://snowdesk.info/partials/place-sheet/favourite/22222222-2222-4222-8222-222222222222/?d=2026-09-11';
+    const weather = 'https://snowdesk.info/api/weather/W1/detail/?date=2026-09-11';
+    installCachesStub({
+      'snowdesk-shell-abc': [
+        { url: route, headers: { 'X-SW-Principal': 'acct-1' } },
+        { url: sheet, headers: { 'X-SW-Principal': 'acct-2' } },
+        { url: weather, headers: { 'X-SW-Principal': 'acct-1' } },
+      ],
+    });
+
+    const readings = await audit.collect();
+    const byUrl = Object.fromEntries(readings.shellEntries.map((entry) => [entry.url, entry]));
+
+    // (`classifyEntry` already reads `.geojson` as a page, so the route's
+    // stamp was read before; the sheet's is new.)
+    expect(byUrl[route].principal).toBe('acct-1');
+    expect(byUrl[sheet]).toMatchObject({ principal: 'acct-2', isPage: false, scoped: true });
+    expect(byUrl[weather].principal).toBeNull();
+  });
+
   it('reads the map page’s own modules out of its cached HTML', async () => {
     // What makes "The app opens" an answer about the page rather than
     // about the cache in general. Seeded at the document's own origin,
@@ -1561,9 +1586,12 @@ describe('Sync now, on the area panels (SNOW-925/951, SNOW-1308)', () => {
 
   let warmed;
   let frAhead = false;
+  // SNOW-1308: whose `/api/area-items/` answer it is (X-Snowdesk-Principal).
+  let itemsViewer = '';
 
   beforeEach(async () => {
     frAhead = false;
+    itemsViewer = '';
     await import('../../static/js/basemap_download_core.js');
     // SNOW-1312: loaded on /offline/ for `latestKnownDate`.
     await import('../../static/js/calendar_core.js');
@@ -1588,7 +1616,12 @@ describe('Sync now, on the area panels (SNOW-925/951, SNOW-1308)', () => {
         if (href === '/api/ratings/?country=fr' && frAhead) {
           body = { ...seasonRatings(), [dayFrom(2)]: { 'FR-01': 2 } };
         }
-        return { ok: true, json: async () => body };
+        // SNOW-1308: the area-items answer names its viewer.
+        const headers = {
+          get: (name) =>
+            name === 'X-Snowdesk-Principal' && href.includes('area-items') ? itemsViewer : null,
+        };
+        return { ok: true, headers, json: async () => body };
       }),
     );
   });
@@ -1985,6 +2018,7 @@ describe('Sync now, on the area panels (SNOW-925/951, SNOW-1308)', () => {
     meta.content = 'acct-B';
     document.head.appendChild(meta);
     onTestFinished(() => meta.remove());
+    itemsViewer = 'acct-B';
     const row = await runPanelWithArea({
       contentAt: '2026-09-01T10:00:00.000Z',
       principal: 'acct-A',
@@ -2033,6 +2067,31 @@ describe('Sync now, on the area panels (SNOW-925/951, SNOW-1308)', () => {
       { timeout: 5000 },
     );
     expect(areaPanel().querySelector('[data-journey-sync]').hidden).toBe(false);
+  });
+
+  it("never attributes another account's answer to this page's (SNOW-1308 review)", async () => {
+    // This page was rendered for A; a sign-in in another tab made the
+    // cookie B's, so /api/area-items/ answered for B. The names are stamped
+    // with no principal, and the panels name nothing.
+    const meta = document.createElement('meta');
+    meta.name = 'pwa-user-id';
+    meta.content = 'acct-A';
+    document.head.appendChild(meta);
+    onTestFinished(() => meta.remove());
+    itemsViewer = 'acct-B';
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+    row.querySelector('[data-journey-sync]').click();
+    await vi.waitUntil(
+      async () => {
+        const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
+        return !!stored.value[0].items;
+      },
+      { timeout: 5000 },
+    );
+
+    const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
+    expect(stored.value[0].items.principal).toBe('');
   });
 
   it('records the shortfall when the warm falls short', async () => {

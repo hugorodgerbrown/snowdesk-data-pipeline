@@ -830,9 +830,11 @@ async function assembleAreaContentURLs(blob) {
   // them, which is not a shortfall; an endpoint that was asked and did
   // not answer is.
   const itemsUrl = mapEl.dataset.areaItemsUrl || '';
+  // SNOW-1308: filled with the answer's `X-Snowdesk-Principal`.
+  const itemsMeta = {};
   const [content, items] = await Promise.all([
     fetchAreaJson(mapEl.dataset.areaContentUrl, bbox, isAreaContent),
-    itemsUrl ? fetchAreaJson(itemsUrl, bbox, isAreaItems) : Promise.resolve(null),
+    itemsUrl ? fetchAreaJson(itemsUrl, bbox, isAreaItems, itemsMeta) : Promise.resolve(null),
   ]);
   const itemsShort = !!itemsUrl && !items;
   if (itemsShort) {
@@ -893,12 +895,16 @@ async function assembleAreaContentURLs(blob) {
   // SNOW-1308 review: with the principal of the session that synced, so
   // the names are shown back only to the account they belong to — the
   // area's own `principal` is its downloader's, not the syncer's.
+  //
+  // Attributed to the account the SERVER answered for, and only where that
+  // is the account this page was rendered for (`attestedExpectation`).
   const expectation =
-    items && typeof core.areaItemExpectation === 'function'
-      ? {
-        ...core.areaItemExpectation(items, itemTemplates),
-        principal: document.querySelector('meta[name="pwa-user-id"]')?.getAttribute('content') || '',
-      }
+    items && typeof core.areaItemExpectation === 'function' && typeof core.attestedExpectation === 'function'
+      ? core.attestedExpectation(
+        core.areaItemExpectation(items, itemTemplates),
+        itemsMeta.principal,
+        document.querySelector('meta[name="pwa-user-id"]')?.getAttribute('content') || '',
+      )
       : null;
   return {
     urls: [...planned, ...itemUrls],
@@ -978,12 +984,14 @@ const AREA_CONTENT_FETCH_BUDGET_MS = 15000;
  * @param {number[]} bbox The area's rectangle, `[west, south, east, north]`.
  * @param {(data: *) => boolean} isValid Whether the parsed answer has the
  *   endpoint's documented shape.
+ * @param {{principal?: string}} [meta] SNOW-1308: filled with the answer's
+ *   `X-Snowdesk-Principal`, where the caller asks.
  * @returns {Promise<Object|null>} The answer, or ``null`` for a missing
  *   endpoint, a failed request, a request that ran out of budget, or an
  *   answer that is not the documented shape — all four are "cannot say",
  *   which the caller reports as a shortfall rather than as an empty area.
  */
-async function fetchAreaJson(endpoint, bbox, isValid) {
+async function fetchAreaJson(endpoint, bbox, isValid, meta) {
   if (!endpoint) return null;
   // Absent AbortController is not a reason to skip the request — it is a
   // reason to run it unbounded, exactly as before this ticket. Every
@@ -999,6 +1007,10 @@ async function fetchAreaJson(endpoint, bbox, isValid) {
     }
     const response = await fetch(url, controller ? { signal: controller.signal } : {});
     if (!response || !response.ok) return null;
+    if (meta) {
+      // SNOW-1308: the viewer a private answer names (`attest_principal`).
+      meta.principal = response.headers?.get?.('X-Snowdesk-Principal') || '';
+    }
     const data = await response.json();
     return isValid(data) ? data : null;
   } catch (_e) {

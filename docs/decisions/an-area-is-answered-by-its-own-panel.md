@@ -72,11 +72,19 @@ storage through the audit afterwards rather than trusting the attempt.
   links to `/offline/?sync=<id>`, and its map stage reads "Can't tell"
   because the tile reading needs the download core.
 - Names are shown only to the account that SYNCED them. Each stamp
-  carries the syncing session's `pwa-user-id` as `items.principal` —
+  carries, as `items.principal`, the account `/api/area-items/` answered
+  for (its `X-Snowdesk-Principal`, `attest_principal`) — and only when
+  that is the page's own `pwa-user-id`; a stale page (a sign-in in
+  another tab) or an anonymous answer stamps none (`attestedExpectation`).
+  It is —
   not the area's own `principal` (SNOW-1142), which is its downloader's:
   another account signed in on the same device can press Sync now, and
   the downloader must not then see that account's trips and pins. A
   missing, empty or different stamp reads "Can't tell" with no names.
+- A thing counts as cached only when the worker would serve it: a trip
+  page, its route and a pin's place sheet must carry this reader's
+  `X-SW-Principal` (`isPrincipalScoped`, read in the same storage walk);
+  an unread stamp is unknown. Public weather sheets need only be there.
 - "Tap to fix" is promised only where Sync now can run (an area whose
   tiles verify); otherwise the verdict is "Can't tell".
 - Remove asks the Manage downloads sheet's own confirmation first.

@@ -2376,3 +2376,18 @@ describe('agreeing with the Manage downloads sheet (SNOW-1138)', () => {
     expect(areaAnswer(region({ terrain: true, terrainTiles: null })).status).toBe('yes');
   });
 });
+
+describe('which cached urls need a matching stamp (SNOW-1308 review)', () => {
+  it.each([
+    ['https://snowdesk.info/trips/11111111-1111-4111-8111-111111111111/', true],
+    ['https://snowdesk.info/trips/11111111-1111-4111-8111-111111111111/route.geojson', true],
+    [
+      'https://snowdesk.info/partials/place-sheet/favourite/22222222-2222-4222-8222-222222222222/?d=2026-09-11',
+      true,
+    ],
+    ['https://snowdesk.info/api/weather/W1/detail/?date=2026-09-11', false],
+    ['https://snowdesk.info/partials/region-sheet/ch-4115/?d=2026-09-11', false],
+  ])('%s → %s', (url, expected) => {
+    expect(core.isPrincipalScoped(url)).toBe(expected);
+  });
+});
