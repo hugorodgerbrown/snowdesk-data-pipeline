@@ -38,6 +38,7 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.accounts.models import Account
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.regions.models import Resort
 from tests.factories import (
@@ -617,8 +618,11 @@ class TestOnTheGround:
 # signed-in reader, the sign-in link for anyone else.
 def _cta(body: str, reader: str) -> str:
     """Return the ``data-reader-cta="<reader>"`` wrapper in ``body``."""
+    # Up to the call's closing tag, so a span inside the button cannot cut it.
     match = re.search(
-        rf'<span\b[^>]*data-reader-cta="{reader}"[^>]*>.*?</span>', body, re.DOTALL
+        rf'<span\b[^>]*data-reader-cta="{reader}"[^>]*>.*?</(?:a|button)>',
+        body,
+        re.DOTALL,
     )
     assert match, f"no {reader} call to report"
     return match.group(0)
@@ -735,6 +739,23 @@ class TestReaderPicksTheCall:
         self, client: Client, django_user_model: Any
     ) -> None:
         client.force_login(django_user_model.objects.create_user("u", "u@example.com"))
+        content = client.get(reverse("public:map")).content.decode()
+        assert re.search(r'id="region-sheet"[^>]*data-reader="signed-in"', content)
+
+    def test_a_signed_in_reader_with_no_account_is_marked_signed_in(
+        self, client: Client, django_user_model: Any
+    ) -> None:
+        """The no-Account case: the mark follows ``is_authenticated``.
+
+        A user with no ``Account`` row (an operator made by
+        ``createsuperuser``) is marked signed in, so online they see Report
+        and the report sheet's verify gate, as before SNOW-1317. Offline they
+        share the anonymous worker partition — the accepted limit in
+        docs/decisions/a-download-looks-forward-and-carries-the-region-sheet.md.
+        """
+        user = django_user_model.objects.create_user("op", "op@example.com")
+        assert not Account.objects.filter(user=user).exists()
+        client.force_login(user)
         content = client.get(reverse("public:map")).content.decode()
         assert re.search(r'id="region-sheet"[^>]*data-reader="signed-in"', content)
 

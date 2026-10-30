@@ -3812,7 +3812,10 @@ function _offlineMissResponse() {
  * under one account shows whoever opens it their own call.
  * ``tests/public/test_region_sheet.py``'s ``TestOfflineCopy`` holds the
  * body to being byte-identical across readers. It is rendered in the
- * reader's language and kept in the one it was saved in.
+ * reader's language and kept in the one it was saved in. Accepted limit: a
+ * signed-in user with no Account (``pwa-user-id`` ``""``, an operator made
+ * by ``createsuperuser``) shares the anonymous partition offline, so may be
+ * served the signed-out map page and see "Sign in to report".
  *
  * Online, an ok, ``basic``, non-``no-store`` answer is kept under
  * ``_publicPartialKey`` — path and ``d`` — and anything else (a 400 for a

@@ -29,7 +29,10 @@ opens the sheet offline. "On the ground"'s call to report renders both its
 forms — the report button and the sign-in link — and the sheet's
 ``data-reader``, rendered with the map page from ``user.is_authenticated``
 (public/partials/_region_sheet_surface.html), shows the reader's own by one
-CSS rule. The one exception is the staff callout; see
+CSS rule. Accepted limit: offline, a signed-in user with no ``Account``
+(``pwa-user-id`` is ``""``; an operator made with ``createsuperuser``) shares
+the worker's anonymous partition, so may get the signed-out map page and see
+"Sign in to report". The one exception is the staff callout; see
 ``_renders_staff_callout``.
 
 The sheet opens on every width since SNOW-1173: a bottom sheet on a phone,

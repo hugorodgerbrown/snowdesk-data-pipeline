@@ -83,11 +83,14 @@ A body is served in the language it was saved in.
 
 **Accepted limit: a signed-in reader with no verified Account.** The
 attribute follows `user.is_authenticated`, exactly the test the server's
-branch used, not `user_is_verified`. A signed-in reader with no `Account`
-row, or an unverified one, sees "Report" and the button opens the report
-sheet's verify gate (`report.js`'s `gateHtml`). That is what they saw online
-before this ticket; it is not new, and a third form for it would be a
-product change this ticket does not make.
+branch used, not `user_is_verified`. Online, a signed-in reader with no
+`Account` row, or an unverified one, sees "Report" and the button opens the
+report sheet's verify gate (`report.js`'s `gateHtml`), as before this
+ticket. Offline it can differ for a reader with no `Account` row: their
+`pwa-user-id` is `""`, so they share the worker's anonymous partition, and
+the map page it serves them may be the signed-out copy — in which case they
+see "Sign in to report". The only such accounts are operators made with
+`createsuperuser`, and the limit is accepted.
 
 The one other reader-dependent branch is the staff callout on a bulletin
 that failed processing (version 0): the admin link, the bulletin id and the
