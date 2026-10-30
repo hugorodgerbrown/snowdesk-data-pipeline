@@ -8,13 +8,21 @@ weather page. Drawn as the resort page's forecast link is ("Read the full
 7-day forecast →": a small accent text link under the weather), not as a
 third full-width button.
 
+SNOW-1313: the link carries the borrowed point's short id, and on the map
+``static/js/map_place_sheet.js`` takes the click and opens that point's
+weather sheet for the map's day (``window.pwaWeatherDetail.open``) instead
+of navigating — online and offline alike, so a downloaded area's saved
+sheet answers it. The ``href`` stays as the no-JS fallback.
+
 Context:
-  forecast_url — the location's weather page for the day, or "" (no link).
+  forecast_url      — the location's weather page for the day, or "" (no link).
+  forecast_short_id — that location's short id, or "" (no attribute).
 {% endcomment %}
 {% if forecast_url %}
     <a
         href="{{ forecast_url }}"
         class="inline-block text-sm text-accent hover:text-accent-hover"
         data-testid="place-sheet-forecast-link"
+        {% if forecast_short_id %}data-forecast-short-id="{{ forecast_short_id }}"{% endif %}
     >{% trans "Full forecast →" %}</a>
 {% endif %}
