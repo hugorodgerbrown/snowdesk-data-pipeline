@@ -55,7 +55,9 @@ See "Going public" before turning either on.
 - **Modes.** `NEW_BULLETIN` restates the establishing issue every day;
   `CHANGES` sends only when the state moved from the day before — except
   on a saved trip's day, whose establishing issue always sends (Hugo,
-  2026-10-30: the night before you go, you want the bulletin). A changed
+  2026-10-30: the night before you go, you want the bulletin). A pin's
+  quiet day logged `SKIPPED` before the trip was saved does not count as
+  the trip's alert. A changed
   update to a day already told sends in either mode. A reissue a reader
   could not tell apart (same fingerprint) never sends.
 - **One day per place.** If today and tomorrow both fire for one place,

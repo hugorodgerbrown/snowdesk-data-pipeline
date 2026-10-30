@@ -433,9 +433,15 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
             fingerprint = current.fingerprint()
             # A FAILED row reached nobody, so it is not what the person was
             # last told: compare against the row before it, and send again.
+            untold = [BulletinAlert.Outcome.FAILED]
+            if place.trip_url and day > today:
+                # A trip's evening alert always sends, so a quiet day logged
+                # SKIPPED for the pin before the trip was saved was not the
+                # trip's alert: look past it to what was actually sent.
+                untold.append(BulletinAlert.Outcome.SKIPPED)
             last = (
                 BulletinAlert.objects.for_day(account.pk, place.region.pk, day)
-                .exclude(outcome=BulletinAlert.Outcome.FAILED)
+                .exclude(outcome__in=untold)
                 .first()
             )
             if last is not None and last.fingerprint == fingerprint:

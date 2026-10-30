@@ -443,6 +443,40 @@ class TestTripDay:
         row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
         assert row.outcome == BulletinAlert.Outcome.SENT
 
+    def test_trip_saved_after_a_quiet_skip_still_sends(self, traveller: tuple) -> None:
+        """A pin's SKIPPED quiet day does not swallow a trip saved after it."""
+        account, region = traveller
+        FavouriteFactory.create(user=account.user, region=region, region_pin=True)
+        for day in (TODAY, TOMORROW):
+            BulletinAlertFactory.create(
+                account=account,
+                region=region,
+                target_date=day,
+                fingerprint=state("considerable").fingerprint(),
+                state=state("considerable").to_json(),
+                outcome=(
+                    BulletinAlert.Outcome.SENT
+                    if day == TODAY
+                    else BulletinAlert.Outcome.SKIPPED
+                ),
+            )
+        publish(region, TODAY, render("considerable"))
+        publish(region, TOMORROW, render("considerable"))
+        assert evaluate_account(account, NOW).message is None
+
+        TripFactory.create(created_by=account.user, date=TOMORROW, name="Mont Fort")
+        PushSubscriptionFactory.create(account=account)
+        with (
+            patch.object(alerts, "start_region", return_value=region),
+            patch.object(alerts, "dispatch_push", return_value=OK),
+        ):
+            run = deliver(evaluate_account(account, NOW))
+            assert run.message is not None
+            row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
+            assert row.outcome == BulletinAlert.Outcome.SENT
+            # Told now: the next run is quiet.
+            assert evaluate_account(account, NOW).message is None
+
     def test_pinned_place_in_changes_mode_stays_quiet(self, traveller: tuple) -> None:
         """Without the trip the same quiet day sends nothing."""
         account, region = traveller
