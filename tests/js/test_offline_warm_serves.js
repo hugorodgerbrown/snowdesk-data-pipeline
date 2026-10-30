@@ -691,8 +691,16 @@ describe('every produced url belongs to a family', () => {
     // family this file has never warmed. Read off the source, so it fails
     // here first.
     expect(readsOf(download.areaContentURLs, 'opts')).toEqual(Object.keys(CONTENT_INPUT).sort());
-    expect(readsOf(download.areaItemURLs, 'tpl')).toEqual(Object.keys(ITEM_TEMPLATES).sort());
-    expect(readsOf(download.areaItemURLs, 'items')).toEqual(Object.keys(ITEMS_INPUT).sort());
+    // SNOW-1308: `areaItemURLs` flattens `areaItemExpectation`, which is
+    // where the templates and item kinds are read.
+    expect(download.areaItemURLs.toString()).toContain('areaItemExpectation(');
+    expect(readsOf(download.areaItemURLs, 'tpl')).toEqual([]);
+    expect(readsOf(download.areaItemExpectation, 'tpl')).toEqual(
+      Object.keys(ITEM_TEMPLATES).sort(),
+    );
+    expect(readsOf(download.areaItemExpectation, 'items')).toEqual(
+      Object.keys(ITEMS_INPUT).sort(),
+    );
   });
 });
 
