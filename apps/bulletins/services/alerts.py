@@ -52,7 +52,6 @@ import datetime
 import logging
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
-from zoneinfo import ZoneInfo
 
 from django.db import transaction
 from django.urls import reverse
@@ -63,6 +62,7 @@ from apps.accounts.push_service import dispatch_push
 from apps.accounts.services.alert_email import send_alert_email
 from apps.bulletins.models import Bulletin, BulletinAlert, RegionDayRating
 from apps.bulletins.services.alert_wording import (
+    ALERT_TZ,
     AlertKind,
     AlertMessage,
     PlaceAlert,
@@ -85,7 +85,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-ALERT_TZ = ZoneInfo("Europe/Zurich")
 NIGHT_STARTS = datetime.time(22, 0)
 NIGHT_ENDS = datetime.time(6, 30)
 
@@ -479,6 +478,8 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
                     change=r.decision.change,
                     compared_to=r.decision.compared_to,
                     url=r.place.trip_url,
+                    valid_from=r.bulletin.valid_from,
+                    valid_until=r.bulletin.valid_to,
                 )
                 for r in sending
             ],

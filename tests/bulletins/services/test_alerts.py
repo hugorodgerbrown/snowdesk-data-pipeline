@@ -208,7 +208,7 @@ class TestEvaluateAndDeliver:
         with patch.object(alerts, "dispatch_push", return_value=OK) as push:
             run = deliver(evaluate_account(account, NOW))
         assert run.message is not None
-        assert run.message.title == "Verbier · Saturday: Considerable (3)"
+        assert run.message.title == "Verbier bulletin"
         push.assert_called_once()
         # Today fired too (no row, alerts predate it) but one place is named
         # once: today is logged skipped, tomorrow is the message.
@@ -236,7 +236,7 @@ class TestEvaluateAndDeliver:
         (row,) = run.rows
         assert row.decision.kind == "update"
         assert run.message is not None
-        assert "updated for Saturday" in run.message.title
+        assert run.message.title == "Verbier bulletin updated"
 
     def test_a_state_that_recurs_is_told_once(self, follower: tuple) -> None:
         """A, then B, then A again: the return of A sends once, not every run."""
@@ -393,7 +393,7 @@ class TestEvaluateAndDeliver:
         publish(other, TOMORROW, render("considerable"))
         run = evaluate_account(account, NOW)
         assert run.message is not None
-        assert run.message.title == "Tomorrow for your 2 places"
+        assert run.message.title == "Bulletins for your 2 places"
         assert run.message.url == "/alerts/2026-01-17/"
 
     def test_bulletin_without_render_model_is_ignored(self, follower: tuple) -> None:

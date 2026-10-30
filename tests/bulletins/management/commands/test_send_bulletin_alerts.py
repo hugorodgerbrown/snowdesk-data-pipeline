@@ -63,7 +63,7 @@ def test_dry_run_writes_nothing(follower: Account) -> None:
     """Without --commit the run reports and writes nothing."""
     out = run()
     assert "[READ-ONLY]" in out
-    assert "Verbier · Saturday: Moderate (2)" in out
+    assert "Verbier bulletin" in out
     assert not BulletinAlert.objects.exists()
     tally = CommandRun.objects.latest("id").counts
     assert tally["accounts"] == 1
