@@ -100,15 +100,19 @@ describe('the shipped offline page', () => {
     );
 
     // SNOW-907 added two more, for the offline-content report; SNOW-922 a
-    // fourth, for the Offline mode switch. Each subresource here is
-    // admitted on the same ground the reset script was: it carries a
-    // control that has to reach a user whose only reachable page is this
-    // one, and the worker precaches it by this exact path.
+    // fourth, for the Offline mode switch; SNOW-1308 three, for the
+    // per-area panels and their removal. Each subresource here is admitted
+    // on the same ground the reset script was: it carries a control that
+    // has to reach a user whose only reachable page is this one, and the
+    // worker precaches it by this exact path.
     expect(sources).toEqual([
       RESET_SCRIPT,
       '/static/js/pwa_network_mode.js',
       '/static/js/offline_audit_core.js',
       '/static/js/offline_audit.js',
+      '/static/js/basemap_area_removal.js',
+      '/static/js/offline_journey_core.js',
+      '/static/js/offline_journey.js',
     ]);
     // The six-step wipe belongs to pwa_reset.js alone — a second copy here
     // would drift the moment either side changed.

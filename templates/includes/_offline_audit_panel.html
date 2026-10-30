@@ -27,10 +27,13 @@ A caller must load both scripts:
     {% templatetag openblock %} static 'js/offline_audit_core.js' {% templatetag closeblock %}
     {% templatetag openblock %} static 'js/offline_audit.js' {% templatetag closeblock %}
 
-Nothing here runs on load. The report is taken when the user asks for it:
-it walks every Cache Storage bucket and opens IndexedDB, which is cheap
-but not free, and a device is in no state to be doing it on every render
-of a page nobody came here to audit.
+Nothing here paints on load. The report is drawn when the user asks for
+it: it walks every Cache Storage bucket and opens IndexedDB, which is
+cheap but not free. SNOW-1308: the area panels above it
+(_offline_journey.html) ask this module for ONE read on load — on
+/offline/ and the fallback page they are the first answer the reader
+came for — and the report reuses that collection's machinery rather than
+taking a second walk of its own.
 {% endcomment %}
 {% load i18n components %}
 
