@@ -265,6 +265,10 @@
     { id: 'danger-ratings', section: 'map', critical: false },
     { id: 'region-shapes', section: 'map', critical: false },
     { id: 'bulletins', section: 'content', critical: false },
+    // SNOW-1312: the map's region sheets an area download saves for its
+    // regions on today and each forward day — what a downloaded region
+    // shows when it is tapped offline.
+    { id: 'region-sheets', section: 'content', critical: false },
     { id: 'saved-places', section: 'content', critical: false },
     { id: 'routes', section: 'content', critical: false },
     { id: 'reports', section: 'content', critical: false },
@@ -360,11 +364,17 @@
    * round trip per entry on a device that may hold hundreds.
    *
    * @param {string} url
-   * @returns {'page'|'script'|'style'|'font'|'image'|'feed'|'other'}
+   * SNOW-1312: an HTMX fragment under ``/partials/`` is a ``'partial'``,
+   * not a page — the region sheets a download saves are fragments with no
+   * principal stamp and no scripts, so reading each one's response the way
+   * a page is read would cost a round trip apiece and answer nothing.
+   *
+   * @returns {'page'|'partial'|'script'|'style'|'font'|'image'|'feed'|'other'}
    */
   function classifyEntry(url) {
     var path = pathOf(url);
     if (path.startsWith('/api/')) return 'feed';
+    if (path.startsWith('/partials/')) return 'partial';
     if (/\.m?js$/.test(path)) return 'script';
     if (/\.css$/.test(path)) return 'style';
     if (/\.(woff2?|ttf|otf)$/.test(path)) return 'font';
@@ -944,6 +954,22 @@
     return REGION_ID.test(segments[0]);
   }
 
+  // SNOW-1312: the map's region sheet, as the worker keys it.
+  var REGION_SHEET_PATH = /^\/partials\/region-sheet\/[^/]+\/$/;
+
+  /**
+   * How many region sheets the shell cache holds (SNOW-1312) — one per
+   * region and day, as the worker keys them.
+   *
+   * @param {AuditReadings} r
+   * @returns {number}
+   */
+  function regionSheets(r) {
+    return (Array.isArray(r.shellEntries) ? r.shellEntries : []).filter(function (entry) {
+      return !!entry && !!entry.url && REGION_SHEET_PATH.test(pathOf(entry.url));
+    }).length;
+  }
+
   // SNOW-914: the overlays ``map_overlay_offline_cache.js`` stamps with a
   // principal and refuses to read back for anyone else. Restated here for
   // the reason everything in this module is restated — the report must not
@@ -1310,6 +1336,7 @@
       'danger-ratings',
       'region-shapes',
       'bulletins',
+      'region-sheets',
     ];
     if (r.cachesReadable === false && CACHE_ROWS.indexOf(id) >= 0) {
       return { status: 'unknown' };
@@ -1468,6 +1495,25 @@
       return readable.length > 0
         ? { status: 'yes' }
         : { status: 'no', note: s(t, 'note-no-bulletins') };
+    }
+
+    if (id === 'region-sheets') {
+      // SNOW-1312: what a downloaded region shows when it is tapped
+      // offline — the map's own sheet, saved per region and forward day.
+      // Read off the urls alone: a sheet is public, so there is no stamp
+      // to check, and the worker serves whatever it holds for that day.
+      // A Yes carries no note: a note on a Yes is a caveat, and the
+      // summary would repeat it.
+      if (regionSheets(r) > 0) return { status: 'yes' };
+      // Nothing downloaded means nothing to have saved — neither a
+      // capability nor a fault, so it counts towards neither side, as an
+      // empty overlay does.
+      var downloaded = (Array.isArray(r.areas) ? r.areas : []).some(function (area) {
+        return area && area.kind !== 'base';
+      });
+      return downloaded
+        ? { status: 'no', note: s(t, 'note-no-region-sheets') }
+        : { status: 'unknown', reason: 'empty', note: s(t, 'note-empty-region-sheets') };
     }
 
     if (id === 'saved-places') {

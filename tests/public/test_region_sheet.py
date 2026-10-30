@@ -620,3 +620,111 @@ class TestOnTheGround:
         )
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert f'data-observation-submission="{report.submission}"' in content
+
+
+# SNOW-1312: the call to report, as the sheet renders it for each kind of
+# reader — the one element of the body that depends on who is asking.
+_REPORT_CTA = re.compile(
+    r'<a\b[^>]*href="[^"]*/sign-in/[^"]*"[^>]*>.*?</a>'
+    r'|<button\b[^>]*data-action="open-report"[^>]*>.*?</button>',
+    re.DOTALL,
+)
+
+
+# The EAWS glossary popovers number their ids from a counter that runs on
+# across renders (``g-lee-slope-1`` here, ``-5`` the next time), which says
+# nothing about the reader.
+_GLOSSARY_ID = re.compile(r"\b(g-[a-z0-9-]+?)-\d+\b")
+
+
+def _comparable(body: str) -> str:
+    """Return ``body`` without its call to report, ids and spacing evened."""
+    return " ".join(_GLOSSARY_ID.sub(r"\1-N", _REPORT_CTA.sub("", body)).split())
+
+
+@pytest.mark.django_db
+class TestOfflineCopy:
+    """SNOW-1312: an area download keeps this body unstamped, so the worker
+    serves the copy it saved to whoever opens the sheet offline. That is
+    sound only while the body carries nothing about the reader.
+
+    It is not byte-identical: "On the ground"'s call to report is a report
+    button for a signed-in reader and a sign-in link otherwise (SNOW-1291),
+    so a copy saved under one serves the other's button. These pin that
+    this button is the ONLY difference, so anything else about the reader
+    reaching the body fails here.
+    """
+
+    def _bodies(self, client: Client, django_user_model: Any) -> tuple[str, str]:
+        """Render one region's sheet signed out, then signed in."""
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        FieldObservationFactory.create(region=region, observed_at=timezone.now())
+        url = _url(region.region_id.lower(), timezone.localdate().isoformat())
+        anonymous = _get(client, url).content.decode()
+        user = django_user_model.objects.create_user(
+            "reader", "reader@example.com", first_name="Zebedee"
+        )
+        client.force_login(user)
+        signed_in = _get(client, url).content.decode()
+        return anonymous, signed_in
+
+    def test_the_body_is_the_same_for_every_reader_but_the_call_to_report(
+        self, client: Client, django_user_model: Any
+    ) -> None:
+        anonymous, signed_in = self._bodies(client, django_user_model)
+
+        assert len(_REPORT_CTA.findall(anonymous)) == 1
+        assert len(_REPORT_CTA.findall(signed_in)) == 1
+        assert _comparable(anonymous) == _comparable(signed_in)
+
+    def test_the_body_names_nothing_about_the_reader(
+        self, client: Client, django_user_model: Any
+    ) -> None:
+        _anonymous, signed_in = self._bodies(client, django_user_model)
+
+        for detail in ("reader@example.com", "Zebedee", 'name="csrfmiddlewaretoken"'):
+            assert detail not in signed_in
+
+    def _failed_bulletin_url(self) -> str:
+        """A region whose today's bulletin failed processing (version 0)."""
+        region = MicroRegionFactory.create()
+        day = timezone.localdate()
+        RegionDayRatingFactory.create(
+            region=region, date=day, max_rating="considerable"
+        )
+        start = datetime.datetime.combine(day, datetime.time.min, tzinfo=datetime.UTC)
+        bulletin = BulletinFactory.create(
+            issued_at=start,
+            valid_from=start,
+            valid_to=start + datetime.timedelta(days=1),
+            render_model={"version": 0, "error": "Synthetic processing error"},
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        RegionBulletinFactory.create(bulletin=bulletin, region=region)
+        return _url(region.region_id.lower(), day.isoformat())
+
+    def test_a_staff_body_with_the_error_callout_is_never_kept(
+        self, client: Client, django_user_model: Any
+    ) -> None:
+        """The staff callout names the admin and the error: never stored."""
+        url = self._failed_bulletin_url()
+        staff = django_user_model.objects.create_user("staff", is_staff=True)
+        client.force_login(staff)
+
+        response = _get(client, url)
+
+        assert "Synthetic processing error" in response.content.decode()
+        assert "no-store" in response["Cache-Control"]
+
+    def test_everyone_else_gets_a_keepable_failed_bulletin(
+        self, client: Client, django_user_model: Any
+    ) -> None:
+        """Only the staff variant is refused; the public one stays offline."""
+        url = self._failed_bulletin_url()
+        client.force_login(django_user_model.objects.create_user("plain"))
+
+        response = _get(client, url)
+
+        assert "Synthetic processing error" not in response.content.decode()
+        assert "no-store" not in response["Cache-Control"]

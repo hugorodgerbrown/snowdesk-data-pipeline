@@ -45,6 +45,7 @@ document.body.innerHTML = `
   <template id="region-sheet-strings-template">
     <span data-string="loading">Loading region details…</span>
     <span data-string="failed">Region details are unavailable offline.</span>
+    <span data-string="notDownloaded">This day isn't downloaded for offline use.</span>
   </template>
   <template id="region-sheet-peek-template"><div data-sheet-peek>
     <span class="danger-tile" data-level="no_rating" data-region-sheet-slot="rating">–</span>
@@ -215,6 +216,42 @@ describe('opening', () => {
     await settle();
     expect(sheet.textContent).toContain('Region details are unavailable offline.');
     expect(sheet.textContent).toContain('Martigny-Verbier');
+  });
+});
+
+describe("a day the device didn't download (SNOW-1312)", () => {
+  /** The worker's offline-miss 504, as `_offlineMissResponse` builds it. */
+  function offlineMiss() {
+    return Promise.resolve({
+      ok: false,
+      status: 504,
+      headers: new Headers({ 'X-SW-Cache': 'miss', 'X-SW-Offline-Miss': '1' }),
+      text: () => Promise.resolve(''),
+    });
+  }
+
+  it('says the day is not downloaded, under the peek it keeps', async () => {
+    fetchMock.mockImplementation(offlineMiss);
+    const sheet = await boot();
+    select('CH-4115', 'tap', { region_name: 'Martigny-Verbier' });
+    await settle();
+
+    expect(sheet.textContent).toContain("This day isn't downloaded for offline use.");
+    expect(sheet.textContent).not.toContain('Region details are unavailable offline.');
+    expect(sheet.textContent).toContain('Martigny-Verbier');
+    expect(sheet.querySelector('[data-sheet-peek]')).not.toBeNull();
+  });
+
+  it('keeps the general line for any other failure', async () => {
+    fetchMock.mockImplementation(() =>
+      Promise.resolve({ ok: false, status: 504, headers: new Headers(), text: () => Promise.resolve('') }),
+    );
+    const sheet = await boot();
+    select('CH-4115', 'tap', { region_name: 'Martigny-Verbier' });
+    await settle();
+
+    expect(sheet.textContent).toContain('Region details are unavailable offline.');
+    expect(sheet.textContent).not.toContain("isn't downloaded");
   });
 });
 

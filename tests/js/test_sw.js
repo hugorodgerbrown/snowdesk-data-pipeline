@@ -175,6 +175,9 @@ const SW_EXPORTS = [
   '_signedInPrincipal',
   '_privateJsonNetworkFirst',
   '_publicJsonNetworkFirst',
+  // SNOW-1312: the map's region sheet, read offline on path + `d`.
+  '_publicPartialNetworkFirst',
+  '_publicPartialKey',
   // SNOW-1311: the activation-time carry of the user's content out of the
   // old shell caches, and its budget.
   '_carryShellContent',
@@ -4340,6 +4343,192 @@ describe('a trip route and a weather sheet are read offline (SNOW-965)', () => {
   });
 });
 
+describe("the map's region sheet is read offline on its day (SNOW-1312)", () => {
+  const SHELL = 'snowdesk-shell-UNSUBSTITUTED';
+  const SHEET = `${ORIGIN}/partials/region-sheet/ch-4115/`;
+  const TODAY = '2026-01-06';
+  const KEY = `${SHEET}?d=${TODAY}`;
+
+  /** The sheet's own request — map_region_sheet.js sends `HX-Request`. */
+  function sheetRequest(url) {
+    return {
+      url,
+      method: 'GET',
+      mode: 'cors',
+      destination: '',
+      headers: new Headers({ 'HX-Request': 'true' }),
+    };
+  }
+
+  /** A same-origin fragment, as `region_sheet_partial` answers. */
+  function fragment(body, status) {
+    return basicResponse(body, {
+      status: status || 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, max-age=600' },
+    });
+  }
+
+  /** Dispatch one fetch event at the real listener; resolve its answer. */
+  async function dispatchFetch(sw, request) {
+    let promise = null;
+    sw.__listeners.fetch({
+      request,
+      clientId: '',
+      respondWith(value) {
+        promise = value;
+      },
+    });
+    return promise;
+  }
+
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  it('classifies the region sheet alone, with and without the core', () => {
+    for (const withCore of [true, false]) {
+      const sw = loadSw(withCore ? { core } : {});
+      const classify = (url) => sw._classifySync(sheetRequest(url), new URL(url));
+
+      expect(classify(`${SHEET}?d=${TODAY}&r=123`)).toBe('public-partial');
+      expect(classify(`${ORIGIN}/partials/region-sheet/FR-01/`)).toBe('public-partial');
+      // The place sheet (SNOW-1313) and every other fragment stay network.
+      expect(classify(`${ORIGIN}/partials/place-sheet/abc/?d=${TODAY}`)).toBe('network');
+      expect(classify(`${ORIGIN}/partials/region-sheet/wp-login/`)).toBe('network');
+      // The weather sheet keeps its own class.
+      expect(classify(`${ORIGIN}/api/weather/Ab3dE_fGh1J/detail/`)).toBe('public-json');
+    }
+  });
+
+  it('keys an entry on path and `d` alone, and needs `d`', () => {
+    const sw = loadSw();
+    const key = (url) => sw._publicPartialKey(new URL(url));
+
+    expect(key(`${SHEET}?d=${TODAY}`)).toBe(KEY);
+    expect(key(`${SHEET}?r=1793360738745&d=${TODAY}&x=y`)).toBe(KEY);
+    expect(key(SHEET)).toBeNull();
+    expect(key(`${SHEET}?d=tomorrow`)).toBeNull();
+    // Two days: the worker and Django would disagree on which.
+    expect(key(`${SHEET}?d=${TODAY}&d=2026-01-01`)).toBeNull();
+  });
+
+  it('warms with `HX-Request` and keeps the sheet under its key, unstamped', async () => {
+    const caches = makeCaches();
+    const fetchSpy = vi.fn(async () => fragment('<p>sheet</p>'));
+    const sw = loadSw({ caches, fetch: fetchSpy });
+
+    const result = await sw._warmCache([`/partials/region-sheet/ch-4115/?d=${TODAY}`]);
+
+    expect(result).toMatchObject({ ok: 1, failed: 0 });
+    expect(fetchSpy.mock.calls[0][1]).toEqual({ headers: { 'HX-Request': 'true' } });
+    const stored = await (await caches.open(SHELL)).match(KEY);
+    expect(await stored.text()).toBe('<p>sheet</p>');
+    expect(stored.headers.get(sw.PRINCIPAL_HEADER)).toBeNull();
+    // A fragment is not a page: nothing it names is warmed after it.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends no `HX-Request` for any other url it warms', async () => {
+    const fetchSpy = vi.fn(async () => basicResponse('{}', { headers: { 'Content-Type': 'application/json' } }));
+    const sw = loadSw({ fetch: fetchSpy });
+
+    await sw._warmCache([`/api/ratings/?d=${TODAY}&country=ch`]);
+
+    expect(fetchSpy.mock.calls[0]).toHaveLength(1);
+  });
+
+  it('counts a sheet that will not warm as a failure, and keeps nothing', async () => {
+    for (const status of [400, 404, 500]) {
+      const caches = makeCaches();
+      const sw = loadSw({ caches, fetch: async () => fragment('nope', status) });
+
+      expect(await sw._warmCache([`/partials/region-sheet/ch-4115/?d=${TODAY}`]))
+        .toMatchObject({ ok: 0, failed: 1 });
+      expect(caches.size(SHELL)).toBe(0);
+    }
+    // An undated sheet has no key the offline read could find.
+    const caches = makeCaches();
+    const undated = loadSw({ caches, fetch: async () => fragment('<p>x</p>') });
+    expect(await undated._warmCache(['/partials/region-sheet/ch-4115/']))
+      .toMatchObject({ ok: 0, failed: 1 });
+    expect(caches.size(SHELL)).toBe(0);
+  });
+
+  it('serves a warmed sheet offline whatever `r` the sheet sends', async () => {
+    const caches = makeCaches();
+    const state = { online: true };
+    const fetchSpy = vi.fn(async () => {
+      if (!state.online) throw new TypeError('Failed to fetch');
+      return fragment('<p>warm</p>');
+    });
+    const sw = loadSw({ caches, fetch: fetchSpy });
+    await sw._warmCache([`/partials/region-sheet/ch-4115/?d=${TODAY}`]);
+    state.online = false;
+    await settleHydration(sw);
+    sw._forceOffline();
+    fetchSpy.mockClear();
+
+    const response = await dispatchFetch(sw, sheetRequest(`${SHEET}?d=${TODAY}&r=1793360738745`));
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('<p>warm</p>');
+    expect(response.headers.get('X-SW-Cache')).toBe('hit');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('answers a day it does not hold with the offline-miss 504', async () => {
+    const caches = makeCaches();
+    caches.seed(SHELL, KEY, new Response('<p>today</p>'));
+    const sw = loadSw({ caches });
+
+    const otherDay = await sw._publicPartialNetworkFirst(sheetRequest(`${SHEET}?d=2026-01-05`));
+    const undated = await sw._publicPartialNetworkFirst(sheetRequest(SHEET));
+
+    for (const response of [otherDay, undated]) {
+      expect(response.status).toBe(504);
+      expect(response.headers.get('X-SW-Offline-Miss')).toBe('1');
+    }
+  });
+
+  it('keeps an ok sheet fetched online under its key, and never a 400 or 404', async () => {
+    const caches = makeCaches();
+    let answer = () => fragment('<p>live</p>');
+    const sw = loadSw({ caches, fetch: async () => answer() });
+
+    const live = await sw._publicPartialNetworkFirst(sheetRequest(`${KEY}&r=9`));
+    await flush();
+    expect(await live.text()).toBe('<p>live</p>');
+    expect(caches.size(SHELL)).toBe(1);
+    expect(await (await (await caches.open(SHELL)).match(KEY)).text()).toBe('<p>live</p>');
+
+    for (const status of [400, 404]) {
+      answer = () => fragment('bad', status);
+      const response = await sw._publicPartialNetworkFirst(
+        sheetRequest(`${SHEET}?d=2026-01-07`),
+      );
+      await flush();
+      expect(response.status).toBe(status);
+    }
+    expect(caches.size(SHELL)).toBe(1);
+  });
+
+  it("leaves the weather sheet's exact match as it was", async () => {
+    // The normalisation is the region sheet's alone: a weather sheet with
+    // a stray parameter is not the warmed one.
+    const caches = makeCaches();
+    const weather = `${ORIGIN}/api/weather/Ab3dE_fGh1J/detail/?date=${TODAY}`;
+    caches.seed(SHELL, weather, new Response('{"html":"x"}'));
+    const sw = loadSw({ caches });
+
+    const exact = await sw._publicJsonNetworkFirst({ url: weather, method: 'GET' });
+    const extra = await sw._publicJsonNetworkFirst({ url: `${weather}&r=1`, method: 'GET' });
+
+    expect(exact.status).toBe(200);
+    expect(extra.status).toBe(504);
+    expect(extra.headers.get('X-SW-Offline-Miss')).toBeNull();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // SNOW-1311 — an update carries your downloaded content across
 // ---------------------------------------------------------------------------
@@ -4467,6 +4656,21 @@ describe('activate carries the old shell caches into the new one (SNOW-1311)', (
       copied: 4,
       failed: 0,
     });
+  });
+
+  it('carries a downloaded region sheet under its own key (SNOW-1312)', async () => {
+    const regionSheet = `${ORIGIN}/partials/region-sheet/ch-4115/?d=2026-10-30`;
+    const caches = makeCaches();
+    caches.seed(OLD, regionSheet, stored('<p>sheet</p>', { 'Content-Type': 'text/html' }));
+    const sw = await offlineSw(caches);
+
+    await activate(sw);
+    await flush();
+
+    const carried = await (await caches.open(SHELL)).match(regionSheet);
+    expect(await carried.text()).toBe('<p>sheet</p>');
+    expect(carried.headers.get('X-SW-Principal')).toBeNull();
+    expect(caches.has(OLD)).toBe(false);
   });
 
   it.each([false, true])(

@@ -85,3 +85,7 @@ That is the honest answer for a forecast that has aged.
   the rest.
 - Every weather sheet opened online is now kept under its own url, until
   the next deploy reaps the shell cache.
+- SNOW-1312 extends the same pattern to the map's region sheet, keyed on
+  path and `d` rather than the exact url, and makes the whole download
+  forward-only:
+  [a-download-looks-forward-and-carries-the-region-sheet.md](a-download-looks-forward-and-carries-the-region-sheet.md).

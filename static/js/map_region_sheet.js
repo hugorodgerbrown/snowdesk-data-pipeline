@@ -94,7 +94,13 @@
   const STRINGS = self.pwaStrings.read('region-sheet-strings-template', {
     loading: 'Loading region details…',
     failed: 'Region details are unavailable offline.',
+    notDownloaded: "This day isn't downloaded for offline use.",
   });
+
+  // SNOW-1312: the header the service worker's region-sheet read puts on
+  // its 504 when the device holds no sheet for that region and day
+  // (`OFFLINE_MISS_HEADER` in sw.js — the other copy of this literal).
+  const OFFLINE_MISS_HEADER = 'X-SW-Offline-Miss';
 
   // The digit a danger tile shows for each level, as the server's
   // `danger_level_digit` filter writes it.
@@ -533,7 +539,14 @@
     if (!peeked) paintLine(STRINGS.loading);
     return fetch(url, { headers: { 'HX-Request': 'true' }, signal: ask.signal })
       .then((resp) => {
-        if (!resp.ok) throw new Error('region sheet ' + resp.status);
+        if (!resp.ok) {
+          const err = new Error('region sheet ' + resp.status);
+          // SNOW-1312: offline, and this day was never downloaded — a
+          // past day, or one past the area's forward window. Said plainly
+          // rather than as a failure.
+          err.notDownloaded = resp.headers?.get(OFFLINE_MISS_HEADER) === '1';
+          throw err;
+        }
         return resp.text();
       })
       .then((html) => {
@@ -548,14 +561,16 @@
         // day's: take it down to the peek row alone.
         if (swapped) paintPeek();
         // The peek the page painted is still true: keep it, and say below
-        // it that the rest could not be fetched.
+        // it that the rest could not be fetched — or, SNOW-1312, that this
+        // day is not one the device downloaded.
+        const message = err && err.notDownloaded ? STRINGS.notDownloaded : STRINGS.failed;
         if (!peeked) {
-          paintLine(STRINGS.failed);
+          paintLine(message);
           return;
         }
         const p = document.createElement('p');
         p.className = 'mt-4 px-2 text-sm text-text-2';
-        p.textContent = STRINGS.failed;
+        p.textContent = message;
         sheet.appendChild(p);
       });
   };

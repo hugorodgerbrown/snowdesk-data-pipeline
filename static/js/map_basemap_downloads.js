@@ -729,7 +729,7 @@ async function cacheOverlayFeedsForDownload() {
 }
 
 /**
- * The days an area's bulletins are taken for.
+ * The days an area's content is taken for: today and forward only.
  *
  * Reads the same forward bound the scrubber and calendar answer to
  * (`pwaCalendarCore.latestKnownDate`, SNOW-927) rather than hardcoding
@@ -737,16 +737,19 @@ async function cacheOverlayFeedsForDownload() {
  * actually needs offline — is picked up the moment it is published,
  * without this function knowing that is what happened.
  *
- * SNOW-953 gives it a reach BACKWARDS too, sized by
- * `readContentPastDays()` (`OFFLINE_CONTENT_PAST_DAYS`, rendered onto the
- * scrubber). Forward-only meant a user carried today and tomorrow but not
- * yesterday, and yesterday's bulletin is what says what the snowpack has
- * just been through. A day a region has no bulletin for renders a 200
- * empty state, so reaching back cannot fail a download.
+ * SNOW-1312: and never backwards. SNOW-953 reached back
+ * `OFFLINE_CONTENT_PAST_DAYS` days; "you're looking forward out in the
+ * field, not back" (Hugo, 2026-10-30), so that reach, its setting and its
+ * data attribute are gone. The window itself is
+ * `pwaBasemapDownloadCore.forwardContentDays`, which `/offline/`'s Update
+ * shares, so the two save the same days. It applies to everything dated
+ * a download saves — bulletin pages, region sheets, dated ratings. Field
+ * observations keep their own recent window
+ * (`cacheOverlayFeedsForDownload`).
  *
- * The day on screen is included when it falls outside that window,
- * because a visitor who scrubbed to a day and then downloaded meant that
- * day.
+ * The day on screen is included when it is today or later and outside
+ * that window, because a visitor who scrubbed to a forward day and then
+ * downloaded meant that day. A past day on screen is not saved.
  *
  * @returns {Promise<string[]>} Date keys, oldest first. Empty only when
  *   the page carries no readable `data-today`.
@@ -757,28 +760,19 @@ async function downloadContentDays() {
 
   let ceiling = today;
   try {
-    const core = window.pwaCalendarCore;
-    if (core && typeof core.latestKnownDate === 'function') {
-      ceiling = core.latestKnownDate(await getSeasonRatings(), today) || today;
+    const calendar = window.pwaCalendarCore;
+    if (calendar && typeof calendar.latestKnownDate === 'function') {
+      ceiling = calendar.latestKnownDate(await getSeasonRatings(), today) || today;
     }
   } catch (_e) {
     // No payload, no ceiling — today alone, which is what this did before
     // SNOW-927 existed.
   }
 
-  const days = [];
-  const todayMs = Date.parse(today);
-  if (!Number.isFinite(todayMs)) return [];
-  const startMs = todayMs - readContentPastDays() * 86400000;
-  const endMs = Date.parse(ceiling);
-  for (let ms = startMs; Number.isFinite(endMs) && ms <= endMs; ms += 86400000) {
-    days.push(new Date(ms).toISOString().slice(0, 10));
-  }
-  if (days.length === 0) days.push(today);
-
-  const onScreen = readUrlDateParam();
-  if (onScreen && !days.includes(onScreen)) days.unshift(onScreen);
-  return days;
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || typeof core.forwardContentDays !== 'function') return [today];
+  const days = core.forwardContentDays(today, ceiling, readUrlDateParam());
+  return days.length > 0 ? days : [today];
 }
 
 /**
@@ -867,9 +861,18 @@ async function assembleAreaContentURLs(blob) {
       days: await downloadContentDays(),
       weatherDetailTemplate: weatherDetail,
       weatherDay: weatherDay,
+      // SNOW-1312: the map's region sheet for every region and day, and
+      // the dated ratings feed the map boots its colours from.
+      regionSheetTemplate: mapEl.dataset.regionSheetUrl || '',
+      ratingsUrl: mapEl.dataset.ratingsUrl || '',
     })
-    : { bulletinUrls: [], weatherDetailUrls: [] };
-  const planned = [...plan.bulletinUrls, ...plan.weatherDetailUrls];
+    : { bulletinUrls: [], weatherDetailUrls: [], regionSheetUrls: [], ratingsUrls: [] };
+  const planned = [
+    ...plan.bulletinUrls,
+    ...(plan.regionSheetUrls || []),
+    ...(plan.ratingsUrls || []),
+    ...plan.weatherDetailUrls,
+  ];
   const itemUrls =
     items && typeof core.areaItemURLs === 'function'
       ? core.areaItemURLs(

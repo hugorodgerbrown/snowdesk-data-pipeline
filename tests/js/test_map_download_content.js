@@ -46,6 +46,16 @@ const REGION_SLUG = 'martigny-verbier';
 const TEMPLATE = 'https://tiles.example.invalid/{z}/{x}/{y}.pbf';
 const PINNED_PREFIX = 'snowdesk-basemap-pinned-';
 const TODAY = '2026-01-06';
+const TOMORROW = '2026-01-07';
+const YESTERDAY = '2026-01-05';
+
+// SNOW-1312: the season ratings the download reads its forward ceiling
+// off (`pwaCalendarCore.latestKnownDate`) — tomorrow's bulletin is out.
+const SEASON_RATINGS = {
+  [YESTERDAY]: { [REGION_ID]: 2 },
+  [TODAY]: { [REGION_ID]: 3 },
+  [TOMORROW]: { [REGION_ID]: 3 },
+};
 
 // SNOW-1072: the terrain-class tileset, on its own host so its tiles can be
 // told apart from everything else a run posts. On the fixture's `#map` from
@@ -312,6 +322,7 @@ function buildFixture() {
          data-resorts-url="/api/resorts.json"
          data-weather-url="/api/weather.geojson"
          data-weather-detail-url="/api/weather/__SHORTID__/detail/"
+         data-region-sheet-url="/partials/region-sheet/XX-0000/"
          data-community-reports-url="/api/community-reports.geojson"
          data-community-reports-eligible="true"
          data-favourites-url="/api/favourites.geojson"
@@ -322,7 +333,6 @@ function buildFixture() {
          data-terrain-class-tile-url="${TERRAIN_TEMPLATE}"
          data-season-end="2026-05-31"></div>
     <div id="season-scrubber" data-today="${TODAY}" data-today-pct="50"
-         data-content-past-days="1"
          data-season-start="2025-11-01" data-season-end="2026-05-31" data-state="ready">
       <div class="season-scrubber-track"><div class="season-scrubber-thumb"></div></div>
       <div class="season-scrubber-loading"></div>
@@ -470,6 +480,9 @@ beforeAll(async () => {
             : { ok: false, status: 500, json: () => Promise.resolve({}) },
         );
       }
+      // SNOW-1312: the season payload the download's ceiling is read off —
+      // yesterday, today and tomorrow are published.
+      if (href.startsWith('/api/ratings.json?country=')) body = SEASON_RATINGS;
       if (href.includes('region-basemap-tiles')) body = REGION_BLOB;
       if (href.includes('weather.geojson')) body = WEATHER_GEOJSON;
       if (href.includes('favourites.geojson')) body = FAVOURITES_GEOJSON;
@@ -531,17 +544,28 @@ describe('a download takes the content inside its boundary', () => {
     expect(posted).toContain(`/${REGION_ID.toLowerCase()}/${REGION_SLUG}/${TODAY}/`);
   });
 
-  it('reaches BACK the number of days the deployment asks for (SNOW-953)', () => {
-    // `data-content-past-days="1"` in the fixture. Forward-only meant a
-    // user carried today and tomorrow but not yesterday — and yesterday's
-    // bulletin is what says what the snowpack has just been through.
-    expect(posted).toContain(`/${REGION_ID.toLowerCase()}/${REGION_SLUG}/2026-01-05/`);
+  it('takes tomorrow too, once it is published (SNOW-927)', () => {
+    expect(posted).toContain(`/${REGION_ID.toLowerCase()}/${REGION_SLUG}/${TOMORROW}/`);
   });
 
-  it('does not reach further back than that', () => {
-    // The window is a setting, not an appetite: every extra day is a page
-    // per region over the connection this feature exists for.
-    expect(posted).not.toContain(`/${REGION_ID.toLowerCase()}/${REGION_SLUG}/2026-01-04/`);
+  it('saves nothing from before today (SNOW-1312)', () => {
+    // "You're looking forward out in the field, not back." Yesterday is in
+    // the season payload, and is still not taken — for any kind of content.
+    expect(posted.some((url) => url.includes(YESTERDAY))).toBe(false);
+  });
+
+  it('posts the region sheet for every region and forward day (SNOW-1312)', () => {
+    // The map's own partial, lowercased, `d` first: the url the sheet asks
+    // for, minus the `r` the worker ignores when it keys the entry.
+    expect(posted).toContain(`/partials/region-sheet/ch-4115/?d=${TODAY}`);
+    expect(posted).toContain(`/partials/region-sheet/ch-4115/?d=${TOMORROW}`);
+  });
+
+  it('posts the dated ratings the map boots its colours from (SNOW-1312)', () => {
+    // map.js's boot leg, in its own parameter order — the worker answers
+    // the feed on its exact url.
+    expect(posted).toContain(`/api/ratings.json?d=${TODAY}&country=ch`);
+    expect(posted).toContain(`/api/ratings.json?d=${TOMORROW}&country=ch`);
   });
 
   it('posts the weather sheet for a location inside, and not one outside', () => {
