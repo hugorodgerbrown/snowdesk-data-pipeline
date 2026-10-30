@@ -1,9 +1,10 @@
 """
 tests/accounts/test_alert_views.py — The bulletin alert settings (SNOW-939).
 
-The Alerts group on the settings page, its two HTMX posts, the test push
-and the one-click unsubscribe — all behind the bulletin_alerts flag except
-the unsubscribe link, which must work for anyone holding one.
+The Alerts group on the settings page, its two HTMX posts, the test push,
+the bell's list (SNOW-1333) and the one-click unsubscribe — all behind the
+bulletin_alerts flag except the unsubscribe link, which must work for
+anyone holding one.
 """
 
 from __future__ import annotations
@@ -12,16 +13,20 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-from django.test import Client
+from django.contrib.auth.models import AnonymousUser
+from django.test import Client, RequestFactory
 from waffle.testutils import override_flag
 
+from apps.accounts.alert_views import alert_list_url
 from apps.accounts.models import Account
 from apps.accounts.services.alert_email import unsubscribe_token
 from tests.factories import (
     AccountFactory,
+    BulletinAlertFactory,
     FavouriteFactory,
     MicroRegionFactory,
     PushSubscriptionFactory,
+    UserFactory,
 )
 
 HTMX: dict[str, Any] = {"HTTP_HX_REQUEST": "true"}
@@ -210,3 +215,78 @@ class TestUnsubscribe:
     def test_bad_token_is_404(self, db: Any) -> None:
         """A forged link names nobody."""
         assert Client().get("/account/alerts/unsubscribe/nope/").status_code == 404
+
+
+@pytest.mark.usefixtures("alerts_flag")
+class TestAlertRecent:
+    """SNOW-1333: the map's bell reads the past week's alerts as JSON."""
+
+    def test_lists_the_sent_messages(
+        self, client_for: Client, account: Account
+    ) -> None:
+        """Each message comes back with its words, link and send time."""
+        account.notify_when = Account.NotifyWhen.NEW_BULLETIN
+        account.save(update_fields=["notify_when"])
+        BulletinAlertFactory.create(
+            account=account,
+            title="Verbier bulletin",
+            body="Valid from Friday at 5 pm to Saturday at 5 pm.",
+            url="/alerts/2026-10-31/",
+        )
+        response = client_for.get("/account/alerts/recent/")
+        assert response.status_code == 200
+        assert "no-cache" in response["Cache-Control"]
+        (alert,) = response.json()["alerts"]
+        assert alert["title"] == "Verbier bulletin"
+        assert alert["url"] == "/alerts/2026-10-31/"
+        assert alert["sent_at"]
+        assert alert["sent"]
+
+    def test_alerts_off_is_empty(self, client_for: Client, account: Account) -> None:
+        """With alerts off nothing is listed, so the bell stays hidden."""
+        BulletinAlertFactory.create(account=account, title="Verbier bulletin")
+        account.notify_when = Account.NotifyWhen.OFF
+        account.save(update_fields=["notify_when"])
+        assert client_for.get("/account/alerts/recent/").json() == {"alerts": []}
+
+    def test_flag_off_is_404(self, client_for: Client) -> None:
+        """Behind the flag, as every alert endpoint is."""
+        with override_flag("bulletin_alerts", active=False):
+            assert client_for.get("/account/alerts/recent/").status_code == 404
+
+    def test_signed_out_redirects(self, db: Any) -> None:
+        """A visitor is sent to sign in, never handed a list."""
+        assert Client().get("/account/alerts/recent/").status_code == 302
+
+    def test_post_is_refused(self, client_for: Client) -> None:
+        """GET only."""
+        assert client_for.post("/account/alerts/recent/").status_code == 405
+
+
+class TestAlertListUrl:
+    """SNOW-1333: the map draws a bell only for an account with alerts on."""
+
+    def _request(self, user: Any) -> Any:
+        request = RequestFactory().get("/map/")
+        request.user = user
+        return request
+
+    def test_alerts_on(self, alerts_flag: Any, account: Account) -> None:
+        """An account with alerts on gets the list's url."""
+        account.notify_when = Account.NotifyWhen.NEW_BULLETIN
+        account.save(update_fields=["notify_when"])
+        assert alert_list_url(self._request(account.user)) == "/account/alerts/recent/"
+
+    def test_alerts_off(self, alerts_flag: Any, account: Account) -> None:
+        """Alerts off: no bell."""
+        account.notify_when = Account.NotifyWhen.OFF
+        account.save(update_fields=["notify_when"])
+        assert alert_list_url(self._request(account.user)) == ""
+
+    def test_no_account(self, alerts_flag: Any) -> None:
+        """A user with no Account profile: no bell."""
+        assert alert_list_url(self._request(UserFactory.create())) == ""
+
+    def test_signed_out(self, alerts_flag: Any) -> None:
+        """A visitor: no bell."""
+        assert alert_list_url(self._request(AnonymousUser())) == ""

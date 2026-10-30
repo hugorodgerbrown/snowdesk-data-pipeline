@@ -479,8 +479,8 @@
   // to be home first.
   //
   // SNOW-1195: so do the day steps either side of it, and (SNOW-1206) the
-  // day's notes bell, whose card map.css hangs under the row as it does
-  // this one.
+  // bell — since SNOW-1333 the alert list — whose card map.css hangs under
+  // the row as it does this one.
   const cluster = document.getElementById('map-utility-cluster');
   if (cluster && typeof window.matchMedia === 'function') {
     const phone = window.matchMedia('(max-width: 639.98px)');
@@ -489,8 +489,7 @@
       toggle,
       document.getElementById('map-day-next'),
       document.getElementById('map-today-control'),
-      // SNOW-1206: and the day's notes bell, whose card drops under the row.
-      document.getElementById('map-day-notes'),
+      document.getElementById('map-alerts'),
       root,
     ].filter(Boolean);
     const homes = moved.map((el) => ({ el, parent: el.parentNode, next: el.nextSibling }));

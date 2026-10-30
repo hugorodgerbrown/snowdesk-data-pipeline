@@ -1,7 +1,7 @@
 """
 apps/accounts/alert_views.py — The bulletin alert settings (SNOW-939, 1325, 1327).
 
-Four endpoints behind the ``bulletin_alerts`` flag:
+Five endpoints behind the ``bulletin_alerts`` flag:
 
 - ``alert_settings``     POST HTMX — set ``notify_when`` and ``alert_email``.
                          Turning alerts on from OFF stamps
@@ -12,6 +12,8 @@ Four endpoints behind the ``bulletin_alerts`` flag:
                          subscription on the account, so the person sees one
                          land on the device they just turned on. Sent while
                          they wait, so the answer says whether it went.
+- ``alert_recent``       GET JSON — the messages sent in the past week, for
+                         the map's bell (SNOW-1333). Private, never cached.
 - ``alert_unsubscribe``  GET confirms, POST stops alert EMAIL (sets
                          ``alert_email`` to NEVER) — the signed link in every
                          alert email, and the RFC 8058 one-click target, so
@@ -30,14 +32,18 @@ import waffle
 from django.contrib.auth.decorators import login_required
 from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext as _
+from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 
 from apps.accounts.models import Account
 from apps.accounts.push_service import dispatch_push
 from apps.accounts.services.alert_email import account_for_unsubscribe
+from apps.bulletins.services.alert_wording import clock
+from apps.bulletins.services.alerts import recent_alerts
 from apps.core.decorators import require_htmx
 from apps.favourites.models import Favourite
 
@@ -59,6 +65,28 @@ def _account_or_404(request: HttpRequest) -> Account:
         return request.user.account  # type: ignore[union-attr]  # login_required guarantees authentication
     except Account.DoesNotExist as exc:
         raise Http404 from exc
+
+
+def alert_list_url(request: HttpRequest) -> str:
+    """
+    Return where the map's bell reads its list, or "" when there is no bell.
+
+    No bell when signed out, with the flag off, without an Account, or with
+    alerts off (Hugo, 2026-10-30): the bell lists alerts and nothing else.
+
+    Args:
+        request: The map page's request.
+
+    Returns:
+        ``/account/alerts/recent/`` or an empty string.
+
+    """
+    if not request.user.is_authenticated or not alerts_enabled(request):
+        return ""
+    account = Account.objects.filter(user=request.user).only("notify_when").first()
+    if account is None or account.notify_when == Account.NotifyWhen.OFF:
+        return ""
+    return reverse("accounts:alert_recent")
 
 
 def alert_settings_context(request: HttpRequest, account: Account) -> dict[str, Any]:
@@ -186,6 +214,32 @@ def alert_test(request: HttpRequest) -> HttpResponse:
     return JsonResponse(
         {"ok": delivered > 0, "devices": devices, "delivered": delivered}
     )
+
+
+@login_required
+@require_GET
+@never_cache
+def alert_recent(request: HttpRequest) -> HttpResponse:
+    """Return the alerts sent to the account in the past week, newest first.
+
+    The map's bell lists them (SNOW-1333). Each entry carries the message's
+    own title, body and link, and ``sent``, when it went ("Friday at 5 pm").
+    With alerts off the list is empty, so the bell stays hidden.
+    """
+    account = _account_or_404(request)
+    if account.notify_when == Account.NotifyWhen.OFF:
+        return JsonResponse({"alerts": []})
+    alerts = [
+        {
+            "title": a.title,
+            "body": a.body,
+            "url": a.url,
+            "sent_at": a.sent_at.isoformat(),
+            "sent": clock(a.sent_at),
+        }
+        for a in recent_alerts(account, timezone.now())
+    ]
+    return JsonResponse({"alerts": alerts})
 
 
 # RFC 8058 one-click unsubscribe: the mail provider POSTs with no session

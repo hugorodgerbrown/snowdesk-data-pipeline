@@ -1,6 +1,6 @@
 ---
 name: alerts
-description: Bulletin alerts — send_bulletin_alerts, BulletinAlert, notify_when, trip_places (a trip's day), /alerts/<day>/, bulletin_alerts flag
+description: Bulletin alerts — send_bulletin_alerts, BulletinAlert, notify_when, trip_places, /alerts/<day>/, the map bell, bulletin_alerts flag
 status: current
 last-reviewed: 2026-10-30
 ---
@@ -29,6 +29,7 @@ See "Going public" before turning either on.
 | Landing | A bundle lands on `/alerts/<day>/`; a one-place alert on the map's region panel (`/map/?d=…#region`) | `apps/public/alert_views.py`, `public/alerts_day.html` |
 | Since strip | "Since Friday" sentences at the top of the region body, same words as the alert | `templates/includes/_since_strip.html`, `public.views._since_strip` |
 | Settings | Mode, email, this device, and a switch per place | `apps/accounts/alert_views.py`, `_alert_settings.html`, `alerts_optin.js` |
+| Bell | The map's date-row bell lists the past week's messages, newest first, each linking where its push did; drawn only for an account with alerts on, with a dot (per device) for one not yet opened | `alerts.recent_alerts`, `accounts:alert_recent` (`/account/alerts/recent/`), `alert_views.alert_list_url`, `static/js/map_alerts.js` |
 | Replay | A real season's alerts for one region, in delivery order | `services/replay.py`, `replay_bulletin_alerts`, staff `/_alerts-replay/` |
 
 ## Rules

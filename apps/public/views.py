@@ -85,6 +85,7 @@ from django.views.generic import RedirectView
 from django_ratelimit.decorators import ratelimit
 
 from apps import analytics
+from apps.accounts.alert_views import alert_list_url
 from apps.accounts.identity import request_identity
 from apps.accounts.models import user_is_verified
 from apps.bulletins.models import (
@@ -964,6 +965,9 @@ def map_page(request: HttpRequest) -> HttpResponse:
             "resort_guide_date": resort_guide.guide_date(
                 is_offseason, example.example_date if example else None
             ),
+            # SNOW-1333: the date row's bell lists the account's alerts, and
+            # is not drawn at all without them to list.
+            "alert_list_url": alert_list_url(request),
         },
     )
 

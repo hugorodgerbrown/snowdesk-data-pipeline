@@ -6,20 +6,16 @@
  * outside it — every past day, which is most of a bulletin season — the
  * switched-on layer drew nothing and said nothing, so it read as broken.
  *
- * Two places say it now:
- *
- *   - THE LAYERS MENU'S WEATHER ROW. Its detail line reads "Forecast only:
- *     {first}–{last}" for as long as the layer is on and the day is outside
- *     the window. That is where someone looking for the layer looks.
- *   - THE DAY'S NOTES. A note in map_day_notes.js's list, for as long as it
- *     holds. SNOW-1196 drew it once on the map, as a pill beside the date
- *     control that went by itself after 8 s; SNOW-1206 moved it behind the
- *     notes bell, whose dot is what says something new is there.
+ * The layers menu's weather row says it: its detail line reads "Forecast
+ * only: {first}–{last}" for as long as the layer is on and the day is
+ * outside the window. That is where someone looking for the layer looks.
+ * SNOW-1196 also said it on the map, as a pill; SNOW-1206 moved that behind
+ * the date row's bell, and SNOW-1333 dropped it when the bell became the
+ * list of bulletin alerts (Hugo, 2026-10-30).
  *
  * Reads ``window.pwaWeatherWindow`` (map.js) for whether the layer is on and
- * which days it covers, ``readUrlDateParam`` / ``formatDatePopup``
- * (map_shared.js) for the day, and writes ``window.pwaDayNotes``
- * (map_day_notes.js, loaded first). Strings from
+ * which days it covers, and ``readUrlDateParam`` / ``formatDatePopup``
+ * (map_shared.js) for the day. Strings from
  * ``map-weather-window-strings-template``.
  */
 (function mapWeatherWindowInit() {
@@ -33,13 +29,7 @@
 
   const STRINGS = self.pwaStrings.read('map-weather-window-strings-template', {
     'forecast-only': 'Forecast only: %(first)s–%(last)s',
-    'note-title': 'Weather is a forecast',
-    'note-detail': 'It covers %(first)s–%(last)s, so this day has none.',
   });
-
-  // The note's id in window.pwaDayNotes, and its place: after the bulletin.
-  const NOTE_ID = 'weather';
-  const NOTE_RANK = 2;
 
   const todayKey = scrubber.dataset.today || '';
   let shownKey = '';
@@ -63,25 +53,13 @@
     return { first: formatDatePopup(dates[0]), last: formatDatePopup(dates[dates.length - 1]) };
   }
 
-  /** Bring the row and the day's note into line with the day. */
+  /** Bring the row into line with the day. */
   function apply() {
     const window_ = outsideWindow();
     if (summary) {
       summary.hidden = !window_;
       summary.textContent = window_ ? self.pwaStrings.interpolate(STRINGS['forecast-only'], window_) : '';
     }
-    const notes = window.pwaDayNotes;
-    if (!notes) return;
-    notes.set(
-      NOTE_ID,
-      window_
-        ? {
-            title: STRINGS['note-title'],
-            detail: self.pwaStrings.interpolate(STRINGS['note-detail'], window_),
-            rank: NOTE_RANK,
-          }
-        : null
-    );
   }
 
   document.addEventListener('snowdesk:date-changed', (e) => {
