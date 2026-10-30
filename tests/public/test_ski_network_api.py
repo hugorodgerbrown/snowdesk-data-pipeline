@@ -9,6 +9,8 @@ Covers:
   the cap            — past ``SKI_NETWORK_MAX_FEATURES`` the answer says
                       ``truncated``.
   response policy    — the ETag and the revalidatable cache policy.
+  the overview       — ``?overview=1`` answers the whole skiable network,
+                      thinned, with no ids, in place of a bbox (SNOW-1322).
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
 
@@ -90,3 +93,33 @@ def test_the_answer_is_revalidatable(client: Client) -> None:
     empty = _get(client, "1.0,1.0,1.1,1.1")
     assert empty.json()["features"] == []
     assert "stale-while-revalidate" not in empty["Cache-Control"]
+
+
+def test_the_overview_is_the_whole_network_without_ids(client: Client) -> None:
+    """Far-apart skiable lines in one answer, no bbox needed, with an ETag."""
+    cache.clear()
+    SkiSegmentFactory.create()
+    SkiSegmentFactory.create(
+        geometry={
+            "type": "MultiLineString",
+            "coordinates": [[[7.0, 46.0], [7.1, 46.1]]],
+        },
+        west=7.0,
+        south=46.0,
+        east=7.1,
+        north=46.1,
+    )
+    SkiSegmentFactory.create(discipline="ski_snowshoe_tour")
+    url = reverse("api:ski_network_geojson")
+    response = client.get(url, {"overview": "1"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["truncated"] is False
+    assert len(body["features"]) == 2
+    assert all("id" not in feature for feature in body["features"])
+    assert all(feature["properties"] == {} for feature in body["features"])
+    again = client.get(
+        url, {"overview": "1"}, headers={"If-None-Match": response["ETag"]}
+    )
+    assert again.status_code == 304
+    cache.clear()

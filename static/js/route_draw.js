@@ -54,13 +54,15 @@
  * be queued. The draft is stamped with the account it was drawn under and
  * discarded on load under any other (route_draw_core.js's draftState).
  *
- * THE NETWORK (SNOW-1277). At z12 or closer the panel loads swisstopo's
- * ski-touring network for the view (/api/ski-network.geojson) and draws it
- * under the draft, whether or not it is followed — since SNOW-1319 a solid
- * amber line on a white halo while following, thin and faint when not
- * (route_draw_core.js networkPaint) — and since
- * SNOW-1285 it is the only place the map draws that network. While "Follow
- * ski routes" is on, a tap within 24 px of a line snaps to it, and a ring
+ * THE NETWORK (SNOW-1277). While "Snap to known ski routes" is on, the panel draws
+ * swisstopo's ski-touring network under the draft from z9, the zoom the SAC
+ * tours start at (SNOW-1322): the whole network thinned, fetched once
+ * (/api/ski-network.geojson?overview=1), thin and faint, until z12; from
+ * z12 the full-detail lines loaded for the view (?bbox=), a solid amber
+ * line on a white halo (SNOW-1319), which a tap snaps to
+ * (route_draw_core.js networkMode, networkPaint). With the switch off it is
+ * hidden. Since SNOW-1285 draw mode is the only place the map draws that
+ * network. While following, a tap within 24 px of a line snaps to it, and a ring
  * shows where it would land before it is placed. When the last point is on
  * the network too, the new leg is routed along it (ski_snap_core.js, the
  * shortest way, straight instead when that is over three times as far).
@@ -117,8 +119,9 @@
   const NETWORK_SOURCE = PREFIX + '-network';
   // The network is loaded and snapped to from this zoom: a view wider than
   // /api/ski-network.geojson's half-degree cap is refused, and a snap
-  // reach of 24 px is over a kilometre further out.
-  const NETWORK_MINZOOM = 12;
+  // reach of 24 px is over a kilometre further out. It is drawn, thinned,
+  // from NETWORK_OVERVIEW_MINZOOM (SNOW-1322).
+  const NETWORK_MINZOOM = core.NETWORK_DETAIL_MINZOOM;
   // Just inside the endpoint's 0.5° cap, after rounding to 3 places.
   const NETWORK_MAX_HALF_SPAN = 0.249;
   const NETWORK_DEBOUNCE_MS = 250;
@@ -181,6 +184,14 @@
     networkInflight: null,
     /** @type {?number} */
     networkTimer: null,
+    /**
+     * The whole network thinned, drawn at z9-z11 and never snapped to
+     * (SNOW-1322); null until it has loaded.
+     * @type {?Array<any>}
+     */
+    overview: null,
+    /** @type {?AbortController} */
+    overviewInflight: null,
     /** The last preview Feature, matching `previewFor`, or null. */
     feature: null,
     /** The waypoints `feature` describes, serialised. */
@@ -245,22 +256,28 @@
   function installLayers(map) {
     if (NETWORK_URL && !map.getSource(NETWORK_SOURCE)) {
       map.addSource(NETWORK_SOURCE, { type: 'geojson', data: networkCollection() });
-      // SNOW-1319: a halo under a core, both repainted by setFollow.
-      const paint = core.networkPaint(state.follow);
+      // SNOW-1319: a halo under a core; SNOW-1322: from z9, faint until
+      // z12, and shown or hidden by setFollow.
+      const paint = core.networkPaint();
+      const layout = {
+        'line-cap': 'round',
+        'line-join': 'round',
+        visibility: state.follow ? 'visible' : 'none',
+      };
       map.addLayer({
         id: NETWORK_SOURCE + '-halo',
         type: 'line',
         source: NETWORK_SOURCE,
-        minzoom: NETWORK_MINZOOM,
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        minzoom: core.NETWORK_OVERVIEW_MINZOOM,
+        layout: layout,
         paint: paint.halo,
       });
       map.addLayer({
         id: NETWORK_SOURCE + '-line',
         type: 'line',
         source: NETWORK_SOURCE,
-        minzoom: NETWORK_MINZOOM,
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        minzoom: core.NETWORK_OVERVIEW_MINZOOM,
+        layout: layout,
         paint: paint.core,
       });
     }
@@ -393,27 +410,42 @@
     return snapCore.nearestOnNetwork(state.graph, point, snapReach());
   }
 
-  /** @returns {Object} The loaded network. */
-  function networkCollection() {
-    return { type: 'FeatureCollection', features: Array.from(state.network.values()) };
+  /** @returns {'none'|'overview'|'detail'} Which network the map shows now. */
+  function networkMode() {
+    const map = getMap();
+    return map ? core.networkMode(map.getZoom(), state.follow) : 'none';
   }
 
-  /** Repaint the network for the Follow switch (SNOW-1319). */
-  function paintNetwork() {
+  /**
+   * @returns {Object} The network for the zoom: the thinned whole at
+   *   z9-z11, the loaded detail from z12, nothing otherwise.
+   */
+  function networkCollection() {
+    const mode = networkMode();
+    /** @type {Array<any>} */
+    let features = [];
+    if (mode === 'overview') features = state.overview || [];
+    else if (mode === 'detail') features = Array.from(state.network.values());
+    return { type: 'FeatureCollection', features: features };
+  }
+
+  /** Show the network's layers while following, hide them otherwise (SNOW-1322). */
+  function showNetwork() {
     const map = getMap();
     if (!map) return;
-    const paint = core.networkPaint(state.follow);
-    /** @type {Array<[string, Object<string, number|string>]>} */
-    const layers = [
-      [NETWORK_SOURCE + '-halo', paint.halo],
-      [NETWORK_SOURCE + '-line', paint.core],
-    ];
-    layers.forEach(function (entry) {
-      if (!map.getLayer(entry[0])) return;
-      Object.keys(entry[1]).forEach(function (key) {
-        map.setPaintProperty(entry[0], key, entry[1][key]);
-      });
+    [NETWORK_SOURCE + '-halo', NETWORK_SOURCE + '-line'].forEach(function (id) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', state.follow ? 'visible' : 'none');
     });
+  }
+
+  /** Stop every network load: the debounce, and the overview and detail fetches. */
+  function stopNetwork() {
+    if (state.networkTimer !== null) clearTimeout(state.networkTimer);
+    state.networkTimer = null;
+    if (state.networkInflight) state.networkInflight.abort();
+    state.networkInflight = null;
+    if (state.overviewInflight) state.overviewInflight.abort();
+    state.overviewInflight = null;
   }
 
   /** Redraw the network. */
@@ -430,14 +462,42 @@
   }
 
   /**
-   * Fetch the segments crossing the view, padded by a quarter and held to
-   * the endpoint's cap, unless a rectangle already loaded covers it.
+   * Fetch the thinned whole network, once (SNOW-1322). A failure leaves
+   * it unloaded, so the next stop of the map asks again.
+   */
+  function loadOverview() {
+    if (state.overview || state.overviewInflight) return;
+    const abort = new AbortController();
+    state.overviewInflight = abort;
+    fetch(NETWORK_URL + '?overview=1', { signal: abort.signal })
+      .then(function (resp) {
+        return resp.ok ? resp.json() : null;
+      })
+      .then(function (body) {
+        if (!body || !Array.isArray(body.features) || !state.active) return;
+        state.overview = body.features;
+        drawNetwork();
+      })
+      .catch(function () {
+        // Offline or refused: nothing is drawn until the map moves again.
+      })
+      .finally(function () {
+        if (state.overviewInflight === abort) state.overviewInflight = null;
+      });
+  }
+
+  /**
+   * Load what the zoom draws: the thinned whole network at z9-z11, or
+   * from z12 the segments crossing the view, padded by a quarter and held
+   * to the endpoint's cap, unless a rectangle already loaded covers it.
    */
   function loadNetwork() {
     state.networkTimer = null;
     const map = getMap();
-    if (!map || !state.active || !NETWORK_URL || !snapCore) return;
-    if (map.getZoom() < NETWORK_MINZOOM || !online()) return;
+    if (!map || !state.active || !NETWORK_URL || !snapCore || !online()) return;
+    const mode = networkMode();
+    if (mode === 'overview') loadOverview();
+    if (mode !== 'detail') return;
     const bounds = map.getBounds();
     const centre = map.getCenter();
     const padX = (bounds.getEast() - bounds.getWest()) / 4;
@@ -493,7 +553,10 @@
     }
     const toggle = find('[data-route-draw-follow]');
     if (toggle) toggle.setAttribute('aria-checked', on ? 'true' : 'false');
-    paintNetwork();
+    // SNOW-1322: off hides the network and stops loading it, so nothing
+    // started while it was on lands after.
+    if (!on) stopNetwork();
+    showNetwork();
     drawNetwork();
     drawGuide();
     if (on) scheduleNetwork();
@@ -1262,10 +1325,7 @@
     state.timer = null;
     if (state.inflight) state.inflight.abort();
     state.inflight = null;
-    if (state.networkTimer !== null) clearTimeout(state.networkTimer);
-    state.networkTimer = null;
-    if (state.networkInflight) state.networkInflight.abort();
-    state.networkInflight = null;
+    stopNetwork();
     state.profile = null;
     crosshair.hidden = true;
     window.removeEventListener('resize', onResize);

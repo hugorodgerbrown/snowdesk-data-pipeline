@@ -46,7 +46,10 @@
  *   forgetDraftFor(key, storage)    — remove the stored draft if it is the
  *                                     save with this key
  *   NETWORK_COLOUR                  — the snap-to network's own colour
- *   networkPaint(follow)            — the network's core and halo paint
+ *   NETWORK_OVERVIEW_MINZOOM        — the zoom the network is drawn from
+ *   NETWORK_DETAIL_MINZOOM          — the zoom it is loaded and snapped from
+ *   networkMode(zoom, follow)       — which network the map draws, if any
+ *   networkPaint()                  — the network's core and halo paint
  *   profileBuilding(state)          — whether the profile is being built
  *
  * SAVING OFFLINE (SNOW-1262). A save carries an Idempotency-Key the device
@@ -102,6 +105,11 @@
   // 30 Oct 2026: "It's only by seeing the snap-to circle that you can tell."
   const NETWORK_COLOUR = '#d97706';
   const NETWORK_HALO_COLOUR = '#ffffff';
+  // SNOW-1322: the network is drawn from the zoom the SAC tours are
+  // (ski_tours_core.js MINZOOM), thinned, and loaded per view and snapped
+  // to from z12, where a 24 px snap reach is under a kilometre.
+  const NETWORK_OVERVIEW_MINZOOM = 9;
+  const NETWORK_DETAIL_MINZOOM = 12;
 
   /**
    * @typedef {[number, number]} Waypoint
@@ -585,26 +593,51 @@
   }
 
   /**
-   * The paint of swisstopo's network under a draft (SNOW-1319).
+   * Which of swisstopo's networks draw mode shows (SNOW-1322).
    *
-   * With following on it is a line to aim at: a solid amber core on a
-   * white halo. With following off nothing snaps to it, so the halo goes
-   * and the core is thin and faint — still there, no longer competing.
+   * Hugo, 30 Oct 2026: "the Swisstopo routes should appear at the same
+   * zoom as the SAC. And if the user toggles the snap option they should
+   * appear". So nothing while "Snap to known ski routes" is off; from z9 the
+   * whole network, thinned ('overview'); from z12 the full-detail lines
+   * loaded for the view, which a tap snaps to ('detail').
    *
-   * @param {boolean} follow - Whether "Follow ski routes" is on.
-   * @returns {{core: Object<string, number|string>, halo: Object<string, number|string>}}
+   * @param {number} zoom - The map's zoom.
+   * @param {boolean} follow - Whether "Snap to known ski routes" is on.
+   * @returns {'none'|'overview'|'detail'}
    */
-  function networkPaint(follow) {
+  function networkMode(zoom, follow) {
+    if (!follow || !(zoom >= NETWORK_OVERVIEW_MINZOOM)) return 'none';
+    return zoom >= NETWORK_DETAIL_MINZOOM ? 'detail' : 'overview';
+  }
+
+  /**
+   * The paint of swisstopo's network under a draft (SNOW-1319, SNOW-1322).
+   *
+   * From z12, where a tap snaps to it, a line to aim at: a solid amber
+   * core on a white halo. Further out nothing snaps, so it is thin and
+   * faint with no halo — Hugo, 30 Oct 2026: "we should reduce the opacity
+   * of the network at 9-11, so it pops when you get to 12." Hidden, not
+   * repainted, while following is off. 0.6 rather than the scoped 0.4:
+   * at 0.4 the thinned lines all but vanished into the winter basemap at
+   * z10.
+   *
+   * @returns {{core: Object<string, any>, halo: Object<string, any>}}
+   */
+  function networkPaint() {
+    /** @param {number} below @param {number} from */
+    const stepped = function (below, from) {
+      return ['step', ['zoom'], below, NETWORK_DETAIL_MINZOOM, from];
+    };
     return {
       core: {
         'line-color': NETWORK_COLOUR,
-        'line-width': follow ? 2.5 : 1.5,
-        'line-opacity': follow ? 1 : 0.35,
+        'line-width': stepped(1.5, 2.5),
+        'line-opacity': stepped(0.6, 1),
       },
       halo: {
         'line-color': NETWORK_HALO_COLOUR,
         'line-width': 5,
-        'line-opacity': follow ? 0.9 : 0,
+        'line-opacity': stepped(0, 0.9),
       },
     };
   }
@@ -648,6 +681,9 @@
     bodyFingerprint: bodyFingerprint,
     forgetDraftFor: forgetDraftFor,
     NETWORK_COLOUR: NETWORK_COLOUR,
+    NETWORK_OVERVIEW_MINZOOM: NETWORK_OVERVIEW_MINZOOM,
+    NETWORK_DETAIL_MINZOOM: NETWORK_DETAIL_MINZOOM,
+    networkMode: networkMode,
     networkPaint: networkPaint,
     profileBuilding: profileBuilding,
   });

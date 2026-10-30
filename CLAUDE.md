@@ -137,7 +137,8 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  Also SkiSegment and SkiTour, the synced reference copy of
                  swisstopo's ski-touring network and SAC's tours
                  (SNOW-1276), served to draw mode by
-                 /api/ski-network.geojson?bbox=; a tour is found by its
+                 /api/ski-network.geojson?bbox= (and ?overview=1 from
+                 z9, SNOW-1322); a tour is found by its
                  summit and saved as a copy, source SKI_TOUR
                  (SNOW-1278, services/ski_tours.py)
   trips/         Shareable trips (SNOW-819) — ``Trip`` (a route the organiser

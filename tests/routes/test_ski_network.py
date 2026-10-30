@@ -4,7 +4,8 @@ tests/routes/test_ski_network.py — Applying the ski-touring feeds (SNOW-1276).
 ``apply_ski_items`` on pages shaped as the v2 feeds serve them: created,
 unchanged by ``updated_at``, rewritten, deleted by a tombstone, absent,
 failed; a dry run deciding without writing; ``synced_since``; and
-``apply_from_service`` on the service's own rows.
+``apply_from_service`` on the service's own rows; and ``network_overview``
+(SNOW-1322), thinned, skiable only, and rebuilt after a sync rewrites a line.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import uuid
 from typing import Any
 
 import pytest
+from django.core.cache import cache
 from django.utils import timezone
 
 from apps.ingest.public import serialise_source_document, serialise_source_ski_tour
@@ -29,6 +31,7 @@ from apps.routes.services.ski_network import (
     apply_from_service,
     apply_ski_items,
     bbox_of,
+    network_overview,
     synced_since,
 )
 from tests.factories import (
@@ -262,3 +265,53 @@ def test_the_service_host_applies_its_own_tours_drawing() -> None:
     SourceSkiTourFactory.create(slope_samples={"segments": []}, track_render={"v": 1})
     apply_from_service(commit=True)
     assert SkiTour.objects.get().track_render == {"v": 1}
+
+
+@pytest.fixture
+def _clear_cache() -> Any:
+    """Start and end with an empty cache, so no overview carries over."""
+    cache.clear()
+    yield
+    cache.clear()
+
+
+# A line with a near-straight middle point the overview thins away.
+DENSE = {
+    "type": "MultiLineString",
+    "coordinates": [[[10.0, 46.8, 2000.0], [10.00001, 46.80001], [10.01, 46.81]]],
+}
+
+
+@pytest.mark.usefixtures("_clear_cache")
+def test_the_overview_thins_the_skiable_lines() -> None:
+    """Snowshoe-only lines are left out and each line is thinned and rounded."""
+    SkiSegmentFactory.create(geometry=DENSE)
+    SkiSegmentFactory.create(discipline="ski_snowshoe_tour")
+    (feature,) = network_overview()
+    assert feature == {
+        "type": "Feature",
+        "geometry": {
+            "type": "MultiLineString",
+            "coordinates": [[[10.0, 46.8], [10.01, 46.81]]],
+        },
+        "properties": {},
+    }
+
+
+@pytest.mark.usefixtures("_clear_cache")
+def test_the_overview_is_rebuilt_after_a_sync_rewrites_a_line() -> None:
+    """The sync's update() leaves updated_at alone; the stamp still moves."""
+    item = _segment()
+    apply_ski_items("ski-network", [item], commit=True)
+    assert network_overview()[0]["geometry"] == LINE
+    moved_line = {
+        "type": "MultiLineString",
+        "coordinates": [[[10.0, 46.8], [10.3, 46.95]]],
+    }
+    moved = _segment(
+        uuid.UUID(item["uuid"]),
+        updated_at="2026-10-29T12:00:00+00:00",
+        document={**item["document"], "geometry": moved_line},
+    )
+    assert apply_ski_items("ski-network", [moved], commit=True)[UPDATED] == 1
+    assert network_overview()[0]["geometry"] == moved_line
