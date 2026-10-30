@@ -570,6 +570,20 @@ class TestTheLegs:
         assert leg_parts(tour) == [(None, [list(TOP[:2]), list(VALLEY[:2])])]
         assert leg_parts(_tour(geometry=_line(VALLEY))) == []
 
+    def test_a_tour_with_no_legs_keeps_every_part_spurs_included(self) -> None:
+        """SAC's parts as published, not chained into one route (a spur stays)."""
+        spur = [10.09, 46.84]
+        tour = _tour(
+            geometry={
+                "type": "MultiLineString",
+                "coordinates": [[VALLEY, TOP], [TOP, spur]],
+            }
+        )
+        assert leg_parts(tour) == [
+            (None, [list(VALLEY), list(TOP)]),
+            (None, [list(TOP), spur]),
+        ]
+
 
 class TestSave:
     """Saving a tour copies it onto the reader's routes."""

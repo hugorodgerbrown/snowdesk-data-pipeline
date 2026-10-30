@@ -797,10 +797,16 @@ def leg_parts(tour: SkiTour) -> list[tuple[bool | None, list[list[float]]]]:
     """
     if tour.legs:
         return [(bool(leg["climbing"]), leg["line"]) for leg in tour.legs]
+    # SAC's stored parts as published, spurs included: not ``_lines``,
+    # which chains them into one route and drops a branch.
+    geometry = tour.geometry or {}
+    coordinates = geometry.get("coordinates") or []
+    if geometry.get("type") == "LineString":
+        coordinates = [coordinates]
     return [
         (None, [[float(lon), float(lat)] for lon, lat, *_ in line])
-        for line in _lines(tour)
-        if len(line) >= 2
+        for line in coordinates
+        if isinstance(line, list) and len(line) >= 2
     ]
 
 
