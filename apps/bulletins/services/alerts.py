@@ -422,7 +422,10 @@ def deliver(run: AccountRun) -> AccountRun:
             if row.decision.sends and not reached:
                 outcome = BulletinAlert.Outcome.SKIPPED
             sends = row.decision.sends and reached
-            BulletinAlert.objects.get_or_create(
+            # update_or_create, not get_or_create: a state that recurs on
+            # the same day rewrites its row, which bumps updated_at and so
+            # makes it the latest again (BulletinAlertQuerySet.for_day).
+            BulletinAlert.objects.update_or_create(
                 account=account,
                 region=row.place.region,
                 target_date=row.day,

@@ -120,6 +120,17 @@ def test_older_validity_does_not_replace_authoritative() -> None:
     assert len(replay_region(records, source="SLF")) == 1
 
 
+@pytest.mark.usefixtures("_fakes")
+def test_issues_held_overnight_are_one_decision() -> None:
+    """Two issues for one day held to 06:30: only the later one is decided."""
+    records = [
+        issue("2026-01-16T22:00:00+00:00", "2026-01-16T23:00:00+00:00", "considerable"),
+        issue("2026-01-17T02:00:00+00:00", "2026-01-17T03:00:00+00:00", "high"),
+    ]
+    (alert,) = replay_region(records, source="SLF")
+    assert "High (4)" in alert.title
+
+
 def test_committed_slf_season() -> None:
     """The committed CH-4115 season replays end to end."""
     alerts = replay_archive(source="SLF")

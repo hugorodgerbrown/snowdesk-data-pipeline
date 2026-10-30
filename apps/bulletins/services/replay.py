@@ -106,6 +106,35 @@ def region_issues(
     return out
 
 
+def _last_per_delivery(
+    issues: list[tuple[datetime.datetime, datetime.datetime, datetime.date, Any]],
+) -> dict[tuple[datetime.date, datetime.datetime], int]:
+    """
+    Return, per (day, delivery time), the index of the issue a run would see.
+
+    Issues published during the night hold are all delivered at 06:30, and
+    the 06:30 run sees only whichever of them is then authoritative for its
+    day. Mirrors ``replay_region``'s authority rule (a later ``valid_from``
+    never loses to an earlier one) without building any render model.
+
+    Args:
+        issues: ``region_issues`` output, in publication order.
+
+    Returns:
+        The index of the last issue to become authoritative for each day at
+        each delivery time.
+
+    """
+    held: dict[datetime.date, datetime.datetime] = {}
+    out: dict[tuple[datetime.date, datetime.datetime], int] = {}
+    for index, (published, valid_from, day, _raw) in enumerate(issues):
+        if day in held and valid_from < held[day]:
+            continue
+        held[day] = valid_from
+        out[(day, _delivery_time(published))] = index
+    return out
+
+
 def replay_region(
     records: Iterable[dict[str, Any]],
     *,
@@ -129,10 +158,12 @@ def replay_region(
         Every decision, sent or not, in delivery order.
 
     """
+    issues = region_issues(records, source, region_id)
+    last_delivered = _last_per_delivery(issues)
     authoritative: dict[datetime.date, tuple[datetime.datetime, BulletinState]] = {}
     logged: dict[datetime.date, BulletinState] = {}
     out: list[ReplayedAlert] = []
-    for published, valid_from, day, raw in region_issues(records, source, region_id):
+    for index, (published, valid_from, day, raw) in enumerate(issues):
         if label is None:
             label = next(
                 (
@@ -151,10 +182,14 @@ def replay_region(
             logger.warning("Replay: skipping an issue whose render model failed")
             continue
         authoritative[day] = (valid_from, state)
+        delivered = _delivery_time(published)
+        if last_delivered[(day, delivered)] != index:
+            # A later issue for this day goes out at the same moment (both
+            # held overnight): the live run only ever sees that one.
+            continue
         last = logged.get(day)
         if last is not None and last.fingerprint() == state.fingerprint():
             continue
-        delivered = _delivery_time(published)
         today = delivered.astimezone(ALERT_TZ).date()
         if day < today:
             # A late correction to a day already over is never announced.

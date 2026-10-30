@@ -230,6 +230,24 @@ class TestEvaluateAndDeliver:
         assert run.message is not None
         assert "updated for Saturday" in run.message.title
 
+    def test_a_state_that_recurs_is_told_once(self, follower: tuple) -> None:
+        """A, then B, then A again: the return of A sends once, not every run."""
+        account, region = follower
+        PushSubscriptionFactory.create(account=account)
+        bulletin = publish(region, TOMORROW, render())
+        with patch.object(alerts, "enqueue_push") as push:
+            deliver(evaluate_account(account, NOW))  # A
+            bulletin.render_model = render("considerable")
+            bulletin.save()
+            deliver(evaluate_account(account, NOW))  # B
+            bulletin.render_model = render()
+            bulletin.save()
+            deliver(evaluate_account(account, NOW))  # A again
+            assert push.call_count == 3
+            again = evaluate_account(account, NOW)
+        assert again.rows == []
+        assert BulletinAlert.objects.filter(target_date=TOMORROW).count() == 2
+
     def test_email_fallback_without_push(self, follower: tuple) -> None:
         """No push device: the FALLBACK account is emailed."""
         account, region = follower

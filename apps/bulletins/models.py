@@ -1116,7 +1116,11 @@ class BulletinAlertQuerySet(models.QuerySet["BulletinAlert"]):
         self, account_id: int, region_id: int, target_date: _date
     ) -> "BulletinAlertQuerySet":
         """
-        Return the rows for one account, region and day, newest first.
+        Return the rows for one account, region and day, latest first.
+
+        Ordered by ``updated_at``: a state that recurs (A, then B, then A
+        again) rewrites its original row, which must then read as the
+        latest, or every run would compare A against B and resend it.
 
         Args:
             account_id: The account's pk.
@@ -1129,7 +1133,7 @@ class BulletinAlertQuerySet(models.QuerySet["BulletinAlert"]):
         """
         return self.filter(
             account_id=account_id, region_id=region_id, target_date=target_date
-        ).order_by("-created_at", "-id")
+        ).order_by("-updated_at", "-id")
 
     def sent(self) -> "BulletinAlertQuerySet":
         """Return the rows that reached the account (push or email)."""

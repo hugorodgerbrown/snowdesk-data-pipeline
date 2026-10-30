@@ -96,7 +96,13 @@
         return reg.pushManager.getSubscription();
       })
       .then(function (sub) {
-        if (sub) {
+        // An existing browser subscription may belong to another account,
+        // or its registration may have failed: register it again (the
+        // endpoint is upserted onto this account) before claiming it.
+        return sub ? register(sub, env) : false;
+      })
+      .then(function (registered) {
+        if (registered) {
           say('subscribed');
           if (test) test.hidden = false;
         } else {
@@ -168,23 +174,33 @@
           });
         })
         .then(function (sub) {
-          var body = Object.assign({}, sub.toJSON(), { mechanism: core.mechanismFor(env) });
-          return fetch('/account/push/register/', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
-            credentials: 'same-origin',
-            body: JSON.stringify(body),
-          });
-        })
-        .then(function (resp) {
-          if (resp.ok && self.pwaDb) {
-            // The launch-time reverify loop (push_demo.js) keys off this.
-            self.pwaDb
-              .put('meta:app', { key: 'push.subscribed_before', value: true })
-              .catch(function () {});
-          }
-          return resp.ok;
+          return register(sub, env);
         });
+    });
+  }
+
+  /**
+   * Register a browser subscription against the signed-in account.
+   *
+   * @param {PushSubscription} sub
+   * @param {Object} env
+   * @returns {Promise<boolean>}
+   */
+  function register(sub, env) {
+    var body = Object.assign({}, sub.toJSON(), { mechanism: core.mechanismFor(env) });
+    return fetch('/account/push/register/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+      credentials: 'same-origin',
+      body: JSON.stringify(body),
+    }).then(function (resp) {
+      if (resp.ok && self.pwaDb) {
+        // The launch-time reverify loop (push_demo.js) keys off this.
+        self.pwaDb
+          .put('meta:app', { key: 'push.subscribed_before', value: true })
+          .catch(function () {});
+      }
+      return resp.ok;
     });
   }
 
