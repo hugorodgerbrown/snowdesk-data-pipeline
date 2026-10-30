@@ -3421,14 +3421,17 @@
    */
   const paintTourRoute = () => {
     const core = self.pwaRouteDrawingCore;
-    if (!core || !map.isStyleLoaded()) return;
+    if (!core) return;
     const collection = {
       type: 'FeatureCollection',
       features: tourRouteFeature ? [tourRouteFeature] : [],
     };
     const ids = core.sourceIds(TOUR_ROUTE_SOURCE);
+    // Only installing waits for the style. isStyleLoaded() is false while
+    // any source is still fetching tiles, so gating the update on it left
+    // a closed tour drawn whenever the panel shut during a load.
     if (!map.getSource(ids.route)) {
-      if (!tourRouteFeature) return;
+      if (!tourRouteFeature || !map.isStyleLoaded()) return;
       core.install(map, collection, { prefix: TOUR_ROUTE_SOURCE, textFont: overlayTextFont });
       installRouteCursorLayers(TOUR_ROUTE_CURSOR_SOURCE, TOUR_ROUTE_SOURCE, true);
       raiseMarkerLayers();
