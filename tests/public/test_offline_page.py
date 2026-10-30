@@ -200,15 +200,14 @@ class TestContentEndpoints:
 
         assert f'data-area-content-url="{reverse("api:area_content")}"' in html
 
-    def test_it_renders_how_far_back_a_download_reaches(self) -> None:
+    def test_it_renders_no_reach_backwards(self) -> None:
         """
-        SNOW-953: the backwards reach is a setting, so the page has to say
-        what it is — a client that guessed would carry different days from
-        the map.
+        SNOW-1312: a download looks forward only, from the map and from
+        here alike, so the page no longer says how far back to reach.
         """
         html = Client().get(reverse("public:offline_page")).content.decode()
 
-        assert f'data-content-past-days="{settings.OFFLINE_CONTENT_PAST_DAYS}"' in html
+        assert "data-content-past-days" not in html
 
     def test_it_still_names_every_country_the_map_carries(self) -> None:
         """

@@ -1854,7 +1854,12 @@ describe('areaContentURLs', () => {
   it('survives an answer that is missing either list', () => {
     const plan = core.areaContentURLs({ days: DAYS });
 
-    expect(plan).toEqual({ bulletinUrls: [], weatherDetailUrls: [] });
+    expect(plan).toEqual({
+      bulletinUrls: [],
+      weatherDetailUrls: [],
+      regionSheetUrls: [],
+      ratingsUrls: [],
+    });
   });
 
   it('dates each sheet with the download day when one is named (SNOW-965)', () => {
@@ -1871,6 +1876,107 @@ describe('areaContentURLs', () => {
     expect(plan.weatherDetailUrls).toEqual([
       '/api/weather/AAAAAAAAAAA/detail/?date=2026-01-06',
     ]);
+  });
+});
+
+describe('areaContentURLs — region sheets and dated ratings (SNOW-1312)', () => {
+  const SHEET = '/partials/region-sheet/XX-0000/';
+  const DAYS = ['2026-01-06', '2026-01-07'];
+
+  it("takes the map's region sheet per region and day, lowercased, `d` first", () => {
+    const plan = core.areaContentURLs({
+      regions: [
+        { id: 'CH-1111', slug: 'inside' },
+        { id: 'ch-1111', slug: 'inside' },
+        { id: 'FR-01', slug: 'chablais' },
+      ],
+      days: DAYS,
+      regionSheetTemplate: SHEET,
+    });
+
+    expect(plan.regionSheetUrls).toEqual([
+      '/partials/region-sheet/ch-1111/?d=2026-01-06',
+      '/partials/region-sheet/ch-1111/?d=2026-01-07',
+      '/partials/region-sheet/fr-01/?d=2026-01-06',
+      '/partials/region-sheet/fr-01/?d=2026-01-07',
+    ]);
+    // Two spellings of one region are one region, for its bulletins too.
+    expect(plan.bulletinUrls).toHaveLength(4);
+  });
+
+  it('takes no region sheet without days or without a template', () => {
+    const regions = [{ id: 'CH-1111', slug: 'inside' }];
+
+    expect(core.areaContentURLs({ regions, days: [], regionSheetTemplate: SHEET })
+      .regionSheetUrls).toEqual([]);
+    expect(core.areaContentURLs({ regions, days: DAYS }).regionSheetUrls).toEqual([]);
+  });
+
+  it("takes the dated ratings feed per day in map.js's boot order", () => {
+    const plan = core.areaContentURLs({ days: DAYS, ratingsUrl: '/api/ratings/' });
+
+    expect(plan.ratingsUrls).toEqual([
+      '/api/ratings/?d=2026-01-06&country=ch',
+      '/api/ratings/?d=2026-01-07&country=ch',
+    ]);
+    expect(core.areaContentURLs({ days: [], ratingsUrl: '/api/ratings/' }).ratingsUrls)
+      .toEqual([]);
+  });
+
+  it('dedupes a repeated day', () => {
+    const plan = core.areaContentURLs({
+      regions: [{ id: 'CH-1111', slug: 'inside' }],
+      days: ['2026-01-06', '2026-01-06'],
+      regionSheetTemplate: SHEET,
+      ratingsUrl: '/api/ratings/',
+    });
+
+    expect(plan.regionSheetUrls).toEqual(['/partials/region-sheet/ch-1111/?d=2026-01-06']);
+    expect(plan.ratingsUrls).toEqual(['/api/ratings/?d=2026-01-06&country=ch']);
+  });
+});
+
+describe('forwardContentDays (SNOW-1312)', () => {
+  it('runs from today to the last published day, never before today', () => {
+    expect(core.forwardContentDays('2026-01-06', '2026-01-07')).toEqual([
+      '2026-01-06',
+      '2026-01-07',
+    ]);
+  });
+
+  it('is today alone without a later ceiling', () => {
+    expect(core.forwardContentDays('2026-01-06')).toEqual(['2026-01-06']);
+    expect(core.forwardContentDays('2026-01-06', '2026-01-04')).toEqual(['2026-01-06']);
+    expect(core.forwardContentDays('2026-01-06', 'garbage')).toEqual(['2026-01-06']);
+  });
+
+  it('adds a forward day on screen, and never a past one', () => {
+    expect(core.forwardContentDays('2026-01-06', '2026-01-06', '2026-01-09')).toEqual([
+      '2026-01-06',
+      '2026-01-09',
+    ]);
+    expect(core.forwardContentDays('2026-01-06', '2026-01-07', '2026-01-05')).toEqual([
+      '2026-01-06',
+      '2026-01-07',
+    ]);
+  });
+
+  it("keys its days in the region sheet's own dateKey format", () => {
+    // The sheet asks with the scrubber's `YYYY-MM-DD` key, and the warmed
+    // url is only found offline if the two agree.
+    for (const day of core.forwardContentDays('2026-03-30', '2026-04-01')) {
+      expect(day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+    expect(core.forwardContentDays('2026-03-30', '2026-04-01')).toEqual([
+      '2026-03-30',
+      '2026-03-31',
+      '2026-04-01',
+    ]);
+  });
+
+  it('is empty for an unreadable today', () => {
+    expect(core.forwardContentDays('')).toEqual([]);
+    expect(core.forwardContentDays(null)).toEqual([]);
   });
 });
 

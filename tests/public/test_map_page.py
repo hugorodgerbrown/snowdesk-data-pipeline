@@ -795,19 +795,19 @@ def test_map_page_accepts_date_query_param() -> None:
 
 
 @pytest.mark.django_db
-def test_map_page_renders_the_area_content_endpoint_and_its_day_reach() -> None:
+def test_map_page_renders_the_area_content_endpoint_and_no_day_reach() -> None:
     """
     SNOW-953: the download's content plan comes from one server request.
 
     ``data-area-content-url`` is the endpoint that answers what a boundary
-    contains, and ``data-content-past-days`` is how far behind today the
-    plan reaches — the client cannot derive either, and a missing
-    attribute silently narrows a download rather than failing it.
+    contains. SNOW-1312: a download looks forward only, so the page no
+    longer carries ``data-content-past-days`` — the reach backwards it
+    configured is gone.
     """
     content = Client().get(reverse("public:map")).content.decode()
 
     assert f'data-area-content-url="{reverse("api:area_content")}"' in content
-    assert f'data-content-past-days="{settings.OFFLINE_CONTENT_PAST_DAYS}"' in content
+    assert "data-content-past-days" not in content
 
 
 @pytest.mark.django_db
