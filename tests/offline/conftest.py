@@ -512,7 +512,8 @@ class OfflineMapPage:
             f"finished in state {state!r} rather than 'done'. "
             "'incomplete' means the tiles arrived but a render dependency "
             "— the style, a TileJSON or the sprite — did not, so the area "
-            "cannot draw offline however complete its tile set looks."
+            "cannot draw offline however complete its tile set looks.\n  "
+            + self.diagnostics()
         )
 
     def wait_for_base_layer(self, timeout_ms: int = 240_000) -> int:
