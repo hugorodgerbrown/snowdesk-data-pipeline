@@ -860,18 +860,22 @@ async function assembleAreaContentURLs(blob) {
     ? core.areaContentURLs({
       regions: content.regions,
       weather: content.weather,
+      // SNOW-1318: each resort's place sheet for every forward day.
+      resorts: content.resorts,
       days: await downloadContentDays(),
       weatherDetailTemplate: weatherDetail,
       weatherDay: weatherDay,
       // SNOW-1312: the map's region sheet for every region and day, and
       // the dated ratings feed the map boots its colours from.
       regionSheetTemplate: mapEl.dataset.regionSheetUrl || '',
+      resortSheetTemplate: mapEl.dataset.resortSheetUrl || '',
       ratingsUrl: mapEl.dataset.ratingsUrl || '',
     })
-    : { bulletinUrls: [], weatherDetailUrls: [], regionSheetUrls: [], ratingsUrls: [] };
+    : { bulletinUrls: [], weatherDetailUrls: [], regionSheetUrls: [], resortSheetUrls: [], ratingsUrls: [] };
   const planned = [
     ...plan.bulletinUrls,
     ...(plan.regionSheetUrls || []),
+    ...(plan.resortSheetUrls || []),
     ...(plan.ratingsUrls || []),
     ...plan.weatherDetailUrls,
   ];
@@ -916,11 +920,20 @@ async function assembleAreaContentURLs(blob) {
 /**
  * Whether a parsed `/api/area-content/` answer has its documented shape.
  *
+ * SNOW-1318: `resorts` is required, so an answer from before the field
+ * (a stale cached copy) is a short plan, never one confidently without
+ * resort sheets.
+ *
  * @param {*} data
  * @returns {boolean}
  */
 function isAreaContent(data) {
-  return !!data && Array.isArray(data.regions) && Array.isArray(data.weather);
+  return (
+    !!data &&
+    Array.isArray(data.regions) &&
+    Array.isArray(data.weather) &&
+    Array.isArray(data.resorts)
+  );
 }
 
 /**

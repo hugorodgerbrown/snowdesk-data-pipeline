@@ -574,8 +574,9 @@ The SW classifies every fetch into one of four buckets:
   basemap" below.
 
 - **`private-partial`** (SNOW-1313) — a saved pin's place sheet,
-  `/partials/place-sheet/favourite/<uuid>/`, and nothing else (the resort
-  place sheet stays `network`: its Save star is per-reader). Strategy:
+  `/partials/place-sheet/favourite/<uuid>/`, and nothing else (a resort's
+  place sheet is `public-partial` since SNOW-1318 — see the note after this
+  bullet). Strategy:
   **network first** (`_privatePartialNetworkFirst`), kept under the region
   sheet's path + `d` key (`_publicPartialKey`) and stamped with the
   principal the answer names (`X-Snowdesk-Principal`, `attest_principal`,
@@ -596,6 +597,16 @@ The SW classifies every fetch into one of four buckets:
   sheet (`public-partial`) classes it is built from are described there and
   in
   [`decisions/a-download-looks-forward-and-carries-the-region-sheet.md`](decisions/a-download-looks-forward-and-carries-the-region-sheet.md).
+
+  A resort's place sheet, `/partials/place-sheet/resort/<slug>/`, joined
+  `public-partial` in SNOW-1318 (`PUBLIC_PARTIAL_PATH`, both copies): its
+  body reads no `request.user` — the Save star renders as a disabled
+  outline and `map_place_sheet.js` paints it from `map.js`'s favourites
+  feed (`window.pwaFavouritedResorts`) — and it answers `private, max-age`
+  on the region sheet's policy. A download warms one per resort
+  `/api/area-content/` names (`resorts`) and forward day
+  (`areaContentURLs`' `resortSheetUrls`), and a warm that fails makes the
+  area short.
 
 - **`network`** — everything else: bulletin JSON
   (`/api/region/<id>/summary/`), ratings (`/api/ratings/`), calendar

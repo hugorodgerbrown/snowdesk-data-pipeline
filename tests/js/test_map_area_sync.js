@@ -68,6 +68,7 @@ const isClassTile = (url) => url.startsWith('https://terrain.example.invalid/');
 let areaContentAnswer = () => ({
   regions: [{ id: REGION_ID, slug: REGION_SLUG }],
   weather: [],
+  resorts: [],
 });
 
 /** One region, whose polygon is the ground the seeded area covers. */

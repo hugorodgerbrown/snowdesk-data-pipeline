@@ -1435,6 +1435,11 @@ def offline_page(request: HttpRequest) -> HttpResponse:
                 "region_sheet": reverse(
                     "public:region_sheet_partial", kwargs={"region_id": "XX-0000"}
                 ),
+                # SNOW-1318: and each resort's place sheet, per day — the
+                # ``__SLUG__`` template ``_map_embed.html`` renders.
+                "resort_sheet": reverse(
+                    "public:resort_sheet_partial", kwargs={"slug": "__SLUG__"}
+                ),
                 # SNOW-1313: a saved pin's place sheet, warmed per pin the
                 # area-items answer names — the nil-uuid template
                 # `_map_embed.html` renders onto `#map`. Account-only, as

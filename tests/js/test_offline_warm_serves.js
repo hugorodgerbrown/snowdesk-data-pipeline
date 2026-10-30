@@ -39,7 +39,8 @@
  * Navigation, a trip's route and a pin's place sheet are kept for the
  * reader they were rendered for: after an account swap or a sign-out the
  * warmed copy must NOT be served. The public classes — the weather sheet,
- * the region sheet, the shell's static files and feeds — must be served
+ * the region sheet, a resort's place sheet (SNOW-1318), the shell's static
+ * files and feeds — must be served
  * whoever is signed in. The two attested classes (``private-json``,
  * ``private-partial``) are fixtured with the server's
  * ``X-Snowdesk-Principal``, and a warm without it must fail, which is what
@@ -123,6 +124,7 @@ const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 // ``#map``'s templates, as `_map_embed.html` renders them.
 const TEMPLATES = {
   regionSheet: '/partials/region-sheet/XX-0000/',
+  resortSheet: '/partials/place-sheet/resort/__SLUG__/',
   weatherDetail: '/api/weather/__SHORTID__/detail/',
   ratings: '/api/ratings/',
   tripPage: '/trips/__UUID__/',
@@ -131,17 +133,19 @@ const TEMPLATES = {
 };
 
 // What `/api/area-content/` answers, shaped to take every output branch:
-// two regions (one CH, one FR), two days, one weather point.
+// two regions (one CH, one FR), two days, one weather point, one resort.
 const CONTENT_INPUT = {
   regions: [
     { id: 'CH-4115', slug: 'martigny-verbier' },
     { id: 'FR-01', slug: 'chablais' },
   ],
   weather: [{ short_id: 'Ab3dE_fGh1J' }],
+  resorts: [{ slug: 'verbier' }],
   days: download.forwardContentDays(TODAY, TOMORROW),
   weatherDetailTemplate: TEMPLATES.weatherDetail,
   weatherDay: TODAY,
   regionSheetTemplate: TEMPLATES.regionSheet,
+  resortSheetTemplate: TEMPLATES.resortSheet,
   ratingsUrl: TEMPLATES.ratings,
 };
 
@@ -207,6 +211,13 @@ const FAMILIES = [
     name: 'region sheet',
     producer: 'areaContentURLs.regionSheetUrls',
     match: new RegExp(`^/partials/region-sheet/[a-z0-9-]+/\\?d=${DAY}$`),
+    swClass: 'public-partial',
+    principal: 'independent',
+  },
+  {
+    name: 'resort sheet',
+    producer: 'areaContentURLs.resortSheetUrls',
+    match: new RegExp(`^/partials/place-sheet/resort/[a-z0-9_-]+/\\?d=${DAY}$`),
     swClass: 'public-partial',
     principal: 'independent',
   },

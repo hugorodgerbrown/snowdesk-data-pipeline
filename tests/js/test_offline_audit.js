@@ -1490,6 +1490,7 @@ describe('Sync now, on the area panels (SNOW-925/951, SNOW-1308)', () => {
          data-trip-route-url-template="/trips/__UUID__/route.geojson"
          data-ratings-url="/api/ratings/"
          data-region-sheet-url="/partials/region-sheet/XX-0000/"
+         data-resort-sheet-url="/partials/place-sheet/resort/__SLUG__/"
          data-favourite-sheet-url="/partials/place-sheet/favourite/00000000-0000-0000-0000-000000000000/"
          data-content-countries="ch fr"
          data-today="${RENDERED_DAY}">
@@ -1511,6 +1512,8 @@ describe('Sync now, on the area panels (SNOW-925/951, SNOW-1308)', () => {
   const AREA_CONTENT = {
     regions: [{ id: REGION_ID, slug: 'martigny-verbier' }],
     weather: [{ short_id: 'INSIDEaaaaa' }],
+    // SNOW-1318: one resort pinned inside the box.
+    resorts: [{ slug: 'verbier' }],
   };
 
   /**
@@ -1976,6 +1979,8 @@ describe('Sync now, on the area panels (SNOW-925/951, SNOW-1308)', () => {
     const urls = warmed.flat();
     for (const delta of [0, 1]) {
       expect(urls).toContain('/partials/region-sheet/ch-4115/?d=' + dayFrom(delta));
+      // SNOW-1318: and each resort's place sheet, as the map's download.
+      expect(urls).toContain('/partials/place-sheet/resort/verbier/?d=' + dayFrom(delta));
       expect(urls).toContain('/api/ratings/?d=' + dayFrom(delta) + '&country=ch');
     }
     // And the season payloads the scrubber paints every day from.
@@ -1991,6 +1996,27 @@ describe('Sync now, on the area panels (SNOW-925/951, SNOW-1308)', () => {
       const failed = urls.filter(
         (url) => url.startsWith('/partials/region-sheet/') || url.startsWith('/api/ratings/?d='),
       ).length;
+      return { ok: urls.length - failed, failed, bytes: 10 };
+    });
+
+    row.querySelector('[data-journey-sync]').click();
+    await vi.waitUntil(
+      async () => {
+        const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
+        return stored.value[0].contentIncomplete === true;
+      },
+      { timeout: 5000 },
+    );
+
+    const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
+    expect(stored.value[0].contentAt).toBe('2026-09-01T10:00:00.000Z');
+  });
+
+  it('counts a resort sheet that fails to warm against the area (SNOW-1318)', async () => {
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+    window.pwaWarmCache.mockImplementation(async (urls) => {
+      warmed.push(urls);
+      const failed = urls.filter((url) => url.startsWith('/partials/place-sheet/resort/')).length;
       return { ok: urls.length - failed, failed, bytes: 10 };
     });
 

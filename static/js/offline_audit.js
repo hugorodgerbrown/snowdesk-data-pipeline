@@ -1556,14 +1556,22 @@
    *
    * @param {string|undefined} endpoint The panel's ``data-area-content-url``.
    * @param {number[]} bbox ``[west, south, east, north]``.
-   * @returns {Promise<{regions: Array<Object>, weather: Array<Object>}|null>}
+   * @returns {Promise<{regions: Array<Object>, weather: Array<Object>,
+   *   resorts: Array<Object>}|null>}
    *   ``null`` for a missing endpoint, a failed request, or an answer that
-   *   is not the documented shape — all three are "cannot say".
+   *   is not the documented shape — all three are "cannot say". SNOW-1318:
+   *   the shape includes ``resorts``, so an answer from before the field
+   *   is a short plan rather than one without resort sheets.
    */
   async function fetchAreaContentPlan(endpoint, bbox) {
     if (!endpoint) return null;
     var data = await fetchJson(endpoint + '?bbox=' + encodeURIComponent(bbox.join(',')));
-    if (!data || !Array.isArray(data.regions) || !Array.isArray(data.weather)) {
+    if (
+      !data ||
+      !Array.isArray(data.regions) ||
+      !Array.isArray(data.weather) ||
+      !Array.isArray(data.resorts)
+    ) {
       return null;
     }
     return data;
@@ -1731,6 +1739,8 @@
     var plan = core.areaContentURLs({
       regions: (content && content.regions) || [],
       weather: (content && content.weather) || [],
+      // SNOW-1318: each resort's place sheet per day, as the map's download.
+      resorts: (content && content.resorts) || [],
       // SNOW-1312: today to the last published day, never before today
       // — the map's own window (`contentDays`).
       //
@@ -1751,10 +1761,12 @@
       // dated ratings feed per day — composed by the same core the map's
       // download uses, so the urls are the map's.
       regionSheetTemplate: data.regionSheetUrl || '',
+      resortSheetTemplate: data.resortSheetUrl || '',
       ratingsUrl: data.ratingsUrl || '',
     });
     var planned = plan.bulletinUrls
       .concat(plan.regionSheetUrls || [])
+      .concat(plan.resortSheetUrls || [])
       .concat(plan.ratingsUrls || [])
       .concat(plan.weatherDetailUrls);
     // SNOW-965: each trip's page and route, and the sheet each pin
