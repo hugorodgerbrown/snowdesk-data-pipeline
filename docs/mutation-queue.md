@@ -169,6 +169,14 @@ offline never reached the server, so its first replay is its only
 delivery and cannot duplicate. Accepted as a limit (30 Oct 2026); there is
 no age cap or UI for it.
 
+**Two more accepted edges.** A row whose key the server holds RESERVED
+(`idempotency_in_flight`) is retried with the queue's ordinary backoff, up
+to its attempt cap, before it fails — so such a row can read "Waiting to
+sync" for a long while. And while a stamped draft is hidden (no one signed
+in), a new line drawn in its place lives in memory only: it is lost if the
+visitor leaves to sign in before saving, because writing it would overwrite
+the hidden draft that belongs to someone else.
+
 **One draft slot.** Draw mode holds one draft, so while its save is queued
 the drawer cannot start another route — the panel opens on the queued line
 with every edit, Start over and Save disabled. Accepted (30 Oct 2026); a
