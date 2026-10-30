@@ -685,3 +685,46 @@ class TestOfflineCopy:
 
         for detail in ("reader@example.com", "Zebedee", 'name="csrfmiddlewaretoken"'):
             assert detail not in signed_in
+
+    def _failed_bulletin_url(self) -> str:
+        """A region whose today's bulletin failed processing (version 0)."""
+        region = MicroRegionFactory.create()
+        day = timezone.localdate()
+        RegionDayRatingFactory.create(
+            region=region, date=day, max_rating="considerable"
+        )
+        start = datetime.datetime.combine(day, datetime.time.min, tzinfo=datetime.UTC)
+        bulletin = BulletinFactory.create(
+            issued_at=start,
+            valid_from=start,
+            valid_to=start + datetime.timedelta(days=1),
+            render_model={"version": 0, "error": "Synthetic processing error"},
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        RegionBulletinFactory.create(bulletin=bulletin, region=region)
+        return _url(region.region_id.lower(), day.isoformat())
+
+    def test_a_staff_body_with_the_error_callout_is_never_kept(
+        self, client: Client, django_user_model: Any
+    ) -> None:
+        """The staff callout names the admin and the error: never stored."""
+        url = self._failed_bulletin_url()
+        staff = django_user_model.objects.create_user("staff", is_staff=True)
+        client.force_login(staff)
+
+        response = _get(client, url)
+
+        assert "Synthetic processing error" in response.content.decode()
+        assert "no-store" in response["Cache-Control"]
+
+    def test_everyone_else_gets_a_keepable_failed_bulletin(
+        self, client: Client, django_user_model: Any
+    ) -> None:
+        """Only the staff variant is refused; the public one stays offline."""
+        url = self._failed_bulletin_url()
+        client.force_login(django_user_model.objects.create_user("plain"))
+
+        response = _get(client, url)
+
+        assert "Synthetic processing error" not in response.content.decode()
+        assert "no-store" not in response["Cache-Control"]

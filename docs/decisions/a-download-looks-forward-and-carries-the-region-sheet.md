@@ -67,12 +67,18 @@ signed out (SNOW-1291). `tests/public/test_region_sheet.py`
 under one account shows the other at worst that button. A body is served in
 the language it was saved in.
 
+The one other reader-dependent branch is the staff callout on a bulletin
+that failed processing (version 0): the admin link, the bulletin id and the
+processing error. `region_sheet_partial` answers that body `no-store`
+(`_renders_staff_callout`), which the worker already refuses to keep, so it
+can never be served to another reader on the same device.
+
 ## Consequences
 
 - Nothing from before today is saved by a download from either entry
   point. A past day offline opens to the peek and the "not downloaded"
   line.
-- Sheets live in the shell cache (`CACHE_VERSION`) with the bulletins, so a
-  deploy reaps them like the rest and the next content refresh restores
-  them.
+- Sheets live in the shell cache (`CACHE_VERSION`) with the bulletins, so
+  an update carries them across with the rest (SNOW-1311,
+  `an-update-carries-your-downloaded-content-across.md`).
 - Every region sheet opened online with a `d` is kept too, under its key.

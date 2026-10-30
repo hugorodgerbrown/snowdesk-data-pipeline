@@ -4408,6 +4408,8 @@ describe("the map's region sheet is read offline on its day (SNOW-1312)", () => 
     expect(key(`${SHEET}?r=1793360738745&d=${TODAY}&x=y`)).toBe(KEY);
     expect(key(SHEET)).toBeNull();
     expect(key(`${SHEET}?d=tomorrow`)).toBeNull();
+    // Two days: the worker and Django would disagree on which.
+    expect(key(`${SHEET}?d=${TODAY}&d=2026-01-01`)).toBeNull();
   });
 
   it('warms with `HX-Request` and keeps the sheet under its key, unstamped', async () => {
@@ -4654,6 +4656,21 @@ describe('activate carries the old shell caches into the new one (SNOW-1311)', (
       copied: 4,
       failed: 0,
     });
+  });
+
+  it('carries a downloaded region sheet under its own key (SNOW-1312)', async () => {
+    const regionSheet = `${ORIGIN}/partials/region-sheet/ch-4115/?d=2026-10-30`;
+    const caches = makeCaches();
+    caches.seed(OLD, regionSheet, stored('<p>sheet</p>', { 'Content-Type': 'text/html' }));
+    const sw = await offlineSw(caches);
+
+    await activate(sw);
+    await flush();
+
+    const carried = await (await caches.open(SHELL)).match(regionSheet);
+    expect(await carried.text()).toBe('<p>sheet</p>');
+    expect(carried.headers.get('X-SW-Principal')).toBeNull();
+    expect(caches.has(OLD)).toBe(false);
   });
 
   it.each([false, true])(

@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from typing import Any
 
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -171,6 +172,14 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
         "terrain_key": problem_terrain_key(terrain or []),
     }
     response = render(request, "public/partials/_region_sheet_body.html", context)
+    if _renders_staff_callout(request, body.get("panel")):
+        # SNOW-1312: the worker keeps this sheet unstamped and serves it to
+        # whoever opens the map offline on this device, so a body carrying
+        # the staff-only error callout (admin link, bulletin id, the
+        # processing error) must never be kept. ``no-store`` is what the
+        # worker's cache write already refuses.
+        patch_cache_control(response, private=True, no_store=True)
+        return response
     settled = target_date < timezone.localdate()
     patch_cache_control(
         response,
@@ -178,3 +187,24 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
         max_age=PAST_DAY_MAX_AGE_S if settled else CURRENT_DAY_MAX_AGE_S,
     )
     return response
+
+
+def _renders_staff_callout(request: HttpRequest, panel: dict[str, Any] | None) -> bool:
+    """Whether the sheet shows a staff reader the failed-bulletin callout.
+
+    Mirrors ``_region_body.html``'s ``user.is_staff`` branch inside the
+    ``render_model.version == 0`` error state — the one part of the sheet
+    beyond the call to report that differs by reader.
+
+    Args:
+        request: The incoming request, whose user is checked.
+        panel: The body's bulletin panel, or ``None`` when there is none.
+
+    Returns:
+        ``True`` when a staff user is shown a bulletin that failed processing.
+
+    """
+    if not panel or not getattr(request.user, "is_staff", False):
+        return False
+    render_model = panel.get("render_model") or {}
+    return render_model.get("version") == 0

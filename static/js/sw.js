@@ -3719,7 +3719,11 @@ async function _publicJsonNetworkFirst(request) {
  * @returns {string|null} ``origin + path + '?d=' + day``, or ``null``.
  */
 function _publicPartialKey(url) {
-  const day = url.searchParams.get('d') || '';
+  // Exactly one `d`: the worker would read the first and Django the last,
+  // so a doubled one could store one day's body under another day's key.
+  const days = url.searchParams.getAll('d');
+  if (days.length !== 1) return null;
+  const day = days[0];
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
   return url.origin + url.pathname + '?d=' + day;
 }
