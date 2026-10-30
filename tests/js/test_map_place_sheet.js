@@ -507,3 +507,146 @@ describe('during playback', () => {
     expect(band()).not.toBeNull();
   });
 });
+
+describe("the resort star, painted from the map's favourites (SNOW-1318)", () => {
+  // The body as the server renders it for every reader: a disabled outline
+  // beside a hidden sign-in link.
+  const NEUTRAL_STAR_BODY = `
+    <div data-testid="place-sheet-body" data-place-kind="resort">
+      <div data-sheet-peek><h2 data-row-label>Verbier</h2>
+        <button type="button" data-resort-star data-resort-slug="verbier"
+                data-favourited="false" data-favourite-uuid=""
+                data-label-save="Save resort" data-label-remove="Remove from saved places"
+                aria-pressed="false" aria-label="Save resort" title="Save resort" disabled>
+          <svg fill="none"></svg>
+        </button>
+        <a href="/account/sign-in/" data-resort-star-signin hidden>Sign in</a>
+      </div>
+    </div>
+  `;
+
+  /** A stand-in for map.js's accessor. */
+  const stubResorts = ({ eligible = true, state = null } = {}) => {
+    const resorts = {
+      eligible: vi.fn(() => eligible),
+      stateFor: vi.fn(() => state),
+      load: vi.fn(() => Promise.resolve()),
+    };
+    window.pwaFavouritedResorts = resorts;
+    return resorts;
+  };
+
+  const openVerbier = async () => {
+    fetchMock.mockImplementation(() => answer(NEUTRAL_STAR_BODY));
+    window.pwaPlaceSheet.open({ kind: 'resort', id: 'verbier', name: 'Verbier' });
+    await settle();
+  };
+
+  const star = () => /** @type {?HTMLButtonElement} */ (sheet.querySelector('[data-resort-star]'));
+  const signIn = () => /** @type {?HTMLElement} */ (sheet.querySelector('[data-resort-star-signin]'));
+
+  afterEach(() => {
+    delete window.pwaFavouritedResorts;
+  });
+
+  it('leaves the disabled outline as rendered without the map', async () => {
+    await openVerbier();
+    expect(star().disabled).toBe(true);
+    expect(signIn().hidden).toBe(true);
+  });
+
+  it('shows a reader who cannot save the sign-in link, and no star', async () => {
+    stubResorts({ eligible: false });
+    await openVerbier();
+    expect(star()).toBeNull();
+    expect(signIn().hidden).toBe(false);
+  });
+
+  it('keeps the outline disabled while the feed is unread, and asks for it', async () => {
+    const resorts = stubResorts({ state: null });
+    // The feed is still in flight.
+    resorts.load.mockImplementation(() => new Promise(() => {}));
+    await openVerbier();
+    expect(signIn()).toBeNull();
+    expect(star().disabled).toBe(true);
+    expect(resorts.stateFor).toHaveBeenCalledWith('verbier');
+    expect(resorts.load).toHaveBeenCalled();
+  });
+
+  it('enables the outline once the feed cannot be read at all', async () => {
+    const resorts = stubResorts({ state: null });
+    let settleLoad;
+    resorts.load.mockImplementation(() => new Promise((resolve) => { settleLoad = resolve; }));
+    await openVerbier();
+    expect(star().disabled).toBe(true);
+    // Network and overlay cache both failed: load settles, still no state.
+    settleLoad();
+    await settle();
+    expect(star().disabled).toBe(false);
+    expect(star().getAttribute('data-favourited')).toBe('false');
+    expect(star().querySelector('svg').getAttribute('fill')).toBe('none');
+  });
+
+  it('paints an unsaved resort as an enabled outline', async () => {
+    stubResorts({ state: { favourited: false, uuid: '' } });
+    await openVerbier();
+    expect(star().disabled).toBe(false);
+    expect(star().getAttribute('aria-pressed')).toBe('false');
+    expect(star().getAttribute('aria-label')).toBe('Save resort');
+    expect(star().querySelector('svg').getAttribute('fill')).toBe('none');
+  });
+
+  it('paints a saved resort filled, with its uuid for the removal', async () => {
+    stubResorts({ state: { favourited: true, uuid: 'fav-1' } });
+    await openVerbier();
+    expect(star().disabled).toBe(false);
+    expect(star().getAttribute('data-favourited')).toBe('true');
+    expect(star().getAttribute('data-favourite-uuid')).toBe('fav-1');
+    expect(star().getAttribute('aria-pressed')).toBe('true');
+    expect(star().getAttribute('aria-label')).toBe('Remove from saved places');
+    expect(star().getAttribute('title')).toBe('Remove from saved places');
+    expect(star().querySelector('svg').getAttribute('fill')).toBe('currentColor');
+  });
+
+  it('holds a queued save filled and disabled', async () => {
+    stubResorts({ state: { favourited: true, uuid: '' } });
+    await openVerbier();
+    expect(star().disabled).toBe(true);
+    expect(star().getAttribute('aria-busy')).toBe('true');
+    expect(star().querySelector('svg').getAttribute('fill')).toBe('currentColor');
+  });
+
+  it('repaints when the map has read the favourites', async () => {
+    const resorts = stubResorts({ state: null });
+    await openVerbier();
+    resorts.stateFor.mockReturnValue({ favourited: true, uuid: 'fav-1' });
+    document.dispatchEvent(new CustomEvent('snowdesk:favourited-resorts-changed'));
+    expect(star().disabled).toBe(false);
+    expect(star().getAttribute('data-favourite-uuid')).toBe('fav-1');
+    expect(star().hasAttribute('aria-busy')).toBe(false);
+  });
+
+  it('repaints, and does not re-read a resort body, when the favourites change', async () => {
+    const resorts = stubResorts({ state: { favourited: false, uuid: '' } });
+    await openVerbier();
+    fetchMock.mockClear();
+    resorts.stateFor.mockReturnValue({ favourited: true, uuid: 'fav-2' });
+    document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(star().getAttribute('data-favourite-uuid')).toBe('fav-2');
+  });
+
+  it("says a resort's day the device does not hold is not downloaded", async () => {
+    stubResorts({ state: null });
+    fetchMock.mockImplementation(() => Promise.resolve({
+      ok: false,
+      status: 504,
+      headers: new Headers({ 'X-SW-Offline-Miss': '1' }),
+    }));
+    window.pwaPlaceSheet.open({ kind: 'resort', id: 'verbier', name: 'Verbier' });
+    await settle();
+    expect(sheet.textContent).toContain('Verbier');
+    expect(sheet.querySelector('[data-testid="place-sheet-not-downloaded"]').textContent)
+      .toBe("This day isn't downloaded for offline use.");
+  });
+});

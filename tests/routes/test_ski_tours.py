@@ -5,11 +5,13 @@ The services in apps/routes/services/ski_tours.py: which end of a tour is
 its target, where a summit stands and what it counts, the hut and way-down
 rules, the guide time, the tour as route points and an unsaved Route, the
 terrain kept on the tour, saving a copy, and every tour thinned for a
-zoomed-out map (SNOW-1285).
+zoomed-out map (SNOW-1285), with both caches following a sync and a local
+walk (SNOW-1323).
 """
 
 from __future__ import annotations
 
+import datetime as dt
 from typing import Any
 from unittest.mock import patch
 
@@ -17,8 +19,10 @@ import pytest
 from django.core.cache import cache
 from django.test import override_settings
 
+from apps.ingest.public import serialise_source_document
 from apps.routes.models import Route, SkiTour
 from apps.routes.services.routes import RouteLimitReached
+from apps.routes.services.ski_network import apply_ski_items
 from apps.routes.services.ski_tours import (
     build_summits,
     draft_tour_route,
@@ -39,7 +43,13 @@ from apps.routes.services.ski_tours import (
     tour_slope_samples,
     tour_title,
 )
-from tests.factories import RouteFactory, SkiTourFactory, UserFactory
+from apps.routes.services.track_render import store_terrain
+from tests.factories import (
+    RouteFactory,
+    SkiTourFactory,
+    SourceSkiTourFactory,
+    UserFactory,
+)
 from track.render import TRACK_RENDER_VERSION
 from track.sac import ends, far_end, is_hut, summit_key, target_end
 
@@ -645,3 +655,52 @@ class TestSave:
         RouteFactory.create(user=user)
         with pytest.raises(RouteLimitReached):
             save_ski_tour(user, _tour())
+
+
+class TestTheCachesFollowBothWriters:
+    """SNOW-1323: a sync and a local walk each move the cache stamp."""
+
+    def _synced(self) -> tuple[Any, dict[str, Any]]:
+        """A service tour applied here, and its feed item."""
+        source = SourceSkiTourFactory.create()
+        item = serialise_source_document(source)
+        apply_ski_items("ski-tours", [item], commit=True)
+        return source, item
+
+    def _rewritten(self, item: dict[str, Any], **document: Any) -> None:
+        """Apply ``item`` again a day later, with ``document`` changed."""
+        later = dt.datetime.fromisoformat(item["updated_at"]) + dt.timedelta(days=1)
+        moved = {
+            **item,
+            "updated_at": later.isoformat(),
+            "document": {**item["document"], **document},
+        }
+        apply_ski_items("ski-tours", [moved], commit=True)
+
+    def test_summits_follow_a_sync_that_renames_a_target(self) -> None:
+        """The sync's update() leaves updated_at; the summits still change."""
+        _source, item = self._synced()
+        before = set(summits())
+        self._rewritten(item, target_name="Piz Linard", target_altitude_m=3410)
+        assert set(summits()) != before
+        assert set(summits()) == {"piz-linard-3410"}
+
+    def test_the_overview_follows_a_sync_that_moves_a_line(self) -> None:
+        """Same count, new line: the overview draws the new one."""
+        _source, item = self._synced()
+        (first,) = tour_overview()
+        self._rewritten(item, geometry=_line([9.0, 46.0], [9.05, 46.05]))
+        (second,) = tour_overview()
+        assert second["geometry"] != first["geometry"]
+        assert second["geometry"]["coordinates"][0][0] == [9.0, 46.0]
+
+    def test_the_overview_follows_a_local_walk(self) -> None:
+        """store_terrain moves updated_at only, and the overview rebuilds."""
+        tour = _tour()
+        with patch("apps.routes.services.ski_tours.leg_parts", wraps=leg_parts) as spy:
+            tour_overview()
+            tour_overview()
+            assert spy.call_count == 1
+            store_terrain(tour, RECORD, points=tour_points(tour))
+            tour_overview()
+            assert spy.call_count == 2

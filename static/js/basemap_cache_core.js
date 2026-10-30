@@ -33,7 +33,8 @@
  *     case needs the async basemap-origin hydration, which stays in
  *     sw.js). SNOW-965 added the two JSON classes — see
  *     ``PRIVATE_JSON_PATH`` / ``PUBLIC_JSON_PATH`` — SNOW-1312 the map's
- *     region sheet, ``PUBLIC_PARTIAL_PATH``, and SNOW-1313 a saved pin's
+ *     region sheet, ``PUBLIC_PARTIAL_PATH`` (SNOW-1318: and a resort's
+ *     place sheet), and SNOW-1313 a saved pin's
  *     place sheet, ``PRIVATE_PARTIAL_PATH``.
  *   isBasemapOrigin(url, originsSet)
  *     True when ``url.origin`` is a member of ``originsSet`` — the allowlist
@@ -100,17 +101,23 @@
   // download for its regions and forward days, so it is read offline
   // through ``_publicPartialNetworkFirst`` in sw.js, keyed on path and
   // ``d`` alone. The region id is the converter's shape
-  // (``apps/regions/converters.py``). Only this partial is public: a
-  // resort's place sheet and every other HTMX fragment stay network-only.
-  const PUBLIC_PARTIAL_PATH = /^\/partials\/region-sheet\/[a-z]{2}-(?=[a-z0-9-]*\d)[a-z0-9]+(?:-[a-z0-9]+)*\/$/i;
+  // (``apps/regions/converters.py``).
+  //
+  // SNOW-1318: and a resort's place sheet,
+  // ``/partials/place-sheet/resort/<slug>/``, warmed per resort and
+  // forward day the same way. Its body reads no ``request.user`` either —
+  // the Save star is painted on the device from the favourites feed — so
+  // one copy serves every reader. The slug is Django's ``slug`` converter.
+  // Every other HTMX fragment stays network-only.
+  const PUBLIC_PARTIAL_PATH = /^\/partials\/(?:region-sheet\/[a-z]{2}-(?=[a-z0-9-]*\d)[a-z0-9]+(?:-[a-z0-9]+)*|place-sheet\/resort\/[a-z0-9_-]+)\/$/i;
 
   // SNOW-1313: a saved pin's place sheet,
   // ``/partials/place-sheet/favourite/<uuid>/``. Owner-scoped HTML, so it
   // is kept the way a trip's route is — stamped with the principal the
   // answer names and served back to that principal alone — under the
   // region sheet's path + ``d`` key (``_privatePartialNetworkFirst`` in
-  // sw.js). Only the favourite form: a resort's place sheet carries a
-  // per-reader Save star the server renders, and stays network-only.
+  // sw.js). Only the favourite form: a resort's place sheet is public
+  // (``PUBLIC_PARTIAL_PATH``, SNOW-1318).
   const PRIVATE_PARTIAL_PATH = /^\/partials\/place-sheet\/favourite\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/$/i;
 
   /**

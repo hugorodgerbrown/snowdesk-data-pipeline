@@ -2806,3 +2806,16 @@ a.season-day:focus-visible {
   stroke-width: 1.5;
   stroke-dasharray: 4 3;
 }
+
+/* SNOW-1317: the map's region sheet carries both calls to report — the
+   report button and the sign-in link (observations/partials/
+   _on_the_ground_cta.html) — so its body is the same for every reader and
+   an area download's saved copy serves whoever opens it offline. The
+   sheet's data-reader, rendered with the map page from
+   user.is_authenticated (public/partials/_region_sheet_surface.html),
+   hides the one that is not the reader's. No JavaScript: the choice holds
+   the moment a body is swapped in, online or from the worker's cache. */
+[data-reader="signed-in"] [data-reader-cta="signed-out"],
+[data-reader="signed-out"] [data-reader-cta="signed-in"] {
+  display: none;
+}

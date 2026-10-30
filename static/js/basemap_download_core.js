@@ -272,8 +272,11 @@
  *     last published day, plus a forward day on screen. Never a past day.
  *   regionSheetURL(template, regionId, day)
  *     SNOW-1312: one region sheet's url, `/partials/region-sheet/<id>/?d=`.
- *   areaContentURLs({regions, weather, days, weatherDetailTemplate,
- *                    regionSheetTemplate, ratingsUrl})
+ *   resortSheetURL(template, slug, day)
+ *     SNOW-1318: one resort's place sheet url,
+ *     `/partials/place-sheet/resort/<slug>/?d=`.
+ *   areaContentURLs({regions, weather, resorts, days, weatherDetailTemplate,
+ *                    regionSheetTemplate, resortSheetTemplate, ratingsUrl})
  *     SNOW-953: the bulletin pages and weather sheets inside an area, as
  *     urls, over the answer ``/api/area-content/`` gives. It composes
  *     rather than selects — SNOW-924's rectangle test over every
@@ -281,7 +284,7 @@
  *     weather sheet is one url per location, and (SNOW-965) why it is
  *     dated with the download's day when the caller names one. SNOW-1312
  *     adds the region sheets per region and day, and the dated ratings
- *     feed per day.
+ *     feed per day; SNOW-1318 a resort's place sheet per resort and day.
  *   areaItemURLs(items, templates, alreadyPlanned)
  *     SNOW-965: the reader's OWN things inside an area, as urls, over the
  *     answer ``/api/area-items/`` gives — each trip's page and its
@@ -2653,6 +2656,28 @@
   }
 
   /**
+   * One resort's place-sheet url for one day (SNOW-1318).
+   *
+   * The map's own request, as `map_place_sheet.js` makes it: the slug in
+   * place of the template's ``__SLUG__``, then `?d=<day>`. The worker
+   * keeps the sheet under its path and `d` ('public-partial'), the key the
+   * offline read looks up.
+   *
+   * @param {string} template A url carrying ``__SLUG__``, as `#map`'s
+   *   `data-resort-sheet-url` does.
+   * @param {string} slug The resort's slug.
+   * @param {string} day An ISO date key.
+   * @returns {string}
+   */
+  function resortSheetURL(template, slug, day) {
+    return (
+      template.replace('__SLUG__', encodeURIComponent(String(slug))) +
+      '?d=' +
+      encodeURIComponent(day)
+    );
+  }
+
+  /**
    * The urls for what an area's boundary contains, from the server's answer.
    *
    * SNOW-953 replaced `areaContentPlan`, which made the SELECTION here —
@@ -2682,6 +2707,11 @@
    * the run warms and tallies, so a sheet or a feed that fails to land
    * counts against the download exactly as a bulletin page does.
    *
+   * SNOW-1318: and, per resort and day, the resort's place sheet
+   * (`resortSheetURL`) — what a resort tapped offline opens. Tallied the
+   * same way, so a resort sheet that fails to warm makes the download
+   * short.
+   *
    * A weather sheet is ONE URL per location, not one per day, and that is
    * a correctness point rather than a saving: `?date=` selects which
    * `Weather` ROW the page reads, and only today's row exists. The
@@ -2703,6 +2733,8 @@
    *   endpoint's `regions` list. Absent or empty yields no bulletins.
    * @param {Array<{short_id?: string}>} [options.weather] The endpoint's
    *   `weather` list.
+   * @param {Array<{slug?: string}>} [options.resorts] SNOW-1318: the
+   *   endpoint's `resorts` list.
    * @param {string[]} [options.days] Date keys to take a bulletin for,
    *   supplied by the caller from `forwardContentDays`, never from a
    *   clock in here.
@@ -2713,10 +2745,14 @@
    * @param {string} [options.regionSheetTemplate] SNOW-1312: a url
    *   carrying ``XX-0000``, as `#map`'s `data-region-sheet-url` does.
    *   Omitted, no region sheets.
+   * @param {string} [options.resortSheetTemplate] SNOW-1318: a url
+   *   carrying ``__SLUG__``, as `#map`'s `data-resort-sheet-url` does.
+   *   Omitted, no resort sheets.
    * @param {string} [options.ratingsUrl] SNOW-1312: the ratings feed's
    *   base url (`/api/ratings/`). Omitted, no dated ratings.
    * @returns {{bulletinUrls: string[], weatherDetailUrls: string[],
-   *   regionSheetUrls: string[], ratingsUrls: string[]}} Each list
+   *   regionSheetUrls: string[], resortSheetUrls: string[],
+   *   ratingsUrls: string[]}} Each list
    *   deduplicated and stable in the server's order, so a run's URL list
    *   is reproducible. The sheet and ratings lists are empty without days.
    */
@@ -2726,6 +2762,7 @@
       bulletinUrls: [],
       weatherDetailUrls: [],
       regionSheetUrls: [],
+      resortSheetUrls: [],
       ratingsUrls: [],
     };
 
@@ -2744,6 +2781,17 @@
       for (const day of days) {
         out.bulletinUrls.push('/' + key + '/' + slug + '/' + day + '/');
         if (sheetTemplate) out.regionSheetUrls.push(regionSheetURL(sheetTemplate, key, day));
+      }
+    }
+
+    const resortTemplate = opts.resortSheetTemplate || '';
+    if (resortTemplate) {
+      const seenResort = new Set();
+      for (const resort of opts.resorts || []) {
+        const slug = resort && resort.slug;
+        if (!slug || seenResort.has(slug)) continue;
+        seenResort.add(slug);
+        for (const day of days) out.resortSheetUrls.push(resortSheetURL(resortTemplate, slug, day));
       }
     }
 
@@ -3448,6 +3496,7 @@
     bboxFromZoomRanges: bboxFromZoomRanges,
     areaBBox: areaBBox,
     areaContentURLs: areaContentURLs,
+    resortSheetURL: resortSheetURL,
     forwardContentDays: forwardContentDays,
     regionSheetURL: regionSheetURL,
     areaItemURLs: areaItemURLs,

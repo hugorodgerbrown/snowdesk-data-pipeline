@@ -1,6 +1,6 @@
 ---
 name: a-download-looks-forward-and-carries-the-region-sheet
-description: Why an area download saves forward days only and carries the region sheet ('public-partial', path + d key, X-SW-Offline-Miss)
+description: Why an area download saves forward days only and carries the region and resort sheets ('public-partial', path + d key, X-SW-Offline-Miss)
 status: current
 last-reviewed: 2026-10-30
 ---
@@ -47,6 +47,25 @@ also lost its colours offline on any day but the one the map last booted on.
    downloaded days", and treats a `/partials/` entry as a fragment rather
    than a page.
 
+## Amended by SNOW-1318: a resort's place sheet joins it
+
+A resort tapped offline in a downloaded area said "Place details are
+unavailable offline": its sheet (`/partials/place-sheet/resort/<slug>/`)
+was `'network'`, because the server rendered the reader's Save star into
+it. The sheet now reads no `request.user` at all — the star renders as a
+disabled outline beside a hidden sign-in link, and `map_place_sheet.js`
+paints it from the favourites feed `map.js` already holds
+(`window.pwaFavouritedResorts`, offline from the overlay cache) — so its
+body is byte-identical for every reader (`TestResortOfflineCopy` in
+`tests/public/test_place_sheet.py`) and it answers `private, max-age` on
+the region sheet's policy. It joins `PUBLIC_PARTIAL_PATH` in both copies,
+so it takes point 3 above whole: path + `d`, unstamped, `HX-Request` on
+the warm, the offline-miss 504 and its "This day isn't downloaded" line.
+`/api/area-content/` gains `resorts` (the map's resort pins inside the
+box), both validators require it, and `areaContentURLs` composes
+`resortSheetUrls`, one per resort and forward day, which the run tallies
+like the region sheets.
+
 ## Why path + `d`, and only for this sheet
 
 `r` is the reports cache-buster SNOW-1295 stamps into the sheet's url after
@@ -60,12 +79,37 @@ The region sheet's body names its day itself.
 
 ## Why unstamped
 
-The body names nothing about the reader. One element depends on who asks:
-"On the ground"'s call to report is a button signed in and a sign-in link
-signed out (SNOW-1291). `tests/public/test_region_sheet.py`
-(`TestOfflineCopy`) holds that to being the only difference, so a copy saved
-under one account shows the other at worst that button. A body is served in
-the language it was saved in.
+The body names nothing about the reader, and is the same for every reader.
+"On the ground"'s call to report is the one element that depends on who asks
+— a report button signed in, a sign-in link signed out (SNOW-1291) — and
+until SNOW-1317 the server chose between them, so a copy saved under one
+account showed the next reader the saver's button: a signed-out reader got a
+Report button that opened the sign-in gate, a signed-in one a link to sign in
+again.
+
+Since SNOW-1317 the sheet's body renders both forms, each in a
+`data-reader-cta` wrapper (`observations/partials/_on_the_ground_cta.html`).
+The region sheet itself carries `data-reader="signed-in|signed-out"`,
+rendered with the map page from `user.is_authenticated`
+(`public/partials/_region_sheet_surface.html`), and one CSS rule in
+`src/css/main.css` hides the form that is not the reader's. No JavaScript:
+the choice holds the moment a body lands, from the network or the worker's
+cache. The map page is the reader's own — the worker keeps it partitioned
+by principal — so the attribute is right offline too.
+`tests/public/test_region_sheet.py` (`TestOfflineCopy`) holds the body to
+being byte-identical across readers, bar the glossary popovers' run-on ids.
+A body is served in the language it was saved in.
+
+**Accepted limit: a signed-in reader with no verified Account.** The
+attribute follows `user.is_authenticated`, exactly the test the server's
+branch used, not `user_is_verified`. Online, a signed-in reader with no
+`Account` row, or an unverified one, sees "Report" and the button opens the
+report sheet's verify gate (`report.js`'s `gateHtml`), as before this
+ticket. Offline it can differ for a reader with no `Account` row: their
+`pwa-user-id` is `""`, so they share the worker's anonymous partition, and
+the map page it serves them may be the signed-out copy — in which case they
+see "Sign in to report". The only such accounts are operators made with
+`createsuperuser`, and the limit is accepted.
 
 The one other reader-dependent branch is the staff callout on a bulletin
 that failed processing (version 0): the admin link, the bulletin id and the

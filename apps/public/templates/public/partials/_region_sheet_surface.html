@@ -23,12 +23,22 @@ At ``sm`` and up it is the inset panel the place and weather sheets are,
 with no detents (SNOW-1173 — the chip's own dropdown panel, which was the
 desktop's way into a smaller summary, is gone).
 
+The sheet carries ``data-reader`` — ``signed-in`` when ``user.is_authenticated``,
+``signed-out`` otherwise — rendered with the map page, never with the body.
+The body's call to report ("On the ground",
+observations/partials/_on_the_ground_cta.html) renders both the report
+button and the sign-in link, and one CSS rule in src/css/main.css shows the
+one that matches. So a body is the same for every reader, and a copy an area
+download saved under one account still shows whoever opens it offline their
+own call (SNOW-1317).
+
 Context expected:
-  (None. map_region_sheet.js reads the endpoint template off #map's
-  data-region-sheet-url, which _map_embed.html renders.)
+  user — the reader (Django's auth context processor), for ``data-reader``.
+  map_region_sheet.js reads the endpoint template off #map's
+  data-region-sheet-url, which _map_embed.html renders.
 {% endcomment %}
 {% trans "Region" as region_sheet_aria_label %}
-{% include "includes/_overlay_sheet.html" with id="region-sheet" aria_label=region_sheet_aria_label detents="peek,half,full" initial="peek" side="left" %}
+{% include "includes/_overlay_sheet.html" with id="region-sheet" aria_label=region_sheet_aria_label detents="peek,half,full" initial="peek" side="left" reader=user.is_authenticated|yesno:"signed-in,signed-out" %}
 <script defer src="{% static 'js/map_region_sheet.js' %}"></script>
 {# The module's own user-facing strings — see docs/i18n.md. #}
 <template id="region-sheet-strings-template">

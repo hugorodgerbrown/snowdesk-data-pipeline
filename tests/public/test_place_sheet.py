@@ -7,8 +7,9 @@ Covers both views, ``resort_sheet_partial`` and ``favourite_sheet_partial``:
     404, a malformed ``?d=`` a 400; a pin is owner-only, so another reader's
     pin and an anonymous request are both a 404.
   - PEEK: the name, the danger tile and the region badge in the
-    ``data-sheet-peek`` header; a resort's Save star (or the sign-in star
-    when anonymous); a saved pin's "…" menu and inline-rename row.
+    ``data-sheet-peek`` header; a resort's Save star, rendered neutral
+    (SNOW-1318: a disabled outline beside a hidden sign-in star, painted by
+    the map's script); a saved pin's "…" menu and inline-rename row.
   - The detents the body allows: all three when there is something for
     FULL to show, peek and half otherwise.
   - A pin's problems are judged against its Location's height, the pin's
@@ -27,6 +28,8 @@ Covers both views, ``resort_sheet_partial`` and ``favourite_sheet_partial``:
     answers ``private, no-cache`` and names its viewer
     (``X-Snowdesk-Principal``); the forecast link carries the borrowed
     point's short id for the map to open its weather sheet in place.
+  - SNOW-1318: a resort's sheet reads nothing about the reader, so every
+    reader gets the same body and it answers ``private, max-age``.
 """
 
 from __future__ import annotations
@@ -123,6 +126,18 @@ def _text(markup: str | bytes) -> str:
     return " ".join(re.sub(r"<[^>]+>", " ", markup).split())
 
 
+def _star(content: str) -> str:
+    """Return the resort's Save star, its opening tag to its closing one."""
+    match = re.search(r"<button\b[^>]*data-resort-star\b.*?</button>", content, re.S)
+    assert match is not None
+    return match.group(0)
+
+
+def _cache_directives(response: Any) -> set[str]:
+    """Return a response's ``Cache-Control`` directives, as a set."""
+    return {part.strip() for part in response["Cache-Control"].split(",")}
+
+
 def _primary_location(resort: Resort) -> Any:
     """Return the resort's primary location."""
     return resort.resort_locations.get(is_primary=True).location
@@ -144,10 +159,22 @@ class TestGuards:
         response = _get(client, _resort_url(resort.slug, "not-a-date"))
         assert response.status_code == 400
 
-    def test_responses_are_never_cached(self, client: Client) -> None:
+    def test_today_is_kept_for_ten_minutes(self, client: Client) -> None:
+        """SNOW-1318: the region sheet's policy, private and short."""
         resort = _resort()
         response = _get(client, _resort_url(resort.slug))
-        assert response["Cache-Control"] == "private, no-store"
+        assert _cache_directives(response) == {"private", "max-age=600"}
+
+    def test_a_forward_day_is_kept_for_ten_minutes(self, client: Client) -> None:
+        resort = _resort()
+        tomorrow = (timezone.localdate() + datetime.timedelta(days=1)).isoformat()
+        response = _get(client, _resort_url(resort.slug, tomorrow))
+        assert _cache_directives(response) == {"private", "max-age=600"}
+
+    def test_a_past_day_is_kept_for_a_day(self, client: Client) -> None:
+        resort = _resort()
+        response = _get(client, _resort_url(resort.slug, "2026-02-03"))
+        assert _cache_directives(response) == {"private", "max-age=86400"}
 
     def test_anonymous_pin_is_404(self, client: Client) -> None:
         favourite = FavouriteFactory.create()
@@ -196,13 +223,39 @@ class TestPinOfflineCopy:
         assert response.status_code == 404
         assert not response.has_header(PRINCIPAL_RESPONSE_HEADER)
 
-    def test_the_resort_sheet_stays_no_store(self, client: Client) -> None:
-        """Out of scope: its Save star is per-reader and unstamped."""
+    def test_the_resort_sheet_is_kept_unstamped(self, client: Client) -> None:
+        """SNOW-1318: the resort sheet names nobody, so it is kept public."""
         client.force_login(AccountFactory.create().user)
         resort = _resort()
         response = _get(client, _resort_url(resort.slug))
-        assert response["Cache-Control"] == "private, no-store"
+        assert "no-store" not in response["Cache-Control"]
         assert not response.has_header(PRINCIPAL_RESPONSE_HEADER)
+
+
+@pytest.mark.django_db
+class TestResortOfflineCopy:
+    """SNOW-1318: an area download keeps a resort's sheet unstamped, so the
+    worker serves the copy it saved to whoever opens it offline. Sound only
+    while the body carries nothing about the reader — byte for byte, unlike
+    the region sheet, which has its call to report.
+    """
+
+    def test_every_reader_gets_the_same_body(self, client: Client) -> None:
+        resort = _resort()
+        url = _resort_url(resort.slug, timezone.localdate().isoformat())
+        anonymous = _get(client, url).content.decode()
+        user = UserFactory.create(email="reader@example.com", first_name="Zebedee")
+        client.force_login(user)
+        signed_in = _get(client, url).content.decode()
+        FavouriteFactory.create(user=user, resort=resort)
+        saved = _get(client, url).content.decode()
+        staff = UserFactory.create(is_staff=True)
+        client.force_login(staff)
+        as_staff = _get(client, url).content.decode()
+
+        assert anonymous == signed_in == saved == as_staff
+        for detail in ("reader@example.com", "Zebedee", "csrfmiddlewaretoken"):
+            assert detail not in signed_in
 
 
 @pytest.mark.django_db
@@ -261,27 +314,41 @@ class TestResortPeek:
         content = _get(client, _resort_url(resort.slug)).content.decode()
         assert 'data-testid="another-day-strip"' not in content
 
-    def test_anonymous_reader_gets_the_sign_in_star(self, client: Client) -> None:
+    def test_the_star_is_a_disabled_outline_until_painted(self, client: Client) -> None:
+        """SNOW-1318: map_place_sheet.js paints it from the favourites feed."""
+        resort = _resort()
+        star = _star(_get(client, _resort_url(resort.slug)).content.decode())
+        assert " disabled" in star
+        assert 'data-favourited="false"' in star
+        assert 'data-favourite-uuid=""' in star
+        assert f'data-resort-slug="{resort.slug}"' in star
+        assert 'fill="none"' in star
+        assert 'data-label-save="Save resort"' in star
+        assert 'data-label-remove="Remove from saved places"' in star
+
+    def test_the_sign_in_star_is_rendered_hidden(self, client: Client) -> None:
+        """The script shows it to a reader the map says is signed out."""
         resort = _resort()
         content = _get(client, _resort_url(resort.slug)).content.decode()
-        assert "data-resort-star" not in content
-        assert f'href="{reverse("accounts:sign_in")}"' in content
+        link = re.search(r"<a\b[^>]*data-resort-star-signin[^>]*>", content)
+        assert link is not None
+        assert " hidden" in link.group(0)
+        assert f'href="{reverse("accounts:sign_in")}"' in link.group(0)
+        # It keeps the resort's slug, name and pin, as the star does.
+        assert f'data-resort-slug="{resort.slug}"' in link.group(0)
+        assert 'data-resort-name="Verbier"' in link.group(0)
 
-    def test_signed_in_reader_gets_the_save_star(self, client: Client) -> None:
-        resort = _resort()
-        client.force_login(UserFactory.create())
-        content = _get(client, _resort_url(resort.slug)).content.decode()
-        assert "data-resort-star" in content
-        assert 'data-favourited="false"' in content
-
-    def test_a_saved_resort_shows_the_filled_star(self, client: Client) -> None:
+    def test_a_saved_resort_still_renders_the_neutral_star(
+        self, client: Client
+    ) -> None:
+        """The reader's favourite is the feed's to say, never the body's."""
         resort = _resort()
         user = UserFactory.create()
         favourite = FavouriteFactory.create(user=user, resort=resort)
         client.force_login(user)
         content = _get(client, _resort_url(resort.slug)).content.decode()
-        assert 'data-favourited="true"' in content
-        assert f'data-favourite-uuid="{favourite.uuid}"' in content
+        assert 'data-favourited="false"' in _star(content)
+        assert str(favourite.uuid) not in content
 
     def test_resort_has_no_row_menu(self, client: Client) -> None:
         resort = _resort()

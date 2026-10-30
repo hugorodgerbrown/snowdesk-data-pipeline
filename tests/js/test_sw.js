@@ -4079,7 +4079,9 @@ describe("the map's region sheet is read offline on its day (SNOW-1312)", () => 
 
       expect(classify(`${SHEET}?d=${TODAY}&r=123`)).toBe('public-partial');
       expect(classify(`${ORIGIN}/partials/region-sheet/FR-01/`)).toBe('public-partial');
-      // The place sheet (SNOW-1313) and every other fragment stay network.
+      // SNOW-1318: and a resort's place sheet.
+      expect(classify(`${ORIGIN}/partials/place-sheet/resort/verbier/?d=${TODAY}`)).toBe('public-partial');
+      // Every other fragment stays network.
       expect(classify(`${ORIGIN}/partials/place-sheet/abc/?d=${TODAY}`)).toBe('network');
       expect(classify(`${ORIGIN}/partials/region-sheet/wp-login/`)).toBe('network');
       // The weather sheet keeps its own class.
@@ -4266,13 +4268,14 @@ describe("a saved pin's place sheet is read offline by its owner (SNOW-1313)", (
     await resetDb();
   });
 
-  it('classifies the favourite sheet alone, never the resort sheet, with and without the core', () => {
+  it('classifies the favourite sheet alone as private, with and without the core', () => {
     for (const withCore of [true, false]) {
       const sw = loadSw(withCore ? { core } : {});
       const classify = (url) => sw._classifySync(sheetRequest(url), new URL(url));
 
       expect(classify(KEY)).toBe('private-partial');
-      expect(classify(`${ORIGIN}/partials/place-sheet/resort/verbier/?d=${TODAY}`)).toBe('network');
+      // SNOW-1318: a resort's sheet is public, as the region sheet is.
+      expect(classify(`${ORIGIN}/partials/place-sheet/resort/verbier/?d=${TODAY}`)).toBe('public-partial');
       expect(classify(`${ORIGIN}/partials/place-sheet/favourite/not-a-uuid/`)).toBe('network');
       expect(classify(`${ORIGIN}/partials/region-sheet/ch-4115/`)).toBe('public-partial');
     }

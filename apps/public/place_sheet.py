@@ -45,6 +45,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.cache import patch_cache_control
 
 from apps.accounts.identity import attest_principal
 from apps.bulletins.models import RegionDayRating
@@ -54,6 +55,7 @@ from apps.favourites.models import Favourite
 from apps.favourites.relevance import annotate_problem_relevance
 from apps.locations.models import Location
 from apps.locations.services.what3words import what3words_map_url
+from apps.public.region_sheet import CURRENT_DAY_MAX_AGE_S, PAST_DAY_MAX_AGE_S
 from apps.public.views import (
     _DANGER_PANEL_META,
     build_resort_body,
@@ -205,8 +207,14 @@ def _place_context(
 def resort_sheet_partial(request: HttpRequest, slug: str) -> HttpResponse:
     """Render the place sheet's body for one resort.
 
-    Public: resorts are a reference layer. Only the Save star is per-user,
-    so the response is never cached.
+    Public: resorts are a reference layer, and since SNOW-1318 the body
+    reads nothing about the reader — no ``request.user`` at all. The Save
+    star is rendered neutral (a disabled outline, and a hidden sign-in
+    link beside it) and ``map_place_sheet.js`` paints it from the
+    favourites feed ``map.js`` already holds (``window.pwaFavouritedResorts``).
+    So one copy serves every reader, and an area download keeps it
+    unstamped for an offline read (``'public-partial'`` in
+    basemap_cache_core.js), as it keeps the region sheet.
 
     Args:
         request: The incoming HTMX GET request.
@@ -214,7 +222,9 @@ def resort_sheet_partial(request: HttpRequest, slug: str) -> HttpResponse:
 
     Returns:
         The rendered ``public/partials/_place_sheet_body.html`` fragment,
-        404 for an unknown resort, 400 for a malformed date.
+        privately cacheable for a day when ``d`` is a past day and for ten
+        minutes otherwise; 404 for an unknown resort, 400 for a malformed
+        date.
 
     """
     target_date = _target_date(request)
@@ -224,28 +234,30 @@ def resort_sheet_partial(request: HttpRequest, slug: str) -> HttpResponse:
         Resort.objects.select_related("region", "location"), slug=slug
     )
 
-    favourite = None
-    if request.user.is_authenticated:
-        favourite = Favourite.objects.filter(user=request.user, resort=resort).first()
-
     # SNOW-1164: under the peek row, the resort page's own body for the
     # map's day — built by the page's own builder, so the two cannot drift.
     context = {
         # The body states the region's level itself (its bulletin callout).
-        **build_resort_body(request, resort, target_date),
+        **build_resort_body(resort, target_date),
         # The day the body's dated eyebrows name (includes/_dated_eyebrow.html;
         # Hugo, 29 Oct 2026) — the sheet's only, since the page's title names it.
         "section_day": target_date,
         "another_day": target_date != timezone.localdate(),
         "kind": "resort",
         "name": resort.name,
-        "can_favourite": request.user.is_authenticated,
-        "favourited": favourite is not None,
-        "favourite_uuid": str(favourite.uuid) if favourite else "",
         "signin_url": reverse("accounts:sign_in"),
     }
     response = render(request, "public/partials/_place_sheet_body.html", context)
-    response["Cache-Control"] = "private, no-store"
+    # SNOW-1318: the region sheet's policy (``region_sheet_partial``) — a
+    # past day's body for a day, today's or a forward day's for ten
+    # minutes. ``private`` keeps it out of shared caches; the worker keeps
+    # its own copy for a downloaded area under path and ``d``.
+    settled = target_date < timezone.localdate()
+    patch_cache_control(
+        response,
+        private=True,
+        max_age=PAST_DAY_MAX_AGE_S if settled else CURRENT_DAY_MAX_AGE_S,
+    )
     return response
 
 

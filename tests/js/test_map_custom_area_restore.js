@@ -219,7 +219,7 @@ async function boot({ eligible = true, records = {} } = {}) {
     vi.fn((url) => {
       // SNOW-953: the area asks the server what its boundary contains; an
       // empty answer is a complete one.
-      const body = String(url).includes('area-content') ? { regions: [], weather: [] } : {};
+      const body = String(url).includes('area-content') ? { regions: [], weather: [], resorts: [] } : {};
       return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
     }),
   );

@@ -127,6 +127,8 @@ const WEATHER_GEOJSON = {
 const AREA_CONTENT = {
   regions: [{ id: REGION_ID, slug: REGION_SLUG }],
   weather: [{ short_id: 'INSIDEaaaaa' }],
+  // SNOW-1318: one resort pinned inside the box.
+  resorts: [{ slug: 'verbier' }],
 };
 
 /**
@@ -327,6 +329,7 @@ function buildFixture() {
          data-weather-url="/api/weather.geojson"
          data-weather-detail-url="/api/weather/__SHORTID__/detail/"
          data-region-sheet-url="/partials/region-sheet/XX-0000/"
+         data-resort-sheet-url="/partials/place-sheet/resort/__SLUG__/"
          data-favourite-sheet-url="/partials/place-sheet/favourite/00000000-0000-0000-0000-000000000000/"
          data-community-reports-url="/api/community-reports.geojson"
          data-community-reports-eligible="true"
@@ -581,6 +584,12 @@ describe('a download takes the content inside its boundary', () => {
     // for, minus the `r` the worker ignores when it keys the entry.
     expect(posted).toContain(`/partials/region-sheet/ch-4115/?d=${TODAY}`);
     expect(posted).toContain(`/partials/region-sheet/ch-4115/?d=${TOMORROW}`);
+  });
+
+  it("posts each resort's place sheet for every forward day (SNOW-1318)", () => {
+    // What a resort tapped offline opens, on the url map_place_sheet.js asks.
+    expect(posted).toContain(`/partials/place-sheet/resort/verbier/?d=${TODAY}`);
+    expect(posted).toContain(`/partials/place-sheet/resort/verbier/?d=${TOMORROW}`);
   });
 
   it('posts the dated ratings the map boots its colours from (SNOW-1312)', () => {
@@ -878,6 +887,34 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
     expect(record.contentIncomplete).toBe(true);
   });
 
+  it.each([
+    ['missing', undefined],
+    ['malformed', 'verbier'],
+  ])('counts an answer with `resorts` %s as a short plan (SNOW-1318)', async (_label, resorts) => {
+    // An answer from before the field — a stale cached copy — would plan
+    // no resort sheets while every url it does name lands.
+    const btn = document.getElementById('map-download-control');
+    areaContentAnswer = () => ({ regions: AREA_CONTENT.regions, weather: AREA_CONTENT.weather, resorts });
+    try {
+      btn.click();
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(btn.dataset.downloadState).toBe('partial');
+    } finally {
+      areaContentAnswer = () => AREA_CONTENT;
+    }
+    expect((await recordedRegion()).contentIncomplete).toBe(true);
+  });
+
+  it('counts a resort sheet that fails to warm as a shortfall (SNOW-1318)', async () => {
+    const btn = document.getElementById('map-download-control');
+    window.pwaWarmCache.mockImplementationOnce(async (urls) => {
+      const failed = urls.filter((url) => url.startsWith('/partials/place-sheet/resort/')).length;
+      return { ok: urls.length - failed, failed, bytes: 0, cancelled: false };
+    });
+    expect(await tapAndSettle()).toBe('partial');
+    expect((await recordedRegion()).contentIncomplete).toBe(true);
+  });
+
   it('counts an area-items failure as a shortfall too (SNOW-965)', async () => {
     // The reader's trips and borrowed forecasts are part of the plan. An
     // endpoint that was asked and answered 500 leaves them unnamed, and
@@ -911,7 +948,7 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
    * which no longer decide anything.
    */
   async function withEmptyPlan(body) {
-    areaContentAnswer = () => ({ regions: [], weather: [] });
+    areaContentAnswer = () => ({ regions: [], weather: [], resorts: [] });
     // SNOW-965: and no items of the reader's own, or they would be urls.
     areaItemsAnswer = () => ({ trips: [], pins: [] });
     try {

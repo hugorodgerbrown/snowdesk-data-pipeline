@@ -1858,6 +1858,7 @@ describe('areaContentURLs', () => {
       bulletinUrls: [],
       weatherDetailUrls: [],
       regionSheetUrls: [],
+      resortSheetUrls: [],
       ratingsUrls: [],
     });
   });
@@ -1933,6 +1934,40 @@ describe('areaContentURLs — region sheets and dated ratings (SNOW-1312)', () =
 
     expect(plan.regionSheetUrls).toEqual(['/partials/region-sheet/ch-1111/?d=2026-01-06']);
     expect(plan.ratingsUrls).toEqual(['/api/ratings/?d=2026-01-06&country=ch']);
+  });
+});
+
+describe('areaContentURLs — resort sheets (SNOW-1318)', () => {
+  const SHEET = '/partials/place-sheet/resort/__SLUG__/';
+  const DAYS = ['2026-01-06', '2026-01-07'];
+
+  it("takes each resort's place sheet per day, deduplicated, `d` on the url", () => {
+    const plan = core.areaContentURLs({
+      resorts: [{ slug: 'verbier' }, { slug: 'verbier' }, { slug: 'saas-fee' }, {}, null],
+      days: DAYS,
+      resortSheetTemplate: SHEET,
+    });
+
+    expect(plan.resortSheetUrls).toEqual([
+      '/partials/place-sheet/resort/verbier/?d=2026-01-06',
+      '/partials/place-sheet/resort/verbier/?d=2026-01-07',
+      '/partials/place-sheet/resort/saas-fee/?d=2026-01-06',
+      '/partials/place-sheet/resort/saas-fee/?d=2026-01-07',
+    ]);
+  });
+
+  it('takes no resort sheet without days or without a template', () => {
+    const resorts = [{ slug: 'verbier' }];
+
+    expect(core.areaContentURLs({ resorts, days: [], resortSheetTemplate: SHEET })
+      .resortSheetUrls).toEqual([]);
+    expect(core.areaContentURLs({ resorts, days: DAYS }).resortSheetUrls).toEqual([]);
+  });
+
+  it('builds the url map_place_sheet.js asks with', () => {
+    expect(core.resortSheetURL(SHEET, 'verbier', '2026-01-06')).toBe(
+      '/partials/place-sheet/resort/verbier/?d=2026-01-06',
+    );
   });
 });
 

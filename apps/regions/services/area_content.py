@@ -24,6 +24,9 @@ Public API:
     weather_location_index()         — ``[WeatherPoint]`` over every
                                         PUBLIC ``Location``, in
                                         ``short_id`` order.
+    resort_index()                   — ``[ResortPoint]`` over every
+                                        resort the map pins, in ``slug``
+                                        order (SNOW-1318).
     bboxes_overlap(a, b)             — edge-inclusive rectangle overlap.
     point_in_bbox(lon, lat, bbox)    — edge-inclusive point containment.
     area_content(bbox, …)            — the answer served by
@@ -54,7 +57,7 @@ from django.conf import settings
 from django.utils.text import slugify
 
 from apps.locations.models import Location
-from apps.regions.models import MicroRegion
+from apps.regions.models import MicroRegion, Resort
 from apps.regions.services.basemap_tiles import bbox_from_boundary
 
 logger = logging.getLogger(__name__)
@@ -93,6 +96,22 @@ class WeatherPoint(NamedTuple):
     """
 
     short_id: str
+    lon: float
+    lat: float
+
+
+class ResortPoint(NamedTuple):
+    """One resort's pin reduced to what a point test needs (SNOW-1318).
+
+    Attributes:
+        slug: ``Resort.slug`` — the ``id`` resorts.geojson emits and the
+            key the resort's place-sheet URL is built from.
+        lon: Longitude in degrees.
+        lat: Latitude in degrees.
+
+    """
+
+    slug: str
     lon: float
     lat: float
 
@@ -183,6 +202,38 @@ def weather_location_index() -> list[WeatherPoint]:
     ]
 
 
+def resort_index() -> list[ResortPoint]:
+    """Return a point for every resort the map draws a pin for (SNOW-1318).
+
+    The filter is ``resorts_geojson``'s — ``Resort.objects.resorts()``,
+    ``geocoded()``, the coordinate read through ``pin_coordinates`` — so a
+    plan names exactly the resorts a reader can tap. A resort
+    ``backfill_resort_slugs`` has not reached is skipped: its sheet's URL
+    cannot be built.
+
+    Returns:
+        One ``ResortPoint`` per resort, ordered by ``slug`` so a plan built
+        from it is reproducible.
+
+    """
+    rows = (
+        Resort.objects.resorts()
+        .geocoded()
+        .exclude(slug__isnull=True)
+        .exclude(slug="")
+        .select_related("location")
+        .order_by("slug")
+    )
+    index: list[ResortPoint] = []
+    for resort in rows.iterator():
+        pin = resort.pin_coordinates
+        if pin is None:
+            continue
+        latitude, longitude = pin
+        index.append(ResortPoint(slug=resort.slug, lon=longitude, lat=latitude))
+    return index
+
+
 def bboxes_overlap(a: BBox | None, b: BBox | None) -> bool:
     """Return whether two ``[west, south, east, north]`` boxes touch or overlap.
 
@@ -239,12 +290,14 @@ def area_content(
     *,
     regions: list[RegionBox] | None = None,
     locations: list[WeatherPoint] | None = None,
+    resorts: list[ResortPoint] | None = None,
 ) -> dict[str, Any]:
-    """Return the regions and weather locations inside ``bbox``.
+    """Return the regions, weather locations and resorts inside ``bbox``.
 
     The whole answer ``/api/area-content/`` serves. The client composes
     the URLs from it: a bulletin page per (region, day) over its own day
-    window, and one undated weather sheet per location.
+    window, one weather sheet per location and (SNOW-1318) one place
+    sheet per resort and day.
 
     Args:
         bbox: ``[west, south, east, north]`` in degrees, already
@@ -253,14 +306,18 @@ def area_content(
             ``micro_region_index()``; the view passes a memoised one.
         locations: The candidate locations, likewise defaulting to
             ``weather_location_index()``.
+        resorts: The candidate resorts, likewise defaulting to
+            ``resort_index()``.
 
     Returns:
-        ``{"regions": [{"id", "slug"}, …], "weather": [{"short_id"}, …]}``,
-        each list in the index's own stable order.
+        ``{"regions": [{"id", "slug"}, …], "weather": [{"short_id"}, …],
+        "resorts": [{"slug"}, …]}``, each list in the index's own stable
+        order.
 
     """
     candidates = micro_region_index() if regions is None else regions
     points = weather_location_index() if locations is None else locations
+    pins = resort_index() if resorts is None else resorts
     return {
         "regions": [
             {"id": region.region_id, "slug": region.slug}
@@ -271,6 +328,10 @@ def area_content(
             {"short_id": point.short_id}
             for point in points
             if point_in_bbox(point.lon, point.lat, bbox)
+        ],
+        # SNOW-1318: a resort is a pin, so the point rule, as for weather.
+        "resorts": [
+            {"slug": pin.slug} for pin in pins if point_in_bbox(pin.lon, pin.lat, bbox)
         ],
     }
 

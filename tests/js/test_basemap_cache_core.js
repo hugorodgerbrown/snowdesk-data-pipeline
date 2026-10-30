@@ -160,10 +160,16 @@ describe('classifySync — the SNOW-965 JSON classes', () => {
     expect(classify(`/partials/place-sheet/favourite/${uuid}/extra/`)).toBe('network');
   });
 
-  it('leaves the resort place sheet and every other fragment network-only (SNOW-1312)', () => {
-    // A resort's place sheet carries a per-reader Save star the server
-    // renders; SNOW-1313 keeps only the favourite form.
-    expect(classify('/partials/place-sheet/resort/verbier/?d=2026-01-06')).toBe('network');
+  it("classifies a resort's place sheet as public-partial (SNOW-1318)", () => {
+    // Its body reads no request.user: the Save star is painted on the device.
+    expect(classify('/partials/place-sheet/resort/verbier/?d=2026-01-06')).toBe('public-partial');
+    expect(classify('/partials/place-sheet/resort/saas-fee_2/')).toBe('public-partial');
+    expect(classify('/partials/place-sheet/resort/verbier/', 'POST')).toBe('network');
+    expect(classify('/partials/place-sheet/resort/verbier/extra/')).toBe('network');
+    expect(classify('/partials/place-sheet/resort/')).toBe('network');
+  });
+
+  it('leaves every other fragment network-only (SNOW-1312)', () => {
     expect(classify('/partials/place-sheet/abc123/?d=2026-01-06')).toBe('network');
     expect(classify('/partials/region-sheet/wp-login/')).toBe('network');
     expect(classify('/partials/region-sheet/ch-4115/extra/')).toBe('network');
