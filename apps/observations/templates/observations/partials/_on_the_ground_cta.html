@@ -4,14 +4,19 @@ observations/partials/_on_the_ground_cta.html — the call to report in "On
 the ground" (SNOW-1291), shared by its full and its one-row empty shape
 (SNOW-1296).
 
-In the map's sheet a button static/js/report.js picks up
-(``data-action="open-report"``) when signed in, a sign-in link when not; on
+In the map's sheet BOTH: a button static/js/report.js picks up
+(``data-action="open-report"``) for a signed-in reader and a sign-in link for
+anyone else, each in a ``data-reader-cta`` wrapper. The sheet's own
+``data-reader`` (public/partials/_region_sheet_surface.html, rendered with the
+map page from ``user.is_authenticated``) picks the one that shows, by one CSS
+rule in src/css/main.css — no JavaScript (SNOW-1317). That keeps the body the
+same for every reader, so the copy an area download saves for one account
+shows the reader who opens it offline their own call, not the saver's. On
 the bulletin page a link to the map, where reporting happens.
 
 Context:
   in_map   — True inside the map's sheet.
   map_url  — The bulletin page's link to this region on the map (page only).
-  user     — The reader.
   variant  — The _button variant: "secondary" under a list, "ghost" in
              the one-row empty shape, where it must not outweigh the line.
   short    — True in the one-row shape: one-word labels, so the line
@@ -23,12 +28,14 @@ Context:
     {% trans "Report what you see" as report_label %}{% trans "Sign in to report" as sign_in_label %}{% trans "Report on the map" as map_label %}
 {% endif %}
 {% if in_map %}
-    {% if user.is_authenticated %}
+    {# ``contents``: the wrapper is no box, so the button sits in the row as before. #}
+    <span class="contents" data-reader-cta="signed-in">
         {% include "includes/_button.html" with label=report_label button_type="button" variant=variant size="compact" data_action="open-report" only %}
-    {% else %}
-        {% url 'accounts:sign_in' as sign_in_url %}
+    </span>
+    {% url 'accounts:sign_in' as sign_in_url %}
+    <span class="contents" data-reader-cta="signed-out">
         {% include "includes/_button.html" with label=sign_in_label href=sign_in_url variant=variant size="compact" only %}
-    {% endif %}
+    </span>
 {% elif map_url %}
     {% include "includes/_button.html" with label=map_label href=map_url variant=variant size="compact" only %}
 {% endif %}

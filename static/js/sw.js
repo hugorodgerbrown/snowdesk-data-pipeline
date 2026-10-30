@@ -3810,13 +3810,18 @@ function _offlineMissResponse() {
  * reads no ``request.user`` at all (the Save star is painted on the
  * device). What follows about the reader is the region sheet's.
  *
- * Public, so unstamped: the body names nothing about the reader. One
- * element does depend on who asks — "On the ground"'s call to report is
- * a button signed in and a sign-in link signed out — and
- * ``tests/public/test_region_sheet.py``'s ``TestOfflineCopy`` holds it to
- * being the only one, so a copy saved under one account serves the other
- * at worst that button. It is rendered in the reader's language and kept
- * in the one it was saved in.
+ * Public, so unstamped: the body names nothing about the reader, and is
+ * the same for every reader (SNOW-1317). "On the ground"'s call to report
+ * carries both its forms, a report button and a sign-in link, and the
+ * sheet's ``data-reader`` — rendered with the map page, which is the
+ * reader's own — shows the matching one by a CSS rule, so a copy saved
+ * under one account shows whoever opens it their own call.
+ * ``tests/public/test_region_sheet.py``'s ``TestOfflineCopy`` holds the
+ * body to being byte-identical across readers. It is rendered in the
+ * reader's language and kept in the one it was saved in. Accepted limit: a
+ * signed-in user with no Account (``pwa-user-id`` ``""``, an operator made
+ * by ``createsuperuser``) shares the anonymous partition offline, so may be
+ * served the signed-out map page and see "Sign in to report".
  *
  * Online, an ok, ``basic``, non-``no-store`` answer is kept under
  * ``_publicPartialKey`` — path and ``d`` — and anything else (a 400 for a

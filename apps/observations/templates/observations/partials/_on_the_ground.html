@@ -36,7 +36,6 @@ Context:
   section_day, another_day — the map's sheet only: the day the eyebrow
              names (includes/_dated_eyebrow.html).
   map_url  — The bulletin page's link to this region on the map (page only).
-  user     — The reader, for the call to report.
 {% endcomment %}
 {% trans "On the ground" as on_the_ground_label %}
 {% if ground.is_today and not ground.count %}
@@ -46,7 +45,7 @@ Context:
         <p class="min-w-0 flex-1 truncate text-meta text-text-3" data-testid="on-the-ground-empty">
             <span aria-hidden="true">·</span> {% trans "No reports in 3 days" %}
         </p>
-        {% include "observations/partials/_on_the_ground_cta.html" with in_map=in_map map_url=map_url user=user variant="ghost" short=True only %}
+        {% include "observations/partials/_on_the_ground_cta.html" with in_map=in_map map_url=map_url variant="ghost" short=True only %}
     </section>
 {% elif ground.is_today %}
     <section class="mb-4" data-testid="on-the-ground" data-on-the-ground>
@@ -68,7 +67,7 @@ Context:
                 {% endfor %}
             </ul>
         {% endif %}
-        {% include "observations/partials/_on_the_ground_cta.html" with in_map=in_map map_url=map_url user=user variant="secondary" only %}
+        {% include "observations/partials/_on_the_ground_cta.html" with in_map=in_map map_url=map_url variant="secondary" only %}
     </section>
 {% elif ground.day %}
     {% blocktrans with day=ground.page_date|date:"j M Y" n=ground.count trimmed asvar observed_title %}

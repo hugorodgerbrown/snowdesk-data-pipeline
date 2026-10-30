@@ -81,6 +81,11 @@ Optional context:
                 ``bindDetents``, over the pure rules in
                 static/js/sheet_detents_core.js. Why phone-only and why forms
                 take none: docs/decisions/sheet-detents-are-phone-only.md.
+  reader      — ``"signed-in"`` or ``"signed-out"``; default none. Renders
+                ``data-reader`` on the sheet, for a body that carries a
+                call for each kind of reader and lets one CSS rule pick
+                (SNOW-1317, src/css/main.css). Only the region sheet passes
+                it; every other sheet renders byte-identical to before.
   initial     — The detent the sheet opens at; default the lowest declared.
                 Ignored without ``detents``.
   side        — ``"left"`` docks the DESKTOP panel down the map's left
@@ -168,6 +173,7 @@ bug in a subtler form.
     data-overlay
     class="{% if static %}relative{% else %}fixed bottom-[var(--map-edge-inset-bottom)] left-[var(--map-edge-inset-left)] right-[var(--map-edge-inset-right)] z-[var(--z-popup)] max-h-[calc(100dvh-var(--map-edge-inset-top)-var(--map-edge-inset-bottom))]{% if scroll_body %} flex flex-col overflow-hidden{% else %} overflow-y-auto{% endif %}{% endif %} rounded-card border border-border bg-card px-4 pb-8 pt-4 shadow-glass sm:bottom-4 {% if side == 'left' %}sm:right-auto {% firstof width 'sm:w-[25rem]' %}{% else %}sm:left-auto sm:right-4 {% firstof width 'sm:w-96' %}{% endif %}"
     {% if side == 'left' and not static %}data-sheet-side="left"{% endif %}
+    {% if reader %}data-reader="{{ reader }}"{% endif %}
     aria-label="{{ aria_label }}"
     {% if detents %}data-detents="{{ detents }}" data-detent-initial="{{ initial|default:'' }}"{% endif %}
 >
