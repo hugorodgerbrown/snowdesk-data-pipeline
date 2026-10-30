@@ -15,15 +15,14 @@
  * view's own rectangle at full detail. swisstopo's raster of its whole
  * network is no longer drawn: nothing in it could be tapped.
  *
- * While a list is open the tours it names are drawn over the rest as a
- * saved route's legs are (SNOW-1286): a way up in the climb's dashed grey,
- * a way down in the descent's solid fuchsia, each with a green dot at its far end
- * (where a way up starts and a way down finishes), and every other tour is
- * dimmed.
+ * Every tour is drawn as a saved route's legs are, at every zoom
+ * (SNOW-1306): a way up in the climb's dashed grey, a way down in the
+ * descent's solid fuchsia, so the two read apart before anything is tapped.
+ * A summit is a label (a dot and its name), never a target.
  *
  * A TAP (map.js's dispatcher calls `tap(point)` after the markers and the
- * weather symbols) on a summit lists every tour to it; on a line it opens
- * the one tour in reach, or lists them. A tour opens in the route panel
+ * weather symbols) on a line opens the tour nearest it
+ * (ski_tours_core.nearestTour). A tour opens in the route panel
  * through window.pwaSkiTourRoute, at once from the line and SAC's figures;
  * when the server has never walked the terrain under it the panel says so
  * (`terrain_pending`), the tour is asked for again with `?sample=1`, and
@@ -33,7 +32,7 @@
  *   tap(point)          — handle a map tap at a screen point; true when taken
  *   find()              — "Find a route": the overlay on, and the hint
  *   openSummit(summit)  — a summit picked in search (SNOW-1294): the layer
- *                         on, the map at the summit, its tours listed
+ *                         on, the map at the summit
  */
 
 // @ts-check
@@ -43,51 +42,36 @@
 
   // Cast once here: every one is checked below before anything runs.
   const config = /** @type {HTMLElement} */ (document.getElementById('ski-tours-config'));
-  const sheet = /** @type {HTMLElement} */ (document.getElementById('ski-tours-sheet'));
   const hint = /** @type {HTMLElement} */ (document.getElementById('ski-tours-hint'));
   const claimTemplate = /** @type {HTMLTemplateElement} */ (
     document.getElementById('ski-tour-claim-template')
   );
   const core = self.pwaSkiToursCore;
-  if (!config || !sheet || !hint || !claimTemplate || !core || !window.MapSheet) return;
+  if (!config || !hint || !claimTemplate || !core || !window.MapSheet) return;
 
   const NIL_UUID = '00000000-0000-0000-0000-000000000000';
   const GEOJSON_URL = config.dataset.geojsonUrl || '';
-  const LIST_URL = config.dataset.listUrl || '';
   const FEATURE_URL = (config.dataset.featureUrl || '').replace(NIL_UUID, '__UUID__');
   const SAVE_URL = (config.dataset.saveUrl || '').replace(NIL_UUID, '__UUID__');
   const SIGNIN_URL = config.dataset.signinUrl || '';
   const SAVE_ELIGIBLE = config.dataset.saveEligible === 'true';
 
   const SOURCE = 'ski-tours';
+  // A way up and a way down: two layers, because MapLibre 4 cannot drive
+  // `line-dasharray` from data.
   const LINE = 'ski-tours-line';
-  const HIGHLIGHT = 'ski-tours-highlight';
-  const HIGHLIGHT_DOWN = 'ski-tours-highlight-down';
+  const LINE_DOWN = 'ski-tours-line-down';
   const SUMMIT = 'ski-tours-summit';
   const LABEL = 'ski-tours-summit-label';
-  // The listed tours' far ends, from a source of their own: points worked
-  // out here (ski_tours_core.farEnds), not features the server sends.
-  const ENDS_SOURCE = 'ski-tours-ends';
-  const FAR_END = 'ski-tours-far-end';
-  const LAYERS = [LINE, HIGHLIGHT, HIGHLIGHT_DOWN, SUMMIT, FAR_END, LABEL];
-  // MapLibre paint cannot read a CSS custom property. The tours' blue is
-  // swisstopo's own for its ski routes (blue-600); the highlight is a
+  // MapLibre paint cannot read a CSS custom property. The lines are a
   // route's two leg colours (legColours); the marks are the ink and the card.
-  const TOUR_COLOUR = '#2563eb';
   const INK_COLOUR = '#1a1916';
-  // The mockup's green dot at a tour's far end: --color-sync-ok (green-600).
-  const FAR_END_COLOUR = '#16a34a';
-  // While a list is open the tours it does not name step back.
-  const DIMMED_OPACITY = 0.3;
   const HALO_COLOUR = '#ffffff';
-  // A summit is a smaller target than a line: reached only close to it.
-  const SUMMIT_TAP_PX = 12;
   const LOAD_DEBOUNCE_MS = 250;
 
   const STRINGS = self.pwaStrings.read('ski-tours-strings-template', {
-    hint: 'Tap a summit or a route',
-    'hint-zoom': 'Zoom in, then tap a summit or a route',
-    loading: 'Loading routes…',
+    hint: 'Tap a route',
+    'hint-zoom': 'Zoom in, then tap a route',
     failed: "The routes couldn't be loaded. Check your connection.",
     'sac-route': 'SAC route',
     'shows-ascent': 'Route shows the ascent only.',
@@ -117,30 +101,10 @@
     inflight: null,
     /** @type {?number} */
     timer: null,
-    /** The tours drawn in the route colour. */
-    /** @type {Array<string>} */
-    highlight: [],
     /** The tour the panel was asked for last, so a late answer is dropped. */
     /** @type {?string} */
     opening: null,
-    /** @type {?AbortController} */
-    listInflight: null,
-    /**
-     * The summit whose list is open when it was opened from search, so the
-     * collection the flight there loads lights its tours up (SNOW-1294).
-     */
-    /** @type {?string} */
-    summitKey: null,
   };
-
-  const controller = window.MapSheet.attach(sheet, {
-    onTeardown: function () {
-      if (state.listInflight) state.listInflight.abort();
-      state.listInflight = null;
-      state.summitKey = null;
-      setHighlight([]);
-    },
-  });
 
   /** @returns {any} The MapLibre map, or null before it exists. */
   function getMap() {
@@ -175,7 +139,7 @@
   function applyVisibility() {
     const map = getMap();
     if (!map || !map.getLayer(LINE)) return;
-    for (const id of [LINE, HIGHLIGHT, HIGHLIGHT_DOWN, FAR_END]) {
+    for (const id of [LINE, LINE_DOWN]) {
       map.setLayoutProperty(id, 'visibility', partVisibility('ski_tours'));
     }
     for (const id of [SUMMIT, LABEL]) {
@@ -230,49 +194,35 @@
     const before = map.getLayer('regions-line') ? 'regions-line' : undefined;
     const minzoom = core.MINZOOM;
     const isTour = ['==', ['get', 'kind'], 'tour'];
-    const highlight = core.highlightFilter(state.highlight);
-    // Bold from z12, where the lines separate; thinner further out, where
-    // the whole of a valley's tours share a few pixels.
-    const width = ['interpolate', ['linear'], ['zoom'], 9, 1.5, 12, 3, 15, 5];
+    // Thin out to z12, where a valley's tours share a few pixels; bolder
+    // past it, where the lines separate. Thinner than the open tour, which
+    // is drawn over them in the same colours.
+    const width = ['interpolate', ['linear'], ['zoom'], 9, 1.5, 12, 2.5, 15, 4];
+    // SNOW-1306: a way up in the climb's grey, dashed, a way down in the
+    // descent's solid fuchsia, as a saved route's legs and the open tour
+    // are, so up and down read apart at every zoom.
+    const legs = legColours();
     map.addLayer({
       id: LINE,
       type: 'line',
       source: SOURCE,
       minzoom: minzoom,
-      filter: isTour,
-      layout: { visibility: visibility, 'line-cap': 'round', 'line-join': 'round' },
-      paint: {
-        'line-color': TOUR_COLOUR,
-        'line-width': width,
-        'line-opacity': state.highlight.length ? DIMMED_OPACITY : 1,
-      },
-    }, before);
-    const highlightWidth = ['interpolate', ['linear'], ['zoom'], 9, 3, 12, 5, 15, 7];
-    // SNOW-1286: a lit tour is drawn as a saved route's legs are — a way up
-    // in the climb's grey, dashed, a way down in the descent's solid
-    // fuchsia — so a tour reads the same before and after it is saved.
-    const legs = legColours();
-    map.addLayer({
-      id: HIGHLIGHT,
-      type: 'line',
-      source: SOURCE,
-      minzoom: minzoom,
-      filter: ['all', isTour, ['!', ['get', 'down']], highlight],
+      filter: ['all', isTour, ['!', ['get', 'down']]],
       layout: { visibility: visibility, 'line-cap': 'butt', 'line-join': 'round' },
       paint: {
         'line-color': legs.climb,
-        'line-width': highlightWidth,
+        'line-width': width,
         'line-dasharray': [2, 1.5],
       },
     }, before);
     map.addLayer({
-      id: HIGHLIGHT_DOWN,
+      id: LINE_DOWN,
       type: 'line',
       source: SOURCE,
       minzoom: minzoom,
-      filter: ['all', isTour, ['get', 'down'], highlight],
+      filter: ['all', isTour, ['get', 'down']],
       layout: { visibility: visibility, 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': legs.descent, 'line-width': highlightWidth },
+      paint: { 'line-color': legs.descent, 'line-width': width },
     }, before);
     const isMark = ['in', ['get', 'kind'], ['literal', ['summit', 'hut']]];
     map.addLayer({
@@ -289,25 +239,6 @@
         'circle-color': ['case', ['==', ['get', 'kind'], 'hut'], HALO_COLOUR, INK_COLOUR],
         'circle-stroke-color': ['case', ['==', ['get', 'kind'], 'hut'], INK_COLOUR, HALO_COLOUR],
         'circle-stroke-width': 1.5,
-      },
-    }, before);
-    // Over the summit and hut marks: a tour that starts at a hut is named
-    // by its green dot, not hidden under the hut's ring.
-    map.addSource(ENDS_SOURCE, {
-      type: 'geojson',
-      data: core.farEnds(state.data.features, state.highlight),
-    });
-    map.addLayer({
-      id: FAR_END,
-      type: 'circle',
-      source: ENDS_SOURCE,
-      minzoom: minzoom,
-      layout: { visibility: visibility },
-      paint: {
-        'circle-radius': 5,
-        'circle-color': FAR_END_COLOUR,
-        'circle-stroke-color': HALO_COLOUR,
-        'circle-stroke-width': 2,
       },
     }, before);
     // The map's own overlay font (SNOW-478), not the style's commonest,
@@ -343,34 +274,6 @@
     }, before);
   }
 
-  /**
-   * Draw these tours in the route colour with their far ends, and dim the
-   * rest; an empty list puts every tour back at full strength.
-   *
-   * @param {Array<string>} uuids
-   */
-  function setHighlight(uuids) {
-    state.highlight = uuids.slice();
-    const map = getMap();
-    if (!map || !map.getLayer(HIGHLIGHT)) return;
-    const isTour = ['==', ['get', 'kind'], 'tour'];
-    const highlight = core.highlightFilter(state.highlight);
-    map.setFilter(HIGHLIGHT, ['all', isTour, ['!', ['get', 'down']], highlight]);
-    map.setFilter(HIGHLIGHT_DOWN, ['all', isTour, ['get', 'down'], highlight]);
-    map.setPaintProperty(LINE, 'line-opacity', state.highlight.length ? DIMMED_OPACITY : 1);
-    paintFarEnds(map);
-  }
-
-  /**
-   * Re-place the listed tours' far ends, from the collection now loaded.
-   *
-   * @param {any} map
-   */
-  function paintFarEnds(map) {
-    const source = map && map.getSource(ENDS_SOURCE);
-    if (source) source.setData(core.farEnds(state.data.features, state.highlight));
-  }
-
   // ---------------------------------------------------------------------------
   // Loading the view
   // ---------------------------------------------------------------------------
@@ -386,10 +289,6 @@
     const source = map.getSource(SOURCE);
     if (source) source.setData(body);
     else installLayers(map);
-    // A list opened from search before its summit's tours were loaded.
-    if (state.summitKey) setHighlight(toursTo(state.summitKey));
-    // A pan that reloads while a list is open keeps its dots in place.
-    paintFarEnds(map);
   }
 
   /**
@@ -630,7 +529,6 @@
   function openTour(uuid) {
     if (!FEATURE_URL || !window.pwaSkiTourRoute) return;
     state.opening = uuid;
-    controller.close();
     showHint(false);
     fetchFeature(uuid, false).then(function (feature) {
       if (state.opening !== uuid) return;
@@ -650,130 +548,45 @@
   }
 
   // ---------------------------------------------------------------------------
-  // The list sheet
-  // ---------------------------------------------------------------------------
-
-  /**
-   * The tours a summit's list names, from what is loaded, for the
-   * highlight (the list itself is the server's).
-   *
-   * @param {string} key
-   * @returns {Array<string>}
-   */
-  function toursTo(key) {
-    return state.data.features
-      .filter(function (f) {
-        return f && f.properties && f.properties.kind === 'tour' && f.properties.summit === key;
-      })
-      .map(function (f) {
-        return String(f.properties.uuid);
-      });
-  }
-
-  /** @param {string} message */
-  function paintSheetLine(message) {
-    const line = document.createElement('p');
-    line.className = 'px-2 py-4 text-sm text-text-2';
-    line.textContent = message;
-    sheet.replaceChildren(line);
-  }
-
-  /**
-   * Open the list sheet for a summit's or a tap's tours.
-   *
-   * @param {string} url
-   * @param {Array<string>} uuids The tours to light up on the map.
-   */
-  function openList(url, uuids) {
-    state.opening = null;
-    state.summitKey = null;
-    showHint(false);
-    if (window.pwaRouteRail?.isOpen?.()) window.pwaRouteRail.close();
-    if (state.listInflight) state.listInflight.abort();
-    const inflight = new AbortController();
-    state.listInflight = inflight;
-    if (!controller.isOpen()) paintSheetLine(STRINGS.loading);
-    controller.open({ awaiting: true });
-    setHighlight(uuids);
-    fetch(url, {
-      credentials: 'same-origin',
-      headers: { 'HX-Request': 'true' },
-      signal: inflight.signal,
-    })
-      .then(function (resp) {
-        return resp.ok ? resp.text() : null;
-      })
-      .then(function (html) {
-        if (state.listInflight !== inflight) return;
-        state.listInflight = null;
-        // Our own server-rendered partial (routes:ski_tour_list), whose
-        // every value went through Django's escaping.
-        if (html === null) paintSheetLine(STRINGS.failed);
-        else sheet.innerHTML = html;
-        controller.open();
-      })
-      .catch(function () {
-        if (state.listInflight !== inflight) return;
-        state.listInflight = null;
-        paintSheetLine(STRINGS.failed);
-      });
-  }
-
-  sheet.addEventListener('click', function (event) {
-    const target = /** @type {HTMLElement} */ (event.target);
-    const row = target && target.closest ? target.closest('[data-ski-tour]') : null;
-    if (!row) return;
-    openTour(String(row.getAttribute('data-ski-tour')));
-  });
-
-  // ---------------------------------------------------------------------------
   // Taps and the way in
   // ---------------------------------------------------------------------------
 
   /**
-   * Handle a map tap at a screen point.
+   * Handle a map tap at a screen point: open the tour nearest it.
    *
    * @param {{x: number, y: number}} point
-   * @returns {boolean} Whether the tap was on a tour or a summit.
+   * @returns {boolean} Whether the tap was on a tour.
    */
   function tap(point) {
     const map = getMap();
     if (!map || !shown() || core.loadMode(map.getZoom()) === 'none' || !map.getLayer(LINE)) {
       return false;
     }
-    /** @param {number} px */
-    const box = (px) => [[point.x - px, point.y - px], [point.x + px, point.y + px]];
-    const hits = map.queryRenderedFeatures(box(SUMMIT_TAP_PX), { layers: [SUMMIT, LABEL] })
-      .concat(map.queryRenderedFeatures(box(core.TAP_PX), { layers: [LINE] }));
-    const choice = core.resolveTap(hits);
-    if (!choice) return false;
-    if (choice.kind === 'tour') {
-      openTour(choice.uuid);
-    } else {
-      const url = core.listUrl(LIST_URL, choice);
-      if (url) openList(url, choice.kind === 'summit' ? toursTo(choice.key) : choice.uuids);
-    }
+    const px = core.TAP_PX;
+    const hits = map.queryRenderedFeatures(
+      [[point.x - px, point.y - px], [point.x + px, point.y + px]],
+      { layers: [LINE, LINE_DOWN] },
+    );
+    const uuid = core.nearestTour(hits, point, function (/** @type {Array<number>} */ c) {
+      return map.project(/** @type {[number, number]} */ ([c[0], c[1]]));
+    });
+    if (!uuid) return false;
+    openTour(uuid);
     return true;
   }
 
   /**
-   * A summit picked in search (SNOW-1294): what a tap on its dot does, from
-   * anywhere on the map. Both parts of the ski-touring layer come on, as
-   * "Find a route" turns them on; the map flies to the summit, close enough for its tours'
-   * own detail; and its list opens. The tours it names are lit up once the
-   * flight's load has them.
+   * A summit picked in search (SNOW-1294): both parts of the ski-touring
+   * layer come on, as "Find a route" turns them on, and the map flies to
+   * the summit, close enough for its tours' own detail. The reader then
+   * picks a tour by its line (SNOW-1306).
    *
    * @param {{key: string, lon: number, lat: number}} summit
    */
   function openSummit(summit) {
     const map = getMap();
     if (!summit || !summit.key || !map) return;
-    // Both parts, as find() turns on: a summit with its tours hidden, or
-    // tours with their summit hidden, is half an answer.
     window.pwaSkiRoutes?.show();
-    const url = core.listUrl(LIST_URL, { kind: 'summit', key: summit.key });
-    if (url) openList(url, toursTo(summit.key));
-    state.summitKey = summit.key;
     if (Number.isFinite(summit.lon) && Number.isFinite(summit.lat)) {
       map.flyTo({
         center: [summit.lon, summit.lat],
@@ -800,7 +613,7 @@
     if (target.closest('[data-ski-tours-hint-close]')) showHint(false);
   });
 
-  // The tour the panel showed has gone: nothing is highlighted for it.
+  // The tour the panel showed has gone: a late answer for it is dropped.
   document.addEventListener('snowdesk:ski-tour-closed', function () {
     state.opening = null;
   });

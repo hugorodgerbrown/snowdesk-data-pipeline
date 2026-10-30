@@ -7,10 +7,11 @@
  * tour goes to (`kind: "summit"` or `"hut"`). ski_tours.js draws them and
  * hands this module what a tap landed on.
  *
- * A TAP NEVER PICKS A TOUR ON ITS OWN. A summit under the tap lists every
- * tour to it, up and down; otherwise one tour in reach opens its panel and
- * more than one lists them, which near a hut is nearly always (decided
- * 28 Oct 2026).
+ * A TAP OPENS THE NEAREST TOUR (SNOW-1306). The tours are drawn with a way
+ * up and a way down told apart, so the reader picks one by sight and the
+ * tap takes the line nearest it. A summit is a label, never a target
+ * (Hugo, 30 Oct 2026: "Just a label for now. Users can see the routes."),
+ * so the list sheet a summit and a crowded tap once opened is gone.
  *
  * Nothing here touches the DOM or the map.
  *
@@ -26,14 +27,10 @@
  *   loadMode(zoom)             — what a zoom loads: none, overview or detail
  *   TAP_PX                     — how near a line a tap reaches, px
  *   LOAD_PAD_DEG               — how far past the view a load reaches
- *   resolveTap(features)       — what a tap means: a summit's list, one
- *                                tour, a list of tours, or nothing
+ *   nearestTour(features, point, project) — the tour a tap opens, or null
  *   loadBox(bounds)            — the rectangle to load for a view
  *   covers(box, bounds)        — whether a loaded rectangle holds a view
- *   highlightFilter(uuids)     — the filter that draws only those tours
- *   farEnds(features, uuids)   — where each of these tours starts or ends
  *   fitsView(corners, size, padding) — whether a tour already shows whole
- *   listUrl(base, choice)      — the list sheet's URL for a tap
  *   featureUrl(template, uuid, sample) — a tour's Feature URL
  */
 
@@ -61,38 +58,61 @@
   const MAX_SPAN_DEG = 0.5;
 
   /**
-   * @typedef {{properties?: ?Object<string, any>}} TapFeature
-   * @typedef {{kind: 'summit', key: string}
-   *   | {kind: 'tour', uuid: string}
-   *   | {kind: 'list', uuids: Array<string>}} TapChoice
+   * @typedef {{properties?: ?Object<string, any>, geometry?: ?{type: string, coordinates: any}}} TapFeature
    * @typedef {[number, number, number, number]} Box west, south, east, north
    */
 
   /**
-   * What a tap on the tours means.
+   * The squared distance, px, from a point to a segment.
    *
-   * @param {Array<TapFeature>} features What the tap's box hit, summits
-   *   and tour lines in any order (a tour clipped into several tiles may
-   *   appear more than once).
-   * @returns {?TapChoice} A summit's list when a summit or hut is under
-   *   the tap; one tour when only one is in reach; the list of them when
-   *   more are; null when nothing is.
+   * @param {{x: number, y: number}} p
+   * @param {{x: number, y: number}} a
+   * @param {{x: number, y: number}} b
+   * @returns {number}
    */
-  function resolveTap(features) {
-    /** @type {Array<string>} */
-    const uuids = [];
+  function segmentDistance2(p, a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const length2 = dx * dx + dy * dy;
+    const t = length2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / length2)) : 0;
+    const x = a.x + t * dx - p.x;
+    const y = a.y + t * dy - p.y;
+    return x * x + y * y;
+  }
+
+  /**
+   * The tour a tap opens: the one whose line passes nearest the tap.
+   *
+   * @param {Array<TapFeature>} features The tour lines the tap's box hit,
+   *   in any order (a tour clipped into several tiles may appear more
+   *   than once, in parts).
+   * @param {{x: number, y: number}} point The tap, screen px.
+   * @param {function(Array<number>): {x: number, y: number}} project A
+   *   coordinate to screen px (the map's own projection).
+   * @returns {?string} The tour's uuid, or null when no tour was hit.
+   */
+  function nearestTour(features, point, project) {
+    /** @type {?string} */
+    let best = null;
+    let bestD = Infinity;
     for (const feature of features || []) {
       const props = (feature && feature.properties) || {};
-      if ((props.kind === 'summit' || props.kind === 'hut') && props.key) {
-        return { kind: 'summit', key: String(props.key) };
-      }
-      if (props.kind === 'tour' && props.uuid && !uuids.includes(String(props.uuid))) {
-        uuids.push(String(props.uuid));
+      if (props.kind !== 'tour' || !props.uuid) continue;
+      const g = feature.geometry;
+      const parts = !g ? [] : g.type === 'MultiLineString' ? g.coordinates : [g.coordinates];
+      for (const part of parts) {
+        if (!Array.isArray(part)) continue;
+        const pts = part.map(project);
+        for (let i = 0; i < pts.length; i++) {
+          const d = segmentDistance2(point, pts[i], pts[Math.min(i + 1, pts.length - 1)]);
+          if (d < bestD) {
+            bestD = d;
+            best = String(props.uuid);
+          }
+        }
       }
     }
-    if (!uuids.length) return null;
-    if (uuids.length === 1) return { kind: 'tour', uuid: uuids[0] };
-    return { kind: 'list', uuids: uuids };
+    return best;
   }
 
   /**
@@ -172,94 +192,6 @@
   }
 
   /**
-   * The MapLibre filter that keeps only these tours.
-   *
-   * @param {Array<string>} uuids
-   * @returns {Array<any>}
-   */
-  function highlightFilter(uuids) {
-    return ['in', ['get', 'uuid'], ['literal', (uuids || []).slice()]];
-  }
-
-  /**
-   * The far end of each of these tours: where it starts, for a way up, or
-   * where it finishes, for a way down. The end of any of its parts farthest
-   * from the tour's own summit, so a line drawn the other way round, or in
-   * parts stored out of order, is still read right; with its summit not
-   * loaded, a way up's first point and a way down's last.
-   *
-   * @param {Array<any>} features A loaded collection's features, summits
-   *   and tours together.
-   * @param {Array<string>} uuids The tours to mark.
-   * @returns {{type: string, features: Array<any>}} One Point per tour.
-   */
-  function farEnds(features, uuids) {
-    const wanted = new Set(uuids || []);
-    /** @type {Map<string, Array<number>>} */
-    const summits = new Map();
-    for (const f of features || []) {
-      const p = f && f.properties;
-      if (p && (p.kind === 'summit' || p.kind === 'hut') && f.geometry) {
-        summits.set(p.key, f.geometry.coordinates);
-      }
-    }
-    /** @type {Array<any>} */
-    const ends = [];
-    const seen = new Set();
-    for (const f of features || []) {
-      const p = f && f.properties;
-      if (!p || p.kind !== 'tour' || !wanted.has(p.uuid) || seen.has(p.uuid)) continue;
-      const g = f.geometry;
-      const parts = !g ? [] : g.type === 'MultiLineString' ? g.coordinates : [g.coordinates];
-      const line = parts.filter((/** @type {any} */ part) => part && part.length);
-      if (!line.length) continue;
-      seen.add(p.uuid);
-      const first = line[0][0];
-      const last = line[line.length - 1][line[line.length - 1].length - 1];
-      const summit = summits.get(p.summit);
-      let end;
-      if (summit) {
-        // The part ends farthest from the summit: swisstopo stores a tour's
-        // parts in no particular order, so its first point need not be where
-        // it starts. Degrees, the longitude scaled by the latitude: only
-        // which end is farther matters.
-        const k = Math.cos((summit[1] * Math.PI) / 180);
-        const d = (/** @type {Array<number>} */ c) =>
-          ((c[0] - summit[0]) * k) ** 2 + (c[1] - summit[1]) ** 2;
-        end = first;
-        for (const part of line) {
-          for (const c of [part[0], part[part.length - 1]]) {
-            if (d(c) > d(end)) end = c;
-          }
-        }
-      } else {
-        end = p.down ? last : first;
-      }
-      ends.push({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [end[0], end[1]] },
-        properties: { uuid: p.uuid },
-      });
-    }
-    return { type: 'FeatureCollection', features: ends };
-  }
-
-  /**
-   * The list sheet's URL for a tap's choice.
-   *
-   * @param {string} base routes:ski_tour_list.
-   * @param {TapChoice} choice A summit's or a list's choice.
-   * @returns {?string} Null for a single tour, which has no list.
-   */
-  function listUrl(base, choice) {
-    if (!base || !choice) return null;
-    const join = base.includes('?') ? '&' : '?';
-    if (choice.kind === 'summit') return base + join + 'summit=' + encodeURIComponent(choice.key);
-    if (choice.kind === 'list') return base + join + 'tours=' + choice.uuids.map(encodeURIComponent).join(',');
-    return null;
-  }
-
-  /**
    * A tour's Feature URL.
    *
    * @param {string} template routes:ski_tour_feature with `__UUID__`.
@@ -279,13 +211,10 @@
     loadMode: loadMode,
     TAP_PX: TAP_PX,
     LOAD_PAD_DEG: LOAD_PAD_DEG,
-    resolveTap: resolveTap,
+    nearestTour: nearestTour,
     loadBox: loadBox,
     covers: covers,
-    highlightFilter: highlightFilter,
-    farEnds: farEnds,
     fitsView: fitsView,
-    listUrl: listUrl,
     featureUrl: featureUrl,
   });
 })();

@@ -9,6 +9,8 @@ Covers ``backfill_ski_tour_slope_samples`` (SNOW-1288):
   - A tour the terrain model cannot answer for stays null, not a failure.
   - One failing tour does not abort the batch; the command exits non-zero.
   - ``--limit`` stops where it says.
+  - A record walked before SNOW-1306 on a tour whose order stands is only
+    marked: no request, no pause.
 
 ``build_slope_samples`` is patched throughout: the walk is
 ``tests/routes/test_slope_segments.py``'s subject.
@@ -32,6 +34,8 @@ pytestmark = pytest.mark.django_db
 COMMAND = "backfill_ski_tour_slope_samples"
 _BUILDER = "apps.routes.services.ski_tours.build_slope_samples"
 RECORD: dict[str, Any] = {"segments": [], "heights": [2000.0]}
+# What a walk keeps since SNOW-1306.
+KEPT: dict[str, Any] = {**RECORD, "walked_reversed": False}
 
 
 def _run(*args: str) -> str:
@@ -67,18 +71,31 @@ def test_commit_walks_and_keeps_the_record() -> None:
         out = _run("--commit")
     assert f"SAC {tour.sac_id} Piz Buin · Von der Hütte" in out
     tour.refresh_from_db()
-    assert tour.slope_samples == RECORD
+    assert tour.slope_samples == KEPT
 
 
 def test_only_tours_without_a_current_record_are_walked() -> None:
     """A doubled record is walked again; a current one is not."""
-    SkiTourFactory.create(slope_samples=RECORD)
+    SkiTourFactory.create(slope_samples=KEPT)
     doubled = SkiTourFactory.create(slope_samples={**RECORD, "there_and_back": True})
     with patch(_BUILDER, return_value=dict(RECORD)) as build:
         _run("--commit")
     build.assert_called_once()
     doubled.refresh_from_db()
-    assert doubled.slope_samples == RECORD
+    assert doubled.slope_samples == KEPT
+
+
+def test_a_record_walked_before_the_order_rule_is_marked_not_walked() -> None:
+    """SNOW-1306: no request and no pause for a tour whose order stands."""
+    tour = SkiTourFactory.create(slope_samples=RECORD)
+    with patch(_BUILDER) as build, patch("time.sleep") as sleep:
+        out = call_command_out = StringIO()
+        call_command(COMMAND, "--commit", stdout=call_command_out)
+    build.assert_not_called()
+    sleep.assert_not_called()
+    assert "1 marked" in out.getvalue()
+    tour.refresh_from_db()
+    assert tour.slope_samples == KEPT
 
 
 def test_a_tour_with_no_answer_stays_null_and_is_no_failure() -> None:

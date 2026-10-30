@@ -13,6 +13,11 @@ tour walked over SNOW-1286's doubled line, which ``tour_slope_samples`` no
 longer holds. The walk is ``tour_slope_samples(tour, sample=True)``, the
 same one the panel's fallback runs, over SAC's own points (SNOW-1287).
 
+**A record walked before SNOW-1306** (a way down now runs from its top) is
+a candidate once. On a tour whose order did not change it is only marked,
+counted ``marked``, with no request and no pause; on one whose order
+flipped it is walked again.
+
 **Null stays honest**, as in ``backfill_route_slope_samples``: a tour the
 terrain model has no answer for is left null, counted ``unanswered``, and
 tried again next run. Not a failure.
@@ -45,7 +50,11 @@ from django.core.management.base import CommandError
 from apps.core.command_iteration import iterate_rows, non_negative_float
 from apps.core.command_register import RegisteredCommand
 from apps.routes.models import SkiTour
-from apps.routes.services.ski_tours import tour_slope_samples, tours_to_sample
+from apps.routes.services.ski_tours import (
+    needs_only_marking,
+    tour_slope_samples,
+    tours_to_sample,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +140,7 @@ class Command(RegisteredCommand):
             limit,
         )
 
-        counts = {"sampled": 0, "unanswered": 0, "failed": 0}
+        counts = {"sampled": 0, "marked": 0, "unanswered": 0, "failed": 0}
         processed = 0
         for tour in iterate_rows(
             self,
@@ -139,13 +148,13 @@ class Command(RegisteredCommand):
             verbosity=verbosity,
             describe=lambda row: f"SAC {row.sac_id} {row.target_name} · {row.name}",
         ):
-            self._sample_one(tour, counts, commit=commit)
+            walked = self._sample_one(tour, counts, commit=commit)
             processed += 1
             # After the work, as backfill_route_slope_samples does: a break
             # on the way in would count a row down and then skip it.
             if limit and processed >= limit:
                 break
-            if commit and delay:
+            if commit and delay and walked:
                 time.sleep(delay)
 
         self._report_outcome(counts, commit=commit, verbosity=verbosity)
@@ -157,7 +166,7 @@ class Command(RegisteredCommand):
 
     def _sample_one(
         self, tour: SkiTour, counts: dict[str, int], *, commit: bool
-    ) -> None:
+    ) -> bool:
         """Walk one tour and keep its record.
 
         Args:
@@ -165,12 +174,21 @@ class Command(RegisteredCommand):
             counts: The running tally, mutated in place.
             commit: Whether to make the requests and persist.
 
+        Returns:
+            Whether the terrain was walked (or would be), and so whether
+            the pause between tours is owed.
+
         """
+        if needs_only_marking(tour):
+            if commit:
+                tour_slope_samples(tour, sample=True)
+            counts["marked"] += 1
+            return False
         if not commit:
             # No request either: a read-only run reports what the queryset
             # already counted.
             counts["sampled"] += 1
-            return
+            return True
         try:
             record = tour_slope_samples(tour, sample=True)
         except Exception:  # noqa: BLE001 — broad catch intentional: one tour must not abort the batch
@@ -180,12 +198,13 @@ class Command(RegisteredCommand):
                 tour.sac_id,
             )
             counts["failed"] += 1
-            return
+            return True
         if record is None:
             # Left null on purpose: a later run tries again.
             counts["unanswered"] += 1
-            return
+            return True
         counts["sampled"] += 1
+        return True
 
     def _report_outcome(
         self, counts: dict[str, int], *, commit: bool, verbosity: int
@@ -203,6 +222,7 @@ class Command(RegisteredCommand):
                 self.stdout.write(
                     self.style.SUCCESS(
                         f"Done. {counts['sampled']} tour(s) sampled, "
+                        f"{counts['marked']} marked as matching their line, "
                         f"{counts['unanswered']} left null (nothing learnable), "
                         f"{counts['failed']} failed."
                     )
@@ -211,17 +231,20 @@ class Command(RegisteredCommand):
                 self.stdout.write(
                     self.style.SUCCESS(
                         f"Read-only run complete — {counts['sampled']} tour(s) "
-                        "would be sampled. No requests made, no data written. "
+                        f"would be sampled, {counts['marked']} marked. "
+                        "No requests made, no data written. "
                         "Pass --commit to sample."
                     )
                 )
         self.tally("sampled", counts["sampled"])
+        self.tally("marked", counts["marked"])
         self.tally("unanswered", counts["unanswered"])
         self.tally("failed", counts["failed"])
         logger.info(
-            "backfill_ski_tour_slope_samples finished: sampled=%d unanswered=%d "
-            "failed=%d commit=%s",
+            "backfill_ski_tour_slope_samples finished: sampled=%d marked=%d "
+            "unanswered=%d failed=%d commit=%s",
             counts["sampled"],
+            counts["marked"],
             counts["unanswered"],
             counts["failed"],
             commit,

@@ -6,8 +6,7 @@ behind the ``route_drawing`` flag.
   at once without the terrain and with it on ``?sample=1``;
 * ``routes:ski_tour_terrain`` — GET, the tour's terrain rows for the
   point card (SNOW-1282);
-* ``routes:ski_tour_save`` — POST, a copy onto the reader's routes;
-* ``routes:ski_tour_list`` — the HTMX list of a summit's tours or a tap's.
+* ``routes:ski_tour_save`` — POST, a copy onto the reader's routes.
 """
 
 from __future__ import annotations
@@ -27,8 +26,6 @@ from tests.factories import RouteFactory, SkiTourFactory, UserFactory
 
 pytestmark = pytest.mark.django_db
 
-HTMX = {"HX-Request": "true"}
-LIST_URL = reverse("routes:ski_tour_list")
 RECORD: dict[str, Any] = {"v": 1, "segments": []}
 
 
@@ -98,7 +95,7 @@ class TestFeature:
         assert response.status_code == 200
         assert "terrain_pending" not in response.json()["feature"]["properties"]
         tour.refresh_from_db()
-        assert tour.slope_samples == RECORD
+        assert tour.slope_samples == {**RECORD, "walked_reversed": False}
 
     def test_a_sampled_tour_is_not_pending(self, client: Client) -> None:
         """The held record answers the first request."""
@@ -213,78 +210,3 @@ class TestSave:
     def test_get_is_405(self, client: Client) -> None:
         """POST only."""
         assert client.get(_save_url(SkiTourFactory.create())).status_code == 405
-
-
-class TestList:
-    """``routes:ski_tour_list``."""
-
-    def test_a_summit_lists_its_ways_up_and_down(self, client: Client) -> None:
-        """Counted, grouped, named by SAC's names."""
-        SkiTourFactory.create(name="Von der Hütte", ascent_time_label="03:30 h")
-        SkiTourFactory.create(name="Abfahrt nach Lavin", ascent_m=None, descent_m=1800)
-        response = client.get(LIST_URL, {"summit": "piz-buin-3312"}, headers=HTMX)
-        assert response.status_code == 200
-        body = response.content.decode()
-        assert "Piz Buin · 3312 m" in body
-        assert "2 SAC routes" in body
-        assert "1 up, 1 down" in body
-        assert "Von der Hütte" in body
-        assert "3 h 30" in body
-        assert "Descent only" in body
-        assert "1800" not in body
-        assert body.count("data-ski-tour=") == 2
-
-    def test_a_row_is_drawn_as_a_saved_routes_leg(self, client: Client) -> None:
-        """A way up dashed grey, a way down solid fuchsia (SNOW-1286).
-
-        Each says which half of the tour its line is, inferring nothing
-        more, and shows none of SAC's height figures (SNOW-1302).
-        """
-        SkiTourFactory.create(name="Von der Hütte", descent_m=1100)
-        SkiTourFactory.create(name="Abfahrt nach Lavin", ascent_m=None, descent_m=1800)
-        response = client.get(LIST_URL, {"summit": "piz-buin-3312"}, headers=HTMX)
-        body = response.content.decode()
-        assert body.count("text-route-rail-climb") == 1
-        assert body.count("text-route-rail-descent") == 1
-        assert body.count("stroke-dasharray") == 1
-        assert body.count("Ascent only") == 1
-        assert body.count("Descent only") == 1
-        assert "via ascent" not in body
-        assert "1100" not in body
-
-    def test_a_tap_lists_its_tours_by_summit(self, client: Client) -> None:
-        """List them as "2 routes pass here", each row titled by its summit."""
-        one = SkiTourFactory.create()
-        two = SkiTourFactory.create(target_name="Signalhorn", target_altitude_m=3207)
-        SkiTourFactory.create()
-        response = client.get(
-            LIST_URL, {"tours": f"{one.source_uuid},{two.source_uuid}"}, headers=HTMX
-        )
-        assert response.status_code == 200
-        body = response.content.decode()
-        assert "2 routes pass here" in body
-        assert "Signalhorn · 3207 m" in body
-        assert body.count("data-ski-tour=") == 2
-
-    @pytest.mark.parametrize("query", [{}, {"tours": "not-a-uuid"}])
-    def test_a_bad_query_is_400(self, client: Client, query: dict[str, str]) -> None:
-        """Neither parameter, or a malformed uuid."""
-        assert client.get(LIST_URL, query, headers=HTMX).status_code == 400
-
-    def test_an_unknown_summit_is_404(self, client: Client) -> None:
-        """No tours go there."""
-        assert (
-            client.get(LIST_URL, {"summit": "nowhere-0"}, headers=HTMX).status_code
-            == 404
-        )
-
-    def test_a_plain_request_is_400(self, client: Client) -> None:
-        """``require_htmx``."""
-        assert client.get(LIST_URL, {"summit": "piz-buin-3312"}).status_code == 400
-
-    @override_flag("route_drawing", active=False)
-    def test_the_flag_off_is_404(self, client: Client) -> None:
-        """Invisible."""
-        SkiTourFactory.create()
-        response = client.get(LIST_URL, {"summit": "piz-buin-3312"}, headers=HTMX)
-        assert response.status_code == 404
