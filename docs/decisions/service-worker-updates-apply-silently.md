@@ -2,7 +2,7 @@
 name: service-worker-updates-apply-silently
 description: Why a waiting SW applies silently (at once on a fresh tab, else on hide) and the banner is only for a stuck worker — pwa-shell
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-30
 ---
 
 # Service-worker updates apply silently; the banner is for a stuck worker
@@ -119,6 +119,11 @@ when the shell does, and once per production release (below).
   deploys every merge under one label, and an unnumbered build has none
   (it keeps `snowdesk-shell-<hash>`).
 
+* **A silent update must not cost the user their downloads.** Applying on
+  hide means an update typically lands the evening after a download.
+  `activate` carries the old shell caches' content into the new one before
+  reaping them, and keeps them on an incomplete carry (SNOW-1311) — see
+  [`an-update-carries-your-downloaded-content-across.md`](an-update-carries-your-downloaded-content-across.md).
 * **`pwa.sw.update_available` now counts stuck-worker banners**, once per
   page. `pwa.sw.update_applied` fires for silent activations too.
 * **An open page can run old JavaScript against a new worker** until its
