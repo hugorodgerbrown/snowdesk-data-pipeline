@@ -6,10 +6,10 @@ publishes it (SNOW-1276). Nobody owns it. It becomes a ``Route`` only when
 someone saves it, as a copy (``save_ski_tour``) through the same
 ``write_route_copy`` a claimed share and a saved trip go through.
 
-THE SUMMIT IS THE HANDLE. Drawn together the tours are one web, and a tap
-on a line near a hut can mean six of them. So each tour's target — the
-summit or hut it climbs to, or comes down from — is a labelled marker, and
-a reader chooses a tour by where it goes. swisstopo names the target
+EACH SUMMIT IS A LABEL. A tour is chosen by its line (SNOW-1306), and each
+tour's target — the summit or hut it climbs to, or comes down from — is a
+labelled marker that says where the lines go, and that orders a line from
+its top (``runs_reversed``). swisstopo names the target
 (``target_name``, ``target_altitude_m``) but gives it no coordinate, so one
 is found: a tour's TARGET END is the end of its line at the target — the
 last point of a way up, the first of a way down — and a summit stands at
@@ -102,6 +102,10 @@ _SUMMITS_CACHE_SECONDS = 7 * 24 * 3600
 _OVERVIEW_CACHE_KEY = "routes:ski-overview:v2:{count}:{stamp}"
 # The mark SNOW-1286 put on a record walked there and back (SNOW-1287).
 _THERE_AND_BACK = "there_and_back"
+# SNOW-1306: the mark on a record known to be walked in the order
+# tour_points gives, a way down from its summit. A record without it was
+# walked in SAC's own order, which is the same for most tours.
+_TOP_ORDERED = "top_ordered"
 _OVERVIEW_TOLERANCE_DEG = 0.0002
 _OVERVIEW_PLACES = 5
 
@@ -563,13 +567,39 @@ def tour_title(tour: SkiTour) -> str:
     return f"{tour.target_name} · {name}" if tour.target_name else name
 
 
+def runs_reversed(tour: SkiTour) -> bool:
+    """Return whether ``tour_points`` turns SAC's line round (SNOW-1306).
+
+    A way down starts at its summit and a way up ends there, whichever way
+    SAC drew it: SAC draws 2,743 of its 2,941 lines from the valley up,
+    ways down included. The summit is where ``summits()`` places it, and
+    the end nearer it is the top.
+
+    Args:
+        tour: The tour, with its geometry loaded.
+
+    Returns:
+        True when the line's last point is where it should start.
+
+    """
+    if not _lines(tour):
+        return False
+    _, last = ends(tour)
+    summit = summits().get(tour_key(tour))
+    near = (summit.lon, summit.lat) if summit else None
+    top_is_last = target_end(tour, near) == last
+    return top_is_last if is_descent(tour) else not top_is_last
+
+
 def tour_points(tour: SkiTour) -> list[list[float | None]]:
     """Return the tour's line as stored route points, ``[[lon, lat, None], …]``.
 
     A tour in several parts (swisstopo breaks one where it crosses a gap in
     its own data) is joined end to end; a point repeating the last is
-    dropped. Nothing else: no point is added or moved (SNOW-1287), so a
-    tour that stops at the top stops there.
+    dropped. The line then runs the way the tour goes: a way down from its
+    summit, a way up to it (Hugo, SNOW-1306, ``runs_reversed``). Nothing
+    else: no point is added or moved (SNOW-1287), so a tour that stops at
+    the top stops there.
 
     Args:
         tour: The tour.
@@ -585,6 +615,8 @@ def tour_points(tour: SkiTour) -> list[list[float | None]]:
             if points and points[-1][:2] == point[:2]:
                 continue
             points.append(point)
+    if runs_reversed(tour):
+        points.reverse()
     return points
 
 
@@ -622,11 +654,30 @@ def sac_time(label: str) -> str:
 def tours_to_sample() -> QuerySet[SkiTour]:
     """Return the tours with no current terrain record (SNOW-1288).
 
-    Never walked, or walked over SNOW-1286's doubled line (the record
-    ``tour_slope_samples`` does not hold).
+    Never walked, walked over SNOW-1286's doubled line (the record
+    ``tour_slope_samples`` does not hold), or walked before SNOW-1306 and
+    not yet known to match the line's order.
     """
     return SkiTour.objects.filter(
-        Q(slope_samples__isnull=True) | Q(slope_samples__has_key=_THERE_AND_BACK)
+        Q(slope_samples__isnull=True)
+        | Q(slope_samples__has_key=_THERE_AND_BACK)
+        | ~Q(slope_samples__has_key=_TOP_ORDERED)
+    )
+
+
+def needs_only_marking(tour: SkiTour) -> bool:
+    """Return whether ``tour``'s record is current but for SNOW-1306's mark.
+
+    Walked in SAC's order before a way down ran from its top, on a tour
+    whose order did not change: ``tour_slope_samples(sample=True)`` marks
+    it without walking again, so the nightly backfill need not pause for it.
+    """
+    held = tour.slope_samples
+    return (
+        held is not None
+        and not held.get(_THERE_AND_BACK)
+        and not held.get(_TOP_ORDERED)
+        and not runs_reversed(tour)
     )
 
 
@@ -649,10 +700,21 @@ def tour_slope_samples(tour: SkiTour, *, sample: bool) -> dict[str, Any] | None:
     # matches the line, which is SAC's own again (SNOW-1287): not held.
     if held is not None and held.get(_THERE_AND_BACK):
         held = None
+    # SNOW-1306: a record walked in SAC's order, before a way down ran from
+    # its top, matches the line only if the order did not change. The
+    # nightly walk marks one that does, so it is asked only once.
+    if held is not None and not held.get(_TOP_ORDERED):
+        if runs_reversed(tour):
+            held = None
+        elif sample:
+            held = {**held, _TOP_ORDERED: True}
+            tour.slope_samples = held
+            SkiTour.objects.filter(pk=tour.pk).update(slope_samples=held)
     if held is not None or not sample:
         return held
     record = build_slope_samples(tour_points(tour), f"ski tour {tour.sac_id}")
     if record is not None:
+        record = {**record, _TOP_ORDERED: True}
         tour.slope_samples = record
         SkiTour.objects.filter(pk=tour.pk).update(slope_samples=record)
     return record

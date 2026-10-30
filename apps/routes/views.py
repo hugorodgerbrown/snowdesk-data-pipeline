@@ -96,7 +96,6 @@ from django.http import (
     Http404,
     HttpRequest,
     HttpResponse,
-    HttpResponseBadRequest,
     HttpResponseGone,
     HttpResponseRedirect,
     JsonResponse,
@@ -141,13 +140,8 @@ from apps.routes.services.shares import (
 )
 from apps.routes.services.ski_tours import (
     draft_tour_route,
-    is_descent,
-    localised,
     one_leg,
-    sac_time,
     save_ski_tour,
-    summits,
-    tour_key,
     tour_points,
     tour_properties,
     tour_slope_samples,
@@ -1387,11 +1381,6 @@ def route_create_drawn(request: HttpRequest) -> JsonResponse:
     return JsonResponse({"uuid": str(route.uuid), "bounds": route.bounds})
 
 
-# The most tours one "N routes pass here" list names. A tap near a hut
-# reaches six; the cap bounds what a hand-written query can ask for.
-_SKI_TOUR_LIST_MAX = 50
-
-
 def _ski_tour_or_404(uuid: UUID) -> SkiTour:
     """Return the tour swisstopo keys ``uuid``, or raise 404."""
     try:
@@ -1521,86 +1510,6 @@ def ski_tour_save(request: HttpRequest, uuid: UUID) -> JsonResponse:
         logger.info("Ski tour save blocked: user=%s hit the cap", request.user.pk)
         return JsonResponse({"error": "route_limit_reached"}, status=409)
     return JsonResponse({"uuid": str(route.uuid), "bounds": route.bounds})
-
-
-def _tour_rows(tours: list[SkiTour]) -> list[dict[str, Any]]:
-    """Return what each row of a tour list shows, by summit and then name."""
-    rows = [
-        {
-            "uuid": str(tour.source_uuid),
-            "name": localised(tour.names, tour.name),
-            "target_name": tour.target_name,
-            "target_altitude_m": tour.target_altitude_m,
-            "grade": localised(tour.grades, tour.grade) or tour.grade,
-            "time": sac_time(tour.ascent_time_label),
-            "down": is_descent(tour),
-        }
-        for tour in tours
-    ]
-    rows.sort(key=lambda row: (row["target_name"], row["name"]))
-    return rows
-
-
-@require_GET
-@require_htmx
-def ski_tour_list(request: HttpRequest) -> HttpResponse:
-    """Render the sheet that lists tours: those under a tap, or to a summit.
-
-    SNOW-1278. A tap never picks a tour on its own: more than one tour in
-    reach opens this list. ``?tours=<uuid>,<uuid>`` lists those tours
-    ("6 routes pass here"), each row named by its summit; ``?summit=<key>``
-    lists every tour to one summit or hut, in two groups, the ways up and
-    the ways down, each row named by SAC's name for it.
-
-    Errors:
-        400 — neither parameter, or a malformed uuid.
-        404 — the ``route_drawing`` flag is off, or the summit is unknown.
-
-    Args:
-        request: The incoming HTMX GET request.
-
-    Returns:
-        The rendered sheet body.
-
-    """
-    if not flag_is_active(request, ROUTE_DRAWING_FLAG):
-        raise Http404("Not found.")
-    summit_key_param = request.GET.get("summit", "")
-    if summit_key_param:
-        summit = summits().get(summit_key_param)
-        if summit is None:
-            raise Http404("Not found.")
-        tours = [
-            tour
-            for tour in SkiTour.objects.filter(
-                target_name=summit.name, target_altitude_m=summit.altitude_m
-            )
-            if tour_key(tour) == summit.key
-        ]
-        rows = _tour_rows(tours)
-        context: dict[str, Any] = {
-            "summit": summit,
-            "count": len(rows),
-            "up_rows": [row for row in rows if not row["down"]],
-            "down_rows": [row for row in rows if row["down"]],
-        }
-    else:
-        try:
-            uuids = [
-                UUID(value)
-                for value in request.GET.get("tours", "").split(",")[
-                    :_SKI_TOUR_LIST_MAX
-                ]
-                if value
-            ]
-        except ValueError:
-            return HttpResponseBadRequest("Bad tour id.")
-        if not uuids:
-            return HttpResponseBadRequest("No tours.")
-        context = {
-            "rows": _tour_rows(list(SkiTour.objects.filter(source_uuid__in=uuids)))
-        }
-    return render(request, "routes/partials/_ski_tour_list.html", context)
 
 
 @require_GET

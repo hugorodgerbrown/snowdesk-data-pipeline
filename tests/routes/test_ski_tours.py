@@ -27,8 +27,10 @@ from apps.routes.services.ski_tours import (
     is_descent,
     is_hut,
     localised,
+    needs_only_marking,
     one_leg,
     overview_geometry,
+    runs_reversed,
     sac_time,
     save_ski_tour,
     summit_key,
@@ -47,6 +49,9 @@ pytestmark = pytest.mark.django_db
 TOP = [10.1, 46.85]
 VALLEY = [10.08, 46.83]
 RECORD: dict[str, Any] = {"v": 1, "segments": []}
+# What a walk keeps since SNOW-1306: the record, marked as walked in the
+# order tour_points gives.
+KEPT: dict[str, Any] = {**RECORD, "top_ordered": True}
 
 
 def _line(*points: list[float]) -> dict[str, Any]:
@@ -369,6 +374,39 @@ class TestTheTourAsARoute:
         assert tour_properties(_tour(ascent_m=None, descent_m=1800))["down"] is True
 
 
+class TestTheOrder:
+    """A way down runs from its summit, a way up to it (SNOW-1306)."""
+
+    def test_a_way_up_drawn_upwards_keeps_sacs_order(self) -> None:
+        """Valley first, summit last."""
+        tour = _tour()
+        assert runs_reversed(tour) is False
+        assert tour_points(tour)[0][:2] == VALLEY
+
+    def test_a_way_down_drawn_upwards_runs_from_the_top(self) -> None:
+        """The same two points, turned round; none added."""
+        tour = _tour(name="Abfahrt nach Guarda", ascent_m=None, descent_m=900)
+        assert runs_reversed(tour) is True
+        assert tour_points(tour) == [[*TOP, None], [*VALLEY, None]]
+
+    def test_a_way_up_drawn_downwards_ends_at_the_top(self) -> None:
+        """Its summit is where its siblings put it, so its own order is no guide."""
+        _tour()
+        _tour(geometry=_line([10.07, 46.84], TOP))
+        backwards = _tour(geometry=_line(TOP, [10.09, 46.82]))
+        assert runs_reversed(backwards) is True
+        assert tour_points(backwards)[-1][:2] == TOP
+
+    def test_a_tour_with_no_line_is_not_reversed(self) -> None:
+        """Nothing to turn round."""
+        assert (
+            runs_reversed(
+                _tour(geometry={"type": "MultiLineString", "coordinates": []})
+            )
+            is False
+        )
+
+
 class TestTheTerrain:
     """The terrain is sampled once per tour and kept on it."""
 
@@ -385,10 +423,10 @@ class TestTheTerrain:
         with patch(
             "apps.routes.services.ski_tours.build_slope_samples", return_value=RECORD
         ) as build:
-            assert tour_slope_samples(tour, sample=True) == RECORD
+            assert tour_slope_samples(tour, sample=True) == KEPT
             tour.refresh_from_db()
-            assert tour.slope_samples == RECORD
-            assert tour_slope_samples(tour, sample=True) == RECORD
+            assert tour.slope_samples == KEPT
+            assert tour_slope_samples(tour, sample=True) == KEPT
         build.assert_called_once()
 
     def test_a_record_walked_there_and_back_is_not_held(self) -> None:
@@ -400,10 +438,10 @@ class TestTheTerrain:
             "apps.routes.services.ski_tours.build_slope_samples",
             return_value=dict(RECORD),
         ) as build:
-            assert tour_slope_samples(tour, sample=True) == RECORD
+            assert tour_slope_samples(tour, sample=True) == KEPT
         assert len(build.call_args.args[0]) == 2
         tour.refresh_from_db()
-        assert tour.slope_samples == RECORD
+        assert tour.slope_samples == KEPT
 
     def test_a_one_way_record_is_held_on_a_tour_skied_down_its_ascent(
         self,
@@ -411,6 +449,32 @@ class TestTheTerrain:
         """The record matches SAC's line, which is the one drawn."""
         tour = _tour(ascent_m=900, descent_m=900, slope_samples=RECORD)
         assert tour_slope_samples(tour, sample=False) == RECORD
+
+    def test_an_unmarked_record_is_held_and_marked_when_the_order_stands(
+        self,
+    ) -> None:
+        """Walked before SNOW-1306 on a way up drawn upwards: marked, not walked."""
+        tour = _tour(slope_samples=RECORD)
+        assert needs_only_marking(tour) is True
+        assert tour_slope_samples(tour, sample=False) == RECORD
+        with patch("apps.routes.services.ski_tours.build_slope_samples") as build:
+            assert tour_slope_samples(tour, sample=True) == KEPT
+        build.assert_not_called()
+        tour.refresh_from_db()
+        assert tour.slope_samples == KEPT
+        assert needs_only_marking(tour) is False
+
+    def test_an_unmarked_record_is_not_held_when_the_order_flips(self) -> None:
+        """A way down drawn upwards now runs from its top: walked again."""
+        tour = _tour(ascent_m=None, descent_m=900, slope_samples=RECORD)
+        assert needs_only_marking(tour) is False
+        assert tour_slope_samples(tour, sample=False) is None
+        with patch(
+            "apps.routes.services.ski_tours.build_slope_samples",
+            return_value=dict(RECORD),
+        ) as build:
+            assert tour_slope_samples(tour, sample=True) == KEPT
+        assert build.call_args.args[0][0][:2] == TOP
 
     def test_a_line_off_the_terrain_model_keeps_nothing(self) -> None:
         """None from the grid stores nothing."""

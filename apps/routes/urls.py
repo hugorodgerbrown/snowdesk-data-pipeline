@@ -118,11 +118,6 @@ urlpatterns = [
         name="ski_tour_save",
     ),
     path(
-        "partials/ski-tours/",
-        views.ski_tour_list,
-        name="ski_tour_list",
-    ),
-    path(
         "<uuid:uuid>/route.gpx",
         views.route_gpx,
         name="gpx",

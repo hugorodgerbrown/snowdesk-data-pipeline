@@ -11188,9 +11188,9 @@
     };
 
     const chooseResult = (item) => {
-      // SNOW-1294: a summit row does what a tap on the summit's dot does —
-      // its tours list opens, the map goes to it, and the ski-touring layer
-      // comes on if it was off (ski_tours.js openSummit).
+      // SNOW-1294: a summit row takes the map to the summit, with the
+      // ski-touring layer on if it was off (ski_tours.js openSummit); the
+      // reader then taps a tour's line (SNOW-1306).
       if (item.type === 'summit') {
         inputEl.value = '';
         collapseSearch();

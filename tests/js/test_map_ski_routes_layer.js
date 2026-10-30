@@ -23,9 +23,7 @@ const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 const TOURS_KEY = 'snowdesk.map.overlay.ski_routes';
 const SUMMITS_KEY = 'snowdesk.map.overlay.ski_summits';
 const MASTER_KEY = 'snowdesk.map.ski-touring.last-on';
-const TOUR_LAYERS = [
-  'ski-tours-line', 'ski-tours-highlight', 'ski-tours-highlight-down', 'ski-tours-far-end',
-];
+const TOUR_LAYERS = ['ski-tours-line', 'ski-tours-line-down'];
 const SUMMIT_LAYERS = ['ski-tours-summit', 'ski-tours-summit-label'];
 
 /** Minimal MapLibre stub tracking per-layer layout and paint. */

@@ -324,7 +324,10 @@ class TestMapPageDrawSurface:
         assert "data-ski-tour-find" in body
         assert "Find a route" in body
         assert "Create a route" in body
-        assert 'id="ski-tours-sheet"' in body
+        assert 'id="ski-tours-config"' in body
+        # SNOW-1306: a tap opens a tour; there is no list sheet.
+        assert 'id="ski-tours-sheet"' not in body
+        assert "data-list-url" not in body
         assert "js/ski_tours.js" in body
         assert f'data-geojson-url="{reverse("api:ski_tours_geojson")}"' in body
         # SNOW-1282: the route panel reads a tour's terrain rows too.
@@ -351,6 +354,6 @@ class TestMapPageDrawSurface:
         assert "data-route-draw-start" not in body
         assert 'id="route-draw-sheet"' not in body
         assert "data-ski-tour-find" not in body
-        assert 'id="ski-tours-sheet"' not in body
+        assert 'id="ski-tours-config"' not in body
         assert "Add a route" in body
         assert 'data-overlay-key="ski_tours"' not in body

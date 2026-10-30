@@ -2,7 +2,7 @@
 name: an-sac-tour-is-a-template-for-a-route
 description: An SAC ski tour (SkiTour) is found by its summit, opened unsaved in the route panel, saved as a copy (Route.source SKI_TOUR)
 status: current
-last-reviewed: 2026-10-29
+last-reviewed: 2026-10-30
 ---
 
 # An SAC tour is a template for a route
@@ -21,28 +21,24 @@ name for the way: "Signalhorn (GR) · Von der Chamonna Tuoi CAS". After
 saving, the reader can rename it, share it or plan a trip with it like any
 other route, and later imports never change it.
 
-**The summit is the handle.** Drawn together, the tours form one web, and
-a tap near a hut can land on six of them. Each target (the summit or hut a
-tour climbs to or comes down from) gets a labelled mark, and readers pick
-a tour by where it goes. swisstopo names the target but gives no
-coordinate, so `build_summits` places it at the median of its tours'
-target ends. A tour's target end is the last point going up or the first
-coming down. After that first guess, each tour is re-read by whichever end
-is nearer, so a tour drawn the wrong way round is still placed correctly.
+**A tour is chosen by its line (SNOW-1306).** Every tour is drawn as a
+saved route's legs are, at every zoom: a way up in the climb's dashed grey,
+a way down in the descent's solid fuchsia (two layers, `ski-tours-line` and
+`ski-tours-line-down`). So the reader can tell up from down before tapping
+anything (Hugo, 29 Oct 2026: "it would help … if you could see a visible
+difference between ascents and descents, even when zoomed out"). A tap on
+a line opens the tour whose line passes nearest it
+(`ski_tours_core.nearestTour`).
 
-**A tap never picks a tour for the reader when more than one is in
-reach.**
-
-- A summit tap opens the list of every way up and every way down
-  (`routes:ski_tour_list?summit=`).
-- A line tap with one tour in reach opens that tour's panel.
-- A line tap with more than one opens "N routes pass here"
-  (`?tours=`), with each row named by its summit.
-
-The listed tours are drawn as a saved route's legs are (SNOW-1286): a way
-up in the climb's dashed grey, a way down in the descent's solid fuchsia.
-They had been drawn the other way round — a way up solid, a way down
-dashed — which on one map gave the same dash two opposite meanings.
+A summit or hut is a label: a dot and its name, placed by `build_summits`
+at the median of its tours' target ends, and not a target (Hugo, 30 Oct
+2026: "Just a label for now. Users can see the routes."). Until then a tap
+never picked a tour for the reader. A summit opened a list of its ways up
+and down, and a tap near several lines opened "N routes pass here"
+(`routes:ski_tour_list`). Hugo found going from a summit to a list to a
+route and back again confusing, and both the list and that rule are gone.
+A tap near a hut where six tours meet now opens the nearest one, and the
+reader moves the tap to pick another.
 
 **SAC's points are never edited (SNOW-1287).** A tour is drawn, measured
 and saved on exactly the points swisstopo publishes for it: if SAC's tour
@@ -62,20 +58,19 @@ only our figures (SNOW-1302).** SAC's height figures measure something
 different from ours. SAC's is summit minus start; ours is the cumulative
 climb along the line. Shown side by side, the two read as a contradiction,
 and on a way down SAC's "↓ 1860 m" sat beside our "2359 m ↑". So the panel
-and the tour list show only the line's own figures, plus SAC's grade and
+shows only the line's own figures, plus SAC's grade and
 guide time. The panel then says plainly which half of the tour the line
 is ("Route shows the ascent only." / "…the descent only.") and points at
 the SAC guide for the rest (Hugo, 2026-10-29: "instead of inferring
 anything"). "↓ via ascent" and `descends_via_ascent` are gone with it.
-Whether a way down should be read from the summit down is still open.
-SNOW-1304 below shows that most ways down have points that run uphill.
+A way down now runs from its summit (SNOW-1306, below).
 
 **A tour is one leg, and a way down is what SAC calls one (SNOW-1304).**
 SAC publishes the ways up and the ways down to a summit separately, so a
 reader can climb by one and ski down another (Hugo, 2026-10-29). The open
 panel and the map draw each tour as one leg, in its direction's colour:
-up is dashed grey, down is solid fuchsia, the same as its list swatch
-and its highlight (`one_leg`). Before this, the panel cut the line into
+up is dashed grey, down is solid fuchsia, the same as the
+tours layer draws it at rest (`one_leg`). Before this, the panel cut the line into
 legs by the order of its points, and that order is no guide: SAC draws
 2,743 of its 2,941 lines from the valley to the summit, ways down
 included. A tour is a way down when SAC names it one in any of its
@@ -94,6 +89,19 @@ copied onto `Route`. `routes_geojson` looks the tour up by
 `tour_properties` as `sac`. A copy whose tour a later sync removed reads
 like any other route.
 
+**A way down runs from its summit, a way up to it (SNOW-1306).** Hugo,
+29 Oct 2026: "Yes to descent running from peak down." `tour_points` turns
+the line round when its order disagrees with its direction
+(`runs_reversed`). The top is the end nearer where `summits()` places the
+summit, because a line's own order is no guide. The points are SAC's, in
+the reverse order, and none is added or moved, so SNOW-1287 holds. The
+profile, the figures, the estimate and a saved copy all run the way the
+tour goes. A terrain record walked before this rule carries no
+`top_ordered` mark. It is still held when the tour's order did not change,
+and the nightly backfill marks it without walking again
+(`needs_only_marking`). A tour whose order flipped is walked again. A copy
+saved earlier keeps the order it was saved in.
+
 **The SAC guide is for members or subscribers.** SAC's route portal asks
 anyone else to sign in and subscribe, so the panel says so under the
 link rather than letting the link land on a login page unannounced.
@@ -104,7 +112,7 @@ link rather than letting the link land on a login page unannounced.
 and estimate therefore come from the code that will show them once the
 tour is saved. The Feature has no `uuid` and no `token`, so the panel
 offers none of a route's own actions. Its claim slot holds SAC's line
-(grade, gain and guide time, labelled as SAC's), the Save button and SAC's
+(grade and guide time, labelled as SAC's), the Save button and SAC's
 guide link. On the map, the tour is drawn in a slot of its own (map.js
 `window.pwaSkiTourRoute`), as a trip's route is, with its own cursor.
 
@@ -151,17 +159,18 @@ whole by `/api/ski-summits.json` (`api:ski_summits_json`) and read once,
 the first time search is focused, never on map load. A row reads
 "Summit · 3,159 m · 4 SAC tours" or "Hut · …"
 (`search_core.buildSummitEntries`), matches on its name, and ranks under a
-region or resort that matches as well (`TYPE_RANK`). Picking one does what
-a tap on the summit's dot does (`window.pwaSkiTours.openSummit`): the
-ski-touring layer comes on, the map flies to the summit and its tours list
-opens. Behind the `route_drawing` flag with the layer, whose list it opens;
-while the flag is on the field says "Find a region, resort or summit".
+region or resort that matches as well (`TYPE_RANK`). Picking one turns the
+ski-touring layer on and flies the map to the summit
+(`window.pwaSkiTours.openSummit`), where the reader taps a tour's line.
+It no longer opens a list (SNOW-1306). Behind the `route_drawing` flag
+with the layer; while the flag is on the field says "Find a region, resort
+or summit".
 
 **A summit is not a Location.** Curated Locations are the set Snowdesk pays
 to forecast (four fetches a day at 2.4 weighted calls each); adding every
 summit would cost about 18,900 calls a day against a 10,000-call free tier
-([why](snowdesk-decides-where-a-forecast-is-fetched.md)). The tours list
-shows no forecast, so nothing borrows one either. A generic "searchable, no
+([why](snowdesk-decides-where-a-forecast-is-fetched.md)). A summit shows
+no forecast, so nothing borrows one either. A generic "searchable, no
 forecast" Location waits for a second, non-SAC source of places.
 
 ## Why
@@ -170,9 +179,12 @@ forecast" Location waits for a second, non-SAC source of places.
   share and plan with. Linking it to a record that the weekly import can
   rewrite would let swisstopo change someone's plan under them. Keeping
   `ski_tour_uuid` is enough to say where the copy came from.
-- **Summits, not lines.** People choose a tour by its objective. The
-  data shows the overlap is the normal case: 6 tours pass one point just
-  outside the Silvrettahütte, and 4 tours reach the Signalhorn.
+- **Lines, labelled by summit.** People choose a tour by its objective,
+  so every summit is named on the map. But a list between the summit and
+  the route was one step too many: the lines themselves, up and down told
+  apart, are the choice (SNOW-1306). The overlap is real (6 tours pass one
+  point just outside the Silvrettahütte), and a tap there takes the
+  nearest.
 - **One panel.** A second panel for tours would be a second set of
   figures that could disagree with the saved route's.
 
@@ -201,8 +213,3 @@ forecast" Location waits for a second, non-SAC source of places.
   SNOW-1284). The reader reached it from a summit at a scale they chose,
   and the original fit to each tour's own extent zoomed in and out on
   every pick.
-- While a list is open, the tours it names are drawn in the route colour,
-  a green dot marks each one's far end (`ski_tours_core.farEnds`: the end
-  away from its summit, where a way up starts and a way down finishes),
-  and every other tour is dimmed (SNOW-1282). The mockup labels the dot
-  with a place name, which the data does not carry, so it is a dot alone.

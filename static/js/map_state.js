@@ -223,15 +223,10 @@ const OVERLAY_LAYERS = Object.freeze({
   // is an inline `image` section inside `text-field`.
   weather: ['weather-point'],
   // SNOW-1285: SAC's tours, and the summits and huts they go to, drawn by
-  // static/js/ski_tours.js from z9 and tappable wherever drawn. Two parts,
-  // each its own switch. A tour list's highlight and far-end dots are the
-  // tours' too: with the tours off there is no list to light them.
-  ski_tours: [
-    'ski-tours-line',
-    'ski-tours-highlight',
-    'ski-tours-highlight-down',
-    'ski-tours-far-end',
-  ],
+  // static/js/ski_tours.js from z9. Two parts, each its own switch: the
+  // tours (a way up and a way down, each its own layer, SNOW-1306) and the
+  // summits, which are labels.
+  ski_tours: ['ski-tours-line', 'ski-tours-line-down'],
   ski_summits: ['ski-tours-summit', 'ski-tours-summit-label'],
   // SNOW-687: the coloured line FIRST and the casing second — deliberately
   // the inverse of the order installRoutesLayer adds them in, where the

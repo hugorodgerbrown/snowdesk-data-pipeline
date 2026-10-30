@@ -201,7 +201,7 @@
    * @property {string} [slug] A pinned resort's slug — the row opens it.
    * @property {string} [uuid] A dropped pin's favourite uuid — the row
    *   flies to it and opens its sheet (SNOW-1264).
-   * @property {string} [key] A summit's key — the row opens its tours list
+   * @property {string} [key] A summit's key — the row takes the map to it
    *   (SNOW-1294).
    * @property {boolean} [hut] Whether a summit row is a hut.
    * @property {number} [lon] A summit's longitude.

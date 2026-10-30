@@ -5,29 +5,20 @@ ski tour from the map (SNOW-1278, behind the ``route_drawing`` flag).
 
 The routes panel's "Find a route" (public/partials/_route_add_rows.html)
 closes that panel, turns the ski-touring routes on and shows the hint
-below. From z12 the tours are drawn as lines and their summits and huts as
-labelled marks (static/js/ski_tours.js), and they can be tapped:
-
-  * a summit or hut lists every tour to it, the ways up and the ways down
-    apart — in #ski-tours-sheet, from routes:ski_tour_list;
-  * a line lists the tours within reach, or opens the one tour in reach.
-    A TAP NEVER PICKS A TOUR ON ITS OWN when there is more than one.
+below. From z9 the tours are drawn as lines, a way up in the climb's dashed
+grey and a way down in the descent's solid fuchsia, and their summits and
+huts as labelled marks (static/js/ski_tours.js). A tap on a line opens the
+tour nearest it; a summit is a label, not a target (SNOW-1306).
 
 A tour opens in the route panel (static/js/route_rail.js) exactly as a
 saved route does — profile, legs, estimate — from routes:ski_tour_feature,
-with this file's claim block in its claim slot: SAC's own figures, "Save to
-my routes" (a sign-in link when signed out) and SAC's guide.
-
-The list sheet is an OBJECT SHEET in the design system's three kinds: a
-thing tapped on the map, so peek, half and full on a phone, docked left on
-a desktop beside the search it answers (rule 7).
+with this file's claim block in its claim slot: SAC's grade and time,
+"Save to my routes" (a sign-in link when signed out) and SAC's guide.
 
 Context expected:
   route_draw_signin_url  — str: the sign-in page, returning to the map.
   routes_upload_eligible — bool: may this request save a route.
 {% endcomment %}
-{% trans "SAC routes" as ski_tours_sheet_label %}
-{% include "includes/_overlay_sheet.html" with id="ski-tours-sheet" aria_label=ski_tours_sheet_label detents="peek,half,full" initial="half" side="left" %}
 {# The endpoints. The feature and save URLs carry the nil uuid, which      #}
 {# ski_tours.js replaces with the tour's own.                              #}
 {% url 'routes:ski_tour_feature' '00000000-0000-0000-0000-000000000000' as ski_tour_feature_url %}
@@ -36,7 +27,6 @@ Context expected:
     id="ski-tours-config"
     hidden
     data-geojson-url="{% url 'api:ski_tours_geojson' %}"
-    data-list-url="{% url 'routes:ski_tour_list' %}"
     data-feature-url="{{ ski_tour_feature_url }}"
     data-save-url="{{ ski_tour_save_url }}"
     data-signin-url="{{ route_draw_signin_url }}"
@@ -111,9 +101,8 @@ Context expected:
 </template>
 {# Every user-facing string ski_tours.js writes (docs/i18n.md).            #}
 <template id="ski-tours-strings-template">
-    <span data-string="hint">{% trans "Tap a summit or a route" %}</span>
-    <span data-string="hint-zoom">{% trans "Zoom in, then tap a summit or a route" %}</span>
-    <span data-string="loading">{% trans "Loading routes…" %}</span>
+    <span data-string="hint">{% trans "Tap a route" %}</span>
+    <span data-string="hint-zoom">{% trans "Zoom in, then tap a route" %}</span>
     <span data-string="failed">{% trans "The routes couldn't be loaded. Check your connection." %}</span>
     <span data-string="sac-route">{% trans "SAC route" %}</span>
     <span data-string="shows-ascent">{% trans "Route shows the ascent only." %}</span>
