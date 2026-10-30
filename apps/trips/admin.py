@@ -75,6 +75,7 @@ class TripAdmin(admin.ModelAdmin):
         "point_count",
         "route_name",
         "slope_samples",
+        "track_render",
         "uuid",
         "created_at",
         "updated_at",

@@ -122,7 +122,6 @@ from apps.routes.services.estimate import estimate_duration_s
 from apps.routes.services.example import example_share
 from apps.routes.services.gpx import GPXParseError
 from apps.routes.services.gpx_export import build_gpx, gpx_filename
-from apps.routes.services.leg_wire import wire_legs
 from apps.routes.services.routes import (
     RouteLimitReached,
     create_drawn_route,
@@ -146,10 +145,7 @@ from apps.routes.services.ski_tours import (
     tour_slope_samples,
 )
 from apps.routes.services.slope_segments import build_slope_samples
-from apps.routes.services.slope_summary import summarise_record
-from apps.routes.services.slope_wire import compact_slope
-from apps.routes.services.terrain_detail import terrain_detail
-from apps.routes.services.terrain_heights import terrain_points
+from apps.routes.services.track_render import current_render
 
 logger = logging.getLogger(__name__)
 
@@ -359,18 +355,17 @@ def _route_feature(route: Route, identity: dict[str, Any]) -> dict[str, Any]:
         A GeoJSON Feature dict.
 
     """
-    # SNOW-1043: the heights are the terrain model's wherever the record
-    # has them, and the device's elsewhere — see terrain_heights. The
-    # profile, the legs and the totals below all read THESE points, so
-    # the three cannot disagree about which series they describe.
-    points = terrain_points(route.points, route.slope_samples)
-    # SNOW-1053: the slope's ``seams`` index into THIS geometry, so the
-    # class segments are drawn along the same coordinates as the casing.
-    slope = compact_slope(route.slope_samples, coordinates=points)
+    # SNOW-1309: everything below the row's own columns is the stored
+    # render — the terrain track (SNOW-1043), the slope classes whose
+    # ``seams`` index into it (SNOW-1053), the legs, the totals and the
+    # ground figures, built together when the terrain was written
+    # (apps/routes/services/track_render.py), so none can disagree.
+    render = current_render(route)
+    points = render["geometry"]
     # The one rule every surface quotes ascent and descent by — the route
-    # row's template reads the same property. None passes straight
-    # through: "unknown", not zero.
-    ascent_m, descent_m = route.climb
+    # row's template reads ``route.climb``, which reads this record too.
+    # None passes straight through: "unknown", not zero.
+    ascent_m, descent_m = render["ascent_m"], render["descent_m"]
     return {
         "type": "Feature",
         "geometry": {
@@ -406,50 +401,32 @@ def _route_feature(route: Route, identity: dict[str, Any]) -> dict[str, Any]:
                 if route.source in (Route.Source.DRAWN, Route.Source.SKI_TOUR)
                 else {}
             ),
-            # OMITTED ENTIRELY when the route has never been sampled, not
-            # passed through as a null like the two above. The key's
-            # presence says whether the route has a slope record at all —
-            # the map's refetch after an upload waits on exactly that —
-            # and a present-but-null value would answer it wrongly.
-            # Unknown-per-segment is expressed inside the value, by a null
-            # angle; see compact_slope.
-            **({"slope": slope} if slope is not None else {}),
-            # SNOW-1018: the route cut at its transitions, for the rail
-            # below the map. ``from``/``to`` are segment indices — the
-            # index space of ``slope.angles`` — never coordinate indices.
+            # Each OMITTED ENTIRELY when there is none, not passed through
+            # as a null like the figures above — the record omits them
+            # already (track_render.build_track_render), and these notes
+            # are why:
+            #
+            # ``slope``: the key's presence says whether the route has a
+            # slope record at all — the map's refetch after an upload
+            # waits on exactly that. Unknown-per-segment is expressed
+            # inside the value, by a null angle; see compact_slope.
+            #
+            # ``legs`` (SNOW-1018): the route cut at its transitions, for
+            # the rail below the map. ``from``/``to`` are segment indices;
+            # ``point_from``/``point_to`` slice the geometry (SNOW-1017).
             # Sent for an unsampled route too, in the indices its record
-            # will have: legs are a fact about the geometry (see
-            # leg_wire). The record is passed only when ``slope`` is sent:
-            # a record compact_slope refused gives the client no
-            # ``angles``, so the legs must index the stride walk instead.
-            # Omitted rather than null when there are none: the home map's
-            # ``routes-line`` filter tests the key's PRESENCE to decide
-            # whether the leg layers are drawing a route (SNOW-1017), and
-            # ``point_from``/``point_to`` slice those legs out of the
-            # geometry.
-            **(
-                {"legs": legs}
-                if (
-                    legs := wire_legs(
-                        points,
-                        route.slope_samples if slope is not None else None,
-                    )
-                )
-                else {}
-            ),
-            # SNOW-961: the same record in figures, and a SEPARATE key
-            # from ``slope`` rather than a field inside it. That one's
-            # presence answers "is this line already coloured"; this one
-            # answers "what does the ground under it amount to", and a
-            # reader that conflated them would be one refactor away from
-            # drawing an uncoloured line because a summary was missing.
-            # Carried for a pending route too — the figures describe the
-            # ground, which does not depend on whose route it is.
-            **(
-                {"terrain": terrain}
-                if (terrain := summarise_record(route.slope_samples)) is not None
-                else {}
-            ),
+            # will have (see leg_wire). The home map's ``routes-line``
+            # filter tests the key's PRESENCE.
+            #
+            # ``terrain`` (SNOW-961): the same record in figures, a
+            # SEPARATE key from ``slope``: that one answers "is this line
+            # already coloured", this one "what does the ground under it
+            # amount to".
+            **{
+                key: render[key]
+                for key in ("slope", "legs", "terrain")
+                if key in render
+            },
         },
     }
 
@@ -879,9 +856,8 @@ def route_terrain(request: HttpRequest, uuid: UUID) -> JsonResponse:
     except Route.DoesNotExist:
         return JsonResponse({"error": "not_found"}, status=404)
 
-    return JsonResponse(
-        {"rows": terrain_detail(route.slope_samples, route.points) or []}
-    )
+    # SNOW-1309: stored with the route's render, never computed per request.
+    return JsonResponse({"rows": current_render(route)["rows"]})
 
 
 @require_GET
@@ -924,9 +900,8 @@ def route_share_terrain(request: HttpRequest, token: str) -> JsonResponse:
     if route is None:
         return JsonResponse({"error": "not_found"}, status=404)
 
-    return JsonResponse(
-        {"rows": terrain_detail(route.slope_samples, route.points) or []}
-    )
+    # SNOW-1309: stored with the route's render, never computed per request.
+    return JsonResponse({"rows": current_render(route)["rows"]})
 
 
 # ---------------------------------------------------------------------------
@@ -1430,14 +1405,15 @@ def ski_tour_feature(request: HttpRequest, uuid: UUID) -> JsonResponse:
     samples = tour_slope_samples(tour, sample=sample)
     draft = draft_tour_route(tour)
     draft.slope_samples = samples
+    # SNOW-1309: the tour's stored render, built with the record it holds
+    # in this order. A tour with none held is drawn from the draft, flat.
+    draft.track_render = tour.track_render if samples is not None else None
     identity: dict[str, Any] = {"tour": True, **tour_properties(tour)}
     if draft.slope_samples is None and not sample:
         identity["terrain_pending"] = True
-    feature = _route_feature(draft, identity)
     # SNOW-1310: a tour's legs are a route's, cut from its terrain where
-    # the ground turns. A tour with no terrain yet has none: one line, in
-    # no direction, until the panel's refill brings it.
-    return JsonResponse({"feature": feature})
+    # the ground turns, and read from its render like a route's.
+    return JsonResponse({"feature": _route_feature(draft, identity)})
 
 
 @require_GET
@@ -1469,8 +1445,12 @@ def ski_tour_terrain(request: HttpRequest, uuid: UUID) -> JsonResponse:
     if not flag_is_active(request, ROUTE_DRAWING_FLAG):
         raise Http404("Not found.")
     tour = _ski_tour_or_404(uuid)
-    samples = tour_slope_samples(tour, sample=False)
-    return JsonResponse({"rows": terrain_detail(samples, tour_points(tour)) or []})
+    if tour_slope_samples(tour, sample=False) is None:
+        return JsonResponse({"rows": []})
+    # SNOW-1309: stored with the tour's render, as a route's are.
+    return JsonResponse(
+        {"rows": current_render(tour, points=tour_points(tour))["rows"]}  # type: ignore[arg-type]
+    )
 
 
 @require_POST

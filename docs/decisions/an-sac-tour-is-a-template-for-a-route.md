@@ -236,14 +236,13 @@ showing the legs"). That holds on the map at rest too: the tours layer
 gets one Feature per leg with its `climbing` (`leg_parts`, in both the
 bbox load and the overview), and a tour with no terrain yet is SAC's line
 as it is, `climbing` null, drawn deep blue until the nightly backfill
-walks it. The legs are cut once and stored on the tour (`SkiTour.legs`,
-`cut_legs`, written by `_keep` with every terrain record), because a tour
-never changes and cutting all 2,941 per request took 35 s; the nightly
-backfill cuts those walked before, without walking them again. Hugo
-(2026-10-30) wants this taken the whole way: "All of the render data
-should be precalculated. Both should store the same shape of data" —
-a route and a tour each holding one stored render record, a tour adding
-SAC's metadata. `SkiTour.legs` is the first slice of that. It
+walks it. The legs are read from the tour's stored render
+(`SkiTour.track_render`, SNOW-1309, written by `_keep` with every terrain
+record through `store_terrain`), because a tour never changes, and cutting
+all 2,941 per request took 35 s. The nightly backfill builds the render
+for tours walked before, without walking them again. A route and a tour
+hold the same record; a tour only adds SAC's metadata
+([why](a-track-is-rendered-once-and-stored.md)). A tour
 is drawn in SAC's colours: `--color-sac-climb` (deep blue) and
 `--color-sac-descent` (sky blue), mirrored as `SAC_CLIMB_COLOUR` /
 `SAC_DESCENT_COLOUR` in `route_legs_core.js`. The open tour's map line

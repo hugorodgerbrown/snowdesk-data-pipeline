@@ -61,6 +61,7 @@ from apps.routes.models import Route
 from apps.routes.services.canonical import canonical_documents
 from apps.routes.services.routes import create_route
 from apps.routes.services.slope_segments import build_slope_samples
+from apps.routes.services.track_render import store_terrain
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -276,8 +277,8 @@ class Command(RegisteredCommand):
                     f"Left {route.source_filename} unsampled (origin answered nothing)"
                 )
             return 0
-        route.slope_samples = samples
-        route.save(update_fields=["slope_samples", "updated_at"])
+        # SNOW-1309: the record and its render, written together.
+        store_terrain(route, samples)
         if verbosity >= 1:
             self.stdout.write(f"Sampled {route.source_filename}")
         return 0

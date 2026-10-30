@@ -40,6 +40,7 @@ from apps.routes.models import Route
 from apps.routes.services.drawn import draft_route
 from apps.routes.services.gpx import parse_gpx
 from apps.routes.services.slope_segments import enqueue_route_slope_sampling
+from apps.routes.services.track_render import build_track_render, stamp_render
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -162,6 +163,13 @@ def create_route(user: "User", raw: bytes, source_filename: str = "") -> Route:
             point_count=parsed.point_count,
             source_point_count=parsed.source_point_count,
             bounds=parsed.bounds,
+            # SNOW-1309: drawn flat until its terrain is sampled.
+            track_render=build_track_render(
+                parsed.points,
+                None,
+                ascent_m=parsed.ascent_m,
+                descent_m=parsed.descent_m,
+            ),
         )
 
     logger.info(
@@ -221,6 +229,7 @@ def create_drawn_route(
     draft = draft_route(points, name=name or gettext("Drawn route"), user=user)
     with transaction.atomic():
         _locked_cap_recheck(user)
+        stamp_render(draft)
         draft.save()
 
     logger.info(

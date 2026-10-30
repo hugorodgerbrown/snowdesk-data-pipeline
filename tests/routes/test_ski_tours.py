@@ -21,16 +21,18 @@ from apps.routes.models import Route, SkiTour
 from apps.routes.services.routes import RouteLimitReached
 from apps.routes.services.ski_tours import (
     build_summits,
-    cut_legs,
     draft_tour_route,
+    drawn_tours,
     ends,
     far_end,
     is_descent,
     is_hut,
+    layer_render,
     leg_parts,
     localised,
     needs_only_marking,
     overview_geometry,
+    rebuild_tour_render,
     runs_reversed,
     sac_time,
     save_ski_tour,
@@ -44,6 +46,7 @@ from apps.routes.services.ski_tours import (
     tour_title,
     tours_to_sample,
 )
+from apps.routes.services.track_render import TRACK_RENDER_VERSION
 from tests.factories import RouteFactory, SkiTourFactory, UserFactory
 
 pytestmark = pytest.mark.django_db
@@ -484,7 +487,7 @@ class TestTheTerrain:
 
 
 class TestTheLegs:
-    """SNOW-1310: a tour is drawn as its legs, as a route is, cut once."""
+    """SNOW-1310/1309: a tour is drawn as its legs, read from its stored render."""
 
     TRACK: list[list[float | None]] = [
         [10.0, 46.0, 1800.0],
@@ -492,41 +495,28 @@ class TestTheLegs:
         [10.0, 46.02, 2100.0],
     ]
     LEGS: list[dict[str, Any]] = [
-        {"i": 1, "climbing": True, "point_from": 0, "point_to": 1},
-        {"i": 2, "climbing": False, "point_from": 1, "point_to": 2},
+        {"i": 1, "from": 0, "to": 0, "climbing": True, "point_from": 0, "point_to": 1},
+        {"i": 2, "from": 1, "to": 1, "climbing": False, "point_from": 1, "point_to": 2},
     ]
-    CUT: list[dict[str, Any]] = [
-        {"climbing": True, "line": [[10.0, 46.0], [10.0, 46.01]]},
-        {"climbing": False, "line": [[10.0, 46.01], [10.0, 46.02]]},
-    ]
+    RENDER: dict[str, Any] = {
+        "v": TRACK_RENDER_VERSION,
+        "geometry": TRACK,
+        "legs": LEGS,
+    }
 
     def _patched(self) -> Any:
-        """Patch the terrain track and the legs cut from it."""
-        track = patch(
-            "apps.routes.services.ski_tours.terrain_points", return_value=self.TRACK
+        """Patch the render's builder to the track and legs above."""
+        return patch(
+            "apps.routes.services.track_render.build_track_render",
+            return_value=self.RENDER,
         )
-        legs = patch("apps.routes.services.ski_tours.wire_legs", return_value=self.LEGS)
-        return track, legs
 
-    def test_the_legs_are_cut_from_the_held_terrain(self) -> None:
-        """The legs the panel shows, sliced out of the terrain track."""
-        tour = _tour(slope_samples=KEPT)
-        track, legs = self._patched()
-        with track, legs:
-            assert cut_legs(tour) == self.CUT
-
-    def test_a_tour_with_no_terrain_has_no_legs_to_cut(self) -> None:
-        """Nothing held, nothing cut."""
-        assert cut_legs(_tour()) == []
-
-    def test_keeping_a_record_stores_its_legs(self) -> None:
-        """A walk stores the legs with the record, and moves updated_at."""
+    def test_keeping_a_record_stores_its_render(self) -> None:
+        """A walk stores the render with the record, and moves updated_at."""
         tour = _tour()
         before = tour.updated_at
-        track, legs = self._patched()
         with (
-            track,
-            legs,
+            self._patched(),
             patch(
                 "apps.routes.services.ski_tours.build_slope_samples",
                 return_value=dict(RECORD),
@@ -534,41 +524,86 @@ class TestTheLegs:
         ):
             tour_slope_samples(tour, sample=True)
         tour.refresh_from_db()
-        assert tour.legs == self.CUT
+        assert tour.track_render == self.RENDER
         assert tour.updated_at > before
 
-    def test_a_held_record_with_no_legs_is_cut_without_a_walk(self) -> None:
-        """Walked before legs were stored: cut, and nothing walked again."""
+    def test_the_render_is_built_over_the_line_in_tour_order(self) -> None:
+        """Built from tour_points, not SAC's raw order, and not SAC's figures."""
+        tour = _tour(ascent_m=900, descent_m=900, slope_samples=KEPT)
+        with patch(
+            "apps.routes.services.track_render.build_track_render",
+            return_value=self.RENDER,
+        ) as build:
+            assert rebuild_tour_render(tour) is True
+        build.assert_called_once_with(
+            tour_points(tour), KEPT, ascent_m=None, descent_m=None
+        )
+
+    def test_a_tour_holding_no_record_has_no_render_to_rebuild(self) -> None:
+        """Never walked: the layer draws SAC's line, and nothing is built."""
+        tour = _tour()
+        assert rebuild_tour_render(tour) is False
+        tour.refresh_from_db()
+        assert tour.track_render is None
+
+    def test_a_held_record_with_no_render_is_built_without_a_walk(self) -> None:
+        """Walked before renders were stored: built, nothing walked again."""
         tour = _tour(slope_samples=KEPT)
-        assert SkiTour.objects.filter(pk=tour.pk, legs__isnull=True).exists()
         assert needs_only_marking(tour) is True
         assert tours_to_sample().filter(pk=tour.pk).exists()
-        track, legs = self._patched()
         with (
-            track,
-            legs,
+            self._patched(),
             patch("apps.routes.services.ski_tours.build_slope_samples") as build,
         ):
             tour_slope_samples(tour, sample=True)
         build.assert_not_called()
         tour.refresh_from_db()
-        assert tour.legs == self.CUT
+        assert tour.track_render == self.RENDER
         assert not tours_to_sample().filter(pk=tour.pk).exists()
         assert needs_only_marking(tour) is False
 
+    def test_a_stale_render_is_a_candidate_again(self) -> None:
+        """A render from an older builder is rebuilt by the nightly backfill."""
+        tour = _tour(slope_samples=KEPT, track_render={**self.RENDER, "v": 0})
+        assert tours_to_sample().filter(pk=tour.pk).exists()
+        assert needs_only_marking(tour) is True
+
     def test_the_layer_draws_the_stored_legs(self) -> None:
-        """Read, never cut, per request."""
-        tour = _tour(legs=self.CUT)
-        assert leg_parts(tour) == [
+        """Sliced out of the stored geometry: read, never cut, per request."""
+        assert leg_parts(self.RENDER, None) == [
             (True, [[10.0, 46.0], [10.0, 46.01]]),
             (False, [[10.0, 46.01], [10.0, 46.02]]),
         ]
 
-    def test_a_tour_with_no_legs_is_sacs_line_in_no_direction(self) -> None:
+    def test_the_layer_reads_only_the_renders_lines(self) -> None:
+        """drawn_tours defers the record and the rows, and layer_render
+        answers the slice it loaded.
+        """
+        tour = _tour(
+            slope_samples=KEPT,
+            track_render={**self.RENDER, "rows": [{"big": True}]},
+        )
+        row = drawn_tours(SkiTour.objects.filter(pk=tour.pk)).get()
+        assert {"track_render", "slope_samples"} <= row.get_deferred_fields()
+        assert layer_render(row) == self.RENDER
+        assert leg_parts(layer_render(row), row.geometry)[0][0] is True
+
+    def test_a_tour_with_no_render_is_sacs_line_in_no_direction(self) -> None:
         """No direction is claimed: SAC's own line, ``climbing`` None."""
         tour = _tour(geometry=_line(TOP, VALLEY))
-        assert leg_parts(tour) == [(None, [list(TOP[:2]), list(VALLEY[:2])])]
-        assert leg_parts(_tour(geometry=_line(VALLEY))) == []
+        row = drawn_tours(SkiTour.objects.filter(pk=tour.pk)).get()
+        assert layer_render(row) is None
+        assert leg_parts(None, tour.geometry) == [
+            (None, [list(TOP[:2]), list(VALLEY[:2])])
+        ]
+        assert leg_parts(None, _line(VALLEY)) == []
+
+    def test_a_stale_render_draws_sacs_line(self) -> None:
+        """An older builder's legs are not trusted: SAC's line instead."""
+        geometry = _line(TOP, VALLEY)
+        assert leg_parts({**self.RENDER, "v": 0}, geometry) == [
+            (None, [list(TOP[:2]), list(VALLEY[:2])])
+        ]
 
     def test_a_tour_with_no_legs_keeps_every_part_spurs_included(self) -> None:
         """SAC's parts as published, not chained into one route (a spur stays)."""
@@ -579,7 +614,7 @@ class TestTheLegs:
                 "coordinates": [[VALLEY, TOP], [TOP, spur]],
             }
         )
-        assert leg_parts(tour) == [
+        assert leg_parts(None, tour.geometry) == [
             (None, [list(VALLEY), list(TOP)]),
             (None, [list(TOP), spur]),
         ]
