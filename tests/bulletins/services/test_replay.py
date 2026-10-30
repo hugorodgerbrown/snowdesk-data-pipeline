@@ -86,11 +86,11 @@ def test_new_bulletin_schedule() -> None:
     alerts = replay_region(RECORDS, source="SLF")
     sent = [a for a in alerts if a.sent]
     assert [a.title for a in sent] == [
-        "Martigny-Verbier: avalanche bulletins are back",
-        "Martigny-Verbier: new avalanche bulletin",
-        "Martigny-Verbier: new avalanche bulletin",
+        "Martigny-Verbier bulletin",
+        "Martigny-Verbier bulletin",
+        "Martigny-Verbier bulletin",
     ]
-    assert sent[0].body.startswith("The first of the season")
+    assert sent[0].body.startswith("First of the season. Valid from")
     held = sent[2].delivered_at.astimezone(ALERT_TZ)
     assert (held.hour, held.minute) == (6, 30)
 
@@ -135,6 +135,6 @@ def test_committed_slf_season() -> None:
     alerts = replay_archive(source="SLF")
     sent = [a for a in alerts if a.sent]
     assert 150 <= len(sent) <= 260
-    assert all(a.title.startswith("Martigny-Verbier: ") for a in sent)
+    assert all(a.title.startswith("Martigny-Verbier bulletin") for a in sent)
     # An open door: the place and the day, never the bulletin's content.
-    assert all(len(a.body) <= 60 for a in sent)
+    assert all(a.body.startswith(("Valid from", "First of")) for a in sent)

@@ -110,7 +110,7 @@ class TestSinglePlace:
             [place(state("moderate"), state("considerable", problems=(WIND,)))],
             TODAY,
         )
-        assert msg.title == "Verbier: new avalanche bulletin"
+        assert msg.title == "Verbier bulletin"
         assert msg.body == "For tomorrow."
         assert msg.url == "/map/?d=2026-01-17#CH-4115"
 
@@ -138,12 +138,12 @@ class TestSinglePlace:
         assert msg.body == "For Sunday."
 
     def test_season_start(self) -> None:
-        """The first bulletin of a season says bulletins are back."""
+        """The first bulletin of a season says so."""
         msg = alert_message(
             [place(None, state(problems=(WIND,)), kind="season_start")], TODAY
         )
-        assert msg.title == "Verbier: avalanche bulletins are back"
-        assert msg.body == "The first of the season, for tomorrow."
+        assert msg.title == "Verbier bulletin"
+        assert msg.body == "First of the season. For tomorrow."
 
     def test_update_today(self) -> None:
         """An update says the bulletin was updated."""
@@ -151,11 +151,11 @@ class TestSinglePlace:
             [place(state("moderate"), state("considerable"), kind="update", day=TODAY)],
             TODAY,
         )
-        assert msg.title == "Verbier: avalanche bulletin updated"
+        assert msg.title == "Verbier bulletin updated"
         assert msg.body == "For today."
 
     def test_trip(self) -> None:
-        """A saved trip's alert names the trip and opens it."""
+        """A saved trip's alert names the trip and its day, and opens it."""
         p = PlaceAlert(
             region_id="CH-4115",
             label="Mont Fort loop",
@@ -165,26 +165,84 @@ class TestSinglePlace:
             url="/trips/abc/",
         )
         msg = alert_message([p], TODAY)
-        assert msg.title == "Mont Fort loop: new avalanche bulletin"
-        assert msg.body == "For your trip tomorrow."
+        assert msg.title == "Mont Fort loop bulletin"
+        assert msg.body == "For your trip on Saturday."
         assert msg.url == "/trips/abc/"
-
-    def test_trip_on_a_later_day(self) -> None:
-        """A trip further off is named by its weekday."""
-        p = PlaceAlert(
-            region_id="CH-4115",
-            label="Mont Fort loop",
-            target_date=TODAY + datetime.timedelta(days=2),
-            kind="new",
-            change=summarise_change(None, state()),
-            url="/trips/abc/",
-        )
-        assert alert_message([p], TODAY).body == "For your trip on Sunday."
 
     def test_as_push(self) -> None:
         """The push payload carries the three fields."""
         msg = alert_message([place(state(), state())], TODAY)
         assert set(msg.as_push()) == {"title", "body", "url"}
+
+
+class TestValidity:
+    """The body says when the bulletin holds."""
+
+    START = datetime.datetime(2026, 1, 16, 16, 0, tzinfo=datetime.UTC)
+    UNTIL = datetime.datetime(2026, 1, 17, 16, 0, tzinfo=datetime.UTC)
+
+    def timed(self, **kwargs: object) -> PlaceAlert:
+        """Return a place with its bulletin's times."""
+        fields: dict[str, object] = {
+            "region_id": "CH-4115",
+            "label": "Verbier",
+            "target_date": TOMORROW,
+            "kind": "new",
+            "change": summarise_change(state(), state()),
+            "valid_from": self.START,
+            "valid_until": self.UNTIL,
+        }
+        fields.update(kwargs)
+        return PlaceAlert(**fields)  # type: ignore[arg-type]
+
+    def test_valid_from_to(self) -> None:
+        """The times read in the Alps' clock, 12-hour in English."""
+        msg = alert_message([self.timed()], TODAY)
+        assert msg.body == "Valid from Friday at 5 pm to Saturday at 5 pm."
+
+    def test_minutes_and_morning(self) -> None:
+        """Minutes show when there are any; a morning reads am."""
+        msg = alert_message(
+            [
+                self.timed(
+                    valid_from=datetime.datetime(
+                        2026, 1, 16, 7, 30, tzinfo=datetime.UTC
+                    )
+                )
+            ],
+            TODAY,
+        )
+        assert msg.body.startswith("Valid from Friday at 8:30 am to")
+
+    def test_trip_and_season_lead(self) -> None:
+        """A trip and a season start lead with their own sentence."""
+        trip = alert_message([self.timed(url="/trips/abc/")], TODAY)
+        assert trip.body == (
+            "For your trip on Saturday. Valid from Friday at 5 pm to Saturday at 5 pm."
+        )
+        season = alert_message([self.timed(kind="season_start")], TODAY)
+        assert season.body.startswith("First of the season. Valid from")
+
+    def test_bundle_shares_times(self) -> None:
+        """A bundle whose bulletins share their validity states it once."""
+        msg = alert_message(
+            [self.timed(), self.timed(label="Davos", region_id="CH-5")], TODAY
+        )
+        assert msg.body == (
+            "Davos and Verbier. Valid from Friday at 5 pm to Saturday at 5 pm."
+        )
+
+    def test_bundle_with_different_times(self) -> None:
+        """Different validity falls back to the shared day."""
+        later = self.START + datetime.timedelta(hours=1)
+        msg = alert_message(
+            [
+                self.timed(),
+                self.timed(label="Davos", region_id="CH-5", valid_from=later),
+            ],
+            TODAY,
+        )
+        assert msg.body == "Davos and Verbier, for tomorrow."
 
 
 class TestBundle:
@@ -199,7 +257,7 @@ class TestBundle:
             ],
             TODAY,
         )
-        assert msg.title == "New avalanche bulletins for your 2 places"
+        assert msg.title == "Bulletins for your 2 places"
         assert msg.body == "Davos and Verbier, for tomorrow."
         assert msg.url == "/alerts/2026-01-17/"
 
@@ -220,7 +278,7 @@ class TestBundle:
             for i in range(2)
         ]
         msg = alert_message(places, TODAY)
-        assert msg.title == "Avalanche bulletins updated for your 2 places"
+        assert msg.title == "Bulletins updated for your 2 places"
         assert msg.body == "P0 and P1, for today."
 
     def test_mixed_days(self) -> None:

@@ -9,10 +9,10 @@ renders a season of them so the copy can be read in sequence.
 The rules:
 
 - **An open door, not the bulletin (SNOW-1332).** An alert says only
-  that there is news, for which place and which day: "Verbier: new
-  avalanche bulletin" / "For tomorrow." No level, no problems: a message
-  can never give the whole picture, so it sends the reader to the page
-  that does (Hugo, 2026-10-30).
+  that there is a bulletin, for which place and when it holds: "Verbier
+  bulletin" / "Valid from Friday at 5 pm to Saturday at 5 pm." No level,
+  no problems: a message can never give the whole picture, so it sends
+  the reader to the page that does (Hugo, 2026-10-30).
 - **One message per person per run.** :func:`alert_message` takes every
   place that fired for an account and bundles them; a single place reads as
   that place, several as their names ("Chamonix, Davos and Verbier, for
@@ -33,9 +33,10 @@ import datetime
 import logging
 from dataclasses import dataclass, field
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from django.urls import reverse
-from django.utils import formats
+from django.utils import formats, translation
 from django.utils.translation import gettext as _
 
 from apps.bulletins.services.bulletin_change import (
@@ -49,6 +50,9 @@ from apps.bulletins.services.bulletin_change import (
 from apps.bulletins.services.day_summary import LEVEL_WORDS, PROBLEM_PHRASES
 
 logger = logging.getLogger(__name__)
+
+# The clock every alert is written in: the Alps' own.
+ALERT_TZ = ZoneInfo("Europe/Zurich")
 
 # Places listed by name in a bundled body before "and N more".
 MAX_LISTED_PLACES: int = 4
@@ -71,6 +75,10 @@ class PlaceAlert:
     # Where a one-place alert opens, when not the map: a saved trip's own
     # page (SNOW-947).
     url: str = ""
+    # When the bulletin holds from and until (SNOW-1332): the reader's way
+    # to place "this alert" among the day's issues.
+    valid_from: datetime.datetime | None = None
+    valid_until: datetime.datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -427,51 +435,91 @@ def day_phrase(day: datetime.date, today: datetime.date) -> str:
     return weekday(day)
 
 
+def clock(moment: datetime.datetime) -> str:
+    """
+    Write a moment as "Saturday at 5 pm" in the Alps' time.
+
+    Args:
+        moment: An aware datetime.
+
+    Returns:
+        The weekday and time: "5 pm", "5:30 pm" in English, the locale's
+        24-hour "17:00" otherwise.
+
+    """
+    local = moment.astimezone(ALERT_TZ)
+    if translation.get_language().startswith("en"):
+        hour = local.hour % 12 or 12
+        minutes = f":{local.minute:02d}" if local.minute else ""
+        time = f"{hour}{minutes} {'am' if local.hour < 12 else 'pm'}"
+    else:
+        time = formats.time_format(local, "H:i")
+    return _("%(day)s at %(time)s") % {"day": weekday(local.date()), "time": time}
+
+
+def validity(
+    valid_from: datetime.datetime | None, valid_until: datetime.datetime | None
+) -> str:
+    """
+    Write when a bulletin holds.
+
+    Args:
+        valid_from: The start of its validity.
+        valid_until: The end of its validity.
+
+    Returns:
+        "Valid from Friday at 5 pm to Saturday at 5 pm.", or an empty
+        string when either time is unknown.
+
+    """
+    if valid_from is None or valid_until is None:
+        return ""
+    return _("Valid from %(start)s to %(end)s.") % {
+        "start": clock(valid_from),
+        "end": clock(valid_until),
+    }
+
+
 def place_title(place: PlaceAlert) -> str:
     """
-    Write the title for a single place: the place, and that there is news.
+    Write the title for a single place.
 
     Args:
         place: The place that fired.
 
     Returns:
-        "Verbier: new avalanche bulletin", "Verbier: avalanche bulletin
-        updated" or "Verbier: avalanche bulletins are back".
+        "Verbier bulletin", or "Verbier bulletin updated" for a reissue.
 
     """
-    if place.kind == "season_start":
-        return _("%(place)s: avalanche bulletins are back") % {"place": place.label}
     if place.kind == "update":
-        return _("%(place)s: avalanche bulletin updated") % {"place": place.label}
-    return _("%(place)s: new avalanche bulletin") % {"place": place.label}
+        return _("%(place)s bulletin updated") % {"place": place.label}
+    return _("%(place)s bulletin") % {"place": place.label}
 
 
 def place_body(place: PlaceAlert, today: datetime.date) -> str:
     """
-    Write the body for a single place: which day the bulletin is for.
+    Write the body for a single place: when its bulletin holds.
 
     Args:
         place: The place that fired.
         today: The local date the message is sent on.
 
     Returns:
-        "For tomorrow.", "For your trip on Sunday." or "The first of the
-        season, for tomorrow."
+        "Valid from Friday at 5 pm to Saturday at 5 pm.", led by "For your
+        trip on Saturday." for a trip and "First of the season." at season
+        start. Without the times it falls back to the day: "For tomorrow."
 
     """
-    day = day_phrase(place.target_date, today)
+    lead: list[str] = []
     if place.url:
-        if place.target_date - today <= datetime.timedelta(days=1):
-            text = _("For your trip %(day)s.") % {"day": day}
-        else:
-            text = _("For your trip on %(day)s.") % {"day": day}
-    else:
-        text = _("For %(day)s.") % {"day": day}
+        day = weekday(place.target_date)
+        lead.append(_("For your trip on %(day)s.") % {"day": day})
     if place.kind == "season_start":
-        return _("The first of the season, %(rest)s") % {
-            "rest": text[:1].lower() + text[1:]
-        }
-    return text
+        lead.append(_("First of the season."))
+    when = validity(place.valid_from, place.valid_until)
+    if not when and not place.url:
+        when = _("For %(day)s.") % {"day": day_phrase(place.target_date, today)}
+    return " ".join([*lead, when]).strip()
 
 
 def place_url(place: PlaceAlert) -> str:
@@ -501,29 +549,29 @@ def _bundle_title(places: list[PlaceAlert]) -> str:
         places: Every place that fired.
 
     Returns:
-        "New avalanche bulletins for your 3 places", or "Avalanche
-        bulletins updated for your 2 places" when every one is an update.
+        "Bulletins for your 3 places", or "Bulletins updated for your 2
+        places" when every one is an update.
 
     """
     count = len(places)
     if all(p.kind == "update" for p in places):
-        return _("Avalanche bulletins updated for your %(count)d places") % {
-            "count": count
-        }
-    return _("New avalanche bulletins for your %(count)d places") % {"count": count}
+        return _("Bulletins updated for your %(count)d places") % {"count": count}
+    return _("Bulletins for your %(count)d places") % {"count": count}
 
 
 def _bundle_body(places: list[PlaceAlert], today: datetime.date) -> str:
     """
-    Write the body for several places: their names, and the day.
+    Write the body for several places: their names, then when.
 
     Args:
         places: Every place that fired.
         today: The local send date.
 
     Returns:
-        "Chamonix, Davos and Verbier, for tomorrow.", with "and 2 more" past
-        four places and no day when the days differ.
+        "Chamonix, Davos and Verbier. Valid from Friday at 5 pm to Saturday
+        at 5 pm.", with "and 2 more" past four places. Bulletins that hold
+        for different times fall back to their shared day ("…, for
+        tomorrow."), or the names alone.
 
     """
     names = sorted(p.label for p in places)
@@ -539,6 +587,11 @@ def _bundle_body(places: list[PlaceAlert], today: datetime.date) -> str:
             "head": ", ".join(listed[:-1]),
             "tail": listed[-1],
         }
+    times = {(p.valid_from, p.valid_until) for p in places}
+    if len(times) == 1:
+        when = validity(*next(iter(times)))
+        if when:
+            return f"{joined}. {when}"
     days = {p.target_date for p in places}
     if len(days) > 1:
         return joined + "."

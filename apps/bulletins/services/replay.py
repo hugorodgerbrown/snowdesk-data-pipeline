@@ -64,6 +64,12 @@ def _parse(value: str) -> datetime.datetime:
     return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def _valid_until(raw: dict[str, Any]) -> datetime.datetime | None:
+    """Return the end of an issue's validity, or None when it gives none."""
+    end = (raw.get("validTime") or {}).get("endTime")
+    return _parse(end) if end else None
+
+
 def _delivery_time(published: datetime.datetime) -> datetime.datetime:
     """Return when the scheduled job would deliver an issue published then."""
     if not in_night_hold(published):
@@ -215,6 +221,8 @@ def replay_region(
                     kind=decision.kind,
                     change=decision.change,
                     compared_to=decision.compared_to,
+                    valid_from=valid_from,
+                    valid_until=_valid_until(raw),
                 )
             ],
             today,

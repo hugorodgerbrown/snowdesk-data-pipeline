@@ -60,16 +60,18 @@ See "Going public" before turning either on.
   the trip's alert. A changed
   update to a day already told sends in either mode. A reissue a reader
   could not tell apart (same fingerprint) never sends.
-- **An open door (SNOW-1332).** The alert says only that there is news,
-  for which place and which day: "Verbier: new avalanche bulletin" / "For
-  tomorrow." ("avalanche bulletin updated" for an update, "avalanche
-  bulletins are back" / "The first of the season, for tomorrow." at season
-  start, "For your trip tomorrow." on a trip). A bundle is "New avalanche
-  bulletins for your 3 places" / "Chamonix, Davos and Verbier, for
-  tomorrow.", "and N more" past four. No level, no problems: a message can
-  never give the whole picture, so it opens the page that does (Hugo,
-  2026-10-30). The email carries the same words. The full sentences
-  (`change_sentences`) stay for the since strip and `/alerts/<day>/`.
+- **An open door (SNOW-1332).** The alert says only that there is a
+  bulletin, for which place and when it holds: "Verbier bulletin" /
+  "Valid from Friday at 5 pm to Saturday at 5 pm." (the bulletin's
+  `valid_from` / `valid_to`, in Europe/Zurich). An update is "Verbier
+  bulletin updated"; a season start leads "First of the season."; a trip
+  leads "For your trip on Saturday.". A bundle is "Bulletins for your 3
+  places" / "Chamonix, Davos and Verbier. Valid from …", "and N more" past
+  four, the times dropped for the shared day when the bulletins hold for
+  different times. No level, no problems: a message can never give the
+  whole picture, so it opens the page that does (Hugo, 2026-10-30). The
+  email carries the same words. The full sentences (`change_sentences`)
+  stay for the since strip and `/alerts/<day>/`.
 - **One day per place.** If today and tomorrow both fire for one place,
   tomorrow is the message and today is logged `SKIPPED`.
 - **Night hold.** 22:00–06:30 Europe/Zurich nothing is sent; the 06:30
