@@ -410,6 +410,13 @@ class OfflineMapPage:
         """
         self.page.click("#basemap-toggle")
         self.page.wait_for_selector("#basemap-menu", state="visible")
+        # The basemaps are one level down the layers menu, behind its
+        # Basemap row (the-layers-menu-is-on-off-then-options.md); level
+        # one holds only the per-layer switches.
+        self.page.click('#basemap-menu [data-layers-open="basemap"]')
+        self.page.wait_for_selector(
+            '#basemap-menu [data-layers-page="basemap"]', state="visible"
+        )
         self.page.click(f'#basemap-menu button[data-basemap-key="{key}"]')
         # `aria-checked`, not the localStorage key. Picking the basemap
         # that is ALREADY active is a deliberate no-op in
