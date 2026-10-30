@@ -1,6 +1,6 @@
 ---
 name: an-area-download-carries-your-trips-and-borrowed-forecasts
-description: Why an area download carries your trips and borrowed forecasts (/api/area-items/, private-json route, public-json weather sheet)
+description: Why an area download carries your trips, borrowed forecasts and pin sheets (/api/area-items/, private-json, public-json, private-partial)
 status: current
 last-reviewed: 2026-10-30
 ---
@@ -89,3 +89,46 @@ That is the honest answer for a forecast that has aged.
   path and `d` rather than the exact url, and makes the whole download
   forward-only:
   [a-download-looks-forward-and-carries-the-region-sheet.md](a-download-looks-forward-and-carries-the-region-sheet.md).
+
+## SNOW-1313: the pin's own sheet
+
+A pin tapped offline showed only its name and when it was saved: its place
+sheet (`/partials/place-sheet/favourite/<uuid>/?d=<day>`) answered
+`no-store` and was classified `'network'`. So the download now carries it,
+and the borrowed forecast is reached from it.
+
+1. **`favourite_sheet_partial` answers `private, no-cache` and attests
+   its viewer** (`attest_principal`), as a trip's uuid route does.
+   Anonymous, or another reader's pin, is the 404 it always was, with no
+   header.
+2. **A `'private-partial'` worker class** for that path alone
+   (`_privatePartialNetworkFirst`): the trip route's principal rule — kept
+   stamped only when the attested viewer is the one signed in, served
+   offline only on a matching stamp — under the region sheet's key, path +
+   `d` (`_publicPartialKey`). The warm sends `HX-Request`, and is handled
+   before the HTML branch, which would stamp it from a `pwa-user-id` meta a
+   fragment does not carry. A 403 or 404 online drops **every** kept day
+   of that pin (`_dropPathEntries`), because the pin is no longer the
+   reader's on any day. An offline miss is SNOW-1312's 504 with
+   `X-SW-Offline-Miss`, and the sheet keeps its name-and-saved-time
+   fallback with "This day isn't downloaded".
+3. **`areaItemURLs` adds the sheet per pin**, through a `favouriteSheet`
+   template (`#map`'s `data-favourite-sheet-url`, the nil-uuid form, and
+   the same template on `/offline/` as `content_feeds.favourite_sheet`),
+   dated with the weather sheet's day — the server's `data-today`, which
+   is the day the map's scrubber commits on boot and the place sheet asks
+   with. Only that day: an undated or another day's request does not find
+   it.
+4. **"Full forecast" opens the map's weather sheet**, online and offline
+   alike (one behaviour, decided). The link carries the borrowed point's
+   `data-forecast-short-id`; `map_place_sheet.js` calls
+   `window.pwaWeatherDetail.open(short_id, dateKey)` with the map's current
+   day instead of navigating, which is the exact url the download warmed
+   (`?date=<day>`). The `href` stays as the no-JS fallback, and a modified
+   click still opens the page.
+
+The kept body holds the delete form's CSRF token, which goes stale when the
+session's token rotates. The sheet posts with the `csrftoken` cookie first,
+the body's token only as a fallback. Offline edits remain out of scope.
+The resort place sheet is not kept: its Save star is rendered per reader,
+and a stamped copy would have to move it client-side first.

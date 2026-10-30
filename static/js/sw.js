@@ -41,6 +41,13 @@
  *     offline on that key; a miss is a 504 carrying
  *     ``X-SW-Offline-Miss: 1`` (_publicPartialNetworkFirst).
  *
+ *   - A saved pin's place sheet (SNOW-1313:
+ *     /partials/place-sheet/favourite/<uuid>/)
+ *     → network-first, kept under the region sheet's path + ``d`` key,
+ *     stamped with the principal the answer names, served offline to that
+ *     principal only; a miss is the same offline-miss 504
+ *     (_privatePartialNetworkFirst).
+ *
  *   - Everything else          (most /api/* endpoints, and third-party
  *                                origins not registered as the active
  *                                basemap)
@@ -1216,6 +1223,9 @@ const PUBLIC_JSON_PATH = /^\/api\/weather\/(?!\d+\/)[A-Za-z0-9_-]+\/detail\/$/;
 // SNOW-1312: the map's region sheet — the third copy-pair, held to the
 // core's by the same tests.
 const PUBLIC_PARTIAL_PATH = /^\/partials\/region-sheet\/[a-z]{2}-(?=[a-z0-9-]*\d)[a-z0-9]+(?:-[a-z0-9]+)*\/$/i;
+// SNOW-1313: a saved pin's place sheet — the fourth copy-pair, held to the
+// core's by the same tests. The resort place sheet does not match.
+const PRIVATE_PARTIAL_PATH = /^\/partials\/place-sheet\/favourite\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/$/i;
 
 // SNOW-1312: the header a region-sheet miss carries, so the sheet can say
 // "this day isn't downloaded" rather than "unavailable". Read by
@@ -1837,9 +1847,10 @@ function _hydrateDevShellCacheOptIn() {
  * @param {Request} request
  * @param {URL} url
  * SNOW-1312: and ``'public-partial'`` — the map's region sheet, read by
- * ``_publicPartialNetworkFirst``.
+ * ``_publicPartialNetworkFirst``. SNOW-1313: and ``'private-partial'`` — a
+ * saved pin's place sheet, read by ``_privatePartialNetworkFirst``.
  *
- * @returns {'static' | 'navigate' | 'private-json' | 'public-json' | 'public-partial' | 'network' | null}
+ * @returns {'static' | 'navigate' | 'private-json' | 'public-json' | 'public-partial' | 'private-partial' | 'network' | null}
  */
 function _classifySync(request, url) {
   // SNOW-496: thin delegator — see basemap_cache_core.js's module header.
@@ -1867,6 +1878,7 @@ function _classifySync(request, url) {
   if (PRIVATE_JSON_PATH.test(url.pathname)) return 'private-json';
   if (PUBLIC_JSON_PATH.test(url.pathname)) return 'public-json';
   if (PUBLIC_PARTIAL_PATH.test(url.pathname)) return 'public-partial';
+  if (PRIVATE_PARTIAL_PATH.test(url.pathname)) return 'private-partial';
 
   if (STATIC_PATHS.has(url.pathname)) return 'static';
 
@@ -2497,12 +2509,15 @@ async function _warmCache(urls, options) {
       return 'other';
     }
     const sameOrigin = url.origin === self.location.origin;
+    const warmClass = sameOrigin ? _classifySync(WARM_CLASSIFY_REQUEST, url) : null;
     // SNOW-1312: the region sheet is an HTMX fragment, and `require_htmx`
     // answers a request without `HX-Request` with a 400 — so this family,
     // and only this one, is fetched with the header the sheet sends.
-    const partial = sameOrigin && _classifySync(WARM_CLASSIFY_REQUEST, url) === 'public-partial';
+    const partial = warmClass === 'public-partial';
+    // SNOW-1313: and a saved pin's place sheet, the same kind of fragment.
+    const privatePartial = warmClass === 'private-partial';
     try {
-      const response = partial
+      const response = partial || privatePartial
         ? await fetch(url.toString(), { headers: { 'HX-Request': 'true' } })
         : await fetch(url.toString());
       const validType = sameOrigin ? response.type === 'basic' : response.type === 'cors';
@@ -2524,6 +2539,22 @@ async function _warmCache(urls, options) {
         const key = _publicPartialKey(url);
         if (!key || _isNoStore(response)) return 'other';
         await cache.put(key, response.clone());
+        bytes += await _warmCacheResponseBytes(response);
+        return null;
+      }
+      // SNOW-1313: a saved pin's place sheet is the owner's HTML, kept
+      // under the region sheet's path + `d` key and stamped as a trip's
+      // route is, from the principal the answer itself names. Ahead of
+      // the HTML branch below, which would stamp it from a `pwa-user-id`
+      // meta a fragment does not carry. An undated url, a `no-store`
+      // answer, a missing attestation or one that disagrees with who is
+      // signed in is a failure, so the run's tally comes up short.
+      if (privatePartial) {
+        const key = _publicPartialKey(url);
+        if (!key || _isNoStore(response)) return 'other';
+        const principal = await _attestedPrincipal(response);
+        if (!principal) return 'other';
+        await cache.put(key, _stampPrincipal(response.clone(), principal));
         bytes += await _warmCacheResponseBytes(response);
         return null;
       }
@@ -3811,6 +3842,98 @@ async function _publicPartialNetworkFirst(request) {
 }
 
 /**
+ * Delete every entry kept for ``url``'s path, whatever its day
+ * (SNOW-1313).
+ *
+ * A pin's sheet is kept once per day it was read on. A 403 or 404 for one
+ * day is the server saying the pin is no longer this reader's on any day,
+ * so every day's copy goes, not just the one asked for.
+ *
+ * @param {Cache} cache
+ * @param {URL} url
+ * @returns {Promise<void>}
+ */
+async function _dropPathEntries(cache, url) {
+  const requests = await cache.keys();
+  for (const kept of requests) {
+    let keptUrl = null;
+    try {
+      keptUrl = new URL(kept.url);
+    } catch (_err) {
+      keptUrl = null;
+    }
+    if (keptUrl && keptUrl.origin === url.origin && keptUrl.pathname === url.pathname) {
+      await cache.delete(kept);
+    }
+  }
+}
+
+/**
+ * Network-first for a saved pin's place sheet (SNOW-1313).
+ *
+ * The sheet a downloaded pin opens offline. Every area download warms it
+ * for each pin inside the box on the download's day (``areaItemURLs`` in
+ * basemap_download_core.js); until this ticket it was classified
+ * ``'network'`` and answered ``no-store``, so a pin tapped offline showed
+ * only its name and when it was saved.
+ *
+ * The region sheet's key — path and ``d`` (``_publicPartialKey``) — so an
+ * undated or another day's request never finds it, and a trip route's
+ * principal rule: the answer names its viewer (``X-Snowdesk-Principal``,
+ * ``_attestedPrincipal``) and is kept, stamped, only when that is who is
+ * signed in on the device now; offline it is served only when the stamp
+ * matches. A 403 or 404 online DROPS the kept copy — the pin was deleted,
+ * or is no longer this reader's — every day's copy of it
+ * (``_dropPathEntries``). Anything else offline is the region
+ * sheet's offline-miss 504, which the sheet answers with its name and
+ * saved time and the "not downloaded" line.
+ *
+ * @param {Request} request
+ * @returns {Promise<Response>}
+ */
+async function _privatePartialNetworkFirst(request) {
+  const startedAt = Date.now();
+  const key = _publicPartialKey(new URL(request.url));
+  const cache = await caches.open(CACHE_VERSION);
+  const fromCache = async () => {
+    const principal = await _signedInPrincipal();
+    // `ignoreVary`, as for the region sheet: the entry is keyed on a bare
+    // url and the sheet's request carries `HX-Request`.
+    const cached = key && principal ? await cache.match(key, { ignoreVary: true }) : null;
+    if (cached && _principalMatches(cached, principal)) {
+      const hit = _stampCacheHit(cached);
+      _debugServe(request, 'private-partial', 'shell', hit, startedAt);
+      return hit;
+    }
+    const miss = _offlineMissResponse();
+    _debugServe(request, 'private-partial', 'timeout-504', miss, startedAt);
+    return miss;
+  };
+  if (!(await _shouldUseNetwork())) return fromCache();
+  let response;
+  try {
+    response = await _boundedFetch(request, SHELL_FETCH_BUDGET_MS);
+  } catch (_err) {
+    return fromCache();
+  }
+  if (key && response && response.ok && response.type === 'basic' && !_isNoStore(response)) {
+    // Cloned now, while the body is unread: the sheet consumes the
+    // original as soon as this returns.
+    const toStore = response.clone();
+    _attestedPrincipal(toStore)
+      .then((principal) => {
+        if (principal) return cache.put(key, _stampPrincipal(toStore, principal));
+        return undefined;
+      })
+      .catch(() => {});
+  } else if (response && (response.status === 403 || response.status === 404)) {
+    _dropPathEntries(cache, new URL(request.url)).catch(() => {});
+  }
+  _debugServe(request, 'private-partial', 'network', response, startedAt);
+  return response;
+}
+
+/**
  * True when ``response`` is page HTML rather than data (SNOW-624).
  *
  * The discriminator for "would `_networkFirst` have cached this, and so
@@ -4594,6 +4717,12 @@ self.addEventListener('fetch', (event) => {
   if (sync === 'public-partial') {
     event.respondWith(
       _guardedRespond(_publicPartialNetworkFirst(request), request, event.clientId),
+    );
+    return;
+  }
+  if (sync === 'private-partial') {
+    event.respondWith(
+      _guardedRespond(_privatePartialNetworkFirst(request), request, event.clientId),
     );
     return;
   }

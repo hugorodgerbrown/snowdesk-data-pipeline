@@ -46,6 +46,7 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.accounts.identity import attest_principal
 from apps.bulletins.models import RegionDayRating
 from apps.bulletins.services.selection import select_bulletin_for_date
 from apps.core.decorators import require_htmx
@@ -191,6 +192,12 @@ def _place_context(
         "forecast_url": f"{base_url}?date={target_date.isoformat()}"
         if base_url
         else "",
+        # SNOW-1313: the point's short id rides on the link, so the map can
+        # open its weather sheet in place (map_place_sheet.js) rather than
+        # navigate — the sheet a download saved, readable offline.
+        "forecast_short_id": source.location.short_id or ""
+        if source is not None and base_url
+        else "",
     }
 
 
@@ -304,5 +311,13 @@ def favourite_sheet_partial(request: HttpRequest, uuid: UUID) -> HttpResponse:
         }
     )
     response = render(request, "public/partials/_place_sheet_body.html", context)
-    response["Cache-Control"] = "private, no-store"
-    return response
+    # SNOW-1313: ``private, no-cache`` rather than ``no-store``, so the
+    # service worker may keep the owner's copy for an offline read of a
+    # downloaded area — stamped with the principal the answer names
+    # (``attest_principal``) and served back to that principal alone
+    # (``'private-partial'`` in basemap_cache_core.js). ``private`` keeps it
+    # out of every shared cache; ``no-cache`` makes an online read
+    # revalidate, so a pin deleted elsewhere stops opening the moment the
+    # network can say so (its 404 drops the kept copy).
+    response["Cache-Control"] = "private, no-cache"
+    return attest_principal(response, request)
