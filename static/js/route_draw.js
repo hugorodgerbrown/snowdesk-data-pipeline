@@ -126,8 +126,10 @@
   const FOLLOW_KEY = 'snowdesk.route-draw-follow';
 
   const STRINGS = self.pwaStrings.read('route-draw-strings-template', {
-    'hint-coarse': 'Move the map to put the cross where you want the next point, then tap Add point.',
-    'hint-fine': 'Click the map to add a point. Near a ski route it snaps to the route.',
+    'hint-coarse': 'Move the map to put the cross where you want to start, then tap Set start location.',
+    'hint-fine': 'Click the map to set the start location. Near a ski route it snaps to the route.',
+    'add-start': 'Set start location',
+    'add-point': 'Add point',
     'stats-empty': 'No points yet.',
     'stats-one': 'One point — add another to start the line.',
     'unit-km': '%(value)s km',
@@ -608,6 +610,17 @@
       }
     }
 
+    // SNOW-1321: say the profile is coming, in the space it will fill.
+    const building = find('[data-route-draw-building]');
+    if (building) {
+      building.hidden = !core.profileBuilding({
+        count: state.points.length,
+        fresh: Boolean(fresh),
+        waiting: state.timer !== null || state.inflight !== null,
+        online: online(),
+      });
+    }
+
     const hint = find('[data-route-draw-hint]');
     if (hint) hint.hidden = state.points.length > 0;
 
@@ -623,6 +636,8 @@
     if (submit) submit.disabled = locked || state.points.length < 2 || state.saving;
     const add = find('[data-route-draw-add]');
     if (add) add.disabled = locked;
+    const addLabel = find('[data-route-draw-add-label]');
+    if (addLabel) addLabel.textContent = STRINGS[state.points.length ? 'add-point' : 'add-start'];
     const name = find('#route-draw-name');
     if (name) name.disabled = locked;
     if (locked) showNotice(STRINGS['save-queued']);
@@ -878,12 +893,16 @@
       return;
     }
     state.timer = window.setTimeout(requestPreview, PREVIEW_DEBOUNCE_MS);
+    renderFigures();
   }
 
   /** Post the waypoints to routes:draw_preview and draw its answer. */
   function requestPreview() {
     state.timer = null;
-    if (!PREVIEW_URL || !online()) return;
+    if (!PREVIEW_URL || !online()) {
+      renderFigures();
+      return;
+    }
     const key = JSON.stringify(state.points);
     const abort = new AbortController();
     state.inflight = abort;
@@ -913,7 +932,10 @@
         showNotice(STRINGS['preview-failed']);
       })
       .finally(function () {
-        if (state.inflight === abort) state.inflight = null;
+        if (state.inflight !== abort) return;
+        state.inflight = null;
+        // A failed or refused preview stops "Building profile…" too.
+        if (state.active) renderFigures();
       });
   }
 

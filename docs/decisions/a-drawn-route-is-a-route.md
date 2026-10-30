@@ -71,6 +71,13 @@ anyone.
 
 ## Consequences
 
+- The panel's primary button reads "Set start location" until the first
+  point is down, then "Add point". From a line's change until its preview
+  is drawn, a placeholder the profile's size, a faint profile-shaped
+  shadow under "Building profile…", holds its place
+  (`route_draw_core.js` `profileBuilding`, SNOW-1321). Hugo, 30 Oct 2026:
+  the wait "should say 'Building profile' in the blank space - so the user
+  is aware", "with a fake shadow so the user knows what to expect."
 - No terrain model outside Switzerland means no profile, climb or estimate
   there. The line is drawn, and the panel says why the figures are
   missing.
