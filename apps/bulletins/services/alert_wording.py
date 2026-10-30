@@ -8,18 +8,20 @@ renders a season of them so the copy can be read in sequence.
 
 The rules:
 
+- **A teaser, not the bulletin (SNOW-1332).** An alert names the place,
+  the day's level and whether it moved: "Verbier · Considerable (3+) ↑" /
+  "Saturday · up from Moderate (2)". Problems, aspects and heights are on
+  the page the tap opens, never in the alert.
 - **One message per person per run.** :func:`alert_message` takes every
   place that fired for an account and bundles them; a single place reads as
-  that place, several read as a list with the places that changed first.
-- **Never "no change".** A day that restates yesterday says what it says
-  ("Same as Friday: wind slab on N–E above 2,400 m."), so a quiet message
-  is still useful on its own.
-- **Moves are named, not implied.** "Up from Moderate.", "Wind slab added
-  on N–E above 2,400 m.", "Wind slab no longer named.", "Wind slab now on
-  N–NW above 2,200 m."
-- **Vocabulary is the bulletin page's.** Problem names and level words come
-  from ``day_summary.py`` so an alert and the page it opens say the same
-  thing the same way.
+  that place, several as one marker each ("Verbier 3+ ↑ · Davos 2"), the
+  places whose level moved first.
+- **The same words in the email.** The email is the fallback for the same
+  alert, so it carries the same title and body.
+- **The full sentences live on the page.** :func:`change_sentences` writes
+  every move ("Wind slab added on N–E above 2,400 m.") for the since strip
+  and ``/alerts/<day>/``, which have the room. Problem names and level
+  words come from ``day_summary.py`` so they read as the bulletin page does.
 
 Server-side strings, so ``makemessages`` covers them.
 """
@@ -400,80 +402,111 @@ def change_sentences(change: BulletinChange) -> list[str]:
     return out
 
 
-def restatement(state: BulletinState) -> str:
+# ---------------------------------------------------------------------------
+# The message: a teaser (SNOW-1332)
+# ---------------------------------------------------------------------------
+
+
+def direction(change: BulletinChange) -> int:
     """
-    Write what a bulletin names, for a day that moved nothing.
+    Return which way the headline level moved, sub-rating included.
 
     Args:
-        state: The current state.
+        change: An A1 change.
 
     Returns:
-        "wind slab on N–E above 2,400 m; wet snow on S" or, with nothing
-        named, "no distinct avalanche problem".
+        1 for up, -1 for down, 0 for no move or nothing to compare against.
 
     """
-    if not state.problems:
-        return _("no distinct avalanche problem")
-    return "; ".join(problem_name(p.problem_type) + where(p) for p in state.problems)
+    previous = change.previous
+    if previous is None:
+        return 0
+    if change.rating_direction:
+        return change.rating_direction
+    if change.subdivision_moved:
+        return 1 if change.current.rank > previous.rank else -1
+    return 0
 
 
-def place_body(place: PlaceAlert) -> str:
+def _arrow(change: BulletinChange) -> str:
+    """Return " ↑", " ↓" or "" for the level's move."""
+    return {1: " ↑", -1: " ↓"}.get(direction(change), "")
+
+
+def day_word(day: datetime.date, today: datetime.date) -> str:
+    """Return "Today" for the send date, otherwise the weekday ("Saturday")."""
+    return _("Today") if day == today else weekday(day)
+
+
+def what_moved(change: BulletinChange) -> str:
     """
-    Write the body for a single place.
+    Say in a few words whether the bulletin moved since the one before.
+
+    Args:
+        change: An A1 change with a previous state.
+
+    Returns:
+        "up from Moderate (2)", "down from …", "same level, avalanche
+        problems changed" or "unchanged".
+
+    """
+    previous = change.previous
+    if previous is None:
+        return ""
+    moved = direction(change)
+    if moved > 0:
+        return _("up from %(level)s") % {"level": headline(previous)}
+    if moved < 0:
+        return _("down from %(level)s") % {"level": headline(previous)}
+    if not change.is_empty:
+        return _("same level, avalanche problems changed")
+    return _("unchanged")
+
+
+def place_title(place: PlaceAlert) -> str:
+    """
+    Write the title for a single place.
 
     Args:
         place: The place that fired.
 
     Returns:
-        The body text.
+        "Verbier · Considerable (3+) ↑": the place, the day's level and an
+        arrow when the level moved.
 
     """
     change = place.change
-    if place.kind == "season_start":
-        return " ".join(
-            [
-                _("Bulletins are back for %(place)s.") % {"place": place.label},
-                _("Named: %(problems)s.") % {"problems": restatement(change.current)},
-            ]
-        )
-    sentences = change_sentences(change)
-    if sentences:
-        return " ".join(sentences)
-    if change.previous is not None and place.compared_to is not None:
-        if place.kind == "update":
-            return _("Reissued with no change: %(problems)s.") % {
-                "problems": restatement(change.current)
-            }
-        return _("Same as %(day)s: %(problems)s.") % {
-            "day": weekday(place.compared_to),
-            "problems": restatement(change.current),
-        }
-    text = restatement(change.current)
-    return text[:1].upper() + text[1:] + "."
+    return f"{place.label} · {headline(change.current)}{_arrow(change)}"
 
 
-def place_title(place: PlaceAlert, today: datetime.date) -> str:
+def place_body(place: PlaceAlert, today: datetime.date) -> str:
     """
-    Write the title for a single place.
+    Write the body for a single place: which day, and whether it moved.
 
     Args:
         place: The place that fired.
         today: The local date the message is sent on.
 
     Returns:
-        "Verbier · Saturday: Considerable (3)", or for an update to a day
-        already announced "Verbier · updated for today: Considerable (3)".
+        "Saturday · up from Moderate (2)", "Today · reissued, unchanged",
+        "Your trip on Saturday · unchanged", "Saturday · first bulletin of
+        the season" or, with nothing to compare against, "Saturday's
+        bulletin".
 
     """
-    level = headline(place.change.current)
+    day = day_word(place.target_date, today)
+    if place.url:
+        day = _("Your trip on %(day)s") % {"day": weekday(place.target_date)}
+    if place.kind == "season_start":
+        return _("%(day)s · first bulletin of the season") % {"day": day}
+    moved = what_moved(place.change)
+    if not moved:
+        if place.url:
+            return day
+        return _("%(day)s's bulletin") % {"day": day}
     if place.kind == "update":
-        when = (
-            _("updated for today")
-            if place.target_date == today
-            else _("updated for %(day)s") % {"day": weekday(place.target_date)}
-        )
-        return f"{place.label} · {when}: {level}"
-    return f"{place.label} · {weekday(place.target_date)}: {level}"
+        return _("%(day)s · reissued, %(moved)s") % {"day": day, "moved": moved}
+    return f"{day} · {moved}"
 
 
 def place_url(place: PlaceAlert) -> str:
@@ -495,11 +528,28 @@ def place_url(place: PlaceAlert) -> str:
     )
 
 
-def _place_marker(place: PlaceAlert) -> str:
-    """Return "Verbier 3 ↑" for a bundled list."""
-    arrow = {1: " ↑", -1: " ↓"}.get(place.change.rating_direction, "")
+def _place_marker(place: PlaceAlert, today: datetime.date | None) -> str:
+    """
+    Return "Verbier 3+ ↑" for a bundled list.
+
+    Args:
+        place: One place in the bundle.
+        today: The send date when the bundle's days differ, so each marker
+            names its own day ("Davos 2 Sun"); None when they share one.
+
+    Returns:
+        The marker.
+
+    """
     figure = level_figure(place.change.current) or "–"
-    return f"{place.label} {figure}{arrow}"
+    marker = f"{place.label} {figure}{_arrow(place.change)}"
+    if today is not None:
+        marker += " " + (
+            _("today")
+            if place.target_date == today
+            else formats.date_format(place.target_date, "D")
+        )
+    return marker
 
 
 def _bundle_title(places: list[PlaceAlert], today: datetime.date) -> str:
@@ -511,48 +561,47 @@ def _bundle_title(places: list[PlaceAlert], today: datetime.date) -> str:
         today: The local send date.
 
     Returns:
-        "Tomorrow for your 3 places", "Today for your 3 places", or
-        "Bulletins for your 3 places" when the days differ.
+        "Your 3 places · Saturday", "Your 2 places · today, reissued", or
+        "Your 2 places" when the days differ.
 
     """
     days = {p.target_date for p in places}
     count = len(places)
-    if days == {today + datetime.timedelta(days=1)}:
-        return _("Tomorrow for your %(count)d places") % {"count": count}
-    if days == {today}:
-        if all(p.kind == "update" for p in places):
-            return _("Updated today for your %(count)d places") % {"count": count}
-        return _("Today for your %(count)d places") % {"count": count}
-    return _("Bulletins for your %(count)d places") % {"count": count}
+    if len(days) > 1:
+        return _("Your %(count)d places") % {"count": count}
+    (day,) = days
+    if all(p.kind == "update" for p in places):
+        when = (
+            _("today, reissued")
+            if day == today
+            else _("%(day)s, reissued") % {"day": weekday(day)}
+        )
+    else:
+        when = _("today") if day == today else weekday(day)
+    return _("Your %(count)d places · %(when)s") % {"count": count, "when": when}
 
 
-def _bundle_body(places: list[PlaceAlert]) -> str:
+def _bundle_body(places: list[PlaceAlert], today: datetime.date) -> str:
     """
-    Write the body for several places, changed places first.
+    Write the body for several places: a marker each, moved places first.
 
     Args:
         places: Every place that fired.
+        today: The local send date.
 
     Returns:
-        "Verbier 3 ↑ · Davos 2 · Chamonix 3. Wind slab added in Verbier."
+        "Verbier 3+ ↑ · Chamonix 2 · Davos 2", with "+2" past four places
+        and each place's day when the days differ.
 
     """
-    ordered = sorted(places, key=lambda p: (p.change.is_empty, p.label))
+    ordered = sorted(places, key=lambda p: (direction(p.change) == 0, p.label))
     listed = ordered[:MAX_LISTED_PLACES]
-    line = " · ".join(_place_marker(p) for p in listed)
+    mixed = len({p.target_date for p in places}) > 1
+    line = " · ".join(_place_marker(p, today if mixed else None) for p in listed)
     extra = len(ordered) - len(listed)
     if extra:
-        line += " " + _("and %(count)d more") % {"count": extra}
-    out = [line + "."]
-    first_changed = next((p for p in ordered if not p.change.is_empty), None)
-    if first_changed is not None:
-        sentences = change_sentences(first_changed.change)
-        if sentences:
-            out.append(
-                _("%(sentence)s in %(place)s.")
-                % {"sentence": sentences[0].rstrip("."), "place": first_changed.label}
-            )
-    return " ".join(out)
+        line += " · " + _("+%(count)d") % {"count": extra}
+    return line
 
 
 def bundle_url(places: list[PlaceAlert]) -> str:
@@ -590,14 +639,14 @@ def alert_message(places: list[PlaceAlert], today: datetime.date) -> AlertMessag
     if len(places) == 1:
         (place,) = places
         return AlertMessage(
-            title=place_title(place, today),
-            body=place_body(place),
+            title=place_title(place),
+            body=place_body(place, today),
             url=place_url(place),
             places=(place,),
         )
     return AlertMessage(
         title=_bundle_title(places, today),
-        body=_bundle_body(places),
+        body=_bundle_body(places, today),
         url=bundle_url(places),
         places=tuple(places),
     )

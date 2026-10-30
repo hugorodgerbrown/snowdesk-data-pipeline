@@ -17,7 +17,6 @@ from apps.bulletins.services.alert_wording import (
     aspect_ranges,
     elevation_phrase,
     headline,
-    restatement,
 )
 from apps.bulletins.services.bulletin_change import (
     BulletinState,
@@ -101,75 +100,70 @@ class TestPhrases:
         assert headline(state("considerable", "=")) == "Considerable (3)"
         assert headline(state("")) == "No rating"
 
-    def test_restatement(self) -> None:
-        """A quiet day names what it names."""
-        assert restatement(state(problems=(WIND, WET))) == (
-            "wind slab on N–E above 2,400 m; wet snow on S"
-        )
-        assert restatement(state()) == "no distinct avalanche problem"
-
 
 class TestSinglePlace:
-    """One place reads as that place."""
+    """One place reads as a teaser: the place, its level, whether it moved."""
 
-    def test_rise_and_added_problem(self) -> None:
-        """A rise and a new problem are both named, rise first."""
+    def test_rise(self) -> None:
+        """A rise carries an arrow and says where it rose from."""
         msg = alert_message(
             [place(state("moderate"), state("considerable", problems=(WIND,)))],
             TODAY,
         )
-        assert msg.title == "Verbier · Saturday: Considerable (3)"
-        assert msg.body == "Up from Moderate (2). Wind slab added on N–E above 2,400 m."
+        assert msg.title == "Verbier · Considerable (3) ↑"
+        assert msg.body == "Saturday · up from Moderate (2)"
         assert msg.url == "/map/?d=2026-01-17#CH-4115"
 
-    def test_fall_and_removed(self) -> None:
-        """A fall and a problem leaving."""
+    def test_fall(self) -> None:
+        """A fall carries a down arrow."""
         msg = alert_message(
             [place(state("considerable", problems=(WIND,)), state("moderate"))],
             TODAY,
         )
-        assert msg.body == "Down from Considerable (3). Wind slab no longer named."
+        assert msg.title == "Verbier · Moderate (2) ↓"
+        assert msg.body == "Saturday · down from Considerable (3)"
 
     def test_subdivision_rise(self) -> None:
         """A sub-rating rise reads as up."""
         msg = alert_message(
             [place(state("considerable", "-"), state("considerable", "+"))], TODAY
         )
-        assert msg.body == "Up from Considerable (3−)."
+        assert msg.title == "Verbier · Considerable (3+) ↑"
+        assert msg.body == "Saturday · up from Considerable (3−)"
 
-    def test_moved_band(self) -> None:
-        """A moved problem says where it is now."""
+    def test_problems_moved(self) -> None:
+        """A problem moving at the same level is still news, but not detailed."""
         moved = ProblemState("wind_slab", ("N", "NW"), lower=2200, rating="moderate")
         msg = alert_message(
             [place(state(problems=(WIND,)), state(problems=(moved,)))], TODAY
         )
-        assert msg.body == "Wind slab now on NW–N above 2,200 m."
+        assert msg.title == "Verbier · Considerable (3)"
+        assert msg.body == "Saturday · same level, avalanche problems changed"
 
-    def test_moved_rating(self) -> None:
-        """A problem's own rating moving is named."""
-        moved = ProblemState("wind_slab", WIND.aspects, 2400, rating="considerable")
-        msg = alert_message(
-            [place(state(problems=(WIND,)), state(problems=(moved,)))], TODAY
-        )
-        assert msg.body == "Wind slab now rated considerable."
-
-    def test_restatement_never_says_no_change(self) -> None:
-        """A day like yesterday says what it says."""
+    def test_unchanged(self) -> None:
+        """A day like the one before says so in one word."""
         same = state(problems=(WIND,))
         msg = alert_message([place(same, same)], TODAY)
-        assert msg.body == "Same as Friday: wind slab on N–E above 2,400 m."
+        assert msg.body == "Saturday · unchanged"
+
+    def test_no_problem_detail(self) -> None:
+        """Problems, aspects and heights stay on the page."""
+        msg = alert_message(
+            [place(state("moderate"), state("considerable", problems=(WIND,)))],
+            TODAY,
+        )
+        assert "wind" not in (msg.title + msg.body).lower()
+        assert " m" not in msg.body
 
     def test_season_start(self) -> None:
-        """The first bulletin of a season says bulletins are back."""
+        """The first bulletin of a season says so."""
         msg = alert_message(
             [place(None, state(problems=(WIND,)), kind="season_start")], TODAY
         )
-        assert msg.body == (
-            "Bulletins are back for Verbier. Named: wind slab on N–E above 2,400 m."
-        )
+        assert msg.body == "Saturday · first bulletin of the season"
 
     def test_no_previous_today(self) -> None:
-        """A day with nothing to compare restates itself."""
+        """A day with nothing to compare names the day's bulletin."""
         p = PlaceAlert(
             region_id="CH-4115",
             label="Verbier",
@@ -177,28 +171,63 @@ class TestSinglePlace:
             kind="new",
             change=summarise_change(None, state(problems=(WET,))),
         )
-        assert alert_message([p], TODAY).body == "Wet snow on S."
+        msg = alert_message([p], TODAY)
+        assert msg.title == "Verbier · Considerable (3)"
+        assert msg.body == "Today's bulletin"
 
-    def test_update_title(self) -> None:
-        """An update to today says so."""
+    def test_update_today(self) -> None:
+        """An update to today says it was reissued."""
         msg = alert_message(
             [place(state("moderate"), state("considerable"), kind="update", day=TODAY)],
             TODAY,
         )
-        assert msg.title == "Verbier · updated for today: Considerable (3)"
+        assert msg.title == "Verbier · Considerable (3) ↑"
+        assert msg.body == "Today · reissued, up from Moderate (2)"
 
     def test_update_for_tomorrow(self) -> None:
         """An update to tomorrow names the day."""
         msg = alert_message(
             [place(state("moderate"), state("considerable"), kind="update")], TODAY
         )
-        assert msg.title == "Verbier · updated for Saturday: Considerable (3)"
+        assert msg.body == "Saturday · reissued, up from Moderate (2)"
 
     def test_update_with_no_change(self) -> None:
         """A reissue that moved nothing says it was reissued."""
         same = state(problems=(WET,))
         msg = alert_message([place(same, same, kind="update", day=TODAY)], TODAY)
-        assert msg.body == "Reissued with no change: wet snow on S."
+        assert msg.body == "Today · reissued, unchanged"
+
+    def test_trip(self) -> None:
+        """A saved trip's alert says it is the trip's day and opens the trip."""
+        p = PlaceAlert(
+            region_id="CH-4115",
+            label="Mont Fort loop",
+            target_date=TOMORROW,
+            kind="new",
+            change=summarise_change(state(), state()),
+            url="/trips/abc/",
+        )
+        msg = alert_message([p], TODAY)
+        assert msg.title == "Mont Fort loop · Considerable (3)"
+        assert msg.body == "Your trip on Saturday · unchanged"
+        assert msg.url == "/trips/abc/"
+
+    def test_trip_with_nothing_to_compare(self) -> None:
+        """A trip's first alert names the trip's day alone."""
+        p = PlaceAlert(
+            region_id="CH-4115",
+            label="Mont Fort loop",
+            target_date=TOMORROW,
+            kind="new",
+            change=summarise_change(None, state()),
+            url="/trips/abc/",
+        )
+        assert alert_message([p], TODAY).body == "Your trip on Saturday"
+
+    def test_unrated(self) -> None:
+        """An unrated day says so in the title."""
+        msg = alert_message([place(None, state(""))], TODAY)
+        assert msg.title == "Verbier · No rating"
 
     def test_as_push(self) -> None:
         """The push payload carries the three fields."""
@@ -207,10 +236,10 @@ class TestSinglePlace:
 
 
 class TestBundle:
-    """Several places bundle into one message."""
+    """Several places bundle into one message, a marker each."""
 
-    def test_changed_first(self) -> None:
-        """Changed places lead; the first change is named."""
+    def test_moved_first(self) -> None:
+        """Places whose level moved lead."""
         msg = alert_message(
             [
                 place(state("moderate"), state("moderate"), "Davos", region_id="CH-5"),
@@ -222,8 +251,8 @@ class TestBundle:
             ],
             TODAY,
         )
-        assert msg.title == "Tomorrow for your 2 places"
-        assert msg.body == "Verbier 3 ↑ · Davos 2. Up from Moderate (2) in Verbier."
+        assert msg.title == "Your 2 places · Saturday"
+        assert msg.body == "Verbier 3 ↑ · Davos 2"
         assert msg.url == "/alerts/2026-01-17/"
 
     def test_more_than_four(self) -> None:
@@ -232,7 +261,7 @@ class TestBundle:
             place(state(), state(), f"Place {i}", region_id=f"CH-{i}") for i in range(6)
         ]
         msg = alert_message(places, TODAY)
-        assert msg.body.endswith("and 2 more.")
+        assert msg.body.endswith(" · +2")
 
     def test_updates_today(self) -> None:
         """Every place updating today."""
@@ -240,7 +269,17 @@ class TestBundle:
             place(state(), state("high"), f"P{i}", "update", TODAY, f"CH-{i}")
             for i in range(2)
         ]
-        assert alert_message(places, TODAY).title == "Updated today for your 2 places"
+        assert alert_message(places, TODAY).title == "Your 2 places · today, reissued"
+
+    def test_updates_tomorrow(self) -> None:
+        """Every place updating a later day."""
+        places = [
+            place(state(), state("high"), f"P{i}", "update", TOMORROW, f"CH-{i}")
+            for i in range(2)
+        ]
+        assert alert_message(places, TODAY).title == (
+            "Your 2 places · Saturday, reissued"
+        )
 
     def test_mixed_today(self) -> None:
         """New and updated places for today."""
@@ -248,15 +287,17 @@ class TestBundle:
             place(state(), state(), "A", "new", TODAY, "CH-1"),
             place(state(), state(), "B", "update", TODAY, "CH-2"),
         ]
-        assert alert_message(places, TODAY).title == "Today for your 2 places"
+        assert alert_message(places, TODAY).title == "Your 2 places · today"
 
     def test_mixed_days(self) -> None:
-        """Places on different days."""
+        """Places on different days name each place's day."""
         places = [
             place(state(), state(), "A", "new", TODAY, "CH-1"),
             place(state(), state(), "B", "new", TOMORROW, "CH-2"),
         ]
-        assert alert_message(places, TODAY).title == "Bulletins for your 2 places"
+        msg = alert_message(places, TODAY)
+        assert msg.title == "Your 2 places"
+        assert msg.body == "A 3 today · B 3 Sat"
 
     def test_empty_raises(self) -> None:
         """A message needs a place."""

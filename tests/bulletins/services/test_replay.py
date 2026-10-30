@@ -86,12 +86,12 @@ def test_new_bulletin_schedule() -> None:
     alerts = replay_region(RECORDS, source="SLF")
     sent = [a for a in alerts if a.sent]
     assert [a.title for a in sent] == [
-        "Martigny-Verbier · Saturday: Moderate (2)",
-        "Martigny-Verbier · Sunday: Considerable (3)",
-        "Martigny-Verbier · Monday: Considerable (3)",
+        "Martigny-Verbier · Moderate (2)",
+        "Martigny-Verbier · Considerable (3) ↑",
+        "Martigny-Verbier · Considerable (3)",
     ]
-    assert sent[0].body.startswith("Bulletins are back")
-    assert sent[1].body == "Up from Moderate (2)."
+    assert sent[0].body == "Saturday · first bulletin of the season"
+    assert sent[1].body == "Sunday · up from Moderate (2)"
     held = sent[2].delivered_at.astimezone(ALERT_TZ)
     assert (held.hour, held.minute) == (6, 30)
 
@@ -137,6 +137,5 @@ def test_committed_slf_season() -> None:
     sent = [a for a in alerts if a.sent]
     assert 150 <= len(sent) <= 260
     assert all(a.title.startswith("Martigny-Verbier · ") for a in sent)
-    assert not any(
-        "no change" in a.body.lower() and "Reissued" not in a.body for a in sent
-    )
+    # A teaser: the day and whether it moved, never the problems.
+    assert all(len(a.body) <= 60 for a in sent)
