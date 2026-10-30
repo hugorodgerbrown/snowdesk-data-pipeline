@@ -2207,7 +2207,9 @@
    *
    * ``unknown`` is in neither figure: a reading that could not be taken is
    * not a capability this device has or lacks, and counting it either way
-   * would be a claim the report cannot support.
+   * would be a claim the report cannot support. Nor is ``pending`` — a row
+   * not yet answered. ``total`` is the answered rows, so "9 of 12" is nine
+   * Yes out of twelve answers, never a silent No for every "—" (SNOW-1059).
    *
    * @param {AuditSection[]} sections
    * @returns {{total: number, yes: number, no: number}}
@@ -2218,9 +2220,10 @@
     var no = 0;
     sections.forEach(function (section) {
       section.checks.forEach(function (check) {
-        total += 1;
         if (check.status === 'yes') yes += 1;
-        if (check.status === 'no' || check.status === 'blocked') no += 1;
+        else if (check.status === 'no' || check.status === 'blocked') no += 1;
+        else return;
+        total += 1;
       });
     });
     return { total: total, yes: yes, no: no };

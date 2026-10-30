@@ -894,7 +894,10 @@ describe('the build', () => {
     const building = audit.build(target, report, t);
 
     const rows = target.querySelectorAll('[data-audit-check]');
-    expect(rows.length).toBe(report.counts.total);
+    // Every row, answered or not — the tally's total leaves unknowns out
+    // (SNOW-1059), so it is not the row count.
+    const rowCount = report.sections.reduce((n, section) => n + section.checks.length, 0);
+    expect(rows.length).toBe(rowCount);
     rows.forEach((row) => {
       expect(row.getAttribute('data-audit-status')).toBe('pending');
       expect(row.querySelector('[data-audit-value]').textContent).toBe('…');

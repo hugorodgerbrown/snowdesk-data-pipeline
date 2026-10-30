@@ -1398,10 +1398,23 @@ describe('the tally', () => {
           { id: '2', label: '', value: '', status: 'no' },
           { id: '3', label: '', value: '', status: 'blocked' },
           { id: '4', label: '', value: '', status: 'unknown' },
+          { id: '5', label: '', value: '', status: 'pending' },
         ],
       },
     ]);
-    expect(counts).toEqual({ total: 4, yes: 1, no: 2 });
+    // SNOW-1059: the total used to be 5 here — every "—" read as a No.
+    expect(counts).toEqual({ total: 3, yes: 1, no: 2 });
+  });
+
+  it('gives a total of answered rows only, as the report paints it', () => {
+    // The staging case: an empty saved-places reading answers "—", and the
+    // line must read "n of (rows - 1)", not "n of rows".
+    const report = core.buildReport(healthy({ dbAvailable: false }), {});
+    const rows = report.sections.flatMap((section) => section.checks);
+    const answered = rows.filter((check) => ['yes', 'no', 'blocked'].includes(check.status));
+    expect(rows.some((check) => check.status === 'unknown')).toBe(true);
+    expect(report.counts.total).toBe(answered.length);
+    expect(report.counts.total).toBeLessThan(rows.length);
   });
 });
 
