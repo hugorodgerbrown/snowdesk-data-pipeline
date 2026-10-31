@@ -53,6 +53,15 @@ commits the version-0 sentinel, recomputes nothing, and fails the task.
 - A task re-reads its row and skips one that is gone or already current,
   so a duplicate enqueue writes nothing and moves no `updated_at`.
   `--all` (and `--bulletin-id` on the instance) pass `force`.
+- **The bulletin row is locked `FOR NO KEY UPDATE`**
+  (`select_for_update(no_key=True)`), never plain `FOR UPDATE`. A
+  sibling's recompute may set a shared rating's `source_bulletin` to this
+  bulletin, and Postgres checks that foreign key with a `KEY SHARE` lock
+  on the bulletin row. `FOR UPDATE` blocks `KEY SHARE`, so a forced
+  rebuild of a morning and an evening issue could deadlock: the morning
+  task holding its row and waiting on the rating, the evening task holding
+  the rating and waiting on the morning row. `FOR NO KEY UPDATE` does not
+  conflict with `KEY SHARE`. The rating rows keep plain `FOR UPDATE`.
 - The `@task` wrappers live in `apps/bulletins`, because `apps/ingest`
   imports no other `apps.*` package; ingest contributes only
   `lock_source_day_ratings`, through `apps.ingest.public`.

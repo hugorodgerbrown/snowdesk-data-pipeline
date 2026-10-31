@@ -35,6 +35,13 @@ first), so two sibling bulletins' tasks on one pair recompute one after
 the other and the second reads the first's committed write, whatever the
 order the worker took them in.
 
+The bulletin row itself is locked FOR NO KEY UPDATE, not FOR UPDATE: a
+sibling's recompute can point a shared rating's ``source_bulletin`` at
+this bulletin, and that foreign-key check takes a KEY SHARE lock on it,
+which FOR UPDATE blocks while this task waits on the rating lock the
+sibling holds — a deadlock on Postgres. FOR NO KEY UPDATE does not
+conflict with KEY SHARE.
+
 A build error commits the version-0 sentinel and recomputes no ratings;
 the task wrapper then raises ``RenderRebuildFailed`` after the commit, so
 the task result reads FAILED and the command counts it.
@@ -159,7 +166,7 @@ def rebuild_one_bulletin(
     """
     with transaction.atomic():
         bulletin = (
-            Bulletin.objects.select_for_update()
+            Bulletin.objects.select_for_update(no_key=True)
             .only(*_BULLETIN_FIELDS)
             .filter(pk=pk)
             .first()
@@ -228,7 +235,7 @@ def rebuild_one_source_bulletin(
     """
     with transaction.atomic():
         row = (
-            SourceBulletin.objects.select_for_update()
+            SourceBulletin.objects.select_for_update(no_key=True)
             .only(*_SOURCE_FIELDS)
             .filter(pk=pk)
             .first()
