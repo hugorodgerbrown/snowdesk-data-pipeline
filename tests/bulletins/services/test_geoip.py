@@ -4,6 +4,10 @@ tests/bulletins/services/test_geoip.py — Tests for apps.bulletins.services.geo
 Covers the happy path (public IP returning a GeoLookup), private/loopback
 addresses, malformed input, and missing-mmdb graceful degradation.
 
+``TestGeoLookupWithStubReader`` exercises the success path, the field
+mapping and the reader cache against a stub standing in for
+``geoip2.database.Reader``, so it runs with no database file present.
+
 Tests that require the actual GeoLite2-City.mmdb database file are marked
 ``requires_geoip_db`` and are skipped automatically when the file is absent
 (i.e. the MaxMind credentials have not been configured and
@@ -13,7 +17,11 @@ Tests that require the actual GeoLite2-City.mmdb database file are marked
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
+import geoip2.database
+import geoip2.errors
 import pytest
 from django.conf import settings as django_settings
 from pytest_django.fixtures import Settings
@@ -141,3 +149,149 @@ class TestGeoLookup:
         # Reset clears it.
         reset_reader_for_testing()
         assert geoip_module._reader_initialised is False  # noqa: SLF001
+
+
+class _StubSubdivisions(list[SimpleNamespace]):
+    """A list of subdivisions exposing ``most_specific`` like geoip2's."""
+
+    @property
+    def most_specific(self) -> SimpleNamespace:
+        """Return the last (most specific) subdivision, as geoip2 does."""
+        return self[-1]
+
+
+def _city_response(
+    *,
+    country: str | None = "CH",
+    subdivisions: list[str | None] | None = None,
+    city: str | None = "Verbier",
+    latitude: float | None = 46.0964,
+    longitude: float | None = 7.2286,
+    accuracy_radius: int | None = 20,
+) -> SimpleNamespace:
+    """Build a namespace shaped like a geoip2 ``City`` response.
+
+    Args:
+        country: The country ISO code.
+        subdivisions: Subdivision ISO codes, least to most specific.
+        city: The city name.
+        latitude: The location's latitude.
+        longitude: The location's longitude.
+        accuracy_radius: The location's accuracy radius in kilometres.
+
+    Returns:
+        A namespace with the attributes ``geo_lookup`` reads.
+
+    """
+    codes = ["VS"] if subdivisions is None else subdivisions
+    return SimpleNamespace(
+        country=SimpleNamespace(iso_code=country),
+        subdivisions=_StubSubdivisions(SimpleNamespace(iso_code=c) for c in codes),
+        city=SimpleNamespace(name=city),
+        location=SimpleNamespace(
+            latitude=latitude,
+            longitude=longitude,
+            accuracy_radius=accuracy_radius,
+        ),
+    )
+
+
+class _StubReader:
+    """Stand-in for ``geoip2.database.Reader`` that never touches a file."""
+
+    instances: list[_StubReader] = []
+    response: SimpleNamespace | None = None
+    error: Exception | None = None
+
+    def __init__(self, path: str) -> None:
+        """Record the path opened and this construction."""
+        self.path = path
+        _StubReader.instances.append(self)
+
+    def city(self, ip: str) -> SimpleNamespace:
+        """Return the configured response, or raise the configured error."""
+        if _StubReader.error is not None:
+            raise _StubReader.error
+        assert _StubReader.response is not None
+        return _StubReader.response
+
+
+class TestGeoLookupWithStubReader:
+    """geo_lookup() against a stubbed Reader — runs without the mmdb file."""
+
+    @pytest.fixture(autouse=True)
+    def stub_reader(
+        self, monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+    ) -> type[_StubReader]:
+        """Patch ``geoip2.database.Reader`` with a fresh ``_StubReader``."""
+        settings.GEOIP_PATH = tmp_path / "stub.mmdb"
+        _StubReader.instances = []
+        _StubReader.response = _city_response()
+        _StubReader.error = None
+        monkeypatch.setattr(geoip2.database, "Reader", _StubReader)
+        return _StubReader
+
+    def test_full_response_maps_onto_lookup(self) -> None:
+        """Every field of the response lands on the matching GeoLookup field."""
+        assert geo_lookup("203.0.113.7") == GeoLookup(
+            country="CH",
+            subdivision="VS",
+            city="Verbier",
+            latitude=46.0964,
+            longitude=7.2286,
+            accuracy_radius_km=20,
+        )
+
+    def test_most_specific_subdivision_is_used(self, stub_reader: Any) -> None:
+        """With several subdivisions, the most specific one's code is kept."""
+        stub_reader.response = _city_response(subdivisions=["ENG", "LND"])
+        result = geo_lookup("203.0.113.7")
+        assert result is not None
+        assert result.subdivision == "LND"
+
+    def test_empty_subdivisions_gives_blank_subdivision(self, stub_reader: Any) -> None:
+        """No subdivisions in the response → ``subdivision == ""``."""
+        stub_reader.response = _city_response(subdivisions=[])
+        result = geo_lookup("203.0.113.7")
+        assert result is not None
+        assert result.subdivision == ""
+
+    def test_missing_names_and_codes_are_blank_not_none(self, stub_reader: Any) -> None:
+        """Absent strings come back as "" and absent numbers as None."""
+        stub_reader.response = _city_response(
+            country=None,
+            subdivisions=[None],
+            city=None,
+            latitude=None,
+            longitude=None,
+            accuracy_radius=None,
+        )
+        assert geo_lookup("203.0.113.7") == GeoLookup.empty()
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            geoip2.errors.AddressNotFoundError("not found", "10.0.0.1"),
+            ValueError("'nonsense' does not appear to be an IP address"),
+        ],
+        ids=["address-not-found", "value-error"],
+    )
+    def test_reader_error_returns_none(
+        self, stub_reader: Any, error: Exception
+    ) -> None:
+        """An exception from ``reader.city`` is swallowed and yields None."""
+        stub_reader.error = error
+        assert geo_lookup("10.0.0.1") is None
+
+    def test_reader_opened_once_and_cached(
+        self, stub_reader: Any, settings: Settings
+    ) -> None:
+        """``_get_reader`` opens GEOIP_PATH once, then reuses the instance."""
+        # Typed as object: the real annotation is Reader, which the stub is not.
+        first: object = geoip_module._get_reader()  # noqa: SLF001
+        second: object = geoip_module._get_reader()  # noqa: SLF001
+        assert len(stub_reader.instances) == 1
+        opened: _StubReader = stub_reader.instances[0]
+        assert opened.path == str(settings.GEOIP_PATH)
+        assert first is opened
+        assert second is opened
