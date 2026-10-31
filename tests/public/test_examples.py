@@ -23,14 +23,11 @@ from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
 
-from apps.bulletins.models import Bulletin
+from apps.bulletins.models import Bulletin, RegionDayRating
+from apps.bulletins.services.day_rating import apply_bulletin_day_ratings
+from apps.ingest.public import build_render_model
 from apps.regions.models import MicroRegion
-from tests.factories import (
-    BulletinFactory,
-    MicroRegionFactory,
-    RegionBulletinFactory,
-    RegionDayRatingFactory,
-)
+from tests.factories import BulletinFactory, MicroRegionFactory, RegionBulletinFactory
 
 
 def _wrap(properties: dict) -> dict:
@@ -53,27 +50,9 @@ def region() -> MicroRegion:
 
 
 def _make_bulletin_with_region(
-    region: MicroRegion,
-    danger_level: str,
-    issued_at: datetime,
-    *,
-    rated: bool = True,
+    region: MicroRegion, danger_level: str, issued_at: datetime
 ) -> Bulletin:
-    """Create a bulletin with a specific danger level linked to a region.
-
-    Args:
-        region: The region the bulletin covers.
-        danger_level: The CAAML ``mainValue`` of its one rating.
-        issued_at: Its issue, validity start and validity end.
-        rated: Also create the region-day's RegionDayRating with this
-            bulletin as its source, which is how ``examples_category``
-            finds candidates (SNOW-998). Off for a second bulletin on the
-            same region-day, which the unique (region, date) leaves unrated.
-
-    Returns:
-        The bulletin.
-
-    """
+    """Create a bulletin with a specific danger level linked to a region."""
     bulletin = BulletinFactory.create(
         raw_data=_wrap(
             {
@@ -90,14 +69,6 @@ def _make_bulletin_with_region(
         region=region,
         region_name_at_time=region.name,
     )
-    if rated:
-        RegionDayRatingFactory.create(
-            region=region,
-            date=bulletin.target_date,
-            min_rating=danger_level,
-            max_rating=danger_level,
-            source_bulletin=bulletin,
-        )
     return bulletin
 
 
@@ -234,7 +205,7 @@ class TestExamplesCategory:
         )
         # Decoy: a different danger level on the same day.
         _make_bulletin_with_region(
-            region, "low", datetime(2025, 3, 15, 9, 0, tzinfo=UTC), rated=False
+            region, "low", datetime(2025, 3, 15, 9, 0, tzinfo=UTC)
         )
         url = reverse(
             "public:examples_category",
@@ -247,6 +218,64 @@ class TestExamplesCategory:
         assert response.context["bulletin"].pk == target.pk
 
 
+def _slf_bulletin(
+    region: MicroRegion,
+    danger_level: str,
+    valid_from: datetime,
+    valid_to: datetime,
+) -> Bulletin:
+    """Create an SLF-shaped bulletin with its render model, linked to a region.
+
+    Built through ``build_render_model`` so ``apply_bulletin_day_ratings``
+    rates it as it would an ingested one.
+
+    Args:
+        region: The one region it covers.
+        danger_level: The CAAML ``mainValue`` of its one rating.
+        valid_from: Its issue and validity start.
+        valid_to: Its validity end.
+
+    Returns:
+        The bulletin.
+
+    """
+    properties = {
+        "bulletinID": f"slf-{danger_level}-{valid_from:%Y%m%d%H}",
+        "publicationTime": valid_from.isoformat(),
+        "validTime": {
+            "startTime": valid_from.isoformat(),
+            "endTime": valid_to.isoformat(),
+        },
+        "lang": "en",
+        "regions": [{"regionID": region.region_id, "name": region.name}],
+        "dangerRatings": [{"mainValue": danger_level, "validTimePeriod": "all_day"}],
+        "avalancheProblems": [],
+        "customData": {"CH": {"aggregation": []}},
+    }
+    render_model = build_render_model(properties)
+    bulletin = BulletinFactory.create(
+        bulletin_id=properties["bulletinID"],
+        raw_data=_wrap(properties),
+        render_model=render_model,
+        render_model_version=render_model["version"],
+        issued_at=valid_from,
+        valid_from=valid_from,
+        valid_to=valid_to,
+    )
+    RegionBulletinFactory.create(
+        bulletin=bulletin, region=region, region_name_at_time=region.name
+    )
+    return bulletin
+
+
+def _newer_considerable(count: int, issued_at: datetime) -> None:
+    """Create *count* considerable bulletins issued at *issued_at*."""
+    for _ in range(count):
+        _make_bulletin_with_region(
+            MicroRegionFactory.create(), "considerable", issued_at
+        )
+
+
 @pytest.mark.django_db
 class TestExamplesCategoryPerRegionVolume:
     """SNOW-998: the pool survives SLF publishing ~149 bulletins per issue."""
@@ -254,7 +283,7 @@ class TestExamplesCategoryPerRegionVolume:
     def test_an_older_level_is_found_behind_a_full_per_region_issue(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """149 newer considerable bulletins do not crowd out a moderate one.
+        """200 newer considerable bulletins do not crowd out a moderate one.
 
         "The newest 200 bulletins" held a moderate bulletin only while it
         was among them; one de-aggregated issue is most of that pool. The
@@ -263,17 +292,7 @@ class TestExamplesCategoryPerRegionVolume:
         older = _make_bulletin_with_region(
             region, "moderate", datetime(2026, 9, 9, 8, 0, tzinfo=UTC)
         )
-        newer = datetime(2026, 9, 10, 9, 0, tzinfo=UTC)
-        for _ in range(149):
-            _make_bulletin_with_region(
-                MicroRegionFactory.create(), "considerable", newer
-            )
-        # Unrated newer rows bring the newer total to 200, which is the
-        # whole of the old pool: the old query would never reach `older`.
-        for _ in range(51):
-            _make_bulletin_with_region(
-                MicroRegionFactory.create(), "considerable", newer, rated=False
-            )
+        _newer_considerable(200, datetime(2026, 9, 10, 9, 0, tzinfo=UTC))
 
         url = reverse("public:examples_category", kwargs={"danger_level": "moderate"})
         response = client.get(url)
@@ -281,91 +300,65 @@ class TestExamplesCategoryPerRegionVolume:
         assert response.status_code == 200
         assert response.context["bulletin"].pk == older.pk
 
-    def test_a_level_only_in_the_split_counts(
+    def test_a_superseded_issue_is_found_behind_a_full_per_region_issue(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """A region-day whose lower rating is the level is a candidate too."""
+        """A moderate evening issue replaced by a considerable morning one.
+
+        The region-day is rated from its latest bulletin, so the real
+        recompute path leaves no moderate rating anywhere. The moderate
+        issue is still a published bulletin at that level, and behind 200
+        newer considerable bulletins it is still found.
+        """
+        evening = _slf_bulletin(
+            region,
+            "moderate",
+            datetime(2026, 9, 9, 15, 0, tzinfo=UTC),
+            datetime(2026, 9, 10, 15, 0, tzinfo=UTC),
+        )
+        morning = _slf_bulletin(
+            region,
+            "considerable",
+            datetime(2026, 9, 10, 6, 0, tzinfo=UTC),
+            datetime(2026, 9, 10, 15, 0, tzinfo=UTC),
+        )
+        day = morning.target_date
+        assert day is not None
+        assert evening.target_date == day
+        apply_bulletin_day_ratings(evening)
+        apply_bulletin_day_ratings(morning)
+        rating = RegionDayRating.objects.get(region=region, date=day)
+        assert rating.source_bulletin_id == morning.pk
+        assert (rating.min_rating, rating.max_rating) == ("considerable",) * 2
+        _newer_considerable(200, datetime(2026, 9, 11, 6, 0, tzinfo=UTC))
+
+        url = reverse("public:examples_category", kwargs={"danger_level": "moderate"})
+        response = client.get(url)
+
+        assert response.status_code == 200
+        assert response.context["bulletin"].pk == evening.pk
+
+    def test_a_bulletin_is_in_the_pool_once(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """Two regions and two matching ratings still make one candidate."""
         bulletin = BulletinFactory.create(
             raw_data=_wrap(
                 {
                     "dangerRatings": [
-                        {"mainValue": "considerable"},
-                        {"mainValue": "moderate"},
+                        {"mainValue": "moderate", "validTimePeriod": "earlier"},
+                        {"mainValue": "moderate", "validTimePeriod": "later"},
                     ],
-                    "avalancheProblems": [],
+                    "avalancheProblems": [{"dangerRatingValue": "moderate"}],
                 }
             ),
-            issued_at=datetime(2026, 9, 10, 9, 0, tzinfo=UTC),
-            valid_from=datetime(2026, 9, 10, 9, 0, tzinfo=UTC),
-            valid_to=datetime(2026, 9, 10, 15, 0, tzinfo=UTC),
+            issued_at=datetime(2026, 9, 10, 8, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 9, 10, 8, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 9, 10, 8, 0, tzinfo=UTC),
         )
         RegionBulletinFactory.create(bulletin=bulletin, region=region)
-        RegionDayRatingFactory.create(
-            region=region,
-            date=bulletin.issued_at.date(),
-            min_rating="moderate",
-            max_rating="considerable",
-            source_bulletin=bulletin,
-        )
-
-        url = reverse("public:examples_category", kwargs={"danger_level": "moderate"})
-        response = client.get(url)
-
-        assert response.status_code == 200
-        assert response.context["bulletin"].pk == bulletin.pk
-
-
-@pytest.mark.django_db
-class TestExamplesCategoryReachesEveryRatedBulletin:
-    """The pool is every bulletin on a rated region-day, not only its source."""
-
-    def test_a_lower_level_from_another_bulletin_is_found(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """A variable day's min level came from X; source_bulletin is Y.
-
-        ``source_bulletin`` names the bulletin behind ``max_rating``, so a
-        join through it alone never reaches X, and /examples/moderate/
-        would miss the only moderate bulletin there is.
-        """
-        moderate = _make_bulletin_with_region(
-            region, "moderate", datetime(2026, 9, 10, 8, 0, tzinfo=UTC), rated=False
-        )
-        considerable = _make_bulletin_with_region(
-            region,
-            "considerable",
-            datetime(2026, 9, 10, 9, 0, tzinfo=UTC),
-            rated=False,
-        )
-        RegionDayRatingFactory.create(
-            region=region,
-            date=considerable.target_date,
-            min_rating="moderate",
-            max_rating="considerable",
-            source_bulletin=considerable,
-        )
-
-        url = reverse("public:examples_category", kwargs={"danger_level": "moderate"})
-        response = client.get(url)
-
-        assert response.status_code == 200
-        assert response.context["bulletin"].pk == moderate.pk
-
-    def test_a_bulletin_rated_on_several_region_days_is_in_the_pool_once(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """Two matching region-days for one bulletin still make one candidate."""
-        bulletin = _make_bulletin_with_region(
-            region, "moderate", datetime(2026, 9, 10, 8, 0, tzinfo=UTC)
-        )
-        other = MicroRegionFactory.create()
-        RegionBulletinFactory.create(bulletin=bulletin, region=other)
-        RegionDayRatingFactory.create(
-            region=other,
-            date=bulletin.target_date,
-            min_rating="moderate",
-            max_rating="moderate",
-            source_bulletin=bulletin,
+        RegionBulletinFactory.create(
+            bulletin=bulletin, region=MicroRegionFactory.create()
         )
         pools: list[list[Any]] = []
 
@@ -380,3 +373,23 @@ class TestExamplesCategoryReachesEveryRatedBulletin:
 
         assert response.status_code == 200
         assert [b.pk for b in pools[0]] == [bulletin.pk]
+
+    def test_the_word_elsewhere_in_the_payload_is_not_a_match(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A level named only as a problem's dangerRatingValue is not a candidate.
+
+        The SQL filter matches any JSON string value equal to the key; the
+        mainValue confirmation in Python is what removes this one.
+        """
+        BulletinFactory.create(
+            raw_data=_wrap(
+                {
+                    "dangerRatings": [{"mainValue": "considerable"}],
+                    "avalancheProblems": [{"dangerRatingValue": "moderate"}],
+                }
+            ),
+        )
+
+        url = reverse("public:examples_category", kwargs={"danger_level": "moderate"})
+        assert client.get(url).status_code == 404

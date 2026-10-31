@@ -49,7 +49,8 @@ import waffle
 from django.conf import settings
 from django.contrib.staticfiles import finders
 from django.core.cache import cache
-from django.db.models import Exists, Max, OuterRef, Prefetch, Q
+from django.db.models import Max, Prefetch, TextField
+from django.db.models.functions import Cast
 from django.http import (
     Http404,
     HttpRequest,
@@ -3025,29 +3026,27 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
     if danger_key is None:
         raise Http404(f"Unknown danger level: {danger_level}")
 
-    # The pool is the newest 200 bulletins covering some region-day rated
-    # at this level (SNOW-998). "The newest 200 bulletins" stopped being
-    # enough when SLF de-aggregated: one 2026/27 issue is ~149 bulletins,
-    # so 200 rows is barely more than one issue, and a level SLF did not
-    # use in the last issue fell out of the pool entirely.
+    # The pool is the newest 200 bulletins whose own payload names this
+    # level, filtered in SQL before the slice (SNOW-998). "The newest 200
+    # bulletins" stopped being enough when SLF de-aggregated: one 2026/27
+    # issue is ~149 bulletins, so 200 rows is barely more than one issue,
+    # and a level SLF did not use in the last issue fell out of the pool.
     #
-    # The test is an EXISTS over every bulletin linked to the region-day
-    # (RegionBulletin, on the bulletin's target_date — the day a
-    # RegionDayRating is keyed on), not only its source_bulletin: that FK
-    # names the bulletin behind max_rating, so on a variable day a level
-    # that is only the lower side would otherwise be missed. EXISTS also
-    # keeps each bulletin once without a DISTINCT over raw_data. Rating
-    # values equal CAAML mainValue keys, so the danger key filters both
-    # columns. The mainValue check stays, in Python because SQLite does not
-    # support JSON __contains, as confirmation that the pinned bulletin's
-    # own ratings carry the level.
-    rated_at_level = RegionDayRating.objects.filter(
-        region__bulletin_links__bulletin=OuterRef("pk"),
-        date=OuterRef("target_date"),
-    ).filter(Q(max_rating=danger_key) | Q(min_rating=danger_key))
-    candidates = Bulletin.objects.filter(Exists(rated_at_level)).order_by("-issued_at")[
-        :200
-    ]
+    # It reads the bulletin, not RegionDayRating: a region-day is rated
+    # from its one latest bulletin, so a superseded issue's level (a
+    # moderate evening issue replaced by a considerable morning one) never
+    # reaches a rating row, and a filter over ratings would never find it.
+    # The match is on the quoted JSON string value ('"moderate"'), which
+    # reads the same in SQLite's stored JSON text and Postgres's
+    # jsonb::text whatever their separators. A rating key can also appear
+    # as some other string value (a problem's dangerRatingValue), so the
+    # mainValue check stays below, in Python because SQLite has no JSON
+    # __contains, and removes those.
+    candidates = (
+        Bulletin.objects.alias(raw_text=Cast("raw_data", TextField()))
+        .filter(raw_text__contains=f'"{danger_key}"')
+        .order_by("-issued_at")[:200]
+    )
     matching = [
         b
         for b in candidates
