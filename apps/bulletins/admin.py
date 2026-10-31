@@ -178,8 +178,6 @@ class BulletinAdmin(admin.ModelAdmin):
         "valid_to",
         "target_date",
         "lang",
-        "region_count",
-        "highest_danger_rating",
         "danger_ratings",
         "render_model_version",
         "pdf_url",
