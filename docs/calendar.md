@@ -169,8 +169,12 @@ re-renders. On an update, `upsert_bulletin` first captures the stored row's
 `prior_pairs`, so a correction that drops a region or moves off a day
 reconciles the rating it leaves behind (SNOW-1168).
 
-**Rebuild**: `rebuild_render_models` recomputes day ratings for every
-`(region, day)` covered by the rebuilt bulletins as a trailing step.
+**Rebuild**: `rebuild_render_models` enqueues one task per bulletin
+(SNOW-1346), and each task recomputes the day ratings of every
+`(region, day)` its bulletin governs, in the same transaction as the
+rebuild and after locking those rating rows, so sibling bulletins' tasks
+settle on the right rating in any order
+([why](decisions/day-ratings-are-recomputed-inside-each-rebuild-task.md)).
 Pass `--skip-day-ratings` to suppress that step when you only want to
 refresh the render models (e.g. debugging a render-model bug without
 touching the calendar). `recompute_day_ratings` recomputes the table on

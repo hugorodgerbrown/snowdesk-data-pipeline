@@ -155,7 +155,15 @@ print("Done. 6 bulletins loaded.")
 
 ## C. Management Command Scenarios
 
-### Scenario 7: Default `rebuild_render_models` is read-only and reports counts
+### Scenario 7: Default `rebuild_render_models` is read-only and reports counts (superseded by SNOW-1346)
+
+> **Superseded by SNOW-1346.** `rebuild_render_models` now only enqueues one
+> task per bulletin: its heading reads `Enqueuing render model rebuilds
+> (version=N)`, a read-only run ends "Read-only run complete — would enqueue
+> N bulletin(s)…", a `--commit` run ends "Enqueued N bulletin(s); F failed.",
+> and an empty run prints no "Nothing to do." line. The expected output in
+> this scenario is the pre-SNOW-1346 wording; the behaviour it checks is
+> covered by `tests/bulletins/management/commands/test_rebuild_render_models.py`.
 
 **Preconditions**: At least one bulletin exists in the database.
 
@@ -172,7 +180,15 @@ print("Done. 6 bulletins loaded.")
 
 ---
 
-### Scenario 8: `--commit` persists; default run only processes stale rows
+### Scenario 8: `--commit` persists; default run only processes stale rows (superseded by SNOW-1346)
+
+> **Superseded by SNOW-1346.** `rebuild_render_models` now only enqueues one
+> task per bulletin: its heading reads `Enqueuing render model rebuilds
+> (version=N)`, a read-only run ends "Read-only run complete — would enqueue
+> N bulletin(s)…", a `--commit` run ends "Enqueued N bulletin(s); F failed.",
+> and an empty run prints no "Nothing to do." line. The expected output in
+> this scenario is the pre-SNOW-1346 wording; the behaviour it checks is
+> covered by `tests/bulletins/management/commands/test_rebuild_render_models.py`.
 
 **Preconditions**: `stable-day-001` has `render_model_version=0`. Other sample bulletins at the current `RENDER_MODEL_VERSION`.
 
@@ -188,7 +204,15 @@ print("Done. 6 bulletins loaded.")
 
 ---
 
-### Scenario 9: `rebuild_render_models --all --commit` rewrites every row
+### Scenario 9: `rebuild_render_models --all --commit` rewrites every row (superseded by SNOW-1346)
+
+> **Superseded by SNOW-1346.** `rebuild_render_models` now only enqueues one
+> task per bulletin: its heading reads `Enqueuing render model rebuilds
+> (version=N)`, a read-only run ends "Read-only run complete — would enqueue
+> N bulletin(s)…", a `--commit` run ends "Enqueued N bulletin(s); F failed.",
+> and an empty run prints no "Nothing to do." line. The expected output in
+> this scenario is the pre-SNOW-1346 wording; the behaviour it checks is
+> covered by `tests/bulletins/management/commands/test_rebuild_render_models.py`.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
@@ -202,7 +226,15 @@ print("Done. 6 bulletins loaded.")
 
 ---
 
-### Scenario 10: `--bulletin-id` targets one bulletin; unknown ID errors
+### Scenario 10: `--bulletin-id` targets one bulletin; unknown ID errors (superseded by SNOW-1346)
+
+> **Superseded by SNOW-1346.** `rebuild_render_models` now only enqueues one
+> task per bulletin: its heading reads `Enqueuing render model rebuilds
+> (version=N)`, a read-only run ends "Read-only run complete — would enqueue
+> N bulletin(s)…", a `--commit` run ends "Enqueued N bulletin(s); F failed.",
+> and an empty run prints no "Nothing to do." line. The expected output in
+> this scenario is the pre-SNOW-1346 wording; the behaviour it checks is
+> covered by `tests/bulletins/management/commands/test_rebuild_render_models.py`.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|

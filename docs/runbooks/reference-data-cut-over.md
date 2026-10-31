@@ -68,15 +68,17 @@ uv run python manage.py copy_weather_to_service           # preview
 uv run python manage.py copy_weather_to_service --commit
 
 # c. Every stored bulletin's render model, index and day ratings.
-#    The whole archive: expect minutes, not seconds.
+#    Enqueues one task per bulletin (SNOW-1346) and returns; the db_worker
+#    works through the archive in the background, at low priority.
 uv run python manage.py rebuild_source_render_models           # preview
 uv run python manage.py rebuild_source_render_models --commit
 ```
 
-`rebuild_source_render_models` exits non-zero when a build fails; each
-failure is named on stderr. A failed build is stored as the error sentinel
-at version 0 and is retried by the next run, so investigate and re-run
-rather than proceeding with failures outstanding.
+The worker rebuilds in the background: re-run the preview until it reports
+nothing to enqueue, and read the worker log for a failed task. A failed
+build is stored as the error sentinel at version 0 and stays stale, so the
+next run enqueues it again; investigate and re-run rather than proceeding
+with failures outstanding.
 
 Then switch **`schedule_backfill_weather` back on**.
 

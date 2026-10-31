@@ -2,8 +2,12 @@
 tests/bulletins/management/commands/test_rebuild_render_models.py — Tests
 for the rebuild_render_models management command.
 
-Covers:
-  - Default mode (no --commit) is read-only and does not write.
+Covers (SNOW-1346: the command enqueues one task per bulletin; tests run
+under ImmediateBackend, so each task runs inline):
+  - Default mode (no --commit) is read-only and enqueues nothing.
+  - --commit enqueues one task per stale row; a second run enqueues none.
+  - --all and --bulletin-id force; --skip-day-ratings drops the refresh.
+  - A failing task does not abort the batch; the run exits non-zero.
   - --commit + default selection: only stale rows are rebuilt.
   - --commit --all: every row is rebuilt.
   - --commit --bulletin-id: exactly one row is rebuilt.
@@ -14,6 +18,7 @@ Covers:
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from unittest.mock import patch
 
 import pytest
 from django.core.management import call_command
@@ -22,7 +27,12 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from apps.bulletins.models import Bulletin, RegionDayRating
-from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
+from apps.bulletins.services.render_model import (
+    RENDER_MODEL_VERSION,
+    RenderModelBuildError,
+    build_render_model,
+)
+from apps.core.models import CommandRun
 from tests.factories import BulletinFactory, MicroRegionFactory, RegionBulletinFactory
 
 
@@ -209,30 +219,141 @@ class TestRebuildRenderModelsReadOnly:
         assert "--commit to persist" in out
 
 
+_BUILD = "apps.bulletins.services.render_rebuild.build_render_model"
+_TASK = "apps.bulletins.management.commands.rebuild_render_models.rebuild_bulletin_task"
+
+
+@pytest.mark.django_db
+class TestRebuildRenderModelsEnqueue:
+    """SNOW-1346: the command enqueues one task per row; the task works."""
+
+    def test_a_bare_run_enqueues_nothing(self) -> None:
+        """Without --commit no task is enqueued."""
+        _make_bulletin(render_model_version=0, bulletin_id="enq-ro-001")
+
+        with patch(_TASK) as task:
+            call_command("rebuild_render_models", verbosity=0)
+
+        task.enqueue.assert_not_called()
+
+    def test_commit_enqueues_one_task_per_stale_row(self) -> None:
+        """Each stale row is one task, unforced, rating its pairs."""
+        stale = [
+            _make_bulletin(render_model_version=0, bulletin_id=f"enq-{i:03d}")
+            for i in range(2)
+        ]
+        _make_bulletin(render_model_version=RENDER_MODEL_VERSION, bulletin_id="cur")
+
+        with patch(_TASK) as task:
+            call_command("rebuild_render_models", commit=True, verbosity=0)
+
+        calls = sorted(call.args for call in task.enqueue.call_args_list)
+        assert calls == sorted((b.pk, False, True) for b in stale)
+
+    def test_all_bulletin_id_and_skip_day_ratings_shape_the_task(self) -> None:
+        """--all and --bulletin-id force; --skip-day-ratings drops the refresh."""
+        b = _make_bulletin(render_model_version=RENDER_MODEL_VERSION, bulletin_id="f")
+
+        with patch(_TASK) as task:
+            call_command(
+                "rebuild_render_models", rebuild_all=True, commit=True, verbosity=0
+            )
+            call_command(
+                "rebuild_render_models",
+                bulletin_id="f",
+                skip_day_ratings=True,
+                commit=True,
+                verbosity=0,
+            )
+
+        assert [call.args for call in task.enqueue.call_args_list] == [
+            (b.pk, True, True),
+            (b.pk, True, False),
+        ]
+
+    def test_a_second_commit_enqueues_nothing(self) -> None:
+        """The first run brought every row current: nothing is a candidate."""
+        b = _make_bulletin(render_model_version=0, bulletin_id="twice-001")
+        call_command("rebuild_render_models", commit=True, verbosity=0)
+        b.refresh_from_db()
+        stamp = b.updated_at
+
+        with patch(_TASK) as task:
+            call_command("rebuild_render_models", commit=True, verbosity=0)
+
+        task.enqueue.assert_not_called()
+        b.refresh_from_db()
+        assert b.updated_at == stamp
+
+    def test_the_run_is_registered_with_its_tallies(self) -> None:
+        """enqueued and failed are tallied, zeros included."""
+        _make_bulletin(render_model_version=0, bulletin_id="reg-001")
+
+        call_command("rebuild_render_models", commit=True, verbosity=0)
+
+        run = CommandRun.objects.get(command="rebuild_render_models")
+        assert run.counts == {"enqueued": 1, "failed": 0}
+
+    def test_the_walk_loads_neither_raw_data_nor_regions(self) -> None:
+        """The command reads only the label's columns; the task reads the rest."""
+        region = MicroRegionFactory.create(region_id="CH-slim-test")
+        for index in range(3):
+            b = _make_bulletin(render_model_version=0, bulletin_id=f"slim-{index}")
+            RegionBulletinFactory.create(bulletin=b, region=region)
+
+        with patch(_TASK), CaptureQueriesContext(connection) as queries:
+            call_command("rebuild_render_models", commit=True, verbosity=0)
+
+        for query in queries.captured_queries:
+            assert '"raw_data"' not in query["sql"]
+            assert '"regions_microregion"' not in query["sql"]
+
+
 @pytest.mark.django_db
 class TestRebuildRenderModelsErrorHandling:
     """Tests for error handling during rebuild."""
 
     def test_error_during_build_does_not_abort_run(self) -> None:
-        """A RenderModelBuildError on one bulletin does not abort the whole run."""
-        from unittest.mock import patch
+        """A build error fails its task; the next bulletin is still rebuilt."""
+        failing = _make_bulletin(render_model_version=0, bulletin_id="error-001")
+        passing = _make_bulletin(render_model_version=0, bulletin_id="error-002")
+        real = build_render_model
 
-        from apps.bulletins.services.render_model import RenderModelBuildError
+        def _flaky(props: dict) -> dict:
+            if props["bulletinID"] == "error-002":
+                return real(props)
+            raise RenderModelBuildError("simulated failure")
 
-        _make_bulletin(render_model_version=0, bulletin_id="error-001")
-
-        with patch(
-            "apps.bulletins.management.commands.rebuild_render_models.build_render_model",
-            side_effect=RenderModelBuildError("simulated failure"),
+        with (
+            patch(_BUILD, side_effect=_flaky),
+            pytest.raises(CommandError, match="1 bulletin rebuild task"),
         ):
-            # Should not raise — error is caught and stored.
-            with pytest.raises(CommandError, match="failed"):
-                call_command("rebuild_render_models", commit=True, verbosity=0)
+            call_command("rebuild_render_models", commit=True, verbosity=0)
+
+        failing.refresh_from_db()
+        passing.refresh_from_db()
+        assert failing.render_model["error"] == "simulated failure"
+        assert passing.render_model_version == RENDER_MODEL_VERSION
+        run = CommandRun.objects.get(command="rebuild_render_models")
+        assert run.counts == {"enqueued": 2, "failed": 1}
+
+    def test_error_summary_printed_and_exits_nonzero(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        """When failures occur, command prints summary and exits non-zero."""
+        _make_bulletin(render_model_version=0, bulletin_id="fail-sum-001")
+        _make_bulletin(render_model_version=0, bulletin_id="fail-sum-002")
+
+        with patch(_BUILD, side_effect=RenderModelBuildError("simulated failure")):
+            with pytest.raises(CommandError):
+                call_command("rebuild_render_models", commit=True, verbosity=1)
+
+        assert "Enqueued 2 bulletin(s); 2 failed." in capsys.readouterr().out
 
 
 @pytest.mark.django_db
 class TestRebuildRenderModelsDayRatings:
-    """Tests for day-rating refresh after rebuild."""
+    """Tests for day-rating refresh in each task."""
 
     def test_commit_refreshes_day_ratings(self) -> None:
         """After --commit, RegionDayRating rows are created for rebuilt bulletins."""
@@ -242,40 +363,7 @@ class TestRebuildRenderModelsDayRatings:
 
         call_command("rebuild_render_models", commit=True, verbosity=0)
 
-        # Day ratings should now exist for the bulletin's covered dates.
         assert RegionDayRating.objects.filter(region=region).exists()
-
-    def test_regions_load_once_per_chunk_without_boundaries(self) -> None:
-        """Regions arrive in one slim prefetch query, not one per bulletin.
-
-        SNOW-1054: the rebuild holds a (region, day) pair per bulletin for
-        the refresh that follows, so the regions it loads must be slim, and
-        loading them must not cost a query per bulletin.
-        """
-        region = MicroRegionFactory.create(region_id="CH-chunk-test")
-        for index in range(3):
-            b = _make_bulletin(
-                render_model_version=0, bulletin_id=f"dr-chunk-{index:03d}"
-            )
-            RegionBulletinFactory.create(bulletin=b, region=region)
-
-        with CaptureQueriesContext(connection) as queries:
-            call_command(
-                "rebuild_render_models",
-                commit=True,
-                skip_day_ratings=False,
-                verbosity=0,
-            )
-
-        region_selects = [
-            q["sql"]
-            for q in queries.captured_queries
-            if q["sql"].startswith("SELECT")
-            and '"regions_microregion"' in q["sql"]
-            and '"bulletins_regionbulletin"' in q["sql"]
-        ]
-        assert len(region_selects) == 1
-        assert '"boundary"' not in region_selects[0]
 
     def test_skip_day_ratings_flag(self) -> None:
         """--skip-day-ratings prevents day-rating rows from being created."""
@@ -287,59 +375,29 @@ class TestRebuildRenderModelsDayRatings:
             "rebuild_render_models", commit=True, skip_day_ratings=True, verbosity=0
         )
 
-        # Render model should have been rebuilt (--commit was given).
         b.refresh_from_db()
         assert b.render_model_version == RENDER_MODEL_VERSION
-        # But no day rating rows should have been created.
         assert not RegionDayRating.objects.filter(region=region).exists()
 
-    def test_day_rating_failure_exits_nonzero(self) -> None:
-        """A failed day-rating recompute surfaces in the exit code (SNOW-602).
+    def test_day_rating_failure_exits_nonzero_and_rolls_back(self) -> None:
+        """A failed recompute fails its task and leaves the row stale.
 
-        The render-model rebuild itself succeeds here; only the downstream
-        recompute fails. Before SNOW-602 the return value of
-        ``refresh_day_ratings`` was discarded and the command exited 0,
-        unlike the three sibling commands that rewrite bulletins.
+        The row write and its recompute share one transaction (SNOW-1346),
+        so the bulletin is enqueued again by the next run.
         """
-        from unittest.mock import patch
-
         region = MicroRegionFactory.create(region_id="CH-dr-fail")
         b = _make_bulletin(render_model_version=0, bulletin_id="dr-fail-001")
         RegionBulletinFactory.create(bulletin=b, region=region)
 
         with patch(
-            "apps.bulletins.management.commands.rebuild_render_models."
-            "refresh_day_ratings",
-            return_value=1,
+            "apps.bulletins.services.render_rebuild.recompute_region_day",
+            side_effect=RuntimeError("boom"),
         ):
-            with pytest.raises(CommandError, match="failed to recompute"):
+            with pytest.raises(CommandError, match="failed"):
                 call_command("rebuild_render_models", commit=True, verbosity=0)
 
-        # The rebuild itself still committed — only the recompute failed.
         b.refresh_from_db()
-        assert b.render_model_version == RENDER_MODEL_VERSION
-
-    def test_error_summary_printed_and_exits_nonzero(
-        self, capsys: pytest.CaptureFixture
-    ) -> None:
-        """When failures occur, command prints summary and exits non-zero."""
-        from unittest.mock import patch
-
-        from apps.bulletins.services.render_model import RenderModelBuildError
-
-        _make_bulletin(render_model_version=0, bulletin_id="fail-sum-001")
-        _make_bulletin(render_model_version=0, bulletin_id="fail-sum-002")
-
-        with patch(
-            "apps.bulletins.management.commands.rebuild_render_models.build_render_model",
-            side_effect=RenderModelBuildError("simulated failure"),
-        ):
-            with pytest.raises(CommandError):
-                call_command("rebuild_render_models", commit=True, verbosity=1)
-
-        captured = capsys.readouterr()
-        # Summary should mention rebuilt count and failed count.
-        assert "Rebuilt" in captured.out or "failed" in captured.out
+        assert b.render_model_version == 0
 
 
 @pytest.mark.django_db
