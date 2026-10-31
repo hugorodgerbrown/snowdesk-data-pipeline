@@ -7434,20 +7434,6 @@ msgstr ""
 msgid "Avalanche bulletin — %(region)s"
 msgstr ""
 
-msgid "rises"
-msgstr ""
-
-msgid "falls"
-msgstr ""
-
-#, python-format
-msgid "%(verb)s %(partition)s to %(label)s"
-msgstr ""
-
-#, python-format
-msgid "%(verb)s to %(label)s"
-msgstr ""
-
 msgid "Weather station"
 msgstr ""
 
