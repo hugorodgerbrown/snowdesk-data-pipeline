@@ -49,7 +49,7 @@ import waffle
 from django.conf import settings
 from django.contrib.staticfiles import finders
 from django.core.cache import cache
-from django.db.models import Max, Prefetch, Q
+from django.db.models import Exists, Max, OuterRef, Prefetch, Q
 from django.http import (
     Http404,
     HttpRequest,
@@ -3025,24 +3025,29 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
     if danger_key is None:
         raise Http404(f"Unknown danger level: {danger_level}")
 
-    # The pool is the newest 200 bulletins that rate some region-day at
-    # this level, through the indexed RegionDayRating.source_bulletin
-    # relation (SNOW-998). "The newest 200 bulletins" stopped being enough
-    # when SLF de-aggregated: one 2026/27 issue is ~149 bulletins, so 200
-    # rows is barely more than one issue, and a level SLF did not use in
-    # the last issue fell out of the pool entirely. Rating values equal
-    # CAAML mainValue keys, so the danger key filters both columns. The
-    # mainValue check stays, in Python because SQLite does not support
-    # JSON __contains, as confirmation that the pinned bulletin's own
-    # ratings carry the level.
-    candidates = (
-        Bulletin.objects.filter(
-            Q(day_ratings__max_rating=danger_key)
-            | Q(day_ratings__min_rating=danger_key)
-        )
-        .distinct()
-        .order_by("-issued_at")[:200]
-    )
+    # The pool is the newest 200 bulletins covering some region-day rated
+    # at this level (SNOW-998). "The newest 200 bulletins" stopped being
+    # enough when SLF de-aggregated: one 2026/27 issue is ~149 bulletins,
+    # so 200 rows is barely more than one issue, and a level SLF did not
+    # use in the last issue fell out of the pool entirely.
+    #
+    # The test is an EXISTS over every bulletin linked to the region-day
+    # (RegionBulletin, on the bulletin's target_date — the day a
+    # RegionDayRating is keyed on), not only its source_bulletin: that FK
+    # names the bulletin behind max_rating, so on a variable day a level
+    # that is only the lower side would otherwise be missed. EXISTS also
+    # keeps each bulletin once without a DISTINCT over raw_data. Rating
+    # values equal CAAML mainValue keys, so the danger key filters both
+    # columns. The mainValue check stays, in Python because SQLite does not
+    # support JSON __contains, as confirmation that the pinned bulletin's
+    # own ratings carry the level.
+    rated_at_level = RegionDayRating.objects.filter(
+        region__bulletin_links__bulletin=OuterRef("pk"),
+        date=OuterRef("target_date"),
+    ).filter(Q(max_rating=danger_key) | Q(min_rating=danger_key))
+    candidates = Bulletin.objects.filter(Exists(rated_at_level)).order_by("-issued_at")[
+        :200
+    ]
     matching = [
         b
         for b in candidates

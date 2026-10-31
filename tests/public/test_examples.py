@@ -13,8 +13,10 @@ never the ``/examples/...`` URL itself.
 
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import Generator, Sequence
 from datetime import UTC, datetime
+from typing import Any
+from unittest.mock import patch
 
 import pytest
 from django.core.cache import cache
@@ -91,7 +93,7 @@ def _make_bulletin_with_region(
     if rated:
         RegionDayRatingFactory.create(
             region=region,
-            date=issued_at.date(),
+            date=bulletin.target_date,
             min_rating=danger_level,
             max_rating=danger_level,
             source_bulletin=bulletin,
@@ -311,3 +313,70 @@ class TestExamplesCategoryPerRegionVolume:
 
         assert response.status_code == 200
         assert response.context["bulletin"].pk == bulletin.pk
+
+
+@pytest.mark.django_db
+class TestExamplesCategoryReachesEveryRatedBulletin:
+    """The pool is every bulletin on a rated region-day, not only its source."""
+
+    def test_a_lower_level_from_another_bulletin_is_found(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A variable day's min level came from X; source_bulletin is Y.
+
+        ``source_bulletin`` names the bulletin behind ``max_rating``, so a
+        join through it alone never reaches X, and /examples/moderate/
+        would miss the only moderate bulletin there is.
+        """
+        moderate = _make_bulletin_with_region(
+            region, "moderate", datetime(2026, 9, 10, 8, 0, tzinfo=UTC), rated=False
+        )
+        considerable = _make_bulletin_with_region(
+            region,
+            "considerable",
+            datetime(2026, 9, 10, 9, 0, tzinfo=UTC),
+            rated=False,
+        )
+        RegionDayRatingFactory.create(
+            region=region,
+            date=considerable.target_date,
+            min_rating="moderate",
+            max_rating="considerable",
+            source_bulletin=considerable,
+        )
+
+        url = reverse("public:examples_category", kwargs={"danger_level": "moderate"})
+        response = client.get(url)
+
+        assert response.status_code == 200
+        assert response.context["bulletin"].pk == moderate.pk
+
+    def test_a_bulletin_rated_on_several_region_days_is_in_the_pool_once(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """Two matching region-days for one bulletin still make one candidate."""
+        bulletin = _make_bulletin_with_region(
+            region, "moderate", datetime(2026, 9, 10, 8, 0, tzinfo=UTC)
+        )
+        other = MicroRegionFactory.create()
+        RegionBulletinFactory.create(bulletin=bulletin, region=other)
+        RegionDayRatingFactory.create(
+            region=other,
+            date=bulletin.target_date,
+            min_rating="moderate",
+            max_rating="moderate",
+            source_bulletin=bulletin,
+        )
+        pools: list[list[Any]] = []
+
+        def first(pool: Sequence[Any]) -> Any:
+            """Record the pool and pick its first entry."""
+            pools.append(list(pool))
+            return pool[0]
+
+        url = reverse("public:examples_category", kwargs={"danger_level": "moderate"})
+        with patch("apps.public.views.random.choice", side_effect=first):
+            response = client.get(url)
+
+        assert response.status_code == 200
+        assert [b.pk for b in pools[0]] == [bulletin.pk]
