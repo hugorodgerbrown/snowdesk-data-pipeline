@@ -49,7 +49,7 @@ import waffle
 from django.conf import settings
 from django.contrib.staticfiles import finders
 from django.core.cache import cache
-from django.db.models import Max, Prefetch
+from django.db.models import Max, Prefetch, Q
 from django.http import (
     Http404,
     HttpRequest,
@@ -2999,8 +2999,9 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
     """
     Render a random bulletin matching a specific danger level inline.
 
-    Finds the most recent bulletin whose highest ``mainValue`` matches the
-    requested level, picks a region from that bulletin, and renders **the
+    Picks a random bulletin, among the newest 200 that rate some
+    region-day at the requested level, whose ``mainValue`` matches it,
+    picks a region from that bulletin, and renders **the
     same view as the canonical bulletin route** with the matched bulletin
     pinned via ``requested_issue_id`` — guaranteeing the page actually
     reflects the requested danger level (not whatever the day's default
@@ -3024,10 +3025,24 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
     if danger_key is None:
         raise Http404(f"Unknown danger level: {danger_level}")
 
-    # Filter in Python because SQLite does not support JSON __contains.
-    # The candidate pool is small (most recent 200 bulletins) so this is
-    # fast enough for a render view.
-    candidates = Bulletin.objects.order_by("-issued_at")[:200]
+    # The pool is the newest 200 bulletins that rate some region-day at
+    # this level, through the indexed RegionDayRating.source_bulletin
+    # relation (SNOW-998). "The newest 200 bulletins" stopped being enough
+    # when SLF de-aggregated: one 2026/27 issue is ~149 bulletins, so 200
+    # rows is barely more than one issue, and a level SLF did not use in
+    # the last issue fell out of the pool entirely. Rating values equal
+    # CAAML mainValue keys, so the danger key filters both columns. The
+    # mainValue check stays, in Python because SQLite does not support
+    # JSON __contains, as confirmation that the pinned bulletin's own
+    # ratings carry the level.
+    candidates = (
+        Bulletin.objects.filter(
+            Q(day_ratings__max_rating=danger_key)
+            | Q(day_ratings__min_rating=danger_key)
+        )
+        .distinct()
+        .order_by("-issued_at")[:200]
+    )
     matching = [
         b
         for b in candidates
