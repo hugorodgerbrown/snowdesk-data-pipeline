@@ -13,7 +13,7 @@
  * the actual element this test drives.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const MUTATION_URL = '/api/test-mutation';
 
@@ -36,7 +36,11 @@ globalThis.fetch = async (url) => {
 
 await import('../../static/js/db.js');
 await import('../../static/js/mutation_queue_core.js');
-await import('../../static/js/telemetry.js');
+// SNOW-1350: a stub, not the real telemetry.js. Nothing here asserts on
+// telemetry, and the real emit awaits IndexedDB before it reads window —
+// so one still pending when the file ends threw "window is not defined"
+// after jsdom's teardown and failed the run with every test green.
+window.pwaTelemetry = { emit: vi.fn() };
 await import('../../static/js/mutation_queue.js');
 
 // Let the one-time, fire-and-forget _reconcilePrincipal() kicked off by

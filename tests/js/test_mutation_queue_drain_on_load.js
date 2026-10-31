@@ -68,7 +68,11 @@ document.head.appendChild(meta);
 
 // The "fresh load".
 await import('../../static/js/mutation_queue_core.js');
-await import('../../static/js/telemetry.js');
+// SNOW-1350: a stub, not the real telemetry.js. Nothing here asserts on
+// telemetry, and the real emit awaits IndexedDB before it reads window —
+// so one still pending when the file ends threw "window is not defined"
+// after jsdom's teardown and failed the run with every test green.
+window.pwaTelemetry = { emit: vi.fn() };
 await import('../../static/js/mutation_queue.js');
 
 /** Poll `predicate` until truthy, or fail after `timeoutMs`. */

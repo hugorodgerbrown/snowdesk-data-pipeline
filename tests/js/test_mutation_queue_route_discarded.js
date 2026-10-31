@@ -14,7 +14,7 @@
  * written, then the rest of the stack loaded once under user B's meta tag.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const USER_A = 'user-a';
 const USER_B = 'user-b';
@@ -54,7 +54,11 @@ meta.setAttribute('content', USER_B);
 document.head.appendChild(meta);
 
 await import('../../static/js/mutation_queue_core.js');
-await import('../../static/js/telemetry.js');
+// SNOW-1350: a stub, not the real telemetry.js. Nothing here asserts on
+// telemetry, and the real emit awaits IndexedDB before it reads window —
+// so one still pending when the file ends threw "window is not defined"
+// after jsdom's teardown and failed the run with every test green.
+window.pwaTelemetry = { emit: vi.fn() };
 await import('../../static/js/mutation_queue.js');
 
 async function waitFor(predicate, { timeoutMs = 2000, intervalMs = 5 } = {}) {

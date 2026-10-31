@@ -9,7 +9,7 @@
  * the meta tag in place before the one-time dynamic import.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const MUTATION_URL = '/api/test-mutation';
 const USER_ID = '42';
@@ -23,7 +23,11 @@ document.body.innerHTML = '<span data-sync-badge class="hidden items-center"></s
 
 await import('../../static/js/db.js');
 await import('../../static/js/mutation_queue_core.js');
-await import('../../static/js/telemetry.js');
+// SNOW-1350: a stub, not the real telemetry.js. Nothing here asserts on
+// telemetry, and the real emit awaits IndexedDB before it reads window —
+// so one still pending when the file ends threw "window is not defined"
+// after jsdom's teardown and failed the run with every test green.
+window.pwaTelemetry = { emit: vi.fn() };
 await import('../../static/js/mutation_queue.js');
 
 // Let the one-time reconcile-on-load settle before this test's own write —
