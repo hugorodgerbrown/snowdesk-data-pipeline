@@ -12,19 +12,26 @@ Covers the unified fetch_bulletins command introduced in SNOW-190:
   * records_failed > 0 non-zero exit.
   * SLF stash archive round-trip.
   * Argparse rejects --end-date and --source local-mirror.
+  * SLF's 2026/27 per-region export end to end through --local-mirror
+    (SNOW-998): the twelve-bulletin sentinel slice, its day ratings against
+    the aggregated equivalent, and a stale region failing one record.
 """
 
+import json
+from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from io import StringIO
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.test import override_settings
+from django.test import RequestFactory, override_settings
 
-from apps.bulletins.models import Bulletin, PipelineRun
+from apps.bulletins.dev_views import slf_mirror
+from apps.bulletins.models import Bulletin, PipelineRun, RegionDayRating
 from apps.ingest.models import SourceBulletin
 from apps.ingest.public import read_slf_archive, write_slf_archive
 from tests.factories import BulletinFactory, MicroRegionFactory, PipelineRunFactory
@@ -1152,3 +1159,206 @@ class TestFetchBulletinsStoresThenApplies:
                 stdout=StringIO(),
             )
         assert Bulletin.objects.get(bulletin_id="shared").region_links.count() == 1
+
+
+# ---------------------------------------------------------------------------
+# SNOW-998: the per-region export, end to end through --local-mirror
+# ---------------------------------------------------------------------------
+
+_SLICE = (
+    Path(__file__).resolve().parents[3]
+    / "sentinels"
+    / "slf"
+    / "per-region-slice.ndjson"
+)
+_MIRROR_URL = "http://testserver/dev/slf-mirror/api/bulletin-list/caaml"
+_SLICE_ARGS = (
+    "--source",
+    "slf",
+    "--local-mirror",
+    "--date",
+    "2026-09-10",
+    "--commit",
+)
+
+
+class _MirrorResponse:
+    """The slice of ``requests.Response`` that ``fetch_bulletin_page`` reads."""
+
+    def __init__(self, body: bytes, status: int) -> None:
+        """Hold the mirror view's body and status."""
+        self._body = body
+        self.status_code = status
+
+    def raise_for_status(self) -> None:
+        """Raise for a non-2xx status, as requests does."""
+        assert self.status_code == 200, self.status_code
+
+    def json(self) -> Any:
+        """Decode the body."""
+        return json.loads(self._body)
+
+
+def _get_from_mirror(url: str, params: dict[str, int], timeout: int) -> Any:
+    """Route ``requests.get`` into ``dev_views.slf_mirror``.
+
+    The mirror is mounted only under DEBUG, so the view is called directly
+    rather than through the URLconf — still the real view, reading the
+    real ``SLF_ARCHIVE_PATH`` with the real paging contract.
+
+    Args:
+        url: The URL ``fetch_bulletin_page`` built; must be the mirror's.
+        params: ``limit`` and ``offset``.
+        timeout: Ignored.
+
+    Returns:
+        A response-like object carrying the mirror's page.
+
+    """
+    assert url == f"{_MIRROR_URL}/en/json", url
+    response = slf_mirror(RequestFactory().get("/", params), "en")
+    return _MirrorResponse(response.content, response.status_code)
+
+
+def _slice_bulletins() -> list[dict[str, Any]]:
+    """Return the slice's twelve raw bulletins."""
+    return [json.loads(line) for line in _SLICE.read_text().splitlines()]
+
+
+def _write_archive(path: Path, bulletins: list[dict[str, Any]]) -> Path:
+    """Write *bulletins* as an NDJSON archive the mirror can serve."""
+    path.write_text("".join(json.dumps(b) + "\n" for b in bulletins))
+    return path
+
+
+def _aggregate(bulletins: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Merge per-region bulletins that say the same thing into one each.
+
+    The inverse of SLF's de-aggregation: entries whose ratings and problems
+    are identical become one bulletin covering all their regions, as the
+    2025/26 export would have published them. Everything per-region —
+    weather, prose — is taken from the first entry, which the day rating
+    never reads.
+
+    Args:
+        bulletins: Per-region raw bulletins.
+
+    Returns:
+        The aggregated raw bulletins.
+
+    """
+    groups: dict[str, dict[str, Any]] = {}
+    for bulletin in bulletins:
+        key = json.dumps(
+            [bulletin["dangerRatings"], bulletin["avalancheProblems"]],
+            sort_keys=True,
+        )
+        if key in groups:
+            groups[key]["regions"] += bulletin["regions"]
+        else:
+            merged = json.loads(json.dumps(bulletin))
+            merged["bulletinID"] = f"aggregated-{len(groups)}"
+            groups[key] = merged
+    return list(groups.values())
+
+
+def _day_ratings() -> dict[str, tuple[Any, ...]]:
+    """Return every RegionDayRating as region id → its rating fields."""
+    return {
+        row.region.region_id: (
+            row.date,
+            row.min_rating,
+            row.min_subdivision,
+            row.max_rating,
+            row.max_subdivision,
+            row.am_rating,
+            row.pm_rating,
+        )
+        for row in RegionDayRating.objects.select_related("region")
+    }
+
+
+@pytest.fixture
+def _slice_regions(db: Any) -> Iterator[None]:
+    """Create the slice's micro-regions and route SLF's HTTP to the mirror."""
+    for bulletin in _slice_bulletins():
+        region = bulletin["regions"][0]
+        MicroRegionFactory.create(region_id=region["regionID"], name=region["name"])
+    with (
+        override_settings(SLF_API_LOCAL_MIRROR_URL=_MIRROR_URL),
+        patch("apps.ingest.sources.slf.requests.get", side_effect=_get_from_mirror),
+    ):
+        yield
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("_slice_regions")
+class TestFetchBulletinsPerRegionSlice:
+    """SNOW-998: SLF's one-bulletin-per-region export, through the real path."""
+
+    @override_settings(SLF_ARCHIVE_PATH=_SLICE)
+    def test_the_slice_ingests_one_row_per_region(self) -> None:
+        """Twelve bulletins in, twelve of each row out, one region apiece."""
+        call_command("fetch_bulletins", *_SLICE_ARGS, stdout=StringIO())
+
+        run = PipelineRun.objects.get()
+        assert run.status == PipelineRun.Status.SUCCESS
+        assert (run.records_created, run.records_failed) == (12, 0)
+        assert SourceBulletin.objects.count() == 12
+        assert Bulletin.objects.count() == 12
+        for bulletin in Bulletin.objects.prefetch_related("region_links"):
+            assert len(bulletin.region_links.all()) == 1, bulletin.bulletin_id
+
+    def test_day_ratings_match_the_aggregated_equivalent(self, tmp_path: Path) -> None:
+        """One per-region issue rates every region-day as its aggregate does.
+
+        The changeover-day guarantee: RegionDayRating is computed per region
+        across the day's bulletins, so whether SLF sent twelve bulletins or
+        the handful they merge into, each region gets the same row.
+        """
+        per_region = _slice_bulletins()
+        aggregated = _aggregate(per_region)
+        assert 1 < len(aggregated) < len(per_region)
+
+        with override_settings(SLF_ARCHIVE_PATH=_SLICE):
+            call_command("fetch_bulletins", *_SLICE_ARGS, stdout=StringIO())
+        from_per_region = _day_ratings()
+
+        RegionDayRating.objects.all().delete()
+        Bulletin.objects.all().delete()
+        SourceBulletin.objects.all().delete()
+        archive = _write_archive(tmp_path / "aggregated.ndjson", aggregated)
+        with override_settings(SLF_ARCHIVE_PATH=archive):
+            call_command("fetch_bulletins", *_SLICE_ARGS, stdout=StringIO())
+        from_aggregated = _day_ratings()
+
+        assert len(from_per_region) == 12
+        assert {rating[3] for rating in from_per_region.values()} == {
+            RegionDayRating.Rating.MODERATE,
+            RegionDayRating.Rating.CONSIDERABLE,
+        }
+        assert from_aggregated == from_per_region
+
+    def test_a_stale_region_fails_only_its_own_record(self, tmp_path: Path) -> None:
+        """A one-region bulletin for a region we do not hold fails alone.
+
+        In the per-region export a bulletin's only region being unknown
+        leaves nothing to write, so NoResolvableRegionsError fails that
+        record; the other eleven still ingest and the command exits
+        non-zero, as SNOW-547 set out.
+        """
+        bulletins = _slice_bulletins()
+        bulletins[0]["regions"] = [{"regionID": "CH-0000", "name": "Retired"}]
+        archive = _write_archive(tmp_path / "stale.ndjson", bulletins)
+
+        with (
+            override_settings(SLF_ARCHIVE_PATH=archive),
+            pytest.raises(CommandError, match="1 failed record"),
+        ):
+            call_command("fetch_bulletins", *_SLICE_ARGS, stdout=StringIO())
+
+        run = PipelineRun.objects.get()
+        assert (run.records_created, run.records_failed) == (11, 1)
+        assert not Bulletin.objects.filter(
+            bulletin_id=bulletins[0]["bulletinID"]
+        ).exists()
