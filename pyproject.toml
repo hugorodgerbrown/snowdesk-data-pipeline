@@ -37,6 +37,10 @@ dependencies = [
     "django-persistent-messages>=0.5",
     "sentry-sdk[django]>=2,<3",
     "mcp-auth",
+    # mint_vapid_keypair imports py_vapid directly, and its from_pem()
+    # workaround (Vapid.from_string) is specific to 1.9 — don't rely on
+    # pywebpush to bring it in transitively.
+    "py-vapid>=1.9,<2",
 ]
 
 [dependency-groups]
