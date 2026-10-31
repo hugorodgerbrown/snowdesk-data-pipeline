@@ -2983,10 +2983,13 @@
   //     (frameRouteLine) — so after the reader has moved the map, a tap
   //     puts the route back.
   //   - A POINT ON THE ROUTE: bring the point to the centre of the VISIBLE
-  //     map (routeCentreRect) and zoom in to z12, where the terrain layers
-  //     start, when the map is further out. Closer in already, it only
-  //     re-centres: it never zooms out.
-  const ROUTE_CENTRE_ZOOM = 12;
+  //     map (routeCentreRect) and zoom in to where the line is drawn in
+  //     slope classes (ROUTE_SLOPE_MINZOOM, z14), when the map is further
+  //     out. Closer in already, it only re-centres: it never zooms out.
+  //     It was z12 until Hugo found it on staging (2026-10-31): from z12 to
+  //     z14 the bullseye only re-centred and the terrain never appeared,
+  //     which was the point of pressing it.
+  const ROUTE_CENTRE_ZOOM = ROUTE_SLOPE_MINZOOM;
   document.addEventListener('snowdesk:route-rail-centre', (event) => {
     const core = self.pwaRouteCursorMapCore;
     if (!map || !core || typeof map.easeTo !== 'function') return;
@@ -3580,7 +3583,7 @@
     if (!map || !Array.isArray(bounds) || bounds.length !== 4) return;
     if (!bounds.every((n) => Number.isFinite(n))) return;
     map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], {
-      padding: paddingClearingRail(),
+      padding: beyondCameraPadding(paddingClearingRail()),
       duration: 400,
     });
   };
@@ -8117,11 +8120,15 @@
     if (sheetTop !== null) {
       reserveFitEdge(padding, 'bottom', 'top', canvas.bottom - sheetTop - padding.bottom, canvas.height);
     }
-    return beyondCameraPadding(padding);
+    return padding;
   };
 
   /**
    * Take the camera's own padding off a fit's padding, edge by edge.
+   *
+   * For fitBounds only. easeTo's `padding` REPLACES the camera's rather
+   * than adding to it, so an easeTo (showPoint) takes paddingClearingRail's
+   * full reservation.
    *
    * MapLibre's fitBounds fits into the canvas less the camera's padding
    * AND the fit's, so an edge both reserve is reserved twice. On a phone
@@ -10425,7 +10432,7 @@
         const bounds = feature ? readFeatureJson(feature.properties.bounds) : null;
         if (!Array.isArray(bounds) || bounds.length !== 4) return false;
         map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], {
-          padding: paddingClearingRail(),
+          padding: beyondCameraPadding(paddingClearingRail()),
           duration: 400,
         });
         return true;
