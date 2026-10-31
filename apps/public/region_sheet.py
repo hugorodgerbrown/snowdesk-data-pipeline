@@ -19,9 +19,13 @@ for all three detents:
     region, which are map objects and so belong to the sheet alone.
 
 The body is ``public/partials/_region_body.html`` with its context from
-``apps.public.views.build_bulletin_body``, and the bulletin is chosen by the
-page's own rule (``_resolve_selected_issue``), so the sheet and the page
-cannot show different issues or describe them differently.
+``apps.public.views.build_bulletin_body``. The bulletin is the one that
+rated the day, ``RegionDayRating.source_bulletin``, loaded with the rating
+the header already reads (SNOW-1341): the latest issue forecasting the day,
+which is the page's own pick, so the sheet and the page cannot show
+different issues or describe them differently. Only a day with no rated
+issue — none at all, or one whose build failed, whose error card the page
+shows — asks the page's rule (``_resolve_selected_issue``) instead.
 
 The body is the same for every reader but staff (SNOW-1317), so the copy
 an area download keeps unstamped (SNOW-1312) is sound to serve to whoever
@@ -102,8 +106,8 @@ def _problem_terrain_rules(
 
     Args:
         country: The region's ISO-2 country code.
-        selected: The bulletin the body under the switch describes, chosen
-            by the page's own rule; ``None`` on a day with none.
+        selected: The bulletin the body under the switch describes — the
+            one that rated the day; ``None`` on a day with none.
 
     Returns:
         The bulletin's problems as terrain rules (possibly empty), or None.
@@ -151,11 +155,21 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
         region_id__iexact=region_id,
     )
     country = region.subregion.major.country
-    day_rating = RegionDayRating.objects.filter(region=region, date=target_date).first()
-
-    selected = _resolve_selected_issue(
-        _issues_for_date(region, target_date), target_date, None
+    day_rating = (
+        RegionDayRating.objects.filter(region=region, date=target_date)
+        .select_related("source_bulletin")
+        .defer("source_bulletin__raw_data")
+        .first()
     )
+
+    # The issue that rated the day is the page's pick (SNOW-1341), and it
+    # came with the rating. A day with no rated issue may still have one the
+    # page shows — a failed build's error card — so only then is it looked up.
+    selected: Bulletin | None = day_rating.source_bulletin if day_rating else None
+    if selected is None:
+        selected = _resolve_selected_issue(
+            _issues_for_date(region, target_date), target_date, None
+        )
 
     level_meta = _DANGER_PANEL_META.get(day_rating.max_rating) if day_rating else None
 

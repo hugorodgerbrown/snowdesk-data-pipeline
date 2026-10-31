@@ -72,10 +72,10 @@ from apps.bulletins.services.alert_wording import (
 from apps.bulletins.services.bulletin_change import (
     BulletinChange,
     BulletinState,
-    bulletin_state,
     summarise_change,
 )
 from apps.favourites.models import Favourite
+from apps.ingest.public import state_of
 from apps.trips.models import Trip
 from apps.trips.services.plan_days import start_region
 
@@ -274,7 +274,8 @@ def day_state(region: MicroRegion, day: datetime.date) -> BulletinState | None:
     bulletin = authoritative_bulletin(region, day)
     if bulletin is None or not bulletin.render_model:
         return None
-    return bulletin_state(bulletin.render_model)
+    # The state the service stored with the model (SNOW-1341).
+    return state_of(bulletin.render_model)[0]
 
 
 # ---------------------------------------------------------------------------
@@ -367,6 +368,10 @@ class PendingRow:
     bulletin: Bulletin
     state: BulletinState
     decision: Decision
+    # The state's fingerprint as the service stored it (SNOW-1341); the
+    # send log's key, so the row is written under the value it was
+    # compared on.
+    fingerprint: str = ""
 
 
 @dataclass
@@ -429,8 +434,9 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
             bulletin = authoritative_bulletin(place.region, day)
             if bulletin is None or not bulletin.render_model:
                 continue
-            current = bulletin_state(bulletin.render_model)
-            fingerprint = current.fingerprint()
+            # The state and fingerprint the service stored with the model
+            # (SNOW-1341); computed only for a model older than version 10.
+            current, fingerprint = state_of(bulletin.render_model)
             # A FAILED row reached nobody, so it is not what the person was
             # last told: compare against the row before it, and send again.
             untold = [BulletinAlert.Outcome.FAILED]
@@ -465,7 +471,9 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
                 enabled_before_day=enabled_at is not None and enabled_at < day_began,
                 trip_day=bool(place.trip_url),
             )
-            run.rows.append(PendingRow(place, day, bulletin, current, decision))
+            run.rows.append(
+                PendingRow(place, day, bulletin, current, decision, fingerprint)
+            )
     _one_day_per_place(run.rows)
     sending = run.sending
     if sending:
@@ -537,7 +545,7 @@ def deliver(run: AccountRun) -> AccountRun:
                 account=account,
                 region=row.place.region,
                 target_date=row.day,
-                fingerprint=row.state.fingerprint(),
+                fingerprint=row.fingerprint or row.state.fingerprint(),
                 defaults={
                     "bulletin": row.bulletin,
                     "state": row.state.to_json(),

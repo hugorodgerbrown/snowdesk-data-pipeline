@@ -20,7 +20,9 @@ from unittest.mock import patch
 
 import pytest
 from django.core.cache import cache
+from django.db import connection
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from apps.bulletins.models import Bulletin, RegionDayRating
@@ -33,6 +35,18 @@ from tests.factories import BulletinFactory, MicroRegionFactory, RegionBulletinF
 def _wrap(properties: dict) -> dict:
     """Wrap a CAAML properties dict in a GeoJSON Feature envelope."""
     return {"type": "Feature", "geometry": None, "properties": properties}
+
+
+def _slf(properties: dict) -> dict:
+    """Give a bare CAAML payload SLF's customData, so its model builds.
+
+    ``/examples/<level>/`` filters on ``Bulletin.danger_levels``, which is
+    read off the render model (SNOW-1341), so a test bulletin needs a model
+    built from its payload, as ingest stores it.
+    """
+    custom = dict(properties.get("customData") or {})
+    custom["CH"] = {"aggregation": [], **(custom.get("CH") or {})}
+    return {**properties, "customData": custom}
 
 
 @pytest.fixture(autouse=True)
@@ -55,11 +69,14 @@ def _make_bulletin_with_region(
     """Create a bulletin with a specific danger level linked to a region."""
     bulletin = BulletinFactory.create(
         raw_data=_wrap(
-            {
-                "dangerRatings": [{"mainValue": danger_level}],
-                "avalancheProblems": [],
-            }
+            _slf(
+                {
+                    "dangerRatings": [{"mainValue": danger_level}],
+                    "avalancheProblems": [],
+                }
+            )
         ),
+        built=True,
         issued_at=issued_at,
         valid_from=issued_at,
         valid_to=issued_at,
@@ -378,14 +395,17 @@ class TestExamplesCategoryPerRegionVolume:
         """Two regions and two matching ratings still make one candidate."""
         bulletin = BulletinFactory.create(
             raw_data=_wrap(
-                {
-                    "dangerRatings": [
-                        {"mainValue": "moderate", "validTimePeriod": "earlier"},
-                        {"mainValue": "moderate", "validTimePeriod": "later"},
-                    ],
-                    "avalancheProblems": [{"dangerRatingValue": "moderate"}],
-                }
+                _slf(
+                    {
+                        "dangerRatings": [
+                            {"mainValue": "moderate", "validTimePeriod": "earlier"},
+                            {"mainValue": "moderate", "validTimePeriod": "later"},
+                        ],
+                        "avalancheProblems": [{"dangerRatingValue": "moderate"}],
+                    }
+                )
             ),
+            built=True,
             issued_at=datetime(2026, 9, 10, 8, 0, tzinfo=UTC),
             valid_from=datetime(2026, 9, 10, 8, 0, tzinfo=UTC),
             valid_to=datetime(2026, 9, 10, 8, 0, tzinfo=UTC),
@@ -414,9 +434,9 @@ class TestExamplesCategoryPerRegionVolume:
         """200 newer bulletins whose weather says "high" do not hide a high one.
 
         SLF's 2026/27 per-region weather carries ``highlight: "high"`` on
-        moderate bulletins (sentinel D does). Matched on the bare value they
-        would fill the slice and the Python check would discard them all;
-        matched on the ``mainValue`` pair they are never candidates.
+        moderate bulletins (sentinel D does). Matched on the bare value in
+        the CAAML they would fill the slice; the ``danger_levels`` column
+        holds only the ratings' levels, so they are never candidates.
         """
         _make_bulletin_with_region(
             region, "high", datetime(2026, 9, 9, 8, 0, tzinfo=UTC)
@@ -424,13 +444,16 @@ class TestExamplesCategoryPerRegionVolume:
         for _ in range(200):
             BulletinFactory.create(
                 raw_data=_wrap(
-                    {
-                        "dangerRatings": [{"mainValue": "moderate"}],
-                        "customData": {
-                            "CH": {"weather": [{"wind": {"highlight": "high"}}]}
-                        },
-                    }
+                    _slf(
+                        {
+                            "dangerRatings": [{"mainValue": "moderate"}],
+                            "customData": {
+                                "CH": {"weather": [{"wind": {"highlight": "high"}}]}
+                            },
+                        }
+                    )
                 ),
+                built=True,
                 issued_at=datetime(2026, 9, 10, 9, 0, tzinfo=UTC),
             )
 
@@ -442,18 +465,66 @@ class TestExamplesCategoryPerRegionVolume:
     ) -> None:
         """A level named only as a problem's dangerRatingValue is not a candidate.
 
-        The SQL filter matches only the ``"mainValue": "<level>"`` pair, so
-        this bulletin is never a candidate; the Python mainValue check would
-        remove it if it were.
+        ``danger_levels`` holds the levels of the bulletin's ratings, never a
+        problem's, so this bulletin is never a candidate.
         """
         BulletinFactory.create(
             raw_data=_wrap(
-                {
-                    "dangerRatings": [{"mainValue": "considerable"}],
-                    "avalancheProblems": [{"dangerRatingValue": "moderate"}],
-                }
+                _slf(
+                    {
+                        "dangerRatings": [{"mainValue": "considerable"}],
+                        "avalancheProblems": [{"dangerRatingValue": "moderate"}],
+                    }
+                )
             ),
+            built=True,
         )
 
         url = reverse("public:examples_category", kwargs={"danger_level": "moderate"})
+        assert client.get(url).status_code == 404
+
+
+@pytest.mark.django_db
+class TestExamplesCategoryReadsNoCaaml:
+    """SNOW-1341: the pool is the danger_levels column, not raw_data."""
+
+    @pytest.mark.parametrize(
+        "slug,key",
+        [
+            ("low", "low"),
+            ("moderate", "moderate"),
+            ("considerable", "considerable"),
+            ("high", "high"),
+            ("very-high", "very_high"),
+        ],
+    )
+    def test_no_query_reads_raw_data(
+        self, client: Client, region: MicroRegion, slug: str, key: str, settings: Any
+    ) -> None:
+        """Every level is found, and no query names the CAAML column.
+
+        ``DEBUG`` off: the bulletin page loads ``raw_data`` for its DEBUG /
+        superuser raw embed (SNOW-1342), which an anonymous visitor to a
+        production page never gets.
+        """
+        settings.DEBUG = False
+        bulletin = _make_bulletin_with_region(
+            region, key, datetime(2025, 3, 15, 8, 0, tzinfo=UTC)
+        )
+        assert bulletin.danger_levels == f"|{key}|"
+        url = reverse("public:examples_category", kwargs={"danger_level": slug})
+        with CaptureQueriesContext(connection) as queries:
+            response = client.get(url)
+        assert response.status_code == 200
+        assert response.context["bulletin"].pk == bulletin.pk
+        assert not [q["sql"] for q in queries if "raw_data" in q["sql"]]
+
+    def test_high_is_not_found_inside_very_high(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """The delimiters make a level match whole: ``|high|`` ≠ ``|very_high|``."""
+        _make_bulletin_with_region(
+            region, "very_high", datetime(2025, 3, 15, 8, 0, tzinfo=UTC)
+        )
+        url = reverse("public:examples_category", kwargs={"danger_level": "high"})
         assert client.get(url).status_code == 404

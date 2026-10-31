@@ -30,6 +30,7 @@ import datetime
 import re
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from django.conf import settings
@@ -768,3 +769,53 @@ class TestReaderPicksTheCall:
             css,
         )
         assert rule
+
+
+@pytest.mark.django_db
+class TestIssueFromTheDayRating:
+    """SNOW-1341: the sheet's bulletin is the one that rated the day."""
+
+    def _bulletin(self, region: Any, start: datetime.datetime) -> Any:
+        """A current-model bulletin from ``start``, linked to ``region``."""
+        bulletin = BulletinFactory.create(
+            issued_at=start,
+            valid_from=start,
+            valid_to=start + datetime.timedelta(hours=9),
+            render_model=_render_model(),
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        RegionBulletinFactory.create(bulletin=bulletin, region=region)
+        return bulletin
+
+    def test_the_rated_issue_comes_with_the_rating(self, client: Client) -> None:
+        """No separate issue lookup when the rating names its bulletin."""
+        region = MicroRegionFactory.create()
+        day = timezone.localdate()
+        start = datetime.datetime.combine(day, datetime.time(6), tzinfo=datetime.UTC)
+        bulletin = self._bulletin(region, start)
+        RegionDayRatingFactory.create(
+            region=region, date=day, max_rating="considerable", source_bulletin=bulletin
+        )
+        with patch("apps.public.region_sheet._issues_for_date") as lookup:
+            response = _get(client, _url(region.region_id.lower()))
+        assert response.status_code == 200
+        lookup.assert_not_called()
+        assert response.context["bulletin"].pk == bulletin.pk
+
+    def test_a_day_with_no_rated_issue_asks_the_pages_rule(
+        self, client: Client
+    ) -> None:
+        """A failed issue is unrated, but the page still shows its error card."""
+        region = MicroRegionFactory.create()
+        day = timezone.localdate()
+        start = datetime.datetime.combine(day, datetime.time(6), tzinfo=datetime.UTC)
+        failed = BulletinFactory.create(
+            issued_at=start,
+            valid_from=start,
+            valid_to=start + datetime.timedelta(hours=9),
+        )
+        RegionBulletinFactory.create(bulletin=failed, region=region)
+        RegionDayRatingFactory.create(region=region, date=day, source_bulletin=None)
+        response = _get(client, _url(region.region_id.lower()))
+        assert response.status_code == 200
+        assert response.context["bulletin"].pk == failed.pk
