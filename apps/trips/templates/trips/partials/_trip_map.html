@@ -79,11 +79,13 @@ Context:
 {# in the handoff — "swap in the real map component" — and 180px of a   #}
 {# whole ski tour is a smear. The radius and the border come from the   #}
 {# card around it now, so the element carries neither.                  #}
+{# SNOW-1334: map-surface-light keeps the map's controls and popups light #}
+{# in dark mode, like every other map surface; the card stays dark.       #}
 <div
     id="trip-map"
     data-trip-map
     data-default-basemap-key="{{ default_basemap_key }}"
-    class="h-80 w-full border-b border-border bg-tag"
+    class="map-surface-light h-80 w-full border-b border-border bg-tag"
     role="img"
     aria-label='{% trans "Map of the trip route and meeting point" %}'
 >
