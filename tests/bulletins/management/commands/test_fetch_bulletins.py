@@ -660,6 +660,29 @@ class TestFetchBulletinsLocalMirror:
         _, kwargs = mock_run.call_args
         assert kwargs["base_url"] == "http://localhost:8000/dev/albina-mirror"
 
+    @override_settings(METEOFRANCE_API_LOCAL_MIRROR_URL="")
+    @patch(PATCH_METEOFRANCE)
+    def test_local_mirror_meteofrance_without_setting_raises(
+        self, mock_run: MagicMock
+    ) -> None:
+        """An explicit empty METEOFRANCE_API_LOCAL_MIRROR_URL still raises.
+
+        development.py now defaults it to the committed sample (SNOW-1241),
+        so this override is what reproduces an unconfigured environment.
+        """
+        with pytest.raises(
+            CommandError, match="METEOFRANCE_API_LOCAL_MIRROR_URL to be configured"
+        ):
+            call_command(
+                "fetch_bulletins",
+                "--source",
+                "meteofrance",
+                "--date",
+                "2026-03-15",
+                "--local-mirror",
+            )
+        mock_run.assert_not_called()
+
     @override_settings(ALBINA_API_LOCAL_MIRROR_URL=None)
     @patch(PATCH_ALBINA)
     def test_local_mirror_albina_without_setting_raises(

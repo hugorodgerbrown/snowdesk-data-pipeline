@@ -256,6 +256,20 @@ def test_settings_spec_check_catches_a_relative_file_mirror() -> None:
     assert "core.settings.E001" in {e.id for e in errors}
 
 
+def test_settings_spec_check_accepts_the_development_meteofrance_default() -> None:
+    """The committed-sample default (SNOW-1241) passes the shape check."""
+    from django.conf import settings
+
+    default = (
+        settings.BASE_DIR / "docs/research/meteofrance/bulletins-2026-05-18"
+    ).as_uri()
+
+    with override_settings(METEOFRANCE_API_LOCAL_MIRROR_URL=default):
+        errors = checks.check_settings_spec(app_configs=None)
+
+    assert "core.settings.E001" not in {e.id for e in errors}
+
+
 def test_settings_spec_check_is_registered() -> None:
     """The check is wired into Django's registry, not just importable."""
     from django.core.checks import registry

@@ -24,7 +24,7 @@ import logging
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import requests
 
@@ -255,7 +255,10 @@ def _read_local_mirror(massif_id: int, base_url: str) -> bytes | None:
 
     """
     parsed = urlparse(base_url)
-    mirror_dir = Path(parsed.netloc + parsed.path)
+    # Percent-decoded: ``Path.as_uri()`` (the development default) escapes a
+    # space or non-ASCII character in the checkout path, and a raw
+    # ``%20`` names a directory that does not exist.
+    mirror_dir = Path(parsed.netloc + unquote(parsed.path))
     xml_path = mirror_dir / f"massif-{massif_id:03d}.xml"
     if not xml_path.exists():
         logger.debug("Local mirror: no file for massif %d at %s", massif_id, xml_path)

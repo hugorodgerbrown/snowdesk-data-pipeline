@@ -158,6 +158,15 @@ class TestReadLocalMirror:
             result = _read_local_mirror(5, f"file://{tmp}")
             assert result == b"<padded/>"
 
+    def test_reads_a_percent_encoded_path(self, tmp_path: Path) -> None:
+        """A mirror URI from ``Path.as_uri()`` reads a directory with a space."""
+        mirror = tmp_path / "snowdesk dev"
+        mirror.mkdir()
+        (mirror / "massif-001.xml").write_bytes(b"<spaced/>")
+        uri = mirror.as_uri()
+        assert "%20" in uri
+        assert _read_local_mirror(1, uri) == b"<spaced/>"
+
 
 # ---------------------------------------------------------------------------
 # _resolve_base_url — live by default, mirror only when explicit

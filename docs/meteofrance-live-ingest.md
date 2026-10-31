@@ -2,7 +2,7 @@
 name: meteofrance-live-ingest
 description: Météo-France DPBRA ingest operations — fetch_bulletins --source meteofrance, METEOFRANCE_API_KEY on Render, --local-mirror
 status: current
-last-reviewed: 2026-10-27
+last-reviewed: 2026-10-31
 ---
 
 # Météo-France live ingest — operations guide
@@ -135,8 +135,9 @@ directory instead of the live APIM, so no API key is needed and no
 network I/O occurs:
 
 ```bash
-# Configure the mirror in .env (or development.py):
-METEOFRANCE_API_LOCAL_MIRROR_URL=file:///path/to/bulletins-2026-05-18
+# In development the mirror defaults to the committed sample below, so no
+# .env line is needed. Override it there to point elsewhere:
+#   METEOFRANCE_API_LOCAL_MIRROR_URL=file:///path/to/another/mirror
 
 # Run with local mirror (read-only):
 uv run python manage.py fetch_bulletins --source meteofrance --local-mirror
@@ -146,17 +147,14 @@ uv run python manage.py fetch_bulletins --source meteofrance --local-mirror --co
 ```
 
 The bundled research fixtures in
-`docs/research/meteofrance/bulletins-2026-05-18/` cover 35 massifs and
-include the delegated-region file (`massif-071.xml`). They are the
-reference inputs for the fetcher regression tests.
+`docs/research/meteofrance/bulletins-2026-05-18/` hold 36 `massif-*.xml`
+files, including the delegated-region file (`massif-071.xml`); a fetch
+reads 35 of them. They are the reference inputs for the fetcher
+regression tests, and since SNOW-1241 they are the development default
+for `METEOFRANCE_API_LOCAL_MIRROR_URL` (`config/settings/development.py`).
+Staging and production have no default.
 
-To point the dev server at these fixtures, add to your `.env`:
-
-```
-METEOFRANCE_API_LOCAL_MIRROR_URL=file:///absolute/path/to/snowdesk-data-pipeline/docs/research/meteofrance/bulletins-2026-05-18
-```
-
-The `file://` path must be absolute. The fetcher reads
+An override must be an absolute `file://` path. The fetcher reads
 `massif-{NN:03d}.xml` (zero-padded to three digits) from the directory.
 A missing file is treated as a 404 (no bulletin today) — same as the
 live path.

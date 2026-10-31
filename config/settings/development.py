@@ -179,8 +179,16 @@ ALBINA_API_LOCAL_MIRROR_URL = config(
 # instead of calling the live MeteoFrance APIM. The value must be an
 # absolute path in the three-slash ``file:///`` form (relative paths are
 # ambiguous and silently parse with the first segment as the netloc).
-# Override via env var; default empty so production doesn't inherit a path.
+# Defaults to the sample committed at
+# docs/research/meteofrance/bulletins-2026-05-18/ (per-massif massif-NNN.xml files)
+# so ``bin/bootstrap-dev-db``, which always passes ``--local-mirror``, works on
+# a fresh checkout with no .env (SNOW-1241). ``as_uri()`` always yields the
+# absolute ``file:///`` form ``settings_spec.local_mirror_url`` requires. An
+# env value, including an explicit empty one, still wins. The default lives
+# here only: base.py stays empty, so production and staging never inherit it.
 METEOFRANCE_API_LOCAL_MIRROR_URL = config(
     "METEOFRANCE_API_LOCAL_MIRROR_URL",
-    default="",
+    default=(
+        BASE_DIR / "docs/research/meteofrance/bulletins-2026-05-18"  # noqa: F405
+    ).as_uri(),
 )
