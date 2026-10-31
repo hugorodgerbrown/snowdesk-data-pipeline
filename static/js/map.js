@@ -2984,17 +2984,27 @@
   // Closer in already, it only re-centres: the button never zooms out.
   const ROUTE_CENTRE_ZOOM = 12;
   document.addEventListener('snowdesk:route-rail-centre', (event) => {
-    if (!map || typeof map.easeTo !== 'function') return;
+    const core = self.pwaRouteCursorMapCore;
+    if (!map || !core || typeof map.easeTo !== 'function') return;
     const detail = /** @type {CustomEvent} */ (event).detail || {};
     const index = routeCursorTarget ? routeCursorTarget.cursor.state().index : null;
     const point = index === null ? null : routeCursorFeature(index);
-    const line = Array.isArray(detail.coordinates) ? detail.coordinates : [];
-    const centre = point ? point.geometry.coordinates : line[Math.floor(line.length / 2)];
-    if (!Array.isArray(centre) || centre.length < 2) return;
+    const centre = core.centreTarget(point ? point.geometry.coordinates : null, detail.coordinates);
+    if (!centre) return;
+    const container = map.getContainer();
+    const canvas = container && container.getBoundingClientRect
+      ? container.getBoundingClientRect()
+      : null;
     map.easeTo({
       center: [centre[0], centre[1]],
-      zoom: Math.max(map.getZoom(), ROUTE_CENTRE_ZOOM),
-      offset: visibleCentreOffset(),
+      zoom: core.centreZoom(map.getZoom(), ROUTE_CENTRE_ZOOM),
+      offset: canvas
+        ? core.centreOffset(
+          canvas,
+          routeCentreRect(canvas),
+          typeof map.getPadding === 'function' ? map.getPadding() : null,
+        )
+        : [0, 0],
     });
   });
 
@@ -3003,8 +3013,8 @@
    *
    * On a phone that is the strip above the sheet (visibleMapRect). On a
    * desktop the panel is the left column, so the visible map is to its
-   * RIGHT, under the top chrome; visibleMapRect, which the cursor's pan
-   * reads, treats the panel as a band across the top instead.
+   * RIGHT, under the top chrome (columnRect); visibleMapRect, which the
+   * cursor's pan reads, treats the panel as a band across the top instead.
    *
    * @param {DOMRect} canvas The map container's rect.
    * @returns {?{left: number, top: number, right: number, bottom: number}}
@@ -3014,38 +3024,9 @@
     const pinned = rail && rail.isOpen && rail.isOpen() && rail.element
       && !(rail.isSheet && rail.isSheet()) && rail.element.getBoundingClientRect;
     if (!pinned) return visibleMapRect();
-    const box = rail.element.getBoundingClientRect();
-    const left = box.width > 0 ? Math.min(canvas.right, box.right) : canvas.left;
-    return {
-      left: left,
-      top: Math.min(canvas.bottom, canvas.top + FIT_PADDING.top),
-      right: canvas.right,
-      bottom: canvas.bottom,
-    };
-  };
-
-  /**
-   * How far the visible map's centre sits from the camera's own, px.
-   *
-   * MapLibre aims `easeTo` at the centre of the PADDED viewport (the
-   * padding map_sheet.js writes), so the offset is taken from there, and
-   * the target lands mid-way across the area nothing covers.
-   *
-   * @returns {[number, number]} [x, y]; [0, 0] with no visible rect.
-   */
-  const visibleCentreOffset = () => {
-    const container = map.getContainer();
-    if (!container || !container.getBoundingClientRect) return [0, 0];
-    const canvas = container.getBoundingClientRect();
-    const rect = routeCentreRect(canvas);
-    if (!rect) return [0, 0];
-    const pad = typeof map.getPadding === 'function' ? map.getPadding() : null;
-    const p = { top: 0, right: 0, bottom: 0, left: 0, ...(pad || {}) };
-    const cameraX = p.left + (canvas.width - p.left - p.right) / 2;
-    const cameraY = p.top + (canvas.height - p.top - p.bottom) / 2;
-    const targetX = (rect.left + rect.right) / 2 - canvas.left;
-    const targetY = (rect.top + rect.bottom) / 2 - canvas.top;
-    return [Math.round(targetX - cameraX), Math.round(targetY - cameraY)];
+    return self.pwaRouteCursorMapCore.columnRect(
+      canvas, rail.element.getBoundingClientRect(), FIT_PADDING.top,
+    );
   };
 
   // The selected region's outline recedes while a route is open and comes

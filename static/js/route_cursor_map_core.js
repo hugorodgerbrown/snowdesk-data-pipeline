@@ -64,6 +64,10 @@
  *                                          segment's path, or null
  *   segmentMidpoints(slope, coords)      → [[lon, lat]] per segment
  *   shareMidpoints(coords, count)        → [[lon, lat]] per equal share
+ *   centreTarget(point, coords)          → where "Centre on route" aims
+ *   centreZoom(zoom, min)                → its zoom; never further out
+ *   columnRect(canvas, column, topInset) → the map a desktop column leaves
+ *   centreOffset(canvas, rect, padding)  → the easeTo offset to rect's middle
  *                                          of the line, for a route with
  *                                          no slope record
  *   nearestSample(midpointsPx, px, maxPx) → the nearest index, or null
@@ -453,7 +457,84 @@
     return { x: x, y: y };
   }
 
+  /**
+   * Where "Centre on route" aims (Hugo, 2026-10-31): the placed point, or
+   * half way along the line by distance, not its middle vertex, which on
+   * an unevenly sampled GPX can sit near either end.
+   *
+   * @param {?Array<number>} point The placed point's [lon, lat], if any.
+   * @param {*} coordinates The route's `geometry.coordinates`.
+   * @returns {?Array<number>} [lon, lat], or null with nothing usable.
+   */
+  function centreTarget(point, coordinates) {
+    if (point && isPoint(point)) return [point[0], point[1]];
+    const half = shareMidpoints(coordinates, 1);
+    if (half.length) return half[0];
+    const only = Array.isArray(coordinates) ? coordinates.find(isPoint) : null;
+    return only ? [only[0], only[1]] : null;
+  }
+
+  /**
+   * The zoom "Centre on route" ends at: `min` from further out, the
+   * current zoom from closer in — it never zooms out.
+   *
+   * @param {number} zoom The map's zoom now.
+   * @param {number} min The terrain zoom, 12.
+   * @returns {number}
+   */
+  function centreZoom(zoom, min) {
+    return Number.isFinite(zoom) ? Math.max(zoom, min) : min;
+  }
+
+  /**
+   * The map a desktop route column leaves visible: right of the column and
+   * under the top chrome, viewport px. (On a phone the sheet covers the
+   * foot instead, and `visibleRect` answers.)
+   *
+   * @param {Rect} canvas The map container's rect.
+   * @param {?{right: number, width: number}} column The panel's rect.
+   * @param {number} topInset The top chrome's height, px.
+   * @returns {Rect}
+   */
+  function columnRect(canvas, column, topInset) {
+    const left = column && column.width > 0 ? Math.min(canvas.right, column.right) : canvas.left;
+    return {
+      left: left,
+      top: Math.min(canvas.bottom, canvas.top + (topInset || 0)),
+      right: canvas.right,
+      bottom: canvas.bottom,
+    };
+  }
+
+  /**
+   * The `easeTo` offset that lands the target mid-way across `rect`.
+   *
+   * MapLibre aims at the centre of the PADDED viewport (the padding
+   * map_sheet.js writes), so the offset is measured from there.
+   *
+   * @param {Rect} canvas The map container's rect, viewport px.
+   * @param {?Rect} rect The visible map, viewport px.
+   * @param {?{top?: number, right?: number, bottom?: number, left?: number}} padding
+   *   The map's camera padding.
+   * @returns {[number, number]} [x, y]; [0, 0] with no rect.
+   */
+  function centreOffset(canvas, rect, padding) {
+    if (!canvas || !rect) return [0, 0];
+    const p = { top: 0, right: 0, bottom: 0, left: 0, ...(padding || {}) };
+    const width = canvas.right - canvas.left;
+    const height = canvas.bottom - canvas.top;
+    const cameraX = p.left + (width - p.left - p.right) / 2;
+    const cameraY = p.top + (height - p.top - p.bottom) / 2;
+    const targetX = (rect.left + rect.right) / 2 - canvas.left;
+    const targetY = (rect.top + rect.bottom) / 2 - canvas.top;
+    return [Math.round(targetX - cameraX), Math.round(targetY - cameraY)];
+  }
+
   self.pwaRouteCursorMapCore = Object.freeze({
+    centreTarget: centreTarget,
+    centreZoom: centreZoom,
+    columnRect: columnRect,
+    centreOffset: centreOffset,
     visibleRect: visibleRect,
     isInside: isInside,
     panOffset: panOffset,
