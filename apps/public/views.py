@@ -547,9 +547,9 @@ def _get_nav_dates(
     Navigation steps one calendar day at a time regardless of whether a
     bulletin exists for the adjacent day — users can reach empty-state pages
     by navigating.  The upper bound is tomorrow (dates further in the future
-    offer no next link); the lower bound is the oldest bulletin's
-    ``valid_to`` date for the region (once the user reaches that day, no
-    earlier prev link is offered).
+    offer no next link); the lower bound is the region's earliest rated
+    day, its oldest ``RegionDayRating`` row (once the user reaches that
+    day, no earlier prev link is offered).
 
     Args:
         region: The MicroRegion to navigate within.
@@ -567,7 +567,7 @@ def _get_nav_dates(
     if current_date < tomorrow:
         next_date = current_date + datetime.timedelta(days=1)
 
-    oldest_date = Bulletin.objects.filter(regions=region).earliest_valid_to_date()
+    oldest_date = RegionDayRating.objects.earliest_date(region)
     prev_date: datetime.date | None = None
     if oldest_date is not None and current_date > oldest_date:
         prev_date = current_date - datetime.timedelta(days=1)

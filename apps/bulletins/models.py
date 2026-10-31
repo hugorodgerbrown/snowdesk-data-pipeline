@@ -281,25 +281,6 @@ class BulletinQuerySet(models.QuerySet["Bulletin"]):
             return None
         return timezone.localtime(latest).date()
 
-    def earliest_valid_to_date(self) -> _date | None:
-        """
-        Return the ``valid_to`` day of the oldest stored bulletin.
-
-        Used by ``_get_nav_dates`` to establish the lower bound of
-        backward day navigation.  Once the user reaches a day on or before
-        the oldest bulletin's ``valid_to`` date, no earlier ``prev_date`` is
-        offered.
-
-        Returns:
-            The local-timezone ``valid_to`` day of the oldest bulletin in
-            this queryset, or ``None`` if the queryset is empty.
-
-        """
-        earliest = self.aggregate(earliest=models.Min("valid_to"))["earliest"]
-        if earliest is None:
-            return None
-        return timezone.localtime(earliest).date()
-
     def earliest_valid_from_date(self) -> _date | None:
         """
         Return the ``valid_from`` day of the oldest stored bulletin.
@@ -633,6 +614,26 @@ class RegionDayRatingQuerySet(models.QuerySet["RegionDayRating"]):
             first=models.Min("date"), last=models.Max("date")
         )
         return agg["first"], agg["last"]
+
+    def earliest_date(self, region: Any) -> _date | None:
+        """
+        Return the earliest rated day for *region*, or None if it has none.
+
+        The lower bound of the bulletin page's backward day navigation
+        (``_get_nav_dates``): one aggregate over this table, with no join
+        through the bulletin M2M (SNOW-1344).
+
+        Args:
+            region: The MicroRegion to look up.
+
+        Returns:
+            The earliest ``date`` among the region's rows, or None.
+
+        """
+        earliest: _date | None = self.filter(region=region).aggregate(
+            earliest=models.Min("date")
+        )["earliest"]
+        return earliest
 
 
 class RegionDayRating(BaseModel):

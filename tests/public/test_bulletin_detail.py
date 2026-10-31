@@ -188,16 +188,22 @@ class TestSelectBulletinForDate:
 # ── _get_nav_dates ───────────────────────────────────────────────────────────
 
 
+def _rate(region: MicroRegion, *days: date) -> None:
+    """Create a RegionDayRating row for *region* on each of *days*."""
+    for day in days:
+        RegionDayRatingFactory.create(region=region, date=day)
+
+
 @pytest.mark.django_db
 class TestGetNavDates:
-    """Tests for the _get_nav_dates helper."""
+    """Tests for the _get_nav_dates helper.
+
+    The lower bound is the region's earliest RegionDayRating row (SNOW-1344).
+    """
 
     def test_returns_prev_and_next(self, region: MicroRegion) -> None:
-        """Prev and next are calendar adjacents regardless of bulletin gaps."""
-        # Anchor the lower bound by creating a bulletin whose valid_to day
-        # is 2026-03-14, so that current_date 2026-03-15 > oldest_date and
-        # prev_date is populated.
-        _make_am_bulletin(region, date(2026, 3, 14))
+        """Prev and next are calendar adjacents regardless of rating gaps."""
+        _rate(region, date(2026, 3, 14))
 
         with _freeze("2026-03-20T12:00:00+00:00"):
             prev_date, next_date = _get_nav_dates(region, date(2026, 3, 15))
@@ -206,9 +212,8 @@ class TestGetNavDates:
         assert next_date == date(2026, 3, 16)
 
     def test_no_prev_at_earliest(self, region: MicroRegion) -> None:
-        """The oldest bulletin's date has no prev_date."""
-        _make_am_bulletin(region, date(2026, 3, 14))
-        _make_am_bulletin(region, date(2026, 3, 15))
+        """The earliest rated day has no prev_date."""
+        _rate(region, date(2026, 3, 14), date(2026, 3, 15))
 
         with _freeze("2026-03-20T12:00:00+00:00"):
             prev_date, _ = _get_nav_dates(region, date(2026, 3, 14))
@@ -217,8 +222,7 @@ class TestGetNavDates:
 
     def test_next_is_tomorrow_when_today(self, region: MicroRegion) -> None:
         """On today, next_date is tomorrow (the adjacent calendar day)."""
-        _make_am_bulletin(region, date(2026, 3, 14))
-        _make_am_bulletin(region, date(2026, 3, 15))
+        _rate(region, date(2026, 3, 14), date(2026, 3, 15))
 
         with _freeze("2026-03-15T10:00:00+00:00"):
             _, next_date = _get_nav_dates(region, date(2026, 3, 15))
@@ -226,42 +230,60 @@ class TestGetNavDates:
         assert next_date == date(2026, 3, 16)
 
     def test_does_not_skip_gaps(self, region: MicroRegion) -> None:
-        """Navigation steps one calendar day at a time, not to the next bulletin."""
-        _make_am_bulletin(region, date(2026, 3, 10))
-        _make_am_bulletin(region, date(2026, 3, 15))
+        """Navigation steps one calendar day at a time, not to the next rating."""
+        _rate(region, date(2026, 3, 10), date(2026, 3, 15))
 
         with _freeze("2026-03-20T12:00:00+00:00"):
             prev_date, _ = _get_nav_dates(region, date(2026, 3, 15))
 
-        # prev is current-1, not the older bulletin date
         assert prev_date == date(2026, 3, 14)
 
     def test_no_next_at_tomorrow(self, region: MicroRegion) -> None:
         """When current_date is tomorrow, next_date is None (upper bound)."""
-        _make_am_bulletin(region, date(2026, 3, 14))
+        _rate(region, date(2026, 3, 14))
 
         with _freeze("2026-03-15T10:00:00+00:00"):
-            # Tomorrow relative to the frozen today (2026-03-15) is 2026-03-16.
             _, next_date = _get_nav_dates(region, date(2026, 3, 16))
 
         assert next_date is None
 
-    def test_no_prev_when_region_has_no_bulletins(self, region: MicroRegion) -> None:
-        """When a region has no bulletins, prev_date is None."""
+    def test_no_prev_when_region_has_no_ratings(self, region: MicroRegion) -> None:
+        """A region with no rated day has no prev_date."""
+        with _freeze("2026-03-20T12:00:00+00:00"):
+            prev_date, next_date = _get_nav_dates(region, date(2026, 3, 15))
+
+        assert prev_date is None
+        assert next_date == date(2026, 3, 16)
+
+    def test_other_regions_ratings_do_not_count(self, region: MicroRegion) -> None:
+        """Only the region's own rows set its lower bound."""
+        other = MicroRegionFactory.create(region_id="CH-4116")
+        _rate(other, date(2026, 3, 1))
+        _rate(region, date(2026, 3, 15))
+
         with _freeze("2026-03-20T12:00:00+00:00"):
             prev_date, _ = _get_nav_dates(region, date(2026, 3, 15))
 
         assert prev_date is None
 
-    def test_no_prev_at_oldest_bulletin_date(self, region: MicroRegion) -> None:
-        """When current_date equals the oldest bulletin date, prev_date is None."""
-        # Only one bulletin; its valid_to day is 2026-03-14 (AM bulletin).
-        _make_am_bulletin(region, date(2026, 3, 14))
+    def test_one_query_with_no_bulletin_join(
+        self,
+        region: MicroRegion,
+        django_assert_num_queries: Any,  # pytest-django fixture, untyped
+    ) -> None:
+        """The bound is one aggregate over RegionDayRating, never the bulletin M2M."""
+        _rate(region, date(2026, 3, 14))
 
-        with _freeze("2026-03-20T12:00:00+00:00"):
-            prev_date, _ = _get_nav_dates(region, date(2026, 3, 14))
+        with (
+            _freeze("2026-03-20T12:00:00+00:00"),
+            django_assert_num_queries(1) as captured,
+        ):
+            _get_nav_dates(region, date(2026, 3, 15))
 
-        assert prev_date is None
+        sql = captured.captured_queries[0]["sql"].lower()
+        assert "regiondayrating" in sql
+        assert "regionbulletin" not in sql
+        assert "bulletins_bulletin" not in sql
 
 
 # ── _has_later_bulletin ─────────────────────────────────────────────────────
@@ -417,9 +439,10 @@ class TestBulletinDetailView:
         self, client: Client, region: MicroRegion
     ) -> None:
         """The empty-state page carries data-prev-url / data-next-url attributes."""
-        # A bulletin on 2026-03-14 anchors the lower bound so both prev and
+        # A rated day on 2026-03-14 anchors the lower bound so both prev and
         # next are populated when viewing 2026-03-15 (no bulletin on that day).
         _make_am_bulletin(region, date(2026, 3, 14))
+        _rate(region, date(2026, 3, 14))
 
         with _freeze("2026-03-20T12:00:00+00:00"):
             url = reverse(
@@ -491,6 +514,8 @@ class TestBulletinDetailView:
         _make_am_bulletin(region, date(2026, 3, 14))
         _make_am_bulletin(region, date(2026, 3, 15))
         _make_am_bulletin(region, date(2026, 3, 16))
+        # The lower bound is the earliest rated day (SNOW-1344).
+        _rate(region, date(2026, 3, 14))
 
         with _freeze("2026-03-20T12:00:00+00:00"):
             url = reverse(
