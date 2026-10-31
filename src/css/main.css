@@ -1128,28 +1128,6 @@ input[type="time"]::-webkit-date-and-time-value {
    completed. */
 .basemap-identity-fill { background: var(--color-sync-ok); }
 
-/* —— Hero rating badge tokens ———————————————
-   EAWS-coloured badge pinned to the bulletin hero
-   card beside the region name. Distinct from the
-   tint-background tokens (* -tint) used by danger
-   bands — these use the saturated EAWS indicator
-   colours so the badge reads as a strong visual
-   anchor against the masthead background.
-   Level 5 uses a diagonal black/red split (left
-   half #1a1916, right half #ff0000) implemented as
-   a CSS gradient in the component rule below; the
-   flat background token still applies to the text
-   colour logic. Text colour uses the theme-invariant
-   --color-eaws-*-fg tokens to stay readable across
-   light and dark modes — see the existing fg token
-   comments above.
-   ————————————————————————————————————————— */
-
-/* Foreground (text) on the hero badge for each level — reuse the existing
-   --color-eaws-*-fg tokens; no new tokens needed for levels 1–5. */
-
-
-
 /* —— EAWS danger-level compact tile —————————
    A small coloured square that carries a danger
    level number (and optional subdivision suffix,
