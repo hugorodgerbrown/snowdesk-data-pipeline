@@ -17,6 +17,7 @@ DB tests use MicroRegionFactory to seed the regions referenced by test XMLs
 from __future__ import annotations
 
 import json
+import logging
 import tempfile
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
@@ -27,6 +28,7 @@ import pytest
 import requests
 
 from apps.bulletins.models import PipelineRun
+from apps.bulletins.services.apply import UnknownRegionError
 from apps.bulletins.services.meteofrance_fetcher import (
     latest_meteofrance_date,
     meteofrance_stash_writer,
@@ -371,6 +373,89 @@ class TestRunMeteofrance:
         assert region_name == "Chablais"
         # customData.MF.massif must be the upper-case slug used by the index.
         assert massif_slug == "CHABLAIS"
+
+    @pytest.mark.django_db
+    def test_walk_raising_mid_iteration_fails_the_run(self) -> None:
+        """An exception from the provider walk marks the run FAILED, not raised.
+
+        The walk yields the one real bulletin, then raises. The run must be
+        returned FAILED with the exception's message stored, so the
+        ``fetch_bulletins`` command can exit non-zero on it.
+        """
+        from apps.ingest.public import fetch_bulletins as real_fetch_bulletins
+
+        def _walk_then_raise(*args: object, **kwargs: object) -> Iterator[object]:
+            """Yield the real walk's items, then fail as a broken walk would."""
+            yield from real_fetch_bulletins(*args, **kwargs)  # type: ignore[arg-type]
+            raise RuntimeError("walk broke mid-iteration")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "massif-001.xml").write_bytes(_sample("massif-001.xml"))
+            with patch(
+                "apps.bulletins.services.meteofrance_fetcher.fetch_bulletins",
+                side_effect=_walk_then_raise,
+            ):
+                run = run_meteofrance_pipeline(
+                    date(2026, 5, 18),
+                    date(2026, 5, 18),
+                    triggered_by="test",
+                    dry_run=True,
+                    massif_ids=(1,),
+                    base_url=f"file://{tmp}",
+                )
+
+        run.refresh_from_db()
+        assert run.status == PipelineRun.Status.FAILED
+        assert run.error_message == "walk broke mid-iteration"
+        assert run.finished_at is not None
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize(
+        "error",
+        [
+            pytest.param(UnknownRegionError("FR-01 not seeded"), id="unknown-region"),
+            pytest.param(RuntimeError("database fell over"), id="generic"),
+        ],
+    )
+    def test_apply_failure_counts_record_failed_and_finishes_partial(
+        self, error: Exception, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A bulletin whose apply raises is counted failed; the run ends PARTIAL.
+
+        Both ``except`` branches of ``_process_bulletin`` — the
+        ``UnknownRegionError`` one and the catch-all — persist
+        ``records_failed`` and return the failed outcome, and the run carries
+        on to finish PARTIAL rather than FAILED.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "massif-001.xml").write_bytes(_sample("massif-001.xml"))
+            with (
+                patch(
+                    "apps.bulletins.services.meteofrance_fetcher.apply_bulletin",
+                    side_effect=error,
+                ) as mock_apply,
+                caplog.at_level(
+                    logging.INFO,
+                    logger="apps.bulletins.services.meteofrance_fetcher",
+                ),
+            ):
+                run = run_meteofrance_pipeline(
+                    date(2026, 5, 18),
+                    date(2026, 5, 18),
+                    triggered_by="test",
+                    dry_run=False,
+                    massif_ids=(1,),
+                    base_url=f"file://{tmp}",
+                )
+
+        mock_apply.assert_called_once()
+        assert mock_apply.call_args.args[0].bulletin_id == _LIVE_ID
+        run.refresh_from_db()
+        assert run.records_failed == 1
+        assert run.records_created == 0
+        assert run.status == PipelineRun.Status.PARTIAL
+        # The failed outcome is counted in the run's finish line.
+        assert "0 created, 0 updated, 0 skipped, 0 delegated, 1 failed" in caplog.text
 
 
 # ---------------------------------------------------------------------------
