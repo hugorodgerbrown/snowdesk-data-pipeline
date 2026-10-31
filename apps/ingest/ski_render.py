@@ -39,7 +39,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from django.db.models import QuerySet
+from django.db.models import BooleanField, Case, QuerySet, Value, When
+from django.db.models.fields.json import KeyTransform
 from django.utils import timezone
 
 from apps.ingest import conf
@@ -54,6 +55,10 @@ from track.slope_samples import (
 from track.terrain_grid import TerrainGrid, load_grid
 
 logger = logging.getLogger(__name__)
+
+# Rows per fetch for the two startup passes over every tour (SNOW-1316's
+# render_ski_tours died at startup on production when they were read whole).
+_STARTUP_CHUNK = 200
 
 
 class RenderOutcome(StrEnum):
@@ -122,8 +127,22 @@ def walk_fingerprint(row: SourceSkiTour, grid: TerrainGrid) -> str:
         A 64-character hex digest.
 
     """
+    return _walk_fingerprint(row.content_hash, grid)
+
+
+def _walk_fingerprint(content_hash: str, grid: TerrainGrid) -> str:
+    """Return the walk fingerprint of a tour whose document hashes to ``content_hash``.
+
+    Args:
+        content_hash: The tour document's hash.
+        grid: The terrain model's definition.
+
+    Returns:
+        A 64-character hex digest.
+
+    """
     payload = {
-        "content_hash": row.content_hash,
+        "content_hash": content_hash,
         "grid": grid.grid,
         "version": grid.version,
         "window_m": grid.default_analysis_window_m,
@@ -134,7 +153,14 @@ def walk_fingerprint(row: SourceSkiTour, grid: TerrainGrid) -> str:
 
 def tour_summits() -> dict[str, sac.Summit]:
     """Return every live tour's summit by key: the first guess at each order."""
-    rows = SourceSkiTour.objects.live().only("id", "document", "content_hash")
+    # Streamed: each document is a whole SAC tour with its line, and the
+    # tours are a few thousand, so holding them all at once is what ran a
+    # small instance out of memory before the first tour was walked.
+    rows = (
+        SourceSkiTour.objects.live()
+        .only("id", "document", "content_hash")
+        .iterator(chunk_size=_STARTUP_CHUNK)
+    )
     return {
         summit.key: summit
         for summit in sac.build_summits(
@@ -161,6 +187,34 @@ def needs_render(row: SourceSkiTour, grid: TerrainGrid) -> bool:
     return row.track_render is not None and not is_current(row.track_render)
 
 
+def _stale(
+    content_hash: str,
+    render_input_fp: str | None,
+    has_render: bool,
+    render_version: Any,
+    grid: TerrainGrid,
+) -> bool:
+    """Return ``needs_render``'s answer from the four values it reads.
+
+    The same rule, decided from the drawing's version alone so the drawing
+    itself is never loaded: ``is_current`` reads nothing else.
+
+    Args:
+        content_hash: The tour document's hash.
+        render_input_fp: The fingerprint the stored walk was made from.
+        has_render: Whether a drawing is stored.
+        render_version: The stored drawing's ``v``, or None.
+        grid: The terrain model's definition.
+
+    Returns:
+        True when the tour has a walk or a drawing to make.
+
+    """
+    if render_input_fp != _walk_fingerprint(content_hash, grid):
+        return True
+    return has_render and not is_current({"v": render_version})
+
+
 def tours_to_render(grid: TerrainGrid) -> QuerySet[SourceSkiTour]:
     """Return the live tours with a walk or a drawing to make, newest first.
 
@@ -174,12 +228,28 @@ def tours_to_render(grid: TerrainGrid) -> QuerySet[SourceSkiTour]:
         The tours, ordered ``-id``.
 
     """
-    stale = [
-        row.pk
-        for row in SourceSkiTour.objects.live().only(
-            "id", "content_hash", "render_input_fp", "track_render"
+    # Only the drawing's version is read, in the database: a stored drawing
+    # is the whole track with its point-card rows, and loading every one at
+    # once ran a small instance out of memory before the first tour.
+    rows = (
+        SourceSkiTour.objects.live()
+        .annotate(
+            has_render=Case(
+                When(track_render__isnull=True, then=Value(False)),
+                default=Value(True),
+                output_field=BooleanField(),
+            ),
+            render_version=KeyTransform("v", "track_render"),
         )
-        if needs_render(row, grid)
+        .values_list(
+            "id", "content_hash", "render_input_fp", "has_render", "render_version"
+        )
+        .iterator(chunk_size=_STARTUP_CHUNK)
+    )
+    stale = [
+        pk
+        for pk, content_hash, render_input_fp, has_render, render_version in rows
+        if _stale(content_hash, render_input_fp, has_render, render_version, grid)
     ]
     return SourceSkiTour.objects.filter(pk__in=stale).order_by("-id")
 
