@@ -6,9 +6,9 @@
  * unit-tested here — these cover the three pure transforms the overlay
  * rests on:
  *
- *   - `iconForCode`, now that the feed serves the WMO code rather than a
- *     filename (the Python half of that table is guarded from pytest, in
- *     tests/weather/services/test_icon_table_parity.py);
+ *   - the projection's `icon`, which is the day's served filename
+ *     (SNOW-1343 — the code → icon table is the server's alone now), with
+ *     a neutral fallback for a day served without one;
  *   - `formatTemp`, the day's max temperature as the symbol's caption;
  *   - the elevation trio — `formatElevation`, `formatElevationBreak` and
  *     `elevationMarkFor` — which have to agree on emptiness, because the
@@ -34,55 +34,6 @@ function makeFeature(days, { lon = 7.4, lat = 46.1, elevation = 1500, id = 1 } =
     properties: { short_id: id, name: 'Station', elevation_m: elevation, days },
   };
 }
-
-describe('iconForCode', () => {
-  it('suffixes -day only for the buckets drawn with a sun', () => {
-    expect(core.iconForCode(0)).toBe('clear-day.svg');
-    expect(core.iconForCode(1)).toBe('partly_cloudy-day.svg');
-  });
-
-  it('resolves every other bucket to a bare, suffix-free filename', () => {
-    // The icon set draws day/night variants only where a sun or a moon
-    // appears; weather in front of a cloud is one drawing (SNOW-791).
-    expect(core.iconForCode(45)).toBe('fog.svg');
-    expect(core.iconForCode(51)).toBe('drizzle.svg');
-    expect(core.iconForCode(61)).toBe('light_rain.svg');
-    expect(core.iconForCode(63)).toBe('moderate_rain.svg');
-    expect(core.iconForCode(65)).toBe('heavy_rain.svg');
-    expect(core.iconForCode(71)).toBe('light_snow.svg');
-    expect(core.iconForCode(73)).toBe('moderate_snow.svg');
-    expect(core.iconForCode(75)).toBe('heavy_snow.svg');
-    expect(core.iconForCode(95)).toBe('thunder.svg');
-  });
-
-  it('never returns a night variant', () => {
-    // A map symbol summarises a whole day, so the day icon is correct at
-    // any hour — see the module docstring.
-    const everyIcon = Array.from({ length: 100 }, (_, code) => core.iconForCode(code));
-    expect(everyIcon.some((name) => name.includes('-night'))).toBe(false);
-  });
-
-  it('ships cloudy without a day/night suffix', () => {
-    expect(core.iconForCode(3)).toBe('cloudy.svg');
-  });
-
-  it('suffixes at most two of the twelve buckets', () => {
-    // Guards the inversion: the rule used to add `-day` to everything but
-    // one bucket, so a regression that re-inverted it would still pass
-    // every single-code assertion above that happens to be a pair.
-    const suffixed = Array.from({ length: 100 }, (_, code) => core.iconForCode(code))
-      .filter((name) => name.includes('-day'));
-    expect(new Set(suffixed)).toEqual(
-      new Set(['clear-day.svg', 'partly_cloudy-day.svg']),
-    );
-  });
-
-  it('falls back to cloudy for an unknown, null or missing code', () => {
-    expect(core.iconForCode(4)).toBe('cloudy.svg');
-    expect(core.iconForCode(null)).toBe('cloudy.svg');
-    expect(core.iconForCode(undefined)).toBe('cloudy.svg');
-  });
-});
 
 describe('formatTemp', () => {
   it('rounds to a whole degree', () => {
@@ -149,7 +100,7 @@ describe('the elevation trio', () => {
 
 describe('projectFeatureForDate', () => {
   it('projects the day entry onto flat icon and label properties', () => {
-    const feature = makeFeature({ '2026-08-30': { code: 71, tmax: 4 } }, { elevation: 3328 });
+    const feature = makeFeature({ '2026-08-30': { code: 71, icon: 'light_snow.svg', tmax: 4 } }, { elevation: 3328 });
 
     const projected = core.projectFeatureForDate(feature, '2026-08-30');
 
@@ -160,9 +111,27 @@ describe('projectFeatureForDate', () => {
     expect(projected.properties.label_elev).toBe('3328 m');
   });
 
+  it('takes the icon the feed serves, not one derived from the code', () => {
+    // SNOW-1343: the server names the file. A code that would once have
+    // resolved to light snow draws whatever icon the day carries.
+    const feature = makeFeature({ '2026-08-30': { code: 71, icon: 'heavy_snow.svg', tmax: 4 } });
+
+    expect(core.projectFeatureForDate(feature, '2026-08-30').properties.icon)
+      .toBe('heavy_snow.svg');
+    expect(core.iconForCode).toBeUndefined();
+  });
+
+  it('falls back to cloudy for a day served without an icon', () => {
+    for (const day of [{ code: 71, tmax: 4 }, { code: 71, icon: '', tmax: 4 }, { tmax: 4 }]) {
+      const feature = makeFeature({ '2026-08-30': day });
+      expect(core.projectFeatureForDate(feature, '2026-08-30').properties.icon)
+        .toBe('cloudy.svg');
+    }
+  });
+
   it('projects an empty elevation row when the station has no height', () => {
     const feature = makeFeature(
-      { '2026-08-30': { code: 71, tmax: 4 } }, { elevation: null },
+      { '2026-08-30': { code: 71, icon: 'light_snow.svg', tmax: 4 } }, { elevation: null },
     );
 
     const projected = core.projectFeatureForDate(feature, '2026-08-30');
@@ -176,7 +145,7 @@ describe('projectFeatureForDate', () => {
   it('projects an empty icon when the feature has no entry for the date', () => {
     // The layer filters on icon !== '', so this feature draws nothing at
     // all rather than an empty symbol reserving a collision box.
-    const feature = makeFeature({ '2026-08-30': { code: 71, tmax: 4 } });
+    const feature = makeFeature({ '2026-08-30': { code: 71, icon: 'light_snow.svg', tmax: 4 } });
 
     const projected = core.projectFeatureForDate(feature, '2026-09-30');
 
@@ -190,7 +159,7 @@ describe('projectFeatureForDate', () => {
   });
 
   it('does not mutate the input feature', () => {
-    const feature = makeFeature({ '2026-08-30': { code: 71, tmax: 4 } });
+    const feature = makeFeature({ '2026-08-30': { code: 71, icon: 'light_snow.svg', tmax: 4 } });
 
     core.projectFeatureForDate(feature, '2026-08-30');
 
@@ -198,7 +167,7 @@ describe('projectFeatureForDate', () => {
   });
 
   it('keeps the other properties and the geometry', () => {
-    const feature = makeFeature({ '2026-08-30': { code: 0, tmax: 1 } }, { id: 42 });
+    const feature = makeFeature({ '2026-08-30': { code: 0, icon: 'clear-day.svg', tmax: 1 } }, { id: 42 });
 
     const projected = core.projectFeatureForDate(feature, '2026-08-30');
 
@@ -212,8 +181,8 @@ describe('projectFeatureCollectionForDate', () => {
     const fc = {
       type: 'FeatureCollection',
       features: [
-        makeFeature({ '2026-08-30': { code: 0, tmax: 6 } }, { id: 1 }),
-        makeFeature({ '2026-08-30': { code: 73, tmax: -2 } }, { id: 2 }),
+        makeFeature({ '2026-08-30': { code: 0, icon: 'clear-day.svg', tmax: 6 } }, { id: 1 }),
+        makeFeature({ '2026-08-30': { code: 73, icon: 'moderate_snow.svg', tmax: -2 } }, { id: 2 }),
       ],
     };
 
@@ -238,8 +207,8 @@ describe('forecastWindowDates / isDateInForecastWindow', () => {
   const fc = {
     type: 'FeatureCollection',
     features: [
-      makeFeature({ '2026-08-31': { code: 0, tmax: 1 }, '2026-08-30': { code: 0, tmax: 1 } }),
-      makeFeature({ '2026-09-01': { code: 0, tmax: 1 }, '2026-08-30': { code: 0, tmax: 1 } }),
+      makeFeature({ '2026-08-31': { code: 0, icon: 'clear-day.svg', tmax: 1 }, '2026-08-30': { code: 0, icon: 'clear-day.svg', tmax: 1 } }),
+      makeFeature({ '2026-09-01': { code: 0, icon: 'clear-day.svg', tmax: 1 }, '2026-08-30': { code: 0, icon: 'clear-day.svg', tmax: 1 } }),
     ],
   };
 
@@ -266,8 +235,8 @@ describe('iconFilenamesForPayload', () => {
     const fc = {
       type: 'FeatureCollection',
       features: [
-        makeFeature({ '2026-08-30': { code: 71, tmax: 1 }, '2026-08-31': { code: 0, tmax: 2 } }),
-        makeFeature({ '2026-08-30': { code: 71, tmax: 1 } }),
+        makeFeature({ '2026-08-30': { code: 71, icon: 'light_snow.svg', tmax: 1 }, '2026-08-31': { code: 0, icon: 'clear-day.svg', tmax: 2 } }),
+        makeFeature({ '2026-08-30': { code: 71, icon: 'light_snow.svg', tmax: 1 } }),
       ],
     };
 
@@ -275,6 +244,15 @@ describe('iconFilenamesForPayload', () => {
       'clear-day.svg',
       'light_snow.svg',
     ]);
+  });
+
+  it('counts the fallback for a day served without an icon', () => {
+    const fc = {
+      type: 'FeatureCollection',
+      features: [makeFeature({ '2026-08-30': { code: 71, tmax: 1 } })],
+    };
+
+    expect(core.iconFilenamesForPayload(fc)).toEqual(['cloudy.svg']);
   });
 
   it('returns an empty set for a null payload', () => {
@@ -409,7 +387,7 @@ describe('markResortPins', () => {
 
   it("leads the second row with the resort's name and drops the mountain mark", () => {
     const DATE = '2026-10-21';
-    const day = { [DATE]: { code: 71, tmax: 5 } };
+    const day = { [DATE]: { code: 71, icon: 'light_snow.svg', tmax: 5 } };
     const fc = core.projectFeatureCollectionForDate({
       type: 'FeatureCollection',
       features: [
@@ -435,7 +413,7 @@ describe('markResortPins', () => {
     const DATE = '2026-10-21';
     const fc = core.projectFeatureCollectionForDate({
       type: 'FeatureCollection',
-      features: [makeFeature({ [DATE]: { code: 71, tmax: 5 } }, {
+      features: [makeFeature({ [DATE]: { code: 71, icon: 'light_snow.svg', tmax: 5 } }, {
         lon: 7.48194, lat: 46.02404, elevation: null,
       })],
     }, DATE);

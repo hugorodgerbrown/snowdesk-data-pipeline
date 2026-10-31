@@ -46,7 +46,7 @@ const WEATHER_FC = {
       properties: {
         name: 'Verbier',
         elevation_m: 1500,
-        days: { '2026-08-31': { code: 0, temp_max_c: 4, temp_min_c: -2 } },
+        days: { '2026-08-31': { code: 0, icon: 'clear-day.svg', temp_max_c: 4, temp_min_c: -2 } },
       },
     },
     {
@@ -55,7 +55,7 @@ const WEATHER_FC = {
       properties: {
         name: 'Davos',
         elevation_m: 1560,
-        days: { '2026-08-31': { code: 3, temp_max_c: 1, temp_min_c: -6 } },
+        days: { '2026-08-31': { code: 3, icon: 'cloudy.svg', temp_max_c: 1, temp_min_c: -6 } },
       },
     },
   ],
