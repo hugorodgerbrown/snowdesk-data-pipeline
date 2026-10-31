@@ -314,25 +314,21 @@ class TestFavouriteCreateValidation:
         assert response.status_code == 400
         assert not Favourite.objects.filter(user=user).exists()
 
-    @pytest.mark.parametrize(
-        ("lat", "lon"),
-        [
-            ("nan", "7.4"),
-            ("46.1", "inf"),
-            ("95", "7.4"),  # latitude > 90
-            ("46.1", "200"),  # longitude > 180
-        ],
-    )
     def test_invalid_coordinates_return_400_no_row_no_external_call(
-        self, client: Client, lat: str, lon: str
+        self, client: Client
     ) -> None:
-        """SNOW-464: non-finite / out-of-range coords are rejected before the
-        Open-Meteo elevation lookup and any write.
+        """SNOW-464: a non-finite coordinate is rejected before the Open-Meteo
+        elevation lookup and any write.
+
+        One bad value is enough here; the full bad-input matrix is covered
+        by ``parse_coordinates``'s own tests in tests/core (SNOW-452).
         """
         user = UserFactory.create()
         client.force_login(user)
         with patch("apps.favourites.services.fetch_elevation") as mock_resolve:
-            response = client.post(CREATE_URL, {"lat": lat, "lon": lon}, **HTMX_HEADERS)
+            response = client.post(
+                CREATE_URL, {"lat": "nan", "lon": "7.4"}, **HTMX_HEADERS
+            )
         assert response.status_code == 400
         assert not Favourite.objects.filter(user=user).exists()
         mock_resolve.assert_not_called()

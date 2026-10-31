@@ -65,7 +65,7 @@ from django.views.decorators.http import require_GET, require_POST
 from django_ratelimit.decorators import ratelimit
 
 from apps.accounts.models import user_is_verified
-from apps.core.coordinates import validate_accuracy_radius_km, validate_coordinates
+from apps.core.coordinates import parse_coordinates, validate_accuracy_radius_km
 from apps.core.decorators import require_htmx
 from apps.locations.models import Location
 from apps.observations.models import TYPE_FAMILY, FieldObservation
@@ -137,31 +137,6 @@ def _auth_gate(request: HttpRequest) -> HttpResponse | None:
     if not user_is_verified(request.user):
         return HttpResponse("Email verification required.", status=403)
     return None
-
-
-def _parse_gps(lat_str: str | None, lon_str: str | None) -> tuple[float, float] | None:
-    """Parse latitude and longitude strings into floats.
-
-    Returns None when either value is missing or unparseable.
-
-    Args:
-        lat_str: Raw latitude string from the request (query param or POST body).
-        lon_str: Raw longitude string from the request.
-
-    Returns:
-        ``(lat, lon)`` float pair, or None on failure.
-
-    """
-    if not lat_str or not lon_str:
-        return None
-    try:
-        lat, lon = float(lat_str), float(lon_str)
-        # Rejects NaN/±Inf and out-of-range values (InvalidCoordinatesError is
-        # a ValueError, so the except below catches it). SNOW-464.
-        validate_coordinates(lat, lon)
-    except ValueError, TypeError:
-        return None
-    return lat, lon
 
 
 def _parse_observed_at(raw: str | None) -> datetime.datetime | None | object:
@@ -253,7 +228,7 @@ def report_form(request: HttpRequest) -> HttpResponse:
     if gate is not None:
         return gate
 
-    coords = _parse_gps(request.GET.get("lat"), request.GET.get("lon"))
+    coords = parse_coordinates(request.GET.get("lat"), request.GET.get("lon"))
     has_coords = coords is not None
 
     lat: float | None = None
@@ -270,7 +245,9 @@ def report_form(request: HttpRequest) -> HttpResponse:
     )
 
     # Parse raw GPS fix coords (present on GPS and GPS_REFINED paths).
-    gps_coords = _parse_gps(request.GET.get("gps_lat"), request.GET.get("gps_lon"))
+    gps_coords = parse_coordinates(
+        request.GET.get("gps_lat"), request.GET.get("gps_lon")
+    )
     gps_lat: float | None = gps_coords[0] if gps_coords is not None else None
     gps_lon: float | None = gps_coords[1] if gps_coords is not None else None
 
@@ -328,7 +305,7 @@ def report_submit(request: HttpRequest) -> HttpResponse:
             "Rate limit exceeded — please wait before submitting again.", status=429
         )
 
-    coords = _parse_gps(request.POST.get("lat"), request.POST.get("lon"))
+    coords = parse_coordinates(request.POST.get("lat"), request.POST.get("lon"))
     if coords is None:
         return HttpResponse(
             "Valid lat and lon are required.",
@@ -370,7 +347,9 @@ def report_submit(request: HttpRequest) -> HttpResponse:
     accuracy_radius_km = _parse_accuracy_radius_km(request.POST.get("accuracy_m"))
 
     # Parse optional raw GPS fix coords (null on MANUAL path).
-    gps_coords = _parse_gps(request.POST.get("gps_lat"), request.POST.get("gps_lon"))
+    gps_coords = parse_coordinates(
+        request.POST.get("gps_lat"), request.POST.get("gps_lon")
+    )
     gps_lat: float | None = gps_coords[0] if gps_coords is not None else None
     gps_lon: float | None = gps_coords[1] if gps_coords is not None else None
 

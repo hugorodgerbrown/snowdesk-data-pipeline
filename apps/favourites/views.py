@@ -70,7 +70,7 @@ from apps import analytics
 from apps.accounts.identity import user_identity
 from apps.bulletins.models import RegionDayRating
 from apps.bulletins.services.selection import select_bulletin_for_date
-from apps.core.coordinates import validate_coordinates
+from apps.core.coordinates import parse_coordinates
 from apps.core.decorators import require_htmx
 from apps.core.freshness import (
     DEFAULT_UNSAFE_AFTER_SECONDS,
@@ -133,34 +133,6 @@ def _rename_url_template() -> str:
     return reverse("favourites:rename", args=[_DUMMY_UUID]).replace(
         str(_DUMMY_UUID), "__UUID__"
     )
-
-
-def _parse_latlon(
-    lat_str: str | None, lon_str: str | None
-) -> tuple[float, float] | None:
-    """Parse latitude and longitude strings into floats.
-
-    Returns None when either value is missing or unparseable.
-
-    Args:
-        lat_str: Raw latitude string from the request POST body.
-        lon_str: Raw longitude string from the request POST body.
-
-    Returns:
-        ``(latitude, longitude)`` float pair, or None on failure.
-
-    """
-    if not lat_str or not lon_str:
-        return None
-    try:
-        lat, lon = float(lat_str), float(lon_str)
-        # Rejects NaN/±Inf and out-of-range values before the Open-Meteo
-        # elevation lookup and DB write (InvalidCoordinatesError is a
-        # ValueError, caught below). SNOW-464.
-        validate_coordinates(lat, lon)
-    except ValueError, TypeError:
-        return None
-    return lat, lon
 
 
 def _card_freshness(
@@ -301,7 +273,7 @@ def favourite_create(request: HttpRequest) -> HttpResponse:
             status=429,
         )
 
-    coords = _parse_latlon(request.POST.get("lat"), request.POST.get("lon"))
+    coords = parse_coordinates(request.POST.get("lat"), request.POST.get("lon"))
     if coords is None:
         return HttpResponse("Valid lat and lon are required.", status=400)
 
