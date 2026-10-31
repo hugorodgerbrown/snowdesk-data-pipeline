@@ -197,14 +197,19 @@ describe('the detents', () => {
     expect(rail.getAttribute('data-detent')).toBe('half');
   });
 
-  it('hides the hint while a point is placed, and brings it back on clear', () => {
+  it('blanks the hint while a point is placed, keeping its line, and brings it back on clear', () => {
     const hint = /** @type {HTMLElement} */ (rail.querySelector('[data-route-rail-hint]'));
     window.pwaRouteRail.open(feature());
-    expect(hint.hidden).toBe(false);
+    expect(hint.classList.contains('invisible')).toBe(false);
     window.pwaRouteRail.cursor().setIndex(5);
-    expect(hint.hidden).toBe(true);
-    window.pwaRouteRail.cursor().setIndex(null);
+    // Invisible, never hidden: a hidden hint gave up its line and the
+    // sheet dropped by it as the first point landed.
     expect(hint.hidden).toBe(false);
+    expect(hint.classList.contains('invisible')).toBe(true);
+    expect(hint.getAttribute('aria-hidden')).toBe('true');
+    window.pwaRouteRail.cursor().setIndex(null);
+    expect(hint.classList.contains('invisible')).toBe(false);
+    expect(hint.hasAttribute('aria-hidden')).toBe(false);
   });
 
   it('leaves a sheet at full where it is when a point moves', () => {

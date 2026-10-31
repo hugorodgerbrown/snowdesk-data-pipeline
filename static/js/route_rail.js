@@ -299,9 +299,14 @@
     if (point && detents && detents.current() === 'peek') detents.set('half');
     // The hint says how to place a point; once one is placed the point
     // header is the answer, so the hint goes until the point is cleared
-    // (2026-10-19). PEEK is measured to the group around it, so a hidden
-    // hint leaves PEEK at the profile's foot.
-    if (hintEl) hintEl.hidden = point;
+    // (2026-10-19). It goes INVISIBLE, not hidden: it keeps its line, so
+    // the sheet holds its height and the panel does not jump down by a
+    // line when the first point lands (Hugo, 2026-10-31).
+    if (hintEl) {
+      hintEl.classList.toggle('invisible', point);
+      if (point) hintEl.setAttribute('aria-hidden', 'true');
+      else hintEl.removeAttribute('aria-hidden');
+    }
     if (point) rail.setAttribute('data-route-rail-point', '');
     else rail.removeAttribute('data-route-rail-point');
   }

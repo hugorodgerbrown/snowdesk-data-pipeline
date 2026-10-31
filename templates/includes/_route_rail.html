@@ -218,7 +218,8 @@ Context:
         {% include "includes/_route_profile.html" only %}
         {# The hint, under the profile it names, until a point is placed: #}
         {# then the point header says what it promised, and route_rail.js #}
-        {# hides it (2026-10-19).                                         #}
+        {# blanks it (2026-10-19) — `invisible`, never `hidden`, so its   #}
+        {# line stays and the sheet does not jump when a point lands.     #}
         <p data-route-rail-hint class="text-summary text-text-3">
             {% trans "Tap or drag the profile to view terrain data" %}
         </p>
