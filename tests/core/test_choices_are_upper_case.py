@@ -16,11 +16,10 @@ providers and must round-trip unchanged):
   ``pm_rating`` — the EAWS danger-rating scale (``"no_rating"``, ``"low"``,
   … ``"very_high"``).
 
-Not walked at all (by construction, not by exemption): the three
+Not walked at all (by construction, not by exemption): the two
 ``TextChoices`` classes in ``apps/bulletins/schema.py``
-(``DangerRatingValue``, ``ValidTimePeriod``, ``AvalancheProblemType``) are
-CAAML wire vocabularies used inline in dataclasses, never attached as a
-model field's ``choices`` — so they never appear in the
+(``DangerRatingValue``, ``ValidTimePeriod``) are CAAML wire vocabularies,
+never attached as a model field's ``choices`` — so they never appear in the
 ``apps.get_models()`` walk below and need no exemption entry. Likewise
 third-party apps (django-csp's ``CspRule.directive`` /
 ``CspReportBlacklist.directive``) are excluded by only walking models

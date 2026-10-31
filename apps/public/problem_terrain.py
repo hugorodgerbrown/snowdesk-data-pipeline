@@ -50,7 +50,7 @@ from django.views.decorators.vary import vary_on_headers
 from apps.bulletins.models import Bulletin, RegionBulletin
 from apps.bulletins.services.selection import select_default_issue
 from apps.ingest.public import TerrainRule, terrain_rules
-from apps.public.views import _DANGER_PANEL_META, _get_properties, _get_render_model
+from apps.public.views import _DANGER_PANEL_META, _get_render_model
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ def bulletin_terrain_rules(bulletin: Bulletin) -> list[TerrainRule]:
     """
     # The RAW render model, as the panel reads it before enriching — the
     # enriched copy has swapped each problem's elevation for a display object.
-    return terrain_rules(_get_render_model(bulletin, _get_properties(bulletin)))
+    return terrain_rules(_get_render_model(bulletin))
 
 
 def problem_terrain_key(rules: list[TerrainRule] | None) -> dict[str, Any]:

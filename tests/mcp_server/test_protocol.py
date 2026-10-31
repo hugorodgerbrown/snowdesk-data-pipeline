@@ -26,6 +26,7 @@ from django.core.cache import cache
 from freezegun import freeze_time
 
 from apps.bulletins.models import RegionDayRating
+from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.mcp_server import protocol
 from apps.mcp_server.tools import TOOLS
 from apps.mcp_server.ui_resources import (
@@ -358,16 +359,26 @@ def test_tools_call_get_avalanche_problems_returns_structured_content() -> None:
         valid_to=datetime.datetime.combine(
             target_date, datetime.time(17, 0), tzinfo=UTC
         ),
-        raw_data={
-            "properties": {
-                "avalancheProblems": [
-                    {
-                        "problemType": "wind_slab",
-                        "dangerRatingValue": "considerable",
-                        "aspects": ["N"],
-                    }
-                ]
-            }
+        # The tool reads the render model's traits, never the CAAML
+        # (SNOW-1342).
+        render_model_version=RENDER_MODEL_VERSION,
+        render_model={
+            "version": RENDER_MODEL_VERSION,
+            "traits": [
+                {
+                    "category": "dry",
+                    "time_period": "all_day",
+                    "problems": [
+                        {
+                            "problem_type": "wind_slab",
+                            "danger_rating_value": "considerable",
+                            "aspects": ["N"],
+                            "elevation": None,
+                            "comment_html": "",
+                        }
+                    ],
+                }
+            ],
         },
     )
     RegionBulletinFactory.create(bulletin=bulletin, region=region)

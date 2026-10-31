@@ -48,7 +48,6 @@ from django.db import models
 from django.db.models import CASCADE, Count, Q
 from django.utils import timezone
 
-from apps.bulletins.schema import AvalancheProblem, DangerRating
 from apps.core.models import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -447,40 +446,6 @@ class Bulletin(BaseModel):
     def __str__(self) -> str:
         """Return a human-readable representation."""
         return self.to_string()
-
-    @property
-    def _properties(self) -> dict:
-        """Return the inner CAAML properties dict from the GeoJSON envelope."""
-        return self.raw_data.get("properties", {}) if self.raw_data else {}
-
-    def region_count(self) -> int:
-        """Return the number of regions in the bulletin."""
-        return len(self._properties.get("regions", []))
-
-    def get_danger_ratings(self) -> list[DangerRating]:
-        """
-        Return the bulletin's ``dangerRatings`` as dataclass instances.
-
-        Returns an empty list if the field is absent from the raw data.
-        """
-        return [
-            DangerRating.from_dict(r) for r in self._properties.get("dangerRatings", [])
-        ]
-
-    def get_avalanche_problems(self) -> list[AvalancheProblem]:
-        """
-        Return the bulletin's ``avalancheProblems`` as dataclass instances.
-
-        Returns an empty list if the field is absent from the raw data.
-        """
-        return [
-            AvalancheProblem.from_dict(p)
-            for p in self._properties.get("avalancheProblems", [])
-        ]
-
-    def highest_danger_rating(self) -> list[str]:
-        """Return the highest rating 1..5."""
-        return [r.main_value for r in self.get_danger_ratings()]
 
 
 # ---------------------------------------------------------------------------

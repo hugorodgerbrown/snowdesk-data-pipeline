@@ -41,6 +41,10 @@ from apps.bulletins.services.day_rating import (
     DAY_RATING_VERSION,
     target_day_for_valid_from,
 )
+from apps.bulletins.services.render_model import (
+    RENDER_MODEL_VERSION,
+    build_render_model,
+)
 from apps.core.models import CommandRun, RequestLog
 from apps.downloads.models import DownloadArea
 from apps.favourites.models import Favourite
@@ -268,6 +272,24 @@ class BulletinFactory(factory.django.DjangoModelFactory[Bulletin]):
         """Factory metadata."""
 
         model = Bulletin
+
+    class Params:
+        """Factory traits.
+
+        ``built=True`` stores the render model ``build_render_model`` makes
+        from the row's ``raw_data``, at the current version — what ingest
+        stores. A read path never rebuilds a stale model (SNOW-1342), so a
+        test that hands over CAAML and expects it rendered asks for this.
+        """
+
+        built = factory.Trait(
+            render_model=factory.LazyAttribute(
+                lambda obj: build_render_model(
+                    (obj.raw_data or {}).get("properties", {})
+                )
+            ),
+            render_model_version=RENDER_MODEL_VERSION,
+        )
 
     bulletin_id = factory.Sequence(lambda n: f"bulletin-{n:04d}")
     source = Bulletin.Source.SLF

@@ -11,7 +11,9 @@ readable.
 from __future__ import annotations
 
 import datetime
+import json
 from datetime import UTC
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -19,6 +21,10 @@ import pytest
 from django.core.cache import cache
 
 from apps.bulletins.models import Bulletin, RegionDayRating
+from apps.bulletins.services.render_model import (
+    RENDER_MODEL_VERSION,
+    build_render_model,
+)
 from apps.mcp_server import tools
 from apps.regions.models import MicroRegion
 from tests.factories import (
@@ -34,6 +40,8 @@ from tests.factories import (
     SubRegionFactory,
     WeatherFactory,
 )
+
+_SENTINELS = Path(__file__).resolve().parents[1] / "sentinels"
 
 
 @pytest.fixture(autouse=True)
@@ -52,12 +60,61 @@ def region() -> MicroRegion:
     )
 
 
+def _problem(
+    problem_type: str | None = "wind_slab",
+    *,
+    danger_rating_value: str | None = None,
+    time_period: str = "all_day",
+    elevation: dict[str, Any] | None = None,
+    aspects: list[str] | None = None,
+    comment_html: str = "",
+    avalanche_size: int | None = None,
+) -> dict[str, Any]:
+    """Build one render-model problem, the shape ``build_render_model`` stores."""
+    return {
+        "problem_type": problem_type,
+        "time_period": time_period,
+        "elevation": elevation,
+        "aspects": aspects or [],
+        "comment_html": comment_html,
+        "core_zone_text": None,
+        "danger_rating_value": danger_rating_value,
+        "avalanche_type": None,
+        "extras": {},
+        "avalanche_size": avalanche_size,
+        "frequency": None,
+        "snowpack_stability": None,
+    }
+
+
+def _trait(
+    problems: list[dict[str, Any]],
+    *,
+    time_period: str = "all_day",
+    category: str = "dry",
+) -> dict[str, Any]:
+    """Build one render-model trait holding ``problems``."""
+    return {
+        "category": category,
+        "time_period": time_period,
+        "title": "",
+        "geography": {"source": "problems"},
+        "problems": problems,
+        "prose": None,
+        "danger_level": 3,
+        "band_id": None,
+        "elevation": None,
+    }
+
+
 def _make_bulletin(
     region: MicroRegion,
     target_date: datetime.date,
     danger_key: str = "considerable",
-    avalanche_problems: list[dict[str, Any]] | None = None,
+    traits: list[dict[str, Any]] | None = None,
     *,
+    ratings: list[dict[str, Any]] | None = None,
+    max_rating: str | None = None,
     source: str = Bulletin.Source.SLF,
     lang: str = "en",
     pdf_url: str = "",
@@ -67,18 +124,17 @@ def _make_bulletin(
     """Create a Bulletin covering ``target_date`` for ``region``.
 
     Returns the created ``Bulletin`` so tests that assert on stored fields
-    (issued_at, next_update, source stamp, lang) can reference them
-    without re-querying.
+    (issued_at, next_update, source, lang) can reference them without
+    re-querying.
 
-    ``avalanche_problems``, when given, is injected verbatim into
-    ``raw_data["properties"]["avalancheProblems"]`` — the caller supplies
-    CAAML-shaped problem dicts (SLF/ALBINA/MF field names) so tests can
-    exercise ``Bulletin.get_avalanche_problems()``'s ``from_dict`` mapping.
-    The key is always written (``None`` and ``[]`` both store ``[]``);
-    ``Bulletin.get_avalanche_problems()`` treats absent-key and empty-list
-    identically anyway.
+    The tools read the render model and the row's columns, never the CAAML
+    (SNOW-1342), so that is what this builds: ``traits`` and ``ratings``
+    go into the render model as stored. ``raw_data`` carries a token CAAML
+    only so ``get_bulletin_raw`` has something to return. ``max_rating``,
+    when given, also writes the day's ``RegionDayRating`` row.
     """
     kwargs: dict[str, Any] = {
+        "source": source,
         "issued_at": datetime.datetime.combine(
             target_date, datetime.time(17, 0), tzinfo=UTC
         ),
@@ -92,20 +148,30 @@ def _make_bulletin(
         "lang": lang,
         "pdf_url": pdf_url,
         "raw_data": {
-            "properties": {
-                "dangerRatings": [{"mainValue": danger_key}],
-                "avalancheProblems": avalanche_problems or [],
-            }
+            "type": "Feature",
+            "geometry": None,
+            "properties": {"dangerRatings": [{"mainValue": danger_key}]},
         },
+        "render_model_version": RENDER_MODEL_VERSION,
         "render_model": {
-            "version": 5,
+            "version": RENDER_MODEL_VERSION,
             "source": source,
             "danger": {
                 "key": danger_key,
                 "number": "3",
                 "subdivision": None,
-                "ratings": [],
+                "ratings": ratings
+                if ratings is not None
+                else [
+                    {
+                        "period": "all_day",
+                        "key": danger_key,
+                        "subdivision": None,
+                        "elevation": None,
+                    }
+                ],
             },
+            "traits": traits or [],
             "prose": {
                 "snowpack_structure": "A weak layer persists near the ground.",
                 "weather_review": "Cloudy overnight.",
@@ -120,6 +186,13 @@ def _make_bulletin(
         kwargs["bulletin_id"] = bulletin_id
     bulletin = BulletinFactory.create(**kwargs)
     RegionBulletinFactory.create(bulletin=bulletin, region=region)
+    if max_rating is not None:
+        RegionDayRatingFactory.create(
+            region=region,
+            date=target_date,
+            min_rating=danger_key,
+            max_rating=max_rating,
+        )
     return bulletin
 
 
@@ -181,6 +254,55 @@ class TestGetCurrentConditions:
         }
         assert "considerable" in result["summary"]
 
+    def test_danger_level_is_the_days_max_rating(self, region: MicroRegion) -> None:
+        """danger_level is RegionDayRating.max_rating, as get_danger_history says.
+
+        On a split day whose morning and afternoon disagree, the tool answers
+        the day's peak — the same value get_danger_history reports for it —
+        and lists each rating's key in danger_ratings.
+        """
+        target_date = datetime.date(2026, 4, 8)
+        _make_bulletin(
+            region,
+            target_date,
+            danger_key="moderate",
+            ratings=[
+                {
+                    "period": "earlier",
+                    "key": "moderate",
+                    "subdivision": None,
+                    "elevation": None,
+                },
+                {
+                    "period": "later",
+                    "key": "considerable",
+                    "subdivision": None,
+                    "elevation": None,
+                },
+            ],
+            max_rating="considerable",
+        )
+
+        result = tools.get_current_conditions(region.region_id, target_date)
+        history = tools.get_danger_history(
+            region.region_id, target_date, target_date, today=target_date
+        )
+
+        assert result["danger_level"] == "considerable"
+        assert result["danger_level"] == history["days"][0]["max_rating"]
+        assert result["danger_ratings"] == ["moderate", "considerable"]
+        assert "considerable" in result["summary"]
+
+    def test_query_count_is_bounded(
+        self, region: MicroRegion, django_assert_max_num_queries: Any
+    ) -> None:
+        """One region, one bulletin, one rating: a handful of queries, no CAAML."""
+        target_date = datetime.date(2026, 4, 8)
+        _make_bulletin(region, target_date, max_rating="considerable")
+
+        with django_assert_max_num_queries(3):
+            tools.get_current_conditions(region.region_id, target_date)
+
     def test_no_bulletin_for_date_is_a_structured_empty_result(
         self, region: MicroRegion
     ) -> None:
@@ -236,23 +358,46 @@ class TestGetAvalancheProblems:
         _make_bulletin(
             region,
             target_date,
-            avalanche_problems=[
-                {
-                    "problemType": "persistent_weak_layers",
-                    "dangerRatingValue": "considerable",
-                    "validTimePeriod": "all_day",
-                    "elevation": {"lowerBound": "2200"},
-                    "aspects": ["N", "NE", "E", "NW"],
-                    "comment": "Distinct weak layers persist near the ground.",
-                },
-                {
-                    "problemType": "wet_snow",
-                    "dangerRatingValue": "moderate",
-                    "validTimePeriod": "earlier",
-                    "elevation": {"upperBound": "2600"},
-                    "aspects": ["S", "SW"],
-                    "comment": "Wet snow avalanches possible on sunny slopes.",
-                },
+            traits=[
+                _trait(
+                    [
+                        _problem(
+                            "persistent_weak_layers",
+                            danger_rating_value="considerable",
+                            elevation={
+                                "lower": 2200,
+                                "upper": None,
+                                "treeline": False,
+                                "treeline_side": None,
+                            },
+                            aspects=["N", "NE", "E", "NW"],
+                            comment_html=(
+                                "<p>Distinct weak layers persist near the ground.</p>"
+                            ),
+                        )
+                    ]
+                ),
+                _trait(
+                    [
+                        _problem(
+                            "wet_snow",
+                            danger_rating_value="moderate",
+                            time_period="earlier",
+                            elevation={
+                                "lower": None,
+                                "upper": 2600,
+                                "treeline": False,
+                                "treeline_side": None,
+                            },
+                            aspects=["S", "SW"],
+                            comment_html=(
+                                "Wet snow avalanches possible on sunny slopes."
+                            ),
+                        )
+                    ],
+                    time_period="earlier",
+                    category="wet",
+                ),
             ],
         )
 
@@ -284,18 +429,27 @@ class TestGetAvalancheProblems:
     def test_serialises_albina_shaped_problem_and_ignores_custom_data(
         self, region: MicroRegion
     ) -> None:
-        """An ALBINA problem's avalancheSize is kept; customData is dropped."""
+        """An ALBINA problem's avalanche_size is kept; the rest is dropped."""
         target_date = datetime.date(2026, 4, 8)
         _make_bulletin(
             region,
             target_date,
-            avalanche_problems=[
-                {
-                    "problemType": "gliding_snow",
-                    "elevation": {"upperBound": "2400"},
-                    "avalancheSize": 2,
-                    "customData": {"ALBINA": {"avalancheType": "glide"}},
-                },
+            traits=[
+                _trait(
+                    [
+                        _problem(
+                            "gliding_snow",
+                            elevation={
+                                "lower": None,
+                                "upper": 2400,
+                                "treeline": False,
+                                "treeline_side": None,
+                            },
+                            avalanche_size=2,
+                        )
+                    ],
+                    category="wet",
+                )
             ],
         )
 
@@ -316,12 +470,12 @@ class TestGetAvalancheProblems:
         _make_bulletin(
             region,
             target_date,
-            avalanche_problems=[
-                {
-                    "problemType": "wet_snow",
-                    "aspects": ["S"],
-                    "validTimePeriod": "later",
-                },
+            traits=[
+                _trait(
+                    [_problem("wet_snow", aspects=["S"], time_period="later")],
+                    time_period="later",
+                    category="wet",
+                )
             ],
         )
 
@@ -353,13 +507,13 @@ class TestGetAvalancheProblems:
     def test_bulletin_with_no_problems_is_distinct_from_no_bulletin(
         self, region: MicroRegion
     ) -> None:
-        """A bulletin with an empty avalancheProblems array is not an error.
+        """A bulletin whose render model has no problems is not an error.
 
         Distinguished from the no-bulletin case by ``has_bulletin: True``
         and different summary wording.
         """
         target_date = datetime.date(2026, 4, 8)
-        _make_bulletin(region, target_date, avalanche_problems=[])
+        _make_bulletin(region, target_date, traits=[])
 
         result = tools.get_avalanche_problems(region.region_id, target_date)
 
@@ -382,7 +536,7 @@ class TestGetAvalancheProblems:
         _make_bulletin(
             region,
             fixed_today,
-            avalanche_problems=[{"problemType": "wind_slab", "aspects": ["N"]}],
+            traits=[_trait([_problem("wind_slab", aspects=["N"])])],
         )
 
         result = tools.get_avalanche_problems(region.region_id, today=fixed_today)
@@ -390,6 +544,104 @@ class TestGetAvalancheProblems:
         assert result["has_bulletin"] is True
         assert result["date"] == "2026-04-08"
         assert result["count"] == 1
+
+    def test_treeline_bound_is_restored_from_treeline_side(
+        self, region: MicroRegion
+    ) -> None:
+        """A treeline bound reads back as the CAAML token, not a number."""
+        target_date = datetime.date(2026, 4, 8)
+        _make_bulletin(
+            region,
+            target_date,
+            traits=[
+                _trait(
+                    [
+                        _problem(
+                            "wind_slab",
+                            elevation={
+                                "lower": None,
+                                "upper": None,
+                                "treeline": True,
+                                "treeline_side": "lower",
+                            },
+                        )
+                    ]
+                )
+            ],
+        )
+
+        (problem,) = tools.get_avalanche_problems(region.region_id, target_date)[
+            "problems"
+        ]
+
+        assert problem["elevation"] == {"lower_bound": "treeline", "upper_bound": None}
+
+    def test_stale_render_model_answers_no_problems(self, region: MicroRegion) -> None:
+        """A version-0 sentinel has no traits, so it answers no problems."""
+        target_date = datetime.date(2026, 4, 8)
+        bulletin = _make_bulletin(region, target_date)
+        bulletin.render_model = {"version": 0, "error": "build failed"}
+        bulletin.save()
+
+        result = tools.get_avalanche_problems(region.region_id, target_date)
+
+        assert result["has_bulletin"] is True
+        assert result["problems"] == []
+
+    @pytest.mark.parametrize(
+        "sentinel",
+        [
+            "slf/C-split-day-multi-problem",
+            "albina/C-split-day-multi-problem",
+            "meteofrance/C-elevation-split-multi-problem",
+        ],
+    )
+    def test_parity_with_the_caaml_problems(
+        self, region: MicroRegion, sentinel: str
+    ) -> None:
+        """Read from a real render model, the tool answers what the CAAML said.
+
+        SNOW-1342 moved the tool from ``avalancheProblems`` to the render
+        model's traits; built from a committed sentinel, every CAAML problem
+        is still answered with its type, rating, aspects and bounds.
+        """
+        properties = json.loads(
+            (_SENTINELS / sentinel / "source.json").read_text(encoding="utf-8")
+        )
+        target_date = datetime.date(2026, 4, 8)
+        bulletin = _make_bulletin(region, target_date)
+        bulletin.render_model = build_render_model(properties)
+        bulletin.save()
+
+        result = tools.get_avalanche_problems(region.region_id, target_date)
+
+        def key(p: dict[str, Any]) -> tuple[Any, ...]:
+            """Return the comparable identity of one problem."""
+            return (p["problem_type"], tuple(sorted(p["aspects"])))
+
+        caaml = {
+            key(
+                {
+                    "problem_type": raw.get("problemType"),
+                    "aspects": raw.get("aspects") or [],
+                }
+            ): raw
+            for raw in properties.get("avalancheProblems") or []
+        }
+        answered = {key(p): p for p in result["problems"]}
+        assert set(answered) == set(caaml)
+        for problem_key, problem in answered.items():
+            raw = caaml[problem_key]
+            assert set(problem) == _CURATED_PROBLEM_FIELDS
+            raw_elevation = raw.get("elevation") or {}
+            for bound, caaml_key in (
+                ("lower_bound", "lowerBound"),
+                ("upper_bound", "upperBound"),
+            ):
+                if problem["elevation"] is not None:
+                    assert problem["elevation"][bound] == raw_elevation.get(caaml_key)
+            if raw.get("avalancheSize") is not None:
+                assert problem["avalanche_size"] == raw["avalancheSize"]
 
 
 # ---------------------------------------------------------------------------
@@ -719,12 +971,13 @@ class TestGetBulletinMetadata:
     def test_missing_source_stamp_reports_null_provider(
         self, region: MicroRegion
     ) -> None:
-        """A bulletin whose render_model has no source stamp reports null."""
-        # Direct factory create — bypasses _make_bulletin so we can omit
-        # the source key from render_model entirely (mirrors the rare
-        # RenderModelBuildError fallback where render_model has version 0
-        # and no source stamp).
+        """A bulletin whose source was never detected reports null.
+
+        The provider is read from ``Bulletin.source`` (SNOW-1342); blank is
+        the one state with no provider to report.
+        """
         bulletin = BulletinFactory.create(
+            source="",
             issued_at=datetime.datetime(2026, 4, 8, 17, 0, tzinfo=UTC),
             valid_from=datetime.datetime(2026, 4, 8, 8, 0, tzinfo=UTC),
             valid_to=datetime.datetime(2026, 4, 8, 17, 0, tzinfo=UTC),
@@ -740,6 +993,20 @@ class TestGetBulletinMetadata:
 
         assert result["source_provider"] is None
         assert result["source_url"] == ""
+
+    def test_source_survives_a_failed_render_model(self, region: MicroRegion) -> None:
+        """A failed render model still reports the row's provider."""
+        bulletin = _make_bulletin(
+            region, datetime.date(2026, 4, 8), source=Bulletin.Source.ALBINA
+        )
+        bulletin.render_model = {"version": 0, "error": "build failed"}
+        bulletin.save()
+
+        result = tools.get_bulletin_metadata(
+            region.region_id, datetime.date(2026, 4, 8)
+        )
+
+        assert result["source_provider"] == "ALBINA"
 
     def test_unknown_region_id_raises_tool_error(self) -> None:
         """An unknown region_id raises ToolError."""
@@ -863,6 +1130,68 @@ class TestBulkCurrentConditions:
             )
             for n in (5, 6, 7)
         ]
+
+    def test_query_count_is_the_same_for_one_and_twenty_regions(
+        self, django_assert_num_queries: Any
+    ) -> None:
+        """The batch is batched: 20 regions cost the queries one does.
+
+        Regions, the day's bulletins and the day's ratings are one query
+        each (SNOW-1342), not one set per region.
+        """
+        target_date = datetime.date(2026, 4, 8)
+        major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_en="Valais")
+        sub = SubRegionFactory.create(prefix="CH-41", major=major)
+        regions = [
+            MicroRegionFactory.create(
+                region_id=f"CH-9{n:03d}", name=f"Region-{n}", subregion=sub
+            )
+            for n in range(20)
+        ]
+        for region in regions:
+            _make_bulletin(region, target_date, max_rating="considerable")
+
+        with django_assert_num_queries(3):
+            one = tools.bulk_current_conditions([regions[0].region_id], target_date)
+        with django_assert_num_queries(3):
+            twenty = tools.bulk_current_conditions(
+                [r.region_id.lower() for r in regions], target_date
+            )
+
+        assert one["results"][0]["danger_level"] == "considerable"
+        assert twenty["count"] == 20
+        assert all(r["has_bulletin"] for r in twenty["results"])
+
+    def test_matches_get_current_conditions(
+        self, three_regions: list[MicroRegion]
+    ) -> None:
+        """Each batched entry is what the single tool answers for that region."""
+        target_date = datetime.date(2026, 4, 8)
+        _make_bulletin(three_regions[0], target_date, max_rating="high")
+        _make_bulletin(three_regions[1], target_date)
+
+        result = tools.bulk_current_conditions(
+            [r.region_id for r in three_regions], target_date
+        )
+
+        assert result["results"] == [
+            tools.get_current_conditions(r.region_id, target_date)
+            for r in three_regions
+        ]
+
+    def test_latest_issue_is_picked_per_region(self, region: MicroRegion) -> None:
+        """Of a region's two issues for the day, the later valid_from wins."""
+        target_date = datetime.date(2026, 4, 8)
+        _make_bulletin(region, target_date, danger_key="low", bulletin_id="evening")
+        later = _make_bulletin(
+            region, target_date, danger_key="high", bulletin_id="morning"
+        )
+        later.valid_from = later.valid_from + datetime.timedelta(hours=1)
+        later.save()
+
+        result = tools.bulk_current_conditions([region.region_id], target_date)
+
+        assert result["results"][0]["danger_level"] == "high"
 
     def test_returns_one_entry_per_region_in_input_order(
         self, three_regions: list[MicroRegion]

@@ -3,8 +3,10 @@ apps/mcp_server/tools.py — MCP tool registry and handlers.
 
 Read-only tools, composed from services that already exist elsewhere in
 the codebase (``apps.mcp_server.resolvers``, ``apps.public.views``,
-``RegionDayRating.objects.for_region_range``, ``Bulletin.render_model``,
-``Bulletin.get_avalanche_problems``):
+``RegionDayRating.objects.for_region_range``, ``Bulletin.render_model``).
+Every tool but ``get_bulletin_raw`` reads the render model, the
+``RegionDayRating`` rows and the bulletin's own columns — never
+``Bulletin.raw_data`` (SNOW-1342):
 
 * ``search_regions`` — fuzzy place-name search (``resolvers.search_places``).
 * ``get_current_conditions`` — danger rating + forecaster prose for one
@@ -71,16 +73,20 @@ from typing import Any
 
 from django.conf import settings
 from django.db.models import Max, Min
+from django.db.models.functions import Upper
 from django.urls import reverse
 from django.utils import timezone
 
 from apps.bulletins.models import Bulletin, RegionDayRating
-from apps.bulletins.schema import AvalancheProblem
-from apps.bulletins.services.selection import select_bulletin_for_date
+from apps.bulletins.services.selection import (
+    select_bulletin_for_date,
+    select_bulletins_for_regions,
+)
 from apps.locations.models import Location
 from apps.mcp_server import resolvers, season
 from apps.mcp_server.ui_resources import DANGER_MAP_URI
 from apps.public.api import COUNTRY_NAMES
+from apps.public.views import _plain_text
 from apps.regions.models import MicroRegion, Resort
 from apps.weather.models import Weather
 
@@ -287,6 +293,41 @@ def get_current_conditions(
 
     target_date = date or today or timezone.localdate()
     bulletin = select_bulletin_for_date(region, target_date)
+    max_rating: str | None = None
+    if bulletin is not None:
+        max_rating = (
+            RegionDayRating.objects.filter(region=region, date=target_date)
+            .values_list("max_rating", flat=True)
+            .first()
+        )
+    return _conditions_result(region, target_date, bulletin, max_rating)
+
+
+def _conditions_result(
+    region: MicroRegion,
+    target_date: dt.date,
+    bulletin: Bulletin | None,
+    max_rating: str | None,
+) -> dict[str, Any]:
+    """Build one region's ``get_current_conditions`` result.
+
+    Shared by the single and the bulk tool so the two answer alike.
+    ``danger_level`` is the day's ``RegionDayRating.max_rating`` — the peak
+    ``get_danger_history`` reports for the same day, so the two tools never
+    disagree on a split AM/PM day — falling back to the render model's
+    headline ``danger.key`` only when the day has no rating row yet.
+    ``danger_ratings`` lists the render model's ``danger.ratings`` keys.
+
+    Args:
+        region: The region asked about.
+        target_date: The day asked about.
+        bulletin: The day's default bulletin, or ``None``.
+        max_rating: The day's ``RegionDayRating.max_rating``, or ``None``.
+
+    Returns:
+        The tool's result dict.
+
+    """
     if bulletin is None:
         return {
             "region_id": region.region_id,
@@ -299,29 +340,35 @@ def get_current_conditions(
             ),
         }
 
-    danger = bulletin.render_model.get("danger") or {}
-    prose_full = bulletin.render_model.get("prose") or {}
+    render_model: dict[str, Any] = bulletin.render_model or {}
+    danger = render_model.get("danger") or {}
+    prose_full = render_model.get("prose") or {}
     prose = {key: prose_full.get(key) for key in _PROSE_FIELDS}
+    danger_level = max_rating or danger.get("key")
     return {
         "region_id": region.region_id,
         "region_name": region.name,
         "date": target_date.isoformat(),
         "has_bulletin": True,
-        "danger_level": danger.get("key"),
-        "danger_ratings": bulletin.highest_danger_rating(),
+        "danger_level": danger_level,
+        "danger_ratings": [
+            r["key"] for r in danger.get("ratings") or [] if r.get("key")
+        ],
         "prose": prose,
-        "summary": _current_conditions_summary(region, target_date, danger, prose),
+        "summary": _current_conditions_summary(
+            region, target_date, danger_level, prose
+        ),
     }
 
 
 def _current_conditions_summary(
     region: Any,
     target_date: dt.date,
-    danger: dict[str, Any],
+    danger_level: str | None,
     prose: dict[str, Any],
 ) -> str:
     """Return a one-line-plus-prose, LLM-quotable conditions summary."""
-    level = (danger.get("key") or "no_rating").replace("_", " ")
+    level = (danger_level or "no_rating").replace("_", " ")
     parts = [
         f"{region.name} ({region.region_id}) on {target_date.isoformat()}: "
         f"danger level {level}."
@@ -368,9 +415,9 @@ def get_avalanche_problems(
         A dict describing the day's problems. When no bulletin covers
         ``date`` this is a structured "no data" result (``has_bulletin:
         False``), not an error — a quiet day with no forecast is a
-        legitimate outcome. A bulletin with no distinct problems (an empty
-        ``avalancheProblems`` array) is also a legitimate, non-error
-        outcome, distinguished from the no-bulletin case by
+        legitimate outcome. A bulletin with no distinct problems (no
+        problems in its render model's traits) is also a legitimate,
+        non-error outcome, distinguished from the no-bulletin case by
         ``has_bulletin: True`` and a different summary wording.
 
     Raises:
@@ -397,7 +444,7 @@ def get_avalanche_problems(
             ),
         }
 
-    problems = [_serialise_problem(p) for p in bulletin.get_avalanche_problems()]
+    problems = _problems_from_render_model(bulletin.render_model or {})
     return {
         "region_id": region.region_id,
         "region_name": region.name,
@@ -409,39 +456,93 @@ def get_avalanche_problems(
     }
 
 
-def _serialise_problem(problem: AvalancheProblem) -> dict[str, Any]:
-    """Serialise one ``AvalancheProblem`` to a JSON-friendly dict.
+def _problems_from_render_model(render_model: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return every problem in a render model's traits, serialised for the tool.
+
+    Read from ``render_model.traits[].problems[]`` in trait order — the
+    provider's editorial order — rather than the CAAML ``avalancheProblems``
+    (SNOW-1342). A stale or failed model (the version-0 sentinel) carries
+    no traits, so it answers no problems.
+
+    Args:
+        render_model: A bulletin's stored render model.
+
+    Returns:
+        One :func:`_serialise_problem` dict per problem.
+
+    """
+    problems: list[dict[str, Any]] = []
+    for trait in render_model.get("traits") or []:
+        for problem in trait.get("problems") or []:
+            problems.append(_serialise_problem(problem, trait))
+    return problems
+
+
+def _caaml_bound(elevation: dict[str, Any], side: str) -> str | None:
+    """Return one CAAML-shaped elevation bound from a projected elevation.
+
+    The render model keeps the numeric bound and records which side carried
+    the ``"treeline"`` token (``treeline_side``); this puts the token back,
+    so the tool answers the strings CAAML published (``"2200"``,
+    ``"treeline"``).
+
+    Args:
+        elevation: A render-model elevation ``{lower, upper, treeline,
+            treeline_side}``.
+        side: ``"lower"`` or ``"upper"``.
+
+    Returns:
+        The bound as a string, or ``None`` when that side is open.
+
+    """
+    if elevation.get("treeline_side") == side:
+        return "treeline"
+    value = elevation.get(side)
+    return str(value) if value is not None else None
+
+
+def _serialise_problem(
+    problem: dict[str, Any], trait: dict[str, Any]
+) -> dict[str, Any]:
+    """Serialise one render-model problem to a JSON-friendly dict.
 
     Curated to the subset of fields useful to an LLM caller —
     ``problem_type``, ``danger_rating_value``, ``valid_time_period``,
     ``elevation``, ``aspects``, ``comment``, ``avalanche_size``.
     Provider-specific fields (``subdivision``, ``avalanche_type``,
     ``snowpack_stability``, ``frequency``) are deliberately omitted.
+    ``valid_time_period`` is the trait's, the window the provider grouped
+    the problem under; ``comment`` is the problem's ``comment_html`` as
+    plain text.
 
     Args:
-        problem: The dataclass instance to serialise.
+        problem: One entry of a trait's ``problems`` list.
+        trait: The trait it belongs to.
 
     Returns:
         A dict with the curated field subset. ``elevation`` is ``None``
-        when the source problem has no elevation constraint, otherwise a
+        when the problem has no elevation constraint, otherwise a
         ``{lower_bound, upper_bound}`` dict (either bound may be
         ``None``). ``aspects`` is always a list.
 
     """
     elevation: dict[str, str | None] | None = None
-    if problem.elevation is not None:
-        elevation = {
-            "lower_bound": problem.elevation.lower_bound,
-            "upper_bound": problem.elevation.upper_bound,
-        }
+    rm_elevation: dict[str, Any] | None = problem.get("elevation")
+    if rm_elevation:
+        lower = _caaml_bound(rm_elevation, "lower")
+        upper = _caaml_bound(rm_elevation, "upper")
+        if lower is not None or upper is not None:
+            elevation = {"lower_bound": lower, "upper_bound": upper}
     return {
-        "problem_type": problem.problem_type,
-        "danger_rating_value": problem.danger_rating_value,
-        "valid_time_period": problem.valid_time_period,
+        "problem_type": problem.get("problem_type") or None,
+        "danger_rating_value": problem.get("danger_rating_value") or None,
+        "valid_time_period": trait.get("time_period")
+        or problem.get("time_period")
+        or None,
         "elevation": elevation,
-        "aspects": list(problem.aspects),
-        "comment": problem.comment,
-        "avalanche_size": problem.avalanche_size,
+        "aspects": list(problem.get("aspects") or []),
+        "comment": _plain_text(problem.get("comment_html")) or None,
+        "avalanche_size": problem.get("avalanche_size"),
     }
 
 
@@ -697,16 +798,15 @@ _SOURCE_HOME_URL: dict[str, str] = {
 }
 
 
-def _source_from_render_model(bulletin: Bulletin) -> str | None:
-    """Return the provider source string stamped on a bulletin's render_model.
+def _bulletin_source(bulletin: Bulletin) -> str | None:
+    """Return the provider a bulletin was ingested from, or ``None``.
 
-    Returns ``None`` when the render model failed to build (version 0) and
-    the source stamp is therefore missing — a rare but possible state that
-    the tool response reports as ``source_provider: null`` rather than
-    guessing a value.
+    Read from the row's own ``source`` column (SNOW-1342), so it answers
+    even when the render model failed to build. ``None`` only for a row
+    whose provider was never detected (blank ``source``) — reported as
+    ``source_provider: null`` rather than a guess.
     """
-    source = bulletin.render_model.get("source") if bulletin.render_model else None
-    return source if isinstance(source, str) and source else None
+    return bulletin.source or None
 
 
 def get_bulletin_metadata(
@@ -756,7 +856,7 @@ def get_bulletin_metadata(
             ),
         }
 
-    source = _source_from_render_model(bulletin)
+    source = _bulletin_source(bulletin)
     # bulletin_id is unique, so filtering by it can only ever return this
     # same row — language variants aren't stored side-by-side. Report the
     # single language the row was fetched in; other-language variants live
@@ -827,11 +927,14 @@ def bulk_current_conditions(
 ) -> dict[str, Any]:
     """Return current conditions for a batch of regions on one day.
 
-    Fan-out over :func:`get_current_conditions`, returning one entry per
-    ``region_id`` in the input order. Unknown region_ids come back as a
-    per-item ``{region_id, has_bulletin: false, error: "unknown_region"}``
-    rather than failing the whole call — a client's stale region_id
-    shouldn't wipe out the other 19.
+    The batched form of :func:`get_current_conditions`, returning one
+    entry per ``region_id`` in the input order. Batched, not fanned out:
+    the regions, the day's bulletins and the day's ratings are one query
+    each, so 20 regions cost what one does (SNOW-1342). Unknown region_ids
+    come back as a per-item
+    ``{region_id, has_bulletin: false, error: "unknown_region"}`` rather
+    than failing the whole call — a client's stale region_id shouldn't
+    wipe out the other 19.
 
     Args:
         region_ids: Up to :data:`_BULK_CURRENT_CONDITIONS_CAP` region_ids.
@@ -854,9 +957,23 @@ def bulk_current_conditions(
     resolved_today = today or timezone.localdate()
     target_date = date or resolved_today
 
+    # resolve_region matches case-insensitively; so does this one query.
+    regions = {
+        region.region_id.upper(): region
+        for region in MicroRegion.objects.select_related("subregion__major")
+        .annotate(region_id_upper=Upper("region_id"))
+        .filter(region_id_upper__in={rid.upper() for rid in region_ids})
+    }
+    bulletins = select_bulletins_for_regions(regions.values(), target_date)
+    max_ratings: dict[int, str] = dict(
+        RegionDayRating.objects.filter(
+            region__in=list(regions.values()), date=target_date
+        ).values_list("region_id", "max_rating")
+    )
+
     results: list[dict[str, Any]] = []
     for region_id in region_ids:
-        region = resolvers.resolve_region(region_id)
+        region = regions.get(region_id.upper())
         if region is None:
             results.append(
                 {
@@ -867,8 +984,14 @@ def bulk_current_conditions(
                 }
             )
             continue
+        bulletin = bulletins.get(region.pk)
         results.append(
-            get_current_conditions(region_id, target_date, today=resolved_today)
+            _conditions_result(
+                region,
+                target_date,
+                bulletin,
+                max_ratings.get(region.pk) if bulletin is not None else None,
+            )
         )
 
     return {
@@ -986,7 +1109,7 @@ def get_bulletin_raw(
             ),
         }
 
-    source = _source_from_render_model(bulletin)
+    source = _bulletin_source(bulletin)
     return {
         "region_id": region.region_id,
         "region_name": region.name,
@@ -994,7 +1117,11 @@ def get_bulletin_raw(
         "has_bulletin": True,
         "provider": source,
         "issued_at": bulletin.issued_at.isoformat(),
-        "caaml": bulletin.raw_data,
+        # The read path defers raw_data; this is the one tool that needs
+        # it, so it loads it by an explicit fetch of its own (SNOW-1342).
+        "caaml": Bulletin.objects.filter(pk=bulletin.pk)
+        .values_list("raw_data", flat=True)
+        .first(),
         "summary": (
             f"Raw CAAML payload for {region.name} ({region.region_id}) on "
             f"{target_date.isoformat()} (issued {bulletin.issued_at.isoformat()})."

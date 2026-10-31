@@ -2,7 +2,7 @@
 name: coding-standards
 description: Repository layout, Python style, model/service/view conventions, testing, and tooling (ruff, mypy, tox, pre-commit) rules
 status: current
-last-reviewed: 2026-10-28
+last-reviewed: 2026-10-31
 ---
 
 # Coding Standards — Snowdesk Data Pipeline
@@ -259,9 +259,9 @@ Every concrete model must:
 
 Keep business logic **out** of models. Put it in the owning app's
 `services/` subdirectory (e.g. [apps/bulletins/services/](../apps/bulletins/services/)).
-Models may expose thin accessors (e.g. `Bulletin.get_danger_ratings()`
-which builds dataclass views over `raw_data`) but must not perform I/O,
-fetch, or mutate other records.
+Models may expose thin accessors (e.g. `Bulletin.row_label()`, which
+reads only the row's own columns) but must not perform I/O, fetch, or
+mutate other records.
 
 ### 3.2 TextChoices
 
@@ -607,20 +607,21 @@ storage, so `Bulletin.raw_data` always looks like:
 }
 ```
 
-Read it via `Bulletin._properties` (or the `get_danger_ratings()` /
-`get_avalanche_problems()` helpers) — do **not** access
-`raw_data["properties"]` directly from callers. See
-[apps/bulletins/models.py](../apps/bulletins/models.py) and
-[apps/bulletins/schema.py](../apps/bulletins/schema.py).
+A read path does **not** read it: it renders from `Bulletin.render_model`
+and the row's own columns, and its querysets defer `raw_data`
+([why](decisions/read-paths-never-read-raw-data.md)). Only the write and
+apply paths, the rebuild commands, the admin and the named raw surfaces
+(the `/api/` CAAML alternate, MCP `get_bulletin_raw`, the superuser raw
+embed) load it.
 
 ### 7.2 Dataclass views over JSON
 
-Structured slices of `raw_data` are exposed via frozen dataclasses
-(`Elevation`, `DangerRating`, `AvalancheProblem`) defined in
-[apps/bulletins/schema.py](../apps/bulletins/schema.py). They map CAAML's camelCase
-keys to snake_case attributes via `from_dict` classmethods. They are
-**read-only views** — they do not validate input, and absent fields
-become `None` or empty tuples.
+The one frozen dataclass left in
+[apps/bulletins/schema.py](../apps/bulletins/schema.py) is `Elevation`, which
+maps CAAML's camelCase bounds to snake_case via `from_dict`. It is a
+**read-only view** — it does not validate input. The `DangerRating` and
+`AvalancheProblem` views over `raw_data` were removed by SNOW-1342; the
+render model is the parsed form.
 
 ### 7.3 Upserts
 

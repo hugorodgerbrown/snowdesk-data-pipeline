@@ -1489,7 +1489,11 @@ These are not scheduled. Reach for them after a code change or data
 incident that invalidates derived state:
 
 - `rebuild_render_models --commit` — after bumping `RENDER_MODEL_VERSION`.
-  Re-runs the render-model derivation for every stale `Bulletin`.
+  Re-runs the render-model derivation for every stale `Bulletin`. The bump's
+  commit carries a `Deploy-Step: rebuild_render_models --commit` trailer:
+  since SNOW-1342 no request rebuilds a stale model, so until this runs a
+  stale bulletin shows the error card
+  ([why](decisions/read-paths-never-read-raw-data.md)).
 - `rebuild_source_render_models --commit` — the same, for the render
   models the weather service stores on `SourceBulletin` and serves in the
   bulletins feed, and for the day ratings it computes from them

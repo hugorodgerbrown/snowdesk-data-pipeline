@@ -47,9 +47,15 @@ from tests.factories import (
 
 
 def _make_am_bulletin(region: MicroRegion, day: date, **kwargs: Any) -> Bulletin:
-    """Create a morning bulletin valid from 06:00 to 15:00 on *day*."""
+    """Create a morning bulletin valid from 06:00 to 15:00 on *day*.
+
+    A ``raw_data`` with no ``render_model`` stores the model built from it,
+    as ingest does — the page never rebuilds one (SNOW-1342).
+    """
     vf = datetime(day.year, day.month, day.day, 6, 0, tzinfo=UTC)
     vt = datetime(day.year, day.month, day.day, 15, 0, tzinfo=UTC)
+    if "raw_data" in kwargs and "render_model" not in kwargs:
+        kwargs.setdefault("built", True)
     bulletin = BulletinFactory.create(
         issued_at=vf - timedelta(minutes=30),
         valid_from=vf,
@@ -418,25 +424,18 @@ class TestRatingBlockCount:
 # ---------------------------------------------------------------------------
 # Test: aspect/elevation row presence
 # ---------------------------------------------------------------------------
-# Test: aspect clockwise ordering — _enrich_avalanche_problem (SNOW-297)
+# Test: aspect clockwise ordering — _sort_aspects_clockwise (SNOW-297)
 # ---------------------------------------------------------------------------
 
 
 class TestEnrichAvalancheProblemAspectOrder:
-    """Aspects are sorted clockwise by _enrich_avalanche_problem (SNOW-297)."""
+    """Aspects are sorted clockwise by _sort_aspects_clockwise (SNOW-297)."""
 
     def _enrich(self, aspects: list[str]) -> dict[str, Any]:
-        """Call _enrich_avalanche_problem with a minimal CAAML problem dict."""
-        from apps.public.views import _enrich_avalanche_problem
+        """Return ``{"aspects": …}`` sorted as a problem card sorts them."""
+        from apps.public.views import _sort_aspects_clockwise
 
-        problem = {
-            "problemType": "wind_slab",
-            "validTimePeriod": "all_day",
-            "aspects": aspects,
-            "comment": "",
-            "elevation": None,
-        }
-        return _enrich_avalanche_problem(problem, [problem], 0)
+        return {"aspects": _sort_aspects_clockwise(aspects)}
 
     def test_out_of_order_aspects_sorted_clockwise(self) -> None:
         """Out-of-order aspects are reordered to the canonical clockwise sequence."""
@@ -761,13 +760,18 @@ class TestMetadataStrip:
     def test_source_cell_renders_em_dash_for_missing_source(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """When render_model has no source key, source-cell shows an em-dash."""
+        """When the row has no source, source-cell shows an em-dash.
+
+        The cell reads ``Bulletin.source``, not the render model (SNOW-1342).
+        """
         day = date(2026, 3, 15)
         rm = _render_model_with_traits([_dry_trait_problems([_problem()])])
-        # Remove the source key to simulate a bulletin without a known source.
-        rm.pop("source", None)
         _make_am_bulletin(
-            region, day, render_model=rm, render_model_version=RENDER_MODEL_VERSION
+            region,
+            day,
+            source="",
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
         )
 
         url = _url("ch-4115", "valais", "2026-03-15")
@@ -3291,6 +3295,71 @@ def _extract_jsonld(content: str) -> dict | None:
     return json.loads(match.group(1).strip())  # type: ignore[no-any-return]
 
 
+class TestKeyMessageFromRenderModel:
+    """The share card's key message is read from the render model (SNOW-1342).
+
+    It feeds only the OG / meta description, and never the CAAML: the first
+    problem comment, else the snowpack structure, else the weather review,
+    each as plain text.
+    """
+
+    def test_first_problem_comment_wins(self) -> None:
+        """A problem comment is preferred over the prose sections."""
+        from apps.public.views import _key_message
+
+        rm = _render_model_with_traits(
+            [_dry_trait_problems([_problem(comment_html="<p>Fresh  wind slabs.</p>")])]
+        )
+        assert _key_message(rm) == "Fresh wind slabs."
+
+    def test_falls_back_to_snowpack_structure(self) -> None:
+        """With no problem comment, the snowpack structure is quoted."""
+        from apps.public.views import _key_message
+
+        rm = _render_model_with_traits(
+            [_dry_trait_problems([_problem(comment_html="")])]
+        )
+        assert _key_message(rm) == "The snowpack is generally stable."
+
+    def test_falls_back_to_weather_review(self) -> None:
+        """With no snowpack structure either, the weather review is quoted."""
+        from apps.public.views import _key_message
+
+        rm = _render_model_with_traits(
+            [],
+            prose={
+                "snowpack_structure": None,
+                "weather_review": "<p>Cloudy <b>overnight</b>.</p>",
+            },
+        )
+        assert _key_message(rm) == "Cloudy overnight."
+
+    def test_error_sentinel_has_no_key_message(self) -> None:
+        """A stale row's sentinel carries no prose, so no key message."""
+        from apps.public.views import _key_message
+
+        assert _key_message({"version": 0, "error": "stale"}) == ""
+
+    @pytest.mark.django_db
+    def test_og_description_quotes_the_render_model_prose(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """The page's og:description reads the stored prose, not raw_data."""
+        rm = _render_model_with_traits(
+            [], prose={"snowpack_structure": "<p>Rendered prose only.</p>"}
+        )
+        _make_am_bulletin(
+            region,
+            date(2026, 3, 15),
+            raw_data={"properties": {"snowpackStructure": {"comment": "Raw prose"}}},
+            render_model=rm,
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        response = client.get(_url("ch-4115", "valais", "2026-03-15"))
+        assert response.context["og_description"].endswith("Rendered prose only.")
+        assert "key_message_source" not in response.context["panel"]
+
+
 @pytest.mark.django_db
 class TestStructuredData:
     """
@@ -3339,9 +3408,9 @@ class TestStructuredData:
         assert main["sourceOrganization"]["name"] == slf_name
         assert main["sourceOrganization"]["url"] == slf_url
 
-        # datePublished matches the fixture's publication_time exactly.
-        # The render model metadata sets publication_time to "2026-03-15T06:00:00+00:00".
-        assert main["datePublished"] == "2026-03-15T06:00:00+00:00"
+        # datePublished is the row's own issued_at (SNOW-1342), which
+        # _make_am_bulletin sets half an hour before the 06:00 valid_from.
+        assert main["datePublished"] == "2026-03-15T05:30:00+00:00"
 
         # temporalCoverage is an ISO-8601 interval covering the bulletin window.
         temporal = main["temporalCoverage"]
@@ -6104,9 +6173,9 @@ class TestUnscheduledMarker:
         )
         bulletin = BulletinFactory.create(
             source=Bulletin.Source.ALBINA,
-            # render_model_version stays at the factory default of 0 so the
-            # view rebuilds the render model from raw_data — which is what
-            # makes the edited payload above actually reach the page.
+            # Store the model built from the edited payload, as ingest would
+            # — the page never rebuilds one (SNOW-1342).
+            built=True,
             raw_data={"type": "Feature", "geometry": None, "properties": props},
             issued_at=valid_from,
             valid_from=valid_from,

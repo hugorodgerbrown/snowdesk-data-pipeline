@@ -218,9 +218,9 @@ class TestProblemCardRendering:
         _make_am_bulletin(
             region,
             day,
-            # render_model_version=0 triggers an on-the-fly rebuild from raw_data
-            # so the test exercises the full render path including problem cards.
-            render_model_version=0,
+            # Store the model built from raw_data, as ingest does — the page
+            # never rebuilds one (SNOW-1342).
+            built=True,
             raw_data={
                 "type": "Feature",
                 "geometry": None,
@@ -261,8 +261,9 @@ class TestProblemCardRendering:
         _make_am_bulletin(
             region,
             day,
-            # render_model_version=0 triggers an on-the-fly rebuild from raw_data.
-            render_model_version=0,
+            # Store the model built from raw_data, as ingest does — the page
+            # never rebuilds one (SNOW-1342).
+            built=True,
             raw_data={
                 "type": "Feature",
                 "geometry": None,
@@ -430,6 +431,7 @@ class TestSlfSubdivisionPlusCanary:
             (_FIXTURE_DIR / "sample_subdivision_3plus_day.json").read_text()
         )
         bulletin = BulletinFactory.create(
+            built=True,
             raw_data=fixture,
             issued_at=datetime(2026, 2, 5, 15, 0, tzinfo=UTC),
             valid_from=datetime(2026, 2, 5, 15, 0, tzinfo=UTC),
@@ -463,6 +465,7 @@ class TestAlbinaPanelContextCanary:
 
         props = json.loads((_FIXTURE_DIR / "albina_sample_bulletin.json").read_text())
         bulletin = BulletinFactory.create(
+            built=True,
             raw_data=_wrap_feature(props),
             issued_at=datetime(2025, 11, 28, 18, 6, 1, tzinfo=UTC),
             valid_from=datetime(2025, 11, 28, 16, 0, tzinfo=UTC),

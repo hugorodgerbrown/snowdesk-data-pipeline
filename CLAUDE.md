@@ -764,6 +764,7 @@ Read these when working in the relevant area:
 | Accounts (signed tokens, rate limits, email) | [`docs/accounts.md`](docs/accounts.md) |
 | Login/logout manual test checklist | [`docs/auth-testing-checklist.md`](docs/auth-testing-checklist.md) |
 | Render model (shape, versioning, day character) | [`docs/render-model.md`](docs/render-model.md) |
+| Why public and MCP read paths never read `Bulletin.raw_data` and no request rebuilds a render model (`render_model` + stored columns only; `issues_for_date` defers `raw_data`; the version-0 sentinel for a stale row; `Deploy-Step: rebuild_render_models --commit` on a `RENDER_MODEL_VERSION` bump; the named raw surfaces) | [`docs/decisions/read-paths-never-read-raw-data.md`](docs/decisions/read-paths-never-read-raw-data.md) |
 | Day summary copy matrix (movement × level × readability, editing rules) | [`docs/day-summary.md`](docs/day-summary.md) |
 | Day character rules (original spec) | [`docs/day_character_rules_spec.md`](docs/day_character_rules_spec.md) |
 | Why a season pass is a many-to-many on Resort and never a gate (Pass, Resort.passes, the sheet's passes column, apps/regions/data/passes.tsv, why no data migration seeds it) | [`docs/decisions/a-pass-groups-resorts-it-never-gates-them.md`](docs/decisions/a-pass-groups-resorts-it-never-gates-them.md) |

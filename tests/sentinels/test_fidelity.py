@@ -32,7 +32,6 @@ import pytest
 from django.test import Client
 
 from apps.bulletins.models import Bulletin
-from apps.bulletins.services.render_model import build_render_model
 from tests.factories import BulletinFactory, MicroRegionFactory, RegionBulletinFactory
 from tests.sentinels.fidelity import (
     Excluded,
@@ -72,12 +71,12 @@ def _parse(timestamp: str) -> datetime:
 def render_sentinel(source_path: Path, client: Client) -> RenderedPage:
     """Render a sentinel's bulletin page and return it in probe-ready shapes.
 
-    The bulletin is created with the factory's default
-    ``render_model_version`` of 0, so the view rebuilds the render model
-    from ``raw_data`` on the fly. That is deliberate: it means the page
-    under test is built from the committed payload rather than from a
-    render model snapshotted at some earlier version, which is the whole
-    point of pointing the guard at the sentinels.
+    The bulletin stores the render model built from the committed payload
+    at the current version, as ingest does (the factory's ``built`` trait).
+    That is deliberate: the page under test is built from the committed
+    payload rather than from a render model snapshotted at some earlier
+    version, which is the whole point of pointing the guard at the
+    sentinels. The view never rebuilds one itself (SNOW-1342).
 
     The request is anonymous. The bulletin page carries superuser-only
     debug affordances (a raw-CAAML viewer among them), and rendering as
@@ -114,6 +113,7 @@ def render_sentinel(source_path: Path, client: Client) -> RenderedPage:
         bulletin_id=properties["bulletinID"],
         lang=properties.get("lang") or "en",
         raw_data={"type": "Feature", "geometry": None, "properties": properties},
+        built=True,
         issued_at=valid_from,
         valid_from=valid_from,
         valid_to=valid_to,
@@ -129,16 +129,13 @@ def render_sentinel(source_path: Path, client: Client) -> RenderedPage:
         f"{sentinel_id}: bulletin page returned {response.status_code}"
     )
     page_html = response.content.decode()
-    # Built here rather than read back from ``bulletin.render_model``: the
-    # view rebuilds a stale render model on the fly and does not write it
-    # back, so the stored column is still the factory's stub. Calling the
-    # same builder the view called is what makes the render model a probe
-    # sees the one the page was actually built from.
+    # The stored model is the one the page was built from, so it is the
+    # one a probe sees.
     return RenderedPage(
         sentinel_id=sentinel_id,
         text=visible_text(page_html),
         html=page_html,
-        render_model=build_render_model(properties),
+        render_model=bulletin.render_model,
     )
 
 
