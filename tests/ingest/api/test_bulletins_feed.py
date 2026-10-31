@@ -68,7 +68,8 @@ def _all() -> list[dict]:
 def test_an_item_is_the_stored_caaml_and_pdf() -> None:
     """The CAAML is served exactly as ingest stored it, with its PDF link.
 
-    And the service's render model beside it (SNOW-1270).
+    And the service's render model beside it (SNOW-1270), and its index of
+    the CAAML (SNOW-1341) — null until indexed.
     """
     row = SourceBulletinFactory.create(
         bulletin_id="b-1",
@@ -83,7 +84,26 @@ def test_an_item_is_the_stored_caaml_and_pdf() -> None:
         "pdf_url": "https://example.org/b-1.pdf",
         "caaml": {"bulletinID": "b-1"},
         "render_model": {"version": 9},
+        "valid_from": None,
+        "target_date": None,
+        "region_codes": [],
     }
+
+
+@pytest.mark.django_db
+def test_an_item_carries_the_services_index_of_the_caaml() -> None:
+    """valid_from, target_date and region_codes, as store_bulletin indexed them."""
+    SourceBulletinFactory.create(
+        bulletin_id="b-2",
+        caaml={"bulletinID": "b-2"},
+        valid_from=dt.datetime(2026, 3, 6, 16, tzinfo=dt.UTC),
+        target_date=dt.date(2026, 3, 7),
+        region_codes=["CH-4115", "CH-4116"],
+    )
+    (item,) = _all()
+    assert item["valid_from"] == "2026-03-06T16:00:00+00:00"
+    assert item["target_date"] == "2026-03-07"
+    assert item["region_codes"] == ["CH-4115", "CH-4116"]
 
 
 @pytest.mark.django_db

@@ -97,6 +97,7 @@ from apps.bulletins.services.day_rating import apply_bulletin_day_ratings
 from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     build_render_model,
+    danger_levels_column,
 )
 from apps.core.command_register import RegisteredCommand
 from apps.weather.services.fetch import HOURLY_DAYS
@@ -1280,7 +1281,10 @@ class Command(RegisteredCommand):
             )
             bulletin.render_model = {"version": 0, "error": str(exc)}
             bulletin.render_model_version = 0
-        bulletin.save(update_fields=["render_model", "render_model_version"])
+        bulletin.danger_levels = danger_levels_column(bulletin.render_model)
+        bulletin.save(
+            update_fields=["render_model", "render_model_version", "danger_levels"]
+        )
 
     def _seed_region_bulletins(
         self,

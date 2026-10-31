@@ -58,6 +58,7 @@ from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
     build_render_model,
+    danger_levels_column,
 )
 from apps.core.command_iteration import iterate_rows
 from apps.core.command_register import RegisteredCommand
@@ -263,6 +264,7 @@ class Command(RegisteredCommand):
             raw_data=new_raw_data,
             render_model=new_render_model,
             render_model_version=new_version,
+            danger_levels=danger_levels_column(new_render_model),
         )
         if success:
             logger.info(

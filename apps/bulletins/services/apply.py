@@ -23,7 +23,7 @@ the other two providers shared it.
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from django.db import transaction
@@ -45,6 +45,7 @@ from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
     build_render_model,
+    danger_levels_column,
     detect_source,
 )
 from apps.ingest.public import (
@@ -328,11 +329,41 @@ def served_render_model_differs(item: dict[str, Any], existing: Bulletin) -> boo
     )
 
 
+def _fed_regions(
+    raw_regions: list[dict[str, str]], region_codes: list[str] | None
+) -> list[dict[str, str]]:
+    """Return the CAAML region entries the bulletin is linked to.
+
+    The service indexes every bulletin's region codes and serves them
+    (SNOW-1341), so with ``region_codes`` the links are the codes it
+    sent, not a re-reading of the CAAML. The name each link records
+    (``region_name_at_time``) is only in the CAAML, so the entries keep
+    the CAAML's order and names; without ``region_codes`` every entry is
+    kept, as before.
+
+    Args:
+        raw_regions: The CAAML ``regions`` list.
+        region_codes: The feed item's ``region_codes``, or None.
+
+    Returns:
+        The entries to resolve, in CAAML order.
+
+    """
+    if region_codes is None:
+        return raw_regions
+    codes = set(region_codes)
+    return [r for r in raw_regions if r.get("regionID") in codes]
+
+
 def upsert_bulletin(
     raw: dict[str, Any],
     run: PipelineRun,
     pdf_url: str = "",
     render_model: dict[str, Any] | None = None,
+    *,
+    valid_from: datetime | None = None,
+    target_date: date | None = None,
+    region_codes: list[str] | None = None,
 ) -> bool:
     """
     Create or update a single Bulletin from a raw API dict.
@@ -349,6 +380,12 @@ def upsert_bulletin(
             per-source ``_*_pdf_url`` helpers and pass it through.
         render_model: The service's render model for this bulletin, copied
             when it is at this code's version (``_render_model``).
+        valid_from: The service's indexed ``validTime.startTime``; read
+            from the CAAML when None.
+        target_date: The service's indexed forecast day; derived from
+            ``valid_from`` when None.
+        region_codes: The service's indexed region codes; every CAAML
+            region is linked when None.
 
     Returns:
         True if a new row was created, False if an existing row was updated.
@@ -362,23 +399,29 @@ def upsert_bulletin(
     }
 
     next_update_raw: str | None = raw.get("nextUpdate")
-    raw_regions: list[dict[str, str]] = raw.get("regions", [])
+    # The service indexed the regions, the start and the day (SNOW-1341):
+    # a fed value is used as sent, and only an absent one is read here.
+    raw_regions = _fed_regions(raw.get("regions", []), region_codes)
 
     computed_render_model, computed_render_model_version = _render_model(
         raw, render_model, run
     )
 
-    valid_from = parse_dt(raw["validTime"]["startTime"])
+    if valid_from is None:
+        valid_from = parse_dt(raw["validTime"]["startTime"])
+    if target_date is None:
+        target_date = target_day_for_valid_from(valid_from)
 
     defaults: dict[str, Any] = {
         "raw_data": raw_data,
         "source": _resolve_source(raw, bulletin_id),
         "render_model": computed_render_model,
         "render_model_version": computed_render_model_version,
+        "danger_levels": danger_levels_column(computed_render_model),
         "issued_at": resolve_issued_at(raw),
         "valid_from": valid_from,
         "valid_to": parse_dt(raw["validTime"]["endTime"]),
-        "target_date": target_day_for_valid_from(valid_from),
+        "target_date": target_date,
         "next_update": parse_dt(next_update_raw) if next_update_raw else None,
         "lang": raw.get("lang", SLF_DEFAULT_LANG),
         "unscheduled": raw.get("unscheduled", False),
@@ -503,7 +546,10 @@ def apply_feed_item(
     ``upsert_bulletin`` would otherwise rewrite the row and recompute its
     derived tables — unless the item's render model is current and differs
     from the stored one, which is the service having rebuilt it (SNOW-1270).
-    The item's render model is handed to ``upsert_bulletin`` to copy.
+    The item's render model is handed to ``upsert_bulletin`` to copy, and
+    its indexed ``valid_from``, ``target_date`` and ``region_codes`` to use
+    as sent (SNOW-1341) — an item from a service that predates them carries
+    none, and ``upsert_bulletin`` reads them from the CAAML instead.
 
     Args:
         item: A feed item, its ``caaml`` a dict.
@@ -532,11 +578,19 @@ def apply_feed_item(
         if run is None:
             raise ValueError("apply_feed_item needs a PipelineRun to commit")
         served = item.get("render_model")
+        fed_valid_from = item.get("valid_from")
+        fed_target_date = item.get("target_date")
+        fed_codes = item.get("region_codes")
         upsert_bulletin(
             caaml,
             run,
             pdf_url=pdf_url,
             render_model=served if isinstance(served, dict) else None,
+            valid_from=parse_dt(fed_valid_from) if fed_valid_from else None,
+            target_date=date.fromisoformat(fed_target_date)
+            if fed_target_date
+            else None,
+            region_codes=list(fed_codes) if isinstance(fed_codes, list) else None,
         )
     return OUTCOME_CREATED if existing is None else OUTCOME_UPDATED
 
