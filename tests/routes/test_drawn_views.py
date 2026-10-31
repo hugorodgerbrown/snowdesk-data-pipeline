@@ -406,10 +406,13 @@ class TestMapPageDrawSurface:
         assert 'data-overlay-key="ski_tours"' in body
         assert 'data-overlay-key="ski_summits"' in body
         assert "sac-route-portal" in body
-        # SNOW-1286: the layer is named for SAC, and its guide for members.
+        # SNOW-1286: the layer is named for SAC. The tour panel no longer
+        # says the guide is for members, nor which half SAC's line is: its
+        # header is the title, one row of figures and the buttons.
         assert "SAC ski touring" in body
-        assert "The SAC guide is for SAC members or subscribers." in body
-        assert "data-ski-tour-guide-note" in body
+        assert "The SAC guide is for SAC members or subscribers." not in body
+        assert "Route shows the ascent only." not in body
+        assert "SAC ski tours © swisstopo" in body
         assert 'data-ski-routes-eligible="true"' in body
         # SNOW-1278: three ways to add a route, replacing the add button,
         # and "Find a route"'s surface.

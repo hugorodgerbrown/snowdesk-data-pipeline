@@ -153,6 +153,8 @@
     'meta-hm': '%(hours)sh%(minutes)sm',
     'meta-m': '%(minutes)sm',
     'meta-duration': '%(figures)s · %(duration)s',
+    'meta-sac-time': '%(figures)s · %(time)s SAC',
+    'meta-sac-grade': '%(figures)s · %(grade)s',
   });
 
   /**
@@ -307,8 +309,16 @@
    * recording has one. Kilometres to one decimal and whole metres with no
    * separator, as the panel's `floatformat` filters write them.
    *
+   * An SAC tour, or a saved copy of one, passes `sac` — the tour's
+   * properties — and SAC's guide time and grade join the end of the row:
+   * "2.3km · 351m ↑ · 49m ↓ · 1h30m SAC · F". The time is tagged SAC so it
+   * never reads as the app's own estimate. `sac_time_s` is written as any
+   * duration is; a guide time with no seconds ("2-3 h") is shown as SAC's
+   * text, `sac_time`.
+   *
    * @param {{distance_m?: ?number, ascent_m?: ?number, descent_m?: ?number,
-   *   duration_s?: ?number}} figures The route's figures, or a leg's (which
+   *   duration_s?: ?number, sac?: ?{sac_time_s?: ?number, sac_time?: string,
+   *   grade?: string}}} figures The route's figures, or a leg's (which
    *   has no duration).
    * @param {Object<string, string>} [strings] Templates keyed as
    *   `DEFAULT_META_LINE`, from the partial's strings template.
@@ -332,11 +342,27 @@
       line = interpolate(t['meta-km'], { km: km });
     }
     var duration = formatDuration(f.duration_s);
-    if (!duration) return line;
-    var spelt = duration.hours
-      ? interpolate(t['meta-hm'], duration)
-      : interpolate(t['meta-m'], duration);
-    return interpolate(t['meta-duration'], { figures: line, duration: spelt });
+    if (duration) {
+      line = interpolate(t['meta-duration'], { figures: line, duration: spell(duration, t) });
+    }
+    var sac = f.sac;
+    if (!sac) return line;
+    var guide = formatDuration(sac.sac_time_s);
+    var time = guide ? spell(guide, t) : sac.sac_time || '';
+    if (time) line = interpolate(t['meta-sac-time'], { figures: line, time: time });
+    if (sac.grade) line = interpolate(t['meta-sac-grade'], { figures: line, grade: String(sac.grade) });
+    return line;
+  }
+
+  /**
+   * A duration as the meta line writes it: "2h51m", or "45m" under an hour.
+   *
+   * @param {{hours: string, minutes: string}} duration From `formatDuration`.
+   * @param {Object<string, string>} t The meta line's templates.
+   * @returns {string}
+   */
+  function spell(duration, t) {
+    return duration.hours ? interpolate(t['meta-hm'], duration) : interpolate(t['meta-m'], duration);
   }
 
   /**

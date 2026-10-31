@@ -2976,6 +2976,59 @@
     keepRouteCursorInView();
   });
 
+  // Centre on route (Hugo, 2026-10-31): the route panel's bullseye brings
+  // the placed point or, with none, the middle of the route's line to the
+  // centre of the VISIBLE map, the strip the panel or the phone sheet does
+  // not cover (visibleMapRect, as the cursor's pan uses), and zooms in to
+  // z12, where the terrain layers start, when the map is further out.
+  // Closer in already, it only re-centres: the button never zooms out.
+  const ROUTE_CENTRE_ZOOM = 12;
+  document.addEventListener('snowdesk:route-rail-centre', (event) => {
+    const core = self.pwaRouteCursorMapCore;
+    if (!map || !core || typeof map.easeTo !== 'function') return;
+    const detail = /** @type {CustomEvent} */ (event).detail || {};
+    const index = routeCursorTarget ? routeCursorTarget.cursor.state().index : null;
+    const point = index === null ? null : routeCursorFeature(index);
+    const centre = core.centreTarget(point ? point.geometry.coordinates : null, detail.coordinates);
+    if (!centre) return;
+    const container = map.getContainer();
+    const canvas = container && container.getBoundingClientRect
+      ? container.getBoundingClientRect()
+      : null;
+    map.easeTo({
+      center: [centre[0], centre[1]],
+      zoom: core.centreZoom(map.getZoom(), ROUTE_CENTRE_ZOOM),
+      offset: canvas
+        ? core.centreOffset(
+          canvas,
+          routeCentreRect(canvas),
+          typeof map.getPadding === 'function' ? map.getPadding() : null,
+        )
+        : [0, 0],
+    });
+  });
+
+  /**
+   * The map the route panel leaves visible, for centring, viewport px.
+   *
+   * On a phone that is the strip above the sheet (visibleMapRect). On a
+   * desktop the panel is the left column, so the visible map is to its
+   * RIGHT, under the top chrome (columnRect); visibleMapRect, which the
+   * cursor's pan reads, treats the panel as a band across the top instead.
+   *
+   * @param {DOMRect} canvas The map container's rect.
+   * @returns {?{left: number, top: number, right: number, bottom: number}}
+   */
+  const routeCentreRect = (canvas) => {
+    const rail = window.pwaRouteRail;
+    const pinned = rail && rail.isOpen && rail.isOpen() && rail.element
+      && !(rail.isSheet && rail.isSheet()) && rail.element.getBoundingClientRect;
+    if (!pinned) return visibleMapRect();
+    return self.pwaRouteCursorMapCore.columnRect(
+      canvas, rail.element.getBoundingClientRect(), FIT_PADDING.top,
+    );
+  };
+
   // The selected region's outline recedes while a route is open and comes
   // back when it closes (choropleth_core.js, 2026-10-19). The rail announces
   // its open and close; a style swap re-installs the layer with the state

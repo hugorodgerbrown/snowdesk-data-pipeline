@@ -338,6 +338,19 @@ def sac_time(label: str) -> str:
     return f"{hours} h {minutes}" if hours else f"{int(minutes)} min"
 
 
+def sac_time_seconds(label: str) -> int | None:
+    """Return SAC's guide time in seconds: "03:30 h" → 12600.
+
+    The route panel writes it as it writes any duration ("3h30m"), so the
+    tour's row reads like a saved route's. A label that is not ``HH:MM h``
+    has no seconds, and the panel falls back to ``sac_time``'s text.
+    """
+    match = re.fullmatch(r"\s*(\d{1,2}):(\d{2})\s*h?\s*", label or "")
+    if not match:
+        return None
+    return int(match.group(1)) * 3600 + int(match.group(2)) * 60
+
+
 def tour_slope_samples(tour: SkiTour, *, sample: bool) -> dict[str, Any] | None:
     """Return the terrain under ``tour``'s line, sampling it when asked to.
 
@@ -488,6 +501,7 @@ def tour_properties(tour: SkiTour) -> dict[str, Any]:
         "target_altitude_m": tour.target_altitude_m,
         "grade": localised(tour.grades, tour.grade) or tour.grade,
         "sac_time": sac_time(tour.ascent_time_label),
+        "sac_time_s": sac_time_seconds(tour.ascent_time_label),
         "sac_url": localised(tour.urls, tour.urls.get("de", "")),
         "down": is_descent(tour),
     }

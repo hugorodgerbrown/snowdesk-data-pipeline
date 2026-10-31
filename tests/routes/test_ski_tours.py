@@ -37,6 +37,7 @@ from apps.routes.services.ski_tours import (
     rebuild_tour_render,
     runs_reversed,
     sac_time,
+    sac_time_seconds,
     save_ski_tour,
     summits,
     tour_overview,
@@ -152,6 +153,22 @@ class TestPureRules:
     ) -> None:
         """Write "03:30 h" as "3 h 30", and anything else as SAC wrote it."""
         assert sac_time(label) == expected
+
+    @pytest.mark.parametrize(
+        ("label", "expected"),
+        [
+            ("03:30 h", 12600),
+            ("04:00 h", 14400),
+            ("00:45 h", 2700),
+            ("2-3 h", None),
+            ("", None),
+        ],
+    )
+    def test_the_guide_time_in_seconds_is_read_from_hh_mm_only(
+        self, label: str, expected: int | None
+    ) -> None:
+        """Read "03:30 h" as 12600 seconds, and anything else as no figure."""
+        assert sac_time_seconds(label) == expected
 
     def test_the_target_end_is_the_last_point_whichever_way_the_tour_goes(
         self,
@@ -341,6 +358,7 @@ class TestTheTourAsARoute:
         props = tour_properties(tour)
         assert props["tour_uuid"] == str(tour.source_uuid)
         assert props["sac_time"] == "3 h 30"
+        assert props["sac_time_s"] == 12600
         assert props["sac_url"] == "https://www.sac-cas.ch/de/"
         assert props["down"] is False
         assert not {"sac_ascent_m", "sac_descent_m", "via_ascent"} & props.keys()

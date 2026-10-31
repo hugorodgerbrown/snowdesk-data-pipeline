@@ -76,6 +76,9 @@
  *   - turns a press on the handle (a click, Enter or Space), or a tap on a
  *     ``data-sheet-drag`` header away from its controls, into a step up to
  *     the next detent, so the three states are reachable without a drag;
+ *   - leaves any detent the sheet names in ``data-detents-reserved`` to the
+ *     content's own code: a tap or a drag never settles there, only
+ *     ``set`` does (the route panel's FULL, its terrain data);
  *   - after every settle, pads the map camera's bottom edge by the sheet's
  *     height, so a fly-to lands above the sheet rather than behind it. The
  *     map's furniture does not move or fold: the sheet slides up over it.
@@ -499,6 +502,17 @@
     // it marks an element `data-sheet-detents` (a bare map pin's sheet drops
     // FULL — there is nothing to reveal).
     var detents = declared;
+    // Detents only the content's own code may open (`set`), never a tap on
+    // the handle or a drag (`data-detents-reserved`, Hugo, 2026-10-31): the
+    // route panel's FULL is its terrain data, opened by its own control.
+    /** @returns {Array<string>} The detents a tap or a drag may reach. */
+    function reachable() {
+      var reserved = core.parseDetents(el.getAttribute('data-detents-reserved'));
+      var open = detents.filter(function (name) {
+        return reserved.indexOf(name) === -1;
+      });
+      return open.length ? open : detents;
+    }
     var opts = options || {};
     var handle = /** @type {HTMLElement|null} */ (el.querySelector('[data-sheet-handle]'));
     var initial = core.initialDetent(detents, el.getAttribute('data-detent-initial'));
@@ -898,7 +912,7 @@
       el.removeAttribute('data-sheet-dragging');
       el.style.removeProperty('--sheet-drag-height');
       var next = core.settle({
-        detents: detents,
+        detents: reachable(),
         heights: heights(),
         height: last.h,
         velocity: event.type === 'pointercancel' ? 0 : velocity,
@@ -965,7 +979,7 @@
         return;
       }
       if (!current) return;
-      var next = core.nextDetent(detents, current);
+      var next = core.nextDetent(reachable(), current);
       if (next) set(next);
     });
 

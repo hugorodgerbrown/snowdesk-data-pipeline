@@ -281,3 +281,52 @@ describe('isInside', () => {
     expect(core.isInside(null, rect)).toBe(false);
   });
 });
+
+describe('Centre on route (2026-10-31)', () => {
+  it('aims at the placed point when there is one', () => {
+    expect(core.centreTarget([7.1, 46.1], [[7, 46], [8, 46]])).toEqual([7.1, 46.1]);
+  });
+
+  it('aims half way along the line by distance, not at its middle vertex', () => {
+    // Three of the four vertices bunch at the start; the middle vertex is
+    // near it, the distance midpoint is half way to the far end.
+    const line = [[7.0, 46.0], [7.001, 46.0], [7.002, 46.0], [8.0, 46.0]];
+    const [lon, lat] = core.centreTarget(null, line);
+    expect(lon).toBeCloseTo(7.5, 2);
+    expect(lat).toBeCloseTo(46.0, 6);
+    expect(core.centreTarget(null, [[7, 46], [8, 46]])[0]).toBeCloseTo(7.5, 6);
+  });
+
+  it('falls back to a lone point, and to nothing', () => {
+    expect(core.centreTarget(null, [[7, 46]])).toEqual([7, 46]);
+    expect(core.centreTarget(null, [])).toBeNull();
+    expect(core.centreTarget(null, undefined)).toBeNull();
+  });
+
+  it('zooms in to the terrain zoom and never out', () => {
+    expect(core.centreZoom(9, 12)).toBe(12);
+    expect(core.centreZoom(14.5, 12)).toBe(14.5);
+    expect(core.centreZoom(NaN, 12)).toBe(12);
+  });
+
+  it('takes the desktop column off the left and the chrome off the top', () => {
+    const canvas = { left: 0, top: 50, right: 1280, bottom: 760 };
+    expect(core.columnRect(canvas, { right: 412, width: 400 }, 60)).toEqual({
+      left: 412, top: 110, right: 1280, bottom: 760,
+    });
+    expect(core.columnRect(canvas, { right: 0, width: 0 }, 60).left).toBe(0);
+  });
+
+  it('offsets from the padded camera centre to the visible centre', () => {
+    const canvas = { left: 0, top: 50, right: 1280, bottom: 760 };
+    // Desktop: the column on the left, no camera padding.
+    const desktop = { left: 412, top: 110, right: 1280, bottom: 760 };
+    expect(core.centreOffset(canvas, desktop, null)).toEqual([206, 30]);
+    // Phone: the sheet covers the foot, and the camera is already padded
+    // for it, so only the difference is offset.
+    const phone = { left: 0, top: 0, right: 390, bottom: 844 };
+    const strip = { left: 0, top: 60, right: 390, bottom: 490 };
+    expect(core.centreOffset(phone, strip, { bottom: 354 })).toEqual([0, 30]);
+    expect(core.centreOffset(phone, null, null)).toEqual([0, 0]);
+  });
+});

@@ -12,8 +12,10 @@ tour nearest it; a summit is a label, not a target (SNOW-1306).
 
 A tour opens in the route panel (static/js/route_rail.js) exactly as a
 saved route does — profile, legs, estimate — from routes:ski_tour_feature,
-with this file's claim block in its claim slot: SAC's grade and time,
-"Save to my routes" (a sign-in link when signed out) and SAC's guide.
+with this file's claim block in its claim slot: "Save to my routes" (a
+sign-in link when signed out), SAC's guide and the credit. SAC's grade and
+time are on the panel's figures row (route_rail.js, formatMetaLine's
+``sac``), so the header is the title, one row and the buttons.
 
 Context expected:
   route_draw_signin_url  — str: the sign-in page, returning to the map.
@@ -55,13 +57,6 @@ Context expected:
 {# A tour's block in the route panel's claim slot, cloned per tour.        #}
 <template id="ski-tour-claim-template">
     <div class="flex flex-col gap-2 pt-1">
-        <p data-ski-tour-sac class="font-mono text-meta text-text-2"></p>
-        {# SNOW-1302: which half of the tour SAC's line is, inferring     #}
-        {# nothing more; the guide has the rest.                          #}
-        <p class="text-meta text-text-2">
-            <span data-ski-tour-shows></span>
-            <span data-ski-tour-guide-see>{% trans "See the SAC guide for details." %}</span>
-        </p>
         {# SNOW-1303: a saved copy shows this block without its Save.     #}
         <div data-ski-tour-actions class="flex gap-2">
             {% if routes_upload_eligible %}
@@ -91,12 +86,9 @@ Context expected:
                 {% include "includes/_icon_external_link.html" with size=14 %}
             </a>
         </div>
-        {# SNOW-1286: SAC's route portal is for its members and its       #}
-        {# subscribers; anyone else lands on a login page, so say so.     #}
-        <p class="text-meta text-text-3">
-            <span data-ski-tour-guide-note>{% trans "The SAC guide is for SAC members or subscribers." %}</span>
-            {% trans "SAC ski tours © swisstopo" %}
-        </p>
+        {# The credit swisstopo's terms ask for, kept in the panel so a   #}
+        {# saved copy opened with the tours layer off still carries it.   #}
+        <p class="text-meta text-text-3">{% trans "SAC ski tours © swisstopo" %}</p>
     </div>
 </template>
 {# Every user-facing string ski_tours.js writes (docs/i18n.md).            #}
@@ -104,10 +96,6 @@ Context expected:
     <span data-string="hint">{% trans "Tap a route" %}</span>
     <span data-string="hint-zoom">{% trans "Zoom in, then tap a route" %}</span>
     <span data-string="failed">{% trans "The routes couldn't be loaded. Check your connection." %}</span>
-    <span data-string="sac-route">{% trans "SAC route" %}</span>
-    <span data-string="shows-ascent">{% trans "Route shows the ascent only." %}</span>
-    <span data-string="shows-descent">{% trans "Route shows the descent only." %}</span>
-    <span data-string="guide-time">{% blocktrans %}%(time)s (SAC guide time){% endblocktrans %}</span>
     <span data-string="saved">{% trans "Route saved." %}</span>
     <span data-string="save-failed">{% trans "That route couldn't be saved. Try again." %}</span>
     <span
