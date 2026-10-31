@@ -805,8 +805,10 @@ def weather_geojson(request: HttpRequest) -> JsonResponse:
     observed_on = timezone.localdate()
     # v2: SNOW-797 renamed ``location_id`` to ``short_id`` in the payload,
     # and a v1 entry cached across the deploy would hand the map a shape
-    # its tap handler no longer reads.
-    cache_key = f"weather-geojson:v2:{observed_on.isoformat()}"
+    # its tap handler no longer reads. v3: SNOW-1343 added each day's
+    # ``icon`` — the map no longer derives one from ``code`` — so a v2
+    # entry cached across the deploy would draw no symbol at all.
+    cache_key = f"weather-geojson:v3:{observed_on.isoformat()}"
     payload, generated_at = cast(
         "tuple[dict[str, Any], datetime | None]",
         cache.get_or_set(
@@ -837,7 +839,9 @@ def _build_weather_payload(
 
     The row lookup is keyed on the ``(location, observed_on)`` unique
     constraint — never ordered by ``fetched_at``, since today's row is
-    updated in place rather than appended.
+    updated in place rather than appended. ``hourly`` is deferred
+    (SNOW-1343): the map draws a day's symbol, never its hours, and the
+    column is the bulk of each row.
 
     Args:
         observed_on: The day whose rows to read — today, in the site's
@@ -853,7 +857,7 @@ def _build_weather_payload(
         row.location_id: row
         for row in Weather.objects.filter(
             location__in=locations, observed_on=observed_on
-        )
+        ).defer("hourly")
     }
     oldest_fetched_at: datetime | None = None
     features: list[dict[str, Any]] = []

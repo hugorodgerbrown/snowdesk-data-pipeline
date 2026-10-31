@@ -15,8 +15,8 @@ Three consumers, one derivation:
                                  Drives both the day picker and the
                                  selected-day line on the location
                                  forecast page.
-  ``build_point_weather_days``   the map feed's ``{date: {code, tmax}}``
-                                 projection (``apps.public.api``).
+  ``build_point_weather_days``   the map feed's ``{date: {code, icon,
+                                 tmax}}`` projection (``apps.public.api``).
 
 **One row in, not a list.** The pre-SNOW-762 version of this module took a
 ``WeatherSnapshot | ForecastCellWeather`` and hedged every field read behind
@@ -54,12 +54,17 @@ WMO code reference:
   95          Thunderstorm
   96, 99      Thunderstorm with hail
 
-``_WMO_CODE_TO_ICON_BUCKET`` is mirrored in ``static/js/map_weather_core.js``
-so the map can resolve an icon from the code the feed carries without a
-second server round trip. The two tables are held together by
-``tests/weather/services/test_icon_table_parity.py``, which parses the JS
-table and asserts equality — a mirror with no guard is drift waiting to
-happen.
+The code → icon-bucket table is the weather service's, not this module's:
+``WMO_CODE_TO_ICON_BUCKET`` and ``icon_bucket_for_code`` live in
+``apps.ingest.normalise.weather_icons`` (SNOW-1343), which writes each
+forward day's ``icon_bucket`` into the ``forecast[]`` entry it stores. A
+reader here prefers that stored bucket and falls back to deriving one from
+``weather_code`` — every day stored before SNOW-1343 lacks the key, and no
+past row is rewritten. The row's own day has no stored bucket (there is no
+column for it) and always derives. The map no longer carries a mirror of the
+table: the feed serves each day's ``icon`` filename. Which variant of a
+day/night pair a panel shows is still decided here, at read time, from the
+day's stored sunrise and sunset.
 """
 
 from __future__ import annotations
@@ -67,6 +72,10 @@ from __future__ import annotations
 import datetime
 from typing import TYPE_CHECKING, TypedDict
 
+from apps.ingest.public import (
+    WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT,
+    icon_bucket_for_code,
+)
 from apps.weather.types import ForecastDay, HourlyRow
 
 if TYPE_CHECKING:
@@ -159,17 +168,9 @@ WEATHER_ICON_BUCKETS: tuple[str, ...] = (
     "thunder",
 )
 
-# Every icon bucket that ships separate day/night SVG variants — the two the
-# icon set draws a sun or a moon in. Everything else is weather in front of a
-# cloud, which looks the same by either light, so it ships as one file
-# (SNOW-791). Enumerated rather than derived by subtraction: the members are
-# a property of the drawings on disk, not of the bucket list, and a new
-# precipitation bucket must not silently acquire a day/night pair that does
-# not exist.
-WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT: frozenset[str] = frozenset(
-    {"clear", "partly_cloudy"}
-)
-
+# WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT — the buckets drawn as a day/night
+# pair — is the weather service's, imported above and re-exported here for
+# the readers that pick a filename (SNOW-1343).
 DEFAULT_ICON_BUCKET: str = "cloudy"
 
 # En-GB condition labels displayed alongside the icon.
@@ -188,38 +189,6 @@ _ICON_BUCKET_LABEL: dict[str, str] = {
     "thunder": "Thunderstorm",
 }
 
-# Mirrored in static/js/map_weather_core.js — see the module docstring.
-_WMO_CODE_TO_ICON_BUCKET: dict[int, str] = {
-    0: "clear",
-    1: "partly_cloudy",
-    2: "partly_cloudy",
-    3: "cloudy",
-    45: "fog",
-    48: "fog",
-    51: "drizzle",
-    53: "drizzle",
-    55: "drizzle",
-    56: "drizzle",
-    57: "drizzle",
-    61: "light_rain",
-    63: "moderate_rain",
-    65: "heavy_rain",
-    66: "light_rain",
-    67: "heavy_rain",
-    71: "light_snow",
-    73: "moderate_snow",
-    75: "heavy_snow",
-    77: "light_snow",
-    80: "light_rain",
-    81: "moderate_rain",
-    82: "heavy_rain",
-    85: "light_snow",
-    86: "heavy_snow",
-    95: "thunder",
-    96: "thunder",
-    99: "thunder",
-}
-
 
 def weather_code_icon_bucket(code: int) -> str:
     """Return the icon bucket for a WMO weather interpretation code.
@@ -236,7 +205,32 @@ def weather_code_icon_bucket(code: int) -> str:
         One of the bucket identifiers in :data:`WEATHER_ICON_BUCKETS`.
 
     """
-    return _WMO_CODE_TO_ICON_BUCKET.get(code, DEFAULT_ICON_BUCKET)
+    return icon_bucket_for_code(code)
+
+
+def _stored_icon_bucket(entry: ForecastDay) -> str:
+    """Return a forward day's icon bucket, preferring the stored one.
+
+    A day stored since SNOW-1343 carries the service's ``icon_bucket``; one
+    stored before it does not, and is never rewritten, so it falls back to
+    deriving the bucket from ``weather_code``. A stored value naming no
+    known drawing is treated as absent rather than trusted.
+
+    Args:
+        entry: One :class:`apps.weather.types.ForecastDay` dict.
+
+    Returns:
+        One of the bucket identifiers in :data:`WEATHER_ICON_BUCKETS`.
+
+    Raises:
+        KeyError: When the entry has neither a usable ``icon_bucket`` nor a
+            ``weather_code`` — the caller drops such a day as malformed.
+
+    """
+    stored = entry.get("icon_bucket")
+    if stored is not None and stored in _ICON_BUCKET_LABEL:
+        return stored
+    return weather_code_icon_bucket(entry["weather_code"])
 
 
 def weather_icon_filename(icon_bucket: str, time_of_day: str) -> str:
@@ -505,10 +499,11 @@ def _forecast_day_context(
         sunrise = datetime.datetime.fromisoformat(entry["sunrise"])
         sunset = datetime.datetime.fromisoformat(entry["sunset"])
         # Inside the guard alongside the date parsing (and matching
-        # build_point_weather_days below): a day missing its weather_code is
-        # as malformed as one missing its date, and must drop out the same
-        # way rather than raising KeyError past the caller.
-        icon_bucket = weather_code_icon_bucket(entry["weather_code"])
+        # build_point_weather_days below): a day with neither a stored
+        # icon_bucket nor a weather_code is as malformed as one missing its
+        # date, and must drop out the same way rather than raising KeyError
+        # past the caller.
+        icon_bucket = _stored_icon_bucket(entry)
     except KeyError, TypeError, ValueError:
         return None
     time_of_day = "day" if _is_day_between(sunrise, sunset, now) else "night"
@@ -597,14 +592,17 @@ def build_point_forecast_panel(
 class PointWeatherDay(TypedDict):
     """One date's entry in the ``days`` dict of the map weather feed.
 
-    Two keys and no more. The map draws a condition icon and a label; the
-    icon is resolved from ``code`` client-side (``map_weather_core.js``) and
-    the label is the day's max temperature beside the station's altitude.
-    Nothing else on the row reaches the map, so nothing else is serialised —
-    the payload is fetched once and carries every location for a week.
+    Three keys and no more. The map draws a condition icon and a label: the
+    icon is the filename served here (SNOW-1343 — the map no longer holds
+    its own code table) and the label is the day's max temperature beside
+    the station's altitude. ``code`` stays on the wire for any reader of the
+    raw condition. Nothing else on the row reaches the map, so nothing else
+    is serialised — the payload is fetched once and carries every location
+    for a week.
     """
 
     code: int  # WMO weather interpretation code (0–99).
+    icon: str  # Weather SVG basename, always the day variant.
     tmax: float | None  # Daily max air temp at 2m, °C.
 
 
@@ -613,8 +611,13 @@ def build_point_weather_days(
 ) -> dict[str, PointWeatherDay]:
     """Project one row and its forward days into the map feed's ``days`` dict.
 
-    Takes no ``now``: there is no day/night decision here. The feed carries
-    the code, and the map resolves the icon at draw time.
+    Takes no ``now``: there is no day/night decision here. A map symbol
+    summarises a whole calendar day, so where the set draws a day/night
+    pair the map always takes the DAY variant — switching every station to
+    a moon because the reader is up late would describe the reader, not the
+    day. A forward day's bucket is its stored ``icon_bucket`` when it has
+    one, else derived from its ``weather_code``; the row's own day always
+    derives.
 
     Args:
         weather: The row to project, or ``None``.
@@ -629,6 +632,9 @@ def build_point_weather_days(
     days: dict[str, PointWeatherDay] = {
         weather.observed_on.isoformat(): PointWeatherDay(
             code=weather.weather_code,
+            icon=weather_icon_filename(
+                weather_code_icon_bucket(weather.weather_code), "day"
+            ),
             tmax=weather.temperature_2m_max,
         )
     }
@@ -639,6 +645,8 @@ def build_point_weather_days(
         except KeyError, TypeError, ValueError:
             continue
         days[date_key] = PointWeatherDay(
-            code=code, tmax=entry.get("temperature_2m_max")
+            code=code,
+            icon=weather_icon_filename(_stored_icon_bucket(entry), "day"),
+            tmax=entry.get("temperature_2m_max"),
         )
     return days
