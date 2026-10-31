@@ -47,12 +47,7 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  parsing, and since SNOW-1270 the render model builder, its
                  prose parser, the period transition and the day-character
                  cascade — store_bulletin builds each bulletin's model onto
-                 SourceBulletin and the feed serves it; since SNOW-1341 the
-                 model's ``derived`` block also carries what readers used to
-                 recompute per request (terrain rules, period transition,
-                 problem family, headline inputs, the alert state and its
-                 fingerprint, danger levels), and bulletin_state lives here
-                 — plus the day-rating
+                 SourceBulletin and the feed serves it — plus the day-rating
                  reading, the target day and the problem-terrain rules;
                  SourceDayRating, rated from the service's own bulletins,
                  is served at /api/data/v2/day-ratings/ and copied over

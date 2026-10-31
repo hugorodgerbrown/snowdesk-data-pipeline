@@ -345,14 +345,31 @@ def _fed_regions(
         raw_regions: The CAAML ``regions`` list.
         region_codes: The feed item's ``region_codes``, or None.
 
+    Every CAAML entry is validated first, exactly as
+    ``_resolve_bulletin_regions`` validates it, so a malformed entry raises
+    before any write whether or not the item carries codes: the service's
+    index silently skips an entry with no ``regionID``, and filtering on its
+    codes would otherwise drop the malformed entry before the check saw it
+    (Codex on #1361).
+
+    Args:
+        raw_regions: The CAAML ``regions`` list.
+        region_codes: The feed item's ``region_codes``, or None.
+
     Returns:
         The entries to resolve, in CAAML order.
+
+    Raises:
+        KeyError: An entry lacks ``regionID`` or ``name``.
 
     """
     if region_codes is None:
         return raw_regions
+    for raw_region in raw_regions:
+        raw_region["regionID"]  # noqa: B018 — the same KeyError the resolver raises
+        raw_region["name"]  # noqa: B018 — the same KeyError the resolver raises
     codes = set(region_codes)
-    return [r for r in raw_regions if r.get("regionID") in codes]
+    return [r for r in raw_regions if r["regionID"] in codes]
 
 
 def upsert_bulletin(
@@ -401,7 +418,8 @@ def upsert_bulletin(
     next_update_raw: str | None = raw.get("nextUpdate")
     # The service indexed the regions, the start and the day (SNOW-1341):
     # a fed value is used as sent, and only an absent one is read here.
-    raw_regions = _fed_regions(raw.get("regions", []), region_codes)
+    caaml_regions: list[dict[str, str]] = raw.get("regions", [])
+    raw_regions = _fed_regions(caaml_regions, region_codes)
 
     computed_render_model, computed_render_model_version = _render_model(
         raw, render_model, run
@@ -437,9 +455,11 @@ def upsert_bulletin(
 
     # Total resolution failure is a coverage-erasing event, not a skip
     # (SNOW-547) — raised here, before the transaction below deletes the
-    # existing links, so prior state survives untouched.
+    # existing links, so prior state survives untouched. Judged against the
+    # CAAML's own list: fed codes that keep none of its entries resolve
+    # nothing, and must not pass as a bulletin with no regions.
     _assert_any_region_resolved(
-        bulletin_id, raw_regions, resolved_regions, skipped_regions
+        bulletin_id, caaml_regions, resolved_regions, skipped_regions
     )
 
     # Replace the bulletin and its region links in one transaction so a

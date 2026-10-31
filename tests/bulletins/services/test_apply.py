@@ -1293,3 +1293,54 @@ class TestFedIndex:
         bulletin = Bulletin.objects.get(bulletin_id="test-001")
         assert bulletin.render_model_version == 0
         assert bulletin.danger_levels == ""
+
+
+@pytest.mark.django_db
+class TestFedIndexMalformedRegions:
+    """Codex on #1361: fed codes never hide a malformed CAAML region entry."""
+
+    pytestmark = pytest.mark.usefixtures("_seed_test_regions")
+
+    def _linked(self) -> set[str]:
+        """Return the stored bulletin's linked region ids."""
+        bulletin = Bulletin.objects.get(bulletin_id="test-001")
+        return set(bulletin.regions.values_list("region_id", flat=True))
+
+    @pytest.mark.parametrize("codes", [None, ["CH-4115"]])
+    def test_one_malformed_entry_raises_before_any_write(
+        self, codes: list[str] | None
+    ) -> None:
+        """With or without fed codes: KeyError, existing links untouched."""
+        upsert_bulletin(_make_raw_bulletin(), PipelineRunFactory.create())
+        raw = _make_raw_bulletin(
+            regions=[{"regionID": "CH-4115", "name": "Piz Buin"}, {"name": "No id"}]
+        )
+        index = {} if codes is None else {"region_codes": codes}
+        with pytest.raises(KeyError):
+            apply_feed_item(
+                _feed_item(raw, **index), PipelineRunFactory.create(), existing=None
+            )
+        assert self._linked() == {"CH-4115", "CH-7111"}
+
+    def test_every_entry_malformed_raises_and_keeps_the_links(self) -> None:
+        """The service indexed no codes from them; still no silent unlink."""
+        upsert_bulletin(_make_raw_bulletin(), PipelineRunFactory.create())
+        raw = _make_raw_bulletin(regions=[{"name": "No id"}, {"name": "Nor this"}])
+        with pytest.raises(KeyError):
+            apply_feed_item(
+                _feed_item(raw, region_codes=[]),
+                PipelineRunFactory.create(),
+                existing=None,
+            )
+        assert self._linked() == {"CH-4115", "CH-7111"}
+
+    def test_codes_that_keep_no_entry_are_no_coverage(self) -> None:
+        """Fed codes matching none of the CAAML's regions resolve nothing."""
+        upsert_bulletin(_make_raw_bulletin(), PipelineRunFactory.create())
+        with pytest.raises(NoResolvableRegionsError):
+            apply_feed_item(
+                _feed_item(_make_raw_bulletin(), region_codes=["CH-0000"]),
+                PipelineRunFactory.create(),
+                existing=None,
+            )
+        assert self._linked() == {"CH-4115", "CH-7111"}
