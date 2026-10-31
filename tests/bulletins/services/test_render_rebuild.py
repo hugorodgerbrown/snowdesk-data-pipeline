@@ -14,6 +14,9 @@ bulletin's render model rebuilt as one task, on both sides:
   - The rating-row lock creates a missing row and retries a racing create.
   - A stale ``SourceDayRating`` is recomputed once, then skipped.
   - Every task is enqueued below the default priority.
+  - Each task locks its bulletin FOR NO KEY UPDATE, then its pairs' rating
+    rows FOR UPDATE in sorted order, before reading the candidates.
+  - A sibling that commits just before a task locks is read by it.
 """
 
 from __future__ import annotations
@@ -23,10 +26,13 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-from django.db import IntegrityError
+from django.db import IntegrityError, connection
+from django.db.models import QuerySet
+from django.test.utils import CaptureQueriesContext
 from django_tasks import TaskResultStatus
 
 from apps.bulletins.models import Bulletin, RegionDayRating
+from apps.bulletins.services.day_rating import recompute_region_day
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.bulletins.services.render_rebuild import (
     RENDER_TASK_PRIORITY,
@@ -46,6 +52,7 @@ from apps.ingest.public import (
     SourceBulletin,
     SourceDayRating,
     lock_source_day_ratings,
+    refresh_source_day_ratings,
 )
 from apps.regions.models import MicroRegion
 from tests.factories import (
@@ -63,6 +70,8 @@ _INSTANCE_BUILD = "apps.bulletins.services.render_rebuild.build_render_model"
 _INSTANCE_RECOMPUTE = "apps.bulletins.services.render_rebuild.recompute_region_day"
 _SOURCE_BUILD = "apps.ingest.store.build_render_model"
 _SOURCE_REFRESH = "apps.bulletins.services.render_rebuild.refresh_source_day_ratings"
+_INSTANCE_LOCK = "apps.bulletins.services.render_rebuild._lock_region_day_ratings"
+_SOURCE_LOCK = "apps.bulletins.services.render_rebuild.lock_source_day_ratings"
 
 
 def _raw(level: str) -> dict[str, Any]:
@@ -433,3 +442,188 @@ def test_a_failed_source_build_is_reported() -> None:
     """The body returns the failure for the wrapper to raise."""
     row = _source(["CH-1"])
     assert rebuild_one_source_bulletin(row.pk) == REBUILD_FAILED
+
+
+def _record_locks(events: list[tuple[str, Any]]) -> Any:
+    """Patch ``QuerySet.select_for_update`` to record each lock, then lock.
+
+    SQLite emits no ``FOR UPDATE``, so the call itself is the evidence:
+    each entry is ``("lock", (model name, no_key))``.
+    """
+    real = QuerySet.select_for_update
+
+    def _spy(self: QuerySet, *args: Any, **kwargs: Any) -> QuerySet:
+        events.append(("lock", (self.model.__name__, kwargs.get("no_key", False))))
+        return real(self, *args, **kwargs)
+
+    return patch.object(QuerySet, "select_for_update", _spy)
+
+
+def _before_first(events: list[tuple[str, Any]], kind: str) -> list[tuple[str, Any]]:
+    """Return the events recorded before the first of ``kind``.
+
+    Fails if ``kind`` never happened, so the prefix is never vacuous.
+    """
+    kinds = [event[0] for event in events]
+    return events[: kinds.index(kind)]
+
+
+def _index(queries: CaptureQueriesContext, *needles: str, after: int = -1) -> int:
+    """Return the index of the first SELECT after ``after`` holding ``needles``."""
+    return next(
+        i
+        for i, q in enumerate(queries.captured_queries)
+        if i > after
+        and q["sql"].startswith("SELECT")
+        and all(needle in q["sql"] for needle in needles)
+    )
+
+
+def _order_clause(queries: CaptureQueriesContext, index: int) -> str:
+    """Return the ORDER BY clause of the captured query at ``index``."""
+    sql = queries.captured_queries[index]["sql"]
+    return sql[sql.index("ORDER BY") :]
+
+
+class TestLockOrder:
+    """The pair locks are taken, sorted, before the candidates are read."""
+
+    def test_instance_locks_bulletin_no_key_then_pairs_before_candidates(
+        self,
+    ) -> None:
+        """Bulletin FOR NO KEY UPDATE; ratings FOR UPDATE, sorted, then read."""
+        first = MicroRegionFactory.create(region_id="CH-2001")
+        second = MicroRegionFactory.create(region_id="CH-2002")
+        bulletin = _bulletin(second)
+        RegionBulletinFactory.create(bulletin=bulletin, region=first)
+        events: list[tuple[str, Any]] = []
+        real_recompute = recompute_region_day
+
+        def _recompute(region: MicroRegion, day: date, **kwargs: Any) -> None:
+            events.append(("recompute", region.pk))
+            real_recompute(region, day, **kwargs)
+
+        with (
+            _record_locks(events),
+            patch(_INSTANCE_RECOMPUTE, side_effect=_recompute),
+            CaptureQueriesContext(connection) as queries,
+        ):
+            rebuild_one_bulletin(bulletin.pk)
+
+        # update_or_create inside the recompute takes its own row lock, so
+        # only the locks before the first recompute are the task's.
+        assert _before_first(events, "recompute") == [
+            ("lock", ("Bulletin", True)),
+            ("lock", ("RegionDayRating", False)),
+        ]
+        assert [e for e in events if e[0] == "recompute"] == [
+            ("recompute", first.pk),
+            ("recompute", second.pk),
+        ]
+        lock_at = _index(queries, 'FROM "bulletins_regiondayrating"', " OR ")
+        order = _order_clause(queries, lock_at)
+        assert order.index('"region_id"') < order.index('"date"')
+        candidates_at = _index(queries, 'FROM "bulletins_bulletin"', '"target_date" =')
+        assert lock_at < candidates_at
+
+    def test_source_locks_bulletin_no_key_then_pairs_before_candidates(
+        self,
+    ) -> None:
+        """Bulletin FOR NO KEY UPDATE; ratings FOR UPDATE, sorted, then read."""
+        row = _source(["CH-2", "CH-1"])
+        events: list[tuple[str, Any]] = []
+        real_refresh = refresh_source_day_ratings
+
+        def _refresh(pairs: Any, **kwargs: Any) -> int:
+            events.append(("refresh", sorted(pairs)))
+            return real_refresh(pairs, **kwargs)
+
+        with (
+            patch(_SOURCE_BUILD, side_effect=_by_caaml),
+            _record_locks(events),
+            patch(_SOURCE_REFRESH, side_effect=_refresh),
+            CaptureQueriesContext(connection) as queries,
+        ):
+            rebuild_one_source_bulletin(row.pk)
+
+        assert _before_first(events, "refresh") == [
+            ("lock", ("SourceBulletin", True)),
+            ("lock", ("SourceDayRating", False)),
+        ]
+        assert [e for e in events if e[0] == "refresh"] == [
+            ("refresh", [("CH-1", DAY), ("CH-2", DAY)]),
+        ]
+        lock_at = _index(queries, 'FROM "ingest_sourcedayrating"', " OR ")
+        order = _order_clause(queries, lock_at)
+        assert order.index('"region_code"') < order.index('"date"')
+        candidates_at = _index(
+            queries, 'FROM "ingest_sourcebulletin"', '"target_date" ='
+        )
+        assert lock_at < candidates_at
+
+    @pytest.mark.skipif(
+        not connection.features.has_select_for_no_key_update,
+        reason="the backend emits no row locks (SQLite)",
+    )
+    def test_the_bulletin_lock_compiles_to_for_no_key_update(self) -> None:
+        """On Postgres the bulletin lock is FOR NO KEY UPDATE, not FOR UPDATE."""
+        bulletin = _bulletin(MicroRegionFactory.create(region_id="CH-2003"))
+        with CaptureQueriesContext(connection) as queries:
+            rebuild_one_bulletin(bulletin.pk, refresh_ratings=False)
+        assert "FOR NO KEY UPDATE" in queries.captured_queries[0]["sql"]
+
+
+class TestInterleaving:
+    """A sibling that commits just before this task locks is read by it."""
+
+    @pytest.mark.parametrize("first", ["morning", "evening"])
+    def test_instance_sibling_committing_before_the_lock_is_read(
+        self, first: str
+    ) -> None:
+        """B has written; A runs whole before B locks; B rates correctly."""
+        region = MicroRegionFactory.create(region_id="CH-3001")
+        rows = {
+            "morning": _bulletin(region, level="high", hour=7),
+            "evening": _bulletin(region, level="low", hour=17),
+        }
+        a = rows[first]
+        b = rows["evening" if first == "morning" else "morning"]
+        real_lock = _lock_region_day_ratings
+
+        def _a_then_lock(pairs: Any) -> None:
+            rebuild_one_bulletin(a.pk)
+            real_lock(pairs)
+
+        with patch(_INSTANCE_LOCK, side_effect=_a_then_lock):
+            rebuild_one_bulletin(b.pk)
+
+        rating = RegionDayRating.objects.get(region=region, date=DAY)
+        assert rating.max_rating == "high"
+        assert rating.source_bulletin_id == rows["morning"].pk
+
+    @pytest.mark.parametrize("first", ["morning", "evening"])
+    def test_source_sibling_committing_before_the_lock_is_read(
+        self, first: str
+    ) -> None:
+        """B has written; A runs whole before B locks; B rates correctly."""
+        rows = {
+            "morning": _source(["CH-1"], hour=7, level="high"),
+            "evening": _source(["CH-1"], hour=17, level="low"),
+        }
+        a = rows[first]
+        b = rows["evening" if first == "morning" else "morning"]
+        real_lock = lock_source_day_ratings
+
+        def _a_then_lock(pairs: Any) -> None:
+            rebuild_one_source_bulletin(a.pk)
+            real_lock(pairs)
+
+        with (
+            patch(_SOURCE_BUILD, side_effect=_by_caaml),
+            patch(_SOURCE_LOCK, side_effect=_a_then_lock),
+        ):
+            rebuild_one_source_bulletin(b.pk)
+
+        rating = SourceDayRating.objects.get(region_code="CH-1", date=DAY)
+        assert rating.max_rating == "high"
+        assert rating.bulletin_id == rows["morning"].bulletin_id
