@@ -98,7 +98,9 @@ logger = logging.getLogger(__name__)
 
 # v2: SNOW-1282 chains a tour's parts, which moves some summits.
 # v4: SNOW-1323 adds the newest source_updated_at to the stamp.
-_SUMMITS_CACHE_KEY = "routes:ski-summits:v4:{count}:{source}:{stamp}"
+# v5: SNOW-1336 drops updated_at — a first open's walk moved it, so every
+# first open wrote a fresh ~120 KB copy that lived a week.
+_SUMMITS_CACHE_KEY = "routes:ski-summits:v5:{count}:{source}"
 _SUMMITS_CACHE_SECONDS = 7 * 24 * 3600
 
 # SNOW-1285: every tour at once, for a map zoomed out past the per-view
@@ -107,6 +109,9 @@ _SUMMITS_CACHE_SECONDS = 7 * 24 * 3600
 # drawn moves, and the whole set is ~2.3 MB, ~0.6 MB gzipped.
 # v3: SNOW-1310 cuts each tour into its legs; v4: SNOW-1323's stamp.
 _OVERVIEW_CACHE_KEY = "routes:ski-overview:v4:{count}:{source}:{stamp}"
+# SNOW-1336: the overview's key still moves on a walk, so it remembers the
+# key it last wrote and deletes that copy when it writes the next one.
+_OVERVIEW_CURRENT_KEY = "routes:ski-overview:current"
 _OVERVIEW_TOLERANCE_DEG = 0.0002
 _OVERVIEW_PLACES = 5
 
@@ -120,7 +125,16 @@ def _tours_stamp(template: str) -> str:
     leaves ``auto_now`` alone; a tour walked here on its first open
     (``store_terrain``) moves ``updated_at`` and not ``source_updated_at``.
     So a sync that adds, rewrites or removes a tour, or a local walk that
-    gives one its drawing, reads afresh.
+    gives one its drawing, reads afresh. A template without a ``{stamp}``
+    field ignores the walk (SNOW-1336).
+
+    Args:
+        template: A cache key with ``{count}``, ``{source}`` and
+            optionally ``{stamp}`` fields.
+
+    Returns:
+        The key for the tours as they stand.
+
     """
     stamp = SkiTour.objects.aggregate(
         count=Count("id"),
@@ -242,7 +256,11 @@ def tour_overview() -> list[dict[str, Any]]:
                         },
                     }
                 )
+        previous = cache.get(_OVERVIEW_CURRENT_KEY)
+        if previous and previous != key:
+            cache.delete(previous)
         cache.set(key, cached, _SUMMITS_CACHE_SECONDS)
+        cache.set(_OVERVIEW_CURRENT_KEY, key, _SUMMITS_CACHE_SECONDS)
     return cached
 
 
