@@ -12,7 +12,7 @@
  *        this generic handler can't safely drive (the mutation-queue
  *        toast's slide transition — templates/includes/_toast_banner.html
  *        — and #offmap-banner's hidden/flex dual toggle — see
- *        public/templates/public/home.html); their own JS keeps binding
+ *        public/templates/public/map.html); their own JS keeps binding
  *        its own dismiss listener directly.
  *      - hides it using the idiom the element declares:
  *        `data-overlay-hide="class"` toggles the Tailwind `hidden` CLASS

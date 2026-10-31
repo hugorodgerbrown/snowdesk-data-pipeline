@@ -4,7 +4,7 @@
  * SNOW-610 split static/js/map.js into thirteen classic scripts. In the
  * browser they share ONE global lexical scope, so `map_basemap_downloads.js`
  * reads `MAP` and `COUNTRY_STATE` — declared in `map_state.js` — as bare
- * identifiers. That is the whole load-order contract home.html encodes.
+ * identifiers. That is the whole load-order contract map.html encodes.
  *
  * `await import()` cannot reproduce it. Vitest evaluates each file as an ES
  * module, and a top-level `let`/`const` in an ES module is MODULE-scoped:
@@ -21,7 +21,7 @@
  * (which is exactly what indirect `eval` into the real global scope would
  * have hit on the second `beforeEach`).
  *
- * Order is not cosmetic — it is home.html's order, and the reason the
+ * Order is not cosmetic — it is map.html's order, and the reason the
  * declaration files come before map.js is that map.js's boot IIFE runs at
  * parse time and would otherwise read a binding still in its temporal dead
  * zone.
@@ -46,7 +46,7 @@ const STATIC_JS = path.resolve(
 
 /*
  * SNOW-656: the `*_core.js` modules `map.js` reads AT PARSE TIME, evaluated
- * ahead of the bundle exactly as home.html loads them ahead of it.
+ * ahead of the bundle exactly as map.html loads them ahead of it.
  *
  * Most cores are reached from a call site — `choropleth_core.js` from
  * `installRegionsLayers`, `search_core.js` from the search box — so a suite
@@ -70,7 +70,7 @@ const STATIC_JS = path.resolve(
  * `tests/public/test_map_script_order.py` parses that array out of this
  * file's text by splitting on its export statement, so anything above it is
  * invisible to that check — which is right, since these are not bundle
- * members and home.html loads them outside the bundle's contiguous run.
+ * members and map.html loads them outside the bundle's contiguous run.
  * (That same parse is why this paragraph paraphrases the export rather than
  * quoting it: a second occurrence of the literal it splits on lands the
  * parse in the wrong half of the file and yields nothing.)
@@ -115,7 +115,7 @@ const PARSE_TIME_CORES = [
   'community_reports_core.js',
 ];
 
-/** home.html's script order for the map bundle. */
+/** map.html's script order for the map bundle. */
 export const MAP_BUNDLE = [
   // Declarations — must precede map.js.
   'map_state.js',

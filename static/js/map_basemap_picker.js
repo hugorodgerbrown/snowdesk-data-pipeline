@@ -538,7 +538,7 @@
   );
 
   // Seed the header and the summaries from the state map.js has already
-  // written onto the rows (it runs before this file — see home.html).
+  // written onto the rows (it runs before this file — see map.html).
   refreshReadout();
 
   // SNOW-588 exposed ``window.pwaLayersMenu.close()`` here so the "Manage

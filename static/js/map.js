@@ -23,7 +23,7 @@
  * readable from a later script as a bare identifier, but is in the
  * temporal dead zone until its own script has run. Every IIFE here runs at
  * parse time. So declarations load before this file, and surfaces after —
- * exactly the order they had when they were one file. `home.html` carries
+ * exactly the order they had when they were one file. `map.html` carries
  * the tags in this order:
  *
  *   map_state.js              MAP, FEATURE_BY_*, COUNTRY_STATE,
@@ -7849,7 +7849,7 @@
   // from here closes whatever else is up, exactly as a tap would; a path
   // that skipped the registry would be two overlays open at once.
   //
-  // The bridges are assigned by other deferred scripts. In home.html the
+  // The bridges are assigned by other deferred scripts. In map.html the
   // surfaces' tags precede map.js, so they exist by now; a page that
   // orders them the other way is covered by the DOMContentLoaded fallback,
   // by which point every deferred script has run.

@@ -11,7 +11,7 @@
  * module deliberately tracks it — where the two differ, the difference is
  * noted below.
  *
- * Loaded from public/partials/_routes_surface.html (not home.html, and not
+ * Loaded from public/partials/_routes_surface.html (not map.html, and not
  * the map bundle — see that partial's own note) for every visitor,
  * regardless of whether the user is authenticated. The floating
  * #route-add-btn carries the data attributes that drive branching:

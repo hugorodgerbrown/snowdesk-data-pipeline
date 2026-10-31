@@ -177,7 +177,7 @@
     const total = allResorts.length;
     const set = allResorts.reduce((acc, r) => acc + (r.has_coords ? 1 : 0), 0);
     // i18n-allow: the resort editor is staff-only (edit_mode, superuser
-    // gate in home.html) and is never rendered for a member of the public.
+    // gate in map.html) and is never rendered for a member of the public.
     remainingEl.textContent = `${set} / ${total} set`;
   };
 
@@ -231,7 +231,7 @@
       const empty = document.createElement('li');
       empty.className = 'italic text-text-3';
       // i18n-allow: the resort editor is staff-only (edit_mode, superuser
-      // gate in home.html) and is never rendered for a member of the public
+      // gate in map.html) and is never rendered for a member of the public
       // — same reasoning as renderRemaining's own allow above.
       let msg = 'No resorts loaded.';
       // SNOW-645 review: bin/i18n-lint's variable-indirection check only

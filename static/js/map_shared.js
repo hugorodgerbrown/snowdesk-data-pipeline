@@ -154,7 +154,7 @@ const formatDatePopup = (dateKey) => {
 // apps/public/api.py) and so is the correction.
 //
 // Returns '' when relative_time.js has not loaded, which both callers
-// already treat as "no subheader" — home.html loads it, and every caller
+// already treat as "no subheader" — map.html loads it, and every caller
 // runs from a user gesture long after parse, so this is a guard rather
 // than a case.
 const formatRelativeTime = (isoString) => {
@@ -167,7 +167,7 @@ const formatRelativeTime = (isoString) => {
 // subheader as the observation pin's, and favourites.js builds it — but
 // that module is NOT part of the map bundle, so the bare identifier above
 // is not a contract it can rely on (its own load order sits in a surface
-// partial, not in home.html's bundle run). Publish the formatter on a named
+// partial, not in map.html's bundle run). Publish the formatter on a named
 // channel instead, the way map_state.js publishes window.snowdeskMapState:
 // one greppable name, and no second implementation of "5 h ago".
 window.snowdeskMapFormat = Object.freeze({ relativeTime: formatRelativeTime });

@@ -7,7 +7,7 @@
  * Dependency-free IIFE attaching ``self.pwaBasemapDownloadCore`` — same
  * idiom as ``basemap_cache_core.js`` (frozen export, no side effects).
  * Loaded on the page (window context) BEFORE ``static/js/map.js`` in
- * ``home.html``, unlike ``basemap_cache_core.js`` which is only ever
+ * ``map.html``, unlike ``basemap_cache_core.js`` which is only ever
  * ``importScripts``'d into the service worker — this module has no SW
  * dependency, so it's a plain deferred ``<script>`` tag.
  *

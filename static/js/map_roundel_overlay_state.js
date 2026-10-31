@@ -58,7 +58,7 @@
  * the panel, not the overlay.
  *
  * LOAD ORDER: needs the bridges, which map.js publishes at parse time,
- * so its <script> tag sits after the map bundle in home.html. It is not a
+ * so its <script> tag sits after the map bundle in map.html. It is not a
  * bundle member — nothing in the bundle reads it. Order is belt-and-braces
  * either way: this module paints once at parse time AND map.js announces
  * once its bridges exist, so whichever runs second corrects the other.

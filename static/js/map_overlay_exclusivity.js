@@ -85,7 +85,7 @@
  * sheets' own teardown (map_sheet.js) empties the sheet body, which is
  * not free and not idempotent-looking to a reader of the DOM.
  *
- * Loaded from public/home.html ahead of every registering module (all
+ * Loaded from public/map.html ahead of every registering module (all
  * deferred, so document order is execution order). Every call site uses
  * optional chaining anyway: a page that renders one of these surfaces
  * without this module still works, it simply stops being exclusive.

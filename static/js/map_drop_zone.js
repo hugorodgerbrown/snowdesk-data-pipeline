@@ -65,7 +65,7 @@
  * load after map.js (it reads `MAP`) and after map_geolocate.js (whose
  * listener answers the locate request it dispatches). It sits OUTSIDE the
  * map bundle — see tests/public/test_map_script_order.py — so its tag goes
- * below the bundle's run in home.html, not inside it.
+ * below the bundle's run in map.html, not inside it.
  */
 
 (function mapDropZoneInit() {
