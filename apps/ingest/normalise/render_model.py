@@ -1618,21 +1618,24 @@ def _validate(
 
 def _build_trait(
     aggregation_entry: dict[str, Any],
-    problems_by_type: dict[str, dict[str, Any]],
+    matched_raw: list[dict[str, Any]],
     danger_ratings: list[dict[str, Any]],
     source: str,
     lang: str = "en",
 ) -> dict[str, Any]:
     """
-    Build a single trait dict from an aggregation entry and a problem lookup.
+    Build a single trait dict from an aggregation entry and its raw problems.
 
-    Problems are iterated in the order specified by the aggregation entry's
-    ``problemTypes`` list, preserving the editorial ordering.
+    The caller resolves the entry to its raw problems, in the order the
+    entry's ``problemTypes`` list gives (the editorial ordering). One type
+    may contribute more than one problem: an ALBINA or Météo-France
+    bulletin can describe the same problem type in two elevation bands
+    within one period, and each band is its own problem (SNOW-1341).
 
     Args:
         aggregation_entry: A single aggregation entry with ``category``,
             ``validTimePeriod``, ``problemTypes``, and optionally ``title``.
-        problems_by_type: Lookup dict mapping problemType → raw problem dict.
+        matched_raw: The entry's raw CAAML problems, in editorial order.
         danger_ratings: Bulletin-level danger ratings (passed to problem builder).
         source: A provider code (``PROVIDER_*``).
         lang: BCP-47 language code forwarded to the per-problem prose enrichment.
@@ -1651,17 +1654,6 @@ def _build_trait(
             (category, time_period), f"{category.capitalize()} avalanches"
         )
     )
-
-    problem_types_ordered: list[str] = aggregation_entry["problemTypes"]
-
-    matched_raw: list[dict[str, Any]] = []
-    for pt in problem_types_ordered:
-        # Defensive: validation already guarantees pt is in problems_by_type,
-        # but assert to catch any future divergence.
-        assert pt in problems_by_type, (  # noqa: S101 — post-validation defensive check
-            f"Problem type {pt!r} not found in problems_by_type after validation."
-        )
-        matched_raw.append(problems_by_type[pt])
 
     built_problems = [
         _build_problem(p, danger_ratings, source, lang) for p in matched_raw
@@ -1722,11 +1714,15 @@ def _build_synthesised_traits(
     lang: str = "en",
 ) -> list[dict[str, Any]]:
     """
-    Build traits for ALBINA and MeteoFrance bulletins using a per-(type, vtp) lookup.
+    Build traits for ALBINA and MeteoFrance bulletins, every raw problem kept.
 
     The same problem type can appear in multiple validTimePeriods in both
     ALBINA and MeteoFrance bulletins, so each aggregation entry is resolved
-    against the subset of problems that match its validTimePeriod.
+    against the subset of problems that match its validTimePeriod — and,
+    for an ALBINA entry, its elevation band. Within that subset every
+    problem of a type is kept, each with its own elevation, aspects, rating
+    and comment: one type described in two bands is two problems
+    (SNOW-1341; the per-(type, period) lookup it replaced kept the last).
 
     Args:
         aggregation: The synthesised aggregation list.
@@ -1739,26 +1735,31 @@ def _build_synthesised_traits(
         Flat list of trait dicts in aggregation order.
 
     """
-    problems_by_type_vtp: dict[tuple[str, str], dict[str, Any]] = {}
-    for p in avalanche_problems:
-        pt = p.get("problemType", "")
-        pvtp = p.get("validTimePeriod") or "all_day"
-        problems_by_type_vtp[(pt, pvtp)] = p
-
     traits: list[dict[str, Any]] = []
     for entry in aggregation:
         entry_vtp = entry.get("validTimePeriod") or "all_day"
-        entry_problems: dict[str, dict[str, Any]] = {}
+        # ALBINA entries are per elevation band; Météo-France ones are not,
+        # so every band of a type in the period belongs to the one entry.
+        entry_band: str | None = entry.get("band_id") or None
+        matched: list[dict[str, Any]] = []
         for pt in entry.get("problemTypes") or []:
-            if (pt, entry_vtp) in problems_by_type_vtp:
-                entry_problems[pt] = problems_by_type_vtp[(pt, entry_vtp)]
-            else:
+            # Every raw problem of this type in this period (and band) is
+            # its own problem: keying them by (type, period) kept only the
+            # last, so a type described in two bands lost one (SNOW-1341).
+            hits = [
+                ap
+                for ap in avalanche_problems
+                if ap.get("problemType") == pt
+                and (ap.get("validTimePeriod") or "all_day") == entry_vtp
+                and (entry_band is None or band_id_for_problem(ap) == entry_band)
+            ]
+            if not hits:
                 # Fallback: first occurrence of this problem type.
-                for ap in avalanche_problems:
-                    if ap.get("problemType") == pt:
-                        entry_problems[pt] = ap
-                        break
-        traits.append(_build_trait(entry, entry_problems, ratings, source, lang))
+                hits = [
+                    next(ap for ap in avalanche_problems if ap.get("problemType") == pt)
+                ]
+            matched.extend(hits)
+        traits.append(_build_trait(entry, matched, ratings, source, lang))
     return traits
 
 
@@ -1803,7 +1804,15 @@ def _build_traits(
             pt: p for p in avalanche_problems if (pt := p.get("problemType"))
         }
         for entry in aggregation:
-            traits.append(_build_trait(entry, problems_by_type, ratings, source, lang))
+            matched: list[dict[str, Any]] = []
+            for pt in entry["problemTypes"]:
+                # Defensive: validation already guarantees pt is in
+                # problems_by_type, but assert to catch any future divergence.
+                assert pt in problems_by_type, (  # noqa: S101 — post-validation defensive check
+                    f"Problem type {pt!r} missing from problems_by_type."
+                )
+                matched.append(problems_by_type[pt])
+            traits.append(_build_trait(entry, matched, ratings, source, lang))
 
     if len(traits) > 2:
         logger.warning(
