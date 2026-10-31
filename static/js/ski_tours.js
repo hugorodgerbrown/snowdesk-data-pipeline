@@ -79,17 +79,12 @@
     hint: 'Tap a route',
     'hint-zoom': 'Zoom in, then tap a route',
     failed: "The routes couldn't be loaded. Check your connection.",
-    'sac-route': 'SAC route',
-    'shows-ascent': 'Route shows the ascent only.',
-    'shows-descent': 'Route shows the descent only.',
-    'guide-time': '%(time)s (SAC guide time)',
     saved: 'Route saved.',
     'save-failed': "That route couldn't be saved. Try again.",
     'save-limit': "You've reached your saved-route limit. Delete one to save another.",
     'save-offline': 'You need to be online to save a route.',
     'tours-offline': 'Tours need signal',
   });
-  const interpolate = self.pwaStrings.interpolate;
 
   const state = {
     /** The last collection loaded, for a basemap swap's re-install. */
@@ -422,45 +417,23 @@
   // ---------------------------------------------------------------------------
 
   /**
-   * The SAC line under the panel's title: "SAC route · PD+ · 3 h 30 (SAC
-   * guide time)". SAC's height figures are left out (SNOW-1302): the panel's
-   * figures line is the line's own, as a saved route's is.
-   *
-   * @param {Object<string, any>} props The tour Feature's properties.
-   * @returns {string}
-   */
-  function sacLine(props) {
-    const parts = [STRINGS['sac-route']];
-    if (props.grade) parts.push(String(props.grade));
-    if (props.sac_time) parts.push(interpolate(STRINGS['guide-time'], { time: props.sac_time }));
-    return parts.join(' · ');
-  }
-
-  /**
    * Build the tour's block for the panel's claim slot.
    *
    * @param {Object<string, any>} props The tour Feature's properties.
    * @param {{saved?: boolean}} [options] `saved`: the block for a copy the
-   *   reader already holds (SNOW-1303) — SAC's facts and guide, no Save.
+   *   reader already holds (SNOW-1303) — the guide and the credit, no Save.
    * @returns {HTMLElement}
    */
   function buildClaim(props, options) {
     const node = /** @type {HTMLElement} */ (
       /** @type {DocumentFragment} */ (claimTemplate.content.cloneNode(true)).firstElementChild
     );
-    const sac = node.querySelector('[data-ski-tour-sac]');
-    if (sac) sac.textContent = sacLine(props);
-    // Which half of the tour SAC's line is, and nothing inferred beyond it.
-    const shows = node.querySelector('[data-ski-tour-shows]');
-    if (shows) shows.textContent = STRINGS[props.down ? 'shows-descent' : 'shows-ascent'];
     const guide = /** @type {HTMLAnchorElement|null} */ (node.querySelector('[data-ski-tour-guide]'));
     if (guide) {
       if (props.sac_url) {
         guide.href = String(props.sac_url);
       } else {
         guide.remove();
-        node.querySelector('[data-ski-tour-guide-note]')?.remove();
-        node.querySelector('[data-ski-tour-guide-see]')?.remove();
       }
     }
     if (options && options.saved) {

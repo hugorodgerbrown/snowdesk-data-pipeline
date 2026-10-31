@@ -2976,6 +2976,26 @@
     keepRouteCursorInView();
   });
 
+  // Zoom to terrain (Hugo, 2026-10-31): the route panel's magnifier eases
+  // the map to z12, where the terrain layers start, centred on the placed
+  // point or, with none, on the middle of the route's line. Already closer
+  // in, it only re-centres: the button never zooms out. The camera padding
+  // map_sheet.js writes keeps the centre clear of the panel.
+  const ROUTE_TERRAIN_ZOOM = 12;
+  document.addEventListener('snowdesk:route-rail-zoom', (event) => {
+    if (!map) return;
+    const detail = /** @type {CustomEvent} */ (event).detail || {};
+    const index = routeCursorTarget ? routeCursorTarget.cursor.state().index : null;
+    const point = index === null ? null : routeCursorFeature(index);
+    const line = Array.isArray(detail.coordinates) ? detail.coordinates : [];
+    const centre = point ? point.geometry.coordinates : line[Math.floor(line.length / 2)];
+    if (!Array.isArray(centre) || centre.length < 2) return;
+    map.easeTo({
+      center: [centre[0], centre[1]],
+      zoom: Math.max(map.getZoom(), ROUTE_TERRAIN_ZOOM),
+    });
+  });
+
   // The selected region's outline recedes while a route is open and comes
   // back when it closes (choropleth_core.js, 2026-10-19). The rail announces
   // its open and close; a style swap re-installs the layer with the state

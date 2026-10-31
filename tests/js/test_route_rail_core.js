@@ -165,6 +165,24 @@ describe('formatMetaLine', () => {
     );
   });
 
+  it('ends an SAC tour’s row with its guide time, tagged SAC, and grade', () => {
+    const tour = { distance_m: 2300, ascent_m: 351, descent_m: 49 };
+    expect(
+      core.formatMetaLine({ ...tour, sac: { sac_time_s: 5400, sac_time: '1 h 30', grade: 'F' } }),
+    ).toBe('2.3km · 351m ↑ · 49m ↓ · 1h30m SAC · F');
+    expect(core.formatMetaLine({ ...tour, sac: { sac_time_s: 2700, grade: '' } })).toBe(
+      '2.3km · 351m ↑ · 49m ↓ · 45m SAC',
+    );
+  });
+
+  it('shows SAC’s own text for a guide time it cannot read', () => {
+    const tour = { distance_m: 2300, ascent_m: 351 };
+    expect(
+      core.formatMetaLine({ ...tour, sac: { sac_time_s: null, sac_time: '2-3 h', grade: 'PD+' } }),
+    ).toBe('2.3km · 351m ↑ · 2-3 h SAC · PD+');
+    expect(core.formatMetaLine({ ...tour, sac: { grade: 'WS' } })).toBe('2.3km · 351m ↑ · WS');
+  });
+
   it('is empty with no distance', () => {
     expect(core.formatMetaLine({ ascent_m: 10 })).toBe('');
     expect(core.formatMetaLine(null)).toBe('');

@@ -257,6 +257,15 @@
         visibility: hidden;
     }
 
+    /* PEEK is the title and the meta line (2026-10-31), so below it the
+       claim's buttons and the profile are covered too, and a covered
+       button must not take a tap or a tab stop. Hidden rather than taken
+       out of the flow, so HALF still measures down to the point header. */
+    .route-rail[data-detent='peek'] [data-route-rail-claim],
+    .route-rail[data-detent='peek'] > [data-route-rail-body] {
+        visibility: hidden;
+    }
+
     /* The terrain data is FULL's alone. Hidden rather than taken
        out of the flow, so FULL can measure it before it shows; HALF stops
        at the point header (`data-sheet-half`), which clips it. */
@@ -265,9 +274,10 @@
     }
 
     /* With a route open the column is trimmed to locate, layers and routes
-       (SNOW-1067, above). The route's peek holds the profile (2026-10-18),
-       so it reaches past locate as well: the whole column goes, as every
-       sheet's half takes it, so no covered button keeps a tab stop. */
+       (SNOW-1067, above). At peek the whole column goes too, as every
+       sheet's half takes it, so no covered button keeps a tab stop. The
+       peek was cut to the title and figures on 2026-10-31; giving the
+       column back above it is a separate change. */
     :root[data-map-sheet='peek'] #map[data-route-rail-open] #map-controls-br {
         visibility: hidden;
     }

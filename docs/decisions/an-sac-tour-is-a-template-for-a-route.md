@@ -2,7 +2,7 @@
 name: an-sac-tour-is-a-template-for-a-route
 description: An SAC ski tour (SkiTour) is found by its summit, opened unsaved in the route panel, saved as a copy (Route.source SKI_TOUR)
 status: current
-last-reviewed: 2026-10-30
+last-reviewed: 2026-10-31
 ---
 
 # An SAC tour is a template for a route
@@ -61,10 +61,14 @@ different from ours. SAC's is summit minus start; ours is the cumulative
 climb along the line. Shown side by side, the two read as a contradiction,
 and on a way down SAC's "↓ 1860 m" sat beside our "2359 m ↑". So the panel
 shows only the line's own figures, plus SAC's grade and
-guide time. The panel then says plainly which half of the tour the line
-is ("Route shows the ascent only." / "…the descent only.") and points at
-the SAC guide for the rest (Hugo, 2026-10-29: "instead of inferring
-anything"). "↓ via ascent" and `descends_via_ascent` are gone with it.
+guide time (Hugo, 2026-10-29: "instead of inferring anything").
+"↓ via ascent" and `descends_via_ascent` are gone with it. The grade and
+time sit at the end of the figures row, the time tagged "SAC" so it never
+reads as the app's own estimate: "2.3km · 351m ↑ · 49m ↓ · 1h30m SAC · F"
+(`formatMetaLine`'s `sac`, `tour_properties`' `sac_time_s`). The sentence
+that said which half of the tour the line is ("Route shows the ascent
+only.") was removed on 2026-10-31 (Hugo): the header is the title, one row
+of figures and the buttons, and the SAC guide is one tap away.
 A way down now runs from its summit (SNOW-1306, below).
 
 **A tour is one leg, and a way down is what SAC calls one (SNOW-1304).**
@@ -114,17 +118,20 @@ walked in is the right one, and the nightly backfill only marks it
 (`needs_only_marking`). One walked the wrong way is walked again.
 
 **The SAC guide is for members or subscribers.** SAC's route portal asks
-anyone else to sign in and subscribe, so the panel says so under the
-link rather than letting the link land on a login page unannounced.
+anyone else to sign in and subscribe. The panel said so under the link
+until 2026-10-31, when Hugo removed the line to simplify the header; the
+layers menu still names the portal. The "SAC ski tours © swisstopo"
+credit stays in the panel, so a saved copy opened with the tours layer
+off still carries it.
 
 **An unsaved tour opens in the same route panel as a saved route.**
 `routes:ski_tour_feature` builds the tour as an unsaved `Route`
 (`draft_tour_route`) and answers with `_route_feature`. The profile, legs
 and estimate therefore come from the code that will show them once the
 tour is saved. The Feature has no `uuid` and no `token`, so the panel
-offers none of a route's own actions. Its claim slot holds SAC's line
-(grade and guide time, labelled as SAC's), the Save button and SAC's
-guide link. On the map, the tour is drawn in a slot of its own (map.js
+offers none of a route's own actions. Its figures row ends with SAC's
+grade and guide time, labelled as SAC's; its claim slot holds the Save
+button, SAC's guide link and the swisstopo credit. On the map, the tour is drawn in a slot of its own (map.js
 `window.pwaSkiTourRoute`), as a trip's route is, with its own cursor.
 
 **The terrain is sampled once per tour, ahead of time, and kept on the

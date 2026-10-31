@@ -2,7 +2,7 @@
 name: testing-scenarios
 description: Manual test scenarios — bulletin, map, search, accounts, PWA install/update/kill-switch, offline downloads, coverage, end-user offline run
 status: current
-last-reviewed: 2026-10-29
+last-reviewed: 2026-10-31
 ---
 
 # User Testing Scenarios -- Snowdesk
@@ -380,10 +380,10 @@ Prerequisite: sign in as `admin@snowdesk.dev`, with the ski tours synced
 | 2a | Open the layers menu, then "SAC ski touring" | Two switches, Tours and Summits, both on; switching one off hides only it; the master switch turns both off and back on |
 | 3 | Tap the Signalhorn's dot | A sheet "Signalhorn (GR) · 3207 m", "4 SAC routes · 2 up, 2 down", the ways up and the ways down apart; the four lines light up as a saved route's legs do — the ways up dashed grey, the ways down solid fuchsia — each with a green dot at its far end, and every other route dims; each row's swatch matches |
 | 4 | Tap a line just outside the Silvrettahütte, where several meet | A sheet "N routes pass here", each row titled by its summit |
-| 5 | Tap a row | The route panel opens on the tour. The map does not move if the whole tour already shows; otherwise it pans, or zooms out, just enough, and never zooms in. The panel shows the tour's title, its figures, the line "SAC route · PD+ · 3 h 30 (SAC guide time)" with none of SAC's height figures, and below it "Route shows the ascent only. See the SAC guide for details." ("…the descent only." for a way down). Its line, profile and distance stop at the top, as SAC's does. The profile follows within seconds the first time any reader opens it |
+| 5 | Tap a row | The route panel opens on the tour. The map does not move if the whole tour already shows; otherwise it pans, or zooms out, just enough, and never zooms in. The panel shows the tour's title and one row of figures ending in SAC's guide time and grade, e.g. "2.3km · 351m ↑ · 49m ↓ · 3h30m SAC · PD+", with none of SAC's height figures; below the buttons only "SAC ski tours © swisstopo". Its line, profile and distance stop at the top, as SAC's does. The profile follows within seconds the first time any reader opens it |
 | 5b | With the Routes layer off, tap the open tour's line | The point is placed where you tapped; the tour does not reopen |
 | 5a | Tap the profile, then the point header's terrain slope line | The terrain data opens with the ground's slope and aspect under the point, as for a saved route |
-| 6 | Click "SAC guide" | SAC's page for the tour opens in a new tab; the line under the buttons says the guide is for SAC members or subscribers |
+| 6 | Click "SAC guide" | SAC's page for the tour opens in a new tab |
 | 7 | Click "Save to my routes" | A toast says "Route saved."; the routes layer frames the new route, listed in the routes panel under the same title |
 
 ### Scenario MS7b: Find a resort

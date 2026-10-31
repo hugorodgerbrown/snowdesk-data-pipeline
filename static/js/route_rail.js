@@ -103,9 +103,10 @@
  *
  * A BOTTOM SHEET ON A PHONE (SNOW-1099). Below 640px the rail is a sheet
  * with detents (window.MapSheet.bindDetents, bound on the first open), and
- * each detent reveals one more layer (2026-10-18): PEEK, where a tap on a
- * route opens it, is the header, the profile and the hint
- * (`data-sheet-peek`); HALF adds the point header (`data-sheet-half`); and
+ * each detent reveals one more layer (2026-10-18; re-cut 2026-10-31):
+ * PEEK, the minimised state, is the title and the meta line
+ * (`data-sheet-peek`); HALF, where a tap on a route opens it, adds the
+ * claim, the profile, the hint and the point header (`data-sheet-half`); and
  * FULL is the terrain data (`[data-route-terrain]`, SNOW-1146; a staff
  * debug readout until then): the route's terrain rows for the segment
  * under the point, fetched from routes:terrain the first time the data is
@@ -166,6 +167,8 @@
     'meta-hm': '%(hours)sh%(minutes)sm',
     'meta-m': '%(minutes)sm',
     'meta-duration': '%(figures)s · %(duration)s',
+    'meta-sac-time': '%(figures)s · %(time)s SAC',
+    'meta-sac-grade': '%(figures)s · %(grade)s',
     'lane-label': 'Elevation profile of %(name)s',
     untitled: 'Untitled route',
     'delete-confirm': "Delete %(name)s? You'll need the .gpx file again to put it back.",
@@ -248,6 +251,8 @@
   var currentProfile = null;
   /** @type {{uuid: ?string, name: string}} */
   var current = { uuid: null, token: null, tour: null, name: '' };
+  /** The open route's line, for the zoom button's fallback centre. */
+  var currentCoordinates = [];
   /** The open route's own meta line. */
   var routeMeta = '';
 
@@ -409,6 +414,7 @@
     }
 
     var coordinates = feature.geometry && feature.geometry.coordinates;
+    currentCoordinates = Array.isArray(coordinates) ? coordinates : [];
     var profile = read.profile;
 
     nameEl.textContent = current.name;
@@ -418,6 +424,9 @@
         ascent_m: props.ascent_m,
         descent_m: props.descent_m,
         duration_s: props.duration_s,
+        // SAC's guide time and grade: a tour's own properties, or a saved
+        // copy's `sac` (SNOW-1303).
+        sac: props.tour ? props : props.sac || null,
       },
       STRINGS,
     );
@@ -988,6 +997,16 @@
       // The × always closes the route (2026-10-02): the point header's
       // wheel is what clears a point and keeps the route.
       close();
+      return;
+    }
+    if (target.closest('[data-route-rail-zoom]')) {
+      // Zoom to terrain (Hugo, 2026-10-31): map.js owns the camera, so the
+      // rail asks and passes the line for when no point is placed.
+      document.dispatchEvent(
+        new CustomEvent('snowdesk:route-rail-zoom', {
+          detail: { coordinates: currentCoordinates },
+        }),
+      );
       return;
     }
     if (target.closest('[data-route-rail-share]')) {
