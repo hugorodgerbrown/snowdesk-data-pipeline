@@ -44,6 +44,8 @@ The names are grouped by what they are for:
       writes a fetched bulletin only when its content hash changes
       (SNOW-1250), building its render model as it does (SNOW-1270);
       ``rebuild_render_model`` rebuilds one stored row's model.
+      ``lock_source_day_ratings`` locks the day ratings a task recomputes
+      (SNOW-1346).
   The weather service
       ``SourceLocation``, the reference places the service fetches, and
       ``SourceWeather``, its account of each day (SNOW-1253).
@@ -107,6 +109,7 @@ from apps.ingest.api.day_ratings import DAY_RATINGS_FEED, serialise_source_day_r
 from apps.ingest.day_ratings import (
     DAY_RATING_FIELDS,
     day_pairs,
+    lock_source_day_ratings,
     refresh_source_day_ratings,
 )
 from apps.ingest.api.paging import (
@@ -462,6 +465,7 @@ __all__ = [
     "import_ski_archive",
     "hourly_rows_for_day",
     "icon_bucket_for_code",
+    "lock_source_day_ratings",
     "merge_ndjson_records",
     "merge_slf_archive",
     "meteofrance_pdf_url",

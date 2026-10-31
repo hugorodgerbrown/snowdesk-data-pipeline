@@ -22,6 +22,13 @@ can copy the service's numbers instead of computing its own.
       and after, so a correction that drops a region re-rates that region
       too (the rule SNOW-1168 set for the app).
 
+  lock_source_day_ratings(pairs)
+      Lock those pairs' rows, creating any missing first, in sorted
+      (region code, day) order. A caller recomputing the pairs from a
+      background task holds the locks for its transaction, so two sibling
+      bulletins' tasks on one pair recompute one after the other and the
+      second reads the first's committed write (SNOW-1346).
+
 The regions themselves are code-held fixtures every side loads; the
 service needs only their codes, which every bulletin carries.
 """
@@ -33,6 +40,8 @@ from collections import defaultdict
 from collections.abc import Iterable
 from datetime import UTC, date, datetime
 from typing import Any
+
+from django.db import IntegrityError, models
 
 from apps.ingest.models import SourceBulletin, SourceDayRating
 from apps.ingest.normalise.day_rating import (
@@ -202,3 +211,43 @@ def refresh_source_day_ratings(
         written,
     )
     return written
+
+
+def lock_source_day_ratings(pairs: Iterable[tuple[str, date]]) -> None:
+    """Lock each (region code, day)'s ``SourceDayRating`` row until commit.
+
+    A missing row is created first — as the unrated day, which is what a
+    refresh writes for a pair no bulletin governs — so there is a row to
+    lock; a concurrent create of the same row is retried once as a read.
+    The rows are then locked in one ``SELECT … FOR UPDATE`` ordered by
+    (region code, day), so two callers locking overlapping pairs take
+    them in the same order and cannot deadlock. Must be called inside
+    ``transaction.atomic()``; a backend without row locks (SQLite) skips
+    the lock and keeps the create.
+
+    Args:
+        pairs: The (region code, day) pairs about to be recomputed.
+
+    """
+    keys = sorted(set(pairs))
+    if not keys:
+        return
+    placeholder = _values(unrated_day(), "")
+    match = models.Q()
+    for code, day in keys:
+        try:
+            SourceDayRating.objects.get_or_create(
+                region_code=code, date=day, defaults=placeholder
+            )
+        except IntegrityError:
+            # Another transaction created it between our read and insert.
+            SourceDayRating.objects.get_or_create(
+                region_code=code, date=day, defaults=placeholder
+            )
+        match |= models.Q(region_code=code, date=day)
+    list(
+        SourceDayRating.objects.select_for_update()
+        .filter(match)
+        .order_by("region_code", "date")
+        .values_list("pk", flat=True)
+    )
