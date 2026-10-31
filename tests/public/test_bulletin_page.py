@@ -3823,104 +3823,6 @@ def _render_model_with_ratings(
     }
 
 
-def _make_region_with_subregion(
-    region_id: str = "CH-4115", name: str = "Valais", slug: str = "ch-4115"
-) -> "MicroRegion":
-    """Create a MicroRegion with the SubRegion/MajorRegion chain required by views."""
-    major = MajorRegionFactory.create()
-    sub = SubRegionFactory.create(major=major)
-    return MicroRegionFactory.create(
-        region_id=region_id, name=name, slug=slug, subregion=sub
-    )
-
-
-@pytest.mark.django_db
-class TestHeroRatingBadge:
-    """The hero rating badge is removed from the bulletin page (SNOW-286)."""
-
-    def _url(self, region_id: str = "ch-4115", date_str: str = "2026-03-15") -> str:
-        return reverse(
-            "public:bulletin_date",
-            kwargs={"region_id": region_id, "slug": "valais", "date_str": date_str},
-        )
-
-    def test_badge_absent_on_empty_state_page(self, client: Client) -> None:
-        """No bulletin → no hero badge (``morning_rating`` is None)."""
-        _make_region_with_subregion()
-        # No bulletin created — empty-state page.
-        response = client.get(self._url())
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'data-testid="bulletin-hero-rating"' not in content
-
-
-# ---------------------------------------------------------------------------
-# Unit tests: _build_morning_rating helper
-# ---------------------------------------------------------------------------
-
-
-class TestBuildMorningRating:
-    """Unit tests for the ``_build_morning_rating`` view helper."""
-
-    def _call(self, panel: dict) -> dict | None:
-        from apps.public.views import _build_morning_rating
-
-        return _build_morning_rating(panel)
-
-    def test_returns_none_when_no_morning_key(self) -> None:
-        """An empty panel dict returns None."""
-        assert self._call({}) is None
-
-    def test_returns_none_for_no_rating_key(self) -> None:
-        """morning_key == 'no_rating' returns None (badge hidden)."""
-        assert (
-            self._call(
-                {
-                    "morning_key": "no_rating",
-                    "morning_number": "0",
-                    "morning_subdivision": "",
-                }
-            )
-            is None
-        )
-
-    def test_returns_dict_for_valid_key(self) -> None:
-        """A valid morning_key produces the expected dict."""
-        result = self._call(
-            {
-                "morning_key": "considerable",
-                "morning_number": "3",
-                "morning_subdivision": "-",
-            }
-        )
-        assert result == {
-            "level_key": "considerable",
-            "level_number": "3",
-            "subdivision": "-",
-        }
-
-    def test_subdivision_none_normalised_to_empty_string(self) -> None:
-        """None subdivision is coerced to empty string so the template renders nothing."""
-        result = self._call(
-            {
-                "morning_key": "moderate",
-                "morning_number": "2",
-                "morning_subdivision": None,
-            }
-        )
-        assert result is not None
-        assert result["subdivision"] == ""
-
-    def test_returns_none_for_empty_morning_key(self) -> None:
-        """An empty string morning_key returns None."""
-        assert (
-            self._call(
-                {"morning_key": "", "morning_number": "0", "morning_subdivision": ""}
-            )
-            is None
-        )
-
-
 # ---------------------------------------------------------------------------
 # Unit tests: compute_period_transition (SNOW-248)
 # ---------------------------------------------------------------------------
@@ -4146,7 +4048,7 @@ def _render_model_with_split_ratings(
 
 @pytest.mark.django_db
 class TestPeriodTransitionBulletinPage:
-    """Integration tests for the period-transition chip and Day Risk Profile (SNOW-248)."""
+    """Integration tests for the period transition on the Day Risk Profile (SNOW-248)."""
 
     def _url(self, date_str: str = "2026-03-15") -> str:
         return reverse(
@@ -4183,11 +4085,13 @@ class TestPeriodTransitionBulletinPage:
             region, day, render_model=rm, render_model_version=version, raw_data=raw
         )
 
-    def test_flat_but_split_no_chip(self, client: Client, region: MicroRegion) -> None:
-        """all_day considerable → later considerable: no chip.
+    def test_flat_but_split_no_caption(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """all_day considerable → later considerable: no caption.
 
-        No caption either: the level holds and neither window names a
-        different problem, so there is nothing for the caption to report.
+        The level holds and neither window names a different problem, so
+        there is nothing for the caption to report.
         23 of the archive's 101 flat splits are like this — see
         docs/day-summary.md.
         """
@@ -4196,7 +4100,6 @@ class TestPeriodTransitionBulletinPage:
         )
         response = client.get(self._url())
         content = response.content.decode()
-        assert 'data-testid="period-transition-chip"' not in content
         assert 'data-testid="day-risk-profile-flat-split-caption"' not in content
 
     def test_flat_split_caption_present_when_the_problem_changes(
@@ -4224,7 +4127,6 @@ class TestPeriodTransitionBulletinPage:
         )
         response = client.get(self._url())
         content = response.content.decode()
-        assert 'data-testid="period-transition-chip"' not in content
         # SNOW-1234: the profile, and the caption with it, is off an SLF day
         # with problem cards — each card names its own window and level.
         assert 'data-testid="day-risk-profile-flat-split-caption"' not in content
@@ -4233,7 +4135,7 @@ class TestPeriodTransitionBulletinPage:
     def test_no_transition_row_for_all_day_only(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """A single all_day rating: no transition row and no chip."""
+        """A single all_day rating: no transition row."""
         day = date(2026, 3, 15)
         rm = _render_model_with_ratings("moderate", "2", None)
         raw = _raw_data_with_ratings(
@@ -4245,130 +4147,7 @@ class TestPeriodTransitionBulletinPage:
         )
         response = client.get(self._url())
         content = response.content.decode()
-        assert 'data-testid="period-transition-chip"' not in content
         assert 'data-testid="day-windows-transition-row"' not in content
-
-    def test_chip_absent_on_empty_state_page(self, client: Client) -> None:
-        """No bulletin → no period-transition chip (period_transition is None)."""
-        _make_region_with_subregion()
-        response = client.get(
-            reverse(
-                "public:bulletin_date",
-                kwargs={
-                    "region_id": "ch-4115",
-                    "slug": "valais",
-                    "date_str": "2026-03-15",
-                },
-            )
-        )
-        content = response.content.decode()
-        assert 'data-testid="period-transition-chip"' not in content
-
-
-# ---------------------------------------------------------------------------
-# Unit tests: _build_period_transition_chip helper (SNOW-248)
-# ---------------------------------------------------------------------------
-
-
-class TestBuildPeriodTransitionChip:
-    """Unit tests for the ``_build_period_transition_chip`` view helper."""
-
-    def _call(self, pt: Any) -> dict | None:
-        from apps.public.views import _build_period_transition_chip
-
-        return _build_period_transition_chip(pt)
-
-    def test_returns_none_for_none_input(self) -> None:
-        """None input returns None."""
-        assert self._call(None) is None
-
-    def test_returns_none_for_flat_but_split(self) -> None:
-        """direction='none' returns None (chip suppressed for flat-but-split)."""
-        from apps.bulletins.services.render_model import PeriodTransition
-
-        pt = PeriodTransition(
-            direction="none",
-            destination_key="considerable",
-            destination_number="3",
-            destination_subdivision="",
-            partition_type="temporal",
-            partition_label="",
-            has_split=True,
-        )
-        assert self._call(pt) is None
-
-    def test_temporal_rise_chip_text(self) -> None:
-        """Temporal rise: chip_text is 'rises to L3'."""
-        from apps.bulletins.services.render_model import PeriodTransition
-
-        pt = PeriodTransition(
-            direction="rise",
-            destination_key="considerable",
-            destination_number="3",
-            destination_subdivision="",
-            partition_type="temporal",
-            partition_label="",
-            has_split=True,
-        )
-        result = self._call(pt)
-        assert result is not None
-        assert result["level_key"] == "considerable"
-        assert result["direction"] == "rise"
-        assert "rises" in result["chip_text"]
-        assert "L3" in result["chip_text"]
-
-    def test_temporal_fall_chip_text(self) -> None:
-        """Temporal fall: chip_text is 'falls to L2'."""
-        from apps.bulletins.services.render_model import PeriodTransition
-
-        pt = PeriodTransition(
-            direction="fall",
-            destination_key="moderate",
-            destination_number="2",
-            destination_subdivision="",
-            partition_type="temporal",
-            partition_label="",
-            has_split=True,
-        )
-        result = self._call(pt)
-        assert result is not None
-        assert "falls" in result["chip_text"]
-        assert "L2" in result["chip_text"]
-
-    def test_elevation_rise_includes_partition_label(self) -> None:
-        """Elevation rise with partition_label: chip text includes the label."""
-        from apps.bulletins.services.render_model import PeriodTransition
-
-        pt = PeriodTransition(
-            direction="rise",
-            destination_key="moderate",
-            destination_number="2",
-            destination_subdivision="",
-            partition_type="elevation",
-            partition_label="above 2600 m",
-            has_split=True,
-        )
-        result = self._call(pt)
-        assert result is not None
-        assert "2600" in result["chip_text"]
-        assert "L2" in result["chip_text"]
-
-    def test_subdivision_included_in_label(self) -> None:
-        """Subdivision suffix is included in the chip text level label."""
-        from apps.bulletins.services.render_model import PeriodTransition
-
-        pt = PeriodTransition(
-            direction="rise",
-            destination_key="moderate",
-            destination_number="2",
-            destination_subdivision="+",
-            partition_type="temporal",
-            partition_label="",
-            has_split=True,
-        )
-        result = self._call(pt)
-        assert result is not None
-        assert "L2+" in result["chip_text"]
 
 
 # ---------------------------------------------------------------------------
