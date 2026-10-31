@@ -169,6 +169,41 @@ def tour_summits() -> dict[str, sac.Summit]:
     }
 
 
+def tour_summit(row: SourceSkiTour) -> dict[str, sac.Summit]:
+    """Return the one summit ``row`` goes to, by key, for a single-tour render.
+
+    ``walk_tour`` reads only the tour's own summit (``summits.get(tour_key)``),
+    and a summit is placed from the tours that share its target, so this
+    reads just those, not every document as ``tour_summits`` does. That is
+    what lets one tour be rendered on its own, as a task (SNOW-1345).
+
+    Args:
+        row: The tour, with its document loaded.
+
+    Returns:
+        ``{key: summit}`` for the tour's target, or empty when it has none.
+
+    """
+    tour = DocumentTour.of(row, samples=False)
+    raw_name = (row.document or {}).get("target_name")
+    if not tour.target_name or not raw_name:
+        return {}
+    key = sac.tour_key(tour)
+    peers = (
+        SourceSkiTour.objects.live()
+        .filter(document__target_name=raw_name)
+        .only("id", "document", "content_hash")
+        .iterator(chunk_size=_STARTUP_CHUNK)
+    )
+    return {
+        summit.key: summit
+        for summit in sac.build_summits(
+            DocumentTour.of(peer, samples=False) for peer in peers
+        )
+        if summit.key == key
+    }
+
+
 def needs_render(row: SourceSkiTour, grid: TerrainGrid) -> bool:
     """Return whether ``row`` has a walk or a drawing to make.
 

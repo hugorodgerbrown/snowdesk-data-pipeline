@@ -81,7 +81,9 @@ The names are grouped by what they are for:
       (SNOW-1316): ``tours_to_render`` names the tours with a walk or a
       drawing to make, ``render_source_tour`` makes it — idempotent by
       fingerprint — with ``tour_summits`` and ``terrain_grid`` loaded once
-      per run; ``RenderOutcome`` names what it did.
+      per run, or ``tour_summit`` for one tour rendered as a task
+      (SNOW-1345), which ``needs_render`` re-checks; ``RenderOutcome``
+      names what it did.
   The data feed
       ``WEATHER_FEED_V2`` (``/api/data/v2/weather/``, keyed by the
       service's place uuid, SNOW-1253), the v2 ``LOCATIONS_FEED``,
@@ -275,8 +277,10 @@ from apps.ingest.ski import (
 )
 from apps.ingest.ski_render import (
     RenderOutcome,
+    needs_render,
     render_source_tour,
     terrain_grid,
+    tour_summit,
     tour_summits,
     tours_to_render,
 )
@@ -303,8 +307,10 @@ from apps.ingest.weather import (
 
 __all__ = [
     "RenderOutcome",
+    "needs_render",
     "render_source_tour",
     "terrain_grid",
+    "tour_summit",
     "tour_summits",
     "tours_to_render",
     "parse_feed_day",
