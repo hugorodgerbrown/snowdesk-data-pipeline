@@ -159,6 +159,18 @@ class TestLoadFieldGuidance:
             assert text, f"{problem_type} has empty guidance"
             assert text == text.strip(), f"{problem_type} is not stripped"
 
+    def test_second_call_returns_the_same_object(self) -> None:
+        """The YAML is parsed once per process (SNOW-1344)."""
+        assert load_field_guidance() is load_field_guidance()
+
+    def test_result_is_read_only(self) -> None:
+        """The shared, cached mapping cannot be mutated by a caller."""
+        guidance = load_field_guidance()
+        with pytest.raises(TypeError):
+            guidance["new_snow"] = "changed"  # type: ignore[index]
+        with pytest.raises(TypeError):
+            del guidance["new_snow"]  # type: ignore[attr-defined]
+
     def test_markup_stays_inside_the_sanitiser_allowlist(self) -> None:
         """Any tag used in the YAML survives `snowdesk_html` rather than escaping.
 

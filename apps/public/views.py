@@ -42,6 +42,7 @@ import logging
 import random
 import unicodedata
 import uuid
+from collections.abc import Mapping
 from typing import Any, cast
 from urllib.parse import urlencode
 
@@ -99,7 +100,10 @@ from apps.bulletins.models import (
 from apps.bulletins.schema import ValidTimePeriod
 from apps.bulletins.services import alert_wording, alerts as alerts_service, day_summary
 from apps.bulletins.services.bulletin_change import bulletin_state, summarise_change
-from apps.bulletins.services.day_rating import season_calendar_cache_key
+from apps.bulletins.services.day_rating import (
+    season_calendar_cache_key,
+    target_day_for_valid_from,
+)
 from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     DayCharacter,
@@ -544,9 +548,9 @@ def _get_nav_dates(
     Navigation steps one calendar day at a time regardless of whether a
     bulletin exists for the adjacent day — users can reach empty-state pages
     by navigating.  The upper bound is tomorrow (dates further in the future
-    offer no next link); the lower bound is the oldest bulletin's
-    ``valid_to`` date for the region (once the user reaches that day, no
-    earlier prev link is offered).
+    offer no next link); the lower bound is the region's earliest rated
+    day, its oldest ``RegionDayRating`` row (once the user reaches that
+    day, no earlier prev link is offered).
 
     Args:
         region: The MicroRegion to navigate within.
@@ -564,7 +568,7 @@ def _get_nav_dates(
     if current_date < tomorrow:
         next_date = current_date + datetime.timedelta(days=1)
 
-    oldest_date = Bulletin.objects.filter(regions=region).earliest_valid_to_date()
+    oldest_date = RegionDayRating.objects.earliest_date(region)
     prev_date: datetime.date | None = None
     if oldest_date is not None and current_date > oldest_date:
         prev_date = current_date - datetime.timedelta(days=1)
@@ -574,12 +578,18 @@ def _get_nav_dates(
 
 def _has_later_bulletin(region: MicroRegion, page_date: datetime.date) -> bool:
     """
-    Return True when a bulletin exists for any date after *page_date*.
+    Return True when a bulletin exists that forecasts a day after *page_date*.
 
     Used on the today branch as a proxy for "a later bulletin has already
     been published for this region", replacing the old ``next_date is None``
     check.  Now that next_date always points to the adjacent calendar day,
     its presence no longer signals the absence of a later bulletin.
+
+    It reads ``target_date``, the day a bulletin forecasts, not
+    ``valid_to``: an issue whose validity runs past midnight but which
+    forecasts today is not a later bulletin, and counting it hid the
+    "next update" notice (SNOW-1344). A row with no ``target_date`` is
+    ignored — ``backfill_bulletin_target_dates`` fills them.
 
     The check is a cheap EXISTS query; callers should short-circuit behind
     ``is_today`` so it only fires on the current-day page.
@@ -589,13 +599,11 @@ def _has_later_bulletin(region: MicroRegion, page_date: datetime.date) -> bool:
         page_date: The calendar day of the page being rendered.
 
     Returns:
-        True if any bulletin for the region has ``valid_to`` strictly after
-        *page_date*.
+        True if any bulletin for the region has ``target_date`` strictly
+        after *page_date*.
 
     """
-    return Bulletin.objects.filter(
-        regions=region, valid_to__date__gt=page_date
-    ).exists()
+    return Bulletin.objects.filter(regions=region, target_date__gt=page_date).exists()
 
 
 def _cache_key(zone_slug: str) -> str:
@@ -3079,7 +3087,10 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
         raise Http404(f"No regions found for bulletin: {bulletin.bulletin_id}")
 
     region = region_bulletin.region
-    target_date = bulletin.valid_to.date()
+    # The day the bulletin forecasts, not the UTC day its validity ends —
+    # valid_to need not fall on the forecast day (SNOW-1344). The same
+    # rule as compute_bulletin_grouping_boundary.
+    target_date = bulletin.target_date or target_day_for_valid_from(bulletin.valid_from)
     # Pin the matched bulletin so the rendered page actually shows the
     # requested danger level. An explicit ``?issue=`` query param wins
     # over the pin so deep-links continue to work.
@@ -7194,7 +7205,7 @@ def _problem_cards_from_render_model_traits(
 
 def _enrich_render_model_problem(
     rm_problem: dict[str, Any],
-    guidance: dict[str, Any],
+    guidance: Mapping[str, str],
     trait_problems: list[dict[str, Any]],
     problem_index: int,
 ) -> dict[str, Any]:

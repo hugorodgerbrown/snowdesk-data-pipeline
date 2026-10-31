@@ -27,10 +27,17 @@ The feed is discoverable via three paths:
 3. The map page carries ``<link rel="alternate" type="application/rss+xml">``
    for each active country so browsers and feed readers can pick them up
    from the page head.
+
+Each entry's description is a plain-text summary drawn from the bulletin's
+render model ``prose`` block (SNOW-1344) — the first non-empty of the
+avalanche-activity highlights, the tendency lead, the snowpack structure
+and the weather forecast, tags stripped and capped at ``_SUMMARY_MAX_CHARS``.
 """
 
 from __future__ import annotations
 
+import html
+import re
 from typing import Any
 
 from django.conf import settings
@@ -38,6 +45,7 @@ from django.contrib.syndication.views import Feed
 from django.http import Http404
 from django.urls import reverse
 from django.utils.feedgenerator import Atom1Feed
+from django.utils.html import strip_tags
 
 from apps.bulletins.models import RegionBulletin
 
@@ -61,6 +69,90 @@ _COUNTRY_NAMES: dict[str, str] = {
 # days (SLF issues one national bulletin covering 149 CH micro-regions
 # at once) would otherwise fill the feed with a single burst.
 _MAX_ITEMS = 20
+
+# Cap on an entry description's length, in characters. A summary longer
+# than this is cut at the last word boundary inside the cap and ends "…".
+_SUMMARY_MAX_CHARS = 280
+
+
+def _prose_candidates(prose: dict[str, Any]) -> list[Any]:
+    """
+    Return the render model prose fields in summary-precedence order.
+
+    The avalanche-activity highlights lead because they are the
+    provider's own headline for the day; the tendency lead, the snowpack
+    structure and the weather forecast follow, most to least specific.
+
+    Args:
+        prose: The render model's ``prose`` dict.
+
+    Returns:
+        The candidate values, in precedence order, unfiltered.
+
+    """
+    activity = prose.get("avalanche_activity")
+    highlights = activity.get("highlights") if isinstance(activity, dict) else None
+    return [
+        highlights,
+        prose.get("tendency_lead"),
+        prose.get("snowpack_structure"),
+        prose.get("weather_forecast"),
+    ]
+
+
+_HEADING = re.compile(r"<h[1-6][^>]*>.*?</h[1-6]>", re.IGNORECASE | re.DOTALL)
+
+
+def _plain_summary(text: str) -> str:
+    """
+    Strip HTML from *text*, collapse whitespace and cap it for a feed entry.
+
+    Args:
+        text: Provider prose, possibly carrying HTML markup and entities.
+
+    Returns:
+        Plain text of at most ``_SUMMARY_MAX_CHARS`` characters; a longer
+        text is cut at the last word boundary inside the cap and ends "…".
+
+    """
+    # A provider heading ("<h1>Snowpack</h1>") names the section, not the
+    # bulletin, so it is dropped rather than run into the first sentence.
+    text = _HEADING.sub(" ", text)
+    plain = " ".join(html.unescape(strip_tags(text)).split())
+    if len(plain) <= _SUMMARY_MAX_CHARS:
+        return plain
+    # Leave room for the ellipsis, then back up to the last space.
+    cut = plain[: _SUMMARY_MAX_CHARS - 1]
+    space = cut.rfind(" ")
+    if space > 0:
+        cut = cut[:space]
+    return cut.rstrip(" ,;:.-") + "…"
+
+
+def bulletin_summary(render_model: dict[str, Any] | None) -> str:
+    """
+    Return a plain-text summary of a bulletin from its render model.
+
+    The first non-empty of the prose fields named in
+    :func:`_prose_candidates` wins. A render model not yet built, or one
+    whose prose is empty, yields ``""``.
+
+    Args:
+        render_model: The bulletin's stored render model, or None.
+
+    Returns:
+        The plain-text summary, or an empty string.
+
+    """
+    prose = (render_model or {}).get("prose")
+    if not isinstance(prose, dict):
+        return ""
+    for candidate in _prose_candidates(prose):
+        if isinstance(candidate, str):
+            summary = _plain_summary(candidate)
+            if summary:
+                return summary
+    return ""
 
 
 class CountryBulletinFeed(Feed):
@@ -125,9 +217,11 @@ class CountryBulletinFeed(Feed):
 
         Ordering: most recent bulletin ``issued_at`` first; ties break on
         ``region_id`` for a stable order. ``select_related`` joins the
-        ``bulletin`` and the region's ``subregion__major`` chain in a
-        single query so ``item_link``, ``item_title``, and
-        ``item_pubdate`` do not fan out into N+1 lookups.
+        ``bulletin`` and the region in a single query so ``item_link``,
+        ``item_title``, and ``item_pubdate`` do not fan out into N+1
+        lookups. ``only`` loads just the columns the feed reads — above
+        all it leaves the bulletin's ``raw_data`` payload behind
+        (SNOW-1344).
 
         Args:
             obj: The canonical lowercase country code from
@@ -141,7 +235,15 @@ class CountryBulletinFeed(Feed):
         prefix = f"{obj.upper()}-"
         return (
             RegionBulletin.objects.filter(region__region_id__istartswith=prefix)
-            .select_related("bulletin", "region__subregion__major")
+            .select_related("bulletin", "region")
+            .only(
+                "region_name_at_time",
+                "bulletin__bulletin_id",
+                "bulletin__issued_at",
+                "bulletin__render_model",
+                "region__region_id",
+                "region__name",
+            )
             .order_by("-bulletin__issued_at", "region__region_id")[:_MAX_ITEMS]
         )
 
@@ -172,14 +274,11 @@ class CountryBulletinFeed(Feed):
         """
         Return the entry description — the bulletin's prose summary.
 
-        Pulls ``fallback_key_message`` from the render model when
-        present; falls back to an empty string when the render model is
-        not yet built (``render_model_version == 0``) or does not
-        expose that field.
+        A plain-text summary from the render model's ``prose`` block (see
+        :func:`bulletin_summary`); an empty string when the render model
+        is not yet built or its prose is empty.
         """
-        render_model = item.bulletin.render_model or {}
-        summary = render_model.get("fallback_key_message") or ""
-        return str(summary)
+        return bulletin_summary(item.bulletin.render_model)
 
     def item_pubdate(self, item: RegionBulletin) -> Any:
         """Return the entry pubDate — the bulletin's ``issued_at`` timestamp."""

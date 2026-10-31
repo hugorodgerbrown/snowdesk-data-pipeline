@@ -9,6 +9,7 @@ Covers:
   - for_region_range() returns only in-range rows (inclusive bounds)
   - season_date_bounds() returns (None, None) for empty window; min/max for
     rows inside; ignores rows outside [start, end]
+  - earliest_date() returns the region's earliest rated day, or None
   - unique_together raises IntegrityError on duplicate (region, date)
   - Admin is registered for the model
 """
@@ -296,3 +297,29 @@ class TestAdminRegistration:
     def test_admin_registered(self) -> None:
         """RegionDayRating appears in admin.site._registry."""
         assert RegionDayRating in admin.site._registry
+
+
+@pytest.mark.django_db
+class TestEarliestDate:
+    """Tests for ``RegionDayRatingQuerySet.earliest_date()`` (SNOW-1344)."""
+
+    def test_returns_none_for_a_region_with_no_rows(self) -> None:
+        """A region with no rated day gives None rather than raising."""
+        region = MicroRegionFactory.create()
+        RegionDayRatingFactory.create(date=datetime.date(2026, 1, 1))
+
+        assert RegionDayRating.objects.earliest_date(region) is None
+
+    def test_returns_the_regions_earliest_day(self) -> None:
+        """The minimum date among the region's own rows wins."""
+        region = MicroRegionFactory.create()
+        for day in (15, 3, 9):
+            RegionDayRatingFactory.create(
+                region=region, date=datetime.date(2026, 1, day)
+            )
+        # An older row for another region does not leak in.
+        RegionDayRatingFactory.create(date=datetime.date(2025, 12, 1))
+
+        assert RegionDayRating.objects.earliest_date(region) == datetime.date(
+            2026, 1, 3
+        )
