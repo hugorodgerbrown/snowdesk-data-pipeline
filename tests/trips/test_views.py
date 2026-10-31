@@ -37,6 +37,7 @@ The meeting point (SNOW-840):
 from __future__ import annotations
 
 import datetime
+import json
 import re
 from typing import Any
 from unittest.mock import patch
@@ -645,6 +646,36 @@ class TestTripCreate:
 
         assert response.status_code == 400
         assert Trip.objects.count() == 0
+
+    @pytest.mark.parametrize(
+        ("latitude", "longitude"),
+        [("nan", "7.4"), ("91.0", "7.4"), ("46.1", "inf"), ("46.1", "200")],
+    )
+    def test_a_bad_coordinate_re_renders_the_pin_on_the_routes_start(
+        self, client: Client, latitude: str, longitude: str
+    ) -> None:
+        """SNOW-452: the picker never receives NaN or a point off the globe.
+
+        A non-finite or out-of-range coordinate falls back to the route's
+        first point, like any other value the re-render cannot use.
+        """
+        route = RouteFactory.create()
+        client.force_login(route.user)
+        payload = _valid_post(str(route.uuid))
+        payload["latitude"] = latitude
+        payload["longitude"] = longitude
+
+        response = client.post(reverse("trips:create"), payload, **_HTMX)
+
+        assert response.status_code == 400
+        match = re.search(
+            r'<script id="trip-meeting-payload" type="application/json">(.*?)</script>',
+            response.content.decode(),
+            re.DOTALL,
+        )
+        assert match is not None
+        first = route.points[0]
+        assert json.loads(match.group(1))["meeting"] == [first[0], first[1]]
 
     @override_flag("what3words", active=True)
     def test_the_re_rendered_form_still_looks_the_address_up(

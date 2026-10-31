@@ -91,6 +91,7 @@ from django.views.decorators.http import (
 from django_ratelimit.decorators import ratelimit
 
 from apps.accounts.identity import attest_principal
+from apps.core.coordinates import parse_coordinates
 from apps.core.decorators import require_htmx
 from apps.core.http import client_ip
 from apps.ingest.public import convert_to_3wa
@@ -631,7 +632,8 @@ def _submitted_picker_payload(
     available. The submitted coordinates are read raw and unvalidated —
     ``form.cleaned_data`` is empty or partial here by definition — and
     anything unparseable falls back to the route's first point, which is
-    the same default the unbound form arrives with.
+    the same default the unbound form arrives with. So does anything
+    non-finite or outside WGS-84 (SNOW-452).
 
     Args:
         request: The POST request, read for the submitted coordinates.
@@ -644,11 +646,12 @@ def _submitted_picker_payload(
 
     """
     first = points[0] if points else [0.0, 0.0]
-    try:
-        latitude = float(request.POST.get("latitude", ""))
-        longitude = float(request.POST.get("longitude", ""))
-    except TypeError, ValueError:
-        latitude, longitude = first[1], first[0]
+    # Missing, unparseable, non-finite or out-of-range all fall back alike,
+    # so the picker never receives NaN or a point off the globe (SNOW-452).
+    coords = parse_coordinates(
+        request.POST.get("latitude"), request.POST.get("longitude")
+    )
+    latitude, longitude = coords if coords is not None else (first[1], first[0])
     return _picker_payload(points, bounds, latitude, longitude, render)
 
 
@@ -1439,15 +1442,10 @@ def meeting_point_address(request: HttpRequest) -> JsonResponse:
     if getattr(request, "limited", False):
         return JsonResponse({"error": "rate_limit_exceeded"}, status=429)
 
-    try:
-        latitude = float(request.GET.get("lat", ""))
-        longitude = float(request.GET.get("lon", ""))
-    except ValueError:
+    coords = parse_coordinates(request.GET.get("lat"), request.GET.get("lon"))
+    if coords is None:
         return JsonResponse({"error": "invalid_coordinate"}, status=400)
-    # ``float`` accepts "nan" and "inf", neither of which is a place; the
-    # chained comparison is False for NaN, so one test refuses all three.
-    if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
-        return JsonResponse({"error": "invalid_coordinate"}, status=400)
+    latitude, longitude = coords
 
     words = convert_to_3wa(latitude, longitude)
     return JsonResponse({"words": words, "url": what3words_map_url(words)})
