@@ -141,6 +141,21 @@ bulletin) is unchanged, only its volume. What SNOW-998 added:
   sample at `samples/slf-2026-27-preview` commit `44695ba0`. A, B and C stay
   and stay asserted aggregated, so both shapes are under test permanently.
 
+### Post-merge verification
+
+The sample's 133 distinct ids are provisional evidence that SLF mint one id
+per entry, not a promise. After merge, the first per-region fetches are
+checked for it: the run log's duplicate count, and no
+`SlfConflictingBulletinIdError` failures.
+
+One behaviour changes here and is worth knowing before it happens. If SLF
+republish a bulletin **in place** — same `bulletinID`, changed content —
+between two pages of one walk, the walk now sees both versions and
+**fails the run**, where before it upserted whichever came last. Nothing
+is overwritten. The remedy is a rerun once SLF's publication has settled
+(the next walk sees one version only), or, if the export keeps doing it,
+pinning `SLF_API_LEGACY_URL` while the guard's posture is reconsidered.
+
 ### Storage per season
 
 SNOW-900's comments put the per-region shape at about 1.0 GB a season.
