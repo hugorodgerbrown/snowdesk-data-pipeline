@@ -942,6 +942,96 @@
   --color-weather-icon-halo: transparent;
 }
 
+/* ———————————————————————————————————————————
+   1c. THE MAP SURFACE STAYS LIGHT (SNOW-1334)
+   Every basemap the map draws is light, so in
+   dark mode everything that floats over it stays
+   light too: search, sheets, menus, roundels,
+   cards, the date row and the scrubber. Dark mode
+   keeps the site nav and footer and every page off
+   the map. Hugo chose this over a dark basemap and
+   over the old dark-panels-on-a-light-map look —
+   docs/decisions/the-map-surface-stays-light.md.
+
+   .map-surface-light marks the root of a map
+   surface (the map page's content wrapper, the
+   trip map, the meeting picker). Under .dark it
+   restates every token .dark overrides at its
+   light value, so the cascade below it resolves as
+   if the page were light. `color` is restated
+   because it inherits as a COMPUTED value: the
+   body's dark ink would otherwise reach any text
+   that sets no colour of its own.
+
+   Copy, not reference: once .dark has rewritten a
+   token on <html> its light value is gone, so it
+   has to be written out again. Every value must
+   equal its @theme definition above, and every
+   token .dark overrides must appear here —
+   tests/public/test_main_css_theme_parity.py fails
+   the build on either kind of drift.
+   ——————————————————————————————————————————— */
+
+.dark .map-surface-light {
+  --color-bg: #f2f0ec;
+  --color-card: #ffffff;
+  --color-card-subtle: #fafaf8;
+  --color-tag: #f5f3ef;
+  --color-text-1: #1a1916;
+  --color-obs-warning: #1a1916;
+  --color-text-2: #6b6860;
+  --color-text-3: #6e6b65;
+  --color-border: rgba(0, 0, 0, 0.09);
+  --color-border-strong: rgba(0, 0, 0, 0.16);
+  --color-admin-bg: #f9fafb;
+  --color-admin-nav: #0f172a;
+  --color-admin-nav-text: #ffffff;
+  --color-status-error-bg: #fee2e2;
+  --color-status-error-text: #991b1b;
+  --color-status-warning-bg: #fef3c7;
+  --color-status-warning-text: #92400e;
+  --color-status-success-bg: #d1fae5;
+  --color-status-success-text: #065f46;
+  --color-status-info-bg: #dbeafe;
+  --color-status-info-text: #1e40af;
+  --color-callout-info-bg: #ffffff;
+  --color-callout-info-border: rgba(0, 0, 0, 0.12);
+  --color-callout-info-text: #6b6860;
+  --color-form-error: #ef4444;
+  --color-sync-ok: #16a34a;
+  --color-sync-off: #9ca3af;
+  --color-sync-blocked: #dc2626;
+  --color-sync-partial: #d97706;
+  --color-basemap-openfreemap-liberty: #2563eb;
+  --color-basemap-swisstopo-winter: #c2540a;
+  --color-basemap-swisstopo-light: #0284c7;
+  --color-basemap-ign-plan: #9333ea;
+  --color-basemap-basemap-at: #0d9488;
+  --color-card-hover: #eeeae2;
+  --color-ring-selected: #3b82f6;
+  --color-chip: rgba(0, 0, 0, 0.06);
+  --color-chip-strong: rgba(0, 0, 0, 0.08);
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
+  --color-accent-text: #ffffff;
+  --color-accent-tint: rgba(37, 99, 235, 0.14);
+  --color-glass: rgba(255, 255, 255, 0.85);
+  --shadow-glass: 0 2px 14px rgba(0, 0, 0, 0.08);
+  --color-scrim: rgba(0, 0, 0, 0.4);
+  --color-popup-glass: rgba(248, 246, 240, 0.65);
+  --color-chart-night: #475569;
+  --color-chart-daylight: #f59e0b;
+  --color-strip-night: #d2d3d4;
+  --color-strip-night-text: #57544e;
+  --color-chart-note-bg: #eef2ff;
+  --color-chart-note-text: #2563eb;
+  --color-weather-icon-halo: rgba(41, 45, 54, 0.85);
+
+  color-scheme: light;
+  color: var(--color-text-1);
+}
+
+
 
 /* ———————————————————————————————————————————
    2. COMPONENT EXCEPTIONS

@@ -1512,7 +1512,12 @@
 
 /* Search-results dropdown — anchored below the cluster, right-aligned
    to it. Width caps at 320px on wide viewports and shrinks to fit
-   narrow ones. Sits on top of everything that isn't the bottom sheet. */
+   narrow ones. Sits on top of everything that isn't the bottom sheet.
+
+   SNOW-1334: every colour in the dropdown and its rows is a --color-*
+   token. They named this file's --ink / --muted / --border and beige and
+   white literals, which have no dark value, so in dark mode the rows sat
+   near-black on the dark card (names at 1.2:1). */
 .search-results {
     position: absolute;
     top: 48px;
@@ -1538,7 +1543,7 @@
     flex-direction: row;
     align-items: center;
     gap: 10px;
-    border-bottom: 0.5px solid var(--border);
+    border-bottom: 0.5px solid var(--color-border);
 }
 
 .search-result:last-child {
@@ -1547,7 +1552,7 @@
 
 .search-result:hover,
 .search-result.active {
-    background: #f2efe7;
+    background: var(--color-card-hover);
 }
 
 .search-result-text {
@@ -1560,7 +1565,7 @@
 
 .search-result-primary {
     font-size: 14px;
-    color: var(--ink);
+    color: var(--color-text-1);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1584,8 +1589,8 @@
     align-items: center;
     justify-content: center;
     border-radius: 999px;
-    background: #ece8dc;
-    color: var(--ink);
+    background: var(--color-tag);
+    color: var(--color-text-1);
 }
 
 /* SNOW-1264: a dropped pin's tile — round, because it is a place, and
@@ -1607,7 +1612,7 @@
     align-items: center;
     justify-content: center;
     border-radius: 999px;
-    background: #ece8dc;
+    background: var(--color-tag);
 }
 
 .search-result-summit {
@@ -1615,13 +1620,13 @@
     width: 10px;
     height: 10px;
     border-radius: 999px;
-    background: var(--ink);
-    box-shadow: 0 0 0 2px #fff;
+    background: var(--color-text-1);
+    box-shadow: 0 0 0 2px var(--color-card);
 }
 
 .search-result-summit--hut {
-    background: #fff;
-    border: 2.5px solid var(--ink);
+    background: var(--color-card);
+    border: 2.5px solid var(--color-text-1);
 }
 
 /* The gondola cabin inside the resort tile (SNOW-1177). `display` is explicit because the global
@@ -1641,14 +1646,14 @@
     font-size: 11px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: var(--muted);
+    color: var(--color-text-2);
     cursor: default;
 }
 
 /* The selected region in the pinned list: the left bar the region panel's
    rows used for the same fact. */
 .search-result.is-current {
-    box-shadow: inset 3px 0 0 var(--ink);
+    box-shadow: inset 3px 0 0 var(--color-text-1);
 }
 
 /* SNOW-697: the row-type word ("Region" / "Resort"). Present for screen
@@ -1670,7 +1675,7 @@
 
 .search-result-secondary {
     font-size: 12px;
-    color: var(--muted);
+    color: var(--color-text-2);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1684,8 +1689,8 @@
     font-size: 11px;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-weight: 500;
-    color: var(--muted);
-    background: #ece8dc;
+    color: var(--color-text-2);
+    background: var(--color-tag);
     padding: 2px 7px;
     border-radius: 10px;
 }
@@ -1694,11 +1699,11 @@
    because inline SVG without explicit dimensions defaults to 300×150;
    the square CH flag uses its 1:1 ratio and the 3:2 AT/FR/IT flags all
    share a width. A hairline border keeps white-bordered flags legible
-   on the badge's beige background. */
+   on the badge's --color-tag fill. */
 .search-result-flag {
     flex: 0 0 auto;
     height: 9px;
-    border: 0.5px solid rgba(0, 0, 0, 0.15);
+    border: 0.5px solid var(--color-border-strong);
     border-radius: 1px;
 }
 
@@ -1716,7 +1721,7 @@
     padding: 12px;
     text-align: center;
     font-size: 12px;
-    color: var(--muted);
+    color: var(--color-text-2);
 }
 
 /* The full-viewport map page (/map/) sizes the body to the screen the
@@ -3721,14 +3726,14 @@ html[data-route-drawing] #map-tour-offer {
     fill: currentColor;
 }
 
-/* The dark-mode colours are NOT here: this control joins the shared
-   `.dark .map-download-control` lists further down, so the two roundels that
-   sit side by side in .ribbon-header take their ink from one declaration and
-   cannot drift apart again. They did: this control shipped with its own pair
-   of rules naming --ink and --muted — the two tokens in this file that have
-   no dark counterpart — so in dark mode its star was near-black on the dark
-   glass while the download arrow beside it was white (Hugo's screenshot:
-   "the pin star icon should be white on gray like the download one"). */
+/* No dark-mode colours here, and none further down since SNOW-1334: the
+   map surface stays light in both themes (src/css/main.css 1c), so this
+   star and the download arrow beside it in .ribbon-header take the same
+   light ink in dark mode too. They once drifted apart — this control
+   shipped with its own --ink / --muted pair while the arrow had a dark
+   override, so in dark mode the star was near-black on dark glass (Hugo's
+   screenshot: "the pin star icon should be white on gray like the download
+   one"). */
 
 /* SNOW-522: the custom-area download control shares .map-download-control's
    glass-roundel chrome and lives in the bottom-right stack with no
@@ -3781,61 +3786,15 @@ html[data-route-drawing] #map-tour-offer {
    change the mouse pointer, and add infill". A new control here takes the
    class rather than growing a fifth. */
 
-/* Review (post-SNOW-645, Hugo's dark-mode report): --ink/--muted-coloured
-   TEXT and glyphs sitting directly on top of the glass surfaces just above
-   and around here (.season-scrubber, .region-readout and its children,
-   .map-download-control) — surfaces this same
-   review moved onto --color-glass, which now genuinely goes dark under
-   .dark. Before that fix their background was a hardcoded
-   rgba(255, 255, 255, …), unaffected by theme, so --ink (a fixed
-   near-black with no dark counterpart) painted on top of it was always
-   legible; making the background theme-aware without also addressing the
-   text it carries would have traded "wrong colour in dark mode" for
-   "invisible in dark mode" — confirmed in a real browser (dark mode, port
-   3000): the region-readout pill's own label and the download roundel's
-   own idle glyph were both unreadable black-on-near-black before this
-   block existed.
-
-   Not a --ink/--muted dark variant (this file's own header explains why
-   that is a bigger job than this ticket) — these are per-selector
-   overrides onto src/css/main.css's ALREADY dark-mirrored --color-text-1 /
-   --color-text-2 (the semantic equivalents: --color-text-1 for primary
-   label text, --color-text-2 for secondary/muted), scoped to exactly the
-   elements whose background this review made theme-aware and nothing
-   else — every other --ink/--muted use in this file sits on a surface
-   that is still deliberately theme-independent (the scrubber's own
-   dark-filled play/pause buttons, the legend card, etc.) and is
-   untouched.
-
-   Placed HERE — before the state-specific rules below, not after them —
-   on purpose: .map-download-control[data-download-state="error"] shares
-   this same (.dark X = two classes) specificity with the plain
-   .dark .map-download-control rule below, so which one wins a real tile
-   is decided by source order, not specificity. Declaring the general dark
-   override first lets the later, more specific-in-INTENT error rule keep
-   winning exactly as it already does in light mode — the reverse order
-   would have silently repainted an offline-and-uncached download's red
-   error state in ordinary text colour under dark mode only. */
-.dark .scrubber-skip,
-.dark .region-readout,
-.dark .region-readout-name,
-.dark .region-readout-leaf,
-.dark .map-download-control,
-.dark .map-region-pin-control {
-    color: var(--color-text-1);
-}
-
-.dark .season-scrubber-loading,
-.dark .region-readout:not(.has-region) .region-readout-leaf,
-.dark .region-readout-crumbs,
-.dark .map-download-control[data-download-state="no-region"],
-.dark .map-download-control[data-download-state="disabled"],
-.dark .map-download-control[data-download-state="offline"],
-.dark .map-download-control[data-download-state="signin"],
-.dark .map-region-pin-control[data-pin-state="no-region"],
-.dark .map-region-pin-control[data-pin-state="signin"] {
-    color: var(--color-text-2);
-}
+/* SNOW-1334: two `.dark …` blocks stood here — fifteen selectors repainting
+   the scrubber's skip buttons, the region readout and the download and
+   region-pin roundels in --color-text-1 / --color-text-2, because their
+   --ink / --muted ink (this file's tokens, which have no dark value) went
+   unreadable on the --color-glass that turns dark under .dark. The map
+   surface no longer turns dark: .map-surface-light (src/css/main.css 1c)
+   restates the light tokens over everything the map page draws, so the
+   glass under these controls stays light and their light ink is right in
+   both themes. The blocks went with the reason for them. */
 
 /* Three distinct reasons the control can't run, one shared treatment:
      no-region  — nothing selected, so there is no basemap to fetch.

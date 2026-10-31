@@ -238,6 +238,8 @@ class TestTripNewPage:
 
         assert "data-trip-meeting-picker" in html
         assert 'id="trip-meeting-payload"' in html
+        # SNOW-1334: the picker and its pin are a light map surface.
+        assert '<div class="map-surface-light relative">' in html
         assert "trip_meeting_picker.js" in html
         # The track itself, not just an empty payload envelope.
         assert "LineString" in html
@@ -350,6 +352,28 @@ class TestTripDetailPage:
         client.force_login(trip.created_by)
         response = client.get(reverse("trips:detail", args=[trip.uuid]))
         assert 'id="trip-map-payload"' in response.content.decode()
+
+    def test_the_map_is_a_light_map_surface(self, client: Client) -> None:
+        """The trip map stays light in dark mode; the card around it does not.
+
+        SNOW-1334: every basemap is light, so what floats over a map is
+        light in both themes. The class sits on the map element itself, so
+        the rest of the trip page keeps the page's theme.
+        """
+        trip = TripFactory.create()
+        client.force_login(trip.created_by)
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+        trip_map = re.search(r"<div[^>]*\bid=\"trip-map\"[^>]*>", html)
+        assert trip_map is not None
+        assert "map-surface-light" in trip_map.group(0)
+        # Nothing else on the page is marked, bar the edit form's meeting
+        # picker, which is a map surface of its own.
+        marked = re.findall(r"<[^>]*\bmap-surface-light\b[^>]*>", html)
+        assert marked
+        assert all(
+            'id="trip-map"' in tag or tag == '<div class="map-surface-light relative">'
+            for tag in marked
+        )
 
     def test_the_slope_seams_index_the_payloads_own_geometry(
         self, client: Client

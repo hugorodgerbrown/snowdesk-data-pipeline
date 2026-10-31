@@ -579,7 +579,10 @@ async function resolveBasemapStyle(key, url) {
 // while degraded, the same harmless failure mode SNOW-478 already accepts
 // for a basemap whose glyph server doesn't serve a requested font.
 function buildFallbackStyle() {
-  const bg = getComputedStyle(document.documentElement)
+  // SNOW-1334: read off the map surface, not <html>, so the fallback
+  // ground is light in dark mode like everything else on the map.
+  const surface = document.querySelector('.map-surface-light') || document.documentElement;
+  const bg = getComputedStyle(surface)
     .getPropertyValue('--color-bg')
     .trim() || '#f2f0ec';
   return {
