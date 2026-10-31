@@ -224,6 +224,11 @@ def test_parse_day() -> None:
 
 def _pages_for_day(day: dt.date) -> list[dict]:
     """Walk one target day of the feed at the default page size."""
+    return _pages_for_window(day, day)
+
+
+def _pages_for_window(day_from: dt.date, day_to: dt.date) -> list[dict]:
+    """Walk a window of target days at the default page size."""
     pages: list[dict] = []
     cursor = None
     while True:
@@ -232,8 +237,8 @@ def _pages_for_day(day: dt.date) -> list[dict]:
             since=None,
             cursor=cursor,
             limit=DEFAULT_LIMIT,
-            day_from=day,
-            day_to=day,
+            day_from=day_from,
+            day_to=day_to,
         )
         pages.append(body)
         cursor = body["next_cursor"]
@@ -257,17 +262,36 @@ def test_a_de_aggregated_day_is_three_default_pages() -> None:
     assert len(pages) <= 3
 
 
+@pytest.mark.django_db
 def test_the_golden_week_of_per_region_bulletins_is_at_most_21_pages() -> None:
-    """Seven de-aggregated days of SLF are 2,086 items, 21 default pages.
+    """Two real de-aggregated days page as three each; seven are 21 pages.
 
-    Arithmetic from the item counts rather than 2,086 rows: the page count
-    is the item count over the page size, which the day test above shows
-    the walk honours.
+    Two target days of 298 rows are walked through the feed's day window,
+    each on its own and then together, so the page count is measured
+    rather than assumed — and the week is the same per-item rate over
+    seven days, 2,086 items. Two days rather than seven keeps the rows to
+    596.
     """
-    items = 7 * _PER_REGION_ISSUE * _ISSUES_PER_DAY
+    days = (dt.date(2026, 12, 20), dt.date(2026, 12, 21))
+    per_day = _PER_REGION_ISSUE * _ISSUES_PER_DAY
+    SourceBulletin.objects.bulk_create(
+        SourceBulletinFactory.build(target_date=day)
+        for day in days
+        for _ in range(per_day)
+    )
 
-    assert items == 2086
-    assert math.ceil(items / DEFAULT_LIMIT) <= 21
+    for day in days:
+        pages = _pages_for_day(day)
+        assert pages[0]["count"] == per_day
+        assert len(pages) == math.ceil(per_day / DEFAULT_LIMIT) == 3
+
+    both = _pages_for_window(days[0], days[1])
+    assert sum(len(p["results"]) for p in both) == 2 * per_day
+    assert len(both) == math.ceil(2 * per_day / DEFAULT_LIMIT) == 6
+
+    week_items = 7 * per_day
+    assert week_items == 2086
+    assert math.ceil(week_items / DEFAULT_LIMIT) <= 21
 
 
 @pytest.mark.django_db
