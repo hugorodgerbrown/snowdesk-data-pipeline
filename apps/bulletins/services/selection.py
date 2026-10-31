@@ -52,6 +52,11 @@ def issues_for_date(
 
     The result is sorted by ``valid_from`` ascending, earlier issue first.
 
+    ``raw_data`` is deferred (SNOW-1342): every caller is a read path that
+    renders from ``render_model`` and the row's own columns, and the CAAML
+    payload is the widest column on the row. A raw surface that does need
+    it (the superuser raw panel, ``get_bulletin_raw``) loads it explicitly.
+
     Args:
         region: The MicroRegion to look up.
         target_date: Calendar date identifying the day to display.
@@ -63,6 +68,7 @@ def issues_for_date(
     return list(
         Bulletin.objects.for_target_date(target_date)
         .filter(regions=region)
+        .defer("raw_data")
         .order_by("valid_from")
     )
 
