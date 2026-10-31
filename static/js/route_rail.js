@@ -106,7 +106,8 @@
  * each detent reveals one more layer (2026-10-18; re-cut 2026-10-31):
  * PEEK, the minimised state, is the title and the meta line
  * (`data-sheet-peek`); HALF, where a tap on a route opens it, adds the
- * claim, the profile, the hint and the point header (`data-sheet-half`); and
+ * claim, the profile and the hint, which a placed point swaps for the point
+ * header, the sheet rising to it (`data-sheet-half` on each, SNOW-1351); and
  * FULL is the terrain data (`[data-route-terrain]`, SNOW-1146; a staff
  * debug readout until then): the route's terrain rows for the segment
  * under the point, fetched from routes:terrain the first time the data is
@@ -287,7 +288,7 @@
    * The point header itself follows the cursor (route_point_card.js),
    * under the profile; the route's title and meta line stay (2026-10-18).
    * The mark is what static/css/map.css reads to show the point header
-   * from sm up only while there is a point to read.
+   * only while there is a point to read, at every width (SNOW-1351).
    *
    * @param {?number} index The cursor index; null with no point.
    */

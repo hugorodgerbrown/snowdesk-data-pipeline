@@ -19,6 +19,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 
 import '../../static/js/i18n_strings.js';
 import '../../static/js/route_cursor_core.js';
@@ -205,6 +206,19 @@ describe('the detents', () => {
     expect(hint.hidden).toBe(true);
     window.pwaRouteRail.cursor().setIndex(null);
     expect(hint.hidden).toBe(false);
+  });
+
+  it('shows the point header only with a point, at every width (SNOW-1351)', () => {
+    // The rule sits outside any @media block: on a phone too the header
+    // waits for a point, so HALF stops under the hint and then rises to
+    // the header, rather than dropping as the hint goes.
+    const css = readFileSync('static/css/map.css', 'utf8');
+    const rule = '.route-rail:not([data-route-rail-point]) > [data-sheet-half]';
+    const at = css.indexOf(rule);
+    expect(at).toBeGreaterThan(-1);
+    const before = css.slice(0, at).replace(/\/\*[\s\S]*?\*\//g, '');
+    const depth = (before.match(/{/g) || []).length - (before.match(/}/g) || []).length;
+    expect(depth).toBe(0);
   });
 
   it('leaves a sheet at full where it is when a point moves', () => {

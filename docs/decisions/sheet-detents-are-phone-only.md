@@ -125,8 +125,13 @@ only binds it to pointer events. Without the core on the page,
   terrain data"; hidden while a point is placed, when PEEK ends at the
   profile's foot, 19 Oct 2026), because a full-width sheet has the room and the
   profile is what a tap on a route is for. HALF adds the point header
-  (unlit until a point is placed; a point placed at peek raises the sheet
-  to HALF) and FULL the terrain data. Its half marker reads
+  (a point placed at peek raises the sheet to HALF) and FULL the terrain
+  data. Since SNOW-1351 the header is not shown until a point is placed:
+  HALF stops under the hint, and a placed point swaps the hint for the
+  header and the sheet rises to it. An unlit header under the hint was
+  white space, and dropping the hint under it moved the sheet down a line
+  (Hugo, 31 Oct 2026); the hint carries its own `data-sheet-half="fit"`,
+  and the first marker with a box wins. Its half marker reads
   `data-sheet-half="fit"`, capped at FULL's room rather than half the
   screen, because on a short phone the profile already fills half, and
   a clipped header would leave the terrain slope line that opens FULL out

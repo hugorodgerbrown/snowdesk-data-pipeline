@@ -2,7 +2,7 @@
 name: the-point-card-names-the-experience
 description: Point card Skier's track and Terrain slope lines; degree bands; climb vs descent scale (trackBand, groundBand, TRACK_BOUNDS, turnOf)
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-10-31
 ---
 
 # The point card names the experience
@@ -14,7 +14,8 @@ header (SNOW-1064; a header of the panel, not a card of its own, since
 SNOW-1068): the aspect wheel and two lines of words, under the profile and
 its hint (2026-10-18 — until then it took the title and meta line's place,
 with the eyebrow naming the route). On a phone it is the route sheet's
-HALF state, shown unlit until a point is placed.
+HALF state, shown once a point is placed (SNOW-1351; it showed unlit
+before one until then).
 
 - **Two labelled lines: Skier's track and Terrain slope.** Each line
   carries a label, because the two describe different things — the
