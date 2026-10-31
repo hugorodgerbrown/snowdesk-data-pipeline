@@ -336,6 +336,32 @@ describe('a saved route opens rail one (SNOW-1018)', () => {
     expect(fits[0].railOpen).toBe(true);
     expect(fits[0].opts).not.toHaveProperty('maxZoom');
   });
+
+  it('does not reserve the phone sheet twice once the camera is padded for it', () => {
+    // Hugo, 2026-10-31: the second route picked on a phone never framed.
+    // map_sheet.js had padded the camera's foot by the resting sheet, and
+    // the fit reserved the same sheet again, so MapLibre fitted into half
+    // the room (or none). The fit's padding is the room beyond the camera's.
+    const canvas = document.getElementById('map');
+    canvas.getBoundingClientRect = () => ({
+      top: 0, left: 0, right: 400, bottom: 800, width: 400, height: 800,
+    });
+    rail.element.getBoundingClientRect = () => ({
+      top: 450, left: 0, right: 400, bottom: 800, width: 400, height: 350,
+    });
+    window.pwaRouteRail.isSheet = () => true;
+    mapStub.getPadding = () => ({ top: 0, right: 0, bottom: 350, left: 0 });
+    try {
+      tapTheRoute(mapStub);
+      expect(fits).toHaveLength(1);
+      expect(fits[0].opts.padding).toEqual({ top: 60, right: 40, bottom: 40, left: 40 });
+    } finally {
+      delete canvas.getBoundingClientRect;
+      delete rail.element.getBoundingClientRect;
+      delete window.pwaRouteRail.isSheet;
+      delete mapStub.getPadding;
+    }
+  });
 });
 
 describe('no route detail sheet (SNOW-1095)', () => {

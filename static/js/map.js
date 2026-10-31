@@ -8117,7 +8117,38 @@
     if (sheetTop !== null) {
       reserveFitEdge(padding, 'bottom', 'top', canvas.bottom - sheetTop - padding.bottom, canvas.height);
     }
-    return padding;
+    return beyondCameraPadding(padding);
+  };
+
+  /**
+   * Take the camera's own padding off a fit's padding, edge by edge.
+   *
+   * MapLibre's fitBounds fits into the canvas less the camera's padding
+   * AND the fit's, so an edge both reserve is reserved twice. On a phone
+   * map_sheet.js pads the camera's foot by the route sheet's lift once
+   * the sheet rests, and paddingClearingRail measures the same sheet: the
+   * first route opened framed correctly only because its sheet was still
+   * sliding in, and every route picked after it, with the sheet already
+   * up, was fitted into half the room it had, zoomed far out and pushed
+   * off-centre (Hugo, 2026-10-31). Answering the room left beyond the
+   * camera's padding makes the result the same whether the sheet has
+   * settled or not. Each edge keeps at least the fit's own margin: the
+   * reservation was capped at a share of the canvas (reserveFitEdge), so
+   * a tall sheet's capped reservation can be smaller than the camera's
+   * padding for it, and the line still wants its margin above the sheet.
+   *
+   * @param {{top: number, right: number, bottom: number, left: number}} padding
+   *   The full reservation, measured from the canvas's edges.
+   * @returns {{top: number, right: number, bottom: number, left: number}}
+   */
+  const beyondCameraPadding = (padding) => {
+    const camera = map && typeof map.getPadding === 'function' ? map.getPadding() : null;
+    if (!camera) return padding;
+    const out = { ...padding };
+    for (const edge of ['top', 'right', 'bottom', 'left']) {
+      out[edge] = Math.max(FIT_PADDING[edge], out[edge] - (Number(camera[edge]) || 0));
+    }
+    return out;
   };
 
   /**
