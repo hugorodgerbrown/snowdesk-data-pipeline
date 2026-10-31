@@ -10,7 +10,9 @@ written, or when ``force`` asks for it. Every write builds the render model
 
 from __future__ import annotations
 
+import json
 from datetime import date
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -156,6 +158,27 @@ class TestRenderModel:
         assert outcome == OUTCOME_UPDATED
         assert row.render_model == _MODEL
         assert row.updated_at > first.updated_at
+
+    def test_a_version_bump_adds_the_derived_block_to_an_unchanged_row(
+        self,
+    ) -> None:
+        """SNOW-1341: a v9 row with the same CAAML gains ``derived`` on refetch."""
+        source = Path(__file__).resolve().parents[1] / "sentinels"
+        caaml = json.loads(
+            (source / "slf" / "A-single-level" / "source.json").read_text()
+        )
+        first, _ = store_bulletin(_rec(caaml))
+        assert "derived" in first.render_model
+        old = {k: v for k, v in first.render_model.items() if k != "derived"}
+        SourceBulletin.objects.filter(pk=first.pk).update(
+            render_model={**old, "version": 9}, render_model_version=9
+        )
+        row, outcome = store_bulletin(_rec(caaml))
+        assert outcome == OUTCOME_UPDATED
+        row.refresh_from_db()
+        assert row.render_model_version == RENDER_MODEL_VERSION
+        assert row.render_model == first.render_model
+        assert row.render_model["derived"]["danger_levels"]["levels"]
 
     def test_a_current_model_is_not_rebuilt(self) -> None:
         """Same CAAML, current builder: nothing is built or written."""

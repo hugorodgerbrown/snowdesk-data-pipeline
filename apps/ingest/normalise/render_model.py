@@ -127,6 +127,22 @@ Version 8 changes:
     back-compat with no remaining reader. ``prose.snowpack_structure`` is
     unchanged.
 
+Version 10 changes (SNOW-1341):
+  - Added the top-level ``derived`` block: what every reader used to
+    compute from the model on every request, computed once here and
+    stored with it (see :func:`build_derived`). ``terrain_rules``,
+    ``period_transition`` (``dataclasses.asdict`` of
+    :class:`PeriodTransition`, or ``None``), ``problem_family``,
+    ``headline_inputs`` (the five arguments of the instance's
+    ``headline_for`` — never the localised copy), ``state`` (the alert
+    state, ``BulletinState.to_json()`` plus its ``fingerprint``) and
+    ``danger_levels`` (``{"levels": [...], "max": ...}``, the distinct
+    EAWS keys in ``danger.ratings``, low first).
+  - ALBINA and Météo-France traits keep every raw problem: a type
+    described in two elevation bands within one period is two problems,
+    each with its own fields. The per-(type, period) lookup it replaced
+    kept only the last (found by Codex reviewing SNOW-1342).
+
 Also exposes ``compute_period_transition``, a pure function that inspects the
 ``danger.ratings`` list in a render model and derives a ``PeriodTransition``
 dataclass describing whether the day escalates, de-escalates, is flat-but-split,
@@ -146,6 +162,8 @@ from typing import Any, Protocol
 from django.utils.html import strip_tags as _strip_tags
 
 import apps.ingest.normalise.prose.en  # noqa: F401 — registers "en" parser side-effect
+from apps.ingest.normalise.bulletin_state import BulletinState, bulletin_state
+from apps.ingest.normalise.problem_terrain import terrain_rules
 from apps.ingest.normalise.prose import parse_for as _prose_parse_for
 from apps.ingest.runs import PROVIDER_ALBINA, PROVIDER_METEOFRANCE, PROVIDER_SLF
 
@@ -159,7 +177,12 @@ logger = logging.getLogger(__name__)
 # earlier keyed the map on ``equal``, a token SLF never sends, so every
 # neutral rating was stored as ``None`` — indistinguishable from "no
 # subdivision", which the reading guide says means "not applicable".
-RENDER_MODEL_VERSION: int = 9
+#
+# v10 (SNOW-1341): the ``derived`` block — terrain rules, period transition,
+# problem family, headline inputs, alert state and danger levels, stored
+# once instead of computed per read — and every band of a problem type
+# kept in ALBINA / Météo-France traits.
+RENDER_MODEL_VERSION: int = 10
 
 # ---------------------------------------------------------------------------
 # Constants — EAWS problem-type enum (openapi.json lines 670–683)
@@ -2043,7 +2066,7 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
     metadata = _build_metadata(properties)
     danger_patterns = _resolve_danger_patterns(properties, source)
 
-    return {
+    model: dict[str, Any] = {
         "version": RENDER_MODEL_VERSION,
         "source": source,
         "danger": danger,
@@ -2052,6 +2075,8 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
         "prose": prose,
         "danger_patterns": danger_patterns,
     }
+    model["derived"] = build_derived(model)
+    return model
 
 
 # ---------------------------------------------------------------------------
@@ -2526,3 +2551,131 @@ def compute_period_transition(render_model: dict[str, Any]) -> PeriodTransition 
         has_split=True,
         source_number=src_number,
     )
+
+
+# ---------------------------------------------------------------------------
+# The derived block (SNOW-1341)
+# ---------------------------------------------------------------------------
+
+
+def _danger_levels(render_model: dict[str, Any]) -> dict[str, Any]:
+    """Return the distinct EAWS levels a render model's ratings name.
+
+    Args:
+        render_model: A render model (or the version-0 error sentinel).
+
+    Returns:
+        ``{"levels": [...], "max": ...}`` — the distinct keys of
+        ``danger.ratings``, ordered up the scale from ``low`` to
+        ``very_high``, and the highest of them, or ``None`` when the model
+        names no rating.
+
+    """
+    danger: dict[str, Any] = render_model.get("danger") or {}
+    ratings: list[dict[str, Any]] = danger.get("ratings") or []
+    named = {r.get("key") for r in ratings}
+    levels = [key for key in _DANGER_ORDER if key in named]
+    return {"levels": levels, "max": levels[-1] if levels else None}
+
+
+def build_derived(render_model: dict[str, Any]) -> dict[str, Any]:
+    """Compute what the readers of a render model would otherwise compute.
+
+    Pure, and the one definition of each value: the builder stores its
+    result as ``render_model["derived"]``, and :func:`derived_of` computes
+    it on demand for a model that carries none.
+
+    Args:
+        render_model: A render model without (or ignoring) ``derived``.
+
+    Returns:
+        ``terrain_rules``, ``period_transition``, ``problem_family``,
+        ``headline_inputs``, ``state`` and ``danger_levels``.
+
+    """
+    transition = compute_period_transition(render_model)
+    family = derive_problem_family(render_model)
+    danger: dict[str, Any] = render_model.get("danger") or {}
+    peak_number: str = danger.get("number") or "1"
+    peak_subdivision: str = danger.get("subdivision") or ""
+    state = bulletin_state(render_model)
+    return {
+        "terrain_rules": terrain_rules(render_model),
+        "period_transition": (
+            dataclasses.asdict(transition) if transition is not None else None
+        ),
+        "problem_family": family,
+        # The five inputs of the instance's ``headline_for`` matrix. The copy
+        # itself is localised, so it is the instance's, never stored.
+        "headline_inputs": {
+            "source": render_model.get("source") or "",
+            "partition_type": (
+                transition.partition_type if transition is not None else "none"
+            ),
+            "peak_rating": (
+                f"{peak_number}{peak_subdivision}" if peak_subdivision else peak_number
+            ),
+            "direction": transition.direction if transition is not None else "none",
+            "family": family,
+        },
+        "state": {**state.to_json(), "fingerprint": state.fingerprint()},
+        "danger_levels": _danger_levels(render_model),
+    }
+
+
+def derived_of(render_model: dict[str, Any] | None) -> dict[str, Any]:
+    """Return a render model's derived block: the stored one, else computed.
+
+    Every model the builder makes carries ``derived`` from version 10. A
+    model without it is the version-0 error sentinel (a failed build, or
+    the stand-in a reader gets for a stale row) or a row built before
+    version 10 that ``rebuild_render_models`` has not reached yet;
+    computing from it gives exactly what the readers computed before
+    SNOW-1341, so the reader's output does not depend on which it got.
+
+    Args:
+        render_model: A stored render model, or None.
+
+    Returns:
+        The ``derived`` dict (:func:`build_derived`'s shape).
+
+    """
+    model = render_model or {}
+    stored = model.get("derived")
+    if isinstance(stored, dict):
+        return stored
+    return build_derived(model)
+
+
+def period_transition_of(derived: dict[str, Any]) -> PeriodTransition | None:
+    """Return the stored period transition as a :class:`PeriodTransition`.
+
+    Args:
+        derived: A render model's ``derived`` block (:func:`derived_of`).
+
+    Returns:
+        The transition, or ``None`` when the day has no split.
+
+    """
+    data = derived.get("period_transition")
+    return PeriodTransition(**data) if data else None
+
+
+def state_of(render_model: dict[str, Any] | None) -> tuple[BulletinState, str]:
+    """Return a render model's alert state and its fingerprint, as stored.
+
+    Args:
+        render_model: A stored render model, or None.
+
+    Returns:
+        ``(state, fingerprint)`` from ``derived.state``. A state stored
+        under another ``BULLETIN_STATE_VERSION`` is recomputed from the
+        model rather than compared field by field.
+
+    """
+    data: dict[str, Any] = derived_of(render_model)["state"]
+    state = BulletinState.from_json(data)
+    if state is None:
+        state = bulletin_state(render_model or {})
+        return state, state.fingerprint()
+    return state, str(data.get("fingerprint") or state.fingerprint())
