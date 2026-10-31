@@ -32,10 +32,12 @@ shows its error card. A `RENDER_MODEL_VERSION` bump ships with a
 **The raw surfaces are named, and each loads `raw_data` itself:** the
 write and apply paths, the rebuild and maintenance commands, the admin,
 the `/api/` raw CAAML alternate (`bulletin_caaml`), the MCP
-`get_bulletin_raw` tool, and the superuser / `DEBUG` raw embed in
-`_render_bulletin_page` — the last two by an explicit
-`values_list("raw_data")` fetch. `examples_category`'s filter is exempt
-until SNOW-1341.
+`get_bulletin_raw` tool (by an explicit `values_list("raw_data")` fetch),
+and the superuser / `DEBUG` raw embed in `_render_bulletin_page` (the
+bulletin page asks `issues_for_date(..., include_raw=True)` for that
+audience only, so the embed costs no extra query and the monitored page
+count is unchanged). `examples_category`'s filter is exempt until
+SNOW-1341.
 
 ## Why
 

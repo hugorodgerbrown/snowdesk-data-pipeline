@@ -33,6 +33,8 @@ from apps.regions.models import MicroRegion
 def issues_for_date(
     region: MicroRegion,
     target_date: datetime.date,
+    *,
+    include_raw: bool = False,
 ) -> list[Bulletin]:
     """
     Return the bulletins that forecast a calendar day.
@@ -56,23 +58,25 @@ def issues_for_date(
 
     ``raw_data`` is deferred (SNOW-1342): every caller is a read path that
     renders from ``render_model`` and the row's own columns, and the CAAML
-    payload is the widest column on the row. A raw surface that does need
-    it (the superuser raw panel, ``get_bulletin_raw``) loads it explicitly.
+    payload is the widest column on the row. The one raw surface on this
+    path — the bulletin page's superuser / ``DEBUG`` raw embed — asks for
+    it explicitly with ``include_raw=True``, so it costs that audience no
+    extra query and everyone else no CAAML.
 
     Args:
         region: The MicroRegion to look up.
         target_date: Calendar date identifying the day to display.
+        include_raw: Load ``raw_data`` with the rows instead of deferring
+            it — only for a caller that will render the raw payload.
 
     Returns:
         A chronologically-sorted list of Bulletins (possibly empty).
 
     """
-    return list(
-        Bulletin.objects.for_target_date(target_date)
-        .filter(regions=region)
-        .defer("raw_data")
-        .order_by("valid_from")
-    )
+    issues = Bulletin.objects.for_target_date(target_date).filter(regions=region)
+    if not include_raw:
+        issues = issues.defer("raw_data")
+    return list(issues.order_by("valid_from"))
 
 
 def select_default_issue(

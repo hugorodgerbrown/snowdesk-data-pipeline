@@ -34,7 +34,8 @@ omitted from the template context so the template hides them gracefully.
 A read path never reads ``Bulletin.raw_data`` and never rebuilds a render
 model (SNOW-1342; docs/decisions/read-paths-never-read-raw-data.md): the
 only raw readers here are the superuser / DEBUG raw embed in
-``_render_bulletin_page``, which fetches the payload explicitly, and
+``_render_bulletin_page``, whose audience alone has ``issues_for_date``
+load it (``include_raw``), and
 ``examples_category``'s filter (until SNOW-1341).
 """
 
@@ -320,18 +321,14 @@ def _render_bulletin_page(
 
     """
     if bulletin is not None and (settings.DEBUG or request.user.is_superuser):
-        # The read path defers ``raw_data`` (SNOW-1342), so the embed loads
-        # it by an explicit fetch of its own — only here, only for this
-        # audience. Escape ``</`` so a stray ``</script>`` substring in the
+        # The read path defers ``raw_data`` (SNOW-1342); the bulletin page
+        # asks issues_for_date for it explicitly for this audience
+        # (include_raw), and a caller that did not still loads it here, on
+        # access. Escape ``</`` so a stray ``</script>`` substring in the
         # CAAML payload cannot terminate the embedding ``<script>`` tag.
         # JSON decodes ``\/`` to ``/`` so round-tripping with JSON.parse is
         # unaffected.
-        raw_data = (
-            Bulletin.objects.filter(pk=bulletin.pk)
-            .values_list("raw_data", flat=True)
-            .first()
-        )
-        raw = json.dumps(raw_data, ensure_ascii=False).replace("</", "<\\/")
+        raw = json.dumps(bulletin.raw_data, ensure_ascii=False).replace("</", "<\\/")
         context = {**context, "raw_data_json": raw}
     response = render(request, "public/bulletin.html", context)
     if bulletin is not None:
@@ -4232,7 +4229,13 @@ def _bulletin_detail_response(
     # the caller asked for; otherwise fall back to the day's latest
     # issue (SNOW-1207). Multi-issue days render the requested (or default) issue
     # as the page body.
-    issues = _issues_for_date(region, target_date)
+    # raw_data is deferred unless this request will render the raw embed
+    # (_render_bulletin_page); then it rides on the same query (SNOW-1342).
+    issues = _issues_for_date(
+        region,
+        target_date,
+        include_raw=settings.DEBUG or request.user.is_superuser,
+    )
     selected = _resolve_selected_issue(issues, target_date, requested_issue_id)
 
     # The page represents the calendar day chosen in the URL, independent

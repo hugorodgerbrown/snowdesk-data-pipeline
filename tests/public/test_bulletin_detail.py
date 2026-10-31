@@ -19,7 +19,9 @@ from unittest.mock import patch
 
 import pytest
 from django.core.cache import cache
+from django.db import connection
 from django.test import Client, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from apps.bulletins.models import Bulletin, RegionDayRating
@@ -736,6 +738,61 @@ class TestBulletinDetailView:
         assert rm["error"] == "validation failed"
         assert rm["error_type"] == "RenderModelBuildError"
 
+    @override_settings(DEBUG=False)
+    def test_anonymous_page_never_selects_raw_data(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """No query an anonymous bulletin page runs selects raw_data (SNOW-1342).
+
+        ``DEBUG=False`` as in production: under ``DEBUG`` the page embeds
+        the raw payload for a developer, by design.
+        """
+        _make_am_bulletin(
+            region,
+            date(2026, 3, 15),
+            raw_data={"properties": {"bulletinID": "raw-marker"}},
+        )
+        url = reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": "ch-4115",
+                "slug": "valais",
+                "date_str": "2026-03-15",
+            },
+        )
+
+        with CaptureQueriesContext(connection) as ctx:
+            with _freeze("2026-03-15T10:00:00+00:00"):
+                response = client.get(url)
+
+        assert response.status_code == 200
+        assert response.context.get("raw_data_json") is None
+        assert not [q["sql"] for q in ctx.captured_queries if "raw_data" in q["sql"]]
+
+    def test_superuser_page_embeds_raw_data(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A superuser's page still carries the raw CAAML embed."""
+        _make_am_bulletin(
+            region,
+            date(2026, 3, 15),
+            raw_data={"properties": {"bulletinID": "raw-marker"}},
+        )
+        client.force_login(UserFactory.create(is_staff=True, is_superuser=True))
+        url = reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": "ch-4115",
+                "slug": "valais",
+                "date_str": "2026-03-15",
+            },
+        )
+
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            response = client.get(url)
+
+        assert "raw-marker" in response.context["raw_data_json"]
+
 
 # ── Issue discovery and selection ────────────────────────────────────────────
 
@@ -752,6 +809,17 @@ class TestIssuesForDate:
 
         assert issues
         assert all("raw_data" in b.get_deferred_fields() for b in issues)
+
+    def test_include_raw_loads_raw_data_with_the_rows(
+        self, region: MicroRegion
+    ) -> None:
+        """The raw embed's audience asks for raw_data on the same query."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+
+        issues = _issues_for_date(region, date(2026, 3, 15), include_raw=True)
+
+        assert issues
+        assert all(not b.get_deferred_fields() for b in issues)
 
     def test_returns_the_issues_that_forecast_the_day(
         self, region: MicroRegion
