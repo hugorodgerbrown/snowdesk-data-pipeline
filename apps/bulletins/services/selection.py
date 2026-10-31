@@ -23,8 +23,10 @@ such issue is the one shown, whatever the time of day.
 from __future__ import annotations
 
 import datetime
+from collections import defaultdict
+from collections.abc import Iterable
 
-from apps.bulletins.models import Bulletin
+from apps.bulletins.models import Bulletin, RegionBulletin
 from apps.regions.models import MicroRegion
 
 
@@ -123,3 +125,44 @@ def select_bulletin_for_date(
 
     """
     return select_default_issue(issues_for_date(region, target_date), target_date)
+
+
+def select_bulletins_for_regions(
+    regions: Iterable[MicroRegion],
+    target_date: datetime.date,
+) -> dict[int, Bulletin]:
+    """
+    Return the default bulletin for each of several regions on one day.
+
+    The batched form of :func:`select_bulletin_for_date`, for a caller that
+    asks about many regions at once (``bulk_current_conditions``): one
+    query for every region rather than one per region, and the same pick
+    — each region's issues that forecast ``target_date``, the latest by
+    ``valid_from`` (:func:`select_default_issue`). ``raw_data`` is deferred,
+    as in :func:`issues_for_date`.
+
+    Args:
+        regions: The MicroRegions to look up.
+        target_date: Calendar date identifying the day to display.
+
+    Returns:
+        ``{region.pk: Bulletin}`` for every region with a bulletin that
+        day; a region with none is absent.
+
+    """
+    links = (
+        RegionBulletin.objects.filter(
+            region__in=list(regions), bulletin__target_date=target_date
+        )
+        .select_related("bulletin")
+        .defer("bulletin__raw_data")
+    )
+    issues: dict[int, list[Bulletin]] = defaultdict(list)
+    for link in links:
+        issues[link.region_id].append(link.bulletin)
+    picked: dict[int, Bulletin] = {}
+    for region_pk, day_issues in issues.items():
+        default = select_default_issue(day_issues, target_date)
+        if default is not None:
+            picked[region_pk] = default
+    return picked
