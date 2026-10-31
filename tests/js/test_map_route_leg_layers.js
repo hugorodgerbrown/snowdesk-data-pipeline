@@ -615,7 +615,9 @@ describe('tapping a legged route', () => {
 
     expect(rail.state.calls).toHaveLength(opened + 1);
     expect(cursor.state().index).toBe(1);
-    expect(fitBoundsCalls).toEqual([]);
+    // Selecting it frames it (2026-10-31); the point is placed from the
+    // tap before the camera moves.
+    expect(fitBoundsCalls).toHaveLength(1);
     projectLngLat = () => ({ x: 0, y: 0 });
     rail.state.cursor = null;
   });
@@ -630,13 +632,17 @@ describe('tapping a legged route', () => {
     expect(rail.last().feature.properties.uuid).toBe('sampled-route');
   });
 
-  it('leaves the camera where it is: the reader can already see the line', () => {
-    // The framing invariants (no zoom cap, deep enough for every mark)
-    // moved with the fit to the share-link arrival,
+  it('leaves the camera where it is on a tap on the route already open', () => {
+    // That tap places a point (tapOpenRoute); only selecting a route
+    // frames it (2026-10-31). The framing invariants (no zoom cap, deep
+    // enough for every mark) are held on the share-link arrival,
     // tests/js/test_map_route_share.js.
+    rail.state.cursor = globalThis.pwaRouteCursorCore.createRouteCursor(3);
+    tapLeg();
     tapLeg();
 
     expect(fitBoundsCalls).toEqual([]);
+    rail.state.cursor = null;
   });
 
   it('does not query the transition layers, which add no route', () => {

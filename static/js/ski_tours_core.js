@@ -30,7 +30,6 @@
  *   nearestTour(features, point, project) — the tour a tap opens, or null
  *   loadBox(bounds)            — the rectangle to load for a view
  *   covers(box, bounds)        — whether a loaded rectangle holds a view
- *   fitsView(corners, size, padding) — whether a tour already shows whole
  *   featureUrl(template, uuid, sample) — a tour's Feature URL
  */
 
@@ -173,25 +172,6 @@
   }
 
   /**
-   * Whether a tour's box, as drawn on screen, sits wholly inside the view
-   * clear of its padding: when it does, opening the tour leaves the camera
-   * where the reader put it (SNOW-1284). All four corners, projected: on a
-   * rotated map two opposite ones are not the box's screen extremes.
-   *
-   * @param {Array<{x: number, y: number}>} corners The box's corners, in px.
-   * @param {{width: number, height: number}} size The map's canvas.
-   * @param {{top: number, right: number, bottom: number, left: number}} padding
-   *   What the panels and the fit's margins cover, in px.
-   * @returns {boolean}
-   */
-  function fitsView(corners, size, padding) {
-    return corners.length > 0 && corners.every(function (c) {
-      return c.x >= padding.left && c.x <= size.width - padding.right
-        && c.y >= padding.top && c.y <= size.height - padding.bottom;
-    });
-  }
-
-  /**
    * A tour's Feature URL.
    *
    * @param {string} template routes:ski_tour_feature with `__UUID__`.
@@ -214,7 +194,6 @@
     nearestTour: nearestTour,
     loadBox: loadBox,
     covers: covers,
-    fitsView: fitsView,
     featureUrl: featureUrl,
   });
 })();

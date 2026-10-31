@@ -64,6 +64,7 @@
  *                                          segment's path, or null
  *   segmentMidpoints(slope, coords)      → [[lon, lat]] per segment
  *   shareMidpoints(coords, count)        → [[lon, lat]] per equal share
+ *   lineBounds(coords)                   → [w, s, e, n]; the bullseye's frame
  *   centreTarget(point, coords)          → where "Centre on route" aims
  *   centreZoom(zoom, min)                → its zoom; never further out
  *   columnRect(canvas, column, topInset) → the map a desktop column leaves
@@ -530,7 +531,31 @@
     return [Math.round(targetX - cameraX), Math.round(targetY - cameraY)];
   }
 
+  /**
+   * A line's bounding box, [west, south, east, north]: what the panel's
+   * bullseye frames with no point placed (2026-10-31).
+   *
+   * @param {*} coordinates The route's `geometry.coordinates`.
+   * @returns {?Array<number>} Null with no usable point.
+   */
+  function lineBounds(coordinates) {
+    const path = Array.isArray(coordinates) ? coordinates.filter(isPoint) : [];
+    if (!path.length) return null;
+    let west = Infinity;
+    let south = Infinity;
+    let east = -Infinity;
+    let north = -Infinity;
+    for (const [lon, lat] of path) {
+      if (lon < west) west = lon;
+      if (lon > east) east = lon;
+      if (lat < south) south = lat;
+      if (lat > north) north = lat;
+    }
+    return [west, south, east, north];
+  }
+
   self.pwaRouteCursorMapCore = Object.freeze({
+    lineBounds: lineBounds,
     centreTarget: centreTarget,
     centreZoom: centreZoom,
     columnRect: columnRect,

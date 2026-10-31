@@ -324,15 +324,17 @@ describe('a saved route opens rail one (SNOW-1018)', () => {
     expect(rail.last().options.claim).toBeNull();
   });
 
-  it('leaves the camera where it is, because the line was already in view', () => {
-    // A tap is on a line the reader can see, at a scale they chose; a fit
-    // would throw that scale away. Only a share-link arrival frames the
-    // route (tests/js/test_map_route_share.js), and a routes-panel row
-    // frames it through window.pwaMapFocus (tests/js/test_map_focus_bridge.js).
+  it('frames the route it opens, with the rail already on screen (2026-10-31)', () => {
+    // Hugo: selecting a route zooms and pans to centre it, a tap included,
+    // so a second route picked with the panel open is framed too. The fit
+    // runs after the rail opens, so it can reserve the rail's room.
     tapTheRoute(mapStub);
 
     expect(rail.last()).not.toBeNull();
-    expect(fits).toHaveLength(0);
+    expect(fits).toHaveLength(1);
+    expect(fits[0].bounds).toEqual([[7.5, 46.1], [7.54, 46.14]]);
+    expect(fits[0].railOpen).toBe(true);
+    expect(fits[0].opts).not.toHaveProperty('maxZoom');
   });
 });
 
