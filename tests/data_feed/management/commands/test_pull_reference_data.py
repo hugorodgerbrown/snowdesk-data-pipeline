@@ -14,14 +14,18 @@ from the service's row. Then:
   second commit changing nothing.
 
 The rest cover the window, tombstones through the command, the refusals
-and the exit code.
+and the exit code, and a window at SLF's 2026/27 per-region volume
+(SNOW-998).
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import json
+import math
 import uuid
 from io import StringIO
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -35,6 +39,7 @@ from oauth2_provider.models import Application
 from apps.bulletins.models import Bulletin, RegionBulletin, RegionDayRating
 from apps.bulletins.services.apply import apply_bulletin
 from apps.core.models import CommandRun
+from apps.data_feed import contract
 from apps.data_feed.management.commands.pull_reference_data import (
     describe_item,
     place_label,
@@ -577,3 +582,79 @@ def test_an_unread_feed_costs_only_itself(
     assert counts["feeds_unread"] == 1
     assert counts["weather_created"] == Weather.objects.count()
     assert counts["ski-tours_unchanged"] == 1
+
+
+class _Counting(_ReplaySession):
+    """A replay that counts the pages asked of each feed."""
+
+    def __init__(self, capture: dict[tuple[str, str | None], dict]) -> None:
+        """Hold the captured pages and an empty tally."""
+        super().__init__(capture)
+        self.requests: dict[str, int] = {}
+
+    def get(self, url: str, *, params: dict, **kwargs: Any) -> Any:
+        """Count the request against its path, then serve the capture."""
+        path = urlsplit(url).path
+        self.requests[path] = self.requests.get(path, 0) + 1
+        return super().get(url, params=params, **kwargs)
+
+
+@pytest.mark.django_db
+@override_settings(**FEED_SETTINGS)
+def test_a_de_aggregated_window_is_consumed_within_its_page_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """--recent 14 at ~149 bulletins an issue, two a day, reads cleanly.
+
+    4,172 real per-region items (the sentinel slice, re-identified) in
+    pages of the client's MAX_LIMIT: every item is reached, none fails,
+    and the walk asks for no more pages than the item count needs. A dry
+    run, because the write per item is the one the fetch_bulletins slice
+    test already drives; what this proves is the client at the volume.
+    """
+    slice_path = (
+        Path(__file__).resolve().parents[3]
+        / "sentinels"
+        / "slf"
+        / "per-region-slice.ndjson"
+    )
+    sample = [json.loads(line) for line in slice_path.read_text().splitlines()]
+    total = 14 * 149 * 2
+    items = [
+        {
+            "bulletin_id": f"per-region-{n:05d}",
+            "updated_at": "2026-10-31T09:00:00+00:00",
+            "pdf_url": "",
+            "caaml": {**sample[n % len(sample)], "bulletinID": f"per-region-{n:05d}"},
+            "render_model": None,
+        }
+        for n in range(total)
+    ]
+    path = "/api/data/v2/bulletins/"
+    capture: dict[tuple[str, str | None], dict] = {
+        (f"/api/data/v2/{feed}/", None): {
+            "results": [],
+            "next_cursor": None,
+            "count": 0,
+        }
+        for feed in FEEDS
+    }
+    budget = math.ceil(total / contract.MAX_LIMIT)
+    for page in range(budget):
+        chunk = items[page * contract.MAX_LIMIT : (page + 1) * contract.MAX_LIMIT]
+        body: dict[str, Any] = {
+            "results": chunk,
+            "next_cursor": f"p{page + 1}" if page + 1 < budget else None,
+        }
+        if page == 0:
+            body["count"] = total
+        capture[(path, f"p{page}" if page else None)] = body
+    session = _Counting(capture)
+    monkeypatch.setattr("apps.data_feed.client.requests.Session", lambda: session)
+
+    _run("--recent", "14")
+
+    counts = _counts()
+    assert counts["bulletins_created"] == total
+    assert counts["bulletins_failed"] == 0
+    assert session.requests[path] == budget == 9
