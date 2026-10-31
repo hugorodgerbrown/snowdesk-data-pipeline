@@ -286,6 +286,7 @@ extend-include = [
     "bin/i18n-lint",
     "bin/js-globals-lint",
     "bin/mcp-app-host",
+    "bin/measure-slf-sentinels",
     "bin/migrations-lint",
     "bin/select-tests",
     "bin/record-rail-fixtures",

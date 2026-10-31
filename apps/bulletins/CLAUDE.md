@@ -13,6 +13,12 @@ via the `fetch_bulletins` command.
   (`detect_caaml_shape`, in `apps/ingest/normalise/slf.py`;
   [why](docs/decisions/the-slf-caaml-shape-is-detected-not-assumed-from-the-url.md)).
   Historical depth limits: [`docs/slf-api-history.md`](docs/slf-api-history.md).
+  From 2026/27 SLF publish **one bulletin per micro-region** (~149 an issue,
+  about six 50-bulletin pages a day) and both shapes ingest side by side
+  with no format branch (SNOW-998). A `bulletinID` repeated within one walk
+  is a counted duplicate when identical (paging overlap) and
+  `SlfConflictingBulletinIdError` — a failed run — when it differs.
+  Per-season storage figures: `bin/measure-slf-sentinels`.
 - **ALBINA** (`apps/bulletins/services/albina_fetcher.py`) — EUREGIO
   avalanche.report CDN, no auth; per-day CAAML v6 JSON URLs for the AT-07,
   IT-32-BZ, and IT-32-TN regions. 404 means "no bulletin".
@@ -34,7 +40,11 @@ envelope before storage — `{ type: "Feature", geometry: null, properties: {…
 
 **Canonical payload examples** live in `tests/sentinels/` — three graded
 cases (A single-level, B structurally-enhanced, C split-day multi-problem)
-per provider, each with a README, enforced by a round-trip test. Read a
+per provider, each with a README, enforced by a round-trip test. SLF has
+two more, D and E, from the 2026/27 per-region export (A–C are the
+aggregated 2025/26 shape), plus `slf/per-region-slice.ndjson`, twelve
+per-region bulletins that are not a sentinel but the fixture for the
+end-to-end `--local-mirror` test. Read a
 sentinel before reasoning about any provider's payload shape; don't trust
 prose descriptions of the schema.
 
