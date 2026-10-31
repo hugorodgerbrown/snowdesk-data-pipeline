@@ -107,7 +107,7 @@ Context:
 {% trans "Route" as route_rail_eyebrow %}
 {% trans "Route actions" as route_rail_menu_label %}
 {% trans "Close the route profile" as route_rail_close_label %}
-{% trans "Zoom to terrain" as route_rail_zoom_label %}
+{% trans "Centre on route" as route_rail_centre_label %}
 <section
     id="route-rail"
     data-route-rail
@@ -164,18 +164,19 @@ Context:
                 >
             </div>
             <div class="-mr-3 -mt-3 flex flex-none items-start">
-                {# Zoom to terrain (Hugo, 2026-10-31): eases the map to z12, #}
-                {# where the terrain layers start, on the placed point or    #}
-                {# the middle of the route (map.js, snowdesk:route-rail-zoom). #}
+                {# Centre on route (Hugo, 2026-10-31): brings the placed point, #}
+                {# or the middle of the route, to the centre of the VISIBLE    #}
+                {# map, zooming in to z12 where the terrain layers start if    #}
+                {# the map is further out (map.js, snowdesk:route-rail-centre). #}
                 {% if not static %}
                     <button
                         type="button"
-                        data-route-rail-zoom
-                        aria-label="{{ route_rail_zoom_label }}"
-                        title="{{ route_rail_zoom_label }}"
+                        data-route-rail-centre
+                        aria-label="{{ route_rail_centre_label }}"
+                        title="{{ route_rail_centre_label }}"
                         class="{% icon_button_classes %}"
                     >
-                        {% include "includes/_icon_zoom_in.html" only %}
+                        {% include "includes/_icon_bullseye.html" only %}
                     </button>
                 {% endif %}
                 <div data-route-rail-actions>

@@ -1,0 +1,31 @@
+{% comment %}
+templates/includes/_icon_bullseye.html — "centre the map on this route":
+a bullseye, three rings round a dot (Hugo, 2026-10-31).
+
+The route panel's button beside the ×, which brings the route (its placed
+point, or its middle) to the centre of the visible map at zoom 12, where
+the terrain layers start. A bullseye rather than the locate crosshair
+(_icon_locate.html): that one finds a single saved point; this one aims
+the camera at the thing already open.
+
+Stroke width 2, the house idiom. The centre dot carries its own ``fill``
+because the root sets ``fill="none"`` for the strokes.
+
+Parameters (passed via {% include … with … %}):
+  size (int, optional) — rendered px, both axes. Default 18.
+{% endcomment %}
+<svg
+    width="{{ size|default:18 }}"
+    height="{{ size|default:18 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <circle cx="12" cy="12" r="9" />
+    <circle cx="12" cy="12" r="5" />
+    <circle cx="12" cy="12" r="1" fill="currentColor" />
+</svg>

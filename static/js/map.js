@@ -2976,14 +2976,15 @@
     keepRouteCursorInView();
   });
 
-  // Zoom to terrain (Hugo, 2026-10-31): the route panel's magnifier eases
-  // the map to z12, where the terrain layers start, centred on the placed
-  // point or, with none, on the middle of the route's line. Already closer
-  // in, it only re-centres: the button never zooms out. The camera padding
-  // map_sheet.js writes keeps the centre clear of the panel.
-  const ROUTE_TERRAIN_ZOOM = 12;
-  document.addEventListener('snowdesk:route-rail-zoom', (event) => {
-    if (!map) return;
+  // Centre on route (Hugo, 2026-10-31): the route panel's bullseye brings
+  // the placed point or, with none, the middle of the route's line to the
+  // centre of the VISIBLE map, the strip the panel or the phone sheet does
+  // not cover (visibleMapRect, as the cursor's pan uses), and zooms in to
+  // z12, where the terrain layers start, when the map is further out.
+  // Closer in already, it only re-centres: the button never zooms out.
+  const ROUTE_CENTRE_ZOOM = 12;
+  document.addEventListener('snowdesk:route-rail-centre', (event) => {
+    if (!map || typeof map.easeTo !== 'function') return;
     const detail = /** @type {CustomEvent} */ (event).detail || {};
     const index = routeCursorTarget ? routeCursorTarget.cursor.state().index : null;
     const point = index === null ? null : routeCursorFeature(index);
@@ -2992,9 +2993,60 @@
     if (!Array.isArray(centre) || centre.length < 2) return;
     map.easeTo({
       center: [centre[0], centre[1]],
-      zoom: Math.max(map.getZoom(), ROUTE_TERRAIN_ZOOM),
+      zoom: Math.max(map.getZoom(), ROUTE_CENTRE_ZOOM),
+      offset: visibleCentreOffset(),
     });
   });
+
+  /**
+   * The map the route panel leaves visible, for centring, viewport px.
+   *
+   * On a phone that is the strip above the sheet (visibleMapRect). On a
+   * desktop the panel is the left column, so the visible map is to its
+   * RIGHT, under the top chrome; visibleMapRect, which the cursor's pan
+   * reads, treats the panel as a band across the top instead.
+   *
+   * @param {DOMRect} canvas The map container's rect.
+   * @returns {?{left: number, top: number, right: number, bottom: number}}
+   */
+  const routeCentreRect = (canvas) => {
+    const rail = window.pwaRouteRail;
+    const pinned = rail && rail.isOpen && rail.isOpen() && rail.element
+      && !(rail.isSheet && rail.isSheet()) && rail.element.getBoundingClientRect;
+    if (!pinned) return visibleMapRect();
+    const box = rail.element.getBoundingClientRect();
+    const left = box.width > 0 ? Math.min(canvas.right, box.right) : canvas.left;
+    return {
+      left: left,
+      top: Math.min(canvas.bottom, canvas.top + FIT_PADDING.top),
+      right: canvas.right,
+      bottom: canvas.bottom,
+    };
+  };
+
+  /**
+   * How far the visible map's centre sits from the camera's own, px.
+   *
+   * MapLibre aims `easeTo` at the centre of the PADDED viewport (the
+   * padding map_sheet.js writes), so the offset is taken from there, and
+   * the target lands mid-way across the area nothing covers.
+   *
+   * @returns {[number, number]} [x, y]; [0, 0] with no visible rect.
+   */
+  const visibleCentreOffset = () => {
+    const container = map.getContainer();
+    if (!container || !container.getBoundingClientRect) return [0, 0];
+    const canvas = container.getBoundingClientRect();
+    const rect = routeCentreRect(canvas);
+    if (!rect) return [0, 0];
+    const pad = typeof map.getPadding === 'function' ? map.getPadding() : null;
+    const p = { top: 0, right: 0, bottom: 0, left: 0, ...(pad || {}) };
+    const cameraX = p.left + (canvas.width - p.left - p.right) / 2;
+    const cameraY = p.top + (canvas.height - p.top - p.bottom) / 2;
+    const targetX = (rect.left + rect.right) / 2 - canvas.left;
+    const targetY = (rect.top + rect.bottom) / 2 - canvas.top;
+    return [Math.round(targetX - cameraX), Math.round(targetY - cameraY)];
+  };
 
   // The selected region's outline recedes while a route is open and comes
   // back when it closes (choropleth_core.js, 2026-10-19). The rail announces

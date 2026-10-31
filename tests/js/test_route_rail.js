@@ -55,7 +55,7 @@ document.body.innerHTML = `
             </ul>
           </div>
         </div>
-        <button type="button" data-route-rail-zoom aria-label="Zoom to terrain"></button>
+        <button type="button" data-route-rail-centre aria-label="Centre on route"></button>
         <button type="button" data-route-rail-close aria-label="Close the route profile"></button>
         <p data-route-rail-meta></p>
         <div data-route-rail-claim hidden></div>
@@ -351,18 +351,18 @@ describe('open', () => {
     expect(rail.hasAttribute('data-route-tour')).toBe(false);
   });
 
-  it('asks the map to zoom to terrain, passing the line, and stays open', () => {
+  it('asks the map to centre on the route, passing the line, and stays open', () => {
     const asked = vi.fn();
-    document.addEventListener('snowdesk:route-rail-zoom', asked);
+    document.addEventListener('snowdesk:route-rail-centre', asked);
     const route = feature();
     window.pwaRouteRail.open(route);
 
-    rail.querySelector('[data-route-rail-zoom]').click();
+    rail.querySelector('[data-route-rail-centre]').click();
 
     expect(asked).toHaveBeenCalledTimes(1);
     expect(asked.mock.calls[0][0].detail.coordinates).toBe(route.geometry.coordinates);
     expect(window.pwaRouteRail.isOpen()).toBe(true);
-    document.removeEventListener('snowdesk:route-rail-zoom', asked);
+    document.removeEventListener('snowdesk:route-rail-centre', asked);
   });
 
   it('ends an SAC tour’s figures with its guide time and grade', () => {

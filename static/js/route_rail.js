@@ -251,7 +251,7 @@
   var currentProfile = null;
   /** @type {{uuid: ?string, name: string}} */
   var current = { uuid: null, token: null, tour: null, name: '' };
-  /** The open route's line, for the zoom button's fallback centre. */
+  /** The open route's line, for the centre button's fallback target. */
   var currentCoordinates = [];
   /** The open route's own meta line. */
   var routeMeta = '';
@@ -999,11 +999,11 @@
       close();
       return;
     }
-    if (target.closest('[data-route-rail-zoom]')) {
-      // Zoom to terrain (Hugo, 2026-10-31): map.js owns the camera, so the
+    if (target.closest('[data-route-rail-centre]')) {
+      // Centre on route (Hugo, 2026-10-31): map.js owns the camera, so the
       // rail asks and passes the line for when no point is placed.
       document.dispatchEvent(
-        new CustomEvent('snowdesk:route-rail-zoom', {
+        new CustomEvent('snowdesk:route-rail-centre', {
           detail: { coordinates: currentCoordinates },
         }),
       );
