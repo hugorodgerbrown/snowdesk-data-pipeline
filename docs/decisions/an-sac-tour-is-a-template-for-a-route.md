@@ -231,11 +231,14 @@ forecast" Location waits for a second, non-SAC source of places.
   joining them in stored order doubled the line back on itself. The way is
   the longest path between two loose ends, run in the direction swisstopo
   drew most of it. The map still draws every part, spur included.
-- Opening a tour brings it into view only when part of it is hidden,
-  and never by zooming in (map.js `frameTour`, `ski_tours_core.fitsView`,
-  SNOW-1284). The reader reached it from a summit at a scale they chose,
-  and the original fit to each tour's own extent zoomed in and out on
-  every pick.
+- Opening a tour frames the whole tour, centred beside the panel, as
+  opening any route does (map.js `frameRouteLine`; Hugo, 2026-10-31).
+  SNOW-1284 had moved the camera only when part of the tour was hidden,
+  and never zoomed in (`frameTour`, `ski_tours_core.fitsView`, both
+  removed), so picking a second tour with the panel open left the map
+  where it was. The bullseye in the panel's header re-frames the route
+  after the reader has moved the map; with a point placed it centres
+  the point at z12 instead, so the terrain shows.
 
 **An SAC tour looks like SAC's until it is saved (SNOW-1307).** With the
 tours layer on, tours drawn in a route's own grey and fuchsia drowned out

@@ -283,6 +283,14 @@ describe('isInside', () => {
 });
 
 describe('Centre on route (2026-10-31)', () => {
+  it('frames the whole line with no point placed: its bounding box', () => {
+    const line = [[7.2, 46.1], [7.0, 46.3], [7.5, 46.0, 2400]];
+    expect(core.lineBounds(line)).toEqual([7.0, 46.0, 7.5, 46.3]);
+    expect(core.lineBounds([[7, 46], ['x', 1]])).toEqual([7, 46, 7, 46]);
+    expect(core.lineBounds([])).toBeNull();
+    expect(core.lineBounds(null)).toBeNull();
+  });
+
   it('aims at the placed point when there is one', () => {
     expect(core.centreTarget([7.1, 46.1], [[7, 46], [8, 46]])).toEqual([7.1, 46.1]);
   });

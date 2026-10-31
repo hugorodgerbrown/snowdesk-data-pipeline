@@ -2976,12 +2976,16 @@
     keepRouteCursorInView();
   });
 
-  // Centre on route (Hugo, 2026-10-31): the route panel's bullseye brings
-  // the placed point or, with none, the middle of the route's line to the
-  // centre of the VISIBLE map, the strip the panel or the phone sheet does
-  // not cover (visibleMapRect, as the cursor's pan uses), and zooms in to
-  // z12, where the terrain layers start, when the map is further out.
-  // Closer in already, it only re-centres: the button never zooms out.
+  // The route panel's bullseye (Hugo, 2026-10-31): one control, two
+  // behaviours, by what is in focus.
+  //   - THE ROUTE ALONE (no point placed): frame the whole route, centred
+  //     in the map the panel leaves visible, exactly as selecting it does
+  //     (frameRouteLine) — so after the reader has moved the map, a tap
+  //     puts the route back.
+  //   - A POINT ON THE ROUTE: bring the point to the centre of the VISIBLE
+  //     map (routeCentreRect) and zoom in to z12, where the terrain layers
+  //     start, when the map is further out. Closer in already, it only
+  //     re-centres: it never zooms out.
   const ROUTE_CENTRE_ZOOM = 12;
   document.addEventListener('snowdesk:route-rail-centre', (event) => {
     const core = self.pwaRouteCursorMapCore;
@@ -2989,7 +2993,11 @@
     const detail = /** @type {CustomEvent} */ (event).detail || {};
     const index = routeCursorTarget ? routeCursorTarget.cursor.state().index : null;
     const point = index === null ? null : routeCursorFeature(index);
-    const centre = core.centreTarget(point ? point.geometry.coordinates : null, detail.coordinates);
+    if (!point) {
+      frameRouteLine(core.lineBounds(detail.coordinates));
+      return;
+    }
+    const centre = core.centreTarget(point.geometry.coordinates, detail.coordinates);
     if (!centre) return;
     const container = map.getContainer();
     const canvas = container && container.getBoundingClientRect
@@ -3559,31 +3567,21 @@
   let tourRouteClaim = null;
 
   /**
-   * Bring a tour into view only when part of it is hidden, and never by
-   * zooming in (SNOW-1284). The reader reached the tour from a summit at
-   * a scale they chose; a fit to every tour's own extent changed that
-   * scale on each pick, in and out.
+   * Frame a route's whole line, centred in the map the route panel leaves
+   * visible (Hugo, 2026-10-31): what selecting a route does, a saved one
+   * or an SAC tour, and what the panel's bullseye does with no point
+   * placed. It zooms in or out as the line needs; there is no cap
+   * (SNOW-972: a route's own marks have minzooms a cap would starve).
    *
-   * @param {number[]} bounds The tour's [west, south, east, north].
-   * @param {?function(...any): boolean} shows Whether a box already shows
-   *   whole (ski_tours_core.fitsView, passed in by ski_tours.js); without
-   *   one the tour is always fitted.
+   * @param {?number[]} bounds The line's [west, south, east, north].
    * @returns {void}
    */
-  const frameTour = (bounds, shows) => {
-    const padding = paddingClearingRail();
-    const canvas = map.getContainer().getBoundingClientRect();
-    const [west, south, east, north] = bounds;
-    const shown = typeof shows === 'function' && shows(
-      [[west, north], [east, north], [east, south], [west, south]].map((c) => map.project(c)),
-      { width: canvas.width, height: canvas.height },
-      padding,
-    );
-    if (shown) return;
+  const frameRouteLine = (bounds) => {
+    if (!map || !Array.isArray(bounds) || bounds.length !== 4) return;
+    if (!bounds.every((n) => Number.isFinite(n))) return;
     map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], {
-      padding: padding,
+      padding: paddingClearingRail(),
       duration: 400,
-      maxZoom: map.getZoom(),
     });
   };
 
@@ -3593,9 +3591,9 @@
      * Called again with the sampled Feature, it refills the open panel.
      *
      * @param {Object} feature From routes:ski_tour_feature.
-     * @param {{claim?: ?Node, frame?: boolean, shows?: function(...any): boolean}} [options]
-     *   `claim` is the Save control; `frame` brings the tour into view if
-     *   `shows` says it is not (frameTour).
+     * @param {{claim?: ?Node, frame?: boolean}} [options]
+     *   `claim` is the Save control; `frame` frames the whole tour,
+     *   centred (frameRouteLine). A refill passes no `frame`.
      * @returns {boolean} Whether the panel opened.
      */
     open(feature, options) {
@@ -3613,9 +3611,7 @@
         routeCursorTarget.cursor.setIndex(index);
       }
       const bounds = parseRouteProperty(feature.properties && feature.properties.bounds);
-      if (opts.frame && Array.isArray(bounds) && bounds.length === 4) {
-        frameTour(bounds, opts.shows || null);
-      }
+      if (opts.frame) frameRouteLine(bounds);
       return true;
     },
     /** @returns {?string} The open tour's uuid, or null. */
@@ -8225,8 +8221,8 @@
      * absence — match ``activateRoute``'s own fit, so a route framed from
      * its panel row and the same route framed by a share link come to rest
      * at the same scale. That is why SNOW-972 had to uncap BOTH: fixing
-     * one alone would have made the other disagree with it. (A tap on the
-     * line frames nothing since 2026-10-02.)
+     * one alone would have made the other disagree with it. (A tap that
+     * opens a route frames it too, again since 2026-10-31.)
      *
      * SNOW-973 SPLIT THE PADDING, and only the padding. A share arrival
      * leaves the route panel pinned top-left (SNOW-1068), so that fit reserves the
@@ -10168,9 +10164,9 @@
       ) || null;
     };
 
-    // SNOW-687: tapping a saved route opens its detail. It also framed the
-    // whole track until 2026-10-02; now only a share arrival does (`frame`,
-    // below), because a tapped line is one the reader can already see. SNOW-1018 CHANGED WHAT "ITS DETAIL" IS. A tap opens rail one
+    // SNOW-687: tapping a saved route opens its detail and frames the
+    // whole track (dropped 2026-10-02, restored 2026-10-31 — see the
+    // "SELECTING A ROUTE FRAMES IT" note below). SNOW-1018 CHANGED WHAT "ITS DETAIL" IS. A tap opens rail one
     // — the route's profile cut at its transitions, docked over the map's
     // foot — and ONLY the rail. The rail carries what the sheet's top half
     // used to: the name, the distance/ascent/descent figures and the
@@ -10189,7 +10185,7 @@
     //
     // Built with createElement, never innerHTML — everything on a route
     // feature that reaches the page is either user-supplied or ours.
-    const activateRoute = (feature, { frame = false } = {}) => {
+    const activateRoute = (feature, { frame = true } = {}) => {
       const props = feature.properties || {};
 
       // Handed the CACHED feature: the one MapLibre gave the tap is the
@@ -10217,47 +10213,26 @@
         ? { uuid: null, token: props.token || null }
         : { uuid: props.uuid || null, token: null });
 
-      // A TAP DOES NOT MOVE THE CAMERA (2026-10-02). The reader tapped a
-      // line they can already see, at a scale they chose; framing it threw
-      // that scale away for one they had not asked for. Only an arrival
-      // that has not seen the route yet — the share deep link — frames it.
-      // A press on a routes-panel row frames it too, through
-      // window.pwaMapFocus.bounds (static/js/row_focus.js), and never comes
-      // through here.
+      // SELECTING A ROUTE FRAMES IT (Hugo, 2026-10-31), a tap included:
+      // the whole line, centred in the map the panel leaves visible, as
+      // the panel's bullseye does with no point placed. This reverses the
+      // 2026-10-02 rule that a tap left the camera alone; that rule left a
+      // second route, picked while the panel was open, unframed. A tap on
+      // the route ALREADY open places a point instead and never comes
+      // through here (tapOpenRoute). Only a Resume of the example
+      // walkthrough past its zoom step passes `frame: false`, to keep the
+      // reader's close-up.
+      //
+      // SNOW-972: NO `maxZoom` (frameRouteLine). A micro-region's cap of
+      // 10 stopped a route ever reaching a size worth looking at, and the
+      // marks drawn ON a route have minzooms of their own;
+      // `tests/js/test_map_route_leg_layers.js` holds that invariant
+      // against every route mark's own minzoom.
+      //
+      // SNOW-1018: the padding reserves the rail opened just above,
+      // measured now while it is on screen.
       if (!frame) return;
-      const bounds = readFeatureJson(props.bounds);
-      if (Array.isArray(bounds) && bounds.length === 4) {
-        // GeoJSON bbox [min_lon, min_lat, max_lon, max_lat] → MapLibre's
-        // [[west, south], [east, north]].
-        //
-        // SNOW-1018: the padding reserves the rail opened just above,
-        // measured now while it is on screen. No sheet is open on a tap
-        // any more, so there is nothing else docked over the map to frame
-        // around.
-        //
-        // SNOW-972: NO `maxZoom`. This fit carried `zoomToFeatureBounds`'
-        // cap of 10 on the reasoning that "a route and a region frame
-        // alike" — and they do not. A micro-region is tens of kilometres
-        // across and a route is often one or two, so the cap that stops a
-        // region filling the screen stopped a route ever reaching a size
-        // worth looking at.
-        //
-        // What made it a defect rather than a preference is that the
-        // marks drawn ON a route have minzooms of their own — the
-        // transition markers at 11 — so the
-        // camera came to rest BELOW the zoom at which the things the
-        // panel was describing in words could render at all.
-        //
-        // `tests/js/test_map_route_leg_layers.js` holds the invariant
-        // against every route mark's own minzoom rather than against the
-        // number 10, so a cap reintroduced a step too low fails there
-        // whatever marks exist by then. Padding is not a cap: it frames
-        // into less map, which zooms the camera OUT, never past a floor.
-        map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], {
-          padding: paddingClearingRail(),
-          duration: 400,
-        });
-      }
+      frameRouteLine(readFeatureJson(props.bounds));
     };
 
     /**
