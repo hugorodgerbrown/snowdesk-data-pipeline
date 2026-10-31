@@ -12,6 +12,9 @@ Covers ``CountryBulletinFeed`` in ``apps/public/feeds.py`` (SNOW-396):
 * GUIDs combine bulletin_id + region_id so an upsert of the same
   bulletin_id doesn't appear as a new entry.
 * Only regions from the requested country appear.
+* Entry descriptions are a plain-text summary of the render model's
+  ``prose`` block — precedence, HTML stripped, 280-character cap — and
+  the feed query leaves ``raw_data`` behind (SNOW-1344).
 * ``/llms.txt`` lists each country's feed under ``## Data``.
 * The homepage carries a ``<link rel="alternate" type="application/rss+xml">``
   for each country.
@@ -19,12 +22,18 @@ Covers ``CountryBulletinFeed`` in ``apps/public/feeds.py`` (SNOW-396):
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
 
 import pytest
 from django.test import Client, override_settings
 
+from apps.bulletins.models import Bulletin
+from apps.ingest.public import build_render_model
+from apps.public.feeds import CountryBulletinFeed, bulletin_summary
 from tests.factories import (
     BulletinFactory,
     MajorRegionFactory,
@@ -39,6 +48,7 @@ def _make_bulletin_for_region(
     country: str,
     name: str = "Region",
     issued_at: datetime | None = None,
+    **bulletin_fields: Any,
 ) -> None:
     """Create a bulletin + RegionBulletin joined to a MicroRegion in ``country``."""
     major = MajorRegionFactory.create(
@@ -58,6 +68,7 @@ def _make_bulletin_for_region(
         valid_from=when,
         valid_to=when + timedelta(days=1),
         issued_at=when,
+        **bulletin_fields,
     )
     RegionBulletinFactory.create(bulletin=bulletin, region=region)
 
@@ -240,3 +251,168 @@ def test_feed_links_ignore_the_example_com_site_row(client: Client) -> None:
     assert "example.com" not in body
     assert '<link href="https://snowdesk.info/ch/feed.rss" rel="self"' in body
     assert '<link href="https://snowdesk.info/ch-4115/martigny-verbier/"' in body
+
+
+_SENTINEL_DIR = Path(__file__).resolve().parents[1] / "sentinels"
+
+
+def _prose_model(**prose: Any) -> dict[str, Any]:
+    """Return a minimal render model carrying only the given ``prose`` keys."""
+    return {"version": 7, "prose": prose}
+
+
+def _entry_summaries(body: str) -> list[str]:
+    """Return every ``<summary>`` element's text in an Atom feed body."""
+    return re.findall(r"<summary[^>]*>(.*?)</summary>", body, re.DOTALL)
+
+
+@pytest.mark.django_db
+class TestFeedDescriptions:
+    """Entry descriptions summarise the render model's prose (SNOW-1344)."""
+
+    @pytest.mark.parametrize(
+        ("provider", "source", "region_id", "country", "expected"),
+        [
+            ("slf", Bulletin.Source.SLF, "CH-4115", "ch", "new snow and snow drift"),
+            (
+                "albina",
+                Bulletin.Source.ALBINA,
+                "AT-07-01",
+                "at",
+                "Gliding avalanches and moist snow slides are possible.",
+            ),
+            (
+                "meteofrance",
+                Bulletin.Source.METEOFRANCE,
+                "FR-01",
+                "fr",
+                "Départs spontanés",
+            ),
+        ],
+    )
+    def test_each_provider_gets_a_description(
+        self,
+        client: Client,
+        provider: str,
+        source: str,
+        region_id: str,
+        country: str,
+        expected: str,
+    ) -> None:
+        """A real sentinel's render model yields a non-empty plain summary."""
+        path = _SENTINEL_DIR / provider / "A-single-level" / "source.json"
+        props = json.loads(path.read_text(encoding="utf-8"))
+        _make_bulletin_for_region(
+            region_id,
+            country.upper(),
+            source=source,
+            render_model=build_render_model(props),
+        )
+
+        summaries = _entry_summaries(
+            client.get(f"/{country}/feed.rss").content.decode()
+        )
+
+        assert len(summaries) == 1
+        assert expected in summaries[0]
+        # Tags never reach the feed — escaped or otherwise.
+        assert "&lt;" not in summaries[0]
+        assert "<" not in summaries[0]
+
+    def test_html_is_stripped(self) -> None:
+        """Markup and entities become plain, whitespace-collapsed text."""
+        model = _prose_model(
+            snowpack_structure="<h1>Snowpack</h1>\n<p>Weak  layers &amp; crusts.</p>"
+        )
+        assert bulletin_summary(model) == "Snowpack Weak layers & crusts."
+
+    @pytest.mark.parametrize(
+        "render_model",
+        [
+            None,
+            {"version": 0, "traits": []},
+            _prose_model(),
+            _prose_model(
+                avalanche_activity={"highlights": "", "comment": ""},
+                tendency_lead=None,
+                snowpack_structure="<p> </p>",
+                weather_forecast="",
+            ),
+        ],
+    )
+    def test_empty_prose_gives_empty_string(
+        self, render_model: dict[str, Any] | None
+    ) -> None:
+        """No render model, or no non-empty prose, yields ``""``."""
+        assert bulletin_summary(render_model) == ""
+
+    @pytest.mark.parametrize(
+        ("prose", "expected"),
+        [
+            (
+                {
+                    "avalanche_activity": {"highlights": "Highlights."},
+                    "tendency_lead": "Lead.",
+                    "snowpack_structure": "Snowpack.",
+                    "weather_forecast": "Forecast.",
+                },
+                "Highlights.",
+            ),
+            (
+                {
+                    "avalanche_activity": {"highlights": ""},
+                    "tendency_lead": "Lead.",
+                    "snowpack_structure": "Snowpack.",
+                    "weather_forecast": "Forecast.",
+                },
+                "Lead.",
+            ),
+            (
+                {
+                    "tendency_lead": None,
+                    "snowpack_structure": "Snowpack.",
+                    "weather_forecast": "Forecast.",
+                },
+                "Snowpack.",
+            ),
+            (
+                {"snowpack_structure": "<p></p>", "weather_forecast": "Forecast."},
+                "Forecast.",
+            ),
+        ],
+    )
+    def test_first_non_empty_field_wins(
+        self, prose: dict[str, Any], expected: str
+    ) -> None:
+        """Highlights, then tendency lead, then snowpack, then weather forecast."""
+        assert bulletin_summary(_prose_model(**prose)) == expected
+
+    def test_long_prose_is_cut_at_a_word_boundary(self) -> None:
+        """A summary over 280 characters ends "…" on a whole word."""
+        words = " ".join(f"word{n:03d}" for n in range(60))  # 479 chars
+        summary = bulletin_summary(_prose_model(snowpack_structure=words))
+
+        assert len(summary) <= 280
+        assert summary.endswith("…")
+        body = summary.removesuffix("…")
+        assert words.startswith(body)
+        # The cut lands between words, never inside one.
+        assert words[len(body)] == " "
+
+    def test_prose_at_the_cap_is_untouched(self) -> None:
+        """Exactly 280 characters is not truncated."""
+        text = "x" * 280
+        assert bulletin_summary(_prose_model(snowpack_structure=text)) == text
+
+    def test_items_defer_raw_data(self) -> None:
+        """The feed query leaves raw_data behind and keeps what it reads."""
+        _make_bulletin_for_region("CH-4115", "CH", name="Verbier")
+
+        item = list(CountryBulletinFeed().items("ch"))[0]
+
+        deferred = item.bulletin.get_deferred_fields()
+        assert "raw_data" in deferred
+        for field in ("render_model", "issued_at", "bulletin_id"):
+            assert field not in deferred
+        assert "region_name_at_time" not in item.get_deferred_fields()
+        assert not {"region_id", "name"} & item.region.get_deferred_fields()
