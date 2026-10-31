@@ -19,6 +19,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 
 import '../../static/js/i18n_strings.js';
 import '../../static/js/route_cursor_core.js';
@@ -197,19 +198,27 @@ describe('the detents', () => {
     expect(rail.getAttribute('data-detent')).toBe('half');
   });
 
-  it('blanks the hint while a point is placed, keeping its line, and brings it back on clear', () => {
+  it('hides the hint while a point is placed, and brings it back on clear', () => {
     const hint = /** @type {HTMLElement} */ (rail.querySelector('[data-route-rail-hint]'));
     window.pwaRouteRail.open(feature());
-    expect(hint.classList.contains('invisible')).toBe(false);
-    window.pwaRouteRail.cursor().setIndex(5);
-    // Invisible, never hidden: a hidden hint gave up its line and the
-    // sheet dropped by it as the first point landed.
     expect(hint.hidden).toBe(false);
-    expect(hint.classList.contains('invisible')).toBe(true);
-    expect(hint.getAttribute('aria-hidden')).toBe('true');
+    window.pwaRouteRail.cursor().setIndex(5);
+    expect(hint.hidden).toBe(true);
     window.pwaRouteRail.cursor().setIndex(null);
-    expect(hint.classList.contains('invisible')).toBe(false);
-    expect(hint.hasAttribute('aria-hidden')).toBe(false);
+    expect(hint.hidden).toBe(false);
+  });
+
+  it('shows the point header only with a point, at every width (SNOW-1351)', () => {
+    // The rule sits outside any @media block: on a phone too the header
+    // waits for a point, so HALF stops under the hint and then rises to
+    // the header, rather than dropping as the hint goes.
+    const css = readFileSync('static/css/map.css', 'utf8');
+    const rule = '.route-rail:not([data-route-rail-point]) > [data-sheet-half]';
+    const at = css.indexOf(rule);
+    expect(at).toBeGreaterThan(-1);
+    const before = css.slice(0, at).replace(/\/\*[\s\S]*?\*\//g, '');
+    const depth = (before.match(/{/g) || []).length - (before.match(/}/g) || []).length;
+    expect(depth).toBe(0);
   });
 
   it('leaves a sheet at full where it is when a point moves', () => {

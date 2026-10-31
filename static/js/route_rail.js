@@ -106,7 +106,8 @@
  * each detent reveals one more layer (2026-10-18; re-cut 2026-10-31):
  * PEEK, the minimised state, is the title and the meta line
  * (`data-sheet-peek`); HALF, where a tap on a route opens it, adds the
- * claim, the profile, the hint and the point header (`data-sheet-half`); and
+ * claim, the profile and the hint, which a placed point swaps for the point
+ * header, the sheet rising to it (`data-sheet-half` on each, SNOW-1351); and
  * FULL is the terrain data (`[data-route-terrain]`, SNOW-1146; a staff
  * debug readout until then): the route's terrain rows for the segment
  * under the point, fetched from routes:terrain the first time the data is
@@ -287,7 +288,7 @@
    * The point header itself follows the cursor (route_point_card.js),
    * under the profile; the route's title and meta line stay (2026-10-18).
    * The mark is what static/css/map.css reads to show the point header
-   * from sm up only while there is a point to read.
+   * only while there is a point to read, at every width (SNOW-1351).
    *
    * @param {?number} index The cursor index; null with no point.
    */
@@ -299,14 +300,9 @@
     if (point && detents && detents.current() === 'peek') detents.set('half');
     // The hint says how to place a point; once one is placed the point
     // header is the answer, so the hint goes until the point is cleared
-    // (2026-10-19). It goes INVISIBLE, not hidden: it keeps its line, so
-    // the sheet holds its height and the panel does not jump down by a
-    // line when the first point lands (Hugo, 2026-10-31).
-    if (hintEl) {
-      hintEl.classList.toggle('invisible', point);
-      if (point) hintEl.setAttribute('aria-hidden', 'true');
-      else hintEl.removeAttribute('aria-hidden');
-    }
+    // (2026-10-19). PEEK is measured to the group around it, so a hidden
+    // hint leaves PEEK at the profile's foot.
+    if (hintEl) hintEl.hidden = point;
     if (point) rail.setAttribute('data-route-rail-point', '');
     else rail.removeAttribute('data-route-rail-point');
   }

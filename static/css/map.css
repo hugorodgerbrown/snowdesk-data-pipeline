@@ -174,15 +174,20 @@
     z-index: 3;
 }
 
+/* The point header shows only while there is a point to read, at every
+   width (2026-10-18 from sm up; on a phone too since SNOW-1351). Until
+   then the hint holds its place, and the phone sheet's HALF stops under
+   the hint; placing a point swaps the hint for the header and the sheet
+   rises to it. An empty header waiting under the hint was white space,
+   and a hint that vanished under a header already there dropped the
+   sheet by a line (Hugo, 2026-10-31). */
+.route-rail:not([data-route-rail-point]) > [data-sheet-half] {
+    display: none;
+}
+
 @media (min-width: 640px) {
     .route-rail {
         top: calc(env(safe-area-inset-top, 0px) + 12px + var(--map-control-lg) + 8px);
-    }
-
-    /* No detents here, so nothing to pull up to: the point header shows
-       only while there is a point to read (2026-10-18). */
-    .route-rail:not([data-route-rail-point]) > [data-sheet-half] {
-        display: none;
     }
 
     /* The terrain data (SNOW-1146) opens in the card: a press on the point

@@ -189,6 +189,10 @@ def test_the_map_page_renders_the_header_under_the_profile() -> None:
         < panel.index("data-sheet-half")
         < panel.index('id="route-point-card"')
     )
+    # SNOW-1351: the hint is HALF's marker while it shows, ahead of the
+    # header's, so a phone sheet with no point stops under the hint.
+    hint = panel.split("data-route-rail-hint", 1)[1].split(">", 1)[0]
+    assert 'data-sheet-half="fit"' in hint
     positions = [
         body.index("js/aspect_wheel_core"),
         body.index("js/route_point_card_core"),

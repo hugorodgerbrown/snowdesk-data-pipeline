@@ -24,13 +24,14 @@ ON A PHONE THE THREE SHEET STATES ARE THREE DEPTHS of that list
 (2026-10-18; re-cut 2026-10-31, Hugo): PEEK, the minimised state, ends
 under the meta line, so the route stays open with its title and figures
 and the map gets the rest; HALF, the state a tap on a route opens, adds
-the claim, the profile, the hint and the point header, unlit until a
-point is placed (a point placed at peek raises the sheet to it); FULL adds
+the claim, the profile and the hint, which a placed point swaps for the
+point header, the sheet rising to it (SNOW-1351; a point placed at peek
+raises the sheet to half); FULL adds
 the TERRAIN DATA, every figure behind the point, and only the terrain
 slope line opens it: a tap on the panel or a drag steps between PEEK and
 HALF (data-detents-reserved). From sm up
-the panel has no detents: the point header shows while a point is placed,
-and the terrain data while it is open.
+the panel has no detents; at every width the point header shows only
+while a point is placed, and from sm up the terrain data while it is open.
 
 THE TERRAIN DATA IS EVERYONE'S, AND HIDDEN UNTIL ASKED FOR (SNOW-1146).
 It was a staff debug readout (SNOW-1099). A press on the point header's
@@ -218,16 +219,18 @@ Context:
         {% include "includes/_route_profile.html" only %}
         {# The hint, under the profile it names, until a point is placed: #}
         {# then the point header says what it promised, and route_rail.js #}
-        {# blanks it (2026-10-19) — `invisible`, never `hidden`, so its   #}
-        {# line stays and the sheet does not jump when a point lands.     #}
-        <p data-route-rail-hint class="text-summary text-text-3">
+        {# hides it (2026-10-19). It is HALF's marker while it shows      #}
+        {# (SNOW-1351): the header below is not displayed until a point   #}
+        {# is placed, so the sheet stops under the hint, then rises to    #}
+        {# the header — the first marker with a box wins (map_sheet.js).  #}
+        <p data-route-rail-hint data-sheet-half="fit" class="text-summary text-text-3">
             {% trans "Tap or drag the profile to view terrain data" %}
         </p>
     </div>
     {# The point header (SNOW-1064): the wheel and the reading, under the #}
-    {# hint at the panel's full width. On a phone it is HALF's (the sheet #}
-    {# stops under it, data-sheet-half) and shows unlit until a point is  #}
-    {# placed; from sm up it shows only while a point is placed. "fit":   #}
+    {# hint at the panel's full width. It shows only while a point is     #}
+    {# placed, at every width (static/css/map.css, SNOW-1351); on a phone #}
+    {# it is then HALF's marker, the sheet stopping under it. "fit":      #}
     {# not capped at half the screen, which on a short phone would clip  #}
     {# the header under a peek that already holds the profile.            #}
     <div data-sheet-half="fit" class="min-w-0 border-t border-border pt-2">
