@@ -67,8 +67,8 @@ KNOWN_EXCEPTIONS: dict[tuple[str, str], str] = {
     ),
 }
 
-# The ink each level puts on its own pale tint — .danger-band and
-# .period-transition-chip. No exceptions here: the tints are ours to pick.
+# The ink each level puts on its own pale tint — .danger-band. No
+# exceptions here: the tints are ours to pick.
 EAWS_TEXT_ON_TINT: tuple[tuple[str, str], ...] = tuple(
     (f"{fill}-text", f"{fill}-tint") for fill in EAWS_FILLS
 )

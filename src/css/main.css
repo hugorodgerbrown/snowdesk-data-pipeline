@@ -1150,35 +1150,6 @@ input[type="time"]::-webkit-date-and-time-value {
 
 
 
-/* —— Period-transition chip ———————————————
-   Sits beside the hero rating badge in the bulletin header to signal that
-   the danger level rises or falls across the day (SNOW-248). The chip uses
-   the EAWS tint palette of the DESTINATION level so the colour communicates
-   the direction of change at a glance.
-
-   Layout: small rounded pill, monospace font to match the badge aesthetic.
-   Colour driven by data-level via attribute selectors — same pattern as
-   .danger-band.
-   ————————————————————————————————————————— */
-
-.period-transition-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.2rem 0.5rem;
-  border-radius: var(--radius-tag);
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  font-weight: 600;
-  line-height: 1.2;
-  flex-shrink: 0;
-}
-.period-transition-chip[data-level="low"]          { background: var(--color-eaws-low-tint);          color: var(--color-eaws-low-text); }
-.period-transition-chip[data-level="moderate"]     { background: var(--color-eaws-moderate-tint);     color: var(--color-eaws-moderate-text); }
-.period-transition-chip[data-level="considerable"] { background: var(--color-eaws-considerable-tint); color: var(--color-eaws-considerable-text); }
-.period-transition-chip[data-level="high"]         { background: var(--color-eaws-high-tint);         color: var(--color-eaws-high-text); }
-.period-transition-chip[data-level="very_high"]    { background: var(--color-eaws-very-high-tint);    color: var(--color-eaws-very-high-text); }
-
-
 /* —— EAWS danger-level compact tile —————————
    A small coloured square that carries a danger
    level number (and optional subdivision suffix,
