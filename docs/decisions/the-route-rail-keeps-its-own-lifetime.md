@@ -66,6 +66,16 @@ narrower rule that covers exactly them.
   (`[data-overflow-open]`). On the document's bubble phase, if nothing
   took it, the rail acts: the first Escape clears a placed point, and the
   next one closes the route.
+
+  **Known gap (SNOW-1335).** That check sees only those three. The layers
+  menu, the zoom flyout, the calendar, the alerts card and the help menu
+  carry none of them and close on their own Escape listener
+  (`map_calendar.js` ~455–460, for one) without consuming the event. On a
+  desktop with a route and one of them open, a single Escape closes the
+  flyout and also clears the point, or closes the route. This was found
+  by reading the code on 2026-10-31 and has not been reproduced in a
+  browser. The intended rule is the one above: the rail acts only on an
+  Escape nothing else was open to take.
 - **What it announces instead.** `snowdesk:route-rail-changed` on every
   open, refill and close (the leader line, map.js, the example guide),
   `snowdesk:route-rail-resized` when its content changes height, and
