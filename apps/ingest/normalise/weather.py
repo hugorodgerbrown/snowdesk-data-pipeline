@@ -35,6 +35,8 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from typing import Any, NotRequired, TypedDict, cast
 
+from apps.ingest.normalise.weather_icons import icon_bucket_for_code
+
 
 class HourlyRow(TypedDict):
     """One hour of one day, as stored in an hourly series.
@@ -69,6 +71,11 @@ class ForecastDay(TypedDict):
 
     ``hourly`` is present only on the first ``HOURLY_DAYS`` entries — read
     it with ``.get()``.
+
+    ``icon_bucket`` is the service's reading of ``weather_code`` — which
+    drawing stands for the day (SNOW-1343). It is absent on every day
+    stored before it was written, and no past row is rewritten, so a reader
+    prefers it and falls back to deriving one from ``weather_code``.
     """
 
     date: str
@@ -90,6 +97,7 @@ class ForecastDay(TypedDict):
     daylight_duration: float | None
     sunshine_duration: float | None
     freezing_level_height: float | None
+    icon_bucket: NotRequired[str]
     hourly: NotRequired[list[HourlyRow]]
 
 
@@ -357,7 +365,8 @@ def forecast_entry(
     Mirrors the model's own columns so a forward day reads the same way as
     a stored one, with ``sunrise``/``sunset`` kept as ISO strings (JSON has
     no datetime) so a consumer can pick a day or night icon without a
-    second lookup.
+    second lookup, and with the day's ``icon_bucket`` (SNOW-1343) so no
+    consumer carries its own code → icon table.
 
     Args:
         daily: The ``"daily"`` block.
@@ -380,6 +389,7 @@ def forecast_entry(
         "sunrise": daily["sunrise"][idx],
         "sunset": daily["sunset"][idx],
         "freezing_level_height": daily_max_freezing_level(hourly, day),
+        "icon_bucket": icon_bucket_for_code(fields["weather_code"]),
     }
     if with_hourly:
         rows = hourly_rows_for_day(hourly, day)

@@ -25,7 +25,10 @@ The names are grouped by what they are for:
       The DPBRA translator, the bulletin identity grammar and the Alpine
       massif catalogue.
   Weather
-      Parsing an Open-Meteo forecast response, and the two shapes it returns.
+      Parsing an Open-Meteo forecast response, and the two shapes it returns;
+      the WMO code → icon bucket table (``WMO_CODE_TO_ICON_BUCKET``,
+      ``icon_bucket_for_code``) the service writes into each forecast day,
+      and the buckets drawn as a day/night pair (SNOW-1343).
   A point
       What Open-Meteo says about one coordinate — ``fetch_forecast`` over a
       date range (``history_base_url`` for the backfill) and
@@ -239,6 +242,11 @@ from apps.ingest.normalise.weather import (
     hourly_rows_for_day,
     parse_dt_preserve_offset,
 )
+from apps.ingest.normalise.weather_icons import (
+    WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT,
+    WMO_CODE_TO_ICON_BUCKET,
+    icon_bucket_for_code,
+)
 from apps.ingest.reference import DocumentRecord, sync_source_documents
 from apps.ingest.runs import (
     OUTCOME_DELEGATED,
@@ -351,6 +359,8 @@ __all__ = [
     "SLUG_TO_CODE",
     "WEATHER_COLUMNS",
     "WEATHER_FEED_V2",
+    "WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT",
+    "WMO_CODE_TO_ICON_BUCKET",
     "WET_PROBLEM_TYPES",
     "BackfillResult",
     "CaamlPayloadShape",
@@ -419,6 +429,7 @@ __all__ = [
     "history_base_url",
     "import_ski_archive",
     "hourly_rows_for_day",
+    "icon_bucket_for_code",
     "merge_ndjson_records",
     "merge_slf_archive",
     "meteofrance_pdf_url",
