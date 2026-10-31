@@ -95,6 +95,28 @@ def _make_am_bulletin(region: MicroRegion, day: date, **kwargs: Any) -> Bulletin
     return bulletin
 
 
+def _make_overnight_bulletin(region: MicroRegion, day: date, **kwargs: Any) -> Bulletin:
+    """Create a bulletin forecasting *day* whose validity runs past midnight.
+
+    Valid from 11:00 on *day* (so ``target_day_for_valid_from`` gives *day*)
+    to 05:00 the next morning — its ``valid_to`` date is the next day.
+    """
+    vf = datetime(day.year, day.month, day.day, 11, 0, tzinfo=UTC)
+    vt = datetime(day.year, day.month, day.day, 5, 0, tzinfo=UTC) + timedelta(days=1)
+    bulletin = BulletinFactory.create(
+        issued_at=vf - timedelta(minutes=30),
+        valid_from=vf,
+        valid_to=vt,
+        **kwargs,
+    )
+    RegionBulletinFactory.create(
+        bulletin=bulletin,
+        region=region,
+        region_name_at_time=region.name,
+    )
+    return bulletin
+
+
 def _freeze(dt_str: str) -> Any:  # mock-typing-impractical
     """Return a patch that freezes django.utils.timezone.now to *dt_str*."""
     frozen = datetime.fromisoformat(dt_str)
@@ -250,11 +272,40 @@ class TestHasLaterBulletin:
     """Tests for the _has_later_bulletin helper."""
 
     def test_returns_true_when_later_bulletin_exists(self, region: MicroRegion) -> None:
-        """Returns True when a bulletin exists with valid_to after page_date."""
-        _make_am_bulletin(region, date(2026, 3, 15))  # valid_to: 15:00 on 3/15
-        _make_am_bulletin(region, date(2026, 3, 16))  # valid_to: 15:00 on 3/16
+        """Returns True when a bulletin forecasts a day after page_date."""
+        _make_am_bulletin(region, date(2026, 3, 15))  # forecasts 3/15
+        _make_am_bulletin(region, date(2026, 3, 16))  # forecasts 3/16
 
         assert _has_later_bulletin(region, date(2026, 3, 15)) is True
+
+    def test_tonights_issue_for_today_is_not_later(self, region: MicroRegion) -> None:
+        """An issue valid past midnight that forecasts today is not later.
+
+        Its ``valid_to`` falls on tomorrow, so the old ``valid_to__date__gt``
+        filter counted it and hid the next-update notice (SNOW-1344).
+        """
+        _make_am_bulletin(region, date(2026, 3, 15))
+        tonight = _make_overnight_bulletin(region, date(2026, 3, 15))
+        assert tonight.valid_to.date() == date(2026, 3, 16)
+        assert tonight.target_date == date(2026, 3, 15)
+
+        assert _has_later_bulletin(region, date(2026, 3, 15)) is False
+
+    def test_evening_issue_for_tomorrow_is_later(self, region: MicroRegion) -> None:
+        """Tonight's evening issue forecasting tomorrow is a real later day."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        evening = _make_pm_bulletin(region, date(2026, 3, 15))
+        assert evening.target_date == date(2026, 3, 16)
+
+        assert _has_later_bulletin(region, date(2026, 3, 15)) is True
+
+    def test_ignores_rows_without_a_target_date(self, region: MicroRegion) -> None:
+        """A bulletin with no target_date is not counted, whatever its valid_to."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        later = _make_am_bulletin(region, date(2026, 3, 17))
+        Bulletin.objects.filter(pk=later.pk).update(target_date=None)
+
+        assert _has_later_bulletin(region, date(2026, 3, 15)) is False
 
     def test_returns_false_when_no_later_bulletin(self, region: MicroRegion) -> None:
         """Returns False when no bulletin exists after page_date."""
@@ -546,6 +597,36 @@ class TestBulletinDetailView:
             response = client.get(url)
 
         assert response.context["next_update_time"] is None
+
+    def test_next_update_shown_after_17_00(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """After 17:00, an overnight issue for today keeps the notice up.
+
+        The issue's ``valid_to`` falls on tomorrow; before SNOW-1344 that
+        alone made ``_has_later_bulletin`` True and hid the notice.
+        """
+        _make_am_bulletin(region, date(2026, 3, 15))
+        _make_overnight_bulletin(
+            region,
+            date(2026, 3, 15),
+            next_update=datetime(2026, 3, 16, 7, 0, tzinfo=UTC),
+        )
+
+        with _freeze("2026-03-15T17:30:00+00:00"):
+            url = reverse(
+                "public:bulletin_date",
+                kwargs={
+                    "region_id": "ch-4115",
+                    "slug": "valais",
+                    "date_str": "2026-03-15",
+                },
+            )
+            response = client.get(url)
+
+        assert response.context["next_update_time"] == datetime(
+            2026, 3, 16, 7, 0, tzinfo=UTC
+        )
 
     def test_unknown_region_returns_404(self, client: Client) -> None:
         """A region ID that doesn't match any Region should 404."""

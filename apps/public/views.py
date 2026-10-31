@@ -577,12 +577,18 @@ def _get_nav_dates(
 
 def _has_later_bulletin(region: MicroRegion, page_date: datetime.date) -> bool:
     """
-    Return True when a bulletin exists for any date after *page_date*.
+    Return True when a bulletin exists that forecasts a day after *page_date*.
 
     Used on the today branch as a proxy for "a later bulletin has already
     been published for this region", replacing the old ``next_date is None``
     check.  Now that next_date always points to the adjacent calendar day,
     its presence no longer signals the absence of a later bulletin.
+
+    It reads ``target_date``, the day a bulletin forecasts, not
+    ``valid_to``: an issue whose validity runs past midnight but which
+    forecasts today is not a later bulletin, and counting it hid the
+    "next update" notice (SNOW-1344). A row with no ``target_date`` is
+    ignored — ``backfill_bulletin_target_dates`` fills them.
 
     The check is a cheap EXISTS query; callers should short-circuit behind
     ``is_today`` so it only fires on the current-day page.
@@ -592,13 +598,11 @@ def _has_later_bulletin(region: MicroRegion, page_date: datetime.date) -> bool:
         page_date: The calendar day of the page being rendered.
 
     Returns:
-        True if any bulletin for the region has ``valid_to`` strictly after
-        *page_date*.
+        True if any bulletin for the region has ``target_date`` strictly
+        after *page_date*.
 
     """
-    return Bulletin.objects.filter(
-        regions=region, valid_to__date__gt=page_date
-    ).exists()
+    return Bulletin.objects.filter(regions=region, target_date__gt=page_date).exists()
 
 
 def _cache_key(zone_slug: str) -> str:
