@@ -2,7 +2,7 @@
 name: alerts
 description: Bulletin alerts — send_bulletin_alerts, BulletinAlert, notify_when, trip_places, /alerts/<day>/, the map bell, bulletin_alerts flag
 status: current
-last-reviewed: 2026-10-30
+last-reviewed: 2026-10-31
 ---
 
 # Bulletin alerts
@@ -20,7 +20,7 @@ See "Going public" before turning either on.
 
 | Step | What | Code |
 |------|------|------|
-| State | What a reader would notice in a bulletin: level, subdivision, problems with aspects, elevation band and rating. Version-stamped JSON and a 16-char fingerprint | `apps/bulletins/services/bulletin_change.py` — `BulletinState`, `bulletin_state`, `summarise_change` |
+| State | What a reader would notice in a bulletin: level, subdivision, problems with aspects, elevation band and rating. Version-stamped JSON and a 16-char fingerprint, computed once by the service and stored in the render model's `derived.state` (SNOW-1341) | `apps/ingest/normalise/bulletin_state.py` — `BulletinState`, `bulletin_state`; `state_of` (the stored state, `apps.ingest.public`); `apps/bulletins/services/bulletin_change.py` re-exports them and holds `summarise_change` |
 | Decision | Whether a (place, day) sends, is skipped, or is recorded silently | `apps/bulletins/services/alerts.py` — `decide` (pure) |
 | Words | Titles and bodies, one place or a bundle | `apps/bulletins/services/alert_wording.py` — `alert_message` |
 | Run | Per account: evaluate every place, one message, deliver, log | `alerts.evaluate_account`, `alerts.deliver`; `send_bulletin_alerts` |

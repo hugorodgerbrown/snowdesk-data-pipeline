@@ -2,7 +2,7 @@
 name: deployment
 description: Path-to-live: main→staging, release→production, release PR via bin/cut-release, Deploy-Step trailer, release-sync fast-forward, CalVer tags
 status: current
-last-reviewed: 2026-10-23
+last-reviewed: 2026-10-31
 ---
 
 # Deployment / path-to-live
@@ -315,6 +315,19 @@ commit body, so a trailer written on the feature branch reaches the range the
 script reads. A release with no steps gets no section — an always-present
 heading would invite the operator to hunt for something that is not there,
 which is how a real one stops being noticed.
+
+**A commit may carry more than one.** Within one commit the trailers keep
+the order they are written in (across commits the newest comes first), so
+write them in the order an operator should run them. A
+`RENDER_MODEL_VERSION` bump is the standing case (SNOW-1341): production is
+also the reference-data service, so both stores of render models are
+rebuilt — ingest's `SourceBulletin` rows, which the feed serves, then the
+app's `Bulletin` rows —
+
+```
+Deploy-Step: rebuild_source_render_models --commit
+Deploy-Step: rebuild_render_models --commit
+```
 
 **Shipping the list.** The same steps go into a tracked `DEPLOY_STEPS`
 file beside `VERSION`, written into the bump commit by `cut-release` and

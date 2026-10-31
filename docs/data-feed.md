@@ -31,7 +31,7 @@ All ten are `GET`, take the same parameters and answer the same shape.
 
 | URL | Item key | What is served |
 |-----|----------|----------------|
-| `/api/data/v1/bulletins/` | `bulletin_id` | Every bulletin ingest has stored (`SourceBulletin`): its CAAML as normalised, plus `pdf_url` |
+| `/api/data/v1/bulletins/` | `bulletin_id` | Every bulletin ingest has stored (`SourceBulletin`): its CAAML as normalised, plus `pdf_url`, the render model (with its `derived` block) and the service's index — `valid_from`, `target_date`, `region_codes` (SNOW-1341) |
 | `/api/data/v1/weather/` | location `uuid` + `observed_on` | `Weather` rows for `Location.objects.public()` only |
 | `/api/data/v1/locations/` | `uuid` | `Location.objects.public()`, with `centroid_of` region codes |
 | `/api/data/v1/resorts/` | `slug` | Every resort with a slug: region code, pin uuid, passes, location links |
@@ -100,10 +100,23 @@ filters on `updated_at`), `cursor` (the previous page's `next_cursor`) and
   "feed": "bulletins",
   "version": 1,
   "count": 412,
-  "results": [{"bulletin_id": "…", "updated_at": "…", "pdf_url": "…", "caaml": {…}, "render_model": {…}}],
+  "results": [{"bulletin_id": "…", "updated_at": "…", "pdf_url": "…", "caaml": {…}, "render_model": {…}, "valid_from": "2026-03-06T16:00:00+00:00", "target_date": "2026-03-07", "region_codes": ["CH-4115", "CH-4116"]}],
   "next_cursor": "MjAyNi0xMC0yM1QwNjo…"
 }
 ```
+
+**What a bulletin item carries beyond the CAAML** (SNOW-1341). The
+service indexes every bulletin it stores — `valid_from` (the CAAML's
+`validTime.startTime`), `target_date` (the day it forecasts) and the sorted
+`region_codes` — and serves the three with the item; `upsert_bulletin`
+uses them as sent and reads them from the CAAML only when an item lacks
+them (`valid_from` / `target_date` are `null` until indexed). The render
+model carries its `derived` block — terrain rules, period transition,
+problem family, headline inputs, alert state and danger levels
+([render-model.md](render-model.md)) — so a client copying a current
+model derives none of it. Both additions are additive, so neither feed's
+version moved: an older client ignores the keys, a newer client reading
+an older service falls back.
 
 **Where the bulletins come from** (SNOW-1250). The bulletins feed reads
 ingest's `SourceBulletin`, which `fetch_bulletins` writes before it applies

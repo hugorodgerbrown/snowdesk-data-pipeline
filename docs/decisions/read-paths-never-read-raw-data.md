@@ -36,8 +36,9 @@ the `/api/` raw CAAML alternate (`bulletin_caaml`), the MCP
 and the superuser / `DEBUG` raw embed in `_render_bulletin_page` (the
 bulletin page asks `issues_for_date(..., include_raw=True)` for that
 audience only, so the embed costs no extra query and the monitored page
-count is unchanged). `examples_category`'s filter is exempt until
-SNOW-1341.
+count is unchanged). `examples_category` was exempt until SNOW-1341,
+which moved its filter onto the `Bulletin.danger_levels` column
+([why](derived-render-fields-are-stored-once.md)).
 
 ## Why
 
