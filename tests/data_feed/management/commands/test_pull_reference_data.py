@@ -601,16 +601,29 @@ class _Counting(_ReplaySession):
 
 @pytest.mark.django_db
 @override_settings(**FEED_SETTINGS)
+@pytest.mark.parametrize(
+    ("args", "days", "pages"),
+    [
+        (("--recent", "14"), 14, 9),
+        (("--golden-week",), 7, 5),
+    ],
+    ids=["recent-14", "golden-week"],
+)
 def test_a_de_aggregated_window_is_consumed_within_its_page_budget(
     monkeypatch: pytest.MonkeyPatch,
+    args: tuple[str, ...],
+    days: int,
+    pages: int,
 ) -> None:
-    """--recent 14 at ~149 bulletins an issue, two a day, reads cleanly.
+    """A window at ~149 bulletins an issue, two a day, reads cleanly.
 
-    4,172 real per-region items (the sentinel slice, re-identified) in
-    pages of the client's MAX_LIMIT: every item is reached, none fails,
-    and the walk asks for no more pages than the item count needs. A dry
-    run, because the write per item is the one the fetch_bulletins slice
-    test already drives; what this proves is the client at the volume.
+    Real per-region items (the sentinel slice, re-identified) for every
+    day of the window — 4,172 for ``--recent 14``, 2,086 for
+    ``--golden-week`` — in pages of the client's MAX_LIMIT: every item is
+    reached, none fails, and the walk asks for exactly the pages the item
+    count needs. A dry run, because the write per item is the one the
+    fetch_bulletins slice test already drives; what this proves is the
+    client at the volume.
     """
     slice_path = (
         Path(__file__).resolve().parents[3]
@@ -619,7 +632,7 @@ def test_a_de_aggregated_window_is_consumed_within_its_page_budget(
         / "per-region-slice.ndjson"
     )
     sample = [json.loads(line) for line in slice_path.read_text().splitlines()]
-    total = 14 * 149 * 2
+    total = days * 149 * 2
     items = [
         {
             "bulletin_id": f"per-region-{n:05d}",
@@ -652,9 +665,9 @@ def test_a_de_aggregated_window_is_consumed_within_its_page_budget(
     session = _Counting(capture)
     monkeypatch.setattr("apps.data_feed.client.requests.Session", lambda: session)
 
-    _run("--recent", "14")
+    _run(*args)
 
     counts = _counts()
     assert counts["bulletins_created"] == total
     assert counts["bulletins_failed"] == 0
-    assert session.requests[path] == budget == 9
+    assert session.requests[path] == budget == pages
