@@ -17,18 +17,17 @@
  *
  * Three things this module owns that the old one did not:
  *
- *   1. THE ICON IS DERIVED HERE, NOT SERVED. The feed carries the WMO
- *      weather code and the day's max temperature and nothing else. TWO
- *      tables below mirror the server: the code → bucket map mirrors
- *      `_WMO_CODE_TO_ICON_BUCKET` and `DAY_NIGHT_BUCKETS` mirrors
- *      `WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT`, both in
- *      `apps/weather/services/weather_display.py`. Both are held to their
- *      Python counterpart by
- *      `tests/weather/services/test_icon_table_parity.py`, which parses
- *      this file. A mirror with no guard is drift waiting to happen.
+ *   1. THE ICON IS SERVED, NOT DERIVED. Each day in the feed carries its
+ *      `icon` filename beside the WMO `code` and the day's max temperature
+ *      (SNOW-1343). The code → icon table is the weather service's
+ *      (`apps/ingest/normalise/weather_icons.py`), which stores each
+ *      forward day's bucket; the server turns it into a filename. This
+ *      module used to carry a mirror of that table, held to it by a parity
+ *      test — one table now, so nothing to drift. A day with no `icon`
+ *      falls back to `'cloudy.svg'`, the server's own neutral default.
  *
- *      Where the set draws a day/night pair the map always takes the DAY
- *      variant. A map symbol summarises a whole calendar day — a daily
+ *      Where the set draws a day/night pair the server always serves the
+ *      DAY variant. A map symbol summarises a whole calendar day — a daily
  *      maximum temperature and a daily condition — so switching every
  *      station on the map to night icons because the reader happens to be
  *      up late says something about the reader, not about the day. The
@@ -63,10 +62,6 @@
  *
  * Public API — attached to `window.pwaWeatherCore`:
  *
- *   iconForCode(code)
- *     WMO weather interpretation code → weather SVG basename, e.g.
- *     `'light_snow.svg'`. Unknown codes fall back to `'cloudy.svg'`,
- *     matching the server's own neutral default.
  *   formatElevation(elevationM)
  *     The station's ground elevation as the label's second line.
  *
@@ -103,53 +98,8 @@
 (function () {
   'use strict';
 
-  // Mirrors _WMO_CODE_TO_ICON_BUCKET in
-  // apps/weather/services/weather_display.py. Parsed by
-  // tests/weather/services/test_icon_table_parity.py — keep the literal
-  // shape (one `code: 'bucket',` pair per line) or that guard stops
-  // reading it.
-  var WMO_ICON_BUCKET = {
-    0: 'clear',
-    1: 'partly_cloudy',
-    2: 'partly_cloudy',
-    3: 'cloudy',
-    45: 'fog',
-    48: 'fog',
-    51: 'drizzle',
-    53: 'drizzle',
-    55: 'drizzle',
-    56: 'drizzle',
-    57: 'drizzle',
-    61: 'light_rain',
-    63: 'moderate_rain',
-    65: 'heavy_rain',
-    66: 'light_rain',
-    67: 'heavy_rain',
-    71: 'light_snow',
-    73: 'moderate_snow',
-    75: 'heavy_snow',
-    77: 'light_snow',
-    80: 'light_rain',
-    81: 'moderate_rain',
-    82: 'heavy_rain',
-    85: 'light_snow',
-    86: 'heavy_snow',
-    95: 'thunder',
-    96: 'thunder',
-    99: 'thunder',
-  };
-
-  // The buckets shipping a day/night PAIR rather than a single file — the
-  // two the icon set draws a sun or a moon in. Mirrors
-  // WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT in
-  // apps/weather/services/weather_display.py; parsed by
-  // tests/weather/services/test_icon_table_parity.py, so keep the literal
-  // shape (one quoted bucket per line) or that guard stops reading it.
-  var DAY_NIGHT_BUCKETS = [
-    'clear',
-    'partly_cloudy',
-  ];
-  var DEFAULT_BUCKET = 'cloudy';
+  // The server's own neutral default, for a day served without an icon.
+  var DEFAULT_ICON = 'cloudy.svg';
 
   // The registered MapLibre image id of the elevation mark. Declared here
   // rather than in map.js because the projection below writes it into every
@@ -158,20 +108,18 @@
   var ELEVATION_MARK_ID = 'weather-elevation-mark';
 
   /**
-   * WMO weather interpretation code → weather SVG basename.
+   * A feed day → its weather SVG basename.
    *
-   * Only `DAY_NIGHT_BUCKETS` take the `-day` suffix; every other bucket
-   * ships one file whatever the light, so its filename is the bare bucket.
+   * The server names the file (SNOW-1343); this only guards against a day
+   * without one, so a malformed entry still draws a neutral symbol.
    *
-   * @param {number|null|undefined} code
+   * @param {{icon?: string}|null|undefined} day
    * @returns {string} e.g. `'light_snow.svg'`, `'clear-day.svg'`;
-   *   `'cloudy.svg'` for an unrecognised or missing code.
+   *   `'cloudy.svg'` for a day with no icon.
    */
-  function iconForCode(code) {
-    var bucket = WMO_ICON_BUCKET[code];
-    if (!bucket) bucket = DEFAULT_BUCKET;
-    if (DAY_NIGHT_BUCKETS.indexOf(bucket) !== -1) return bucket + '-day.svg';
-    return bucket + '.svg';
+  function iconForDay(day) {
+    var icon = day && day.icon;
+    return typeof icon === 'string' && icon !== '' ? icon : DEFAULT_ICON;
   }
 
   /**
@@ -252,7 +200,7 @@
     var days = properties.days || {};
     var day = days[dateKey] || null;
     var newProperties = Object.assign({}, properties, {
-      icon: day ? iconForCode(day.code) : '',
+      icon: day ? iconForDay(day) : '',
       label_temp: day ? formatTemp(day.tmax) : '',
       label_break: day ? formatElevationBreak(properties.elevation_m) : '',
       elev_mark: day ? elevationMarkFor(properties.elevation_m) : '',
@@ -325,7 +273,7 @@
       var keys = Object.keys(days);
       for (var j = 0; j < keys.length; j++) {
         var day = days[keys[j]];
-        if (day) seen[iconForCode(day.code)] = true;
+        if (day) seen[iconForDay(day)] = true;
       }
     }
     return Object.keys(seen).sort();
@@ -498,7 +446,6 @@
   }
 
   window.pwaWeatherCore = Object.freeze({
-    iconForCode: iconForCode,
     formatTemp: formatTemp,
     formatElevation: formatElevation,
     formatElevationBreak: formatElevationBreak,

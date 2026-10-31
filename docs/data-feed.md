@@ -2,7 +2,7 @@
 name: data-feed
 description: Data feed /api/data/v1/ + v2, from/to windows, service clients, pull_reference_data, pull_production_data, DATA_FEED_*, mint_feed_token
 status: current
-last-reviewed: 2026-10-30
+last-reviewed: 2026-10-31
 ---
 
 # The production data feed
@@ -51,6 +51,13 @@ for the place (`SourceLocation.uuid`). A client holds that id as
 needs production's own location ids. v1 stays served until staging's pull
 moves to v2 (SNOW-1272). A token is bound to its URL prefix, so a client
 needs a token bound to `/api/data/v2/` to read it.
+
+**A forward day names its icon bucket (SNOW-1343).** Each entry of a weather
+item's `forecast` list written since SNOW-1343 carries `icon_bucket` — the
+service's reading of its `weather_code`, e.g. `"light_snow"` — on v1 and v2
+alike, since both serve the column as stored. Days stored before it lack
+the key and are never rewritten, so a client reads it with a fallback to
+the code (`icon_bucket_for_code` in `apps.ingest.public`).
 
 **v2 places, passes and resorts (SNOW-1271).** Served from the
 reference-data service's own tables, which `mirror_reference_data` fills

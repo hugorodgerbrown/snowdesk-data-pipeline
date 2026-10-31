@@ -18,7 +18,9 @@ from typing import Any
 
 import pytest
 from django.core.cache import cache
+from django.db import connection
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -165,8 +167,53 @@ class TestPayloadShape:
         days = _get()["features"][0]["properties"]["days"]
 
         assert days == {
-            today.isoformat(): {"code": 3, "tmax": 4.5},
-            tomorrow.isoformat(): {"code": 71, "tmax": 1.0},
+            today.isoformat(): {"code": 3, "icon": "cloudy.svg", "tmax": 4.5},
+            tomorrow.isoformat(): {
+                "code": 71,
+                "icon": "light_snow.svg",
+                "tmax": 1.0,
+            },
+        }
+
+    def test_each_day_carries_its_icon_stored_or_derived(self) -> None:
+        """SNOW-1343: the feed serves the icon, so the map holds no table.
+
+        A forward day stored since SNOW-1343 names its bucket; one stored
+        before it (no ``icon_bucket``) derives from its code. A day/night
+        pair is always the day variant on the map.
+        """
+        today = timezone.localdate()
+        stored = today + datetime.timedelta(days=1)
+        legacy = today + datetime.timedelta(days=2)
+        location = LocationFactory.create()
+        ResortLocationFactory.create(location=location)
+        WeatherFactory.create(
+            location=location,
+            observed_on=today,
+            weather_code=0,
+            forecast=[
+                {
+                    "date": stored.isoformat(),
+                    "weather_code": 2,
+                    "icon_bucket": "partly_cloudy",
+                    "sunrise": f"{stored}T06:30:00+00:00",
+                    "sunset": f"{stored}T20:15:00+00:00",
+                },
+                {
+                    "date": legacy.isoformat(),
+                    "weather_code": 86,
+                    "sunrise": f"{legacy}T06:30:00+00:00",
+                    "sunset": f"{legacy}T20:15:00+00:00",
+                },
+            ],
+        )
+
+        days = _get()["features"][0]["properties"]["days"]
+
+        assert {key: day["icon"] for key, day in days.items()} == {
+            today.isoformat(): "clear-day.svg",
+            stored.isoformat(): "partly_cloudy-day.svg",
+            legacy.isoformat(): "heavy_snow.svg",
         }
 
     def test_a_location_with_no_row_gets_a_feature_with_no_days(self) -> None:
@@ -215,3 +262,33 @@ class TestCaching:
 
         generated_at = datetime.datetime.fromisoformat(response["X-Data-Generated-At"])
         assert abs((generated_at - older).total_seconds()) < 1
+
+    def test_the_payload_is_cached_under_the_v3_key(self) -> None:
+        """SNOW-1343 changed the day shape, so a v2 entry must not be served."""
+        today = timezone.localdate().isoformat()
+        cache.set(f"weather-geojson:v2:{today}", ({"stale": True}, None))
+
+        payload = _get()
+
+        assert "stale" not in payload
+        assert cache.get(f"weather-geojson:v3:{today}") is not None
+
+
+@pytest.mark.django_db
+class TestQueries:
+    """The feed reads what the map draws and nothing more."""
+
+    def test_hourly_is_not_loaded(self) -> None:
+        """The hourly column is the bulk of a row and the map never reads it."""
+        location = LocationFactory.create()
+        ResortLocationFactory.create(location=location)
+        WeatherFactory.create(location=location, observed_on=timezone.localdate())
+
+        with CaptureQueriesContext(connection) as queries:
+            _get()
+
+        weather_reads = [
+            q["sql"] for q in queries.captured_queries if "weather_weather" in q["sql"]
+        ]
+        assert weather_reads
+        assert all('"hourly"' not in sql for sql in weather_reads)

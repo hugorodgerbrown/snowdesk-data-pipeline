@@ -205,6 +205,30 @@ class TestMeetingPointWeather:
         assert before.days[day]["icon_filename"] == "clear-night.svg"
         assert after.days[day]["icon_filename"] == "clear-day.svg"
 
+    def test_a_stored_icon_bucket_wins_and_takes_the_meeting_times_variant(
+        self,
+    ) -> None:
+        """A day's stored bucket is drawn, in the meeting time's day/night variant.
+
+        The row says cloudy (code 3) but its stored bucket says clear, so the
+        bucket written at fetch time is what the trip draws (SNOW-1343). The
+        legacy case, an entry with no ``icon_bucket``, is the test above.
+        """
+        day = TODAY + datetime.timedelta(days=1)
+        early = TripFactory.create(date=day, start_time=datetime.time(6, 30))
+        late = TripFactory.create(date=day, start_time=datetime.time(9, 0))
+        forecast = forecast_days(TODAY, [3, 3])
+        for entry in forecast:
+            entry["icon_bucket"] = "clear"
+        _public_point(*MEETING, forecast=forecast)
+
+        before = meeting_point_weather(early, TODAY)
+        after = meeting_point_weather(late, TODAY)
+
+        assert before is not None and after is not None
+        assert before.days[day]["icon_filename"] == "clear-night.svg"
+        assert after.days[day]["icon_filename"] == "clear-day.svg"
+
     def test_a_past_trip_reads_the_row_of_its_own_day(self) -> None:
         """What the forecast said that morning, never rewritten."""
         day = TODAY - datetime.timedelta(days=3)

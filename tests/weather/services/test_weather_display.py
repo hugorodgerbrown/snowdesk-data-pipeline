@@ -10,7 +10,9 @@ Covers the four things this module actually decides:
   time-of-day only;
 * the three context builders, including the two degradations that matter —
   a ``None`` row produces ``None`` rather than an error, and a forward day
-  with no ``hourly`` key produces an empty list rather than a KeyError.
+  with no ``hourly`` key produces an empty list rather than a KeyError;
+* a forward day's stored ``icon_bucket`` (SNOW-1343) winning over its
+  ``weather_code``, and a day stored before it falling back to the code.
 
 Every assertion that names an icon filename runs under ``freeze_time`` at
 midday. The day/night suffix projects the *current* wall-clock time onto the
@@ -527,6 +529,68 @@ class TestBuildPointForecastPanel:
 
 
 @pytest.mark.django_db
+class TestStoredIconBucket:
+    """SNOW-1343: the outlook reads a forward day's stored bucket."""
+
+    @freeze_time(MIDDAY)
+    def test_the_stored_bucket_is_preferred_over_the_code(self) -> None:
+        """The service's reading of the day wins over a local derivation."""
+        weather = WeatherFactory.create(
+            forecast=[_forecast_day(weather_code=71, icon_bucket="heavy_snow")]
+        )
+
+        panel = build_point_forecast_panel(weather, timezone.now())
+
+        assert panel is not None
+        assert panel["days"][1]["icon_bucket"] == "heavy_snow"
+        assert panel["days"][1]["icon_filename"] == "heavy_snow.svg"
+        assert panel["days"][1]["condition_label"] == "Heavy snow"
+
+    @freeze_time(MIDDAY)
+    def test_a_legacy_day_falls_back_to_its_code(self) -> None:
+        """A day stored before SNOW-1343 carries no bucket and still draws."""
+        weather = WeatherFactory.create(forecast=[_forecast_day(weather_code=73)])
+
+        panel = build_point_forecast_panel(weather, timezone.now())
+
+        assert panel is not None
+        assert panel["days"][1]["icon_bucket"] == "moderate_snow"
+
+    @freeze_time(MIDDAY)
+    def test_an_unknown_stored_bucket_falls_back_to_the_code(self) -> None:
+        """A bucket naming no drawing is not trusted over the code."""
+        weather = WeatherFactory.create(
+            forecast=[_forecast_day(weather_code=45, icon_bucket="sleet")]
+        )
+
+        panel = build_point_forecast_panel(weather, timezone.now())
+
+        assert panel is not None
+        assert panel["days"][1]["icon_bucket"] == "fog"
+
+    @pytest.mark.parametrize(
+        ("instant", "expected"),
+        [
+            ("2026-08-31T10:00:00+00:00", "clear-day.svg"),
+            ("2026-08-31T21:00:00+00:00", "clear-night.svg"),
+        ],
+    )
+    def test_day_or_night_is_still_decided_at_read_time(
+        self, instant: str, expected: str
+    ) -> None:
+        """The stored bucket names a drawing; the hour picks its variant."""
+        weather = WeatherFactory.create(
+            forecast=[_forecast_day(weather_code=3, icon_bucket="clear")]
+        )
+
+        with freeze_time(instant):
+            panel = build_point_forecast_panel(weather, timezone.now())
+
+        assert panel is not None
+        assert panel["days"][1]["icon_filename"] == expected
+
+
+@pytest.mark.django_db
 class TestBuildPointWeatherDays:
     """Tests for the map feed's ``days`` projection."""
 
@@ -550,9 +614,54 @@ class TestBuildPointWeatherDays:
         days = build_point_weather_days(weather)
 
         assert days == {
-            "2026-08-30": {"code": 3, "tmax": 4.5},
-            "2026-08-31": {"code": 71, "tmax": 1.0},
+            "2026-08-30": {"code": 3, "icon": "cloudy.svg", "tmax": 4.5},
+            "2026-08-31": {"code": 71, "icon": "light_snow.svg", "tmax": 1.0},
         }
+
+    def test_a_stored_icon_bucket_names_the_icon(self) -> None:
+        """SNOW-1343: the service's stored bucket wins over the code."""
+        weather = WeatherFactory.create(
+            observed_on=datetime.date(2026, 8, 30),
+            forecast=[
+                _forecast_day(
+                    date="2026-08-31", weather_code=71, icon_bucket="heavy_snow"
+                )
+            ],
+        )
+
+        days = build_point_weather_days(weather)
+
+        assert days["2026-08-31"]["icon"] == "heavy_snow.svg"
+        assert days["2026-08-31"]["code"] == 71
+
+    def test_a_legacy_day_derives_its_icon_from_the_code(self) -> None:
+        """A day stored before SNOW-1343 has no bucket and is not rewritten."""
+        weather = WeatherFactory.create(
+            observed_on=datetime.date(2026, 8, 30),
+            forecast=[_forecast_day(date="2026-08-31", weather_code=95)],
+        )
+
+        assert build_point_weather_days(weather)["2026-08-31"]["icon"] == (
+            "thunder.svg"
+        )
+
+    @freeze_time("2026-08-30T23:30:00+00:00")
+    def test_the_map_always_takes_the_day_variant(self) -> None:
+        """A map symbol summarises the day, so a pair is never a moon."""
+        weather = WeatherFactory.create(
+            observed_on=datetime.date(2026, 8, 30),
+            weather_code=0,
+            forecast=[
+                _forecast_day(
+                    date="2026-08-31", weather_code=0, icon_bucket="partly_cloudy"
+                )
+            ],
+        )
+
+        days = build_point_weather_days(weather)
+
+        assert days["2026-08-30"]["icon"] == "clear-day.svg"
+        assert days["2026-08-31"]["icon"] == "partly_cloudy-day.svg"
 
     def test_a_malformed_forward_day_is_skipped(self) -> None:
         """An unparseable entry drops out rather than taking the feed down."""

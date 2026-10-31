@@ -5,7 +5,9 @@ The Open-Meteo parsing moved here from apps/weather/services/fetch.py
 (SNOW-1248). tests/weather/services/test_fetch.py still drives it end to end
 through ``fetch_weather_for_location``; these tests pin each function on its
 own, against hand-built ``daily`` / ``hourly`` blocks, with no location and no
-database.
+database. Also the WMO code → icon bucket table in
+apps.ingest.normalise.weather_icons, which ``forecast_entry`` writes into every
+forward day (SNOW-1343).
 """
 
 from __future__ import annotations
@@ -25,6 +27,11 @@ from apps.ingest.normalise.weather import (
     forecast_entry,
     hourly_rows_for_day,
     parse_dt_preserve_offset,
+)
+from apps.ingest.normalise.weather_icons import (
+    WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT,
+    WMO_CODE_TO_ICON_BUCKET,
+    icon_bucket_for_code,
 )
 
 DAY_ONE = date(2026, 1, 10)
@@ -179,3 +186,76 @@ class TestForecastEntry:
         """Past HOURLY_DAYS the key is absent, not empty."""
         entry = forecast_entry(_daily(), _hourly(), 1, DAY_TWO, with_hourly=False)
         assert "hourly" not in entry
+
+    def test_writes_the_days_icon_bucket(self) -> None:
+        """Each forward day carries the service's reading of its code."""
+        snowy = forecast_entry(_daily(), _hourly(), 0, DAY_ONE, with_hourly=True)
+        overcast = forecast_entry(_daily(), _hourly(), 1, DAY_TWO, with_hourly=False)
+        assert snowy["icon_bucket"] == "light_snow"
+        assert overcast["icon_bucket"] == "cloudy"
+
+    def test_an_unknown_code_writes_cloudy(self) -> None:
+        """A code outside the table still stores a renderable bucket."""
+        daily = _daily(weather_code=[4, 3])
+        entry = forecast_entry(daily, None, 0, DAY_ONE, with_hourly=False)
+        assert entry["icon_bucket"] == "cloudy"
+
+
+# The twelve drawings the icon set ships (apps/weather/services/
+# weather_display.py WEATHER_ICON_BUCKETS) — written out here because ingest
+# may not import the weather app, even from a test of its own table.
+_ICON_BUCKETS = {
+    "clear",
+    "partly_cloudy",
+    "cloudy",
+    "fog",
+    "drizzle",
+    "light_rain",
+    "moderate_rain",
+    "heavy_rain",
+    "light_snow",
+    "moderate_snow",
+    "heavy_snow",
+    "thunder",
+}
+
+
+class TestIconBucketForCode:
+    """icon_bucket_for_code and the table behind it."""
+
+    @pytest.mark.parametrize(
+        ("code", "expected"),
+        [
+            (0, "clear"),
+            (2, "partly_cloudy"),
+            (3, "cloudy"),
+            (48, "fog"),
+            (57, "drizzle"),
+            (61, "light_rain"),
+            (63, "moderate_rain"),
+            (65, "heavy_rain"),
+            (71, "light_snow"),
+            (73, "moderate_snow"),
+            (86, "heavy_snow"),
+            (99, "thunder"),
+        ],
+    )
+    def test_maps_known_codes(self, code: int, expected: str) -> None:
+        """Representative codes land in their bucket."""
+        assert icon_bucket_for_code(code) == expected
+
+    def test_every_documented_wmo_code_is_mapped(self) -> None:
+        """Every code Open-Meteo documents has an explicit bucket."""
+        documented = {0, 1, 2, 3, 45, 48, 51, 53, 55, 56, 57, 61, 63, 65, 66, 67}
+        documented |= {71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 99}
+        assert set(WMO_CODE_TO_ICON_BUCKET) == documented
+
+    def test_every_bucket_is_a_drawing(self) -> None:
+        """The table names no bucket the icon set does not draw."""
+        assert set(WMO_CODE_TO_ICON_BUCKET.values()) <= _ICON_BUCKETS
+        assert WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT <= _ICON_BUCKETS
+
+    @pytest.mark.parametrize("code", [4, 100, -1, None])
+    def test_an_unknown_or_missing_code_is_cloudy(self, code: int | None) -> None:
+        """Anything outside the table resolves to the neutral default."""
+        assert icon_bucket_for_code(code) == "cloudy"

@@ -43,6 +43,7 @@ from apps.bulletins.services.golden_week import SOURCES
 from apps.bulletins.services.replay import DEFAULT_REGION, replay_archive
 from apps.core.decorators import require_htmx
 from apps.core.sw_shell import cache_version
+from apps.ingest.public import WMO_CODE_TO_ICON_BUCKET
 from apps.public.design_tokens import LIBRARY_GROUPS, get_category
 from apps.public.errors import ERROR_PAGES, error_response
 from apps.routes.models import Route
@@ -53,7 +54,6 @@ from apps.weather.icon_sets import (
 )
 from apps.weather.services.weather_display import (
     _ICON_BUCKET_LABEL,
-    _WMO_CODE_TO_ICON_BUCKET,
     WEATHER_ICON_BUCKETS,
     weather_icon_filename,
 )
@@ -243,7 +243,7 @@ def icon_set_comparison(request: HttpRequest) -> HttpResponse:
 
     Rows are the twelve buckets in ``WEATHER_ICON_BUCKETS`` order, each
     labelled with the WMO codes that resolve to it — so the grid doubles as
-    the readable form of ``_WMO_CODE_TO_ICON_BUCKET``. A bucket with a
+    the readable form of ``WMO_CODE_TO_ICON_BUCKET``. A bucket with a
     day/night pair contributes two rows; the ten that ship a single drawing
     contribute one.
 
@@ -261,7 +261,7 @@ def icon_set_comparison(request: HttpRequest) -> HttpResponse:
 
     """
     codes: dict[str, list[int]] = {}
-    for code, bucket in sorted(_WMO_CODE_TO_ICON_BUCKET.items()):
+    for code, bucket in sorted(WMO_CODE_TO_ICON_BUCKET.items()):
         codes.setdefault(bucket, []).append(code)
 
     sets = available_icon_sets()
