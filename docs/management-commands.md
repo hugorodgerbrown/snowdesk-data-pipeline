@@ -1498,7 +1498,8 @@ These are not scheduled. Reach for them after a code change or data
 incident that invalidates derived state:
 
 - `rebuild_render_models --commit` — after bumping `RENDER_MODEL_VERSION`.
-  Re-runs the render-model derivation for every stale `Bulletin`. The bump's
+  Enqueues one task per stale `Bulletin` (CLAUDE.md command rule 7, SNOW-1346); each task
+  re-derives its render model and recomputes its day ratings. The bump's
   commit carries a `Deploy-Step: rebuild_render_models --commit` trailer:
   since SNOW-1342 no request rebuilds a stale model, so until this runs a
   stale bulletin shows the error card
@@ -1509,7 +1510,10 @@ incident that invalidates derived state:
   (`SourceDayRating`, SNOW-1270). Run on production after a
   `RENDER_MODEL_VERSION` or `DAY_RATING_VERSION` bump, and once when
   SNOW-1270 first deploys: rows stored before it carry no model, no index
-  and no ratings.
+  and no ratings. Like its sibling it only enqueues (CLAUDE.md command rule 7, SNOW-1346):
+  one task per stale `SourceBulletin`, one per stale `SourceDayRating`.
+  Their order is convention, not a dependency
+  ([why](decisions/day-ratings-are-recomputed-inside-each-rebuild-task.md)).
 - `reformat_mf_comments --commit` — one-off retroactive formatter for FR bulletins
   ingested before SNOW-207 added the HTML formatter (plain-text prose fields only;
   already-HTML rows are skipped). Filters to `bulletin_id__startswith='FR'`.
@@ -2025,28 +2029,36 @@ uv run python manage.py fetch_bulletins --source slf \
 #   Incremental additions handled by: fetch_bulletins --source albina --stash
 
 # Rebuild the render model on stale bulletins (render_model_version < RENDER_MODEL_VERSION).
-# Read-only by default — pass --commit to persist (same convention as fetch_bulletins).
-# Prints "<pk> <source> <day> <bulletin_id>" per bulletin, newest first, then
-# refreshes RegionDayRating for every (region, day) the rebuilt bulletins cover.
-# A RENDER_MODEL_VERSION bump makes every bulletin stale, so --commit rebuilds
-# the whole archive; the pairs it holds for the refresh are slim (SNOW-1054).
+# CLAUDE.md command rule 7 (SNOW-1346): --commit only ENQUEUES one rebuild_bulletin_task per
+# bulletin, at priority -50, and returns; each task re-checks its row (a
+# current one is skipped, so a duplicate enqueue is a no-op), rebuilds the
+# model and danger_levels from raw_data, and recomputes RegionDayRating for
+# every (region, day) it governs in the same transaction. Prints
+# "<pk> <source> <day> <bulletin_id>" per bulletin, newest first. Tallies
+# enqueued / failed; failed counts tasks that come back FAILED under an
+# inline backend (dev, test, staging), and exits non-zero when > 0. On
+# production's queued backend, re-run the preview to see what is still stale.
 uv run python manage.py rebuild_render_models           # read-only
-uv run python manage.py rebuild_render_models --commit  # persist
+uv run python manage.py rebuild_render_models --commit  # enqueue
 
-# Flags: --commit, --all (every row), --bulletin-id <id> (single row),
-#   --batch-size N (streamed-queryset iterator chunk size, default 500, SNOW-602),
-#   --skip-day-ratings (persist render models without refreshing RegionDayRating)
+# Flags: --commit, --all (every row, forced), --bulletin-id <id> (single row,
+#   forced), --batch-size N (streamed-queryset iterator chunk size, default
+#   500, SNOW-602), --skip-day-ratings (tasks rebuild without refreshing
+#   RegionDayRating)
 
 # Rebuild the service's stored render models (SourceBulletin, SNOW-1270): the
 # rows whose render_model_version predates RENDER_MODEL_VERSION, failed builds
-# and never-indexed rows included, or every row with --all; then the service's
-# day ratings (SourceDayRating) for every (region, day) a rebuilt row touched,
-# plus every rating computed under an older DAY_RATING_VERSION. A changed row
-# moves its updated_at, so the feeds serve it again. Tallies rebuilt /
-# unchanged / failed / day_ratings and exits non-zero when a build fails.
-# Read-only by default.
+# and never-indexed rows included, or every row (forced) with --all. Rule 7
+# (SNOW-1346): --commit only ENQUEUES — one rebuild_source_bulletin_task per
+# row, which rebuilds it and recomputes the SourceDayRating of every
+# (region, day) it governed before or governs now, then one
+# refresh_source_day_rating_task per rating computed under an older
+# DAY_RATING_VERSION. All at priority -50; each re-checks its row. A changed
+# row moves its updated_at, so the feeds serve it again. Tallies enqueued /
+# day_ratings_enqueued / failed and exits non-zero when a task run inline
+# fails. Read-only by default.
 uv run python manage.py rebuild_source_render_models           # read-only
-uv run python manage.py rebuild_source_render_models --commit  # persist
+uv run python manage.py rebuild_source_render_models --commit  # enqueue
 
 # Re-derive every RegionDayRating row under the current v9 policy: min/max
 # come from an elevation-band split (distinct all_day band keys) or, failing

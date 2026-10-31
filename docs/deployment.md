@@ -329,6 +329,15 @@ Deploy-Step: rebuild_source_render_models --commit
 Deploy-Step: rebuild_render_models --commit
 ```
 
+Since SNOW-1346 both steps only **enqueue** — one task per stale bulletin
+on the `db_worker` runner, at priority -50 — so each returns in seconds and
+the rebuild finishes in the background; re-run either command without
+`--commit` to read how many rows are still stale. Their order is
+convention, not a dependency: the instance rebuild builds from its own
+`raw_data`, never from the service's model, and the two write different
+tables
+([why](decisions/day-ratings-are-recomputed-inside-each-rebuild-task.md)).
+
 **Shipping the list.** The same steps go into a tracked `DEPLOY_STEPS`
 file beside `VERSION`, written into the bump commit by `cut-release` and
 rewritten on every release (header only when a release has none), so the
