@@ -33,6 +33,7 @@ from apps.ingest.ski_render import (
     needs_render,
     render_source_tour,
     terrain_grid,
+    tour_summit,
     tour_summits,
     tours_to_render,
     walk_fingerprint,
@@ -201,6 +202,28 @@ def test_the_summits_are_read_in_one_query(
     SourceSkiTourFactory.create_batch(3)
     with django_assert_num_queries(1):
         assert tour_summits()
+
+
+def test_one_tours_summit_matches_the_full_set() -> None:
+    """tour_summit places the tour's own summit exactly as tour_summits does."""
+    rows = SourceSkiTourFactory.create_batch(3)
+    other = SourceSkiTourFactory.create()
+    other.document = {**other.document, "target_name": "Piz Palü"}
+    other.save()
+    full = tour_summits()
+    one = tour_summit(rows[0])
+    assert len(one) == 1
+    (key,) = one
+    assert one[key] == full[key]
+    assert tour_summit(other).keys() == {k for k in full if k != key}
+
+
+def test_a_tour_without_a_target_has_no_summit() -> None:
+    """No target name: nothing to place, and no query for peers."""
+    row = SourceSkiTourFactory.create()
+    row.document = {**row.document, "target_name": ""}
+    row.save()
+    assert tour_summit(row) == {}
 
 
 def test_the_candidates_agree_with_needs_render_in_every_state() -> None:

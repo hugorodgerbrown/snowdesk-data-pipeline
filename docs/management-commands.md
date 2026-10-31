@@ -197,7 +197,7 @@ worker logs.
 | Run-register prune | `prune_command_runs --commit` | `50 3 * * *` (daily, 03:50 UTC) | Marks `CommandRun` rows a killed process left `RUNNING` for over six hours as `INTERRUPTED`, and deletes `SCHEDULER` runs older than 90 days (SNOW-1189). Every other run is kept for good. |
 | what3words fill | `fill_what3words --commit` | `0 4 * * *` (daily, 04:00 UTC) | Converts each `Location` still without a three word address (SNOW-881). Sweeps up rows no mint-time fill covers — a field observation's location, and any row where a conversion failed. A clean no-op when `WHAT3WORDS_API_KEY` is unset, which is what lets it be registered unconditionally. Daily because the estate grows with user activity rather than the clock. |
 | Slope-sample reconcile | `backfill_route_slope_samples --commit`, then `backfill_trip_slope_samples --commit` | `30 4 * * *` (daily, 04:30 UTC) | The safety net for a terrain-sampling task that was never queued (SNOW-1228). Upload, trip creation and trip edits enqueue sampling after their row has committed, and an enqueue failure there is logged rather than raised — the user's route or trip exists, so a 500 would be a lie — which leaves `slope_samples` null. Both commands select exactly those rows. Deliberately uncapped (SNOW-1243): the commands walk newest-first and leave an unsampleable row (a route outside terrain coverage) eligible, so a `--limit` would let those rows crowd out older ones whose enqueue really failed; the commands' own delay paces tile requests. The trip pass still runs when the route pass fails, and the first failure is re-raised afterwards. SAC tours are walked by the service instead, in `render_ski_tours` (SNOW-1316). |
-| SAC tour render | `render_ski_tours --commit` | `30 5 * * *` (daily, 05:30 UTC) | The reference-data service walks and draws every SAC tour it has not, on `SourceSkiTour`, then applies them to this host's `SkiTour` rows (SNOW-1316). Idempotent by fingerprint: a normal day finds only the tours a weekly import rewrote. An outage stores nothing and exits non-zero. |
+| SAC tour render | `render_ski_tours --commit` | `30 5 * * *` (daily, 05:30 UTC) | Enqueues one task per SAC tour the reference-data service has not walked and drawn; each task renders its tour on `SourceSkiTour` and applies it to this host's `SkiTour` (SNOW-1316, SNOW-1345). Idempotent by fingerprint: a normal day finds only the tours a weekly import rewrote. An unanswered tour stores nothing and is tried the next day. |
 | Resort-link detector | `link_resort_locations --check` | `0 5 * * *` (daily, 05:00 UTC) | The only scheduled job that writes nothing (SNOW-885). Reports resorts with a coordinate but no pin `Location` (`Resort.location`, SNOW-1144) — each one a resort whose weather is not fetched, still on the map only through the transitional fallback to its mirrored coordinates (removed by SNOW-1147), with nothing else saying so — and exits NON-ZERO when there are any, so the worker log carries the alarm. Since SNOW-1144 every pin writer goes through `set_resort_pin`, so after the one-time backfill this should never fire; if it does, an operator runs `link_resort_locations --commit` by hand. |
 
 Each job checks a waffle switch, `schedule_<job id>` (for example
@@ -1247,7 +1247,7 @@ uv run python manage.py backfill_trip_slope_samples --commit         # apply
 uv run python manage.py backfill_trip_slope_samples --commit --limit 20
 ```
 
-### `render_ski_tours` — the service walks and draws every SAC tour, once
+### `render_ski_tours` — enqueue a render task per SAC tour
 
 SNOW-1316, replacing SNOW-1288's `backfill_ski_tour_slope_samples`. A
 tour's walk (`slope_samples`) and drawing (`track_render`) are
@@ -1257,19 +1257,28 @@ instance copies them from the v2 `ski-tours` feed
 (`pull_reference_data`, `apply_ski_items`) instead of walking 2,941 tours
 itself. Runs where the service runs: production.
 
+**The command enqueues; the task runner works (SNOW-1345).** One process
+walking every tour took over an hour and copied nothing onto the map until
+it ended, so a dropped shell lost the lot. `--commit` now enqueues one
+`render_tour_task` per candidate (`apps/routes/services/ski_tour_render.py`)
+and returns in seconds. Each task re-checks its tour (`needs_render`),
+walks and draws it with only its own summit (`tour_summit`), copies it onto
+this host's `SkiTour` (`apply_source_tour`) and pauses `--delay` seconds
+after a walk. Tasks are enqueued at priority −50, below alerts and pushes
+on the same `default` queue. Under `ImmediateBackend` (dev, test, staging)
+they run inline, one after another.
+
 Candidates are `tours_to_render(grid)`: a tour whose `render_input_fp`
 (the document's `content_hash` plus the terrain grid's identity) is not
 the current one, or whose drawing is below `TRACK_RENDER_VERSION`. A stale
 drawing is redrawn from the walk it holds, with no request. **Idempotent**:
-a second run finds no candidate and writes nothing; a drawing whose `fp`
-matches is never rewritten. **An outage writes nothing**: a tour the tile
-origin does not answer for is counted `unavailable`, tried next run, and
-fails the run (non-zero exit); three in a row stops it early. No terrain
-grid fails it too. A line too short to walk is `no_terrain`, stored, and settled. The
-weekly `import_ski_tours` sync clears all three fields on a tour whose
-document changed. On `--commit` the host's own `SkiTour` rows then take
-what changed (`apply_from_service`). Paced by `--delay` (a second between
-walked tours); the first full run takes about five hours.
+a second run finds no candidate, and a tour enqueued twice is skipped by
+its second task. **An outage writes nothing**: a tour the tile origin does
+not answer for stores nothing and is a candidate again the next day. No
+terrain grid fails the command, and fails any task that runs without one.
+A line too short to walk is `no_terrain`, stored, and settled. The weekly
+`import_ski_tours` sync clears all three fields on a tour whose document
+changed.
 
 Scheduled daily at 05:30 UTC (`schedule_render_ski_tours`). The panel's
 on-open walk stays as the fallback for a tour an instance holds no
@@ -1277,7 +1286,7 @@ drawing for.
 
 ```bash
 uv run python manage.py render_ski_tours                  # preview
-uv run python manage.py render_ski_tours --commit         # walk, draw, apply
+uv run python manage.py render_ski_tours --commit         # enqueue every candidate
 uv run python manage.py render_ski_tours --commit --limit 20
 ```
 

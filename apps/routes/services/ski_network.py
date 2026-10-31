@@ -22,6 +22,9 @@ apply them, with the same function:
   synced_since(kind)
       The newest ``updated_at`` held, where the next incremental pull
       starts; None before the first one.
+  apply_source_tour(source_pk)
+      Apply one service tour here, straight after its task renders it
+      (SNOW-1345).
   bbox_of(geometry)
       A GeoJSON line's ``(west, south, east, north)``.
   network_overview()
@@ -357,6 +360,27 @@ def apply_from_service(*, commit: bool) -> dict[str, Counter[str]]:
                 break
         result[kind] = counts
     return result
+
+
+def apply_source_tour(source_pk: int) -> Counter[str]:
+    """Apply one of the service's tours here, as soon as it is drawn (SNOW-1345).
+
+    The per-tour task calls this after it renders a tour, so the tour is
+    on this host's map at once rather than at the end of a long run. It
+    is the same ``apply_ski_items`` a page goes through, so the two
+    paths cannot drift.
+
+    Args:
+        source_pk: The ``SourceSkiTour``'s primary key.
+
+    Returns:
+        The item's outcome, or an empty count when the row is gone.
+
+    """
+    row = SourceSkiTour.objects.filter(pk=source_pk).first()
+    if row is None:
+        return Counter()
+    return apply_ski_items(SKI_TOURS, [serialise_source_ski_tour(row)], commit=True)
 
 
 def _network_stamp() -> str:

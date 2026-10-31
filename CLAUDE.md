@@ -435,6 +435,12 @@ These rules apply to **every** new or refactored management command
    `self.tally(name, n)` for what it changes (or would change in a dry
    run), zeros included. A test fails a command that skips it
    ([why](docs/decisions/every-command-run-is-registered.md)).
+7. **Long work made of independent updates goes on the task runner** —
+   a command that would walk thousands of rows, each its own update,
+   enqueues one `django_tasks` task per row and returns, rather than
+   holding a shell for an hour (Hugo, 2026-10-31; `render_ski_tours`,
+   SNOW-1345). The task re-checks its row, so a duplicate enqueue is a
+   no-op, and is enqueued below the default priority.
 
 Full contract plus the command catalogue and flag reference:
 [`docs/management-commands.md`](docs/management-commands.md).
