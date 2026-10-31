@@ -2,7 +2,7 @@
 name: glossary
 description: Domain term → code symbol map — CAAML, DPBRA, massif, Bulletin/RegionBulletin, render model, day rating, sentinels, Location, Weather
 status: current
-last-reviewed: 2026-10-30
+last-reviewed: 2026-10-31
 ---
 
 # Glossary — domain terms to code symbols
@@ -71,7 +71,7 @@ L3 is deliberately skipped. All in `apps/regions/models.py`.
 | Day summary | The one-line explainer beside the day-character label, selected per bulletin from an 80-cell copy matrix | `summary_for()` in `apps/bulletins/services/day_summary.py`; see [day-summary.md](day-summary.md) |
 | Movement | How a day's danger level moves across its windows — static / rising / easing / shifting | `classify_movement()` in `apps/bulletins/services/day_summary.py` |
 | Readability | Whether a day's problems leave surface evidence — readable / hidden / mixed / quiet | `classify_readability()` in `apps/bulletins/services/day_summary.py` |
-| Avalanche problem | EAWS problem token (new_snow, wind_slab, …) with rating, aspects, elevation | `AvalancheProblem` dataclass in `apps/bulletins/schema.py` |
+| Avalanche problem | EAWS problem token (new_snow, wind_slab, …) with rating, aspects, elevation | `render_model.traits[].problems[]` (built by `_build_problem` in `apps/ingest/normalise/render_model.py`) |
 | Elevation band | Per-rating altitude banding (ALBINA / Météo-France only — SLF has none) | `RegionDayRating.bands` JSON |
 | Unscheduled bulletin | Out-of-cycle update flagged by the provider | `Bulletin.unscheduled` |
 | Provider row | A row in the map's layers menu "Conditions" section (its "Bulletins" section until SNOW-904) — one WARNING SERVICE, not one country. ALBINA publishes for AT and IT, so its single row switches both codes: the grouping is declared once in `COUNTRY_GROUPS` and projected into the DOM as `data-country-codes` (SNOW-658) | `COUNTRY_GROUPS` / `countryCodesFor` / `overlayKeyForCountry` in `static/js/map_state.js`; guarded by `tests/public/test_map_country_groups.py` |

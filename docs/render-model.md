@@ -2,7 +2,7 @@
 name: render-model
 description: Bulletin.render_model JSON shape — danger ratings, traits, prose, RENDER_MODEL_VERSION, enrich_render_model, CAAML fidelity guard
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-31
 ---
 
 # Render model
@@ -25,7 +25,7 @@ Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest t
 - `metadata` — `{ publication_time, valid_from, valid_until, next_update, unscheduled, lang }`. Timestamps are ISO 8601 strings or `None`; `unscheduled` defaults to `False`; `lang` defaults to `"en"`.
 - `prose` — `{ snowpack_structure, weather_review, weather_forecast, tendency[], avalanche_activity, tendency_lead }`. Scalars are HTML strings or `None`. Each tendency entry has `{ comment, tendency_type, valid_from, valid_until }`. `avalanche_activity` is always present (empty strings for SLF); `tendency_lead` is ALBINA's forecaster one-liner from `tendency[0].highlights`, `None` for the other two providers.
 
-**Versioning**: `RENDER_MODEL_VERSION = 9` (in `apps/ingest/normalise/render_model.py`, the service's, since SNOW-1270). Bump it and run `rebuild_render_models` whenever the output shape or builder logic changes — and, on a source environment, `rebuild_source_render_models` too, so the service's stored models follow. `BulletinQuerySet.needs_render_model_rebuild()` returns all rows with a stale version. v8 removed the duplicate top-level `snowpack_structure` key (SNOW-488) — `prose.snowpack_structure` is unchanged and remains the canonical location. v9 stores SLF's `neutral` subdivision as `"="` (SNOW-1054); v8 and earlier keyed the token map on `equal`, which SLF never sends, so every neutral rating was stored as `None`.
+**Versioning**: `RENDER_MODEL_VERSION = 9` (in `apps/ingest/normalise/render_model.py`, the service's, since SNOW-1270). Bump it whenever the output shape or builder logic changes, and ship the bump with a `Deploy-Step: rebuild_render_models --commit` trailer (see [deployment](deployment.md)) so the stored models are rebuilt on deploy — and, on a source environment, `rebuild_source_render_models` too, so the service's stored models follow. `BulletinQuerySet.needs_render_model_rebuild()` returns all rows with a stale version. v8 removed the duplicate top-level `snowpack_structure` key (SNOW-488) — `prose.snowpack_structure` is unchanged and remains the canonical location. v9 stores SLF's `neutral` subdivision as `"="` (SNOW-1054); v8 and earlier keyed the token map on `equal`, which SLF never sends, so every neutral rating was stored as `None`.
 
 **Display enrichment** (SNOW-69): the stored render model is the canonical, version-stamped shape — but it isn't what templates consume. `enrich_render_model()` in `apps/public/views.py` adds presentation-ready fields (problem labels, `ElevationBounds`, `field_guidance`, `hide_comment`) on top of each trait's problems before the data reaches the template. Both the bulletin page and the map drawer endpoint (`apps.public.api.region_summary`) call it, so the two render paths share a single enriched shape. Keep purely-derivable presentation in the enrichment step rather than the builder — it stays out of the stored JSON, doesn't bump the version, and can change without a rebuild.
 
@@ -35,7 +35,7 @@ Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest t
 
 **On validation failure**: the caller stores `render_model = {"version": 0, "error": "...", "error_type": "..."}`. `fetch_bulletins` exits non-zero via `CommandError` when `run.records_failed > 0`. `rebuild_render_models` prints a failure summary and exits non-zero.
 
-**Safety net**: `_get_render_model` in `apps/public/views.py` detects a stale `render_model_version` at render time, rebuilds on the fly, and logs a warning. On `RenderModelBuildError` during the rebuild it returns an error sentinel dict (does NOT write to DB); the template renders an error card. This keeps the page functional during a backfill; the warning is the signal to run the rebuild command.
+**No rebuild on read** (SNOW-1342): `_get_render_model` in `apps/public/views.py` returns the stored model when `render_model_version` is current. A stale row is **not** rebuilt per request — it reads as the `{"version": 0, "error": …, "error_type": "StaleRenderModel"}` sentinel (a stored failure keeps its own error) and logs a warning naming both versions; the template renders the error card. That is why a version bump needs the `rebuild_render_models --commit` Deploy-Step. Read paths never read `raw_data` at all — [why](decisions/read-paths-never-read-raw-data.md).
 
 **Day character**: `compute_day_character(render_model)` is a pure function returning a `DayCharacter` with three fields — `key` (the locale-independent cascade key: `stable`, `manageable`, `hard_to_read`, `widespread`, `dangerous`), `label` (the display string), and `explainer` (the one-line day summary). Empty `traits` → the `stable` key immediately. Branch and export on `key`, never on `label`, which varies with the active locale.
 

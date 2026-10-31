@@ -2,7 +2,7 @@
 name: mcp-server
 description: MCP JSON-RPC at POST /api/mcp/ and staff /api/ops/mcp/ (ops_tools) — mcp-auth bearer auth, tools, MCP Apps view
 status: current
-last-reviewed: 2026-10-28
+last-reviewed: 2026-10-31
 ---
 
 # MCP server
@@ -156,13 +156,23 @@ Returns the danger rating and forecaster prose for one region on one day.
   `has_bulletin` is `false` and the rest is a structured "no data" result
   — a quiet day with no forecast is a legitimate outcome, not an error.
 
+`danger_level` is the day's `RegionDayRating.max_rating` — the same peak
+`get_danger_history` reports for that day, so the two never disagree on a
+split AM/PM day — falling back to the render model's `danger.key` only
+when the day has no rating row yet. `danger_ratings` lists the keys of
+the render model's `danger.ratings`. Nothing here reads `raw_data`
+(SNOW-1342).
+
 ### `get_avalanche_problems`
 
 Returns the structured avalanche-problem list for one region on one day —
 the decision-support detail behind the scalar `danger_level` returned by
-`get_current_conditions`. Sourced from `Bulletin.get_avalanche_problems()`
-(`apps/bulletins/models.py`), which parses the bulletin's `avalancheProblems`
-CAAML array into `AvalancheProblem` dataclasses (`apps/bulletins/schema.py`).
+`get_current_conditions`. Sourced from the bulletin's render model —
+every problem of every `traits[]` entry, in trait order (SNOW-1342; it
+parsed the CAAML `avalancheProblems` before). `valid_time_period` is the
+trait's window; `comment` is the problem's `comment_html` as plain text;
+`elevation` bounds are rebuilt as the CAAML strings (`"2200"`,
+`"treeline"`) from the projected bounds and `treeline_side`.
 
 * **Params:** `region_id` (string, required), `date` (`YYYY-MM-DD`,
   optional — defaults to today).
@@ -174,16 +184,16 @@ CAAML array into `AvalancheProblem` dataclasses (`apps/bulletins/schema.py`).
   either of which may itself be `null`. When no bulletin covers `date`,
   `has_bulletin` is `false` and `problems`/`count` are empty/`0` — the
   same structured "no data" shape as `get_current_conditions`. A bulletin
-  with an empty `avalancheProblems` array is a distinct, non-error case
+  whose render model holds no problems is a distinct, non-error case
   (`has_bulletin: true`, `problems: []`, and a different summary wording)
   from "no bulletin at all".
 
 **Curated field subset.** Deliberately omits provider-specific fields —
 `subdivision` (SLF's CH sub-level qualifier), `avalanche_type` (ALBINA's
 slab/loose/glide axis), `snowpack_stability`, and `frequency` — as
-low-value for a general-purpose LLM caller. See
-`AvalancheProblem`'s docstring in `apps/bulletins/schema.py` for the full field
-set these are drawn from.
+low-value for a general-purpose LLM caller. The full field set they are
+drawn from is the render model's problem shape (`_build_problem` in
+`apps/ingest/normalise/render_model.py`).
 
 ### `get_danger_history`
 
@@ -274,7 +284,10 @@ the source without hallucinating.
   single-item list (`Bulletin.bulletin_id` is unique so only one language
   variant survives per row). When no bulletin covers `date`,
   `has_bulletin` is `false` and provenance fields are omitted — a
-  structured "no data" result, not an error.
+  structured "no data" result, not an error. `source_provider` is the
+  row's `Bulletin.source` column (SNOW-1342), so it answers even when the
+  render model failed to build; `null` only for a row whose provider was
+  never detected.
 
 ### `get_bulletin_raw`
 
@@ -288,13 +301,18 @@ is ~10-30 KB per bulletin, so it is not the default.
 * **Returns:** `{region_id, region_name, date, has_bulletin, provider,
   issued_at, caaml: {type: "Feature", geometry, properties: {...}},
   summary}`. When no bulletin covers `date`, `has_bulletin` is `false`
-  and the `caaml` key is omitted.
+  and the `caaml` key is omitted. The one MCP tool that reads
+  `Bulletin.raw_data`: the read path defers the column, so the tool
+  loads it by an explicit fetch of its own.
 
 ### `bulk_current_conditions`
 
-Batched fan-out over `get_current_conditions`. Prevents a "show me
+The batched form of `get_current_conditions`. Prevents a "show me
 Valais today" prompt from turning into 20+ sequential MCP round-trips
-through a client that is already going through an LLM.
+through a client that is already going through an LLM. Batched in the
+database too (SNOW-1342): the regions, the day's bulletins
+(`select_bulletins_for_regions`) and the day's `RegionDayRating` rows are
+one query each, so 20 regions cost the queries one does.
 
 * **Params:** `region_ids` (array of strings, 1..20, required), `date`
   (`YYYY-MM-DD`, optional — defaults to today).
