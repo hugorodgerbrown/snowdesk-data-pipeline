@@ -5,7 +5,11 @@ Covers:
   - parse_dpbra_xml: two-band and single-band danger ratings, avalanche
     problems, tendency, custom data, UTC conversion, bulletinID format.
   - MeteoFranceDelegatedRegionError raised for non-BULLETINS_NEIGE_AVALANCHE root.
-  - MeteoFranceTranslationError for missing required elements and invalid values.
+  - MeteoFranceTranslationError for missing required elements and invalid values
+    (a malformed elevation split, an unknown SAT code).
+  - Synthetic-XML edge cases: <TEXTE> fallbacks for the problem prose and the
+    activity comment, J+2 tendency / j2Outlook omission, malformed snow-cover
+    levels skipped.
   - Internal helpers: _parse_local_to_utc, _parse_local_date, _parse_plus_one_day,
     _aspects_from_pente, _elevation_from_prose, _evolution_from_levels.
   - format_comment_as_html: empty input, paragraphs, headings, bullets, escaping.
@@ -93,6 +97,49 @@ def _minimal_dpbra(
     <TEXTESANSTITRE/>
     <TEXTE/>
   </STABILITE>
+  <QUALITE><TEXTE/></QUALITE>
+</BULLETINS_NEIGE_AVALANCHE>""".encode()
+
+
+_DEFAULT_RISQUE = (
+    '<RISQUE RISQUE1="2" ALTITUDE="" RISQUE2="" RISQUEMAXI="2" '
+    'RISQUEMAXIJ2="2" DATE_RISQUE_J2="2026-05-19T00:00:00"/>'
+)
+_DEFAULT_STABILITE = (
+    '<STABILITE><SitAvalTyp SAT1="4" SAT2=""/><TITRE/>'
+    "<TEXTESANSTITRE/><TEXTE/></STABILITE>"
+)
+
+
+def _dpbra_from_parts(
+    risque: str = _DEFAULT_RISQUE,
+    stabilite: str = _DEFAULT_STABILITE,
+    extra: str = "",
+) -> bytes:
+    """
+    Build a DPBRA XML document from raw ``<RISQUE>`` / ``<STABILITE>`` fragments.
+
+    Unlike ``_minimal_dpbra``, the caller supplies the fragments verbatim, so
+    a test can drop an element or set an attribute to a value the typed
+    helper cannot express (a non-integer, an out-of-range code). ``extra`` is
+    appended inside the root, after ``<STABILITE>`` (e.g. ``<ENNEIGEMENT>``).
+    """
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<BULLETINS_NEIGE_AVALANCHE ID="1" MASSIF="TestMassif"
+    DATEBULLETIN="2026-05-17T16:00:00"
+    DATEECHEANCE="2026-05-18T18:00:00"
+    DATEVALIDITE="2026-05-18T18:00:00"
+    DATEDIFFUSION="2026-05-17T16:02:00"
+    AMENDEMENT="false">
+  <CARTOUCHERISQUE>
+    {risque}
+    <PENTE NE="false" E="false" SE="false" S="false"
+           SW="false" W="false" NW="false" N="false"/>
+    <ACCIDENTEL/>
+    <NATUREL/>
+  </CARTOUCHERISQUE>
+  {stabilite}
+  {extra}
   <QUALITE><TEXTE/></QUALITE>
 </BULLETINS_NEIGE_AVALANCHE>""".encode()
 
@@ -506,6 +553,142 @@ class TestParseSyntheticBulletin:
         # Format: FR-01-YYYY-MM-DD — must use Paris local date 2026-01-01
         assert "-2026-01-01" in bid
 
+    # -- Elevation split --------------------------------------------------
+
+    @pytest.mark.parametrize(
+        ("altitude", "risque2", "message"),
+        [
+            ("deux mille", "3", "Non-integer ALTITUDE"),
+            ("2200", "fort", "Non-integer RISQUE2"),
+            ("2200", "7", "RISQUE2=7 out of range"),
+        ],
+    )
+    def test_malformed_elevation_split_raises(
+        self, altitude: str, risque2: str, message: str
+    ) -> None:
+        """A split whose ALTITUDE or RISQUE2 cannot be read is refused, not guessed."""
+        risque = (
+            f'<RISQUE RISQUE1="2" ALTITUDE="{altitude}" RISQUE2="{risque2}" '
+            'RISQUEMAXI="3" RISQUEMAXIJ2="2" DATE_RISQUE_J2="2026-05-19T00:00:00"/>'
+        )
+        with pytest.raises(MeteoFranceTranslationError, match=message):
+            parse_dpbra_xml(_dpbra_from_parts(risque=risque))
+
+    # -- Problem prose (STABILITE) ----------------------------------------
+
+    def test_problem_prose_falls_back_to_texte(self) -> None:
+        """With no <TEXTESANSTITRE>, a problem's elevation is read from <TEXTE>."""
+        stabilite = (
+            '<STABILITE><SitAvalTyp SAT1="4" SAT2=""/><TITRE/>'
+            "<TEXTE>Au-dessus de 2400 m, plaques friables.</TEXTE></STABILITE>"
+        )
+        result = parse_dpbra_xml(_dpbra_from_parts(stabilite=stabilite))
+        assert result["avalancheProblems"][0]["elevation"] == {"lowerBound": "2400"}
+
+    def test_activity_comment_strips_titre_prefix_from_texte(self) -> None:
+        """A <TITRE> that opens <TEXTE> is not repeated in the activity comment."""
+        stabilite = (
+            '<STABILITE><SitAvalTyp SAT1="4" SAT2=""/>'
+            "<TITRE>Risque faible</TITRE>"
+            "<TEXTE>Risque faible\nLa neige est stable.</TEXTE></STABILITE>"
+        )
+        result = parse_dpbra_xml(_dpbra_from_parts(stabilite=stabilite))
+        assert result["avalancheActivity"]["comment"] == "<p>La neige est stable.</p>"
+
+    def test_activity_comment_keeps_texte_when_titre_is_not_a_prefix(self) -> None:
+        """A <TITRE> that does not open <TEXTE> leaves the comment whole."""
+        stabilite = (
+            '<STABILITE><SitAvalTyp SAT1="4" SAT2=""/>'
+            "<TITRE>Autre titre</TITRE>"
+            "<TEXTE>Risque faible\nLa neige est stable.</TEXTE></STABILITE>"
+        )
+        result = parse_dpbra_xml(_dpbra_from_parts(stabilite=stabilite))
+        assert result["avalancheActivity"]["comment"] == (
+            "<p>Risque faible</p><p>La neige est stable.</p>"
+        )
+
+    def test_missing_sitavaltyp_yields_no_problems(self) -> None:
+        """A <STABILITE> with no <SitAvalTyp> publishes no avalanche problems."""
+        stabilite = "<STABILITE><TITRE/><TEXTESANSTITRE/><TEXTE/></STABILITE>"
+        result = parse_dpbra_xml(_dpbra_from_parts(stabilite=stabilite))
+        assert result["avalancheProblems"] == []
+
+    @pytest.mark.parametrize(
+        ("sat1", "message"),
+        [
+            ("neige", "Non-integer SAT1='neige'"),
+            ("9", "SAT1=9 is outside the known SAT vocabulary"),
+        ],
+    )
+    def test_unknown_sat_code_raises(self, sat1: str, message: str) -> None:
+        """A SAT code that maps to no EAWS problem type is refused, not dropped."""
+        stabilite = (
+            f'<STABILITE><SitAvalTyp SAT1="{sat1}" SAT2=""/><TITRE/>'
+            "<TEXTESANSTITRE/><TEXTE/></STABILITE>"
+        )
+        with pytest.raises(MeteoFranceTranslationError, match=message):
+            parse_dpbra_xml(_dpbra_from_parts(stabilite=stabilite))
+
+    # -- J+2 tendency and customData.MF.j2Outlook --------------------------
+
+    @pytest.mark.parametrize(
+        "risque",
+        [
+            '<RISQUE RISQUE1="2" ALTITUDE="" RISQUE2="" RISQUEMAXI="2" '
+            'DATE_RISQUE_J2="2026-05-19T00:00:00"/>',
+            '<RISQUE RISQUE1="2" ALTITUDE="" RISQUE2="" RISQUEMAXI="2" '
+            'RISQUEMAXIJ2="2"/>',
+        ],
+        ids=["no-risquemaxij2", "no-date-risque-j2"],
+    )
+    def test_absent_j2_field_yields_no_tendency(self, risque: str) -> None:
+        """Without both J+2 attributes there is no tendency and no j2Outlook."""
+        result = parse_dpbra_xml(_dpbra_from_parts(risque=risque))
+        assert result["tendency"] == []
+        assert result["customData"]["MF"]["j2Outlook"] is None
+
+    def test_non_integer_risquemaxij2_yields_no_tendency_or_outlook(self) -> None:
+        """A non-integer RISQUEMAXIJ2 drops the tendency and the j2Outlook."""
+        risque = (
+            '<RISQUE RISQUE1="2" ALTITUDE="" RISQUE2="" RISQUEMAXI="2" '
+            'RISQUEMAXIJ2="?" DATE_RISQUE_J2="2026-05-19T00:00:00"/>'
+        )
+        result = parse_dpbra_xml(_dpbra_from_parts(risque=risque))
+        assert result["tendency"] == []
+        assert result["customData"]["MF"]["j2Outlook"] is None
+
+    def test_unparseable_j2_date_yields_no_tendency_and_logs(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """An unparseable DATE_RISQUE_J2 omits the tendency and says so in the log."""
+        risque = (
+            '<RISQUE RISQUE1="2" ALTITUDE="" RISQUE2="" RISQUEMAXI="2" '
+            'RISQUEMAXIJ2="3" DATE_RISQUE_J2="demain"/>'
+        )
+        with caplog.at_level(
+            "ERROR", logger="apps.ingest.normalise.meteofrance.translator"
+        ):
+            result = parse_dpbra_xml(_dpbra_from_parts(risque=risque))
+        assert result["tendency"] == []
+        assert "Could not parse DATE_RISQUE_J2='demain'" in caplog.text
+
+    # -- Snow cover (customData.MF.snowCover) ------------------------------
+
+    def test_malformed_snow_cover_level_is_skipped(self) -> None:
+        """A <NIVEAU> with a non-integer depth is dropped; the others survive."""
+        enneigement = (
+            '<ENNEIGEMENT LimiteNord="1200" LimiteSud="1500" DATE="2026-05-17">'
+            '<NIVEAU ALTI="1000" N="10" S="5"/>'
+            '<NIVEAU ALTI="2000" N="beaucoup" S="40"/>'
+            '<NIVEAU ALTI="3000" N="120" S="90"/>'
+            "</ENNEIGEMENT>"
+        )
+        result = parse_dpbra_xml(_dpbra_from_parts(extra=enneigement))
+        assert result["customData"]["MF"]["snowCover"]["depthsCm"] == [
+            {"altitudeM": 1000, "north": 10, "south": 5},
+            {"altitudeM": 3000, "north": 120, "south": 90},
+        ]
+
 
 # ---------------------------------------------------------------------------
 # format_comment_as_html — direct unit tests
@@ -522,6 +705,16 @@ class TestFormatCommentAsHtml:
     def test_whitespace_only_returns_empty(self) -> None:
         """Whitespace-only input returns an empty string."""
         assert format_comment_as_html("   \n  \n  ") == ""
+
+    def test_blank_lines_inside_and_after_bullet_list(self) -> None:
+        r"""Blank lines the block split misses close a bullet list and are skipped.
+
+        ``str.splitlines`` breaks on a bare ``\r`` while the blank-line block
+        split matches only ``\n``, so ``\r\r`` reaches the body as an empty
+        line: the first one ends the list, a second is skipped outright.
+        """
+        result = format_comment_as_html("* un\r* deux\r\r\rAprès la liste")
+        assert result == "<ul><li>un</li><li>deux</li></ul><p>Après la liste</p>"
 
     def test_single_paragraph_no_heading(self) -> None:
         """A plain prose line with no colon becomes a single <p>."""
