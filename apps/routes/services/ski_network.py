@@ -86,6 +86,14 @@ _SERIALISERS: dict[str, Callable[[Any], dict[str, Any]]] = {
 # How many service rows the host's own apply reads at a time.
 APPLY_CHUNK = 500
 
+# A tour is far heavier than a segment: it carries SAC's whole document,
+# its walk and its drawing, and a page holds each one three times over
+# (the row, its feed item, the model it writes). 500 at once ran the
+# production instance out of memory on its first full apply, so tours
+# are read and committed a few at a time. Each page commits on its own,
+# so an interrupted apply resumes where it stopped.
+TOUR_APPLY_CHUNK = 20
+
 # SNOW-1322: the whole network, thinned as the tours overview is, for draw
 # mode zoomed out past the per-view load. ~3.1 MB, ~0.6 MB gzipped.
 _OVERVIEW_CACHE_KEY = "routes:ski-network-overview:v1:{count}:{stamp}"
@@ -310,15 +318,17 @@ def _service_pages(
 ) -> Iterator[list[dict[str, Any]]]:
     """Yield the service's rows of ``kind`` changed since ``since``, as feed items.
 
-    In chunks of ``APPLY_CHUNK``, so the geometry is never held whole.
+    In chunks of ``APPLY_CHUNK`` segments or ``TOUR_APPLY_CHUNK`` tours, so
+    the geometry is never held whole.
     """
+    size = TOUR_APPLY_CHUNK if kind == SKI_TOURS else APPLY_CHUNK
     rows = _SOURCE_MODELS[kind].objects.order_by("updated_at", "id")
     if since is not None:
         rows = rows.filter(updated_at__gte=since)
     chunk: list[dict[str, Any]] = []
-    for row in rows.iterator(chunk_size=APPLY_CHUNK):
+    for row in rows.iterator(chunk_size=size):
         chunk.append(_SERIALISERS[kind](row))
-        if len(chunk) == APPLY_CHUNK:
+        if len(chunk) == size:
             yield chunk
             chunk = []
     if chunk:

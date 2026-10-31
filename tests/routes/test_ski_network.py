@@ -197,6 +197,30 @@ def test_the_service_host_applies_its_own_rows(
     assert SkiSegment.objects.count() == 2
 
 
+def test_the_service_host_applies_tours_a_few_at_a_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tours are paged by their own small chunk, each page committed alone."""
+    from apps.routes.services import ski_network
+
+    monkeypatch.setattr(ski_network, "TOUR_APPLY_CHUNK", 2)
+    pages: list[int] = []
+    real_apply = ski_network.apply_ski_items
+
+    def spy(kind: str, items: list[dict[str, Any]], *, commit: bool) -> Any:
+        """Record each tours page's size, then apply it."""
+        if kind == "ski-tours":
+            pages.append(len(items))
+        return real_apply(kind, items, commit=commit)
+
+    monkeypatch.setattr(ski_network, "apply_ski_items", spy)
+    SourceSkiTourFactory.create_batch(5)
+    result = apply_from_service(commit=True)
+    assert pages == [2, 2, 1]
+    assert result["ski-tours"][CREATED] == 5
+    assert SkiTour.objects.count() == 5
+
+
 def test_the_service_host_stops_at_a_failed_page(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
