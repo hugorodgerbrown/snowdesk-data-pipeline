@@ -606,7 +606,7 @@ file changes.
 **Fifth guard: `tox -e fidelity-lint`.** Not a design-system guard, but
 the same family. Snowdesk claims to show the provider's bulletin in full
 rather than a simplified subset; `tests/sentinels/fidelity.py` holds one
-row per dotted CAAML path across the nine sentinels, each either declared
+row per dotted CAAML path across the eleven sentinels, each either declared
 **rendered** (with a probe naming the surface) or **excluded** (with a
 written reason). `bin/fidelity-lint` checks every path is classified —
 that half is dependency-free and runs in the lint matrix, and it is what

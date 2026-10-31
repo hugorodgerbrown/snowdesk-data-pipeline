@@ -240,11 +240,43 @@ class TestSlfPdfUrl:
 # ---------------------------------------------------------------------------
 # detect_caaml_shape — SNOW-900
 # ---------------------------------------------------------------------------
-# Unit tests against fixture dicts, never the network. The one exception is
-# ``test_the_committed_sentinels_are_aggregated``, which reads the three real
-# SLF sentinels off disk: a synthetic "many regions" fixture proves only that
-# the arithmetic works, whereas the sentinels prove the classifier answers
-# correctly for the payloads we actually ingest today.
+# Unit tests against fixture dicts, never the network. The exceptions read
+# the real SLF sentinels and the per-region slice off disk: a synthetic
+# "many regions" fixture proves only that the arithmetic works, whereas the
+# sentinels prove the classifier answers correctly for the payloads SLF
+# actually publishes — A/B/C from the 2025/26 aggregated export, D/E and the
+# slice from the 2026/27 per-region sample (SNOW-998).
+
+_SLF_SENTINELS = Path(__file__).resolve().parents[2] / "sentinels" / "slf"
+_SLICE = _SLF_SENTINELS / "per-region-slice.ndjson"
+_AGGREGATED_SENTINELS = (
+    "A-single-level",
+    "B-subdivision-plus",
+    "C-split-day-multi-problem",
+)
+_PER_REGION_SENTINELS = (
+    "D-per-region-single-problem",
+    "E-per-region-two-problems",
+)
+
+
+def _slf_sentinel_sources(names: tuple[str, ...]) -> list[Path]:
+    """
+    Return the named SLF sentinels' ``source.json`` paths.
+
+    Asserts the committed set is exactly the five known sentinels, so a new
+    one has to be sorted into a kind here rather than passing unclassified.
+
+    Args:
+        names: The sentinel directory names wanted.
+
+    Returns:
+        One ``source.json`` path per name, in the order given.
+
+    """
+    committed = {path.parent.name for path in _SLF_SENTINELS.glob("*/source.json")}
+    assert committed == {*_AGGREGATED_SENTINELS, *_PER_REGION_SENTINELS}
+    return [_SLF_SENTINELS / name / "source.json" for name in names]
 
 
 def _per_region_bulletin(
@@ -288,16 +320,16 @@ class TestDetectCaamlShape:
         assert detected.shape == CAAML_SHAPE_AGGREGATED
         assert detected.max_regions_per_bulletin == 2
 
-    def test_the_committed_sentinels_are_aggregated(self) -> None:
-        """The real payloads we ingest today classify as aggregated.
+    def test_the_aggregated_sentinels_are_aggregated(self) -> None:
+        """The 2025/26 payloads A, B and C classify as aggregated.
 
-        The three SLF sentinels carry 93, 65 and 13 regions, so each one
-        on its own is enough — which is the margin the page-size
-        threshold below is calibrated against.
+        The three carry 93, 65 and 13 regions, so each one on its own is
+        enough — which is the margin the page-size threshold below is
+        calibrated against. They stay under test permanently: the
+        aggregated history is never re-ingested, and a legacy page can
+        still arrive through ``SLF_API_LEGACY_URL``.
         """
-        sentinel_dir = Path(__file__).resolve().parents[2] / "sentinels" / "slf"
-        sources = sorted(sentinel_dir.glob("*/source.json"))
-        assert len(sources) == 3, "expected three committed SLF sentinels"
+        sources = _slf_sentinel_sources(_AGGREGATED_SENTINELS)
 
         for source in sources:
             bulletin = json.loads(source.read_text())
@@ -305,6 +337,41 @@ class TestDetectCaamlShape:
 
             assert detected.shape == CAAML_SHAPE_AGGREGATED, source.parent.name
             assert detected.max_regions_per_bulletin > 1
+
+    def test_the_per_region_sentinels_are_per_region(self) -> None:
+        """The 2026/27 payloads D and E classify as per-region (SNOW-998).
+
+        Each is a single bulletin, which is below the page-size threshold,
+        so it is the ``customData.CH.weather`` marker that settles it —
+        the classification a short first page of the new export gets.
+        """
+        sources = _slf_sentinel_sources(_PER_REGION_SENTINELS)
+
+        for source in sources:
+            bulletin = json.loads(source.read_text())
+            detected = detect_caaml_shape([bulletin])
+
+            assert detected.shape == CAAML_SHAPE_PER_REGION, source.parent.name
+            assert detected.max_regions_per_bulletin == 1
+            assert "customData.CH.weather" in detected.markers
+
+    def test_the_slice_is_per_region_on_page_size_alone(self) -> None:
+        """Twelve real single-region bulletins are per-region with no marker.
+
+        The weather block is stripped, so only the count is left to go on:
+        the real payload clears ``_PER_REGION_MIN_BULLETINS`` by itself,
+        and would still be recognised the day SLF drop the marker field.
+        """
+        page = [json.loads(line) for line in _SLICE.read_text().splitlines()]
+        for bulletin in page:
+            del bulletin["customData"]["CH"]["weather"]
+
+        detected = detect_caaml_shape(page)
+
+        assert detected.shape == CAAML_SHAPE_PER_REGION
+        assert detected.markers == ()
+        assert detected.bulletin_count == detected.region_count == 12
+        assert detected.max_regions_per_bulletin == 1
 
     def test_a_full_de_aggregated_page_is_per_region(self) -> None:
         """A page of single-region bulletins is the new export.
