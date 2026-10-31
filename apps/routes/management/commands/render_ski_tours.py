@@ -64,6 +64,9 @@ from apps.routes.services.ski_network import FAILED, OUTCOMES, apply_from_servic
 
 logger = logging.getLogger(__name__)
 
+# Tours fetched per round trip in the main loop.
+_ROW_CHUNK = 50
+
 # Seconds between walked tours: politeness towards the tile origin.
 _DEFAULT_DELAY_S = 1.0
 
@@ -160,6 +163,9 @@ class Command(RegisteredCommand):
             candidates,
             verbosity=verbosity,
             describe=_describe,
+            # A row carries its whole SAC document and line; the default
+            # 2,000-row fetch held too many at once on a small instance.
+            chunk_size=_ROW_CHUNK,
         ):
             outcome = self._render_one(row, summits, grid, counts, commit=commit)
             processed += 1

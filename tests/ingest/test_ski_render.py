@@ -201,3 +201,37 @@ def test_the_summits_are_read_in_one_query(
     SourceSkiTourFactory.create_batch(3)
     with django_assert_num_queries(1):
         assert tour_summits()
+
+
+def test_the_candidates_agree_with_needs_render_in_every_state() -> None:
+    """tours_to_render decides in the database what needs_render decides per row.
+
+    The candidate pass reads only the drawing's version, so a stored drawing
+    is never loaded (production ran out of memory loading them all); this
+    holds it to the per-row rule across a fresh, a stale-drawing, an unwalked
+    and a settled no-terrain tour.
+    """
+    fresh = SourceSkiTourFactory.create()
+    stale = SourceSkiTourFactory.create()
+    for row in (fresh, stale):
+        with patch(_BUILDER, return_value=dict(RECORD)):
+            _render(row)
+    SourceSkiTour.objects.filter(pk=stale.pk).update(track_render={"v": 0})
+    unwalked = SourceSkiTourFactory.create()
+    settled = SourceSkiTourFactory.create()
+    point = [10.05, 46.85]
+    SourceSkiTour.objects.filter(pk=settled.pk).update(
+        document={
+            **settled.document,
+            "geometry": {"type": "LineString", "coordinates": [point, point]},
+        }
+    )
+    settled.refresh_from_db()
+    with patch(_BUILDER):
+        _render(settled)
+
+    rows = list(SourceSkiTour.objects.all())
+    expected = {row.pk for row in rows if needs_render(row, GRID)}
+    assert expected == {stale.pk, unwalked.pk}
+    assert set(tours_to_render(GRID).values_list("pk", flat=True)) == expected
+    assert fresh.pk not in expected
