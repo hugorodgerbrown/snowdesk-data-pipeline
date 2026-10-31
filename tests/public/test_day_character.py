@@ -250,6 +250,7 @@ class TestDayCharacterInPanelContext:
             return {"type": "Feature", "geometry": None, "properties": properties}
 
         bulletin = BulletinFactory.create(
+            built=True,
             raw_data=_wrap(
                 {
                     "dangerRatings": [{"mainValue": "considerable"}],

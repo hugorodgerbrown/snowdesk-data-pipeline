@@ -28,8 +28,14 @@ previous day) and a morning update (valid from ~07:00 on the day itself).
 The CAAML raw data does not contain the AI-generated summary fields
 described in docs/site-structure.md (overallVerdict, activity ratings,
 structured weather, etc.). Where possible, equivalent values are derived
-from the raw CAAML data; sections with no available data are omitted from
-the template context so the template hides them gracefully.
+from the bulletin's stored render model; sections with no available data are
+omitted from the template context so the template hides them gracefully.
+
+A read path never reads ``Bulletin.raw_data`` and never rebuilds a render
+model (SNOW-1342; docs/decisions/read-paths-never-read-raw-data.md): the
+only raw readers here are the superuser / DEBUG raw embed in
+``_render_bulletin_page``, which fetches the payload explicitly, and
+``examples_category``'s filter (until SNOW-1341).
 """
 
 from __future__ import annotations
@@ -108,9 +114,7 @@ from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     DayCharacter,
     PeriodTransition,
-    RenderModelBuildError,
     band_label_for_elevation,
-    build_render_model,
     compute_day_character,
     compute_period_transition,
     derive_problem_family,
@@ -125,7 +129,6 @@ from apps.core.decorators import require_htmx
 from apps.core.http import client_ip, is_speculative
 from apps.core.services.request_log import capture as capture_request_log
 from apps.core.sw_shell import inject_cache_version, served_cache_version
-from apps.core.utils import html_to_markdown
 from apps.favourites.models import Favourite
 from apps.locations.models import Location, ResortLocation
 from apps.observations.models import FieldObservation
@@ -266,22 +269,6 @@ BULLETIN_SOURCE_LINKS: dict[str, tuple[str, str]] = {
 }
 
 
-def _get_properties(bulletin: Bulletin) -> dict[str, Any]:
-    """
-    Extract the CAAML properties dict from a bulletin's GeoJSON envelope.
-
-    Args:
-        bulletin: A Bulletin instance.
-
-    Returns:
-        The properties dict, or empty dict if absent.
-
-    """
-    if bulletin.raw_data:
-        return cast("dict[str, Any]", bulletin.raw_data.get("properties", {}))
-    return {}
-
-
 def _plain_text(html: str | None) -> str:
     """
     Strip HTML tags and collapse whitespace to produce readable plain text.
@@ -298,170 +285,6 @@ def _plain_text(html: str | None) -> str:
     text = strip_tags(html)
     # Collapse runs of whitespace into single spaces.
     return " ".join(text.split())
-
-
-def _extract_danger(props: dict[str, Any]) -> dict[str, str | None]:
-    """
-    Derive danger level, verdict, and colour from CAAML dangerRatings.
-
-    Uses the highest danger rating present in the bulletin.
-
-    Args:
-        props: The CAAML properties dict.
-
-    Returns:
-        Dict with keys: danger_level, overall_verdict, verdict_colour.
-
-    """
-    ratings = props.get("dangerRatings", [])
-    if not ratings:
-        return {"danger_level": None, "overall_verdict": None, "verdict_colour": None}
-
-    # Find the highest danger level across all rating entries.
-    level_order = ["low", "moderate", "considerable", "high", "very_high"]
-    highest = "low"
-    for r in ratings:
-        value = r.get("mainValue", "low")
-        if value in level_order and level_order.index(value) > level_order.index(
-            highest
-        ):
-            highest = value
-
-    info = _DANGER_MAP.get(highest, _DANGER_MAP["low"])
-    return {
-        "danger_level": f"Level {info['number']} \u2014 {info['label']}",
-        "overall_verdict": info["verdict"],
-        "verdict_colour": info["colour"],
-    }
-
-
-def _extract_hazards(props: dict[str, Any]) -> list[dict[str, str]]:
-    """
-    Build a list of key-hazard dicts from CAAML avalanche problems.
-
-    Each dict contains the raw ``problem_type`` (for icon lookup) and a
-    human-readable ``description``.
-
-    Args:
-        props: The CAAML properties dict.
-
-    Returns:
-        List of dicts with ``problem_type`` and ``description`` keys.
-
-    """
-    problems = props.get("avalancheProblems", [])
-    hazards: list[dict[str, str]] = []
-    for p in problems:
-        raw_type = p.get("problemType", "unknown")
-        label = raw_type.replace("_", " ").capitalize()
-        level = p.get("dangerRatingValue", "")
-        elevation = p.get("elevation", {})
-        lower = elevation.get("lowerBound") if elevation else None
-        upper = elevation.get("upperBound") if elevation else None
-
-        parts = [label]
-        if level:
-            parts.append(f"({level.replace('_', ' ')})")
-        if lower:
-            parts.append(f"above {lower}m")
-        elif upper:
-            parts.append(f"below {upper}m")
-
-        comment = _plain_text(p.get("comment"))
-        if comment:
-            parts.append(f"\u2014 {comment}")
-
-        hazards.append(
-            {
-                "problem_type": raw_type,
-                "description": " ".join(parts),
-            }
-        )
-    return hazards
-
-
-def _extract_summary(props: dict[str, Any]) -> str:
-    """
-    Extract a summary paragraph from the snowpack-structure comment.
-
-    Falls back to the weather-review comment if snowpack is absent.
-
-    Args:
-        props: The CAAML properties dict.
-
-    Returns:
-        Plain-text summary, or empty string.
-
-    """
-    snowpack = props.get("snowpackStructure", {})
-    text = _plain_text(snowpack.get("comment") if snowpack else None)
-    if text:
-        return text
-
-    review = props.get("weatherReview", {})
-    return _plain_text(review.get("comment") if review else None)
-
-
-def _extract_outlook(props: dict[str, Any]) -> str:
-    """
-    Extract an outlook paragraph from the tendency comments.
-
-    Args:
-        props: The CAAML properties dict.
-
-    Returns:
-        Plain-text outlook, or empty string.
-
-    """
-    tendency = props.get("tendency", [])
-    if not tendency:
-        return ""
-    comments = [
-        _plain_text(t.get("comment"))
-        for t in tendency
-        if isinstance(t, dict) and t.get("comment")
-    ]
-    return " ".join(comments)
-
-
-def _extract_weather_review(props: dict[str, Any]) -> str:
-    """
-    Extract the weather review section as Markdown.
-
-    The CAAML ``weatherReview`` contains an HTML comment summarising
-    observed conditions (fresh snow, temperature, wind, etc.).
-
-    Args:
-        props: The CAAML properties dict.
-
-    Returns:
-        Markdown-formatted weather review, or empty string.
-
-    """
-    review = props.get("weatherReview", {})
-    if not review:
-        return ""
-    return html_to_markdown(review.get("comment") or "")
-
-
-def _extract_weather_forecast(props: dict[str, Any]) -> str:
-    """
-    Extract the weather forecast section as Markdown.
-
-    The CAAML ``weatherForecast`` contains an HTML comment describing
-    expected conditions for the next period.
-
-    Args:
-        props: The CAAML properties dict.
-
-    Returns:
-        Markdown-formatted weather forecast, or empty string.
-
-    """
-    forecast = props.get("weatherForecast", {})
-    if not forecast:
-        return ""
-    return html_to_markdown(forecast.get("comment") or "")
 
 
 def _render_bulletin_page(
@@ -497,11 +320,18 @@ def _render_bulletin_page(
 
     """
     if bulletin is not None and (settings.DEBUG or request.user.is_superuser):
-        # Escape ``</`` so a stray ``</script>`` substring in the CAAML
-        # payload cannot terminate the embedding ``<script>`` tag.  JSON
-        # decodes ``\/`` to ``/`` so round-tripping with JSON.parse is
+        # The read path defers ``raw_data`` (SNOW-1342), so the embed loads
+        # it by an explicit fetch of its own — only here, only for this
+        # audience. Escape ``</`` so a stray ``</script>`` substring in the
+        # CAAML payload cannot terminate the embedding ``<script>`` tag.
+        # JSON decodes ``\/`` to ``/`` so round-tripping with JSON.parse is
         # unaffected.
-        raw = json.dumps(bulletin.raw_data, ensure_ascii=False).replace("</", "<\\/")
+        raw_data = (
+            Bulletin.objects.filter(pk=bulletin.pk)
+            .values_list("raw_data", flat=True)
+            .first()
+        )
+        raw = json.dumps(raw_data, ensure_ascii=False).replace("</", "<\\/")
         context = {**context, "raw_data_json": raw}
     response = render(request, "public/bulletin.html", context)
     if bulletin is not None:
@@ -3260,74 +3090,17 @@ _SUBDIVISION_LABELS: dict[str, Promise] = {
 }
 
 
-def _parse_danger_rating(rating: dict[str, Any]) -> tuple[str, str, str]:
-    """Return ``(period, main_value, subdivision)`` for a CAAML dangerRating dict.
-
-    This function reads the raw CAAML shape (with ``customData.CH.subdivision``).
-    It is kept for use by ``_danger_rank`` and ``_max_rating_per_period`` which
-    are used by the ``build_problem_cards`` path. New code should use
-    ``_rm_danger_rank`` and ``_max_rm_rating_per_period`` which operate on the
-    projected ``danger.ratings`` entries.
-    """
-    period = rating.get("validTimePeriod") or "all_day"
-    level = rating.get("mainValue") or ""
-    raw_sub = (rating.get("customData") or {}).get("CH", {}).get("subdivision", "")
-    return period, level, raw_sub
-
-
-def _danger_rank(level: str, sub: str) -> tuple[int, int]:
-    """Return a sortable rank for a danger level + raw-token subdivision pair.
-
-    Band index from ``_DANGER_ORDER`` is the primary key; the raw ``customData.CH``
-    subdivision token maps to an integer offset (minus → -1, neutral/absent → 0,
-    plus → +1). Tuple comparison gives the correct total ordering:
-    ``(2, -1) < (2, 0) < (2, 1) < (3, -1)``.
-
-    For projected subdivision display chars (``+``/``-``/``=``), use
-    :func:`_rm_danger_rank` instead.
-    """
-    band = _DANGER_ORDER.index(level)
-    offset = {"minus": -1, "neutral": 0, "plus": 1}.get(sub, 0)
-    return (band, offset)
-
-
 def _rm_danger_rank(level: str, sub: str) -> tuple[int, int]:
     """Return a sortable rank for a danger level + projected subdivision display char.
 
-    Mirrors :func:`_danger_rank` but accepts projected subdivision display chars
-    (``"+"``, ``"-"``, ``"="``, or ``""``) from ``danger.ratings[*].subdivision``.
+    Band index from ``_DANGER_ORDER`` is the primary key; the projected
+    subdivision display char (``"+"``, ``"-"``, ``"="``, or ``""``) from
+    ``danger.ratings[*].subdivision`` maps to an offset, so tuple comparison
+    orders ``(2, -1) < (2, 0) < (2, 1) < (3, -1)``.
     """
     band = _DANGER_ORDER.index(level) if level in _DANGER_ORDER else 0
     offset = {"+": 1, "=": 0, "-": -1}.get(sub, 0)
     return (band, offset)
-
-
-def _max_rating_per_period(
-    ratings: list[dict[str, Any]],
-) -> dict[str, dict[str, Any]]:
-    """Group ``dangerRatings`` by ``validTimePeriod``, keeping the highest-rank.
-
-    For each period, picks the rating with the highest (band, subdivision)
-    rank — so elevation-split ratings within a single period are collapsed
-    to the more dangerous of the two. Ratings with an unknown ``mainValue``
-    are skipped.
-
-    Operates on raw CAAML ``dangerRatings`` dicts. See
-    :func:`_max_rm_rating_per_period` for the projected variant.
-    """
-    by_period: dict[str, dict[str, Any]] = {}
-    for r in ratings:
-        period, level, sub = _parse_danger_rating(r)
-        if level not in _DANGER_ORDER:
-            continue
-        incumbent = by_period.get(period)
-        if incumbent is None:
-            by_period[period] = r
-            continue
-        _, inc_level, inc_sub = _parse_danger_rating(incumbent)
-        if _danger_rank(level, sub) > _danger_rank(inc_level, inc_sub):
-            by_period[period] = r
-    return by_period
 
 
 def _group_rm_ratings_by_period(
@@ -3567,53 +3340,6 @@ def _day_windows_from_rm_ratings(
     return fallback_rows
 
 
-def _day_windows_from_raw_ratings(bulletin: Bulletin) -> list[dict[str, Any]]:
-    """
-    Build day-window rows from raw CAAML dangerRatings.
-
-    Fallback used for bulletins that predate the ``danger.ratings``
-    projection (v4 and earlier). Applies the same SLF / ALBINA logic as
-    ``_day_windows_from_rm_ratings`` but reads directly from the raw
-    ``dangerRatings`` CAAML properties.
-    """
-    props = _get_properties(bulletin)
-    raw_ratings: list[dict[str, Any]] = props.get("dangerRatings") or []
-    by_period_raw = _max_rating_per_period(raw_ratings)
-
-    def _day_window_row(rating: dict[str, Any]) -> dict[str, Any]:
-        """Build one day-window row dict from a CAAML dangerRating."""
-        period, level, sub = _parse_danger_rating(rating)
-        suffix = _SUBDIVISION_SUFFIX.get(sub, "")
-        number = _DANGER_PANEL_META[level]["number"]
-        return {
-            "type": period,
-            "level_key": level,
-            "level_css": level.replace("_", "-"),
-            "level_label": _DANGER_PANEL_META[level]["label"],
-            "level_number": f"{number}{suffix}",
-            "subdivision_label": _SUBDIVISION_LABELS.get(suffix, ""),
-            "caption": "",
-            "pill_label": _DAY_WINDOW_PILL_LABELS.get(period, period),
-        }
-
-    all_day_rating = by_period_raw.get("all_day")
-    if all_day_rating is not None:
-        windows = [_day_window_row(all_day_rating)]
-        later_rating = by_period_raw.get("later")
-        # Always include the later period when present — flat-but-split days
-        # (same level AM/PM but different problem mix) deserve two rows just
-        # as escalating days do.  The old strictly-greater gate is dropped.
-        if later_rating is not None:
-            windows.append(_day_window_row(later_rating))
-        return windows
-
-    # ALBINA-style: one row per period, ordered earlier → later.
-    period_order = ("earlier", "later")
-    return [
-        _day_window_row(by_period_raw[p]) for p in period_order if p in by_period_raw
-    ]
-
-
 def _build_day_windows(
     bulletin: Bulletin,
     render_model: dict[str, Any] | None = None,
@@ -3621,10 +3347,8 @@ def _build_day_windows(
     """
     Return the list[Window] consumed by the day-windows panel partial.
 
-    Reads from the projected ``danger.ratings`` list in the render model when
-    available. Falls back to reading raw ``dangerRatings`` from CAAML properties
-    when the render model is absent or carries no ``danger.ratings`` (e.g. for
-    v4 bulletins that predate this projection).
+    Reads the projected ``danger.ratings`` list in the render model — never
+    the raw CAAML ``dangerRatings`` (SNOW-1342).
 
     SLF editorial style: always one ``all_day`` rating, optionally a
     ``later`` overlay when the problem mix changes. Emits one row for the
@@ -3644,21 +3368,17 @@ def _build_day_windows(
 
     Args:
         bulletin: The Bulletin to build windows for.
-        render_model: The render model dict (enriched or raw). When supplied,
-            the projected ``danger.ratings`` list is used in preference to
-            raw CAAML properties.
+        render_model: The render model dict (enriched or raw), whose
+            ``danger.ratings`` list the rows are built from.
 
     """
     rm_ratings: list[dict[str, Any]] = []
     if render_model:
         rm_ratings = (render_model.get("danger") or {}).get("ratings") or []
 
-    if rm_ratings:
-        return _day_windows_from_rm_ratings(rm_ratings)
-
-    # Fallback: read raw dangerRatings from CAAML properties.
-    # Used for bulletins that predate the danger.ratings projection (v4 and earlier).
-    return _day_windows_from_raw_ratings(bulletin)
+    # Every model at the current version carries danger.ratings; a stale
+    # row reads as the error sentinel and has none (SNOW-1342).
+    return _day_windows_from_rm_ratings(rm_ratings) if rm_ratings else []
 
 
 def _day_risk_profile_adds_to_cards(
@@ -3845,10 +3565,7 @@ def _build_og_description(panel: dict[str, Any] | None) -> str:
     return truncated.rstrip(".,;:")
 
 
-def _build_article_times(
-    bulletin: Bulletin,
-    panel: dict[str, Any],
-) -> tuple[str, str]:
+def _build_article_times(bulletin: Bulletin) -> tuple[str, str]:
     """
     Return the ``(published, modified)`` ISO-8601 timestamps for a bulletin.
 
@@ -3860,10 +3577,11 @@ def _build_article_times(
     one fact a reader most needs to trust — a bulletin's value is almost
     entirely a function of how recent it is.
 
-    Published time comes from the render model's ``publication_time``,
-    falling back to ``bulletin.valid_from`` so the field is always
-    present. Modified time is the row's own ``updated_at``, so a re-issued
-    bulletin reads as fresher than an untouched one.
+    Published time is the row's own ``issued_at`` — the provider's
+    ``publicationTime``, stored at ingest, so it is present on every row
+    and needs neither the render model nor the CAAML (SNOW-1342).
+    Modified time is the row's own ``updated_at``, so a re-issued bulletin
+    reads as fresher than an untouched one.
 
     Both source values are timezone-aware (project invariant), so
     ``isoformat()`` already yields the offset-bearing form OG and
@@ -3871,19 +3589,12 @@ def _build_article_times(
 
     Args:
         bulletin: The ``Bulletin`` being rendered.
-        panel: The panel context dict built by :func:`_build_panel_context`.
 
     Returns:
         A ``(date_published, date_modified)`` pair of ISO-8601 strings.
 
     """
-    render_model_meta: dict[str, Any] = (panel.get("render_model") or {}).get(
-        "metadata"
-    ) or {}
-    date_published: str = (
-        render_model_meta.get("publication_time") or bulletin.valid_from.isoformat()
-    )
-    return date_published, bulletin.updated_at.isoformat()
+    return bulletin.issued_at.isoformat(), bulletin.updated_at.isoformat()
 
 
 def _build_structured_data(
@@ -3922,9 +3633,9 @@ def _build_structured_data(
         ``{{ structured_data_json|safe }}`` in a template.
 
     """
-    # Source organisation details (SLF / ALBINA / METEOFRANCE).
-    source_key = (panel.get("render_model") or {}).get("source", "")
-    source_name, source_url = BULLETIN_SOURCE_LINKS.get(source_key, ("", ""))
+    # Source organisation details (SLF / ALBINA / METEOFRANCE), from the
+    # row's own ``source`` column — its values are BULLETIN_SOURCE_LINKS' keys.
+    source_name, source_url = BULLETIN_SOURCE_LINKS.get(bulletin.source, ("", ""))
 
     # Major-region name for spatialCoverage.containedInPlace.
     major = region.subregion.major if region.subregion else None
@@ -3938,7 +3649,7 @@ def _build_structured_data(
 
     # Shared with the article:* OG properties on the page — see
     # _build_article_times for why the derivation is not repeated here.
-    date_published, date_modified = _build_article_times(bulletin, panel)
+    date_published, date_modified = _build_article_times(bulletin)
 
     # ISO-8601 interval for temporalCoverage.
     temporal_coverage = (
@@ -4323,12 +4034,10 @@ def build_bulletin_body(
     )
 
     # Derive the source label and URL for the metadata strip Source cell
-    # (SNOW-211). Read from the panel's render model — not selected.render_model
-    # — so v3 bulletins benefit from _build_panel_context's on-the-fly rebuild
-    # to v4 (which is the version that introduced the ``source`` key).
-    source_key = (panel.get("render_model") or {}).get("source", "")
+    # (SNOW-211) from the row's own ``source`` column, so it reads the same
+    # whether or not the render model is current (SNOW-1342).
     bulletin_source_label, bulletin_source_url = BULLETIN_SOURCE_LINKS.get(
-        source_key, ("", "")
+        selected.source, ("", "")
     )
 
     # Period transition — rise/fall/flat-but-split (SNOW-248), read by the
@@ -4598,9 +4307,7 @@ def _bulletin_detail_response(
 
     # SNOW-555: one derivation feeding both the JSON-LD Report below and the
     # article:* OG properties on the page.
-    article_published_time, article_modified_time = _build_article_times(
-        selected, panel
-    )
+    article_published_time, article_modified_time = _build_article_times(selected)
 
     context = {
         # The body (SNOW-1164): everything public/partials/_region_body.html
@@ -6139,12 +5846,6 @@ _DANGER_RATING_INT: dict[str, int] = {
     "high": 4,
     "very_high": 5,
 }
-# Map CAAML ``customData.CH.subdivision`` strings to display suffixes.
-_SUBDIVISION_SUFFIX: dict[str, str] = {
-    "minus": "-",
-    "neutral": "=",
-    "plus": "+",
-}
 
 
 # Mirrors WhiteRisk's split: a dangerRating whose validTimePeriod is
@@ -6426,215 +6127,6 @@ def _problem_summary(
             "elevation": elevation.display,
         }
     return gettext("Affects all aspects and elevations")
-
-
-def _enrich_avalanche_problem(
-    problem: dict[str, Any],
-    cluster: list[dict[str, Any]],
-    idx: int,
-) -> dict[str, Any]:
-    """
-    Build a presentation-ready dict from a raw CAAML avalancheProblems entry.
-
-    Args:
-        problem: One entry from the CAAML ``avalancheProblems`` array.
-        cluster: All problems in the same (kind, danger_level) group.
-        idx: Index of this problem within ``cluster``.
-
-    Returns:
-        Dict with ``problem_type``, ``time_period``, ``aspects``,
-        ``elevation``, ``comment_html``, ``label``, ``time_period_label``,
-        and ``hide_comment`` keys.
-
-    """
-    problem_type: str = problem.get("problemType") or ""
-    time_period: str = problem.get("validTimePeriod") or ""
-    aspects: list[str] = _sort_aspects_clockwise(problem.get("aspects") or [])
-    comment_html: str = problem.get("comment") or ""
-    raw_elevation: dict[str, Any] | None = problem.get("elevation") or None
-    elevation = _format_elevation(raw_elevation) if raw_elevation else None
-    core_zone_text: str = ((problem.get("customData") or {}).get("CH") or {}).get(
-        "coreZoneText"
-    ) or ""
-
-    label = _PROBLEM_LABELS.get(
-        problem_type, problem_type.replace("_", " ").capitalize()
-    )
-    time_period_label = _TIME_PERIOD_LABELS.get(time_period, "")
-
-    hide_comment = False
-    if comment_html and len(cluster) > 1:
-        plain = _plain_text(comment_html)
-        later_plains = [_plain_text(p.get("comment") or "") for p in cluster[idx + 1 :]]
-        if plain in later_plains:
-            hide_comment = True
-
-    return {
-        "problem_type": problem_type,
-        "time_period": time_period,
-        "aspects": aspects,
-        "elevation": elevation,
-        "comment_html": comment_html,
-        "label": label,
-        "time_period_label": time_period_label,
-        "hide_comment": hide_comment,
-        "core_zone_text": core_zone_text,
-    }
-
-
-def _problem_card(raw_p: dict[str, Any], category: str) -> dict[str, Any]:
-    """Build a flat presentation card dict from one raw CAAML avalancheProblem."""
-    drv = raw_p.get("dangerRatingValue") or ""
-    danger_level = _DANGER_RATING_INT.get(drv, 1)
-    danger_level_key = drv.replace("_", "-")
-    enriched = _enrich_avalanche_problem(raw_p, [raw_p], 0)
-    return {
-        "category": category,
-        "danger_level": danger_level,
-        "danger_level_key": danger_level_key,
-        **enriched,
-    }
-
-
-def _problem_cards_from_aggregation(
-    aggregation: list[dict[str, Any]],
-    problem_index: dict[str, dict[str, Any]],
-    danger_ratings: list[dict[str, Any]] | None = None,
-) -> list[dict[str, Any]]:
-    """Build one card per aggregation entry.
-
-    Collapses multiple problem types within an entry into a single card
-    with a combined label (e.g. "Wet snow + Gliding snow").
-
-    Per the bulletin guide, multiple problems within one aggregation entry
-    always share identical spatial constraints. The only difference is the
-    problem type title, so labels are joined with " + ".
-
-    Data-backed assumptions (drawn from analysis of 2,159 SLF bulletins —
-    see docs/bulletin-guide.md):
-    - Every aggregation entry carries a ``category`` field.
-    - Every aggregation entry carries a non-empty ``problemTypes`` list.
-    - Every ``problemType`` token in aggregation resolves to a raw problem.
-
-    Raises:
-        ValueError: If any of the above invariants are violated, indicating
-            an unexpected change in the SLF schema.
-
-    Args:
-        aggregation: The ``customData.CH.aggregation`` list.
-        problem_index: ``{problemType: raw_problem}`` built from
-            ``avalancheProblems``.
-        danger_ratings: Projected ``danger.ratings`` list from the render
-            model. Used to look up the per-period subdivision suffix for each
-            card (SNOW-291). ``None`` and ``[]`` produce empty subdivisions.
-
-    Returns:
-        Flat list of card dicts in aggregation order, one per entry.
-
-    """
-    resolved_ratings: list[dict[str, Any]] = danger_ratings or []
-    cards: list[dict[str, Any]] = []
-    for i, agg_entry in enumerate(aggregation):
-        category: str | None = agg_entry.get("category")
-        if not category:
-            raise ValueError(
-                f"aggregation entry {i} is missing 'category': {agg_entry!r}"
-            )
-        problem_types: list[str] = agg_entry.get("problemTypes") or []
-        if not problem_types:
-            raise ValueError(
-                f"aggregation entry {i} has empty 'problemTypes': {agg_entry!r}"
-            )
-        for pt in problem_types:
-            if pt not in problem_index:
-                raise ValueError(
-                    f"aggregation entry {i} references problem type {pt!r} "
-                    f"which is not in avalancheProblems"
-                )
-
-        # Use the first problem for spatial data (all share the same constraints).
-        card = _problem_card(problem_index[problem_types[0]], category)
-
-        if len(problem_types) > 1:
-            labels = [
-                str(_PROBLEM_LABELS.get(pt, pt.replace("_", " ").capitalize()))
-                for pt in problem_types
-            ]
-            card["label"] = " + ".join(labels)
-            # Use the max danger level across all problems in this entry.
-            danger_levels = [
-                _DANGER_RATING_INT.get(
-                    problem_index[pt].get("dangerRatingValue") or "", 1
-                )
-                for pt in problem_types
-            ]
-            max_level = max(danger_levels)
-            card["danger_level"] = max_level
-            card["danger_level_key"] = _DANGER_ORDER[max_level - 1].replace("_", "-")
-
-        # SNOW-291: add panel_title, time_period, subdivision, and level_number
-        # to match the shape emitted by _problem_cards_from_render_model_traits.
-        agg_time_period: str = agg_entry.get("validTimePeriod") or "all_day"
-        agg_panel_title: str = agg_entry.get("title") or ""
-        card["panel_title"] = agg_panel_title
-        card["time_period"] = agg_time_period
-        card["title_time_suffix"] = _title_time_suffix(agg_panel_title, agg_time_period)
-        agg_subdivision: str = _subdivision_for_period(
-            agg_time_period,
-            resolved_ratings,
-            _DANGER_ORDER[max(int(card["danger_level"]), 1) - 1],
-        )
-        card["subdivision"] = agg_subdivision
-        card["subdivision_label"] = _SUBDIVISION_LABELS.get(agg_subdivision, "")
-        card["level_number"] = (
-            f"{card['danger_level']}{agg_subdivision}" if agg_subdivision else ""
-        )
-
-        cards.append(card)
-    return cards
-
-
-def build_problem_cards(
-    raw_problems: list[dict[str, Any]],
-    aggregation: list[dict[str, Any]],
-    danger_ratings: list[dict[str, Any]] | None = None,
-) -> list[dict[str, Any]]:
-    """
-    Build one flat presentation card per aggregation entry, in aggregation order.
-
-    Both ``raw_problems`` and ``aggregation`` are expected to be present
-    whenever the bulletin carries avalanche problems. Missing either returns
-    an empty list; callers (``_resolve_problem_cards``) fall back to the
-    render-model traits in that case. Schema violations (missing category,
-    empty problemTypes, unresolved problem type) are caught and logged.
-
-    Args:
-        raw_problems: The CAAML ``avalancheProblems`` array.
-        aggregation: The ``customData.CH.aggregation`` array.
-        danger_ratings: Projected ``danger.ratings`` list from the render
-            model. Forwarded to ``_problem_cards_from_aggregation`` for
-            per-period subdivision lookup (SNOW-291).
-
-    Returns:
-        List of flat card dicts in aggregation order, or empty list on error.
-
-    """
-    if not raw_problems:
-        # Empty avalancheProblems is normal on quiet days and for any
-        # bulletin whose risk is described purely in prose. Callers fall
-        # back to the render-model traits when this returns [].
-        return []
-    if not aggregation:
-        # ALBINA bulletins never carry customData.CH.aggregation — that's
-        # source-specific to SLF. Callers (_resolve_problem_cards) fall back
-        # to the render-model traits in that case.
-        return []
-    index = {p["problemType"]: p for p in raw_problems if p.get("problemType")}
-    try:
-        return _problem_cards_from_aggregation(aggregation, index, danger_ratings)
-    except ValueError:
-        logger.exception("build_problem_cards: unexpected aggregation schema")
-        return []
 
 
 def _resolve_problem_cards(
@@ -7148,11 +6640,11 @@ def _problem_cards_from_render_model_traits(
     """
     Build one problem card per render-model trait.
 
-    Used as a fallback for ALBINA bulletins which carry no
-    ``customData.CH.aggregation``, so ``build_problem_cards`` returns [].
-    The traits list comes from the **enriched** render model (already processed
-    by ``enrich_render_model``), so elevation and label fields are already in
-    the presentation-ready shape the ``_rating_block.html`` partial expects.
+    Every source's problem cards come from here (SNOW-1342 removed the
+    raw-CAAML aggregation path). The traits list comes from the **enriched**
+    render model (already processed by ``enrich_render_model``), so
+    elevation and label fields are already in the presentation-ready shape
+    the ``_rating_block.html`` partial expects.
 
     One card is emitted per trait using the first problem in each trait for
     spatial data (aspects / elevation) — ALBINA aggregation entries always
@@ -7335,51 +6827,48 @@ def enrich_render_model(
     return {**render_model, "traits": enriched_traits}
 
 
-def _get_render_model(
-    bulletin: Bulletin,
-    props: dict[str, Any],
-) -> dict[str, Any]:
+def _get_render_model(bulletin: Bulletin) -> dict[str, Any]:
     """
-    Return the render model for a bulletin, rebuilding on the fly if stale.
+    Return a bulletin's stored render model, or an error sentinel if stale.
 
-    When ``bulletin.render_model_version`` is older than
-    ``RENDER_MODEL_VERSION`` the render model is rebuilt from ``props``.
-    On ``RenderModelBuildError`` an error sentinel dict is returned so the
-    view can render an error card without crashing. The stored DB row is
-    never modified here.
+    **A request never rebuilds a render model** (SNOW-1342). A row whose
+    ``render_model_version`` is older than ``RENDER_MODEL_VERSION`` is not
+    rebuilt from ``raw_data`` here — that would load every bulletin's CAAML
+    on every read path and hide a missed rebuild behind a per-request
+    cost. A version bump ships with ``Deploy-Step: rebuild_render_models
+    --commit`` instead (docs/render-model.md), and a row the rebuild has
+    not reached reads as the same ``{"version": 0, "error": …}`` sentinel
+    a failed build stores, so the page renders its error card. A stored
+    failure keeps its own message; a stale row says which versions differ.
 
     Args:
         bulletin: The Bulletin whose render model is needed.
-        props: The CAAML properties dict (from ``bulletin.raw_data``).
 
     Returns:
-        A render model dict (may have version=0 on build failure).
+        The stored render model dict, or a version-0 error sentinel.
 
     """
     if bulletin.render_model_version >= RENDER_MODEL_VERSION:
         return cast("dict[str, Any]", bulletin.render_model)
 
     logger.warning(
-        "Bulletin %s has stale render_model (stored version=%d, current=%d);"
-        " building on the fly",
+        "Bulletin %s has a stale render_model (stored version=%d, current=%d);"
+        " run rebuild_render_models --commit",
         bulletin.bulletin_id,
         bulletin.render_model_version,
         RENDER_MODEL_VERSION,
     )
-    try:
-        return build_render_model(props)
-    except RenderModelBuildError as exc:
-        logger.exception(
-            "Bulletin %s render model rebuild failed during view render: %s",
-            bulletin.bulletin_id,
-            exc,
-        )
-        # Return error sentinel for this render only — do NOT write to DB.
-        return {
-            "version": 0,
-            "error": str(exc),
-            "error_type": exc.__class__.__name__,
-        }
+    stored: dict[str, Any] = bulletin.render_model or {}
+    return {
+        "version": 0,
+        "error": stored.get("error")
+        or (
+            f"Render model is stale (stored version "
+            f"{bulletin.render_model_version}, current {RENDER_MODEL_VERSION}); "
+            "run rebuild_render_models --commit."
+        ),
+        "error_type": stored.get("error_type") or "StaleRenderModel",
+    }
 
 
 def problem_cards_for_bulletin(bulletin: Bulletin) -> list[dict[str, Any]]:
@@ -7399,8 +6888,7 @@ def problem_cards_for_bulletin(bulletin: Bulletin) -> list[dict[str, Any]]:
         Flat list of card dicts ready for ``public/_rating_block.html``.
 
     """
-    props = _get_properties(bulletin)
-    raw_rm = _get_render_model(bulletin, props)
+    raw_rm = _get_render_model(bulletin)
     render_model = enrich_render_model(raw_rm)
     traits = render_model.get("traits") or []
     rm_danger = raw_rm.get("danger") or {}
@@ -7409,14 +6897,41 @@ def problem_cards_for_bulletin(bulletin: Bulletin) -> list[dict[str, Any]]:
     )
 
 
+def _key_message(render_model: dict[str, Any]) -> str:
+    """
+    Return the one-paragraph key message a share card quotes, as plain text.
+
+    The first problem comment across the traits, else the snowpack
+    structure, else the weather review — read from the render model
+    rather than the CAAML (SNOW-1342), in the order the fallback always
+    took.
+
+    Args:
+        render_model: The stored (unenriched) render model.
+
+    Returns:
+        Plain text with whitespace collapsed, or ``""``.
+
+    """
+    for trait in render_model.get("traits") or []:
+        for problem in trait.get("problems") or []:
+            comment = _plain_text(problem.get("comment_html"))
+            if comment:
+                return comment
+    prose: dict[str, Any] = render_model.get("prose") or {}
+    return _plain_text(prose.get("snowpack_structure")) or _plain_text(
+        prose.get("weather_review")
+    )
+
+
 def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     """
     Build the template context for a single compact bulletin panel.
 
-    Reads ``bulletin.render_model`` directly. If ``render_model_version`` is
-    older than ``RENDER_MODEL_VERSION`` the render model is rebuilt on the fly
-    and a warning is logged so operators know which rows need the
-    ``rebuild_render_models`` command run against them.
+    Reads ``bulletin.render_model`` and the row's own columns only — never
+    ``raw_data`` (SNOW-1342). A row whose ``render_model_version`` is older
+    than ``RENDER_MODEL_VERSION`` reads as the error sentinel
+    :func:`_get_render_model` returns; it is not rebuilt per request.
 
     Each visible field is paired with a ``*_source`` key describing the
     CAAML JSON path (or Bulletin field) the value was derived from, so the
@@ -7432,12 +6947,8 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         A dict consumed by ``public/_bulletin_panel.html``.
 
     """
-    props = _get_properties(bulletin)
-
-    # Retrieve or build the render model. Bulletins ingested before this
-    # feature was deployed will have render_model_version == 0; build on
-    # the fly so the page renders correctly while a backfill job catches up.
-    raw_render_model = _get_render_model(bulletin, props)
+    # The stored render model, or the error sentinel for a stale row.
+    raw_render_model = _get_render_model(bulletin)
 
     # Enrich the render model with presentation-ready fields (labels,
     # ElevationBounds, field_guidance, hide_comment per trait).
@@ -7457,26 +6968,10 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         danger_key = "low"
     danger_meta = _DANGER_PANEL_META[danger_key]
 
-    # Fallback key-message: used by the template when the bulletin has no
-    # avalanche problems. Try avalancheProblems[0].comment first, then
-    # snowpackStructure.comment, then weatherReview.comment.
-    key_message = ""
-    key_message_source = ""
-    ap = props.get("avalancheProblems") or []
-    if ap:
-        key_message = ap[0].get("comment") or ""
-        if key_message:
-            key_message_source = "avalancheProblems[0].comment"
-    if not key_message:
-        key_message = (props.get("snowpackStructure") or {}).get("comment") or ""
-        if key_message:
-            key_message_source = "snowpackStructure.comment"
-    if not key_message:
-        key_message = (props.get("weatherReview") or {}).get("comment") or ""
-        if key_message:
-            key_message_source = "weatherReview.comment"
-
-    snowpack_structure = (props.get("snowpackStructure") or {}).get("comment") or ""
+    # The key message feeds only the OG / meta description
+    # (_build_og_description): the first problem's comment, else the
+    # snowpack structure, else the weather review — as plain text.
+    key_message = _key_message(raw_render_model)
 
     traits: list[dict[str, Any]] = render_model.get("traits") or []
 
@@ -7529,8 +7024,6 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         "danger_icon": danger_meta["icon"],
         "danger_source": "render_model.danger.key (highest)",
         "key_message": key_message,
-        "key_message_source": key_message_source,
-        "snowpack_structure": snowpack_structure,
         "footer_date_from": bulletin.valid_from,
         "footer_date_to": bulletin.valid_to,
         "footer_next_update": bulletin.next_update,

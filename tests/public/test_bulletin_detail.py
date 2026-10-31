@@ -667,42 +667,14 @@ class TestBulletinDetailView:
 
         assert response.status_code == 404
 
-    def test_stale_render_model_triggers_warning_and_rebuilds(
+    def test_stale_render_model_reads_as_the_error_sentinel(
         self, client: Client, region: MicroRegion, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """A bulletin at a lower render_model_version triggers a warning and rebuilds."""
-        # Create a bulletin whose stored render_model_version is 1.
-        am = _make_am_bulletin(region, date(2026, 3, 15), render_model_version=1)
-        url = reverse(
-            "public:bulletin_date",
-            kwargs={
-                "region_id": "ch-4115",
-                "slug": "valais",
-                "date_str": "2026-03-15",
-            },
-        )
+        """A stale row is not rebuilt per request: it renders the error card.
 
-        # Patch RENDER_MODEL_VERSION in the view module to 2 so version 1 appears stale.
-        with patch("apps.public.views.RENDER_MODEL_VERSION", 2):
-            with _freeze("2026-03-15T10:00:00+00:00"):
-                with caplog.at_level("WARNING", logger="apps.public.views"):
-                    response = client.get(url)
-
-        assert response.status_code == 200
-        assert response.context["bulletin"].pk == am.pk
-        assert any(
-            "stale render_model" in record.message
-            and "stored version=1" in record.message
-            and "current=2" in record.message
-            for record in caplog.records
-        )
-
-    def test_stale_render_model_rebuild_failure_returns_200_with_error_state(
-        self, client: Client, region: MicroRegion, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """When stale rebuild raises RenderModelBuildError, page returns 200 with error card."""
-        from apps.bulletins.services.render_model import RenderModelBuildError
-
+        SNOW-1342 — the builder is never called on a read path; the warning
+        names the versions so an operator knows to run the rebuild.
+        """
         am = _make_am_bulletin(region, date(2026, 3, 15), render_model_version=1)
         url = reverse(
             "public:bulletin_date",
@@ -715,25 +687,54 @@ class TestBulletinDetailView:
 
         with patch("apps.public.views.RENDER_MODEL_VERSION", 2):
             with patch(
-                "apps.public.views.build_render_model",
-                side_effect=RenderModelBuildError("validation failed"),
-            ):
+                "apps.ingest.normalise.render_model.build_render_model"
+            ) as builder:
                 with _freeze("2026-03-15T10:00:00+00:00"):
-                    with caplog.at_level("ERROR", logger="apps.public.views"):
+                    with caplog.at_level("WARNING", logger="apps.public.views"):
                         response = client.get(url)
 
+        builder.assert_not_called()
         assert response.status_code == 200
         assert response.context["bulletin"].pk == am.pk
-        # The panel render model should have version=0 (error state).
         panel = response.context.get("panel")
         assert panel is not None
         assert panel["render_model"]["version"] == 0
-        # An ERROR log entry should have been emitted.
+        assert panel["render_model"]["error_type"] == "StaleRenderModel"
         assert any(
-            "render model rebuild failed" in record.message.lower()
+            "stale render_model" in record.message
+            and "stored version=1" in record.message
+            and "current=2" in record.message
             for record in caplog.records
-            if record.levelname == "ERROR"
         )
+
+    def test_stored_build_failure_keeps_its_own_error(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A stored version-0 failure surfaces its own message, not a stale one."""
+        am = _make_am_bulletin(region, date(2026, 3, 15))
+        am.render_model = {
+            "version": 0,
+            "error": "validation failed",
+            "error_type": "RenderModelBuildError",
+        }
+        am.render_model_version = 0
+        am.save()
+        url = reverse(
+            "public:bulletin_date",
+            kwargs={
+                "region_id": "ch-4115",
+                "slug": "valais",
+                "date_str": "2026-03-15",
+            },
+        )
+
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            response = client.get(url)
+
+        assert response.status_code == 200
+        rm = response.context["panel"]["render_model"]
+        assert rm["error"] == "validation failed"
+        assert rm["error_type"] == "RenderModelBuildError"
 
 
 # ── Issue discovery and selection ────────────────────────────────────────────
@@ -742,6 +743,15 @@ class TestBulletinDetailView:
 @pytest.mark.django_db
 class TestIssuesForDate:
     """All three SLF-style issues covering a calendar day are returned."""
+
+    def test_defers_raw_data(self, region: MicroRegion) -> None:
+        """issues_for_date never loads the CAAML payload (SNOW-1342)."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+
+        issues = _issues_for_date(region, date(2026, 3, 15))
+
+        assert issues
+        assert all("raw_data" in b.get_deferred_fields() for b in issues)
 
     def test_returns_the_issues_that_forecast_the_day(
         self, region: MicroRegion

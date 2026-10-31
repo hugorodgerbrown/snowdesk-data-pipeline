@@ -2401,8 +2401,9 @@ SITE_FOOTER_VARIANTS: tuple[dict[str, Any], ...] = (
 # ── Rating block (SNOW-201) ─────────────────────────────────────────────────
 # Seven cards: one per EAWS problem type at a representative danger level,
 # plus a prose-only card exercising the no-core-zone branch.
-# Shapes match the dict produced by ``build_problem_cards`` / the render
-# model traits — keys consumed by ``_rating_block.html``.
+# Shapes match the dict built from the render model traits
+# (``_problem_cards_from_render_model_traits``) — keys consumed by
+# ``_rating_block.html``.
 
 
 def _make_rating_card(
