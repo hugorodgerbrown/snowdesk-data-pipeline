@@ -819,3 +819,25 @@ class TestIssueFromTheDayRating:
         response = _get(client, _url(region.region_id.lower()))
         assert response.status_code == 200
         assert response.context["bulletin"].pk == failed.pk
+
+
+@pytest.mark.django_db
+def test_a_failed_morning_update_shows_as_the_page_shows_it(client: Client) -> None:
+    """Codex on #1361: the rating names the evening, the page the morning.
+
+    A failed build is never rated, so the day keeps the evening issue as
+    its source; the page picks the newer morning update and shows its error
+    card, and the sheet must show the same issue.
+    """
+    from tests.public.test_problem_terrain import (  # noqa: PLC0415
+        _evening_and_failed_morning,
+    )
+
+    region = MicroRegionFactory.create()
+    day = timezone.localdate()
+    _, morning = _evening_and_failed_morning(day, region)
+    page = client.get(region.get_absolute_url(day))
+    sheet = _get(client, _url(region.region_id.lower()))
+    assert page.context["bulletin"].pk == morning.pk
+    assert sheet.status_code == 200
+    assert sheet.context["bulletin"].pk == morning.pk

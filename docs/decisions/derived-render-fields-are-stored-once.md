@@ -34,10 +34,15 @@ read it through `derived_of` / `state_of` / `period_transition_of`
   `valid_from`, `target_date`, `region_codes` — and `upsert_bulletin` uses
   them as sent, reading the CAAML only when an item lacks them. Additive,
   so the feed version did not move.
-- The problem-terrain feed and the region sheet take the day's issue from
-  `RegionDayRating.source_bulletin` (`select_related`), the issue that
-  rated the day, instead of re-running the selection rule over the day's
-  `RegionBulletin` links.
+- The problem-terrain feed and the region sheet show the page's pick —
+  the latest issue forecasting the day — and take its render model from
+  `RegionDayRating.source_bulletin` (`select_related`) whenever that is
+  the pick. It is not always: `recompute_region_day` rates only a built
+  model, so when a newer issue failed to build the rating still names the
+  older one while the page shows the newer one's error card (Codex on
+  #1361). Each reader therefore checks for a newer issue — the sheet with
+  one query, the feed with one light query over the day's links — and
+  uses the page's pick when there is one.
 
 ## Why
 
@@ -63,11 +68,11 @@ model takes its derived values with it.
   rebuild has not reached (the alerts run reads `Bulletin.render_model`
   without a version check). The result is what the readers computed
   before, so output does not depend on which path a row took.
-- A region whose only issue that day failed to build has no
-  `source_bulletin`, so the problem-terrain feed leaves it out rather than
-  listing it with no rules; the region sheet falls back to the page's
-  selection rule in that case only, to keep showing the failed issue's
-  error card.
+- `RegionDayRating.source_bulletin` equals the page's pick only when the
+  latest issue built. A reader that needs the page's issue cannot take the
+  rating's on trust; it pays the newer-issue check. A failed pick reads
+  as the version-0 sentinel, so the feed lists its region with no rules
+  and the sheet shows its error card, as the page does.
 - `examples_category` no longer reads `raw_data`, and leaves the raw
   readers listed in
   [read-paths-never-read-raw-data](read-paths-never-read-raw-data.md).
