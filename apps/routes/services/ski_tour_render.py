@@ -11,8 +11,9 @@ task on the background runner (``db_worker`` in production; inline under
       Re-read the tour and skip it if it no longer needs work (a duplicate
       enqueue, or a run that already did it), walk and draw it with its own
       summit only (``tour_summit``), copy it onto this host's ``SkiTour``
-      (``apply_source_tour``), then pause ``delay_s`` after a real walk, the
-      politeness towards the tile origin the old loop's sleep gave.
+      (``apply_source_tour``) in the same transaction, then pause
+      ``delay_s`` after a real walk, the politeness towards the tile origin
+      the old loop's sleep gave.
 
 The tasks are enqueued at low priority so alert emails and pushes on the
 same ``default`` queue are never stuck behind two thousand tours.
@@ -23,6 +24,7 @@ from __future__ import annotations
 import logging
 import time
 
+from django.db import transaction
 from django_tasks import task
 
 from apps.ingest.public import (
@@ -93,15 +95,20 @@ def render_one_tour(source_pk: int, delay_s: float = 0.0) -> RenderOutcome | Non
     grid = _grid()
     if not needs_render(row, grid):
         return None
-    outcome = render_source_tour(row, tour_summit(row), grid, commit=True)
-    if outcome == RenderOutcome.UNAVAILABLE:
-        logger.warning(
-            "ski tour render: tile origin did not answer for pk=%s; "
-            "left for the next run",
-            source_pk,
-        )
-        return outcome
-    apply_source_tour(source_pk)
+    # The service's write and this host's copy commit together: a render
+    # whose copy failed, or a worker stopped between the two, rolls back and
+    # leaves the tour a candidate, rather than marking it done with the map
+    # still stale (nothing else would ever re-apply it).
+    with transaction.atomic():
+        outcome = render_source_tour(row, tour_summit(row), grid, commit=True)
+        if outcome == RenderOutcome.UNAVAILABLE:
+            logger.warning(
+                "ski tour render: tile origin did not answer for pk=%s; "
+                "left for the next run",
+                source_pk,
+            )
+            return outcome
+        apply_source_tour(source_pk)
     walked = outcome == RenderOutcome.RENDERED
     if walked and delay_s:
         time.sleep(delay_s)

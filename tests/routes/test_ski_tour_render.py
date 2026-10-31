@@ -115,6 +115,25 @@ def test_an_unanswered_tour_stores_and_applies_nothing() -> None:
     assert not SkiTour.objects.exists()
 
 
+def test_a_failed_copy_rolls_the_render_back() -> None:
+    """Render and copy commit together, so the tour stays a candidate."""
+    source = SourceSkiTourFactory.create()
+    with (
+        patch(_GRID, return_value=_grid()),
+        patch(_BUILDER, return_value=dict(RECORD)),
+        patch(
+            "apps.routes.services.ski_tour_render.apply_source_tour",
+            side_effect=RuntimeError("boom"),
+        ),
+        pytest.raises(RuntimeError),
+    ):
+        render_one_tour(source.pk)
+    source.refresh_from_db()
+    assert source.track_render is None
+    assert source.render_input_fp in ("", None)
+    assert not SkiTour.objects.exists()
+
+
 def test_no_grid_fails_the_task() -> None:
     """Nothing can be walked without the terrain model."""
     source = SourceSkiTourFactory.create()
