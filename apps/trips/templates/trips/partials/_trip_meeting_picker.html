@@ -65,7 +65,9 @@ Context:
 {# The wrapper holds the map and the pin side by side: MapLibre owns its   #}
 {# container's children, so the pin is a sibling laid over it rather than  #}
 {# a child it might reorder.                                               #}
-<div class="relative">
+{# SNOW-1334: map-surface-light keeps the map's own controls and the pin  #}
+{# light in dark mode, like every other map surface; the form stays dark. #}
+<div class="map-surface-light relative">
     <div
         id="trip-meeting-picker"
         data-trip-meeting-picker

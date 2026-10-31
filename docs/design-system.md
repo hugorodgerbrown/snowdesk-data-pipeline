@@ -2,7 +2,7 @@
 name: design-system
 description: Design handover — editorial and interaction principles, icon vs ellipsis rule, design tokens, the component layer, field guidance
 status: current
-last-reviewed: 2026-10-21
+last-reviewed: 2026-10-31
 ---
 
 
@@ -75,6 +75,8 @@ Applied when `.dark` is present on `<html>`. EAWS danger colours intentionally d
 | `--color-text-2` | `#6b6860` | `#a8a49c` |
 | `--color-text-3` | `#6e6b65` | `#9a968e` |
 | `--color-border` | `rgba(0,0,0,0.09)` | `rgba(255,255,255,0.09)` |
+
+**The map surface stays light in both themes (SNOW-1334).** Every basemap the map draws is light, so the things that float over it (search, sheets, menus, roundels, cards, toasts, the date row and the scrubber) stay light in dark mode too. Dark mode covers the site nav and footer and every page off the map. A map surface's root carries `.map-surface-light`: the map page's content wrapper, the trip map and the meeting picker. Under `.dark` it restates every token above at its light value. A new map surface takes the class. Nothing inside one needs a dark variant, and `static/css/map.css` holds no `.dark` rules. Why: [`decisions/the-map-surface-stays-light.md`](decisions/the-map-surface-stays-light.md).
 
 ### Colour — interactive accent
 

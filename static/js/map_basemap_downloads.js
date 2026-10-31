@@ -192,7 +192,7 @@ const DOWNLOAD_PROGRESS_COLOUR_FALLBACK = '#16a34a';
 // roundel rules use (src/css/main.css, static/css/map.css) — kept in step
 // with that fallback deliberately, since the failure mode (a stale
 // output.css build with the token undefined) is identical here:
-//   1. --color-basemap-<key, underscores to dashes> off the document root
+//   1. --color-basemap-<key, underscores to dashes> off the map surface (.map-surface-light, else the document root)
 //      — the exact token those CSS rules read, so every surface (roundel,
 //      sheet swatch, progress grid, downloaded-areas overlay) agrees.
 //   2. --color-sync-ok — no key (unresolved picker), an unrecognised key,
@@ -202,7 +202,9 @@ const DOWNLOAD_PROGRESS_COLOUR_FALLBACK = '#16a34a';
 // @param {string | null} key
 // @returns {string} A CSS colour value, never empty.
 function basemapIdentityColour(key) {
-  const root = getComputedStyle(document.documentElement);
+  // SNOW-1334: off the map surface, where these colours are drawn — its
+  // tokens are the light ones in both themes.
+  const root = getComputedStyle(document.querySelector('.map-surface-light') || document.documentElement);
   if (key) {
     const value = root.getPropertyValue(`--color-basemap-${key.replace(/_/g, '-')}`).trim();
     if (value) return value;

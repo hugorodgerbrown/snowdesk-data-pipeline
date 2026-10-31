@@ -92,224 +92,233 @@ in addition to the shared map assets.
 {% endblock %}
 
 {% block content %}
-    {# SNOW-324/486: off-map notification. Hidden by default; map.js reveals it #}
-    {# when the locate pill is tapped while the user is outside the map's       #}
-    {# bounds, and a 7s timeout auto-dismisses. Rendered through the shared     #}
-    {# floating-banner primitive (top-centre card, dismissible) and wired to    #}
-    {# overlays.js via data-overlay — the same shape and × as every other       #}
-    {# floating nudge, on all viewports.                                        #}
-    {% trans "Off the map" as offmap_title %}
-    {% trans "Your location is outside the mapped regions." as offmap_body %}
-    {% include "includes/_overlay_banner.html" with variant="floating" id="offmap-banner" position="top" icon="location-off" title=offmap_title title_id="offmap-banner-title" body=offmap_body aria_live="polite" dismissible=True %}
-    {# SNOW-682: locate-failed notification. Same primitive, same top-centre  #}
-    {# slot and the same JS owner as the off-map banner above — and mutually  #}
-    {# exclusive with it, since both are answers to the same tap. Revealed by #}
-    {# map_geolocate.js when no fix arrives within its five-second budget     #}
-    {# (offline on a phone, the common case is a cold GPS lock that never     #}
-    {# lands), and auto-dismissed after 12s. The CTA re-runs the locate: it   #}
-    {# is the retry the user would otherwise get by hunting for the roundel   #}
-    {# again, which is exactly what a banner sitting over the map is in the   #}
-    {# way of.                                                                #}
-    {% trans "Can't find your location" as locate_failed_title %}
-    {% trans "Your device didn't give us a position. Move somewhere with a clearer view of the sky, then try again." as locate_failed_body %}
-    {% trans "Try again" as locate_failed_cta %}
-    {% include "includes/_overlay_banner.html" with variant="floating" id="locate-failed-banner" position="top" icon="location-off" title=locate_failed_title title_id="locate-failed-banner-title" body=locate_failed_body cta_id="locate-retry" cta_label=locate_failed_cta aria_live="polite" dismissible=True %}
-    {# SNOW-828: the trip-arrival banner. Revealed by map.js when the page   #}
-    {# is opened on ?trip= or ?trip_share= and the route has been drawn —    #}
-    {# it names WHICH trip the line belongs to (the title is written at      #}
-    {# runtime from the geojson's own properties, which is what body_id and  #}
-    {# title_id are the hooks for) and offers the way back to the page the   #}
-    {# reader came from. Without it the arrival is an unexplained magenta    #}
-    {# line, since the trip is drawn transiently and appears in no panel.    #}
-    {# Bottom-centre rather than top: the two banners above are answers to a #}
-    {# locate tap and this is not, so they are not mutually exclusive and    #}
-    {# must not share a slot.                                               #}
-    {% trans "Showing this trip's route." as trip_arrival_body %}
-    {% trans "Back to the trip" as trip_arrival_cta %}
-    {% include "includes/_overlay_banner.html" with variant="floating" id="trip-arrival-banner" title=" " title_id="trip-arrival-banner-title" body=trip_arrival_body body_id="trip-arrival-banner-body" cta_id="trip-arrival-back" cta_label=trip_arrival_cta aria_live="polite" dismissible=True %}
-    {# SNOW-1117: show_tour_offer renders the hidden #map-tour-offer card, #}
-    {# and map_help_autostart=False stops the tour starting by itself: on  #}
-    {# this page it opens from the offer's "Start the tour" or the "?"     #}
-    {# roundel, never over a map the visitor has not seen yet.            #}
-    {% include "public/partials/_map_embed.html" with show_tour_offer=True map_help_autostart=False %}
-    {# SNOW-344: edit-resorts panel (moved from map.html).               #}
-    {% if edit_target == "resorts" %}{% include "public/partials/edit_resorts_panel.html" %}{% endif %}
-    {# SNOW-755: edit-locations panel — the same surface for the curated Location estate. #}
-    {% if edit_target == "locations" %}{% include "public/partials/edit_locations_panel.html" %}{% endif %}
-    {# htmx.min.js is shared by both sheet surfaces below (field-report   #}
-    {# and favourites) — loaded once here, ahead of both surface partials. #}
-    <script defer src="{% static 'js/htmx.min.js' %}"></script>
-    {# SNOW-475: place_picker.js is likewise shared by both sheet surfaces #}
-    {# — loaded once here, ahead of both surface partials. Each partial     #}
-    {# carried its own tag until the 2026-08-03 JS review (C5): browsers    #}
-    {# do not deduplicate script elements by URL, so the IIFE ran twice and #}
-    {# the second window.PlacePicker overwrote the first, orphaning its     #}
-    {# closure. Document order here puts it before report.js and            #}
-    {# favourites.js, which is what both of them require.                   #}
-    <script defer src="{% static 'js/place_picker.js' %}"></script>
-    {# SNOW-608: the sheet controller, failure toast and mutation-storage  #}
-    {# guard both surfaces below share. Loaded here rather than from       #}
-    {# either partial — all three scripts are defer, so document order is  #}
-    {# execution order and window.MapSheet exists before either caller.    #}
-    {# SNOW-1097: the pure peek/half/full rules map_sheet.js binds to a     #}
-    {# drag. Before it, so window.pwaSheetDetentsCore exists when attach()  #}
-    {# and bindDetents() first run.                                         #}
-    <script defer src="{% static 'js/sheet_detents_core.js' %}"></script>
-    <script defer src="{% static 'js/map_sheet.js' %}"></script>
-    {# SNOW-879: the shared stale-while-revalidate cache for the three UGC   #}
-    {# panels' rows. Loaded HERE, ahead of every surface partial below, for  #}
-    {# the same reason as the three tags above: all four are defer, so       #}
-    {# document order is execution order, and favourites.js / report.js /    #}
-    {# routes.js each call window.pwaPanelRows.warm() at init. Each guards   #}
-    {# the call with `?.`, so a page that omits this tag degrades to the     #}
-    {# fetch-on-every-open behaviour rather than breaking.                   #}
-    <script defer src="{% static 'js/panel_rows_cache.js' %}"></script>
-    {# SNOW-658: only one overlay is open over the map at a time              #}
-    {# (window.pwaMapOverlays). Every map overlay — the layers menu, the      #}
-    {# three UGC sheets, the anchored detail popup, the legend card and the   #}
-    {# help coachmark — registers with it and announces its own open, and it  #}
-    {# closes the rest. It replaces the                                       #}
-    {# hand-wired pairs each surface used to carry, which covered three of    #}
-    {# the fifteen relationships between them. Loaded HERE, ahead of every    #}
-    {# registering module: map_sheet.js registers from attach(), and both     #}
-    {# surface partials below (and the map bundle further down) register at   #}
-    {# their own parse time, so this has to have run first.                   #}
-    <script defer src="{% static 'js/map_overlay_exclusivity.js' %}"></script>
-    {# SNOW-658: where a map overlay may reach — the floor above the season   #}
-    {# scrubber, the height cap below #map's top edge, and the inset past the #}
-    {# bottom-right roundel column (window.pwaOverlayBounds). Shared by the   #}
-    {# layers menu (map_basemap_picker.js, in the bundle below) and the three #}
-    {# UGC sheets. Loaded here, outside the bundle's contiguous run: every    #}
-    {# consumer calls it from a user-triggered handler, never at parse time,  #}
-    {# so it only has to be on the page.                                      #}
-    <script defer src="{% static 'js/map_overlay_bounds.js' %}"></script>
-    {# SNOW-658: renaming a UGC panel row in place — the interaction the    #}
-    {# two renameable panels (downloads, favourites) share, with each       #}
-    {# passing its own commit. Loaded here rather than from either surface  #}
-    {# for the same reason htmx/place_picker/map_sheet are: both callers    #}
-    {# are below, all these scripts are defer, so document order is         #}
-    {# execution order and window.pwaInlineRename exists before either.     #}
-    {#                                                                      #}
-    {# It replaced overflow_menu.js on this page for one day, when Hugo's   #}
-    {# SNOW-658 design took the "…" off every panel and nothing here opened #}
-    {# one. That ruling is gone — see the next block, and                   #}
-    {# docs/design-system.md's interaction principles — so both modules now #}
-    {# load, and this comment is kept only so the swap does not look        #}
-    {# unexplained in the history.                                          #}
-    {# SNOW-867: the "…" row menus. Loaded HERE, once, because several       #}
-    {# surfaces on this page carry one — the routes panel (SNOW-830), the    #}
-    {# downloads panel, and the favourites panel (SNOW-887) — under the      #}
-    {# rule that replaced SNOW-658's: two or more actions is a "…", one is a #}
-    {# bare icon. It used to load from _routes_surface.html as that panel's  #}
-    {# own dependency; a second tag there would run the module twice, since  #}
-    {# browsers do not deduplicate script elements by URL.                   #}
-    <script defer src="{% static 'js/overflow_menu.js' %}"></script>
-    {# SNOW-887: window.pwaShare. Loaded HERE for the same reason as the     #}
-    {# menu above — the routes panel had it as its own dependency until the  #}
-    {# favourites panel became a second consumer, and two tags would run the #}
-    {# module twice. Deferred scripts run in document order, so pwaShare     #}
-    {# exists before routes.js and favourites.js reach their own top level;  #}
-    {# static/js/map.js reads it from a click handler, long after all of     #}
-    {# them.                                                                 #}
-    <script defer src="{% static 'js/share.js' %}"></script>
-    <script defer src="{% static 'js/inline_rename.js' %}"></script>
-    {# SNOW-711: the server half of that rename — read the row's uuid off   #}
-    {# the pencil, POST the committed name, hand the response back. The     #}
-    {# favourites and routes panels here and the account page's own list    #}
-    {# all did that identically; each still decides what to do with the     #}
-    {# response, which is the only part that differs.                       #}
-    <script defer src="{% static 'js/row_rename_commit.js' %}"></script>
-    {# The other half of a UGC row's name: pressing it frames that item on   #}
-    {# the map. Loaded here for the same reason as the two above — the       #}
-    {# routes, favourites, field-observation and (SNOW-811) downloads        #}
-    {# surfaces below all delegate to window.pwaRowFocus, and deferred       #}
-    {# classic scripts run in document order. Not loaded on the account      #}
-    {# pages: their rows name the same places, but there is no map on those  #}
-    {# pages to fly, so those rows render no focus button at all.            #}
-    <script defer src="{% static 'js/row_focus.js' %}"></script>
-    {# SNOW-752: the third shared row module — recognise a row's own Remove #}
-    {# landing, so the surface that owns the list can re-read it and tell   #}
-    {# the map. Loaded here, ahead of the three panel modules below, for    #}
-    {# the same reason as the two above: each calls window.pwaRowRemoved    #}
-    {# .watch() as its IIFE runs, and deferred classic scripts run in       #}
-    {# document order. Unlike row_focus.js this one IS also loaded on the   #}
-    {# account pages — their rows carry the same trash, and a list there    #}
-    {# goes just as stale.                                                  #}
-    <script defer src="{% static 'js/row_removed.js' %}"></script>
-    {# Keeps every `<time data-relative-time>` on this page true for as     #}
-    {# long as the page is open — the field-observation rows' "reported 2   #}
-    {# hours ago". This is the map: it is opened at the car park and read   #}
-    {# again hours later, out of signal, with nothing re-rendering it.      #}
-    {# Loaded here rather than from _report_surface.html so it binds once   #}
-    {# and is available to any other surface that grows a relative age.     #}
-    <script defer src="{% static 'js/relative_time.js' %}"></script>
-    {# SNOW-672: the sign-in gate the three surfaces below all show. Loaded #}
-    {# here, ahead of them, for the same reason as relative_time.js — one   #}
-    {# owner for the treatment rather than a copy in each module.           #}
-    <script defer src="{% static 'js/signin_cta.js' %}"></script>
-    {# SNOW-749: the account half of offline downloads — pushes each        #}
-    {# completed download's DEFINITION to the account and reads back the    #}
-    {# areas already there. Loaded ahead of the map bundle so                #}
-    {# window.pwaDownloadsSync exists by the time map_basemap_downloads.js  #}
-    {# and map_region_download.js reach for it; both read it lazily, from   #}
-    {# inside async functions, so this is belt-and-braces rather than a     #}
-    {# load-order contract. Entirely inert for a signed-out visitor — it    #}
-    {# reads eligibility off #map-custom-download-control.                   #}
-    <script defer src="{% static 'js/downloads_sync.js' %}"></script>
-    {# The one toast instance MapSheet.toast() reveals — server-rendered   #}
-    {# and hidden, so the markup, tokens and ARIA roles have a single      #}
-    {# owner and the "×" is handled by overlays.js like every other toast. #}
-    {% include "includes/_toast.html" with id="map-sheet-toast" kind="warning" body="" %}
-    {# SNOW-333: field-report sheet + JS — shared with the map surface.  #}
-    {% include "public/partials/_report_surface.html" %}
-    {# SNOW-414: favourite-pin sheet + JS — shared with the map surface. #}
-    {% include "public/partials/_favourites_surface.html" %}
-    {# SNOW-686: saved-routes sheet + JS — shared with the map surface.     #}
-    {# Ungated since SNOW-724 retired the ``routes`` rollout flag; the      #}
-    {# sheet renders for every visitor, and routes.js branches on           #}
-    {# ``routes_eligible`` (authentication) for its sign-in CTA.            #}
-    {% include "public/partials/_routes_surface.html" %}
-    {# SNOW-1256: draw a route on the map — only while the route_drawing   #}
-    {# flag is on for this request. After the routes surface, whose panel  #}
-    {# holds the "Draw on the map" CTA that opens it.                      #}
-    {% if route_drawing_enabled %}
-        {% include "public/partials/_route_draw_surface.html" %}
-        {# SNOW-1278: "Find a route" — SAC's tours on the map, tapped.     #}
-        {% include "public/partials/_ski_tours_surface.html" %}
-    {% endif %}
-    {# SNOW-1239: the weather, place and region sheets pause while the     #}
-    {# timeline plays — no request per frame, one when it stops — and say  #}
-    {# so in this band. Before the three surfaces, whose scripts read it.  #}
-    <script defer src="{% static 'js/sheet_playback_core.js' %}"></script>
-    <template id="sheet-playback-band-template">
-        <div role="status" class="px-2 py-2">
-            {% trans "Playback in progress" as sheet_playback_band %}
-            {% include "includes/_eyebrow.html" with tag="p" text=sheet_playback_band %}
-        </div>
-    </template>
-    {# SNOW-761: weather detail sheet + JS. No roundel — the trigger is the  #}
-    {# condition symbol on the map itself, so this surface is inert until    #}
-    {# one is tapped.                                                        #}
-    {% include "public/partials/_weather_surface.html" %}
-    {# SNOW-1098: the region sheet a map tap opens on a phone. #}
-    {% include "public/partials/_region_sheet_surface.html" %}
-    {% include "public/partials/_place_sheet_surface.html" %}
-    {# The back pill between the three place panels (Hugo, 25 Oct 2026). #}
-    {% include "public/partials/_panel_trail_surface.html" %}
-    {# SNOW-1119: help mode — the "?" roundel names every control and guides #}
-    {# the sheets. After the sheets, which its guides describe.               #}
-    {% include "public/partials/_map_help_mode.html" %}
-    {# SNOW-588: "Manage downloads" sheet + JS — what this device has     #}
-    {# stored offline, what it costs, and a delete. SNOW-634: opened from #}
-    {# the map roundel (#map-custom-download-control) now, not the       #}
-    {# layers menu's old "Manage downloads…" row — that row is gone.     #}
-    {% include "public/partials/_map_downloads_sheet.html" %}
-    {# SNOW-978: the terrain filter's sheet — opened by the adjust button    #}
-    {# beside the layers menu's terrain filter row (SNOW-1109). Only for an  #}
-    {# eligible page.                                                         #}
-    {% if terrain_filter_eligible %}
-        {% include "public/partials/_map_terrain_filter_sheet.html" %}
-    {% endif %}
+    {# SNOW-1334: the map surface stays light in dark mode. Everything this   #}
+    {# page draws over the map sits inside this wrapper, which restates the   #}
+    {# light tokens under .dark (src/css/main.css 1c); the site nav and      #}
+    {# footer, rendered by base.html outside the block, stay dark.           #}
+    {# display: contents, so the wrapper adds no box: #map and every overlay #}
+    {# keep taking part in the body's flex column exactly as before, and     #}
+    {# custom properties still inherit through it.                           #}
+    <div class="map-surface-light contents">
+        {# SNOW-324/486: off-map notification. Hidden by default; map.js reveals it #}
+        {# when the locate pill is tapped while the user is outside the map's       #}
+        {# bounds, and a 7s timeout auto-dismisses. Rendered through the shared     #}
+        {# floating-banner primitive (top-centre card, dismissible) and wired to    #}
+        {# overlays.js via data-overlay — the same shape and × as every other       #}
+        {# floating nudge, on all viewports.                                        #}
+        {% trans "Off the map" as offmap_title %}
+        {% trans "Your location is outside the mapped regions." as offmap_body %}
+        {% include "includes/_overlay_banner.html" with variant="floating" id="offmap-banner" position="top" icon="location-off" title=offmap_title title_id="offmap-banner-title" body=offmap_body aria_live="polite" dismissible=True %}
+        {# SNOW-682: locate-failed notification. Same primitive, same top-centre  #}
+        {# slot and the same JS owner as the off-map banner above — and mutually  #}
+        {# exclusive with it, since both are answers to the same tap. Revealed by #}
+        {# map_geolocate.js when no fix arrives within its five-second budget     #}
+        {# (offline on a phone, the common case is a cold GPS lock that never     #}
+        {# lands), and auto-dismissed after 12s. The CTA re-runs the locate: it   #}
+        {# is the retry the user would otherwise get by hunting for the roundel   #}
+        {# again, which is exactly what a banner sitting over the map is in the   #}
+        {# way of.                                                                #}
+        {% trans "Can't find your location" as locate_failed_title %}
+        {% trans "Your device didn't give us a position. Move somewhere with a clearer view of the sky, then try again." as locate_failed_body %}
+        {% trans "Try again" as locate_failed_cta %}
+        {% include "includes/_overlay_banner.html" with variant="floating" id="locate-failed-banner" position="top" icon="location-off" title=locate_failed_title title_id="locate-failed-banner-title" body=locate_failed_body cta_id="locate-retry" cta_label=locate_failed_cta aria_live="polite" dismissible=True %}
+        {# SNOW-828: the trip-arrival banner. Revealed by map.js when the page   #}
+        {# is opened on ?trip= or ?trip_share= and the route has been drawn —    #}
+        {# it names WHICH trip the line belongs to (the title is written at      #}
+        {# runtime from the geojson's own properties, which is what body_id and  #}
+        {# title_id are the hooks for) and offers the way back to the page the   #}
+        {# reader came from. Without it the arrival is an unexplained magenta    #}
+        {# line, since the trip is drawn transiently and appears in no panel.    #}
+        {# Bottom-centre rather than top: the two banners above are answers to a #}
+        {# locate tap and this is not, so they are not mutually exclusive and    #}
+        {# must not share a slot.                                               #}
+        {% trans "Showing this trip's route." as trip_arrival_body %}
+        {% trans "Back to the trip" as trip_arrival_cta %}
+        {% include "includes/_overlay_banner.html" with variant="floating" id="trip-arrival-banner" title=" " title_id="trip-arrival-banner-title" body=trip_arrival_body body_id="trip-arrival-banner-body" cta_id="trip-arrival-back" cta_label=trip_arrival_cta aria_live="polite" dismissible=True %}
+        {# SNOW-1117: show_tour_offer renders the hidden #map-tour-offer card, #}
+        {# and map_help_autostart=False stops the tour starting by itself: on  #}
+        {# this page it opens from the offer's "Start the tour" or the "?"     #}
+        {# roundel, never over a map the visitor has not seen yet.            #}
+        {% include "public/partials/_map_embed.html" with show_tour_offer=True map_help_autostart=False %}
+        {# SNOW-344: edit-resorts panel (moved from map.html).               #}
+        {% if edit_target == "resorts" %}{% include "public/partials/edit_resorts_panel.html" %}{% endif %}
+        {# SNOW-755: edit-locations panel — the same surface for the curated Location estate. #}
+        {% if edit_target == "locations" %}{% include "public/partials/edit_locations_panel.html" %}{% endif %}
+        {# htmx.min.js is shared by both sheet surfaces below (field-report   #}
+        {# and favourites) — loaded once here, ahead of both surface partials. #}
+        <script defer src="{% static 'js/htmx.min.js' %}"></script>
+        {# SNOW-475: place_picker.js is likewise shared by both sheet surfaces #}
+        {# — loaded once here, ahead of both surface partials. Each partial     #}
+        {# carried its own tag until the 2026-08-03 JS review (C5): browsers    #}
+        {# do not deduplicate script elements by URL, so the IIFE ran twice and #}
+        {# the second window.PlacePicker overwrote the first, orphaning its     #}
+        {# closure. Document order here puts it before report.js and            #}
+        {# favourites.js, which is what both of them require.                   #}
+        <script defer src="{% static 'js/place_picker.js' %}"></script>
+        {# SNOW-608: the sheet controller, failure toast and mutation-storage  #}
+        {# guard both surfaces below share. Loaded here rather than from       #}
+        {# either partial — all three scripts are defer, so document order is  #}
+        {# execution order and window.MapSheet exists before either caller.    #}
+        {# SNOW-1097: the pure peek/half/full rules map_sheet.js binds to a     #}
+        {# drag. Before it, so window.pwaSheetDetentsCore exists when attach()  #}
+        {# and bindDetents() first run.                                         #}
+        <script defer src="{% static 'js/sheet_detents_core.js' %}"></script>
+        <script defer src="{% static 'js/map_sheet.js' %}"></script>
+        {# SNOW-879: the shared stale-while-revalidate cache for the three UGC   #}
+        {# panels' rows. Loaded HERE, ahead of every surface partial below, for  #}
+        {# the same reason as the three tags above: all four are defer, so       #}
+        {# document order is execution order, and favourites.js / report.js /    #}
+        {# routes.js each call window.pwaPanelRows.warm() at init. Each guards   #}
+        {# the call with `?.`, so a page that omits this tag degrades to the     #}
+        {# fetch-on-every-open behaviour rather than breaking.                   #}
+        <script defer src="{% static 'js/panel_rows_cache.js' %}"></script>
+        {# SNOW-658: only one overlay is open over the map at a time              #}
+        {# (window.pwaMapOverlays). Every map overlay — the layers menu, the      #}
+        {# three UGC sheets, the anchored detail popup, the legend card and the   #}
+        {# help coachmark — registers with it and announces its own open, and it  #}
+        {# closes the rest. It replaces the                                       #}
+        {# hand-wired pairs each surface used to carry, which covered three of    #}
+        {# the fifteen relationships between them. Loaded HERE, ahead of every    #}
+        {# registering module: map_sheet.js registers from attach(), and both     #}
+        {# surface partials below (and the map bundle further down) register at   #}
+        {# their own parse time, so this has to have run first.                   #}
+        <script defer src="{% static 'js/map_overlay_exclusivity.js' %}"></script>
+        {# SNOW-658: where a map overlay may reach — the floor above the season   #}
+        {# scrubber, the height cap below #map's top edge, and the inset past the #}
+        {# bottom-right roundel column (window.pwaOverlayBounds). Shared by the   #}
+        {# layers menu (map_basemap_picker.js, in the bundle below) and the three #}
+        {# UGC sheets. Loaded here, outside the bundle's contiguous run: every    #}
+        {# consumer calls it from a user-triggered handler, never at parse time,  #}
+        {# so it only has to be on the page.                                      #}
+        <script defer src="{% static 'js/map_overlay_bounds.js' %}"></script>
+        {# SNOW-658: renaming a UGC panel row in place — the interaction the    #}
+        {# two renameable panels (downloads, favourites) share, with each       #}
+        {# passing its own commit. Loaded here rather than from either surface  #}
+        {# for the same reason htmx/place_picker/map_sheet are: both callers    #}
+        {# are below, all these scripts are defer, so document order is         #}
+        {# execution order and window.pwaInlineRename exists before either.     #}
+        {#                                                                      #}
+        {# It replaced overflow_menu.js on this page for one day, when Hugo's   #}
+        {# SNOW-658 design took the "…" off every panel and nothing here opened #}
+        {# one. That ruling is gone — see the next block, and                   #}
+        {# docs/design-system.md's interaction principles — so both modules now #}
+        {# load, and this comment is kept only so the swap does not look        #}
+        {# unexplained in the history.                                          #}
+        {# SNOW-867: the "…" row menus. Loaded HERE, once, because several       #}
+        {# surfaces on this page carry one — the routes panel (SNOW-830), the    #}
+        {# downloads panel, and the favourites panel (SNOW-887) — under the      #}
+        {# rule that replaced SNOW-658's: two or more actions is a "…", one is a #}
+        {# bare icon. It used to load from _routes_surface.html as that panel's  #}
+        {# own dependency; a second tag there would run the module twice, since  #}
+        {# browsers do not deduplicate script elements by URL.                   #}
+        <script defer src="{% static 'js/overflow_menu.js' %}"></script>
+        {# SNOW-887: window.pwaShare. Loaded HERE for the same reason as the     #}
+        {# menu above — the routes panel had it as its own dependency until the  #}
+        {# favourites panel became a second consumer, and two tags would run the #}
+        {# module twice. Deferred scripts run in document order, so pwaShare     #}
+        {# exists before routes.js and favourites.js reach their own top level;  #}
+        {# static/js/map.js reads it from a click handler, long after all of     #}
+        {# them.                                                                 #}
+        <script defer src="{% static 'js/share.js' %}"></script>
+        <script defer src="{% static 'js/inline_rename.js' %}"></script>
+        {# SNOW-711: the server half of that rename — read the row's uuid off   #}
+        {# the pencil, POST the committed name, hand the response back. The     #}
+        {# favourites and routes panels here and the account page's own list    #}
+        {# all did that identically; each still decides what to do with the     #}
+        {# response, which is the only part that differs.                       #}
+        <script defer src="{% static 'js/row_rename_commit.js' %}"></script>
+        {# The other half of a UGC row's name: pressing it frames that item on   #}
+        {# the map. Loaded here for the same reason as the two above — the       #}
+        {# routes, favourites, field-observation and (SNOW-811) downloads        #}
+        {# surfaces below all delegate to window.pwaRowFocus, and deferred       #}
+        {# classic scripts run in document order. Not loaded on the account      #}
+        {# pages: their rows name the same places, but there is no map on those  #}
+        {# pages to fly, so those rows render no focus button at all.            #}
+        <script defer src="{% static 'js/row_focus.js' %}"></script>
+        {# SNOW-752: the third shared row module — recognise a row's own Remove #}
+        {# landing, so the surface that owns the list can re-read it and tell   #}
+        {# the map. Loaded here, ahead of the three panel modules below, for    #}
+        {# the same reason as the two above: each calls window.pwaRowRemoved    #}
+        {# .watch() as its IIFE runs, and deferred classic scripts run in       #}
+        {# document order. Unlike row_focus.js this one IS also loaded on the   #}
+        {# account pages — their rows carry the same trash, and a list there    #}
+        {# goes just as stale.                                                  #}
+        <script defer src="{% static 'js/row_removed.js' %}"></script>
+        {# Keeps every `<time data-relative-time>` on this page true for as     #}
+        {# long as the page is open — the field-observation rows' "reported 2   #}
+        {# hours ago". This is the map: it is opened at the car park and read   #}
+        {# again hours later, out of signal, with nothing re-rendering it.      #}
+        {# Loaded here rather than from _report_surface.html so it binds once   #}
+        {# and is available to any other surface that grows a relative age.     #}
+        <script defer src="{% static 'js/relative_time.js' %}"></script>
+        {# SNOW-672: the sign-in gate the three surfaces below all show. Loaded #}
+        {# here, ahead of them, for the same reason as relative_time.js — one   #}
+        {# owner for the treatment rather than a copy in each module.           #}
+        <script defer src="{% static 'js/signin_cta.js' %}"></script>
+        {# SNOW-749: the account half of offline downloads — pushes each        #}
+        {# completed download's DEFINITION to the account and reads back the    #}
+        {# areas already there. Loaded ahead of the map bundle so                #}
+        {# window.pwaDownloadsSync exists by the time map_basemap_downloads.js  #}
+        {# and map_region_download.js reach for it; both read it lazily, from   #}
+        {# inside async functions, so this is belt-and-braces rather than a     #}
+        {# load-order contract. Entirely inert for a signed-out visitor — it    #}
+        {# reads eligibility off #map-custom-download-control.                   #}
+        <script defer src="{% static 'js/downloads_sync.js' %}"></script>
+        {# The one toast instance MapSheet.toast() reveals — server-rendered   #}
+        {# and hidden, so the markup, tokens and ARIA roles have a single      #}
+        {# owner and the "×" is handled by overlays.js like every other toast. #}
+        {% include "includes/_toast.html" with id="map-sheet-toast" kind="warning" body="" %}
+        {# SNOW-333: field-report sheet + JS — shared with the map surface.  #}
+        {% include "public/partials/_report_surface.html" %}
+        {# SNOW-414: favourite-pin sheet + JS — shared with the map surface. #}
+        {% include "public/partials/_favourites_surface.html" %}
+        {# SNOW-686: saved-routes sheet + JS — shared with the map surface.     #}
+        {# Ungated since SNOW-724 retired the ``routes`` rollout flag; the      #}
+        {# sheet renders for every visitor, and routes.js branches on           #}
+        {# ``routes_eligible`` (authentication) for its sign-in CTA.            #}
+        {% include "public/partials/_routes_surface.html" %}
+        {# SNOW-1256: draw a route on the map — only while the route_drawing   #}
+        {# flag is on for this request. After the routes surface, whose panel  #}
+        {# holds the "Draw on the map" CTA that opens it.                      #}
+        {% if route_drawing_enabled %}
+            {% include "public/partials/_route_draw_surface.html" %}
+            {# SNOW-1278: "Find a route" — SAC's tours on the map, tapped.     #}
+            {% include "public/partials/_ski_tours_surface.html" %}
+        {% endif %}
+        {# SNOW-1239: the weather, place and region sheets pause while the     #}
+        {# timeline plays — no request per frame, one when it stops — and say  #}
+        {# so in this band. Before the three surfaces, whose scripts read it.  #}
+        <script defer src="{% static 'js/sheet_playback_core.js' %}"></script>
+        <template id="sheet-playback-band-template">
+            <div role="status" class="px-2 py-2">
+                {% trans "Playback in progress" as sheet_playback_band %}
+                {% include "includes/_eyebrow.html" with tag="p" text=sheet_playback_band %}
+            </div>
+        </template>
+        {# SNOW-761: weather detail sheet + JS. No roundel — the trigger is the  #}
+        {# condition symbol on the map itself, so this surface is inert until    #}
+        {# one is tapped.                                                        #}
+        {% include "public/partials/_weather_surface.html" %}
+        {# SNOW-1098: the region sheet a map tap opens on a phone. #}
+        {% include "public/partials/_region_sheet_surface.html" %}
+        {% include "public/partials/_place_sheet_surface.html" %}
+        {# The back pill between the three place panels (Hugo, 25 Oct 2026). #}
+        {% include "public/partials/_panel_trail_surface.html" %}
+        {# SNOW-1119: help mode — the "?" roundel names every control and guides #}
+        {# the sheets. After the sheets, which its guides describe.               #}
+        {% include "public/partials/_map_help_mode.html" %}
+        {# SNOW-588: "Manage downloads" sheet + JS — what this device has     #}
+        {# stored offline, what it costs, and a delete. SNOW-634: opened from #}
+        {# the map roundel (#map-custom-download-control) now, not the       #}
+        {# layers menu's old "Manage downloads…" row — that row is gone.     #}
+        {% include "public/partials/_map_downloads_sheet.html" %}
+        {# SNOW-978: the terrain filter's sheet — opened by the adjust button    #}
+        {# beside the layers menu's terrain filter row (SNOW-1109). Only for an  #}
+        {# eligible page.                                                         #}
+        {% if terrain_filter_eligible %}
+            {% include "public/partials/_map_terrain_filter_sheet.html" %}
+        {% endif %}
+    </div>
 {% endblock %}
 
 {% block extra_js %}

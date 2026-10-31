@@ -2704,3 +2704,131 @@ def test_the_controls_a_detent_sheet_hides_are_on_the_page() -> None:
             assert f'id="{target[1:]}"' in content
         else:
             assert target[1:] in content
+
+
+class _SurfaceAncestry(HTMLParser):
+    """Record, per element of interest, whether it sits inside the map surface.
+
+    SNOW-1334. The key is an element's ``id``, or its tag name for ``nav``
+    and ``footer``. The value is True when an open ancestor carries
+    ``map-surface-light``. Tolerant of HTML's implicit closes: an end tag
+    pops back to the nearest open element of the same name, so a ``<p>``
+    or ``<li>`` the page never closes cannot leave the stack too deep.
+    """
+
+    _VOID = frozenset(
+        {
+            "area",
+            "base",
+            "br",
+            "col",
+            "embed",
+            "hr",
+            "img",
+            "input",
+            "link",
+            "meta",
+            "source",
+            "track",
+            "wbr",
+        }
+    )
+
+    def __init__(self) -> None:
+        """Start with an empty stack and nothing recorded."""
+        super().__init__(convert_charrefs=True)
+        self._stack: list[tuple[str, bool]] = []
+        self.inside: dict[str, bool] = {}
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Note where this element sits, then open it."""
+        values = dict(attrs)
+        within = bool(self._stack) and self._stack[-1][1]
+        if values.get("id"):
+            self.inside.setdefault(str(values["id"]), within)
+        if tag in ("nav", "footer"):
+            self.inside.setdefault(tag, within)
+        if tag in self._VOID:
+            return
+        marks = "map-surface-light" in (values.get("class") or "").split()
+        self._stack.append((tag, within or marks))
+
+    def handle_endtag(self, tag: str) -> None:
+        """Close back to the nearest open element of this name."""
+        for depth in range(len(self._stack) - 1, -1, -1):
+            if self._stack[depth][0] == tag:
+                del self._stack[depth:]
+                return
+
+
+@pytest.mark.django_db
+def test_the_map_surface_stays_light_and_the_chrome_does_not() -> None:
+    """Everything the map page draws sits inside the light map surface.
+
+    SNOW-1334: in dark mode the map's search, sheets, menus, toasts, date
+    row and scrubber stay light, because every basemap is light. They
+    inherit that from one ``map-surface-light`` wrapper around the whole
+    content block. The site nav and footer, which base.html renders outside
+    that block, stay in the page's theme.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    parser = _SurfaceAncestry()
+    parser.feed(content)
+
+    for element_id in (
+        "map",
+        "search-input",
+        "search-results",
+        "basemap-menu",
+        "region-sheet",
+        "favourite-sheet",
+        "map-sheet-toast",
+        "map-calendar-toggle",
+    ):
+        assert parser.inside.get(element_id) is True, element_id
+    assert parser.inside.get("nav") is False
+    assert parser.inside.get("footer") is False
+
+
+def test_the_wrapper_adds_no_box() -> None:
+    """The map surface wrapper is ``display: contents``.
+
+    #map and every overlay are flex children of the full-screen body
+    (static/css/map.css ``.map-fullscreen``); a wrapper with a box of its
+    own would take that layout away from them.
+    """
+    template = (
+        Path(settings.BASE_DIR) / "apps/public/templates/public/map.html"
+    ).read_text()
+
+    assert '<div class="map-surface-light contents">' in template
+
+
+def test_map_css_has_no_dark_mode_rules_left() -> None:
+    """No ``.dark`` rule in map.css repaints the map surface.
+
+    SNOW-1334 removed the two blocks (fifteen selectors) that moved the
+    scrubber, region readout and roundels onto light ink in dark mode.
+    The surface no longer goes dark, so a new ``.dark`` rule here would
+    paint dark-mode ink on light glass.
+    """
+    css = (Path(settings.BASE_DIR) / "static/css/map.css").read_text()
+    rules = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+
+    assert not re.search(r"(^|[\s,}])\.dark[\s.:\[]", rules)
+
+
+def test_the_search_dropdown_draws_only_with_tokens() -> None:
+    """Every colour in the search dropdown is a ``--color-*`` token.
+
+    SNOW-1334: the rows named map.css's --ink / --muted / --border and
+    beige and white literals, none of which has a dark value, so in dark
+    mode the names sat at 1.2:1 on the dark card.
+    """
+    css = (Path(settings.BASE_DIR) / "static/css/map.css").read_text()
+    start = css.index(".search-results {")
+    end = css.index(".map-fullscreen {")
+    block = re.sub(r"/\*.*?\*/", "", css[start:end], flags=re.S)
+
+    assert not re.search(r"var\(--(ink|muted|border|paper)\)", block)
+    assert not re.search(r"#[0-9a-fA-F]{3,8}\b", block)
