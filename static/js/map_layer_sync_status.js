@@ -370,7 +370,7 @@
    *
    * Read from the row's own ``data-country-codes`` attribute rather than from
    * ``countryCodesFor`` in static/js/map_state.js, which is where the grouping
-   * is DECLARED: this module loads before the map bundle (see home.html) and
+   * is DECLARED: this module loads before the map bundle (see map.html) and
    * is unit-tested on its own, so a bare cross-script identifier would be in
    * its temporal dead zone at parse time and undefined in isolation. The
    * template renders the attribute from that same declaration, and

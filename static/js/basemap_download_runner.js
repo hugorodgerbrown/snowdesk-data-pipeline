@@ -29,7 +29,7 @@
  * a real MapLibre instance. Same thin-delegator shape `sw.js` uses for
  * `basemap_cache_core.js`.
  *
- * Loaded from `public/home.html` before `map.js` (both `defer`, so
+ * Loaded from `public/map.html` before `map.js` (both `defer`, so
  * document order is execution order).
  *
  * SNOW-844 adds a SECOND entry point, `repair`, which deliberately does

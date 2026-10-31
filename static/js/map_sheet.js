@@ -19,7 +19,7 @@
  *   canQueueMutations()   → false when this device cannot persist a
  *                           queued mutation.
  *
- * Loaded once from ``public/home.html`` ahead of both surface partials
+ * Loaded once from ``public/map.html`` ahead of both surface partials
  * (all three are ``defer``, so document order is execution order).
  *
  * Sheet lifecycle
@@ -105,7 +105,7 @@
  * Toast
  * -----
  * One server-rendered ``includes/_toast.html`` instance
- * (``#map-sheet-toast``, included once by home.html), revealed with the
+ * (``#map-sheet-toast``, included once by map.html), revealed with the
  * caller's text rather than built from ``createElement`` in two places.
  * That makes the markup, the tokens and the ARIA roles the partial's
  * business rather than this module's, and leaves the "×" to

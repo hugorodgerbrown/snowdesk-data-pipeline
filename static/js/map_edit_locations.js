@@ -2,7 +2,7 @@
  * static/js/map_edit_locations.js — SNOW-755 in-map location editor.
  *
  * Loaded only when the page is rendered with ?edit=locations AND the
- * request user is a superuser (home.html guards both the panel include
+ * request user is a superuser (map.html guards both the panel include
  * and this <script> tag). The API endpoints re-check the same thing —
  * this file is a UI tool, not the trust boundary.
  *
@@ -100,7 +100,7 @@
   // module returns keys so the rule stays testable and the copy stays
   // here, next to the rest of the panel's voice.
   // i18n-allow: the location editor is staff-only (?edit=locations,
-  // superuser gate in home.html and at every endpoint) and is never
+  // superuser gate in map.html and at every endpoint) and is never
   // rendered for a member of the public.
   const REQUIREMENT_LABELS = {
     name: 'a name',

@@ -720,7 +720,7 @@
 
   // ---- First-run auto-start ----
   // Skips auto-start when the embedding page opts out via
-  // data-map-help-no-autostart on #map-help-overlay (home.html does this —
+  // data-map-help-no-autostart on #map-help-overlay (map.html does this —
   // see the module docstring). Every other embedder keeps auto-starting.
 
   let persisted = null;
