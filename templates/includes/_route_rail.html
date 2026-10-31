@@ -26,14 +26,16 @@ under the meta line, so the route stays open with its title and figures
 and the map gets the rest; HALF, the state a tap on a route opens, adds
 the claim, the profile, the hint and the point header, unlit until a
 point is placed (a point placed at peek raises the sheet to it); FULL adds
-the TERRAIN DATA, every figure behind the point. From sm up
+the TERRAIN DATA, every figure behind the point, and only the terrain
+slope line opens it: a tap on the panel or a drag steps between PEEK and
+HALF (data-detents-reserved). From sm up
 the panel has no detents: the point header shows while a point is placed,
 and the terrain data while it is open.
 
 THE TERRAIN DATA IS EVERYONE'S, AND HIDDEN UNTIL ASKED FOR (SNOW-1146).
 It was a staff debug readout (SNOW-1099). A press on the point header's
 TERRAIN SLOPE line (`[data-route-terrain-toggle]`) reveals it: on a phone
-by raising the sheet to FULL, which a drag also reaches; from sm up by
+by raising the sheet to FULL, which nothing else reaches; from sm up by
 opening it in the card (`data-route-terrain-open`). The figures come from
 the owner's own terrain rows (routes:terrain); a pending share has no
 uuid and so no rows, and shows no toggle.
@@ -119,6 +121,9 @@ Context:
     data-route-plan-trip-url="{% url 'trips:new' %}"
     {% if not static %}
         data-detents="peek,half,full"
+        {# FULL is the terrain data's alone: only the terrain slope line opens #}
+        {# it, never a tap on the panel or a drag (Hugo, 2026-10-31).        #}
+        data-detents-reserved="full"
         data-detent-initial="half"
         data-route-terrain-url-template="{% url 'routes:terrain' uuid='00000000-0000-0000-0000-000000000000' %}"
         {# SNOW-1230: the same rows for a route someone was SENT, by its token. #}

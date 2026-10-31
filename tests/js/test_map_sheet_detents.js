@@ -167,6 +167,54 @@ describe('the handle', () => {
   });
 });
 
+describe('a reserved detent (2026-10-31)', () => {
+  /** @returns {ReturnType<typeof attachSheet>} */
+  function reservedSheet() {
+    const attached = attachSheet('peek,half,full', 'half');
+    attached.sheet.setAttribute('data-detents-reserved', 'full');
+    attached.controller.open();
+    return attached;
+  }
+
+  it('is never reached by the handle, which steps peek and half', () => {
+    const { sheet, handle } = reservedSheet();
+    handle.click();
+    expect(sheet.getAttribute('data-detent')).toBe('peek');
+    handle.click();
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+    handle.click();
+    expect(sheet.getAttribute('data-detent')).toBe('peek');
+  });
+
+  it('is never reached by a drag up, which stops at half', () => {
+    const { sheet, handle } = reservedSheet();
+    pointer(handle, 'pointerdown', 500, 0);
+    pointer(handle, 'pointermove', 350, 500);
+    pointer(handle, 'pointermove', 200, 1000);
+    pointer(handle, 'pointerup', 200, 1000);
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+  });
+
+  it('is opened by the content’s own set, and a tap steps back down', () => {
+    // The route panel binds its own detents and drives them (route_rail.js).
+    document.body.innerHTML = `
+      <div id="map"></div>
+      <section id="rail" data-detents="peek,half,full" data-detents-reserved="full"
+               data-detent-initial="half"><button type="button" data-sheet-handle></button></section>
+    `;
+    const sheet = /** @type {HTMLElement} */ (document.getElementById('rail'));
+    stubHeight(sheet, 400);
+    const detents = window.MapSheet.bindDetents(sheet);
+    const handle = /** @type {HTMLElement} */ (sheet.querySelector('[data-sheet-handle]'));
+    detents.open();
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+    detents.set('full');
+    expect(sheet.getAttribute('data-detent')).toBe('full');
+    handle.click();
+    expect(sheet.getAttribute('data-detent')).toBe('peek');
+  });
+});
+
 describe('dragging', () => {
   it('settles a drag up at the nearest detent', () => {
     const { sheet, handle, controller } = attachSheet('peek,half,full', 'half');

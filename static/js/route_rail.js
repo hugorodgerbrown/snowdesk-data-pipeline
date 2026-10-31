@@ -516,8 +516,10 @@
     // The terrain rows load the first time the sheet reaches FULL for a
     // route, never before: most opens never go there. Leaving FULL puts the
     // sheet's scroll back at the top; map.css hides the data below full.
-    // A drag reaches FULL as the terrain slope line does, so the open mark
-    // follows the detent rather than the line's own presses.
+    // FULL is reserved (data-detents-reserved, 2026-10-31): a tap on the
+    // panel or a drag never reaches it, only the terrain slope line does.
+    // The open mark still follows the detent, so a drag DOWN from FULL
+    // closes the data as the line would.
     new MutationObserver(function () {
       if (rail.getAttribute('data-detent') === 'full') {
         rail.setAttribute('data-route-terrain-open', '');

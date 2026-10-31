@@ -2,7 +2,7 @@
 name: sheet-detents-are-phone-only
 description: Phone sheet detents (_overlay_sheet.html detents, data-sheet-detents, bindDetents); forms take none; sheet covers, never moves, map controls
 status: current
-last-reviewed: 2026-10-29
+last-reviewed: 2026-10-31
 ---
 
 # Sheet detents are phone-only, and forms take none
@@ -149,3 +149,9 @@ only binds it to pointer events. Without the core on the page,
 - A padding change is skipped while the camera is moving and applied on
   `moveend`, because a `jumpTo` mid-flight cancels the flight (a search
   pick frames its region just as the sheet's content re-fits PEEK).
+- A sheet can reserve a detent for its own code with
+  `data-detents-reserved`: a tap on the handle or header, or a drag,
+  steps and settles only among the others, and only `set` opens the
+  reserved one. The route panel reserves FULL, its terrain data, so only
+  the terrain slope line reveals it. It opens at HALF and peeks at its
+  title and figures row (Hugo, 2026-10-31).
