@@ -24,6 +24,8 @@ from apps.routes.models import Route, SkiTour
 from apps.routes.services.routes import RouteLimitReached
 from apps.routes.services.ski_network import apply_ski_items
 from apps.routes.services.ski_tours import (
+    _OVERVIEW_CACHE_KEY,
+    _tours_stamp,
     build_summits,
     draft_tour_route,
     drawn_tours,
@@ -704,3 +706,26 @@ class TestTheCachesFollowBothWriters:
             store_terrain(tour, RECORD, points=tour_points(tour))
             tour_overview()
             assert spy.call_count == 2
+
+    def test_summits_ignore_a_local_walk(self) -> None:
+        """SNOW-1336: a first open's walk neither rebuilds nor re-caches them."""
+        tour = _tour()
+        with patch(
+            "apps.routes.services.ski_tours.build_summits", wraps=build_summits
+        ) as spy:
+            summits()
+            store_terrain(tour, RECORD, points=tour_points(tour))
+            summits()
+            assert spy.call_count == 1
+
+    def test_the_overview_holds_one_copy_after_a_walk(self) -> None:
+        """SNOW-1336: the rebuild deletes the copy it replaces."""
+        tour = _tour()
+        tour_overview()
+        before = _tours_stamp(_OVERVIEW_CACHE_KEY)
+        store_terrain(tour, RECORD, points=tour_points(tour))
+        tour_overview()
+        after = _tours_stamp(_OVERVIEW_CACHE_KEY)
+        assert before != after
+        assert cache.get(before) is None
+        assert cache.get(after) is not None
