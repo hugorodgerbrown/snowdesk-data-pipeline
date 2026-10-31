@@ -320,11 +320,19 @@ class TestFeedDescriptions:
         assert "<" not in summaries[0]
 
     def test_html_is_stripped(self) -> None:
-        """Markup and entities become plain, whitespace-collapsed text."""
+        """Markup and entities become plain text; a section heading is dropped."""
         model = _prose_model(
             snowpack_structure="<h1>Snowpack</h1>\n<p>Weak  layers &amp; crusts.</p>"
         )
-        assert bulletin_summary(model) == "Snowpack Weak layers & crusts."
+        assert bulletin_summary(model) == "Weak layers & crusts."
+
+    def test_a_heading_alone_falls_through_to_the_next_field(self) -> None:
+        """Prose that is only a heading is empty, so the next field wins."""
+        model = _prose_model(
+            snowpack_structure="<h2>Snowpack</h2>",
+            weather_forecast="<p>Clear skies.</p>",
+        )
+        assert bulletin_summary(model) == "Clear skies."
 
     @pytest.mark.parametrize(
         "render_model",

@@ -37,6 +37,7 @@ and the weather forecast, tags stripped and capped at ``_SUMMARY_MAX_CHARS``.
 from __future__ import annotations
 
 import html
+import re
 from typing import Any
 
 from django.conf import settings
@@ -99,6 +100,9 @@ def _prose_candidates(prose: dict[str, Any]) -> list[Any]:
     ]
 
 
+_HEADING = re.compile(r"<h[1-6][^>]*>.*?</h[1-6]>", re.IGNORECASE | re.DOTALL)
+
+
 def _plain_summary(text: str) -> str:
     """
     Strip HTML from *text*, collapse whitespace and cap it for a feed entry.
@@ -111,6 +115,9 @@ def _plain_summary(text: str) -> str:
         text is cut at the last word boundary inside the cap and ends "…".
 
     """
+    # A provider heading ("<h1>Snowpack</h1>") names the section, not the
+    # bulletin, so it is dropped rather than run into the first sentence.
+    text = _HEADING.sub(" ", text)
     plain = " ".join(html.unescape(strip_tags(text)).split())
     if len(plain) <= _SUMMARY_MAX_CHARS:
         return plain
