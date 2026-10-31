@@ -2,7 +2,7 @@
 name: management-commands
 description: Commands — RegisteredCommand / CommandRun register, fetch_bulletins, fetch_weather, purge_*, prune_command_runs, backfill_*
 status: current
-last-reviewed: 2026-10-29
+last-reviewed: 2026-10-31
 ---
 
 # Management commands
@@ -2253,18 +2253,21 @@ running dev server, Météo-France read from a directory on disk.
 1. The Django dev server running on :8000 — the SLF and ALBINA local
    mirrors are NDJSON archives served by dev-only views in the running
    server.
-2. `METEOFRANCE_API_LOCAL_MIRROR_URL` set in `.env` to an absolute
-   three-slash `file:///` URI of a directory of `massif-NNN.xml` files.
-   Météo-France's mirror is read straight from disk, not via the server;
-   under `--local-mirror` no `METEOFRANCE_API_KEY` is needed. The
+2. `METEOFRANCE_API_LOCAL_MIRROR_URL` — defaults in development to the
    committed sample, `docs/research/meteofrance/bulletins-2026-05-18/`,
-   holds the French massifs issued for 2026-05-18:
+   which holds the French massifs issued for 2026-05-18, so nothing needs
+   setting on a fresh checkout. Override it in `.env` to point elsewhere,
+   as an absolute three-slash `file:///` URI of a directory of
+   `massif-NNN.xml` files. Météo-France's mirror is read straight from
+   disk, not via the server; under `--local-mirror` no
+   `METEOFRANCE_API_KEY` is needed. An override looks like:
 
    ```bash
-   METEOFRANCE_API_LOCAL_MIRROR_URL=file:///absolute/path/to/snowdesk-data-pipeline/docs/research/meteofrance/bulletins-2026-05-18
+   METEOFRANCE_API_LOCAL_MIRROR_URL=file:///absolute/path/to/a/massif-xml-directory
    ```
 
-   Without it the Météo-France step fails with `CommandError:
+   Set explicitly empty (`METEOFRANCE_API_LOCAL_MIRROR_URL=`), or outside
+   development, where there is no default, the Météo-France step fails with `CommandError:
    --local-mirror requires settings.METEOFRANCE_API_LOCAL_MIRROR_URL to be
    configured (only available in development).` and the script exits
    non-zero after SLF and ALBINA have been fetched. See
