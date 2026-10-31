@@ -374,13 +374,43 @@ class TestExamplesCategoryPerRegionVolume:
         assert response.status_code == 200
         assert [b.pk for b in pools[0]] == [bulletin.pk]
 
+    def test_weather_highlights_do_not_crowd_out_an_older_level(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """200 newer bulletins whose weather says "high" do not hide a high one.
+
+        SLF's 2026/27 per-region weather carries ``highlight: "high"`` on
+        moderate bulletins (sentinel D does). Matched on the bare value they
+        would fill the slice and the Python check would discard them all;
+        matched on the ``mainValue`` pair they are never candidates.
+        """
+        _make_bulletin_with_region(
+            region, "high", datetime(2026, 9, 9, 8, 0, tzinfo=UTC)
+        )
+        for _ in range(200):
+            BulletinFactory.create(
+                raw_data=_wrap(
+                    {
+                        "dangerRatings": [{"mainValue": "moderate"}],
+                        "customData": {
+                            "CH": {"weather": [{"wind": {"highlight": "high"}}]}
+                        },
+                    }
+                ),
+                issued_at=datetime(2026, 9, 10, 9, 0, tzinfo=UTC),
+            )
+
+        url = reverse("public:examples_category", kwargs={"danger_level": "high"})
+        assert client.get(url).status_code == 200
+
     def test_the_word_elsewhere_in_the_payload_is_not_a_match(
         self, client: Client, region: MicroRegion
     ) -> None:
         """A level named only as a problem's dangerRatingValue is not a candidate.
 
-        The SQL filter matches any JSON string value equal to the key; the
-        mainValue confirmation in Python is what removes this one.
+        The SQL filter matches only the ``"mainValue": "<level>"`` pair, so
+        this bulletin is never a candidate; the Python mainValue check would
+        remove it if it were.
         """
         BulletinFactory.create(
             raw_data=_wrap(

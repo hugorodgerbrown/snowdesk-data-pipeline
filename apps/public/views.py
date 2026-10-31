@@ -3036,15 +3036,17 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
     # from its one latest bulletin, so a superseded issue's level (a
     # moderate evening issue replaced by a considerable morning one) never
     # reaches a rating row, and a filter over ratings would never find it.
-    # The match is on the quoted JSON string value ('"moderate"'), which
-    # reads the same in SQLite's stored JSON text and Postgres's
-    # jsonb::text whatever their separators. A rating key can also appear
-    # as some other string value (a problem's dangerRatingValue), so the
-    # mainValue check stays below, in Python because SQLite has no JSON
-    # __contains, and removes those.
+    # The match is on the mainValue pair ('"mainValue": "moderate"'), not
+    # the bare value: SLF's 2026/27 weather block carries "high" / "low"
+    # highlights, so a bare '"high"' could fill the slice with bulletins
+    # that are not high and hide an older one that is. Both backends write
+    # a key and its value as '"key": "value"' — Django stores SQLite JSON
+    # with json.dumps' default separators, and Postgres renders jsonb::text
+    # the same way. The mainValue check below stays, in Python because
+    # SQLite has no JSON __contains, to confirm each candidate.
     candidates = (
         Bulletin.objects.alias(raw_text=Cast("raw_data", TextField()))
-        .filter(raw_text__contains=f'"{danger_key}"')
+        .filter(raw_text__contains=f'"mainValue": "{danger_key}"')
         .order_by("-issued_at")[:200]
     )
     matching = [

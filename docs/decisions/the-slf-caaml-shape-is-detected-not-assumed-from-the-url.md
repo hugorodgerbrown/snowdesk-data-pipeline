@@ -132,9 +132,11 @@ bulletin) is unchanged, only its volume. What SNOW-998 added:
   raise the page size against an API whose limits we do not know.
 - **`/examples/<level>/` starts from the level.** "The newest 200
   bulletins" was barely one per-region issue; the pool is now the newest
-  200 whose own payload names the level, matched in SQL as a quoted JSON
-  string value on `raw_data` cast to text, with the `mainValue` check in
-  Python as confirmation. It reads the bulletin rather than
+  200 whose own payload names the level, matched in SQL as the
+  `"mainValue": "<level>"` pair on `raw_data` cast to text (not the bare
+  value: the per-region weather carries `"high"` / `"low"` highlights that
+  would fill the slice), with the `mainValue` check in Python as
+  confirmation. It reads the bulletin rather than
   `RegionDayRating`, because a region-day is rated from its one latest
   bulletin and a superseded issue's level never reaches a rating row.
 - **Sentinels.** `tests/sentinels/slf/D-per-region-single-problem/` and
