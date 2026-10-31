@@ -42,6 +42,7 @@ import logging
 import random
 import unicodedata
 import uuid
+from collections.abc import Mapping
 from typing import Any, cast
 from urllib.parse import urlencode
 
@@ -7204,7 +7205,7 @@ def _problem_cards_from_render_model_traits(
 
 def _enrich_render_model_problem(
     rm_problem: dict[str, Any],
-    guidance: dict[str, Any],
+    guidance: Mapping[str, str],
     trait_problems: list[dict[str, Any]],
     problem_index: int,
 ) -> dict[str, Any]:
