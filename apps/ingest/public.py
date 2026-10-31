@@ -60,7 +60,9 @@ The names are grouped by what they are for:
       what follows from the model: the day a bulletin forecasts and the
       danger range it gives it (``target_day_for_valid_from``,
       ``rate_render_model``), and its problems as terrain rules
-      (``terrain_rules``). The labels and copy a page shows for them, and
+      (``terrain_rules``), and what an alert compares about it
+      (``bulletin_state``, ``BulletinState``, SNOW-1341). The labels and
+      copy a page shows for them, and
       which bulletin governs a region's day, are the instance's.
   The weather backfill
       Filling a station's missing past days from the historical forecast
@@ -177,6 +179,16 @@ from apps.ingest.normalise.meteofrance.massifs import (
     SLUG_TO_CODE,
     normalise_slug,
     slug_to_region_id,
+)
+from apps.ingest.normalise.bulletin_state import (
+    BULLETIN_STATE_VERSION,
+    CLOCKWISE_ASPECTS,
+    DANGER_NUMBER,
+    DANGER_ORDER,
+    NEUTRAL_PROBLEMS,
+    BulletinState,
+    ProblemState,
+    bulletin_state,
 )
 from apps.ingest.normalise.day_rating import (
     DAY_RATING_VERSION,
@@ -302,6 +314,14 @@ from apps.ingest.weather import (
 )
 
 __all__ = [
+    "BULLETIN_STATE_VERSION",
+    "BulletinState",
+    "CLOCKWISE_ASPECTS",
+    "DANGER_NUMBER",
+    "DANGER_ORDER",
+    "NEUTRAL_PROBLEMS",
+    "ProblemState",
+    "bulletin_state",
     "RenderOutcome",
     "render_source_tour",
     "terrain_grid",
