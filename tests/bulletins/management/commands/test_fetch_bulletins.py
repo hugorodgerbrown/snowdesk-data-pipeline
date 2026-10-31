@@ -1119,3 +1119,36 @@ class TestFetchBulletinsStoresThenApplies:
         assert Bulletin.objects.get().updated_at == bulletin.updated_at
         second = PipelineRun.objects.latest("started_at")
         assert (second.records_created, second.records_updated) == (0, 0)
+
+    @patch("apps.ingest.sources.slf.fetch_bulletin_page")
+    def test_a_conflicting_bulletin_id_exits_non_zero(
+        self, fetch_page: MagicMock
+    ) -> None:
+        """SNOW-998: one id published with two region sets fails the command."""
+        MicroRegionFactory.create(region_id="CH-4222")
+        MicroRegionFactory.create(region_id="CH-4223")
+        stamp = "2026-09-10T09:00:00Z"
+        first = {
+            "bulletinID": "shared",
+            "publicationTime": stamp,
+            "validTime": {"startTime": stamp, "endTime": "2026-09-10T15:00:00Z"},
+            "lang": "en",
+            "regions": [{"regionID": "CH-4222", "name": "Zermatt"}],
+            "dangerRatings": [],
+            "avalancheProblems": [],
+            "customData": {"CH": {}},
+        }
+        second = dict(first, regions=[{"regionID": "CH-4223", "name": "Saas Fee"}])
+        fetch_page.return_value = [first, second]
+
+        with pytest.raises(CommandError, match="shared"):
+            call_command(
+                "fetch_bulletins",
+                "--source",
+                "slf",
+                "--date",
+                "2026-09-10",
+                "--commit",
+                stdout=StringIO(),
+            )
+        assert Bulletin.objects.get(bulletin_id="shared").region_links.count() == 1
