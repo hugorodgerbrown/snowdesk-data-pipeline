@@ -674,6 +674,19 @@ RENDERED: dict[str, Rendered] = {
 }
 
 
+#: Why every leaf of SLF's per-region weather block (2026/27 export) is
+#: excluded. One reason for the whole block, because the decision is one
+#: decision: the block is a structured three-day weather series per
+#: micro-region, and rendering it is SNOW-1000's job, not SNOW-998's.
+_CH_WEATHER_REASON = (
+    "SNOW-1000 ingests the per-region weather. SLF's 2026/27 export "
+    "carries a structured weather series per micro-region (wind, new "
+    "snow, snowfall limit, temperatures over three periods); until that "
+    "ticket decides how it reaches a reader, the reader gets the same "
+    "days in prose through weatherReview.comment, which is rendered."
+)
+
+
 #: Paths that deliberately reach no reader, each with the reason. This is
 #: the half worth reviewing: every line is a decision somebody made about
 #: what a reader does not need. Print it with
@@ -703,6 +716,35 @@ EXCLUDED: dict[str, Excluded] = {
         "than read from here — the page has one answer for which day it "
         "is showing and does not take a second one from the payload."
     ),
+    "customData.CH.weather[].newSnow[].elevationM": Excluded(_CH_WEATHER_REASON),
+    "customData.CH.weather[].newSnow[].precipitationType": Excluded(_CH_WEATHER_REASON),
+    "customData.CH.weather[].newSnow[].snowCm": Excluded(_CH_WEATHER_REASON),
+    "customData.CH.weather[].period.end": Excluded(_CH_WEATHER_REASON),
+    "customData.CH.weather[].period.start": Excluded(_CH_WEATHER_REASON),
+    "customData.CH.weather[].timeSeries.snowfallLimit[].elevationM": Excluded(
+        _CH_WEATHER_REASON
+    ),
+    "customData.CH.weather[].timeSeries.snowfallLimit[].highlight": Excluded(
+        _CH_WEATHER_REASON
+    ),
+    "customData.CH.weather[].timeSeries.snowfallLimit[].timestamp": Excluded(
+        _CH_WEATHER_REASON
+    ),
+    "customData.CH.weather[].timeSeries.temperatures[].elevationM": Excluded(
+        _CH_WEATHER_REASON
+    ),
+    "customData.CH.weather[].timeSeries.temperatures[].highlight": Excluded(
+        _CH_WEATHER_REASON
+    ),
+    "customData.CH.weather[].timeSeries.temperatures[].timestamp": Excluded(
+        _CH_WEATHER_REASON
+    ),
+    "customData.CH.weather[].timeSeries.temperatures[].valueC": Excluded(
+        _CH_WEATHER_REASON
+    ),
+    "customData.CH.weather[].wind.direction": Excluded(_CH_WEATHER_REASON),
+    "customData.CH.weather[].wind.highlight": Excluded(_CH_WEATHER_REASON),
+    "customData.CH.weather[].wind.speedKmh": Excluded(_CH_WEATHER_REASON),
     "customData.MF.amendment": Excluded(
         "Meteo-France's own name for an off-schedule reissue. The "
         "translator projects it onto the standard `unscheduled` flag, "

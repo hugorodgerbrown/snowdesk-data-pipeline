@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+# bin/measure-slf-sentinels — what SLF's per-region export costs to store.
+#
+# SNOW-998. From the 2026/27 winter SLF publish one bulletin per
+# micro-region, about 149 an issue and two issues a day, instead of five or
+# six aggregated ones. Every row is stored twice over: ingest's
+# SourceBulletin holds the CAAML and the render model built from it, and
+# the app's Bulletin holds the same CAAML inside its GeoJSON Feature
+# envelope (raw_data) beside its own copy of the render model.
+#
+# This measures those three documents for each per-region bulletin
+# committed under tests/sentinels/slf/ — sentinels D and E and the
+# twelve-bulletin per-region-slice.ndjson — and projects a season from the
+# slice's mean. The figures are compact-JSON bytes (no whitespace, UTF-8),
+# which is what the documents weigh on the wire; Postgres stores jsonb in
+# its own binary form and TOAST-compresses it, so a database's real
+# footprint differs from these by a factor this script cannot know.
+#
+# Deterministic: the same committed files give the same output. Reads only;
+# prints to stdout. render_model needs the app's builder, hence Django:
+#
+#     uv run python bin/measure-slf-sentinels
+#
+# The output is recorded in
+# docs/decisions/the-slf-caaml-shape-is-detected-not-assumed-from-the-url.md
+# under "Storage per season".
+#
+# ruff: noqa: T201
+# T201 — CLI script; print() is the intended output channel.
+
+"""SLF per-region storage measurement — see the header block above."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import pathlib
+import sys
+from typing import Any
+
+REPO = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO))
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.development")
+
+import django  # noqa: E402 — must follow the settings-module assignment above
+
+django.setup()
+
+logging.disable(logging.WARNING)
+
+from apps.ingest.public import build_render_model  # noqa: E402 — needs django.setup()
+
+logger = logging.getLogger(__name__)
+
+SLF_SENTINELS = REPO / "tests" / "sentinels" / "slf"
+SENTINELS: tuple[str, ...] = (
+    "D-per-region-single-problem",
+    "E-per-region-two-problems",
+)
+SLICE = SLF_SENTINELS / "per-region-slice.ndjson"
+
+# A season's SLF rows at the per-region rate: ~149 bulletins an issue, two
+# issues a day, over roughly the 128 days of a winter (SNOW-998's scope).
+DEFAULT_SEASON_ROWS = 38_000
+
+
+def compact_bytes(document: Any) -> int:
+    """Return the UTF-8 length of *document* as compact JSON.
+
+    Args:
+        document: Any JSON-serialisable value.
+
+    Returns:
+        Its size in bytes with no insignificant whitespace.
+
+    """
+    text = json.dumps(document, ensure_ascii=False, separators=(",", ":"))
+    return len(text.encode("utf-8"))
+
+
+def measure(bulletin: dict[str, Any]) -> dict[str, int]:
+    """Measure the three stored documents one bulletin becomes.
+
+    Args:
+        bulletin: A raw SLF CAAML bulletin, as the API serves it.
+
+    Returns:
+        Bytes for ``caaml`` (SourceBulletin.caaml), ``raw_data`` (the
+        Feature envelope Bulletin.raw_data holds), ``render_model`` (stored
+        on both rows) and ``weather`` (the ``customData.CH.weather`` block's
+        share of the CAAML).
+
+    """
+    envelope = {"type": "Feature", "geometry": None, "properties": bulletin}
+    weather = bulletin.get("customData", {}).get("CH", {}).get("weather", [])
+    return {
+        "caaml": compact_bytes(bulletin),
+        "raw_data": compact_bytes(envelope),
+        "render_model": compact_bytes(build_render_model(bulletin)),
+        "weather": compact_bytes(weather),
+    }
+
+
+def label(bulletin: dict[str, Any]) -> str:
+    """Return a short readable label: region, level and problem count."""
+    region = bulletin["regions"][0]
+    level = bulletin["dangerRatings"][0]["mainValue"]
+    problems = len(bulletin.get("avalancheProblems", []))
+    return f"{region['regionID']} {region['name']} — {level}, {problems} problem(s)"
+
+
+def kb(n: float) -> str:
+    """Format a byte count in kilobytes (1 KB = 1,000 bytes)."""
+    return f"{n / 1000:7.1f} KB"
+
+
+def gb(n: float) -> str:
+    """Format a byte count in gigabytes (1 GB = 10^9 bytes)."""
+    return f"{n / 1e9:5.2f} GB"
+
+
+def print_row(name: str, sizes: dict[str, int]) -> None:
+    """Print one bulletin's measurements on one line."""
+    print(
+        f"  {name:<56} caaml {kb(sizes['caaml'])}  raw_data {kb(sizes['raw_data'])}"
+        f"  render_model {kb(sizes['render_model'])}"
+        f"  weather {sizes['weather'] / sizes['caaml']:4.0%}"
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Print the per-bulletin figures and the season projection.
+
+    Args:
+        argv: Command-line arguments; ``sys.argv[1:]`` when None.
+
+    Returns:
+        The process exit code.
+
+    """
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--season-rows",
+        type=int,
+        default=DEFAULT_SEASON_ROWS,
+        help=f"SLF rows in a season (default {DEFAULT_SEASON_ROWS:,})",
+    )
+    args = parser.parse_args(argv)
+
+    print("Sentinels")
+    for name in SENTINELS:
+        bulletin = json.loads((SLF_SENTINELS / name / "source.json").read_text())
+        print_row(name, measure(bulletin))
+
+    bulletins = [json.loads(line) for line in SLICE.read_text().splitlines() if line]
+    print(f"\nSlice ({len(bulletins)} bulletins, {SLICE.relative_to(REPO)})")
+    rows = [measure(bulletin) for bulletin in bulletins]
+    for bulletin, sizes in zip(bulletins, rows, strict=True):
+        print_row(label(bulletin), sizes)
+
+    mean = {key: sum(r[key] for r in rows) / len(rows) for key in rows[0]}
+    source_row = mean["caaml"] + mean["render_model"]
+    bulletin_row = mean["raw_data"] + mean["render_model"]
+    season = args.season_rows
+
+    print("\nMean per bulletin")
+    print(f"  caaml         {kb(mean['caaml'])}")
+    print(f"  raw_data      {kb(mean['raw_data'])}")
+    print(f"  render_model  {kb(mean['render_model'])}")
+    print(f"  weather share {mean['weather'] / mean['caaml']:.0%} of the CAAML")
+
+    print(f"\nSeason at {season:,} rows (compact JSON, before jsonb and TOAST)")
+    print(f"  SourceBulletin (caaml + render_model)     {gb(source_row * season)}")
+    print(f"  Bulletin       (raw_data + render_model)  {gb(bulletin_row * season)}")
+    print(
+        f"  Both                                      "
+        f"{gb((source_row + bulletin_row) * season)}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

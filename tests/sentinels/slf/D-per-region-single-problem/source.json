@@ -1,0 +1,921 @@
+{
+  "bulletinID": "51e348b5-6966-4baa-8d85-07c710d99d62",
+  "lang": "en",
+  "validTime": {
+    "startTime": "2026-09-10T09:00:00Z",
+    "endTime": "2026-09-10T15:00:00Z"
+  },
+  "nextUpdate": "2026-09-11T15:00:00Z",
+  "unscheduled": true,
+  "regions": [
+    {
+      "regionID": "CH-1122",
+      "name": "Gruyère"
+    }
+  ],
+  "dangerRatings": [
+    {
+      "mainValue": "moderate",
+      "validTimePeriod": "all_day",
+      "customData": {
+        "CH": {
+          "subdivision": "neutral"
+        }
+      }
+    }
+  ],
+  "avalancheProblems": [
+    {
+      "comment": "The somewhat older wind slabs are to be found in particular in gullies and bowls, and behind abrupt changes in the terrain. They are to be evaluated with care and prudence in very steep terrain. Mostly the avalanches are small. Apart from the danger of being buried, restraint should be exercised as well in view of the danger of avalanches sweeping people along and giving rise to falls.",
+      "dangerRatingValue": "moderate",
+      "validTimePeriod": "all_day",
+      "problemType": "wind_slab",
+      "elevation": {
+        "lowerBound": "1400"
+      },
+      "aspects": [
+        "N",
+        "NE",
+        "E",
+        "SW",
+        "W",
+        "NW"
+      ],
+      "customData": {
+        "CH": {
+          "subdivision": "neutral",
+          "coreZoneText": "Danger level \"moderate\" (2=) in southwest to north to east facing aspects above 1400m."
+        }
+      }
+    }
+  ],
+  "customData": {
+    "CH": {
+      "aggregation": [
+        {
+          "category": "dry",
+          "validTimePeriod": "all_day",
+          "problemTypes": [
+            "wind_slab"
+          ]
+        }
+      ],
+      "weather": [
+        {
+          "wind": {
+            "speedKmh": 21.5,
+            "direction": "SW"
+          },
+          "period": {
+            "end": "2026-09-08T15:00:00.000Z",
+            "start": "2026-09-07T15:00:00.000Z"
+          },
+          "newSnow": [
+            {
+              "snowCm": 0,
+              "elevationM": 1000
+            },
+            {
+              "snowCm": 0,
+              "elevationM": 1500
+            }
+          ],
+          "timeSeries": {
+            "temperatures": [
+              {
+                "valueC": 16.7,
+                "highlight": "high",
+                "timestamp": "2026-09-07T16:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 16.8,
+                "highlight": "high",
+                "timestamp": "2026-09-07T17:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 16.7,
+                "highlight": "high",
+                "timestamp": "2026-09-07T18:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 16.6,
+                "highlight": "high",
+                "timestamp": "2026-09-07T19:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 16.4,
+                "highlight": "high",
+                "timestamp": "2026-09-07T20:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 16.5,
+                "highlight": "high",
+                "timestamp": "2026-09-07T21:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 16.4,
+                "highlight": "high",
+                "timestamp": "2026-09-07T22:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 16.3,
+                "highlight": "high",
+                "timestamp": "2026-09-07T23:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 16.5,
+                "highlight": "high",
+                "timestamp": "2026-09-08T00:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 16.4,
+                "highlight": "high",
+                "timestamp": "2026-09-08T01:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 16.1,
+                "highlight": "high",
+                "timestamp": "2026-09-08T02:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 15.9,
+                "highlight": "high",
+                "timestamp": "2026-09-08T03:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 15.6,
+                "highlight": "high",
+                "timestamp": "2026-09-08T04:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 15.4,
+                "highlight": "high",
+                "timestamp": "2026-09-08T05:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 15,
+                "highlight": "high",
+                "timestamp": "2026-09-08T06:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 14.9,
+                "highlight": "high",
+                "timestamp": "2026-09-08T07:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 15.2,
+                "highlight": "high",
+                "timestamp": "2026-09-08T08:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 14.9,
+                "highlight": "high",
+                "timestamp": "2026-09-08T09:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 15.4,
+                "highlight": "high",
+                "timestamp": "2026-09-08T10:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 16.3,
+                "highlight": "high",
+                "timestamp": "2026-09-08T11:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 17.3,
+                "highlight": "high",
+                "timestamp": "2026-09-08T12:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 17.5,
+                "highlight": "high",
+                "timestamp": "2026-09-08T13:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 17.4,
+                "highlight": "high",
+                "timestamp": "2026-09-08T14:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 17.4,
+                "highlight": "high",
+                "timestamp": "2026-09-08T15:00:00.000Z",
+                "elevationM": 2000
+              }
+            ],
+            "snowfallLimit": [
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-07T16:00:00.000Z",
+                "elevationM": 3480
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-07T17:00:00.000Z",
+                "elevationM": 3550
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-07T18:00:00.000Z",
+                "elevationM": 3580
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-07T19:00:00.000Z",
+                "elevationM": 3690
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-07T20:00:00.000Z",
+                "elevationM": 3660
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-07T21:00:00.000Z",
+                "elevationM": 3490
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-07T22:00:00.000Z",
+                "elevationM": 3490
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-07T23:00:00.000Z",
+                "elevationM": 3600
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T00:00:00.000Z",
+                "elevationM": 3480
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T01:00:00.000Z",
+                "elevationM": 3500
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T02:00:00.000Z",
+                "elevationM": 3510
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T03:00:00.000Z",
+                "elevationM": 3400
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T04:00:00.000Z",
+                "elevationM": 3310
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T05:00:00.000Z",
+                "elevationM": 3470
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T06:00:00.000Z",
+                "elevationM": 3300
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T07:00:00.000Z",
+                "elevationM": 3060
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T08:00:00.000Z",
+                "elevationM": 3150
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T09:00:00.000Z",
+                "elevationM": 3210
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T10:00:00.000Z",
+                "elevationM": 3160
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T11:00:00.000Z",
+                "elevationM": 3040
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T12:00:00.000Z",
+                "elevationM": 3450
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T13:00:00.000Z",
+                "elevationM": 3500
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T14:00:00.000Z",
+                "elevationM": 3440
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T15:00:00.000Z",
+                "elevationM": 3630
+              }
+            ]
+          }
+        },
+        {
+          "wind": {
+            "speedKmh": 21.8,
+            "direction": "SW"
+          },
+          "period": {
+            "end": "2026-09-09T15:00:00.000Z",
+            "start": "2026-09-08T15:00:00.000Z"
+          },
+          "newSnow": [
+            {
+              "snowCm": 0,
+              "elevationM": 1000
+            },
+            {
+              "snowCm": 5,
+              "elevationM": 1500,
+              "precipitationType": "rain"
+            }
+          ],
+          "timeSeries": {
+            "temperatures": [
+              {
+                "valueC": 17.5,
+                "highlight": "high",
+                "timestamp": "2026-09-08T16:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 17.7,
+                "highlight": "high",
+                "timestamp": "2026-09-08T17:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 17.8,
+                "highlight": "high",
+                "timestamp": "2026-09-08T18:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 15.7,
+                "highlight": "high",
+                "timestamp": "2026-09-08T19:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 14.5,
+                "highlight": "high",
+                "timestamp": "2026-09-08T20:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 13.7,
+                "highlight": "high",
+                "timestamp": "2026-09-08T21:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 12,
+                "highlight": "high",
+                "timestamp": "2026-09-08T22:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 11.3,
+                "highlight": "high",
+                "timestamp": "2026-09-08T23:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 10.7,
+                "highlight": "high",
+                "timestamp": "2026-09-09T00:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 9.9,
+                "highlight": "medium",
+                "timestamp": "2026-09-09T01:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 10.2,
+                "highlight": "high",
+                "timestamp": "2026-09-09T02:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 9.5,
+                "highlight": "medium",
+                "timestamp": "2026-09-09T03:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 9.4,
+                "highlight": "medium",
+                "timestamp": "2026-09-09T04:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 8.6,
+                "highlight": "medium",
+                "timestamp": "2026-09-09T05:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 7.9,
+                "highlight": "medium",
+                "timestamp": "2026-09-09T06:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 6.6,
+                "highlight": "medium",
+                "timestamp": "2026-09-09T07:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 5.9,
+                "highlight": "medium",
+                "timestamp": "2026-09-09T08:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 5.8,
+                "highlight": "medium",
+                "timestamp": "2026-09-09T09:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 5.9,
+                "highlight": "medium",
+                "timestamp": "2026-09-09T10:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 5.4,
+                "highlight": "medium",
+                "timestamp": "2026-09-09T11:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 4.7,
+                "timestamp": "2026-09-09T12:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 5.4,
+                "highlight": "medium",
+                "timestamp": "2026-09-09T13:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 4.8,
+                "timestamp": "2026-09-09T14:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 4.4,
+                "timestamp": "2026-09-09T15:00:00.000Z",
+                "elevationM": 2000
+              }
+            ],
+            "snowfallLimit": [
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T16:00:00.000Z",
+                "elevationM": 3640
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T17:00:00.000Z",
+                "elevationM": 3590
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T18:00:00.000Z",
+                "elevationM": 3220
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T19:00:00.000Z",
+                "elevationM": 3460
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T20:00:00.000Z",
+                "elevationM": 3190
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T21:00:00.000Z",
+                "elevationM": 3490
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T22:00:00.000Z",
+                "elevationM": 3450
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-08T23:00:00.000Z",
+                "elevationM": 3390
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-09T00:00:00.000Z",
+                "elevationM": 3290
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-09T01:00:00.000Z",
+                "elevationM": 3240
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-09T02:00:00.000Z",
+                "elevationM": 3110
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-09T03:00:00.000Z",
+                "elevationM": 2850
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-09T04:00:00.000Z",
+                "elevationM": 3130
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-09T05:00:00.000Z",
+                "elevationM": 3170
+              },
+              {
+                "highlight": "high",
+                "timestamp": "2026-09-09T06:00:00.000Z",
+                "elevationM": 3150
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-09T07:00:00.000Z",
+                "elevationM": 2950
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-09T08:00:00.000Z",
+                "elevationM": 2760
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-09T09:00:00.000Z",
+                "elevationM": 2610
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-09T10:00:00.000Z",
+                "elevationM": 2520
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-09T11:00:00.000Z",
+                "elevationM": 2680
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-09T12:00:00.000Z",
+                "elevationM": 2590
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-09T13:00:00.000Z",
+                "elevationM": 2670
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-09T14:00:00.000Z",
+                "elevationM": 2680
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-09T15:00:00.000Z",
+                "elevationM": 2620
+              }
+            ]
+          }
+        },
+        {
+          "wind": {
+            "speedKmh": 27.9,
+            "direction": "NE"
+          },
+          "period": {
+            "end": "2026-09-10T15:00:00.000Z",
+            "start": "2026-09-09T15:00:00.000Z"
+          },
+          "newSnow": [
+            {
+              "snowCm": 0,
+              "elevationM": 1000
+            },
+            {
+              "snowCm": 5,
+              "elevationM": 1500,
+              "precipitationType": "rain"
+            }
+          ],
+          "timeSeries": {
+            "temperatures": [
+              {
+                "valueC": 4,
+                "timestamp": "2026-09-09T16:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 4.3,
+                "timestamp": "2026-09-09T17:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 4.3,
+                "timestamp": "2026-09-09T18:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 4.5,
+                "timestamp": "2026-09-09T19:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 4.4,
+                "timestamp": "2026-09-09T20:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 4.2,
+                "timestamp": "2026-09-09T21:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 3.5,
+                "timestamp": "2026-09-09T22:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 3.5,
+                "timestamp": "2026-09-09T23:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 3.6,
+                "timestamp": "2026-09-10T00:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 3.3,
+                "timestamp": "2026-09-10T01:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 3.2,
+                "timestamp": "2026-09-10T02:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 3.6,
+                "timestamp": "2026-09-10T03:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 3.5,
+                "timestamp": "2026-09-10T04:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 3.4,
+                "timestamp": "2026-09-10T05:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 3.1,
+                "timestamp": "2026-09-10T06:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 3.8,
+                "timestamp": "2026-09-10T07:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 4,
+                "timestamp": "2026-09-10T08:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 4.1,
+                "timestamp": "2026-09-10T09:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 3.7,
+                "timestamp": "2026-09-10T10:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 3.7,
+                "timestamp": "2026-09-10T11:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 4.1,
+                "timestamp": "2026-09-10T12:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 4.7,
+                "timestamp": "2026-09-10T13:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 5,
+                "highlight": "medium",
+                "timestamp": "2026-09-10T14:00:00.000Z",
+                "elevationM": 2000
+              },
+              {
+                "valueC": 5,
+                "highlight": "medium",
+                "timestamp": "2026-09-10T15:00:00.000Z",
+                "elevationM": 2000
+              }
+            ],
+            "snowfallLimit": [
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-09T16:00:00.000Z",
+                "elevationM": 2620
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-09T17:00:00.000Z",
+                "elevationM": 2590
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-09T18:00:00.000Z",
+                "elevationM": 2580
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-09T19:00:00.000Z",
+                "elevationM": 2610
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-09T20:00:00.000Z",
+                "elevationM": 2620
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-09T21:00:00.000Z",
+                "elevationM": 2530
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-09T22:00:00.000Z",
+                "elevationM": 2410
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-09T23:00:00.000Z",
+                "elevationM": 2320
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-10T00:00:00.000Z",
+                "elevationM": 2170
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-10T01:00:00.000Z",
+                "elevationM": 2080
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-10T02:00:00.000Z",
+                "elevationM": 2080
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-10T03:00:00.000Z",
+                "elevationM": 2230
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-10T04:00:00.000Z",
+                "elevationM": 2270
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-10T05:00:00.000Z",
+                "elevationM": 2190
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-10T06:00:00.000Z",
+                "elevationM": 2130
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-10T07:00:00.000Z",
+                "elevationM": 2100
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-10T08:00:00.000Z",
+                "elevationM": 2120
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-10T09:00:00.000Z",
+                "elevationM": 2120
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-10T10:00:00.000Z",
+                "elevationM": 2160
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-10T11:00:00.000Z",
+                "elevationM": 2210
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-10T12:00:00.000Z",
+                "elevationM": 2300
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-10T13:00:00.000Z",
+                "elevationM": 2350
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-10T14:00:00.000Z",
+                "elevationM": 2340
+              },
+              {
+                "highlight": "medium",
+                "timestamp": "2026-09-10T15:00:00.000Z",
+                "elevationM": 2350
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "publicationTime": "2026-09-10T09:00:00Z",
+  "weatherReview": {
+    "comment": "<h1>Weather Review 08.09.</h1><ul><li>Snowfall limit: 3040m-3690m</li><li>Temperature at 2000 m: 17.5°C</li><li>Fresh snow at 1000 m: 0cm</li><li>Fresh snow at 1500 m: 0cm</li><li>Maximum wind speed: 21.5km/h</li><li>Wind direction: SW</li></ul><h1>Weather Review 09.09.</h1><ul><li>Snowfall limit: 2520m-3640m</li><li>Temperature at 2000 m: 17.8°C</li><li>Fresh snow at 1000 m: 0cm</li><li>Fresh snow at 1500 m: 5cm</li><li>Maximum wind speed: 21.8km/h</li><li>Wind direction: SW</li></ul><h1>Weather Review 10.09.</h1><ul><li>Snowfall limit: 2080m-2620m</li><li>Temperature at 2000 m: 5°C</li><li>Fresh snow at 1000 m: 0cm</li><li>Fresh snow at 1500 m: 5cm</li><li>Maximum wind speed: 27.9km/h</li><li>Wind direction: NE</li></ul>"
+  },
+  "snowpackStructure": {
+    "comment": "New and wind-drifted snow from the last few days is still in some cases prone to triggering, especially on shady slopes in the high alpine regions. At the transition to the underlying old snowpack, there are in particular on north- and east-facing slopes at elevated altitudes, in some cases, still rough-grained weak layers."
+  }
+}

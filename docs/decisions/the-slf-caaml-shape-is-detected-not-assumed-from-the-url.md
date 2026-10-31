@@ -1,8 +1,8 @@
 ---
 name: the-slf-caaml-shape-is-detected-not-assumed-from-the-url
-description: detect_caaml_shape, customData.CH.weather, SLF_API_LEGACY_URL — why the SLF CAAML shape is read off each response, not the URL
+description: detect_caaml_shape, SLF_API_LEGACY_URL, SlfConflictingBulletinIdError — SLF shape read per response; per-region ingest and storage
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-31
 ---
 
 # The SLF CAAML shape is detected, not assumed from the URL
@@ -91,9 +91,10 @@ send mirror runs at the live API.
   Anyone reaching for it should read the WARNING line afterwards to see
   whether it changed what arrived — which is why the log names the shape and
   the base URL together.
-- **The WARNING repeats, every page, every fetch.** That is intended. It
-  stays noisy until SNOW-998 handles the de-aggregated shape properly;
-  silencing it before then would restore the original failure.
+- **The WARNING repeats, every page, every fetch.** That is intended: it
+  is how the changeover announces itself. SNOW-998 made the per-region
+  shape ingest correctly (below) but left the level alone, so the day SLF
+  switch is still visible in the log on the day it happens.
 - **Detection never blocks a fetch.** It only describes the page, so
   `_region_count` is total rather than strict and a malformed entry is left
   for the real ingest to reject with an error that names the bulletin.
@@ -102,10 +103,96 @@ send mirror runs at the live API.
   no payload anywhere near it. If SLF ever publish genuinely narrow legacy
   pages, the markers are the signal that still holds.
 
+## The per-region shape is ingested (SNOW-998)
+
+Nothing in the ingest path forks on shape, and nothing has to: an
+aggregated bulletin resolves to N region links and a per-region one to
+one. Both shapes are ingested side by side, so the change can land before
+SLF switch and nothing is timed against their schedule. The 2025/26
+aggregated history stays as stored; the v2 feed's contract (one item per
+bulletin) is unchanged, only its volume. What SNOW-998 added:
+
+- **One `bulletinID`, one content, per walk.** `iter_slf` fingerprints
+  each bulletin's canonical JSON. An identical repeat — paging overlap when
+  SLF publish mid-walk and every offset shifts — is a counted
+  `OUTCOME_DUPLICATE`, ALBINA's precedent. A repeat that differs (another
+  region set, another rating) raises `SlfConflictingBulletinIdError`
+  (exported through `apps.ingest.public`); `run_slf_pipeline` fails the run,
+  `fetch_bulletins` exits non-zero, and the second copy never overwrites
+  the first. With ~149 rows an issue, the id is the only thing keeping them
+  apart, so an id that names two bulletins is a stop, not a warning. A
+  conflict cannot occur within a legacy walk, so there the guard is a no-op
+  apart from counting paging repeats as duplicates.
+- **A stale region fails one record.** A per-region bulletin whose one
+  region we do not hold has nothing left to write; `NoResolvableRegionsError`
+  fails that record, `records_failed` rises and the command exits non-zero —
+  SNOW-547's posture, unchanged, now covered on this shape.
+- **`PAGE_SIZE` stays 50.** A day goes from one page to about six (298
+  bulletins over two issues). That is six requests a fetch, not a reason to
+  raise the page size against an API whose limits we do not know.
+- **`/examples/<level>/` starts from the level.** "The newest 200
+  bulletins" was barely one per-region issue; the pool is now the newest
+  200 whose own payload names the level, matched in SQL as the
+  `"mainValue": "<level>"` pair on `raw_data` cast to text (not the bare
+  value: the per-region weather carries `"high"` / `"low"` highlights that
+  would fill the slice), with the `mainValue` check in Python as
+  confirmation. It reads the bulletin rather than
+  `RegionDayRating`, because a region-day is rated from its one latest
+  bulletin and a superseded issue's level never reaches a rating row.
+- **Sentinels.** `tests/sentinels/slf/D-per-region-single-problem/` and
+  `E-per-region-two-problems/`, plus the twelve-bulletin
+  `per-region-slice.ndjson` (not a sentinel; the end-to-end
+  `fetch_bulletins --local-mirror` fixture), all extracted from SLF's
+  sample at `samples/slf-2026-27-preview` commit `44695ba0`. A, B and C stay
+  and stay asserted aggregated, so both shapes are under test permanently.
+
+### Post-merge verification
+
+The sample's 133 distinct ids are provisional evidence that SLF mint one id
+per entry, not a promise. After merge, the first per-region fetches are
+checked for it: the run log's duplicate count, and no
+`SlfConflictingBulletinIdError` failures.
+
+One behaviour changes here and is worth knowing before it happens. If SLF
+republish a bulletin **in place** — same `bulletinID`, changed content —
+between two pages of one walk, the walk now sees both versions and
+**fails the run**, where before it upserted whichever came last. Nothing
+is overwritten. The remedy is a rerun once SLF's publication has settled
+(the next walk sees one version only), or, if the export keeps doing it,
+pinning `SLF_API_LEGACY_URL` while the guard's posture is reconsidered.
+
+### Storage per season
+
+SNOW-900's comments put the per-region shape at about 1.0 GB a season.
+`bin/measure-slf-sentinels` measures it from the committed payloads
+(compact JSON bytes, before Postgres's jsonb encoding and TOAST
+compression, which this cannot predict):
+
+| Per bulletin (slice mean, 12) | Bytes |
+|---|---|
+| `caaml` (SourceBulletin) | 15.4 KB |
+| `raw_data` (Bulletin, Feature envelope) | 15.4 KB |
+| `render_model` (on both rows) | 3.5 KB |
+| `customData.CH.weather` share of the CAAML | 80% |
+
+| Season at ~38,000 rows | Size |
+|---|---|
+| SourceBulletin (`caaml` + `render_model`) | 0.72 GB |
+| Bulletin (`raw_data` + `render_model`) | 0.72 GB |
+| Both | 1.44 GB |
+
+Sentinel D (Gruyère, moderate, one problem) is 15.0 KB of CAAML and a
+2.8 KB render model; E (Zermatt, considerable, two problems) is 17.5 KB and
+4.9 KB. The CAAML is stored twice — once by ingest, once by the app — so
+the doubling is the rehostable-unit split, not the new shape; the weather
+block is most of each copy, which is SNOW-1000's to decide what to keep.
+A default feed page of 100 of the largest slice bulletin, render models
+included, serialises to about 2.4 MB, under the 5 MB the feed's ceiling
+assumes.
+
 ## Not decided here
 
-What to *do* about the new shape: SNOW-998 (de-aggregated ingest),
-SNOW-999 (the tendency bulletin, and whether the map shows a rating for a
+What else to do about the new shape: SNOW-999 (the tendency bulletin, and whether the map shows a rating for a
 day that has not happened), SNOW-1000 (per-region weather and
 `dangerRatingEvolution`) and SNOW-1001 (whether `BulletinGrouping`
 survives). This ticket makes the changeover audible; it does not absorb it.

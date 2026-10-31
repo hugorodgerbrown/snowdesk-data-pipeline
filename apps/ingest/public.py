@@ -250,6 +250,7 @@ from apps.ingest.runs import (
     FetchOutcome,
     FetchStats,
     NormalisedBulletin,
+    SlfConflictingBulletinIdError,
     fetch_bulletins,
 )
 from apps.ingest.sources.meteofrance import meteofrance_pdf_url, pdf_session
@@ -378,6 +379,7 @@ __all__ = [
     "SourceSkiTour",
     "SourceWeather",
     "SkiArchiveError",
+    "SlfConflictingBulletinIdError",
     "SwisstopoError",
     "SweepResult",
     "TerrainRule",

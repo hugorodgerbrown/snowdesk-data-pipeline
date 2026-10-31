@@ -30,6 +30,7 @@ from apps.ingest.runs import (
     FetchOutcome,
     FetchStats,
     NormalisedBulletin,
+    SlfConflictingBulletinIdError,
     fetch_bulletins,
 )
 
@@ -95,6 +96,53 @@ class TestSlfWalk:
         assert len(items) == 2
         assert seen == ["new", "in", "old"]
         assert stats.requests == 1
+
+    @patch("apps.ingest.sources.slf.PAGE_SIZE", 2)
+    @patch("apps.ingest.sources.slf.fetch_bulletin_page")
+    def test_an_identical_repeat_across_pages_is_a_duplicate(
+        self, page: MagicMock
+    ) -> None:
+        """Paging overlap repeats a bulletin; the walk yields it once (SNOW-998).
+
+        SLF publishing mid-walk shifts every offset by the new issue's
+        size, so the next page starts with what the last one ended on.
+        """
+        first = _raw("a", "2026-01-15T09:00:00Z")
+        second = _raw("b", "2026-01-15T08:00:00Z")
+        page.side_effect = [[first, second], [dict(second)], []]
+
+        items = list(fetch_bulletins(PROVIDER_SLF, DAY, DAY))
+
+        assert [type(item).__name__ for item in items] == [
+            "NormalisedBulletin",
+            "NormalisedBulletin",
+            "FetchOutcome",
+        ]
+        assert items[2] == FetchOutcome(OUTCOME_DUPLICATE)
+
+    @patch("apps.ingest.sources.slf.fetch_bulletin_page")
+    def test_a_conflicting_repeat_raises(self, page: MagicMock) -> None:
+        """One id with two region sets means the id names nothing; stop."""
+        zermatt = _raw("shared", "2026-01-15T08:00:00Z")
+        zermatt["regions"] = [{"regionID": "CH-4222", "name": "Zermatt"}]
+        saas = dict(zermatt, regions=[{"regionID": "CH-4223", "name": "Saas Fee"}])
+        page.return_value = [zermatt, saas]
+
+        walk = fetch_bulletins(PROVIDER_SLF, DAY, DAY)
+        assert isinstance(next(walk), NormalisedBulletin)
+        with pytest.raises(SlfConflictingBulletinIdError, match="shared"):
+            next(walk)
+
+    @patch("apps.ingest.sources.slf.fetch_bulletin_page")
+    def test_key_order_is_not_a_conflict(self, page: MagicMock) -> None:
+        """The fingerprint is of canonical JSON, so reordered keys still match."""
+        original = _raw("a", "2026-01-15T08:00:00Z")
+        reordered = dict(reversed(list(original.items())))
+        page.return_value = [original, reordered]
+
+        items = list(fetch_bulletins(PROVIDER_SLF, DAY, DAY))
+
+        assert items[1] == FetchOutcome(OUTCOME_DUPLICATE)
 
 
 class TestAlbinaWalk:

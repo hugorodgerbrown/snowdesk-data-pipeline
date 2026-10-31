@@ -23,6 +23,7 @@ line.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
@@ -127,6 +128,26 @@ class FetchStats:
 Item = NormalisedBulletin | FetchOutcome
 
 
+class SlfConflictingBulletinIdError(Exception):
+    """One SLF walk met the same ``bulletinID`` with two different contents.
+
+    The 2026/27 export mints one bulletin per micro-region (SNOW-998), so
+    SLF's ids are what keep about 149 rows per issue apart. An identical
+    repeat is paging overlap and harmless; a repeat that differs — another
+    region, another rating — means the id no longer names one bulletin, and
+    writing either copy would silently overwrite the other. So the walk
+    stops, and ``run_slf_pipeline`` records the run as failed.
+    """
+
+    def __init__(self, bulletin_id: str) -> None:
+        """Name the id that was published twice with different contents."""
+        super().__init__(
+            f"SLF published bulletinID {bulletin_id} twice in one walk with "
+            "different contents"
+        )
+        self.bulletin_id = bulletin_id
+
+
 def _window(start: date, end: date) -> tuple[datetime, datetime]:
     """Return the UTC instants bounding ``[start, end]``, end exclusive."""
     range_start = datetime(start.year, start.month, start.day, tzinfo=UTC)
@@ -139,25 +160,79 @@ def _log_unparseable(raw: dict[str, Any]) -> None:
     logger.exception("Error parsing bulletin data:\n%s", json.dumps(raw, indent=4))
 
 
+def _fingerprint(raw: dict[str, Any]) -> str:
+    """Return a digest of a bulletin's canonical JSON, keys sorted."""
+    canonical = json.dumps(raw, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _slf_repeat(raw: dict[str, Any], seen: dict[str, str]) -> FetchOutcome | None:
+    """Recognise a bulletin this walk has already met.
+
+    Args:
+        raw: The raw bulletin.
+        seen: ``bulletinID`` → fingerprint for every bulletin met so far
+            this walk; updated with this one when it is new.
+
+    Returns:
+        ``FetchOutcome(OUTCOME_DUPLICATE)`` for an identical repeat, which
+        is paging overlap — SLF publishing mid-walk shifts every offset —
+        or ``None`` for a bulletin met for the first time, or one with no
+        id, which ``_slf_item`` rejects with its own error.
+
+    Raises:
+        SlfConflictingBulletinIdError: The id was met before with
+            different contents.
+
+    """
+    bulletin_id = raw.get("bulletinID")
+    if not isinstance(bulletin_id, str):
+        return None
+    fingerprint = _fingerprint(raw)
+    previous = seen.get(bulletin_id)
+    if previous is None:
+        seen[bulletin_id] = fingerprint
+        return None
+    if previous != fingerprint:
+        logger.error(
+            "SLF bulletinID %s repeated with different contents:\n%s",
+            bulletin_id,
+            json.dumps(raw, indent=4),
+        )
+        raise SlfConflictingBulletinIdError(bulletin_id)
+    return FetchOutcome(OUTCOME_DUPLICATE)
+
+
 def _slf_item(
-    raw: dict[str, Any], *, range_start: datetime, range_end: datetime
+    raw: dict[str, Any],
+    seen: dict[str, str],
+    *,
+    range_start: datetime,
+    range_end: datetime,
 ) -> Item | None:
     """Decide what one SLF bulletin from a page is.
 
     Args:
         raw: The raw bulletin.
+        seen: The walk's ``bulletinID`` → fingerprint map; see
+            ``_slf_repeat``.
         range_start: Window start, inclusive.
         range_end: Window end, exclusive.
 
     Returns:
-        The bulletin, a skipped-newer outcome, or ``None`` once the walk has
-        passed the start of the window and should stop.
+        The bulletin, a skipped-newer or duplicate outcome, or ``None``
+        once the walk has passed the start of the window and should stop.
 
     Raises:
         KeyError: The bulletin has no usable timestamp or id; its JSON is
             logged first.
+        SlfConflictingBulletinIdError: The id was met before with
+            different contents.
 
     """
+    repeat = _slf_repeat(raw, seen)
+    if repeat is not None:
+        return repeat
     try:
         issued_at = resolve_issued_at(raw)
         if issued_at >= range_end:
@@ -198,16 +273,21 @@ def iter_slf(
         stats: Counts the pages fetched.
 
     Yields:
-        ``NormalisedBulletin`` for each bulletin in the window, and
-        ``FetchOutcome(OUTCOME_SKIPPED_NEWER)`` for each one after it.
+        ``NormalisedBulletin`` for each bulletin in the window,
+        ``FetchOutcome(OUTCOME_SKIPPED_NEWER)`` for each one after it, and
+        ``FetchOutcome(OUTCOME_DUPLICATE)`` for an identical repeat of one
+        already met — ALBINA's precedent, applied to paging overlap.
 
     Raises:
         KeyError: A bulletin carries no usable timestamp; its JSON is
             logged first.
+        SlfConflictingBulletinIdError: A ``bulletinID`` came back with
+            different contents (SNOW-998).
 
     """
     range_start, range_end = _window(start, end)
     stats = stats if stats is not None else FetchStats()
+    seen: dict[str, str] = {}
     offset = 0
     while True:
         page = slf_source.fetch_bulletin_page(
@@ -219,7 +299,7 @@ def iter_slf(
         for raw in page:
             if on_item is not None:
                 on_item(raw)
-            item = _slf_item(raw, range_start=range_start, range_end=range_end)
+            item = _slf_item(raw, seen, range_start=range_start, range_end=range_end)
             if item is None:
                 return
             yield item

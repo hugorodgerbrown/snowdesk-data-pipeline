@@ -49,7 +49,8 @@ import waffle
 from django.conf import settings
 from django.contrib.staticfiles import finders
 from django.core.cache import cache
-from django.db.models import Max, Prefetch
+from django.db.models import Max, Prefetch, TextField
+from django.db.models.functions import Cast
 from django.http import (
     Http404,
     HttpRequest,
@@ -2999,8 +3000,9 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
     """
     Render a random bulletin matching a specific danger level inline.
 
-    Finds the most recent bulletin whose highest ``mainValue`` matches the
-    requested level, picks a region from that bulletin, and renders **the
+    Picks a random bulletin, among the newest 200 that rate some
+    region-day at the requested level, whose ``mainValue`` matches it,
+    picks a region from that bulletin, and renders **the
     same view as the canonical bulletin route** with the matched bulletin
     pinned via ``requested_issue_id`` — guaranteeing the page actually
     reflects the requested danger level (not whatever the day's default
@@ -3024,10 +3026,29 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
     if danger_key is None:
         raise Http404(f"Unknown danger level: {danger_level}")
 
-    # Filter in Python because SQLite does not support JSON __contains.
-    # The candidate pool is small (most recent 200 bulletins) so this is
-    # fast enough for a render view.
-    candidates = Bulletin.objects.order_by("-issued_at")[:200]
+    # The pool is the newest 200 bulletins whose own payload names this
+    # level, filtered in SQL before the slice (SNOW-998). "The newest 200
+    # bulletins" stopped being enough when SLF de-aggregated: one 2026/27
+    # issue is ~149 bulletins, so 200 rows is barely more than one issue,
+    # and a level SLF did not use in the last issue fell out of the pool.
+    #
+    # It reads the bulletin, not RegionDayRating: a region-day is rated
+    # from its one latest bulletin, so a superseded issue's level (a
+    # moderate evening issue replaced by a considerable morning one) never
+    # reaches a rating row, and a filter over ratings would never find it.
+    # The match is on the mainValue pair ('"mainValue": "moderate"'), not
+    # the bare value: SLF's 2026/27 weather block carries "high" / "low"
+    # highlights, so a bare '"high"' could fill the slice with bulletins
+    # that are not high and hide an older one that is. Both backends write
+    # a key and its value as '"key": "value"' — Django stores SQLite JSON
+    # with json.dumps' default separators, and Postgres renders jsonb::text
+    # the same way. The mainValue check below stays, in Python because
+    # SQLite has no JSON __contains, to confirm each candidate.
+    candidates = (
+        Bulletin.objects.alias(raw_text=Cast("raw_data", TextField()))
+        .filter(raw_text__contains=f'"mainValue": "{danger_key}"')
+        .order_by("-issued_at")[:200]
+    )
     matching = [
         b
         for b in candidates

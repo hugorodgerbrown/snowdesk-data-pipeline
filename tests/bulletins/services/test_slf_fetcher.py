@@ -294,6 +294,57 @@ class TestRunPipeline:
         assert run.status == PipelineRun.Status.FAILED
         assert "timeout" in run.error_message
 
+    @patch("apps.ingest.sources.slf.fetch_bulletin_page")
+    def test_a_conflicting_bulletin_id_fails_the_run(
+        self, mock_fetch: MagicMock
+    ) -> None:
+        """SNOW-998: a reused id stops the walk and is never written twice.
+
+        The first copy is already applied when the second arrives; the run
+        is FAILED, which makes ``fetch_bulletins`` exit non-zero, and the
+        conflicting copy does not overwrite it.
+        """
+        first = _make_raw_bulletin(
+            "shared",
+            "2025-03-15T08:00:00Z",
+            regions=[{"regionID": "CH-4115", "name": "Piz Buin"}],
+        )
+        second = _make_raw_bulletin(
+            "shared",
+            "2025-03-15T08:00:00Z",
+            regions=[{"regionID": "CH-7111", "name": "Engadin"}],
+        )
+        mock_fetch.return_value = [first, second]
+
+        run = run_slf_pipeline(
+            start=date(2025, 3, 15),
+            end=date(2025, 3, 15),
+            triggered_by="test",
+        )
+
+        assert run.status == PipelineRun.Status.FAILED
+        assert "shared" in run.error_message
+        bulletin = Bulletin.objects.get(bulletin_id="shared")
+        assert list(
+            bulletin.region_links.values_list("region__region_id", flat=True)
+        ) == ["CH-4115"]
+
+    @patch("apps.ingest.sources.slf.fetch_bulletin_page")
+    def test_an_identical_repeat_is_counted_once(self, mock_fetch: MagicMock) -> None:
+        """Paging overlap: the repeat is a duplicate, not a second write."""
+        bulletin = _make_raw_bulletin("b1", "2025-03-15T08:00:00Z")
+        mock_fetch.return_value = [bulletin, dict(bulletin)]
+
+        run = run_slf_pipeline(
+            start=date(2025, 3, 15),
+            end=date(2025, 3, 15),
+            triggered_by="test",
+        )
+
+        assert run.status == PipelineRun.Status.SUCCESS
+        assert (run.records_created, run.records_updated) == (1, 0)
+        assert Bulletin.objects.count() == 1
+
     @patch("apps.ingest.sources.slf.PAGE_SIZE", 1)
     @patch("apps.ingest.sources.slf.fetch_bulletin_page")
     def test_paginates_until_empty_page(self, mock_fetch: MagicMock) -> None:

@@ -6,11 +6,18 @@ began reading ingest's ``SourceBulletin`` and the paging rule moved to
 ``apps/ingest/api/paging.py``. What one item carries, the keyset paging —
 every row exactly once across pages, ``since`` filtering, the cursor round
 trip — parameter parsing, and a page's fixed query count.
+
+And the ceilings at SLF's 2026/27 per-region volume (SNOW-998): ~149
+bulletins an issue, two issues a day, every item about the size of the
+per-region sentinels.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import json
+import math
+from pathlib import Path
 
 import pytest
 from django.db import connection
@@ -19,6 +26,7 @@ from django.utils import timezone
 
 from apps.ingest.api.bulletins import BULLETINS_FEED
 from apps.ingest.api.paging import (
+    DEFAULT_LIMIT,
     Feed,
     FeedQueryError,
     decode_cursor,
@@ -28,7 +36,20 @@ from apps.ingest.api.paging import (
     parse_limit,
     parse_since,
 )
+from apps.ingest.models import SourceBulletin
+from apps.ingest.normalise.render_model import build_render_model
 from tests.factories import SourceBulletinFactory
+
+_SLICE = (
+    Path(__file__).resolve().parents[2]
+    / "sentinels"
+    / "slf"
+    / "per-region-slice.ndjson"
+)
+# SLF's 2026/27 export: one bulletin per micro-region, two issues a day.
+_PER_REGION_ISSUE = 149
+_ISSUES_PER_DAY = 2
+_PAGE_CEILING_BYTES = 5_000_000
 
 
 def _all() -> list[dict]:
@@ -194,3 +215,104 @@ def test_parse_day() -> None:
     with pytest.raises(FeedQueryError) as error:
         parse_day("2026-13-40", "to")
     assert error.value.param == "to"
+
+
+# ---------------------------------------------------------------------------
+# SNOW-998: ceilings at the per-region volume
+# ---------------------------------------------------------------------------
+
+
+def _pages_for_day(day: dt.date) -> list[dict]:
+    """Walk one target day of the feed at the default page size."""
+    return _pages_for_window(day, day)
+
+
+def _pages_for_window(day_from: dt.date, day_to: dt.date) -> list[dict]:
+    """Walk a window of target days at the default page size."""
+    pages: list[dict] = []
+    cursor = None
+    while True:
+        body = feed_page(
+            BULLETINS_FEED,
+            since=None,
+            cursor=cursor,
+            limit=DEFAULT_LIMIT,
+            day_from=day_from,
+            day_to=day_to,
+        )
+        pages.append(body)
+        cursor = body["next_cursor"]
+        if cursor is None:
+            return pages
+
+
+@pytest.mark.django_db
+def test_a_de_aggregated_day_is_three_default_pages() -> None:
+    """298 bulletins on one target day fit in three default pages."""
+    day = dt.date(2026, 12, 20)
+    rows = _PER_REGION_ISSUE * _ISSUES_PER_DAY
+    SourceBulletin.objects.bulk_create(
+        SourceBulletinFactory.build(target_date=day) for _ in range(rows)
+    )
+
+    pages = _pages_for_day(day)
+
+    assert pages[0]["count"] == rows
+    assert sum(len(p["results"]) for p in pages) == rows
+    assert len(pages) <= 3
+
+
+@pytest.mark.django_db
+def test_the_golden_week_of_per_region_bulletins_is_at_most_21_pages() -> None:
+    """Two real de-aggregated days page as three each; seven are 21 pages.
+
+    Two target days of 298 rows are walked through the feed's day window,
+    each on its own and then together, so the page count is measured
+    rather than assumed — and the week is the same per-item rate over
+    seven days, 2,086 items. Two days rather than seven keeps the rows to
+    596.
+    """
+    days = (dt.date(2026, 12, 20), dt.date(2026, 12, 21))
+    per_day = _PER_REGION_ISSUE * _ISSUES_PER_DAY
+    SourceBulletin.objects.bulk_create(
+        SourceBulletinFactory.build(target_date=day)
+        for day in days
+        for _ in range(per_day)
+    )
+
+    for day in days:
+        pages = _pages_for_day(day)
+        assert pages[0]["count"] == per_day
+        assert len(pages) == math.ceil(per_day / DEFAULT_LIMIT) == 3
+
+    both = _pages_for_window(days[0], days[1])
+    assert sum(len(p["results"]) for p in both) == 2 * per_day
+    assert len(both) == math.ceil(2 * per_day / DEFAULT_LIMIT) == 6
+
+    week_items = 7 * per_day
+    assert week_items == 2086
+    assert math.ceil(week_items / DEFAULT_LIMIT) <= 21
+
+
+@pytest.mark.django_db
+def test_a_default_page_of_per_region_bulletins_is_under_5_mb() -> None:
+    """A full page of the slice's largest bulletin serialises under 5 MB.
+
+    Each item carries the CAAML (weather block and all) and the render
+    model built from it, which is the whole of what the wire sends.
+    """
+    slice_bulletins = [json.loads(line) for line in _SLICE.read_text().splitlines()]
+    largest = max(slice_bulletins, key=lambda b: len(json.dumps(b)))
+    render_model = build_render_model(largest)
+    SourceBulletin.objects.bulk_create(
+        SourceBulletinFactory.build(
+            caaml={**largest, "bulletinID": f"per-region-{n:03d}"},
+            render_model=render_model,
+        )
+        for n in range(DEFAULT_LIMIT)
+    )
+
+    body = feed_page(BULLETINS_FEED, since=None, cursor=None, limit=DEFAULT_LIMIT)
+
+    assert len(body["results"]) == DEFAULT_LIMIT
+    assert len(json.dumps(body).encode("utf-8")) < _PAGE_CEILING_BYTES
