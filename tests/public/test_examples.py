@@ -14,7 +14,7 @@ never the ``/examples/...`` URL itself.
 from __future__ import annotations
 
 from collections.abc import Generator, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from unittest.mock import patch
 
@@ -216,6 +216,40 @@ class TestExamplesCategory:
         assert response.status_code == 200
         # The view's rendered bulletin context object is the matched one.
         assert response.context["bulletin"].pk == target.pk
+
+    def test_evening_issue_renders_its_target_day(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """An evening issue opens on the day it forecasts, not its valid_to day.
+
+        Its validity here ends on the day it was issued, so a page keyed on
+        ``valid_to.date()`` would land a day early (SNOW-1344).
+        """
+        evening = datetime(2025, 3, 14, 16, 0, tzinfo=UTC)
+        bulletin = _make_bulletin_with_region(region, "considerable", evening)
+        assert bulletin.target_date == date(2025, 3, 15)
+
+        response = client.get(
+            reverse("public:examples_category", kwargs={"danger_level": "considerable"})
+        )
+
+        assert response.status_code == 200
+        assert "/ch-4115/valais/2025-03-15/" in response.context["canonical_url"]
+
+    def test_null_target_date_falls_back_to_valid_from(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A row with no target_date takes the day from its valid_from."""
+        evening = datetime(2025, 3, 14, 16, 0, tzinfo=UTC)
+        bulletin = _make_bulletin_with_region(region, "considerable", evening)
+        Bulletin.objects.filter(pk=bulletin.pk).update(target_date=None)
+
+        response = client.get(
+            reverse("public:examples_category", kwargs={"danger_level": "considerable"})
+        )
+
+        assert response.status_code == 200
+        assert "/ch-4115/valais/2025-03-15/" in response.context["canonical_url"]
 
 
 def _slf_bulletin(

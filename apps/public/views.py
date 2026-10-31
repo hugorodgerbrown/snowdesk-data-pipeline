@@ -99,7 +99,10 @@ from apps.bulletins.models import (
 from apps.bulletins.schema import ValidTimePeriod
 from apps.bulletins.services import alert_wording, alerts as alerts_service, day_summary
 from apps.bulletins.services.bulletin_change import bulletin_state, summarise_change
-from apps.bulletins.services.day_rating import season_calendar_cache_key
+from apps.bulletins.services.day_rating import (
+    season_calendar_cache_key,
+    target_day_for_valid_from,
+)
 from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     DayCharacter,
@@ -3079,7 +3082,10 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
         raise Http404(f"No regions found for bulletin: {bulletin.bulletin_id}")
 
     region = region_bulletin.region
-    target_date = bulletin.valid_to.date()
+    # The day the bulletin forecasts, not the UTC day its validity ends —
+    # valid_to need not fall on the forecast day (SNOW-1344). The same
+    # rule as compute_bulletin_grouping_boundary.
+    target_date = bulletin.target_date or target_day_for_valid_from(bulletin.valid_from)
     # Pin the matched bulletin so the rendered page actually shows the
     # requested danger level. An explicit ``?issue=`` query param wins
     # over the pin so deep-links continue to work.
