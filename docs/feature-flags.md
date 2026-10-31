@@ -1,8 +1,8 @@
 ---
 name: feature-flags
-description: django-waffle guide — Flag/Switch/Sample, flag inventory, waffle_flags.json, waffle_switches.json, schedule_<job> switches
+description: django-waffle — Flag/Switch inventory, waffle_flags.json, GRP_FLAG_<NAME> + GRP_ALPHA groups, waffle_switches.json, schedule_<job> switches
 status: current
-last-reviewed: 2026-10-23
+last-reviewed: 2026-10-31
 ---
 
 # Feature flags (django-waffle)
@@ -221,6 +221,31 @@ row exists. Two consequences worth knowing:
   than a dark feature and no error.
 * `"groups": "GRP_DEBUG"` — a bare string rather than a list — is rejected
   outright. Iterating it would create ten single-letter groups.
+* A `GRP_FLAG_*` name in `groups` is rejected too — those groups belong to
+  the command (below).
+
+### Every flag has its own group, and GRP_ALPHA
+
+The manifest never names these; `sync_waffle_flags --commit` scopes every
+flag to two groups regardless:
+
+| Group | Who is in it | Lifetime |
+|-------|--------------|----------|
+| `GRP_FLAG_<NAME>` (`debug_log` → `GRP_FLAG_DEBUG_LOG`) | Whoever should have this one flag on | Created with the flag, **deleted with it** — so are its memberships. Any `GRP_FLAG_*` group no manifest flag owns (a flag deleted by hand in the admin) is deleted too. |
+| `GRP_ALPHA` | The alpha testers — everything turned on | Created once, never deleted. |
+
+So **turning a flag on for one person is adding them to its
+`GRP_FLAG_*` group** in `/admin/auth/group/` (or on the user's page);
+turning everything on for them is adding them to `GRP_ALPHA`. Waffle ORs
+its rules, so this sits beside the flag's other targeting (`superusers`,
+a named group such as `GRP_DEBUG`, …) and never narrows it.
+
+This is the one write the command makes to a flag that already exists:
+a flag lacking either default group is given it. It is **add-only** —
+nothing an operator scoped in the admin is removed — so the
+"create-default" rule above still holds for everything else. Both helpers
+live in `apps/core/services/waffle_sync.py` (`flag_group_name`,
+`default_groups`, `ALPHA_GROUP`).
 
 ---
 
@@ -355,7 +380,8 @@ The change takes effect on the next request — there's no cache to bust.
 4. Ship it. The next deploy's `sync_waffle_flags --commit` deletes the
    `Flag` row — the DB is reconciled to the manifest by create + delete,
    so an entry no longer in the manifest is removed automatically with
-   no separate cleanup step.
+   no separate cleanup step. Its `GRP_FLAG_<NAME>` group goes with it,
+   memberships included.
 
 Worked example: SNOW-724, which removed four at once. Its one caveat is
 that a **feature's** removal is not a flag's removal — if the gate is

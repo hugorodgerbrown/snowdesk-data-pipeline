@@ -23,6 +23,13 @@ SNOW-812 added ``groups`` to the manifest vocabulary — group NAMES a flag is
 scoped to. It is the one manifest key that is not a scalar create-default:
 ``Flag.groups`` is a ManyToMany, so the command applies it after the row
 exists. Everything here still stops at parsing it.
+
+Every flag also carries two groups the manifest never names: its own
+``GRP_FLAG_<NAME>`` group, so turning a flag on for one person is adding
+them to a group, and ``GRP_ALPHA``, the alpha testers, who hold every flag.
+``flag_group_name`` and ``default_groups`` derive both from the flag name;
+the command creates them with the flag and removes the flag's own group
+with it.
 """
 
 from __future__ import annotations
@@ -55,6 +62,41 @@ _OPTIONAL_KEYS = frozenset(
 # ``_OPTIONAL_KEYS`` precisely so ``create_defaults()`` cannot pick it up.
 _GROUPS_KEY = "groups"
 _ALLOWED_KEYS = _REQUIRED_KEYS | _OPTIONAL_KEYS | {_GROUPS_KEY}
+
+#: The alpha-testing group. Every flag is scoped to it, so a member has
+#: every flagged feature turned on.
+ALPHA_GROUP = "GRP_ALPHA"
+#: Prefix of the per-flag group: ``debug_log`` is held by
+#: ``GRP_FLAG_DEBUG_LOG``. A group with this prefix belongs to the command —
+#: it is created with its flag and deleted with it.
+FLAG_GROUP_PREFIX = "GRP_FLAG_"
+
+
+def flag_group_name(flag_name: str) -> str:
+    """Return the name of the group that exists to hold one flag.
+
+    Args:
+        flag_name: The waffle flag's name, e.g. ``"debug_log"``.
+
+    Returns:
+        ``GRP_FLAG_`` plus the flag name upper-cased, e.g.
+        ``"GRP_FLAG_DEBUG_LOG"``.
+
+    """
+    return f"{FLAG_GROUP_PREFIX}{flag_name.upper()}"
+
+
+def default_groups(flag_name: str) -> tuple[str, str]:
+    """Return the groups every flag is scoped to, whatever its manifest says.
+
+    Args:
+        flag_name: The waffle flag's name.
+
+    Returns:
+        The flag's own group and the alpha group, in that order.
+
+    """
+    return (flag_group_name(flag_name), ALPHA_GROUP)
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,7 +166,8 @@ def load_manifest(path: Path) -> list[FlagSpec]:
             required key (``name``/``note``), repeats a ``name`` already
             seen earlier in the file, carries a key outside the
             recognised ``FlagSpec`` fields, or gives ``groups`` anything
-            but a list of non-empty strings.
+            but a list of non-empty strings, or names a ``GRP_FLAG_*``
+            group in it.
 
     """
     if not path.exists():
@@ -165,7 +208,8 @@ def _validate_entry(path: Path, index: int, entry: Any, seen_names: set[str]) ->
 
     Raises:
         ValueError: If ``entry`` is not an object, carries an unknown key,
-            is missing a required key, or repeats a ``name`` already in
+            is missing a required key, gives a malformed ``groups`` or one
+            naming a ``GRP_FLAG_*`` group, or repeats a ``name`` already in
             ``seen_names``.
 
     """
@@ -196,6 +240,15 @@ def _validate_entry(path: Path, index: int, entry: Any, seen_names: set[str]) ->
         raise ValueError(
             f"Waffle flag manifest {path}: entry {index} key "
             f"{_GROUPS_KEY!r} must be a list of non-empty group names."
+        )
+    if groups and any(g.startswith(FLAG_GROUP_PREFIX) for g in groups):
+        # A GRP_FLAG_* group is the command's own: it is derived from a flag
+        # name and deleted when no flag owns it, so naming one here would
+        # scope this flag to a group the next run removes.
+        raise ValueError(
+            f"Waffle flag manifest {path}: entry {index} key "
+            f"{_GROUPS_KEY!r} may not name a {FLAG_GROUP_PREFIX}* group — "
+            "every flag gets its own automatically."
         )
 
     name = entry["name"]

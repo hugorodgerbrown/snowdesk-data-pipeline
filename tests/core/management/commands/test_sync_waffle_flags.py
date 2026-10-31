@@ -14,6 +14,10 @@ Covers:
   - A missing, malformed, or duplicate-name manifest raises ``CommandError``.
   - SNOW-812: a manifest ``groups`` entry scopes the created flag, creating
     any named group that does not exist yet.
+  - Every flag gets its own ``GRP_FLAG_<NAME>`` group and ``GRP_ALPHA``:
+    created with a new flag, added (add-only) to an existing one, and the
+    flag's own group deleted with the flag. A member of either group has
+    the flag on.
 """
 
 from __future__ import annotations
@@ -23,10 +27,20 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+import waffle
 from django.contrib.auth.models import Group
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.test import RequestFactory
 from waffle.models import Flag
+
+from tests.factories import UserFactory
+
+
+def _group_names(flag_name: str) -> set[str]:
+    """Return the names of the groups ``flag_name`` is scoped to."""
+    flag = Flag.objects.get(name=flag_name)
+    return set(flag.groups.values_list("name", flat=True))
 
 
 def _write_manifest(path: Path, flags: list[dict[str, object]]) -> Path:
@@ -178,8 +192,7 @@ def test_commit_scopes_a_flag_to_its_manifest_groups(tmp_path: Path) -> None:
 
     call_command("sync_waffle_flags", "--commit", manifest=manifest)
 
-    flag = Flag.objects.get(name="scoped")
-    assert list(flag.groups.all()) == [existing]
+    assert existing.name in _group_names("scoped")
 
 
 @pytest.mark.django_db
@@ -200,7 +213,7 @@ def test_commit_creates_a_named_group_that_does_not_exist_yet(tmp_path: Path) ->
     call_command("sync_waffle_flags", "--commit", manifest=manifest)
 
     group = Group.objects.get(name="GRP_DEBUG")
-    assert list(Flag.objects.get(name="scoped").groups.all()) == [group]
+    assert "GRP_DEBUG" in _group_names("scoped")
     # Created empty — membership is the operator's call, not the deploy's.
     assert group.user_set.count() == 0
 
@@ -220,7 +233,7 @@ def test_dry_run_creates_no_groups(tmp_path: Path) -> None:
 
     call_command("sync_waffle_flags", manifest=manifest)
 
-    assert not Group.objects.filter(name="GRP_DEBUG").exists()
+    assert not Group.objects.exists()
 
 
 @pytest.mark.django_db
@@ -237,3 +250,143 @@ def test_groups_must_be_a_list_of_names(tmp_path: Path) -> None:
 
     with pytest.raises(CommandError, match="must be a list of non-empty group names"):
         call_command("sync_waffle_flags", "--commit", manifest=manifest)
+
+
+@pytest.mark.django_db
+def test_a_new_flag_gets_its_own_group_and_the_alpha_group(tmp_path: Path) -> None:
+    """Created alongside the flag, both empty, beside any named group."""
+    manifest = _write_manifest(
+        tmp_path / "flags.json",
+        [{"name": "debug_log", "note": "Debug", "groups": ["GRP_DEBUG"]}],
+    )
+
+    call_command("sync_waffle_flags", "--commit", manifest=manifest)
+
+    assert _group_names("debug_log") == {
+        "GRP_DEBUG",
+        "GRP_FLAG_DEBUG_LOG",
+        "GRP_ALPHA",
+    }
+    assert Group.objects.get(name="GRP_FLAG_DEBUG_LOG").user_set.count() == 0
+
+
+@pytest.mark.django_db
+def test_a_member_of_either_default_group_has_the_flag_on(tmp_path: Path) -> None:
+    """The point of the groups: membership is how a flag is turned on."""
+    manifest = _write_manifest(
+        tmp_path / "flags.json",
+        [
+            {"name": "first", "note": "First"},
+            {"name": "second", "note": "Second"},
+        ],
+    )
+    call_command("sync_waffle_flags", "--commit", manifest=manifest)
+    alpha = UserFactory.create()
+    alpha.groups.add(Group.objects.get(name="GRP_ALPHA"))
+    tester = UserFactory.create()
+    tester.groups.add(Group.objects.get(name="GRP_FLAG_FIRST"))
+    outsider = UserFactory.create()
+
+    def is_on(user: object, flag: str) -> bool:
+        request = RequestFactory().get("/")
+        request.user = user  # type: ignore[assignment]
+        return bool(waffle.flag_is_active(request, flag))
+
+    assert is_on(alpha, "first") and is_on(alpha, "second")
+    assert is_on(tester, "first") and not is_on(tester, "second")
+    assert not is_on(outsider, "first")
+
+
+@pytest.mark.django_db
+def test_an_existing_flag_is_given_its_default_groups_add_only(
+    tmp_path: Path,
+) -> None:
+    """A flag created before the default groups gains them on the next run.
+
+    Add-only: a group an operator scoped it to in the admin stays.
+    """
+    flag = Flag.objects.create(name="old_flag", note="Old")
+    hand_picked = Group.objects.create(name="GRP_HAND_PICKED")
+    flag.groups.add(hand_picked)  # type: ignore[attr-defined]
+    manifest = _write_manifest(
+        tmp_path / "flags.json", [{"name": "old_flag", "note": "Old"}]
+    )
+
+    call_command("sync_waffle_flags", "--commit", manifest=manifest)
+
+    assert _group_names("old_flag") == {
+        "GRP_HAND_PICKED",
+        "GRP_FLAG_OLD_FLAG",
+        "GRP_ALPHA",
+    }
+
+
+@pytest.mark.django_db
+def test_removing_a_flag_removes_its_own_group_only(tmp_path: Path) -> None:
+    """GRP_FLAG_* goes with its flag; GRP_ALPHA and named groups stay."""
+    manifest = _write_manifest(
+        tmp_path / "flags.json",
+        [
+            {"name": "keep", "note": "Keep"},
+            {"name": "gone", "note": "Gone", "groups": ["GRP_DEBUG"]},
+        ],
+    )
+    call_command("sync_waffle_flags", "--commit", manifest=manifest)
+    member = UserFactory.create()
+    member.groups.add(Group.objects.get(name="GRP_FLAG_GONE"))
+
+    _write_manifest(manifest, [{"name": "keep", "note": "Keep"}])
+    call_command("sync_waffle_flags", "--commit", manifest=manifest)
+
+    assert set(Group.objects.values_list("name", flat=True)) == {
+        "GRP_FLAG_KEEP",
+        "GRP_ALPHA",
+        "GRP_DEBUG",
+    }
+    assert member.groups.count() == 0
+
+
+@pytest.mark.django_db
+def test_an_orphaned_flag_group_is_removed(tmp_path: Path) -> None:
+    """A GRP_FLAG_* group no manifest flag owns is deleted.
+
+    Covers a flag deleted by hand in the admin, whose group the
+    flag-removal step never saw.
+    """
+    Group.objects.create(name="GRP_FLAG_DELETED_IN_ADMIN")
+    Group.objects.create(name="GRP_UNRELATED")
+    manifest = _write_manifest(tmp_path / "flags.json", [])
+
+    call_command("sync_waffle_flags", "--commit", manifest=manifest)
+
+    assert set(Group.objects.values_list("name", flat=True)) == {"GRP_UNRELATED"}
+
+
+@pytest.mark.django_db
+def test_dry_run_deletes_no_groups(tmp_path: Path) -> None:
+    """The read-only default leaves an orphaned flag group in place."""
+    Group.objects.create(name="GRP_FLAG_ORPHAN")
+    Flag.objects.create(name="lacking", note="Lacking")
+    manifest = _write_manifest(
+        tmp_path / "flags.json", [{"name": "lacking", "note": "Lacking"}]
+    )
+
+    call_command("sync_waffle_flags", manifest=manifest)
+
+    assert Group.objects.filter(name="GRP_FLAG_ORPHAN").exists()
+    assert _group_names("lacking") == set()
+
+
+@pytest.mark.django_db
+def test_a_second_run_changes_no_groups(tmp_path: Path) -> None:
+    """Once every flag holds its groups, a re-run is a no-op."""
+    manifest = _write_manifest(
+        tmp_path / "flags.json", [{"name": "steady", "note": "Steady"}]
+    )
+    call_command("sync_waffle_flags", "--commit", manifest=manifest)
+    group_ids = set(Group.objects.values_list("pk", flat=True))
+
+    call_command("sync_waffle_flags", "--commit", manifest=manifest)
+
+    assert set(Group.objects.values_list("pk", flat=True)) == group_ids
+    assert _group_names("steady") == {"GRP_FLAG_STEADY", "GRP_ALPHA"}
