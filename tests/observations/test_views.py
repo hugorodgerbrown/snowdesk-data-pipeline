@@ -454,30 +454,22 @@ class TestReportSubmitGpsGate:
 class TestReportSubmitInvalidCoordinates:
     """SNOW-464: non-finite / out-of-range coordinates are rejected with 400."""
 
-    @pytest.mark.parametrize(
-        ("lat", "lon"),
-        [
-            ("nan", "7.1"),
-            ("46.1", "inf"),
-            ("46.1", "-inf"),
-            ("95", "7.1"),  # latitude > 90
-            ("-95", "7.1"),  # latitude < -90
-            ("46.1", "200"),  # longitude > 180
-            ("46.1", "-200"),  # longitude < -180
-        ],
-    )
     def test_invalid_coordinates_return_400_and_create_no_row(
-        self, client: Client, lat: str, lon: str
+        self, client: Client
     ) -> None:
-        """A non-finite or out-of-range lat/lon is rejected before any write."""
+        """A non-finite lat is rejected before any write.
+
+        One bad value is enough here; the full bad-input matrix is covered
+        by ``parse_coordinates``'s own tests in tests/core (SNOW-452).
+        """
         user = _verified_user()
         client.force_login(user)
         with patch("apps.observations.views.region_for_point") as mock_region:
             response = client.post(
                 SUBMIT_URL,
                 {
-                    "lat": lat,
-                    "lon": lon,
+                    "lat": "nan",
+                    "lon": "7.1",
                     "location_source": FieldObservation.LOCATION_SOURCE.GPS,
                     "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
                 },
