@@ -11,7 +11,7 @@
  * than a week while it is there.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const DISCARDED = 'A route drawn offline under another account was discarded.';
 
@@ -42,7 +42,11 @@ await window.pwaDb.put('meta:app', {
 });
 
 await import('../../static/js/mutation_queue_core.js');
-await import('../../static/js/telemetry.js');
+// SNOW-1350: a stub, not the real telemetry.js. Nothing here asserts on
+// telemetry, and the real emit awaits IndexedDB before it reads window —
+// so one still pending when the file ends threw "window is not defined"
+// after jsdom's teardown and failed the run with every test green.
+window.pwaTelemetry = { emit: vi.fn() };
 await import('../../static/js/mutation_queue.js');
 
 async function waitFor(predicate, { timeoutMs = 2000, intervalMs = 5 } = {}) {
