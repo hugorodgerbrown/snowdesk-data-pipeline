@@ -570,7 +570,10 @@ class TestLockOrder:
         bulletin = _bulletin(MicroRegionFactory.create(region_id="CH-2003"))
         with CaptureQueriesContext(connection) as queries:
             rebuild_one_bulletin(bulletin.pk, refresh_ratings=False)
-        assert "FOR NO KEY UPDATE" in queries.captured_queries[0]["sql"]
+        # The django_db transaction makes the task's atomic() open a
+        # SAVEPOINT first, so find the bulletin SELECT rather than query 0.
+        lock_at = _index(queries, 'FROM "bulletins_bulletin"')
+        assert "FOR NO KEY UPDATE" in queries.captured_queries[lock_at]["sql"]
 
 
 class TestInterleaving:
