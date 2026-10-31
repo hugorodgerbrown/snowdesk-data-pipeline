@@ -4,7 +4,9 @@ for a day (apps.public.problem_terrain, SNOW-1194).
 
 Covers:
   - The payload: rules grouped by bulletin, each region pointing at the
-    bulletin its page shows (the shared selection rule), a region whose
+    bulletin that rated its day (``RegionDayRating.source_bulletin``, the
+    one its page shows), the rules read from the render model's stored
+    ``derived.terrain_rules`` (SNOW-1341), a region whose
     bulletin describes no ground listed with an empty list, a region with
     no bulletin that day left out.
   - The gates: empty while the terrain-class tiles are unconfigured, and
@@ -22,10 +24,14 @@ from typing import Any
 
 import pytest
 from django.core.cache import cache
+from django.db import connection
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.bulletins.models import Bulletin, RegionDayRating
+from apps.bulletins.services.day_rating import apply_bulletin_day_ratings
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.public.problem_terrain import (
     build_problem_terrain_payload,
@@ -90,7 +96,36 @@ def _bulletin(day: datetime.date, regions: list[Any], **render: Any) -> Any:
     )
     for region in regions:
         RegionBulletinFactory.create(bulletin=bulletin, region=region)
+    # The feed reads the day's ratings, as ingest writes them (SNOW-1341).
+    apply_bulletin_day_ratings(bulletin)
     return bulletin
+
+
+def _evening_and_failed_morning(day: datetime.date, region: Any) -> tuple[Any, Any]:
+    """The evening issue for ``day`` (built) and its morning update (failed)."""
+    evening_start = datetime.datetime.combine(
+        day - datetime.timedelta(days=1), datetime.time(16), tzinfo=datetime.UTC
+    )
+    evening = BulletinFactory.create(
+        issued_at=evening_start,
+        valid_from=evening_start,
+        valid_to=evening_start + datetime.timedelta(days=1),
+        render_model=_render_model(),
+        render_model_version=RENDER_MODEL_VERSION,
+    )
+    morning_start = datetime.datetime.combine(
+        day, datetime.time(6), tzinfo=datetime.UTC
+    )
+    morning = BulletinFactory.create(
+        issued_at=morning_start,
+        valid_from=morning_start,
+        valid_to=morning_start + datetime.timedelta(hours=10),
+    )
+    for bulletin in (evening, morning):
+        RegionBulletinFactory.create(bulletin=bulletin, region=region)
+        apply_bulletin_day_ratings(bulletin)
+    assert evening.target_date == morning.target_date == day
+    return evening, morning
 
 
 WIND_SLAB_RULE = {
@@ -169,11 +204,70 @@ class TestPayload:
             render_model_version=RENDER_MODEL_VERSION,
         )
         RegionBulletinFactory.create(bulletin=evening, region=region)
+        apply_bulletin_day_ratings(evening)
         tomorrow = today + datetime.timedelta(days=1)
         assert build_problem_terrain_payload(today)["regions"] == {}
         assert build_problem_terrain_payload(tomorrow)["regions"] == {
             region.region_id: str(evening.bulletin_id)
         }
+
+    def test_reads_the_rules_stored_with_the_model(self, settings: Any) -> None:
+        """SNOW-1341: derived.terrain_rules is served, not recomputed."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        today = timezone.localdate()
+        region = MicroRegionFactory.create()
+        stored = {**WIND_SLAB_RULE, "rating": 5, "aspects": [4]}
+        bulletin = _bulletin(today, [region])
+        model = {**bulletin.render_model, "derived": {"terrain_rules": [stored]}}
+        Bulletin.objects.filter(pk=bulletin.pk).update(render_model=model)
+        payload = build_problem_terrain_payload(today)
+        assert payload["bulletins"] == {str(bulletin.bulletin_id): [stored]}
+
+    def test_a_day_is_two_queries(self, settings: Any) -> None:
+        """The ratings with their bulletins, and the links; nothing per region."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        today = timezone.localdate()
+        _bulletin(today, [MicroRegionFactory.create() for _ in range(3)])
+        _bulletin(today, [MicroRegionFactory.create() for _ in range(2)])
+        with CaptureQueriesContext(connection) as queries:
+            payload = build_problem_terrain_payload(today)
+        assert len(payload["regions"]) == 5
+        assert len(queries) == 2
+        assert not [q for q in queries if "raw_data" in q["sql"]]
+
+    def test_a_region_with_no_rated_bulletin_gets_the_pages_issue(
+        self, settings: Any
+    ) -> None:
+        """No RegionDayRating.source_bulletin: the latest linked issue."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        today = timezone.localdate()
+        region = MicroRegionFactory.create()
+        bulletin = _bulletin(today, [region])
+        RegionDayRating.objects.filter(region=region).update(source_bulletin=None)
+        payload = build_problem_terrain_payload(today)
+        key = str(bulletin.bulletin_id)
+        assert payload["regions"] == {region.region_id: key}
+        assert payload["bulletins"] == {key: [WIND_SLAB_RULE]}
+
+    def test_a_failed_morning_update_is_served_as_the_page_shows_it(
+        self, settings: Any
+    ) -> None:
+        """Codex on #1361: evening built, morning failed — the morning's rules.
+
+        No rating names a failed build, so the day stays rated from the
+        evening issue, while the page shows the morning update's error
+        card. The feed follows the page: the morning issue, with no rules.
+        """
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        today = timezone.localdate()
+        region = MicroRegionFactory.create()
+        evening, morning = _evening_and_failed_morning(today, region)
+        rating = RegionDayRating.objects.get(region=region, date=today)
+        assert rating.source_bulletin_id == evening.pk
+        payload = build_problem_terrain_payload(today)
+        key = str(morning.bulletin_id)
+        assert payload["regions"] == {region.region_id: key}
+        assert payload["bulletins"] == {key: []}
 
     def test_empty_while_the_tiles_are_unconfigured(self, settings: Any) -> None:
         """The terrain filter's own gate."""

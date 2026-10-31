@@ -29,7 +29,12 @@ from apps.bulletins.services.alerts import (
     since_previous_day,
     trip_places,
 )
-from apps.bulletins.services.bulletin_change import BulletinState, ProblemState
+from apps.bulletins.services.bulletin_change import (
+    BulletinState,
+    ProblemState,
+    bulletin_state,
+)
+from apps.ingest.public import build_derived
 from tests.factories import (
     AccountFactory,
     BulletinAlertFactory,
@@ -630,3 +635,51 @@ class TestRecentAlerts:
         self._row(account, title="", when=now)
         self._row(AccountFactory.create(), when=now)
         assert recent_alerts(account, now) == []
+
+
+@pytest.mark.django_db
+class TestStoredState:
+    """SNOW-1341: the run reads the state the service stored with the model."""
+
+    def test_the_stored_fingerprint_is_the_send_logs(self, follower: tuple) -> None:
+        """The row records derived.state's fingerprint, not a recomputed one."""
+        account, region = follower
+        rm = render("considerable")
+        stored = state("considerable")
+        rm["derived"] = {
+            **build_derived(rm),
+            "state": {**stored.to_json(), "fingerprint": "from-service"},
+        }
+        publish(region, TOMORROW, rm)
+        run = evaluate_account(account, NOW)
+        (row,) = [r for r in run.rows if r.day == TOMORROW]
+        assert row.fingerprint == "from-service"
+        assert row.state == stored
+        with patch.object(alerts, "send_alert_email"):
+            deliver(run)
+        logged = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
+        assert logged.fingerprint == "from-service"
+        # The next run compares on the same stored value: nothing new.
+        assert [
+            r for r in evaluate_account(account, NOW).rows if r.day == TOMORROW
+        ] == []
+
+    def test_day_state_reads_the_stored_state(self, follower: tuple) -> None:
+        """The "since" strip's previous side comes from derived.state too."""
+        _, region = follower
+        rm = render("moderate")
+        stored = state("high", (WIND,))
+        rm["derived"] = {
+            **build_derived(rm),
+            "state": {**stored.to_json(), "fingerprint": "x"},
+        }
+        publish(region, TODAY, rm)
+        assert alerts.day_state(region, TODAY) == stored
+
+    def test_a_model_without_one_is_reduced_as_before(self, follower: tuple) -> None:
+        """A pre-v10 model: the state is computed from it."""
+        _, region = follower
+        publish(region, TODAY, render("considerable", [WIND_RM]))
+        assert alerts.day_state(region, TODAY) == bulletin_state(
+            render("considerable", [WIND_RM])
+        )

@@ -40,6 +40,7 @@ from apps.bulletins.services.day_rating import target_day_for_valid_from
 from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
+    build_render_model,
 )
 from apps.ingest.models import SourceBulletin, SourceDayRating
 from apps.ingest.public import (
@@ -1195,3 +1196,151 @@ class TestStoreThenApply:
         item = {"bulletin_id": "b-1", "caaml": _make_raw_bulletin("b-1")}
         with pytest.raises(ValueError, match="PipelineRun"):
             apply_feed_item(item, None, existing=None)
+
+
+# ---------------------------------------------------------------------------
+# The service's index and derived block (SNOW-1341)
+# ---------------------------------------------------------------------------
+
+
+def _feed_item(raw: dict[str, Any], **index: Any) -> dict[str, Any]:
+    """Return ``raw`` as a bulletins feed item, with any index keys given."""
+    return {"bulletin_id": raw["bulletinID"], "pdf_url": "", "caaml": raw, **index}
+
+
+@pytest.mark.django_db
+class TestFedIndex:
+    """upsert_bulletin uses the feed item's index and falls back to the CAAML."""
+
+    pytestmark = pytest.mark.usefixtures("_seed_test_regions")
+
+    def test_fed_values_are_used_as_sent(self) -> None:
+        """target_date, valid_from and region_codes are not re-derived."""
+        raw = _make_raw_bulletin(
+            dangerRatings=[{"mainValue": "moderate", "validTimePeriod": "all_day"}]
+        )
+        item = _feed_item(
+            raw,
+            valid_from="2025-03-15T18:00:00+00:00",
+            target_date="2025-03-20",
+            region_codes=["CH-7111"],
+        )
+        apply_feed_item(item, PipelineRunFactory.create(), existing=None)
+        bulletin = Bulletin.objects.get(bulletin_id="test-001")
+        assert bulletin.valid_from == datetime(2025, 3, 15, 18, tzinfo=UTC)
+        assert bulletin.target_date == date(2025, 3, 20)
+        assert list(bulletin.regions.values_list("region_id", flat=True)) == ["CH-7111"]
+        # The link's name is still the CAAML's — the feed does not send it.
+        link = RegionBulletin.objects.get(bulletin=bulletin)
+        assert link.region_name_at_time == "Engadin"
+
+    def test_an_item_without_them_reads_the_caaml(self) -> None:
+        """An older service's item: every value comes from the CAAML."""
+        raw = _make_raw_bulletin()
+        apply_feed_item(_feed_item(raw), PipelineRunFactory.create(), existing=None)
+        bulletin = Bulletin.objects.get(bulletin_id="test-001")
+        start = parse_dt(raw["validTime"]["startTime"])
+        assert bulletin.valid_from == start
+        assert bulletin.target_date == target_day_for_valid_from(start)
+        assert set(bulletin.regions.values_list("region_id", flat=True)) == {
+            "CH-4115",
+            "CH-7111",
+        }
+
+    def test_null_index_values_read_the_caaml(self) -> None:
+        """A row the service never indexed sends nulls; they are ignored."""
+        raw = _make_raw_bulletin()
+        item = _feed_item(raw, valid_from=None, target_date=None)
+        apply_feed_item(item, PipelineRunFactory.create(), existing=None)
+        bulletin = Bulletin.objects.get(bulletin_id="test-001")
+        assert bulletin.target_date == target_day_for_valid_from(
+            parse_dt(raw["validTime"]["startTime"])
+        )
+
+    def test_a_current_served_model_is_copied_derived_and_all(self) -> None:
+        """The derived block arrives with the model; nothing is rebuilt."""
+        raw = _make_raw_bulletin(
+            dangerRatings=[{"mainValue": "high", "validTimePeriod": "all_day"}]
+        )
+        served = build_render_model(raw)
+        served["derived"]["problem_family"] = "served"
+        with patch("apps.bulletins.services.apply.build_render_model") as build:
+            apply_feed_item(
+                _feed_item(raw, render_model=served),
+                PipelineRunFactory.create(),
+                existing=None,
+            )
+        build.assert_not_called()
+        bulletin = Bulletin.objects.get(bulletin_id="test-001")
+        assert bulletin.render_model["derived"]["problem_family"] == "served"
+
+    def test_danger_levels_column_is_written(self) -> None:
+        """'|'-delimited, low first, from the stored model's derived block."""
+        raw = _make_raw_bulletin(
+            dangerRatings=[
+                {"mainValue": "considerable", "validTimePeriod": "earlier"},
+                {"mainValue": "moderate", "validTimePeriod": "later"},
+            ]
+        )
+        upsert_bulletin(raw, PipelineRunFactory.create())
+        bulletin = Bulletin.objects.get(bulletin_id="test-001")
+        assert bulletin.danger_levels == "|moderate|considerable|"
+
+    def test_a_failed_build_names_no_level(self) -> None:
+        """The version-0 sentinel carries no ratings, so the column is empty."""
+        raw = _make_raw_bulletin(customData={})
+        upsert_bulletin(raw, PipelineRunFactory.create())
+        bulletin = Bulletin.objects.get(bulletin_id="test-001")
+        assert bulletin.render_model_version == 0
+        assert bulletin.danger_levels == ""
+
+
+@pytest.mark.django_db
+class TestFedIndexMalformedRegions:
+    """Codex on #1361: fed codes never hide a malformed CAAML region entry."""
+
+    pytestmark = pytest.mark.usefixtures("_seed_test_regions")
+
+    def _linked(self) -> set[str]:
+        """Return the stored bulletin's linked region ids."""
+        bulletin = Bulletin.objects.get(bulletin_id="test-001")
+        return set(bulletin.regions.values_list("region_id", flat=True))
+
+    @pytest.mark.parametrize("codes", [None, ["CH-4115"]])
+    def test_one_malformed_entry_raises_before_any_write(
+        self, codes: list[str] | None
+    ) -> None:
+        """With or without fed codes: KeyError, existing links untouched."""
+        upsert_bulletin(_make_raw_bulletin(), PipelineRunFactory.create())
+        raw = _make_raw_bulletin(
+            regions=[{"regionID": "CH-4115", "name": "Piz Buin"}, {"name": "No id"}]
+        )
+        index = {} if codes is None else {"region_codes": codes}
+        with pytest.raises(KeyError):
+            apply_feed_item(
+                _feed_item(raw, **index), PipelineRunFactory.create(), existing=None
+            )
+        assert self._linked() == {"CH-4115", "CH-7111"}
+
+    def test_every_entry_malformed_raises_and_keeps_the_links(self) -> None:
+        """The service indexed no codes from them; still no silent unlink."""
+        upsert_bulletin(_make_raw_bulletin(), PipelineRunFactory.create())
+        raw = _make_raw_bulletin(regions=[{"name": "No id"}, {"name": "Nor this"}])
+        with pytest.raises(KeyError):
+            apply_feed_item(
+                _feed_item(raw, region_codes=[]),
+                PipelineRunFactory.create(),
+                existing=None,
+            )
+        assert self._linked() == {"CH-4115", "CH-7111"}
+
+    def test_codes_that_keep_no_entry_are_no_coverage(self) -> None:
+        """Fed codes matching none of the CAAML's regions resolve nothing."""
+        upsert_bulletin(_make_raw_bulletin(), PipelineRunFactory.create())
+        with pytest.raises(NoResolvableRegionsError):
+            apply_feed_item(
+                _feed_item(_make_raw_bulletin(), region_codes=["CH-0000"]),
+                PipelineRunFactory.create(),
+                existing=None,
+            )
+        assert self._linked() == {"CH-4115", "CH-7111"}

@@ -44,6 +44,7 @@ from apps.bulletins.services.day_rating import (
 from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     build_render_model,
+    danger_levels_column,
 )
 from apps.core.models import CommandRun, RequestLog
 from apps.downloads.models import DownloadArea
@@ -301,6 +302,10 @@ class BulletinFactory(factory.django.DjangoModelFactory[Bulletin]):
     valid_to = factory.LazyAttribute(lambda obj: obj.issued_at)
     target_date = factory.LazyAttribute(
         lambda obj: target_day_for_valid_from(obj.valid_from)
+    )
+    # Read off the render model, as upsert_bulletin writes it (SNOW-1341).
+    danger_levels = factory.LazyAttribute(
+        lambda obj: danger_levels_column(obj.render_model)
     )
     lang = "en"
     unscheduled = False

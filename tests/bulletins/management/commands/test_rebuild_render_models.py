@@ -106,6 +106,17 @@ class TestRebuildRenderModelsDefault:
         assert isinstance(b.render_model, dict)
         assert b.render_model.get("version") == RENDER_MODEL_VERSION
 
+    def test_a_v9_row_gains_the_derived_block_and_its_levels(self) -> None:
+        """SNOW-1341: the Deploy-Step fills derived and Bulletin.danger_levels."""
+        b = _make_bulletin(render_model_version=9, bulletin_id="v9-001")
+        assert b.danger_levels == ""
+
+        call_command("rebuild_render_models", commit=True, verbosity=0)
+
+        b.refresh_from_db()
+        assert b.render_model["derived"]["danger_levels"]["levels"] == ["low"]
+        assert b.danger_levels == "|low|"
+
 
 @pytest.mark.django_db
 class TestRebuildRenderModelsAll:

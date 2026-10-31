@@ -59,6 +59,8 @@ from typing import TYPE_CHECKING
 
 from django.utils.translation import gettext_lazy as _
 
+from apps.ingest.public import NEUTRAL_PROBLEMS
+
 if TYPE_CHECKING:
     # ``django_stubs_ext`` is a typing-only dependency; ``from __future__
     # import annotations`` keeps every reference below a forward string at
@@ -89,9 +91,8 @@ READABLE_PROBLEMS: frozenset[str] = frozenset(
 HIDDEN_PROBLEMS: frozenset[str] = frozenset({"persistent_weak_layers", "gliding_snow"})
 
 # Placeholder entries that name no hazard; they never reach %(problems)s.
-NEUTRAL_PROBLEMS: frozenset[str] = frozenset(
-    {"no_distinct_avalanche_problem", "favourable_situation"}
-)
+# The service's set since SNOW-1341 (``apps.ingest.public``), which drops
+# them from an alert's state by the same rule.
 
 # Lower-case mid-sentence phrasing for the EAWS problem types. Distinct
 # from ``_PROBLEM_LABELS`` in apps/public/views.py, which are Title Case

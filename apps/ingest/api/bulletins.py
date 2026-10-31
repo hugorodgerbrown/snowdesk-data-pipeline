@@ -6,9 +6,15 @@ provider's CAAML exactly as normalised, its PDF link, and since SNOW-1270
 the service's render model of it. A client copies the render model when it
 was built at the client's own ``RENDER_MODEL_VERSION`` and builds its own
 otherwise, so a client running a newer builder is never held to the
-service's. The other derived tables (region links, day ratings, groupings)
-are still rebuilt by the client's ``upsert_bulletin``. ``BULLETINS_FEED``
-is the feed ``/api/data/v1/bulletins/`` pages through.
+service's. Since SNOW-1341 an item also carries what the service indexed
+from the CAAML — ``valid_from``, ``target_date`` and ``region_codes`` —
+which the client's ``upsert_bulletin`` uses as sent, and the render model
+carries its ``derived`` block. Both are additive: an older client ignores
+the new keys, and a client reading an older service's item reads them from
+the CAAML instead, so neither feed version moved. The other derived tables
+(region links, day ratings, groupings) are still rebuilt by the client's
+``upsert_bulletin``. ``BULLETINS_FEED`` is the feed
+``/api/data/v1/bulletins/`` pages through.
 
 Moved from ``apps/data_feed/feeds.py`` by SNOW-1250, which also changed what
 it reads: ingest's own ``SourceBulletin`` rather than the app's ``Bulletin``.
@@ -31,9 +37,14 @@ from apps.ingest.models import SourceBulletin
 def serialise_source_bulletin(row: SourceBulletin) -> dict[str, Any]:
     """Return a bulletin as the provider's CAAML, its PDF link and render model.
 
+    Plus the service's index of the CAAML (SNOW-1341): ``valid_from`` and
+    ``target_date`` as ISO strings (null until indexed) and the sorted
+    ``region_codes``.
+
     Args:
         row: A row loaded with ``bulletin_id``, ``pdf_url``, ``caaml``,
-            ``render_model`` and ``updated_at``.
+            ``render_model``, ``updated_at``, ``valid_from``,
+            ``target_date`` and ``region_codes``.
 
     Returns:
         The wire item.
@@ -45,13 +56,24 @@ def serialise_source_bulletin(row: SourceBulletin) -> dict[str, Any]:
         "pdf_url": row.pdf_url,
         "caaml": row.caaml,
         "render_model": row.render_model,
+        "valid_from": row.valid_from.isoformat() if row.valid_from else None,
+        "target_date": row.target_date.isoformat() if row.target_date else None,
+        "region_codes": list(row.region_codes or []),
     }
 
 
 def _source_bulletins() -> QuerySet[SourceBulletin]:
     """Return every stored bulletin, loading only what the item carries."""
     return SourceBulletin.objects.only(
-        "id", "bulletin_id", "updated_at", "pdf_url", "caaml", "render_model"
+        "id",
+        "bulletin_id",
+        "updated_at",
+        "pdf_url",
+        "caaml",
+        "render_model",
+        "valid_from",
+        "target_date",
+        "region_codes",
     )
 
 

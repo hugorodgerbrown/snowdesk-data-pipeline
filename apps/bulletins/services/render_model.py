@@ -34,8 +34,10 @@ from apps.ingest.public import (
     compute_period_transition,
     day_character_key,
     derive_problem_family,
+    derived_of,
     detect_prose_spatial,
     detect_source as detect_provider,
+    period_transition_of,
     problem_types_for,
 )
 
@@ -63,6 +65,7 @@ __all__ = [
     "build_render_model",
     "compute_day_character",
     "compute_period_transition",
+    "danger_levels_column",
     "derive_problem_family",
     "detect_prose_spatial",
     "detect_source",
@@ -176,8 +179,9 @@ def compute_day_character(render_model: dict[str, Any]) -> DayCharacter:
     # The service's cascade; empty traits are a quiet day.
     key = day_character_key(render_model)
 
-    # Movement and the window the explainer describes.
-    transition = compute_period_transition(render_model)
+    # Movement and the window the explainer describes. The transition is
+    # the one the service stored with the model (SNOW-1341).
+    transition = period_transition_of(derived_of(render_model))
     earlier_types = problem_types_for(traits, {"all_day", "earlier"})
     later_types = problem_types_for(traits, {"later"})
     movement = day_summary.classify_movement(
@@ -207,3 +211,28 @@ def compute_day_character(render_model: dict[str, Any]) -> DayCharacter:
         label=_DAY_CHARACTER_LABELS[key],
         explainer=day_summary.summary_for(movement, level, window_types, from_level),
     )
+
+
+# ---------------------------------------------------------------------------
+# The danger-levels column (SNOW-1341)
+# ---------------------------------------------------------------------------
+
+
+def danger_levels_column(render_model: dict[str, Any] | None) -> str:
+    """Return ``Bulletin.danger_levels`` for a render model.
+
+    The levels come from the model's ``derived.danger_levels`` (computed
+    when a model carries no ``derived``), ``|``-delimited with a leading and
+    trailing ``|`` so a filter can match one whole key —
+    ``danger_levels__contains="|high|"`` never matches ``very_high``.
+
+    Args:
+        render_model: The model being stored, or None.
+
+    Returns:
+        E.g. ``"|moderate|considerable|"``, or ``""`` when it names no level
+        (a failed build's sentinel names none).
+
+    """
+    levels: list[str] = derived_of(render_model)["danger_levels"]["levels"]
+    return f"|{'|'.join(levels)}|" if levels else ""

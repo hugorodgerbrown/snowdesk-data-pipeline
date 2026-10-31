@@ -352,14 +352,29 @@ class Bulletin(BaseModel):
         help_text=(
             "Versioned, presentation-ready view of the bulletin built from "
             "raw_data. Shape: {version, source, danger, traits, metadata, "
-            "prose, danger_patterns} — see docs/render-model.md. Rebuilt by "
-            "upsert_bulletin and on demand by rebuild_render_models."
+            "prose, danger_patterns, derived} — see docs/render-model.md. "
+            "Rebuilt by upsert_bulletin and on demand by rebuild_render_models."
         ),
     )
     render_model_version = models.PositiveIntegerField(
         default=0,
         db_index=True,
         help_text="Version of the render_model schema. 0 means not yet built.",
+    )
+    # Not indexed, deliberately (SNOW-1341): its one reader, /examples/<level>/,
+    # filters it with a LIKE and takes the newest 200 by issued_at, which an
+    # index on this column would not serve.
+    danger_levels = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text=(
+            "The distinct EAWS levels the bulletin's ratings name, low first, "
+            "'|'-delimited with a leading and trailing '|' (e.g. "
+            "'|moderate|considerable|'), from render_model.derived."
+            "danger_levels; '' when it names none. Written with the render "
+            "model by upsert_bulletin and rebuild_render_models."
+        ),
     )
     issued_at = models.DateTimeField(db_index=True)
     valid_from = models.DateTimeField()

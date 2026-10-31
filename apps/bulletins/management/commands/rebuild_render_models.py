@@ -3,7 +3,9 @@ apps/bulletins/management/commands/rebuild_render_models.py — Management comma
 
 Rebuilds the ``render_model`` JSONField on Bulletin rows whose
 ``render_model_version`` is older than the current ``RENDER_MODEL_VERSION``
-constant, or on a specific bulletin, or on all bulletins. After a successful
+constant, or on a specific bulletin, or on all bulletins, and with it the
+``danger_levels`` column read off the rebuilt model's ``derived`` block
+(SNOW-1341). After a successful
 render-model rebuild it also refreshes the RegionDayRating rows for every
 (region, day) covered by the rebuilt bulletins (pass ``--skip-day-ratings``
 to suppress this step).
@@ -58,6 +60,7 @@ from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
     build_render_model,
+    danger_levels_column,
 )
 from apps.core.command_iteration import iterate_rows
 from apps.core.command_register import RegisteredCommand
@@ -184,9 +187,12 @@ class Command(RegisteredCommand):
                 new_version,
             )
         else:
+            # danger_levels is read off the model it was built with, so the
+            # column moves with every rebuild (SNOW-1341).
             Bulletin.objects.filter(pk=bulletin.pk).update(
                 render_model=new_render_model,
                 render_model_version=new_version,
+                danger_levels=danger_levels_column(new_render_model),
             )
         return success, new_version
 

@@ -57,8 +57,7 @@ import waffle
 from django.conf import settings
 from django.contrib.staticfiles import finders
 from django.core.cache import cache
-from django.db.models import Max, Prefetch, TextField
-from django.db.models.functions import Cast
+from django.db.models import Max, Prefetch
 from django.http import (
     Http404,
     HttpRequest,
@@ -106,7 +105,7 @@ from apps.bulletins.models import (
 )
 from apps.bulletins.schema import ValidTimePeriod
 from apps.bulletins.services import alert_wording, alerts as alerts_service, day_summary
-from apps.bulletins.services.bulletin_change import bulletin_state, summarise_change
+from apps.bulletins.services.bulletin_change import summarise_change
 from apps.bulletins.services.day_rating import (
     season_calendar_cache_key,
     target_day_for_valid_from,
@@ -117,8 +116,6 @@ from apps.bulletins.services.render_model import (
     PeriodTransition,
     band_label_for_elevation,
     compute_day_character,
-    compute_period_transition,
-    derive_problem_family,
     detect_prose_spatial,
     problem_types_for,
 )
@@ -131,6 +128,7 @@ from apps.core.http import client_ip, is_speculative
 from apps.core.services.request_log import capture as capture_request_log
 from apps.core.sw_shell import inject_cache_version, served_cache_version
 from apps.favourites.models import Favourite
+from apps.ingest.public import derived_of, period_transition_of, state_of
 from apps.locations.models import Location, ResortLocation
 from apps.observations.models import FieldObservation
 from apps.observations.services.ground import ground_for_region
@@ -2835,9 +2833,9 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
     """
     Render a random bulletin matching a specific danger level inline.
 
-    Picks a random bulletin, among the newest 200 that rate some
-    region-day at the requested level, whose ``mainValue`` matches it,
-    picks a region from that bulletin, and renders **the
+    Picks a random bulletin, among the newest 200 whose ratings name the
+    requested level (``Bulletin.danger_levels``), picks a region from that
+    bulletin, and renders **the
     same view as the canonical bulletin route** with the matched bulletin
     pinned via ``requested_issue_id`` — guaranteeing the page actually
     reflects the requested danger level (not whatever the day's default
@@ -2861,8 +2859,8 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
     if danger_key is None:
         raise Http404(f"Unknown danger level: {danger_level}")
 
-    # The pool is the newest 200 bulletins whose own payload names this
-    # level, filtered in SQL before the slice (SNOW-998). "The newest 200
+    # The pool is the newest 200 bulletins whose ratings name this level,
+    # filtered in SQL before the slice (SNOW-998). "The newest 200
     # bulletins" stopped being enough when SLF de-aggregated: one 2026/27
     # issue is ~149 bulletins, so 200 rows is barely more than one issue,
     # and a level SLF did not use in the last issue fell out of the pool.
@@ -2871,27 +2869,18 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
     # from its one latest bulletin, so a superseded issue's level (a
     # moderate evening issue replaced by a considerable morning one) never
     # reaches a rating row, and a filter over ratings would never find it.
-    # The match is on the mainValue pair ('"mainValue": "moderate"'), not
-    # the bare value: SLF's 2026/27 weather block carries "high" / "low"
-    # highlights, so a bare '"high"' could fill the slice with bulletins
-    # that are not high and hide an older one that is. Both backends write
-    # a key and its value as '"key": "value"' — Django stores SQLite JSON
-    # with json.dumps' default separators, and Postgres renders jsonb::text
-    # the same way. The mainValue check below stays, in Python because
-    # SQLite has no JSON __contains, to confirm each candidate.
-    candidates = (
-        Bulletin.objects.alias(raw_text=Cast("raw_data", TextField()))
-        .filter(raw_text__contains=f'"mainValue": "{danger_key}"')
-        .order_by("-issued_at")[:200]
+    #
+    # Since SNOW-1341 the filter is the ``danger_levels`` column — the
+    # distinct levels of the render model's danger.ratings, stored as
+    # "|moderate|considerable|" — not a LIKE over raw_data cast to text,
+    # so the page reads no CAAML. The delimiters make the match exact
+    # ("|high|" is not inside "|very_high|"), so no Python confirmation is
+    # needed. Unindexed on purpose: a LIKE '%…%' cannot use one.
+    matching = list(
+        Bulletin.objects.filter(danger_levels__contains=f"|{danger_key}|")
+        .order_by("-issued_at")
+        .only("pk", "bulletin_id", "target_date", "valid_from")[:200]
     )
-    matching = [
-        b
-        for b in candidates
-        if any(
-            r.get("mainValue") == danger_key
-            for r in (b.raw_data or {}).get("properties", {}).get("dangerRatings", [])
-        )
-    ]
 
     if not matching:
         raise Http404(f"No bulletins found for danger level: {danger_level}")
@@ -3919,47 +3908,30 @@ def _track_bulletin_viewed(
     )
 
 
-def _build_bulletin_headline(
-    raw_render_model: dict[str, Any],
-    period_transition: PeriodTransition | None,
-) -> str:
+def _build_bulletin_headline(headline_inputs: dict[str, str]) -> str:
     """
     Return the data-driven headline for a bulletin's render model (SNOW-249).
 
-    Projects the five inputs of the variant matrix — source, partition
-    type, peak rating, direction and problem family — from the render
-    model and its period transition, then looks the copy up with
+    The five inputs of the variant matrix — source, partition type, peak
+    rating, direction and problem family — are projected by the service
+    and stored in the model's ``derived.headline_inputs`` (SNOW-1341); only
+    the copy, which is localised, is looked up here with
     :func:`apps.public.headlines.headline_for`. The resort page read it too
     (SNOW-1124) until SNOW-1203 gave its card the Day Risk Profile rows.
 
     Args:
-        raw_render_model: The panel's render model (``panel["render_model"]``).
-        period_transition: ``compute_period_transition(raw_render_model)``,
-            or ``None`` on an all-day bulletin.
+        headline_inputs: ``derived_of(render_model)["headline_inputs"]``.
 
     Returns:
         The translated headline string.
 
     """
-    source: str = raw_render_model.get("source") or ""
-    partition_type: str = (
-        period_transition.partition_type if period_transition is not None else "none"
-    )
-    danger_info: dict[str, Any] = raw_render_model.get("danger") or {}
-    peak_number: str = danger_info.get("number") or "1"
-    peak_subdivision: str = danger_info.get("subdivision") or ""
-    peak_rating: str = (
-        f"{peak_number}{peak_subdivision}" if peak_subdivision else peak_number
-    )
-    direction: str = (
-        period_transition.direction if period_transition is not None else "none"
-    )
     return headline_for(
-        source,
-        partition_type,
-        peak_rating,
-        direction,
-        derive_problem_family(raw_render_model),
+        headline_inputs["source"],
+        headline_inputs["partition_type"],
+        headline_inputs["peak_rating"],
+        headline_inputs["direction"],
+        headline_inputs["family"],
     )
 
 
@@ -4038,13 +4010,15 @@ def build_bulletin_body(
     )
 
     # Period transition — rise/fall/flat-but-split (SNOW-248), read by the
-    # day movement and the headline below. Derived from the render model's
-    # danger.ratings list; source-neutral (no if source == "slf" branches).
-    # ``None`` on all-day bulletins.
+    # day movement and the headline below. The service derives it from the
+    # render model's danger.ratings list and stores it in ``derived``
+    # (SNOW-1341). ``None`` on all-day bulletins.
     raw_render_model: dict[str, Any] = panel.get("render_model") or {}
-    period_transition: PeriodTransition | None = compute_period_transition(
-        raw_render_model
-    )
+    # Read off the stored (unenriched) model: a model with no ``derived``
+    # is computed from, and the enriched copy's problems carry display
+    # objects rather than the stored shape.
+    derived = derived_of(_get_render_model(selected))
+    period_transition: PeriodTransition | None = period_transition_of(derived)
 
     # Day movement — the same classification the day summary uses, so the
     # Day Risk Profile's flat-split caption cannot claim a change the
@@ -4060,7 +4034,7 @@ def build_bulletin_body(
     )
 
     # Bulletin headline (SNOW-249).
-    headline: str = _build_bulletin_headline(raw_render_model, period_transition)
+    headline: str = _build_bulletin_headline(derived["headline_inputs"])
 
     return {
         "since_strip": since_strip,
@@ -4115,7 +4089,7 @@ def _since_strip(
     previous = alerts_service.day_state(region, previous_date)
     if previous is None:
         return None
-    change = summarise_change(previous, bulletin_state(render_model))
+    change = summarise_change(previous, state_of(render_model)[0])
     return {
         "heading": _("Since %(day)s’s bulletin")
         % {"day": date_format(previous_date, "l")},

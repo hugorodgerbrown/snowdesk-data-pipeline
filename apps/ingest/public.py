@@ -60,7 +60,9 @@ The names are grouped by what they are for:
       what follows from the model: the day a bulletin forecasts and the
       danger range it gives it (``target_day_for_valid_from``,
       ``rate_render_model``), and its problems as terrain rules
-      (``terrain_rules``). The labels and copy a page shows for them, and
+      (``terrain_rules``), and what an alert compares about it
+      (``bulletin_state``, ``BulletinState``, SNOW-1341). The labels and
+      copy a page shows for them, and
       which bulletin governs a region's day, are the instance's.
   The weather backfill
       Filling a station's missing past days from the historical forecast
@@ -178,6 +180,16 @@ from apps.ingest.normalise.meteofrance.massifs import (
     normalise_slug,
     slug_to_region_id,
 )
+from apps.ingest.normalise.bulletin_state import (
+    BULLETIN_STATE_VERSION,
+    CLOCKWISE_ASPECTS,
+    DANGER_NUMBER,
+    DANGER_ORDER,
+    NEUTRAL_PROBLEMS,
+    BulletinState,
+    ProblemState,
+    bulletin_state,
+)
 from apps.ingest.normalise.day_rating import (
     DAY_RATING_VERSION,
     NO_RATING,
@@ -204,13 +216,17 @@ from apps.ingest.normalise.render_model import (
     RenderModelBuildError,
     band_id_for_problem,
     band_label_for_elevation,
+    build_derived,
     build_render_model,
     compute_period_transition,
     day_character_key,
     derive_problem_family,
+    derived_of,
     detect_prose_spatial,
     detect_source,
+    period_transition_of,
     problem_types_for,
+    state_of,
 )
 from apps.ingest.normalise.slf import (
     CAAML_SHAPE_AGGREGATED,
@@ -302,6 +318,14 @@ from apps.ingest.weather import (
 )
 
 __all__ = [
+    "BULLETIN_STATE_VERSION",
+    "BulletinState",
+    "CLOCKWISE_ASPECTS",
+    "DANGER_NUMBER",
+    "DANGER_ORDER",
+    "NEUTRAL_PROBLEMS",
+    "ProblemState",
+    "bulletin_state",
     "RenderOutcome",
     "render_source_tour",
     "terrain_grid",
@@ -400,6 +424,7 @@ __all__ = [
     "band_id_for_problem",
     "band_label_for_elevation",
     "build_bulletin_id",
+    "build_derived",
     "build_render_model",
     "compact_publication_stamp",
     "compute_period_transition",
@@ -411,6 +436,7 @@ __all__ = [
     "day_is_complete",
     "day_pairs",
     "derive_problem_family",
+    "derived_of",
     "detect_caaml_shape",
     "detect_prose_spatial",
     "detect_source",
@@ -442,6 +468,7 @@ __all__ = [
     "parse_feed_limit",
     "parse_feed_since",
     "parse_prose_for",
+    "period_transition_of",
     "pdf_session",
     "problem_types_for",
     "rate_render_model",
@@ -458,6 +485,7 @@ __all__ = [
     "serialise_source_weather",
     "slf_pdf_url",
     "slug_to_region_id",
+    "state_of",
     "store_bulletin",
     "store_source_weather",
     "sweep",

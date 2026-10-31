@@ -1232,11 +1232,11 @@ class TestComputeDayCharacterRoundTrip:
 
 
 class TestRenderModelVersion:
-    """Tests that RENDER_MODEL_VERSION and built version are both 9."""
+    """Tests that RENDER_MODEL_VERSION and built version are both 10."""
 
     def test_constant_is_current(self) -> None:
         """RENDER_MODEL_VERSION constant equals the current version."""
-        assert RENDER_MODEL_VERSION == 9
+        assert RENDER_MODEL_VERSION == 10
 
     def test_build_render_model_returns_current_version(self) -> None:
         """build_render_model returns a dict with the current version."""
