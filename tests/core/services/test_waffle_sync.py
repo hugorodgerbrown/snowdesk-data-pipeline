@@ -8,6 +8,9 @@ Covers:
     ``name``/``note``, a duplicate ``name``, and an unknown key each raise
     ``ValueError``.
   - ``FlagSpec.create_defaults``: only explicitly-set fields are included.
+  - ``flag_group_name`` / ``default_groups``: every flag's own GRP_FLAG_*
+    group plus GRP_ALPHA; a manifest ``groups`` naming a GRP_FLAG_* group
+    is rejected.
 """
 
 from __future__ import annotations
@@ -18,7 +21,14 @@ from pathlib import Path
 
 import pytest
 
-from apps.core.services.waffle_sync import FlagSpec, compute_flag_diff, load_manifest
+from apps.core.services.waffle_sync import (
+    ALPHA_GROUP,
+    FlagSpec,
+    compute_flag_diff,
+    default_groups,
+    flag_group_name,
+    load_manifest,
+)
 
 # ---------------------------------------------------------------------------
 # compute_flag_diff
@@ -196,3 +206,35 @@ def test_flag_spec_create_defaults_with_no_optional_fields() -> None:
     """A spec with no optional fields set produces only {"note": ...}."""
     spec = FlagSpec(name="flag_a", note="Note A")
     assert spec.create_defaults() == {"note": "Note A"}
+
+
+# ---------------------------------------------------------------------------
+# flag_group_name / default_groups
+# ---------------------------------------------------------------------------
+
+
+def test_flag_group_name_upper_cases_the_flag_name() -> None:
+    """``debug_log`` is held by ``GRP_FLAG_DEBUG_LOG``."""
+    assert flag_group_name("debug_log") == "GRP_FLAG_DEBUG_LOG"
+
+
+def test_default_groups_are_the_flags_own_group_and_alpha() -> None:
+    """Every flag is scoped to its own group and to the alpha testers."""
+    assert default_groups("sync_log") == ("GRP_FLAG_SYNC_LOG", ALPHA_GROUP)
+    assert ALPHA_GROUP == "GRP_ALPHA"
+
+
+def test_load_manifest_rejects_a_flag_group_in_groups(tmp_path: Path) -> None:
+    """A GRP_FLAG_* group is the command's own, so a manifest may not name one.
+
+    The command deletes any GRP_FLAG_* group no flag owns, so a flag scoped
+    to another flag's group by hand would lose it on the next run.
+    """
+    manifest = tmp_path / "flags.json"
+    manifest.write_text(
+        json.dumps(
+            {"flags": [{"name": "a", "note": "A", "groups": ["GRP_FLAG_OTHER"]}]}
+        )
+    )
+    with pytest.raises(ValueError, match="may not name a GRP_FLAG_"):
+        load_manifest(manifest)
