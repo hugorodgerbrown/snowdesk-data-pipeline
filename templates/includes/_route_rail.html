@@ -169,10 +169,10 @@ Context:
                 >
             </div>
             <div class="-mr-3 -mt-3 flex flex-none items-start">
-                {# Centre on route (Hugo, 2026-10-31): brings the placed point, #}
-                {# or the middle of the route, to the centre of the VISIBLE    #}
-                {# map, zooming in to z12 where the terrain layers start if    #}
-                {# the map is further out (map.js, snowdesk:route-rail-centre). #}
+                {# Centre on route (Hugo, 2026-10-31): with no point, frames   #}
+                {# the whole route; with a point, centres it in the VISIBLE    #}
+                {# map at z14, where the line shows its slope classes, if the  #}
+                {# map is further out (map.js, snowdesk:route-rail-centre).    #}
                 {% if not static %}
                     <button
                         type="button"

@@ -238,7 +238,7 @@ forecast" Location waits for a second, non-SAC source of places.
   removed), so picking a second tour with the panel open left the map
   where it was. The bullseye in the panel's header re-frames the route
   after the reader has moved the map; with a point placed it centres
-  the point at z12 instead, so the terrain shows.
+  the point at z14 instead, where the line is drawn in slope classes.
 
 **An SAC tour looks like SAC's until it is saved (SNOW-1307).** With the
 tours layer on, tours drawn in a route's own grey and fuchsia drowned out

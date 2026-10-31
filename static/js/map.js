@@ -2983,10 +2983,13 @@
   //     (frameRouteLine) — so after the reader has moved the map, a tap
   //     puts the route back.
   //   - A POINT ON THE ROUTE: bring the point to the centre of the VISIBLE
-  //     map (routeCentreRect) and zoom in to z12, where the terrain layers
-  //     start, when the map is further out. Closer in already, it only
-  //     re-centres: it never zooms out.
-  const ROUTE_CENTRE_ZOOM = 12;
+  //     map (routeCentreRect) and zoom in to where the line is drawn in
+  //     slope classes (ROUTE_SLOPE_MINZOOM, z14), when the map is further
+  //     out. Closer in already, it only re-centres: it never zooms out.
+  //     It was z12 until Hugo found it on staging (2026-10-31): from z12 to
+  //     z14 the bullseye only re-centred and the terrain never appeared,
+  //     which was the point of pressing it.
+  const ROUTE_CENTRE_ZOOM = ROUTE_SLOPE_MINZOOM;
   document.addEventListener('snowdesk:route-rail-centre', (event) => {
     const core = self.pwaRouteCursorMapCore;
     if (!map || !core || typeof map.easeTo !== 'function') return;
@@ -3580,7 +3583,7 @@
     if (!map || !Array.isArray(bounds) || bounds.length !== 4) return;
     if (!bounds.every((n) => Number.isFinite(n))) return;
     map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], {
-      padding: paddingClearingRail(),
+      padding: beyondCameraPadding(paddingClearingRail()),
       duration: 400,
     });
   };
@@ -8121,6 +8124,41 @@
   };
 
   /**
+   * Take the camera's own padding off a fit's padding, edge by edge.
+   *
+   * For fitBounds only. easeTo's `padding` REPLACES the camera's rather
+   * than adding to it, so an easeTo (showPoint) takes paddingClearingRail's
+   * full reservation.
+   *
+   * MapLibre's fitBounds fits into the canvas less the camera's padding
+   * AND the fit's, so an edge both reserve is reserved twice. On a phone
+   * map_sheet.js pads the camera's foot by the route sheet's lift once
+   * the sheet rests, and paddingClearingRail measures the same sheet: the
+   * first route opened framed correctly only because its sheet was still
+   * sliding in, and every route picked after it, with the sheet already
+   * up, was fitted into half the room it had, zoomed far out and pushed
+   * off-centre (Hugo, 2026-10-31). Answering the room left beyond the
+   * camera's padding makes the result the same whether the sheet has
+   * settled or not. Each edge keeps at least the fit's own margin: the
+   * reservation was capped at a share of the canvas (reserveFitEdge), so
+   * a tall sheet's capped reservation can be smaller than the camera's
+   * padding for it, and the line still wants its margin above the sheet.
+   *
+   * @param {{top: number, right: number, bottom: number, left: number}} padding
+   *   The full reservation, measured from the canvas's edges.
+   * @returns {{top: number, right: number, bottom: number, left: number}}
+   */
+  const beyondCameraPadding = (padding) => {
+    const camera = map && typeof map.getPadding === 'function' ? map.getPadding() : null;
+    if (!camera) return padding;
+    const out = { ...padding };
+    for (const edge of ['top', 'right', 'bottom', 'left']) {
+      out[edge] = Math.max(FIT_PADDING[edge], out[edge] - (Number(camera[edge]) || 0));
+    }
+    return out;
+  };
+
+  /**
    * Fit padding that frames a region beside the open region sheet.
    *
    * SNOW-1173: a region picked from search selects it, which opens the
@@ -10394,7 +10432,7 @@
         const bounds = feature ? readFeatureJson(feature.properties.bounds) : null;
         if (!Array.isArray(bounds) || bounds.length !== 4) return false;
         map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], {
-          padding: paddingClearingRail(),
+          padding: beyondCameraPadding(paddingClearingRail()),
           duration: 400,
         });
         return true;
