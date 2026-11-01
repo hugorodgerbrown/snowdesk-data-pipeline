@@ -1,13 +1,13 @@
 ---
 name: bulletin-guide
-description: How to read the SLF avalanche bulletin — danger levels, subdivisions, dry/wet hazards, aspects, elevation, day evolution
+description: Reading an SLF, ALBINA or Météo-France bulletin — danger scale, problems, aspect, elevation, day evolution, provider differences
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-11-01
 ---
 
 # How to Read the Avalanche Bulletin
 
-The Swiss avalanche bulletin is published daily by the WSL Institute for Snow and Avalanche Research (SLF) and covers the Swiss Alps and Jura. It is an informed forecast — not a guarantee — and cannot replace an on-site assessment. The information here explains how the bulletin is structured, what each field means, and what the data reveals about how the bulletin behaves in practice.
+Snowdesk shows bulletins from three services: the WSL Institute for Snow and Avalanche Research (SLF) for Switzerland, ALBINA (avalanche.report) for Tyrol, South Tyrol and Trentino, and Météo-France for the French massifs. The examples below are drawn from SLF bulletins; the danger scale, problem types, aspects and elevation bands are shared EAWS standards, and **What differs by provider** covers the rest. A bulletin is an informed forecast — not a guarantee — and cannot replace an on-site assessment. The information here explains how the bulletin is structured, what each field means, and what the data reveals about how the bulletin behaves in practice.
 
 ---
 
@@ -142,7 +142,26 @@ Each bulletin includes longer text in four sections, updated once daily in the e
 
 ---
 
+## What differs by provider
+
+The public guide's matching section is `/how-to-read-a-bulletin/#provider-differences`, with linkable fragments for each part.
+
+| Section | SLF | ALBINA | Météo-France | Fragment |
+|---|---|---|---|---|
+| Avalanche activity (summary + text) | — (in the snowpack text) | ✓ | ✓ (CARTOUCHERISQUE/RESUME, STABILITE) | `#avalanche-activity` |
+| Outlook (tendency) | — | ✓ forecaster's own headline | ✓ derived: RISQUEMAXIJ2 against today's level, dated J+2 | `#tendency-outlook` |
+| Weather review and forecast | ✓ | — | — | `#slf-weather` |
+| Dry / wet hazard grouping | ✓ (customData.CH) | — | — | `#slf-weather` |
+| Aspects | per problem | per problem | once for the whole bulletin | `#meteofrance-conventions` |
+| Elevation | per problem | per problem | one bulletin-wide split altitude (`RISQUE/@ALTITUDE`); no structured per-problem elevation — the translator reads it from the problem prose, falling back to the split (`_elevation_from_prose`) | `#meteofrance-conventions` |
+| Language | de / fr / it / en | de / it / en, and others | fr only | `#meteofrance-conventions` |
+
+Field-level detail for Météo-France: [`meteofrance-mapping.md`](meteofrance-mapping.md).
+
+---
+
 ## Limitations
+
 
 The bulletin is a regional forecast. It cannot assess individual slopes — it can only indicate which types of terrain (aspect, elevation, steepness) carry the indicated danger. Local conditions always require on-site assessment.
 

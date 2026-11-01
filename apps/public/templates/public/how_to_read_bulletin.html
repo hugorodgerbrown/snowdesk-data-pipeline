@@ -1,7 +1,8 @@
 {% extends "public/base.html" %}
 {% comment %}
 apps/public/templates/public/how_to_read_bulletin.html — Static reference guide
-explaining how to read the SLF Swiss avalanche bulletin.
+explaining how to read an avalanche bulletin from any of the three providers
+Snowdesk shows: SLF, ALBINA and Météo-France.
 
 Structured to mirror the three main sections of the bulletin page —
 "Day Risk Profile", "Avalanche Problems", "Snowpack & Weather" — so
@@ -11,6 +12,14 @@ and the SLF Avalanche Bulletin Interpretation Guide, Edition November
 2025. Inline component examples are built by _build_guide_examples() in
 apps/public/views.py.
 
+SNOW-679: the spine (danger scale, problems, elevation and aspect) is
+EAWS-wide and reads the same for every provider. The "What differs by
+provider" section below it covers the sections only some providers publish
+and the conventions that differ, grounded in tests/sentinels/ and
+docs/meteofrance-mapping.md. Its fragment ids (provider-differences,
+avalanche-activity, tendency-outlook, slf-weather, meteofrance-conventions)
+are linkable and asserted by tests/public/test_how_to_read_bulletin.py.
+
 Each sub-section follows the pattern:
   h3 heading → short description → live example component → detailed breakdown
 {% endcomment %}
@@ -18,7 +27,7 @@ Each sub-section follows the pattern:
 
 {% block page_meta %}
     {% trans "How to read a bulletin" as page_name %}
-    {% trans "A guide to reading the SLF Swiss avalanche bulletin — danger levels, problem types, elevation and aspect, and how the day evolves." as page_description %}
+    {% trans "A guide to reading an avalanche bulletin from SLF, ALBINA or Météo-France — danger levels, problem types, elevation and aspect, how the day evolves, and what differs between providers." as page_description %}
     {% include "includes/_page_meta.html" with title=page_name|add:" · Snowdesk" description=page_description %}
 {% endblock page_meta %}
 
@@ -28,10 +37,13 @@ Each sub-section follows the pattern:
         {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" data_testid="guide-heading" %}
         <p class="text-sm text-text-3 mb-10">
             {% blocktrans trimmed %}
-                Published daily by the WSL Institute for Snow and Avalanche Research (SLF), the bulletin covers the
-                Swiss Alps and Jura. It is an informed forecast — not a guarantee — and cannot replace an on-site
+                Snowdesk shows bulletins from three services: the WSL Institute for Snow and Avalanche Research (SLF)
+                for Switzerland, ALBINA (avalanche.report) for Tyrol, South Tyrol and Trentino, and Météo-France for the
+                French massifs. A bulletin is an informed forecast — not a guarantee — and cannot replace an on-site
                 assessment. This guide follows the same structure as the bulletin page itself: Day Risk Profile,
-                Avalanche Problems, and Snowpack &amp; Weather.
+                Avalanche Problems, and Snowpack &amp; Weather. The examples are drawn from SLF bulletins; all three
+                providers use the same European danger scale and problem types, and the section on what differs by
+                provider covers the rest.
             {% endblocktrans %}
         </p>
 
@@ -477,7 +489,7 @@ Each sub-section follows the pattern:
             {% translate "Snowpack &amp; Weather" as snowpack_weather_label %}
             {% include "includes/_eyebrow.html" with text=snowpack_weather_label class_extra="mb-6" %}
             <p class="mb-4">
-                {% trans "Each bulletin includes four prose sections, updated once daily in the evening. They expand on demand on the bulletin page." %}
+                {% trans "An SLF bulletin includes four prose sections, updated once daily in the evening. They expand on demand on the bulletin page. ALBINA and Météo-France bulletins carry a snowpack section and an outlook too, but not SLF's weather review and forecast — see what differs by provider below." %}
             </p>
             <dl class="space-y-4">
                 <div>
@@ -505,6 +517,102 @@ Each sub-section follows the pattern:
                     </dd>
                 </div>
             </dl>
+        </section>
+
+        {# ================================================================== #}
+        {# WHAT DIFFERS BY PROVIDER (SNOW-679)                                 #}
+        {# ================================================================== #}
+        <section
+            id="provider-differences"
+            class="mb-10 text-sm leading-relaxed text-text-2 border-t border-border pt-8"
+            data-testid="guide-provider-differences"
+        >
+            {% translate "What differs by provider" as provider_differences_label %}
+            {% include "includes/_eyebrow.html" with text=provider_differences_label class_extra="mb-6" %}
+            <p class="mb-6">
+                {% blocktrans trimmed %}
+                    The danger scale, the five avalanche problems, aspects and elevation bands are shared European
+                    (EAWS) standards, so everything above reads the same on a bulletin from SLF, ALBINA or Météo-France.
+                    What differs is which sections a provider publishes, and a few conventions in how it describes the
+                    terrain.
+                {% endblocktrans %}
+            </p>
+
+            <div id="avalanche-activity" class="mb-8" data-testid="guide-avalanche-activity">
+                <h3 class="text-base font-semibold text-text-1 mb-3">
+                    {% trans "Avalanche Activity — ALBINA and Météo-France" %}
+                </h3>
+                <p class="mb-3">
+                    {% blocktrans trimmed %}
+                        ALBINA and Météo-France bulletins include a section on the avalanches to expect: whether they
+                        are likely to release naturally or to be triggered by people, and how large they may be. It
+                        opens with a one-line summary. SLF bulletins do not have this section; the same information sits
+                        in their snowpack text.
+                    {% endblocktrans %}
+                </p>
+            </div>
+
+            <div id="tendency-outlook" class="mb-8" data-testid="guide-tendency-outlook">
+                <h3 class="text-base font-semibold text-text-1 mb-3">
+                    {% trans "Outlook — ALBINA and Météo-France" %}
+                </h3>
+                <p class="mb-3">
+                    {% blocktrans trimmed %}
+                        ALBINA and Météo-France bulletins end with an outlook, the tendency: an arrow showing whether
+                        the danger is expected to rise, stay the same or fall, and the day it refers to. Where it comes
+                        from differs.
+                    {% endblocktrans %}
+                </p>
+                <ul class="list-disc pl-5 space-y-2">
+                    <li>
+                        {% blocktrans trimmed %}
+                            <strong class="text-text-1">ALBINA</strong> — written by the forecaster, with a short
+                            headline in their own words.
+                        {% endblocktrans %}
+                    </li>
+                    <li>
+                        {% blocktrans trimmed %}
+                            <strong class="text-text-1">Météo-France</strong> — worked out from the numbers. The
+                            bulletin forecasts a danger level for two days ahead (J+2); the arrow compares that level
+                            with today's, and the date is that day.
+                        {% endblocktrans %}
+                    </li>
+                </ul>
+            </div>
+
+            <div id="slf-weather" class="mb-8" data-testid="guide-slf-weather">
+                <h3 class="text-base font-semibold text-text-1 mb-3">
+                    {% trans "Weather review and forecast — SLF" %}
+                </h3>
+                <p class="mb-3">
+                    {% blocktrans trimmed %}
+                        Only SLF bulletins carry the weather review and weather forecast sections described above. SLF
+                        also groups each day's problems into dry and wet avalanche hazards, which is what drives the
+                        danger band at the top of a Swiss bulletin and shows when wet snow takes over later in the day.
+                    {% endblocktrans %}
+                </p>
+            </div>
+
+            <div id="meteofrance-conventions" data-testid="guide-meteofrance-conventions">
+                <h3 class="text-base font-semibold text-text-1 mb-3">
+                    {% trans "Météo-France conventions" %}
+                </h3>
+                <p class="mb-3">
+                    {% blocktrans trimmed %}
+                        Météo-France publishes its bulletin in its own format, which Snowdesk translates into the same
+                        shape as the other two. A few of its conventions survive the translation:
+                    {% endblocktrans %}
+                </p>
+                <ul class="list-disc pl-5 space-y-2">
+                    <li>
+                        {% trans "The aspects are given once for the whole bulletin, not for each avalanche problem." %}
+                    </li>
+                    <li>
+                        {% trans "The danger can be split at one altitude, with one level above it and another below. Météo-France gives no separate elevations for each avalanche problem: the elevation on a problem card is read from the forecaster's text, or, where the text names none, taken from that split altitude." %}
+                    </li>
+                    <li>{% trans "The text is in French only." %}</li>
+                </ul>
+            </div>
         </section>
 
         {# ================================================================== #}
