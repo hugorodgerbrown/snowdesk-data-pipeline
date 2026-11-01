@@ -1,0 +1,63 @@
+{% comment %}
+apps/public/templates/public/partials/_daily_read.html — the homepage's daily
+read, "Across the Alps today" (SNOW-1357).
+
+What moved since yesterday, one group per country, every sentence a count or
+a name the providers' bulletins carry: never advice, never a judgement. The
+sentences are built in apps/public/daily_read.py (present_daily_read); this
+partial only lays them out. The square leading each group is the country's
+highest level today, the EAWS danger tile the map's region rows use. The
+biggest swing links to that region's bulletin for the day.
+
+Rendered only when there is a read: off season home.html leaves it out and
+the page reads as it always has.
+
+Context:
+  daily_read — present_daily_read()'s dict: ``day`` and ``countries``, each
+               {country, label, peak_level, sentences, swing}; ``swing`` is
+               None or {region_code, region_name, url, before, after}.
+  map_url    — the map's url, for the closing link.
+{% endcomment %}
+{% load i18n components snowdesk_time %}
+<section
+    class="max-w-wide mx-auto mb-12"
+    aria-labelledby="daily-read-heading"
+    data-testid="home-daily-read"
+>
+    {% card padding="p-4 md:p-5" %}
+    {% trans "Across the Alps today" as daily_read_eyebrow %}
+    {% include "includes/_eyebrow.html" with text=daily_read_eyebrow tag="h2" heading_id="daily-read-heading" class_extra="mb-1" %}
+    <p class="text-sm text-text-3 mb-3">{{ daily_read.day|date:"l j F Y" }}</p>
+    <ul class="divide-y divide-border">
+        {% for country in daily_read.countries %}
+            <li class="flex gap-3 py-3" data-testid="daily-read-country" data-country="{{ country.country }}">
+                <span
+                    class="danger-tile flex-none"
+                    data-level="{{ country.peak_level }}"
+                    aria-hidden="true"
+                >{{ country.peak_level|danger_level_digit }}</span>
+                <div class="min-w-0 flex-1">
+                    <h3 class="text-label font-semibold text-text-1">{{ country.label }}</h3>
+                    {% for sentence in country.sentences %}<p class="text-sm text-text-2 leading-prose">
+                            {{ sentence }}
+                        </p>{% endfor %}
+                    {% if country.swing %}
+                        <p class="text-sm text-text-2 leading-prose" data-testid="daily-read-swing">
+                            {% trans "Biggest change:" %}
+                            <a
+                                href="{{ country.swing.url }}"
+                                class="font-medium text-text-1 underline"
+                            >{{ country.swing.region_name }}</a>,
+                            {{ country.swing.before }} → {{ country.swing.after }}.
+                        </p>
+                    {% endif %}
+                </div>
+            </li>
+        {% endfor %}
+    </ul>
+    <p class="text-sm text-text-3 mt-3">
+        {% trans "Every level is the provider's own. Read the bulletin before you go." %}
+        <a href="{{ map_url }}" class="font-medium text-text-1 underline">{% trans "Open today's map" %}</a>
+    </p>
+    {% endcard %}
+</section>

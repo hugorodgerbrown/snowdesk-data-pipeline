@@ -11,17 +11,29 @@ Covers:
   - /map/ renders the interactive map.
   - /observations/ 301s to /map/?panel=reports.
   - The manifest's start_url is /map/ while its id stays /.
+  - The daily read (SNOW-1357): under the hero on a rated day, linking the
+    biggest swing to its dated bulletin; absent off season; cached; never
+    built for a map-state 301.
 """
 
 from __future__ import annotations
 
+import datetime
 import json
 import re
 from pathlib import Path
 
 import pytest
+from django.core.cache import cache
+from django.db import connection
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
+from django.utils import timezone
+
+from apps.bulletins.models import RegionDayRating
+from apps.regions.models import MicroRegion
+from tests.factories import MicroRegionFactory, RegionDayRatingFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -76,6 +88,82 @@ class TestHomepage:
 
         assert response.status_code == 200
         assert "public/home.html" in [t.name for t in response.templates]
+
+
+class TestDailyRead:
+    """SNOW-1357: "Across the Alps today" under the hero."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self) -> None:
+        """Each test builds its own read."""
+        cache.clear()
+
+    def _swing_day(self) -> MicroRegion:
+        """Rate one region up a level since yesterday; return it."""
+        today = timezone.localdate()
+        place = MicroRegionFactory.create(
+            region_id="CH-4115", name="Martigny – Verbier"
+        )
+        RegionDayRatingFactory.create(
+            region=place,
+            date=today - datetime.timedelta(days=1),
+            max_rating=RegionDayRating.Rating.MODERATE,
+        )
+        RegionDayRatingFactory.create(
+            region=place, date=today, max_rating=RegionDayRating.Rating.HIGH
+        )
+        return place
+
+    def test_renders_under_the_hero_with_the_swing_linked(self, client: Client) -> None:
+        """The read follows the hero and links the swing to today's bulletin."""
+        place = self._swing_day()
+
+        content = client.get("/").content.decode()
+
+        assert 'data-testid="home-daily-read"' in content
+        assert content.index('data-testid="home-hero"') < content.index(
+            'data-testid="home-daily-read"'
+        )
+        assert content.index('data-testid="home-daily-read"') < content.index(
+            'data-testid="home-features"'
+        )
+        assert f'href="{place.get_absolute_url(timezone.localdate())}"' in content
+        assert "Moderate → High" in content
+
+    def test_absent_off_season(self, client: Client) -> None:
+        """No rated region today: the page reads as it always has."""
+        RegionDayRatingFactory.create(
+            date=timezone.localdate(), max_rating=RegionDayRating.Rating.NO_RATING
+        )
+
+        content = client.get("/").content.decode()
+
+        assert 'data-testid="home-daily-read"' not in content
+
+    def test_a_second_request_reads_the_cache(self, client: Client) -> None:
+        """Inside the cache window the homepage makes no query for the read.
+
+        The page's other queries (the site banners) are not the read's, so
+        the check is on the tables the read reads.
+        """
+        self._swing_day()
+        client.get("/")
+
+        with CaptureQueriesContext(connection) as queries:
+            client.get("/")
+
+        sql = " ".join(q["sql"] for q in queries.captured_queries)
+        assert "regiondayrating" not in sql
+        assert "bulletins_bulletin" not in sql
+
+    def test_a_map_state_redirect_builds_no_read(self, client: Client) -> None:
+        """/?d=… 301s before the read is built, so nothing is cached."""
+        self._swing_day()
+
+        response = client.get("/?d=2026-01-14")
+
+        assert response.status_code == 301
+        assert cache.get(f"daily-read:{timezone.localdate().isoformat()}") is None
 
 
 class TestLegacyMapLinksOnRoot:

@@ -44,6 +44,7 @@ from apps.public._component_fixtures import (
     CARD_VARIANTS,
     CHIP_VARIANTS,
     COLLAPSIBLE_PANEL_VARIANTS,
+    DAILY_READ_VARIANTS,
     DANGER_TILE_EMPTY_VARIANTS,
     DATED_EYEBROW_VARIANTS,
     DAY_CHARACTER_VARIANTS,
@@ -1258,6 +1259,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_card.html",
         variants=CARD_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="daily-read",
+        label="Daily read",
+        description=(
+            'The homepage\'s "Across the Alps today" (SNOW-1357): what moved '
+            "since yesterday, per country, every sentence a count or a name "
+            "from the providers' bulletins. Built by apps/public/daily_read.py; "
+            "absent off season."
+        ),
+        kind="components",
+        partial="public/partials/_daily_read.html",
+        variants=DAILY_READ_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(
