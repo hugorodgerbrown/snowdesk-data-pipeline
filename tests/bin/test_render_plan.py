@@ -10,6 +10,7 @@ each panel; a shifted margin is not a defect a test should catch.
 from __future__ import annotations
 
 import copy
+import datetime as dt
 import importlib.machinery
 import importlib.util
 import json
@@ -58,12 +59,14 @@ def _item(ident: str, kind: str = "feature", **extra: Any) -> dict[str, Any]:
     return item
 
 
-def _plan(weeks: list[list[dict[str, Any]]] | None = None) -> dict[str, Any]:
-    """Build a minimal valid plan."""
+def _plan(
+    weeks: list[list[dict[str, Any]]] | None = None, start: str = "2026-11-02"
+) -> dict[str, Any]:
+    """Build a minimal valid plan whose four weeks start a week apart."""
     weeks = weeks or [[_item("SNOW-1")], [_item("SNOW-2", "bug")], [], []]
     return {
-        "generated_on": "2026-11-02",
-        "window": {"start": "2026-11-02", "end": "2026-12-01"},
+        "generated_on": start,
+        "window": {"start": start, "end": start},
         "summary": "A month for the season.",
         "capacity": {
             "done_42d": 250,
@@ -73,7 +76,14 @@ def _plan(weeks: list[list[dict[str, Any]]] | None = None) -> dict[str, Any]:
             "note": "Measured.",
         },
         "weeks": [
-            {"label": f"Week {i + 1}", "start": "2026-11-02", "theme": "T", "items": w}
+            {
+                "label": f"Week {i + 1}",
+                "start": (
+                    dt.date.fromisoformat(start) + dt.timedelta(weeks=i)
+                ).isoformat(),
+                "theme": "T",
+                "items": w,
+            }
             for i, w in enumerate(weeks)
         ],
         "decisions": [],
@@ -132,9 +142,25 @@ class TestDiff:
         plan["completed_since_last"] = ["SNOW-3"]
         delta = render_plan.diff(plan, previous)
         assert delta["added"] == [("SNOW-5", "Title of SNOW-5", 0)]
-        assert delta["moved"] == [("SNOW-1", "Title of SNOW-1", 0, 2)]
+        assert delta["moved"] == [
+            ("SNOW-1", "Title of SNOW-1", "2026-11-02", "2026-11-16")
+        ]
         assert delta["shipped"] == [("SNOW-3", "Title of SNOW-3")]
         assert delta["dropped"] == [("SNOW-4", "Title of SNOW-4")]
+
+    def test_rollover_is_not_a_move(self) -> None:
+        """A ticket still on the same date a week later has not moved."""
+        previous = _plan([[], [_item("SNOW-1")], [], []])
+        plan = _plan([[_item("SNOW-1")], [], [], []], start="2026-11-09")
+        assert render_plan.diff(plan, previous)["moved"] == []
+
+    def test_same_index_a_week_later_is_a_slip(self) -> None:
+        """A ticket left in week 2 across a rollover has slipped a week."""
+        previous = _plan([[], [_item("SNOW-1")], [], []])
+        plan = _plan([[], [_item("SNOW-1")], [], []], start="2026-11-09")
+        assert render_plan.diff(plan, previous)["moved"] == [
+            ("SNOW-1", "Title of SNOW-1", "2026-11-09", "2026-11-16")
+        ]
 
 
 class TestRender:

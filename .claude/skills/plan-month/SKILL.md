@@ -52,9 +52,10 @@ its tests (`tests/bin/test_render_plan.py`).
 
 ### Interactive mode (default)
 
-A human asked. Steps 1–5 as written, then **stop before step 6**: show the
-proposed Linear writes (new tickets, priority changes) as a table and wait
-for an explicit yes. Then apply the writes, render and publish.
+A human asked. Steps 1–5 as written. **Steps 1–5 write nothing to
+Linear**: step 5 only drafts ticket proposals. Stop before step 6, show the
+proposed writes (the drafted tickets and the priority changes) as one table,
+and wait for an explicit yes. Then apply the writes, render and publish.
 
 ### Routine mode
 
@@ -186,9 +187,10 @@ the idea's key nouns across **all** states, including Done, Canceled and
 Deferred: a Deferred ticket means Hugo said not now, so do not raise it
 again. Also search for `plan-month` to find tickets earlier runs raised.
 
-Raise **at most three** new tickets per run, highest fit first. Never raise
-a *Not for us* item. Each one follows the `create-ticket` conventions
-(`.claude/skills/create-ticket/SKILL.md`):
+**Draft** at most three new tickets per run, highest fit first. Create
+nothing yet: creation happens in step 6, after the approval gate in
+interactive mode. Never draft a *Not for us* item. Each draft follows the
+`create-ticket` conventions (`.claude/skills/create-ticket/SKILL.md`):
 
 - state `Backlog`, exactly one Type label and one Area label, a priority
   from the schedule;
@@ -197,12 +199,15 @@ a *Not for us* item. Each one follows the `create-ticket` conventions
   *Raised by the weekly 30-day plan (plan-month) from docs/competitors.md,
   Feature inspiration item N.*
 
-Then score the new ticket like any other and place it (week 2 at the
-earliest). Record it in `new_tickets` with `idea` naming the item and rival.
+Then score the draft like any other and place it (week 2 at the
+earliest) under a placeholder id (`NEW-1`, …). Record it in `new_tickets`
+with `idea` naming the item and rival.
 
-### 6. Write priorities to Linear
+### 6. Write to Linear
 
-Interactive mode: present the writes and wait for a yes first.
+Interactive mode: present every write and wait for a yes first. Then
+create the drafted tickets, replace each placeholder id in the plan with
+the real `SNOW-` id, and set the priorities below.
 
 | Placement | Priority |
 |---|---|

@@ -141,17 +141,23 @@ def read_previous(path: pathlib.Path | None) -> dict[str, Any] | None:
     return json.loads(match.group(1))
 
 
-def week_of(plan: dict[str, Any]) -> dict[str, int]:
-    """Map each planned ticket id to its week index (0–3)."""
+def week_of(plan: dict[str, Any]) -> dict[str, tuple[int, str]]:
+    """Map each planned ticket id to its week index (0–3) and week start date."""
     return {
-        item["id"]: index
+        item["id"]: (index, week["start"])
         for index, week in enumerate(plan["weeks"])
         for item in week["items"]
     }
 
 
 def diff(plan: dict[str, Any], previous: dict[str, Any] | None) -> dict[str, list]:
-    """Compare this plan with the last one: added, moved, shipped, dropped."""
+    """Compare this plan with the last one: added, moved, shipped, dropped.
+
+    A move is judged on the week's start DATE, not its index: the window
+    rolls forward a week every run, so a ticket that stays on 9 November
+    goes from week 2 to week 1 without moving, and one left in week 2 has
+    in fact slipped a week.
+    """
     if previous is None:
         return {"added": [], "moved": [], "shipped": [], "dropped": [], "first": True}
     now, before = week_of(plan), week_of(previous)
@@ -164,11 +170,11 @@ def diff(plan: dict[str, Any], previous: dict[str, Any] | None) -> dict[str, lis
     completed = set(plan.get("completed_since_last", []))
     gone = [ident for ident in before if ident not in now]
     return {
-        "added": [(i, titles[i], now[i]) for i in now if i not in before],
+        "added": [(i, titles[i], now[i][0]) for i in now if i not in before],
         "moved": [
-            (i, titles[i], before[i], now[i])
+            (i, titles[i], before[i][1], now[i][1])
             for i in now
-            if i in before and before[i] != now[i]
+            if i in before and before[i][1] != now[i][1]
         ],
         "shipped": [(i, titles[i]) for i in gone if i in completed],
         "dropped": [(i, titles[i]) for i in gone if i not in completed],
@@ -250,9 +256,9 @@ def render_changes(delta: dict[str, list]) -> str:
             f'<li><span class="chg add">New</span>{link(ident)} {esc(title)} <span class="quiet">→ week {week + 1}</span></li>'
         )
     for ident, title, was, now in delta["moved"]:
-        arrow = "earlier" if now < was else "later"
+        arrow = "earlier" if now < was else "later"  # ISO dates sort as dates
         rows.append(
-            f'<li><span class="chg move">Moved {arrow}</span>{link(ident)} {esc(title)} <span class="quiet">week {was + 1} → {now + 1}</span></li>'
+            f'<li><span class="chg move">Moved {arrow}</span>{link(ident)} {esc(title)} <span class="quiet">{esc(fmt_day(was))} → {esc(fmt_day(now))}</span></li>'
         )
     for ident, title in delta["shipped"]:
         rows.append(
