@@ -244,8 +244,16 @@ are now Done, so the diff can tell shipped from dropped. Then:
 
     uv run python bin/render-plan /tmp/plan.json --previous /tmp/plan-prev.html --output /tmp/plan.html
 
+Give every row in `decisions`, `new_tickets` and `not_planned` its Linear
+`status` too, and set `statuses_at` to the moment you read Linear (an ISO
+UTC timestamp): the page's **Refresh statuses from Linear** button reads
+every ticket updated since then through the viewer's own Linear connector
+and repaints the status chips, so the plan stays live between runs.
+
 Publish with `Artifact`: `file_path: /tmp/plan.html`, `url:` ARTIFACT_URL,
-no `icon`, and `description: "Snowdesk's next four weeks of work, ranked
+no `icon`, **no `capabilities`** (omitting it keeps the stored
+`{mcp: {servers: [{server: "Linear", tools: ["list_issues"]}]}}` grant the
+Refresh button needs; passing anything else would replace it), and `description: "Snowdesk's next four weeks of work, ranked
 from Linear and the competitor doc."`.
 
 ### 8. Report
