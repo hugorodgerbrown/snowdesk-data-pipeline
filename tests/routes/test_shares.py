@@ -48,6 +48,7 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from apps.routes.models import Route, RouteShare
+from apps.routes.services import shares
 from apps.routes.services.routes import RouteLimitReached
 from apps.routes.services.shares import (
     PENDING_SESSION_KEY,
@@ -616,4 +617,23 @@ class TestClaimCarriesCrossedRegions:
         copy = claim_route_share(UserFactory.create(), share.token)
 
         assert route.crossed_regions is None
+        assert copy.crossed_regions == ["CH-7003"]
+
+    def test_the_regions_are_resolved_outside_the_claim_transaction(self) -> None:
+        """No geometry walk runs inside the claim's atomic block."""
+        owner = UserFactory.create()
+        route = RouteFactory.create(user=owner)
+        share = RouteShareFactory.create(route=route, created_by=owner)
+        depth = len(connection.atomic_blocks)
+        seen: list[int] = []
+
+        def resolve(points: Any) -> list[str]:
+            """Record how deep in transactions the walk ran."""
+            seen.append(len(connection.atomic_blocks))
+            return ["CH-7003"]
+
+        with patch.object(shares, "resolve_track_regions", side_effect=resolve):
+            copy = claim_route_share(UserFactory.create(), share.token)
+
+        assert seen == [depth]
         assert copy.crossed_regions == ["CH-7003"]
