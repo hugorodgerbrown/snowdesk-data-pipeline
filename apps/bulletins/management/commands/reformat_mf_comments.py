@@ -51,7 +51,7 @@ from django.core.management.base import CommandError
 from apps.bulletins.models import Bulletin
 from apps.bulletins.services.day_rating import (
     day_rating_pairs,
-    recompute_region_day,
+    refresh_day_ratings,
     slim_regions_prefetch,
 )
 from apps.bulletins.services.render_model import (
@@ -280,9 +280,10 @@ class Command(RegisteredCommand):
         """
         Recompute RegionDayRating for every (region, day) pair supplied.
 
-        Calls ``recompute_region_day`` directly (rather than the shared
-        ``day_rating.refresh_day_ratings`` wrapper) so a per-pair failure is
-        counted here and folded into the command's own non-zero exit.
+        Delegates to ``day_rating.refresh_day_ratings``, which returns the
+        per-pair failure count (folded into the command's own non-zero exit)
+        and deletes the refreshed regions' cached season calendars
+        (SNOW-1172).
 
         Args:
             pairs: (region, day) pairs to refresh, already deduplicated by
@@ -295,17 +296,7 @@ class Command(RegisteredCommand):
         self.stdout.write(
             f"Refreshing day ratings for {len(pairs)} (region, day) pair(s)."
         )
-        rating_failures = 0
-        for region, day in pairs:
-            try:
-                recompute_region_day(region, day, commit=True)
-            except Exception:
-                rating_failures += 1
-                logger.exception(
-                    "Failed to refresh day rating for region=%s day=%s",
-                    region.region_id,
-                    day,
-                )
+        rating_failures = refresh_day_ratings(pairs)
         self.stdout.write(self.style.SUCCESS("Day ratings refreshed."))
         return rating_failures
 
