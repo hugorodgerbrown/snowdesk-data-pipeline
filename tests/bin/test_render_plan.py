@@ -238,6 +238,9 @@ class TestLive:
         assert 'id="plan-refresh"' in page
         assert "callTool('Linear', 'list_issues'" in page
         assert "save_issue" not in page
+        # Moves are counted against the published statuses, so a second
+        # refresh reports the same tickets as moved, not "nothing moved".
+        assert "s !== original[id]" in page
 
     def test_statuses_at_is_shown(self) -> None:
         """The note names when the embedded statuses were read."""

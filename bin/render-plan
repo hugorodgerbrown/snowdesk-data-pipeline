@@ -483,16 +483,27 @@ LIVE_SCRIPT = r"""
   var mcp = null;
   function say(text, warn) { note.textContent = text; note.classList.toggle('warn', !!warn); }
   function stamp(d) { return d.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); }
+  // The statuses the plan was published with: every refresh is measured
+  // against these, never against the previous refresh's repaint.
+  var original = {};
+  document.querySelectorAll('[data-ticket]').forEach(function (el) {
+    var chip = el.querySelector('[data-status]');
+    if (chip) original[el.getAttribute('data-ticket')] = chip.textContent;
+  });
   function apply(statuses) {
-    var changed = 0;
+    var moved = {};
     document.querySelectorAll('[data-ticket]').forEach(function (el) {
-      var s = statuses[el.getAttribute('data-ticket')];
+      var id = el.getAttribute('data-ticket');
+      var s = statuses[id];
       var chip = el.querySelector('[data-status]');
       if (!s || !chip) return;
-      if (chip.textContent !== s) { chip.textContent = s; el.classList.add('changed'); changed += 1; }
+      chip.textContent = s;
+      var differs = s !== original[id];
+      el.classList.toggle('changed', differs);
       el.classList.toggle('closed', !!CLOSED[s]);
+      if (differs) moved[id] = 1;
     });
-    return changed;
+    return Object.keys(moved).length;
   }
   function explain(err) {
     var code = err && err.code;
