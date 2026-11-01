@@ -654,6 +654,73 @@ CARD_VARIANTS: tuple[dict[str, Any], ...] = (
 # Status page variants (SNOW-200) -------------------------------------------
 # Rendered via the _status_page_demo.html wrapper template.
 
+
+# SNOW-1359: the Favourites panel's "Today" block, as build_saved_today()
+# hands it to favourites/partials/_saved_today.html — every kind of saved
+# place, one per trend, one with no bulletin and one with no forecast.
+def _saved_today_row(**fields: Any) -> Any:
+    """Build one SavedToday row for the library, defaults filled."""
+    from apps.favourites.saved_today import SavedToday
+
+    base: dict[str, Any] = {
+        "uuid": "00000000-0000-0000-0000-000000000000",
+        "kind": "pin",
+        "name": "",
+        "level": None,
+        "subdivision": "",
+        "trend": None,
+        "latitude": 46.1,
+        "longitude": 7.2,
+        "region_id": "CH-4115",
+        "region_url": "#",
+        "icon": "partly_cloudy-day.svg",
+        "temp_max": -2.0,
+        "rating": None,
+        # The borrowed point, shaped as a NearestForecast reads in
+        # includes/_forecast_source.html.
+        "source": SimpleNamespace(
+            label="Mont Fort", elevation_m=3329, distance_km=2.1, is_same_place=False
+        ),
+    }
+    base.update(fields)
+    return SavedToday(**base)
+
+
+SAVED_TODAY_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Every kind and every trend, most urgent first",
+        "solo": True,
+        "context": {
+            "saved_today": [
+                _saved_today_row(
+                    kind="resort", name="Verbier", level="high", trend="up"
+                ),
+                _saved_today_row(
+                    kind="region",
+                    name="Martigny – Verbier",
+                    level="considerable",
+                    subdivision="+",
+                    trend="same",
+                    latitude=None,
+                    longitude=None,
+                    source=SimpleNamespace(
+                        label="Martigny – Verbier",
+                        elevation_m=2104,
+                        distance_km=0.0,
+                        is_same_place=True,
+                    ),
+                ),
+                _saved_today_row(
+                    name="Col des Mines", level="moderate", trend="down", temp_max=3.0
+                ),
+                _saved_today_row(name="Car park", level="low", icon=None, source=None),
+                _saved_today_row(region_id=None, region_url="", temp_max=None),
+            ],
+        },
+    },
+)
+
+
 # SNOW-1357: the homepage's daily read, as present_daily_read() hands it to
 # public/partials/_daily_read.html. Off season there is no read and the
 # homepage leaves the section out, so there is no empty variant to show.

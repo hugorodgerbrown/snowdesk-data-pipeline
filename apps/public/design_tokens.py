@@ -81,6 +81,7 @@ from apps.public._component_fixtures import (
     ROUTE_PROFILE_VARIANTS,
     ROUTE_RAIL_VARIANTS,
     ROW_DISCLOSURE_VARIANTS,
+    SAVED_TODAY_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
     SEASON_CELL_VARIANTS,
     SEASON_SCRUBBER_VARIANTS,
@@ -1273,6 +1274,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="public/partials/_daily_read.html",
         variants=DAILY_READ_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="saved-today",
+        label="Saved today",
+        description=(
+            'The Favourites panel\'s "Today" block (SNOW-1359): one row per '
+            "saved place, every kind, with the region's danger today, its "
+            "move since yesterday and the borrowed nearest forecast, most "
+            "urgent first. Built by apps/favourites/saved_today.py."
+        ),
+        kind="components",
+        partial="favourites/partials/_saved_today.html",
+        variants=SAVED_TODAY_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

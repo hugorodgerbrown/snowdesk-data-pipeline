@@ -1,0 +1,136 @@
+{% load i18n snowdesk_time map_focus weather_icons %}
+{% comment %}
+favourites/partials/_saved_today.html — "Today" for the user's saved places
+(SNOW-1359).
+
+The top of the Favourites panel: one compact row per saved place, every
+kind the user keeps (a dropped pin, a saved resort, a region pin), each with
+the region's danger today, how it moved since yesterday and the forecast it
+borrows from the nearest curated point. Built by
+apps.favourites.saved_today.build_saved_today, most urgent first.
+
+An inset block inside the panel's "Places" section rather than a section of
+its own, so the panel keeps the one-label shape the four UGC panels share
+(tests/public/test_ugc_panels.py). The rows below it are still the dropped
+pins, with their rename / share / remove menus; these are a reading of the
+day, and carry no actions.
+
+What a row's name does depends on what the place is:
+  a pin or resort  frames it on the map — the ``data-row-focus`` button
+                   static/js/row_focus.js serves for every panel row;
+  a region pin     is a real link to the region's bulletin, carrying
+                   ``data-panel-open="region"`` so on the map
+                   static/js/map_panel_trail.js opens the region's sheet
+                   instead (favourites.js closes this panel for it).
+
+The danger tile is the EAWS square (``danger-tile`` + ``data-level``), the
+trend the house chevron turned up or down, a level plus a word so neither
+colour nor shape carries it alone. A borrowed forecast says which point it
+is from, how high and how far away, in the shared
+includes/_forecast_source.html sentence, as every borrowing surface must
+(docs/decisions/snowdesk-decides-where-a-forecast-is-fetched.md). Online only: the offline roster cache
+(favourites_offline.js) holds the pin rows, not this.
+
+Context:
+    saved_today : list[SavedToday]
+{% endcomment %}
+{% if saved_today %}
+    <section class="mb-3 rounded-card bg-bg p-3" data-testid="saved-today" aria-labelledby="saved-today-heading">
+        {% trans "Today" as today_label %}
+        {% include "includes/_eyebrow.html" with tag="h3" heading_id="saved-today-heading" text=today_label class_extra="pb-1 font-medium" only %}
+        <ul class="flex flex-col">
+            {% for row in saved_today %}
+                <li
+                    class="flex min-w-0 items-center gap-3 border-t border-border py-2 first:border-t-0"
+                    data-testid="saved-today-row"
+                    data-kind="{{ row.kind }}"
+                >
+                    {% if row.level %}
+                        <span
+                            class="danger-tile flex-none"
+                            data-level="{{ row.level }}"
+                            aria-hidden="true"
+                        >{{ row.level|danger_level_digit }}{{ row.subdivision }}</span>
+                        <span
+                            class="sr-only"
+                        >{% blocktrans trimmed with level=row.level|danger_level_digit|danger_level_label %}Danger
+                                today: {{ level }}{% endblocktrans %}</span>
+                    {% else %}
+                        <span
+                            class="inline-flex h-9 w-9 flex-none items-center justify-center rounded-tag border border-border bg-card text-text-3"
+                            aria-hidden="true"
+                        >–</span>
+                    {% endif %}
+                    <div class="flex min-w-0 flex-1 flex-col">
+                        {% trans "Unnamed pin" as unnamed_pin %}
+                        {% firstof row.name unnamed_pin as row_name %}
+                        {% if row.kind == "region" and row.region_id %}
+                            <a
+                                href="{{ row.region_url }}"
+                                data-panel-open="region"
+                                data-panel-id="{{ row.region_id }}"
+                                class="truncate text-sm font-medium text-text-1 hover:underline"
+                            >{{ row_name }}</a>
+                        {% else %}
+                            {% focus_target row.longitude row.latitude as row_focus %}
+                            {% blocktrans trimmed with name=row_name asvar row_focus_label %}Zoom to
+                                {{ name }}{% endblocktrans %}
+                            {% if row_focus %}
+                                <button
+                                    type="button"
+                                    data-row-focus="{{ row_focus }}"
+                                    aria-label="{{ row_focus_label }}"
+                                    class="truncate text-left text-sm font-medium text-text-1 hover:underline"
+                                >
+                                    {{ row_name }}
+                                </button>
+                            {% else %}
+                                <span class="truncate text-sm font-medium text-text-1">{{ row_name }}</span>
+                            {% endif %}
+                        {% endif %}
+                        <span class="flex items-center gap-1 text-meta text-text-2" data-testid="saved-today-trend">
+                            {% if not row.level %}
+                                {% trans "No bulletin" %}
+                            {% elif row.trend == "up" %}
+                                <span
+                                    class="inline-flex rotate-180"
+                                    aria-hidden="true"
+                                >{% include "includes/_icon_chevron.html" with size=12 %}</span>
+                                {% trans "Up since yesterday" %}
+                            {% elif row.trend == "down" %}
+                                <span
+                                    class="inline-flex"
+                                    aria-hidden="true"
+                                >{% include "includes/_icon_chevron.html" with size=12 %}</span>
+                                {% trans "Down since yesterday" %}
+                            {% elif row.trend == "same" %}
+                                {% trans "Same as yesterday" %}
+                            {% else %}
+                                {% trans "Today's level" %}
+                            {% endif %}
+                        </span>
+                        {% if row.source %}
+                            <span class="text-meta text-text-3" data-testid="saved-today-source">
+                                {% include "includes/_forecast_source.html" with source=row.source anchor="pin" only %}
+                            </span>
+                        {% endif %}
+                    </div>
+                    {% if row.icon %}
+                        <span
+                            class="flex flex-none items-center gap-1 text-sm text-text-1"
+                            data-testid="saved-today-forecast"
+                        >
+                            <img
+                                src="{% weather_icon_url row.icon %}"
+                                class="{% weather_icon_class %} h-6 w-6"
+                                alt=""
+                                aria-hidden="true"
+                            >
+                            {% if row.temp_max is not None %}{{ row.temp_max|floatformat:0 }}&deg;{% endif %}
+                        </span>
+                    {% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+    </section>
+{% endif %}

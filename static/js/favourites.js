@@ -399,6 +399,13 @@
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return;
     if (handleFocusClick(event)) return;
+    // SNOW-1359: a "Today" region row opens that region's sheet
+    // (map_panel_trail.js follows it); this panel steps out of its way, as
+    // a focus press does.
+    if (target.closest('a[data-panel-open]')) {
+      closeSheet();
+      return;
+    }
     if (handleShareClick(event)) return;
     if (handleRenameClick(event)) return;
     if (!target.closest('[data-panel-add]')) return;
