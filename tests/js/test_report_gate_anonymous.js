@@ -80,9 +80,21 @@ describe('anonymous tap on Report', () => {
   });
 
   it('offers a link to the configured sign-in page', () => {
-    const link = sheet.querySelector(`a[href="${SIGNIN_URL}"]`);
+    const link = sheet.querySelector(`a[href^="${SIGNIN_URL}"]`);
     expect(link).not.toBeNull();
     expect(link.textContent.trim()).toBe('Sign in');
+  });
+
+  it('returns the visitor to the map url they tapped it from (SNOW-903)', () => {
+    window.history.replaceState(null, '', '/map/?d=2026-01-07&panel=reports');
+    const link = sheet.querySelector(`a[href^="${SIGNIN_URL}"]`);
+    link.addEventListener('click', (event) => event.preventDefault());
+
+    link.click();
+
+    const next = new URL(link.getAttribute('href'), window.location.origin).searchParams.get('next');
+    expect(next).toBe('/map/?d=2026-01-07&panel=reports');
+    window.history.replaceState(null, '', '/');
   });
 
   it('carries a dismiss control, so the sheet is not a dead end (SNOW-474)', () => {

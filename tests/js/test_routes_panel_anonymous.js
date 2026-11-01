@@ -82,7 +82,8 @@ describe('the signed-out branch', () => {
     const rows = sheet.querySelector('[data-routes-rows]');
     expect(rows.textContent).toContain('Sign in to save a route.');
     const link = rows.querySelector('a');
-    expect(link.getAttribute('href')).toBe('/sign-in/');
+    // SNOW-903: with a `next` back to the page it was tapped on.
+    expect(link.getAttribute('href')).toMatch(/^\/sign-in\/\?next=/);
     expect(link.textContent).toBe('Sign in');
   });
 

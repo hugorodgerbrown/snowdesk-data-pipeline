@@ -174,7 +174,16 @@
     if (!resorts || (!star && !signIn)) return;
     if (!resorts.eligible()) {
       if (star) star.remove();
-      if (signIn) signIn.hidden = false;
+      if (signIn) {
+        signIn.hidden = false;
+        // SNOW-903: the sheet is an HTMX fragment, so the server cannot name
+        // the map url as `next` — the request it saw was the fragment's.
+        // Bound here instead, to the map url as it is when tapped.
+        window.snowdeskSigninCta?.bindNext?.(
+          /** @type {HTMLAnchorElement} */ (signIn),
+          signIn.dataset.signinUrl,
+        );
+      }
       return;
     }
     if (signIn) signIn.remove();

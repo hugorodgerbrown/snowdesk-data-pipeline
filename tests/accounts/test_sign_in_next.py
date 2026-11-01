@@ -71,6 +71,11 @@ class TestSafeNext:
         """The whole point: a path on this site comes back unchanged."""
         assert safe_next(self._request(), _SAFE_NEXT) == _SAFE_NEXT
 
+    def test_a_map_url_with_its_query_is_accepted(self) -> None:
+        """SNOW-903: the map's ``next`` — its path and query — comes back whole."""
+        value = "/map/?d=2026-01-07&panel=routes"
+        assert safe_next(self._request(), value) == value
+
     def test_absolute_external_url_is_rejected(self) -> None:
         """The phishing case — a foreign host must never be redirected to."""
         assert safe_next(self._request(), "https://evil.example/x") is None

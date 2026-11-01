@@ -1636,7 +1636,11 @@
       return { started: false, reason: 'invalid' };
     }
     if (NEEDS_SIGNIN) {
-      if (DOWNLOADS_SIGNIN_URL) window.location.assign(DOWNLOADS_SIGNIN_URL);
+      // SNOW-903: back to the map url as it is now, not as it was at load.
+      if (DOWNLOADS_SIGNIN_URL) {
+        const cta = window.snowdeskSigninCta;
+        window.location.assign(cta && cta.withNext ? cta.withNext(DOWNLOADS_SIGNIN_URL) : DOWNLOADS_SIGNIN_URL);
+      }
       return { started: false, reason: 'signin' };
     }
     if (restoring || runState === 'busy') return { started: false, reason: 'busy' };

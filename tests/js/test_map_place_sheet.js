@@ -520,7 +520,7 @@ describe("the resort star, painted from the map's favourites (SNOW-1318)", () =>
                 aria-pressed="false" aria-label="Save resort" title="Save resort" disabled>
           <svg fill="none"></svg>
         </button>
-        <a href="/account/sign-in/" data-resort-star-signin hidden>Sign in</a>
+        <a href="/account/sign-in/" data-signin-url="/account/sign-in/" data-resort-star-signin hidden>Sign in</a>
       </div>
     </div>
   `;
@@ -560,6 +560,22 @@ describe("the resort star, painted from the map's favourites (SNOW-1318)", () =>
     await openVerbier();
     expect(star()).toBeNull();
     expect(signIn().hidden).toBe(false);
+  });
+
+  it('sends the reader back to the map, never the fragment, once signed in (SNOW-903)', async () => {
+    stubResorts({ eligible: false });
+    window.history.replaceState(null, '', '/map/?d=2026-01-06&place=resort:verbier');
+    await openVerbier();
+    window.history.replaceState(null, '', '/map/?d=2026-01-07&place=resort:verbier');
+    const link = /** @type {HTMLAnchorElement} */ (signIn());
+    link.addEventListener('click', (event) => event.preventDefault());
+
+    link.click();
+
+    const next = new URL(link.getAttribute('href'), window.location.origin).searchParams.get('next');
+    expect(next).toBe('/map/?d=2026-01-07&place=resort:verbier');
+    expect(next).not.toContain('/partials/');
+    window.history.replaceState(null, '', '/');
   });
 
   it('keeps the outline disabled while the feed is unread, and asks for it', async () => {

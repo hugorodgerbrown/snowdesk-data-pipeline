@@ -70,7 +70,12 @@ Context:
                     ``w3w_share_text`` hung on it.
   signin_url      — the resort's sign-in star (kind "resort" only). The
                     Save star itself carries no reader state (SNOW-1318):
-                    map_place_sheet.js paints it.
+                    map_place_sheet.js paints it. The href is the BARE
+                    sign-in url and must stay so: this is a require_htmx
+                    fragment, so {% sign_in_href %} would name the
+                    fragment's url as `next`. map_place_sheet.js gives it
+                    the live map url through snowdeskSigninCta.bindNext
+                    (SNOW-903).
 {% endcomment %}
 {% trans "Unnamed pin" as unnamed_pin %}
 {% firstof name unnamed_pin as label %}
@@ -151,6 +156,7 @@ Context:
                 </button>
                 <a
                     href="{{ signin_url }}"
+                    data-signin-url="{{ signin_url }}"
                     data-resort-star-signin
                     data-resort-slug="{{ resort.slug }}"
                     data-resort-name="{{ resort.name }}"
