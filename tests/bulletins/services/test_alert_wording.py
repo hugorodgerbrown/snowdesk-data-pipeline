@@ -125,8 +125,16 @@ class TestSinglePlace:
         msg = alert_message([place(state(), state())], TODAY)
         assert msg.body == "Considerable, no change."
 
+    def test_shifted_problem_is_no_change(self) -> None:
+        """A problem moving its aspects or band is not news."""
+        moved = ProblemState("wind_slab", ("S",), lower=2000, rating="moderate")
+        msg = alert_message(
+            [place(state(problems=(WIND,)), state(problems=(moved,)))], TODAY
+        )
+        assert msg.body == "Considerable, no change."
+
     def test_problems_changed(self) -> None:
-        """The level held but the problems moved."""
+        """The level held but a problem came or went."""
         msg = alert_message(
             [place(state(problems=(WIND,)), state(problems=(WET,)))], TODAY
         )
@@ -182,8 +190,13 @@ class TestSinglePlace:
 
     def test_unrated(self) -> None:
         """An unrated state reads as no rating."""
-        msg = alert_message([place(None, state(""))], TODAY)
-        assert msg.body == "No rating."
+        msg = alert_message([place(None, state(""), kind="season_start")], TODAY)
+        assert msg.body == "First of the season. No rating."
+
+    def test_bulletins_are_back(self) -> None:
+        """A new bulletin with nothing before it resumes after a gap."""
+        msg = alert_message([place(None, state("low"))], TODAY)
+        assert msg.body == "Bulletins are back. Low."
 
     def test_trip(self) -> None:
         """A saved trip's alert leads with the trip, and opens it."""

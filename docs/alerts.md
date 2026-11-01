@@ -54,12 +54,14 @@ See "Going public" before turning either on.
 - **Which bulletin.** `RegionDayRating.source_bulletin` — the same issue
   the map shows for that day.
 - **Modes.** `NEW_BULLETIN` restates the establishing issue every day;
-  `CHANGES` sends only when the state moved from the day before — except
+  `CHANGES` sends only when the level moved or a problem came or went
+  from the day before — except
   on a saved trip's day, whose establishing issue always sends (Hugo,
   2026-10-30: the night before you go, you want the bulletin). A pin's
   quiet day logged `SKIPPED` before the trip was saved does not count as
-  the trip's alert. A changed
-  update to a day already told sends in either mode. A reissue a reader
+  the trip's alert. An update
+  to a day already told sends in either mode when the level moved or a
+  problem came or went. A reissue a reader
   could not tell apart (same fingerprint) never sends.
 - **The day, the level and what moved (SNOW-1356).** A one-place
   alert's title names the place and the day the bulletin is for, so
@@ -67,8 +69,14 @@ See "Going public" before turning either on.
   a reissue is "Verbier – Thursday bulletin update". The body is the
   level and whether it moved: "Considerable, up from Moderate.",
   "Considerable (3+), up from 3−." within a level, "Moderate, avalanche
-  problems changed.", "Moderate, no change." A season start leads
-  "First of the season."; a trip leads "For your trip.". SNOW-1332's open
+  problems changed." (a problem added or removed), "Moderate, no
+  change." A problem only shifting its aspects, band or rating is no
+  change (`BulletinChange.is_notable`): SLF shifts one most days, and in a
+  replayed season it fired "problems changed" on two days in five. A
+  season start leads "First of the season."; a restart after a pause
+  inside the season (a bulletin within `SEASON_GAP_DAYS`, 60, before
+  yesterday, `had_bulletin_in_season`) leads "Bulletins are back."; a
+  trip leads "For your trip.". SNOW-1332's open
   door ("Verbier bulletin" / "Valid from … to …") read as the same message
   every day of a replayed season (Hugo, 2026-11-01). Problems, aspects
   and heights stay on the page the tap opens. A bundle is unchanged:

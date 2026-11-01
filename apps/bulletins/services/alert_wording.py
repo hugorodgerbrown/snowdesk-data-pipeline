@@ -520,7 +520,8 @@ def movement(change: BulletinChange) -> str:
     Returns:
         "Considerable, up from Moderate.", "Considerable (3+), up from 3−."
         for a sub-level move, "Moderate, avalanche problems changed." when
-        only the problems moved, "Moderate, no change." when nothing did,
+        a problem was added or removed, "Moderate, no change." when
+        nothing did or a problem only shifted its aspects or band,
         and the bare "Moderate." with nothing to compare against.
 
     """
@@ -546,7 +547,8 @@ def movement(change: BulletinChange) -> str:
         if current.rank > previous.rank:
             return _("%(level)s, up from %(previous)s.") % values
         return _("%(level)s, down from %(previous)s.") % values
-    if change.added or change.removed or change.moved:
+    if change.added or change.removed:
+        # A problem shifting its aspects or band is not news (SNOW-1356).
         return _("%(level)s, avalanche problems changed.") % {"level": word}
     return _("%(level)s, no change.") % {"level": word}
 
@@ -578,8 +580,8 @@ def place_body(place: PlaceAlert, today: datetime.date) -> str:
 
     Returns:
         "Considerable, up from Moderate. 20 cm new snow forecast.", led by
-        "For your trip." for a trip and "First of the season." at season
-        start.
+        "For your trip." for a trip, "First of the season." at season
+        start and "Bulletins are back." after a gap inside it.
 
     """
     parts: list[str] = []
@@ -587,6 +589,9 @@ def place_body(place: PlaceAlert, today: datetime.date) -> str:
         parts.append(_("For your trip."))
     if place.kind == "season_start":
         parts.append(_("First of the season."))
+    elif place.kind == "new" and place.change.previous is None:
+        # Bulletins resumed after a gap inside the season (SNOW-1356).
+        parts.append(_("Bulletins are back."))
     parts.append(movement(place.change))
     snow = new_snow(place.new_snow_cm)
     if snow:

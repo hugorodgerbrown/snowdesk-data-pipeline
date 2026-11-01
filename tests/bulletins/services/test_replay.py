@@ -146,3 +146,16 @@ def test_new_snow_is_named_when_given() -> None:
     snow = dict.fromkeys({a.target_date for a in plain}, 30.0)
     snowy = [a for a in replay_region(RECORDS, source="SLF", new_snow=snow) if a.sent]
     assert all(a.body.endswith("30 cm new snow forecast.") for a in snowy)
+
+
+@pytest.mark.usefixtures("_fakes")
+def test_a_pause_inside_the_season_is_not_a_new_season() -> None:
+    """Bulletins that resume after a gap say so; only the first starts it."""
+    records = [
+        issue("2026-01-16T15:00:00+00:00", "2026-01-16T16:00:00+00:00"),
+        issue("2026-01-25T15:00:00+00:00", "2026-01-25T16:00:00+00:00", "low"),
+    ]
+    first, resumed = (a for a in replay_region(records, source="SLF") if a.sent)
+    assert first.body.startswith("First of the season.")
+    assert resumed.kind == "new"
+    assert resumed.body == "Bulletins are back. Low."
