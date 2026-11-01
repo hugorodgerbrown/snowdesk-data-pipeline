@@ -352,6 +352,43 @@ describe('the boundary outlines and the bulletin fill are filtered separately', 
     expect(atRatings()).toBe(afterFirst);
   });
 
+  it('skips the season ratings of a country no provider claims (SNOW-957)', async () => {
+    // SLF alone on the global basemap: all four countries' outlines load, but
+    // only Switzerland's season is asked for.
+    await boot({ providers: 'country.ch', countries: 'ch fr at it' });
+
+    const ratingsFor = new Set(
+      globalThis.fetch.mock.calls
+        .map((call) => String(call[0]))
+        .filter((url) => url.includes('/api/ratings.json'))
+        .map((url) => new URL(url, 'https://example.test').searchParams.get('country')),
+    );
+    expect(ratingsFor.has('fr')).toBe(false);
+    expect(ratingsFor.has('at')).toBe(false);
+    expect(ratingsFor.has('it')).toBe(false);
+  });
+
+  it('fetches them when the row is switched on after a boundary-only boot', async () => {
+    // The toggle's own `loadCountryRatings` is now the only fetch for such a
+    // country, and the region it reveals is painted from it.
+    // Counted as before-and-after rather than exactly once: an earlier
+    // test's bundle leaves its own document listeners behind.
+    const mapStub = await boot({ providers: 'country.ch', countries: 'ch fr at it' });
+    const atRatings = () => globalThis.fetch.mock.calls
+      .map((call) => String(call[0]))
+      .filter((url) => url.includes('/api/ratings.json') && url.includes('country=at'))
+      .length;
+    expect(atRatings()).toBe(0);
+
+    document.dispatchEvent(new CustomEvent('snowdesk:country-toggle', {
+      detail: { code: 'at', next: true },
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(atRatings()).toBeGreaterThan(0);
+    expect(filterCodes(mapStub, 'regions-fill')).toContain('AT');
+  });
+
   it("loads the basemap's countries, not just the enabled providers'", async () => {
     // The filter alone is not enough: a country whose geometry was never
     // fetched draws no outline however the filter reads. SLF alone on the

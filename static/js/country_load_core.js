@@ -73,17 +73,25 @@
    * @param {boolean} [options.hasMajorUrl] `MAJOR_REGIONS_URL` is configured.
    * @param {boolean} [options.hasSubUrl] `SUB_REGIONS_URL` is configured.
    * @param {boolean} [options.hasRatingsUrl] `RATINGS_URL` is configured.
+   * @param {boolean} [options.boundaryOnly] SNOW-957: the country is loaded
+   *   only because the basemap outlines it, and no provider row claims it.
+   *   Its geometry is still fetched, since the outline needs it, but its
+   *   season ratings back a fill that never paints for it, so they are
+   *   skipped. Switching its row on later fetches them through the toggle's
+   *   own `loadCountryRatings` call. Absent means claimed, so a caller that
+   *   does not know never loses a feed.
    * @returns {{regions: boolean, major: boolean, sub: boolean,
    *   ratings: string}} `ratings` is `'fetch'` (request the season),
    *   `'ensure-cached'` (boot already has it in memory — only top up the SW
-   *   cache) or `'skip'` (no URL configured).
+   *   cache) or `'skip'` (no URL configured, or a boundary-only country).
    */
   function planCountryFeeds(options) {
     var opts = options || {};
     var isBoot = !!opts.isBootCountry;
     var ratings = 'skip';
     if (opts.hasRatingsUrl) {
-      ratings = isBoot ? 'ensure-cached' : 'fetch';
+      if (isBoot) ratings = 'ensure-cached';
+      else if (!opts.boundaryOnly) ratings = 'fetch';
     }
     return {
       // Skipped for the boot country: its L4 geometry is already in

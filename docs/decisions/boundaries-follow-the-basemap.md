@@ -2,7 +2,7 @@
 name: boundaries-follow-the-basemap
 description: EAWS boundary outlines follow the active basemap, not the Bulletins rows (BASEMAP_COUNTRIES, data-basemap-countries, boundaryCountryCodes)
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-11-01
 ---
 
 # The boundary outlines follow the basemap, not the Bulletins rows
@@ -64,13 +64,16 @@ sizes the offline base layer the same way
   fetched draws no outline however the filter reads — so boot walks the
   union of the enabled providers' countries and the basemap's, and a
   `snowdesk:basemap-changed` listener loads whatever a swap newly needs.
-  `ensureCountryLoaded` is one unit — geometry *and* that country's season
-  ratings — so this costs three extra countries' feeds (~40 KB of ratings
-  each). All of it is off the critical path (which stays CH-L4 + ratings +
-  resorts), publicly cacheable, and lands in Cache Storage, which is what
-  makes the outlines readable offline. Whether the ratings leg should be
-  skipped for a country no provider claims is a separate, measurable
-  question; it is one unit here.
+  This costs three extra countries' geometry, all of it off the critical
+  path (which stays CH-L4 + ratings + resorts), publicly cacheable, and in
+  Cache Storage, which is what makes the outlines readable offline. **Since
+  SNOW-957 the season ratings are not part of it.** A country loaded only
+  for its outline (`boundaryOnly` to `planCountryFeeds`) skips its ratings
+  (~40 KB each), because they back a fill that never paints for it. The
+  toggle that later switches its row on fetches them through
+  `loadCountryRatings`. The cost is that a row switched on for the first
+  time while offline has no season to paint until the device is back
+  online, unless an area download already saved the day's ratings.
 - **A country can now be loaded before its provider row is switched on**,
   so the ratings need a memo of their own. `ensureCountryLoaded`
   short-circuits on `loadedCountries` and its choropleth paint is part of
