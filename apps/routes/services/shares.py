@@ -44,7 +44,7 @@ from __future__ import annotations
 import logging
 import secrets
 from datetime import timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
 from django.conf import settings
@@ -52,6 +52,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.utils import timezone
 
+from apps.regions.services.track_regions import resolve_track_regions
 from apps.routes.models import Route, RouteShare
 from apps.routes.services.routes import _assert_under_cap, _locked_cap_recheck
 from apps.routes.services.slope_segments import enqueue_route_slope_sampling
@@ -175,6 +176,9 @@ _COPIED_FIELDS = (
     "ski_tour_uuid",
     "source_filename",
     "points",
+    # SNOW-945. The copy has the same track, so it crosses the same
+    # regions; carried rather than re-resolved.
+    "crossed_regions",
     "distance_m",
     "ascent_m",
     "descent_m",
@@ -231,11 +235,40 @@ def write_route_copy(user: "User", fields: dict[str, object]) -> Route:
     """
     _assert_under_cap(user)
 
+    fields = with_crossed_regions(fields)
+
     with transaction.atomic():
         _locked_cap_recheck(user)
         # SNOW-1309: the copy's render is built from what it copies, never
         # taken from the source, so it cannot arrive stale.
         return Route.objects.create(user=user, **stamped_fields(fields))
+
+
+def with_crossed_regions(fields: dict[str, object]) -> dict[str, object]:
+    """
+    Return a copy's fields with the regions its track crosses (SNOW-945).
+
+    Carried when the caller has them (a claimed share, a saved trip),
+    resolved here when it has not (an SAC tour) or the source predates the
+    backfill. A caller that wraps the copy in its own transaction calls
+    this first, so no geometry walk runs while a transaction is open.
+
+    Args:
+        fields: The Route field values to write.
+
+    Returns:
+        ``fields`` itself when it already carries ``crossed_regions``,
+        otherwise a copy with them resolved from ``points``.
+
+    """
+    if fields.get("crossed_regions") is not None:
+        return fields
+    return {
+        **fields,
+        "crossed_regions": resolve_track_regions(
+            cast("list[list[float]] | None", fields.get("points"))
+        ),
+    }
 
 
 def claim_route_share(user: "User", token: str) -> Route:
@@ -297,10 +330,13 @@ def claim_route_share(user: "User", token: str) -> Route:
     # record that the link was ever used. Nesting makes the inner block a
     # savepoint and restores the all-or-nothing guarantee the two writes had
     # when they shared a single block, before SNOW-824 extracted the copy.
+    # The regions are resolved before the block for a source that predates
+    # the backfill (SNOW-945), so the geometry walk holds no transaction.
+    fields = with_crossed_regions(
+        {field: getattr(source, field) for field in _COPIED_FIELDS}
+    )
     with transaction.atomic():
-        route = write_route_copy(
-            user, {field: getattr(source, field) for field in _COPIED_FIELDS}
-        )
+        route = write_route_copy(user, fields)
 
         # An atomic UPDATE rather than a read-modify-write. Two people
         # claiming the same link at the same moment both read the same

@@ -43,7 +43,13 @@ from apps.trips.services.trips import (
     delete_trips_for_user,
     update_trip,
 )
-from tests.factories import LocationFactory, RouteFactory, TripFactory, UserFactory
+from tests.factories import (
+    LocationFactory,
+    MicroRegionFactory,
+    RouteFactory,
+    TripFactory,
+    UserFactory,
+)
 
 _DATE = datetime.date(2026, 3, 14)
 _TIME = datetime.time(7, 30)
@@ -542,3 +548,55 @@ class TestDeleteTripInstance:
         assert not Trip.objects.filter(pk=trip_pk).exists()
         assert not TripParticipant.objects.filter(trip_id=trip_pk).exists()
         assert not Location.objects.filter(pk=location_pk).exists()
+
+
+def _crossed_box(
+    west: float, south: float, east: float, north: float
+) -> dict[str, object]:
+    """Return a GeoJSON Polygon for a lon/lat rectangle (SNOW-945 tests)."""
+    return {
+        "type": "Polygon",
+        "coordinates": [
+            [[west, south], [east, south], [east, north], [west, north], [west, south]],
+        ],
+    }
+
+
+@pytest.mark.django_db
+class TestCreateTripCrossedRegions:
+    """SNOW-945: a trip stores the regions its route crosses."""
+
+    def test_the_route_list_is_inherited(self) -> None:
+        """Taken from the route, not resolved again."""
+        route = RouteFactory.create(crossed_regions=["CH-1", "CH-2"])
+
+        trip = create_trip(
+            route.user, route_uuid=route.uuid, date=_DATE, start_time=_TIME
+        )
+
+        assert trip.crossed_regions == ["CH-1", "CH-2"]
+
+    def test_a_route_from_before_the_backfill_is_resolved(self) -> None:
+        """A null route list is resolved from its points."""
+        MicroRegionFactory.create(
+            region_id="CH-7005", boundary=_crossed_box(7.3, 46.0, 7.5, 46.2)
+        )
+        route = RouteFactory.create()
+
+        trip = create_trip(
+            route.user, route_uuid=route.uuid, date=_DATE, start_time=_TIME
+        )
+
+        assert trip.crossed_regions == ["CH-7005"]
+
+    def test_the_trip_keeps_its_list_after_the_route_goes(self) -> None:
+        """Stored on the trip because the route can be deleted."""
+        route = RouteFactory.create(crossed_regions=["CH-1"])
+        trip = create_trip(
+            route.user, route_uuid=route.uuid, date=_DATE, start_time=_TIME
+        )
+
+        route.delete()
+        trip.refresh_from_db()
+
+        assert trip.crossed_regions == ["CH-1"]

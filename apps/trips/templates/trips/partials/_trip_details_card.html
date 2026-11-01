@@ -39,8 +39,10 @@ Context:
     meeting_point_w3w_url : str|None — where that address links to.
     meeting_point_place   : dict — ``place`` and ``maps_url``, the fallback
                             when there is no address (``_meeting_place``).
-    trip_danger           : TripDanger|None — the day's level on the route's
-                            start (apps.trips.services.plan_days).
+    trip_dangers          : list[TripDanger] — the day's level in each region
+                            the route crosses that a bulletin rated, in
+                            route order (apps.trips.services.plan_days,
+                            SNOW-945); usually empty.
     trip_weather          : (ForecastPanelDay, TripWeather)|None — the
                             day's forecast and the curated point it is
                             borrowed from, nearest the meeting point.
@@ -65,14 +67,14 @@ Context:
         </dd>
     </div>
 </dl>
-{% if trip_weather or trip_danger %}
+{% if trip_weather or trip_dangers %}
     <div class="flex flex-col gap-2.5 border-t border-border bg-card-subtle px-4.5 py-3">
         {% if trip_weather %}
             {% include "trips/partials/_trip_weather.html" with day=trip_weather.0 source=trip_weather.1 only %}
         {% endif %}
-        {% if trip_danger %}
-            {% include "trips/partials/_trip_danger.html" with trip=trip danger=trip_danger only %}
-        {% endif %}
+        {% for danger in trip_dangers %}
+            {% include "trips/partials/_trip_danger.html" with trip=trip danger=danger only %}
+        {% endfor %}
     </div>
 {% endif %}
 {% endcard %}

@@ -178,3 +178,16 @@ class TestAlreadySaved:
         )
 
         assert already_saved(viewer, trip) is False
+
+
+@pytest.mark.django_db
+class TestSaveTripRouteCrossedRegions:
+    """SNOW-945: a saved route carries the trip's list."""
+
+    def test_the_trip_list_is_carried(self) -> None:
+        """The saved route crosses what the trip page said it crossed."""
+        trip = TripFactory.create(crossed_regions=["CH-1", "CH-2"])
+
+        route = save_trip_route(UserFactory.create(), trip)
+
+        assert route.crossed_regions == ["CH-1", "CH-2"]

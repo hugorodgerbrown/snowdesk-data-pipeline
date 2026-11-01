@@ -506,7 +506,7 @@ class TestTripDay:
         publish(region, TOMORROW, render("considerable"))
         PushSubscriptionFactory.create(account=account)
         with (
-            patch.object(alerts, "start_region", return_value=region),
+            patch.object(alerts, "track_regions", return_value=[region]),
             patch.object(alerts, "dispatch_push", return_value=OK),
         ):
             run = deliver(evaluate_account(account, NOW))
@@ -540,7 +540,7 @@ class TestTripDay:
         TripFactory.create(created_by=account.user, date=TOMORROW, name="Mont Fort")
         PushSubscriptionFactory.create(account=account)
         with (
-            patch.object(alerts, "start_region", return_value=region),
+            patch.object(alerts, "track_regions", return_value=[region]),
             patch.object(alerts, "dispatch_push", return_value=OK),
         ):
             run = deliver(evaluate_account(account, NOW))
@@ -573,7 +573,7 @@ class TestTripDay:
             created_by=account.user, date=TODAY + datetime.timedelta(days=7)
         )
         publish(region, TOMORROW, render())
-        with patch.object(alerts, "start_region", return_value=region):
+        with patch.object(alerts, "track_regions", return_value=[region]):
             assert evaluate_account(account, NOW).rows == []
 
     def test_trip_and_pin_in_one_region_are_one_place(self, traveller: tuple) -> None:
@@ -583,7 +583,7 @@ class TestTripDay:
             user=account.user, region=region, region_pin=True, name="Verbier"
         )
         TripFactory.create(created_by=account.user, date=TOMORROW, name="Mont Fort")
-        with patch.object(alerts, "start_region", return_value=region):
+        with patch.object(alerts, "track_regions", return_value=[region]):
             (place,) = places_on(
                 account_places(account.user), trip_places(account.user, TOMORROW)
             )
@@ -595,23 +595,180 @@ class TestTripDay:
         account, region = traveller
         trip = TripFactory.create(date=TOMORROW)
         TripParticipantFactory.create(trip=trip, user=account.user)
-        with patch.object(alerts, "start_region", return_value=region):
+        with patch.object(alerts, "track_regions", return_value=[region]):
             (place,) = trip_places(account.user, TOMORROW)
         assert place.region == region
 
-    def test_start_outside_every_region_adds_nothing(self, traveller: tuple) -> None:
-        """No region for the start is no place, and no error."""
+    def test_track_outside_every_region_adds_nothing(self, traveller: tuple) -> None:
+        """A track in no region is no place, and no error."""
         account, _region = traveller
         TripFactory.create(created_by=account.user, date=TOMORROW)
-        with patch.object(alerts, "start_region", return_value=None):
+        with patch.object(alerts, "track_regions", return_value=[]):
             assert trip_places(account.user, TOMORROW) == []
 
     def test_someone_elses_trip_is_not_a_place(self, traveller: tuple) -> None:
         """A trip the account never saved is not its place."""
         account, region = traveller
         TripFactory.create(date=TOMORROW)
-        with patch.object(alerts, "start_region", return_value=region):
+        with patch.object(alerts, "track_regions", return_value=[region]):
             assert trip_places(account.user, TOMORROW) == []
+
+
+class TestTripAcrossRegions:
+    """A trip crossing several regions is one place covering all (SNOW-945)."""
+
+    @pytest.fixture()
+    def crossing(self, db: Any) -> tuple[Account, Any, Any]:
+        """Return an account with alerts on, and two neighbouring regions."""
+        account = AccountFactory.create(
+            notify_when=Account.NotifyWhen.CHANGES,
+            alerts_enabled_at=NOW - datetime.timedelta(days=7),
+        )
+        first = MicroRegionFactory.create(region_id="CH-4115", name="Verbier")
+        second = MicroRegionFactory.create(region_id="CH-4116", name="Arolla")
+        return account, first, second
+
+    def _logged(self, account: Account, region: Any, day: datetime.date) -> None:
+        """Log a considerable state for (region, day) as already told."""
+        BulletinAlertFactory.create(
+            account=account,
+            region=region,
+            target_date=day,
+            fingerprint=state("considerable").fingerprint(),
+            state=state("considerable").to_json(),
+        )
+
+    def test_two_region_trip_is_one_place(self, crossing: tuple) -> None:
+        """Both regions, one place, the trip's name and link."""
+        account, first, second = crossing
+        trip = TripFactory.create(
+            created_by=account.user, date=TOMORROW, name="Haute Route"
+        )
+        with patch.object(alerts, "track_regions", return_value=[first, second]):
+            (place,) = trip_places(account.user, TOMORROW)
+        assert place.covered == [first, second]
+        assert place.label == "Haute Route"
+        assert place.trip_url == f"/trips/{trip.uuid}/"
+
+    def test_one_alert_names_both_bulletins(self, crossing: tuple) -> None:
+        """One message for the trip, one log row per region."""
+        account, first, second = crossing
+        trip = TripFactory.create(
+            created_by=account.user, date=TOMORROW, name="Haute Route"
+        )
+        for region in (first, second):
+            publish(region, TOMORROW, render("considerable"))
+        PushSubscriptionFactory.create(account=account)
+        with (
+            patch.object(alerts, "track_regions", return_value=[first, second]),
+            patch.object(alerts, "dispatch_push", return_value=OK),
+        ):
+            run = deliver(evaluate_account(account, NOW))
+        assert run.message is not None
+        assert run.message.title.startswith("Haute Route")
+        assert run.message.body == "For your trip. 2 bulletins."
+        assert run.message.url == f"/trips/{trip.uuid}/"
+        logged = BulletinAlert.objects.filter(account=account, target_date=TOMORROW)
+        assert {row.region_id for row in logged} == {first.pk, second.pk}
+
+    def test_a_change_in_either_region_fires(self, crossing: tuple) -> None:
+        """Only the second region moved: the trip is still told."""
+        account, first, second = crossing
+        TripFactory.create(created_by=account.user, date=TOMORROW, name="Haute Route")
+        for region in (first, second):
+            self._logged(account, region, TODAY)
+            publish(region, TODAY, render("considerable"))
+            self._logged(account, region, TOMORROW)
+        publish(first, TOMORROW, render("considerable"))
+        publish(second, TOMORROW, render("high"))
+        with patch.object(alerts, "track_regions", return_value=[first, second]):
+            run = evaluate_account(account, NOW)
+        assert run.message is not None
+        assert run.message.body == "For your trip. 2 bulletins."
+
+    def test_a_region_yet_to_publish_is_not_counted(self, crossing: tuple) -> None:
+        """Only one region has published: the trip names one bulletin."""
+        account, first, _second = crossing
+        TripFactory.create(created_by=account.user, date=TOMORROW, name="Haute Route")
+        publish(first, TOMORROW, render("considerable"))
+        with patch.object(alerts, "track_regions", return_value=[first, _second]):
+            run = evaluate_account(account, NOW)
+        assert run.message is not None
+        assert run.message.title == "Haute Route – Saturday bulletin"
+        assert run.message.body == "For your trip. 1 bulletin."
+        assert "Considerable" not in run.message.body
+
+    def test_one_region_trip_folds_into_a_pin(self, crossing: tuple) -> None:
+        """A trip inside a pinned region is that pin's place, as before."""
+        account, first, _second = crossing
+        FavouriteFactory.create(
+            user=account.user, region=first, region_pin=True, name="Verbier"
+        )
+        TripFactory.create(created_by=account.user, date=TOMORROW, name="Mont Fort")
+        with patch.object(alerts, "track_regions", return_value=[first]):
+            (place,) = places_on(
+                account_places(account.user), trip_places(account.user, TOMORROW)
+            )
+        assert place.label == "Verbier, Mont Fort"
+
+    def test_multi_region_trip_beside_a_pin_stays_apart(self, crossing: tuple) -> None:
+        """A pin in the trip's first region is still its own place."""
+        account, first, second = crossing
+        FavouriteFactory.create(
+            user=account.user, region=first, region_pin=True, name="Verbier"
+        )
+        TripFactory.create(created_by=account.user, date=TOMORROW, name="Haute Route")
+        with patch.object(alerts, "track_regions", return_value=[first, second]):
+            places = places_on(
+                account_places(account.user), trip_places(account.user, TOMORROW)
+            )
+        assert [p.label for p in places] == ["Haute Route", "Verbier"]
+        assert places[0].covered == [first, second]
+        assert places[1].covered == [first]
+
+    def test_a_quiet_pin_does_not_overwrite_the_trips_send(
+        self, crossing: tuple
+    ) -> None:
+        """A pin and a trip sharing a region write one row, the trip's."""
+        account, first, second = crossing
+        FavouriteFactory.create(
+            user=account.user, region=first, region_pin=True, name="Verbier"
+        )
+        TripFactory.create(created_by=account.user, date=TOMORROW, name="Haute Route")
+        for region in (first, second):
+            self._logged(account, region, TODAY)
+            publish(region, TODAY, render("considerable"))
+            publish(region, TOMORROW, render("considerable"))
+        PushSubscriptionFactory.create(account=account)
+        with (
+            patch.object(alerts, "track_regions", return_value=[first, second]),
+            patch.object(alerts, "dispatch_push", return_value=OK),
+        ):
+            run = deliver(evaluate_account(account, NOW))
+            assert run.message is not None
+            (row,) = BulletinAlert.objects.filter(
+                account=account, region=first, target_date=TOMORROW
+            )
+            assert row.outcome == BulletinAlert.Outcome.SENT
+            assert row.title.startswith("Haute Route")
+            # Told now: the next run is quiet.
+            assert evaluate_account(account, NOW).message is None
+
+    def test_stored_regions_are_read_without_resolving(self, crossing: tuple) -> None:
+        """A trip carrying its regions is placed from them, in route order."""
+        account, first, second = crossing
+        TripFactory.create(
+            created_by=account.user,
+            date=TOMORROW,
+            name="Haute Route",
+            crossed_regions=[second.region_id, first.region_id],
+        )
+        with patch(
+            "apps.regions.services.track_regions.resolve_track_regions"
+        ) as resolve:
+            (place,) = trip_places(account.user, TOMORROW)
+        resolve.assert_not_called()
+        assert place.covered == [second, first]
 
 
 @pytest.mark.django_db

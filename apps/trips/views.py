@@ -96,6 +96,7 @@ from apps.core.decorators import require_htmx
 from apps.core.http import client_ip
 from apps.ingest.public import convert_to_3wa
 from apps.locations.services.what3words import fill_what3words, what3words_map_url
+from apps.regions.services.track_regions import track_regions
 from apps.routes.models import Route
 from apps.routes.services.routes import RouteLimitReached
 from apps.routes.services.track_render import current_render
@@ -109,7 +110,7 @@ from apps.trips.services.participants import (
     join_trip,
     leave_trip_by_uuid,
 )
-from apps.trips.services.plan_days import plan_week, trip_danger, with_weather
+from apps.trips.services.plan_days import plan_week, trip_dangers, with_weather
 from apps.trips.services.routes import already_saved, save_trip_route
 from apps.trips.services.shares import (
     TripShareTokenCollision,
@@ -349,7 +350,7 @@ def _trip_day_weather(trip: Trip) -> tuple[ForecastPanelDay, TripWeather] | None
     return day, weather
 
 
-def _plan_context(form: TripForm, points: list[list[float]]) -> dict[str, Any]:
+def _plan_context(form: TripForm, source: Route | Trip | None) -> dict[str, Any]:
     """Return what the form's "When" section renders from (SNOW-1215).
 
     The week of day tiles, with each day's danger level where a bulletin
@@ -365,7 +366,9 @@ def _plan_context(form: TripForm, points: list[list[float]]) -> dict[str, Any]:
 
     Args:
         form: The form being rendered, bound or unbound.
-        points: The track the trip is planned from, for its region.
+        source: The route or trip the plan is drawn from — its track, for
+            the forecast point, and the regions it crosses (SNOW-945) — or
+            None, which plans with no levels and no forecast.
 
     Returns:
         A dict with ``plan_week``, ``plan_date``, ``plan_other``,
@@ -377,10 +380,16 @@ def _plan_context(form: TripForm, points: list[list[float]]) -> dict[str, Any]:
 
     """
     today = timezone.localdate()
+    points = source.points if source is not None else []
+    regions = (
+        track_regions(source.crossed_regions, source.points)
+        if source is not None
+        else []
+    )
     # SNOW-1217: each tile's forecast, from the forecast point nearest the
     # route's start — a route has no forecast of its own.
     weather = nearest_weather(points[0][1], points[0][0], today) if points else None
-    week = with_weather(plan_week(today, points), weather)
+    week = with_weather(plan_week(today, regions), weather)
     value = form["date"].value()
     plan_date = (
         value.isoformat() if isinstance(value, datetime.date) else str(value or "")
@@ -765,10 +774,13 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
         # is an offer awaiting a decision with nowhere else to live.
         "map_url": _map_deep_link("trip", str(trip.uuid)),
         "map_payload": _trip_map_payload(trip),
-        # SNOW-1216. The day's danger level on the route's start, for the
-        # plan card's one line — None on every day no bulletin rated, which
-        # is most of them, and the card then simply has no line.
-        "trip_danger": trip_danger(trip.date, trip.points),
+        # SNOW-1216, SNOW-945. The day's danger level in each region the
+        # route crosses, in route order, one line each on the plan card —
+        # empty on every day no bulletin rated, which is most of them, and
+        # the card then simply has no lines.
+        "trip_dangers": trip_dangers(
+            trip.date, track_regions(trip.crossed_regions, trip.points)
+        ),
         # SNOW-1217. The forecast for the trip's day, borrowed from the
         # curated point nearest the meeting point, and that point — or
         # None outside the forecast window.
@@ -841,7 +853,7 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
         ),
         "edit_form": edit_form,
         # SNOW-1215: the edit form is the Plan page's form, week and all.
-        **(_plan_context(edit_form, trip.points) if edit_form is not None else {}),
+        **(_plan_context(edit_form, trip) if edit_form is not None else {}),
         # Only the organiser's page wires the share controls, so only it
         # needs the templates. The public page gets empty strings rather
         # than a missing key, so a stray attribute renders as "" rather
@@ -928,7 +940,7 @@ def trip_new(request: HttpRequest) -> HttpResponse:
                 current_render(route),
                 route.distance_m,
             ),
-            **_plan_context(form, route.points),
+            **_plan_context(form, route),
             **_basemap_context(),
             **_what3words_context(request),
         },
@@ -1099,7 +1111,7 @@ def trip_create(request: HttpRequest) -> HttpResponse:
                     route.bounds if route else [],
                     current_render(route) if route else None,
                 ),
-                **_plan_context(form, route.points if route else []),
+                **_plan_context(form, route),
                 **_basemap_context(),
                 **_what3words_context(request),
             },
@@ -1206,7 +1218,7 @@ def trip_edit(request: HttpRequest, uuid: UUID) -> HttpResponse:
                     trip.bounds if trip else [],
                     current_render(trip) if trip else None,
                 ),
-                **_plan_context(form, trip.points if trip else []),
+                **_plan_context(form, trip),
                 **_basemap_context(),
                 **_what3words_context(request),
             },
