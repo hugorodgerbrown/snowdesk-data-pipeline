@@ -676,6 +676,11 @@ def _saved_today_row(**fields: Any) -> Any:
         "icon": "partly_cloudy-day.svg",
         "temp_max": -2.0,
         "rating": None,
+        # The borrowed point, shaped as a NearestForecast reads in
+        # includes/_forecast_source.html.
+        "source": SimpleNamespace(
+            label="Mont Fort", elevation_m=3329, distance_km=2.1, is_same_place=False
+        ),
     }
     base.update(fields)
     return SavedToday(**base)
@@ -698,11 +703,17 @@ SAVED_TODAY_VARIANTS: tuple[dict[str, Any], ...] = (
                     trend="same",
                     latitude=None,
                     longitude=None,
+                    source=SimpleNamespace(
+                        label="Martigny – Verbier",
+                        elevation_m=2104,
+                        distance_km=0.0,
+                        is_same_place=True,
+                    ),
                 ),
                 _saved_today_row(
                     name="Col des Mines", level="moderate", trend="down", temp_max=3.0
                 ),
-                _saved_today_row(name="Car park", level="low", icon=None),
+                _saved_today_row(name="Car park", level="low", icon=None, source=None),
                 _saved_today_row(region_id=None, region_url="", temp_max=None),
             ],
         },

@@ -29,21 +29,29 @@ answers it.
 downloaded area — pays one scan however many places it asks about.
 ``nearest_forecast`` is their composition, with the same tie-break: the
 first candidate at the smallest distance wins.
+
+**A list of places borrows in a fixed number of queries** (SNOW-1359).
+``nearest_forecasts`` is ``nearest_forecast`` for many places at once: one
+scan, one fetch of every chosen row, and the labels read from prefetched
+relations by ``_prefetched_label``, the same precedence as
+``forecast_label`` without its per-place queries.
 """
 
 from __future__ import annotations
 
 import datetime
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import NamedTuple, cast
+from typing import NamedTuple, TypeVar, cast
 
 from apps.locations.models import Location
 from apps.weather.models import Weather
 from track.geo import haversine_km
 
 logger = logging.getLogger(__name__)
+
+K = TypeVar("K")
 
 # Under this a place IS the forecast point, near enough — a saved resort's
 # own pin — and the caption drops the distance rather than print "0 km".
@@ -213,3 +221,65 @@ def nearest_forecast(
     return NearestForecast(
         row=row, label=forecast_label(row.location), distance_km=distance
     )
+
+
+def _prefetched_label(location: Location) -> str:
+    """Name a point as ``forecast_label`` does, from prefetched relations.
+
+    The same precedence (its own name, a resort it pins, a resort it is
+    linked to, its region), read from ``.all()`` so a location fetched by
+    ``nearest_forecasts`` costs no further query.
+    """
+    if location.name:
+        return location.name
+    for resort in location.pinned_resorts.all():
+        return resort.name
+    for link in location.resort_locations.all():
+        return link.resort.name
+    for region in location.micro_regions.all():
+        return region.name
+    return ""
+
+
+def nearest_forecasts(
+    points: Mapping[K, tuple[float, float]], observed_on: datetime.date
+) -> dict[K, NearestForecast]:
+    """Return the nearest curated forecast for each of many places.
+
+    ``nearest_forecast`` for a list, in a fixed number of queries however
+    many places there are: the day's candidates once, then every chosen row
+    with its location and the relations its label is read from.
+
+    Args:
+        points: Each place's ``(latitude, longitude)``, by any key.
+        observed_on: The day whose rows are read.
+
+    Returns:
+        A ``NearestForecast`` per key; a key is absent when no public point
+        has a row for the day.
+
+    """
+    if not points:
+        return {}
+    candidates = forecast_candidates(observed_on)
+    chosen: dict[K, tuple[int, float]] = {}
+    for key, (lat, lon) in points.items():
+        best = nearest_candidate(lat, lon, candidates)
+        if best is not None:
+            chosen[key] = (best[0].pk, best[1])
+    rows = (
+        Weather.objects.filter(pk__in={pk for pk, _ in chosen.values()})
+        .select_related("location")
+        .prefetch_related(
+            "location__pinned_resorts",
+            "location__resort_locations__resort",
+            "location__micro_regions",
+        )
+    )
+    by_pk = {row.pk: row for row in rows}
+    labels = {pk: _prefetched_label(row.location) for pk, row in by_pk.items()}
+    return {
+        key: NearestForecast(row=by_pk[pk], label=labels[pk], distance_km=distance)
+        for key, (pk, distance) in chosen.items()
+        if pk in by_pk
+    }

@@ -18,13 +18,16 @@ from django.template.loader import render_to_string
 from apps.weather.models import Weather
 from apps.weather.services.nearest import (
     forecast_candidates,
+    forecast_label,
     nearest_candidate,
     nearest_forecast,
+    nearest_forecasts,
 )
 from tests.factories import (
     FavouriteFactory,
     LocationFactory,
     MicroRegionFactory,
+    ResortFactory,
     ResortLocationFactory,
     WeatherFactory,
 )
@@ -128,6 +131,71 @@ class TestForecastCandidateHelpers:
         """An empty day borrows nothing."""
         assert forecast_candidates(DAY) == []
         assert nearest_candidate(46.0, 7.4, []) is None
+
+
+@pytest.mark.django_db
+class TestNearestForecasts:
+    """``nearest_forecasts`` — many places, a fixed number of queries (SNOW-1359)."""
+
+    @staticmethod
+    def _points() -> list[Any]:
+        """One public point per label precedence, each with a row for DAY."""
+        named = LocationFactory.create(name="Mont Fort", latitude=46.0, longitude=7.0)
+        ResortLocationFactory.create(location=named)
+        pinned = LocationFactory.create(name="", latitude=46.0, longitude=8.0)
+        ResortFactory.create(name="Verbier", location=pinned)
+        linked = LocationFactory.create(name="", latitude=46.0, longitude=9.0)
+        ResortLocationFactory.create(
+            location=linked, resort=ResortFactory.create(name="Nendaz")
+        )
+        centroid = LocationFactory.create(name="", latitude=46.0, longitude=10.0)
+        MicroRegionFactory.create(name="Val de Bagnes", centroid_location=centroid)
+        points = [named, pinned, linked, centroid]
+        for point in points:
+            WeatherFactory.create(location=point, observed_on=DAY)
+        return points
+
+    def test_each_place_borrows_as_nearest_forecast_does(self) -> None:
+        """Same point, same distance and the label ``forecast_label`` gives."""
+        points = self._points()
+        places = {i: (46.01, p.longitude) for i, p in enumerate(points)}
+
+        borrowed = nearest_forecasts(places, DAY)
+
+        for key, (lat, lon) in places.items():
+            one = nearest_forecast(lat, lon, DAY)
+            assert one is not None
+            assert borrowed[key].location == one.location
+            assert borrowed[key].distance_km == pytest.approx(one.distance_km)
+            assert borrowed[key].label == forecast_label(one.location)
+        assert [borrowed[i].label for i in range(4)] == [
+            "Mont Fort",
+            "Verbier",
+            "Nendaz",
+            "Val de Bagnes",
+        ]
+
+    @pytest.mark.parametrize("n", [1, 4])
+    def test_a_fixed_number_of_queries(
+        self, n: int, django_assert_num_queries: Callable[..., Any]
+    ) -> None:
+        """The scan, the rows, and one query per prefetched relation."""
+        points = self._points()
+        places = {i: (46.01, points[i].longitude) for i in range(n)}
+
+        with django_assert_num_queries(6):
+            borrowed = nearest_forecasts(places, DAY)
+            labels = [b.label for b in borrowed.values()]
+
+        assert len(labels) == n
+
+    def test_nothing_to_borrow(
+        self, django_assert_num_queries: Callable[..., Any]
+    ) -> None:
+        """No places queries nothing; a day with no rows borrows nothing."""
+        with django_assert_num_queries(0):
+            assert nearest_forecasts({}, DAY) == {}
+        assert nearest_forecasts({"a": (46.0, 7.0)}, DAY) == {}
 
 
 def _source(**overrides: object) -> dict[str, object]:

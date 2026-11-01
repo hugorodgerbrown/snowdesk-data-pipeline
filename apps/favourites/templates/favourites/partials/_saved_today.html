@@ -25,7 +25,10 @@ What a row's name does depends on what the place is:
 
 The danger tile is the EAWS square (``danger-tile`` + ``data-level``), the
 trend the house chevron turned up or down, a level plus a word so neither
-colour nor shape carries it alone. Online only: the offline roster cache
+colour nor shape carries it alone. A borrowed forecast says which point it
+is from, how high and how far away, in the shared
+includes/_forecast_source.html sentence, as every borrowing surface must
+(docs/decisions/snowdesk-decides-where-a-forecast-is-fetched.md). Online only: the offline roster cache
 (favourites_offline.js) holds the pin rows, not this.
 
 Context:
@@ -106,6 +109,11 @@ Context:
                                 {% trans "Today's level" %}
                             {% endif %}
                         </span>
+                        {% if row.source %}
+                            <span class="text-meta text-text-3" data-testid="saved-today-source">
+                                {% include "includes/_forecast_source.html" with source=row.source anchor="pin" only %}
+                            </span>
+                        {% endif %}
                     </div>
                     {% if row.icon %}
                         <span

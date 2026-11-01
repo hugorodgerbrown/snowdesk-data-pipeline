@@ -11,6 +11,7 @@ Covers ``apps.favourites.saved_today``:
     centroid, and none when there is nothing to borrow from;
   - the order: highest level, then rising before steady before falling,
     then by name;
+  - which point the forecast is from (``source``), for the caption;
   - a fixed number of queries however many places there are.
 """
 
@@ -235,6 +236,9 @@ class TestForecast:
         row = _build(user)[0]
         assert row.temp_max == -3.0
         assert row.icon is not None and row.icon.endswith(".svg")
+        assert row.source is not None
+        assert row.source.distance_km == pytest.approx(1.4, abs=0.1)
+        assert not row.source.is_same_place
 
     def test_a_region_pin_borrows_from_its_centroid(self) -> None:
         user = UserFactory.create()
@@ -243,7 +247,10 @@ class TestForecast:
         region = MicroRegion.objects.get(centroid_location=near)
         FavouriteFactory.create(user=user, region=region, region_pin=True)
 
-        assert _build(user)[0].temp_max == 1.0
+        row = _build(user)[0]
+        assert row.temp_max == 1.0
+        assert row.source is not None
+        assert row.source.is_same_place
 
     def test_a_region_pin_with_no_centroid_has_no_forecast(self) -> None:
         user = UserFactory.create()
@@ -255,6 +262,7 @@ class TestForecast:
         row = _build(user)[0]
         assert row.icon is None
         assert row.temp_max is None
+        assert row.source is None
 
     def test_no_point_with_a_row_today_is_no_forecast(self) -> None:
         user = UserFactory.create()
@@ -318,10 +326,10 @@ class TestQueries:
             FavouriteFactory.create(user=user, region=region, region_pin=True)
 
     @pytest.mark.parametrize("n", [1, 4])
-    def test_three_queries_once_the_favourites_and_todays_ratings_are_read(
+    def test_six_queries_once_the_favourites_and_todays_ratings_are_read(
         self, n: int
     ) -> None:
-        """Yesterday's ratings, the candidates and the chosen weather rows."""
+        """Yesterday's ratings, then ``nearest_forecasts``' five."""
         user = UserFactory.create()
         self._place_everything(user, n)
         favourites = _favourites(user)
@@ -332,4 +340,4 @@ class TestQueries:
             rows = build_saved_today(favourites, day, ratings)
 
         assert len(rows) == 3 * n
-        assert len(queries) == 3
+        assert len(queries) == 6

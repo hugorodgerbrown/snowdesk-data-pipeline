@@ -10,11 +10,13 @@ in the shape a map panel can hold.
 Built for a whole list at once and in a fixed number of queries, however
 many places there are: today's ratings are passed in (the view reads them
 once for both of the panel's sections), and this reads yesterday's ratings
-once, the day's forecast candidates once, and the chosen ``Weather`` rows
-once. ``nearest_forecast`` and ``forecast_label`` are deliberately NOT
-called: each queries per place. Which point a place borrows is the rule
+once, and borrows every place's forecast through ``nearest_forecasts``,
+which costs the same handful of queries for one place or forty.
+``nearest_forecast`` is deliberately NOT called: it queries per place.
+Which point a place borrows is the rule
 ``docs/decisions/snowdesk-decides-where-a-forecast-is-fetched.md`` sets:
-the nearest curated point, at any distance.
+the nearest curated point, at any distance, and the row says which point
+it is (``source``, rendered by ``includes/_forecast_source.html``).
 
 The trend compares level RANKS only. A subdivision ("3+") is part of the
 day's level as written, not a step on the scale, so "3-" to "3+" is Same.
@@ -32,8 +34,7 @@ from apps.bulletins.models import RegionDayRating
 from apps.favourites.models import Favourite
 from apps.public.templatetags.snowdesk_time import danger_level_digit
 from apps.regions.models import MicroRegion
-from apps.weather.models import Weather
-from apps.weather.services.nearest import forecast_candidates, nearest_candidate
+from apps.weather.services.nearest import NearestForecast, nearest_forecasts
 from apps.weather.services.weather_display import (
     weather_code_icon_bucket,
     weather_icon_filename,
@@ -72,6 +73,8 @@ class SavedToday:
         region_url: The region's canonical bulletin page, or "".
         icon: The borrowed forecast's day icon filename, or None.
         temp_max: The borrowed forecast's maximum, °C, or None.
+        source: Which curated point the forecast is borrowed from, how
+            high and how far away, or None when there is no forecast.
         rating: Today's rating row, for the response's freshness headers.
 
     """
@@ -89,6 +92,7 @@ class SavedToday:
     icon: str | None
     temp_max: float | None
     rating: RegionDayRating | None
+    source: NearestForecast | None = None
 
     def to_string(self) -> str:
         """Return the row in one line, for logs and test failures."""
@@ -165,29 +169,6 @@ def _forecast_point(
     return None
 
 
-def _borrowed_weather(
-    points: Mapping[int, tuple[float, float]], day: datetime.date
-) -> dict[int, Weather]:
-    """Return each place's nearest curated forecast row, by favourite pk.
-
-    Two queries whatever the number of places: the day's candidates once,
-    then every chosen row in one ``pk__in`` fetch.
-    """
-    if not points:
-        return {}
-    candidates = forecast_candidates(day)
-    chosen: dict[int, int] = {}
-    for pk, (lat, lon) in points.items():
-        best = nearest_candidate(lat, lon, candidates)
-        if best is not None:
-            chosen[pk] = best[0].pk
-    rows = Weather.objects.filter(pk__in=set(chosen.values())).only(
-        "id", "weather_code", "temperature_2m_max"
-    )
-    by_pk = {row.pk: row for row in rows}
-    return {pk: by_pk[row_pk] for pk, row_pk in chosen.items() if row_pk in by_pk}
-
-
 def _name(favourite: Favourite, kind: str, region: MicroRegion | None) -> str:
     """Return what a row is called: the resort, the region or the pin's label."""
     if kind == RESORT and favourite.resort is not None:
@@ -231,7 +212,7 @@ def build_saved_today(
         for f in favourites
         if (point := _forecast_point(f, regions[f.pk])) is not None
     }
-    weather = _borrowed_weather(points, day)
+    weather = nearest_forecasts(points, day)
 
     rows: list[SavedToday] = []
     for favourite in favourites:
@@ -241,7 +222,8 @@ def build_saved_today(
         if not _rank(today_rating):
             today_rating = None
         yesterday_rating = yesterday.get(region.pk) if region is not None else None
-        row = weather.get(favourite.pk)
+        source = weather.get(favourite.pk)
+        row = source.row if source is not None else None
         rows.append(
             SavedToday(
                 uuid=str(favourite.uuid),
@@ -263,6 +245,7 @@ def build_saved_today(
                 else None,
                 temp_max=row.temperature_2m_max if row is not None else None,
                 rating=today_rating,
+                source=source,
             )
         )
 

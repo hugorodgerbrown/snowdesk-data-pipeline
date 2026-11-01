@@ -2628,6 +2628,25 @@ class TestSavedTodayInTheList:
         assert sorted(kinds) == ["pin", "region", "resort"]
         assert 'data-level="considerable"' in content
 
+    def test_a_borrowed_forecast_says_where_it_is_from(self, client: Client) -> None:
+        """The shared caption names the point, its height and its distance."""
+        user = UserFactory.create()
+        point = LocationFactory.create(
+            name="Mont Fort", latitude=46.10, longitude=7.40, elevation_m=3329
+        )
+        ResortLocationFactory.create(location=point)
+        WeatherFactory.create(location=point, temperature_2m_max=-4.0)
+        FavouriteFactory.create(user=user, name="Col", latitude=46.11, longitude=7.41)
+        client.force_login(user)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        today = content[: content.index('id="favourites-roster-cache"')]
+
+        assert 'data-testid="saved-today-source"' in today
+        assert re.search(
+            r"Forecast for Mont Fort \(3329 m\),\s+1\.\d km from this pin\.", today
+        )
+
     def test_a_region_row_opens_the_region_and_a_pin_row_frames_the_pin(
         self, client: Client
     ) -> None:
