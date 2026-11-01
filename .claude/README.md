@@ -20,6 +20,7 @@ updates).
 │   ├── audit-map/              ← technical review of the map subsystem (used by Routine)
 │   ├── post-project-update/    ← Linear project status update (used by Routine)
 │   ├── report-churn/           ← weekly churn chart (used by Routine)
+│   ├── plan-month/             ← rolling 30-day plan + Linear priorities (used by Routine)
 │   ├── write-explainer/        ← a public explainer page under docs/explainers/
 │   └── create-ticket/          ← make a Linear ticket (front of the lifecycle)
 └── agents/
@@ -149,6 +150,7 @@ You don't need to remember slash commands — say what you want:
 - "review the map" / "map review" → audit-map
 - "post a daily update for Snowdesk" → post-project-update
 - "update the churn chart" / "how's throughput been" → report-churn
+- "plan the month" / "prioritise the backlog" → plan-month
 
 A bare "audit the project" matches neither on purpose — say which audit you
 mean, or Claude will ask.
@@ -176,7 +178,7 @@ Tickets in the wrong state cause the skill to stop and explain why.
 
 ## Skills that run unattended
 
-Three skills are invoked by scheduled Routines and run without an approval
+Four skills are invoked by scheduled Routines and run without an approval
 gate. All live in this repo (not under `~/.claude/`) so the remote Routine
 environment can find them after cloning, and none carries
 `disable-model-invocation` — that flag would block the scheduled task.
@@ -184,6 +186,11 @@ environment can find them after cloning, and none carries
 - **`post-project-update`** — once a day, posts a Linear project status update.
 - **`report-churn`** — once a week, re-renders the churn chart and republishes
   its artifact. Publishes nothing else: no PR, no Linear write.
+
+- **`plan-month`** — every Monday, ranks the open tickets against the
+  competitor doc into a four-week plan, raises up to three Backlog tickets
+  for unticketed competitor ideas, sets Linear priority to match each
+  ticket's week (never touching Urgent), and republishes its artifact.
 
 - **`audit-map`** — once a week, re-verifies the previous map review against
   the code, raises a parent ticket with one scoped child per new finding, and

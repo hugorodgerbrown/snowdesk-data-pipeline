@@ -9,6 +9,8 @@ bulletin's render model rebuilt as one task, on both sides:
   - A build error commits the sentinel, recomputes nothing, and fails the
     task.
   - A failed recompute rolls the row write back.
+  - A committed rebuild deletes the region's cached season calendar; a
+    rolled-back one leaves it (SNOW-1172).
   - Two sibling bulletins on one pair end with the governing one's rating,
     whichever task runs first.
   - The rating-row lock creates a missing row and retries a racing create.
@@ -26,13 +28,19 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from django.conf import settings
+from django.core.cache import cache
 from django.db import IntegrityError, connection
 from django.db.models import QuerySet
 from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 from django_tasks import TaskResultStatus
 
 from apps.bulletins.models import Bulletin, RegionDayRating
-from apps.bulletins.services.day_rating import recompute_region_day
+from apps.bulletins.services.day_rating import (
+    recompute_region_day,
+    season_calendar_cache_key,
+)
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.bulletins.services.render_rebuild import (
     RENDER_TASK_PRIORITY,
@@ -64,6 +72,19 @@ from tests.factories import (
 )
 
 pytestmark = pytest.mark.django_db
+
+
+def _seed_calendar(region: MicroRegion) -> list[str]:
+    """Cache a season-calendar body for ``region`` in every language."""
+    today_iso = timezone.localdate().isoformat()
+    keys = [
+        season_calendar_cache_key(region.canonical_region_id, today_iso, code)
+        for code, _name in settings.LANGUAGES
+    ]
+    for key in keys:
+        cache.set(key, "<stale calendar>", 3600)
+    return keys
+
 
 DAY = date(2026, 1, 2)
 _INSTANCE_BUILD = "apps.bulletins.services.render_rebuild.build_render_model"
@@ -248,6 +269,35 @@ class TestInstanceTask:
         bulletin.refresh_from_db()
         assert bulletin.render_model_version == 0
         assert not RegionDayRating.objects.exists()
+
+    def test_a_committed_rebuild_drops_the_cached_season_calendar(
+        self, django_capture_on_commit_callbacks: Any
+    ) -> None:
+        """SNOW-1172: the region's cached calendar goes once the rebuild commits."""
+        region = MicroRegionFactory.create(region_id="CH-1011")
+        bulletin = _bulletin(region, level="considerable")
+        keys = _seed_calendar(region)
+
+        with django_capture_on_commit_callbacks(execute=True):
+            rebuild_one_bulletin(bulletin.pk)
+
+        assert all(cache.get(key) is None for key in keys)
+
+    def test_a_rolled_back_rebuild_keeps_the_cached_season_calendar(
+        self, django_capture_on_commit_callbacks: Any
+    ) -> None:
+        """A failed recompute rolls back, so the still-correct cache stays."""
+        region = MicroRegionFactory.create(region_id="CH-1012")
+        bulletin = _bulletin(region)
+        keys = _seed_calendar(region)
+
+        with django_capture_on_commit_callbacks(execute=True) as callbacks:
+            with patch(_INSTANCE_RECOMPUTE, side_effect=RuntimeError("db gone")):
+                with pytest.raises(RuntimeError):
+                    rebuild_one_bulletin(bulletin.pk)
+
+        assert callbacks == []
+        assert all(cache.get(key) is not None for key in keys)
 
     @pytest.mark.parametrize("morning_first", [True, False])
     def test_siblings_on_one_pair_rate_the_morning_issue(

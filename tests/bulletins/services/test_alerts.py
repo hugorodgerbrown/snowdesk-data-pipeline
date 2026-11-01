@@ -23,6 +23,8 @@ from apps.bulletins.services.alerts import (
     decide,
     deliver,
     evaluate_account,
+    forecast_new_snow,
+    had_bulletin_in_season,
     in_night_hold,
     places_on,
     recent_alerts,
@@ -40,12 +42,14 @@ from tests.factories import (
     BulletinAlertFactory,
     BulletinFactory,
     FavouriteFactory,
+    LocationFactory,
     MicroRegionFactory,
     PushSubscriptionFactory,
     RegionDayRatingFactory,
     ResortFactory,
     TripFactory,
     TripParticipantFactory,
+    WeatherFactory,
 )
 
 TODAY = datetime.date(2026, 1, 16)
@@ -134,6 +138,45 @@ class TestDecide:
         d = decide(**self.kwargs(previous_day=None))
         assert d.sends and d.kind == "season_start"
 
+    def test_resumption_inside_the_season(self) -> None:
+        """No bulletin yesterday but one earlier this season: a new bulletin."""
+        d = decide(**self.kwargs(previous_day=None, rated_in_season=True))
+        assert d.sends and d.kind == "new" and d.change.previous is None
+
+    def test_changes_skips_a_shifted_problem(self) -> None:
+        """A problem moving its aspects is not a change worth telling."""
+        north = ProblemState("wind_slab", ("N",))
+        south = ProblemState("wind_slab", ("S",))
+        d = decide(
+            **self.kwargs(
+                mode="CHANGES",
+                previous_day=state(problems=(north,)),
+                current=state(problems=(south,)),
+            )
+        )
+        assert d.outcome == BulletinAlert.Outcome.SKIPPED
+
+    def test_update_with_a_shifted_problem_is_skipped(self) -> None:
+        """An update that only shifts a problem's band is logged, not told."""
+        low = ProblemState("wind_slab", ("N",), lower=2000)
+        high = ProblemState("wind_slab", ("N",), lower=2400)
+        d = decide(
+            **self.kwargs(
+                has_row=True,
+                logged=state(problems=(low,)),
+                current=state(problems=(high,)),
+            )
+        )
+        assert d.kind == "update" and d.outcome == BulletinAlert.Outcome.SKIPPED
+
+    def test_update_with_an_added_problem_sends(self) -> None:
+        """An update that adds a problem is told."""
+        wind = ProblemState("wind_slab", ("N",))
+        d = decide(
+            **self.kwargs(has_row=True, logged=state(), current=state(problems=(wind,)))
+        )
+        assert d.sends
+
     def test_today_baseline_when_enabled_mid_day(self) -> None:
         """A day under way when alerts were turned on is recorded silently."""
         d = decide(**self.kwargs(day=TODAY, enabled_before_day=False))
@@ -214,7 +257,7 @@ class TestEvaluateAndDeliver:
         with patch.object(alerts, "dispatch_push", return_value=OK) as push:
             run = deliver(evaluate_account(account, NOW))
         assert run.message is not None
-        assert run.message.title == "Verbier bulletin"
+        assert run.message.title == "Verbier – Saturday bulletin"
         push.assert_called_once()
         # Today fired too (no row, alerts predate it) but one place is named
         # once: today is logged skipped, tomorrow is the message.
@@ -242,7 +285,7 @@ class TestEvaluateAndDeliver:
         (row,) = run.rows
         assert row.decision.kind == "update"
         assert run.message is not None
-        assert run.message.title == "Verbier bulletin updated"
+        assert run.message.title == "Verbier – Saturday bulletin update"
 
     def test_a_state_that_recurs_is_told_once(self, follower: tuple) -> None:
         """A, then B, then A again: the return of A sends once, not every run."""
@@ -593,8 +636,8 @@ class TestRecentAlerts:
         when = kwargs.pop("when", None)
         row = BulletinAlertFactory.create(
             account=account,
-            title=kwargs.pop("title", "Verbier bulletin"),
-            body=kwargs.pop("body", "Valid from Friday at 5 pm to Saturday at 5 pm."),
+            title=kwargs.pop("title", "Verbier – Saturday bulletin"),
+            body=kwargs.pop("body", "Considerable, no change."),
             url=kwargs.pop("url", "/alerts/2026-10-31/"),
             **kwargs,
         )
@@ -683,3 +726,92 @@ class TestStoredState:
         assert alerts.day_state(region, TODAY) == bulletin_state(
             render("considerable", [WIND_RM])
         )
+
+
+@pytest.mark.django_db
+class TestForecastNewSnow:
+    """The new snow line reads the day's own row at the region's centroid.
+
+    One row per day, refined by every fetch until it passes (SNOW-1337).
+    """
+
+    def centroid_region(self) -> Any:
+        """Return a region with a centroid location."""
+        location = LocationFactory.create()
+        return MicroRegionFactory.create(centroid_location=location)
+
+    def test_tomorrow_reads_its_own_row(self) -> None:
+        """A later day reads that day's row, not today's."""
+        region = self.centroid_region()
+        WeatherFactory.create(
+            location=region.centroid_location, observed_on=TODAY, snowfall_sum=1.0
+        )
+        WeatherFactory.create(
+            location=region.centroid_location, observed_on=TOMORROW, snowfall_sum=22.4
+        )
+        assert forecast_new_snow(region, TOMORROW, TODAY) == 22.4
+
+    def test_today_reads_the_row(self) -> None:
+        """Today reads the row's own snowfall."""
+        region = self.centroid_region()
+        WeatherFactory.create(
+            location=region.centroid_location, observed_on=TODAY, snowfall_sum=8.0
+        )
+        assert forecast_new_snow(region, TODAY, TODAY) == 8.0
+
+    def test_nothing_known(self) -> None:
+        """No centroid, no row, no figure, or a past day: None."""
+        assert forecast_new_snow(MicroRegionFactory.create(), TODAY, TODAY) is None
+        region = self.centroid_region()
+        assert forecast_new_snow(region, TODAY, TODAY) is None
+        WeatherFactory.create(
+            location=region.centroid_location, observed_on=TOMORROW, snowfall_sum=None
+        )
+        assert forecast_new_snow(region, TOMORROW, TODAY) is None
+        later = TODAY + datetime.timedelta(days=3)
+        assert forecast_new_snow(region, later, TODAY) is None
+        yesterday = TODAY - datetime.timedelta(days=1)
+        WeatherFactory.create(
+            location=region.centroid_location, observed_on=yesterday, snowfall_sum=5.0
+        )
+        assert forecast_new_snow(region, yesterday, TODAY) is None
+
+    def test_one_place_alert_names_it(self, follower: tuple) -> None:
+        """A one-place alert carries the snow; the body names it."""
+        account, region = follower
+        region.centroid_location = LocationFactory.create()
+        region.save(update_fields=["centroid_location"])
+        WeatherFactory.create(
+            location=region.centroid_location, observed_on=TOMORROW, snowfall_sum=20.0
+        )
+        publish(region, TODAY, render())
+        publish(region, TOMORROW, render("considerable", [WIND_RM]))
+        run = evaluate_account(account, NOW)
+        assert run.message is not None
+        assert run.message.body.endswith("20 cm new snow forecast.")
+
+
+@pytest.mark.django_db
+class TestSeasonGap:
+    """A gap inside the season is a resumption, not a new season (SNOW-1356)."""
+
+    def test_recent_bulletin_is_in_season(self) -> None:
+        """A bulletin ten days back keeps the season going."""
+        region = MicroRegionFactory.create()
+        publish(region, TODAY - datetime.timedelta(days=10), render())
+        assert had_bulletin_in_season(region, TODAY)
+
+    def test_old_bulletin_is_last_season(self) -> None:
+        """Nothing in the last sixty days: a new season."""
+        region = MicroRegionFactory.create()
+        publish(region, TODAY - datetime.timedelta(days=61), render())
+        assert not had_bulletin_in_season(region, TODAY)
+
+    def test_resumed_alert_says_bulletins_are_back(self, follower: tuple) -> None:
+        """After a pause the alert says bulletins are back, not a season start."""
+        account, region = follower
+        publish(region, TODAY - datetime.timedelta(days=10), render())
+        publish(region, TOMORROW, render("low"))
+        run = evaluate_account(account, NOW)
+        assert run.message is not None
+        assert run.message.body == "Bulletins are back. Low."

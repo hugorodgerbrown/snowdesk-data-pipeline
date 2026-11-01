@@ -104,6 +104,23 @@ class BulletinChange:
         return self.previous.subdivision != self.current.subdivision
 
     @property
+    def is_notable(self) -> bool:
+        """
+        Return True when the level moved or a problem came or went (SNOW-1356).
+
+        A problem shifting its aspects, band or rating is not notable: SLF
+        shifts one most days, and an alert for it reads as noise.
+        """
+        if self.previous is None:
+            return False
+        return bool(
+            self.rating_direction
+            or self.subdivision_moved
+            or self.added
+            or self.removed
+        )
+
+    @property
     def is_empty(self) -> bool:
         """
         Return True when nothing a reader would notice moved.

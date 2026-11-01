@@ -377,6 +377,30 @@ class TestDeleteTrip:
         assert stored["what3words"] is None
         assert stored["what3words_fetched_at"] is None
 
+    def test_moving_the_meeting_point_clears_its_elevation(self) -> None:
+        """SNOW-845: the height was resolved at the old pin, so it goes too."""
+        route = RouteFactory.create()
+        trip = create_trip(
+            route.user, route_uuid=route.uuid, date=_DATE, start_time=_TIME
+        )
+        location = trip.meeting_point
+        location.elevation_m = 2100.0
+        location.save(update_fields=["elevation_m", "updated_at"])
+
+        update_trip(
+            route.user,
+            trip.uuid,
+            date=_DATE,
+            start_time=_TIME,
+            latitude=46.9,
+            longitude=8.1,
+        )
+
+        stored = Location.objects.values("latitude", "longitude", "elevation_m").get(
+            pk=location.pk
+        )
+        assert stored == {"latitude": 46.9, "longitude": 8.1, "elevation_m": None}
+
     def test_an_edit_that_does_not_move_the_pin_keeps_the_address(self) -> None:
         """A conversion is billed, so a time change must not spend one."""
         route = RouteFactory.create()

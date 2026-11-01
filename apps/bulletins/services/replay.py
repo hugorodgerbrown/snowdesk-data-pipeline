@@ -25,12 +25,18 @@ from __future__ import annotations
 
 import datetime
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from apps.bulletins.services.alert_wording import PlaceAlert, alert_message
-from apps.bulletins.services.alerts import ALERT_TZ, NIGHT_ENDS, decide, in_night_hold
+from apps.bulletins.services.alerts import (
+    ALERT_TZ,
+    NIGHT_ENDS,
+    SEASON_GAP_DAYS,
+    decide,
+    in_night_hold,
+)
 from apps.bulletins.services.bulletin_change import BulletinState, bulletin_state
 from apps.bulletins.services.golden_week import iter_archive_records, target_day
 from apps.ingest.public import build_render_model
@@ -148,6 +154,7 @@ def replay_region(
     region_id: str = DEFAULT_REGION,
     mode: str = "NEW_BULLETIN",
     label: str | None = None,
+    new_snow: Mapping[datetime.date, float] | None = None,
 ) -> list[ReplayedAlert]:
     """
     Replay every alert decision for one region across an archive.
@@ -159,6 +166,9 @@ def replay_region(
         mode: ``NEW_BULLETIN`` or ``CHANGES``.
         label: The place's name in the messages (defaults to the region's
             name in the first issue).
+        new_snow: Snowfall in cm per bulletin day, for the new snow line
+            (SNOW-944). The archive carries no weather, so without it the
+            replay names none.
 
     Returns:
         Every decision, sent or not, in delivery order.
@@ -210,6 +220,10 @@ def replay_region(
             has_row=last is not None,
             previous_day=previous[1] if previous else None,
             enabled_before_day=True,
+            rated_in_season=any(
+                day - datetime.timedelta(days=gap) in authoritative
+                for gap in range(2, SEASON_GAP_DAYS + 2)
+            ),
         )
         logged[day] = state
         message = alert_message(
@@ -223,6 +237,7 @@ def replay_region(
                     compared_to=decision.compared_to,
                     valid_from=valid_from,
                     valid_until=_valid_until(raw),
+                    new_snow_cm=(new_snow or {}).get(day),
                 )
             ],
             today,

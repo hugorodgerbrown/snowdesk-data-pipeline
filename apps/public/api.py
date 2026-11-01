@@ -3620,24 +3620,11 @@ def edit_location_save(request: HttpRequest, short_id: str) -> JsonResponse:
         # rename must not rewrite it: doing so would silently truncate a
         # full-precision coordinate set in the admin to the five decimals
         # the sheet carries, which is a data edit nobody asked for.
-        location.latitude = lat
-        location.longitude = lon
-        location.elevation_m = None
-        # SNOW-840: the three word address is derived from the coordinate
-        # exactly as the elevation above it is, so it dies on the same
-        # condition. Cleared here even though only trips render one today —
-        # the invariant belongs to the location, not to whichever surface
-        # happens to read it, and a Location moved through this endpoint
-        # can be a trip's meeting point.
-        location.what3words = None
-        location.what3words_fetched_at = None
-        update_fields += [
-            "latitude",
-            "longitude",
-            "elevation_m",
-            "what3words",
-            "what3words_fetched_at",
-        ]
+        # SNOW-845: Location.move_to clears the height and the three word
+        # address, both derived from the old coordinate. ``moved`` is this
+        # editor's own rounded comparison, passed so the rule is applied on
+        # exactly the condition above.
+        update_fields += location.move_to(lat, lon, moved=True)
     location.save(update_fields=update_fields)
     # SNOW-1226: a moved pin has just lost its height and holds a forecast
     # for where it used to be; an unmoved one only fills what is missing.
