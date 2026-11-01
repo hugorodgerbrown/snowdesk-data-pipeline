@@ -14,7 +14,7 @@
     },
     {
       "name": "what3words",
-      "note": "Gates the SNOW-840 three word address on a trip's meeting point (both the trip page and the public share page) and its matching /help/ section. Off by default because convert-to-3wa is not on the what3words free plan — it needs the paid Basic plan and a WHAT3WORDS_API_KEY, so the feature deploys dark and is switched on per environment once one exists.",
+      "note": "Gates the SNOW-840 three word address on a trip's meeting point (both the trip page and the public share page), a saved pin and an observation's owner-only address, and its matching /help/ section. On for everyone in production since 2026-11-01; kept as a kill switch — off falls back to the coordinates and keeps stored addresses. Defaults to superusers so a new environment without a WHAT3WORDS_API_KEY stays dark (docs/feature-flags.md).",
       "superusers": true
     },
     {

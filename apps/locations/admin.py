@@ -221,12 +221,11 @@ class LocationAdmin(admin.ModelAdmin):
     ) -> None:
         """Save the row, then enqueue its height and today's forecast.
 
-        A moved pin loses its height first, unless the same save sets one by
-        hand: a height resolved at the old coordinate would make a
-        mis-pinned summit look plausible, which is the rule the in-map
-        editor's ``edit_location_save`` already follows. Then
-        ``enqueue_location_prime`` (SNOW-1226) fills what is missing, on
-        commit.
+        A moved pin loses its height and its three word address first,
+        through ``Location.move_to`` (SNOW-845), unless the same save sets a
+        height by hand: values resolved at the old coordinate would make a
+        mis-pinned place look right. Then ``enqueue_location_prime``
+        (SNOW-1226) fills what is missing, on commit.
 
         Args:
             request: The admin request.
@@ -236,8 +235,15 @@ class LocationAdmin(admin.ModelAdmin):
 
         """
         moved = change and bool({"latitude", "longitude"} & set(form.changed_data))
-        if moved and "elevation_m" not in form.changed_data:
-            obj.elevation_m = None
+        # The bound form has already written the new coordinate onto obj, so
+        # move_to cannot compare it with itself; the form says whether it
+        # moved. The full-row save below writes whatever move_to cleared.
+        obj.move_to(
+            obj.latitude,
+            obj.longitude,
+            moved=moved,
+            keep_elevation="elevation_m" in form.changed_data,
+        )
         super().save_model(request, obj, form, change)
         enqueue_location_prime(obj, moved=moved)
 

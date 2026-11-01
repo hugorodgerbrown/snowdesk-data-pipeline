@@ -387,7 +387,7 @@ class TestReformatSkipDayRatings:
         RegionBulletinFactory.create(bulletin=b, region=region)
 
         with patch(
-            "apps.bulletins.management.commands.reformat_mf_comments.recompute_region_day"
+            "apps.bulletins.services.day_rating.recompute_region_day"
         ) as mock_recompute:
             call_command(
                 "reformat_mf_comments",
@@ -405,7 +405,7 @@ class TestReformatSkipDayRatings:
         RegionBulletinFactory.create(bulletin=b, region=region)
 
         with patch(
-            "apps.bulletins.management.commands.reformat_mf_comments.recompute_region_day"
+            "apps.bulletins.services.day_rating.recompute_region_day"
         ) as mock_recompute:
             call_command(
                 "reformat_mf_comments",
@@ -414,6 +414,29 @@ class TestReformatSkipDayRatings:
             )
 
         mock_recompute.assert_called_once()
+
+    def test_refresh_drops_the_cached_season_calendar(self) -> None:
+        """SNOW-1172: a refreshed region's cached calendar is deleted."""
+        from django.conf import settings
+        from django.core.cache import cache
+        from django.utils import timezone
+
+        from apps.bulletins.services.day_rating import season_calendar_cache_key
+
+        region = MicroRegionFactory.create(region_id="FR-BELLEDONNE-CAL")
+        b = _make_fr_bulletin(bulletin_id="FR-12-2026-05-19")
+        RegionBulletinFactory.create(bulletin=b, region=region)
+        today_iso = timezone.localdate().isoformat()
+        keys = [
+            season_calendar_cache_key(region.canonical_region_id, today_iso, code)
+            for code, _name in settings.LANGUAGES
+        ]
+        for key in keys:
+            cache.set(key, "<stale calendar>", 3600)
+
+        call_command("reformat_mf_comments", commit=True, verbosity=0)
+
+        assert all(cache.get(key) is None for key in keys)
 
 
 # ---------------------------------------------------------------------------
@@ -551,7 +574,7 @@ class TestReformatDayRatingFailure:
         RegionBulletinFactory.create(bulletin=b, region=region)
 
         with patch(
-            "apps.bulletins.management.commands.reformat_mf_comments.recompute_region_day",
+            "apps.bulletins.services.day_rating.recompute_region_day",
             side_effect=Exception("forced rating failure"),
         ):
             with pytest.raises(CommandError, match="day-rating recompute"):
@@ -575,7 +598,7 @@ class TestReformatDayRatingFailure:
                 raise Exception("first pair fails")
 
         with patch(
-            "apps.bulletins.management.commands.reformat_mf_comments.recompute_region_day",
+            "apps.bulletins.services.day_rating.recompute_region_day",
             side_effect=_fail_first,
         ):
             with pytest.raises(CommandError):

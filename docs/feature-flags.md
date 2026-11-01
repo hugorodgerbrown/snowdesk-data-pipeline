@@ -53,19 +53,31 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 |------|---------------------|-------|------------|
 | `sync_log` | `superusers=True` | The `/offline/` "Sync log" panel (SNOW-930 moved it off `/account/settings/`) (reads `window.pwaDb.getSyncLog()` via `static/js/sync_log.js`) and its matching `/help/` section. | SNOW-482. |
 | `debug_log` | `groups=["GRP_DEBUG"]` | The on-device debug trace on every public page — the panel and the `static/js/debug_log.js` recorder behind it ([`debug-log.md`](debug-log.md)). | SNOW-812. |
-| `what3words` | `superusers=True` | A three word address rendered as `///filled.count.soap`: a trip's meeting point on the trip page and the public share page (`_trip_context` in `apps/trips/views.py`), a saved pin's address (`apps/favourites/views.py`), a field observation's owner-only address (`apps/observations/views.py`), and its matching `/help/` section. | SNOW-840. |
+| `what3words` | `superusers=True` (on for everyone in production since 2026-11-01) | A three word address rendered as `///filled.count.soap`: a trip's meeting point on the trip page and the public share page (`_trip_context` in `apps/trips/views.py`), a saved pin's address (`apps/favourites/views.py`), a field observation's owner-only address (`apps/observations/views.py`), and its matching `/help/` section. | SNOW-840. |
 | `route_drawing` | `superusers=True` | Drawing a route on the map (SNOW-1255–1260): the routes panel's "Draw on the map" CTA and its draw panel (`public/partials/_route_draw_surface.html`, `static/js/route_draw.js`), `routes:draw_preview`, `routes:create_drawn` and the row menu's Download GPX (`routes:gpx`). Also swisstopo's ski-touring routes layer — the layers menu's "Ski-touring routes" row, on by default from z10, and its zoom-control gate (`data-ski-routes-eligible`, `window.pwaSkiRoutes`). Also "Find a route" (SNOW-1278): the routes panel's three add rows (`_route_add_rows.html`), the SAC tours from z9, a tap on a line opening one (`_ski_tours_surface.html`, `static/js/ski_tours.js`), `/api/ski-tours.geojson`, SAC's summits and huts in the map's search (SNOW-1294, `data-ski-summits-url`, `/api/ski-summits.json`), `routes:ski_tour_feature` and `routes:ski_tour_save`. Minting surfaces only: a saved drawn route reads everywhere regardless ([why](decisions/a-drawn-route-is-a-route.md)). | SNOW-1255. |
 
-**`what3words` is a subscription gate, not a rollout gate.** It is the
-one flag here whose off state is the *correct* state in an environment
-that has not bought anything: `convert-to-3wa` left the what3words free
-plan in November 2024, so the feature needs the paid Basic plan and a
-`WHAT3WORDS_API_KEY`. The flag is what lets the code merge and deploy
-before either exists. It gates an outbound HTTP call rather than a
-template branch, which is why it is read in the view: flag off means no
-call, no query and no change to the page. It is read on the trip,
-favourite and observation surfaces and never on the homepage or the map
-page, so the `download_sync` cost argument below does not apply to it.
+**`what3words` is on in production, and kept as a kill switch.** Since
+1 November 2026 it is on for everyone there, set in the admin; the
+manifest's `superusers=True` is only the default a new environment is
+created with, so one without a `WHAT3WORDS_API_KEY` stays dark until
+someone turns it on. `convert-to-3wa` needs a paid plan (Basic covers it,
+unmetered — [the written confirmation](decisions/what3words-addresses-are-stored-indefinitely.md));
+production runs on the current key while Hugo is the only user, and moves
+to Basic when a second user arrives.
+
+The flag stays because it is the way to switch the feature off without a
+deploy if what3words misbehaves — an outage, a revoked key, a change of
+terms. Turning it off degrades rather than breaks: it gates an outbound
+HTTP call, so it is read in the view, and off means no call and no query.
+The trip page, the share page and the trips list show the meeting point's
+coordinates, a saved pin shows no address, and the meeting picker's live
+lookup (`trips:what3words`) answers 404, which the picker treats as no
+address. Stored addresses are kept, so turning it back on restores them
+without a single conversion. The same fallback already covers the flag
+being on with no key or a failing API: `convert_to_3wa` never raises, and
+an empty key makes no request. It is read on the trip, favourite and
+observation surfaces and never on the homepage or the map page, so the
+`download_sync` cost argument below does not apply to it.
 
 **The first two flags are the same shape.** `sync_log` is not a
 rollout gate waiting to be opened: it is a per-user diagnostic toggle. The

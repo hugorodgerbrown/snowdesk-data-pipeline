@@ -337,8 +337,10 @@ class Location(BaseModel):
     a re-placement of the same row — the place was always where it now
     says it is, and the old coordinate was simply wrong — not a new
     place, so the links pointing at it are still correct and stay.
-    ``edit_location_save`` clears ``elevation_m`` when the pin actually
-    moves, because it was resolved from where the row used to claim to be.
+    Every move goes through :meth:`move_to` (SNOW-845), which clears the
+    values derived from the old coordinate — ``elevation_m``,
+    ``what3words`` and ``what3words_fetched_at`` — because they were
+    resolved from where the row used to claim to be.
 
     A curated place has a ``name`` and usually a ``kind``; a location minted
     from a favourite or an observation has neither, and is an anonymous
@@ -475,8 +477,8 @@ class Location(BaseModel):
 
         THE ADDRESS DOES NOT GO STALE. It is a deterministic encoding of a
         3m square, so the only thing that can invalidate it is the pin
-        moving to a different square, which ``edit_location_save`` handles
-        by clearing the column outright.
+        moving to a different square, which :meth:`move_to` handles by
+        clearing the column outright on every move path (SNOW-845).
 
         Returned WITHOUT the ``///`` prefix, which is presentation and
         belongs to the template.
@@ -487,6 +489,61 @@ class Location(BaseModel):
 
         """
         return self.what3words or None
+
+    def move_to(
+        self,
+        latitude: float,
+        longitude: float,
+        *,
+        moved: bool | None = None,
+        keep_elevation: bool = False,
+    ) -> list[str]:
+        """Re-place this location, clearing what its old coordinate derived.
+
+        The one copy of the rule (SNOW-845): a value derived from a
+        coordinate does not survive that coordinate changing. A height or a
+        three word address resolved at the old pin would make a mis-pinned
+        place look right, so a move clears ``elevation_m``, ``what3words``
+        and ``what3words_fetched_at``, and the out-of-band fillers resolve
+        them again for the new square. Every move path calls this: the
+        admin, the in-map editor, a trip's meeting pin, a resort pin and
+        the curated sheet import.
+
+        Nothing is saved. The caller adds the returned fields to its own
+        ``save(update_fields=…)`` (plus ``updated_at``), or saves the full
+        row.
+
+        Args:
+            latitude: The new latitude.
+            longitude: The new longitude.
+            moved: Whether the pin moved, when the caller has already
+                decided. The admin passes it because its form has already
+                written the new coordinate onto ``self``; the in-map editor
+                passes its 5-decimal rounded comparison, so a rename never
+                truncates a full-precision coordinate. None compares the new
+                coordinate with ``self``'s current one.
+            keep_elevation: Keep ``elevation_m`` — the admin passes True when
+                the same submission sets a height by hand. The address is
+                always cleared on a move.
+
+        Returns:
+            The fields this call assigned, or ``[]`` when the pin did not
+            move (and nothing was touched).
+
+        """
+        if moved is None:
+            moved = (latitude, longitude) != (self.latitude, self.longitude)
+        if not moved:
+            return []
+        self.latitude = latitude
+        self.longitude = longitude
+        self.what3words = None
+        self.what3words_fetched_at = None
+        fields = ["latitude", "longitude", "what3words", "what3words_fetched_at"]
+        if not keep_elevation:
+            self.elevation_m = None
+            fields.append("elevation_m")
+        return fields
 
     def get_absolute_url(self) -> str:
         """Return the location's weather page — ``/weather/<short_id>/``.
