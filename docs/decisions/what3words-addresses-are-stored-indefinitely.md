@@ -15,8 +15,9 @@ column whatever its age. `what3words_fetched_at` records when the
 conversion happened and is provenance, not a clock.
 
 The only thing that invalidates an address is the pin moving to a different
-square, which `edit_location_save` handles by clearing the column at the
-point of the move.
+square, which `Location.move_to` handles by clearing the column at the
+point of the move, on every move path: the admin, the in-map editor, a
+trip's meeting pin, a resort pin and the curated sheet import (SNOW-845).
 
 The address is stored **on the same row as the coordinate it was derived
 from**. The pin is the user's own and is the meeting point; the address is

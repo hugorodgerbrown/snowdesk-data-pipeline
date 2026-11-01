@@ -597,3 +597,77 @@ class TestLocationQuerySetVisibleTo:
         FavouriteFactory.create(user=owner, location=location)
 
         assert list(Location.objects.visible_to(owner)) == [location]
+
+
+@pytest.mark.django_db
+class TestMoveTo:
+    """Location.move_to — the one copy of the pin-move rule (SNOW-845)."""
+
+    def _resolved(self) -> Location:
+        """Return a location holding a height and a three word address."""
+        return LocationFactory.create(
+            latitude=46.1,
+            longitude=7.3,
+            elevation_m=1500.0,
+            what3words="filled.count.soap",
+            what3words_fetched_at=timezone.now(),
+        )
+
+    def test_a_move_clears_every_derived_value(self) -> None:
+        """Height, address and its timestamp all go; the fields are returned."""
+        location = self._resolved()
+
+        fields = location.move_to(46.2, 7.4)
+
+        assert (location.latitude, location.longitude) == (46.2, 7.4)
+        assert location.elevation_m is None
+        assert location.what3words is None
+        assert location.what3words_fetched_at is None
+        assert sorted(fields) == sorted(
+            [
+                "latitude",
+                "longitude",
+                "elevation_m",
+                "what3words",
+                "what3words_fetched_at",
+            ]
+        )
+
+    def test_the_same_coordinate_touches_nothing(self) -> None:
+        """An unmoved pin returns [] and keeps every value."""
+        location = self._resolved()
+
+        assert location.move_to(46.1, 7.3) == []
+        assert location.elevation_m == 1500.0
+        assert location.what3words == "filled.count.soap"
+        assert location.what3words_fetched_at is not None
+
+    def test_moved_overrides_the_self_comparison(self) -> None:
+        """A caller's own decision wins, in both directions."""
+        moved = self._resolved()
+        assert moved.move_to(46.1, 7.3, moved=True) != []
+        assert moved.what3words is None
+
+        unmoved = self._resolved()
+        assert unmoved.move_to(46.9, 7.9, moved=False) == []
+        assert (unmoved.latitude, unmoved.longitude) == (46.1, 7.3)
+        assert unmoved.what3words == "filled.count.soap"
+
+    def test_keep_elevation_keeps_only_the_height(self) -> None:
+        """A height set by hand in the same save survives; the address does not."""
+        location = self._resolved()
+
+        fields = location.move_to(46.2, 7.4, keep_elevation=True)
+
+        assert location.elevation_m == 1500.0
+        assert location.what3words is None
+        assert "elevation_m" not in fields
+
+    def test_nothing_is_saved(self) -> None:
+        """The caller saves; the database still holds the old pin."""
+        location = self._resolved()
+
+        location.move_to(46.2, 7.4)
+
+        stored = Location.objects.values("latitude", "what3words").get(pk=location.pk)
+        assert stored == {"latitude": 46.1, "what3words": "filled.count.soap"}

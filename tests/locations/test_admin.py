@@ -28,7 +28,9 @@ import pytest
 from django.forms.models import model_to_dict
 from django.test import Client
 from django.urls import reverse
+from django.utils import timezone
 
+from apps.locations.models import Location
 from apps.weather.models import Weather
 from apps.weather.services import backfill
 from apps.weather.services.reference import mirror_reference_locations
@@ -378,6 +380,48 @@ class TestPrimeOnAdminSave:
         prime.assert_called_once()
         assert prime.call_args.kwargs == {"moved": True}
 
+    def test_a_moved_location_loses_its_address(self, staff_client: Client) -> None:
+        """SNOW-845: the three word address named the square the pin left."""
+        location = LocationFactory.create(
+            resolved=True,
+            what3words="filled.count.soap",
+            what3words_fetched_at=timezone.now(),
+        )
+        with mock.patch(_PRIME):
+            response = self._change_location(staff_client, location, latitude=46.3)
+
+        assert response.status_code == 302
+        stored = Location.objects.values(
+            "elevation_m", "what3words", "what3words_fetched_at"
+        ).get(pk=location.pk)
+        assert stored == {
+            "elevation_m": None,
+            "what3words": None,
+            "what3words_fetched_at": None,
+        }
+
+    def test_an_unmoved_save_keeps_the_address_and_height(
+        self, staff_client: Client
+    ) -> None:
+        """A rename leaves every coordinate-derived value alone."""
+        fetched_at = timezone.now()
+        location = LocationFactory.create(
+            resolved=True,
+            what3words="filled.count.soap",
+            what3words_fetched_at=fetched_at,
+        )
+        with mock.patch(_PRIME):
+            self._change_location(staff_client, location, name="Schilthorn")
+
+        stored = Location.objects.values(
+            "elevation_m", "what3words", "what3words_fetched_at"
+        ).get(pk=location.pk)
+        assert stored == {
+            "elevation_m": 1500.0,
+            "what3words": "filled.count.soap",
+            "what3words_fetched_at": fetched_at,
+        }
+
     def test_a_rename_keeps_the_height(self, staff_client: Client) -> None:
         """Only a move invalidates the height."""
         location = LocationFactory.create(resolved=True)
@@ -400,6 +444,7 @@ class TestPrimeOnAdminSave:
 
         location.refresh_from_db()
         assert location.elevation_m == 2970.0
+        assert location.what3words is None
 
     def test_a_link_added_inline_on_the_resort_enqueues_its_location(
         self, staff_client: Client

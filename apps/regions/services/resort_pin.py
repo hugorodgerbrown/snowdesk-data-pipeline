@@ -156,25 +156,14 @@ def _move_in_place(
             the new height, as ``anchor_location`` is given at mint time.
 
     """
-    location.latitude = latitude
-    location.longitude = longitude
+    # SNOW-845: Location.move_to clears the values the old coordinate
+    # derived (the address, SNOW-840, and the height), then the resort's
+    # recorded height is set, as anchor_location does at mint time.
+    fields = location.move_to(latitude, longitude, moved=True)
     location.elevation_m = (
         float(resort.base_elevation_m) if resort.base_elevation_m is not None else None
     )
-    # SNOW-840: the address is derived from the coordinate, so it dies with
-    # it — the rule edit_location_save applies to a curated point.
-    location.what3words = None
-    location.what3words_fetched_at = None
-    location.save(
-        update_fields=[
-            "latitude",
-            "longitude",
-            "elevation_m",
-            "what3words",
-            "what3words_fetched_at",
-            "updated_at",
-        ]
-    )
+    location.save(update_fields=[*fields, "updated_at"])
 
 
 def _anchor(resort: Resort, latitude: float, longitude: float) -> Location:

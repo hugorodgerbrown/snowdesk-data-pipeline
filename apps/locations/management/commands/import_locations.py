@@ -517,11 +517,25 @@ def _apply_row(location: Location, row: dict[str, str]) -> dict[str, tuple[Any, 
 
     changes: dict[str, tuple[Any, Any]] = {}
     for field in LOCATION_FIELDS:
+        if field in ("latitude", "longitude"):
+            continue
         old = getattr(location, field, None)
         new = values[field]
         if old != new:
             changes[field] = (old, new)
             setattr(location, field, new)
+    old_coordinate = (location.latitude, location.longitude)
+    new_coordinate = (values["latitude"], values["longitude"])
+    for field, old, new in zip(
+        ("latitude", "longitude"), old_coordinate, new_coordinate, strict=True
+    ):
+        if old != new:
+            changes[field] = (old, new)
+    # SNOW-845: an existing curated location moved by the sheet loses the
+    # height and address resolved at its old pin; the out-of-band fillers
+    # resolve them again, and an unmoved row keeps all three. A new row has
+    # no coordinate yet, so it is simply placed (nothing to clear).
+    location.move_to(*new_coordinate)
     return changes
 
 
