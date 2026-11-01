@@ -178,6 +178,17 @@ class TestProviderDifferences:
         conventions = body[body.index('id="meteofrance-conventions"') :]
         assert "once for the whole bulletin" in conventions
 
+    def test_meteofrance_problem_elevations_are_explained(self, client: Client) -> None:
+        """The guide says where a Météo-France problem card's elevation comes from.
+
+        The translator reads it from the prose and falls back to the
+        bulletin-wide split, so the guide must not say a problem card can
+        carry no elevation.
+        """
+        conventions = _fragment(_page(client), "meteofrance-conventions")
+        assert "appear only in the text" not in conventions
+        assert "taken from that split altitude" in conventions
+
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("testid", EXISTING_TESTIDS)

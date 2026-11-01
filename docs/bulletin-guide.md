@@ -153,7 +153,7 @@ The public guide's matching section is `/how-to-read-a-bulletin/#provider-differ
 | Weather review and forecast | ✓ | — | — | `#slf-weather` |
 | Dry / wet hazard grouping | ✓ (customData.CH) | — | — | `#slf-weather` |
 | Aspects | per problem | per problem | once for the whole bulletin | `#meteofrance-conventions` |
-| Elevation | per problem | per problem | one bulletin-wide split altitude (`RISQUE/@ALTITUDE`); problem elevations in text only | `#meteofrance-conventions` |
+| Elevation | per problem | per problem | one bulletin-wide split altitude (`RISQUE/@ALTITUDE`); no structured per-problem elevation — the translator reads it from the problem prose, falling back to the split (`_elevation_from_prose`) | `#meteofrance-conventions` |
 | Language | de / fr / it / en | de / it / en, and others | fr only | `#meteofrance-conventions` |
 
 Field-level detail for Météo-France: [`meteofrance-mapping.md`](meteofrance-mapping.md).
