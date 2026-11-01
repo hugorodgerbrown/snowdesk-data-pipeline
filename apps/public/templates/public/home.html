@@ -2,7 +2,8 @@
 {% comment %}
 apps/public/templates/public/home.html — the marketing homepage at /.
 
-A static page: the headline, then four cards — current conditions, route
+The headline, then the daily read (SNOW-1357, public/partials/_daily_read.html
+— the page's one dynamic section, absent off season), then four cards — current conditions, route
 planning, weather, trips — each a screenshot of the app above a short
 description, then a supporting line (offline), the authority caveat and one
 button into the app at /map/. The Help, Compare apps and build-blog panels that
@@ -75,6 +76,12 @@ parameters never reaches this template — views.home 301s it to /map/.
                 {% trans "Know your line before you leave." %}
             </h1>
         </section>
+
+        {# The daily read (SNOW-1357): what moved since yesterday. Absent  #}
+        {# on a day no region is rated, so the page reads as it did.       #}
+        {% if daily_read %}
+            {% include "public/partials/_daily_read.html" %}
+        {% endif %}
 
         {# ---------------------------------------------------------------- #}
         {# Four cards, one per thing Snowdesk does: conditions, the route,  #}

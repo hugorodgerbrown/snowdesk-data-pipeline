@@ -2,7 +2,7 @@
 name: glossary
 description: Domain term → code symbol map — CAAML, DPBRA, massif, Bulletin/RegionBulletin, render model, day rating, sentinels, Location, Weather
 status: current
-last-reviewed: 2026-10-31
+last-reviewed: 2026-11-01
 ---
 
 # Glossary — domain terms to code symbols
@@ -76,6 +76,7 @@ L3 is deliberately skipped. All in `apps/regions/models.py`.
 | Unscheduled bulletin | Out-of-cycle update flagged by the provider | `Bulletin.unscheduled` |
 | Provider row | A row in the map's layers menu "Conditions" section (its "Bulletins" section until SNOW-904) — one WARNING SERVICE, not one country. ALBINA publishes for AT and IT, so its single row switches both codes: the grouping is declared once in `COUNTRY_GROUPS` and projected into the DOM as `data-country-codes` (SNOW-658) | `COUNTRY_GROUPS` / `countryCodesFor` / `overlayKeyForCountry` in `static/js/map_state.js`; guarded by `tests/public/test_map_country_groups.py` |
 | Homepage | The static page at `/` that describes Snowdesk and links into the map; loads no map JavaScript. Not the map (see `the-homepage-is-not-the-map`) | `public:home`, `views.home`, `apps/public/templates/public/home.html` |
+| Daily read | The homepage's "Across the Alps today" section: what moved since yesterday, per country — movement, today's peak, the problem named most and the biggest swing — every sentence a count or a name from the providers' bulletins, never advice. Built from `RegionDayRating` rows with a provider rating and the source bulletins' stored states; absent off season; cached 15 minutes (SNOW-1357) | `build_daily_read` / `cached_daily_read` / `present_daily_read` in `apps/public/daily_read.py`; `public/partials/_daily_read.html` |
 | Map page | The interactive map at `/map/` — the app, and the manifest's `start_url` | `public:map`, `views.map_page`, `apps/public/templates/public/map.html` |
 | Map surface | Everything drawn over a map (search, sheets, menus, roundels, the date row, the scrubber). It is light in both themes, because every basemap is light | `.map-surface-light` (`src/css/main.css` 1c); [decisions/the-map-surface-stays-light.md](decisions/the-map-surface-stays-light.md) |
 | Bulletin page | The rendered bulletin for one micro-region — three URL forms, all served by `bulletin_detail`: `/<region_id>/` and `/<region_id>/<slug>/` default to today, `/<region_id>/<slug>/<YYYY-MM-DD>/` is dated and redirects to canonical when the parts disagree | `public:region_root` / `public:bulletin` / `public:bulletin_date` in `apps/public/urls.py`; `apps/public/templates/public/bulletin.html` |

@@ -144,6 +144,7 @@ from apps.weather.services.weather_display import build_point_forecast_panel
 
 from . import competitor_matrix, resort_guide
 from .component_previews import help_illustrations
+from .daily_read import cached_daily_read, present_daily_read
 from .decorators import lowercase_region_id
 from .guidance import load_field_guidance
 from .headlines import headline_for
@@ -603,9 +604,11 @@ def home(request: HttpRequest) -> HttpResponseBase:
     """
     Render the marketing homepage at ``/``.
 
-    A static page — a screenshot of the map, a pitch, and short sections on
-    what Snowdesk gives a reader — with a link into the app at ``/map/``. It
-    loads no map JavaScript.
+    A screenshot of the map, a pitch, and short sections on what Snowdesk
+    gives a reader, with a link into the app at ``/map/``. It loads no map
+    JavaScript. Under the hero sits the one dynamic section, the daily read
+    (SNOW-1357, ``apps/public/daily_read.py``), cached for 15 minutes and
+    absent on a day no region is rated.
 
     The map was served here until the homepage took ``/``, so bookmarks and
     shared links carry map state on ``/`` (``/?d=…``, ``/?panel=reports``).
@@ -621,7 +624,10 @@ def home(request: HttpRequest) -> HttpResponseBase:
     """
     if _carries_map_state(request):
         return _MAP_REDIRECT(request)
-    return render(request, "public/home.html")
+    # SNOW-1357: the daily read under the hero, built only once the request
+    # is known to be the homepage's (a map-state 301 never reads it).
+    daily_read = present_daily_read(cached_daily_read(timezone.localdate()))
+    return render(request, "public/home.html", {"daily_read": daily_read})
 
 
 def map_page(request: HttpRequest) -> HttpResponse:

@@ -654,6 +654,72 @@ CARD_VARIANTS: tuple[dict[str, Any], ...] = (
 # Status page variants (SNOW-200) -------------------------------------------
 # Rendered via the _status_page_demo.html wrapper template.
 
+# SNOW-1357: the homepage's daily read, as present_daily_read() hands it to
+# public/partials/_daily_read.html. Off season there is no read and the
+# homepage leaves the section out, so there is no empty variant to show.
+DAILY_READ_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Two countries — a swing in one, none in the other",
+        "solo": True,
+        "context": {
+            "map_url": "/map/",
+            "daily_read": {
+                "day": datetime.date(2026, 1, 14),
+                "countries": [
+                    {
+                        "country": "CH",
+                        "label": "Switzerland",
+                        "peak_level": "considerable",
+                        "sentences": [
+                            "Danger rose in 12 regions and fell in 3 since yesterday.",
+                            "Highest today: Considerable, in 8 of 40 regions.",
+                            "Named most: wind slab, in 24 of 40 regions.",
+                        ],
+                        "swing": {
+                            "region_code": "CH-4115",
+                            "region_name": "Martigny – Verbier",
+                            "url": "#",
+                            "before": "Moderate",
+                            "after": "High",
+                        },
+                    },
+                    {
+                        "country": "FR",
+                        "label": "France",
+                        "peak_level": "moderate",
+                        "sentences": [
+                            "Danger held in every region since yesterday.",
+                            "Highest today: Moderate, in 11 of 23 regions.",
+                            "Named most: persistent weak layers, in 9 of 23 regions.",
+                        ],
+                        "swing": None,
+                    },
+                ],
+            },
+        },
+    },
+    {
+        "caption": "One country, first day of the season (nothing to compare)",
+        "solo": True,
+        "context": {
+            "map_url": "/map/",
+            "daily_read": {
+                "day": datetime.date(2026, 11, 20),
+                "countries": [
+                    {
+                        "country": "AT",
+                        "label": "Austria",
+                        "peak_level": "low",
+                        "sentences": ["Highest today: Low, in 6 of 6 regions."],
+                        "swing": None,
+                    },
+                ],
+            },
+        },
+    },
+)
+
+
 STATUS_PAGE_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "With CTA — link expired",
