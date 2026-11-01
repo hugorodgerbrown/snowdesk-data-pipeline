@@ -282,7 +282,10 @@ class TestEmittedRows:
 
         text = paths["file"].read_text(encoding="utf-8")
         assert "elevation" not in text
-        assert "3328" not in text
+        # Compare whole cells, not substrings: a random uuid can contain
+        # "3328" (it did, on PR #1382's CI run).
+        cells = {cell for line in text.splitlines() for cell in line.split("\t")}
+        assert not cells & {"3328", "3328.0"}
 
     def test_anonymous_locations_are_not_dumped(self, tmp_path: Path) -> None:
         """A location minted from a favourite is user data, not sheet data."""
