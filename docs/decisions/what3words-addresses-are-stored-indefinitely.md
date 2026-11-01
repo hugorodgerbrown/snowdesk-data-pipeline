@@ -114,6 +114,12 @@ change to any of those is a change to what was confirmed.
   would land if one ever returned.
 - The pin stays on the row. No surface needs to drop, round or move the
   coordinate to keep an address beside it.
+- **The plan, as of 1 November 2026.** Production runs on the current API
+  key while Hugo is the only user. The move to Basic is due when a second
+  user arrives — a real person outside the project, not a test account.
+  The `what3words` flag is on for everyone there and is kept as a kill
+  switch: off falls back to the coordinates and keeps every stored address
+  ([`feature-flags.md`](../feature-flags.md)).
 - The cost is a flat Basic subscription and nothing per call. Conversions
   being unmetered removes cost as an argument anywhere in this
   feature. Where the code still converts once and stores rather than per
