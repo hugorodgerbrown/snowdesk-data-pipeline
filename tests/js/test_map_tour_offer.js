@@ -85,6 +85,19 @@ describe('when it appears', () => {
     expect(isShown()).toBe(true);
   });
 
+  it('does not miss a season that landed before it loaded (SNOW-957)', async () => {
+    // map_shared.js's flag: the boot season's one-shot event already went
+    // out, before this deferred script registered its listener.
+    globalThis.SEASON_RATINGS_READY = true;
+    try {
+      await loadModules();
+      vi.advanceTimersByTime(SETTLE_MS);
+      expect(isShown()).toBe(true);
+    } finally {
+      delete globalThis.SEASON_RATINGS_READY;
+    }
+  });
+
   it('does not wait for the colours for ever', async () => {
     await loadModules();
 

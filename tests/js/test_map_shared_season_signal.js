@@ -21,12 +21,13 @@ const SOURCE = readFileSync(
 /**
  * Evaluate map_shared.js in its own scope and hand back its season getter.
  *
- * @returns {() => Promise<Object>}
+ * @returns {{getSeasonRatings: () => Promise<Object>, ready: () => boolean}}
  */
 function loadGetter() {
   // eslint-disable-next-line no-new-func
   return new Function(
-    `${SOURCE}\n;RATINGS_URL = '/api/ratings.json'; return getSeasonRatings;`,
+    `${SOURCE}\n;RATINGS_URL = '/api/ratings.json';
+    return { getSeasonRatings, ready: () => SEASON_RATINGS_READY };`,
   )();
 }
 
@@ -44,10 +45,12 @@ describe('the boot season signal (SNOW-957)', () => {
     const listener = (e) => codes.push(e.detail.code);
     document.addEventListener('snowdesk:country-ratings-loaded', listener);
     try {
-      const getSeasonRatings = loadGetter();
-      await getSeasonRatings();
-      await getSeasonRatings();
+      const shared = loadGetter();
+      expect(shared.ready()).toBe(false);
+      await shared.getSeasonRatings();
+      await shared.getSeasonRatings();
       await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(shared.ready()).toBe(true);
     } finally {
       document.removeEventListener('snowdesk:country-ratings-loaded', listener);
     }
@@ -59,12 +62,14 @@ describe('the boot season signal (SNOW-957)', () => {
     const codes = [];
     const listener = (e) => codes.push(e.detail.code);
     document.addEventListener('snowdesk:country-ratings-loaded', listener);
+    const shared = loadGetter();
     try {
-      await loadGetter()().catch(() => {});
+      await shared.getSeasonRatings().catch(() => {});
       await new Promise((resolve) => setTimeout(resolve, 0));
     } finally {
       document.removeEventListener('snowdesk:country-ratings-loaded', listener);
     }
     expect(codes).toEqual([]);
+    expect(shared.ready()).toBe(false);
   });
 });

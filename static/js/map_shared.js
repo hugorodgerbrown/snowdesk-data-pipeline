@@ -182,6 +182,10 @@ window.snowdeskMapFormat = Object.freeze({ relativeTime: formatRelativeTime });
 // full-season scrubber/timelapse cache).
 let RATINGS_URL = null;
 let SEASON_RATINGS_PROMISE = null;
+// SNOW-957: true once the boot country's season has landed and its
+// 'snowdesk:country-ratings-loaded' has gone out. A listener registered by a
+// later deferred script can miss that one-shot event, so it reads this first.
+let SEASON_RATINGS_READY = false;
 
 const getSeasonRatings = () => {
   if (SEASON_RATINGS_PROMISE !== null) return SEASON_RATINGS_PROMISE;
@@ -200,6 +204,7 @@ const getSeasonRatings = () => {
   // visit would have fallen back to their six-second cap. The other
   // listeners re-derive from the cache, which is harmless once more.
   SEASON_RATINGS_PROMISE.then(() => {
+    SEASON_RATINGS_READY = true;
     document.dispatchEvent(new CustomEvent('snowdesk:country-ratings-loaded', {
       detail: { code: 'ch' },
     }));
