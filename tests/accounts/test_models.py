@@ -15,6 +15,7 @@ from django.utils import timezone
 
 from apps.accounts.aaguids import lookup as aaguid_lookup
 from apps.accounts.models import Account, PasskeyCredential, user_is_verified
+from apps.core.models import BaseModel
 from tests.factories import (
     AccountFactory,
     PasskeyCredentialFactory,
@@ -82,6 +83,11 @@ class TestAccountAcquisitionRequest:
 @pytest.mark.django_db
 class TestPasskeyCredentialModel:
     """Tests for the PasskeyCredential model."""
+
+    def test_inherits_base_model_and_its_ordering(self) -> None:
+        """SNOW-530: the standard kit comes from BaseModel; ordering stays stated."""
+        assert issubclass(PasskeyCredential, BaseModel)
+        assert PasskeyCredential._meta.ordering == ["-created_at"]
 
     def test_str_returns_email_and_name(self) -> None:
         passkey = PasskeyCredentialFactory.create(name="My passkey")

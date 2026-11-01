@@ -9,6 +9,7 @@ Covers:
     account-owned rows.
   - mechanism default and choices validation (SNOW-380).
   - inactive_at default and PushSubscription.objects.active() (SNOW-380).
+  - It inherits BaseModel and states its own ordering (SNOW-530).
 """
 
 from __future__ import annotations
@@ -19,12 +20,18 @@ from django.db import IntegrityError
 from django.utils import timezone
 
 from apps.accounts.models import PushSubscription
+from apps.core.models import BaseModel
 from tests.factories import AccountFactory, PushSubscriptionFactory
 
 
 @pytest.mark.django_db
 class TestPushSubscriptionModel:
     """Unit tests for the PushSubscription model."""
+
+    def test_inherits_base_model_and_its_ordering(self) -> None:
+        """SNOW-530: the standard kit comes from BaseModel; ordering stays stated."""
+        assert issubclass(PushSubscription, BaseModel)
+        assert PushSubscription._meta.ordering == ["-created_at"]
 
     def test_factory_creates_valid_instance(self) -> None:
         """PushSubscriptionFactory produces a saved, valid PushSubscription."""
