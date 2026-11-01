@@ -520,7 +520,7 @@ describe("the resort star, painted from the map's favourites (SNOW-1318)", () =>
                 aria-pressed="false" aria-label="Save resort" title="Save resort" disabled>
           <svg fill="none"></svg>
         </button>
-        <a href="/account/sign-in/" data-resort-star-signin hidden>Sign in</a>
+        <a href="/account/sign-in/" data-signin-url="/account/sign-in/" data-resort-star-signin hidden>Sign in</a>
       </div>
     </div>
   `;

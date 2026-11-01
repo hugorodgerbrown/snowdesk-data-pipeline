@@ -10190,7 +10190,7 @@
         // SNOW-903: back to this shared route's map url as it is when the
         // link is tapped — the popup and the rail stay open while `?d=`
         // moves under them.
-        window.snowdeskSigninCta?.bindNext?.(link);
+        window.snowdeskSigninCta?.bindNext?.(link, ROUTES_SIGNIN_URL);
         return link;
       }
 

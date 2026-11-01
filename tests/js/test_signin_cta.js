@@ -109,7 +109,7 @@ describe('withNext and bindNext (SNOW-903)', () => {
     a.setAttribute('href', URL);
     a.addEventListener('click', (event) => event.preventDefault());
     document.body.appendChild(a);
-    cta().bindNext(a);
+    cta().bindNext(a, URL);
     expect(nextOf(a.getAttribute('href'))).toBe('/map/?d=2026-01-06');
 
     window.history.replaceState(null, '', '/map/?d=2026-01-07&panel=favourites');
@@ -127,13 +127,21 @@ describe('withNext and bindNext (SNOW-903)', () => {
 
     const a = document.createElement('a');
     a.setAttribute('href', hostile);
-    cta().bindNext(a);
+    cta().bindNext(a, hostile);
     expect(a.getAttribute('href')).toBe(hostile);
 
     const b = document.createElement('a');
     b.setAttribute('href', '//evil.example/accounts/sign-in/');
-    cta().bindNext(b);
+    cta().bindNext(b, '//evil.example/accounts/sign-in/');
     expect(b.getAttribute('href')).toBe('//evil.example/accounts/sign-in/');
+  });
+
+  it('takes the url from its caller, never from the anchor href', () => {
+    window.history.replaceState(null, '', '/map/?d=2026-01-06');
+    const a = document.createElement('a');
+    a.setAttribute('href', '/somewhere-else/');
+    cta().bindNext(a, URL);
+    expect(a.getAttribute('href')).toBe(`${URL}?next=%2Fmap%2F%3Fd%3D2026-01-06`);
   });
 
   it('binds an anchor once, however often it is bound', () => {
@@ -141,8 +149,8 @@ describe('withNext and bindNext (SNOW-903)', () => {
     a.setAttribute('href', URL);
     const spy = vi.spyOn(a, 'addEventListener');
 
-    cta().bindNext(a);
-    cta().bindNext(a);
+    cta().bindNext(a, URL);
+    cta().bindNext(a, URL);
 
     expect(spy).toHaveBeenCalledTimes(1);
     expect(a.getAttribute('href').match(/next=/g)).toHaveLength(1);

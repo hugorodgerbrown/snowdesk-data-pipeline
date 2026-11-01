@@ -580,7 +580,7 @@
     el.innerHTML = gateHtml();
     const link = el.querySelector('a[href]');
     if (link && window.snowdeskSigninCta.bindNext) {
-      window.snowdeskSigninCta.bindNext(/** @type {HTMLAnchorElement} */ (link));
+      window.snowdeskSigninCta.bindNext(/** @type {HTMLAnchorElement} */ (link), SIGNIN_URL);
     }
   }
 

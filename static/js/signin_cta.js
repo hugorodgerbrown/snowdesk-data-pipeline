@@ -44,10 +44,12 @@
 
   const PROMPT_CLASS = 'text-sm text-text-2 mb-3';
 
-  // SNOW-903: where an anchor bound by `bindNext` keeps the url it first
-  // carried, so each recompute starts from the bare sign-in url rather than
-  // from an href that already names the previous `next`.
-  const ORIGINAL_HREF_ATTR = 'data-signin-href';
+  // SNOW-903: the sign-in url each anchor bound by `bindNext` was given, so
+  // each recompute starts from the bare url its caller passed rather than
+  // from an href that already names the previous `next` — and never from an
+  // href read back out of the DOM.
+  /** @type {WeakMap<HTMLAnchorElement, string>} */
+  const BOUND = new WeakMap();
 
   /**
    * The root-relative form of a same-origin sign-in url with a `next`
@@ -91,20 +93,23 @@
   }
 
   /**
-   * Point a sign-in anchor at `withNext()` of its own href, now and on every
-   * click, so the `next` is the live page url at the moment it is tapped.
-   * Binding the same anchor twice adds no second listener. An href that is
-   * not this site's is left exactly as it was.
+   * Point a sign-in anchor at `withNext(url)`, now and on every click, so
+   * the `next` is the live page url at the moment it is tapped. The url
+   * comes from the caller (the value it rendered the anchor from), never
+   * from the anchor's own href. Binding the same anchor again only updates
+   * its url; it adds no second listener. A url that is not this site's is
+   * never written.
    *
    * @param {HTMLAnchorElement} anchor
+   * @param {string|null|undefined} url The bare sign-in url.
    * @returns {HTMLAnchorElement}
    */
-  function bindNext(anchor) {
-    if (!anchor) return anchor;
-    const bound = anchor.hasAttribute(ORIGINAL_HREF_ATTR);
-    if (!bound) anchor.setAttribute(ORIGINAL_HREF_ATTR, anchor.getAttribute('href') || '');
+  function bindNext(anchor, url) {
+    if (!anchor || !url) return anchor;
+    const bound = BOUND.has(anchor);
+    BOUND.set(anchor, url);
     const refresh = () => {
-      const next = rootRelativeWithNext(anchor.getAttribute(ORIGINAL_HREF_ATTR) || '');
+      const next = rootRelativeWithNext(BOUND.get(anchor) || '');
       if (next) anchor.setAttribute('href', next);
     };
     refresh();
@@ -139,7 +144,7 @@
       a.className = LINK_CLASS;
       a.textContent = ctaText;
       // SNOW-903: back to where the visitor was when they tapped it.
-      bindNext(a);
+      bindNext(a, signinUrl);
       wrap.appendChild(a);
     }
     return wrap;
