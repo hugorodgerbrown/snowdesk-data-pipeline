@@ -2,7 +2,7 @@
 name: alerts
 description: Bulletin alerts — send_bulletin_alerts, BulletinAlert, notify_when, trip_places, /alerts/<day>/, the map bell, bulletin_alerts flag
 status: current
-last-reviewed: 2026-10-31
+last-reviewed: 2026-11-01
 ---
 
 # Bulletin alerts
@@ -54,25 +54,43 @@ See "Going public" before turning either on.
 - **Which bulletin.** `RegionDayRating.source_bulletin` — the same issue
   the map shows for that day.
 - **Modes.** `NEW_BULLETIN` restates the establishing issue every day;
-  `CHANGES` sends only when the state moved from the day before — except
+  `CHANGES` sends only when the level moved or a problem came or went
+  from the day before — except
   on a saved trip's day, whose establishing issue always sends (Hugo,
   2026-10-30: the night before you go, you want the bulletin). A pin's
   quiet day logged `SKIPPED` before the trip was saved does not count as
-  the trip's alert. A changed
-  update to a day already told sends in either mode. A reissue a reader
+  the trip's alert. An update
+  to a day already told sends in either mode when the level moved or a
+  problem came or went. A reissue a reader
   could not tell apart (same fingerprint) never sends.
-- **An open door (SNOW-1332).** The alert says only that there is a
-  bulletin, for which place and when it holds: "Verbier bulletin" /
-  "Valid from Friday at 5 pm to Saturday at 5 pm." (the bulletin's
-  `valid_from` / `valid_to`, in Europe/Zurich). An update is "Verbier
-  bulletin updated"; a season start leads "First of the season."; a trip
-  leads "For your trip on Saturday.". A bundle is "Bulletins for your 3
-  places" / "Chamonix, Davos and Verbier. Valid from …", "and N more" past
-  four, the times dropped for the shared day when the bulletins hold for
-  different times. No level, no problems: a message can never give the
-  whole picture, so it opens the page that does (Hugo, 2026-10-30). The
-  email carries the same words. The full sentences (`change_sentences`)
-  stay for the since strip and `/alerts/<day>/`.
+- **The day, the level and what moved (SNOW-1356).** A one-place
+  alert's title names the place and the day the bulletin is for, so
+  Wednesday's 17:00 issue says Thursday: "Verbier – Thursday bulletin";
+  a reissue is "Verbier – Thursday bulletin update". The body is the
+  level and whether it moved: "Considerable, up from Moderate.",
+  "Considerable (3+), up from 3−." within a level, "Moderate, avalanche
+  problems changed." (a problem added or removed), "Moderate, no
+  change." A problem only shifting its aspects, band or rating is no
+  change (`BulletinChange.is_notable`): SLF shifts one most days, and in a
+  replayed season it fired "problems changed" on two days in five. A
+  season start leads "First of the season."; a restart after a pause
+  inside the season (a bulletin within `SEASON_GAP_DAYS`, 60, before
+  yesterday, `had_bulletin_in_season`) leads "Bulletins are back."; a
+  trip leads "For your trip.". SNOW-1332's open
+  door ("Verbier bulletin" / "Valid from … to …") read as the same message
+  every day of a replayed season (Hugo, 2026-11-01). Problems, aspects
+  and heights stay on the page the tap opens. A bundle is unchanged:
+  "Bulletins for your 3 places" / "Chamonix, Davos and Verbier. Valid
+  from …", "and N more" past four. The email carries the same words. The
+  full sentences (`change_sentences`) stay for the since strip and
+  `/alerts/<day>/`.
+- **New snow (SNOW-944).** A one-place alert ends "20 cm new snow
+  forecast." when today's `Weather` row for the region's
+  `centroid_location` forecasts 5 cm or more for the bulletin's day
+  (`alerts.forecast_new_snow`: the row's own `snowfall_sum` for today, its
+  `forecast[]` entry for tomorrow; `NEW_SNOW_MIN_CM`). The replay archive
+  carries no weather, so `/_alerts-replay/` names none unless
+  `replay_region(new_snow=…)` is given it.
 - **One day per place.** If today and tomorrow both fire for one place,
   tomorrow is the message and today is logged `SKIPPED`.
 - **Night hold.** 22:00–06:30 Europe/Zurich nothing is sent; the 06:30
@@ -101,5 +119,5 @@ Before the switch goes on:
    `tests/public/test_no_bulletin_alert_claims.py`, which holds every
    other page to the old truth until then.
 
-Deferred: weather in the alert (A6), trip alerts (Phase B), the NEW tag on
+Deferred: the NEW tag on
 cards.

@@ -78,6 +78,7 @@ from apps.favourites.models import Favourite
 from apps.ingest.public import state_of
 from apps.trips.models import Trip
 from apps.trips.services.plan_days import start_region
+from apps.weather.models import Weather
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -88,6 +89,11 @@ logger = logging.getLogger(__name__)
 
 NIGHT_STARTS = datetime.time(22, 0)
 NIGHT_ENDS = datetime.time(6, 30)
+
+# A region with no bulletin for this long before a day starts a new
+# season on it; a shorter gap (SLF pauses early in the winter) is a
+# resumption (SNOW-1356).
+SEASON_GAP_DAYS: int = 60
 
 _KIND_TO_ROW: dict[AlertKind, str] = {
     "new": BulletinAlert.Kind.NEW,
@@ -259,6 +265,28 @@ def authoritative_bulletin(region: MicroRegion, day: datetime.date) -> Bulletin 
     return rating.source_bulletin if rating is not None else None
 
 
+def had_bulletin_in_season(region: MicroRegion, day: datetime.date) -> bool:
+    """
+    Return whether a region had a bulletin in the season gap before a day.
+
+    Args:
+        region: The micro-region.
+        day: The first day after the gap being judged (the day before the
+            bulletin's own).
+
+    Returns:
+        True when any day in the ``SEASON_GAP_DAYS`` before ``day`` has an
+        authoritative bulletin.
+
+    """
+    return RegionDayRating.objects.filter(
+        region=region,
+        date__gte=day - datetime.timedelta(days=SEASON_GAP_DAYS),
+        date__lt=day,
+        source_bulletin__isnull=False,
+    ).exists()
+
+
 def day_state(region: MicroRegion, day: datetime.date) -> BulletinState | None:
     """
     Return the alert state of a region's authoritative bulletin on a day.
@@ -309,6 +337,7 @@ def decide(
     previous_day: BulletinState | None,
     enabled_before_day: bool,
     trip_day: bool = False,
+    rated_in_season: bool = False,
 ) -> Decision:
     """
     Decide what one new state for one region and day means for one account.
@@ -327,6 +356,10 @@ def decide(
         enabled_before_day: Whether alerts were on before ``day`` began.
         trip_day: Whether the person has a saved trip on ``day``; its
             establishing issue then sends in ``CHANGES`` mode too.
+        rated_in_season: Whether the region had a bulletin in the
+            ``SEASON_GAP_DAYS`` before ``previous_day``. With no bulletin
+            yesterday, it tells a resumption ("Bulletins are back.") from
+            the first bulletin of the winter (SNOW-1356).
 
     Returns:
         The decision.
@@ -335,7 +368,9 @@ def decide(
     sent, skipped = BulletinAlert.Outcome.SENT, BulletinAlert.Outcome.SKIPPED
     if has_row:
         change = summarise_change(logged, current)
-        outcome = skipped if change.is_empty else sent
+        # Only a moved level or a problem added or removed is worth an
+        # update; a shifted aspect or band is logged and not told.
+        outcome = sent if change.is_notable else skipped
         return Decision(outcome, "update", change, day)
 
     compared_to = day - datetime.timedelta(days=1)
@@ -347,9 +382,12 @@ def decide(
             compared_to,
         )
     if previous_day is None:
-        return Decision(sent, "season_start", summarise_change(None, current), None)
+        # A gap within the season is a resumption, sent as a new bulletin
+        # with nothing to compare against; only the first is a season start.
+        kind: AlertKind = "new" if rated_in_season else "season_start"
+        return Decision(sent, kind, summarise_change(None, current), None)
     change = summarise_change(previous_day, current)
-    if mode == Account.NotifyWhen.CHANGES and change.is_empty and not trip_day:
+    if mode == Account.NotifyWhen.CHANGES and not change.is_notable and not trip_day:
         return Decision(skipped, "new", change, compared_to)
     return Decision(sent, "new", change, compared_to)
 
@@ -412,6 +450,47 @@ def _one_day_per_place(rows: list[PendingRow]) -> None:
             row.decision = replace(row.decision, outcome=BulletinAlert.Outcome.SKIPPED)
 
 
+def forecast_new_snow(
+    region: MicroRegion, day: datetime.date, today: datetime.date
+) -> float | None:
+    """
+    Return the new snow forecast for a region's day, as known today (SNOW-944).
+
+    Read from today's row for the region's centroid location: its own
+    ``snowfall_sum`` for today, its ``forecast[]`` entry for a later day.
+    A forecast never reads a past row, so this is what the weather sheet
+    says now.
+
+    Args:
+        region: The micro-region.
+        day: The bulletin's day.
+        today: The local send date.
+
+    Returns:
+        The snowfall in cm, or None with no centroid, no row or no entry.
+
+    """
+    if region.centroid_location_id is None:
+        return None
+    row = (
+        Weather.objects.filter(
+            location_id=region.centroid_location_id, observed_on=today
+        )
+        .only("snowfall_sum", "forecast")
+        .first()
+    )
+    if row is None:
+        return None
+    if day == today:
+        return row.snowfall_sum
+    iso = day.isoformat()
+    for entry in row.forecast or []:
+        if entry.get("date") == iso:
+            value = entry.get("snowfall_sum")
+            return float(value) if value is not None else None
+    return None
+
+
 def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
     """
     Work out every row and the one message for an account, writing nothing.
@@ -456,6 +535,8 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
             day_began = (
                 day_start if day == today else day_start + datetime.timedelta(days=1)
             )
+            yesterday = day - datetime.timedelta(days=1)
+            previous = None if last is not None else day_state(place.region, yesterday)
             decision = decide(
                 mode=account.notify_when,
                 day=day,
@@ -463,13 +544,14 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
                 current=current,
                 logged=BulletinState.from_json(last.state) if last else None,
                 has_row=last is not None,
-                previous_day=(
-                    None
-                    if last is not None
-                    else day_state(place.region, day - datetime.timedelta(days=1))
-                ),
+                previous_day=previous,
                 enabled_before_day=enabled_at is not None and enabled_at < day_began,
                 trip_day=bool(place.trip_url),
+                rated_in_season=(
+                    last is None
+                    and previous is None
+                    and had_bulletin_in_season(place.region, yesterday)
+                ),
             )
             run.rows.append(
                 PendingRow(place, day, bulletin, current, decision, fingerprint)
@@ -489,6 +571,11 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
                     url=r.place.trip_url,
                     valid_from=r.bulletin.valid_from,
                     valid_until=r.bulletin.valid_to,
+                    new_snow_cm=(
+                        forecast_new_snow(r.place.region, r.day, today)
+                        if len(sending) == 1
+                        else None
+                    ),
                 )
                 for r in sending
             ],
