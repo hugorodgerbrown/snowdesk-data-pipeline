@@ -47,6 +47,9 @@ class Command(RegisteredCommand):
     not a growable queryset streamed row by row.
     """
 
+    # Offered to the ops MCP server's run_command (apps.core.remote_commands).
+    mcp_runnable = True
+
     help = (
         "Reconcile waffle.Switch rows to the manifest at "
         "apps/core/fixtures/waffle_switches.json by create + delete only (an "

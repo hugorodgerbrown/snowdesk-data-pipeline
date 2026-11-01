@@ -24,6 +24,8 @@
  * It is hidden when the cursor has no index, the rail is closed, or the
  * map has no point to offer — the routes overlay off, a route with no
  * slope record, or a dot the rail covers. A line with one end is no line.
+ * A dot BESIDE the panel, level with its bottom edge or above it, is not
+ * covered (SNOW-1354): the line swings under the edge into the notch.
  *
  * WHEN IT REDRAWS. On a cursor change (its own subscription to the open
  * route's cursor), a camera move or map resize, a window resize, a change
@@ -44,6 +46,10 @@
   if (!mapEl) return;
 
   var SVG_NS = 'http://www.w3.org/2000/svg';
+  // SNOW-1354: a dot less than this far below the notch takes the swing,
+  // which reaches this far below the lower of the two ends.
+  var SWING_CLEAR_PX = 24;
+  var SWING_DEPTH_PX = 40;
 
   var svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('class', 'route-leader');
@@ -100,10 +106,20 @@
     var start = local(mapPoint);
     var notch = local(railPoint);
 
-    path.setAttribute('d', core.leaderPath([start, notch]));
+    var sheet = Boolean(rail.isSheet && rail.isSheet());
+    // SNOW-1354: a dot beside the panel, level with its bottom edge or
+    // above it, swings under the edge into the notch rather than bend
+    // down onto it through the panel.
+    var beside = !sheet && start.y < notch.y + SWING_CLEAR_PX;
+    path.setAttribute(
+      'd',
+      beside && core.swingPath
+        ? core.swingPath(start, notch, SWING_DEPTH_PX)
+        : core.leaderPath([start, notch]),
+    );
     // The notch: a small triangle pointing onto the panel's edge — up onto
     // its bottom edge, or down onto a phone sheet's top edge (SNOW-1099).
-    var base = notch.y + (rail.isSheet && rail.isSheet() ? -5 : 5);
+    var base = notch.y + (sheet ? -5 : 5);
     var mark = document.createElementNS(SVG_NS, 'path');
     mark.setAttribute(
       'd',

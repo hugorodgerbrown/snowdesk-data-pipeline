@@ -119,6 +119,38 @@ describe('lineLayers', () => {
     expect(marks[0].paint['circle-color']).toEqual(['case', ['get', 'climbing'], '#1d4ed8', '#38bdf8']);
   });
 
+  it('haloes the open tour slimly below z14, its line a route\'s own (SNOW-1354)', () => {
+    const plain = core.lineLayers(options());
+    const layers = core.lineLayers(options({ halo: true }));
+    const ids = layers.map((layer) => layer.id);
+    const byId = (list, id) => list.find((layer) => layer.id === id);
+
+    expect(ids).toEqual([
+      'p-line-halo',
+      'p-line-casing',
+      'p-line',
+      'p-leg-halo',
+      'p-leg-casing',
+      'p-leg-climb',
+      'p-leg-descent',
+      'p-slope-line',
+      'p-slope-unknown',
+    ]);
+    for (const id of ['p-line-halo', 'p-leg-halo']) {
+      const layer = byId(layers, id);
+      expect(layer.paint['line-color']).toBe('#ffffff');
+      // Gone from z14, where the slope classes set the line apart.
+      expect(layer.maxzoom).toBe(core.ROUTE_SLOPE_MINZOOM);
+    }
+    // 1.25 px clear of the leg casing either side at z12 (5.5 → 8).
+    expect(byId(layers, 'p-leg-halo').paint['line-width'][6]).toBe(8);
+    // The flat halo keeps the flat casing's filter; the legs' has none.
+    expect(byId(layers, 'p-line-halo').filter).toEqual(byId(layers, 'p-line-casing').filter);
+    expect(byId(layers, 'p-leg-halo').filter).toBeUndefined();
+    // Every other layer is exactly a saved route's.
+    for (const layer of plain) expect(byId(layers, layer.id)).toEqual(layer);
+  });
+
   it('draws a legless tour\'s flat line in the colour it is given (SNOW-1310)', () => {
     const layers = core.lineLayers(options({ colours: { climb: '#1d4ed8', descent: '#38bdf8', line: '#1d4ed8' } }));
     const plain = core.lineLayers(options());

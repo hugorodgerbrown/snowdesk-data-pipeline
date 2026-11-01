@@ -54,6 +54,9 @@ SCHEDULED_RETENTION_DAYS: int = 90
 class Command(RegisteredCommand):
     """Close stale RUNNING rows and delete old scheduled runs."""
 
+    # Offered to the ops MCP server's run_command (apps.core.remote_commands).
+    mcp_runnable = True
+
     help = (
         "Marks CommandRun rows left RUNNING longer than --stale-hours as "
         f"INTERRUPTED (default {STALE_HOURS}h) and deletes SCHEDULER runs older "

@@ -83,6 +83,9 @@ class Command(RegisteredCommand):
     command exits non-zero when any failed or the upstream throttled it.
     """
 
+    # Offered to the ops MCP server's run_command (apps.core.remote_commands).
+    mcp_runnable = True
+
     help = (
         "Fill the missing Weather days for the active locations, newest "
         "fortnight first, within a budget of weighted Open-Meteo calls. "

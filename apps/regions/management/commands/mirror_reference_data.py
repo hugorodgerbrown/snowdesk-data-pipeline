@@ -46,6 +46,9 @@ class _Rollback(Exception):
 class Command(RegisteredCommand):
     """Mirror places, passes and resorts into the reference-data service."""
 
+    # Offered to the ops MCP server's run_command (apps.core.remote_commands).
+    mcp_runnable = True
+
     help = (
         "Mirror the curated places, passes and resorts into the reference-data "
         "service's tables. Read-only unless --commit is passed."

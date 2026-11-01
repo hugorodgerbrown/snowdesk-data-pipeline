@@ -361,6 +361,22 @@
   }
 
   /**
+   * Put a saved SAC copy's "SAC guide ↗" pill at the end of the title, or
+   * take the last route's away (SNOW-1354). An SAC tour not yet saved
+   * keeps the outlined button in its claim block instead.
+   *
+   * @param {?Object} sac A saved copy's `sac`, or null.
+   */
+  function fillGuidePill(sac) {
+    var title = nameEl && nameEl.parentElement;
+    if (!title) return;
+    title.querySelectorAll('[data-route-rail-guide]').forEach(function (el) { el.remove(); });
+    var tours = window.pwaSkiTours;
+    var pill = sac && tours && tours.guidePill ? tours.guidePill(sac) : null;
+    if (pill) title.appendChild(pill);
+  }
+
+  /**
    * Seat a pending share's Save control, or empty the slot.
    *
    * @param {?Node} node The control map.js built, or null.
@@ -419,6 +435,7 @@
     var profile = read.profile;
 
     nameEl.textContent = current.name;
+    fillGuidePill(props.tour ? null : props.sac);
     routeMeta = railCore.formatMetaLine(
       {
         distance_m: props.distance_m,

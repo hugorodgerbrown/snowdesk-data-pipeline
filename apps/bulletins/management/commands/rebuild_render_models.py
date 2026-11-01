@@ -82,6 +82,9 @@ _LABEL_FIELDS: tuple[str, ...] = (
 class Command(RegisteredCommand):
     """Enqueue a render-model rebuild task per stale or specified Bulletin."""
 
+    # Offered to the ops MCP server's run_command (apps.core.remote_commands).
+    mcp_runnable = True
+
     help = (
         "Enqueue one background task per Bulletin row that is stale "
         "(render_model_version < RENDER_MODEL_VERSION); each task rebuilds "

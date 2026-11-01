@@ -1683,6 +1683,9 @@ a.season-day:focus-visible {
 [data-route-tour] .route-rail-lane { color: var(--color-sac-climb); }
 [data-route-tour] .route-rail-leg[data-climbing="true"]  { fill: var(--color-sac-climb); }
 [data-route-tour] .route-rail-leg[data-climbing="false"] { fill: var(--color-sac-descent); }
+/* A saved SAC copy's "SAC guide" pill sits in the title (SNOW-1354);
+   while Rename has the name's label hidden, the pill goes with it. */
+[data-route-rail-title]:has([data-row-label][hidden]) [data-route-rail-guide] { display: none; }
 
 /* —— The route profile's lane and readout (moved from map.css, SNOW-1215)
    The profile is one component on three pages (templates/includes/

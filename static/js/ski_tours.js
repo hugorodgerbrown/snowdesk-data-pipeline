@@ -36,6 +36,9 @@
  *   openSummit(summit)  — a summit picked in search (SNOW-1294): the layer
  *                         on, the map at the summit, and a "Tours need
  *                         signal" toast when they cannot load (SNOW-1320)
+ *   savedBlock(sac)     — a saved copy's block for the panel: the credit
+ *   guidePill(sac)      — a saved copy's "SAC guide ↗" pill for its title
+ *                         (SNOW-1354), or null
  */
 
 // @ts-check
@@ -48,6 +51,9 @@
   const hint = /** @type {HTMLElement} */ (document.getElementById('ski-tours-hint'));
   const claimTemplate = /** @type {HTMLTemplateElement} */ (
     document.getElementById('ski-tour-claim-template')
+  );
+  const pillTemplate = /** @type {HTMLTemplateElement|null} */ (
+    document.getElementById('ski-tour-guide-pill-template')
   );
   const core = self.pwaSkiToursCore;
   if (!config || !hint || !claimTemplate || !core || !window.MapSheet) return;
@@ -437,6 +443,9 @@
       }
     }
     if (options && options.saved) {
+      // SNOW-1354: a saved copy's guide is the pill on its title
+      // (guidePill), so its block keeps only the credit.
+      if (guide) guide.remove();
       node.querySelectorAll('[data-ski-tour-save-slot]').forEach((el) => el.remove());
       const actions = node.querySelector('[data-ski-tour-actions]');
       if (actions && !actions.children.length) actions.remove();
@@ -449,6 +458,22 @@
       });
     }
     return node;
+  }
+
+  /**
+   * A saved copy's "SAC guide ↗" pill, for the end of its title in the
+   * route panel (SNOW-1354); null with no guide URL or no template.
+   *
+   * @param {?{sac_url?: string}} props A saved copy's `sac`.
+   * @returns {?HTMLAnchorElement}
+   */
+  function guidePill(props) {
+    if (!pillTemplate || !props || !props.sac_url) return null;
+    const pill = /** @type {HTMLAnchorElement} */ (
+      /** @type {DocumentFragment} */ (pillTemplate.content.cloneNode(true)).firstElementChild
+    );
+    pill.href = String(props.sac_url);
+    return pill;
   }
 
   /**
@@ -673,5 +698,6 @@
      * @returns {?HTMLElement}
      */
     savedBlock: (props) => (claimTemplate ? buildClaim(props, { saved: true }) : null),
+    guidePill: guidePill,
   });
 })();

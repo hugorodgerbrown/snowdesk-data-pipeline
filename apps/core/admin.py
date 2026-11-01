@@ -114,7 +114,7 @@ class CommandRunAdmin(admin.ModelAdmin):
         "finished_at",
     ]
     list_filter = ["status", "mode", "invoked_via", "environment", "release", "command"]
-    search_fields = ["command", "argv", "operator", "git_sha"]
+    search_fields = ["command", "argv", "operator", "git_sha", "task_id"]
     date_hierarchy = "started_at"
     ordering = ["-started_at"]
     list_select_related = ["parent"]
@@ -134,6 +134,8 @@ class CommandRunAdmin(admin.ModelAdmin):
         "error",
         "invoked_via",
         "operator",
+        "reason",
+        "task_id",
         "host",
         "service",
         "instance",

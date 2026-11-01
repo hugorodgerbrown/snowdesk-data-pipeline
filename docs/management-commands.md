@@ -165,7 +165,27 @@ before running a command against a deployed environment. A Render shell runs
 everyone as the same OS user, so without it the row cannot say who ran it.
 `SNOWDESK_INVOKED_VIA` is set by `run_scheduler` (`SCHEDULER`) and
 `bin/build.sh` (`BUILD`); a run with neither is `SHELL` from `manage.py`, or
-`CALL_COMMAND` from code.
+`CALL_COMMAND` from code. A run started from the ops MCP server is `MCP`,
+with the staff account as its operator and the `reason` and `task_id` it
+was queued with.
+
+### Running a command from the ops MCP server
+
+A command with `mcp_runnable = True` can be started by a staff account from
+the ops MCP server's `run_command` tool, without a Render shell. The tool
+queues one `run_command_task` on the task worker (`db_worker`) and returns
+its task id at once; `get_command_task` follows it to the register row. A
+dry run unless the caller passes `commit: true`; `--commit` itself, Django's
+`--settings` / `--pythonpath` and every option naming a server file are
+refused; a command already queued or running is not started again; and an
+environment whose tasks run inline (staging, dev) refuses outright. Full
+contract: [`mcp-server.md`](mcp-server.md#running-commands); why:
+[decisions/a-remote-command-runs-on-the-task-worker.md](decisions/a-remote-command-runs-on-the-task-worker.md).
+
+Set the attribute only on a command that finishes in minutes — the worker
+that runs it is the one that sends email — so a long job enqueues one task
+per row and returns (rule 7). `tests/core/test_command_register_guard.py`
+pins the list, so adding one is a deliberate edit.
 
 ## Operational requirements
 

@@ -132,6 +132,9 @@ class Command(RegisteredCommand):
     re-run at any time. An operator runs it, not a deploy.
     """
 
+    # Offered to the ops MCP server's run_command (apps.core.remote_commands).
+    mcp_runnable = True
+
     help = (
         "Mint a Location at each MicroRegion's centroid, anchoring the "
         "region in the location estate. Offline — derived from the region's "

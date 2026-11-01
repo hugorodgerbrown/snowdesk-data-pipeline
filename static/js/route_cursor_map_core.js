@@ -75,6 +75,7 @@
  *   legAt(legs, index)                   → the leg holding an index, or null
  *   visibleRect(canvas, railTop, topInset) → the map the rails leave visible
  *   isInside(point, rect)                → whether a point is in a rect
+ *   isVisible(point, rect, covers)       → in rect and under none of covers
  *   panOffset(point, rect, margin)       → the pan that brings it in, or null
  *
  * ## The visible map (SNOW-1019)
@@ -425,6 +426,25 @@
   }
 
   /**
+   * Whether a point is in the visible map and under none of the boxes
+   * covering it (SNOW-1354).
+   *
+   * The leader line asks this of the cursor dot: a dot BESIDE the route
+   * panel is in plain view, though it is above the panel's bottom edge,
+   * so only the panel's own box hides it — not the band across the map's
+   * width that `visibleRect` keeps clear for a pan.
+   *
+   * @param {?{x: number, y: number}} point
+   * @param {?Rect} rect The visible map.
+   * @param {Array<?Rect>} [covers] What lies over it, the route panel.
+   * @returns {boolean}
+   */
+  function isVisible(point, rect, covers) {
+    if (!isInside(point, rect)) return false;
+    return !(covers || []).some((box) => box && isInside(point, box));
+  }
+
+  /**
    * One axis of `panOffset`.
    *
    * @param {number} value The point's coordinate.
@@ -562,6 +582,7 @@
     centreOffset: centreOffset,
     visibleRect: visibleRect,
     isInside: isInside,
+    isVisible: isVisible,
     panOffset: panOffset,
     sampleCount: sampleCount,
     cursorPoint: cursorPoint,

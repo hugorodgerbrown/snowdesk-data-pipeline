@@ -91,6 +91,9 @@
   /** Mirrors `--color-route-line-casing`. */
   const ROUTE_CASING_COLOUR = '#1a1916';
 
+  /** The open SAC tour's halo (SNOW-1354), mirroring `--color-card`. */
+  const HALO_COLOUR = '#ffffff';
+
   /** A transition marker's ring, so it reads over either leg colour. */
   const TRANSITION_RING_COLOUR = '#ffffff';
 
@@ -126,6 +129,10 @@
    * @property {boolean} [solidClimb] True draws a climb solid, without
    *   its dash: an SAC tour, because a dash on SAC's own maps means a leg
    *   needing extra care (SNOW-1307).
+   * @property {boolean} [halo] True adds a slim white halo under the
+   *   casings below ROUTE_SLOPE_MINZOOM: the SAC tour a reader has open,
+   *   so it stands off the tours network beside it, drawn in the same
+   *   blues. The line and casing stay a saved route's (SNOW-1354).
    */
 
   /**
@@ -283,7 +290,35 @@
     const flat = flatFilter();
     const colours = legColours(options.colours);
     const slopeCore = self.pwaRouteSlopeCore;
+    const halo = options.halo === true;
     const legWidth = ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 3.2, 16, 5.5];
+    const legCasingWidth = ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 5.5, 16, 9];
+    const casingOpacity = 0.55;
+    // SNOW-1354: a slim white halo under each casing, 1.25 px clear of it
+    // either side, and only below ROUTE_SLOPE_MINZOOM, where the open tour
+    // shares the map with the tours network in the same blues. The line
+    // and casing are a saved route's own, so the two read alike; from z14
+    // the slope classes set the line apart and the halo goes (Hugo,
+    // 2026-11-01: the first, bolder halo was too much).
+    /**
+     * @param {string} id
+     * @param {string} source
+     * @param {?Array<any>|undefined} filter
+     * @param {Array<any>} width
+     * @returns {Object<string, any>}
+     */
+    const haloLayer = (id, source, filter, width) => filtered({
+      id: id,
+      type: 'line',
+      source: source,
+      maxzoom: ROUTE_SLOPE_MINZOOM,
+      layout: layoutFor(options, { 'line-cap': 'round', 'line-join': 'round' }),
+      paint: {
+        'line-color': HALO_COLOUR,
+        'line-opacity': 0.9,
+        'line-width': width,
+      },
+    }, filter);
     const layers = [
       filtered({
         id: p + '-line-casing',
@@ -292,7 +327,7 @@
         layout: layoutFor(options, { 'line-cap': 'round', 'line-join': 'round' }),
         paint: {
           'line-color': ROUTE_CASING_COLOUR,
-          'line-opacity': 0.55,
+          'line-opacity': casingOpacity,
           'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 7, 16, 11],
         },
       }, options.casingFilter === undefined ? flat : options.casingFilter),
@@ -313,8 +348,8 @@
         layout: layoutFor(options, { 'line-cap': 'round', 'line-join': 'round' }),
         paint: {
           'line-color': ROUTE_CASING_COLOUR,
-          'line-opacity': 0.55,
-          'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 5.5, 16, 9],
+          'line-opacity': casingOpacity,
+          'line-width': legCasingWidth,
         },
       },
       {
@@ -350,6 +385,18 @@
         },
       },
     ];
+    if (halo) {
+      // Under the flat casing (index 0) and the leg casing (index 2).
+      const flatCasingFilter = options.casingFilter === undefined ? flat : options.casingFilter;
+      layers.splice(2, 0, haloLayer(
+        p + '-leg-halo', s.legs, null,
+        ['interpolate', ['linear'], ['zoom'], 6, 5.5, 12, 8, 16, 11.5],
+      ));
+      layers.unshift(haloLayer(
+        p + '-line-halo', s.route, flatCasingFilter,
+        ['interpolate', ['linear'], ['zoom'], 6, 5.5, 12, 9.5, 16, 13.5],
+      ));
+    }
     // A segment the terrain had no answer for is its own layer in the
     // unknown grey: `step` needs a number, and falling on the ramp's first
     // stop would paint unsurveyed ground as gentle.
@@ -519,7 +566,7 @@
    *
    * @param {any} map A MapLibre map.
    * @param {?FeatureCollection} collection The routes to draw.
-   * @param {{prefix: string, textFont?: Array<string>, colours?: {climb: string, descent: string, line?: string}, solidClimb?: boolean}} options
+   * @param {{prefix: string, textFont?: Array<string>, colours?: {climb: string, descent: string, line?: string}, solidClimb?: boolean, halo?: boolean}} options
    *   `textFont` is the transition labels' font; the style's own when
    *   omitted. `colours` and `solidClimb` as LayerOptions.
    * @returns {SourceIds}
@@ -538,6 +585,7 @@
       textFont: options.textFont || styleTextFont(map.getStyle ? map.getStyle() : null),
       colours: options.colours,
       solidClimb: options.solidClimb,
+      halo: options.halo,
     };
     for (const layer of lineLayers(layerOptions).concat(markLayers(layerOptions))) {
       map.addLayer(layer);

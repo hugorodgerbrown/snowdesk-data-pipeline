@@ -20,6 +20,10 @@ Two families:
 * **Health** — ``build_info``, ``ingest_status``, ``bulletin_coverage``,
   ``task_queue_health``, ``weather_freshness``, ``location_estate_health``
   and ``feature_flags``.
+* **Commands** — ``list_runnable_commands``, ``run_command`` (writes:
+  queues an ``mcp_runnable`` command on the task worker) and
+  ``get_command_task``, defined in ``apps.mcp_server.command_tools`` and
+  merged in at the end of this module.
 * **Waffle writes** — ``set_switch`` and ``set_flag`` turn an existing
   switch or flag on or off. Each needs the name, the state and a reason,
   changes nothing when the row is already in that state, never creates a
@@ -59,6 +63,7 @@ from apps.bulletins.models import Bulletin, PipelineRun, RegionDayRating
 from apps.core.command_register import _environment
 from apps.core.models import CommandRun
 from apps.locations.models import Location
+from apps.mcp_server.command_tools import COMMAND_TOOLS
 from apps.mcp_server.resolvers import _PROVIDER_BY_COUNTRY
 from apps.mcp_server.tools import (
     ToolError,
@@ -1477,3 +1482,6 @@ OPS_TOOLS: dict[str, ToolSpec] = {
         writes=True,
     ),
 }
+
+# The command runner (list_runnable_commands, run_command, get_command_task).
+OPS_TOOLS.update(COMMAND_TOOLS)
