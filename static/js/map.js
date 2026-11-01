@@ -8504,12 +8504,16 @@
         //
         // SNOW-957: since boot skips the ratings of a country no provider
         // claims, this call is now the ONLY fetch of them for such a
-        // country, not a repaint of a payload boot already holds. The dot is
-        // re-probed once they land, because the refresh above ran before.
-        const alreadyLoaded = loadedCountries.has(code);
+        // country, not a repaint of a payload boot already holds. It runs
+        // whatever the load did: a switch made while the boundary-only boot
+        // load was still in flight joins that load, which fetched no
+        // ratings, and would otherwise leave the country grey. When the load
+        // fetched them itself, ``COUNTRY_RATINGS`` makes this a repaint. The
+        // dot is re-probed once they land, because the refresh above ran
+        // before.
         ensureCountryLoaded(code, { userInitiated: true }).then(async () => {
           applyCountryFilters();
-          if (alreadyLoaded && await loadCountryRatings(code)) sync?.refresh();
+          if (await loadCountryRatings(code)) sync?.refresh();
         }).catch(() => {});
       } else {
         applyCountryFilters();

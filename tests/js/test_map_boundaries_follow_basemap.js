@@ -210,10 +210,15 @@ async function boot(options) {
   localStorage.setItem('snowdesk.map.overlay.l2', 'true');
   buildFixture(options);
   const mapStub = stubMapLibre();
-  vi.stubGlobal('fetch', vi.fn((url) => Promise.resolve({
-    ok: true,
-    json: () => Promise.resolve(responseFor(url)),
-  })));
+  vi.stubGlobal('fetch', vi.fn((url) => {
+    const answer = () => ({ ok: true, json: () => Promise.resolve(responseFor(url)) });
+    // `hold` keeps a matching request pending until the test releases it,
+    // for a load the visitor overtakes.
+    if (options.hold && options.hold.matches(String(url))) {
+      return new Promise((resolve) => options.hold.pending.push(() => resolve(answer())));
+    }
+    return Promise.resolve(answer());
+  }));
 
   vi.resetModules();
   await import('../../static/js/basemap_download_core.js');
@@ -383,6 +388,32 @@ describe('the boundary outlines and the bulletin fill are filtered separately', 
     document.dispatchEvent(new CustomEvent('snowdesk:country-toggle', {
       detail: { code: 'at', next: true },
     }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(atRatings()).toBeGreaterThan(0);
+    expect(filterCodes(mapStub, 'regions-fill')).toContain('AT');
+  });
+
+  it('fetches them when the row is switched on mid-way through that boot load', async () => {
+    // The toggle joins the boundary-only load still in flight, which fetches
+    // no ratings, so the toggle must fetch them itself once it settles.
+    const hold = {
+      matches: (url) => url.includes('/api/regions.geojson') && url.includes('country=at'),
+      pending: [],
+    };
+    const mapStub = await boot({ providers: 'country.ch', countries: 'ch fr at it', hold });
+    const atRatings = () => globalThis.fetch.mock.calls
+      .map((call) => String(call[0]))
+      .filter((url) => url.includes('/api/ratings.json') && url.includes('country=at'))
+      .length;
+    expect(hold.pending.length).toBeGreaterThan(0);
+
+    document.dispatchEvent(new CustomEvent('snowdesk:country-toggle', {
+      detail: { code: 'at', next: true },
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(atRatings()).toBe(0);
+    for (const release of hold.pending.splice(0)) release();
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(atRatings()).toBeGreaterThan(0);

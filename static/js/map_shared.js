@@ -192,6 +192,18 @@ const getSeasonRatings = () => {
     if (!resp.ok) throw new Error('ratings fetch failed');
     return resp.json();
   });
+  // SNOW-957: announce the boot country's season the way a merged country's
+  // is announced. The between-seasons note and the tour offer wait for the
+  // first 'snowdesk:country-ratings-loaded' as their "the colours are on the
+  // map" signal; that used to be a neighbour's background merge, which a
+  // country only the basemap outlines no longer fetches, so a Swiss-only
+  // visit would have fallen back to their six-second cap. The other
+  // listeners re-derive from the cache, which is harmless once more.
+  SEASON_RATINGS_PROMISE.then(() => {
+    document.dispatchEvent(new CustomEvent('snowdesk:country-ratings-loaded', {
+      detail: { code: 'ch' },
+    }));
+  }).catch(() => {});
   return SEASON_RATINGS_PROMISE;
 };
 

@@ -71,7 +71,12 @@ sizes the offline base layer the same way
   for its outline (`boundaryOnly` to `planCountryFeeds`) skips its ratings
   (~40 KB each), because they back a fill that never paints for it. The
   toggle that later switches its row on fetches them through
-  `loadCountryRatings`. The cost is that a row switched on for the first
+  `loadCountryRatings`, whatever the load did, so a switch made while the
+  outline load is still in flight is painted too. Because no neighbour's
+  merge now raises the first `snowdesk:country-ratings-loaded` at boot,
+  `getSeasonRatings` raises it for `ch` once Switzerland's season lands,
+  which is what the between-seasons note and the tour offer wait for. The
+  cost is that a row switched on for the first
   time while offline has no season to paint until the device is back
   online, unless an area download already saved the day's ratings.
 - **A country can now be loaded before its provider row is switched on**,
