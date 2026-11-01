@@ -8,28 +8,30 @@ The level, in words with its digit, the region it is for, and the day; the
 compact danger tile the Plan page's day tiles carry in front of it, so the
 level the organiser saw while choosing the day reads the same here.
 
-RENDERED ONLY WHEN THERE IS A LEVEL. The caller tests ``trip_danger`` and
-leaves the strip out otherwise; this partial never says "no bulletin".
+RENDERED ONLY WHEN THERE IS A LEVEL. The caller includes it once per
+entry of ``trip_dangers`` — one per region the route crosses that a
+bulletin rated for the day, in route order (SNOW-945) — and leaves the
+strip out when there are none; this partial never says "no bulletin".
 
-The region is the route start's (apps.trips.services.plan_days), named in
-the line because a reader planning a tour has to know which bulletin the
-level is from before trusting it. The link opens THAT bulletin on THAT
+The region is named in the line because a reader planning a tour has to
+know which bulletin the level is from before trusting it, and a route that
+crosses two regions has two. The link opens THAT bulletin on THAT
 day, not the region's latest. On a phone it drops under the sentence:
 beside it, the sentence wrapped over three lines.
 
 Context:
     trip   : Trip — for its day.
-    danger : TripDanger — the level (``danger.day``) and its region.
+    danger : TripDanger — the level (``danger.level``) and its region.
 {% endcomment %}
 <div class="flex flex-wrap items-center gap-x-3 gap-y-1" data-testid="trip-danger">
     <p class="flex min-w-0 basis-full items-center gap-2 text-sm text-text-1 sm:basis-auto sm:flex-1">
         <span
             class="danger-tile danger-tile--compact flex-none"
-            data-level="{{ danger.day.rating }}"
+            data-level="{{ danger.level.rating }}"
             aria-hidden="true"
-        >{{ danger.day.digit }}</span>
+        >{{ danger.level.digit }}</span>
         <span class="min-w-0">
-            {% blocktrans trimmed with level=danger.day.rating_label region=danger.region.name day=trip.date|date:"l" %}
+            {% blocktrans trimmed with level=danger.level.rating_label region=danger.region.name day=trip.date|date:"l" %}
                 <strong class="font-semibold">{{ level }}</strong> in {{ region }} for {{ day }}
             {% endblocktrans %}
         </span>

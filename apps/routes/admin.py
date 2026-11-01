@@ -71,6 +71,7 @@ class RouteAdmin(admin.ModelAdmin):
         "name",
         "source_filename",
         "points",
+        "crossed_regions",
         "distance_m",
         "ascent_m",
         # descent_m was added by SNOW-686's follow-up and never reached

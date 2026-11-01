@@ -140,7 +140,10 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  /api/ski-network.geojson?bbox= (and ?overview=1 from
                  z9, SNOW-1322); a tour is found by its
                  summit and saved as a copy, source SKI_TOUR
-                 (SNOW-1278, services/ski_tours.py)
+                 (SNOW-1278, services/ski_tours.py). Every route stores
+                 the avalanche regions its track crosses
+                 (crossed_regions, SNOW-945), read by the Plan page,
+                 the trip page and the trip alert
   trips/         Shareable trips (SNOW-819) — ``Trip`` (a route the organiser
                  owns, on a named day, at a stated time and meeting point)
                  and ``TripParticipant`` (every account that has SAVED it,
@@ -157,7 +160,10 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  named; read
                  docs/decisions/a-trip-is-one-object-with-a-roster.md,
                  whose disclosure-rule bullet SNOW-848 supersedes, before
-                 putting anything about the other savers back on a page
+                 putting anything about the other savers back on a page.
+                 A trip copies its route's crossed_regions; its Plan
+                 tiles and danger lines show every crossed region, and
+                 the alert treats it as one place (SNOW-945)
   downloads/     Offline basemap areas synced to an account (SNOW-749) — the
                  ``DownloadArea`` model (FK to auth.User) and its sync API.
                  The DEFINITION of an area only: the tiles stay in each
@@ -798,6 +804,7 @@ Read these when working in the relevant area:
 | Why a leg transition is snapped onto the raw high or low point (detect_legs, _snap_to_extrema, SMOOTHING_WINDOW_M; the smoothed turning point sat 9–50 m off on every canonical track) | [`docs/decisions/a-leg-transition-sits-on-the-extremum.md`](docs/decisions/a-leg-transition-sits-on-the-extremum.md) |
 | Why a route's heights come from the terrain model, not the altimeter (slope_samples `heights`, terrain_points, climb_totals, has_terrain_heights; the profile, legs, ascent/descent and track gradient on model heights; the device `<ele>` as fallback; bin/record-slope-fixtures) | [`docs/decisions/route-heights-come-from-the-terrain-model.md`](docs/decisions/route-heights-come-from-the-terrain-model.md) |
 | Why model heights are despiked on ground of 40° or more (terrain_heights._despiked, SPIKE_HALF_WINDOW, SPIKE_THRESHOLD_M, SPIKE_MIN_GROUND_DEG; a median over ±75 m, no device altimeter; the four-tour sweep; SNOW-1051) | [`docs/decisions/route-heights-are-despiked-on-steep-ground.md`](docs/decisions/route-heights-are-despiked-on-steep-ground.md) |
+| Why a route and a trip store the regions their track crosses, and a multi-region trip is one alert place (Route.crossed_regions, Trip.crossed_regions, resolve_track_regions, track_regions, REGION_STRIDE_M, trip_dangers, PlanLevel, the Plan tile's three levels and +N, AlertPlace.regions / covered / key, "N bulletins", backfill_crossed_regions --commit as a Deploy-Step) | [`docs/decisions/a-route-carries-the-regions-it-crosses.md`](docs/decisions/a-route-carries-the-regions-it-crosses.md) |
 | Why the Plan page reads like the map (route_profile.js and _route_profile.html shared with the route panel, _route_meta_line.html, the When/Where/Details sections and read-back footer, the day tiles in the weather picker's pattern with a level only on a rated day, plan_days.plan_week, trip_form.js) | [`docs/decisions/the-plan-page-reads-like-the-map.md`](docs/decisions/the-plan-page-reads-like-the-map.md) |
 | Every coordinate-bearing field — exact vs approximate, how derived, track/geo haversine | [`docs/locations.md`](docs/locations.md) |
 | Why a what3words address is stored indefinitely beside the pin (Location.what3words, three_word_address, convert-to-3wa vs convert-to-coordinates, the pin-move invalidation, the Basic plan, what3words' written confirmation of 7 September 2026) | [`docs/decisions/what3words-addresses-are-stored-indefinitely.md`](docs/decisions/what3words-addresses-are-stored-indefinitely.md) |

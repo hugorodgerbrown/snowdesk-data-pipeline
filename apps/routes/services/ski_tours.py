@@ -513,6 +513,8 @@ def save_ski_tour(user: User, tour: SkiTour) -> Route:
     Through ``write_route_copy``, so the per-account cap is checked exactly
     as a claimed share's is. The terrain the tour holds is copied with it;
     a tour never opened is sampled after the commit, as a drawn route is.
+    The regions it crosses are resolved there too (SNOW-945): a tour
+    carries no list of its own.
 
     Args:
         user: The account saving it.

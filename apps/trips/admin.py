@@ -67,6 +67,7 @@ class TripAdmin(admin.ModelAdmin):
         "name",
         "description",
         "points",
+        "crossed_regions",
         "bounds",
         "distance_m",
         "ascent_m",

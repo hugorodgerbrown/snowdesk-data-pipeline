@@ -28,6 +28,14 @@ it by push and, as the fallback, email.
   told the day's level and problems whether or not they moved. Updates on
   the day itself still need a change.
 
+**A trip is one place** (SNOW-945, Hugo 2026-10-31), covering every region
+its route crosses. A one-region trip folds into a pin on its region as
+before. A trip crossing several regions stays its own place, named for the
+trip and opening the trip page, even when one of its regions is pinned: the
+two are different doors, so that region can appear twice in a bundle. The
+send log stays one row per account, region and day; a multi-region trip is
+decided region by region, and the trip place fires when any of them does.
+
 **Night hold.** Nothing is evaluated 22:00–06:30 Europe/Zurich, so an
 issue landing overnight is picked up by the first run of the morning.
 
@@ -76,8 +84,8 @@ from apps.bulletins.services.bulletin_change import (
 )
 from apps.favourites.models import Favourite
 from apps.ingest.public import state_of
+from apps.regions.services.track_regions import track_regions
 from apps.trips.models import Trip
-from apps.trips.services.plan_days import start_region
 from apps.weather.models import Weather
 
 if TYPE_CHECKING:
@@ -129,20 +137,41 @@ def in_night_hold(now: datetime.datetime) -> bool:
 
 @dataclass
 class AlertPlace:
-    """One region an account follows, with the name it knows it by.
+    """One place an account follows, with the name it knows it by.
 
     ``trip_url`` is set when a saved trip is (one of) the reasons: the
     alert then links to the trip page rather than the map.
+
+    ``region`` is the place's region — the first in route order for a trip.
+    ``regions`` is set only for a trip crossing several regions (SNOW-945):
+    every one, in route order, and the place covers them all.
     """
 
     region: MicroRegion
     labels: list[str] = field(default_factory=list)
     trip_url: str = ""
+    regions: list[MicroRegion] = field(default_factory=list)
 
     @property
     def label(self) -> str:
         """Return the place's name ("Verbier" or "Verbier, Bruson")."""
         return ", ".join(self.labels) or self.region.name
+
+    @property
+    def covered(self) -> list[MicroRegion]:
+        """Return every region the place covers, in route order."""
+        return self.regions or [self.region]
+
+    @property
+    def key(self) -> str:
+        """Return what identifies the place within one run.
+
+        A region's pk for a one-region place, and the trip page for a trip
+        crossing several, which is its own place even beside a pin.
+        """
+        if len(self.covered) > 1:
+            return f"trip:{self.trip_url}"
+        return f"region:{self.region.pk}"
 
 
 def account_places(user: User) -> list[AlertPlace]:
@@ -182,44 +211,51 @@ def account_places(user: User) -> list[AlertPlace]:
 
 def trip_places(user: User, day: datetime.date) -> list[AlertPlace]:
     """
-    Return the regions a user's saved trips on one day start in (SNOW-947).
+    Return the places a user's saved trips on one day make (SNOW-947, SNOW-945).
 
-    The region is the route's start, the rule the trip page and the Plan
-    page already use (``plan_days.start_region``), so the alert names the
-    region and level the trip page shows. A start outside every region
-    adds nothing. Every account that saved the trip counts, organiser or
-    not; nobody is told who else holds it.
+    The regions are every one the route crosses (``track_regions``), the
+    rule the trip page and the Plan page use, so the alert covers what the
+    trip page shows. A trip crossing one region is a place in that region,
+    and two such trips in one region are one place with both names. A trip
+    crossing several is one place of its own, covering all of them in
+    route order. A track outside every region adds nothing. Every account
+    that saved the trip counts, organiser or not; nobody is told who else
+    holds it.
 
     Args:
         user: The account's user.
         day: The day the trips are dated.
 
     Returns:
-        One place per region, labelled by trip name, ordered by label.
+        The places, labelled by trip name, ordered by label.
 
     """
-    by_region: dict[int, AlertPlace] = {}
+    by_key: dict[str, AlertPlace] = {}
     trips = Trip.objects.for_user(user).filter(date=day).order_by("start_time")
-    for trip in trips.only("uuid", "name", "route_name", "points"):
-        region = start_region(trip.points)
-        if region is None:
+    for trip in trips.only("uuid", "name", "route_name", "points", "crossed_regions"):
+        regions = track_regions(trip.crossed_regions, trip.points)
+        if not regions:
             continue
-        place = by_region.setdefault(region.pk, AlertPlace(region=region))
+        url = reverse("trips:detail", kwargs={"uuid": trip.uuid})
+        candidate = AlertPlace(
+            region=regions[0], regions=regions if len(regions) > 1 else []
+        )
+        candidate.trip_url = url
+        place = by_key.setdefault(candidate.key, candidate)
         if trip.display_name and trip.display_name not in place.labels:
             place.labels.append(trip.display_name)
-        place.trip_url = place.trip_url or reverse(
-            "trips:detail", kwargs={"uuid": trip.uuid}
-        )
-    return sorted(by_region.values(), key=lambda p: p.label)
+        place.trip_url = place.trip_url or url
+    return sorted(by_key.values(), key=lambda p: p.label)
 
 
 def places_on(pins: list[AlertPlace], trips: list[AlertPlace]) -> list[AlertPlace]:
     """
     Return one day's places: every pin, with that day's trips folded in.
 
-    A trip in a region the person already pins is one place with both
-    names, so the send log (one row per account, region and day) and the
-    message carry it once.
+    A one-region trip in a region the person already pins is one place
+    with both names, so the send log (one row per account, region and day)
+    and the message carry it once. A trip crossing several regions is
+    never folded: its door is the trip page (SNOW-945).
 
     Args:
         pins: ``account_places`` — the every-day places.
@@ -229,15 +265,15 @@ def places_on(pins: list[AlertPlace], trips: list[AlertPlace]) -> list[AlertPlac
         The day's places, ordered by label.
 
     """
-    by_region = {p.region.pk: replace(p, labels=list(p.labels)) for p in pins}
+    by_key = {p.key: replace(p, labels=list(p.labels)) for p in pins}
     for trip in trips:
-        place = by_region.get(trip.region.pk)
+        place = by_key.get(trip.key)
         if place is None:
-            by_region[trip.region.pk] = trip
+            by_key[trip.key] = trip
             continue
         place.labels.extend(lbl for lbl in trip.labels if lbl not in place.labels)
         place.trip_url = trip.trip_url
-    return sorted(by_region.values(), key=lambda p: p.label)
+    return sorted(by_key.values(), key=lambda p: p.label)
 
 
 # ---------------------------------------------------------------------------
@@ -410,6 +446,14 @@ class PendingRow:
     # send log's key, so the row is written under the value it was
     # compared on.
     fingerprint: str = ""
+    # The region this row decides: the place's own, or one of a
+    # multi-region trip's (SNOW-945). The send log is keyed on it.
+    region: MicroRegion | None = None
+
+    @property
+    def log_region(self) -> MicroRegion:
+        """Return the region the row is logged under."""
+        return self.region if self.region is not None else self.place.region
 
 
 @dataclass
@@ -440,13 +484,13 @@ def _one_day_per_place(rows: list[PendingRow]) -> None:
         rows: The run's rows.
 
     """
-    latest: dict[int, datetime.date] = {}
+    latest: dict[str, datetime.date] = {}
     for row in rows:
         if row.decision.sends:
-            pk = row.place.region.pk
-            latest[pk] = max(latest.get(pk, row.day), row.day)
+            key = row.place.key
+            latest[key] = max(latest.get(key, row.day), row.day)
     for row in rows:
-        if row.decision.sends and row.day < latest[row.place.region.pk]:
+        if row.decision.sends and row.day < latest[row.place.key]:
             row.decision = replace(row.decision, outcome=BulletinAlert.Outcome.SKIPPED)
 
 
@@ -509,8 +553,12 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
     day_start = datetime.datetime.combine(today, datetime.time(0), tzinfo=ALERT_TZ)
     pins = account_places(account.user)
     for day in (today, today + datetime.timedelta(days=1)):
-        for place in places_on(pins, trip_places(account.user, day)):
-            bulletin = authoritative_bulletin(place.region, day)
+        for place, region in (
+            (place, region)
+            for place in places_on(pins, trip_places(account.user, day))
+            for region in place.covered
+        ):
+            bulletin = authoritative_bulletin(region, day)
             if bulletin is None or not bulletin.render_model:
                 continue
             # The state and fingerprint the service stored with the model
@@ -525,7 +573,7 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
                 # trip's alert: look past it to what was actually sent.
                 untold.append(BulletinAlert.Outcome.SKIPPED)
             last = (
-                BulletinAlert.objects.for_day(account.pk, place.region.pk, day)
+                BulletinAlert.objects.for_day(account.pk, region.pk, day)
                 .exclude(outcome__in=untold)
                 .first()
             )
@@ -536,7 +584,7 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
                 day_start if day == today else day_start + datetime.timedelta(days=1)
             )
             yesterday = day - datetime.timedelta(days=1)
-            previous = None if last is not None else day_state(place.region, yesterday)
+            previous = None if last is not None else day_state(region, yesterday)
             decision = decide(
                 mode=account.notify_when,
                 day=day,
@@ -550,38 +598,67 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
                 rated_in_season=(
                     last is None
                     and previous is None
-                    and had_bulletin_in_season(place.region, yesterday)
+                    and had_bulletin_in_season(region, yesterday)
                 ),
             )
             run.rows.append(
-                PendingRow(place, day, bulletin, current, decision, fingerprint)
+                PendingRow(place, day, bulletin, current, decision, fingerprint, region)
             )
     _one_day_per_place(run.rows)
-    sending = run.sending
-    if sending:
-        run.message = alert_message(
-            [
-                PlaceAlert(
-                    region_id=r.place.region.region_id,
-                    label=r.place.label,
-                    target_date=r.day,
-                    kind=r.decision.kind,
-                    change=r.decision.change,
-                    compared_to=r.decision.compared_to,
-                    url=r.place.trip_url,
-                    valid_from=r.bulletin.valid_from,
-                    valid_until=r.bulletin.valid_to,
-                    new_snow_cm=(
-                        forecast_new_snow(r.place.region, r.day, today)
-                        if len(sending) == 1
-                        else None
-                    ),
-                )
-                for r in sending
-            ],
-            today,
-        )
+    if run.sending:
+        places = _place_alerts(run.sending)
+        if len(places) == 1 and places[0].bulletin_count == 1:
+            row = run.sending[0]
+            places[0] = replace(
+                places[0],
+                new_snow_cm=forecast_new_snow(row.log_region, row.day, today),
+            )
+        run.message = alert_message(places, today)
     return run
+
+
+def _place_alerts(sending: list[PendingRow]) -> list[PlaceAlert]:
+    """
+    Return one ``PlaceAlert`` per place that fired, in the rows' order.
+
+    A one-region place is its row. A trip crossing several regions has a
+    row per region that fired and is one alert covering them all: it names
+    how many bulletins it covers rather than one region's level (SNOW-945),
+    and is an update only when every one of its rows is.
+
+    Args:
+        sending: The run's sending rows.
+
+    Returns:
+        The places, at least one.
+
+    """
+    grouped: dict[str, list[PendingRow]] = {}
+    for row in sending:
+        grouped.setdefault(row.place.key, []).append(row)
+    alerts: list[PlaceAlert] = []
+    for rows in grouped.values():
+        first = rows[0]
+        kind: AlertKind = (
+            "update"
+            if all(r.decision.kind == "update" for r in rows)
+            else next(r.decision.kind for r in rows if r.decision.kind != "update")
+        )
+        alerts.append(
+            PlaceAlert(
+                region_id=first.log_region.region_id,
+                label=first.place.label,
+                target_date=first.day,
+                kind=kind,
+                change=first.decision.change,
+                compared_to=first.decision.compared_to,
+                url=first.place.trip_url,
+                valid_from=first.bulletin.valid_from,
+                valid_until=first.bulletin.valid_to,
+                bulletin_count=len(first.place.covered),
+            )
+        )
+    return alerts
 
 
 def deliver(run: AccountRun) -> AccountRun:
@@ -630,7 +707,7 @@ def deliver(run: AccountRun) -> AccountRun:
             # makes it the latest again (BulletinAlertQuerySet.for_day).
             alert, _ = BulletinAlert.objects.update_or_create(
                 account=account,
-                region=row.place.region,
+                region=row.log_region,
                 target_date=row.day,
                 fingerprint=row.fingerprint or row.state.fingerprint(),
                 defaults={

@@ -40,6 +40,7 @@ from django.db import transaction
 
 from apps.locations.models import Location
 from apps.locations.services.orphans import delete_location_if_orphaned
+from apps.regions.services.track_regions import resolve_track_regions
 from apps.routes.models import Route
 from apps.routes.services.track_render import stamped_fields
 from apps.trips.models import Trip, TripParticipant
@@ -261,6 +262,17 @@ def create_trip(
     meeting_latitude, meeting_longitude = _meeting_coordinates(
         route, latitude, longitude
     )
+    # SNOW-945: the regions the route crosses — the route's own list, or
+    # resolved from its points when it predates the backfill. Stored on the
+    # trip because the route can be deleted. Passed beside the snapshot
+    # rather than through _SNAPSHOT_FIELDS (see
+    # docs/decisions/a-trip-is-one-object-with-a-roster.md). Outside the
+    # transaction, so no geometry walk holds a lock.
+    crossed = (
+        route.crossed_regions
+        if route.crossed_regions is not None
+        else resolve_track_regions(route.points)
+    )
 
     with transaction.atomic():
         _locked_cap_recheck(user)
@@ -281,6 +293,7 @@ def create_trip(
             name=name[:_NAME_MAX_LENGTH],
             description=description,
             route_name=route.name[:_NAME_MAX_LENGTH],
+            crossed_regions=crossed,
             # SNOW-1309: with the snapshot's render, built from the
             # snapshot itself.
             **stamped_fields(

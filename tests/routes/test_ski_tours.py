@@ -48,6 +48,7 @@ from apps.routes.services.ski_tours import (
 )
 from apps.routes.services.track_render import store_terrain
 from tests.factories import (
+    MicroRegionFactory,
     RouteFactory,
     SkiTourFactory,
     SourceSkiTourFactory,
@@ -747,3 +748,30 @@ class TestTheCachesFollowBothWriters:
         assert before != after
         assert cache.get(before) is None
         assert cache.get(after) is not None
+
+
+def _crossed_box(
+    west: float, south: float, east: float, north: float
+) -> dict[str, object]:
+    """Return a GeoJSON Polygon for a lon/lat rectangle (SNOW-945 tests)."""
+    return {
+        "type": "Polygon",
+        "coordinates": [
+            [[west, south], [east, south], [east, north], [west, north], [west, south]],
+        ],
+    }
+
+
+@pytest.mark.django_db
+class TestSaveResolvesCrossedRegions:
+    """SNOW-945: a saved tour stores the regions it crosses."""
+
+    def test_a_saved_tour_is_resolved(self) -> None:
+        """A tour carries no list, so the copy resolves its own."""
+        MicroRegionFactory.create(
+            region_id="CH-7004", boundary=_crossed_box(10.0, 46.8, 10.2, 46.9)
+        )
+        with patch("apps.routes.services.ski_tours.enqueue_route_slope_sampling"):
+            route = save_ski_tour(UserFactory.create(), _tour())
+
+        assert route.crossed_regions == ["CH-7004"]

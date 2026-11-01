@@ -1,24 +1,28 @@
 """
 tests/trips/test_plan_days.py — the Plan page's week of day tiles (SNOW-1215).
 
-Covers ``apps.trips.services.plan_days``: five days from today, the route
-start's region, and a level only on a day a bulletin rated — never on a
-day rated "no rating", never outside the week, and never for a start
-outside every region.
+Covers ``apps.trips.services.plan_days``: five days from today, a level for
+each crossed region in route order (SNOW-945), and a level only on a day a
+bulletin rated — never on a day rated "no rating", never outside the week,
+and never without regions. ``trip_dangers`` is the trip page's one day.
 """
 
 from __future__ import annotations
 
 import datetime
+from typing import Any
 
 import pytest
 
 from apps.bulletins.models import RegionDayRating
+from apps.regions.models import MicroRegion
 from apps.trips.services.plan_days import (
     PLAN_DAYS,
+    TILE_LEVELS,
     PlanDay,
+    PlanLevel,
     plan_week,
-    trip_danger,
+    trip_dangers,
     with_weather,
 )
 from apps.trips.services.trip_weather import meeting_point_weather
@@ -41,15 +45,20 @@ _SQUARE = {
         [[7.0, 46.0], [7.5, 46.0], [7.5, 46.5], [7.0, 46.5], [7.0, 46.0]],
     ],
 }
-_TRACK = [[7.2, 46.1, 1500.0], [7.3, 46.2, 2400.0]]
 
 
 @pytest.fixture
-def region() -> object:
-    """A region containing the track's start."""
+def region() -> MicroRegion:
+    """The first region a route crosses."""
     return MicroRegionFactory.create(
         name="Martigny-Verbier", boundary=_SQUARE, centre={"lon": 7.25, "lat": 46.25}
     )
+
+
+@pytest.fixture
+def second() -> MicroRegion:
+    """The second region a route crosses."""
+    return MicroRegionFactory.create(name="Val de Bagnes")
 
 
 @pytest.mark.django_db
@@ -63,19 +72,13 @@ class TestPlanWeek:
         assert len(week.days) == PLAN_DAYS == 5
         assert week.first == TODAY
         assert week.last == TODAY + datetime.timedelta(days=4)
-        assert week.region is None
-        assert all(not day.rating for day in week.days)
+        assert week.regions == []
+        assert all(not day.levels for day in week.days)
+        assert "no region" in str(week)
 
-    def test_a_start_outside_every_region_has_no_levels(self, region: object) -> None:
-        """No region is an answer about coverage, not an error."""
-        RegionDayRatingFactory.create(region=region, date=TODAY)
-
-        week = plan_week(TODAY, [[9.9, 47.9, 0.0]])
-
-        assert week.region is None
-        assert all(not day.rating for day in week.days)
-
-    def test_a_rated_day_carries_its_peak_level(self, region: object) -> None:
+    def test_one_region_carries_one_level_per_rated_day(
+        self, region: MicroRegion
+    ) -> None:
         """Today and tomorrow rated; the days after carry nothing."""
         RegionDayRatingFactory.create(
             region=region, date=TODAY, max_rating=RegionDayRating.Rating.MODERATE
@@ -87,15 +90,54 @@ class TestPlanWeek:
             max_subdivision="+",
         )
 
-        week = plan_week(TODAY, _TRACK)
+        week = plan_week(TODAY, [region])
 
-        assert week.region == region
-        assert [day.digit for day in week.days] == ["2", "3+", "", "", ""]
-        assert week.days[1].rating_label == "Considerable (3+)"
+        assert week.regions == [region]
+        assert [[lv.digit for lv in day.levels] for day in week.days] == [
+            ["2"],
+            ["3+"],
+            [],
+            [],
+            [],
+        ]
+        assert week.days[1].levels[0].rating_label == "Considerable (3+)"
+        assert week.days[1].readback == "Considerable (3+)"
         assert "Martigny-Verbier" in str(week)
 
+    def test_several_regions_are_in_route_order(
+        self, region: MicroRegion, second: MicroRegion
+    ) -> None:
+        """The route's order, not the rows' — and an unrated region is skipped."""
+        RegionDayRatingFactory.create(
+            region=second, date=TODAY, max_rating=RegionDayRating.Rating.MODERATE
+        )
+        RegionDayRatingFactory.create(
+            region=region, date=TODAY, max_rating=RegionDayRating.Rating.CONSIDERABLE
+        )
+        RegionDayRatingFactory.create(
+            region=second,
+            date=TODAY + datetime.timedelta(days=1),
+            max_rating=RegionDayRating.Rating.LOW,
+        )
+
+        week = plan_week(TODAY, [region, second])
+
+        assert [lv.region for lv in week.days[0].levels] == [region, second]
+        assert week.days[0].caption == (
+            "Considerable (3) in Martigny-Verbier · Moderate (2) in Val de Bagnes"
+        )
+        assert week.days[0].readback == week.days[0].caption
+        assert [lv.region for lv in week.days[1].levels] == [second]
+
+    def test_one_query_for_every_region(
+        self, region: MicroRegion, second: MicroRegion, django_assert_num_queries: Any
+    ) -> None:
+        """The whole week, every region, one read."""
+        with django_assert_num_queries(1):
+            plan_week(TODAY, [region, second])
+
     def test_no_rating_and_days_outside_the_week_are_ignored(
-        self, region: object
+        self, region: MicroRegion
     ) -> None:
         """A "no rating" row, and a row a week out, show nothing."""
         RegionDayRatingFactory.create(
@@ -108,46 +150,53 @@ class TestPlanWeek:
             region=region, date=TODAY + datetime.timedelta(days=5)
         )
 
-        week = plan_week(TODAY, _TRACK)
+        week = plan_week(TODAY, [region])
 
-        assert all(not day.rating for day in week.days)
+        assert all(not day.levels for day in week.days)
 
 
 @pytest.mark.django_db
-class TestTripDanger:
-    """``trip_danger`` — the trip page's one day (SNOW-1216)."""
+class TestTripDangers:
+    """``trip_dangers`` — the trip page's one day (SNOW-1216, SNOW-945)."""
 
-    def test_a_rated_day_carries_its_level_and_region(self, region: object) -> None:
-        """The same row and rule as the Plan page's tile."""
+    def test_each_rated_region_in_route_order(
+        self, region: MicroRegion, second: MicroRegion
+    ) -> None:
+        """The same rows and rule as the Plan page's tile."""
+        RegionDayRatingFactory.create(
+            region=second, date=TODAY, max_rating=RegionDayRating.Rating.MODERATE
+        )
         RegionDayRatingFactory.create(
             region=region, date=TODAY, max_rating=RegionDayRating.Rating.CONSIDERABLE
         )
 
-        danger = trip_danger(TODAY, _TRACK)
+        dangers = trip_dangers(TODAY, [region, second])
 
-        assert danger is not None
-        assert danger.region == region
-        assert danger.day.rating_label == "Considerable (3)"
-        assert str(danger) == "2026-10-24 3 Martigny-Verbier"
+        assert [danger.region for danger in dangers] == [region, second]
+        assert dangers[0].level.rating_label == "Considerable (3)"
+        assert str(dangers[0]) == f"2026-10-24 3 {region.region_id}"
 
-    def test_an_unrated_day_is_none(self, region: object) -> None:
-        """No row, or a "no rating" row, is no level."""
+    def test_an_unrated_region_is_skipped(
+        self, region: MicroRegion, second: MicroRegion
+    ) -> None:
+        """No row, or a "no rating" row, is no line."""
         RegionDayRatingFactory.create(
             region=region,
             date=TODAY,
             min_rating=RegionDayRating.Rating.NO_RATING,
             max_rating=RegionDayRating.Rating.NO_RATING,
         )
+        RegionDayRatingFactory.create(
+            region=second, date=TODAY, max_rating=RegionDayRating.Rating.LOW
+        )
 
-        assert trip_danger(TODAY, _TRACK) is None
-        assert trip_danger(TODAY + datetime.timedelta(days=1), _TRACK) is None
+        assert [d.region for d in trip_dangers(TODAY, [region, second])] == [second]
+        assert trip_dangers(TODAY + datetime.timedelta(days=1), [region]) == []
 
-    def test_a_start_outside_every_region_is_none(self, region: object) -> None:
-        """Coverage, not an error; and a trackless trip asks nothing."""
-        RegionDayRatingFactory.create(region=region, date=TODAY)
-
-        assert trip_danger(TODAY, [[9.9, 47.9, 0.0]]) is None
-        assert trip_danger(TODAY, []) is None
+    def test_no_regions_asks_nothing(self, django_assert_num_queries: Any) -> None:
+        """A track outside coverage: no lines and no query."""
+        with django_assert_num_queries(0):
+            assert trip_dangers(TODAY, []) == []
 
 
 @pytest.mark.django_db
@@ -183,13 +232,30 @@ class TestWithWeather:
         assert with_weather(week, None) is week
 
 
+@pytest.mark.django_db
 class TestPlanDay:
-    """``PlanDay`` — an unrated day reads as nothing."""
+    """``PlanDay`` — an unrated day reads as nothing; many fold into "+N"."""
 
-    def test_an_unrated_day_has_no_digit_or_label(self) -> None:
+    def test_an_unrated_day_has_no_levels(self) -> None:
         """The tile's slot stays empty."""
         day = PlanDay(TODAY)
 
-        assert day.digit == ""
-        assert day.rating_label == ""
+        assert day.tile_levels == ()
+        assert day.more_levels == 0
+        assert day.caption == ""
         assert str(day) == "2026-10-24"
+
+    def test_past_three_the_rest_fold_into_more(self) -> None:
+        """Four regions: three marks and "+1", and the caption names all four."""
+        levels = tuple(
+            PlanLevel(
+                MicroRegionFactory.create(name=f"Region {n}"),
+                RegionDayRating.Rating.MODERATE,
+            )
+            for n in range(4)
+        )
+        day = PlanDay(TODAY, levels)
+
+        assert len(day.tile_levels) == TILE_LEVELS == 3
+        assert day.more_levels == 1
+        assert day.caption.count(" in Region ") == 4

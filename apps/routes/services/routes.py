@@ -36,6 +36,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils.translation import gettext
 
+from apps.regions.services.track_regions import resolve_track_regions
 from apps.routes.models import Route
 from apps.routes.services.drawn import draft_route
 from apps.routes.services.gpx import parse_gpx
@@ -148,6 +149,9 @@ def create_route(user: "User", raw: bytes, source_filename: str = "") -> Route:
     # CPU-bound and potentially slow on a large track — kept outside the
     # transaction so parsing never holds a row lock.
     parsed = parse_gpx(raw)
+    # SNOW-945: the regions the track crosses, resolved outside the
+    # transaction for the same reason the parse is.
+    crossed = resolve_track_regions(parsed.points)
 
     with transaction.atomic():
         _locked_cap_recheck(user)
@@ -156,6 +160,7 @@ def create_route(user: "User", raw: bytes, source_filename: str = "") -> Route:
             name=parsed.name[:_NAME_MAX_LENGTH],
             source_filename=source_filename[:_FILENAME_MAX_LENGTH],
             points=parsed.points,
+            crossed_regions=crossed,
             distance_m=parsed.distance_m,
             ascent_m=parsed.ascent_m,
             descent_m=parsed.descent_m,
@@ -228,6 +233,8 @@ def create_drawn_route(
     # name reads as a broken one, so an unnamed draft gets a plain label
     # its owner can rename.
     draft = draft_route(points, name=name or gettext("Drawn route"), user=user)
+    # SNOW-945: resolved outside the transaction, as create_route does.
+    draft.crossed_regions = resolve_track_regions(draft.points)
     with transaction.atomic():
         _locked_cap_recheck(user)
         stamp_render(draft)

@@ -59,7 +59,12 @@ from apps.routes.services.shares import (
     pending_shares,
     pending_tokens,
 )
-from tests.factories import RouteFactory, RouteShareFactory, UserFactory
+from tests.factories import (
+    MicroRegionFactory,
+    RouteFactory,
+    RouteShareFactory,
+    UserFactory,
+)
 
 
 def _session() -> SessionStore:
@@ -571,3 +576,44 @@ class TestPendingShares:
                 assert share.route is not None
 
         assert len(ctx.captured_queries) == 1
+
+
+def _crossed_box(
+    west: float, south: float, east: float, north: float
+) -> dict[str, object]:
+    """Return a GeoJSON Polygon for a lon/lat rectangle (SNOW-945 tests)."""
+    return {
+        "type": "Polygon",
+        "coordinates": [
+            [[west, south], [east, south], [east, north], [west, north], [west, south]],
+        ],
+    }
+
+
+@pytest.mark.django_db
+class TestClaimCarriesCrossedRegions:
+    """SNOW-945: a claimed copy carries the source's list, or resolves one."""
+
+    def test_the_source_list_is_carried(self) -> None:
+        """Same track, same regions: copied, not re-resolved."""
+        owner = UserFactory.create()
+        route = RouteFactory.create(user=owner, crossed_regions=["CH-1", "CH-2"])
+        share = RouteShareFactory.create(route=route, created_by=owner)
+
+        copy = claim_route_share(UserFactory.create(), share.token)
+
+        assert copy.crossed_regions == ["CH-1", "CH-2"]
+
+    def test_a_source_from_before_the_backfill_is_resolved(self) -> None:
+        """A null source list is resolved from the copy's points."""
+        MicroRegionFactory.create(
+            region_id="CH-7003", boundary=_crossed_box(7.3, 46.0, 7.5, 46.2)
+        )
+        owner = UserFactory.create()
+        route = RouteFactory.create(user=owner)
+        share = RouteShareFactory.create(route=route, created_by=owner)
+
+        copy = claim_route_share(UserFactory.create(), share.token)
+
+        assert route.crossed_regions is None
+        assert copy.crossed_regions == ["CH-7003"]

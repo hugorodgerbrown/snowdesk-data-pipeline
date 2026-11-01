@@ -192,7 +192,9 @@ class TestAlertsDay:
             created_by=account.user, date=today, name="Mont Fort loop"
         )
         client.force_login(account.user)
-        with patch("apps.bulletins.services.alerts.start_region", return_value=region):
+        with patch(
+            "apps.bulletins.services.alerts.track_regions", return_value=[region]
+        ):
             content = client.get(f"/alerts/{today.isoformat()}/").content.decode()
         assert content.count('data-testid="alerts-day-row"') == 1
         assert "Mont Fort loop" in content
@@ -208,7 +210,9 @@ class TestAlertsDay:
         tomorrow = today + datetime.timedelta(days=1)
         TripFactory.create(created_by=account.user, date=today, name="Mont Fort")
         client.force_login(account.user)
-        with patch("apps.bulletins.services.alerts.start_region", return_value=region):
+        with patch(
+            "apps.bulletins.services.alerts.track_regions", return_value=[region]
+        ):
             content = client.get(f"/alerts/{tomorrow.isoformat()}/").content.decode()
             past = client.get(
                 f"/alerts/{(tomorrow + datetime.timedelta(days=1)).isoformat()}/"

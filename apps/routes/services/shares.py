@@ -44,7 +44,7 @@ from __future__ import annotations
 import logging
 import secrets
 from datetime import timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
 from django.conf import settings
@@ -52,6 +52,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.utils import timezone
 
+from apps.regions.services.track_regions import resolve_track_regions
 from apps.routes.models import Route, RouteShare
 from apps.routes.services.routes import _assert_under_cap, _locked_cap_recheck
 from apps.routes.services.slope_segments import enqueue_route_slope_sampling
@@ -175,6 +176,9 @@ _COPIED_FIELDS = (
     "ski_tour_uuid",
     "source_filename",
     "points",
+    # SNOW-945. The copy has the same track, so it crosses the same
+    # regions; carried rather than re-resolved.
+    "crossed_regions",
     "distance_m",
     "ascent_m",
     "descent_m",
@@ -230,6 +234,18 @@ def write_route_copy(user: "User", fields: dict[str, object]) -> Route:
 
     """
     _assert_under_cap(user)
+
+    # SNOW-945: every copy stores the regions its track crosses — carried
+    # when the caller has them (a claimed share, a saved trip), resolved
+    # here when it has not (an SAC tour) or the source predates the
+    # backfill. Outside the transaction, so no geometry walk holds a lock.
+    if fields.get("crossed_regions") is None:
+        fields = {
+            **fields,
+            "crossed_regions": resolve_track_regions(
+                cast("list[list[float]] | None", fields.get("points"))
+            ),
+        }
 
     with transaction.atomic():
         _locked_cap_recheck(user)

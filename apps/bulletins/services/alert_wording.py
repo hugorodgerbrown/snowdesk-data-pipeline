@@ -90,6 +90,10 @@ class PlaceAlert:
     # The new snow forecast for ``target_date`` at the region's weather
     # point, in cm (SNOW-944), or None when nothing is known.
     new_snow_cm: float | None = None
+    # How many regions' bulletins the place covers: more than one for a
+    # trip crossing several (SNOW-945), whose body then names the count
+    # rather than one region's level.
+    bulletin_count: int = 1
 
 
 @dataclass(frozen=True)
@@ -505,6 +509,10 @@ def place_title(place: PlaceAlert) -> str:
 
     """
     values = {"place": place.label, "day": weekday(place.target_date)}
+    if place.bulletin_count > 1:
+        if place.kind == "update":
+            return _("%(place)s – %(day)s bulletins update") % values
+        return _("%(place)s – %(day)s bulletins") % values
     if place.kind == "update":
         return _("%(place)s – %(day)s bulletin update") % values
     return _("%(place)s – %(day)s bulletin") % values
@@ -581,12 +589,18 @@ def place_body(place: PlaceAlert, today: datetime.date) -> str:
     Returns:
         "Considerable, up from Moderate. 20 cm new snow forecast.", led by
         "For your trip." for a trip, "First of the season." at season
-        start and "Bulletins are back." after a gap inside it.
+        start and "Bulletins are back." after a gap inside it. A trip
+        crossing several regions reads "For your trip. 2 bulletins.": no
+        level and no problems, since one region's would misstate the
+        others, and the trip page lists each (SNOW-945).
 
     """
     parts: list[str] = []
     if place.url:
         parts.append(_("For your trip."))
+    if place.bulletin_count > 1:
+        parts.append(_("%(count)d bulletins.") % {"count": place.bulletin_count})
+        return " ".join(parts)
     if place.kind == "season_start":
         parts.append(_("First of the season."))
     elif place.kind == "new" and place.change.previous is None:
