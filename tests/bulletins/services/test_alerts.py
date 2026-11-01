@@ -714,6 +714,34 @@ class TestTripAcrossRegions:
         assert places[0].covered == [first, second]
         assert places[1].covered == [first]
 
+    def test_a_quiet_pin_does_not_overwrite_the_trips_send(
+        self, crossing: tuple
+    ) -> None:
+        """A pin and a trip sharing a region write one row, the trip's."""
+        account, first, second = crossing
+        FavouriteFactory.create(
+            user=account.user, region=first, region_pin=True, name="Verbier"
+        )
+        TripFactory.create(created_by=account.user, date=TOMORROW, name="Haute Route")
+        for region in (first, second):
+            self._logged(account, region, TODAY)
+            publish(region, TODAY, render("considerable"))
+            publish(region, TOMORROW, render("considerable"))
+        PushSubscriptionFactory.create(account=account)
+        with (
+            patch.object(alerts, "track_regions", return_value=[first, second]),
+            patch.object(alerts, "dispatch_push", return_value=OK),
+        ):
+            run = deliver(evaluate_account(account, NOW))
+            assert run.message is not None
+            (row,) = BulletinAlert.objects.filter(
+                account=account, region=first, target_date=TOMORROW
+            )
+            assert row.outcome == BulletinAlert.Outcome.SENT
+            assert row.title.startswith("Haute Route")
+            # Told now: the next run is quiet.
+            assert evaluate_account(account, NOW).message is None
+
     def test_stored_regions_are_read_without_resolving(self, crossing: tuple) -> None:
         """A trip carrying its regions is placed from them, in route order."""
         account, first, second = crossing

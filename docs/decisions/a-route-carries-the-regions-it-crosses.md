@@ -56,7 +56,11 @@ season at most.
 - The send log stays keyed on (account, region, day). A multi-region trip
   writes one row per region, and fires when any of its regions does. The
   scope's per-place fingerprint would have needed a new key on
-  `BulletinAlert`; per-region rows give the same answer without one.
+  `BulletinAlert`; per-region rows give the same answer without one. Where
+  a pin shares a region with such a trip, both address one log row, and
+  `deliver` writes it once, the sending row winning
+  (`_one_row_per_log_key`), so a quiet pin never records the trip's
+  delivered day as untold.
 - A multi-region alert states no level and no new snow. One region's
   figures would misstate the others, and the trip page lists each.
 - Existing rows are filled by `backfill_crossed_regions --commit`, run as

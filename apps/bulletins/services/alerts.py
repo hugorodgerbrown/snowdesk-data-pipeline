@@ -693,7 +693,7 @@ def deliver(run: AccountRun) -> AccountRun:
         )
     pending: list[int] = []
     with transaction.atomic():
-        for row in run.rows:
+        for row in _one_row_per_log_key(run.rows):
             outcome = row.decision.outcome
             sends = row.decision.sends and reachable
             if row.decision.sends:
@@ -738,6 +738,32 @@ def deliver(run: AccountRun) -> AccountRun:
                 message.url,
             )
     return run
+
+
+def _one_row_per_log_key(rows: list[PendingRow]) -> list[PendingRow]:
+    """
+    Return the rows to write, one per send-log key, a sending one winning.
+
+    A trip crossing several regions is its own place even where a pin
+    shares one of them (SNOW-945), so two rows can address one
+    (region, day, fingerprint) row of the log. Written in turn, a pin's
+    SKIPPED would overwrite the trip's PENDING and leave a delivered day
+    recorded as untold. The row that sends is kept; otherwise the first.
+
+    Args:
+        rows: The run's rows, in evaluation order.
+
+    Returns:
+        The rows, in first-seen order, at most one per key.
+
+    """
+    chosen: dict[tuple[int, datetime.date, str], PendingRow] = {}
+    for row in rows:
+        key = (row.log_region.pk, row.day, row.fingerprint or row.state.fingerprint())
+        held = chosen.get(key)
+        if held is None or (row.decision.sends and not held.decision.sends):
+            chosen[key] = row
+    return list(chosen.values())
 
 
 def _can_email(account: Account) -> bool:
