@@ -13,7 +13,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 function buildFixture() {
   document.body.innerHTML = `
     <details id="help-topic-layers"><summary>Layers</summary><p>…</p></details>
-    <div id="help-topic-slope"><details><summary>Slope</summary></details></div>
+    <details id="help-topic-slope"><summary>Slope</summary></details>
+    <div id="help-topic-legacy"><details><summary>Legacy</summary></details></div>
     <details id="help-topic-routes"><summary>Routes</summary></details>
   `;
   Element.prototype.scrollIntoView = vi.fn();
@@ -42,10 +43,16 @@ describe('help topic anchors', () => {
     expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
   });
 
-  it('opens a panel wrapped in an anchor', async () => {
+  it('opens a formerly wrapped panel by the id on its own details (SNOW-743)', async () => {
     await load('/help/#help-topic-slope');
 
     expect(isOpen('help-topic-slope')).toBe(true);
+  });
+
+  it('still opens a panel wrapped in an anchor', async () => {
+    await load('/help/#help-topic-legacy');
+
+    expect(isOpen('help-topic-legacy')).toBe(true);
   });
 
   it('opens a topic named after the page has loaded', async () => {

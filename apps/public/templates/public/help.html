@@ -12,11 +12,17 @@ apps/public/templates/public/help/.
 
 The Sync-log panel is gated on the per-user ``sync_log_visible`` waffle
 boolean computed by apps.public.views.help_page — a user never sees
-documentation for a feature they cannot use. It is the only gated panel;
-SNOW-724 opened the slope-angle topic to everyone.
+documentation for a feature they cannot use. The what3words panel is gated
+the same way, on ``what3words_visible``; SNOW-724 opened the slope-angle
+topic to everyone.
+
+SNOW-743: every topic's ``<details>`` carries ``id == data-testid`` through
+``anchor_id``, so each is a link target, and the filter box at the top
+(static/js/help_filter.js) walks those panels, grouped by the eyebrows that
+carry ``data-hook="help-section"``.
 
 The panels are grouped under four eyebrow headings rather than running as
-one flat list of sixteen: "The map" alone holds eight, and a reader
+one flat list of twenty: "The map" alone holds twelve, and a reader
 looking for the layers menu should not have to read past the season
 calendar to find it. The headings are includes/_eyebrow.html, the same
 section label the bulletin and account pages use.
@@ -43,14 +49,50 @@ Routes and Offline downloads came to have neither.
             {% trans "A plain-language guide to what Snowdesk does and how to use each part of it." %}
         </p>
 
+        {# SNOW-743: the filter. Rendered hidden and revealed by              #}
+        {# static/js/help_filter.js, so with JavaScript off there is no box   #}
+        {# that does nothing. It matches each topic's own text (never its     #}
+        {# illustration's sample copy) plus a short synonym map, offline,     #}
+        {# with no fetch: the deliberate alternative to a semantic search.    #}
+        <div class="mb-6" data-help-filter hidden>
+            <label
+                for="help-filter-input"
+                class="block text-sm font-medium text-text-1 mb-1.5"
+            >{% trans "Find a topic" %}</label>
+            {% trans "Try “offline”, “gpx” or “slope”" as t_filter_placeholder %}
+            <input
+                id="help-filter-input"
+                type="search"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="{{ t_filter_placeholder }}"
+                class="{% input_classes %}"
+                data-help-filter-input
+                aria-describedby="help-filter-status"
+            >
+            <p
+                id="help-filter-status"
+                class="mt-2 text-sm text-text-2"
+                role="status"
+                aria-live="polite"
+                data-help-filter-status
+            >
+            </p>
+        </div>
+        <template id="help-filter-strings-template">
+            <span data-string="no-match">{% trans "No topic matches that. Try a different word." %}</span>
+            <span data-string="one-match">{% trans "1 topic matches." %}</span>
+            <span data-string="some-match">{% blocktrans %}%(count)s topics match.{% endblocktrans %}</span>
+        </template>
+
         {% translate "Getting started" as t_section_start %}
-        {% include "includes/_eyebrow.html" with text=t_section_start class_extra="mb-2" only %}
+        {% include "includes/_eyebrow.html" with text=t_section_start class_extra="mb-2" data_hook="help-section" only %}
 
         {% translate "What is Snowdesk" as t_overview %}
-        {% include "includes/_collapsible_panel.html" with title=t_overview data_testid="help-topic-overview" body_template="public/help/_topic_overview.html" %}
+        {% include "includes/_collapsible_panel.html" with title=t_overview data_testid="help-topic-overview" anchor_id="help-topic-overview" body_template="public/help/_topic_overview.html" %}
 
         {% translate "Bulletins" as t_section_bulletins %}
-        {% include "includes/_eyebrow.html" with text=t_section_bulletins class_extra="mt-6 mb-2" only %}
+        {% include "includes/_eyebrow.html" with text=t_section_bulletins class_extra="mt-6 mb-2" data_hook="help-section" only %}
 
         {# Each of these three illustrates a different component of the      #}
         {# bulletin page, in the order the page stacks them: the header, the #}
@@ -63,7 +105,7 @@ Routes and Offline downloads came to have neither.
         {% include "includes/_collapsible_panel.html" with title=t_bulletins data_testid="help-topic-bulletins" anchor_id="help-topic-bulletins" illustration="public/help/illustrations/_day_windows.html" body_template="public/help/_topic_bulletins.html" %}
 
         {% translate "Avalanche problems" as t_problems %}
-        {% include "includes/_collapsible_panel.html" with title=t_problems data_testid="help-topic-problems" illustration="public/help/illustrations/_rating_block.html" body_template="public/help/_topic_problems.html" %}
+        {% include "includes/_collapsible_panel.html" with title=t_problems data_testid="help-topic-problems" anchor_id="help-topic-problems" illustration="public/help/illustrations/_rating_block.html" body_template="public/help/_topic_problems.html" %}
 
         {# Split from one "season timeline & calendar" panel: the heatmap is #}
         {# opened from a bulletin page, so it belongs here, while the        #}
@@ -84,7 +126,7 @@ Routes and Offline downloads came to have neither.
         {# downloads. A reader working down this group is working down the    #}
         {# right-hand side of the map.                                        #}
         {% translate "The map" as t_section_map %}
-        {% include "includes/_eyebrow.html" with text=t_section_map class_extra="mt-6 mb-2" only %}
+        {% include "includes/_eyebrow.html" with text=t_section_map class_extra="mt-6 mb-2" data_hook="help-section" only %}
 
         {% translate "Getting around the map" as t_map %}
         {% include "includes/_collapsible_panel.html" with title=t_map data_testid="help-topic-map" anchor_id="help-topic-map" body_template="public/help/_topic_map.html" %}
@@ -109,38 +151,19 @@ Routes and Offline downloads came to have neither.
         {# window, and what is deliberately NOT on it — so the Layers panel #}
         {# above gives the row a sentence and points here.                  #}
         {% translate "Weather on the map" as t_weather_layer %}
-        {% include "includes/_collapsible_panel.html" with title=t_weather_layer data_testid="help-topic-weather-layer" body_template="public/help/_topic_weather_layer.html" %}
+        {% include "includes/_collapsible_panel.html" with title=t_weather_layer data_testid="help-topic-weather-layer" anchor_id="help-topic-weather-layer" body_template="public/help/_topic_weather_layer.html" %}
 
-        {# SNOW-691: the map legend's "Slope angle" heading is a link to     #}
-        {# #help-topic-slope, so this panel is a navigation target and not   #}
-        {# only something to scroll past. The id sits on a wrapper rather    #}
-        {# than on the <details> itself, so _collapsible_panel.html keeps    #}
-        {# one shape for all of its callers.                                 #}
-        {#                                                                   #}
-        {# The wrapper repeats the panel's own "mb-2 last:mb-0" because it    #}
-        {# SWALLOWS it: the <details> is this div's only child, so the        #}
-        {# panel's `last:mb-0` matches and zeroes the margin every unwrapped  #}
-        {# sibling keeps. The gap under Slope angle was half the others' from #}
-        {# SNOW-691 until it was spotted by eye. Any future wrapper around a  #}
-        {# panel needs the same two classes for the same reason.              #}
-        <div id="help-topic-slope" class="mb-2 last:mb-0">
-            {% translate "Slope angle" as t_slope %}
-            {% include "includes/_collapsible_panel.html" with title=t_slope data_testid="help-topic-slope" body_template="public/help/_topic_slope.html" %}
-        </div>
-        {# SNOW-978: the terrain filter's caveats. The map legend and the     #}
-        {# filter sheet link to #help-topic-terrain-filter; the wrapper keeps #}
-        {# the shared bottom margin for the reason the slope one does.         #}
-        <div id="help-topic-terrain-filter" class="mb-2 last:mb-0">
-            {% translate "Terrain filter" as t_terrain_filter %}
-            {% include "includes/_collapsible_panel.html" with title=t_terrain_filter data_testid="help-topic-terrain-filter" body_template="public/help/_topic_terrain_filter.html" %}
-        </div>
-        {# SNOW-979: the problem-terrain layer's caveats. The region sheet's  #}
-        {# switch links to #help-topic-bulletin-terrain; the wrapper keeps    #}
-        {# the shared bottom margin for the reason the slope one does.         #}
-        <div id="help-topic-bulletin-terrain" class="mb-2 last:mb-0">
-            {% translate "Problem terrain" as t_bulletin_terrain %}
-            {% include "includes/_collapsible_panel.html" with title=t_bulletin_terrain data_testid="help-topic-bulletin-terrain" body_template="public/help/_topic_bulletin_terrain.html" %}
-        </div>
+        {# SNOW-691 / 978 / 979: the map legend links to #help-topic-slope   #}
+        {# and #help-topic-terrain-filter, and the region sheet's switch to  #}
+        {# #help-topic-bulletin-terrain, so these panels are navigation      #}
+        {# targets. Their ids sat on wrapper divs until SNOW-743 put every   #}
+        {# topic's id on its own <details> through ``anchor_id``.            #}
+        {% translate "Slope angle" as t_slope %}
+        {% include "includes/_collapsible_panel.html" with title=t_slope data_testid="help-topic-slope" anchor_id="help-topic-slope" body_template="public/help/_topic_slope.html" %}
+        {% translate "Terrain filter" as t_terrain_filter %}
+        {% include "includes/_collapsible_panel.html" with title=t_terrain_filter data_testid="help-topic-terrain-filter" anchor_id="help-topic-terrain-filter" body_template="public/help/_topic_terrain_filter.html" %}
+        {% translate "Problem terrain" as t_bulletin_terrain %}
+        {% include "includes/_collapsible_panel.html" with title=t_bulletin_terrain data_testid="help-topic-bulletin-terrain" anchor_id="help-topic-bulletin-terrain" body_template="public/help/_topic_bulletin_terrain.html" %}
 
         {# SNOW-744: these four topics illustrate themselves with the SAME    #}
         {# component (includes/_ugc_panel.html), each passing its own entry   #}
@@ -164,24 +187,24 @@ Routes and Offline downloads came to have neither.
         {# their own trips do not carry.                                     #}
         {% if what3words_visible %}
             {% translate "The meeting point" as t_what3words %}
-            {% include "includes/_collapsible_panel.html" with title=t_what3words data_testid="help-topic-what3words" body_template="public/help/_topic_what3words.html" %}
+            {% include "includes/_collapsible_panel.html" with title=t_what3words data_testid="help-topic-what3words" anchor_id="help-topic-what3words" body_template="public/help/_topic_what3words.html" %}
         {% endif %}
 
         {% translate "Offline downloads" as t_downloads %}
         {% include "includes/_collapsible_panel.html" with title=t_downloads data_testid="help-topic-downloads" anchor_id="help-topic-downloads" illustration="public/help/illustrations/_panel.html" panel=panels.downloads body_template="public/help/_topic_downloads.html" %}
 
         {% translate "Your account and this device" as t_section_account %}
-        {% include "includes/_eyebrow.html" with text=t_section_account class_extra="mt-6 mb-2" only %}
+        {% include "includes/_eyebrow.html" with text=t_section_account class_extra="mt-6 mb-2" data_hook="help-section" only %}
 
         {% translate "Accounts" as t_accounts %}
-        {% include "includes/_collapsible_panel.html" with title=t_accounts data_testid="help-topic-accounts" body_template="public/help/_topic_accounts.html" %}
+        {% include "includes/_collapsible_panel.html" with title=t_accounts data_testid="help-topic-accounts" anchor_id="help-topic-accounts" body_template="public/help/_topic_accounts.html" %}
 
         {% translate "Install & offline" as t_install %}
-        {% include "includes/_collapsible_panel.html" with title=t_install data_testid="help-topic-install" body_template="public/help/_topic_install.html" %}
+        {% include "includes/_collapsible_panel.html" with title=t_install data_testid="help-topic-install" anchor_id="help-topic-install" body_template="public/help/_topic_install.html" %}
 
         {% if sync_log_visible %}
             {% translate "Sync log" as t_sync_log %}
-            {% include "includes/_collapsible_panel.html" with title=t_sync_log data_testid="help-topic-sync-log" body_template="public/help/_topic_sync_log.html" %}
+            {% include "includes/_collapsible_panel.html" with title=t_sync_log data_testid="help-topic-sync-log" anchor_id="help-topic-sync-log" body_template="public/help/_topic_sync_log.html" %}
         {% endif %}
     </main>
 {% endblock %}
@@ -189,4 +212,5 @@ Routes and Offline downloads came to have neither.
     {# SNOW-1119: the map's help mode links each control to its topic here #}
     {# (/help/#help-topic-layers); this opens the panel the link lands on.   #}
     <script defer src="{% static 'js/help_topic_anchor.js' %}"></script>
+    <script defer src="{% static 'js/help_filter.js' %}"></script>
 {% endblock extra_js %}

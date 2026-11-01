@@ -98,6 +98,70 @@ ALWAYS_ON_MAP_SENTENCE_TESTIDS = [
 ROUTE_EDITOR_URL = "https://gpx.studio/"
 
 
+_DETAILS = re.compile(r"<details\b[^>]*>", re.S)
+_ATTR = re.compile(r'([a-z-]+)="([^"]*)"')
+
+
+def _panel_attrs(content: str) -> list[dict[str, str]]:
+    """Return the attributes of every help topic's ``<details>``, in order."""
+    panels = [dict(_ATTR.findall(tag)) for tag in _DETAILS.findall(content)]
+    return [p for p in panels if p.get("data-testid", "").startswith("help-topic-")]
+
+
+def _details_id_of(content: str, testid: str) -> str | None:
+    """Return the ``id`` on the help topic ``<details>`` with this testid."""
+    for attrs in _panel_attrs(content):
+        if attrs.get("data-testid") == testid:
+            return attrs.get("id")
+    return None
+
+
+@pytest.mark.django_db
+class TestHelpTopicAnchorsAndFilter:
+    """SNOW-743: every topic is a link target and the page carries a filter."""
+
+    @pytest.mark.parametrize("gated_on", [False, True])
+    def test_every_topic_carries_its_testid_as_its_id(
+        self, client: Client, gated_on: bool
+    ) -> None:
+        """Both gated states: the id equals the testid, and none repeats."""
+        with (
+            override_flag("sync_log", active=gated_on),
+            override_flag("what3words", active=gated_on),
+        ):
+            content = client.get(reverse("public:help")).content.decode()
+        panels = _panel_attrs(content)
+        assert len(panels) == (20 if gated_on else 18)
+        for attrs in panels:
+            assert attrs.get("id") == attrs["data-testid"], attrs
+        ids = re.findall(r'\bid="(help-topic-[a-z0-9-]+)"', content)
+        assert len(ids) == len(set(ids))
+
+    def test_the_filter_box_is_labelled_and_hidden_until_the_script_runs(
+        self, client: Client
+    ) -> None:
+        """With JavaScript off there is no box; with it, the label names it."""
+        content = client.get(reverse("public:help")).content.decode()
+        assert re.search(r"<div[^>]*data-help-filter[^>]*\bhidden", content)
+        assert re.search(r'<label\s+for="help-filter-input"', content)
+        assert 'id="help-filter-input"' in content
+
+    def test_the_strings_template_and_script_are_on_the_page(
+        self, client: Client
+    ) -> None:
+        """The JS reads its copy from the page and is loaded by it."""
+        content = client.get(reverse("public:help")).content.decode()
+        assert 'id="help-filter-strings-template"' in content
+        for key in ("no-match", "one-match", "some-match"):
+            assert f'data-string="{key}"' in content
+        assert "js/help_filter.js" in content
+
+    def test_the_four_section_headings_carry_the_hook(self, client: Client) -> None:
+        """The filter hides a heading by this hook when its topics all go."""
+        content = client.get(reverse("public:help")).content.decode()
+        assert content.count('data-hook="help-section"') == 4
+
+
 @pytest.mark.django_db
 class TestHelpPage:
     """The /help page satisfies the SNOW-456 acceptance criteria."""
@@ -316,21 +380,16 @@ class TestHelpPageFlagGating:
         response = client.get(reverse("public:help"))
         assert b'id="help-topic-slope"' in response.content
 
-    def test_slope_panel_wrapper_keeps_the_shared_bottom_margin(
-        self, client: Client
-    ) -> None:
-        """The anchor wrapper must not swallow the panel's own margin.
+    def test_slope_panel_anchor_is_on_its_own_details(self, client: Client) -> None:
+        """SNOW-743: the id sits on the <details>, not on a wrapper div.
 
-        ``_collapsible_panel.html`` carries ``mb-2 last:mb-0``. Inside the
-        wrapper the ``<details>`` is the only child, so ``last:mb-0``
-        matches and zeroes the gap every unwrapped sibling keeps — the
-        space under Slope angle was half its neighbours' from SNOW-691
-        until it was spotted by eye. The wrapper repeats both classes to
-        put it back, and this pins that.
+        The wrapper swallowed the panel's ``last:mb-0`` margin (SNOW-691) and
+        had to repeat it; with the id on the panel itself there is nothing to
+        repeat, and every topic is the same bare sibling the filter walks.
         """
         content = client.get(reverse("public:help")).content.decode()
-        wrapper = content[content.index('id="help-topic-slope"') :][:120]
-        assert 'class="mb-2 last:mb-0"' in wrapper, wrapper
+        assert '<div id="help-topic-slope"' not in content
+        assert _details_id_of(content, "help-topic-slope") == "help-topic-slope"
 
     def test_slope_panel_states_the_layer_is_not_a_verdict(
         self, client: Client
@@ -690,9 +749,10 @@ class TestTerrainFilterHelpTopic:
     def test_topic_is_an_anchor_target(self, client: Client) -> None:
         """The map legend and the filter sheet link to this fragment."""
         content = client.get(reverse("public:help")).content.decode()
-        assert 'id="help-topic-terrain-filter"' in content
-        wrapper = content[content.index('id="help-topic-terrain-filter"') :][:120]
-        assert 'class="mb-2 last:mb-0"' in wrapper, wrapper
+        assert (
+            _details_id_of(content, "help-topic-terrain-filter")
+            == "help-topic-terrain-filter"
+        )
 
     def test_topic_states_each_limit(self, client: Client) -> None:
         """Terrain only, no runout, not a verdict, Switzerland only, and
@@ -722,9 +782,10 @@ class TestBulletinTerrainHelpTopic:
     def test_topic_is_an_anchor_target(self, client: Client) -> None:
         """The region sheet's switch links to this fragment."""
         content = client.get(reverse("public:help")).content.decode()
-        assert 'id="help-topic-bulletin-terrain"' in content
-        wrapper = content[content.index('id="help-topic-bulletin-terrain"') :][:120]
-        assert 'class="mb-2 last:mb-0"' in wrapper, wrapper
+        assert (
+            _details_id_of(content, "help-topic-bulletin-terrain")
+            == "help-topic-bulletin-terrain"
+        )
 
     def test_topic_states_each_limit(self, client: Client) -> None:
         """Grey is not safe, undecided ground, no runout, not a verdict,
