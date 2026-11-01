@@ -212,23 +212,20 @@
     if (!box || !(input instanceof HTMLInputElement) || !main) return;
     const status = box.querySelector('[data-help-filter-status]');
 
+    // i18n_strings.js is loaded (deferred, earlier in the page) by
+    // public/base.html, so it has run before this deferred module.
     /** @type {Record<string, string>} */
-    const FALLBACKS = {
+    const STRINGS = window.pwaStrings.read('help-filter-strings-template', {
       'no-match': 'No topic matches that. Try a different word.',
       'one-match': '1 topic matches.',
       'some-match': '%(count)s topics match.',
-    };
-    const strings = window.pwaStrings;
-    /** @type {Record<string, string>} */
-    const STRINGS = strings ? strings.read('help-filter-strings-template', FALLBACKS) : FALLBACKS;
+    });
     /**
      * @param {string} template
      * @param {number} count
      * @returns {string}
      */
-    const withCount = (template, count) => (strings
-      ? strings.interpolate(template, { count })
-      : template.replace('%(count)s', String(count)));
+    const withCount = (template, count) => window.pwaStrings.interpolate(template, { count });
 
     /** Topics and headings in document order; a heading owns what follows it. */
     const items = Array.from(

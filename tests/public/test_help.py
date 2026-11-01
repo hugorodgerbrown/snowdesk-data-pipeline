@@ -143,7 +143,7 @@ class TestHelpTopicAnchorsAndFilter:
         """With JavaScript off there is no box; with it, the label names it."""
         content = client.get(reverse("public:help")).content.decode()
         assert re.search(r"<div[^>]*data-help-filter[^>]*\bhidden", content)
-        assert '<label for="help-filter-input"' in content
+        assert re.search(r'<label\s+for="help-filter-input"', content)
         assert 'id="help-filter-input"' in content
 
     def test_the_strings_template_and_script_are_on_the_page(
