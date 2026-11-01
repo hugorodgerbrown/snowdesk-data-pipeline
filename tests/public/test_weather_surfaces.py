@@ -23,9 +23,11 @@ behaviour every surface shares: **no row means no panel, never an error**.
 Historical bulletin dates have no ``Weather`` row at all — the SNOW-731
 backfill is deferred — so that path is the common one, not the edge.
 
-Every test that names an icon file runs under ``freeze_time`` at midday. The
-day/night suffix projects the current wall-clock time onto the page date, so
-an unfrozen assertion passes locally and fails in CI after sunset.
+Tests here run under ``freeze_time`` at midday. Only the single-day header
+(``build_weather_display``) still projects the current wall-clock time onto
+the page date for its day/night suffix, so an unfrozen assertion on it would
+pass locally and fail in CI after sunset; the week strip's tiles always draw
+the day variant (SNOW-1298).
 """
 
 from __future__ import annotations

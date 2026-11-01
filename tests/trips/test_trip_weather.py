@@ -186,29 +186,20 @@ class TestMeetingPointWeather:
 
         assert meeting_point_weather(trip, TODAY) is None
 
-    def test_the_meeting_time_is_read_on_the_forecast_points_clock(self) -> None:
-        """06:30 at a UTC+2 point is before a 07:40 sunrise: a night icon.
-
-        Read in the site's zone (UTC) it would be 08:30 local, after
-        sunrise, and the clear sky would wrongly draw the sun.
-        """
+    def test_a_pre_dawn_meeting_still_draws_the_day_icon(self) -> None:
+        """06:30, before a 07:40 sunrise, is a day out: a sun (SNOW-1298)."""
         day = TODAY + datetime.timedelta(days=1)
         early = TripFactory.create(date=day, start_time=datetime.time(6, 30))
-        late = TripFactory.create(date=day, start_time=datetime.time(9, 0))
         _public_point(*MEETING, forecast=forecast_days(TODAY, [0, 0]))
 
-        before = meeting_point_weather(early, TODAY)
-        after = meeting_point_weather(late, TODAY)
+        weather = meeting_point_weather(early, TODAY)
 
-        assert before is not None and after is not None
-        assert before.is_same_place
-        assert before.days[day]["icon_filename"] == "clear-night.svg"
-        assert after.days[day]["icon_filename"] == "clear-day.svg"
+        assert weather is not None
+        assert weather.is_same_place
+        assert weather.days[day]["icon_filename"] == "clear-day.svg"
 
-    def test_a_stored_icon_bucket_wins_and_takes_the_meeting_times_variant(
-        self,
-    ) -> None:
-        """A day's stored bucket is drawn, in the meeting time's day/night variant.
+    def test_a_stored_icon_bucket_wins(self) -> None:
+        """A day's stored bucket is drawn, over the row's code.
 
         The row says cloudy (code 3) but its stored bucket says clear, so the
         bucket written at fetch time is what the trip draws (SNOW-1343). The
@@ -216,18 +207,15 @@ class TestMeetingPointWeather:
         """
         day = TODAY + datetime.timedelta(days=1)
         early = TripFactory.create(date=day, start_time=datetime.time(6, 30))
-        late = TripFactory.create(date=day, start_time=datetime.time(9, 0))
         forecast = forecast_days(TODAY, [3, 3])
         for entry in forecast:
             entry["icon_bucket"] = "clear"
         _public_point(*MEETING, forecast=forecast)
 
-        before = meeting_point_weather(early, TODAY)
-        after = meeting_point_weather(late, TODAY)
+        weather = meeting_point_weather(early, TODAY)
 
-        assert before is not None and after is not None
-        assert before.days[day]["icon_filename"] == "clear-night.svg"
-        assert after.days[day]["icon_filename"] == "clear-day.svg"
+        assert weather is not None
+        assert weather.days[day]["icon_filename"] == "clear-day.svg"
 
     def test_a_past_trip_reads_the_row_of_its_own_day(self) -> None:
         """What the forecast said that morning, never rewritten."""

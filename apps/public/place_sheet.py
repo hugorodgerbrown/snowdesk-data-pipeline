@@ -169,7 +169,7 @@ def _place_context(
     # backfill_location_short_ids has not reached: it has no page yet, so
     # the sheet offers no link rather than a bare "?date=".
     base_url = source.location.get_absolute_url() if source is not None else ""
-    forecast_panel = build_point_forecast_panel(weather, now)
+    forecast_panel = build_point_forecast_panel(weather)
     forward_day = None
     if forecast_panel is not None and target_date > today:
         forward_day = next(

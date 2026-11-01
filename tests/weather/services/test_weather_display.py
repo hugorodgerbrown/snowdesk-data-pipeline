@@ -359,7 +359,7 @@ class TestBuildPointForecastPanel:
 
     def test_none_row_yields_none(self) -> None:
         """A missing row degrades to no panel."""
-        assert build_point_forecast_panel(None, timezone.now()) is None
+        assert build_point_forecast_panel(None) is None
 
     @freeze_time(MIDDAY)
     def test_the_rows_own_day_leads_then_its_forecast(self) -> None:
@@ -372,7 +372,7 @@ class TestBuildPointForecastPanel:
             ],
         )
 
-        panel = build_point_forecast_panel(weather, timezone.now())
+        panel = build_point_forecast_panel(weather)
 
         assert panel is not None
         assert [day["date"] for day in panel["days"]] == [
@@ -404,7 +404,7 @@ class TestBuildPointForecastPanel:
             ],
         )
 
-        panel = build_point_forecast_panel(weather, timezone.now())
+        panel = build_point_forecast_panel(weather)
 
         assert panel is not None
         assert [day["wind_speed_max"] for day in panel["days"]] == [24.0, 31.0]
@@ -415,7 +415,7 @@ class TestBuildPointForecastPanel:
         """Open-Meteo drops variables per model, so absence is ordinary."""
         weather = WeatherFactory.create(forecast=[_forecast_day()])
 
-        panel = build_point_forecast_panel(weather, timezone.now())
+        panel = build_point_forecast_panel(weather)
 
         assert panel is not None
         assert panel["days"][1]["wind_speed_max"] is None
@@ -435,7 +435,7 @@ class TestBuildPointForecastPanel:
             ],
         )
 
-        panel = build_point_forecast_panel(weather, timezone.now())
+        panel = build_point_forecast_panel(weather)
 
         assert panel is not None
         assert len(panel["days"][1]["hourly"]) == 1
@@ -449,7 +449,7 @@ class TestBuildPointForecastPanel:
             forecast=[{"date": "not-a-date", "weather_code": 3}, _forecast_day()],
         )
 
-        panel = build_point_forecast_panel(weather, timezone.now())
+        panel = build_point_forecast_panel(weather)
 
         assert panel is not None
         assert [day["date"] for day in panel["days"]] == [
@@ -475,7 +475,7 @@ class TestBuildPointForecastPanel:
             forecast=[entry, _forecast_day(date="2026-09-01")],
         )
 
-        panel = build_point_forecast_panel(weather, timezone.now())
+        panel = build_point_forecast_panel(weather)
 
         assert panel is not None
         assert [day["date"] for day in panel["days"]] == [
@@ -504,7 +504,7 @@ class TestBuildPointForecastPanel:
             forecast=[_forecast_day(date="2026-08-31")],
         )
 
-        panel = build_point_forecast_panel(weather, timezone.now())
+        panel = build_point_forecast_panel(weather)
 
         assert panel is not None
         assert [day["sunrise_local"] for day in panel["days"]] == ["07:05", "06:30"]
@@ -515,7 +515,7 @@ class TestBuildPointForecastPanel:
         """A forward day renders its own temps, snowfall and freezing level."""
         weather = WeatherFactory.create(forecast=[_forecast_day(weather_code=73)])
 
-        panel = build_point_forecast_panel(weather, timezone.now())
+        panel = build_point_forecast_panel(weather)
 
         assert panel is not None
         forward = panel["days"][1]
@@ -539,7 +539,7 @@ class TestStoredIconBucket:
             forecast=[_forecast_day(weather_code=71, icon_bucket="heavy_snow")]
         )
 
-        panel = build_point_forecast_panel(weather, timezone.now())
+        panel = build_point_forecast_panel(weather)
 
         assert panel is not None
         assert panel["days"][1]["icon_bucket"] == "heavy_snow"
@@ -551,7 +551,7 @@ class TestStoredIconBucket:
         """A day stored before SNOW-1343 carries no bucket and still draws."""
         weather = WeatherFactory.create(forecast=[_forecast_day(weather_code=73)])
 
-        panel = build_point_forecast_panel(weather, timezone.now())
+        panel = build_point_forecast_panel(weather)
 
         assert panel is not None
         assert panel["days"][1]["icon_bucket"] == "moderate_snow"
@@ -563,31 +563,33 @@ class TestStoredIconBucket:
             forecast=[_forecast_day(weather_code=45, icon_bucket="sleet")]
         )
 
-        panel = build_point_forecast_panel(weather, timezone.now())
+        panel = build_point_forecast_panel(weather)
 
         assert panel is not None
         assert panel["days"][1]["icon_bucket"] == "fog"
 
     @pytest.mark.parametrize(
-        ("instant", "expected"),
-        [
-            ("2026-08-31T10:00:00+00:00", "clear-day.svg"),
-            ("2026-08-31T21:00:00+00:00", "clear-night.svg"),
-        ],
+        "instant", ["2026-08-31T10:00:00+00:00", "2026-08-31T21:00:00+00:00"]
     )
-    def test_day_or_night_is_still_decided_at_read_time(
-        self, instant: str, expected: str
-    ) -> None:
-        """The stored bucket names a drawing; the hour picks its variant."""
+    def test_a_tile_is_a_day_whatever_the_hour(self, instant: str) -> None:
+        """Every tile, lead and forward, draws its day icon (SNOW-1298).
+
+        A tile summarises a day, so the hour the reader looks at it says
+        nothing about it: at 23:00 local the strip still shows suns.
+        """
         weather = WeatherFactory.create(
-            forecast=[_forecast_day(weather_code=3, icon_bucket="clear")]
+            weather_code=0,
+            forecast=[_forecast_day(weather_code=3, icon_bucket="clear")],
         )
 
         with freeze_time(instant):
-            panel = build_point_forecast_panel(weather, timezone.now())
+            panel = build_point_forecast_panel(weather)
 
         assert panel is not None
-        assert panel["days"][1]["icon_filename"] == expected
+        assert [day["icon_filename"] for day in panel["days"]] == [
+            "clear-day.svg",
+            "clear-day.svg",
+        ]
 
 
 @pytest.mark.django_db

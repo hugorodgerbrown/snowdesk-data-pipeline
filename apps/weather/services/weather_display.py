@@ -474,18 +474,19 @@ class ForecastPanel(TypedDict):
     days: list[ForecastPanelDay]
 
 
-def _forecast_day_context(
-    entry: ForecastDay, now: datetime.datetime
-) -> ForecastPanelDay | None:
+def _forecast_day_context(entry: ForecastDay) -> ForecastPanelDay | None:
     """Build one outlook column from a ``forecast[]`` entry.
 
     ``hourly`` is **optional** on a forward day — only the first few entries
     carry one (see ``apps.weather.services.fetch``) — so it is read with
     ``.get()`` and falls back to an empty list rather than being assumed.
 
+    The icon is always the day variant (SNOW-1298): a tile summarises a
+    whole day, as the map's symbol does, so the hour the reader looks says
+    nothing about it.
+
     Args:
         entry: One :class:`apps.weather.types.ForecastDay` dict.
-        now: The reference instant for the day/night icon decision.
 
     Returns:
         A :class:`ForecastPanelDay`, or ``None`` when the entry's ``date``,
@@ -506,12 +507,11 @@ def _forecast_day_context(
         icon_bucket = _stored_icon_bucket(entry)
     except KeyError, TypeError, ValueError:
         return None
-    time_of_day = "day" if _is_day_between(sunrise, sunset, now) else "night"
     return ForecastPanelDay(
         date=day_date,
         weekday_label=day_date.strftime("%a"),
         icon_bucket=icon_bucket,
-        icon_filename=weather_icon_filename(icon_bucket, time_of_day),
+        icon_filename=weather_icon_filename(icon_bucket, "day"),
         condition_label=_ICON_BUCKET_LABEL[icon_bucket],
         temp_max=entry.get("temperature_2m_max"),
         temp_min=entry.get("temperature_2m_min"),
@@ -532,9 +532,7 @@ def _forecast_day_context(
     )
 
 
-def build_point_forecast_panel(
-    weather: "Weather | None", now: datetime.datetime
-) -> ForecastPanel | None:
+def build_point_forecast_panel(weather: "Weather | None") -> ForecastPanel | None:
     """Build the multi-day outlook for one location from one row.
 
     The row's own day leads, followed by each entry in its ``forecast``
@@ -545,7 +543,6 @@ def build_point_forecast_panel(
 
     Args:
         weather: The row whose day and forward days to render, or ``None``.
-        now: The reference instant for each day's day/night icon decision.
 
     Returns:
         A :class:`ForecastPanel`, or ``None`` when ``weather`` is ``None``.
@@ -553,14 +550,13 @@ def build_point_forecast_panel(
     """
     if weather is None:
         return None
-    lead_time_of_day = "day" if is_day(weather, now) else "night"
     lead_bucket = weather_code_icon_bucket(weather.weather_code)
     days: list[ForecastPanelDay] = [
         ForecastPanelDay(
             date=weather.observed_on,
             weekday_label=weather.observed_on.strftime("%a"),
             icon_bucket=lead_bucket,
-            icon_filename=weather_icon_filename(lead_bucket, lead_time_of_day),
+            icon_filename=weather_icon_filename(lead_bucket, "day"),
             condition_label=_ICON_BUCKET_LABEL[lead_bucket],
             temp_max=weather.temperature_2m_max,
             temp_min=weather.temperature_2m_min,
@@ -578,7 +574,7 @@ def build_point_forecast_panel(
         )
     ]
     for entry in weather.forecast or []:
-        day = _forecast_day_context(entry, now)
+        day = _forecast_day_context(entry)
         if day is not None:
             days.append(day)
     return ForecastPanel(days=days)

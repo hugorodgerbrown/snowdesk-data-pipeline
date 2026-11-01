@@ -19,10 +19,11 @@ Both answer in ``ForecastPanelDay`` — the weather pages' own per-day shape
 (``apps.weather.services.weather_display``) — so a tile and a card show
 the icon, the high, the low and the new snow the forecast page shows.
 
-**The icon is the daytime one.** ``build_point_forecast_panel`` chooses a
-day or night icon by projecting a wall-clock time onto each day. A plan is
-for a day out, so the Plan page projects noon, and the trip page projects
-the meeting time — both on the forecast point's own clock.
+**The icon is the daytime one.** ``build_point_forecast_panel`` draws
+every tile with its day icon, because a tile summarises a day (SNOW-1298).
+Before that it projected a wall-clock time onto each day, and this module
+projected noon or the meeting time to keep a plan's tiles out of the
+night.
 """
 
 from __future__ import annotations
@@ -30,8 +31,6 @@ from __future__ import annotations
 import datetime
 import logging
 from dataclasses import dataclass, field
-
-from django.utils import timezone
 
 from apps.locations.models import Location
 from apps.trips.models import Trip
@@ -92,48 +91,20 @@ class TripWeather:
         return self.to_string()
 
 
-def _at_the_point(
-    row: Weather, day: datetime.date, at: datetime.time
-) -> datetime.datetime:
-    """Return ``at`` on ``day`` as a wall-clock time AT the forecast point.
-
-    A meeting time is the time on the meeting point's clock, and the
-    day/night decision compares it with sunrise there. The forecast days
-    keep the provider's sunrise strings with the point's own offset
-    (``timezone=auto``), so the reference instant is built in that offset;
-    the site's zone, UTC, would put a 06:00 Alpine meeting at 08:00 local.
-    Falls back to the site's zone when no forecast day carries an offset.
-    """
-    zone: datetime.tzinfo = timezone.get_current_timezone()
-    for entry in row.forecast or []:
-        try:
-            offset = datetime.datetime.fromisoformat(entry["sunrise"]).tzinfo
-        except KeyError, TypeError, ValueError:
-            continue
-        if offset is not None:
-            zone = offset
-            break
-    return datetime.datetime.combine(day, at, tzinfo=zone)
-
-
-def _days(
-    row: Weather, now: datetime.datetime
-) -> dict[datetime.date, ForecastPanelDay]:
+def _days(row: Weather) -> dict[datetime.date, ForecastPanelDay]:
     """Return a row's forecast window keyed by day."""
-    panel = build_point_forecast_panel(row, now)
+    panel = build_point_forecast_panel(row)
     return {day["date"]: day for day in panel["days"]} if panel else {}
 
 
-def _borrowed(
-    nearest: NearestForecast, day: datetime.date, at: datetime.time
-) -> TripWeather:
-    """Wrap a borrowed row as a plan's forecast, its icons projected at ``at``."""
+def _borrowed(nearest: NearestForecast) -> TripWeather:
+    """Wrap a borrowed row as a plan's forecast."""
     row = nearest.row
     return TripWeather(
         location=nearest.location,
         label=nearest.label,
         distance_km=nearest.distance_km,
-        days=_days(row, _at_the_point(row, day, at)),
+        days=_days(row),
     )
 
 
@@ -161,7 +132,7 @@ def nearest_weather(
     nearest = nearest_forecast(latitude, longitude, today)
     if nearest is None:
         return None
-    return _borrowed(nearest, today, datetime.time(12))
+    return _borrowed(nearest)
 
 
 def meeting_point_weather(trip: Trip, today: datetime.date) -> TripWeather | None:
@@ -186,4 +157,4 @@ def meeting_point_weather(trip: Trip, today: datetime.date) -> TripWeather | Non
     nearest = nearest_forecast(point.latitude, point.longitude, min(today, trip.date))
     if nearest is None:
         return None
-    return _borrowed(nearest, trip.date, trip.start_time)
+    return _borrowed(nearest)

@@ -4505,7 +4505,7 @@ def _location_forecast_context(
     """
     row_date = min(observed_on, timezone.localdate())
     weather = Weather.objects.filter(location=location, observed_on=row_date).first()
-    panel = build_point_forecast_panel(weather, now)
+    panel = build_point_forecast_panel(weather)
     selected_index = next(
         (
             index
@@ -5454,7 +5454,7 @@ def _resort_forecast_points(
         if location is None:
             continue
         weather = weather_by_location.get(location.pk)
-        panel = build_point_forecast_panel(weather, now)
+        panel = build_point_forecast_panel(weather)
         if panel is not None:
             panel["days"] = panel["days"][:FORECAST_DAYS]
         points.append(
