@@ -143,6 +143,7 @@ score 100 so they sort first. Add up:
 | Estimate XS or S / L | +5 / −5 |
 | Blocks another open ticket (driver `unblock`) | +5 each, max +15 |
 | Linear priority `Urgent` | pinned to week 1, never re-scored |
+| **Codex review ticket** (see "Pinned every week" below) | pinned to week 1, never re-scored |
 
 **Season weighting follows the calendar.** Pre-season (October–November)
 and in-season (December–April): as above. Off-season (May–September):
@@ -157,8 +158,21 @@ topic. It must deliver the idea. Name the rival and the item number in `why`.
 
 ### 4. Schedule four weeks
 
-Sort by score, then fill weeks 1→4 until each holds a quarter of usable
-capacity. Constraints:
+**Pinned every week: the Codex review ticket.** Codex files a repository
+review into Linear each week as one ticket, titled `Adversarial repository
+review — <date> — …` (older ones: `Adversarial code review — <date>`), e.g.
+SNOW-1362. **Every open one goes in week 1, every run**, whatever its
+state (Backlog included, overriding the week-2 rule below), labels or
+score, with `score: 100`, `kind: "bug"`, driver `bug`, and a `why` naming
+its count of findings and the most severe one. Find them with
+`list_issues` `query: "Adversarial"` over the open states and match the
+title prefix; ignore Done, Canceled and Duplicate ones. A review left open
+from an earlier week stays pinned too: it is not "below the line" for being
+old. Pinned tickets take week 1's capacity first; the rest of the schedule
+fills around them.
+
+Then sort the rest by score and fill weeks 1→4 until each holds a quarter
+of usable capacity. Constraints:
 
 - **Backlog tickets start no earlier than week 2.** Scope → Codex → resolve
   takes days. A Backlog Bug is the exception.
@@ -211,7 +225,7 @@ the real `SNOW-` id, and set the priorities below.
 
 | Placement | Priority |
 |---|---|
-| Weeks 1–2 | High (2) |
+| Weeks 1–2, and every Codex review ticket | High (2) |
 | Weeks 3–4 | Medium (3) |
 | Open, not planned | Low (4) |
 
