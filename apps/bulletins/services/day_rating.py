@@ -295,14 +295,23 @@ def refresh_day_ratings(pairs: Iterable[tuple["MicroRegion", date]]) -> int:
     """
     Recompute RegionDayRating for every (region, day) pair supplied.
 
+    Then deletes the cached season calendar of every distinct region in
+    ``pairs`` (SNOW-1172), so a batch command never leaves the calendar
+    serving markup built from the old ratings. A region whose recompute
+    failed is invalidated too: its rows may have changed before the
+    failure, and a spare re-render is cheap. Cache errors are logged by
+    :func:`_invalidate_season_calendars` and never change the return value.
+
     Args:
         pairs: (region, day) tuples, typically produced by
-            :func:`day_rating_pairs`.
+            :func:`day_rating_pairs`. Any iterable, including a one-shot
+            generator: it is read once.
 
     Returns:
         The number of pairs that failed to recompute.
 
     """
+    pairs = list(pairs)
     failures = 0
     for region, day in pairs:
         try:
@@ -314,6 +323,8 @@ def refresh_day_ratings(pairs: Iterable[tuple["MicroRegion", date]]) -> int:
                 region.region_id,
                 day,
             )
+    regions = {region.pk: region for region, _day in pairs}
+    _invalidate_season_calendars(regions.values())
     return failures
 
 

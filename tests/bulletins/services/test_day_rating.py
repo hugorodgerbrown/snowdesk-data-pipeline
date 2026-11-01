@@ -1251,6 +1251,86 @@ class TestRefreshDayRatings:
         ok_row = RegionDayRating.objects.get(region=region_ok, date=day)
         assert ok_row.max_rating == "high"
 
+    @staticmethod
+    def _seed_calendar_keys(region: Any) -> list[str]:
+        """Cache a season-calendar body for every language and return the keys."""
+        from django.conf import settings
+
+        today_iso = timezone.localdate().isoformat()
+        keys = [
+            season_calendar_cache_key(region.canonical_region_id, today_iso, code)
+            for code, _name in settings.LANGUAGES
+        ]
+        for key in keys:
+            cache.set(key, "<stale calendar>", 3600)
+        return keys
+
+    def test_invalidates_season_calendar_of_refreshed_regions_only(self) -> None:
+        """SNOW-1172: every language's key goes for a refreshed region; others stay."""
+        cache.clear()
+        refreshed = MicroRegionFactory.create(region_id="CH-3011")
+        untouched = MicroRegionFactory.create(region_id="CH-3012")
+        refreshed_keys = self._seed_calendar_keys(refreshed)
+        untouched_keys = self._seed_calendar_keys(untouched)
+
+        refresh_day_ratings(
+            [
+                (refreshed, datetime.date(2026, 3, 4)),
+                (refreshed, datetime.date(2026, 3, 5)),
+            ]
+        )
+
+        assert all(cache.get(key) is None for key in refreshed_keys)
+        assert all(cache.get(key) is not None for key in untouched_keys)
+
+    def test_generator_is_recomputed_and_invalidated(self) -> None:
+        """A one-shot generator is read once: recomputed and then invalidated."""
+        cache.clear()
+        region = MicroRegionFactory.create(region_id="CH-3013")
+        vf = datetime.datetime(2026, 3, 4, 8, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 4, 17, 0, tzinfo=UTC)
+        _make_bulletin_for_region(
+            region, vf, vt, traits=[_trait(3, "dry")], headline_key="considerable"
+        )
+        keys = self._seed_calendar_keys(region)
+
+        failures = refresh_day_ratings(
+            pair for pair in [(region, datetime.date(2026, 3, 4))]
+        )
+
+        assert failures == 0
+        assert RegionDayRating.objects.filter(
+            region=region, date=datetime.date(2026, 3, 4)
+        ).exists()
+        assert all(cache.get(key) is None for key in keys)
+
+    def test_failed_recompute_still_invalidates_and_is_counted(self) -> None:
+        """A region whose recompute raises still loses its cached calendar."""
+        cache.clear()
+        region = MicroRegionFactory.create(region_id="CH-3014")
+        keys = self._seed_calendar_keys(region)
+
+        with patch(
+            "apps.bulletins.services.day_rating.recompute_region_day",
+            side_effect=ValueError("boom"),
+        ):
+            failures = refresh_day_ratings({(region, datetime.date(2026, 3, 6))})
+
+        assert failures == 1
+        assert all(cache.get(key) is None for key in keys)
+
+    def test_cache_error_never_raises(self) -> None:
+        """A cache backend failure is logged and the failure count is unchanged."""
+        region = MicroRegionFactory.create(region_id="CH-3015")
+
+        with patch(
+            "apps.bulletins.services.day_rating.cache.delete_many",
+            side_effect=RuntimeError("cache down"),
+        ):
+            failures = refresh_day_ratings({(region, datetime.date(2026, 3, 7))})
+
+        assert failures == 0
+
 
 # ---------------------------------------------------------------------------
 # Exception swallowing inside upsert_bulletin
