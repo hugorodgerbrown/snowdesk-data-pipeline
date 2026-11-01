@@ -2,7 +2,7 @@
 name: environment-network-allowlist
 description: Canonical egress allowlist (bare + *. pairs) for Claude Code on the web — EGRESS_BLOCKED hosts, provider APIs, basemaps, scan sites
 status: current
-last-reviewed: 2026-10-27
+last-reviewed: 2026-11-01
 ---
 
 # Environment network allow-list
@@ -376,6 +376,13 @@ because git traffic goes through the session's own git proxy.
 Each section below records one block as it was found. The canonical list
 above supersedes them; they stay as the record of why each domain was
 asked for.
+
+## Requested — 2026-11-01 (competitor-scan routine)
+
+- `unofficialnetworks.com` — `getaddrinfo ENOTFOUND` (outside the allowed
+  domains). Carries the 2 Oct 2026 Diedamskopf geofenced avalanche-alert
+  story logged in `competitors.md`. Add `unofficialnetworks.com` and
+  `*.unofficialnetworks.com`.
 
 ## Requested — 2026-09-30 (stress-testing a cloud session)
 
