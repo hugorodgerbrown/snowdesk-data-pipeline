@@ -146,7 +146,10 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  /api/ski-network.geojson?bbox= (and ?overview=1 from
                  z9, SNOW-1322); a tour is found by its
                  summit and saved as a copy, source SKI_TOUR
-                 (SNOW-1278, services/ski_tours.py)
+                 (SNOW-1278, services/ski_tours.py). Every route stores
+                 the avalanche regions its track crosses
+                 (crossed_regions, SNOW-945), read by the Plan page,
+                 the trip page and the trip alert
   trips/         Shareable trips (SNOW-819) — ``Trip`` (a route the organiser
                  owns, on a named day, at a stated time and meeting point)
                  and ``TripParticipant`` (every account that has SAVED it,
@@ -163,7 +166,10 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  named; read
                  docs/decisions/a-trip-is-one-object-with-a-roster.md,
                  whose disclosure-rule bullet SNOW-848 supersedes, before
-                 putting anything about the other savers back on a page
+                 putting anything about the other savers back on a page.
+                 A trip copies its route's crossed_regions; its Plan
+                 tiles and danger lines show every crossed region, and
+                 the alert treats it as one place (SNOW-945)
   downloads/     Offline basemap areas synced to an account (SNOW-749) — the
                  ``DownloadArea`` model (FK to auth.User) and its sync API.
                  The DEFINITION of an area only: the tiles stay in each
@@ -799,11 +805,12 @@ Read these when working in the relevant area:
 | Why a saved route on the map is drawn as its legs, not in slope classes, and in slope classes from z14 (route_legs_core.js, routes-leg-climb / routes-leg-descent, routes-transitions, routes-slope-line, ROUTE_SLOPE_MINZOOM, slopeSegmentCollection, point_from / point_to, bindRouteCursor; SNOW-1019 closed the two-rail gap, SNOW-1065 collapsed it to one rail; the steep-ground shadow removed; route_drawing_core.js shares the drawing with the trip page and meeting picker since SNOW-1212) | [`docs/decisions/legs-not-slope-classes-on-the-map.md`](docs/decisions/legs-not-slope-classes-on-the-map.md) |
 | HISTORICAL — why the bank angle was drawn signed (bank.py, bank_angle_deg, bank_angles, `roll_deg`, `banks` on the wire still computed and sent; the wedge drawing on rail two was removed by SNOW-1065; lookup vs pattern, no gate, the flat array) | [`docs/decisions/the-bank-angle-is-drawn-signed.md`](docs/decisions/the-bank-angle-is-drawn-signed.md) |
 | Why the point card names the experience in words and degree bands (Skier's track / Terrain slope lines; trackBand, groundWord, groundBand, headline; the track scale TRACK_BOUNDS, a climb's 5/10/15/20° and a descent's 5/15/25/35°, shared with the aspect wheel's trackStep; the point header inside the one route panel pinned top-left, `--route-column-width`; fallSide; the terrain slope line reveals the terrain data, SNOW-1146) | [`docs/decisions/the-point-card-names-the-experience.md`](docs/decisions/the-point-card-names-the-experience.md) |
-| Why the route rail stays out of the overlay registry (route_rail.js, window.pwaRouteRail open / close / isOpen, not in window.pwaMapOverlays; MapSheet.bindDetents and closeOtherSheets keep it one object sheet among the region, place and weather sheets; the two-phase Escape — capture-phase check for [data-overlay] / [data-overflow-open], then clear the point, then close; snowdesk:route-rail-changed / -resized, #map[data-route-rail-open]; one rail since SNOW-1065) | [`docs/decisions/the-route-rail-keeps-its-own-lifetime.md`](docs/decisions/the-route-rail-keeps-its-own-lifetime.md) |
+| Why the route rail stays out of the overlay registry (route_rail.js, window.pwaRouteRail open / close / isOpen, not in window.pwaMapOverlays; MapSheet.bindDetents and closeOtherSheets keep it one object sheet among the region, place and weather sheets; the two-phase Escape — capture-phase check for [data-overlay] / [data-overflow-open] / pwaMapOverlays.openNames() (SNOW-1335), then clear the point, then close; snowdesk:route-rail-changed / -resized, #map[data-route-rail-open]; one rail since SNOW-1065) | [`docs/decisions/the-route-rail-keeps-its-own-lifetime.md`](docs/decisions/the-route-rail-keeps-its-own-lifetime.md) |
 | HISTORICAL — why rail two's readout was the track's angle and the ground's class (rail two, its readout and the staff debug rail were removed by SNOW-1065; `/_route-terrain/<uuid>/?format=json` is kept; the point card reads a point now) | [`docs/decisions/the-rail-readout-is-the-tracks-angle-and-the-grounds-class.md`](docs/decisions/the-rail-readout-is-the-tracks-angle-and-the-grounds-class.md) |
 | Why a leg transition is snapped onto the raw high or low point (detect_legs, _snap_to_extrema, SMOOTHING_WINDOW_M; the smoothed turning point sat 9–50 m off on every canonical track) | [`docs/decisions/a-leg-transition-sits-on-the-extremum.md`](docs/decisions/a-leg-transition-sits-on-the-extremum.md) |
 | Why a route's heights come from the terrain model, not the altimeter (slope_samples `heights`, terrain_points, climb_totals, has_terrain_heights; the profile, legs, ascent/descent and track gradient on model heights; the device `<ele>` as fallback; bin/record-slope-fixtures) | [`docs/decisions/route-heights-come-from-the-terrain-model.md`](docs/decisions/route-heights-come-from-the-terrain-model.md) |
 | Why model heights are despiked on ground of 40° or more (terrain_heights._despiked, SPIKE_HALF_WINDOW, SPIKE_THRESHOLD_M, SPIKE_MIN_GROUND_DEG; a median over ±75 m, no device altimeter; the four-tour sweep; SNOW-1051) | [`docs/decisions/route-heights-are-despiked-on-steep-ground.md`](docs/decisions/route-heights-are-despiked-on-steep-ground.md) |
+| Why a route and a trip store the regions their track crosses, and a multi-region trip is one alert place (Route.crossed_regions, Trip.crossed_regions, resolve_track_regions, track_regions, REGION_STRIDE_M, trip_dangers, PlanLevel, the Plan tile's three levels and +N, AlertPlace.regions / covered / key, "N bulletins", backfill_crossed_regions --commit as a Deploy-Step) | [`docs/decisions/a-route-carries-the-regions-it-crosses.md`](docs/decisions/a-route-carries-the-regions-it-crosses.md) |
 | Why the Plan page reads like the map (route_profile.js and _route_profile.html shared with the route panel, _route_meta_line.html, the When/Where/Details sections and read-back footer, the day tiles in the weather picker's pattern with a level only on a rated day, plan_days.plan_week, trip_form.js) | [`docs/decisions/the-plan-page-reads-like-the-map.md`](docs/decisions/the-plan-page-reads-like-the-map.md) |
 | Every coordinate-bearing field — exact vs approximate, how derived, track/geo haversine | [`docs/locations.md`](docs/locations.md) |
 | Why a what3words address is stored indefinitely beside the pin (Location.what3words, three_word_address, convert-to-3wa vs convert-to-coordinates, the pin-move invalidation, the Basic plan, what3words' written confirmation of 7 September 2026) | [`docs/decisions/what3words-addresses-are-stored-indefinitely.md`](docs/decisions/what3words-addresses-are-stored-indefinitely.md) |
@@ -921,6 +928,7 @@ Read these when working in the relevant area:
 | Why production's data reaches staging through an HTTPS feed rather than a database credential (replay through upsert_bulletin, idempotent pulls, client credentials over an API key; sync-staging-data kept as the reset) | [`docs/decisions/data-reaches-other-environments-through-a-feed.md`](docs/decisions/data-reaches-other-environments-through-a-feed.md) |
 | Refresh staging's bulletins from production (bin/sync-staging-data, run by hand since the cron was disabled 2026-08-27, the read-only role) | [`docs/runbooks/refresh-staging-from-production.md`](docs/runbooks/refresh-staging-from-production.md) |
 | Reset the live DB after a migration-history rewrite | [`docs/runbooks/reset-live-db.md`](docs/runbooks/reset-live-db.md) |
+| Move the production and staging Postgres roles from MD5 to SCRAM-SHA-256 (SET password_encryption, ALTER ROLE, the DATABASE_URL rotation across the five consumers, no rollback) | [`docs/runbooks/rotate-postgres-password-encryption.md`](docs/runbooks/rotate-postgres-password-encryption.md) |
 | Rename subscriptions app to accounts on an existing DB (table rename, InconsistentMigrationHistory) | [`docs/runbooks/rename-subscriptions-to-accounts.md`](docs/runbooks/rename-subscriptions-to-accounts.md) |
 | Self-hosted basemap origin cutover (tiles.snowdesk-data.info; origin is in the snowdesk-tiles repo) | [`docs/runbooks/self-hosted-tiles.md`](docs/runbooks/self-hosted-tiles.md) |
 | Terrain elevation tileset (swissALTI3D → 5 m EPSG:3035 Int16 grid; `/terrain/v1/{x}/{y}.s16`, grid.json, the 204 rule, TERRAIN_VERSION; built in the snowdesk-tiles repo) | [`docs/runbooks/terrain-tileset.md`](docs/runbooks/terrain-tileset.md) |

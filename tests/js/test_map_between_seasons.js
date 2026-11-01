@@ -80,6 +80,19 @@ describe('when it shows', () => {
     expect(window.pwaTelemetry.emit).toHaveBeenCalledWith('map.between_seasons.shown', {});
   });
 
+  it('does not miss a season that landed before it loaded (SNOW-957)', async () => {
+    // map_shared.js's flag: the boot season's one-shot event already went
+    // out, before this deferred script registered its listener.
+    globalThis.SEASON_RATINGS_READY = true;
+    try {
+      await load();
+      vi.advanceTimersByTime(SETTLE_MS);
+      expect(note().hidden).toBe(false);
+    } finally {
+      delete globalThis.SEASON_RATINGS_READY;
+    }
+  });
+
   it('waits for the welcome card to go', async () => {
     document.getElementById('map-tour-offer').hidden = false;
     await load();

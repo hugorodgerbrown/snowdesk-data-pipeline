@@ -184,6 +184,13 @@
   };
   let ratingsLoaded = false;
   let pageLoaded = false;
+  // SNOW-957: the boot season may have landed before this deferred script
+  // ran, in which case its one-shot event has already gone out.
+  // ``SEASON_RATINGS_READY`` is map_shared.js's; the guard keeps the
+  // module standalone where that script is not loaded.
+  if (typeof SEASON_RATINGS_READY !== 'undefined' && SEASON_RATINGS_READY) {
+    ratingsLoaded = true;
+  }
   document.addEventListener('snowdesk:country-ratings-loaded', () => {
     ratingsLoaded = true;
     if (pageLoaded) start();

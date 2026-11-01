@@ -41,16 +41,21 @@ See "Going public" before turning either on.
 - **Which places.** Region pins and saved resorts, each with
   `Favourite.alerts` (default on). A dropped pin never alerts. Places in
   one region are one place, named "Martigny-Verbier, Verbier".
-- **Saved trips (SNOW-947).** A trip the account has saved (organiser or
-  not, `Trip.objects.for_user`) is a place on its own day only, for the
-  region its route starts in — `plan_days.start_region`, the rule the trip
-  page and the Plan page use, so the alert names the level the trip page
-  shows. `trip_places` builds them and `places_on` folds them into the
-  day's pins: a trip in a pinned region is one place and one row, with
-  both names. A one-place trip alert, and the trip's row on
-  `/alerts/<day>/`, open the trip page. A start outside every region adds
-  nothing. Trips follow the account's alert setting; there is no per-trip
-  switch.
+- **Saved trips (SNOW-947, SNOW-945).** A trip the account has saved
+  (organiser or not, `Trip.objects.for_user`) is a place on its own day
+  only, covering every region its route crosses — `track_regions`, the
+  rule the trip page and the Plan page use, so the alert covers what the
+  trip page shows. `trip_places` builds them and `places_on` folds them
+  into the day's pins. A trip that stays in one region is a place in that
+  region, and in a pinned region it is one place and one row, with both
+  names. A trip crossing several regions is one place of its own
+  (`AlertPlace.regions`, keyed by the trip page): it writes one send-log
+  row per region, fires when any of them does, and reads "For your trip.
+  N bulletins." with no level. A one-place trip alert, and the trip's row
+  on `/alerts/<day>/`, open the trip page. A track outside every region
+  adds nothing. Trips follow the account's alert setting; there is no
+  per-trip switch
+  ([why](decisions/a-route-carries-the-regions-it-crosses.md)).
 - **Which bulletin.** `RegionDayRating.source_bulletin` — the same issue
   the map shows for that day.
 - **Modes.** `NEW_BULLETIN` restates the establishing issue every day;

@@ -326,7 +326,7 @@ class TestBuildPointForecastPanel:
 
     def test_none_row_yields_none(self) -> None:
         """A missing row degrades to no panel."""
-        assert build_point_forecast_panel(None, timezone.now()) is None
+        assert build_point_forecast_panel(None) is None
 
     @freeze_time(MIDDAY)
     def test_the_rows_own_day_leads_then_the_following_rows(self) -> None:
@@ -334,7 +334,7 @@ class TestBuildPointForecastPanel:
         weather = WeatherFactory.create(observed_on=datetime.date(2026, 8, 30))
         _following(weather, "2026-09-01", "2026-08-31")
 
-        panel = build_point_forecast_panel(weather, timezone.now())
+        panel = build_point_forecast_panel(weather)
 
         assert panel is not None
         assert [day["date"] for day in panel["days"]] == [
@@ -351,7 +351,7 @@ class TestBuildPointForecastPanel:
         _following(weather, *[f"2026-09-0{day}" for day in range(1, 8)])
         WeatherFactory.create(observed_on=datetime.date(2026, 8, 31))
 
-        panel = build_point_forecast_panel(weather, timezone.now())
+        panel = build_point_forecast_panel(weather)
 
         assert panel is not None
         assert [day["date"] for day in panel["days"]] == [
@@ -368,7 +368,7 @@ class TestBuildPointForecastPanel:
         following = _following(weather, "2026-08-31")
 
         with django_assert_num_queries(0):
-            panel = build_point_forecast_panel(weather, timezone.now(), following)
+            panel = build_point_forecast_panel(weather, following)
 
         assert panel is not None
         assert len(panel["days"]) == 2
@@ -388,7 +388,7 @@ class TestBuildPointForecastPanel:
             wind_direction_10m_dominant=45.0,
         )
 
-        panel = build_point_forecast_panel(weather, timezone.now())
+        panel = build_point_forecast_panel(weather)
 
         assert panel is not None
         assert [day["wind_speed_max"] for day in panel["days"]] == [24.0, 31.0]
@@ -401,7 +401,7 @@ class TestBuildPointForecastPanel:
         _following(weather, "2026-08-31", hourly=[{"time": "2026-08-31T09:00"}])
         _following(weather, "2026-09-01")
 
-        panel = build_point_forecast_panel(weather, timezone.now())
+        panel = build_point_forecast_panel(weather)
 
         assert panel is not None
         assert len(panel["days"][1]["hourly"]) == 1
@@ -424,11 +424,34 @@ class TestBuildPointForecastPanel:
             sunset=datetime.datetime(2026, 8, 31, 20, 15, tzinfo=datetime.UTC),
         )
 
-        panel = build_point_forecast_panel(weather, timezone.now())
+        panel = build_point_forecast_panel(weather)
 
         assert panel is not None
         assert [day["sunrise_local"] for day in panel["days"]] == ["07:05", "06:30"]
         assert [day["sunset_local"] for day in panel["days"]] == ["19:40", "20:15"]
+
+    @pytest.mark.parametrize(
+        "instant", ["2026-08-30T10:00:00+00:00", "2026-08-30T21:00:00+00:00"]
+    )
+    def test_a_tile_is_a_day_whatever_the_hour(self, instant: str) -> None:
+        """Every tile, lead and following, draws its day icon (SNOW-1298).
+
+        A tile summarises a day, so the hour the reader looks at it says
+        nothing about it: at 23:00 local the strip still shows suns.
+        """
+        weather = WeatherFactory.create(
+            observed_on=datetime.date(2026, 8, 30), weather_code=0
+        )
+        _following(weather, "2026-08-31", weather_code=0)
+
+        with freeze_time(instant):
+            panel = build_point_forecast_panel(weather)
+
+        assert panel is not None
+        assert [day["icon_filename"] for day in panel["days"]] == [
+            "clear-day.svg",
+            "clear-day.svg",
+        ]
 
     @freeze_time(MIDDAY)
     def test_following_day_scalars_reach_the_column(self) -> None:
@@ -444,7 +467,7 @@ class TestBuildPointForecastPanel:
             freezing_level_height=2100.0,
         )
 
-        panel = build_point_forecast_panel(weather, timezone.now())
+        panel = build_point_forecast_panel(weather)
 
         assert panel is not None
         forward = panel["days"][1]
@@ -529,7 +552,7 @@ class TestLocalClock:
             hourly=[{"time": "2026-08-31T00:00+02:00"}],
         )
 
-        panel = build_point_forecast_panel(lead, timezone.now())
+        panel = build_point_forecast_panel(lead)
 
         assert panel is not None
         assert [(d["sunrise_local"], d["sunset_local"]) for d in panel["days"]] == [

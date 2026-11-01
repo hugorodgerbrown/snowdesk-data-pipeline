@@ -193,26 +193,17 @@ class TestMeetingPointWeather:
 
         assert meeting_point_weather(trip, TODAY) is None
 
-    def test_the_meeting_time_is_read_on_the_forecast_points_clock(self) -> None:
-        """06:30 at a UTC+2 point is before a 07:40 sunrise: a night icon.
-
-        Read in the site's zone (UTC) it would be 08:30 local, after
-        sunrise, and the clear sky would wrongly draw the sun.
-        """
+    def test_a_pre_dawn_meeting_still_draws_the_day_icon(self) -> None:
+        """06:30, before a 07:40 sunrise, is a day out: a sun (SNOW-1298)."""
         day = TODAY + datetime.timedelta(days=1)
         early = TripFactory.create(date=day, start_time=datetime.time(6, 30))
-        late = TripFactory.create(date=day, start_time=datetime.time(9, 0))
-        # The point's clock is its hourly series' offset (timezone=auto).
-        hourly = [{"time": f"{TODAY.isoformat()}T{h:02d}:00+02:00"} for h in range(24)]
-        _public_point(*MEETING, codes=(0, 0), hourly=hourly)
+        _public_point(*MEETING, codes=(0, 0))
 
-        before = meeting_point_weather(early, TODAY)
-        after = meeting_point_weather(late, TODAY)
+        weather = meeting_point_weather(early, TODAY)
 
-        assert before is not None and after is not None
-        assert before.is_same_place
-        assert before.days[day]["icon_filename"] == "clear-night.svg"
-        assert after.days[day]["icon_filename"] == "clear-day.svg"
+        assert weather is not None
+        assert weather.is_same_place
+        assert weather.days[day]["icon_filename"] == "clear-day.svg"
 
     def test_a_past_trip_reads_the_row_of_its_own_day(self) -> None:
         """What the forecast said that morning, never rewritten."""

@@ -35,6 +35,31 @@ const BOUNDARY_LAYERS = [
   'major-regions-line', 'major-regions-label',
 ];
 
+/** The day the toggle tests commit and expect Austria painted for. */
+const PAINT_DAY = '2026-01-05';
+
+/**
+ * Commit `PAINT_DAY` the way the scrubber does, so a paint has a day.
+ */
+const commitPaintDay = () => {
+  document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
+    detail: { date: PAINT_DAY, source: 'scrubber' },
+  }));
+};
+
+/**
+ * The rating painted onto a region, or 'no_rating' if none was written.
+ *
+ * @param {Object} mapStub
+ * @param {string} regionID
+ * @returns {string|null}
+ */
+const paintedRating = (mapStub, regionID) => {
+  const feature = window.snowdeskMapState.featureByRegionId[regionID];
+  if (!feature) return null;
+  return mapStub.getFeatureState({ id: feature.id }).rating || 'no_rating';
+};
+
 /** One region per country, so a filter can be read as a set of codes. */
 const featureCollection = () => ({
   type: 'FeatureCollection',
@@ -56,6 +81,10 @@ const featureCollection = () => ({
  */
 const responseFor = (url) => {
   const code = (String(url).match(/country=([a-z]+)/) || [])[1];
+  // A season payload: Austria's one region is rated High on the painted day.
+  if (String(url).includes('/api/ratings.json')) {
+    return code === 'at' ? { [PAINT_DAY]: { 'AT-2': 4 } } : {};
+  }
   const all = featureCollection();
   if (!code) return all;
   const country = code.toUpperCase();
@@ -67,6 +96,7 @@ const responseFor = (url) => {
 
 /** Minimal MapLibre stub — this suite reads filters, not paint. */
 function stubMapLibre() {
+  const featureState = new Map();
   const handlers = {};
   const layers = new Set();
   const filters = new Map();
@@ -81,7 +111,8 @@ function stubMapLibre() {
     getFilter: (id) => filters.get(id) ?? null,
     getLayoutProperty: () => 'visible',
     getPaintProperty: () => undefined,
-    getFeatureState: () => ({}),
+    // Recorded, so a test can read back the rating a paint wrote.
+    getFeatureState: (target) => featureState.get(target && target.id) || {},
     isSourceLoaded: () => true,
     // Sources are tracked (rather than the usual `() => null`) because the
     // dedupe test below reads what actually landed in the `regions` source:
@@ -100,7 +131,10 @@ function stubMapLibre() {
     setLayoutProperty: () => {},
     setPaintProperty: () => {},
     setFilter: (id, filter) => { filters.set(id, filter); },
-    setFeatureState: () => {},
+    setFeatureState: (target, state) => {
+      const id = target && target.id;
+      featureState.set(id, { ...(featureState.get(id) || {}), ...state });
+    },
     removeFeatureState: () => {},
     setStyle: () => {},
     isStyleLoaded: () => true,
@@ -210,10 +244,15 @@ async function boot(options) {
   localStorage.setItem('snowdesk.map.overlay.l2', 'true');
   buildFixture(options);
   const mapStub = stubMapLibre();
-  vi.stubGlobal('fetch', vi.fn((url) => Promise.resolve({
-    ok: true,
-    json: () => Promise.resolve(responseFor(url)),
-  })));
+  vi.stubGlobal('fetch', vi.fn((url) => {
+    const answer = () => ({ ok: true, json: () => Promise.resolve(responseFor(url)) });
+    // `hold` keeps a matching request pending until the test releases it,
+    // for a load the visitor overtakes.
+    if (options.hold && options.hold.matches(String(url))) {
+      return new Promise((resolve) => options.hold.pending.push(() => resolve(answer())));
+    }
+    return Promise.resolve(answer());
+  }));
 
   vi.resetModules();
   await import('../../static/js/basemap_download_core.js');
@@ -350,6 +389,73 @@ describe('the boundary outlines and the bulletin fill are filtered separately', 
     await toggle(true);
 
     expect(atRatings()).toBe(afterFirst);
+  });
+
+  it('skips the season ratings of a country no provider claims (SNOW-957)', async () => {
+    // SLF alone on the global basemap: all four countries' outlines load, but
+    // only Switzerland's season is asked for.
+    await boot({ providers: 'country.ch', countries: 'ch fr at it' });
+
+    const ratingsFor = new Set(
+      globalThis.fetch.mock.calls
+        .map((call) => String(call[0]))
+        .filter((url) => url.includes('/api/ratings.json'))
+        .map((url) => new URL(url, 'https://example.test').searchParams.get('country')),
+    );
+    expect(ratingsFor.has('fr')).toBe(false);
+    expect(ratingsFor.has('at')).toBe(false);
+    expect(ratingsFor.has('it')).toBe(false);
+  });
+
+  it('fetches them when the row is switched on after a boundary-only boot', async () => {
+    // The toggle's own `loadCountryRatings` is now the only fetch for such a
+    // country, and the region it reveals is painted from it.
+    // Counted as before-and-after rather than exactly once: an earlier
+    // test's bundle leaves its own document listeners behind.
+    const mapStub = await boot({ providers: 'country.ch', countries: 'ch fr at it' });
+    const atRatings = () => globalThis.fetch.mock.calls
+      .map((call) => String(call[0]))
+      .filter((url) => url.includes('/api/ratings.json') && url.includes('country=at'))
+      .length;
+    expect(atRatings()).toBe(0);
+    commitPaintDay();
+
+    document.dispatchEvent(new CustomEvent('snowdesk:country-toggle', {
+      detail: { code: 'at', next: true },
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(atRatings()).toBeGreaterThan(0);
+    expect(filterCodes(mapStub, 'regions-fill')).toContain('AT');
+    expect(paintedRating(mapStub, 'AT-2')).toBe('high');
+  });
+
+  it('fetches them when the row is switched on mid-way through that boot load', async () => {
+    // The toggle joins the boundary-only load still in flight, which fetches
+    // no ratings, so the toggle must fetch them itself once it settles.
+    const hold = {
+      matches: (url) => url.includes('/api/regions.geojson') && url.includes('country=at'),
+      pending: [],
+    };
+    const mapStub = await boot({ providers: 'country.ch', countries: 'ch fr at it', hold });
+    const atRatings = () => globalThis.fetch.mock.calls
+      .map((call) => String(call[0]))
+      .filter((url) => url.includes('/api/ratings.json') && url.includes('country=at'))
+      .length;
+    expect(hold.pending.length).toBeGreaterThan(0);
+    commitPaintDay();
+
+    document.dispatchEvent(new CustomEvent('snowdesk:country-toggle', {
+      detail: { code: 'at', next: true },
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(atRatings()).toBe(0);
+    for (const release of hold.pending.splice(0)) release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(atRatings()).toBeGreaterThan(0);
+    expect(filterCodes(mapStub, 'regions-fill')).toContain('AT');
+    expect(paintedRating(mapStub, 'AT-2')).toBe('high');
   });
 
   it("loads the basemap's countries, not just the enabled providers'", async () => {

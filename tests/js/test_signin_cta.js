@@ -18,7 +18,7 @@
  * loads ahead of the three surfaces that call it.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const PROMPT = 'Sign in to save favourites.';
 const CTA = 'Sign in';
@@ -32,7 +32,9 @@ describe('window.snowdeskSigninCta', () => {
     expect(p.textContent).toBe(PROMPT);
 
     const a = el.querySelector('a');
-    expect(a.getAttribute('href')).toBe(URL);
+    // SNOW-903: with a `next` naming the page it was built on.
+    const here = window.location.pathname + window.location.search;
+    expect(a.getAttribute('href')).toBe(`${URL}?next=${encodeURIComponent(here)}`);
     expect(a.textContent).toBe(CTA);
   });
 
@@ -59,5 +61,98 @@ describe('window.snowdeskSigninCta', () => {
     const el = window.snowdeskSigninCta.build(URL, '<b>bold</b>', CTA);
     expect(el.querySelector('p').querySelector('b')).toBeNull();
     expect(el.querySelector('p').textContent).toBe('<b>bold</b>');
+  });
+});
+
+describe('withNext and bindNext (SNOW-903)', () => {
+  const cta = () => window.snowdeskSigninCta;
+  const nextOf = (href) => new globalThis.URL(href, window.location.origin).searchParams.get('next');
+
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('appends the path and query, never the origin or the hash', () => {
+    window.history.replaceState(null, '', '/map/?d=2026-01-06&panel=routes#frag');
+
+    const href = cta().withNext(URL);
+
+    expect(href.startsWith(URL)).toBe(true);
+    expect(nextOf(href)).toBe('/map/?d=2026-01-06&panel=routes');
+  });
+
+  it('encodes the query so its & and ? stay inside the next value', () => {
+    window.history.replaceState(null, '', '/map/?d=2026-01-06&panel=routes');
+
+    const href = cta().withNext(URL);
+
+    expect(href).toBe(`${URL}?next=%2Fmap%2F%3Fd%3D2026-01-06%26panel%3Droutes`);
+  });
+
+  it('keeps a url that already names its destination', () => {
+    const fixed = `${URL}?next=%2Froutes%2Fexample%2F`;
+    window.history.replaceState(null, '', '/map/?d=2026-01-06');
+
+    expect(cta().withNext(fixed)).toBe(fixed);
+  });
+
+  it('writes this site\'s absolute url as a root-relative path', () => {
+    window.history.replaceState(null, '', '/map/');
+    const absolute = `${window.location.origin}${URL}`;
+
+    expect(cta().withNext(absolute)).toBe(`${URL}?next=%2Fmap%2F`);
+  });
+
+  it('recomputes a bound anchor when it is tapped after the url moved', () => {
+    window.history.replaceState(null, '', '/map/?d=2026-01-06');
+    const a = document.createElement('a');
+    a.setAttribute('href', URL);
+    a.addEventListener('click', (event) => event.preventDefault());
+    document.body.appendChild(a);
+    cta().bindNext(a, URL);
+    expect(nextOf(a.getAttribute('href'))).toBe('/map/?d=2026-01-06');
+
+    window.history.replaceState(null, '', '/map/?d=2026-01-07&panel=favourites');
+    a.click();
+
+    expect(nextOf(a.getAttribute('href'))).toBe('/map/?d=2026-01-07&panel=favourites');
+    a.remove();
+  });
+
+  it('never rewrites a non-http href or a protocol-relative one', () => {
+    window.history.replaceState(null, '', '/map/');
+    // eslint-disable-next-line no-script-url -- the hostile input under test
+    const hostile = 'javascript:alert(1)';
+    expect(cta().withNext(hostile)).toBe(hostile);
+
+    const a = document.createElement('a');
+    a.setAttribute('href', hostile);
+    cta().bindNext(a, hostile);
+    expect(a.getAttribute('href')).toBe(hostile);
+
+    const b = document.createElement('a');
+    b.setAttribute('href', '//evil.example/accounts/sign-in/');
+    cta().bindNext(b, '//evil.example/accounts/sign-in/');
+    expect(b.getAttribute('href')).toBe('//evil.example/accounts/sign-in/');
+  });
+
+  it('takes the url from its caller, never from the anchor href', () => {
+    window.history.replaceState(null, '', '/map/?d=2026-01-06');
+    const a = document.createElement('a');
+    a.setAttribute('href', '/somewhere-else/');
+    cta().bindNext(a, URL);
+    expect(a.getAttribute('href')).toBe(`${URL}?next=%2Fmap%2F%3Fd%3D2026-01-06`);
+  });
+
+  it('binds an anchor once, however often it is bound', () => {
+    const a = document.createElement('a');
+    a.setAttribute('href', URL);
+    const spy = vi.spyOn(a, 'addEventListener');
+
+    cta().bindNext(a, URL);
+    cta().bindNext(a, URL);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(a.getAttribute('href').match(/next=/g)).toHaveLength(1);
   });
 });

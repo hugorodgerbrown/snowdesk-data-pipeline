@@ -256,6 +256,15 @@ class Trip(BaseModel):
             "re-read from the route."
         ),
     )
+    crossed_regions = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The MicroRegion.region_ids the track crosses, in the order it "
+            "first enters each (SNOW-945). Null until resolved; [] when the "
+            "track is outside coverage."
+        ),
+    )
     bounds = models.JSONField(
         help_text=(
             "Snapshot of the route's GeoJSON bbox: "

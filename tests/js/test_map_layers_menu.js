@@ -590,7 +590,8 @@ describe('the sign-in hand-off', () => {
     const sheet = document.getElementById('map-layer-signin-sheet');
     expect(sheet.hidden).toBe(false);
     expect(sheet.textContent).toContain('show your favourites on the map');
-    expect(sheet.querySelector('a').getAttribute('href')).toBe('/account/sign-in/');
+    // SNOW-903: with a `next` back to the page it was tapped on.
+    expect(sheet.querySelector('a').getAttribute('href')).toMatch(/^\/account\/sign-in\/\?next=/);
     // Nothing was toggled and no overlay was asked for.
     expect(rowFor('favourites').getAttribute('aria-checked')).toBe('false');
     expect(window.pwaFavouritesOverlay.show).not.toHaveBeenCalled();

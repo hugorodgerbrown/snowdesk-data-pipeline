@@ -129,6 +129,9 @@ def _snapshot_fields(trip: Trip) -> dict[str, Any]:
         "name": _copy_name_for(trip),
         "source_filename": "",
         "points": trip.points,
+        # SNOW-945: the trip's own list, so the saved route crosses what
+        # the trip page said it crossed. None resolves in write_route_copy.
+        "crossed_regions": trip.crossed_regions,
         "distance_m": trip.distance_m,
         # None passes straight through: "unknown", never zero.
         "ascent_m": trip.ascent_m,

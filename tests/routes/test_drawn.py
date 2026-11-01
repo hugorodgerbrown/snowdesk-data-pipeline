@@ -25,7 +25,7 @@ from apps.routes.services.drawn import (
 from apps.routes.services.estimate import estimate_duration_s
 from apps.routes.services.gpx import MAX_POINTS
 from apps.routes.services.routes import RouteLimitReached, create_drawn_route
-from tests.factories import RouteFactory, UserFactory
+from tests.factories import MicroRegionFactory, RouteFactory, UserFactory
 
 
 class TestCleanWaypoints:
@@ -188,3 +188,32 @@ class TestCreateDrawnRoute:
         with pytest.raises(RouteLimitReached):
             create_drawn_route(user, clean_waypoints([[7.0, 46.0], [7.0, 46.001]]))
         assert Route.objects.filter(user=user).count() == 1
+
+
+def _crossed_box(
+    west: float, south: float, east: float, north: float
+) -> dict[str, object]:
+    """Return a GeoJSON Polygon for a lon/lat rectangle (SNOW-945 tests)."""
+    return {
+        "type": "Polygon",
+        "coordinates": [
+            [[west, south], [east, south], [east, north], [west, north], [west, south]],
+        ],
+    }
+
+
+@pytest.mark.django_db
+class TestDrawnRouteCrossedRegions:
+    """SNOW-945: a drawn route stores the regions its track crosses."""
+
+    def test_a_drawn_route_stores_its_regions(self) -> None:
+        """Resolved at creation, as an upload is."""
+        MicroRegionFactory.create(
+            region_id="CH-7002", boundary=_crossed_box(6.9, 45.9, 7.1, 46.1)
+        )
+
+        route = create_drawn_route(
+            UserFactory.create(), clean_waypoints([[7.0, 46.0], [7.0, 46.001]])
+        )
+
+        assert route.crossed_regions == ["CH-7002"]

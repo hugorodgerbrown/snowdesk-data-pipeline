@@ -29,7 +29,12 @@ Verified on the current call sites: the nav and the region-pin roundel render
 only in full pages, and the two trips partials ARE also rendered as fragments
 (``_saved_fragment`` / ``_save_route_fragment`` in ``apps.trips.views``) but
 only for a visitor who has just saved — the anonymous branch holding this tag
-is unreachable down that path.  A new call site needs the same check; the
+is unreachable down that path.  The resort page's favourite button
+(``favourites/partials/_resort_favourite_button.html``, SNOW-903) is the same
+case: ``favourite_resort_toggle`` re-renders it only for a signed-in user.
+The map's place sheet is the opposite case and must NOT use this tag — its
+signed-out star is rewritten client-side by ``snowdeskSigninCta.bindNext``
+(``static/js/signin_cta.js``).  A new call site needs the same check; the
 question to ask is not "is this file a partial" but "can the signed-out branch
 render in a fragment response".
 """

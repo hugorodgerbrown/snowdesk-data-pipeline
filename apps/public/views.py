@@ -4508,7 +4508,7 @@ def _location_forecast_context(
     """
     row_date = min(observed_on, timezone.localdate())
     weather = Weather.objects.filter(location=location, observed_on=row_date).first()
-    panel = build_point_forecast_panel(weather, now)
+    panel = build_point_forecast_panel(weather)
     selected_index = next(
         (
             index
@@ -5132,7 +5132,9 @@ def resort_detail(
     sections in a main column with the curated facts in a sidebar.
 
     Builds the same favourite context the place sheet does (``favourited`` /
-    ``favourite_uuid`` / ``can_favourite`` / ``signin_url``).
+    ``favourite_uuid`` / ``can_favourite``). The signed-out link is built by
+    ``{% sign_in_href %}`` in the favourite partial, which names this page as
+    ``next`` (SNOW-903), so no sign-in url rides in the context.
 
     SNOW-1164 split the page into a frame and a body: the body — the
     forecast, the facts and the region row — is ``build_resort_body``
@@ -5182,7 +5184,6 @@ def resort_detail(
         "favourited": favourite is not None,
         "favourite_uuid": str(favourite.uuid) if favourite else "",
         "can_favourite": can_favourite,
-        "signin_url": reverse("accounts:sign_in"),
         # SNOW-1155: the header's mono eyebrow — alternative name, canton,
         # country — each part omitted when blank.
         "resort_eyebrow": _resort_eyebrow(resort),
@@ -5451,7 +5452,7 @@ def _resort_forecast_points(
             continue
         week = week_by_location.get(location.pk, [])
         weather = week[0] if week and week[0].observed_on == today else None
-        panel = build_point_forecast_panel(weather, now, week[1:])
+        panel = build_point_forecast_panel(weather, week[1:])
         points.append(
             {
                 "role": str(role).lower(),

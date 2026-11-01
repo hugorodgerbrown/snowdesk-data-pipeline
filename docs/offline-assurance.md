@@ -2,7 +2,7 @@
 name: offline-assurance
 description: Weekly offline-maps suite — tests/offline/, tox -e offline, RecordingProxy, SNOWDESK_OFFLINE_SEED, #nav-offline-mode watertightness
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-11-01
 ---
 
 # Offline-maps assurance (weekly)
@@ -164,3 +164,11 @@ actionable.
 Reproduce with the seed, then read the assertion — each one names what it
 expected, what it got, and what would have to be true for the result to be
 correct.
+
+A download that ends in `error` names what failed (SNOW-1331): the visible
+toast's line in the diagnostics ends `failures=[…]`, the worker's sample of
+up to five failed URLs, each with its `status` (`null` when no response came
+back, `0` for an opaque one), its `why` (`network`, `quota`, `other`) and the
+`detail` that names the branch — `url`, `threw`, `status`, `type`, `key`,
+`no-store`, `principal` or `write`. One host and one status across the
+sample is a pattern; read it before guessing at the cause.

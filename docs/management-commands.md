@@ -1310,6 +1310,24 @@ uv run python manage.py render_ski_tours --commit         # enqueue every candid
 uv run python manage.py render_ski_tours --commit --limit 20
 ```
 
+### `backfill_crossed_regions` — store the regions each track crosses
+
+SNOW-945. Fills `crossed_regions` on every `Route` and `Trip` that has
+none, by `resolve_track_regions` (one sample every 50 m). Without
+`--commit` it reports what it would write. It writes with a queryset
+`update()`, so `updated_at` does not move. A row the backfill has not
+reached still reads correctly, because `track_regions` resolves a missing
+list live. Run once after the deploy that adds the column, as a
+`Deploy-Step: backfill_crossed_regions --commit` trailer, and again after
+clearing the column for an EAWS boundary change. Tallies `routes`,
+`trips`, `outside_coverage` and `failed`; exits non-zero when any row
+failed.
+
+```bash
+uv run python manage.py backfill_crossed_regions            # preview
+uv run python manage.py backfill_crossed_regions --commit   # apply
+```
+
 ### `rebuild_track_renders` — store a current render on every track
 
 SNOW-1309. Every `Route`, `Trip` and walked `SkiTour` stores its

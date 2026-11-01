@@ -231,6 +231,15 @@ class Route(BaseModel):
             "order. ele is metres, or null where the source had no <ele>."
         ),
     )
+    crossed_regions = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The MicroRegion.region_ids the track crosses, in the order it "
+            "first enters each (SNOW-945). Null until resolved; [] when the "
+            "track is outside coverage."
+        ),
+    )
     distance_m = models.FloatField(
         help_text=(
             "Great-circle length of the full-resolution track in metres, "

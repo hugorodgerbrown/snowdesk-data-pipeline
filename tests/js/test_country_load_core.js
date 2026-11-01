@@ -61,6 +61,29 @@ describe('planCountryFeeds', () => {
       .toBe('fetch');
   });
 
+  it('skips the ratings of a country only the basemap outlines (SNOW-957)', () => {
+    // Its geometry is still fetched, since the outline needs it; its season
+    // backs a fill that never paints for it.
+    expect(core.planCountryFeeds({ boundaryOnly: true, ...ALL_URLS })).toEqual({
+      regions: true,
+      major: true,
+      sub: true,
+      ratings: 'skip',
+    });
+  });
+
+  it('still tops up the boot country even when no row claims it', () => {
+    // Boot already holds Switzerland's season in memory; topping up the
+    // cache is a different question from fetching it.
+    expect(core.planCountryFeeds({ isBootCountry: true, boundaryOnly: true, ...ALL_URLS }).ratings)
+      .toBe('ensure-cached');
+  });
+
+  it('treats a caller that does not say as claiming the country', () => {
+    expect(core.planCountryFeeds({ boundaryOnly: false, ...ALL_URLS }).ratings).toBe('fetch');
+    expect(core.planCountryFeeds({ ...ALL_URLS }).ratings).toBe('fetch');
+  });
+
   it('asks for nothing that has no URL configured', () => {
     expect(core.planCountryFeeds({ isBootCountry: false })).toEqual({
       regions: false,

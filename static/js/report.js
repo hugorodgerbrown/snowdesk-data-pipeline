@@ -567,6 +567,23 @@
     return '<p class="text-sm text-text-2">' + esc(STRINGS['signin-prompt']) + '</p>';
   }
 
+  /**
+   * Paint the gate into `el`. SNOW-903: the sign-in pill is then bound
+   * through `snowdeskSigninCta.bindNext`, so signing in returns the visitor
+   * to the map url they tapped it from (`?d=`, `?panel=`), not the one they
+   * arrived on.
+   *
+   * @param {Element} el
+   * @returns {void}
+   */
+  function paintGate(el) {
+    el.innerHTML = gateHtml();
+    const link = el.querySelector('a[href]');
+    if (link && window.snowdeskSigninCta.bindNext) {
+      window.snowdeskSigninCta.bindNext(/** @type {HTMLAnchorElement} */ (link), SIGNIN_URL);
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // The panel (SNOW-658) — the sheet's default body: the user's own reports, a
   // CTA to file another, and the map-overlay switch that used to be a layers-
@@ -605,7 +622,7 @@
       // Every value interpolated here is escaped by gateHtml() — the strings
       // are server-translated copy, not user content, but a locale carrying a
       // quote would still break out of the attribute it sits in.
-      if (gate) gate.innerHTML = gateHtml();
+      if (gate) paintGate(gate);
       return true;
     }
     if (gate) gate.remove();
@@ -656,7 +673,7 @@
     // ineligible user still gets told why it is not — an empty sheet would be
     // a dead end with no explanation.
     if (IS_ELIGIBLE) startReportFlow();
-    else sheet.innerHTML = gateHtml();
+    else paintGate(sheet);
   }
 
   btn.addEventListener('click', function () {
@@ -681,7 +698,7 @@
     if (!target.closest('[data-action="open-report"]')) return;
     controller.open();
     if (IS_ELIGIBLE) startReportFlow();
-    else sheet.innerHTML = gateHtml();
+    else paintGate(sheet);
   });
 
   // SNOW-803: the sheet-level bridge, read by static/js/map.js to honour a

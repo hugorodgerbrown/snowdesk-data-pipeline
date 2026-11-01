@@ -14,6 +14,20 @@
  * user-facing text of its own: the surfaces read theirs from the strings
  * <template> via window.pwaStrings, and hand the values in.
  *
+ * SNOW-903: and every sign-in link the map hands out returns the visitor to
+ * where they were when they TAPPED it. `withNext(url)` appends
+ * `next=<location.pathname + location.search>` — a same-site relative path,
+ * which the sign-in view's `safe_next` passes unchanged; never `location.href`
+ * (absolute) and never the hash — unless the url already names a `next`, in
+ * which case it is a deliberate destination and is left alone. `bindNext(a)`
+ * sets an anchor's href that way and recomputes it on every click, from the
+ * url the anchor first carried, because the map rewrites its own URL
+ * (`?d=`, `?panel=`) through `history.replaceState` while a sheet stays open.
+ * `build()` binds its pill the same way. The place sheet's signed-out star
+ * must use `bindNext` rather than the server's `{% sign_in_href %}`: the
+ * sheet is an HTMX fragment, and the request path the server sees is the
+ * fragment's, not the map's.
+ *
  * Load order is not a constraint here. Every caller reaches
  * window.snowdeskSigninCta from inside a render function that runs on user
  * interaction, long after every deferred script on the page has executed.
@@ -29,6 +43,81 @@
     'text-sm font-medium text-center py-2 px-4';
 
   const PROMPT_CLASS = 'text-sm text-text-2 mb-3';
+
+  // SNOW-903: the sign-in url each anchor bound by `bindNext` was given, so
+  // each recompute starts from the bare url its caller passed rather than
+  // from an href that already names the previous `next` — and never from an
+  // href read back out of the DOM.
+  /** @type {WeakMap<HTMLAnchorElement, string>} */
+  const BOUND = new WeakMap();
+
+  /**
+   * The root-relative form of a same-origin sign-in url with a `next`
+   * naming the page as it is now, or null when there is nothing to rewrite
+   * (another origin or scheme — a `//host` included — an existing `next`,
+   * or a url that cannot be parsed).
+   *
+   * The result is always assembled behind a literal `/`, from the parsed
+   * path with its leading slashes folded, so whatever an href read back
+   * from the DOM held, what is written is a path on this site.
+   *
+   * @param {string} url The sign-in url, relative or absolute.
+   * @returns {string|null}
+   */
+  function rootRelativeWithNext(url) {
+    if (!url) return null;
+    let parsed;
+    try {
+      parsed = new URL(url, window.location.origin);
+    } catch (_err) {
+      return null;
+    }
+    // Only this site's own sign-in page is given a `next`, so the page url
+    // is never sent anywhere else.
+    if (parsed.origin !== window.location.origin) return null;
+    if (parsed.searchParams.has('next')) return null;
+    parsed.searchParams.set('next', window.location.pathname + window.location.search);
+    return '/' + parsed.pathname.replace(/^\/+/, '') + parsed.search + parsed.hash;
+  }
+
+  /**
+   * Give a sign-in url a `next` naming the page as it is now.
+   *
+   * @param {string} url The sign-in url, relative or absolute.
+   * @returns {string} The url as a root-relative path with
+   *   `next=<path + query>`, or the url unchanged when it already carries a
+   *   `next`, points at another origin or scheme, or cannot be parsed.
+   */
+  function withNext(url) {
+    return rootRelativeWithNext(url) ?? url;
+  }
+
+  /**
+   * Point a sign-in anchor at `withNext(url)`, now and on every click, so
+   * the `next` is the live page url at the moment it is tapped. The url
+   * comes from the caller (the value it rendered the anchor from), never
+   * from the anchor's own href. Binding the same anchor again only updates
+   * its url; it adds no second listener. A url that is not this site's is
+   * never written.
+   *
+   * @param {HTMLAnchorElement} anchor
+   * @param {string|null|undefined} url The bare sign-in url.
+   * @returns {HTMLAnchorElement}
+   */
+  function bindNext(anchor, url) {
+    if (!anchor || !url) return anchor;
+    const bound = BOUND.has(anchor);
+    BOUND.set(anchor, url);
+    const refresh = () => {
+      const next = rootRelativeWithNext(BOUND.get(anchor) || '');
+      if (next) anchor.setAttribute('href', next);
+    };
+    refresh();
+    // Capture phase, so the href is current before any other click handler
+    // (or the browser's own navigation) reads it.
+    if (!bound) anchor.addEventListener('click', refresh, true);
+    return anchor;
+  }
 
   /**
    * Build the gate as DOM nodes.
@@ -54,6 +143,8 @@
       a.setAttribute('href', signinUrl);
       a.className = LINK_CLASS;
       a.textContent = ctaText;
+      // SNOW-903: back to where the visitor was when they tapped it.
+      bindNext(a, signinUrl);
       wrap.appendChild(a);
     }
     return wrap;
@@ -63,5 +154,7 @@
     LINK_CLASS: LINK_CLASS,
     PROMPT_CLASS: PROMPT_CLASS,
     build: build,
+    withNext: withNext,
+    bindNext: bindNext,
   };
 })();

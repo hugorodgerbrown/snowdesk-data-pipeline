@@ -2098,6 +2098,12 @@ async function _trimCache(cache, max) {
 // ERR_INSUFFICIENT_RESOURCES on every one of them.
 const WARM_CACHE_CONCURRENCY = 6;
 
+// SNOW-1331: how many failed URLs a warm run names in its reply. Enough to
+// see a pattern (one host, one status) in a bug report or the offline
+// suite's assertion; few enough that a run failing every tile posts a
+// handful of lines, not four thousand.
+const WARM_FAILURE_SAMPLE = 5;
+
 // Tile-grid rework: shortest gap between two 'warm-cache-progress' messages. The
 // on-map grid wants to know about each tile as it lands, but a
 // full-ceiling run settles thousands of them and one postMessage each
@@ -2424,8 +2430,15 @@ async function _warmCacheResponseBytes(response) {
  * of this file for why the two offline modes part company at exactly this
  * point.
  *
+ * SNOW-1331: ``failures`` is a sample of what failed — the first
+ * ``WARM_FAILURE_SAMPLE`` URLs counted in ``failed``, each as
+ * ``{url, status, why, detail}`` from its final attempt — and is empty when
+ * nothing failed. ``failed`` still counts every failure.
+ *
  * @returns {Promise<{ok: number, failed: number, reason: string|null,
- *   bytes: number, cancelled: boolean}>}
+ *   bytes: number, cancelled: boolean,
+ *   failures: Array<{url: string, status: number|null, why: string,
+ *   detail: string}>}>}
  */
 async function _warmCache(urls, options) {
   // SNOW-748: the user's own offline mode, refused before a cache is even
@@ -2438,7 +2451,7 @@ async function _warmCache(urls, options) {
   // the app not to spend.
   await _hydrateNetworkMode();
   if (_networkMode === 'offline-forced') {
-    return { ok: 0, failed: 0, reason: 'offline-forced', bytes: 0, cancelled: true };
+    return { ok: 0, failed: 0, reason: 'offline-forced', bytes: 0, cancelled: true, failures: [] };
   }
   const opts = options || {};
   const pinned = !!opts.pinned;
@@ -2496,18 +2509,42 @@ async function _warmCache(urls, options) {
   };
   // SNOW-568: the most actionable failure seen so far, or null.
   let reason = null;
-  const noteFailure = (why) => {
-    reason = _warmCacheWorseReason(reason, why);
+  // SNOW-1331: the first WARM_FAILURE_SAMPLE failed URLs, each as its final
+  // attempt left it, so a "Download failed" can say WHAT failed — the counts
+  // alone never could, and the weekly offline suite's swisstopo weeks sat
+  // red for want of one URL and one status.
+  const failures = [];
+  const noteFailure = (rawUrl, failure) => {
+    reason = _warmCacheWorseReason(reason, failure.why);
+    if (failures.length < WARM_FAILURE_SAMPLE) {
+      failures.push({
+        url: String(rawUrl),
+        status: failure.status,
+        why: failure.why,
+        detail: failure.detail,
+      });
+    }
   };
+  /**
+   * SNOW-1331: one failure as ``warmOne`` reports it. ``status`` is the
+   * HTTP status when a response came back (0 for an opaque one) and null
+   * when none did — a throw, or a URL that never reached a fetch.
+   *
+   * @param {string} why
+   * @param {string} detail
+   * @param {number|null} status
+   * @returns {{why: string, detail: string, status: number|null}}
+   */
+  const fail = (why, detail, status) => ({ why, detail, status });
 
   /**
    * Fetch one URL and write it to the cache its origin belongs to.
-   * Returns the failure reason, or null on success. Never throws — a
-   * rejection here would abandon every URL still queued behind it in the
-   * pool.
+   * Returns the failure (SNOW-1331: its reason, the branch that failed and
+   * the status), or null on success. Never throws — a rejection here would
+   * abandon every URL still queued behind it in the pool.
    *
    * @param {string} rawUrl
-   * @returns {Promise<string|null>}
+   * @returns {Promise<{why: string, detail: string, status: number|null}|null>}
    */
   const warmOne = async (rawUrl) => {
     let url;
@@ -2518,7 +2555,7 @@ async function _warmCache(urls, options) {
       // the user can act on — classified directly rather than through
       // _warmCacheClassifyFailure, whose TypeError branch means "the
       // network was unreachable", which this is not.
-      return 'other';
+      return fail('other', 'url', null);
     }
     const sameOrigin = url.origin === self.location.origin;
     const warmClass = sameOrigin ? _classifySync(WARM_CLASSIFY_REQUEST, url) : null;
@@ -2528,18 +2565,24 @@ async function _warmCache(urls, options) {
     const partial = warmClass === 'public-partial';
     // SNOW-1313: and a saved pin's place sheet, the same kind of fragment.
     const privatePartial = warmClass === 'private-partial';
+    // SNOW-1331: set once a response is in hand, so the catch below can
+    // tell a fetch that threw from a write that did.
+    let status = null;
     try {
       const response = partial || privatePartial
         ? await fetch(url.toString(), { headers: { 'HX-Request': 'true' } })
         : await fetch(url.toString());
+      if (!response) return fail('other', 'status', null);
+      status = response.status;
       const validType = sameOrigin ? response.type === 'basic' : response.type === 'cors';
-      if (!response || !response.ok || !validType) {
-        // A reachable server that answered with the wrong thing (404,
-        // 5xx, an opaque redirect). Retrying is pointless, but it is
-        // also not a quota problem — 'other' keeps it out of the
-        // "free up space" message.
-        return 'other';
-      }
+      // A reachable server that answered with the wrong thing (404,
+      // 5xx, an opaque redirect). Retrying is pointless, but it is
+      // also not a quota problem — 'other' keeps it out of the
+      // "free up space" message. SNOW-1331: the type is checked first,
+      // because an opaque answer is also not ``ok`` and its 0 status
+      // says nothing about the server.
+      if (!validType) return fail('other', 'type', status);
+      if (!response.ok) return fail('other', 'status', status);
       const cache = sameOrigin ? shellCache : basemapCache;
       // SNOW-1312: a region sheet (SNOW-1318: or a resort's place sheet)
       // is public — no principal stamp — and is
@@ -2550,7 +2593,8 @@ async function _warmCache(urls, options) {
       // below: a fragment names no viewer and boots no scripts.
       if (partial) {
         const key = _publicPartialKey(url);
-        if (!key || _isNoStore(response)) return 'other';
+        if (!key) return fail('other', 'key', status);
+        if (_isNoStore(response)) return fail('other', 'no-store', status);
         await cache.put(key, response.clone());
         bytes += await _warmCacheResponseBytes(response);
         return null;
@@ -2564,9 +2608,10 @@ async function _warmCache(urls, options) {
       // signed in is a failure, so the run's tally comes up short.
       if (privatePartial) {
         const key = _publicPartialKey(url);
-        if (!key || _isNoStore(response)) return 'other';
+        if (!key) return fail('other', 'key', status);
+        if (_isNoStore(response)) return fail('other', 'no-store', status);
         const principal = await _attestedPrincipal(response);
-        if (!principal) return 'other';
+        if (!principal) return fail('other', 'principal', status);
         await cache.put(key, _stampPrincipal(response.clone(), principal));
         bytes += await _warmCacheResponseBytes(response);
         return null;
@@ -2580,11 +2625,11 @@ async function _warmCache(urls, options) {
       // write, so the run's tally comes up short and the area is never
       // painted complete over it.
       if (sameOrigin && _classifySync(WARM_CLASSIFY_REQUEST, url) === 'private-json') {
-        if (_isNoStore(response)) return 'other';
+        if (_isNoStore(response)) return fail('other', 'no-store', status);
         // Read per url, not once per run: an account swap mid-run must not
         // stamp a later route with a principal that has since changed.
         const principal = await _attestedPrincipal(response);
-        if (!principal) return 'other';
+        if (!principal) return fail('other', 'principal', status);
         await cache.put(url.toString(), _stampPrincipal(response.clone(), principal));
         bytes += await _warmCacheResponseBytes(response);
         return null;
@@ -2630,7 +2675,9 @@ async function _warmCache(urls, options) {
       bytes += await _warmCacheResponseBytes(response);
       return null;
     } catch (err) {
-      return _warmCacheClassifyFailure(err);
+      // SNOW-1331: with no response yet the fetch itself threw; with one,
+      // the write (or reading the body for it) did — quota lands here.
+      return fail(_warmCacheClassifyFailure(err), status === null ? 'threw' : 'write', status);
     }
   };
 
@@ -2645,17 +2692,18 @@ async function _warmCache(urls, options) {
       cancelled = true;
       return;
     }
-    let why = await warmOne(rawUrl);
+    let failure = await warmOne(rawUrl);
     // One retry for a transient failure. A quota failure is never
     // retried — the disk will not have grown between the two attempts,
     // and a second full run of retries against a full disk just doubles
     // the time the user waits for the same answer.
-    if (why && why !== 'quota') {
-      why = await warmOne(rawUrl);
+    if (failure && failure.why !== 'quota') {
+      failure = await warmOne(rawUrl);
     }
-    if (why) {
+    if (failure) {
       failed += 1;
-      noteFailure(why);
+      // SNOW-1331: the retry's outcome, which is the failure counted.
+      noteFailure(rawUrl, failure);
     } else {
       ok += 1;
       // Successes only. A failed tile must not light up its square — the
@@ -2680,7 +2728,7 @@ async function _warmCache(urls, options) {
   if (pinned && opts.glyphPrefix) {
     bytes += await _promoteGlyphs(opts.glyphPrefix, basemapCache);
   }
-  return { ok, failed, reason, bytes, cancelled };
+  return { ok, failed, reason, bytes, cancelled, failures };
 }
 
 /**
@@ -5094,6 +5142,8 @@ self.addEventListener('message', (event) => {
         failed: event.data.urls.length,
         reason: 'other',
         bytes: 0,
+        // SNOW-1331: no URL was tried, so there is nothing to name.
+        failures: [],
         requestId,
       });
     } else {
@@ -5155,6 +5205,10 @@ self.addEventListener('message', (event) => {
           reason: result.reason || null,
           bytes: result.bytes,
           cancelled: !!result.cancelled,
+          // SNOW-1331: up to WARM_FAILURE_SAMPLE failed URLs with their
+          // status and the branch that failed — the bug report's answer to
+          // "what failed?".
+          failures: result.failures || [],
           areaId: areaId || null,
           requestId,
         });
@@ -5174,6 +5228,8 @@ self.addEventListener('message', (event) => {
           // _warmCache's docstring for what this does and doesn't
           // guarantee.
           cancelled: result.cancelled,
+          // SNOW-1331: the sample of failed URLs, empty on success.
+          failures: result.failures || [],
           requestId,
         });
       });

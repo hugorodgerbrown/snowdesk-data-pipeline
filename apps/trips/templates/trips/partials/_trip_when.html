@@ -19,14 +19,17 @@ the native date input laid over the tile, which opens the system's own
 date picker. A day already outside the week — a trip planned further out,
 or an edited trip already past — arrives checked on "Other", which shows it.
 
-THE DANGER LEVEL, WHEN THERE IS ONE. A tile shows the route region's
-level for its day as a compact ``.danger-tile`` when a bulletin rated
-that day (apps/trips/services/plan_days.py), and an empty slot of the same
-height otherwise, so the tiles never change height. Most days have none —
+THE DANGER LEVELS, WHEN THERE ARE ANY. A tile shows each crossed region's
+level for its day as a compact ``.danger-tile``, side by side in route
+order, when a bulletin rated that day (apps/trips/services/plan_days.py,
+SNOW-945), and an empty slot of the same height otherwise, so the tiles
+never change height. A one-region route shows one mark, as before. Past
+``TILE_LEVELS`` (three) the rest fold into a "+N"; the caption names every
+one. Most days have none —
 a bulletin covers today, and tomorrow once the evening issue is out —
 and that is the intended reading, not a gap.
 
-The line under the tiles names the checked day, and its region and level
+The line under the tiles names the checked day, and each region and level
 when there are any. One per tile is rendered; the script shows the checked
 tile's, and the server shows it first, so it reads without the script.
 
@@ -42,7 +45,7 @@ no weather slot at all, rather than seven empty ones.
 
 Context:
     form       : TripForm.
-    plan_week  : PlanWeek — the five days and the region.
+    plan_week  : PlanWeek — the five days and the regions.
     plan_date  : str — the form's day, ISO, or "".
     plan_other : str — that day when it is outside the week, else "".
     plan_other_date : date or None — the same day, to print.
@@ -93,14 +96,20 @@ Context:
                                 {% endif %}
                             </span>
                         {% endif %}
-                        <span class="flex h-5 items-center">
-                            {% if day.rating %}
+                        <span class="flex h-5 items-center gap-0.5">
+                            {% for level in day.tile_levels %}
                                 <span
                                     class="danger-tile danger-tile--compact"
-                                    data-level="{{ day.rating }}"
+                                    data-level="{{ level.rating }}"
                                     data-testid="trip-day-rating"
-                                    title="{{ day.rating_label }}"
-                                >{{ day.digit }}</span>
+                                    title="{{ level.caption }}"
+                                >{{ level.digit }}</span>
+                            {% endfor %}
+                            {% if day.more_levels %}
+                                <span
+                                    class="text-meta text-text-2"
+                                    data-testid="trip-day-more-levels"
+                                >+{{ day.more_levels }}</span>
                             {% endif %}
                         </span>
                         <span class="weather-day-marker h-1 w-5 rounded-pill bg-transparent" aria-hidden="true"></span>
@@ -165,18 +174,18 @@ Context:
                 <p
                     data-day-caption="{{ iso }}"
                     data-short="{{ day.date|date:'D j M' }}"
-                    data-rating="{{ day.rating_label }}"
+                    data-rating="{{ day.readback }}"
                     {% if iso != plan_date %}hidden{% endif %}
                 >
                     {{ day.date|date:"l j F" }}
                     {% if day.weather %}
                         · {% include "trips/partials/_trip_weather_words.html" with day=day.weather only %}
                     {% endif %}
-                    {% if day.rating %}
-                        {% blocktrans trimmed with region=plan_week.region.name level=day.rating_label %}
+                    {% for level in day.levels %}
+                        {% blocktrans trimmed with region=level.region.name level=level.rating_label %}
                             · <strong class="font-semibold text-text-1">{{ level }}</strong> in {{ region }}
                         {% endblocktrans %}
-                    {% endif %}
+                    {% endfor %}
                 </p>
             {% endwith %}
         {% endfor %}

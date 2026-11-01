@@ -350,7 +350,9 @@ describe('signed out with the gate on', () => {
     btn.click();
     await tick(10);
 
-    expect(assign).toHaveBeenCalledWith(SIGNIN_URL);
+    // SNOW-903: with a `next` naming the map url as it is at the tap.
+    const here = window.location.pathname + window.location.search;
+    expect(assign).toHaveBeenCalledWith(`${SIGNIN_URL}?next=${encodeURIComponent(here)}`);
     // And no run started. Asserted on the painted state rather than on
     // whether the blob endpoint was fetched: the done-probe fetches that
     // same endpoint for a region with no stored record, so a fetch spy

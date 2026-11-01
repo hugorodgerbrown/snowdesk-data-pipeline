@@ -390,4 +390,21 @@ describe('region download — a cancelled run is not a failure (SNOW-748)', () =
     expect(failureToastVisible()).toBe(true);
     expect(await recordedRegion()).toBeUndefined();
   });
+  it("hands the worker's sample of failed urls to the toast (SNOW-1331)", async () => {
+    const failures = [{ url: 'https://tiles.example.invalid/14/8577/5811.pbf', status: 429, why: 'other', detail: 'status' }];
+    nextResult = { ok: 0, failed: 3, bytes: 0, cancelled: false, failures };
+
+    await runDownload();
+
+    const toast = document.getElementById(ERROR_TOAST_ID);
+    expect(JSON.parse(toast.getAttribute('data-failures'))).toEqual(failures);
+  });
+
+  it('carries no sample on a cancelled run, which reveals nothing (SNOW-1331)', async () => {
+    nextResult = { ok: 0, failed: 0, bytes: 0, cancelled: true, reason: 'offline-forced', failures: [] };
+
+    await runDownload();
+
+    expect(document.getElementById(ERROR_TOAST_ID).hasAttribute('data-failures')).toBe(false);
+  });
 });

@@ -48,6 +48,7 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from apps.routes.models import Route, RouteShare
+from apps.routes.services import shares
 from apps.routes.services.routes import RouteLimitReached
 from apps.routes.services.shares import (
     PENDING_SESSION_KEY,
@@ -59,7 +60,12 @@ from apps.routes.services.shares import (
     pending_shares,
     pending_tokens,
 )
-from tests.factories import RouteFactory, RouteShareFactory, UserFactory
+from tests.factories import (
+    MicroRegionFactory,
+    RouteFactory,
+    RouteShareFactory,
+    UserFactory,
+)
 
 
 def _session() -> SessionStore:
@@ -571,3 +577,63 @@ class TestPendingShares:
                 assert share.route is not None
 
         assert len(ctx.captured_queries) == 1
+
+
+def _crossed_box(
+    west: float, south: float, east: float, north: float
+) -> dict[str, object]:
+    """Return a GeoJSON Polygon for a lon/lat rectangle (SNOW-945 tests)."""
+    return {
+        "type": "Polygon",
+        "coordinates": [
+            [[west, south], [east, south], [east, north], [west, north], [west, south]],
+        ],
+    }
+
+
+@pytest.mark.django_db
+class TestClaimCarriesCrossedRegions:
+    """SNOW-945: a claimed copy carries the source's list, or resolves one."""
+
+    def test_the_source_list_is_carried(self) -> None:
+        """Same track, same regions: copied, not re-resolved."""
+        owner = UserFactory.create()
+        route = RouteFactory.create(user=owner, crossed_regions=["CH-1", "CH-2"])
+        share = RouteShareFactory.create(route=route, created_by=owner)
+
+        copy = claim_route_share(UserFactory.create(), share.token)
+
+        assert copy.crossed_regions == ["CH-1", "CH-2"]
+
+    def test_a_source_from_before_the_backfill_is_resolved(self) -> None:
+        """A null source list is resolved from the copy's points."""
+        MicroRegionFactory.create(
+            region_id="CH-7003", boundary=_crossed_box(7.3, 46.0, 7.5, 46.2)
+        )
+        owner = UserFactory.create()
+        route = RouteFactory.create(user=owner)
+        share = RouteShareFactory.create(route=route, created_by=owner)
+
+        copy = claim_route_share(UserFactory.create(), share.token)
+
+        assert route.crossed_regions is None
+        assert copy.crossed_regions == ["CH-7003"]
+
+    def test_the_regions_are_resolved_outside_the_claim_transaction(self) -> None:
+        """No geometry walk runs inside the claim's atomic block."""
+        owner = UserFactory.create()
+        route = RouteFactory.create(user=owner)
+        share = RouteShareFactory.create(route=route, created_by=owner)
+        depth = len(connection.atomic_blocks)
+        seen: list[int] = []
+
+        def resolve(points: Any) -> list[str]:
+            """Record how deep in transactions the walk ran."""
+            seen.append(len(connection.atomic_blocks))
+            return ["CH-7003"]
+
+        with patch.object(shares, "resolve_track_regions", side_effect=resolve):
+            copy = claim_route_share(UserFactory.create(), share.token)
+
+        assert seen == [depth]
+        assert copy.crossed_regions == ["CH-7003"]

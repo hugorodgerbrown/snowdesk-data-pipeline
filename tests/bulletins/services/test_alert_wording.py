@@ -213,6 +213,43 @@ class TestSinglePlace:
         assert msg.body == "For your trip. Considerable, no change."
         assert msg.url == "/trips/abc/"
 
+    def test_trip_crossing_several_regions(self) -> None:
+        """A multi-region trip counts its bulletins and states no level."""
+        p = PlaceAlert(
+            region_id="CH-4115",
+            label="Haute Route",
+            target_date=TOMORROW,
+            kind="new",
+            change=summarise_change(state("moderate"), state("considerable")),
+            url="/trips/abc/",
+            new_snow_cm=20,
+            bulletin_count=2,
+            multi_region=True,
+        )
+        msg = alert_message([p], TODAY)
+        assert msg.title == "Haute Route – Saturday bulletins"
+        assert msg.body == "For your trip. 2 bulletins."
+        assert "Considerable" not in msg.body
+        assert "snow" not in msg.body
+        assert msg.url == "/trips/abc/"
+
+    def test_trip_crossing_several_regions_update(self) -> None:
+        """An update to a multi-region trip says so in the title."""
+        p = PlaceAlert(
+            region_id="CH-4115",
+            label="Haute Route",
+            target_date=TOMORROW,
+            kind="update",
+            change=summarise_change(state("moderate"), state("considerable")),
+            compared_to=TOMORROW,
+            url="/trips/abc/",
+            bulletin_count=3,
+            multi_region=True,
+        )
+        msg = alert_message([p], TODAY)
+        assert msg.title == "Haute Route – Saturday bulletins update"
+        assert msg.body == "For your trip. 3 bulletins."
+
     def test_as_push(self) -> None:
         """The push payload carries the three fields."""
         msg = alert_message([place(state(), state())], TODAY)

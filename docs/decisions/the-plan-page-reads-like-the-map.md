@@ -1,6 +1,6 @@
 ---
 name: the-plan-page-reads-like-the-map
-description: route_profile.js, _route_profile.html, _trip_when.html, plan_week, trip_danger, trip_route_profile.js; Plan page tiles, trip page profile
+description: route_profile.js, _route_profile.html, _trip_when.html, plan_week, trip_dangers, trip_route_profile.js; Plan page tiles, trip page profile
 status: current
 last-reviewed: 2026-10-24
 ---
@@ -47,8 +47,9 @@ SNOW-1215 restructured the Plan page (`trips:new`) and the trip page's
    `trip_form.js` copies a picked day into the Other radio, or onto the
    day's own tile when the week has one.
 5. **A tile shows the danger level only when a bulletin rated that day.**
-   The level is the route start region's `RegionDayRating.max_rating`
-   (`apps/trips/services/plan_days.py`). Most tiles show nothing, because a
+   The level is each crossed region's `RegionDayRating.max_rating`
+   (`apps/trips/services/plan_days.py`; every region since SNOW-945,
+   [why](a-route-carries-the-regions-it-crosses.md)). Most tiles show nothing, because a
    bulletin covers only today and, after the evening issue, tomorrow. That
    is the intended reading: there is no "no bulletin" chip.
 6. **The trip name's placeholder is the route's name.** It is no longer
@@ -71,7 +72,7 @@ context) follows the same rules.
    `trip_map.js` turns into a dot with `route_cursor_map_core.js`, the map
    page's own conversion. There is no point card: the page is a plan to
    read, and "View on the map" is where the terrain is read.
-3. **The danger line is the Plan tile's, for one day.** `trip_danger`
+3. **The danger line is the Plan tile's, for one day.** `trip_dangers`
    uses the same region rule and `RegionDayRating` row as the tiles. The
    plan card shows "Considerable (3) in Martigny-Verbier for Sunday · Read
    the bulletin →" only on a rated day, and has no strip otherwise.
@@ -94,8 +95,8 @@ degradation, not a gap to fill.
 
 - A change to how the profile draws is made once, in `route_profile.js`,
   and reaches the map, the Plan page and the trip page together.
-- The route start's region is looked up on every render of the form (one
-  query plus a polygon test, `region_for_point`), with one more query for
-  the week's ratings.
+- The regions are stored on the route (`crossed_regions`, SNOW-945), so a
+  render of the form reads them in one query, with one more query for the
+  week's ratings.
 - `TripForm.date` keeps its `DateInput` widget as the field's definition,
   but no template renders it any more. The radios are the control.

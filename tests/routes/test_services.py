@@ -54,7 +54,7 @@ from apps.routes.services.gpx import (
     parse_gpx,
 )
 from apps.routes.services.routes import RouteLimitReached, create_route, delete_route
-from tests.factories import RouteFactory, UserFactory
+from tests.factories import MicroRegionFactory, RouteFactory, UserFactory
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -745,3 +745,36 @@ class TestSourcePointCountIsPersisted:
 
         assert route.source_point_count == 3
         assert route.point_count == 3
+
+
+def _crossed_box(
+    west: float, south: float, east: float, north: float
+) -> dict[str, object]:
+    """Return a GeoJSON Polygon for a lon/lat rectangle (SNOW-945 tests)."""
+    return {
+        "type": "Polygon",
+        "coordinates": [
+            [[west, south], [east, south], [east, north], [west, north], [west, south]],
+        ],
+    }
+
+
+@pytest.mark.django_db
+class TestCreateRouteCrossedRegions:
+    """SNOW-945: an upload stores the regions its track crosses."""
+
+    def test_an_upload_stores_its_regions(self) -> None:
+        """The fixture runs north from 7.0 E, 46.0 N."""
+        MicroRegionFactory.create(
+            region_id="CH-7001", boundary=_crossed_box(6.9, 45.9, 7.1, 46.1)
+        )
+
+        route = create_route(UserFactory.create(), _fixture("single_track.gpx"))
+
+        assert route.crossed_regions == ["CH-7001"]
+
+    def test_an_upload_outside_coverage_stores_an_empty_list(self) -> None:
+        """Known to be outside, not unresolved."""
+        route = create_route(UserFactory.create(), _fixture("single_track.gpx"))
+
+        assert route.crossed_regions == []

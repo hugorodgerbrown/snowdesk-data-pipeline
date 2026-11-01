@@ -1415,7 +1415,12 @@
           // ran and nothing was cached, which is still a failed download
           // from the user's point of view, just one with no reason to
           // report beyond the generic line.
-          revealBasemapDownloadError(result ? result.reason : null);
+          // SNOW-1331: with the worker's sample of failed urls, for diagnostics.
+          revealBasemapDownloadError(
+            result ? result.reason : null,
+            undefined,
+            result ? result.failures : null,
+          );
         }
         // SNOW-505/522: the warm-cache run has just warmed the shell +
         // pinned basemap caches; re-probe every sync dot against real
@@ -1631,7 +1636,11 @@
       return { started: false, reason: 'invalid' };
     }
     if (NEEDS_SIGNIN) {
-      if (DOWNLOADS_SIGNIN_URL) window.location.assign(DOWNLOADS_SIGNIN_URL);
+      // SNOW-903: back to the map url as it is now, not as it was at load.
+      if (DOWNLOADS_SIGNIN_URL) {
+        const cta = window.snowdeskSigninCta;
+        window.location.assign(cta && cta.withNext ? cta.withNext(DOWNLOADS_SIGNIN_URL) : DOWNLOADS_SIGNIN_URL);
+      }
       return { started: false, reason: 'signin' };
     }
     if (restoring || runState === 'busy') return { started: false, reason: 'busy' };
@@ -1737,7 +1746,14 @@
             ok = true;
           } else {
             await progressFill.finish(false);
-            if (!cancelled) revealBasemapDownloadError(result ? result.reason : null);
+            if (!cancelled) {
+              // SNOW-1331: with the worker's sample of failed urls.
+              revealBasemapDownloadError(
+                result ? result.reason : null,
+                undefined,
+                result ? result.failures : null,
+              );
+            }
           }
           // The same post-run refreshes `handleConfirm` makes.
           window.pwaLayerSyncStatus?.refresh();

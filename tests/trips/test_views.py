@@ -1161,6 +1161,82 @@ class TestTripPageDanger:
 
 
 @pytest.mark.django_db
+@freeze_time("2026-10-24 10:00:00")
+class TestTripsAcrossRegions:
+    """SNOW-945: a track crossing several regions shows every rated level."""
+
+    DAY = datetime.date(2026, 10, 25)
+
+    def _regions(self, *ratings: str | None) -> list[str]:
+        """Make one region per rating, rated on DAY when given; return ids."""
+        ids = []
+        for n, rating in enumerate(ratings):
+            region = MicroRegionFactory.create(
+                region_id=f"CH-90{n}0", name=f"Region {n + 1}"
+            )
+            if rating:
+                RegionDayRatingFactory.create(
+                    region=region, date=self.DAY, max_rating=rating
+                )
+            ids.append(region.region_id)
+        return ids
+
+    def _plan(self, client: Client, crossed: list[str]) -> str:
+        """Render the Plan page for a route carrying ``crossed``."""
+        route = RouteFactory.create(crossed_regions=crossed)
+        client.force_login(route.user)
+        return client.get(f"{reverse('trips:new')}?route={route.uuid}").content.decode()
+
+    def test_trip_page_has_a_line_per_rated_region(self, client: Client) -> None:
+        """Two rated regions, two lines in route order; an unrated one none."""
+        crossed = self._regions("considerable", None, "moderate")
+        trip = TripFactory.create(date=self.DAY, crossed_regions=crossed)
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        assert html.count('data-testid="trip-danger"') == 2
+        assert html.index("Considerable (3) in Region 1") < html.index(
+            "Moderate (2) in Region 3"
+        )
+        assert "Region 2" not in html
+
+    def test_two_region_tile_shows_both_levels(self, client: Client) -> None:
+        """Both digits on the tile; the caption and readback name both."""
+        html = self._plan(client, self._regions("considerable", "moderate"))
+
+        tile = html[html.index('id="trip-day-1"') :]
+        tile = tile[: tile.index('id="trip-day-2"')]
+        assert tile.count('data-testid="trip-day-rating"') == 2
+        assert "trip-day-more-levels" not in tile
+        assert 'title="Considerable (3) in Region 1"' in tile
+        assert (
+            'data-rating="Considerable (3) in Region 1 · Moderate (2) in Region 2"'
+            in html
+        )
+
+    def test_four_regions_show_three_and_a_count(self, client: Client) -> None:
+        """A busy tile shows the first three levels and +1."""
+        html = self._plan(
+            client, self._regions("low", "moderate", "considerable", "high")
+        )
+
+        assert html.count('data-testid="trip-day-rating"') == 3
+        more = re.search(r'data-testid="trip-day-more-levels"[^>]*>([^<]*)<', html)
+        assert more is not None
+        assert more.group(1).strip() == "+1"
+        assert "High (4) in Region 4" in html
+
+    def test_one_region_tile_is_unchanged(self, client: Client) -> None:
+        """One region: one digit and the plain level as the readback."""
+        html = self._plan(client, self._regions("considerable"))
+
+        assert html.count('data-testid="trip-day-rating"') == 1
+        assert 'data-rating="Considerable (3)"' in html
+        assert "trip-day-more-levels" not in html
+
+
+@pytest.mark.django_db
 class TestMeetingPointAddressLookup:
     """The live address under the Plan page's pin (SNOW-1214)."""
 

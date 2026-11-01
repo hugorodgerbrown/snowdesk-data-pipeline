@@ -5904,7 +5904,12 @@
 
   const _loadCountry = async (
     code,
-    { isBootCountry = false, userInitiated = false, onGeometryMerged = null } = {},
+    {
+      isBootCountry = false,
+      userInitiated = false,
+      onGeometryMerged = null,
+      boundaryOnly = false,
+    } = {},
   ) => {
     if (loadedCountries.has(code)) return;
     const upper = code.toUpperCase();
@@ -5918,6 +5923,7 @@
       hasMajorUrl: !!MAJOR_REGIONS_URL,
       hasSubUrl: !!SUB_REGIONS_URL,
       hasRatingsUrl: !!RATINGS_URL,
+      boundaryOnly,
     });
     try {
       const [newRegions, newMajor, newSub] = await Promise.all([
@@ -8495,10 +8501,19 @@
         // have made. It memoises the payload per country, so a row switched
         // off and on again repaints from what the session already holds
         // rather than re-fetching the season.
-        const alreadyLoaded = loadedCountries.has(code);
-        ensureCountryLoaded(code, { userInitiated: true }).then(() => {
+        //
+        // SNOW-957: since boot skips the ratings of a country no provider
+        // claims, this call is now the ONLY fetch of them for such a
+        // country, not a repaint of a payload boot already holds. It runs
+        // whatever the load did: a switch made while the boundary-only boot
+        // load was still in flight joins that load, which fetched no
+        // ratings, and would otherwise leave the country grey. When the load
+        // fetched them itself, ``COUNTRY_RATINGS`` makes this a repaint. The
+        // dot is re-probed once they land, because the refresh above ran
+        // before.
+        ensureCountryLoaded(code, { userInitiated: true }).then(async () => {
           applyCountryFilters();
-          if (alreadyLoaded) loadCountryRatings(code);
+          if (await loadCountryRatings(code)) sync?.refresh();
         }).catch(() => {});
       } else {
         applyCountryFilters();
@@ -8522,7 +8537,7 @@
   document.addEventListener('snowdesk:basemap-changed', () => {
     for (const code of boundaryCountryCodes()) {
       if (loadedCountries.has(code)) continue;
-      ensureCountryLoaded(code).then(() => {
+      ensureCountryLoaded(code, { boundaryOnly: !countryState[code] }).then(() => {
         applyCountryFilters();
       }).catch(() => {});
     }
@@ -8854,7 +8869,13 @@
     };
     const holdCap = setTimeout(releaseHold, BOOT_GEOMETRY_HOLD_MS);
     Promise.all([...bootCountries].map((code) => new Promise((resolve) => {
-      ensureCountryLoaded(code, { isBootCountry: code === 'ch', onGeometryMerged: resolve })
+      // SNOW-957: a country only the basemap outlines skips its season
+      // ratings, which back a fill that never paints for it.
+      ensureCountryLoaded(code, {
+        isBootCountry: code === 'ch',
+        onGeometryMerged: resolve,
+        boundaryOnly: !countryState[code],
+      })
         .catch(() => {})
         .finally(resolve);
     }))).then(() => {
@@ -10166,6 +10187,10 @@
         link.href = ROUTES_SIGNIN_URL;
         link.className = ROUTE_CLAIM_CTA_CLASS;
         link.textContent = MAP_STRINGS['route-save-signin'];
+        // SNOW-903: back to this shared route's map url as it is when the
+        // link is tapped — the popup and the rail stay open while `?d=`
+        // moves under them.
+        window.snowdeskSigninCta?.bindNext?.(link, ROUTES_SIGNIN_URL);
         return link;
       }
 

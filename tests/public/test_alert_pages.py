@@ -192,12 +192,42 @@ class TestAlertsDay:
             created_by=account.user, date=today, name="Mont Fort loop"
         )
         client.force_login(account.user)
-        with patch("apps.bulletins.services.alerts.start_region", return_value=region):
+        with patch(
+            "apps.bulletins.services.alerts.track_regions", return_value=[region]
+        ):
             content = client.get(f"/alerts/{today.isoformat()}/").content.decode()
         assert content.count('data-testid="alerts-day-row"') == 1
         assert "Mont Fort loop" in content
         assert f"/trips/{trip.uuid}/" in content
         assert "Open the trip" in content
+
+    def test_a_trip_across_regions_names_each(
+        self, client: Client, region: Any
+    ) -> None:
+        """A multi-region trip counts its bulletins and gives each a line.
+
+        The second region is unchanged and the first rose, so the card
+        must not read the first region's level as the whole trip, nor say
+        nothing moved (SNOW-945).
+        """
+        account = AccountFactory.create()
+        today = timezone.localdate()
+        second = MicroRegionFactory.create(name="Arolla")
+        _publish(second, today - datetime.timedelta(days=1), "moderate")
+        _publish(second, today, "moderate")
+        trip = TripFactory.create(created_by=account.user, date=today, name="Haute")
+        client.force_login(account.user)
+        with patch(
+            "apps.bulletins.services.alerts.track_regions",
+            return_value=[region, second],
+        ):
+            content = client.get(f"/alerts/{today.isoformat()}/").content.decode()
+        assert content.count('data-testid="alerts-day-row"') == 1
+        assert "2 bulletins" in content
+        assert f"{region.name}: Up from Moderate (2)." in content
+        assert "Arolla: " in content
+        assert "No change to the level or the problems." not in content
+        assert f"/trips/{trip.uuid}/" in content
 
     def test_todays_trip_stays_on_tomorrows_page(
         self, client: Client, region: Any
@@ -208,7 +238,9 @@ class TestAlertsDay:
         tomorrow = today + datetime.timedelta(days=1)
         TripFactory.create(created_by=account.user, date=today, name="Mont Fort")
         client.force_login(account.user)
-        with patch("apps.bulletins.services.alerts.start_region", return_value=region):
+        with patch(
+            "apps.bulletins.services.alerts.track_regions", return_value=[region]
+        ):
             content = client.get(f"/alerts/{tomorrow.isoformat()}/").content.decode()
             past = client.get(
                 f"/alerts/{(tomorrow + datetime.timedelta(days=1)).isoformat()}/"

@@ -92,7 +92,8 @@ describe('a signed-out visitor holding a pending share', () => {
 
     const foot = sheet.querySelector('[data-panel-foot]');
     expect(foot.textContent).toContain('Sign in to save a route.');
-    expect(foot.querySelector('a').getAttribute('href')).toBe('/sign-in/');
+    // SNOW-903: with a `next` back to the page it was tapped on.
+    expect(foot.querySelector('a').getAttribute('href')).toMatch(/^\/sign-in\/\?next=/);
   });
 
   it('still removes the add CTA — uploading needs an account', () => {

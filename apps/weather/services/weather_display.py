@@ -486,6 +486,10 @@ def following_rows(weather: Weather) -> list[Weather]:
     past day, the rows that stand for the days after it. A day with no row
     is simply absent.
 
+    The icon is always the day variant (SNOW-1298): a tile summarises a
+    whole day, as the map's symbol does, so the hour the reader looks says
+    nothing about it.
+
     Args:
         weather: The lead day's row.
 
@@ -500,24 +504,26 @@ def following_rows(weather: Weather) -> list[Weather]:
     )
 
 
-def _row_day_context(weather: Weather, now: datetime.datetime) -> ForecastPanelDay:
+def _row_day_context(weather: Weather) -> ForecastPanelDay:
     """Build one outlook column from one row.
+
+    The icon is always the day variant (SNOW-1298): a tile summarises a
+    whole day, as the map's symbol does, so the hour the reader looks says
+    nothing about it.
 
     Args:
         weather: The row for the day.
-        now: The reference instant for the day/night icon decision.
 
     Returns:
         The day's :class:`ForecastPanelDay`.
 
     """
-    time_of_day = "day" if is_day(weather, now) else "night"
     bucket = weather_code_icon_bucket(weather.weather_code)
     return ForecastPanelDay(
         date=weather.observed_on,
         weekday_label=weather.observed_on.strftime("%a"),
         icon_bucket=bucket,
-        icon_filename=weather_icon_filename(bucket, time_of_day),
+        icon_filename=weather_icon_filename(bucket, "day"),
         condition_label=_ICON_BUCKET_LABEL[bucket],
         temp_max=weather.temperature_2m_max,
         temp_min=weather.temperature_2m_min,
@@ -537,7 +543,6 @@ def _row_day_context(weather: Weather, now: datetime.datetime) -> ForecastPanelD
 
 def build_point_forecast_panel(
     weather: Weather | None,
-    now: datetime.datetime,
     following: Sequence[Weather] | None = None,
 ) -> ForecastPanel | None:
     """Build the multi-day outlook for one location from its rows.
@@ -547,7 +552,6 @@ def build_point_forecast_panel(
 
     Args:
         weather: The lead day's row, or ``None``.
-        now: The reference instant for each day's day/night icon decision.
         following: The rows after the lead day, oldest first, when the
             caller already holds them. Defaults to None, which reads them
             with :func:`following_rows` — one query.
@@ -559,7 +563,7 @@ def build_point_forecast_panel(
     if weather is None:
         return None
     rows = following_rows(weather) if following is None else following
-    return ForecastPanel(days=[_row_day_context(row, now) for row in (weather, *rows)])
+    return ForecastPanel(days=[_row_day_context(row) for row in (weather, *rows)])
 
 
 # ---------------------------------------------------------------------------

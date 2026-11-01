@@ -65,7 +65,8 @@ describe('anonymous tap on the favourites roundel', () => {
 
   it('offers the sign-in CTA in place of the list', () => {
     expect(sheet.textContent).toContain('Sign in');
-    expect(sheet.querySelector(`a[href="${SIGNIN_URL}"]`)).not.toBeNull();
+    // SNOW-903: with a `next` back to the page it was tapped on.
+    expect(sheet.querySelector(`a[href^="${SIGNIN_URL}?next="]`)).not.toBeNull();
   });
 
   it('never requests the list — the endpoint 403s for a visitor', () => {
