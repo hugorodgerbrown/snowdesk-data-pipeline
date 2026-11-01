@@ -19,7 +19,6 @@ Keep business logic out of models — put it in apps/accounts/services/ instead.
 from __future__ import annotations
 
 import logging
-import uuid
 from typing import TYPE_CHECKING
 
 from django.conf import settings
@@ -358,7 +357,7 @@ class PasskeyCredentialQuerySet(models.QuerySet["PasskeyCredential"]):
         return self.filter(credential_id=credential_id)
 
 
-class PasskeyCredential(models.Model):
+class PasskeyCredential(BaseModel):
     """
     A WebAuthn platform passkey registered by a User (auth.User).
 
@@ -380,11 +379,6 @@ class PasskeyCredential(models.Model):
     ``device_type`` is ``"platform"`` for Touch ID / Face ID / Windows Hello
     and ``"cross-platform"`` for roaming authenticators (hardware keys, etc.).
     """
-
-    id = models.BigAutoField(primary_key=True)
-    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -415,7 +409,7 @@ class PasskeyCredential(models.Model):
 
     objects: PasskeyCredentialQuerySet = PasskeyCredentialQuerySet.as_manager()  # type: ignore[assignment]
 
-    class Meta:
+    class Meta(BaseModel.Meta):
         """Model metadata."""
 
         ordering = ["-created_at"]
@@ -480,7 +474,7 @@ class PushSubscriptionQuerySet(models.QuerySet["PushSubscription"]):
         return self.filter(inactive_at__isnull=True)
 
 
-class PushSubscription(models.Model):
+class PushSubscription(BaseModel):
     """
     A browser/device Web Push subscription registered for an Account.
 
@@ -513,11 +507,6 @@ class PushSubscription(models.Model):
         SW = "SW", "Service worker"
         DECLARATIVE = "DECLARATIVE", "Declarative Web Push"
 
-    id = models.BigAutoField(primary_key=True)
-    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
     account = models.ForeignKey(
         Account,
         on_delete=models.CASCADE,
@@ -544,7 +533,7 @@ class PushSubscription(models.Model):
 
     objects: PushSubscriptionQuerySet = PushSubscriptionQuerySet.as_manager()  # type: ignore[assignment]
 
-    class Meta:
+    class Meta(BaseModel.Meta):
         """Model metadata."""
 
         ordering = ["-created_at"]
