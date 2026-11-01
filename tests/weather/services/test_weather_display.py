@@ -40,6 +40,7 @@ from apps.weather.services.weather_display import (
     build_point_weather_days,
     build_weather_display,
     is_day,
+    local_zone,
     weather_code_bucket,
     weather_code_icon_bucket,
     weather_icon_filename,
@@ -494,6 +495,66 @@ class TestBuildPointWeatherDays:
 
         assert days["2026-08-30"]["icon"] == "clear-day.svg"
         assert days["2026-08-31"]["icon"] == "partly_cloudy-day.svg"
+
+
+@pytest.mark.django_db
+class TestLocalClock:
+    """Sunrise and sunset read on the location's clock after a round trip.
+
+    A stored ``DateTimeField`` comes back in UTC, so the offset is read from
+    the row's hourly series (``local_zone``), which keeps the provider's.
+    """
+
+    def _alpine(self, day: datetime.date, *, hourly: bool = True) -> Weather:
+        """Store an Alpine row (+02:00) and read it back from the database."""
+        offset = datetime.timezone(datetime.timedelta(hours=2))
+        row = WeatherFactory.create(
+            observed_on=day,
+            sunrise=datetime.datetime.combine(day, datetime.time(6, 30), offset),
+            sunset=datetime.datetime.combine(day, datetime.time(20, 5), offset),
+            hourly=[{"time": f"{day.isoformat()}T00:00+02:00"}] if hourly else None,
+        )
+        return Weather.objects.get(pk=row.pk)
+
+    @freeze_time(MIDDAY)
+    def test_a_following_day_read_back_keeps_the_local_clock(self) -> None:
+        """A following row loaded from the database shows 06:30, not 04:30."""
+        lead = self._alpine(datetime.date(2026, 8, 30))
+        offset = datetime.timezone(datetime.timedelta(hours=2))
+        WeatherFactory.create(
+            location=lead.location,
+            observed_on=datetime.date(2026, 8, 31),
+            sunrise=datetime.datetime(2026, 8, 31, 6, 31, tzinfo=offset),
+            sunset=datetime.datetime(2026, 8, 31, 20, 3, tzinfo=offset),
+            hourly=[{"time": "2026-08-31T00:00+02:00"}],
+        )
+
+        panel = build_point_forecast_panel(lead, timezone.now())
+
+        assert panel is not None
+        assert [(d["sunrise_local"], d["sunset_local"]) for d in panel["days"]] == [
+            ("06:30", "20:05"),
+            ("06:31", "20:03"),
+        ]
+
+    @freeze_time(MIDDAY)
+    def test_the_lead_day_read_back_keeps_the_local_clock(self) -> None:
+        """Today's strip reads the same clock."""
+        display = build_weather_display(
+            self._alpine(datetime.date(2026, 8, 30)), timezone.now()
+        )
+
+        assert display is not None
+        assert (display["sunrise_local"], display["sunset_local"]) == (
+            "06:30",
+            "20:05",
+        )
+
+    def test_a_row_without_hours_falls_back_to_its_own_offset(self) -> None:
+        """No hourly offset to read: the stored instant's own zone is used."""
+        row = self._alpine(datetime.date(2026, 8, 30), hourly=False)
+
+        assert local_zone(row) == row.sunrise.tzinfo
 
 
 def _following(lead: Weather, *dates: str, **fields: Any) -> list[Weather]:

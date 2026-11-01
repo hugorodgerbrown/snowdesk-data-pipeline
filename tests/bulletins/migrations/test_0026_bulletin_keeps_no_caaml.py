@@ -42,11 +42,18 @@ def test_an_unheld_bulletins_caaml_is_copied_before_the_column_goes() -> None:
     Bulletin = old.get_model("bulletins", "Bulletin")
     OldSource = old.get_model("ingest", "SourceBulletin")
     common = {"issued_at": STAMP, "valid_from": STAMP, "valid_to": STAMP}
-    archived = {"bulletinID": "mf-archive", "customData": {"MF": {}}}
+    archived = {
+        "bulletinID": "mf-archive",
+        "regions": [{"regionID": "FR-02"}, {"regionID": "FR-01"}],
+        "customData": {"MF": {}},
+    }
     Bulletin.objects.create(
         bulletin_id="mf-archive",
         source="METEOFRANCE",
         raw_data={"type": "Feature", "geometry": None, "properties": archived},
+        render_model={"version": 9, "traits": []},
+        render_model_version=9,
+        target_date=dt.date(2026, 1, 15),
         **common,
     )
     Bulletin.objects.create(
@@ -74,6 +81,11 @@ def test_an_unheld_bulletins_caaml_is_copied_before_the_column_goes() -> None:
     assert (copied.provider, copied.caaml) == ("METEOFRANCE", archived)
     assert copied.content_hash == content_hash(archived)
     assert copied.fetched_at == STAMP
+    # Served whole: the feed files a row by its model and index alone.
+    assert copied.render_model == {"version": 9, "traits": []}
+    assert copied.render_model_version == 9
+    assert (copied.valid_from, copied.target_date) == (STAMP, dt.date(2026, 1, 15))
+    assert copied.region_codes == ["FR-01", "FR-02"]
     assert rows["slf-held"].caaml == {"bulletinID": "slf-held"}
 
     _migrate(MigrationExecutor(connection).loader.graph.leaf_nodes())

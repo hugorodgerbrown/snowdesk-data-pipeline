@@ -8,8 +8,12 @@
 # Before the column goes, any bulletin ingest holds no SourceBulletin for —
 # one written around the store, as the Météo-France archive loader did until
 # this ticket — has its CAAML copied into one, so dropping raw_data loses no
-# provider payload. Rows ingest already holds are left as they are. The copy
-# is one-way: reversing the migration re-adds an empty raw_data column.
+# provider payload. The copy carries the bulletin's own render model and
+# index (valid_from, target_date, region codes) with it, so the feed serves
+# it whole — an item without them could not be filed, and nothing would
+# fetch these archive rows again to fill them in. Rows ingest already holds
+# are left as they are. The copy is one-way: reversing the migration re-adds
+# an empty raw_data column.
 
 import hashlib
 import json
@@ -48,7 +52,17 @@ def copy_unheld_caaml(apps, schema_editor) -> None:  # noqa: ANN001 — migratio
     held = set(SourceBulletin.objects.values_list("bulletin_id", flat=True))
     rows = (
         Bulletin.objects.exclude(bulletin_id__in=held)
-        .only("bulletin_id", "source", "raw_data", "pdf_url", "updated_at")
+        .only(
+            "bulletin_id",
+            "source",
+            "raw_data",
+            "pdf_url",
+            "updated_at",
+            "valid_from",
+            "target_date",
+            "render_model",
+            "render_model_version",
+        )
         .iterator(chunk_size=500)
     )
     batch = []
@@ -65,6 +79,17 @@ def copy_unheld_caaml(apps, schema_editor) -> None:  # noqa: ANN001 — migratio
                 pdf_url=bulletin.pdf_url,
                 content_hash=_hash(properties),
                 fetched_at=bulletin.updated_at,
+                render_model=bulletin.render_model or {},
+                render_model_version=bulletin.render_model_version,
+                valid_from=bulletin.valid_from,
+                target_date=bulletin.target_date,
+                region_codes=sorted(
+                    {
+                        entry["regionID"]
+                        for entry in properties.get("regions") or []
+                        if isinstance(entry, dict) and entry.get("regionID")
+                    }
+                ),
             )
         )
         if len(batch) >= 500:

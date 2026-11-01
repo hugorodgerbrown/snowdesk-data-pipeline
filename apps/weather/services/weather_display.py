@@ -223,6 +223,44 @@ def weather_icon_filename(icon_bucket: str, time_of_day: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# The location's clock
+# ---------------------------------------------------------------------------
+
+
+def local_zone(weather: "Weather") -> datetime.tzinfo:
+    """Return the fixed offset of the location's own clock for ``weather``.
+
+    A ``DateTimeField`` loses the provider's offset on a database round trip
+    (``USE_TZ`` hands it back in UTC), so ``sunrise`` read from a stored row
+    cannot say what the clock reads at the location. The row's hourly series
+    can: each hour keeps the provider's timestamp as a string, in the
+    point's own offset (``timezone=auto``). That offset is the answer; a row
+    with no such hour falls back to the one ``sunrise`` carries — the
+    provider's own on a row built in memory, UTC on one read back.
+
+    Args:
+        weather: The row whose location's clock is wanted.
+
+    Returns:
+        A tzinfo for formatting the row's instants as wall-clock times.
+
+    """
+    for hour in weather.hourly or []:
+        try:
+            offset = datetime.datetime.fromisoformat(hour["time"]).tzinfo
+        except KeyError, TypeError, ValueError:
+            continue
+        if offset is not None:
+            return offset
+    return weather.sunrise.tzinfo or datetime.UTC
+
+
+def _clock(instant: datetime.datetime, zone: datetime.tzinfo) -> str:
+    """Return ``instant`` as "HH:MM" on the clock ``zone`` keeps."""
+    return instant.astimezone(zone).strftime("%H:%M")
+
+
+# ---------------------------------------------------------------------------
 # Day / night
 # ---------------------------------------------------------------------------
 
@@ -298,7 +336,7 @@ class WeatherDisplay(TypedDict):
     bucket: str
     is_day: bool
     time_of_day: str  # "day" or "night" — pre-computed for template clarity.
-    sunrise_local: str  # "HH:MM" in the row's stored offset.
+    sunrise_local: str  # "HH:MM" on the location's clock (local_zone).
     sunset_local: str  # "HH:MM" in the row's stored offset.
     icon_bucket: str  # One of WEATHER_ICON_BUCKETS (finer than ``bucket``).
     condition_label: str  # En-GB human label, e.g. "Light snow".
@@ -368,11 +406,11 @@ def build_weather_display(
         bucket=weather_code_bucket(weather.weather_code),
         is_day=daytime,
         time_of_day=time_of_day,
-        # Formatted in the row's stored offset so the strip shows the
-        # wall-clock time of sunrise/sunset AT THE LOCATION, not in the
-        # Django-active TIME_ZONE.
-        sunrise_local=weather.sunrise.strftime("%H:%M"),
-        sunset_local=weather.sunset.strftime("%H:%M"),
+        # The wall-clock time of sunrise/sunset AT THE LOCATION, not in the
+        # Django-active TIME_ZONE — read from the row's hourly offset, since
+        # a stored DateTimeField comes back in UTC (local_zone).
+        sunrise_local=_clock(weather.sunrise, zone := local_zone(weather)),
+        sunset_local=_clock(weather.sunset, zone),
         icon_bucket=icon_bucket,
         condition_label=_ICON_BUCKET_LABEL[icon_bucket],
         icon_filename=weather_icon_filename(icon_bucket, time_of_day),
@@ -410,7 +448,7 @@ class ForecastPanelDay(TypedDict):
     # SNOW-1105: the weather sheet states the chance of precipitation, and
     # on a forward day it reads this column rather than a row of its own.
     precipitation_probability_max: int | None
-    # SNOW-789: the day's daylight window, "HH:MM" in the day's OWN stored
+    # SNOW-789: the day's daylight window, "HH:MM" in the day's OWN
     # offset — the same rule as ``WeatherDisplay.sunrise_local``. The day
     # picker's selected-day line states the daylight for whichever day is
     # chosen, so every column has to carry its own pair rather than the
@@ -489,9 +527,9 @@ def _row_day_context(weather: Weather, now: datetime.datetime) -> ForecastPanelD
         wind_bearing=weather.wind_direction_10m_dominant,
         precipitation_probability_max=weather.precipitation_probability_max,
         # Same rule as WeatherDisplay: the wall-clock time AT THE LOCATION,
-        # in the row's stored offset — each day's own, not the lead day's.
-        sunrise_local=weather.sunrise.strftime("%H:%M"),
-        sunset_local=weather.sunset.strftime("%H:%M"),
+        # in each day's own offset (local_zone), not the lead day's.
+        sunrise_local=_clock(weather.sunrise, zone := local_zone(weather)),
+        sunset_local=_clock(weather.sunset, zone),
         hourly=(hourly := list(weather.hourly or [])),
         selectable=bool(hourly),
     )
