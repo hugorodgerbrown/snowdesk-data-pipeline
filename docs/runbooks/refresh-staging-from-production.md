@@ -169,8 +169,9 @@ Render does not expose — leave the role on MD5 and raise it separately.
 
 The rest of the roles on this database, the application role included, are
 almost certainly on MD5 for the same reason. That is a pre-existing posture
-question for the whole instance rather than anything this runbook introduces;
-worth a ticket, not worth blocking the sync on.
+question for the whole instance rather than anything this runbook introduces,
+and it has its own runbook:
+[`rotate-postgres-password-encryption.md`](rotate-postgres-password-encryption.md).
 
 **The last line is not optional.** `GRANT SELECT ON ALL TABLES` applies only
 to the tables that exist at the moment it runs. Without the default-privileges
