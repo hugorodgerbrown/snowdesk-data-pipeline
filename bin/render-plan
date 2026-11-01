@@ -1,0 +1,498 @@
+#!/usr/bin/env python3
+# bin/render-plan — render the weekly 30-day plan as one Artifact page.
+#
+# The `plan-month` skill decides WHAT goes in the plan: it reads Linear and
+# docs/competitors.md, scores every open ticket, and writes its judgement as
+# one JSON document (schema below). This script decides only HOW that plan
+# looks, so the page has the same shape every Monday whoever — or whatever —
+# produced the JSON. A routine that hand-wrote HTML each week would drift in
+# layout and in what it bothers to show; a renderer cannot.
+#
+# It also carries the plan forward. The JSON is embedded in the page it
+# renders (<script type="application/json" id="plan-data">), so next week's
+# run passes last week's page as --previous and the "Since last week" panel
+# is computed rather than remembered: added, moved between weeks, shipped,
+# dropped. The Artifact is the only state the plan has — a Routine has no
+# persistent disk — and this is how it survives from one run to the next.
+#
+# The output is a self-contained HTML fragment — no <!doctype>, <html>,
+# <head> or <body> of its own — the convention bin/render-churn and
+# bin/render-day-summary-matrix share, so it publishes as an Artifact.
+#
+# Reads only. Prints to stdout unless --output names a file.
+#
+#     uv run python bin/render-plan /tmp/plan.json --previous /tmp/prev.html \
+#         --output /tmp/plan.html
+#
+# Input schema (every key required unless marked optional):
+#
+#   generated_on   "YYYY-MM-DD"
+#   window         {"start": "YYYY-MM-DD", "end": "YYYY-MM-DD"}
+#   summary        2–3 sentences: what this month is for
+#   capacity       {"done_42d": int, "unplanned_share": float 0–1,
+#                   "planned_per_30d": int, "reserve_pct": int,
+#                   "note": str}
+#   weeks          four of {"label": str, "start": "YYYY-MM-DD",
+#                   "theme": str, "items": [item, …]}
+#   item           {"id": "SNOW-n", "title": str, "kind": one of KINDS,
+#                   "area": str, "status": str, "estimate": int|null,
+#                   "score": int, "why": str, "drivers": [one of DRIVERS]}
+#   decisions      [{"id", "title", "question"}] — Requires input, for Hugo
+#   new_tickets    [{"id", "title", "idea": str}] — raised this run
+#   linear_changes [{"id", "field", "from", "to"}] — written this run
+#   signals        [str] — competitor movements that moved the ranking
+#   not_planned    [{"id", "title", "reason"}]
+#   completed_since_last  optional [ids] — Done since the previous plan
+#
+# ruff: noqa: T201, E501
+# T201 — CLI script; print() is the intended output channel.
+# E501 — most of this file is an embedded HTML document and its CSS; the
+#        same reasoning bin/render-churn's header gives.
+
+"""30-day plan renderer — see the header block above for full behaviour."""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import html
+import json
+import pathlib
+import re
+import sys
+from typing import Any
+
+KINDS = ("bug", "feature", "improvement", "chore")
+DRIVERS = ("season", "competitive", "bug", "unblock")
+DRIVER_LABELS = {
+    "season": "Season",
+    "competitive": "Rival ships it",
+    "bug": "Broken today",
+    "unblock": "Unblocks others",
+}
+LINEAR_URL = "https://linear.app/hugorodgerbrown/issue/{id}"
+DATA_RE = re.compile(
+    r'<script type="application/json" id="plan-data">(.*?)</script>', re.S
+)
+
+
+def esc(value: object) -> str:
+    """HTML-escape any value for text or a double-quoted attribute."""
+    return html.escape(str(value), quote=True)
+
+
+def fmt_day(iso: str) -> str:
+    """Render an ISO date as '2 Nov'."""
+    day = dt.date.fromisoformat(iso)
+    return f"{day.day} {day:%b}"
+
+
+REQUIRED_KEYS = (
+    "generated_on",
+    "window",
+    "summary",
+    "capacity",
+    "weeks",
+    "decisions",
+    "new_tickets",
+    "linear_changes",
+    "signals",
+    "not_planned",
+)
+
+
+def item_problems(item: dict[str, Any]) -> list[str]:
+    """Return the schema problems in one planned ticket."""
+    ident = item.get("id", "?")
+    problems = []
+    if item.get("kind") not in KINDS:
+        problems.append(f"{ident}: kind {item.get('kind')!r} not in {KINDS}")
+    problems.extend(
+        f"{ident}: driver {driver!r} not in {DRIVERS}"
+        for driver in item.get("drivers", [])
+        if driver not in DRIVERS
+    )
+    return problems
+
+
+def validate(plan: dict[str, Any]) -> list[str]:
+    """Return every schema problem in ``plan``; empty when it is renderable."""
+    problems = [f"missing key: {key}" for key in REQUIRED_KEYS if key not in plan]
+    if problems:
+        return problems
+    if len(plan["weeks"]) != 4:
+        problems.append(f"expected 4 weeks, got {len(plan['weeks'])}")
+    seen: set[str] = set()
+    for item in (i for week in plan["weeks"] for i in week.get("items", [])):
+        if item.get("id") in seen:
+            problems.append(f"{item['id']} is planned in two weeks")
+        seen.add(item.get("id", "?"))
+        problems.extend(item_problems(item))
+    return problems
+
+
+def read_previous(path: pathlib.Path | None) -> dict[str, Any] | None:
+    """Extract the embedded plan JSON from last week's rendered page."""
+    if path is None or not path.exists():
+        return None
+    match = DATA_RE.search(path.read_text(encoding="utf-8"))
+    if not match:
+        return None
+    return json.loads(match.group(1))
+
+
+def week_of(plan: dict[str, Any]) -> dict[str, int]:
+    """Map each planned ticket id to its week index (0–3)."""
+    return {
+        item["id"]: index
+        for index, week in enumerate(plan["weeks"])
+        for item in week["items"]
+    }
+
+
+def diff(plan: dict[str, Any], previous: dict[str, Any] | None) -> dict[str, list]:
+    """Compare this plan with the last one: added, moved, shipped, dropped."""
+    if previous is None:
+        return {"added": [], "moved": [], "shipped": [], "dropped": [], "first": True}
+    now, before = week_of(plan), week_of(previous)
+    titles = {
+        item["id"]: item["title"]
+        for source in (previous, plan)
+        for week in source["weeks"]
+        for item in week["items"]
+    }
+    completed = set(plan.get("completed_since_last", []))
+    gone = [ident for ident in before if ident not in now]
+    return {
+        "added": [(i, titles[i], now[i]) for i in now if i not in before],
+        "moved": [
+            (i, titles[i], before[i], now[i])
+            for i in now
+            if i in before and before[i] != now[i]
+        ],
+        "shipped": [(i, titles[i]) for i in gone if i in completed],
+        "dropped": [(i, titles[i]) for i in gone if i not in completed],
+        "first": False,
+    }
+
+
+def link(ident: str) -> str:
+    """Render a ticket id as a link to Linear."""
+    return f'<a class="id" href="{esc(LINEAR_URL.format(id=ident))}">{esc(ident)}</a>'
+
+
+def render_item(item: dict[str, Any]) -> str:
+    """One planned ticket as a row in its week lane."""
+    drivers = "".join(
+        f'<span class="driver d-{esc(d)}">{esc(DRIVER_LABELS[d])}</span>'
+        for d in item.get("drivers", [])
+    )
+    estimate = item.get("estimate")
+    size = {1: "XS", 2: "S", 3: "M", 5: "L"}.get(estimate, "–") if estimate else "–"
+    return f"""
+      <li class="item k-{esc(item["kind"])}">
+        <div class="item-head">
+          <span class="kind">{esc(item["kind"])}</span>{link(item["id"])}
+          <span class="size" title="Estimate">{esc(size)}</span>
+        </div>
+        <p class="item-title">{esc(item["title"])}</p>
+        <p class="why">{esc(item["why"])}</p>
+        <div class="meta"><span class="status">{esc(item["status"])}</span><span class="area">{esc(item["area"])}</span>{drivers}</div>
+      </li>"""
+
+
+def mix_bar(items: list[dict[str, Any]]) -> str:
+    """Draw a thin stacked bar showing a week's mix of bugs, features and chores."""
+    if not items:
+        return '<div class="mix empty" aria-hidden="true"></div>'
+    parts = []
+    for kind in KINDS:
+        count = sum(1 for item in items if item["kind"] == kind)
+        if count:
+            parts.append(
+                f'<span class="seg k-{kind}" style="flex:{count}" title="{count} {kind}"></span>'
+            )
+    label = ", ".join(
+        f"{sum(1 for i in items if i['kind'] == k)} {k}"
+        for k in KINDS
+        if any(i["kind"] == k for i in items)
+    )
+    return (
+        f'<div class="mix" role="img" aria-label="{esc(label)}">{"".join(parts)}</div>'
+    )
+
+
+def render_week(index: int, week: dict[str, Any]) -> str:
+    """One of the four week lanes."""
+    items = week["items"]
+    rows = "".join(render_item(item) for item in items) or (
+        '<li class="none">Nothing planned — capacity held for whatever arrives.</li>'
+    )
+    return f"""
+    <section class="week" aria-labelledby="w{index}">
+      <header>
+        <p class="eyebrow">{esc(week["label"])} · from {esc(fmt_day(week["start"]))}</p>
+        <h2 id="w{index}">{esc(week["theme"])}</h2>
+        {mix_bar(items)}
+        <p class="count">{len(items)} ticket{"s" if len(items) != 1 else ""}</p>
+      </header>
+      <ol class="items">{rows}</ol>
+    </section>"""
+
+
+def render_changes(delta: dict[str, list]) -> str:
+    """Render the 'Since last week' panel."""
+    if delta["first"]:
+        return '<p class="quiet">First plan in this series — next Monday shows what moved.</p>'
+    rows = []
+    for ident, title, week in delta["added"]:
+        rows.append(
+            f'<li><span class="chg add">New</span>{link(ident)} {esc(title)} <span class="quiet">→ week {week + 1}</span></li>'
+        )
+    for ident, title, was, now in delta["moved"]:
+        arrow = "earlier" if now < was else "later"
+        rows.append(
+            f'<li><span class="chg move">Moved {arrow}</span>{link(ident)} {esc(title)} <span class="quiet">week {was + 1} → {now + 1}</span></li>'
+        )
+    for ident, title in delta["shipped"]:
+        rows.append(
+            f'<li><span class="chg ship">Shipped</span>{link(ident)} {esc(title)}</li>'
+        )
+    for ident, title in delta["dropped"]:
+        rows.append(
+            f'<li><span class="chg drop">Dropped</span>{link(ident)} {esc(title)}</li>'
+        )
+    if not rows:
+        return '<p class="quiet">Nothing moved since last week.</p>'
+    tally = (
+        f"+{len(delta['added'])} new · {len(delta['moved'])} moved · "
+        f"{len(delta['shipped'])} shipped · {len(delta['dropped'])} dropped"
+    )
+    return f'<p class="tally">{tally}</p><ul class="changes">{"".join(rows)}</ul>'
+
+
+def render_capacity(plan: dict[str, Any]) -> str:
+    """Render the capacity strip: what the month can hold against what is planned."""
+    cap = plan["capacity"]
+    planned = sum(len(week["items"]) for week in plan["weeks"])
+    budget = max(cap["planned_per_30d"], 1)
+    usable = round(budget * (100 - cap["reserve_pct"]) / 100)
+    fill = min(planned / budget, 1) * 100
+    usable_pct = usable / budget * 100
+    return f"""
+  <section class="capacity" aria-label="Capacity">
+    <div class="cap-figures">
+      <div><span class="big">{planned}</span><span class="lbl">planned</span></div>
+      <div><span class="big">{usable}</span><span class="lbl">usable capacity</span></div>
+      <div><span class="big">{cap["done_42d"]}</span><span class="lbl">closed, last 6 weeks</span></div>
+      <div><span class="big">{round(cap["unplanned_share"] * 100)}%</span><span class="lbl">of that unplanned</span></div>
+    </div>
+    <div class="cap-bar" role="img" aria-label="{planned} planned of {usable} usable, {cap["reserve_pct"]}% held in reserve">
+      <span class="cap-fill" style="width:{fill:.1f}%"></span>
+      <span class="cap-mark" style="left:{usable_pct:.1f}%"></span>
+    </div>
+    <p class="quiet">{esc(cap["note"])} The marker is usable capacity; the {cap["reserve_pct"]}% beyond it is held for bugs nobody has filed yet.</p>
+  </section>"""
+
+
+def render_list(rows: list[dict[str, Any]], tail: str) -> str:
+    """Render a simple ticket list with one trailing field."""
+    if not rows:
+        return '<p class="quiet">None this week.</p>'
+    return (
+        "<ul class='plain'>"
+        + "".join(
+            f"<li>{link(r['id'])} <strong>{esc(r['title'])}</strong><br><span class='quiet'>{esc(r[tail])}</span></li>"
+            for r in rows
+        )
+        + "</ul>"
+    )
+
+
+def render_linear_changes(rows: list[dict[str, Any]]) -> str:
+    """Render the audit log of what this run wrote to Linear."""
+    if not rows:
+        return '<p class="quiet">No Linear fields changed this run.</p>'
+    body = "".join(
+        f"<tr><td>{link(r['id'])}</td><td>{esc(r['field'])}</td><td>{esc(r['from'])}</td><td>{esc(r['to'])}</td></tr>"
+        for r in rows
+    )
+    return f"""<div class="table-wrap"><table><thead><tr><th>Ticket</th><th>Field</th><th>Was</th><th>Now</th></tr></thead><tbody>{body}</tbody></table></div>"""
+
+
+STYLE = """
+<style>
+/* Layout: a header and capacity strip, then four week lanes side by side
+   (stacking on a phone), then the side panels in a two-column grid. */
+:root {
+  --bg: #f2f0ec; --card: #ffffff; --tag: #f5f3ef; --fg: #1a1916; --fg-2: #6b6860;
+  --line: rgba(0,0,0,0.09); --line-strong: rgba(0,0,0,0.16); --accent: #2563eb;
+  --bug: #dc2626; --feature: #2563eb; --improvement: #0f766e; --chore: #8a867d;
+  --add: #065f46; --add-bg: #d1fae5; --move: #1e40af; --move-bg: #dbeafe;
+  --drop: #92400e; --drop-bg: #fef3c7; --ship: #3a5a00; --ship-bg: #e8ffb8;
+  --font: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #161513; --card: #201f1c; --tag: #2a2925; --fg: #ece9e2; --fg-2: #a7a297;
+  --line: rgba(255,255,255,0.09); --line-strong: rgba(255,255,255,0.18); --accent: #7aa2ff;
+  --bug: #f87171; --feature: #7aa2ff; --improvement: #2dd4bf; --chore: #a7a297;
+  --add: #a7f3d0; --add-bg: #12372c; --move: #bfdbfe; --move-bg: #172b55;
+  --drop: #fde68a; --drop-bg: #3d2e0b; --ship: #d9f99d; --ship-bg: #2a3a0c;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #161513; --card: #201f1c; --tag: #2a2925; --fg: #ece9e2; --fg-2: #a7a297;
+  --line: rgba(255,255,255,0.09); --line-strong: rgba(255,255,255,0.18); --accent: #7aa2ff;
+  --bug: #f87171; --feature: #7aa2ff; --improvement: #2dd4bf; --chore: #a7a297;
+  --add: #a7f3d0; --add-bg: #12372c; --move: #bfdbfe; --move-bg: #172b55;
+  --drop: #fde68a; --drop-bg: #3d2e0b; --ship: #d9f99d; --ship-bg: #2a3a0c;
+  color-scheme: dark; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 15px; line-height: 1.5; }
+.page { max-width: 1280px; margin: 0 auto; padding-block: 32px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 28px; }
+a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+h1 { font-size: 30px; font-weight: 600; letter-spacing: -0.01em; }
+h2 { font-size: 17px; font-weight: 600; }
+h3 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-2); }
+p { margin: 0; }
+.eyebrow { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg-2); font-variant-numeric: tabular-nums; }
+.lede { max-width: 68ch; font-size: 17px; color: var(--fg); }
+.quiet { color: var(--fg-2); font-size: 13px; }
+.masthead { display: grid; gap: 10px; }
+.capacity { display: grid; gap: 12px; }
+.cap-figures { display: flex; flex-wrap: wrap; gap: 12px 36px; }
+.cap-figures div { display: grid; }
+.big { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.lbl { font-size: 12px; color: var(--fg-2); }
+.cap-bar { position: relative; height: 10px; background: var(--tag); border-radius: 999px; border: 1px solid var(--line); }
+.cap-fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 999px; opacity: 0.75; }
+.cap-mark { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--fg); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--fg-2); }
+.legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; background: var(--c); vertical-align: -1px; }
+.weeks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 1060px) { .weeks { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .weeks { grid-template-columns: minmax(0, 1fr); } }
+.week { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 14px; align-content: start; min-width: 0; }
+.week header { display: grid; gap: 6px; }
+.mix { display: flex; gap: 2px; height: 6px; border-radius: 999px; overflow: hidden; }
+.mix.empty { background: var(--tag); }
+.seg { display: block; } .seg.k-bug { background: var(--bug); } .seg.k-feature { background: var(--feature); }
+.seg.k-improvement { background: var(--improvement); } .seg.k-chore { background: var(--chore); }
+.count { font-size: 12px; color: var(--fg-2); font-variant-numeric: tabular-nums; }
+.items { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.item { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 4px; min-width: 0; }
+.item-head { display: flex; align-items: center; gap: 8px; }
+.kind { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; color: var(--c); }
+.kind::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--c); margin-right: 5px; vertical-align: 1px; }
+.k-bug { --c: var(--bug); } .k-feature { --c: var(--feature); } .k-improvement { --c: var(--improvement); } .k-chore { --c: var(--chore); }
+.id { font-family: var(--mono); font-size: 12px; }
+.size { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--fg-2); border: 1px solid var(--line-strong); border-radius: 4px; padding: 0 5px; }
+.item-title { font-weight: 600; font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; }
+.why { font-size: 13px; color: var(--fg-2); overflow-wrap: anywhere; }
+.meta { display: flex; flex-wrap: wrap; gap: 4px; }
+.meta span { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--tag); color: var(--fg-2); }
+.meta .status { color: var(--fg); }
+.meta .d-season { background: var(--move-bg); color: var(--move); }
+.meta .d-competitive { background: var(--drop-bg); color: var(--drop); }
+.meta .d-bug { background: var(--tag); color: var(--bug); }
+.meta .d-unblock { background: var(--add-bg); color: var(--add); }
+.none { color: var(--fg-2); font-size: 13px; }
+.panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+@media (max-width: 760px) { .panels { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.panel.wide { grid-column: 1 / -1; }
+.tally { font-variant-numeric: tabular-nums; font-weight: 600; }
+.changes, .plain { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: 14px; }
+.chg { display: inline-block; font-size: 11px; font-weight: 600; border-radius: 4px; padding: 0 6px; margin-right: 8px; }
+.chg.add { background: var(--add-bg); color: var(--add); } .chg.move { background: var(--move-bg); color: var(--move); }
+.chg.ship { background: var(--ship-bg); color: var(--ship); } .chg.drop { background: var(--drop-bg); color: var(--drop); }
+.signals { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-weight: 600; color: var(--fg-2); font-size: 12px; }
+details summary { cursor: pointer; font-weight: 600; }
+details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+details[open] summary { margin-bottom: 10px; }
+footer { font-size: 12px; color: var(--fg-2); }
+</style>"""
+
+
+def render(plan: dict[str, Any], previous: dict[str, Any] | None) -> str:
+    """Render the whole page as an Artifact HTML fragment."""
+    delta = diff(plan, previous)
+    window = plan["window"]
+    weeks = "".join(render_week(i, w) for i, w in enumerate(plan["weeks"]))
+    signals = (
+        "<ul class='signals'>"
+        + "".join(f"<li>{esc(s)}</li>" for s in plan["signals"])
+        + "</ul>"
+        if plan["signals"]
+        else '<p class="quiet">No competitor movement changed the ranking this week.</p>'
+    )
+    # "<" as \u003c: nothing in a title can close the script element, and
+    # json.loads reads it back unchanged.
+    embedded = json.dumps(plan, ensure_ascii=False, indent=1).replace("<", "\\u003c")
+    legend = "".join(f'<span class="k-{k}">{k}</span>' for k in KINDS)
+    return f"""<title>Snowdesk 30-Day Plan</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap">
+{STYLE}
+<main class="page">
+  <header class="masthead">
+    <p class="eyebrow">Plan of {esc(fmt_day(plan["generated_on"]))} · covers {esc(fmt_day(window["start"]))} – {esc(fmt_day(window["end"]))}</p>
+    <h1>The next 30 days</h1>
+    <p class="lede">{esc(plan["summary"])}</p>
+  </header>
+  {render_capacity(plan)}
+  <div class="legend" aria-label="Ticket kinds">{legend}</div>
+  <div class="weeks">{weeks}</div>
+  <div class="panels">
+    <section class="panel"><h3>Since last week</h3>{render_changes(delta)}</section>
+    <section class="panel"><h3>Waiting on Hugo</h3>{render_list(plan["decisions"], "question")}</section>
+    <section class="panel"><h3>Competitor signals</h3>{signals}</section>
+    <section class="panel"><h3>Raised this run</h3>{render_list(plan["new_tickets"], "idea")}</section>
+    <section class="panel wide"><h3>Written to Linear this run</h3>{render_linear_changes(plan["linear_changes"])}</section>
+    <section class="panel wide"><details><summary>Not planned this month ({len(plan["not_planned"])})</summary>{render_list(plan["not_planned"], "reason")}</details></section>
+  </div>
+  <footer>Rendered by bin/render-plan from the plan-month skill's JSON. Ranking weights winter-season readiness and competitive gaps; see .claude/skills/plan-month/SKILL.md.</footer>
+</main>
+<script type="application/json" id="plan-data">{embedded}</script>
+"""
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Parse arguments, validate the plan, and write the page."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("plan", type=pathlib.Path, help="the plan JSON")
+    parser.add_argument(
+        "--previous",
+        type=pathlib.Path,
+        help="last week's rendered page, for the 'Since last week' panel",
+    )
+    parser.add_argument("--output", type=pathlib.Path, help="write here, not stdout")
+    args = parser.parse_args(argv)
+
+    plan = json.loads(args.plan.read_text(encoding="utf-8"))
+    problems = validate(plan)
+    if problems:
+        for problem in problems:
+            print(f"render-plan: {problem}", file=sys.stderr)
+        return 1
+    page = render(plan, read_previous(args.previous))
+    if args.output:
+        args.output.write_text(page, encoding="utf-8")
+        planned = sum(len(w["items"]) for w in plan["weeks"])
+        print(f"render-plan: {planned} tickets, {len(page)} bytes", file=sys.stderr)
+    else:
+        print(page)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
