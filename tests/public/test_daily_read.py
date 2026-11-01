@@ -299,18 +299,34 @@ class TestWording:
             ((12, 3, 25), "Danger rose in 12 regions and fell in 3 since yesterday."),
             ((1, 1, 0), "Danger rose in 1 region and fell in 1 since yesterday."),
             ((0, 0, 40), "Danger held in every region since yesterday."),
-            ((8, 0, 0), "Danger rose in all 8 regions since yesterday."),
-            ((0, 5, 0), "Danger fell in all 5 regions since yesterday."),
-            ((1, 0, 0), "Danger rose in the one region rated yesterday."),
-            (
-                (2, 0, 9),
-                "Danger rose in 2 regions since yesterday and held elsewhere.",
-            ),
-            ((0, 1, 9), "Danger fell in 1 region since yesterday and held elsewhere."),
+            ((40, 0, 0), "Danger rose in all 40 regions since yesterday."),
+            ((0, 40, 0), "Danger fell in all 40 regions since yesterday."),
+            ((2, 0, 38), "Danger rose in 2 regions since yesterday and held in 38."),
+            ((0, 1, 39), "Danger fell in 1 region since yesterday and held in 39."),
         ],
     )
     def test_movement(self, counts: tuple[int, int, int], sentence: str) -> None:
         """Each shape of movement reads as one sentence."""
+        rose, fell, held = counts
+        assert daily_read_sentences(country(rose=rose, fell=fell, held=held))[0] == (
+            sentence
+        )
+
+    @pytest.mark.parametrize(
+        ("counts", "sentence"),
+        [
+            ((0, 0, 1), "Danger held in the one region rated both days."),
+            ((0, 0, 12), "Danger held in all 12 regions rated both days."),
+            ((8, 0, 0), "Danger rose in all 8 regions rated both days."),
+            ((0, 5, 0), "Danger fell in all 5 regions rated both days."),
+            ((1, 0, 0), "Danger rose in the one region rated both days."),
+            ((2, 0, 3), "Danger rose in 2 regions since yesterday and held in 3."),
+        ],
+    )
+    def test_movement_when_only_some_regions_compare(
+        self, counts: tuple[int, int, int], sentence: str
+    ) -> None:
+        """40 rated today, fewer yesterday: no claim reaches past those compared."""
         rose, fell, held = counts
         assert daily_read_sentences(country(rose=rose, fell=fell, held=held))[0] == (
             sentence

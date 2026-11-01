@@ -369,6 +369,81 @@ def level_word(key: str) -> str:
     return text[:1].upper() + text[1:]
 
 
+def _movement_sentence(read: CountryRead) -> str | None:
+    """
+    Return the movement sentence, or None when nothing could be compared.
+
+    A claim about "every region" or "all N" is made only of the regions it
+    counts: when some regions rated today were unrated yesterday, the
+    sentence says "rated both days", and a mixed day names how many held
+    rather than saying "elsewhere".
+
+    Args:
+        read: One country's read.
+
+    Returns:
+        The sentence, in the active language, or None.
+
+    """
+    n = read.compared
+    if not n:
+        return None
+    whole = n == read.rated_count
+    if read.rose == 0 and read.fell == 0:
+        if whole:
+            return _("Danger held in every region since yesterday.")
+        return ngettext(
+            "Danger held in the one region rated both days.",
+            "Danger held in all %(n)d regions rated both days.",
+            n,
+        ) % {"n": n}
+    if read.rose == n or read.fell == n:
+        if whole:
+            rose = ngettext(
+                "Danger rose in the one region since yesterday.",
+                "Danger rose in all %(n)d regions since yesterday.",
+                n,
+            )
+            fell = ngettext(
+                "Danger fell in the one region since yesterday.",
+                "Danger fell in all %(n)d regions since yesterday.",
+                n,
+            )
+        else:
+            rose = ngettext(
+                "Danger rose in the one region rated both days.",
+                "Danger rose in all %(n)d regions rated both days.",
+                n,
+            )
+            fell = ngettext(
+                "Danger fell in the one region rated both days.",
+                "Danger fell in all %(n)d regions rated both days.",
+                n,
+            )
+        return (rose if read.rose == n else fell) % {"n": n}
+    if read.rose and read.fell:
+        rose_part = ngettext(
+            "Danger rose in %(n)d region", "Danger rose in %(n)d regions", read.rose
+        ) % {"n": read.rose}
+        return _("%(rose)s and fell in %(fell)d since yesterday.") % {
+            "rose": rose_part,
+            "fell": read.fell,
+        }
+    if read.rose:
+        moved = ngettext(
+            "Danger rose in %(n)d region since yesterday",
+            "Danger rose in %(n)d regions since yesterday",
+            read.rose,
+        ) % {"n": read.rose}
+    else:
+        moved = ngettext(
+            "Danger fell in %(n)d region since yesterday",
+            "Danger fell in %(n)d regions since yesterday",
+            read.fell,
+        ) % {"n": read.fell}
+    return _("%(moved)s and held in %(held)d.") % {"moved": moved, "held": read.held}
+
+
 def daily_read_sentences(read: CountryRead) -> list[str]:
     """
     Return a country's movement, peak and problem sentences.
@@ -384,54 +459,9 @@ def daily_read_sentences(read: CountryRead) -> list[str]:
 
     """
     sentences: list[str] = []
-    n = read.compared
-    if n:
-        if read.rose == 0 and read.fell == 0:
-            sentences.append(_("Danger held in every region since yesterday."))
-        elif read.rose == n:
-            sentences.append(
-                ngettext(
-                    "Danger rose in the one region rated yesterday.",
-                    "Danger rose in all %(n)d regions since yesterday.",
-                    n,
-                )
-                % {"n": n}
-            )
-        elif read.fell == n:
-            sentences.append(
-                ngettext(
-                    "Danger fell in the one region rated yesterday.",
-                    "Danger fell in all %(n)d regions since yesterday.",
-                    n,
-                )
-                % {"n": n}
-            )
-        elif read.rose and read.fell:
-            rose = ngettext(
-                "Danger rose in %(n)d region", "Danger rose in %(n)d regions", read.rose
-            ) % {"n": read.rose}
-            sentences.append(
-                _("%(rose)s and fell in %(fell)d since yesterday.")
-                % {"rose": rose, "fell": read.fell}
-            )
-        elif read.rose:
-            sentences.append(
-                ngettext(
-                    "Danger rose in %(n)d region since yesterday and held elsewhere.",
-                    "Danger rose in %(n)d regions since yesterday and held elsewhere.",
-                    read.rose,
-                )
-                % {"n": read.rose}
-            )
-        else:
-            sentences.append(
-                ngettext(
-                    "Danger fell in %(n)d region since yesterday and held elsewhere.",
-                    "Danger fell in %(n)d regions since yesterday and held elsewhere.",
-                    read.fell,
-                )
-                % {"n": read.fell}
-            )
+    movement = _movement_sentence(read)
+    if movement:
+        sentences.append(movement)
     sentences.append(
         ngettext(
             "Highest today: %(level)s, in %(count)d of %(total)d region.",
