@@ -3,17 +3,85 @@
 # SNOW-1337: a Bulletin keeps no CAAML of its own. raw_data goes (the CAAML
 # stays in ingest's SourceBulletin) and content_hash arrives, blank on every
 # existing row: the next feed item for a row rewrites it once and stamps
-# the hash, so no data migration is needed.
+# the hash.
+#
+# Before the column goes, any bulletin ingest holds no SourceBulletin for —
+# one written around the store, as the Météo-France archive loader did until
+# this ticket — has its CAAML copied into one, so dropping raw_data loses no
+# provider payload. Rows ingest already holds are left as they are. The copy
+# is one-way: reversing the migration re-adds an empty raw_data column.
+
+import hashlib
+import json
 
 from django.db import migrations, models
+
+_PROVIDERS = {"SLF", "ALBINA", "METEOFRANCE"}
+
+
+def _provider(source: str, properties: dict) -> str | None:
+    """Return the SourceBulletin provider for a row, or None if unknown."""
+    if source in _PROVIDERS:
+        return source
+    custom = properties.get("customData") or {}
+    if "CH" in custom:
+        return "SLF"
+    if "MF" in custom:
+        return "METEOFRANCE"
+    if "ALBINA" in custom or any(str(k).startswith("LWD_") for k in custom):
+        return "ALBINA"
+    return None
+
+
+def _hash(caaml: dict) -> str:
+    """sha256 of canonical JSON — apps.ingest.models.content_hash, frozen here."""
+    canonical = json.dumps(
+        caaml, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def copy_unheld_caaml(apps, schema_editor) -> None:  # noqa: ANN001 — migration API
+    """Copy raw_data into a SourceBulletin for every bulletin ingest lacks."""
+    Bulletin = apps.get_model("bulletins", "Bulletin")
+    SourceBulletin = apps.get_model("ingest", "SourceBulletin")
+    held = set(SourceBulletin.objects.values_list("bulletin_id", flat=True))
+    rows = (
+        Bulletin.objects.exclude(bulletin_id__in=held)
+        .only("bulletin_id", "source", "raw_data", "pdf_url", "updated_at")
+        .iterator(chunk_size=500)
+    )
+    batch = []
+    for bulletin in rows:
+        properties = (bulletin.raw_data or {}).get("properties") or {}
+        provider = _provider(bulletin.source, properties)
+        if not properties or provider is None:
+            continue
+        batch.append(
+            SourceBulletin(
+                bulletin_id=bulletin.bulletin_id,
+                provider=provider,
+                caaml=properties,
+                pdf_url=bulletin.pdf_url,
+                content_hash=_hash(properties),
+                fetched_at=bulletin.updated_at,
+            )
+        )
+        if len(batch) >= 500:
+            SourceBulletin.objects.bulk_create(batch, ignore_conflicts=True)
+            batch = []
+    if batch:
+        SourceBulletin.objects.bulk_create(batch, ignore_conflicts=True)
 
 
 class Migration(migrations.Migration):
     dependencies = [
         ("bulletins", "0025_bulletin_danger_levels"),
+        ("ingest", "0008_sourceweather_one_row_per_day"),
     ]
 
     operations = [
+        migrations.RunPython(copy_unheld_caaml, migrations.RunPython.noop),
         migrations.RemoveField(
             model_name="bulletin",
             name="raw_data",
