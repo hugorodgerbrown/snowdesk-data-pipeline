@@ -104,6 +104,33 @@ describe('the leader line', () => {
     }
   });
 
+  it('swings under the panel from a dot beside it, above its bottom (SNOW-1354)', () => {
+    // The dot is right of the panel and higher than the notch (y 300): the
+    // line leaves it downward, dips 40 px below the notch, and comes up
+    // into it rather than bending down onto it through the panel.
+    points.map = { x: 500, y: 120 };
+    openRail().setIndex(4);
+    window.pwaRouteLeader.redraw();
+
+    expect(svg.style.display).toBe('');
+    expect(leaderPath()).toBe('M500 120 C500 340, 120 340, 120 300');
+    expect(stops()[0].getAttribute('d')).toBe('M116 305 L124 305 L120 300 Z');
+    points.map = { x: 100, y: 50 };
+  });
+
+  it('keeps the plain bend on a phone sheet, whatever the heights', () => {
+    points.map = { x: 100, y: 200 };
+    window.pwaRouteRail.isSheet = () => true;
+    try {
+      openRail().setIndex(4);
+      window.pwaRouteLeader.redraw();
+      expect(leaderPath()).toBe('M100 200 C100 250, 120 250, 120 300');
+    } finally {
+      delete window.pwaRouteRail.isSheet;
+      points.map = { x: 100, y: 50 };
+    }
+  });
+
   it('is hidden when the map\'s dot is covered', () => {
     // map.js answers null for a dot behind the rail; a line with one end
     // points at nothing.

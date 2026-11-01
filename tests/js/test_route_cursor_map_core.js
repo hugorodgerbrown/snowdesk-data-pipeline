@@ -282,6 +282,26 @@ describe('isInside', () => {
   });
 });
 
+describe('isVisible (SNOW-1354)', () => {
+  const map = { left: 0, top: 60, right: 800, bottom: 600 };
+  const panel = { left: 12, top: 12, right: 412, bottom: 400 };
+
+  it('sees a dot beside the panel, above its bottom edge', () => {
+    expect(core.isVisible({ x: 600, y: 200 }, map, [panel])).toBe(true);
+  });
+
+  it('hides a dot under the panel, or outside the map', () => {
+    expect(core.isVisible({ x: 200, y: 200 }, map, [panel])).toBe(false);
+    expect(core.isVisible({ x: 600, y: 30 }, map, [panel])).toBe(false);
+    expect(core.isVisible(null, map, [panel])).toBe(false);
+  });
+
+  it('takes no covers, or a missing one, as nothing covering', () => {
+    expect(core.isVisible({ x: 200, y: 200 }, map)).toBe(true);
+    expect(core.isVisible({ x: 200, y: 200 }, map, [null])).toBe(true);
+  });
+});
+
 describe('Centre on route (2026-10-31)', () => {
   it('frames the whole line with no point placed: its bounding box', () => {
     const line = [[7.2, 46.1], [7.0, 46.3], [7.5, 46.0, 2400]];

@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 import '../../static/js/route_leader_core.js';
 
-const { leaderPath } = self.pwaRouteLeaderCore;
+const { leaderPath, swingPath } = self.pwaRouteLeaderCore;
 
 describe('leaderPath', () => {
   it('bends once between two stops, leaving and arriving vertically', () => {
@@ -44,5 +44,22 @@ describe('leaderPath', () => {
     expect(leaderPath([{ x: 0.123456, y: 0 }, { x: 1, y: 1 }])).toBe(
       'M0.12 0 C0.12 0.5, 1 0.5, 1 1',
     );
+  });
+});
+
+describe('swingPath (SNOW-1354)', () => {
+  it('dips below the lower end and arrives at the notch going up', () => {
+    expect(swingPath({ x: 500, y: 120 }, { x: 120, y: 300 }, 40))
+      .toBe('M500 120 C500 340, 120 340, 120 300');
+  });
+
+  it('dips below the dot when the dot is the lower end', () => {
+    expect(swingPath({ x: 500, y: 310 }, { x: 120, y: 300 }, 40))
+      .toBe('M500 310 C500 350, 120 350, 120 300');
+  });
+
+  it('draws nothing with an end missing', () => {
+    expect(swingPath(null, { x: 1, y: 1 }, 40)).toBe('');
+    expect(swingPath({ x: NaN, y: 1 }, { x: 1, y: 1 }, 40)).toBe('');
   });
 });

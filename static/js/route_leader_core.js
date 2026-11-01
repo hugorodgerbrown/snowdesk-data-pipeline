@@ -25,6 +25,10 @@
  *   leaderPath(points, axis?) → an SVG path `d`, or '' for fewer than two
  *     points; `axis` 'y' (the default) or 'x', the direction the line
  *     leaves and meets each stop
+ *   swingPath(start, notch, depth) → an SVG path `d` from a point level
+ *     with or above a notch on a panel's bottom edge: down past the edge
+ *     by `depth` px, then up into the notch (SNOW-1354); '' for a
+ *     missing or non-finite end
  */
 
 // @ts-check
@@ -81,7 +85,37 @@
     return parts.join(' ');
   }
 
+  /**
+   * The leader from a point BESIDE the panel to its bottom notch
+   * (SNOW-1354).
+   *
+   * A point level with the notch or above it would make `leaderPath`'s
+   * bend arrive at the notch from above, through the panel. This one
+   * cubic leaves the point downward and swings under the panel's edge,
+   * `depth` px below the lower of the two ends, to arrive at the notch
+   * going up, as the leader always does: control points
+   * `(start.x, k)` and `(notch.x, k)` with k that depth below.
+   *
+   * @param {?{x: number, y: number}} start The point on the map.
+   * @param {?{x: number, y: number}} notch The notch on the panel's edge.
+   * @param {number} depth How far below the lower end the swing reaches.
+   * @returns {string} The path `d`, or ''.
+   */
+  function swingPath(start, notch, depth) {
+    /** @param {?{x: number, y: number}} p */
+    const ok = (p) => Boolean(p && Number.isFinite(p.x) && Number.isFinite(p.y));
+    if (!ok(start) || !ok(notch)) return '';
+    const s = /** @type {{x: number, y: number}} */ (start);
+    const n = /** @type {{x: number, y: number}} */ (notch);
+    const k = Math.max(s.y, n.y) + (Number.isFinite(depth) ? depth : 0);
+    return 'M' + num(s.x) + ' ' + num(s.y)
+      + ' C' + num(s.x) + ' ' + num(k)
+      + ', ' + num(n.x) + ' ' + num(k)
+      + ', ' + num(n.x) + ' ' + num(n.y);
+  }
+
   self.pwaRouteLeaderCore = Object.freeze({
     leaderPath: leaderPath,
+    swingPath: swingPath,
   });
 })();

@@ -2843,6 +2843,23 @@
   };
 
   /**
+   * The desktop route panel's box, viewport px, while it is open; null on
+   * a phone, where the panel is a bottom sheet (routeSheetTop), and with
+   * no panel (SNOW-1354).
+   *
+   * @returns {?{left: number, top: number, right: number, bottom: number}}
+   */
+  const routePanelBox = () => {
+    const rail = window.pwaRouteRail;
+    if (!rail || !rail.isOpen || !rail.isOpen() || !rail.element) return null;
+    if (rail.isSheet && rail.isSheet()) return null;
+    if (!rail.element.getBoundingClientRect) return null;
+    const box = rail.element.getBoundingClientRect();
+    if (!(box.height > 0)) return null;
+    return { left: box.left, top: box.top, right: box.right, bottom: box.bottom };
+  };
+
+  /**
    * The example walkthrough's bar, viewport px, while it shows; null
    * otherwise (SNOW-1230).
    *
@@ -2899,8 +2916,9 @@
   /**
    * The cursor dot's screen point, or null when it is not VISIBLE.
    *
-   * Under the route panel or the top chrome counts as absent, so the leader
-   * line drops its map stop rather than point at a dot nobody can see.
+   * Under the route panel's box or the top chrome counts as absent, so the
+   * leader line drops its map stop rather than point at a dot nobody can
+   * see; beside the panel it stands (SNOW-1354).
    * A canvas not yet laid out has no visible rect to test against, and
    * the point stands.
    *
@@ -2909,9 +2927,19 @@
   const routeCursorScreenPoint = () => {
     const point = routeCursorRawPoint();
     if (!point) return null;
-    const rect = visibleMapRect();
+    const core = self.pwaRouteCursorMapCore;
+    const container = map && map.getContainer ? map.getContainer() : null;
+    if (!core || !container || !container.getBoundingClientRect) return point;
+    // SNOW-1354: only the panel's own box hides the dot. The band across
+    // the map's width that visibleMapRect keeps clear is for a pan; a dot
+    // beside the panel, above its bottom edge, is in plain view, and the
+    // leader used to drop for it.
+    const rect = core.visibleRect(
+      container.getBoundingClientRect(), routeSheetTop(), FIT_PADDING.top,
+    );
     if (!rect) return point;
-    return self.pwaRouteCursorMapCore.isInside(point, rect) ? point : null;
+    const panel = routePanelBox();
+    return core.isVisible(point, rect, panel ? [panel] : []) ? point : null;
   };
 
   // How far inside the visible map a panned-to dot lands, and how long the
@@ -3202,6 +3230,33 @@
         paint: {
           'line-color': colour || ['coalesce', ['get', 'colour'], ROUTE_LINE_COLOUR],
           'line-width': ['interpolate', ['linear'], ['zoom'], 12, z12, 16, z16],
+        },
+      });
+    }
+    // SNOW-1354: and a ring round the segment, white over an ink outline.
+    // At z14 the 25 m are about 5 px of line, a square on a line already
+    // cut into colours; the ring is what the eye finds. Not in the
+    // segment's class colour, which vanishes on a run of the same class.
+    // Only where the segment is drawn: a route never sampled keeps its
+    // own ring below.
+    for (const [id, colour, width] of [
+      [prefix + '-cursor-ring-casing', ROUTE_CASING_COLOUR, 5],
+      [prefix + '-cursor-ring', ROUTE_CURSOR_HALO, 3],
+    ]) {
+      map.addLayer({
+        id,
+        type: 'circle',
+        source: sourceId,
+        minzoom: ROUTE_SLOPE_MINZOOM,
+        filter: ['all', ['==', ['geometry-type'], 'Point'], ['to-boolean', ['get', 'segment']]],
+        layout: {
+          visibility: visible ? 'visible' : 'none',
+        },
+        paint: {
+          'circle-opacity': 0,
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], ROUTE_SLOPE_MINZOOM, 14, 16, 17],
+          'circle-stroke-color': colour,
+          'circle-stroke-width': width,
         },
       });
     }
@@ -3532,6 +3587,9 @@
           ? { climb: legs.SAC_CLIMB_COLOUR, descent: legs.SAC_DESCENT_COLOUR, line: legs.SAC_CLIMB_COLOUR }
           : undefined,
         solidClimb: true,
+        // SNOW-1354: a white halo, so the open tour stands off the tours
+        // network beside it, drawn in the same blues.
+        halo: true,
       });
       installRouteCursorLayers(TOUR_ROUTE_CURSOR_SOURCE, TOUR_ROUTE_SOURCE, true);
       raiseMarkerLayers();

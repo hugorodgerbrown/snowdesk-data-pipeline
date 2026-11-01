@@ -879,6 +879,31 @@ describe('the route cursor on the map (SNOW-1019)', () => {
     ]);
   });
 
+  it('rings the cursor\'s segment from z14, white over ink (SNOW-1354)', () => {
+    const ids = [...layers.keys()];
+    const routeLayers = window.snowdeskMapState.overlayLayers.routes;
+    const casing = layers.get('routes-cursor-ring-casing');
+    const ring = layers.get('routes-cursor-ring');
+    for (const layer of [casing, ring]) {
+      expect(layer.type).toBe('circle');
+      expect(layer.source).toBe('route-cursor-point');
+      expect(layer.minzoom).toBe(14);
+      // Only round a drawn segment: an unsampled route keeps its own ring.
+      expect(layer.filter).toEqual([
+        'all', ['==', ['geometry-type'], 'Point'], ['to-boolean', ['get', 'segment']],
+      ]);
+      expect(layer.paint['circle-opacity']).toBe(0);
+      expect(routeLayers).toContain(layer.id);
+    }
+    expect(casing.paint['circle-stroke-color']).toBe('#1a1916');
+    expect(ring.paint['circle-stroke-color']).toBe('#ffffff');
+    expect(casing.paint['circle-stroke-width']).toBeGreaterThan(ring.paint['circle-stroke-width']);
+    // Over the segment, under the dot's own layers.
+    expect(ids.indexOf('routes-cursor-segment')).toBeLessThan(ids.indexOf('routes-cursor-ring-casing'));
+    expect(ids.indexOf('routes-cursor-ring-casing')).toBeLessThan(ids.indexOf('routes-cursor-ring'));
+    expect(ids.indexOf('routes-cursor-ring')).toBeLessThan(ids.indexOf('routes-cursor-point-halo'));
+  });
+
   it('puts the cursor\'s segment beside the dot on a sampled route (SNOW-1145)', () => {
     const cursor = openSampledRoute();
 
@@ -1104,6 +1129,23 @@ describe('keeping the cursor dot in view (SNOW-1019)', () => {
     expect(panCalls).toHaveLength(1);
     // 375 → 400 + 12 + 24.
     expect(panCalls[0][0][1]).toBeCloseTo(-61);
+    tearDown();
+  });
+
+  it('gives the leader its map stop for a dot beside the panel (SNOW-1354)', () => {
+    // A narrower panel, its right edge at 150: the dot at x 200, y 125 is
+    // above the panel's bottom (250) but beside it, in plain view.
+    setUp();
+    railSpy.mockReturnValue({ ...RAIL, right: 150, width: 138 });
+    for (const handler of mapStub.handlers.dragstart || []) handler();
+
+    cursor.setIndex(0);
+
+    const point = window.pwaRouteCursorMap.point();
+    expect(point).not.toBeNull();
+    expect(point.x).toBeCloseTo(200);
+    expect(point.y).toBeCloseTo(125);
+    for (const handler of mapStub.handlers.dragend || []) handler();
     tearDown();
   });
 
