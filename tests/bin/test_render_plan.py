@@ -211,6 +211,42 @@ class TestRender:
         assert "<td>Medium</td>" in page
 
 
+class TestLive:
+    """The live refresh: status markers, closed styling and the script."""
+
+    def test_every_ticket_carries_a_status_marker(self) -> None:
+        """Week items and list rows can be repainted by ticket id."""
+        plan = _plan()
+        plan["decisions"] = [
+            {"id": "SNOW-7", "title": "T", "question": "Q?", "status": "Requires input"}
+        ]
+        page = render_plan.render(plan, None)
+        assert 'data-ticket="SNOW-1"' in page
+        assert "data-ticket='SNOW-7'" in page
+        assert page.count("data-status") >= 3
+
+    def test_closed_ticket_is_marked(self) -> None:
+        """A Done or Canceled ticket renders with the closed class."""
+        plan = _plan([[_item("SNOW-1", status="Done")], [_item("SNOW-2")], [], []])
+        page = render_plan.render(plan, None)
+        assert 'class="item k-feature closed" data-ticket="SNOW-1"' in page
+        assert 'class="item k-feature" data-ticket="SNOW-2"' in page
+
+    def test_refresh_reads_linear_read_only(self) -> None:
+        """The script calls list_issues on Linear and nothing else."""
+        page = render_plan.render(_plan(), None)
+        assert 'id="plan-refresh"' in page
+        assert "callTool('Linear', 'list_issues'" in page
+        assert "save_issue" not in page
+
+    def test_statuses_at_is_shown(self) -> None:
+        """The note names when the embedded statuses were read."""
+        plan = _plan()
+        plan["statuses_at"] = "2026-11-01T16:40:00Z"
+        assert "Statuses as of 1 Nov, 16:40 UTC." in render_plan.render(plan, None)
+        assert "Statuses as of 2 Nov." in render_plan.render(_plan(), None)
+
+
 class TestMain:
     """The command line."""
 

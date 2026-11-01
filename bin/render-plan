@@ -43,6 +43,17 @@
 #   signals        [str] — competitor movements that moved the ranking
 #   not_planned    [{"id", "title", "reason"}]
 #   completed_since_last  optional [ids] — Done since the previous plan
+#   statuses_at    optional ISO timestamp — when the embedded statuses were
+#                  read from Linear (defaults to generated_on)
+#
+# The page is live as well as dated. Its Refresh button reads every SNOW
+# ticket updated since `statuses_at` through the viewer's own Linear
+# connector (the Artifact `mcp` capability, tool `list_issues`, read only)
+# and repaints each ticket's status where it appears. Nothing is written
+# back, and the plan itself (weeks, order, priorities) changes only when
+# the next run republishes it. The publish must declare
+#   capabilities: {mcp: {servers: [{server: "Linear", tools: ["list_issues"]}]}}
+# once; later republishes omit `capabilities` and keep it.
 #
 # ruff: noqa: T201, E501
 # T201 — CLI script; print() is the intended output channel.
@@ -71,6 +82,8 @@ DRIVER_LABELS = {
     "unblock": "Unblocks others",
 }
 LINEAR_URL = "https://linear.app/hugorodgerbrown/issue/{id}"
+# Statuses a ticket leaves the plan's work through; drawn struck through.
+CLOSED = ("Done", "Canceled", "Duplicate")
 DATA_RE = re.compile(
     r'<script type="application/json" id="plan-data">(.*?)</script>', re.S
 )
@@ -79,6 +92,14 @@ DATA_RE = re.compile(
 def esc(value: object) -> str:
     """HTML-escape any value for text or a double-quoted attribute."""
     return html.escape(str(value), quote=True)
+
+
+def fmt_stamp(iso: str) -> str:
+    """Render an ISO date or timestamp as '1 Nov' or '1 Nov, 15:50 UTC'."""
+    if "T" not in iso:
+        return fmt_day(iso)
+    stamp = dt.datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(dt.UTC)
+    return f"{stamp.day} {stamp:%b}, {stamp:%H:%M} UTC"
 
 
 def fmt_day(iso: str) -> str:
@@ -187,6 +208,11 @@ def link(ident: str) -> str:
     return f'<a class="id" href="{esc(LINEAR_URL.format(id=ident))}">{esc(ident)}</a>'
 
 
+def closed_class(status: str | None) -> str:
+    """Return the class that marks a ticket closed, or nothing when it is open."""
+    return " closed" if status in CLOSED else ""
+
+
 def render_item(item: dict[str, Any]) -> str:
     """One planned ticket as a row in its week lane."""
     drivers = "".join(
@@ -196,14 +222,14 @@ def render_item(item: dict[str, Any]) -> str:
     estimate = item.get("estimate")
     size = {1: "XS", 2: "S", 3: "M", 5: "L"}.get(estimate, "–") if estimate else "–"
     return f"""
-      <li class="item k-{esc(item["kind"])}">
+      <li class="item k-{esc(item["kind"])}{closed_class(item["status"])}" data-ticket="{esc(item["id"])}">
         <div class="item-head">
           <span class="kind">{esc(item["kind"])}</span>{link(item["id"])}
           <span class="size" title="Estimate">{esc(size)}</span>
         </div>
         <p class="item-title">{esc(item["title"])}</p>
         <p class="why">{esc(item["why"])}</p>
-        <div class="meta"><span class="status">{esc(item["status"])}</span><span class="area">{esc(item["area"])}</span>{drivers}</div>
+        <div class="meta"><span class="status" data-status>{esc(item["status"])}</span><span class="area">{esc(item["area"])}</span>{drivers}</div>
       </li>"""
 
 
@@ -308,7 +334,9 @@ def render_list(rows: list[dict[str, Any]], tail: str) -> str:
     return (
         "<ul class='plain'>"
         + "".join(
-            f"<li>{link(r['id'])} <strong>{esc(r['title'])}</strong><br><span class='quiet'>{esc(r[tail])}</span></li>"
+            f"<li class='row{closed_class(r.get('status'))}' data-ticket='{esc(r['id'])}'>"
+            f"{link(r['id'])} <span class='status' data-status>{esc(r.get('status', ''))}</span> "
+            f"<strong>{esc(r['title'])}</strong><br><span class='quiet'>{esc(r[tail])}</span></li>"
             for r in rows
         )
         + "</ul>"
@@ -424,7 +452,94 @@ details summary { cursor: pointer; font-weight: 600; }
 details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 details[open] summary { margin-bottom: 10px; }
 footer { font-size: 12px; color: var(--fg-2); }
+.live { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.refresh { font: inherit; font-size: 13px; font-weight: 600; color: var(--fg); background: var(--card); border: 1px solid var(--line-strong); border-radius: 999px; padding: 5px 14px; cursor: pointer; }
+.refresh:hover { border-color: var(--accent); color: var(--accent); }
+.refresh:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.refresh[disabled] { cursor: progress; opacity: 0.6; }
+.live-note { font-size: 13px; color: var(--fg-2); font-variant-numeric: tabular-nums; }
+.live-note.warn { color: var(--drop); }
+.plain .status:empty { display: none; }
+.plain .status { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--tag); color: var(--fg); }
+.closed .item-title, .closed strong { text-decoration: line-through; text-decoration-color: var(--fg-2); }
+.closed .why { opacity: 0.7; }
+.closed .status { background: var(--ship-bg) !important; color: var(--ship) !important; }
+.changed .status { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (prefers-reduced-motion: no-preference) { .changed .status { transition: outline-color 0.4s; } }
 </style>"""
+
+
+# The Refresh button. Reads Linear through the viewer's own connector (read
+# only), repaints the status chip of every [data-ticket] element, and keeps
+# the last good statuses on any failure. Error copy branches on the
+# capability's error codes, as the mcp contract asks.
+LIVE_SCRIPT = r"""
+(function () {
+  var btn = document.getElementById('plan-refresh');
+  var note = document.getElementById('plan-refresh-note');
+  var plan = JSON.parse(document.getElementById('plan-data').textContent);
+  var CLOSED = { Done: 1, Canceled: 1, Duplicate: 1 };
+  var since = plan.statuses_at || plan.generated_on;
+  var mcp = null;
+  function say(text, warn) { note.textContent = text; note.classList.toggle('warn', !!warn); }
+  function stamp(d) { return d.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); }
+  function apply(statuses) {
+    var changed = 0;
+    document.querySelectorAll('[data-ticket]').forEach(function (el) {
+      var s = statuses[el.getAttribute('data-ticket')];
+      var chip = el.querySelector('[data-status]');
+      if (!s || !chip) return;
+      if (chip.textContent !== s) { chip.textContent = s; el.classList.add('changed'); changed += 1; }
+      el.classList.toggle('closed', !!CLOSED[s]);
+    });
+    return changed;
+  }
+  function explain(err) {
+    var code = err && err.code;
+    if (code === 'needs_reauth') return 'Reconnect Linear in claude.ai Settings, Connectors, then refresh.';
+    if (code === 'server_not_connected' || code === 'selection_required') return 'Add Linear in claude.ai Settings, Connectors to refresh statuses.';
+    if (code === 'not_in_manifest' || code === 'approval_required' || code === 'not_granted' || code === 'blocked_by_policy' || code === 'consent_required') return 'This page is not allowed to read Linear for you. Allow it from the artifact’s Permissions menu.';
+    if (code === 'server_unavailable' || code === 'rate_limited') return 'Linear did not answer. Try again in a minute.';
+    if (code === 'tool_error') return 'Linear refused the request: ' + (err.message || 'no reason given') + '.';
+    return 'Could not refresh (' + (code || 'unknown error') + '). The statuses shown are from the plan.';
+  }
+  function page(cursor) {
+    var input = { team: 'SNOW', updatedAt: since, limit: 250, fields: ['id', 'status'] };
+    if (cursor) input.cursor = cursor;
+    return mcp.callTool('Linear', 'list_issues', input, { cache: false });
+  }
+  function readAll() {
+    var statuses = {};
+    function step(cursor, n, retried) {
+      return page(cursor).then(function (r) {
+        var p = r.payload || {};
+        (p.issues || []).forEach(function (i) { if (i.id && i.status) statuses[i.id] = i.status; });
+        if (p.hasNextPage && p.cursor && n < 8) return step(p.cursor, n + 1, false);
+        return statuses;
+      }, function (err) {
+        if (err && err.retryable && !retried) {
+          var wait = Math.min(err.retryAfterMs || 1500 + Math.random() * 1500, 60000);
+          return new Promise(function (ok) { setTimeout(ok, wait); }).then(function () { return step(cursor, n, true); });
+        }
+        throw err;
+      });
+    }
+    return step(null, 0, false);
+  }
+  btn.addEventListener('click', function () {
+    if (!mcp) return;
+    btn.disabled = true;
+    say('Reading Linear…');
+    readAll().then(function (statuses) {
+      var changed = apply(statuses);
+      say('Statuses from Linear, ' + stamp(new Date()) + '. ' + (changed ? changed + (changed === 1 ? ' ticket has' : ' tickets have') + ' moved since this plan was written.' : 'Nothing has moved since this plan was written.'));
+    }, function (err) { say(explain(err), true); }).then(function () { btn.disabled = false; });
+  });
+  if (window.claude && window.claude.use) {
+    window.claude.use('mcp').then(function (m) { mcp = m; if (m) btn.hidden = false; }, function () {});
+  }
+})();
+"""
 
 
 def render(plan: dict[str, Any], previous: dict[str, Any] | None) -> str:
@@ -454,6 +569,10 @@ def render(plan: dict[str, Any], previous: dict[str, Any] | None) -> str:
     <p class="eyebrow">Plan of {esc(fmt_day(plan["generated_on"]))} · covers {esc(fmt_day(window["start"]))} – {esc(fmt_day(window["end"]))}</p>
     <h1>The next 30 days</h1>
     <p class="lede">{esc(plan["summary"])}</p>
+    <div class="live">
+      <button type="button" class="refresh" id="plan-refresh" hidden>Refresh statuses from Linear</button>
+      <span class="live-note" id="plan-refresh-note" aria-live="polite">Statuses as of {esc(fmt_stamp(plan.get("statuses_at") or plan["generated_on"]))}.</span>
+    </div>
   </header>
   {render_capacity(plan)}
   <div class="legend" aria-label="Ticket kinds">{legend}</div>
@@ -469,6 +588,7 @@ def render(plan: dict[str, Any], previous: dict[str, Any] | None) -> str:
   <footer>Rendered by bin/render-plan from the plan-month skill's JSON. Ranking weights winter-season readiness and competitive gaps; see .claude/skills/plan-month/SKILL.md.</footer>
 </main>
 <script type="application/json" id="plan-data">{embedded}</script>
+<script>{LIVE_SCRIPT}</script>
 """
 
 
