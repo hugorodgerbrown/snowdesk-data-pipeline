@@ -3233,15 +3233,16 @@
         },
       });
     }
-    // SNOW-1354: and a ring round the segment, white over an ink outline.
+    // SNOW-1354: and a ring round the segment, a hairline: 2 px of white
+    // over a 3.5 px ink outline at 0.8, so 0.75 px of ink shows either side.
     // At z14 the 25 m are about 5 px of line, a square on a line already
     // cut into colours; the ring is what the eye finds. Not in the
     // segment's class colour, which vanishes on a run of the same class.
     // Only where the segment is drawn: a route never sampled keeps its
     // own ring below.
-    for (const [id, colour, width] of [
-      [prefix + '-cursor-ring-casing', ROUTE_CASING_COLOUR, 5],
-      [prefix + '-cursor-ring', ROUTE_CURSOR_HALO, 3],
+    for (const [id, colour, width, opacity] of [
+      [prefix + '-cursor-ring-casing', ROUTE_CASING_COLOUR, 3.5, 0.8],
+      [prefix + '-cursor-ring', ROUTE_CURSOR_HALO, 2, 1],
     ]) {
       map.addLayer({
         id,
@@ -3257,6 +3258,7 @@
           'circle-radius': ['interpolate', ['linear'], ['zoom'], ROUTE_SLOPE_MINZOOM, 14, 16, 17],
           'circle-stroke-color': colour,
           'circle-stroke-width': width,
+          'circle-stroke-opacity': opacity,
         },
       });
     }

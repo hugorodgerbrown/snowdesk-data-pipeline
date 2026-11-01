@@ -879,7 +879,7 @@ describe('the route cursor on the map (SNOW-1019)', () => {
     ]);
   });
 
-  it('rings the cursor\'s segment from z14, white over ink (SNOW-1354)', () => {
+  it('rings the cursor\'s segment from z14 with a hairline, white over ink (SNOW-1354)', () => {
     const ids = [...layers.keys()];
     const routeLayers = window.snowdeskMapState.overlayLayers.routes;
     const casing = layers.get('routes-cursor-ring-casing');
@@ -897,7 +897,11 @@ describe('the route cursor on the map (SNOW-1019)', () => {
     }
     expect(casing.paint['circle-stroke-color']).toBe('#1a1916');
     expect(ring.paint['circle-stroke-color']).toBe('#ffffff');
-    expect(casing.paint['circle-stroke-width']).toBeGreaterThan(ring.paint['circle-stroke-width']);
+    // The hairline Hugo picked: 2 px of white over 3.5 px of ink at 0.8.
+    expect(casing.paint['circle-stroke-width']).toBe(3.5);
+    expect(casing.paint['circle-stroke-opacity']).toBe(0.8);
+    expect(ring.paint['circle-stroke-width']).toBe(2);
+    expect(ring.paint['circle-stroke-opacity']).toBe(1);
     // Over the segment, under the dot's own layers.
     expect(ids.indexOf('routes-cursor-segment')).toBeLessThan(ids.indexOf('routes-cursor-ring-casing'));
     expect(ids.indexOf('routes-cursor-ring-casing')).toBeLessThan(ids.indexOf('routes-cursor-ring'));
