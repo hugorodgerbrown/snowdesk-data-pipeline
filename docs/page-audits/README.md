@@ -1,6 +1,6 @@
 # Page audits
 
-Most recent audit: [2026-10-25](2026-10-25.html)
+Most recent audit: [2026-11-01](2026-11-01.html)
 
 ## Purpose
 
@@ -83,6 +83,7 @@ Sections in order, omitting any that would be empty:
 
 | Date | Baseline | Headline |
 |------|----------|----------|
+| [2026-11-01](2026-11-01.html) | `b09d298` → `0b9ed87` | The bulletin guide finally covers all three providers (SNOW-679, closed after ten audits) and bulletin alerts landed as a superuser-only dark launch while the privacy policy already describes them; the homepage lost its Help/Compare/blog panels, so `/compare/` is now unlinked everywhere and the explainers and Claude connector still have no inbound link |
 | [2026-10-25](2026-10-25.html) | `4ce4425` → `b09d298` | The Trip page now draws routes with the map's legs modules (closing that finding), and `/resorts/` plus a flagged example-route onboarding arrived; the footer is at its five-link ceiling, and the bulletin guide is still SLF-only for the tenth audit |
 | [2026-10-18](2026-10-18.html) | `c721895` → `4ce4425` | The rewritten homepage now names all three bulletin providers (closing the scope finding in part) but still omits the Claude connector and explainers, which makes the SLF-only reading guide (SNOW-679) the loudest gap between promise and page; the footer comment about `/compare/` and the Trip page's slope-class drawing remain unfixed and untracked |
 | [2026-10-11](2026-10-11.html) | `bbc1577` → `c721895` | The site gained a static homepage at `/` that quietly re-links `/compare/` (closing that finding in part) but names neither the Claude connector nor the explainers; the bulletin guide's review date was bumped without adding ALBINA or Météo-France, and every other tracked finding is unchanged. Covers two weeks — no audit was filed for 4 October |
