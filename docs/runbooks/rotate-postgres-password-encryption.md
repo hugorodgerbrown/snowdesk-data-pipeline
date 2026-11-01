@@ -40,11 +40,11 @@ application role, read through its own env group.
 
 | Environment | Service | Kind | Picks up a new value by |
 |---|---|---|---|
-| Production | `snowdesk-website` | web, the only migrator | a restart |
-| Production | `snowdesk-scheduler` | worker (`run_scheduler`) | a restart |
-| Production | `snowdesk-background-tasks` | worker (`db_worker`) | a restart |
-| Staging | `snowdesk-staging` | web | a restart |
-| Staging | `snowdesk-staging-data-pull` | cron, 07:20 UTC (`pull_reference_data --commit`) | its next run — a fresh process each time |
+| Production | `snowdesk-website` | web, the only migrator | a deploy |
+| Production | `snowdesk-scheduler` | worker (`run_scheduler`) | a deploy |
+| Production | `snowdesk-background-tasks` | worker (`db_worker`) | a deploy |
+| Staging | `snowdesk-staging` | web | a deploy |
+| Staging | `snowdesk-staging-data-pull` | cron, 07:20 UTC (`pull_reference_data --commit`) | its next run after the env-group save |
 
 All three production services read `fromGroup: Production`; both staging
 consumers read `fromGroup: Staging`. The commented-out
@@ -87,11 +87,18 @@ Then, from the dashboard:
 - **The application role's name** — the user part of the environment's
   current `DATABASE_URL` (env group → `DATABASE_URL` → reveal):
   `postgres://<app_role>:<password>@<host>/<db>`.
-- **Whether an env-group edit restarts the dependent services on its own.**
-  Render's behaviour here has changed over time; check the env group's save
-  dialog. This runbook assumes neither: it restarts each service explicitly.
+- **Whether saving the env group deploys the linked services on its own.**
+  Render's documentation says saving an env group triggers a deploy of every
+  service linked to it that has auto-deploy on. Check each service's
+  **Settings → Auto-Deploy**, so you know which ones you will deploy by hand.
 
-Write the four facts down for each environment before going on.
+**A restart is not enough.** Render's **Restart service** reuses the running
+deploy's environment — "restarting does not incorporate those changes" — so
+a service restarted after the env-group save still connects with the OLD
+password and fails. A service only picks up the new `DATABASE_URL` from a
+new **deploy**.
+
+Write the five facts down for each environment before going on.
 
 ## The change — production
 
@@ -123,9 +130,14 @@ in a different session would hash with the server default again.
 3. **Immediately** update `DATABASE_URL` on the **Production** env group,
    replacing only the password part, and save.
 
-4. **Restart, migrator first.** `snowdesk-website` first — it serves traffic,
-   so it is the fastest signal the new value works — then
-   `snowdesk-scheduler` and `snowdesk-background-tasks`.
+4. **Let the deploys finish.** The save triggers a deploy of each linked
+   service with auto-deploy on. For any with auto-deploy off, start one by
+   hand: **Manual Deploy → Deploy latest commit**. Watch `snowdesk-website`
+   first — it serves traffic, so its deploy going live is the fastest signal
+   the new value works — then `snowdesk-scheduler` and
+   `snowdesk-background-tasks`. Do **not** use **Restart service** for this
+   (see the pre-flight note). Until each deploy is live, that service keeps
+   its old connections and fails on any new one.
 
 5. **Verify** (below) before touching staging.
 
@@ -149,7 +161,9 @@ authenticate.
    ```
 
 3. Update `DATABASE_URL` on the **Staging** env group and save.
-4. Restart `snowdesk-staging`.
+4. Let `snowdesk-staging`'s triggered deploy go live, or start one with
+   **Manual Deploy → Deploy latest commit** if its auto-deploy is off. Not a
+   restart: a restart keeps the old value.
 5. `snowdesk-staging-data-pull` takes the new value on its next run. Prove it
    now with the cron's **Trigger run** in the dashboard; it should exit 0.
 
@@ -172,7 +186,7 @@ For each environment:
 The old password stops authenticating the instant the `ALTER ROLE` commits,
 and Postgres keeps no copy of it. There is nothing to roll back to: the only
 way forward from a bad state is to rotate again — generate another password,
-re-issue it under SCRAM, update the env group, restart.
+re-issue it under SCRAM, update the env group, let the deploys go live.
 
 Everything **before** step 2 commits (the pre-flight, the generated password,
 the open sessions) can be abandoned at no cost.
@@ -180,9 +194,10 @@ the open sessions) can be abandoned at no cost.
 ## Troubleshooting
 
 - **`password authentication failed for user "<app_role>"` after the edit.**
-  The env group was not saved, or a service was not restarted and is still
-  connecting with the old value. Check the saved `DATABASE_URL` against the
-  password you issued, then restart the failing service.
+  The env group was not saved, or a service is still on a deploy from before
+  the save — including one that was only restarted, which keeps the old
+  value. Check the saved `DATABASE_URL` against the password you issued, then
+  deploy the failing service (**Manual Deploy → Deploy latest commit**).
 - **Django connects but `psql` rejects the same DSN.** The password contains
   an `@` (or another URL-significant character): `urlsplit` splits on the
   last `@`, so Django recovers it while libpq does not. Regenerate an
