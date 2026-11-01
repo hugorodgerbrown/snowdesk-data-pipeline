@@ -67,6 +67,9 @@ class Command(RegisteredCommand):
     terrain grid cannot be loaded, or when a task run inline failed.
     """
 
+    # Offered to the ops MCP server's run_command (apps.core.remote_commands).
+    mcp_runnable = True
+
     help = (
         "Enqueue one background task per SAC ski tour the reference-data "
         "service has not walked and drawn; each task renders its tour and "

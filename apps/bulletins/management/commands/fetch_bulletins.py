@@ -94,6 +94,9 @@ class Command(RegisteredCommand):
     not a queryset over a growable local table.
     """
 
+    # Offered to the ops MCP server's run_command (apps.core.remote_commands).
+    mcp_runnable = True
+
     help = (
         "Fetch avalanche bulletins for a date range. "
         "--source is required; pass 'slf', 'albina', 'meteofrance', or "

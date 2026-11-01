@@ -60,6 +60,9 @@ def _row_counts() -> dict[str, int]:
 class Command(RegisteredCommand):
     """Clear expired OAuth tokens and codes with the toolkit's own rule."""
 
+    # Offered to the ops MCP server's run_command (apps.core.remote_commands).
+    mcp_runnable = True
+
     help = (
         "Deletes expired OAuth access tokens, refresh tokens and authorization "
         "codes using django-oauth-toolkit's clear_expired(). Read-only without "

@@ -38,7 +38,14 @@ Who started a run comes from two environment variables: ``SNOWDESK_OPERATOR``
 names the person (a Render shell runs every operator as one OS user, which
 is the fallback), and ``SNOWDESK_INVOKED_VIA`` names the caller when it is
 not a plain shell — ``run_scheduler`` sets ``SCHEDULER`` for its process,
-``bin/build.sh`` sets ``BUILD``.
+``bin/build.sh`` sets ``BUILD``. A run started from the ops MCP server's
+``run_command`` (``apps.core.remote_commands``) is ``MCP`` instead, named by
+``remote_invocation`` rather than the environment, because the task worker
+that runs it is one process serving every operator: the staff account,
+the reason and the task id ride on a context variable for that run alone.
+
+A command is offered to ``run_command`` only when it sets
+``mcp_runnable = True`` — see ``RegisteredCommand``.
 """
 
 from __future__ import annotations
@@ -51,6 +58,9 @@ import os
 import re
 import socket
 import traceback
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Any, ClassVar, TextIO, cast
 
 from django.apps import apps
@@ -97,6 +107,43 @@ _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 _CURRENT_RUN: contextvars.ContextVar[CommandRun | None] = contextvars.ContextVar(
     "current_command_run", default=None
 )
+
+
+@dataclass(frozen=True)
+class RemoteInvocation:
+    """Who started a run from the ops MCP server, why, and as which task."""
+
+    operator: str
+    reason: str
+    task_id: str
+
+
+# Set by ``remote_invocation`` around a run started from ``run_command``.
+_INVOCATION: contextvars.ContextVar[RemoteInvocation | None] = contextvars.ContextVar(
+    "remote_command_invocation", default=None
+)
+
+
+@contextmanager
+def remote_invocation(invocation: RemoteInvocation) -> Iterator[None]:
+    """Record every run started inside the block as started over MCP.
+
+    The run the block starts is ``invoked_via=MCP`` with the invocation's
+    operator, reason and task id; a run IT starts through ``call_command``
+    keeps ``CALL_COMMAND`` and its parent, and the same operator.
+
+    Args:
+        invocation: The staff account, reason and task id to record.
+
+    Yields:
+        Nothing; the context variable is reset on exit.
+
+    """
+    token = _INVOCATION.set(invocation)
+    try:
+        yield
+    finally:
+        _INVOCATION.reset(token)
 
 
 class _Tail:
@@ -210,7 +257,14 @@ def redacted_argv(argv: list[str]) -> list[str]:
 
 
 def _operator() -> str:
-    """Return who is running the command: SNOWDESK_OPERATOR, else the OS user."""
+    """Return who is running the command.
+
+    The staff account of a ``remote_invocation``, else SNOWDESK_OPERATOR,
+    else the OS user.
+    """
+    invocation = _INVOCATION.get()
+    if invocation is not None:
+        return invocation.operator
     named = os.environ.get("SNOWDESK_OPERATOR", "").strip()
     if named:
         return named
@@ -234,9 +288,19 @@ class RegisteredCommand(BaseCommand):
     ``record_runs = False``, with a comment saying why, only for a command
     that never finishes (``run_scheduler``) or must not touch the database.
     Set ``capture_output = False`` for a command that prints a credential.
+    Set ``mcp_runnable = True`` to let staff run it from the ops MCP server.
     """
 
     record_runs: ClassVar[bool] = True
+    # True offers the command to the ops MCP server's run_command, which
+    # enqueues it on the task worker (apps.core.remote_commands). Off by
+    # default: the attribute IS the allow-list. Set it only on a command
+    # that finishes in seconds to a few minutes — one that walks thousands
+    # of rows enqueues a task per row and returns (CLAUDE.md rule 7) —
+    # because the worker running it is the one that sends email. A guard
+    # test refuses it on a command that is unrecorded or prints a
+    # credential.
+    mcp_runnable: ClassVar[bool] = False
     # False for a command whose output IS a credential (a bearer token, a
     # private key, a sign-in link): its row then records no output at all,
     # because a register readable in the admin and over MCP must never hold
@@ -353,6 +417,8 @@ class RegisteredCommand(BaseCommand):
 
     def _invoked_via(self, parent: CommandRun | None) -> str:
         """Return what started the run."""
+        if parent is None and _INVOCATION.get() is not None:
+            return CommandRun.INVOKED_VIA.MCP
         named = os.environ.get("SNOWDESK_INVOKED_VIA", "").strip().upper()
         if named in CommandRun.INVOKED_VIA.values:
             return named
@@ -365,6 +431,7 @@ class RegisteredCommand(BaseCommand):
     ) -> CommandRun | None:
         """Create the ``RUNNING`` row, or return None when it cannot be written."""
         parent = _CURRENT_RUN.get()
+        invocation = _INVOCATION.get() if parent is None else None
         try:
             return CommandRun.objects.create(
                 command=self.command_name,
@@ -385,6 +452,8 @@ class RegisteredCommand(BaseCommand):
                 git_sha=str(settings.RELEASE_VERSION),
                 release=str(settings.APP_RELEASE),
                 parent=parent,
+                reason=invocation.reason if invocation else "",
+                task_id=invocation.task_id if invocation else "",
             )
         except Exception:  # noqa: BLE001 — rule 3: the register must never stop a command running
             logger.warning(

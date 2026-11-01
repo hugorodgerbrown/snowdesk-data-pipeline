@@ -32,9 +32,11 @@ from apps.core.command_register import (
     OUTPUT_TAIL_CHARS,
     REDACTED,
     RegisteredCommand,
+    RemoteInvocation,
     _Tail,
     recorded_arguments,
     redacted_argv,
+    remote_invocation,
 )
 from apps.core.models import CommandRun
 from apps.locations.models import Location
@@ -481,3 +483,26 @@ def test_the_admin_is_read_only(rf: Any) -> None:
     assert not admin.has_add_permission(request)
     assert not admin.has_change_permission(request, run)
     assert not admin.has_delete_permission(request, run)
+
+
+def test_a_remote_invocation_names_mcp_the_operator_and_the_task() -> None:
+    """A run inside ``remote_invocation`` is attributed to the staff account."""
+    invocation = RemoteInvocation(operator="hugo", reason="deploy", task_id="t-1")
+    with remote_invocation(invocation):
+        call_command(_Probe(), stdout=StringIO())
+    run = _only_run()
+    assert run.invoked_via == CommandRun.INVOKED_VIA.MCP
+    assert run.operator == "hugo"
+    assert run.reason == "deploy"
+    assert run.task_id == "t-1"
+
+
+def test_a_remote_invocation_ends_with_its_block() -> None:
+    """After the block, a run is attributed as usual."""
+    with remote_invocation(RemoteInvocation("hugo", "deploy", "t-1")):
+        pass
+    call_command(_Probe(), stdout=StringIO())
+    run = _only_run()
+    assert run.invoked_via == CommandRun.INVOKED_VIA.CALL_COMMAND
+    assert run.reason == ""
+    assert run.task_id == ""

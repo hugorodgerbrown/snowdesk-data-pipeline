@@ -647,7 +647,7 @@ the same protocol code: `protocol.dispatch(payload, server)` takes a
 `ToolServer` (name, tools, views), and the ops one is `snowdesk-ops` with
 `OPS_TOOLS` and no views. The public endpoint cannot call an ops tool.
 Every tool answers about the environment it runs on, and every one is
-read-only except the two waffle setters below.
+read-only except the two waffle setters and `run_command` below.
 
 | Tool | Answers |
 |------|---------|
@@ -664,6 +664,9 @@ read-only except the two waffle setters below.
 | `location_estate_health` | Location count by kind, and rows without elevation, without what3words, and orphaned (`LocationQuerySet.orphaned()`) |
 | `feature_flags` | Each waffle flag's live targeting, each switch's state and note, each sample's percent, drift from `apps/core/fixtures/waffle_flags.json`, and the last ten waffle changes from the admin log (`recent_changes`: who, when, why) |
 | `set_switch` | **Writes.** Turns an existing switch `on` or `off` — e.g. a `schedule_<job>` switch to pause a scheduled job |
+| `list_runnable_commands` | The commands `run_command` can start (`mcp_runnable = True`): help, options, whether each has `--commit`, its last run, and whether this environment has a task worker |
+| `run_command` | **Writes.** Queues one runnable command on the task worker and returns its task id at once — see [Running commands](#running-commands) |
+| `get_command_task` | A queued command's task state and, once it has started, its register row: status, counts, duration, output tail |
 | `set_flag` | **Writes.** Sets an existing flag's `everyone` override `on` or `off`, or `targeted` to clear it so percent, staff, groups and users decide again |
 
 ### The waffle setters
@@ -692,6 +695,46 @@ so each is made deliberate rather than convenient:
   client asks before it calls one.
 - **Immediate.** waffle flushes its cache when the save commits, so the
   next request — and the next scheduled-job firing — reads the new state.
+
+### Running commands
+
+`list_runnable_commands`, `run_command` and `get_command_task` live in
+`apps/mcp_server/command_tools.py`; the rules are
+`apps/core/remote_commands.py`'s. A command is offered only when its class
+sets `mcp_runnable = True` (`RegisteredCommand`, off by default — the
+attribute is the allow-list, pinned by
+`tests/core/test_command_register_guard.py`).
+
+- **It returns at once.** `run_command` never runs the command in the web
+  request: it queues one `run_command_task` and returns the task id.
+  Gunicorn cuts a request off at 30 seconds, which would leave the run's
+  register row `RUNNING` for ever.
+- **No worker, no run.** Where the task backend is `ImmediateBackend` —
+  staging, dev and test — an enqueue would run inline, so `run_command`
+  refuses and says to use a shell (Hugo, 2026-11-01).
+  `list_runnable_commands` says so in `worker_available`.
+- **Every argument is deliberate.** `command`, `commit` (no default) and
+  `reason` (at most 500 characters) are required; `arguments` is a list of
+  command-line tokens. `--commit` inside `arguments` is refused — a write
+  is always the separate `commit: true`. The tokens are parsed with the
+  command's own parser before anything is queued.
+- **Nothing outside the command.** `--settings`, `--pythonpath` and every
+  option that names a server file (`DENIED_OPTIONS`: `--file`,
+  `--manifest`, `--archive`, `--local-mirror`, …) are refused, compared
+  after parsing so an abbreviation is caught too.
+- **One at a time.** A command with a `RUNNING` register row younger than
+  six hours, from any caller, or a `run_command` task still queued for it,
+  is not started again.
+- **Recorded.** The run is a `CommandRun` row with `invoked_via=MCP`, the
+  staff account as operator, the reason and the task id; a run it starts
+  through `call_command` keeps `CALL_COMMAND`. The enqueue is a `WARNING`
+  log line. The task re-checks the attribute before running, so a command
+  that lost it in a deploy between queueing and running is refused, and a
+  command's `sys.exit` fails the task rather than the worker.
+
+Opt a command in only if it finishes in minutes: the worker that runs it
+is the one that sends email. A job over thousands of rows enqueues a task
+per row and returns (CLAUDE.md management-command rule 7).
 
 **Served at `POST /api/ops/mcp/`** (and `/api/ops/mcp`), by
 `apps.mcp_server.views.ops_mcp_endpoint`: the same `@mcp_endpoint`
