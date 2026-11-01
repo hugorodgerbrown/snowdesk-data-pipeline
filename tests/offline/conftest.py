@@ -750,11 +750,20 @@ class OfflineMapPage:
         ``revealBasemapDownloadError`` shows one toast per failure reason
         (quota, budget, no worker, …), so the visible one's id names why a
         download ended in ``error`` where the roundel's state cannot.
+
+        SNOW-1331: and the worker's sample of what failed — up to five
+        ``{url, status, why, detail}`` the toast carries as
+        ``data-failures`` — so a failing assertion names the URLs and
+        statuses rather than only a count.
         """
         toasts: list[str] = self.page.evaluate(
             """() => [...document.querySelectorAll('[id^="map-download-error-toast"]')]
                 .filter((el) => !el.classList.contains('hidden'))
-                .map((el) => `${el.id}: ${el.textContent.trim().replace(/\\s+/g, ' ')}`)"""
+                .map((el) => {
+                    const line = `${el.id}: ${el.textContent.trim().replace(/\\s+/g, ' ')}`;
+                    const failures = el.getAttribute('data-failures');
+                    return failures ? `${line} failures=${failures}` : line;
+                })"""
         )
         return toasts
 

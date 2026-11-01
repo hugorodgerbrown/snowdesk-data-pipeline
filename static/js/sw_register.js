@@ -360,6 +360,10 @@
           // worker won't send it — ``false`` is the correct read, since
           // that worker has no cancellation protocol to have honoured.
           cancelled: !!data.cancelled,
+          // SNOW-1331: up to five failed URLs, each ``{url, status, why,
+          // detail}``, so a failed download can name what failed. An older
+          // worker won't send it — ``[]`` reads as "nothing named".
+          failures: Array.isArray(data.failures) ? data.failures : [],
         });
         _warmCacheSlot = null;
       }
@@ -518,7 +522,9 @@
    * @param {{pinned?: boolean, areaId?: string, onProgress?: (done: number,
    *   total: number, settled?: number[], bytes?: number) => void}} [opts]
    * @returns {Promise<{ok: number, failed: number, reason: string|null,
-   *   bytes: number, cancelled: boolean} | null>}
+   *   bytes: number, cancelled: boolean,
+   *   failures: Array<{url: string, status: number|null, why: string,
+   *   detail: string}>} | null>}
    */
   async function warmCache(urls, opts) {
     _warmCacheRunsPending += 1;
@@ -551,7 +557,9 @@
    *   onProgress?: (done: number, total: number, settled?: number[],
    *   bytes?: number) => void}} [opts]
    * @returns {Promise<{ok: number, failed: number, reason: string|null,
-   *   bytes: number, cancelled: boolean} | null>}
+   *   bytes: number, cancelled: boolean,
+   *   failures: Array<{url: string, status: number|null, why: string,
+   *   detail: string}>} | null>}
    */
   async function _warmCacheRun(urls, opts) {
     const active = await _activeWorker();

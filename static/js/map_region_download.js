@@ -1689,7 +1689,12 @@
           await renderControl();
         } else {
           _settleRun(data, 'error');
-          revealBasemapDownloadError(result ? result.reason : null, 'region');
+          revealBasemapDownloadError(
+            result ? result.reason : null,
+            'region',
+            // SNOW-1331: the worker's sample of failed urls, for diagnostics.
+            result ? result.failures : null,
+          );
         }
         // The layers menu is a live cache-state dashboard, and this run
         // changed what is on disk — same post-run refresh a download does.
@@ -1877,7 +1882,12 @@
           // shortfall that was still there.
           await _stampRegionContent(data.regionId, false);
           _settleRun(data, 'partial');
-          revealBasemapDownloadError(result ? result.reason : null, 'region');
+          revealBasemapDownloadError(
+            result ? result.reason : null,
+            'region',
+            // SNOW-1331: the worker's sample of failed urls, for diagnostics.
+            result ? result.failures : null,
+          );
         }
         window.pwaLayerSyncStatus?.refresh();
       },
@@ -2258,7 +2268,12 @@
           _settleRun(data, 'done');
         } else {
           _settleRun(data, 'error');
-          revealBasemapDownloadError(result ? result.reason : null, 'region');
+          revealBasemapDownloadError(
+            result ? result.reason : null,
+            'region',
+            // SNOW-1331: the worker's sample of failed urls, for diagnostics.
+            result ? result.failures : null,
+          );
         }
         // SNOW-505: the warm-cache run has just warmed the shell + pinned
         // basemap caches (the SW's warm-cache handler awaits its

@@ -839,6 +839,152 @@ describe('_warmCache reports a running byte total (SNOW-632)', () => {
   });
 });
 
+describe('_warmCache names what failed (SNOW-1331)', () => {
+  const SHELL = 'snowdesk-shell-UNSUBSTITUTED';
+  const FEED = `${ORIGIN}/api/ratings/`;
+  const TILE = 'https://tiles.example/v1/7/66/45.pbf';
+  const ROUTE = `${ORIGIN}/trips/2f1c0b7e-4b7a-4c39-9a51-0d6c1f0e9a11/route.geojson`;
+  const SHEET = `${ORIGIN}/partials/region-sheet/ch-4115/`;
+
+  /** A same-origin JSON answer, with an optional status and headers. */
+  function json(status, headers) {
+    return basicResponse('{}', {
+      status: status || 200,
+      headers: { 'Content-Type': 'application/json', ...(headers || {}) },
+    });
+  }
+
+  /** A region-sheet fragment, as `region_sheet_partial` answers. */
+  function fragment(cacheControl) {
+    return basicResponse('<p>sheet</p>', {
+      headers: { 'Content-Type': 'text/html', 'Cache-Control': cacheControl },
+    });
+  }
+
+  /** What the browser hands back for a cross-origin answer with no CORS. */
+  function opaque() {
+    return { ok: false, status: 0, type: 'opaque', headers: new Headers(), clone: () => opaque() };
+  }
+
+  /** A CacheStorage stub whose every `put` throws `err`. */
+  function cachesWhosePutThrows(err) {
+    const stub = makeCaches();
+    const open = stub.open;
+    stub.open = async (name) => {
+      const cache = await open(name);
+      cache.put = async () => {
+        throw err;
+      };
+      return cache;
+    };
+    return stub;
+  }
+
+  /** Run `_warmCache` over `urls` against `fetch`; resolve its summary. */
+  async function warm(urls, fetch, caches) {
+    const sw = loadSw({ caches: caches || makeCaches(), fetch });
+    return sw._warmCache(urls);
+  }
+
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  it.each([
+    ['a malformed url', ['https://['], async () => json(), 'url', null, 'other'],
+    [
+      'a fetch that throws',
+      [FEED],
+      async () => {
+        throw new TypeError('Failed to fetch');
+      },
+      'threw',
+      null,
+      'network',
+    ],
+    ['a status that is not ok', [FEED], async () => json(429), 'status', 429, 'other'],
+    ['an opaque cross-origin answer', [TILE], async () => opaque(), 'type', 0, 'other'],
+    ['a region sheet with no day', [SHEET], async () => fragment('private'), 'key', 200, 'other'],
+    [
+      'a region sheet marked no-store',
+      [`${SHEET}?d=2026-01-06`],
+      async () => fragment('no-store'),
+      'no-store',
+      200,
+      'other',
+    ],
+    [
+      'a route with nobody signed in',
+      [ROUTE],
+      async () => json(200, { 'Cache-Control': 'private, no-cache', 'X-Snowdesk-Principal': 'acct-a' }),
+      'principal',
+      200,
+      'other',
+    ],
+  ])('names %s', async (_label, urls, fetch, detail, status, why) => {
+    const result = await warm(urls, fetch);
+
+    expect(result.failed).toBe(1);
+    expect(result.failures).toEqual([{ url: urls[0], status, why, detail }]);
+  });
+
+  it('names a write that throws, quota included, with the status that came back', async () => {
+    const quota = Object.assign(new Error('full'), { name: 'QuotaExceededError' });
+    const result = await warm([FEED], async () => json(), cachesWhosePutThrows(quota));
+
+    expect(result.reason).toBe('quota');
+    expect(result.failures).toEqual([{ url: FEED, status: 200, why: 'quota', detail: 'write' }]);
+  });
+
+  it("records the retry's outcome, which is the failure counted", async () => {
+    let calls = 0;
+    const result = await warm([FEED], async () => {
+      calls += 1;
+      if (calls === 1) throw new TypeError('Failed to fetch');
+      return json(503);
+    });
+
+    expect(calls).toBe(2);
+    expect(result.failures).toEqual([{ url: FEED, status: 503, why: 'other', detail: 'status' }]);
+  });
+
+  it('caps the sample at five while `failed` counts every failure', async () => {
+    const urls = Array.from({ length: 8 }, (_, i) => `${ORIGIN}/api/tile-${i}.json`);
+    const result = await warm(urls, async () => json(403));
+
+    expect(result.failed).toBe(8);
+    expect(result.failures).toHaveLength(5);
+    expect(result.failures.every((f) => f.status === 403 && f.detail === 'status')).toBe(true);
+  });
+
+  it('reports an empty sample on a clean run', async () => {
+    const result = await warm([FEED], async () => json());
+
+    expect(result).toMatchObject({ ok: 1, failed: 0, failures: [] });
+  });
+
+  it('posts the sample on warm-cache-done, and an empty one for a refused pinned run', async () => {
+    const sw = loadSw({ caches: makeCaches(), fetch: async () => json(429) });
+    const reply = (data) =>
+      new Promise((resolve) => {
+        sw.__listeners.message({
+          data: { type: 'warm-cache', ...data },
+          source: {
+            postMessage: (message) => {
+              if (message.type === 'warm-cache-done') resolve(message);
+            },
+          },
+        });
+      });
+
+    const done = await reply({ urls: [FEED], requestId: 'req-1' });
+    expect(done.failures).toEqual([{ url: FEED, status: 429, why: 'other', detail: 'status' }]);
+
+    const refused = await reply({ urls: [FEED], requestId: 'req-2', pinned: true });
+    expect(refused).toMatchObject({ failed: 1, failures: [] });
+  });
+});
+
 describe('_warmCache cancellation (SNOW-632)', () => {
   const urls = Array.from({ length: 40 }, (_, i) => `${ORIGIN}/api/tile-${i}.json`);
 
@@ -1846,6 +1992,7 @@ describe('warm-cache under the two offline modes (SNOW-748)', () => {
       reason: 'offline-forced',
       bytes: 0,
       cancelled: true,
+      failures: [],
     });
   });
 

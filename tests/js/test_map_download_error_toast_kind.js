@@ -70,6 +70,38 @@ describe('revealBasemapDownloadError', () => {
   });
 });
 
+describe('revealBasemapDownloadError carries the failed urls (SNOW-1331)', () => {
+  const failures = [{ url: 'https://tiles.example/7/66/45.pbf', status: 429, why: 'other', detail: 'status' }];
+  const carried = (id) => document.getElementById(id).getAttribute('data-failures');
+
+  it('writes the sample to the shown toast, and to no other', () => {
+    api.reveal(null, 'region', failures);
+
+    expect(JSON.parse(carried('map-download-error-toast'))).toEqual(failures);
+    expect(TOAST_IDS.filter((id) => carried(id) !== null)).toEqual(['map-download-error-toast']);
+  });
+
+  it('clears an earlier sample when a later failure carries none', () => {
+    api.reveal(null, 'region', failures);
+    api.reveal(null, 'region');
+
+    expect(carried('map-download-error-toast')).toBeNull();
+  });
+
+  it('drops the sample when a new attempt clears the toasts', () => {
+    api.reveal(null, 'region', failures);
+    api.clear();
+
+    expect(carried('map-download-error-toast')).toBeNull();
+  });
+
+  it('writes nothing for an empty sample', () => {
+    api.reveal(null, undefined, []);
+
+    expect(carried('map-download-error-toast')).toBeNull();
+  });
+});
+
 describe('clearBasemapDownloadError', () => {
   it.each(['quota', 'budget'])('hides the region %s copy when a new attempt starts', (reason) => {
     api.reveal(reason, 'region');

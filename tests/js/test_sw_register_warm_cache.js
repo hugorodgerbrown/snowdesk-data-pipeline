@@ -277,6 +277,37 @@ describe('pwaWarmCacheCancel() with a run in flight (SNOW-632)', () => {
     expect(result.failed).toBe(0);
   });
 
+  it("passes the worker's sample of failed urls through (SNOW-1331)", async () => {
+    swStub.controller = makeWorker();
+    const promise = window.pwaWarmCache(['/a.mvt'], { pinned: true, areaId: 'x' });
+    await flush();
+    const { requestId } = posted[0];
+    const failures = [{ url: '/a.mvt', status: 429, why: 'other', detail: 'status' }];
+
+    swStub.dispatchEvent(
+      new MessageEvent('message', {
+        data: { type: 'warm-cache-done', ok: 0, failed: 1, reason: 'other', bytes: 0, failures, requestId },
+      }),
+    );
+
+    expect((await promise).failures).toEqual(failures);
+  });
+
+  it('reads an older worker with no sample as an empty one (SNOW-1331)', async () => {
+    swStub.controller = makeWorker();
+    const promise = window.pwaWarmCache(['/a.mvt'], { pinned: true, areaId: 'x' });
+    await flush();
+    const { requestId } = posted[0];
+
+    swStub.dispatchEvent(
+      new MessageEvent('message', {
+        data: { type: 'warm-cache-done', ok: 0, failed: 1, reason: 'other', bytes: 0, requestId },
+      }),
+    );
+
+    expect((await promise).failures).toEqual([]);
+  });
+
   it('forwards the running bytes total as a fourth onProgress argument', async () => {
     swStub.controller = makeWorker();
     const onProgress = vi.fn();
