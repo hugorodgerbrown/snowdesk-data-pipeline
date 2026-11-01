@@ -224,6 +224,7 @@ class TestSinglePlace:
             url="/trips/abc/",
             new_snow_cm=20,
             bulletin_count=2,
+            multi_region=True,
         )
         msg = alert_message([p], TODAY)
         assert msg.title == "Haute Route – Saturday bulletins"
@@ -243,6 +244,7 @@ class TestSinglePlace:
             compared_to=TOMORROW,
             url="/trips/abc/",
             bulletin_count=3,
+            multi_region=True,
         )
         msg = alert_message([p], TODAY)
         assert msg.title == "Haute Route – Saturday bulletins update"

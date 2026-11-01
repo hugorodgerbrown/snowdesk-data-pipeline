@@ -686,6 +686,18 @@ class TestTripAcrossRegions:
         assert run.message is not None
         assert run.message.body == "For your trip. 2 bulletins."
 
+    def test_a_region_yet_to_publish_is_not_counted(self, crossing: tuple) -> None:
+        """Only one region has published: the trip names one bulletin."""
+        account, first, _second = crossing
+        TripFactory.create(created_by=account.user, date=TOMORROW, name="Haute Route")
+        publish(first, TOMORROW, render("considerable"))
+        with patch.object(alerts, "track_regions", return_value=[first, _second]):
+            run = evaluate_account(account, NOW)
+        assert run.message is not None
+        assert run.message.title == "Haute Route – Saturday bulletin"
+        assert run.message.body == "For your trip. 1 bulletin."
+        assert "Considerable" not in run.message.body
+
     def test_one_region_trip_folds_into_a_pin(self, crossing: tuple) -> None:
         """A trip inside a pinned region is that pin's place, as before."""
         account, first, _second = crossing

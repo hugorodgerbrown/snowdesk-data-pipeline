@@ -462,6 +462,9 @@ class AccountRun:
 
     account: Account
     rows: list[PendingRow] = field(default_factory=list)
+    # How many bulletins each (place, day) has, changed or not: what a
+    # multi-region trip's message counts (SNOW-945).
+    available: dict[tuple[str, datetime.date], int] = field(default_factory=dict)
     message: AlertMessage | None = None
     push_count: int = 0
     emailed: bool = False
@@ -561,6 +564,8 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
             bulletin = authoritative_bulletin(region, day)
             if bulletin is None or not bulletin.render_model:
                 continue
+            seen = (place.key, day)
+            run.available[seen] = run.available.get(seen, 0) + 1
             # The state and fingerprint the service stored with the model
             # (SNOW-1341); computed only for a model older than version 10.
             current, fingerprint = state_of(bulletin.render_model)
@@ -606,8 +611,8 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
             )
     _one_day_per_place(run.rows)
     if run.sending:
-        places = _place_alerts(run.sending)
-        if len(places) == 1 and places[0].bulletin_count == 1:
+        places = _place_alerts(run.sending, run.available)
+        if len(places) == 1 and not places[0].multi_region:
             row = run.sending[0]
             places[0] = replace(
                 places[0],
@@ -617,7 +622,9 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
     return run
 
 
-def _place_alerts(sending: list[PendingRow]) -> list[PlaceAlert]:
+def _place_alerts(
+    sending: list[PendingRow], available: dict[tuple[str, datetime.date], int]
+) -> list[PlaceAlert]:
     """
     Return one ``PlaceAlert`` per place that fired, in the rows' order.
 
@@ -628,6 +635,9 @@ def _place_alerts(sending: list[PendingRow]) -> list[PlaceAlert]:
 
     Args:
         sending: The run's sending rows.
+        available: How many bulletins each (place, day) has, changed or
+            not; a multi-region trip counts these, not the regions it
+            crosses, so a region yet to publish is not claimed.
 
     Returns:
         The places, at least one.
@@ -655,7 +665,8 @@ def _place_alerts(sending: list[PendingRow]) -> list[PlaceAlert]:
                 url=first.place.trip_url,
                 valid_from=first.bulletin.valid_from,
                 valid_until=first.bulletin.valid_to,
-                bulletin_count=len(first.place.covered),
+                bulletin_count=available.get((first.place.key, first.day), 1),
+                multi_region=len(first.place.covered) > 1,
             )
         )
     return alerts

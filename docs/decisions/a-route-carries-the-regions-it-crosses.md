@@ -31,7 +31,9 @@ EAWS region ids in the order the track first enters them (SNOW-945).
 - **A trip is one alert place.** A trip that crosses several regions is
   one place covering them all, named and linked by the trip. A change in
   any of its regions makes it fire, and the message counts the bulletins
-  ("For your trip. 2 bulletins."). It never folds into a pin, because its
+  ("For your trip. 2 bulletins."): the regions that have published for
+  the day, changed or not, so one still waiting on its evening issue is
+  not claimed ("For your trip. 1 bulletin."). It never folds into a pin, because its
   link is the trip page. A trip that stays in one region behaves as
   before, folding into a pin in that region.
 

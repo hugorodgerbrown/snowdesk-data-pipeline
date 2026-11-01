@@ -41,7 +41,7 @@ from zoneinfo import ZoneInfo
 
 from django.urls import reverse
 from django.utils import formats, translation
-from django.utils.translation import gettext as _
+from django.utils.translation import gettext as _, ngettext
 
 from apps.bulletins.services.bulletin_change import (
     CLOCKWISE_ASPECTS,
@@ -90,10 +90,14 @@ class PlaceAlert:
     # The new snow forecast for ``target_date`` at the region's weather
     # point, in cm (SNOW-944), or None when nothing is known.
     new_snow_cm: float | None = None
-    # How many regions' bulletins the place covers: more than one for a
-    # trip crossing several (SNOW-945), whose body then names the count
-    # rather than one region's level.
+    # How many bulletins the place has for the day: for a trip crossing
+    # several regions (SNOW-945), the regions that have published one,
+    # changed or not, so a region still waiting on its evening issue is
+    # not counted.
     bulletin_count: int = 1
+    # A trip crossing several regions, whose body names the bulletin count
+    # rather than one region's level, whatever the count (SNOW-945).
+    multi_region: bool = False
 
 
 @dataclass(frozen=True)
@@ -509,7 +513,7 @@ def place_title(place: PlaceAlert) -> str:
 
     """
     values = {"place": place.label, "day": weekday(place.target_date)}
-    if place.bulletin_count > 1:
+    if place.multi_region and place.bulletin_count != 1:
         if place.kind == "update":
             return _("%(place)s – %(day)s bulletins update") % values
         return _("%(place)s – %(day)s bulletins") % values
@@ -598,8 +602,12 @@ def place_body(place: PlaceAlert, today: datetime.date) -> str:
     parts: list[str] = []
     if place.url:
         parts.append(_("For your trip."))
-    if place.bulletin_count > 1:
-        parts.append(_("%(count)d bulletins.") % {"count": place.bulletin_count})
+    if place.multi_region:
+        count = place.bulletin_count
+        parts.append(
+            ngettext("%(count)d bulletin.", "%(count)d bulletins.", count)
+            % {"count": count}
+        )
         return " ".join(parts)
     if place.kind == "season_start":
         parts.append(_("First of the season."))
