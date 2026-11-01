@@ -55,6 +55,18 @@ To run a cycle by hand without the skill, follow the same five steps.
 for anything that requires new tests, multi-file changes, or design
 decisions.
 
+## The PR body names one ticket
+
+A cycle's PR body carries counts, the tox baseline, a link to the dated doc
+and the magic line `Closes SNOW-NNN`, and **no other SNOW id or Linear issue
+link**. The GitHub–Linear integration closes a ticket linked from a merged PR
+body, not only the one after `Closes`. That is how #331 (the 2026-07-12
+cycle) closed SNOW-166 and SNOW-363–366 the moment it merged, with none of
+their findings fixed. The child tickets are linked from the dated doc, which
+the integration does not read. The `audit-code`, `audit-map` and
+`audit-pages` skills all state the rule; do not put a child-ticket list back
+in a PR body.
+
 ## Layout of each cycle's doc
 
 Each `YYYY-MM-DD.md` should include the following sections in order:

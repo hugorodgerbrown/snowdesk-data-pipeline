@@ -271,8 +271,13 @@ Then update the "Most recent cycle" pointer and the History table in
 4. Commit with `--author="Claude <noreply@anthropic.com>"`, subject
    `SNOW-NNN: map review YYYY-MM-DD`.
 5. Push and open a **draft** PR whose body starts with `Closes SNOW-NNN`,
-   carries the Artifact URL, the findings table and the child-ticket list, so
-   the PR is readable without opening the file.
+   carries the Artifact URL and the findings table (descriptions, ratings and
+   dispositions only), so the PR is readable without opening the file.
+   **`Closes SNOW-NNN` is the only SNOW id the body may contain**: no
+   child-ticket list, no child id in the table, no Linear issue link. The
+   GitHub–Linear integration closes a ticket linked from a merged PR body, so
+   a child named there would be closed with nothing fixed. The children are
+   linked from the doc.
 6. Move the parent ticket to `In Review` and post the PR URL as a comment.
 
 ## Do not
