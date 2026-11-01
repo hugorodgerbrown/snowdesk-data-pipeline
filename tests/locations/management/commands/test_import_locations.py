@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.utils import timezone
 
 from apps.locations.management.commands.import_locations import (
     DEFAULT_LINKS_PATH,
@@ -147,13 +148,22 @@ class TestImportLocationsCommit:
         assert location.name == "Mont Fort"
 
     def test_update_never_touches_the_resolved_fields(self, tmp_path: Path) -> None:
-        """elevation_m survives a re-import.
+        """elevation_m and the address survive a re-import at the same pin.
 
-        The sheet does not own it — an out-of-band resolution pass does —
-        so an import must not blank the work an Open-Meteo call paid for.
+        The sheet does not own them — out-of-band resolution passes do —
+        so an import that changes only curated metadata must not blank the
+        work an Open-Meteo or what3words call paid for.
         """
+        fetched_at = timezone.now()
         location = LocationFactory.create(
-            uuid=MONT_FORT, name="Mt Fort", kind=Location.KIND.PEAK, resolved=True
+            uuid=MONT_FORT,
+            name="Mt Fort",
+            kind=Location.KIND.PEAK,
+            latitude=46.1036,
+            longitude=7.2989,
+            resolved=True,
+            what3words="filled.count.soap",
+            what3words_fetched_at=fetched_at,
         )
         sheets = write_sheets(
             tmp_path, [f"{MONT_FORT}\tMont Fort\tPEAK\t46.1036\t7.2989\t"], []
@@ -162,7 +172,34 @@ class TestImportLocationsCommit:
         call_command("import_locations", "--commit", stdout=StringIO(), **sheets)
 
         location.refresh_from_db()
+        assert location.name == "Mont Fort"
         assert location.elevation_m == 1500.0
+        assert location.what3words == "filled.count.soap"
+        assert location.what3words_fetched_at == fetched_at
+
+    def test_a_moved_pin_clears_the_resolved_fields(self, tmp_path: Path) -> None:
+        """SNOW-845: a re-import that moves the pin clears what it derived."""
+        location = LocationFactory.create(
+            uuid=MONT_FORT,
+            name="Mont Fort",
+            kind=Location.KIND.PEAK,
+            latitude=46.1000,
+            longitude=7.2900,
+            resolved=True,
+            what3words="filled.count.soap",
+            what3words_fetched_at=timezone.now(),
+        )
+        sheets = write_sheets(
+            tmp_path, [f"{MONT_FORT}\tMont Fort\tPEAK\t46.1036\t7.2989\t"], []
+        )
+
+        call_command("import_locations", "--commit", stdout=StringIO(), **sheets)
+
+        location.refresh_from_db()
+        assert (location.latitude, location.longitude) == (46.1036, 7.2989)
+        assert location.elevation_m is None
+        assert location.what3words is None
+        assert location.what3words_fetched_at is None
 
     def test_deletes_a_curated_location_the_sheet_dropped(self, tmp_path: Path) -> None:
         """A curated row removed from the sheet is deleted, links first.

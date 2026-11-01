@@ -360,37 +360,19 @@ def update_trip(
     with transaction.atomic():
         if latitude is not None and longitude is not None:
             location = trip.meeting_point
-            moved = location.latitude != latitude or location.longitude != longitude
-            location.latitude = latitude
-            location.longitude = longitude
-            # ``updated_at`` is auto_now, applied in Python on save() and
-            # skipped for any field absent from update_fields — so it is
-            # listed, or the column is left stale.
-            update_fields = ["latitude", "longitude", "updated_at"]
+            # SNOW-845: Location.move_to owns the rule that a value derived
+            # from the coordinate (the three word address, SNOW-840, and the
+            # height) dies with it. A stale address is worse than none: the
+            # trip page renders it as the meeting point while the
+            # coordinates in the same element's ``title`` say somewhere
+            # else. An unmoved pin touches nothing, so an organiser
+            # correcting a start time never spends a billed conversion.
+            moved_fields = location.move_to(latitude, longitude)
+            moved = bool(moved_fields)
             if moved:
-                # SNOW-840: the cached three word address named the square
-                # the pin USED to stand on, and nothing else would notice
-                # for up to 30 days. A stale address is worse than none:
-                # the trip page renders it as the meeting point while the
-                # coordinates in the same element's ``title`` say
-                # somewhere else, and the whole reason to show an address
-                # is that somebody navigates to it. Cleared here, so the
-                # next render converts the square the pin actually stands
-                # on.
-                #
-                # Guarded on ``moved`` rather than cleared on every edit
-                # because a conversion is billed: an organiser correcting
-                # a start time must not spend one.
-                #
-                # The same rule, for the same reason, as
-                # ``apps.public.api`` nulling ``elevation_m`` when a
-                # location's coordinate is rewritten — a value derived
-                # from a coordinate does not survive that coordinate
-                # changing.
-                location.what3words = None
-                location.what3words_fetched_at = None
-                update_fields += ["what3words", "what3words_fetched_at"]
-            location.save(update_fields=update_fields)
+                # ``updated_at`` is auto_now, applied in Python on save()
+                # and skipped for any field absent from update_fields.
+                location.save(update_fields=[*moved_fields, "updated_at"])
 
         trip.date = date
         trip.start_time = start_time
