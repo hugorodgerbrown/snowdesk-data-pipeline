@@ -198,7 +198,7 @@ Context:
             {% endif %}
 
             {% comment %}
-                   SECTION 3b — Avalanche activity (ALBINA only).
+                   SECTION 3b — Avalanche activity (ALBINA and Météo-France).
                    Rendered when prose.avalanche_activity carries non-empty
                    highlights or comment strings. Suppressed for SLF bulletins
                    whose activity prose is empty by the source-aware builder.
@@ -234,7 +234,7 @@ Context:
             {% endwith %}
 
             {% comment %}
-                   SECTION 3c — Tendency outlook (ALBINA only).
+                   SECTION 3c — Tendency outlook (ALBINA and Météo-France).
                    Renders the directional arrow, label, target date, and
                    highlights prose. Suppressed when panel.tendency_outlook
                    is None (SLF / no-tendency case).
