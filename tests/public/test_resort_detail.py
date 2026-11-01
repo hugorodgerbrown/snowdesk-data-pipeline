@@ -834,15 +834,17 @@ class TestResortForecastStrip:
         assert day.count("&mdash;") == 3
 
     @freeze_time(EVENING)
-    def test_after_sunset_today_draws_the_night_icon(self) -> None:
-        """The day/night decision reads the request's own instant."""
+    def test_after_sunset_today_still_draws_the_day_icon(self) -> None:
+        """A strip tile is a day, not the hour it is read at (SNOW-1298)."""
         resort = ResortFactory.create(geocoded=True)
         assert resort.location is not None
         _todays_weather(resort.location)
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
-        assert "clear-night.svg" in _section(content, "resort-forecast-today")
+        today = _section(content, "resort-forecast-today")
+        assert "clear-day.svg" in today
+        assert "clear-night.svg" not in today
 
     @freeze_time(MIDDAY)
     def test_each_point_has_its_own_hourly_link(self) -> None:
