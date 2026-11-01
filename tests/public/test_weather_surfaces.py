@@ -54,6 +54,7 @@ from tests.factories import (
     ResortLocationFactory,
     UserFactory,
     WeatherFactory,
+    weather_rows_from_days,
 )
 
 MIDDAY = "2026-08-30T12:00:00+00:00"
@@ -97,14 +98,13 @@ def _forecast_day(
     weather_code: int = 71,
     hourly: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
-    """Build one ``forecast[]`` entry, optionally with a nested hourly series.
+    """Describe one following day's row, optionally with an hourly series.
 
     Args:
-        date: The forward day's ISO date.
+        date: The day's ISO date.
         weather_code: The day's WMO code.
-        hourly: The day's hourly rows. Omitted entirely when None, which is
-            the real shape past ``HOURLY_DAYS`` — the key is absent, not
-            null.
+        hourly: The day's hourly rows. Omitted entirely when None: a row
+            written without a series.
 
     Returns:
         The entry dict.
@@ -226,13 +226,14 @@ class TestFavouriteCard:
         """
         user = UserFactory.create()
         favourite = FavouriteFactory.create(user=user, name="The col")
+        point = _curated_near(favourite)
         WeatherFactory.create(
-            location=_curated_near(favourite),
+            location=point,
             observed_on=datetime.date(2026, 8, 30),
             sunrise=SUNRISE,
             sunset=SUNSET,
-            forecast=[_forecast_day("2026-08-31")],
         )
+        weather_rows_from_days(point, [_forecast_day("2026-08-31")])
 
         client = Client()
         client.force_login(user)
@@ -292,7 +293,9 @@ class TestLocationForecastPage:
             observed_on=PAGE_DATE,
             sunrise=SUNRISE,
             sunset=SUNSET,
-            forecast=[_forecast_day("2026-08-31"), _forecast_day("2026-09-01")],
+        )
+        weather_rows_from_days(
+            location, [_forecast_day("2026-08-31"), _forecast_day("2026-09-01")]
         )
 
         response = Client().get(
@@ -346,7 +349,10 @@ class TestLocationForecastPage:
             sunrise=SUNRISE,
             sunset=SUNSET,
             hourly=_hourly_series("2026-08-30"),
-            forecast=[
+        )
+        weather_rows_from_days(
+            location,
+            [
                 _forecast_day("2026-08-31", hourly=_hourly_series("2026-08-31")),
                 _forecast_day("2026-09-01"),
                 _forecast_day("2026-09-02"),
@@ -384,7 +390,9 @@ class TestLocationForecastPage:
             sunrise=SUNRISE,
             sunset=SUNSET,
             hourly=_hourly_series("2026-08-30"),
-            forecast=[_forecast_day("2026-08-31"), _forecast_day("2026-09-01")],
+        )
+        weather_rows_from_days(
+            location, [_forecast_day("2026-08-31"), _forecast_day("2026-09-01")]
         )
 
         html = (
@@ -475,7 +483,10 @@ class TestLocationForecastPage:
             sunrise=SUNRISE,
             sunset=SUNSET,
             hourly=_hourly_series("2026-08-30"),
-            forecast=[
+        )
+        weather_rows_from_days(
+            location,
+            [
                 _forecast_day("2026-08-31", hourly=_hourly_series("2026-08-31")),
                 _forecast_day("2026-09-01"),
             ],
@@ -559,8 +570,8 @@ class TestIconHalo:
             observed_on=PAGE_DATE,
             sunrise=SUNRISE,
             sunset=SUNSET,
-            forecast=[_forecast_day("2026-08-31")],
         )
+        weather_rows_from_days(location, [_forecast_day("2026-08-31")])
 
         html = (
             Client()
@@ -632,7 +643,6 @@ class TestMeteogramMarks:
             sunrise=SUNRISE,
             sunset=SUNSET,
             hourly=_hourly_series("2026-08-30"),
-            forecast=[],
         )
         forecast = _location_forecast_context(location, PAGE_DATE, timezone.now())
         return render_to_string(

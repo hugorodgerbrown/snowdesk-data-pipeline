@@ -4,7 +4,7 @@ tests/ingest/test_weather.py — Tests for apps.ingest.weather (SNOW-1253).
 The service's own weather: the place list (``sync_source_locations``), the
 past-day write rule on its table (``store_source_weather``) and the walk
 (``fetch_source_weather``). The request-and-parse rules
-(``forecast_fields``) are pinned through the app's fetch in
+(``forecast_rows``) are pinned through the app's fetch in
 ``tests/weather/services/test_fetch.py``, which calls them.
 """
 
@@ -186,23 +186,52 @@ class TestFetchSourceWeather:
 
         assert get.call_count == 1
         assert get.call_args.kwargs["params"]["elevation"] == "3328.0"
-        row = SourceWeather.objects.get()
-        assert row.location == place
-        assert row.observed_on == today
-        assert row.forecast is not None
-        assert len(row.forecast) == 2
-        assert seen == [row]
-        assert counts == {"created": 1, "updated": 0, "failed": 0}
+        rows = list(SourceWeather.objects.order_by("observed_on"))
+        # One row per day of the window (SNOW-1337), each handed on.
+        assert [row.observed_on for row in rows] == [
+            today + dt.timedelta(days=offset) for offset in range(3)
+        ]
+        assert {row.location for row in rows} == {place}
+        assert {row.forecast_on for row in rows} == {today}
+        assert seen == rows
+        assert counts == {"created": 3, "updated": 0, "failed": 0}
 
-    def test_a_second_run_refines_todays_row(self) -> None:
-        """Run twice in a day, the row is updated, not duplicated."""
+    def test_a_second_run_refines_the_week(self) -> None:
+        """Run twice in a day, every row is updated, none duplicated."""
         SourceLocationFactory.create()
         today = timezone.localdate()
         with mock.patch("requests.get", return_value=_response(_payload(today))):
             fetch_source_weather(today, commit=True)
             counts = fetch_source_weather(today, commit=True)
-        assert SourceWeather.objects.count() == 1
-        assert counts["updated"] == 1
+        assert SourceWeather.objects.count() == 3
+        assert counts["updated"] == 3
+
+    def test_the_next_days_fetch_shortens_each_lead_time(self) -> None:
+        """Tomorrow's fetch moves forecast_on on, and adds one day at the end."""
+        place = SourceLocationFactory.create()
+        today = timezone.localdate()
+        tomorrow = today + dt.timedelta(days=1)
+        with mock.patch("requests.get", return_value=_response(_payload(today))):
+            fetch_source_weather(today, commit=True)
+        with (
+            mock.patch("requests.get", return_value=_response(_payload(tomorrow))),
+            mock.patch("django.utils.timezone.localdate", return_value=tomorrow),
+        ):
+            counts = fetch_source_weather(tomorrow, commit=True)
+
+        assert counts == {"created": 1, "updated": 2, "failed": 0}
+        leads = {
+            row.observed_on: (row.observed_on - row.forecast_on).days
+            for row in SourceWeather.objects.filter(location=place)
+        }
+        # Today's row is now past and was not touched; the rest lead from
+        # tomorrow.
+        assert leads == {
+            today: 0,
+            tomorrow: 0,
+            today + dt.timedelta(days=2): 1,
+            today + dt.timedelta(days=3): 2,
+        }
 
     def test_read_only_probes_but_writes_nothing(self) -> None:
         """Without commit the request runs and nothing is stored or handed on."""
@@ -237,5 +266,7 @@ class TestFetchSourceWeather:
             )
 
         assert seen == [bad, good]
-        assert counts == {"created": 1, "updated": 0, "failed": 1}
-        assert SourceWeather.objects.get().location == good
+        assert counts == {"created": 3, "updated": 0, "failed": 1}
+        assert set(SourceWeather.objects.values_list("location", flat=True)) == {
+            good.pk
+        }

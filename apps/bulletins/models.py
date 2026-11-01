@@ -6,9 +6,11 @@ Owns the eight bulletin-driven models:
     manual), its status, and timing metadata.
   - Bulletin: stores SLF avalanche bulletins fetched from the CAAML API,
     keyed by ``bulletin_id``. Includes a ``render_model`` JSONField (a
-    versioned, presentation-ready view derived from ``raw_data``) and a
-    ``render_model_version`` integer used to trigger incremental rebuilds
-    when the builder logic changes.
+    versioned, presentation-ready view of the provider's CAAML, served by
+    the ingest service) and a ``render_model_version`` integer used to
+    trigger incremental rebuilds when the builder logic changes. Since
+    SNOW-1337 it keeps no CAAML of its own: that stays in ingest's
+    ``SourceBulletin``, read through ``apps.ingest.public.source_caaml``.
   - RegionBulletin: many-to-many through table linking bulletins to
     ``regions.MicroRegion`` rows.
   - RegionDayRating: denormalised per-(region, date) min and max danger
@@ -334,26 +336,32 @@ class Bulletin(BaseModel):
         blank=True,
         db_index=True,
         help_text=(
-            "Provider this bulletin was ingested from, detected from "
-            "raw_data.customData by detect_source. Blank only for rows "
-            "predating the field and not yet covered by "
-            "backfill_bulletin_source, or whose customData carries no known "
-            "source marker."
+            "Provider this bulletin was ingested from, detected by the "
+            "ingest service from the CAAML's customData and served as the "
+            "feed item's source. Blank only when the customData carries no "
+            "known source marker."
         ),
     )
-    raw_data = models.JSONField(
-        default=dict,
+    content_hash = models.CharField(
+        max_length=64,
         blank=True,
-        help_text="Full CAAML bulletin wrapped in a GeoJSON Feature envelope.",
+        default="",
+        help_text=(
+            "sha256 of the CAAML this row was filed from — the service's "
+            "SourceBulletin.content_hash, served on the feed item. The apply "
+            "step compares it to tell an unchanged item (SNOW-1337). Blank "
+            "on a row filed before then, so its next item rewrites it once."
+        ),
     )
     render_model = models.JSONField(
         default=dict,
         blank=True,
         help_text=(
-            "Versioned, presentation-ready view of the bulletin built from "
-            "raw_data. Shape: {version, source, danger, traits, metadata, "
-            "prose, danger_patterns, derived} — see docs/render-model.md. "
-            "Rebuilt by upsert_bulletin and on demand by rebuild_render_models."
+            "Versioned, presentation-ready view of the bulletin, built by the "
+            "ingest service from its CAAML. Shape: {version, source, danger, "
+            "traits, metadata, prose, danger_patterns, derived} — see "
+            "docs/render-model.md. Copied from the feed item by write_bulletin "
+            "and rebuilt on demand by rebuild_render_models."
         ),
     )
     render_model_version = models.PositiveIntegerField(
@@ -399,8 +407,7 @@ class Bulletin(BaseModel):
         max_length=500,
         help_text=(
             "URL of the source bulletin PDF (SLF / ALBINA / Météo-France). "
-            "Populated by upsert_bulletin at ingest time and back-filled by "
-            "the backfill_pdf_urls management command."
+            "Populated from the feed item's pdf_url at ingest time."
         ),
     )
     regions: models.ManyToManyField = models.ManyToManyField(

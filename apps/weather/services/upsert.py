@@ -57,9 +57,10 @@ def upsert_weather(
       backfill (SNOW-731) use this same entry point rather than needing an
       exception to the rule.
     * **present, ``observed_on`` today or later** — updated in place. This
-      is the scheduled fetch refining today's row on each of its four
-      daily runs. In place, not appended: read paths key off the unique
-      constraint and must stay a ``.first()``.
+      is the scheduled fetch refining today's row and the six ahead of it
+      on each of its four daily runs (SNOW-1337). In place, not appended:
+      read paths key off the unique constraint and must stay a
+      ``.first()``.
     * **present, ``observed_on`` past** — refused.
 
     Args:
@@ -67,7 +68,9 @@ def upsert_weather(
         observed_on: The calendar day the row is of.
         **fields: Column values to write. ``fetched_at`` is set here when
             the caller does not supply it, since it means "when this row
-            was last written" and that is now.
+            was last written" and that is now; ``forecast_on`` likewise
+            defaults to today, or to the day itself for a past-dated row
+            (lead time zero).
 
     Returns:
         A ``(weather, created)`` tuple, where ``created`` is True for a new
@@ -78,6 +81,7 @@ def upsert_weather(
 
     """
     fields.setdefault("fetched_at", timezone.now())
+    fields.setdefault("forecast_on", min(observed_on, timezone.localdate()))
 
     existing = Weather.objects.filter(
         location=location, observed_on=observed_on

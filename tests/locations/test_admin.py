@@ -231,17 +231,18 @@ class TestBackfillMissingWeatherAction:
         assert response.status_code == 200
         assert Weather.objects.filter(location=location, observed_on=yesterday).exists()
 
-    def test_a_backfilled_row_carries_no_forecast(
+    def test_a_backfilled_row_has_lead_time_zero(
         self, staff_client: Client, settings: Any
     ) -> None:
-        """The action writes the same shape the service does — no invented outlook."""
+        """The action writes the same shape the service does: the day as known on it."""
         yesterday = _one_day_window(settings)
         location = self._station("Mont Fort")
 
         with mock.patch("requests.get", return_value=_response(_payload([yesterday]))):
             self._run(staff_client, [location])
 
-        assert Weather.objects.get(location=location).forecast is None
+        row = Weather.objects.get(location=location)
+        assert row.forecast_on == row.observed_on
 
     def test_the_cap_truncates_the_run_and_says_so(
         self, staff_client: Client, settings: Any

@@ -739,18 +739,18 @@ class TestBulletinDetailView:
         assert rm["error_type"] == "RenderModelBuildError"
 
     @override_settings(DEBUG=False)
-    def test_anonymous_page_never_selects_raw_data(
+    def test_anonymous_page_never_reads_the_caaml(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """No query an anonymous bulletin page runs selects raw_data (SNOW-1342).
+        """No query an anonymous bulletin page runs reads the CAAML (SNOW-1342).
 
         ``DEBUG=False`` as in production: under ``DEBUG`` the page embeds
-        the raw payload for a developer, by design.
+        the service's CAAML for a developer, by design (SNOW-1337).
         """
         _make_am_bulletin(
             region,
             date(2026, 3, 15),
-            raw_data={"properties": {"bulletinID": "raw-marker"}},
+            held={"bulletinID": "raw-marker"},
         )
         url = reverse(
             "public:bulletin_date",
@@ -766,17 +766,21 @@ class TestBulletinDetailView:
                 response = client.get(url)
 
         assert response.status_code == 200
-        assert response.context.get("raw_data_json") is None
-        assert not [q["sql"] for q in ctx.captured_queries if "raw_data" in q["sql"]]
+        assert response.context.get("caaml_json") is None
+        assert not [
+            q["sql"]
+            for q in ctx.captured_queries
+            if "ingest_sourcebulletin" in q["sql"]
+        ]
 
-    def test_superuser_page_embeds_raw_data(
+    def test_superuser_page_embeds_the_services_caaml(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """A superuser's page still carries the raw CAAML embed."""
+        """A superuser's page carries the CAAML the service holds."""
         _make_am_bulletin(
             region,
             date(2026, 3, 15),
-            raw_data={"properties": {"bulletinID": "raw-marker"}},
+            held={"bulletinID": "raw-marker"},
         )
         client.force_login(UserFactory.create(is_staff=True, is_superuser=True))
         url = reverse(
@@ -791,7 +795,7 @@ class TestBulletinDetailView:
         with _freeze("2026-03-15T10:00:00+00:00"):
             response = client.get(url)
 
-        assert "raw-marker" in response.context["raw_data_json"]
+        assert "raw-marker" in response.context["caaml_json"]
 
 
 # ── Issue discovery and selection ────────────────────────────────────────────
@@ -800,26 +804,6 @@ class TestBulletinDetailView:
 @pytest.mark.django_db
 class TestIssuesForDate:
     """All three SLF-style issues covering a calendar day are returned."""
-
-    def test_defers_raw_data(self, region: MicroRegion) -> None:
-        """issues_for_date never loads the CAAML payload (SNOW-1342)."""
-        _make_am_bulletin(region, date(2026, 3, 15))
-
-        issues = _issues_for_date(region, date(2026, 3, 15))
-
-        assert issues
-        assert all("raw_data" in b.get_deferred_fields() for b in issues)
-
-    def test_include_raw_loads_raw_data_with_the_rows(
-        self, region: MicroRegion
-    ) -> None:
-        """The raw embed's audience asks for raw_data on the same query."""
-        _make_am_bulletin(region, date(2026, 3, 15))
-
-        issues = _issues_for_date(region, date(2026, 3, 15), include_raw=True)
-
-        assert issues
-        assert all(not b.get_deferred_fields() for b in issues)
 
     def test_returns_the_issues_that_forecast_the_day(
         self, region: MicroRegion

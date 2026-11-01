@@ -3,25 +3,25 @@ apps/weather/models.py — Database models for the weather application.
 
 Defines the one model the Open-Meteo domain needs:
 
-* ``Weather`` — what was known about one ``Location`` on one day. One row
+* ``Weather`` — what is known about one ``Location`` on one day. One row
   per ``(location, observed_on)``, never rewritten once that day is past.
 
-**One table, not three.** This replaces ``WeatherSnapshot``,
-``ForecastCellWeather`` and ``ForecastCellWeatherHistory``, which split the
-same data three ways across two different anchors — a region centroid and a
-quantised grid cell. Both anchors are now ``Location`` (SNOW-700), and the
-convergence history the third table existed for is the ``forecast`` column:
-each row already records what the forward days looked like on the day it was
-written, which is the same information without a table to keep in step.
+**One row per day, created ahead and refined** (SNOW-1337). Each fetch
+covers today and the six days after it and writes one row for each: a day's
+row is created when it first enters the window, six days out, refined by
+every fetch until its day arrives, and frozen once it has passed — its last
+write the one made on the day itself. ``forecast_on`` is the day of the
+fetch that last wrote the row, so its lead time is
+``observed_on - forecast_on``: six on creation, zero on the day, and zero
+on every past row. No row holds a list of later days: the outlook from any
+day is simply the next rows for that place. What the forecast for a day
+said at six days out is not retained (Hugo, 2026-11-01).
 
-**A row is an account of a day, not a cache of it.** ``observed_on`` is the
-day the row is *of*; ``forecast`` is what the days after it looked like *as
-known on that day*. That is why a past row is immutable — rewriting it
-would silently replace what we said with what turned out to be true, and
-nothing afterwards could tell the two apart. The rule is enforced in
+**A past row is immutable.** Rewriting it would silently replace what we
+said on the day with something else. The rule is enforced in
 ``apps.weather.services.upsert`` and backstopped by ``save()`` below.
 
-Today's row is **updated in place**, not appended, so a read path is
+A row is **updated in place**, not appended, so a read path is
 ``.filter(location=…, observed_on=…).first()`` on the unique constraint —
 never ``.order_by("-fetched_at").first()``.
 
@@ -35,6 +35,7 @@ cause one. See ``docs/decisions/no-signals-for-side-effects.md``.
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from django.db import models
@@ -105,6 +106,25 @@ class WeatherQuerySet(models.QuerySet["Weather"]):
         """
         return self.filter(observed_on__gte=timezone.localdate())
 
+    def window(self, first_day: "date", days: int) -> "WeatherQuerySet":
+        """Return the rows for ``days`` consecutive days from ``first_day``.
+
+        The outlook from a day is the rows that follow it (SNOW-1337), so
+        this is the one query behind every multi-day surface.
+
+        Args:
+            first_day: The first day of the window.
+            days: How many days the window spans, ``first_day`` included.
+
+        Returns:
+            Filtered queryset, oldest day first.
+
+        """
+        return self.filter(
+            observed_on__gte=first_day,
+            observed_on__lt=first_day + timedelta(days=days),
+        ).order_by("observed_on")
+
 
 # ---------------------------------------------------------------------------
 # Weather
@@ -112,13 +132,11 @@ class WeatherQuerySet(models.QuerySet["Weather"]):
 
 
 class Weather(BaseModel):
-    """What was known about one location on one day.
+    """What is known about one location on one day.
 
-    The daily scalars describe ``observed_on`` itself. ``hourly`` breaks
-    that same day down hour by hour. ``forecast`` holds the days *after* it,
-    as they looked on it — so a row read a week later still says what was
-    being forecast at the time, which is what makes the table an account
-    rather than a cache.
+    The daily scalars describe ``observed_on`` itself and ``hourly`` breaks
+    that same day down hour by hour. ``forecast_on`` is the day of the fetch
+    that last wrote it; once ``observed_on`` has passed the row is final.
 
     Every scalar except ``weather_code``, ``sunrise`` and ``sunset`` is
     nullable: Open-Meteo drops variables depending on which model backs the
@@ -144,6 +162,13 @@ class Weather(BaseModel):
     )
     fetched_at = models.DateTimeField(
         help_text="When this row was last written (updated on every write).",
+    )
+    forecast_on = models.DateField(
+        help_text=(
+            "The day of the fetch that last wrote this row. The lead time is "
+            "observed_on - forecast_on: six when the day enters the window, "
+            "zero on the day itself."
+        ),
     )
 
     # --- Daily scalars, describing ``observed_on`` -------------------------
@@ -242,7 +267,7 @@ class Weather(BaseModel):
         ),
     )
 
-    # --- JSON columns ------------------------------------------------------
+    # --- JSON column -------------------------------------------------------
 
     hourly = models.JSONField(
         null=True,
@@ -250,15 +275,6 @@ class Weather(BaseModel):
         help_text=(
             "This day, hour by hour: a list of HourlyRow dicts. Null when "
             "the response carried no hourly block. See apps.weather.types."
-        ),
-    )
-    forecast = models.JSONField(
-        null=True,
-        blank=True,
-        help_text=(
-            "The days AFTER observed_on, as known on it: a list of "
-            "ForecastDay dicts. Only the first few carry a nested 'hourly' "
-            "key — read it with .get(). See apps.weather.types."
         ),
     )
 
@@ -293,6 +309,17 @@ class Weather(BaseModel):
     def __str__(self) -> str:
         """Return a human-readable representation."""
         return self.to_string()
+
+    @property
+    def lead_days(self) -> int:
+        """How many days ahead of its day this row was last written.
+
+        Returns:
+            ``observed_on - forecast_on`` in days: zero on the day itself
+            and on every past row.
+
+        """
+        return (self.observed_on - self.forecast_on).days
 
     @property
     def is_immutable(self) -> bool:

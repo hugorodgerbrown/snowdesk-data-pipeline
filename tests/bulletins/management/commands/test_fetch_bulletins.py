@@ -1118,7 +1118,7 @@ class TestFetchBulletinsStoresThenApplies:
         call_command("fetch_bulletins", *args, stdout=StringIO())
         source = SourceBulletin.objects.get(bulletin_id="b-1")
         bulletin = Bulletin.objects.get(bulletin_id="b-1")
-        assert bulletin.raw_data["properties"] == source.caaml
+        assert bulletin.content_hash == source.content_hash
         assert bulletin.pdf_url == source.pdf_url != ""
 
         call_command("fetch_bulletins", *args, stdout=StringIO())

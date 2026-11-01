@@ -16,11 +16,12 @@ draw the meteogram (Hugo: "it should be the same content").
 
 Three shapes, discriminated by ``show_day_picker`` and NEVER by the date:
 
-  live row        the week; days 1–2 reveal a day line AND a meteogram,
-                  days 3–7 reveal a day line alone.
-  backfilled row  ``forecast=None`` is one day, so no picker: the day line
-                  and its meteogram render plainly, with no hiding class —
-                  with no radio the ``:has()`` reveal could never match.
+  a week        the day and the rows after it (SNOW-1337); each day with
+                hours reveals a day line AND a meteogram, one without hours
+                a day line alone.
+  one day       no rows after it, so no picker: the day line and its
+                meteogram render plainly, with no hiding class — with no
+                radio the ``:has()`` reveal could never match.
   no row at all   the "nothing recorded" message, or in the map on a day
                   after today, "the forecast does not reach this day yet".
 
@@ -46,8 +47,8 @@ Context:
     day_strips      — list of {"index", "strips"}, map only: the sheet's
                       drawing of each day with a series (SNOW-1219), in
                       place of ``hourly_charts``.
-    day_figures     — list of {"index", "day", "hourly_from"}, map only:
-                      each day past the hourly window, one figure a row.
+    day_figures     — list of {"index", "day"}, map only:
+                      each day with no hourly series, one figure a row.
     testid_prefix   — str: ``location-weather`` on the page,
                       ``weather-detail`` in the sheet.
     selector_name   — str: the radio group's name, distinct per container.
@@ -96,7 +97,7 @@ Context:
                     data-hourly-day="{{ entry.index }}"
                     data-testid="{{ testid_prefix }}-figures-panel"
                 >
-                    {% include "includes/_day_figures.html" with day=entry.day hourly_from=entry.hourly_from testid_prefix=testid_prefix|add:"-figures" only %}
+                    {% include "includes/_day_figures.html" with day=entry.day testid_prefix=testid_prefix|add:"-figures" only %}
                 </div>
             {% endfor %}
             {% for entry in hourly_charts %}

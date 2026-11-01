@@ -23,6 +23,7 @@ from apps.bulletins.models import (
 from apps.bulletins.services.apply import upsert_bulletin
 from apps.bulletins.services.slf_fetcher import run_slf_pipeline
 from apps.ingest.normalise.slf import slf_pdf_url
+from apps.ingest.public import content_hash
 from tests.factories import MicroRegionFactory, PipelineRunFactory
 
 # The ``slf_fetcher`` logger, named once rather than spelled out at each
@@ -255,7 +256,8 @@ class TestRunPipeline:
 
         assert (run.records_created, run.records_updated) == (0, 1)
         stored = Bulletin.objects.get(bulletin_id="existing")
-        assert stored.raw_data["properties"]["lang"] == "de"
+        assert stored.lang == "de"
+        assert stored.content_hash == content_hash(changed)
 
     @patch("apps.ingest.sources.slf.fetch_bulletin_page")
     def test_updates_existing_with_force(self, mock_fetch: MagicMock) -> None:

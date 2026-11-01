@@ -56,6 +56,7 @@ from tests.factories import (
     ResortLocationFactory,
     UserFactory,
     WeatherFactory,
+    weather_rows_from_days,
 )
 from tests.public.test_resort_detail import _todays_bulletin
 
@@ -79,7 +80,7 @@ def _get(client: Client, url: str) -> Any:
 
 
 def _forecast_day(day: datetime.date) -> dict[str, object]:
-    """Build one ``forecast[]`` entry for ``day``."""
+    """Describe the row for ``day``."""
     iso = day.isoformat()
     return {
         "date": iso,
@@ -464,12 +465,15 @@ def _pin(client: Client) -> Any:
     return favourite
 
 
-def _curated_near(favourite: Any, **weather: Any) -> Any:
+def _curated_near(
+    favourite: Any, following: list[dict[str, object]] | None = None, **weather: Any
+) -> Any:
     """A curated forecast point 1.1 km north of a pin, with a row.
 
     A pin buys no fetch of its own (2026-10-28): its sheet borrows the
     nearest curated point, so a test that wants weather on the sheet puts
-    it HERE, never on the pin's own location.
+    it HERE, never on the pin's own location. ``following`` describes the
+    rows for the days after (SNOW-1337: one row per day).
     """
     point = LocationFactory.create(
         name="Mont Fort",
@@ -479,6 +483,7 @@ def _curated_near(favourite: Any, **weather: Any) -> Any:
     )
     ResortLocationFactory.create(location=point)
     WeatherFactory.create(location=point, **weather)
+    weather_rows_from_days(point, following)
     return point
 
 
@@ -518,7 +523,7 @@ class TestPinWeather:
     def test_forward_day_reads_todays_forecast(self, client: Client) -> None:
         favourite = _pin(client)
         tomorrow = timezone.localdate() + datetime.timedelta(days=1)
-        _curated_near(favourite, forecast=[_forecast_day(tomorrow)])
+        _curated_near(favourite, following=[_forecast_day(tomorrow)])
         content = _get(
             client, _favourite_url(favourite.uuid, tomorrow.isoformat())
         ).content.decode()

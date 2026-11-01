@@ -7,7 +7,7 @@ provider's CAAML is the service's job, not an instance's (ADR
 ``reference-data-has-one-source-of-truth.md``). The instance keeps the
 presentation — the day-character labels and copy, the templates.
 
-Converts the raw CAAML properties dict stored in Bulletin.raw_data into a
+Converts the raw CAAML properties dict stored in SourceBulletin.caaml into a
 versioned, presentation-ready ``render_model`` dict. The render model is a
 stable, flattened representation that views consume directly, avoiding
 repeated re-derivation of the same computed values.
@@ -499,7 +499,7 @@ def detect_source(properties: dict[str, Any]) -> str:
     - ``"CH"`` → SLF.
 
     This is the canonical source-detection logic shared by the render-model
-    builder and the ``backfill_pdf_urls`` management command.  Using
+    builder and the bulletins feed (``bulletin_identity``).  Using
     ``customData`` as the discriminator makes detection robust against stale
     ``render_model["source"]`` values (e.g. the legacy ``"euregio"`` value
     written by older pipeline versions).
@@ -2008,7 +2008,7 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
 
     Args:
         properties: The CAAML properties dict (the ``"properties"`` key from
-            the GeoJSON Feature envelope stored in ``Bulletin.raw_data``).
+            CAAML v6 Feature), as stored in ``SourceBulletin.caaml``.
 
     Returns:
         A render model dict ready for storage in ``Bulletin.render_model``.

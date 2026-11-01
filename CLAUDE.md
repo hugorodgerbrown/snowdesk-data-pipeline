@@ -58,7 +58,10 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  NormalisedBulletin / FetchOutcome — the app decides what to
                  write (SNOW-1249). SourceBulletin holds what each provider
                  published; the bulletins data feed reads it and every
-                 Bulletin is applied from it (SNOW-1250). SourceLocation
+                 Bulletin is applied from it (SNOW-1250). The feed serves
+                 the render model and identity fields, never the CAAML,
+                 and a Bulletin keeps none (SNOW-1337): raw surfaces read
+                 it with source_caaml. SourceLocation
                  (the reference places, keyed by the uuid each instance
                  holds as Location.source_uuid) and SourceWeather (their
                  days) are the weather service: fetch_weather mirrors the
@@ -103,7 +106,10 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  with the history Weather already held, once. Migrations 0001–0006 belong to
                  the estate SNOW-762 stripped and are retained because six
                  migrations in four other apps depend on them; 0007 creates
-                 the new table. Read
+                 the new table; 0009 (SNOW-1337) adds forecast_on and
+                 drops the forecast[] list — each fetch writes seven
+                 rows, today to six days ahead, each with its hourly.
+                 Read
                  docs/decisions/weather-is-one-immutable-location-row.md
                  before changing the shape of a row
   accounts/      Signed-token account flow and the one account page,
@@ -773,18 +779,18 @@ Read these when working in the relevant area:
 | Accounts (signed tokens, rate limits, email) | [`docs/accounts.md`](docs/accounts.md) |
 | Login/logout manual test checklist | [`docs/auth-testing-checklist.md`](docs/auth-testing-checklist.md) |
 | Render model (shape, versioning, day character) | [`docs/render-model.md`](docs/render-model.md) |
-| Why public and MCP read paths never read `Bulletin.raw_data` and no request rebuilds a render model (`render_model` + stored columns only; `issues_for_date` defers `raw_data`; the version-0 sentinel for a stale row; `Deploy-Step: rebuild_render_models --commit` on a `RENDER_MODEL_VERSION` bump; the named raw surfaces) | [`docs/decisions/read-paths-never-read-raw-data.md`](docs/decisions/read-paths-never-read-raw-data.md) |
+| Why public and MCP read paths never read CAAML and no request rebuilds a render model (`render_model` + stored columns only; `Bulletin.raw_data` dropped by SNOW-1337; the raw surfaces read `SourceBulletin.caaml` via `source_caaml` / `caaml_envelope` and answer 404 / no data without it; the version-0 sentinel for a stale row; `Deploy-Step: rebuild_render_models --commit` on a `RENDER_MODEL_VERSION` bump) | [`docs/decisions/read-paths-never-read-raw-data.md`](docs/decisions/read-paths-never-read-raw-data.md) |
 | Why what a reader computes from a render model is built once and stored in it (render_model["derived"] — terrain_rules, period_transition, problem_family, headline_inputs, state and its fingerprint, danger_levels; build_derived, derived_of, state_of, period_transition_of; bulletin_state moved into ingest; Bulletin.danger_levels and /examples/<level>/; the feed's valid_from / target_date / region_codes; problem-terrain and the region sheet read RegionDayRating.source_bulletin) | [`docs/decisions/derived-render-fields-are-stored-once.md`](docs/decisions/derived-render-fields-are-stored-once.md) |
 | Why the render-model rebuilds enqueue one task per bulletin and each task recomputes its own day ratings (rebuild_render_models / rebuild_source_render_models --commit enqueue only; render_rebuild.py, rebuild_bulletin_task, rebuild_source_bulletin_task, refresh_source_day_rating_task, priority -50; the sorted select_for_update on RegionDayRating / SourceDayRating, lock_source_day_ratings; the sentinel then RenderRebuildFailed; why the two Deploy-Steps' order is not a dependency) | [`docs/decisions/day-ratings-are-recomputed-inside-each-rebuild-task.md`](docs/decisions/day-ratings-are-recomputed-inside-each-rebuild-task.md) |
 | Day summary copy matrix (movement × level × readability, editing rules) | [`docs/day-summary.md`](docs/day-summary.md) |
 | Day character rules (original spec) | [`docs/day_character_rules_spec.md`](docs/day_character_rules_spec.md) |
 | Why a season pass is a many-to-many on Resort and never a gate (Pass, Resort.passes, the sheet's passes column, apps/regions/data/passes.tsv, why no data migration seeds it) | [`docs/decisions/a-pass-groups-resorts-it-never-gates-them.md`](docs/decisions/a-pass-groups-resorts-it-never-gates-them.md) |
 | Location is the primitive (Location model, ForecastPoint is a fetch cell, apps/locations/) | [`docs/decisions/location-is-the-primitive.md`](docs/decisions/location-is-the-primitive.md) |
-| Weather is one immutable row per location per day (Weather model, upsert_weather, Location.objects.active()) | [`docs/decisions/weather-is-one-immutable-location-row.md`](docs/decisions/weather-is-one-immutable-location-row.md) |
+| Weather is one row per location per day, refined until the day passes, then final (Weather model, forecast_on / lead_days, hourly on every row, the outlook as the following rows — WeatherQuerySet.window, following_rows; SourceWeather the same; upsert_weather, Location.objects.active()) | [`docs/decisions/weather-is-one-immutable-location-row.md`](docs/decisions/weather-is-one-immutable-location-row.md) |
 | Weather UI (_weather_detail sheet and its detents, _weather_panel/_weather_day_picker/_weather_day_line, build_weather_display, is_day, /api/weather.geojson, map_weather_core.js) | [`docs/weather-surfaces.md`](docs/weather-surfaces.md) |
 | Why only Snowdesk decides where a forecast is fetched (Location.active() is the curated estate only; a Favourite or Trip.meeting_point buys no fetch; the pin sheet, favourite card, trip page and Plan page borrow the nearest curated forecast at any distance — nearest_forecast, NearestForecast, SAME_PLACE_KM, includes/_forecast_source.html) | [`docs/decisions/snowdesk-decides-where-a-forecast-is-fetched.md`](docs/decisions/snowdesk-decides-where-a-forecast-is-fetched.md) |
 | HISTORICAL — why the Plan page borrowed the nearest forecast and a trip fetched its own meeting point (nearest_weather, meeting_point_weather, enqueue_meeting_weather and NEAREST_RADIUS_KM, both removed 2026-10-28) | [`docs/decisions/a-plan-borrows-a-forecast-a-trip-has-its-own.md`](docs/decisions/a-plan-borrows-a-forecast-a-trip-has-its-own.md) |
-| Why the weather backfill is a capped inline admin action, and why a backfilled row has no forecast[] | [`docs/decisions/weather-backfill-is-an-admin-action.md`](docs/decisions/weather-backfill-is-an-admin-action.md) |
+| Why the weather backfill is a capped inline admin action, and why a backfilled row is its day at lead time zero (`forecast_on`) | [`docs/decisions/weather-backfill-is-an-admin-action.md`](docs/decisions/weather-backfill-is-an-admin-action.md) |
 | Why backfill_weather is an hourly sweep of fortnight blocks, newest first, inside a weighted-call budget (sweep, sweep_budget, request_weight, fortnight_blocks, Open-Meteo's weighted quota, the 429 stop, --location / --resort / --until) | [`docs/decisions/weather-backfill-sweeps-newest-fortnight-first.md`](docs/decisions/weather-backfill-sweeps-newest-fortnight-first.md) |
 | Why the weather day picker is a CSS radio group, not seven dated links (`?date=` picks the row, the picker picks inside it) | [`docs/decisions/weather-day-picker-is-a-selector-not-navigation.md`](docs/decisions/weather-day-picker-is-a-selector-not-navigation.md) |
 | Why Snowdesk draws its own weather icons (bin/build-weather-icons, the both-backgrounds palette, the baked silhouette edge) | [`docs/decisions/weather-icons-are-drawn-in-house.md`](docs/decisions/weather-icons-are-drawn-in-house.md) |

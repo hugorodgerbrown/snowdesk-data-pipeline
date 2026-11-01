@@ -5,10 +5,10 @@ for the ``diagnose_region_coverage`` management command.
 Covers:
 
   - Bucket A (region has a RegionDayRating row).
-  - Bucket B (region listed in a bulletin's raw_data but no rating row).
+  - Bucket B (region listed in a bulletin's CAAML but no rating row).
   - Bucket C (region never listed in any bulletin).
-  - Bucket B's signal is read from raw_data, not the RegionBulletin
-    join — so a region that's in raw_data but missing its M2M link still
+  - Bucket B's signal is read from the CAAML, not the RegionBulletin
+    join — so a region that's in the CAAML but missing its M2M link still
     shows up in B.
   - The partition is disjoint and exhaustive.
   - ``--date`` restricts the analysis to bulletins targeting one day.
@@ -27,11 +27,13 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from apps.bulletins.models import Bulletin, RegionBulletin, RegionDayRating
+from apps.ingest.public import SourceBulletin, target_day_for_valid_from
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
     RegionDayRatingFactory,
+    SourceBulletinFactory,
 )
 
 
@@ -42,30 +44,31 @@ def _bulletin_with_regions(
     valid_from: datetime | None = None,
 ) -> Bulletin:
     """
-    Create a Bulletin whose raw_data lists the supplied region IDs.
+    Create a Bulletin whose CAAML, held by the service, lists ``region_ids``.
 
-    Mirrors the GeoJSON Feature envelope produced by ``upsert_bulletin``
-    so the diagnostic exercises the same payload shape that production
-    rows carry. RegionBulletin links are intentionally not created — the
-    diagnostic reads raw_data directly, so the M2M side is incidental
-    here.
+    The diagnostic reads the regions from ``SourceBulletin.caaml`` (the only
+    copy since SNOW-1337), so the CAAML is written there with the indexed
+    ``valid_from`` / ``target_date`` ``store_bulletin`` would give it.
+    RegionBulletin links are intentionally not created — the diagnostic
+    reads the CAAML directly, so the M2M side is incidental here.
     """
     issued = valid_from or datetime(2026, 3, 15, 8, 0, tzinfo=UTC)
+    SourceBulletinFactory.create(
+        bulletin_id=bulletin_id,
+        valid_from=issued,
+        target_date=target_day_for_valid_from(issued),
+        caaml={
+            "bulletinID": bulletin_id,
+            "regions": [
+                {"regionID": rid, "name": f"Region {rid}"} for rid in region_ids
+            ],
+        },
+    )
     return BulletinFactory.create(
         bulletin_id=bulletin_id,
         issued_at=issued,
         valid_from=issued,
         valid_to=issued + timedelta(days=1),
-        raw_data={
-            "type": "Feature",
-            "geometry": None,
-            "properties": {
-                "bulletinID": bulletin_id,
-                "regions": [
-                    {"regionID": rid, "name": f"Region {rid}"} for rid in region_ids
-                ],
-            },
-        },
     )
 
 
@@ -94,11 +97,11 @@ class TestBucketAssignment:
     def test_region_in_bulletin_but_no_rating_row_is_bucket_b(
         self, capsys: pytest.CaptureFixture
     ) -> None:
-        """A region listed in raw_data but with no rating row is in bucket B."""
+        """A region listed in the CAAML but with no rating row is in bucket B."""
         MicroRegionFactory.create(region_id="CH-B001")
         _bulletin_with_regions(["CH-B001"], bulletin_id="bul-b")
         # Deliberately no RegionBulletin and no RegionDayRating: the
-        # diagnostic must rely on raw_data alone.
+        # diagnostic must rely on the CAAML alone.
 
         call_command("diagnose_region_coverage", verbosity=0)
 
@@ -110,7 +113,7 @@ class TestBucketAssignment:
     def test_region_never_in_any_bulletin_is_bucket_c(
         self, capsys: pytest.CaptureFixture
     ) -> None:
-        """A region absent from every bulletin's raw_data is in bucket C."""
+        """A region absent from every bulletin's CAAML is in bucket C."""
         MicroRegionFactory.create(region_id="CH-C001")
         # An unrelated bulletin that doesn't mention CH-C001.
         _bulletin_with_regions(["CH-OTHER"], bulletin_id="bul-c-other")
@@ -125,15 +128,15 @@ class TestBucketAssignment:
     def test_bucket_b_does_not_require_region_bulletin_link(
         self, capsys: pytest.CaptureFixture
     ) -> None:
-        """Bucket B is computed from raw_data, ignoring the M2M join."""
+        """Bucket B is computed from the CAAML, ignoring the M2M join."""
         MicroRegionFactory.create(region_id="CH-B002")
-        # raw_data lists the region but no RegionBulletin row exists.
+        # The CAAML lists the region but no RegionBulletin row exists.
         _bulletin_with_regions(["CH-B002"], bulletin_id="bul-b2")
 
         call_command("diagnose_region_coverage", verbosity=0)
 
         out = capsys.readouterr().out
-        # No M2M join means listing in raw_data alone is enough.
+        # No M2M join means listing in the CAAML alone is enough.
         assert "B. In raw bulletin but no rating row:  1" in out
         assert "CH-B002" in out
 
@@ -285,7 +288,14 @@ class TestCountdown:
         MicroRegionFactory.create(region_id="CH-Z002")
         first = _bulletin_with_regions(["CH-Z001"], bulletin_id="bul-z001")
         second = _bulletin_with_regions(["CH-Z002"], bulletin_id="bul-z002")
-        expected = sorted([first.pk, second.pk], reverse=True)
+        # The scan walks the service's rows, so the countdown is their ids.
+        expected = list(
+            SourceBulletin.objects.filter(
+                bulletin_id__in=[first.bulletin_id, second.bulletin_id]
+            )
+            .order_by("-id")
+            .values_list("id", flat=True)
+        )
 
         call_command("diagnose_region_coverage", verbosity=1)
 

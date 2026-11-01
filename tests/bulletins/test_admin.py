@@ -149,10 +149,10 @@ class TestAdminXssEscape:
         return BulletinAdmin(BulletinModel, site)
 
     def _bulletin(self, raw_properties: dict) -> Bulletin:
-        """Create a Bulletin with the given raw_data properties payload."""
+        """Create a Bulletin whose service-held CAAML is ``raw_properties``."""
         from tests.factories import BulletinFactory
 
-        return BulletinFactory.create(raw_data={"properties": raw_properties})
+        return BulletinFactory.create(held=raw_properties)
 
     def test_danger_ratings_escapes_main_value(self) -> None:
         """danger_ratings escapes a <script> injected into mainValue."""
@@ -280,8 +280,8 @@ class TestBulletinAdminDisplayMethods:
     """
 
     def _bulletin(self, raw_properties: dict) -> Bulletin:
-        """Create a Bulletin with the given raw_data properties payload."""
-        return BulletinFactory.create(raw_data={"properties": raw_properties})
+        """Create a Bulletin whose service-held CAAML is ``raw_properties``."""
+        return BulletinFactory.create(held=raw_properties)
 
     def test_danger_ratings_empty_returns_dash(self) -> None:
         """Empty ``dangerRatings`` array short-circuits to the dash."""
@@ -371,13 +371,19 @@ class TestBulletinAdminDisplayMethods:
         bulletin = self._bulletin({"tendency": [{"validTime": "x"}, "string entry"]})
         assert _admin().tendency(bulletin) == "—"
 
-    def test_raw_data_pretty_renders_json(self) -> None:
-        """``raw_data_pretty`` wraps indented JSON in a ``<pre>`` element."""
+    def test_caaml_pretty_renders_the_service_copy(self) -> None:
+        """``caaml_pretty`` wraps the service's CAAML, enveloped, in a ``<pre>``."""
         bulletin = self._bulletin({"foo": "bar"})
-        html = _admin().raw_data_pretty(bulletin)
+        html = _admin().caaml_pretty(bulletin)
         assert "<pre" in html
         assert "&quot;foo&quot;" in html
         assert "&quot;bar&quot;" in html
+        assert "&quot;Feature&quot;" in html
+
+    def test_caaml_pretty_says_when_none_is_held(self) -> None:
+        """A bulletin the service holds no CAAML for says so (SNOW-1337)."""
+        bulletin = BulletinFactory.create()
+        assert _admin().caaml_pretty(bulletin) == "No CAAML is held for this bulletin."
 
     def test_render_model_pretty_renders_json(self) -> None:
         """``render_model_pretty`` wraps indented JSON in a ``<pre>`` element."""

@@ -33,8 +33,6 @@ from apps.regions.models import MicroRegion
 def issues_for_date(
     region: MicroRegion,
     target_date: datetime.date,
-    *,
-    include_raw: bool = False,
 ) -> list[Bulletin]:
     """
     Return the bulletins that forecast a calendar day.
@@ -56,26 +54,18 @@ def issues_for_date(
 
     The result is sorted by ``valid_from`` ascending, earlier issue first.
 
-    ``raw_data`` is deferred (SNOW-1342): every caller is a read path that
-    renders from ``render_model`` and the row's own columns, and the CAAML
-    payload is the widest column on the row. The one raw surface on this
-    path — the bulletin page's superuser / ``DEBUG`` raw embed — asks for
-    it explicitly with ``include_raw=True``, so it costs that audience no
-    extra query and everyone else no CAAML.
+    Every caller is a read path that renders from ``render_model`` and the
+    row's own columns (SNOW-1342); the row holds no CAAML since SNOW-1337.
 
     Args:
         region: The MicroRegion to look up.
         target_date: Calendar date identifying the day to display.
-        include_raw: Load ``raw_data`` with the rows instead of deferring
-            it — only for a caller that will render the raw payload.
 
     Returns:
         A chronologically-sorted list of Bulletins (possibly empty).
 
     """
     issues = Bulletin.objects.for_target_date(target_date).filter(regions=region)
-    if not include_raw:
-        issues = issues.defer("raw_data")
     return list(issues.order_by("valid_from"))
 
 
@@ -142,8 +132,7 @@ def select_bulletins_for_regions(
     asks about many regions at once (``bulk_current_conditions``): one
     query for every region rather than one per region, and the same pick
     — each region's issues that forecast ``target_date``, the latest by
-    ``valid_from`` (:func:`select_default_issue`). ``raw_data`` is deferred,
-    as in :func:`issues_for_date`.
+    ``valid_from`` (:func:`select_default_issue`).
 
     Args:
         regions: The MicroRegions to look up.
@@ -154,13 +143,9 @@ def select_bulletins_for_regions(
         day; a region with none is absent.
 
     """
-    links = (
-        RegionBulletin.objects.filter(
-            region__in=list(regions), bulletin__target_date=target_date
-        )
-        .select_related("bulletin")
-        .defer("bulletin__raw_data")
-    )
+    links = RegionBulletin.objects.filter(
+        region__in=list(regions), bulletin__target_date=target_date
+    ).select_related("bulletin")
     issues: dict[int, list[Bulletin]] = defaultdict(list)
     for link in links:
         issues[link.region_id].append(link.bulletin)

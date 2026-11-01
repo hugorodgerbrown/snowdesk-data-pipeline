@@ -219,9 +219,7 @@ class CountryBulletinFeed(Feed):
         ``region_id`` for a stable order. ``select_related`` joins the
         ``bulletin`` and the region in a single query so ``item_link``,
         ``item_title``, and ``item_pubdate`` do not fan out into N+1
-        lookups. ``only`` loads just the columns the feed reads — above
-        all it leaves the bulletin's ``raw_data`` payload behind
-        (SNOW-1344).
+        lookups. ``only`` loads just the columns the feed reads (SNOW-1344).
 
         Args:
             obj: The canonical lowercase country code from

@@ -17,6 +17,11 @@
 #      ``upsert_bulletin`` requires one.  Synthesised as
 #      ``FR-{NN:02d}-{covered date}-{publication timestamp}``.
 #
+# A committed row goes the way a live fetch does (SNOW-1337): stored in
+# ingest's ``SourceBulletin`` first, then applied to ``Bulletin`` by
+# ``apply_bulletin`` — a ``Bulletin`` keeps no CAAML, so a row written
+# around the store would leave the archive's CAAML held nowhere.
+#
 # The publication timestamp is what makes the id unique.  Météo-France issues
 # more than one BRA per massif per covered day — typically the previous evening
 # and a morning refresh — so ``FR-{NN}-{covered date}`` alone collided for 105
@@ -330,15 +335,17 @@ def _process_line(
     Args:
         raw_line: A stripped line from the NDJSON file.
         line_number: 1-based line counter for log messages.
-        commit: If ``True``, call ``upsert_bulletin``; otherwise dry-run.
+        commit: If ``True``, store and apply the row (``apply_bulletin``);
+            otherwise dry-run.
         run: Active ``PipelineRun`` (or ``None`` in dry-run mode).
         counts: Mutable counter object updated by this call.
 
     """
     from apps.bulletins.services.apply import (
         NoResolvableRegionsError,
-        upsert_bulletin,
+        apply_bulletin,
     )
+    from apps.ingest.public import OUTCOME_CREATED, NormalisedBulletin
 
     properties = _parse_envelope(raw_line, line_number)
     if properties is None:
@@ -372,8 +379,9 @@ def _process_line(
     # reason to abandon the rest of the file (SNOW-547) — same posture as the
     # unknown-slug and bad-shape branches above, and as the ALBINA / MF live
     # fetchers, which already catch broadly around upsert_bulletin.
+    record = NormalisedBulletin(bulletin_id, "METEOFRANCE", properties, lambda: "")
     try:
-        created = upsert_bulletin(properties, run)
+        created = apply_bulletin(record, run) == OUTCOME_CREATED
     except NoResolvableRegionsError:
         logger.exception("Line %d: skipping %s", line_number, bulletin_id)
         # _record_run_failure alone is enough to surface this: it feeds

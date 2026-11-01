@@ -75,6 +75,7 @@ from tests.factories import (
     SubRegionFactory,
     UserFactory,
     WeatherFactory,
+    weather_rows_from_days,
 )
 
 
@@ -393,7 +394,11 @@ def _forecast_day(offset: int, **overrides: Any) -> dict[str, Any]:
 
 
 def _todays_weather(location: Any, **overrides: Any) -> Any:
-    """Create today's Weather row for a location with a six-day forecast."""
+    """Create today's Weather row for a location, and the six days after it.
+
+    ``forecast`` names the day dicts for the rows after today (SNOW-1337:
+    one row per day); ``None`` or ``[]`` writes today alone.
+    """
     fields: dict[str, Any] = {
         "location": location,
         "observed_on": TODAY,
@@ -408,10 +413,14 @@ def _todays_weather(location: Any, **overrides: Any) -> Any:
         "wind_gusts_10m_max": 60.0,
         "wind_direction_10m_dominant": 315.0,
         "freezing_level_height": 1900.0,
-        "forecast": [_forecast_day(offset) for offset in range(1, 7)],
     }
+    following = overrides.pop(
+        "forecast", [_forecast_day(offset) for offset in range(1, 7)]
+    )
     fields.update(overrides)
-    return WeatherFactory.create(**fields)
+    row = WeatherFactory.create(**fields)
+    weather_rows_from_days(location, following)
+    return row
 
 
 class _ElementSource(HTMLParser):
@@ -766,7 +775,7 @@ class TestResortForecastStrip:
 
     @freeze_time(MIDDAY)
     def test_a_backfilled_row_is_today_alone(self) -> None:
-        """``forecast=None`` (a backfilled row) is one tile, not an error."""
+        """A row with no rows after it (a backfilled day) is one tile."""
         resort = ResortFactory.create(geocoded=True)
         assert resort.location is not None
         _todays_weather(resort.location, forecast=None)
@@ -779,7 +788,7 @@ class TestResortForecastStrip:
 
     @freeze_time(MIDDAY)
     def test_a_longer_window_is_capped_at_seven(self) -> None:
-        """Eight forward days still draw seven tiles."""
+        """Eight rows ahead still draw seven tiles."""
         resort = ResortFactory.create(geocoded=True)
         assert resort.location is not None
         _todays_weather(

@@ -17,14 +17,13 @@ rewritten four times a day and a manual correction to one is a normal thing
 to want. Deletion is off everywhere: a row is the record that we said
 something, and removing it is not a correction.
 
-**The two JSON series are read-only on every row, and pretty-printed.**
-``hourly`` is 24 objects of seven variables and ``forecast`` is up to six
-days of the same shape again; in a ``Textarea`` they render as one
-unbroken line thousands of characters long, which is unreadable and — since
+**The hourly series is read-only on every row, and pretty-printed.**
+``hourly`` is 24 objects of seven variables; in a ``Textarea`` it renders as
+one unbroken line thousands of characters long, which is unreadable and — since
 the only way to edit it is to hand-write valid JSON into that line — not
-usefully editable either. They are provider output, written by
-``services/fetch.py`` and ``services/backfill.py``; correcting one by hand
-is not a workflow the surface should offer. So they are shown as indented
+usefully editable either. It is provider output, written by
+``services/fetch.py`` and ``services/backfill.py``; correcting it by hand
+is not a workflow the surface should offer. So it is shown as indented
 JSON instead, on every row rather than only past ones.
 """
 
@@ -63,8 +62,8 @@ _DAILY_FIELDS = [
     "freezing_level_height",
 ]
 
-# Never editable, on any row: identity, the two audit timestamps, and the
-# two JSON series (see the module docstring — they are rendered by the
+# Never editable, on any row: identity, the two audit timestamps, the
+# lead time, and the hourly series (see the module docstring — they are rendered by the
 # display methods below rather than by a Textarea).
 _ALWAYS_READONLY = [
     "id",
@@ -72,10 +71,10 @@ _ALWAYS_READONLY = [
     "created_at",
     "updated_at",
     "hourly_json",
-    "forecast_json",
+    "lead_days",
 ]
 
-# Bounded height with its own scrollbar: a season's ``forecast`` runs to
+# Bounded height with its own scrollbar: a day's ``hourly`` runs to
 # hundreds of lines, and letting it push the Metadata fieldset off the
 # bottom of the page would trade one readability problem for another.
 _JSON_STYLE = (
@@ -92,6 +91,8 @@ class WeatherAdmin(admin.ModelAdmin):
     list_display = [
         "location",
         "observed_on",
+        "forecast_on",
+        "lead_days",
         "weather_code",
         "temperature_2m_max",
         "temperature_2m_min",
@@ -106,12 +107,23 @@ class WeatherAdmin(admin.ModelAdmin):
     ordering = ["-observed_on"]
 
     fieldsets = (
-        (None, {"fields": ("location", "observed_on", "fetched_at")}),
+        (
+            None,
+            {
+                "fields": (
+                    "location",
+                    "observed_on",
+                    "forecast_on",
+                    "lead_days",
+                    "fetched_at",
+                )
+            },
+        ),
         ("Conditions", {"fields": tuple(_DAILY_FIELDS)}),
         (
             "Series",
             {
-                "fields": ("hourly_json", "forecast_json"),
+                "fields": ("hourly_json",),
                 "description": (
                     "Provider output, shown as formatted JSON. Not editable "
                     "here on any row — see apps/weather/services/fetch.py and "
@@ -161,20 +173,18 @@ class WeatherAdmin(admin.ModelAdmin):
         """
         return self._as_json(obj.hourly)
 
-    @admin.display(description="Forecast")
-    def forecast_json(self, obj: Weather) -> SafeString | str:
-        """Render the forward days as indented JSON.
+    @admin.display(description="Lead time (days)")
+    def lead_days(self, obj: Weather) -> int:
+        """Return ``observed_on - forecast_on`` in days (SNOW-1337).
 
         Args:
             obj: The row being viewed.
 
         Returns:
-            A scrollable ``<pre>`` block, or an em dash when the column is
-            null — which is what every backfilled row carries, deliberately
-            (see docs/decisions/weather-backfill-is-an-admin-action.md).
+            The lead time: zero on the day itself and on every past row.
 
         """
-        return self._as_json(obj.forecast)
+        return obj.lead_days
 
     @staticmethod
     def _as_json(value: Any) -> SafeString | str:

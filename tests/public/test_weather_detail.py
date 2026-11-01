@@ -42,6 +42,7 @@ from django.urls import reverse
 from freezegun import freeze_time
 
 from apps.locations.models import Location
+from apps.weather.models import Weather
 from tests.factories import (
     FavouriteFactory,
     LocationFactory,
@@ -78,41 +79,44 @@ def _hourly(day: datetime.date) -> list[dict[str, Any]]:
     ]
 
 
-def _forecast(anchor: datetime.date, days: int = 6) -> list[dict[str, Any]]:
-    """Build forward days, the first of them carrying an hourly series.
+def _following(
+    location: Location, anchor: datetime.date, days: int = 6
+) -> list[Weather]:
+    """Create the rows for the days after ``anchor``, each with its hourly.
 
-    Mirrors the real shape twice over: ``hourly`` is present on only the
-    first FORWARD entry, because the row itself carries day 0's series
-    and ``HOURLY_DAYS`` is 2 — a fixture giving every day one would
-    misrepresent it — and six forward days plus the row's own is
-    ``FORECAST_DAYS``, the seven the day picker's grid is built on. A
+    Mirrors the real shape (SNOW-1337): one row per day, every row carrying
+    its own hourly series, and six following days plus the lead row's own
+    is ``FORECAST_DAYS``, the seven the day picker's grid is built on. A
     shorter fixture would leave the picker's own shape untested.
 
     Args:
-        anchor: The parent row's own day; forward days follow it.
-        days: How many forward days to build.
+        location: The place the rows describe.
+        anchor: The lead row's own day; the following rows start after it.
+        days: How many following days to create.
 
     Returns:
-        A list of ``ForecastDay``-shaped dicts.
+        The rows, oldest day first.
 
     """
-    entries: list[dict[str, Any]] = []
+    rows: list[Weather] = []
     for index in range(1, days + 1):
         day = anchor + datetime.timedelta(days=index)
-        entry: dict[str, Any] = {
-            "date": day.isoformat(),
-            "weather_code": 3,
-            "sunrise": f"{day.isoformat()}T07:30:00+01:00",
-            "sunset": f"{day.isoformat()}T17:00:00+01:00",
-            "temperature_2m_max": 2.0 + index,
-            "temperature_2m_min": -6.0 + index,
-            "snowfall_sum": 1.0,
-            "freezing_level_height": 1500.0 + index * 100,
-        }
-        if index == 1:
-            entry["hourly"] = _hourly(day)
-        entries.append(entry)
-    return entries
+        offset = datetime.timezone(datetime.timedelta(hours=1))
+        rows.append(
+            WeatherFactory.create(
+                location=location,
+                observed_on=day,
+                weather_code=3,
+                sunrise=datetime.datetime.combine(day, datetime.time(7, 30), offset),
+                sunset=datetime.datetime.combine(day, datetime.time(17, 0), offset),
+                temperature_2m_max=2.0 + index,
+                temperature_2m_min=-6.0 + index,
+                snowfall_sum=1.0,
+                freezing_level_height=1500.0 + index * 100,
+                hourly=_hourly(day),
+            )
+        )
+    return rows
 
 
 @pytest.fixture
@@ -137,8 +141,8 @@ def resort_location() -> Location:
         wind_speed_10m_max=22.0,
         precipitation_probability_max=60,
         hourly=_hourly(TODAY),
-        forecast=_forecast(TODAY),
     )
+    _following(location, TODAY)
     return location
 
 
@@ -168,7 +172,6 @@ def backfilled_location() -> Location:
         freezing_level_height=1800.0,
         snowfall_sum=3.0,
         hourly=_hourly(TODAY),
-        forecast=None,
     )
     return location
 
@@ -290,7 +293,7 @@ class TestCard:
         html = response.json()["html"]
         assert 'data-testid="weather-detail"' in html
         assert "1450" in html  # elevation
-        assert "1800" in html  # freezing level
+        assert "1100" in html  # freezing level, from the hourly strip
         assert "22" in html  # wind
 
     @freeze_time("2026-01-12T11:00:00+00:00")
@@ -427,7 +430,7 @@ class TestCard:
         assert 'data-testid="weather-detail-forecast-picker"' in html
         assert html.count('data-testid="weather-detail-forecast-day"') == 7
         assert html.count('data-testid="weather-detail-day-line"') == 7
-        assert html.count('data-testid="weather-detail-hourly-panel"') == 2
+        assert html.count('data-testid="weather-detail-hourly-panel"') == 7
         assert 'data-testid="weather-detail-provenance"' in html
         assert _checked_index(html) == 0
 
@@ -540,9 +543,7 @@ class TestCardDetents:
         _without_places(monkeypatch)
         location = LocationFactory.create(anonymous=True, elevation_m=1450.0)
         MicroRegionFactory.create(name="Chablais", centroid_location=location)
-        WeatherFactory.create(
-            location=location, observed_on=TODAY, hourly=None, forecast=None
-        )
+        WeatherFactory.create(location=location, observed_on=TODAY, hourly=None)
 
         html = client.get(_card_url(location), {"date": TODAY.isoformat()}).json()[
             "html"
@@ -596,15 +597,28 @@ class TestCardDayStrips:
         ]
         return html
 
-    def test_days_with_hours_get_strips_and_the_rest_figures(
+    def test_every_day_carries_hours_so_every_day_gets_strips(
         self, client: Client, resort_location: Location
     ) -> None:
-        """Two days carry a series; the other five open their daily figures."""
+        """All seven rows carry a series (SNOW-1337), so all seven get strips."""
         html = self._html(client, resort_location)
 
-        assert html.count('data-testid="weather-detail-strips"') == 2
-        assert html.count('data-testid="weather-detail-figures"') == 5
+        assert html.count('data-testid="weather-detail-strips"') == 7
+        assert 'data-testid="weather-detail-figures"' not in html
         assert "weather-detail-hourly-legend-open" not in html
+
+    def test_a_day_without_hours_gets_its_figures(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """A row written without a series opens its daily figures instead."""
+        Weather.objects.filter(
+            location=resort_location, observed_on=TODAY + datetime.timedelta(days=3)
+        ).update(hourly=None)
+
+        html = self._html(client, resort_location)
+
+        assert html.count('data-testid="weather-detail-strips"') == 6
+        assert html.count('data-testid="weather-detail-figures"') == 1
 
     def test_one_selector_with_eight_blocks(
         self, client: Client, resort_location: Location
@@ -702,14 +716,17 @@ class TestCardDayStrips:
         assert "1,450 m" in html
         assert ">you" not in html
 
-    def test_a_later_day_says_when_its_hours_arrive(
+    def test_a_day_without_hours_says_so(
         self, client: Client, resort_location: Location
     ) -> None:
-        """Day 3 gets its hours when it is tomorrow: the day after TODAY."""
+        """No promise that hours will arrive: every fetch writes them."""
+        Weather.objects.filter(
+            location=resort_location, observed_on=TODAY + datetime.timedelta(days=3)
+        ).update(hourly=None)
+
         html = self._html(client, resort_location)
 
-        tomorrow = (TODAY + datetime.timedelta(days=1)).strftime("%A")
-        assert f"Hour by hour from {tomorrow}." in html
+        assert "No hour-by-hour forecast was recorded for this day." in html
 
     def test_the_sheets_day_line_is_brief(
         self, client: Client, resort_location: Location
@@ -815,14 +832,18 @@ class TestForecastPage:
         """``selectable`` still means something — just something narrower.
 
         It no longer decides which cells are controls (all of them are);
-        it decides which of them reveals day strips. HOURLY_DAYS is 2, so
-        five of the seven cells reveal the day's figures instead, as the
-        sheet does (SNOW-1219).
+        it decides which of them reveals day strips. Every row carries its
+        hours since SNOW-1337, so a row without them is the only one that
+        reveals the day's figures instead, as the sheet does (SNOW-1219).
         """
+        Weather.objects.filter(
+            location=resort_location, observed_on=TODAY + datetime.timedelta(days=3)
+        ).update(hourly=None)
+
         html = _main(_page(client, resort_location))
 
-        assert html.count('data-testid="location-weather-hourly-panel"') == 2
-        assert html.count('data-testid="location-weather-figures-panel"') == 5
+        assert html.count('data-testid="location-weather-hourly-panel"') == 6
+        assert html.count('data-testid="location-weather-figures-panel"') == 1
         # Every day still gets its own line, chart or no chart.
         for index in range(7):
             assert f'data-day-line="{index}"' in html

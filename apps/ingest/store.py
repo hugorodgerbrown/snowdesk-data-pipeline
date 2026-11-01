@@ -26,6 +26,11 @@ next fetched, even when its CAAML has not changed, and
 ``rebuild_render_model`` does the same for one row on demand (the
 ``rebuild_source_render_models`` command walks the stale ones). A rebuild
 that produces the stored values again writes nothing.
+
+``source_caaml(bulletin_id)`` is the one way a host reads a stored
+bulletin's CAAML (SNOW-1337): the feed never serves it, so a host's raw
+surfaces — on the instance that runs the service — read it here, matched on
+the shared ``bulletin_id``, and say "no data" when the service holds none.
 """
 
 from __future__ import annotations
@@ -55,6 +60,38 @@ from apps.ingest.runs import NormalisedBulletin
 logger = logging.getLogger(__name__)
 
 OUTCOME_UNCHANGED = "unchanged"
+
+
+def caaml_envelope(caaml: dict[str, Any]) -> dict[str, Any]:
+    """Wrap CAAML properties in the GeoJSON Feature envelope the raw surfaces serve.
+
+    Args:
+        caaml: The CAAML properties.
+
+    Returns:
+        ``{"type": "Feature", "geometry": None, "properties": caaml}``.
+
+    """
+    return {"type": "Feature", "geometry": None, "properties": caaml}
+
+
+def source_caaml(bulletin_id: str) -> dict[str, Any] | None:
+    """Return the CAAML the service stored for ``bulletin_id``, or None.
+
+    Args:
+        bulletin_id: The provider's bulletin id, shared with the host's row.
+
+    Returns:
+        The CAAML properties, or ``None`` when the service holds no such
+        bulletin (expected on an instance that pulls its bulletins from
+        another's feed).
+
+    """
+    return (
+        SourceBulletin.objects.filter(bulletin_id=bulletin_id)
+        .values_list("caaml", flat=True)
+        .first()
+    )
 
 
 def render_model_for(caaml: dict[str, Any]) -> tuple[dict[str, Any], int]:

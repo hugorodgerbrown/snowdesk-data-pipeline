@@ -66,7 +66,7 @@ from tests.factories import (
     UserFactory,
     WeatherFactory,
     drifting_track_record,
-    forecast_days,
+    following_days,
 )
 
 # The element the meeting point renders into, tag and contents. Matched
@@ -1092,11 +1092,8 @@ class TestTripPageWeather:
             name="Verbier", latitude=46.11, longitude=7.4, elevation_m=1500.0
         )
         ResortLocationFactory.create(location=point)
-        WeatherFactory.create(
-            location=point,
-            observed_on=today,
-            forecast=forecast_days(today, [71], snow=[2.0]),
-        )
+        WeatherFactory.create(location=point, observed_on=today)
+        following_days(point, today, [71], snow=[2.0])
         client.force_login(trip.created_by)
 
         html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
@@ -1393,11 +1390,8 @@ class TestPlanPage:
         )
         ResortLocationFactory.create(location=location)
         today = datetime.date(2026, 10, 24)
-        WeatherFactory.create(
-            location=location,
-            observed_on=today,
-            forecast=forecast_days(today, [73], snow=[6.0]),
-        )
+        WeatherFactory.create(location=location, observed_on=today)
+        following_days(location, today, [73], snow=[6.0])
         client.force_login(route.user)
 
         html = client.get(f"{reverse('trips:new')}?route={route.uuid}").content.decode()

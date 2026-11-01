@@ -2712,14 +2712,12 @@
    * same way, so a resort sheet that fails to warm makes the download
    * short.
    *
-   * A weather sheet is ONE URL per location, not one per day, and that is
-   * a correctness point rather than a saving: `?date=` selects which
-   * `Weather` ROW the page reads, and only today's row exists. The
-   * forward days live inside that row's `forecast[]` and the day picker
-   * selects among them client-side — see
+   * A weather sheet is ONE URL per location, not one per day: a forward
+   * `?date=` opens the same week as today's — today's row and the rows
+   * after it (SNOW-1337) — and the day picker selects among them
+   * client-side — see
    * `docs/decisions/weather-day-picker-is-a-selector-not-navigation.md`.
-   * Fetching a URL per day would cache six "no weather was recorded here
-   * for this day" pages out of every seven.
+   * Fetching a URL per day would cache the same week seven times.
    *
    * SNOW-965: that one URL carries `?date=<weatherDay>` when the caller
    * names the day — today — because it is the URL the map's weather

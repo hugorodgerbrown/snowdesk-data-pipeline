@@ -2,7 +2,7 @@
 name: coding-standards
 description: Repository layout, Python style, model/service/view conventions, testing, and tooling (ruff, mypy, tox, pre-commit) rules
 status: current
-last-reviewed: 2026-10-31
+last-reviewed: 2026-11-01
 ---
 
 # Coding Standards — Snowdesk Data Pipeline
@@ -594,10 +594,15 @@ absorbs the known false positives. Do not vendor or pin these rulesets.
 
 ## 7. Data conventions
 
-### 7.1 CAAML storage envelope
+### 7.1 CAAML storage and the raw envelope
 
-Raw SLF bulletins are wrapped in a GeoJSON Feature envelope before
-storage, so `Bulletin.raw_data` always looks like:
+A bulletin's CAAML is stored once, by the ingest service, as the bare
+properties in `SourceBulletin.caaml` (SNOW-1337). A `Bulletin` keeps none:
+it holds the render model the service built and the identity columns the
+feed item carried. The raw surfaces (the `/api/` CAAML alternate, MCP
+`get_bulletin_raw`, the superuser raw embed, the admin) read it with
+`apps.ingest.public.source_caaml` and serve it in a GeoJSON Feature
+envelope (`caaml_envelope`):
 
 ```json
 {
@@ -608,11 +613,8 @@ storage, so `Bulletin.raw_data` always looks like:
 ```
 
 A read path does **not** read it: it renders from `Bulletin.render_model`
-and the row's own columns, and its querysets defer `raw_data`
-([why](decisions/read-paths-never-read-raw-data.md)). Only the write and
-apply paths, the rebuild commands, the admin and the named raw surfaces
-(the `/api/` CAAML alternate, MCP `get_bulletin_raw`, the superuser raw
-embed) load it.
+and the row's own columns
+([why](decisions/read-paths-never-read-raw-data.md)).
 
 ### 7.2 Dataclass views over JSON
 
@@ -620,7 +622,7 @@ The one frozen dataclass left in
 [apps/bulletins/schema.py](../apps/bulletins/schema.py) is `Elevation`, which
 maps CAAML's camelCase bounds to snake_case via `from_dict`. It is a
 **read-only view** — it does not validate input. The `DangerRating` and
-`AvalancheProblem` views over `raw_data` were removed by SNOW-1342; the
+`AvalancheProblem` views over the CAAML were removed by SNOW-1342; the
 render model is the parsed form.
 
 ### 7.3 Upserts

@@ -47,15 +47,11 @@ def _make_bulletin(
         "issued_at": datetime(2025, 3, 15, 8, 0, tzinfo=UTC),
         "valid_from": datetime(2025, 3, 15, 7, 0, tzinfo=UTC),
         "valid_to": datetime(2025, 3, 16, 7, 0, tzinfo=UTC),
-        "raw_data": {
-            "type": "Feature",
-            "geometry": None,
-            "properties": {
-                "bulletinID": bulletin_id or "test",
-                "dangerRatings": [{"mainValue": "low"}],
-                "avalancheProblems": [],
-                "customData": {"CH": {}},
-            },
+        "held": {
+            "bulletinID": bulletin_id or "test",
+            "dangerRatings": [{"mainValue": "low"}],
+            "avalancheProblems": [],
+            "customData": {"CH": {}},
         },
     }
     if bulletin_id:
@@ -294,7 +290,7 @@ class TestRebuildRenderModelsEnqueue:
         run = CommandRun.objects.get(command="rebuild_render_models")
         assert run.counts == {"enqueued": 1, "failed": 0}
 
-    def test_the_walk_loads_neither_raw_data_nor_regions(self) -> None:
+    def test_the_walk_loads_neither_caaml_nor_regions(self) -> None:
         """The command reads only the label's columns; the task reads the rest."""
         region = MicroRegionFactory.create(region_id="CH-slim-test")
         for index in range(3):
@@ -305,7 +301,7 @@ class TestRebuildRenderModelsEnqueue:
             call_command("rebuild_render_models", commit=True, verbosity=0)
 
         for query in queries.captured_queries:
-            assert '"raw_data"' not in query["sql"]
+            assert '"ingest_sourcebulletin"' not in query["sql"]
             assert '"regions_microregion"' not in query["sql"]
 
 

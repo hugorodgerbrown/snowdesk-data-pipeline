@@ -98,16 +98,18 @@ def _at_the_point(
     """Return ``at`` on ``day`` as a wall-clock time AT the forecast point.
 
     A meeting time is the time on the meeting point's clock, and the
-    day/night decision compares it with sunrise there. The forecast days
-    keep the provider's sunrise strings with the point's own offset
-    (``timezone=auto``), so the reference instant is built in that offset;
-    the site's zone, UTC, would put a 06:00 Alpine meeting at 08:00 local.
-    Falls back to the site's zone when no forecast day carries an offset.
+    day/night decision compares it with sunrise there. A row's hourly
+    series keeps the provider's timestamps with the point's own offset
+    (``timezone=auto``) — a JSON string survives the database where a
+    datetime column's offset does not — so the reference instant is built
+    in that offset; the site's zone, UTC, would put a 06:00 Alpine meeting
+    at 08:00 local. Falls back to the site's zone when the row has no hour
+    carrying an offset.
     """
     zone: datetime.tzinfo = timezone.get_current_timezone()
-    for entry in row.forecast or []:
+    for hour in row.hourly or []:
         try:
-            offset = datetime.datetime.fromisoformat(entry["sunrise"]).tzinfo
+            offset = datetime.datetime.fromisoformat(hour["time"]).tzinfo
         except KeyError, TypeError, ValueError:
             continue
         if offset is not None:

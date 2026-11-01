@@ -1,8 +1,11 @@
 """
 apps/bulletins/management/commands/relink_bulletin_regions.py — Management command.
 
-Rebuilds each bulletin's ``RegionBulletin`` links from the region list in its
-own stored ``raw_data`` (SNOW-1187).
+Rebuilds each bulletin's ``RegionBulletin`` links from the region list in the
+CAAML the ingest service stored for it (SNOW-1187; read from
+``SourceBulletin`` since SNOW-1337, when a ``Bulletin`` stopped keeping one).
+A bulletin the service holds no CAAML for has no payload to relink from and
+is left alone.
 
 Every ALBINA bulletin of the 2025/26 season was found linked to the wrong
 micro regions: the links were correct when written — ``region_name_at_time``
@@ -72,6 +75,7 @@ from apps.bulletins.services.day_rating import (
 from apps.bulletins.services.grouping import compute_bulletin_grouping_boundary
 from apps.core.command_iteration import iterate_rows
 from apps.core.command_register import RegisteredCommand
+from apps.ingest.public import source_caaml
 from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
@@ -86,23 +90,17 @@ _FAILED = "failed"
 
 
 def _raw_regions(bulletin: Bulletin) -> list[dict[str, str]]:
-    """Return the CAAML ``regions`` list from a stored ``raw_data`` payload.
-
-    Every provider's payload is stored in a GeoJSON Feature envelope by
-    ``upsert_bulletin``; an unwrapped payload is accepted too, as
-    ``rekey_meteofrance_bulletins`` does for the oldest rows.
+    """Return the CAAML ``regions`` list the service stored for a bulletin.
 
     Args:
         bulletin: The bulletin whose payload to read.
 
     Returns:
-        The ``regions`` list, or an empty list when the payload has none.
+        The ``regions`` list, or an empty list when the service holds no
+        CAAML for it or the payload lists none.
 
     """
-    raw_data = bulletin.raw_data or {}
-    properties = raw_data.get("properties")
-    if not isinstance(properties, dict):
-        properties = raw_data
+    properties = source_caaml(bulletin.bulletin_id) or {}
     regions = properties.get("regions")
     return regions if isinstance(regions, list) else []
 
@@ -155,7 +153,7 @@ class Command(RegisteredCommand):
 
     help = (
         "Rebuild RegionBulletin links for one provider's bulletins from each "
-        "bulletin's stored raw_data, then refresh the affected day ratings and "
+        "bulletin's stored CAAML, then refresh the affected day ratings and "
         "grouping outlines (SNOW-1187). Read-only unless --commit is passed. "
         "Idempotent: bulletins already linked as their payload says are skipped."
     )

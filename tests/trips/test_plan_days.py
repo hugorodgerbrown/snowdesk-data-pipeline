@@ -29,7 +29,7 @@ from tests.factories import (
     ResortLocationFactory,
     TripFactory,
     WeatherFactory,
-    forecast_days,
+    following_days,
 )
 
 TODAY = datetime.date(2026, 10, 24)
@@ -158,9 +158,8 @@ class TestWithWeather:
         """The forecast reaches two days here; the rest keep none."""
         location = LocationFactory.create()
         ResortLocationFactory.create(location=location)
-        WeatherFactory.create(
-            location=location, observed_on=TODAY, forecast=forecast_days(TODAY, [73])
-        )
+        WeatherFactory.create(location=location, observed_on=TODAY)
+        following_days(location, TODAY, [73])
         weather = meeting_point_weather(
             TripFactory.create(date=TODAY, meeting_point=location), TODAY
         )

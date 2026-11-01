@@ -5,9 +5,8 @@ Two functions, one walk:
 
   fetch_weather_for_location(location, observed_on, *, commit, base_url)
       One Open-Meteo forecast request for one location, covering
-      ``FORECAST_DAYS`` days. Writes one ``Weather`` row — the day
-      ``observed_on`` — carrying that day's scalars and hourly series, plus
-      the days after it in the ``forecast`` column.
+      ``FORECAST_DAYS`` days. Writes one ``Weather`` row per day of the
+      window (SNOW-1337), each with its own scalars and hourly series.
 
   fetch_all_locations(observed_on, *, commit, base_url, on_location)
       Streams ``Location.objects.active()`` and calls the above for each,
@@ -17,7 +16,7 @@ Two functions, one walk:
 **One pass over one anchor.** This replaces two passes over two anchors —
 a region-centroid pass writing ``WeatherSnapshot`` and a quantised-cell pass
 writing ``ForecastCellWeather``. Both anchors are now ``Location``, so there
-is one variable set, one request shape and one row per location per run.
+is one variable set and one request shape per location per run.
 
 **No fetch-time dedup.** The quantisation the old ``ForecastCell`` grid did
 was measured on 2026-08-29: 240 real places produced 240 distinct cells,
@@ -60,7 +59,7 @@ from django.db import transaction
 from apps.ingest.public import (
     FORECAST_DAYS,
     HOURLY_DAYS,
-    forecast_fields,
+    forecast_rows,
 )
 from apps.locations.models import Location
 from apps.weather.models import Weather
@@ -89,14 +88,15 @@ def fetch_weather_for_location(
     *,
     commit: bool,
     base_url: str | None = None,
-) -> tuple[Weather, bool] | None:
+) -> list[tuple[Weather, bool]] | None:
     """
-    Fetch and optionally persist one location's weather for one day.
+    Fetch and optionally persist one location's week, one row per day.
 
     Makes one Open-Meteo forecast request covering ``FORECAST_DAYS`` days
-    from ``observed_on``. The first storable day becomes the ``Weather``
-    row; the days after it become its ``forecast`` column, with the first
-    ``HOURLY_DAYS`` of the window also carrying an hourly series.
+    from ``observed_on`` and writes a ``Weather`` row for each storable day
+    (SNOW-1337): today's row and the six ahead of it are created or refined
+    in place, each with its own hourly series and ``forecast_on`` set to
+    ``observed_on``.
 
     ``location.elevation_m`` is passed to the API when set, so the forecast
     is statistically downscaled to the point's own altitude rather than the
@@ -105,20 +105,19 @@ def fetch_weather_for_location(
 
     Days the backing model did not resolve are dropped before anything is
     written (SNOW-628), so a short window is the normal outcome rather than
-    a failure. The write is wrapped in one transaction (SNOW-546).
+    a failure. The week is written in one transaction (SNOW-546).
 
     Args:
         location: The location to fetch for.
-        observed_on: The first day of the window, and the day the written
-            row is of.
+        observed_on: The first day of the window — today.
         commit: When False the request still executes — it is a real API
             probe — but nothing is written and None is returned.
         base_url: Overrides the configured Open-Meteo host. Defaults to
             None, which uses the configured host and sends the customer key.
 
     Returns:
-        A ``(weather, created)`` tuple when ``commit`` is True, or None
-        when it is False.
+        One ``(weather, created)`` pair per day written when ``commit`` is
+        True, or None when it is False.
 
     Raises:
         requests.HTTPError: The API returned a non-2xx status.
@@ -126,8 +125,6 @@ def fetch_weather_for_location(
             or no day in the window is storable — which is a malformed
             payload rather than a short horizon (SNOW-628).
         KeyError: A required array is absent from the response.
-        ImmutableWeatherRowError: A row already exists for this location and
-            day, and that day has passed.
 
     """
     logger.debug(
@@ -139,7 +136,7 @@ def fetch_weather_for_location(
 
     # The request and its parsing are ingest's (SNOW-1253), shared with the
     # service's own fetch of its reference places so the two cannot drift.
-    row_date, fields = forecast_fields(
+    rows = forecast_rows(
         location.latitude,
         location.longitude,
         location.elevation_m,
@@ -151,11 +148,11 @@ def fetch_weather_for_location(
     if not commit:
         return None
 
-    # One transaction for the row and nothing else — the whole unit of work
-    # for this location, so a failure here cannot leave a half-written row
+    # One transaction for the location's week and nothing else, so a
+    # failure partway cannot leave some days refined and the rest stale
     # while the batch counts the location as failed (SNOW-546).
     with transaction.atomic():
-        return upsert_weather(location, row_date, **fields)
+        return [upsert_weather(location, day, **fields) for day, fields in rows]
 
 
 def fetch_all_locations(
@@ -190,8 +187,8 @@ def fetch_all_locations(
 
     Returns:
         A mapping with integer counters: ``created`` (new rows),
-        ``updated`` (rows refined in place) and ``failed`` (locations whose
-        fetch raised).
+        ``updated`` (rows refined in place) — up to ``FORECAST_DAYS`` of
+        them a location — and ``failed`` (locations whose fetch raised).
 
     """
     counts: dict[str, int] = {"created": 0, "updated": 0, "failed": 0}
@@ -217,8 +214,7 @@ def fetch_all_locations(
             )
             counts["failed"] += 1
             continue
-        if result is not None:
-            _, created = result
+        for _, created in result or []:
             counts["created" if created else "updated"] += 1
 
     logger.info(

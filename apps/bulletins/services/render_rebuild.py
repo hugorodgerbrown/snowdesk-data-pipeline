@@ -11,9 +11,12 @@ under ``ImmediateBackend`` in dev, test and staging):
   rebuild_bulletin_task.enqueue(pk, force, refresh_ratings)
       An instance ``Bulletin``: re-read it and skip it if it is gone or
       already current (unless ``force``), rebuild its render model from
-      ``raw_data``, write the model, its version and ``danger_levels``,
-      then recompute the ``RegionDayRating`` of every (region, day) it
-      governs.
+      the CAAML the ingest service stored for it (``source_caaml``,
+      SNOW-1337 — a ``Bulletin`` keeps none), write the model, its version
+      and ``danger_levels``, then recompute the ``RegionDayRating`` of
+      every (region, day) it governs. A bulletin the service holds no CAAML
+      for is left as it is and fails the task: there is nothing here to
+      build it from, and a newer model reaches it through the feed.
 
   rebuild_source_bulletin_task.enqueue(pk, force, refresh_ratings)
       A service ``SourceBulletin``: the same through
@@ -77,6 +80,7 @@ from apps.ingest.public import (
     lock_source_day_ratings,
     rebuild_render_model,
     refresh_source_day_ratings,
+    source_caaml,
 )
 from apps.regions.models import MicroRegion
 
@@ -85,13 +89,12 @@ logger = logging.getLogger(__name__)
 # Below the default (0), so user-facing work on the queue goes first.
 RENDER_TASK_PRIORITY = -50
 
-# What an instance task reads off its Bulletin: the CAAML it builds from,
-# the version it checks, and what day_rating_pairs and the log line need.
+# What an instance task reads off its Bulletin: the id its CAAML is found
+# by, the version it checks, and what day_rating_pairs and the log line need.
 _BULLETIN_FIELDS: tuple[str, ...] = (
     "pk",
     "bulletin_id",
     "source",
-    "raw_data",
     "render_model_version",
     "valid_from",
     "target_date",
@@ -160,8 +163,9 @@ def rebuild_one_bulletin(
             (region, day) the bulletin governs.
 
     Returns:
-        ``REBUILT``, ``REBUILD_FAILED`` (the sentinel was committed), or
-        None when the bulletin is gone or already current.
+        ``REBUILT``, ``REBUILD_FAILED`` (the sentinel was committed, or the
+        service holds no CAAML for it and nothing was written), or None
+        when the bulletin is gone or already current.
 
     """
     with transaction.atomic():
@@ -177,7 +181,13 @@ def rebuild_one_bulletin(
         if not force and bulletin.render_model_version >= RENDER_MODEL_VERSION:
             return None
 
-        props = (bulletin.raw_data or {}).get("properties", {})
+        props = source_caaml(bulletin.bulletin_id)
+        if props is None:
+            logger.warning(
+                "render rebuild: no CAAML is held for bulletin %s, leaving it",
+                bulletin.bulletin_id,
+            )
+            return REBUILD_FAILED
         render_model: dict[str, Any]
         try:
             render_model = build_render_model(props)

@@ -28,7 +28,7 @@ from tests.factories import (
     ResortLocationFactory,
     TripFactory,
     WeatherFactory,
-    forecast_days,
+    following_days,
 )
 
 TODAY = datetime.date(2026, 10, 24)
@@ -43,15 +43,21 @@ def _public_point(
     longitude: float,
     name: str = "Verbier",
     observed_on: datetime.date = TODAY,
+    codes: tuple[int, ...] = (73, 0),
+    snow: list[float] | None = None,
     **weather: object,
 ) -> Location:
-    """A named resort location with a forecast row for ``observed_on``."""
+    """A named resort location with a row for ``observed_on`` and the days after.
+
+    ``codes`` gives one WMO code per following day's row (SNOW-1337: one
+    row per day); ``()`` writes the lead row alone.
+    """
     location = LocationFactory.create(
         name=name, latitude=latitude, longitude=longitude, elevation_m=1520.0
     )
     ResortLocationFactory.create(location=location)
-    weather.setdefault("forecast", forecast_days(observed_on, [73, 0]))
     WeatherFactory.create(location=location, observed_on=observed_on, **weather)
+    following_days(location, observed_on, list(codes), snow)
     return location
 
 
@@ -164,7 +170,8 @@ class TestMeetingPointWeather:
             MEETING[0] + 0.01,
             MEETING[1],
             "Near",
-            forecast=forecast_days(TODAY, [61, 73], snow=[0.0, 8.0]),
+            codes=(61, 73),
+            snow=[0.0, 8.0],
         )
         _public_point(MEETING[0] + 0.05, MEETING[1], "Far")
 
@@ -195,7 +202,9 @@ class TestMeetingPointWeather:
         day = TODAY + datetime.timedelta(days=1)
         early = TripFactory.create(date=day, start_time=datetime.time(6, 30))
         late = TripFactory.create(date=day, start_time=datetime.time(9, 0))
-        _public_point(*MEETING, forecast=forecast_days(TODAY, [0, 0]))
+        # The point's clock is its hourly series' offset (timezone=auto).
+        hourly = [{"time": f"{TODAY.isoformat()}T{h:02d}:00+02:00"} for h in range(24)]
+        _public_point(*MEETING, codes=(0, 0), hourly=hourly)
 
         before = meeting_point_weather(early, TODAY)
         after = meeting_point_weather(late, TODAY)
@@ -205,36 +214,12 @@ class TestMeetingPointWeather:
         assert before.days[day]["icon_filename"] == "clear-night.svg"
         assert after.days[day]["icon_filename"] == "clear-day.svg"
 
-    def test_a_stored_icon_bucket_wins_and_takes_the_meeting_times_variant(
-        self,
-    ) -> None:
-        """A day's stored bucket is drawn, in the meeting time's day/night variant.
-
-        The row says cloudy (code 3) but its stored bucket says clear, so the
-        bucket written at fetch time is what the trip draws (SNOW-1343). The
-        legacy case, an entry with no ``icon_bucket``, is the test above.
-        """
-        day = TODAY + datetime.timedelta(days=1)
-        early = TripFactory.create(date=day, start_time=datetime.time(6, 30))
-        late = TripFactory.create(date=day, start_time=datetime.time(9, 0))
-        forecast = forecast_days(TODAY, [3, 3])
-        for entry in forecast:
-            entry["icon_bucket"] = "clear"
-        _public_point(*MEETING, forecast=forecast)
-
-        before = meeting_point_weather(early, TODAY)
-        after = meeting_point_weather(late, TODAY)
-
-        assert before is not None and after is not None
-        assert before.days[day]["icon_filename"] == "clear-night.svg"
-        assert after.days[day]["icon_filename"] == "clear-day.svg"
-
     def test_a_past_trip_reads_the_row_of_its_own_day(self) -> None:
         """What the forecast said that morning, never rewritten."""
         day = TODAY - datetime.timedelta(days=3)
         trip = TripFactory.create(date=day)
         point = _public_point(
-            *MEETING, observed_on=day, forecast=None, temperature_2m_max=-1.0
+            *MEETING, observed_on=day, codes=(), temperature_2m_max=-1.0
         )
         WeatherFactory.create(location=point, observed_on=TODAY, temperature_2m_max=9.0)
 

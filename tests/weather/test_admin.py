@@ -49,7 +49,7 @@ class TestWeatherAdminImmutability:
             "observed_on",
             "weather_code",
             "hourly_json",
-            "forecast_json",
+            "lead_days",
         ):
             assert field in readonly
 
@@ -100,7 +100,7 @@ class TestWeatherAdminSeriesRendering:
         readonly = admin_instance.get_readonly_fields(None, weather)  # type: ignore[arg-type]
 
         assert "hourly_json" in readonly
-        assert "forecast_json" in readonly
+        assert "lead_days" in readonly
 
     def test_hourly_renders_as_indented_json(
         self, admin_instance: WeatherAdmin
@@ -121,17 +121,22 @@ class TestWeatherAdminSeriesRendering:
     def test_a_null_series_renders_as_a_dash(
         self, admin_instance: WeatherAdmin
     ) -> None:
-        """A backfilled row carries no forecast, and that must read as absence.
+        """A row with no hourly series must read as absence.
 
-        Not ``None``, not ``[]`` — those look like a bug rather than the
-        deliberate null the backfill writes.
+        Not ``None``, not ``[]`` — those look like a bug rather than a day
+        the provider gave no hours for.
         """
-        weather = WeatherFactory.create(
-            observed_on=timezone.localdate(), hourly=None, forecast=None
-        )
+        weather = WeatherFactory.create(observed_on=timezone.localdate(), hourly=None)
 
         assert admin_instance.hourly_json(weather) == "—"
-        assert admin_instance.forecast_json(weather) == "—"
+
+    def test_the_lead_time_is_shown(self, admin_instance: WeatherAdmin) -> None:
+        """A day ahead reads as its lead time, observed_on - forecast_on."""
+        weather = WeatherFactory.create(
+            observed_on=timezone.localdate() + datetime.timedelta(days=3)
+        )
+
+        assert admin_instance.lead_days(weather) == 3
 
     def test_provider_strings_cannot_inject_markup(
         self, admin_instance: WeatherAdmin

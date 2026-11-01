@@ -23,6 +23,8 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from apps.bulletins.models import Bulletin, RegionBulletin
+from apps.bulletins.services.apply import bulletin_item
+from apps.bulletins.services.render_model import build_render_model
 from apps.data_feed import feeds
 from apps.data_feed.services.apply import (
     ApplyError,
@@ -246,7 +248,7 @@ class TestApplyResort:
 
 @pytest.mark.django_db
 class TestApplyBulletin:
-    """Bulletins, replayed through upsert_bulletin."""
+    """Bulletins, filed from the item's fields by write_bulletin (SNOW-1337)."""
 
     @pytest.fixture(autouse=True)
     def _region(self) -> MicroRegion:
@@ -254,12 +256,13 @@ class TestApplyBulletin:
         return MicroRegionFactory.create(region_id="CH-4115")
 
     def _item(self, **overrides: Any) -> dict[str, Any]:
-        """Return a bulletins feed item."""
+        """Return a bulletins feed item, as the service serves it: no CAAML."""
+        caaml = _caaml(**overrides)
         return {
-            "bulletin_id": "b-1",
+            **bulletin_item(
+                caaml, "https://example.org/b-1.pdf", build_render_model(caaml)
+            ),
             "updated_at": "2026-10-20T15:05:00+00:00",
-            "pdf_url": "https://example.org/b-1.pdf",
-            "caaml": _caaml(**overrides),
         }
 
     def test_create_rebuilds_the_derived_rows_here(self) -> None:
@@ -289,10 +292,46 @@ class TestApplyBulletin:
         assert apply_bulletin(changed, commit=True, run=run) is Outcome.UPDATED
         assert Bulletin.objects.get(bulletin_id="b-1").unscheduled is True
 
-    def test_no_caaml_is_an_error(self) -> None:
-        """An item with nothing to replay fails."""
+    def test_the_row_is_filed_from_the_items_fields_alone(self) -> None:
+        """No CAAML on the item, none on the row; the served model is copied."""
+        run = PipelineRunFactory.create()
+        item = self._item()
+        assert "caaml" not in item
+        apply_bulletin(item, commit=True, run=run)
+        bulletin = Bulletin.objects.get(bulletin_id="b-1")
+        assert bulletin.render_model == item["render_model"]
+        assert bulletin.content_hash == item["content_hash"]
+        assert bulletin.issued_at.isoformat() == "2026-10-20T15:00:00+00:00"
+        assert bulletin.valid_to.isoformat() == "2026-10-21T15:00:00+00:00"
+        assert bulletin.source == "SLF"
+        assert not hasattr(bulletin, "raw_data")
+
+    def test_an_older_services_caaml_item_is_still_read(self) -> None:
+        """Staging can ship before production: a ``caaml`` item still files."""
+        run = PipelineRunFactory.create()
+        item: dict[str, Any] = {
+            "bulletin_id": "b-1",
+            "updated_at": "2026-10-20T15:05:00+00:00",
+            "pdf_url": "https://example.org/b-1.pdf",
+            "caaml": _caaml(),
+            "render_model": None,
+            "valid_from": None,
+            "target_date": None,
+            "region_codes": [],
+        }
+        assert apply_bulletin(item, commit=True, run=run) is Outcome.CREATED
+        bulletin = Bulletin.objects.get(bulletin_id="b-1")
+        assert bulletin.render_model_version > 0
+        assert RegionBulletin.objects.filter(bulletin=bulletin).count() == 1
+        # And the same bulletin served the new way reads as unchanged.
+        assert apply_bulletin(self._item(), commit=True, run=run) is Outcome.UNCHANGED
+
+    def test_no_render_model_is_an_error(self) -> None:
+        """An item with nothing to file from fails."""
         with pytest.raises(ApplyError):
-            apply_bulletin({"bulletin_id": "b-2", "caaml": None}, commit=True, run=None)
+            apply_bulletin(
+                {"bulletin_id": "b-2", "render_model": None}, commit=True, run=None
+            )
 
     def test_commit_needs_a_run(self) -> None:
         """A write is always attributed to a PipelineRun."""

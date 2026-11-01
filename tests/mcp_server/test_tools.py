@@ -25,6 +25,7 @@ from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     build_render_model,
 )
+from apps.ingest.public import SourceBulletin
 from apps.mcp_server import tools
 from apps.regions.models import MicroRegion
 from tests.factories import (
@@ -129,8 +130,9 @@ def _make_bulletin(
 
     The tools read the render model and the row's columns, never the CAAML
     (SNOW-1342), so that is what this builds: ``traits`` and ``ratings``
-    go into the render model as stored. ``raw_data`` carries a token CAAML
-    only so ``get_bulletin_raw`` has something to return. ``max_rating``,
+    go into the render model as stored. ``held`` gives the ingest service a
+    token CAAML for it (SNOW-1337) only so ``get_bulletin_raw`` has
+    something to return. ``max_rating``,
     when given, also writes the day's ``RegionDayRating`` row.
     """
     kwargs: dict[str, Any] = {
@@ -147,11 +149,7 @@ def _make_bulletin(
         "next_update": next_update,
         "lang": lang,
         "pdf_url": pdf_url,
-        "raw_data": {
-            "type": "Feature",
-            "geometry": None,
-            "properties": {"dangerRatings": [{"mainValue": danger_key}]},
-        },
+        "held": {"dangerRatings": [{"mainValue": danger_key}]},
         "render_model_version": RENDER_MODEL_VERSION,
         "render_model": {
             "version": RENDER_MODEL_VERSION,
@@ -982,7 +980,6 @@ class TestGetBulletinMetadata:
             valid_from=datetime.datetime(2026, 4, 8, 8, 0, tzinfo=UTC),
             valid_to=datetime.datetime(2026, 4, 8, 17, 0, tzinfo=UTC),
             lang="en",
-            raw_data={"properties": {"dangerRatings": []}},
             render_model={"version": 0, "error": "build failed"},
         )
         RegionBulletinFactory.create(bulletin=bulletin, region=region)
@@ -1059,15 +1056,12 @@ class TestGetBulletinRaw:
     def test_returns_caaml_verbatim_for_present_bulletin(
         self, region: MicroRegion
     ) -> None:
-        """The stored raw_data is returned unchanged.
+        """The CAAML the ingest service holds is returned, in its envelope.
 
-        Production ingest wraps raw CAAML in a GeoJSON Feature envelope
-        (see ``docs/decisions/geojson-feature-envelope.md``); the tool
-        never unwraps that envelope — a caller reasoning against the
-        CAAML schema wants the same shape they would fetch from the
-        provider. This test's factory sets raw_data without the envelope
-        for brevity; the important assertion is the deep-equal against
-        whatever the ingest stored.
+        ``SourceBulletin.caaml`` holds the bare properties; the tool wraps
+        them in the GeoJSON Feature envelope (``caaml_envelope``, see
+        ``docs/decisions/geojson-feature-envelope.md``) the surface has
+        always answered with.
         """
         target_date = datetime.date(2026, 4, 8)
         bulletin = _make_bulletin(region, target_date, source=Bulletin.Source.ALBINA)
@@ -1079,8 +1073,26 @@ class TestGetBulletinRaw:
         assert result["date"] == "2026-04-08"
         assert result["provider"] == "ALBINA"
         assert result["issued_at"].startswith("2026-04-08T17:00")
-        assert result["caaml"] == bulletin.raw_data
-        assert "dangerRatings" in result["caaml"]["properties"]
+        assert result["caaml"] == {
+            "type": "Feature",
+            "geometry": None,
+            "properties": {"dangerRatings": [{"mainValue": "considerable"}]},
+        }
+        assert result["issued_at"] == bulletin.issued_at.isoformat()
+
+    def test_a_bulletin_the_service_holds_no_caaml_for(
+        self, region: MicroRegion
+    ) -> None:
+        """No SourceBulletin row: the bulletin is reported, its CAAML is None."""
+        target_date = datetime.date(2026, 4, 8)
+        bulletin = _make_bulletin(region, target_date)
+        SourceBulletin.objects.filter(bulletin_id=bulletin.bulletin_id).delete()
+
+        result = tools.get_bulletin_raw(region.region_id, target_date)
+
+        assert result["has_bulletin"] is True
+        assert result["caaml"] is None
+        assert "No CAAML is held" in result["summary"]
 
     def test_no_bulletin_for_date_is_a_structured_empty_result(
         self, region: MicroRegion

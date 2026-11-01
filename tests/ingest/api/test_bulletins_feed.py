@@ -64,30 +64,80 @@ def _all() -> list[dict]:
             return items
 
 
-@pytest.mark.django_db
-def test_an_item_is_the_stored_caaml_and_pdf() -> None:
-    """The CAAML is served exactly as ingest stored it, with its PDF link.
+_CAAML = {
+    "bulletinID": "b-1",
+    "lang": "de",
+    "publicationTime": "2026-03-06T15:30:00Z",
+    "validTime": {
+        "startTime": "2026-03-06T16:00:00Z",
+        "endTime": "2026-03-07T16:00:00+00:00",
+    },
+    "nextUpdate": "2026-03-07T07:00:00Z",
+    "unscheduled": True,
+    "customData": {"CH": {}},
+    "regions": [
+        {"regionID": "CH-4115", "name": "Martigny-Verbier", "extra": "dropped"},
+        {"regionID": "CH-4116"},
+    ],
+    "avalancheProblems": [{"problemType": "wind_slab"}],
+}
 
-    And the service's render model beside it (SNOW-1270), and its index of
-    the CAAML (SNOW-1341) — null until indexed.
+
+@pytest.mark.django_db
+def test_an_item_is_the_render_model_and_identity_never_the_caaml() -> None:
+    """SNOW-1337: the service serves what a client files a bulletin by.
+
+    The render model (SNOW-1270), the index (SNOW-1341), the PDF link, the
+    content hash and the identity fields read off the CAAML — and no
+    ``caaml`` key at all.
     """
     row = SourceBulletinFactory.create(
         bulletin_id="b-1",
         pdf_url="https://example.org/b-1.pdf",
-        caaml={"bulletinID": "b-1"},
+        caaml=_CAAML,
         render_model={"version": 9},
     )
     (item,) = _all()
+    assert "caaml" not in item
     assert item == {
         "bulletin_id": "b-1",
         "updated_at": row.updated_at.isoformat(),
         "pdf_url": "https://example.org/b-1.pdf",
-        "caaml": {"bulletinID": "b-1"},
+        "content_hash": row.content_hash,
         "render_model": {"version": 9},
         "valid_from": None,
         "target_date": None,
         "region_codes": [],
+        "valid_to": "2026-03-07T16:00:00+00:00",
+        "issued_at": "2026-03-06T15:30:00+00:00",
+        "next_update": "2026-03-07T07:00:00+00:00",
+        "lang": "de",
+        "unscheduled": True,
+        "source": "SLF",
+        # Only regionID and name travel; a key the CAAML lacks stays absent,
+        # so the client refuses the entry as it refused the CAAML's.
+        "regions": [
+            {"regionID": "CH-4115", "name": "Martigny-Verbier"},
+            {"regionID": "CH-4116"},
+        ],
     }
+
+
+@pytest.mark.django_db
+def test_an_unreadable_caaml_serves_nulls_not_an_error() -> None:
+    """One malformed bulletin never breaks a page: its fields are null."""
+    SourceBulletinFactory.create(
+        bulletin_id="b-bad",
+        caaml={"bulletinID": "b-bad", "validTime": {"endTime": "not a date"}},
+    )
+    (item,) = _all()
+    assert item["valid_to"] is None
+    assert item["issued_at"] is None
+    assert item["next_update"] is None
+    assert item["source"] == ""
+    assert item["lang"] == "en"
+    assert item["unscheduled"] is False
+    assert item["regions"] == []
 
 
 @pytest.mark.django_db

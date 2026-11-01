@@ -30,6 +30,7 @@ from tests.factories import (
     MicroRegionFactory,
     ResortLocationFactory,
     WeatherFactory,
+    weather_rows_from_days,
 )
 
 
@@ -153,7 +154,10 @@ class TestPayloadShape:
             observed_on=today,
             weather_code=3,
             temperature_2m_max=4.5,
-            forecast=[
+        )
+        weather_rows_from_days(
+            location,
+            [
                 {
                     "date": tomorrow.isoformat(),
                     "weather_code": 71,
@@ -175,45 +179,27 @@ class TestPayloadShape:
             },
         }
 
-    def test_each_day_carries_its_icon_stored_or_derived(self) -> None:
+    def test_each_day_carries_its_icon_derived_from_its_code(self) -> None:
         """SNOW-1343: the feed serves the icon, so the map holds no table.
 
-        A forward day stored since SNOW-1343 names its bucket; one stored
-        before it (no ``icon_bucket``) derives from its code. A day/night
-        pair is always the day variant on the map.
+        Each day's icon is derived from its own row's code (SNOW-1337: one
+        row per day). A day/night pair is always the day variant on the map.
         """
         today = timezone.localdate()
-        stored = today + datetime.timedelta(days=1)
-        legacy = today + datetime.timedelta(days=2)
+        tomorrow = today + datetime.timedelta(days=1)
+        after = today + datetime.timedelta(days=2)
         location = LocationFactory.create()
         ResortLocationFactory.create(location=location)
-        WeatherFactory.create(
-            location=location,
-            observed_on=today,
-            weather_code=0,
-            forecast=[
-                {
-                    "date": stored.isoformat(),
-                    "weather_code": 2,
-                    "icon_bucket": "partly_cloudy",
-                    "sunrise": f"{stored}T06:30:00+00:00",
-                    "sunset": f"{stored}T20:15:00+00:00",
-                },
-                {
-                    "date": legacy.isoformat(),
-                    "weather_code": 86,
-                    "sunrise": f"{legacy}T06:30:00+00:00",
-                    "sunset": f"{legacy}T20:15:00+00:00",
-                },
-            ],
-        )
+        WeatherFactory.create(location=location, observed_on=today, weather_code=0)
+        WeatherFactory.create(location=location, observed_on=tomorrow, weather_code=2)
+        WeatherFactory.create(location=location, observed_on=after, weather_code=86)
 
         days = _get()["features"][0]["properties"]["days"]
 
         assert {key: day["icon"] for key, day in days.items()} == {
             today.isoformat(): "clear-day.svg",
-            stored.isoformat(): "partly_cloudy-day.svg",
-            legacy.isoformat(): "heavy_snow.svg",
+            tomorrow.isoformat(): "partly_cloudy-day.svg",
+            after.isoformat(): "heavy_snow.svg",
         }
 
     def test_a_location_with_no_row_gets_a_feature_with_no_days(self) -> None:

@@ -505,8 +505,11 @@ class SourceWeather(models.Model):
 
     The columns are the app's ``Weather`` columns, one for one
     (``WEATHER_COLUMNS``), so applying a row into an instance is a copy.
-    ``hourly`` and ``forecast`` hold the same shapes. A past day is never
-    rewritten (``store_source_weather``), and ``save()`` re-checks it.
+    One row per place per day (SNOW-1337): a day's row is created when it
+    first enters the fetch window, six days out, and refined by every fetch
+    until its day passes; ``forecast_on`` is the day of the fetch that last
+    wrote it. A past day is never rewritten (``store_source_weather``), and
+    ``save()`` re-checks it.
     """
 
     id = models.BigAutoField(primary_key=True)
@@ -524,6 +527,13 @@ class SourceWeather(models.Model):
         db_index=True, help_text="The calendar day this row is OF."
     )
     fetched_at = models.DateTimeField(help_text="When this row was last written.")
+    forecast_on = models.DateField(
+        help_text=(
+            "The day of the fetch that last wrote this row. The lead time is "
+            "observed_on - forecast_on: six when the day enters the window, "
+            "zero on the day itself."
+        ),
+    )
 
     weather_code = models.PositiveSmallIntegerField()
     sunrise = models.DateTimeField()
@@ -546,7 +556,6 @@ class SourceWeather(models.Model):
     sunshine_duration = models.FloatField(null=True, blank=True)
     freezing_level_height = models.FloatField(null=True, blank=True)
     hourly = models.JSONField(null=True, blank=True)
-    forecast = models.JSONField(null=True, blank=True)
 
     objects = SourceWeatherQuerySet.as_manager()
 
@@ -622,7 +631,7 @@ WEATHER_COLUMNS: tuple[str, ...] = (
     "sunshine_duration",
     "freezing_level_height",
     "hourly",
-    "forecast",
+    "forecast_on",
 )
 
 

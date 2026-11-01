@@ -13,6 +13,7 @@ call sites.
 import datetime
 import secrets
 import uuid
+from collections.abc import Mapping, Sequence
 from datetime import UTC
 from typing import Any
 
@@ -273,16 +274,21 @@ class BulletinFactory(factory.django.DjangoModelFactory[Bulletin]):
         """Factory metadata."""
 
         model = Bulletin
+        skip_postgeneration_save = True
 
     class Params:
         """Factory traits.
 
-        ``built=True`` stores the render model ``build_render_model`` makes
-        from the row's ``raw_data``, at the current version — what ingest
-        stores. A read path never rebuilds a stale model (SNOW-1342), so a
-        test that hands over CAAML and expects it rendered asks for this.
+        ``raw_data`` is the CAAML Feature envelope a test describes the
+        bulletin by. It is not a column (SNOW-1337: a ``Bulletin`` keeps no
+        CAAML); ``built=True`` stores the render model ``build_render_model``
+        makes from it, at the current version — what ingest serves. A read
+        path never rebuilds a stale model (SNOW-1342), so a test that hands
+        over CAAML and expects it rendered asks for this. A test that needs
+        the CAAML itself (a raw surface) creates the ``SourceBulletin`` too.
         """
 
+        raw_data = factory.LazyFunction(dict)
         built = factory.Trait(
             render_model=factory.LazyAttribute(
                 lambda obj: build_render_model(
@@ -294,7 +300,6 @@ class BulletinFactory(factory.django.DjangoModelFactory[Bulletin]):
 
     bulletin_id = factory.Sequence(lambda n: f"bulletin-{n:04d}")
     source = Bulletin.Source.SLF
-    raw_data = factory.LazyFunction(dict)
     render_model = factory.LazyFunction(lambda: {"version": 0, "traits": []})
     render_model_version = 0
     issued_at = factory.Faker("date_time_this_year", tzinfo=UTC)
@@ -310,6 +315,25 @@ class BulletinFactory(factory.django.DjangoModelFactory[Bulletin]):
     lang = "en"
     unscheduled = False
     pipeline_run = factory.SubFactory(PipelineRunFactory)
+
+    @factory.post_generation
+    def held(
+        obj: Bulletin,
+        create: bool,
+        extracted: Mapping[str, Any] | None,
+        **kwargs: Any,
+    ) -> None:
+        """Hold ``held`` (CAAML properties) as the bulletin's SourceBulletin.
+
+        A ``Bulletin`` keeps no CAAML (SNOW-1337): the raw surfaces and the
+        instance rebuild read it from ingest's ``SourceBulletin`` by
+        ``bulletin_id``. ``BulletinFactory.create(held={...})`` writes that
+        row, so a test reads as one bulletin with its CAAML.
+        """
+        if create and extracted is not None:
+            SourceBulletinFactory.create(
+                bulletin_id=obj.bulletin_id, caaml=dict(extracted)
+            )
 
 
 class SourceBulletinFactory(factory.django.DjangoModelFactory[SourceBulletin]):
@@ -488,7 +512,11 @@ class SourceWeatherFactory(factory.django.DjangoModelFactory[SourceWeather]):
     temperature_2m_min = -2.0
     snowfall_sum = 1.2
     hourly = None
-    forecast = factory.LazyFunction(list)
+    # The day of the fetch that wrote it: today for today and a day ahead,
+    # the day itself for a past one (lead time zero, SNOW-1337).
+    forecast_on = factory.LazyAttribute(
+        lambda row: min(row.observed_on, django_timezone.localdate())
+    )
 
 
 class RegionBulletinFactory(factory.django.DjangoModelFactory[RegionBulletin]):
@@ -1323,10 +1351,8 @@ class WeatherFactory(factory.django.DjangoModelFactory[Weather]):
     ``observed_on=<a past date>`` rather than getting it by accident of
     when the suite runs.
 
-    ``forecast`` defaults to an empty list rather than null: a row written
-    by the fetcher always has the key, even when the model horizon left
-    nothing forward to record, and a test asserting on it should not have
-    to distinguish "no forward days" from "never fetched".
+    ``forecast_on`` defaults to the day of the fetch that would have written
+    the row: today for today or a day ahead, the day itself for a past one.
     """
 
     class Meta:
@@ -1348,50 +1374,51 @@ class WeatherFactory(factory.django.DjangoModelFactory[Weather]):
     temperature_2m_min = -2.0
     snowfall_sum = 1.2
     hourly = None
-    # LazyFunction, not a bare [] — a mutable class attribute would be the
-    # same list object on every row the factory builds.
-    forecast = factory.LazyFunction(list)
+    forecast_on = factory.LazyAttribute(
+        lambda row: min(row.observed_on, django_timezone.localdate())
+    )
 
 
-def forecast_days(
-    first: datetime.date, codes: list[int], snow: list[float] | None = None
-) -> list[dict[str, Any]]:
-    """Return ``forecast[]`` entries for the days after ``first`` (SNOW-1217).
+def following_days(
+    location: Location,
+    first: datetime.date,
+    codes: list[int],
+    snow: list[float] | None = None,
+) -> list[Weather]:
+    """Create the ``Weather`` rows for the days after ``first`` (SNOW-1337).
 
-    One entry per code, in the shape ``fetch_weather_for_location`` writes:
-    day ``n`` is ``first + n`` (from 1), a high of ``4 - n``°, a low of
-    ``-5 - n``°, daylight 07:40–18:20 at UTC+2, and the given new snow
-    (none by default).
+    One row per code, as ``fetch_weather`` writes the days ahead of the
+    lead day: day ``n`` is ``first + n`` (from 1), a high of ``4 - n``°, a
+    low of ``-5 - n``°, daylight 07:40–18:20 at UTC+2, and the given new
+    snow (none by default).
 
     Args:
-        first: The row's own day; the entries start the day after.
-        codes: One WMO weather code per forward day.
-        snow: New snow per forward day, cm; zeros when omitted.
+        location: The place the rows describe.
+        first: The lead row's own day; the rows start the day after.
+        codes: One WMO weather code per following day.
+        snow: New snow per following day, cm; zeros when omitted.
 
     Returns:
-        The entries, ready for ``WeatherFactory.create(forecast=…)``.
+        The rows, oldest day first.
 
     """
     offset = datetime.timezone(datetime.timedelta(hours=2))
-    entries = []
+    rows = []
     for n, code in enumerate(codes, start=1):
         day = first + datetime.timedelta(days=n)
-        entries.append(
-            {
-                "date": day.isoformat(),
-                "sunrise": datetime.datetime.combine(
-                    day, datetime.time(7, 40), offset
-                ).isoformat(),
-                "sunset": datetime.datetime.combine(
-                    day, datetime.time(18, 20), offset
-                ).isoformat(),
-                "weather_code": code,
-                "temperature_2m_max": 4.0 - n,
-                "temperature_2m_min": -5.0 - n,
-                "snowfall_sum": (snow or [0.0] * len(codes))[n - 1],
-            }
+        rows.append(
+            WeatherFactory.create(
+                location=location,
+                observed_on=day,
+                sunrise=datetime.datetime.combine(day, datetime.time(7, 40), offset),
+                sunset=datetime.datetime.combine(day, datetime.time(18, 20), offset),
+                weather_code=code,
+                temperature_2m_max=4.0 - n,
+                temperature_2m_min=-5.0 - n,
+                snowfall_sum=(snow or [0.0] * len(codes))[n - 1],
+            )
         )
-    return entries
+    return rows
 
 
 # SNOW-1043: a short track and a slope record whose model heights disagree
@@ -1428,3 +1455,37 @@ def drifting_track_record() -> dict[str, object]:
         "segments": [{"angle_deg": 12.0, "aspect_deg": 180.0}] * 4,
         "heights": [2000.0, 2010.0, 2020.0, 2030.0, 2040.0],
     }
+
+
+def weather_rows_from_days(
+    location: Location, days: Sequence[Mapping[str, Any]] | None
+) -> list[Weather]:
+    """Create one ``Weather`` row per day dict, the shape tests describe days in.
+
+    Since SNOW-1337 each day ahead is its own row, so a test that once
+    wrote a ``forecast`` list of day dicts onto today's row writes those
+    days as rows instead. Each dict carries ``date`` (ISO string) and any
+    ``Weather`` field; ISO strings for ``sunrise`` / ``sunset`` are parsed.
+    A legacy ``icon`` key is dropped — the icon is derived from
+    ``weather_code``.
+
+    Args:
+        location: The place the rows describe.
+        days: The day dicts, or ``None`` for none.
+
+    Returns:
+        The rows, in the order given.
+
+    """
+    rows = []
+    for entry in days or ():
+        fields = dict(entry)
+        observed_on = datetime.date.fromisoformat(fields.pop("date"))
+        fields.pop("icon", None)
+        for key in ("sunrise", "sunset"):
+            if isinstance(fields.get(key), str):
+                fields[key] = datetime.datetime.fromisoformat(fields[key])
+        rows.append(
+            WeatherFactory.create(location=location, observed_on=observed_on, **fields)
+        )
+    return rows

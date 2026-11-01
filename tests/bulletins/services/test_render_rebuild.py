@@ -101,7 +101,7 @@ def _bulletin(
     """
     valid_from = datetime(2026, 1, 2 if hour < 12 else 1, hour, tzinfo=UTC)
     bulletin = BulletinFactory.create(
-        raw_data=_raw(level),
+        held=_raw(level)["properties"],
         render_model={"version": version, "traits": []},
         render_model_version=version,
         issued_at=valid_from,
@@ -180,6 +180,20 @@ class TestInstanceTask:
     def test_a_gone_pk_is_skipped(self) -> None:
         """A bulletin deleted since the enqueue needs nothing."""
         assert rebuild_one_bulletin(999_999) is None
+
+    def test_a_row_the_service_holds_no_caaml_for_is_left(self) -> None:
+        """No SourceBulletin: nothing is written and the task says it failed."""
+        region = MicroRegionFactory.create(region_id="CH-1009")
+        bulletin = BulletinFactory.create(
+            render_model={"version": 0, "traits": [], "kept": True},
+            render_model_version=0,
+        )
+        RegionBulletinFactory.create(bulletin=bulletin, region=region)
+
+        assert rebuild_one_bulletin(bulletin.pk) == REBUILD_FAILED
+        bulletin.refresh_from_db()
+        assert bulletin.render_model == {"version": 0, "traits": [], "kept": True}
+        assert not RegionDayRating.objects.filter(region=region).exists()
 
     def test_force_rebuilds_a_current_row(self) -> None:
         """``--all`` and ``--bulletin-id`` rebuild even a current model."""

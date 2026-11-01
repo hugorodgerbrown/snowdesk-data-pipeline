@@ -12,7 +12,8 @@ gliding-snow problems the command prints one summary line showing:
   aspect_match     — parser matches that also contain at least one aspect
   elevation_match  — parser matches that also contain a real elevation bound
 
-The command reads ``raw_data`` (not ``render_model``) so the counts are
+The command reads the CAAML the ingest service stored (``SourceBulletin.caaml``
+— since SNOW-1337 the only copy), not ``render_model``, so the counts are
 independent of whether the render model has been rebuilt after the v6 bump.
 
 Pure SELECT — no ``--commit`` flag; the command never writes to the database.
@@ -34,7 +35,7 @@ from apps.bulletins.models import Bulletin
 from apps.bulletins.services.render_model import WET_PROBLEM_TYPES
 from apps.core.command_iteration import iterate_rows
 from apps.core.command_register import RegisteredCommand
-from apps.ingest.public import parse_prose_for as parse_for
+from apps.ingest.public import SourceBulletin, parse_prose_for as parse_for
 
 logger = logging.getLogger(__name__)
 
@@ -125,10 +126,8 @@ class Command(RegisteredCommand):
         """
         Iterate the bulletin archive and accumulate wet-snow coverage stats.
 
-        Source is detected from ``raw_data.properties.customData`` keys
-        (the same logic as ``detect_source`` in render_model.py) rather
-        than from a model field, because the Bulletin model does not store
-        source as a dedicated database column.
+        Source is detected from the CAAML's ``customData`` keys (the same
+        logic as ``detect_source`` in render_model.py).
 
         Streams newest-id-first via ``iterate_rows``, printing each scanned
         bulletin's id as a countdown line — ``id`` is carried in the
@@ -148,14 +147,14 @@ class Command(RegisteredCommand):
         bulletin_count = 0
         problem_count = 0
 
-        rows = Bulletin.objects.values_list("id", "bulletin_id", "raw_data", "lang")
-        for _pk, _bulletin_id, raw_data, lang in iterate_rows(
+        rows = SourceBulletin.objects.values_list("id", "bulletin_id", "caaml")
+        for _pk, _bulletin_id, caaml in iterate_rows(
             self,
             rows,
             verbosity=verbosity,
             describe=lambda row: row[1],
         ):
-            properties = _get_properties(raw_data)
+            properties = caaml if isinstance(caaml, dict) else None
             if not properties:
                 continue
 
@@ -164,7 +163,7 @@ class Command(RegisteredCommand):
                 continue
 
             bulletin_count += 1
-            bulletin_lang: str = lang or properties.get("lang") or "en"
+            bulletin_lang: str = properties.get("lang") or "en"
             key = (bulletin_lang, bulletin_source)
 
             for problem in properties.get("avalancheProblems") or []:
@@ -299,27 +298,6 @@ def _score_problem(
         or elev.get("treeline")
     ):
         bucket.elevation_match += 1
-
-
-def _get_properties(raw_data: Any) -> dict[str, Any] | None:
-    """
-    Extract the CAAML properties dict from a bulletin raw_data blob.
-
-    Tolerates missing/malformed payloads silently.
-
-    Args:
-        raw_data: The ``Bulletin.raw_data`` value (GeoJSON Feature envelope).
-
-    Returns:
-        The ``"properties"`` dict, or ``None`` on failure.
-
-    """
-    if not isinstance(raw_data, dict):
-        return None
-    properties = raw_data.get("properties")
-    if not isinstance(properties, dict):
-        return None
-    return properties
 
 
 def _pct(numerator: int, denominator: int) -> int:

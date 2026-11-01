@@ -19,12 +19,14 @@ Covers:
 from __future__ import annotations
 
 import re
+from typing import Any
 
 import pytest
 from django.core.management import call_command
 from pytest import CaptureFixture
 
 from apps.bulletins.models import Bulletin
+from apps.ingest.public import SourceBulletin
 from tests.factories import BulletinFactory
 
 # ---------------------------------------------------------------------------
@@ -54,7 +56,8 @@ def _make_raw_data(
             ``"ALBINA"`` → ALBINA source.
 
     Returns:
-        A raw_data dict suitable for ``BulletinFactory.create(raw_data=...)``.
+        A CAAML Feature envelope; ``_held`` passes its properties on as the
+        service's copy (``BulletinFactory.create(held=...)``).
 
     """
     category = "wet" if problem_type in ("wet_snow", "gliding_snow") else "dry"
@@ -105,6 +108,15 @@ def _make_raw_data(
 # ---------------------------------------------------------------------------
 
 
+def _held(**kwargs: Any) -> dict:
+    """Return the CAAML properties ``_make_raw_data`` builds, for ``held=``.
+
+    The command reads ``SourceBulletin.caaml`` (SNOW-1337), so each test
+    bulletin's CAAML is written there, under the bulletin's own id.
+    """
+    return dict(_make_raw_data(**kwargs)["properties"])
+
+
 @pytest.mark.django_db
 class TestParseWetSnowCoverage:
     """Tests for parse_wet_snow_coverage management command."""
@@ -121,7 +133,7 @@ class TestParseWetSnowCoverage:
         """Problems with aspects are counted in total but not unstructured."""
         BulletinFactory.create(
             lang="en",
-            raw_data=_make_raw_data(
+            held=_held(
                 aspects=["S", "SE"],
                 comment="Wet-snow releases on south slopes below 2000m.",
             ),
@@ -138,7 +150,7 @@ class TestParseWetSnowCoverage:
         """Unstructured problems with parseable prose are counted in parser_match."""
         BulletinFactory.create(
             lang="en",
-            raw_data=_make_raw_data(
+            held=_held(
                 aspects=[],
                 elevation=None,
                 comment="Wet-snow avalanches on south facing slopes below 2000m.",
@@ -156,7 +168,7 @@ class TestParseWetSnowCoverage:
         """Unstructured problems with generic prose stay at 0 parser_match."""
         BulletinFactory.create(
             lang="en",
-            raw_data=_make_raw_data(
+            held=_held(
                 aspects=[],
                 elevation=None,
                 comment="Warming temperatures increase instability.",
@@ -173,7 +185,7 @@ class TestParseWetSnowCoverage:
         """Blank-comment problems are counted as unstructured but not parser_match."""
         BulletinFactory.create(
             lang="en",
-            raw_data=_make_raw_data(aspects=[], elevation=None, comment=""),
+            held=_held(aspects=[], elevation=None, comment=""),
         )
         call_command("parse_wet_snow_coverage", verbosity=0)
         captured = capsys.readouterr()
@@ -183,7 +195,7 @@ class TestParseWetSnowCoverage:
         """Dry problem types are ignored entirely."""
         BulletinFactory.create(
             lang="en",
-            raw_data=_make_raw_data(
+            held=_held(
                 problem_type="wind_slab",
                 aspects=[],
                 comment="Wind-slab releases on north slopes below 2400m.",
@@ -198,7 +210,7 @@ class TestParseWetSnowCoverage:
         """Gliding-snow problems are counted alongside wet_snow."""
         BulletinFactory.create(
             lang="en",
-            raw_data=_make_raw_data(
+            held=_held(
                 problem_type="gliding_snow",
                 aspects=[],
                 elevation=None,
@@ -214,14 +226,14 @@ class TestParseWetSnowCoverage:
         # Create one SLF bulletin (CH customData) and one ALBINA bulletin.
         BulletinFactory.create(
             lang="en",
-            raw_data=_make_raw_data(
+            held=_held(
                 comment="Wet-snow on south slopes below 2000m.",
                 custom_data_key="CH",
             ),
         )
         BulletinFactory.create(
             lang="en",
-            raw_data=_make_raw_data(
+            held=_held(
                 comment="Wet releases on north aspects.",
                 custom_data_key="ALBINA",
             ),
@@ -240,7 +252,7 @@ class TestParseWetSnowCoverage:
         """--verbosity 2 prints the scanned-bulletins summary line."""
         BulletinFactory.create(
             lang="en",
-            raw_data=_make_raw_data(comment="Wet-snow on south slopes below 2000m."),
+            held=_held(comment="Wet-snow on south slopes below 2000m."),
         )
         call_command("parse_wet_snow_coverage", verbosity=2)
         captured = capsys.readouterr()
@@ -253,7 +265,7 @@ class TestParseWetSnowCoverage:
 
         BulletinFactory.create(
             lang="en",
-            raw_data=_make_raw_data(comment="Wet-snow on south slopes below 2000m."),
+            held=_held(comment="Wet-snow on south slopes below 2000m."),
         )
         count_before = BulletinModel.objects.count()
         call_command("parse_wet_snow_coverage", verbosity=0)
@@ -265,14 +277,14 @@ class TestParseWetSnowCoverage:
         """Problems from different languages produce separate report lines."""
         BulletinFactory.create(
             lang="en",
-            raw_data=_make_raw_data(
+            held=_held(
                 lang="en",
                 comment="Wet-snow on south slopes below 2000m.",
             ),
         )
         BulletinFactory.create(
             lang="de",
-            raw_data=_make_raw_data(
+            held=_held(
                 lang="de",
                 comment="Nassschneelawinen an südexponierten Hängen.",
             ),
@@ -289,13 +301,20 @@ class TestParseWetSnowCoverage:
         """Each scanned bulletin's id is printed, newest id first (SNOW-602)."""
         first = BulletinFactory.create(
             lang="en",
-            raw_data=_make_raw_data(comment="Wet-snow on south slopes below 2000m."),
+            held=_held(comment="Wet-snow on south slopes below 2000m."),
         )
         second = BulletinFactory.create(
             lang="en",
-            raw_data=_make_raw_data(comment="Wet-snow on north slopes below 2000m."),
+            held=_held(comment="Wet-snow on north slopes below 2000m."),
         )
-        expected = sorted([first.pk, second.pk], reverse=True)
+        # The scan walks the service's rows, so the countdown is their ids.
+        expected = list(
+            SourceBulletin.objects.filter(
+                bulletin_id__in=[first.bulletin_id, second.bulletin_id]
+            )
+            .order_by("-id")
+            .values_list("id", flat=True)
+        )
 
         call_command("parse_wet_snow_coverage", verbosity=1)
 
@@ -313,7 +332,7 @@ class TestParseWetSnowCoverage:
         """Countdown lines are suppressed at verbosity 0."""
         BulletinFactory.create(
             lang="en",
-            raw_data=_make_raw_data(comment="Wet-snow on south slopes below 2000m."),
+            held=_held(comment="Wet-snow on south slopes below 2000m."),
         )
         pk = Bulletin.objects.get().pk
 

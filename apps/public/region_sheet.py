@@ -160,7 +160,6 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
     day_rating = (
         RegionDayRating.objects.filter(region=region, date=target_date)
         .select_related("source_bulletin")
-        .defer("source_bulletin__raw_data")
         .first()
     )
 
@@ -174,7 +173,6 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
         newer = (
             Bulletin.objects.for_target_date(target_date)
             .filter(regions=region, valid_from__gt=selected.valid_from)
-            .defer("raw_data")
             .order_by("-valid_from")
             .first()
         )

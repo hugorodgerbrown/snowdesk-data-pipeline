@@ -9,12 +9,22 @@ outline. Every path that writes a bulletin comes through here: the three
 provider pipelines, the Météo-France archive loader, the golden week and
 ``pull_production_data``.
 
-  upsert_bulletin(raw, run, pdf_url)   one raw CAAML dict → one row.
-  apply_feed_item(item, run, …)        one ``bulletins`` feed item → one
-                                       row, unless it is already here.
+  write_bulletin(item, run, caaml)     one ``bulletins`` feed item → one
+                                       row, from its explicit fields alone.
+  upsert_bulletin(raw, run, pdf_url)   one raw CAAML dict → one row, by
+                                       reading it into a feed item first.
+  apply_feed_item(item, run, …)        one feed item → one row, unless it is
+                                       already here.
   apply_bulletin(record, run, force)   store an ingest ``NormalisedBulletin``
                                        in ``SourceBulletin``, then apply the
                                        stored row as a feed item (SNOW-1250).
+
+Since SNOW-1337 a ``Bulletin`` keeps no CAAML of its own: the row is filed
+from the item's identity fields and its render model, and the CAAML stays
+in ingest's ``SourceBulletin``. A render model built at another version is
+rebuilt here only when the caller holds the CAAML (a production fetch, the
+archive loader, the golden week); a staging pull stores the served model
+as it came, and the read paths treat an old version as they always have.
 
 Moved out of ``slf_fetcher.py`` unchanged, where it had lived since before
 the other two providers shared it.
@@ -46,7 +56,6 @@ from apps.bulletins.services.render_model import (
     RenderModelBuildError,
     build_render_model,
     danger_levels_column,
-    detect_source,
 )
 from apps.ingest.public import (
     OUTCOME_CREATED,
@@ -58,9 +67,10 @@ from apps.ingest.public import (
     NormalisedBulletin,
     SourceBulletin,
     SourceDayRating,
+    bulletin_identity,
+    content_hash,
     day_pairs,
     parse_dt,
-    resolve_issued_at,
     serialise_source_bulletin,
     serialise_source_day_rating,
     store_bulletin,
@@ -200,35 +210,6 @@ def _assert_any_region_resolved(
     )
 
 
-def _resolve_source(raw: dict[str, Any], bulletin_id: str) -> str:
-    """
-    Detect the provider a raw bulletin came from, degrading to blank.
-
-    Provenance is detected from the raw payload rather than read back out of
-    ``render_model["source"]``: it is an ingest fact, so it must survive a
-    render-model build failure and must not be rewritten by
-    ``rebuild_render_models``.
-
-    Args:
-        raw: The raw CAAML properties dict.
-        bulletin_id: The bulletin identifier, for the warning log line.
-
-    Returns:
-        A ``Bulletin.Source`` value, or ``""`` when the payload carries no
-        known source marker.
-
-    """
-    try:
-        return detect_source(raw)
-    except RenderModelBuildError:
-        logger.warning(
-            "No known source marker in customData for bulletin %s — "
-            "leaving source blank",
-            bulletin_id,
-        )
-        return ""
-
-
 def _refresh_grouping(bulletin: Bulletin, run: PipelineRun) -> None:
     """
     Recompute ``bulletin``'s grouping outline without ever aborting ingest.
@@ -269,20 +250,25 @@ def _refresh_grouping(bulletin: Bulletin, run: PipelineRun) -> None:
 
 
 def _render_model(
-    raw: dict[str, Any],
+    bulletin_id: str,
+    caaml: dict[str, Any] | None,
     served: dict[str, Any] | None,
     run: PipelineRun,
 ) -> tuple[dict[str, Any], int]:
     """Return the render model to store: the service's, or one built here.
 
-    The service builds every bulletin's render model and serves it with the
-    CAAML (SNOW-1270). It is copied when it was built at this code's
-    ``RENDER_MODEL_VERSION``; otherwise — an older service, a failed build
-    there, a caller with no served model — it is built here, so an instance
-    running a newer builder is never held to the service's output.
+    The service builds every bulletin's render model and serves it
+    (SNOW-1270). It is copied when it was built at this code's
+    ``RENDER_MODEL_VERSION``. Otherwise — an older service, a failed build
+    there — it is built here from ``caaml`` when the caller holds it, so an
+    instance running a newer builder is never held to the service's output.
+    Without the CAAML (a feed pull, SNOW-1337) the served model is stored as
+    it came, at its own version, and ``rebuild_render_models`` brings it
+    up to date where the CAAML is held.
 
     Args:
-        raw: The CAAML properties.
+        bulletin_id: The bulletin, for the log line.
+        caaml: The CAAML properties, when the caller holds them.
         served: The service's render model, if the caller has one.
         run: The run whose ``records_failed`` a failed local build bumps.
 
@@ -292,12 +278,21 @@ def _render_model(
     """
     if served is not None and served.get("version") == RENDER_MODEL_VERSION:
         return served, RENDER_MODEL_VERSION
+    if caaml is None:
+        if served is not None:
+            version = served.get("version")
+            return served, version if isinstance(version, int) else 0
+        return {
+            "version": 0,
+            "error": "the item carried no render model",
+            "error_type": "MissingRenderModel",
+        }, 0
     try:
-        return build_render_model(raw), RENDER_MODEL_VERSION
+        return build_render_model(caaml), RENDER_MODEL_VERSION
     except RenderModelBuildError as exc:
         logger.exception(
             "Failed to build render model for bulletin %s: %s",
-            raw.get("bulletinID"),
+            bulletin_id,
             exc,
         )
         run.records_failed += 1
@@ -372,79 +367,164 @@ def _fed_regions(
     return [r for r in raw_regions if r["regionID"] in codes]
 
 
+def bulletin_item(
+    raw: dict[str, Any],
+    pdf_url: str = "",
+    render_model: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Read a raw CAAML bulletin into a ``bulletins`` feed item.
+
+    The item a caller holding only the CAAML (the archive loader, the
+    golden week, a test) hands to :func:`write_bulletin`, built by the
+    service's own reading of the CAAML (``bulletin_identity``), so it is
+    the item the feed would serve for the same bulletin.
+
+    Args:
+        raw: The CAAML properties.
+        pdf_url: The bulletin's PDF link.
+        render_model: A render model already built for it, if any.
+
+    Returns:
+        The feed item.
+
+    """
+    identity = bulletin_identity(raw)
+    try:
+        valid_from: str | None = parse_dt(raw["validTime"]["startTime"]).isoformat()
+    except KeyError, TypeError, ValueError:
+        valid_from = None
+    return {
+        "bulletin_id": raw["bulletinID"],
+        "pdf_url": pdf_url,
+        "content_hash": content_hash(raw),
+        "render_model": render_model,
+        "valid_from": valid_from,
+        "target_date": None,
+        "region_codes": None,
+        **identity,
+    }
+
+
 def upsert_bulletin(
     raw: dict[str, Any],
     run: PipelineRun,
     pdf_url: str = "",
     render_model: dict[str, Any] | None = None,
-    *,
-    valid_from: datetime | None = None,
-    target_date: date | None = None,
-    region_codes: list[str] | None = None,
 ) -> bool:
     """
-    Create or update a single Bulletin from a raw API dict.
+    Create or update a single Bulletin from a raw CAAML dict.
 
-    Wraps the raw bulletin in a GeoJSON Feature envelope (matching the
-    format expected by downstream consumers) before storing. Creates or
-    looks up MicroRegion records and links them via RegionBulletin.
+    Reads the CAAML into a feed item (:func:`bulletin_item`) and writes it
+    through :func:`write_bulletin`, with the CAAML at hand to build the
+    render model from. The CAAML itself is not stored (SNOW-1337).
 
     Args:
-        raw: A single bulletin dict from the SLF CAAML API.
+        raw: A single bulletin's CAAML properties.
         run: The PipelineRun to associate with this bulletin.
         pdf_url: Optional URL of the source bulletin PDF. Defaults to ``""``
             (empty) when not supplied — callers compute this via the
             per-source ``_*_pdf_url`` helpers and pass it through.
-        render_model: The service's render model for this bulletin, copied
-            when it is at this code's version (``_render_model``).
-        valid_from: The service's indexed ``validTime.startTime``; read
-            from the CAAML when None.
-        target_date: The service's indexed forecast day; derived from
-            ``valid_from`` when None.
-        region_codes: The service's indexed region codes; every CAAML
-            region is linked when None.
+        render_model: A render model for this bulletin, copied when it is
+            at this code's version.
 
     Returns:
         True if a new row was created, False if an existing row was updated.
 
     """
-    bulletin_id: str = raw["bulletinID"]
-    raw_data: dict[str, Any] = {
-        "type": "Feature",
-        "geometry": None,
-        "properties": raw,
-    }
+    return write_bulletin(bulletin_item(raw, pdf_url, render_model), run, caaml=raw)
 
-    next_update_raw: str | None = raw.get("nextUpdate")
+
+def _required_instant(item: dict[str, Any], key: str) -> datetime:
+    """Return the item's ``key`` timestamp, refusing an item without one.
+
+    Args:
+        item: A ``bulletins`` feed item.
+        key: The field.
+
+    Returns:
+        The parsed instant.
+
+    Raises:
+        KeyError: The item carries no ``key``.
+
+    """
+    value = item.get(key)
+    if not value:
+        raise KeyError(f"bulletin {item.get('bulletin_id')!r} carries no {key}")
+    return parse_dt(value)
+
+
+def write_bulletin(
+    item: dict[str, Any],
+    run: PipelineRun,
+    *,
+    caaml: dict[str, Any] | None = None,
+) -> bool:
+    """
+    Create or update a Bulletin and its region links from a feed item.
+
+    Every column is the item's (SNOW-1337): its identity fields, its
+    render model and its ``content_hash``. Creates the ``RegionBulletin``
+    links for the item's ``regions`` (narrowed to its ``region_codes``
+    when it carries them, SNOW-1341), then refreshes the bulletin's day
+    ratings and grouping outline.
+
+    Args:
+        item: A ``bulletins`` feed item.
+        run: The PipelineRun to associate with this bulletin.
+        caaml: The bulletin's CAAML, when the caller holds it; used only to
+            build a render model when the item's is not at this code's
+            version.
+
+    Returns:
+        True if a new row was created, False if an existing row was updated.
+
+    Raises:
+        KeyError: The item lacks ``valid_from``, ``valid_to`` or
+            ``issued_at``, or a region entry lacks ``regionID`` or ``name``.
+
+    """
+    bulletin_id: str = item["bulletin_id"]
     # The service indexed the regions, the start and the day (SNOW-1341):
-    # a fed value is used as sent, and only an absent one is read here.
-    caaml_regions: list[dict[str, str]] = raw.get("regions", [])
-    raw_regions = _fed_regions(caaml_regions, region_codes)
-
-    computed_render_model, computed_render_model_version = _render_model(
-        raw, render_model, run
+    # a fed value is used as sent, and only an absent one is derived here.
+    caaml_regions: list[dict[str, str]] = list(item.get("regions") or [])
+    # An empty list is an unindexed row, not a bulletin covering nothing.
+    fed_codes = item.get("region_codes")
+    raw_regions = _fed_regions(
+        caaml_regions,
+        list(fed_codes) if isinstance(fed_codes, list) and fed_codes else None,
     )
 
-    if valid_from is None:
-        valid_from = parse_dt(raw["validTime"]["startTime"])
-    if target_date is None:
-        target_date = target_day_for_valid_from(valid_from)
+    valid_from = _required_instant(item, "valid_from")
+    valid_to = _required_instant(item, "valid_to")
+    issued_at = _required_instant(item, "issued_at")
+    fed_target_date = item.get("target_date")
+    target_date = (
+        date.fromisoformat(fed_target_date)
+        if fed_target_date
+        else target_day_for_valid_from(valid_from)
+    )
+    served = item.get("render_model")
+    computed_render_model, computed_render_model_version = _render_model(
+        bulletin_id, caaml, served if isinstance(served, dict) else None, run
+    )
+    next_update = item.get("next_update")
 
     defaults: dict[str, Any] = {
-        "raw_data": raw_data,
-        "source": _resolve_source(raw, bulletin_id),
+        "content_hash": item.get("content_hash") or "",
+        "source": item.get("source") or "",
         "render_model": computed_render_model,
         "render_model_version": computed_render_model_version,
         "danger_levels": danger_levels_column(computed_render_model),
-        "issued_at": resolve_issued_at(raw),
+        "issued_at": issued_at,
         "valid_from": valid_from,
-        "valid_to": parse_dt(raw["validTime"]["endTime"]),
+        "valid_to": valid_to,
         "target_date": target_date,
-        "next_update": parse_dt(next_update_raw) if next_update_raw else None,
-        "lang": raw.get("lang", SLF_DEFAULT_LANG),
-        "unscheduled": raw.get("unscheduled", False),
+        "next_update": parse_dt(next_update) if next_update else None,
+        "lang": item.get("lang") or SLF_DEFAULT_LANG,
+        "unscheduled": bool(item.get("unscheduled", False)),
         "pipeline_run": run,
-        "pdf_url": pdf_url,
+        "pdf_url": item.get("pdf_url") or "",
     }
 
     # Resolve every region *before* touching the DB (SNOW-460): a malformed
@@ -545,6 +625,26 @@ def upsert_bulletin(
     return created
 
 
+def _from_older_service(item: dict[str, Any]) -> dict[str, Any]:
+    """Read an item from a service that still served CAAML into today's shape.
+
+    An instance can be deployed before the service it pulls from (staging
+    ships from ``main`` first), so an item may carry ``caaml`` and none of
+    the identity fields (SNOW-1337). Those are read off its CAAML exactly as
+    the service now reads them; the fields it did send win.
+
+    Args:
+        item: A feed item carrying ``caaml``.
+
+    Returns:
+        The item with its identity fields, ``content_hash`` included.
+
+    """
+    caaml = item["caaml"]
+    sent = {key: value for key, value in item.items() if value is not None}
+    return {**bulletin_item(caaml, item.get("pdf_url") or ""), **sent}
+
+
 def apply_feed_item(
     item: dict[str, Any],
     run: PipelineRun | None,
@@ -552,6 +652,7 @@ def apply_feed_item(
     existing: Bulletin | None,
     commit: bool = True,
     force: bool = False,
+    caaml: dict[str, Any] | None = None,
 ) -> str:
     """Write one ``bulletins`` feed item here, unless it is already here.
 
@@ -561,35 +662,38 @@ def apply_feed_item(
     ``apps.data_feed.services.apply.apply_bulletin``). Both hand it the same
     wire item, built by ``serialise_source_bulletin``.
 
-    Unchanged when the stored CAAML and PDF link are identical, which is
-    what makes a re-fetch or a re-pull of the same window a no-op:
-    ``upsert_bulletin`` would otherwise rewrite the row and recompute its
-    derived tables — unless the item's render model is current and differs
-    from the stored one, which is the service having rebuilt it (SNOW-1270).
-    The item's render model is handed to ``upsert_bulletin`` to copy, and
-    its indexed ``valid_from``, ``target_date`` and ``region_codes`` to use
-    as sent (SNOW-1341) — an item from a service that predates them carries
-    none, and ``upsert_bulletin`` reads them from the CAAML instead.
+    Unchanged when the item's ``content_hash`` (the CAAML it was served
+    from) and PDF link match the stored row's, which is what makes a
+    re-fetch or a re-pull of the same window a no-op: ``write_bulletin``
+    would otherwise rewrite the row and recompute its derived tables —
+    unless the item's render model is current and differs from the stored
+    one, which is the service having rebuilt it (SNOW-1270).
 
     Args:
-        item: A feed item, its ``caaml`` a dict.
+        item: A feed item.
         run: The ``PipelineRun`` to attribute a write to; required when
             ``commit``.
         existing: The ``Bulletin`` already stored under the item's id (with
-            ``raw_data``, ``pdf_url`` and ``render_model`` loaded), or None.
+            ``content_hash``, ``pdf_url`` and ``render_model`` loaded), or
+            None.
         commit: Write; otherwise only decide.
         force: Write even when nothing has changed.
+        caaml: The bulletin's CAAML, when the caller holds it (a production
+            fetch); a local render-model build reads it.
 
     Returns:
         ``OUTCOME_CREATED``, ``OUTCOME_UPDATED`` or ``OUTCOME_UNCHANGED``.
 
     """
-    caaml = item["caaml"]
+    if isinstance(item.get("caaml"), dict):
+        caaml = caaml or item["caaml"]
+        if not item.get("issued_at"):
+            item = _from_older_service(item)
     pdf_url = item.get("pdf_url") or ""
     if existing is not None and not force:
-        stored = (existing.raw_data or {}).get("properties")
         if (
-            stored == caaml
+            existing.content_hash
+            and existing.content_hash == item.get("content_hash")
             and existing.pdf_url == pdf_url
             and not served_render_model_differs(item, existing)
         ):
@@ -597,21 +701,7 @@ def apply_feed_item(
     if commit:
         if run is None:
             raise ValueError("apply_feed_item needs a PipelineRun to commit")
-        served = item.get("render_model")
-        fed_valid_from = item.get("valid_from")
-        fed_target_date = item.get("target_date")
-        fed_codes = item.get("region_codes")
-        upsert_bulletin(
-            caaml,
-            run,
-            pdf_url=pdf_url,
-            render_model=served if isinstance(served, dict) else None,
-            valid_from=parse_dt(fed_valid_from) if fed_valid_from else None,
-            target_date=date.fromisoformat(fed_target_date)
-            if fed_target_date
-            else None,
-            region_codes=list(fed_codes) if isinstance(fed_codes, list) else None,
-        )
+        write_bulletin(item, run, caaml=caaml)
     return OUTCOME_CREATED if existing is None else OUTCOME_UPDATED
 
 
@@ -655,11 +745,15 @@ def apply_bulletin(
     row, _ = store_bulletin(record, force=force)
     existing = (
         Bulletin.objects.filter(bulletin_id=row.bulletin_id)
-        .only("pk", "bulletin_id", "raw_data", "pdf_url", "render_model")
+        .only("pk", "bulletin_id", "content_hash", "pdf_url", "render_model")
         .first()
     )
     outcome = apply_feed_item(
-        serialise_source_bulletin(row), run, existing=existing, force=force
+        serialise_source_bulletin(row),
+        run,
+        existing=existing,
+        force=force,
+        caaml=row.caaml,
     )
     copy_service_day_ratings(pairs | day_pairs(row))
     return outcome

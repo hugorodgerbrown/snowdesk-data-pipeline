@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -75,6 +75,7 @@ from apps.routes.models import Route
 from apps.routes.services.canonical import canonical_paths
 from apps.trips.models import Trip
 from apps.weather.models import Weather
+from apps.weather.services.fetch import FORECAST_DAYS
 
 User = get_user_model()
 
@@ -731,44 +732,40 @@ class TestWeatherSeeding:
     """Today's weather, so the meteogram draws in a fresh database (SNOW-1108)."""
 
     def test_include_weather_pulls_in_location(self) -> None:
-        """Each seeded Location and the CH-4115 centroid gets one row today."""
+        """Each seeded Location and the CH-4115 centroid gets a week of rows."""
         call_command("seed_test_data", "--include", "weather", commit=True, verbosity=0)
 
         centroid = MicroRegion.objects.get(region_id="CH-4115").centroid_location
         assert centroid is not None
+        today = timezone.localdate()
         assert _seeded_locations().count() == _EXPECTED_LOCATIONS + 1
-        assert Weather.objects.count() == _EXPECTED_LOCATIONS + 1
+        assert Weather.objects.count() == (_EXPECTED_LOCATIONS + 1) * FORECAST_DAYS
         assert set(Weather.objects.values_list("observed_on", flat=True)) == {
-            timezone.localdate()
+            today + timedelta(days=n) for n in range(FORECAST_DAYS)
         }
         assert Weather.objects.filter(location=centroid).exists()
 
     def test_a_row_has_the_shape_fetch_writes(self) -> None:
-        """24 hours today; six forward days, only tomorrow with hours (as fetched)."""
+        """One row per day, each with its own 24 hours, all forecast today."""
         call_command("seed_test_data", "--include", "weather", commit=True, verbosity=0)
 
-        row = Weather.objects.first()
-        assert row is not None
-        assert row.hourly is not None
-        assert len(row.hourly) == 24
-        assert row.hourly[0]["time"] == f"{timezone.localdate().isoformat()}T00:00"
-        assert row.forecast is not None
-        assert len(row.forecast) == 6
-        assert [bool(day.get("hourly")) for day in row.forecast] == [
-            True,
-            False,
-            False,
-            False,
-            False,
-            False,
-        ]
+        today = timezone.localdate()
+        location = Weather.objects.values_list("location", flat=True).first()
+        rows = list(Weather.objects.filter(location=location).order_by("observed_on"))
+        assert len(rows) == FORECAST_DAYS
+        for row in rows:
+            assert row.forecast_on == today
+            assert row.hourly is not None
+            assert len(row.hourly) == 24
+            assert row.hourly[0]["time"] == f"{row.observed_on.isoformat()}T00:00"
 
     def test_higher_pins_are_colder(self) -> None:
         """The lapse rate makes the 2700 m pin colder than the 1500 m one."""
         call_command("seed_test_data", "--include", "weather", commit=True, verbosity=0)
 
-        low = Weather.objects.get(location__elevation_m=1500.0)
-        high = Weather.objects.get(location__elevation_m=2700.0)
+        today = timezone.localdate()
+        low = Weather.objects.get(location__elevation_m=1500.0, observed_on=today)
+        high = Weather.objects.get(location__elevation_m=2700.0, observed_on=today)
         assert high.temperature_2m_max is not None
         assert low.temperature_2m_max is not None
         assert high.temperature_2m_max < low.temperature_2m_max

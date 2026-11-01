@@ -5,8 +5,10 @@ Read-only tools, composed from services that already exist elsewhere in
 the codebase (``apps.mcp_server.resolvers``, ``apps.public.views``,
 ``RegionDayRating.objects.for_region_range``, ``Bulletin.render_model``).
 Every tool but ``get_bulletin_raw`` reads the render model, the
-``RegionDayRating`` rows and the bulletin's own columns — never
-``Bulletin.raw_data`` (SNOW-1342):
+``RegionDayRating`` rows and the bulletin's own columns — never CAAML
+(SNOW-1342). ``get_bulletin_raw`` reads the ingest service's stored CAAML
+(``apps.ingest.public.source_caaml``, SNOW-1337), since a ``Bulletin``
+keeps none:
 
 * ``search_regions`` — fuzzy place-name search (``resolvers.search_places``).
 * ``get_current_conditions`` — danger rating + forecaster prose for one
@@ -82,6 +84,7 @@ from apps.bulletins.services.selection import (
     select_bulletin_for_date,
     select_bulletins_for_regions,
 )
+from apps.ingest.public import caaml_envelope, source_caaml
 from apps.locations.models import Location
 from apps.mcp_server import resolvers, season
 from apps.mcp_server.ui_resources import DANGER_MAP_URI
@@ -1085,7 +1088,10 @@ def get_bulletin_raw(
         ``date``, ``has_bulletin``, ``provider``, ``issued_at``) and the
         raw ``caaml`` payload verbatim. When no bulletin covers ``date``
         the result carries ``has_bulletin: false`` and no ``caaml`` key —
-        a quiet day is a legitimate empty result, not an error.
+        a quiet day is a legitimate empty result, not an error. When the
+        service holds no CAAML for the bulletin (an instance that pulls its
+        bulletins from another's feed), ``caaml`` is ``None`` and the
+        summary says so.
 
     Raises:
         ToolError: ``region_id`` does not match any known region.
@@ -1110,6 +1116,7 @@ def get_bulletin_raw(
         }
 
     source = _bulletin_source(bulletin)
+    caaml = source_caaml(bulletin.bulletin_id)
     return {
         "region_id": region.region_id,
         "region_name": region.name,
@@ -1117,14 +1124,15 @@ def get_bulletin_raw(
         "has_bulletin": True,
         "provider": source,
         "issued_at": bulletin.issued_at.isoformat(),
-        # The read path defers raw_data; this is the one tool that needs
-        # it, so it loads it by an explicit fetch of its own (SNOW-1342).
-        "caaml": Bulletin.objects.filter(pk=bulletin.pk)
-        .values_list("raw_data", flat=True)
-        .first(),
+        # The ingest service's stored CAAML (SNOW-1337): a Bulletin keeps
+        # none. None on an instance whose service holds no such bulletin.
+        "caaml": caaml_envelope(caaml) if caaml is not None else None,
         "summary": (
             f"Raw CAAML payload for {region.name} ({region.region_id}) on "
             f"{target_date.isoformat()} (issued {bulletin.issued_at.isoformat()})."
+            if caaml is not None
+            else f"No CAAML is held for the {region.name} ({region.region_id}) "
+            f"bulletin on {target_date.isoformat()}."
         ),
     }
 

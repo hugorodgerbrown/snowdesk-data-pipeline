@@ -9,10 +9,10 @@ Covers the four things this module actually decides:
 * ``is_day``'s sunrise-inclusive / sunset-exclusive boundary, compared
   time-of-day only;
 * the three context builders, including the two degradations that matter —
-  a ``None`` row produces ``None`` rather than an error, and a forward day
-  with no ``hourly`` key produces an empty list rather than a KeyError;
-* a forward day's stored ``icon_bucket`` (SNOW-1343) winning over its
-  ``weather_code``, and a day stored before it falling back to the code.
+  a ``None`` row produces ``None`` rather than an error, and a row with no
+  ``hourly`` produces an empty list;
+* the outlook as the rows after the lead day (SNOW-1337): a week at most,
+  the place's own, read once or handed in.
 
 Every assertion that names an icon filename runs under ``freeze_time`` at
 midday. The day/night suffix projects the *current* wall-clock time onto the
@@ -23,12 +23,14 @@ sunset.
 from __future__ import annotations
 
 import datetime
+from typing import Any
 
 import pytest
 from django.utils import timezone
 from freezegun import freeze_time
 
 from apps.weather.models import Weather
+from apps.weather.services.fetch import FORECAST_DAYS
 from apps.weather.services.weather_display import (
     DEFAULT_BUCKET,
     DEFAULT_ICON_BUCKET,
@@ -46,42 +48,6 @@ from tests.factories import WeatherFactory
 
 # A midday reference instant. Every icon assertion below is anchored here.
 MIDDAY = "2026-08-30T12:00:00+00:00"
-
-
-def _forecast_day(
-    *,
-    date: str = "2026-08-31",
-    weather_code: int = 71,
-    hourly: list[dict[str, object]] | None = None,
-    **overrides: object,
-) -> dict[str, object]:
-    """Build one ``forecast[]`` entry for a test row.
-
-    Args:
-        date: The forward day's ISO date.
-        weather_code: The day's WMO code.
-        hourly: The nested hourly series, or ``None`` to omit the key
-            entirely — which is what a day past ``HOURLY_DAYS`` looks like.
-        **overrides: Any other ``ForecastDay`` key to set.
-
-    Returns:
-        The entry dict.
-
-    """
-    entry: dict[str, object] = {
-        "date": date,
-        "weather_code": weather_code,
-        "sunrise": f"{date}T06:30:00+02:00",
-        "sunset": f"{date}T20:15:00+02:00",
-        "temperature_2m_max": 3.0,
-        "temperature_2m_min": -4.0,
-        "snowfall_sum": 12.0,
-        "freezing_level_height": 2100.0,
-    }
-    if hourly is not None:
-        entry["hourly"] = hourly
-    entry.update(overrides)
-    return entry
 
 
 class TestBuckets:
@@ -355,22 +321,17 @@ class TestBuildWeatherDisplay:
 
 @pytest.mark.django_db
 class TestBuildPointForecastPanel:
-    """Tests for the multi-day outlook built from one row."""
+    """Tests for the multi-day outlook built from a day and the rows after it."""
 
     def test_none_row_yields_none(self) -> None:
         """A missing row degrades to no panel."""
         assert build_point_forecast_panel(None, timezone.now()) is None
 
     @freeze_time(MIDDAY)
-    def test_the_rows_own_day_leads_then_its_forecast(self) -> None:
-        """The row's day comes first; the forward days follow in stored order."""
-        weather = WeatherFactory.create(
-            observed_on=datetime.date(2026, 8, 30),
-            forecast=[
-                _forecast_day(date="2026-08-31"),
-                _forecast_day(date="2026-09-01"),
-            ],
-        )
+    def test_the_rows_own_day_leads_then_the_following_rows(self) -> None:
+        """The lead day comes first; the next rows for the place follow in order."""
+        weather = WeatherFactory.create(observed_on=datetime.date(2026, 8, 30))
+        _following(weather, "2026-09-01", "2026-08-31")
 
         panel = build_point_forecast_panel(weather, timezone.now())
 
@@ -382,26 +343,48 @@ class TestBuildPointForecastPanel:
         ]
 
     @freeze_time(MIDDAY)
-    def test_wind_reaches_the_lead_day_and_the_forward_days(self) -> None:
-        """Both build sites populate wind, not just the lead one.
+    def test_the_outlook_stops_at_a_week_and_at_the_place(self) -> None:
+        """Seven days in all, and never another place's rows."""
+        weather = WeatherFactory.create(observed_on=datetime.date(2026, 8, 30))
+        _following(weather, *[f"2026-08-{day}" for day in range(31, 32)])
+        _following(weather, *[f"2026-09-0{day}" for day in range(1, 8)])
+        WeatherFactory.create(observed_on=datetime.date(2026, 8, 31))
 
-        The lead day is read off the ``Weather`` row and the forward days
-        off their ``forecast[]`` entries, in two separate constructor
-        calls. Updating one and not the other would show wind on today
-        and nothing after it — which is why this asserts across the whole
-        strip rather than on ``days[0]``.
-        """
+        panel = build_point_forecast_panel(weather, timezone.now())
+
+        assert panel is not None
+        assert [day["date"] for day in panel["days"]] == [
+            datetime.date(2026, 8, 30) + datetime.timedelta(days=offset)
+            for offset in range(FORECAST_DAYS)
+        ]
+
+    @freeze_time(MIDDAY)
+    def test_rows_handed_in_are_used_without_a_query(
+        self, django_assert_num_queries: Any
+    ) -> None:
+        """A caller holding the week for many places passes it in."""
+        weather = WeatherFactory.create(observed_on=datetime.date(2026, 8, 30))
+        following = _following(weather, "2026-08-31")
+
+        with django_assert_num_queries(0):
+            panel = build_point_forecast_panel(weather, timezone.now(), following)
+
+        assert panel is not None
+        assert len(panel["days"]) == 2
+
+    @freeze_time(MIDDAY)
+    def test_wind_reaches_the_lead_day_and_the_following_days(self) -> None:
+        """Every column carries its own row's wind."""
         weather = WeatherFactory.create(
             observed_on=datetime.date(2026, 8, 30),
             wind_speed_10m_max=24.0,
             wind_direction_10m_dominant=270.0,
-            forecast=[
-                _forecast_day(
-                    date="2026-08-31",
-                    wind_speed_10m_max=31.0,
-                    wind_direction_10m_dominant=45.0,
-                ),
-            ],
+        )
+        _following(
+            weather,
+            "2026-08-31",
+            wind_speed_10m_max=31.0,
+            wind_direction_10m_dominant=45.0,
         )
 
         panel = build_point_forecast_panel(weather, timezone.now())
@@ -411,97 +394,33 @@ class TestBuildPointForecastPanel:
         assert [day["wind_bearing"] for day in panel["days"]] == [270.0, 45.0]
 
     @freeze_time(MIDDAY)
-    def test_a_forward_day_missing_wind_degrades_to_none(self) -> None:
-        """Open-Meteo drops variables per model, so absence is ordinary."""
-        weather = WeatherFactory.create(forecast=[_forecast_day()])
-
-        panel = build_point_forecast_panel(weather, timezone.now())
-
-        assert panel is not None
-        assert panel["days"][1]["wind_speed_max"] is None
-        assert panel["days"][1]["wind_bearing"] is None
-
-    @freeze_time(MIDDAY)
-    def test_a_forward_day_without_hourly_yields_an_empty_list(self) -> None:
-        """``hourly`` is optional per entry, so absence is not an error.
-
-        Only the first few forward days carry an hourly series; beyond that
-        the key is absent entirely.
-        """
-        weather = WeatherFactory.create(
-            forecast=[
-                _forecast_day(date="2026-08-31", hourly=[{"time": "2026-08-31T09:00"}]),
-                _forecast_day(date="2026-09-05"),
-            ],
-        )
+    def test_every_following_day_carries_its_own_hourly_series(self) -> None:
+        """Each row's hours reach its own column (SNOW-1337), or [] when null."""
+        weather = WeatherFactory.create(observed_on=datetime.date(2026, 8, 30))
+        _following(weather, "2026-08-31", hourly=[{"time": "2026-08-31T09:00"}])
+        _following(weather, "2026-09-01")
 
         panel = build_point_forecast_panel(weather, timezone.now())
 
         assert panel is not None
         assert len(panel["days"][1]["hourly"]) == 1
+        assert panel["days"][1]["selectable"] is True
         assert panel["days"][2]["hourly"] == []
+        assert panel["days"][2]["selectable"] is False
 
     @freeze_time(MIDDAY)
-    def test_a_malformed_forward_day_is_dropped_not_raised(self) -> None:
-        """One unparseable entry cannot take the whole outlook out."""
-        weather = WeatherFactory.create(
-            observed_on=datetime.date(2026, 8, 30),
-            forecast=[{"date": "not-a-date", "weather_code": 3}, _forecast_day()],
-        )
-
-        panel = build_point_forecast_panel(weather, timezone.now())
-
-        assert panel is not None
-        assert [day["date"] for day in panel["days"]] == [
-            datetime.date(2026, 8, 30),
-            datetime.date(2026, 8, 31),
-        ]
-
-    @freeze_time(MIDDAY)
-    def test_a_forward_day_without_a_weather_code_is_dropped_not_raised(self) -> None:
-        """A code-less entry is as malformed as a date-less one.
-
-        The date/sunrise/sunset guard once stopped short of the icon-bucket
-        lookup, so an entry that parsed its dates but carried no
-        ``weather_code`` raised ``KeyError`` past the caller and took the
-        page down — the opposite of what the docstring promised. Unlike
-        ``hourly``, ``weather_code`` is required on every entry, so its
-        absence is corruption rather than an expected gap.
-        """
-        entry = _forecast_day(date="2026-08-31")
-        del entry["weather_code"]
-        weather = WeatherFactory.create(
-            observed_on=datetime.date(2026, 8, 30),
-            forecast=[entry, _forecast_day(date="2026-09-01")],
-        )
-
-        panel = build_point_forecast_panel(weather, timezone.now())
-
-        assert panel is not None
-        assert [day["date"] for day in panel["days"]] == [
-            datetime.date(2026, 8, 30),
-            datetime.date(2026, 9, 1),
-        ]
-
-    @freeze_time(MIDDAY)
-    def test_daylight_reaches_the_lead_day_and_the_forward_days(self) -> None:
-        """SNOW-789: every column carries its OWN daylight window.
-
-        The selected-day line states the daylight for whichever day the
-        picker has chosen, so a pair set only on the lead day would print
-        today's sunrise under Friday's date. The two build sites are
-        separate constructor calls, which is why this asserts across the
-        strip rather than on ``days[0]``.
-
-        Both are formatted in the entry's own stored offset — the forward
-        day's ``+02:00`` sunrise reads 06:30 whatever the active
-        ``TIME_ZONE`` is.
-        """
+    def test_daylight_is_each_days_own(self) -> None:
+        """SNOW-789: every column carries its OWN daylight window."""
         weather = WeatherFactory.create(
             observed_on=datetime.date(2026, 8, 30),
             sunrise=datetime.datetime(2026, 8, 30, 7, 5, tzinfo=datetime.UTC),
             sunset=datetime.datetime(2026, 8, 30, 19, 40, tzinfo=datetime.UTC),
-            forecast=[_forecast_day(date="2026-08-31")],
+        )
+        _following(
+            weather,
+            "2026-08-31",
+            sunrise=datetime.datetime(2026, 8, 31, 6, 30, tzinfo=datetime.UTC),
+            sunset=datetime.datetime(2026, 8, 31, 20, 15, tzinfo=datetime.UTC),
         )
 
         panel = build_point_forecast_panel(weather, timezone.now())
@@ -511,9 +430,18 @@ class TestBuildPointForecastPanel:
         assert [day["sunset_local"] for day in panel["days"]] == ["19:40", "20:15"]
 
     @freeze_time(MIDDAY)
-    def test_forward_day_scalars_reach_the_column(self) -> None:
-        """A forward day renders its own temps, snowfall and freezing level."""
-        weather = WeatherFactory.create(forecast=[_forecast_day(weather_code=73)])
+    def test_following_day_scalars_reach_the_column(self) -> None:
+        """A following day renders its own icon, temps, snowfall and freezing level."""
+        weather = WeatherFactory.create(observed_on=datetime.date(2026, 8, 30))
+        _following(
+            weather,
+            "2026-08-31",
+            weather_code=73,
+            temperature_2m_max=3.0,
+            temperature_2m_min=-4.0,
+            snowfall_sum=12.0,
+            freezing_level_height=2100.0,
+        )
 
         panel = build_point_forecast_panel(weather, timezone.now())
 
@@ -529,68 +457,6 @@ class TestBuildPointForecastPanel:
 
 
 @pytest.mark.django_db
-class TestStoredIconBucket:
-    """SNOW-1343: the outlook reads a forward day's stored bucket."""
-
-    @freeze_time(MIDDAY)
-    def test_the_stored_bucket_is_preferred_over_the_code(self) -> None:
-        """The service's reading of the day wins over a local derivation."""
-        weather = WeatherFactory.create(
-            forecast=[_forecast_day(weather_code=71, icon_bucket="heavy_snow")]
-        )
-
-        panel = build_point_forecast_panel(weather, timezone.now())
-
-        assert panel is not None
-        assert panel["days"][1]["icon_bucket"] == "heavy_snow"
-        assert panel["days"][1]["icon_filename"] == "heavy_snow.svg"
-        assert panel["days"][1]["condition_label"] == "Heavy snow"
-
-    @freeze_time(MIDDAY)
-    def test_a_legacy_day_falls_back_to_its_code(self) -> None:
-        """A day stored before SNOW-1343 carries no bucket and still draws."""
-        weather = WeatherFactory.create(forecast=[_forecast_day(weather_code=73)])
-
-        panel = build_point_forecast_panel(weather, timezone.now())
-
-        assert panel is not None
-        assert panel["days"][1]["icon_bucket"] == "moderate_snow"
-
-    @freeze_time(MIDDAY)
-    def test_an_unknown_stored_bucket_falls_back_to_the_code(self) -> None:
-        """A bucket naming no drawing is not trusted over the code."""
-        weather = WeatherFactory.create(
-            forecast=[_forecast_day(weather_code=45, icon_bucket="sleet")]
-        )
-
-        panel = build_point_forecast_panel(weather, timezone.now())
-
-        assert panel is not None
-        assert panel["days"][1]["icon_bucket"] == "fog"
-
-    @pytest.mark.parametrize(
-        ("instant", "expected"),
-        [
-            ("2026-08-31T10:00:00+00:00", "clear-day.svg"),
-            ("2026-08-31T21:00:00+00:00", "clear-night.svg"),
-        ],
-    )
-    def test_day_or_night_is_still_decided_at_read_time(
-        self, instant: str, expected: str
-    ) -> None:
-        """The stored bucket names a drawing; the hour picks its variant."""
-        weather = WeatherFactory.create(
-            forecast=[_forecast_day(weather_code=3, icon_bucket="clear")]
-        )
-
-        with freeze_time(instant):
-            panel = build_point_forecast_panel(weather, timezone.now())
-
-        assert panel is not None
-        assert panel["days"][1]["icon_filename"] == expected
-
-
-@pytest.mark.django_db
 class TestBuildPointWeatherDays:
     """Tests for the map feed's ``days`` projection."""
 
@@ -598,79 +464,45 @@ class TestBuildPointWeatherDays:
         """A location with no row contributes no days, not an error."""
         assert build_point_weather_days(None) == {}
 
-    def test_row_and_forecast_are_keyed_by_iso_date(self) -> None:
-        """The row's own day and every forward day appear, keyed by date."""
+    def test_every_row_is_keyed_by_iso_date(self) -> None:
+        """The lead day and every following row appear, keyed by date."""
         weather = WeatherFactory.create(
             observed_on=datetime.date(2026, 8, 30),
             weather_code=3,
             temperature_2m_max=4.5,
-            forecast=[
-                _forecast_day(
-                    date="2026-08-31", weather_code=71, temperature_2m_max=1.0
-                )
-            ],
+        )
+        following = _following(
+            weather, "2026-08-31", weather_code=71, temperature_2m_max=1.0
         )
 
-        days = build_point_weather_days(weather)
+        days = build_point_weather_days(weather, following)
 
         assert days == {
             "2026-08-30": {"code": 3, "icon": "cloudy.svg", "tmax": 4.5},
             "2026-08-31": {"code": 71, "icon": "light_snow.svg", "tmax": 1.0},
         }
 
-    def test_a_stored_icon_bucket_names_the_icon(self) -> None:
-        """SNOW-1343: the service's stored bucket wins over the code."""
-        weather = WeatherFactory.create(
-            observed_on=datetime.date(2026, 8, 30),
-            forecast=[
-                _forecast_day(
-                    date="2026-08-31", weather_code=71, icon_bucket="heavy_snow"
-                )
-            ],
-        )
-
-        days = build_point_weather_days(weather)
-
-        assert days["2026-08-31"]["icon"] == "heavy_snow.svg"
-        assert days["2026-08-31"]["code"] == 71
-
-    def test_a_legacy_day_derives_its_icon_from_the_code(self) -> None:
-        """A day stored before SNOW-1343 has no bucket and is not rewritten."""
-        weather = WeatherFactory.create(
-            observed_on=datetime.date(2026, 8, 30),
-            forecast=[_forecast_day(date="2026-08-31", weather_code=95)],
-        )
-
-        assert build_point_weather_days(weather)["2026-08-31"]["icon"] == (
-            "thunder.svg"
-        )
-
     @freeze_time("2026-08-30T23:30:00+00:00")
     def test_the_map_always_takes_the_day_variant(self) -> None:
         """A map symbol summarises the day, so a pair is never a moon."""
         weather = WeatherFactory.create(
-            observed_on=datetime.date(2026, 8, 30),
-            weather_code=0,
-            forecast=[
-                _forecast_day(
-                    date="2026-08-31", weather_code=0, icon_bucket="partly_cloudy"
-                )
-            ],
+            observed_on=datetime.date(2026, 8, 30), weather_code=0
         )
+        following = _following(weather, "2026-08-31", weather_code=2)
 
-        days = build_point_weather_days(weather)
+        days = build_point_weather_days(weather, following)
 
         assert days["2026-08-30"]["icon"] == "clear-day.svg"
         assert days["2026-08-31"]["icon"] == "partly_cloudy-day.svg"
 
-    def test_a_malformed_forward_day_is_skipped(self) -> None:
-        """An unparseable entry drops out rather than taking the feed down."""
-        weather = WeatherFactory.create(
-            observed_on=datetime.date(2026, 8, 30),
-            forecast=[{"weather_code": 3}, _forecast_day(date="2026-08-31")],
-        )
 
-        assert sorted(build_point_weather_days(weather)) == [
-            "2026-08-30",
-            "2026-08-31",
-        ]
+def _following(lead: Weather, *dates: str, **fields: Any) -> list[Weather]:
+    """Create one row per ISO date for ``lead``'s place, with ``fields``."""
+    return [
+        WeatherFactory.create(
+            location=lead.location,
+            observed_on=datetime.date.fromisoformat(day),
+            **fields,
+        )
+        for day in dates
+    ]

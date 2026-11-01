@@ -1,29 +1,28 @@
 """
 apps/weather/services/weather_display.py — Render-time helpers for ``Weather``.
 
-Turns one ``apps.weather.models.Weather`` row — the day it is *of*, plus the
-forward days in its ``forecast`` column — into the context dicts the
-server-rendered surfaces read, and into the lean ``days`` dict the map's
-weather feed serves.
+Turns ``apps.weather.models.Weather`` rows — one day each, and the rows that
+follow a day for its outlook — into the context dicts the server-rendered
+surfaces read, and into the lean ``days`` dict the map's weather feed serves.
 
 Three consumers, one derivation:
 
   ``build_weather_display``      the single day on the favourite card and
                                  the help page's weather illustration.
   ``build_point_forecast_panel`` the multi-day outlook: the row's own day
-                                 followed by every entry in ``forecast``.
+                                 followed by the next rows for the place.
                                  Drives both the day picker and the
                                  selected-day line on the location
                                  forecast page.
   ``build_point_weather_days``   the map feed's ``{date: {code, icon,
                                  tmax}}`` projection (``apps.public.api``).
 
-**One row in, not a list.** The pre-SNOW-762 version of this module took a
-``WeatherSnapshot | ForecastCellWeather`` and hedged every field read behind
-``getattr(..., None)`` because the two models did not agree on what they
-carried. There is one model now, so every read here is a direct attribute
-access and the forward days come from that row's own ``forecast`` list
-rather than from N sibling rows. The caller's read path is always
+**A day is a row, and so is every day after it** (SNOW-1337). Each fetch
+writes one row per day of its seven-day window, so the outlook from a day is
+the rows that follow it for the same place — read in one query
+(``following_rows``), or handed in by a caller that already holds them
+for many places at once. Every read is a direct attribute access on a
+``Weather``. The caller's read path for the lead day is always
 ``Weather.objects.filter(location=…, observed_on=…).first()`` on the unique
 constraint — never ``.order_by("-fetched_at").first()``, since today's row is
 updated in place.
@@ -56,31 +55,26 @@ WMO code reference:
 
 The code → icon-bucket table is the weather service's, not this module's:
 ``WMO_CODE_TO_ICON_BUCKET`` and ``icon_bucket_for_code`` live in
-``apps.ingest.normalise.weather_icons`` (SNOW-1343), which writes each
-forward day's ``icon_bucket`` into the ``forecast[]`` entry it stores. A
-reader here prefers that stored bucket and falls back to deriving one from
-``weather_code`` — every day stored before SNOW-1343 lacks the key, and no
-past row is rewritten. The row's own day has no stored bucket (there is no
-column for it) and always derives. The map no longer carries a mirror of the
-table: the feed serves each day's ``icon`` filename. Which variant of a
-day/night pair a panel shows is still decided here, at read time, from the
-day's stored sunrise and sunset.
+``apps.ingest.normalise.weather_icons`` (SNOW-1343), and every day's bucket
+is derived from its row's ``weather_code`` through it. The map no longer
+carries a mirror of the table: the feed serves each day's ``icon``
+filename. Which variant of a day/night pair a panel shows is still decided
+here, at read time, from the day's stored sunrise and sunset.
 """
 
 from __future__ import annotations
 
 import datetime
-from typing import TYPE_CHECKING, TypedDict
+from collections.abc import Sequence
+from typing import TypedDict
 
 from apps.ingest.public import (
+    FORECAST_DAYS,
     WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT,
     icon_bucket_for_code,
 )
-from apps.weather.types import ForecastDay, HourlyRow
-
-if TYPE_CHECKING:
-    from apps.weather.models import Weather
-
+from apps.weather.models import Weather
+from apps.weather.types import HourlyRow
 
 # ---------------------------------------------------------------------------
 # Background buckets
@@ -208,31 +202,6 @@ def weather_code_icon_bucket(code: int) -> str:
     return icon_bucket_for_code(code)
 
 
-def _stored_icon_bucket(entry: ForecastDay) -> str:
-    """Return a forward day's icon bucket, preferring the stored one.
-
-    A day stored since SNOW-1343 carries the service's ``icon_bucket``; one
-    stored before it does not, and is never rewritten, so it falls back to
-    deriving the bucket from ``weather_code``. A stored value naming no
-    known drawing is treated as absent rather than trusted.
-
-    Args:
-        entry: One :class:`apps.weather.types.ForecastDay` dict.
-
-    Returns:
-        One of the bucket identifiers in :data:`WEATHER_ICON_BUCKETS`.
-
-    Raises:
-        KeyError: When the entry has neither a usable ``icon_bucket`` nor a
-            ``weather_code`` — the caller drops such a day as malformed.
-
-    """
-    stored = entry.get("icon_bucket")
-    if stored is not None and stored in _ICON_BUCKET_LABEL:
-        return stored
-    return weather_code_icon_bucket(entry["weather_code"])
-
-
 def weather_icon_filename(icon_bucket: str, time_of_day: str) -> str:
     """Return the weather SVG basename for a bucket and time of day.
 
@@ -265,10 +234,8 @@ def _is_day_between(
 ) -> bool:
     """Return whether the wall-clock ``now`` sits inside the day window.
 
-    The shared body of :func:`is_day` and the per-forecast-day decision in
-    :func:`build_point_forecast_panel`, which reads its sunrise/sunset off a
-    ``ForecastDay`` rather than off a model instance. The rule is identical
-    in both, so it is written once.
+    The body of :func:`is_day`, kept separate so the rule can be read and
+    tested on its own.
 
     Args:
         sunrise: Sunrise, as an aware datetime.
@@ -455,9 +422,8 @@ class ForecastPanelDay(TypedDict):
     # Every column in the day picker is a control now, so this no longer
     # decides which ones are; it decides only whether selecting this day
     # reveals an ``_hourly_chart.html`` beneath the picker. Presence of an
-    # hourly series, NOT truthiness of some other field — a forward day
-    # past HOURLY_DAYS has no 'hourly' key at all, and an empty list is
-    # equally "no detail to show". Kept as its own field rather than left
+    # hourly series, NOT truthiness of some other field — a row with a null
+    # or empty ``hourly`` has no detail to show. Kept as its own field rather than left
     # to the template testing ``day.hourly``, so the rule lives where it
     # can be tested.
     selectable: bool
@@ -474,78 +440,79 @@ class ForecastPanel(TypedDict):
     days: list[ForecastPanelDay]
 
 
-def _forecast_day_context(
-    entry: ForecastDay, now: datetime.datetime
-) -> ForecastPanelDay | None:
-    """Build one outlook column from a ``forecast[]`` entry.
+def following_rows(weather: Weather) -> list[Weather]:
+    """Return the rows after ``weather``'s day for the same place, in order.
 
-    ``hourly`` is **optional** on a forward day — only the first few entries
-    carry one (see ``apps.weather.services.fetch``) — so it is read with
-    ``.get()`` and falls back to an empty list rather than being assumed.
+    The outlook from a day is the next ``FORECAST_DAYS - 1`` days' rows
+    (SNOW-1337): for today, the six days ahead the last fetch wrote; for a
+    past day, the rows that stand for the days after it. A day with no row
+    is simply absent.
 
     Args:
-        entry: One :class:`apps.weather.types.ForecastDay` dict.
+        weather: The lead day's row.
+
+    Returns:
+        Up to ``FORECAST_DAYS - 1`` rows, oldest day first.
+
+    """
+    return list(
+        Weather.objects.filter(location_id=weather.location_id).window(
+            weather.observed_on + datetime.timedelta(days=1), FORECAST_DAYS - 1
+        )
+    )
+
+
+def _row_day_context(weather: Weather, now: datetime.datetime) -> ForecastPanelDay:
+    """Build one outlook column from one row.
+
+    Args:
+        weather: The row for the day.
         now: The reference instant for the day/night icon decision.
 
     Returns:
-        A :class:`ForecastPanelDay`, or ``None`` when the entry's ``date``,
-        ``sunrise``, ``sunset`` or ``weather_code`` cannot be read — a
-        malformed forward day drops out of the strip rather than taking the
-        page with it.
+        The day's :class:`ForecastPanelDay`.
 
     """
-    try:
-        day_date = datetime.date.fromisoformat(entry["date"])
-        sunrise = datetime.datetime.fromisoformat(entry["sunrise"])
-        sunset = datetime.datetime.fromisoformat(entry["sunset"])
-        # Inside the guard alongside the date parsing (and matching
-        # build_point_weather_days below): a day with neither a stored
-        # icon_bucket nor a weather_code is as malformed as one missing its
-        # date, and must drop out the same way rather than raising KeyError
-        # past the caller.
-        icon_bucket = _stored_icon_bucket(entry)
-    except KeyError, TypeError, ValueError:
-        return None
-    time_of_day = "day" if _is_day_between(sunrise, sunset, now) else "night"
+    time_of_day = "day" if is_day(weather, now) else "night"
+    bucket = weather_code_icon_bucket(weather.weather_code)
     return ForecastPanelDay(
-        date=day_date,
-        weekday_label=day_date.strftime("%a"),
-        icon_bucket=icon_bucket,
-        icon_filename=weather_icon_filename(icon_bucket, time_of_day),
-        condition_label=_ICON_BUCKET_LABEL[icon_bucket],
-        temp_max=entry.get("temperature_2m_max"),
-        temp_min=entry.get("temperature_2m_min"),
-        snowfall_sum=entry.get("snowfall_sum"),
-        freezing_level_height=entry.get("freezing_level_height"),
-        wind_speed_max=entry.get("wind_speed_10m_max"),
-        wind_bearing=entry.get("wind_direction_10m_dominant"),
-        precipitation_probability_max=entry.get("precipitation_probability_max"),
-        # Formatted off the already-parsed locals, so the offset shown is
-        # the one the provider stamped on THAT day — not the Django-active
-        # TIME_ZONE, and not the lead day's.
-        sunrise_local=sunrise.strftime("%H:%M"),
-        sunset_local=sunset.strftime("%H:%M"),
-        # NotRequired on ForecastDay — a forward day past HOURLY_DAYS has no
-        # 'hourly' key at all, so this is a presence check, not a null check.
-        hourly=(hourly := list(entry.get("hourly") or [])),
+        date=weather.observed_on,
+        weekday_label=weather.observed_on.strftime("%a"),
+        icon_bucket=bucket,
+        icon_filename=weather_icon_filename(bucket, time_of_day),
+        condition_label=_ICON_BUCKET_LABEL[bucket],
+        temp_max=weather.temperature_2m_max,
+        temp_min=weather.temperature_2m_min,
+        snowfall_sum=weather.snowfall_sum,
+        freezing_level_height=weather.freezing_level_height,
+        wind_speed_max=weather.wind_speed_10m_max,
+        wind_bearing=weather.wind_direction_10m_dominant,
+        precipitation_probability_max=weather.precipitation_probability_max,
+        # Same rule as WeatherDisplay: the wall-clock time AT THE LOCATION,
+        # in the row's stored offset — each day's own, not the lead day's.
+        sunrise_local=weather.sunrise.strftime("%H:%M"),
+        sunset_local=weather.sunset.strftime("%H:%M"),
+        hourly=(hourly := list(weather.hourly or [])),
         selectable=bool(hourly),
     )
 
 
 def build_point_forecast_panel(
-    weather: "Weather | None", now: datetime.datetime
+    weather: Weather | None,
+    now: datetime.datetime,
+    following: Sequence[Weather] | None = None,
 ) -> ForecastPanel | None:
-    """Build the multi-day outlook for one location from one row.
+    """Build the multi-day outlook for one location from its rows.
 
-    The row's own day leads, followed by each entry in its ``forecast``
-    column in stored order — which is the provider's own ``daily.time``
-    order, ascending (SNOW-466). No second query: the forward days were
-    written alongside the day they were known on, which is the whole point
-    of the column.
+    The row's own day leads, followed by the rows for the days after it
+    (SNOW-1337), in date order.
 
     Args:
-        weather: The row whose day and forward days to render, or ``None``.
+        weather: The lead day's row, or ``None``.
         now: The reference instant for each day's day/night icon decision.
+        following: The rows after the lead day, oldest first, when the
+            caller already holds them. Defaults to None, which reads them
+            with :func:`following_rows` — one query.
 
     Returns:
         A :class:`ForecastPanel`, or ``None`` when ``weather`` is ``None``.
@@ -553,35 +520,8 @@ def build_point_forecast_panel(
     """
     if weather is None:
         return None
-    lead_time_of_day = "day" if is_day(weather, now) else "night"
-    lead_bucket = weather_code_icon_bucket(weather.weather_code)
-    days: list[ForecastPanelDay] = [
-        ForecastPanelDay(
-            date=weather.observed_on,
-            weekday_label=weather.observed_on.strftime("%a"),
-            icon_bucket=lead_bucket,
-            icon_filename=weather_icon_filename(lead_bucket, lead_time_of_day),
-            condition_label=_ICON_BUCKET_LABEL[lead_bucket],
-            temp_max=weather.temperature_2m_max,
-            temp_min=weather.temperature_2m_min,
-            snowfall_sum=weather.snowfall_sum,
-            freezing_level_height=weather.freezing_level_height,
-            wind_speed_max=weather.wind_speed_10m_max,
-            wind_bearing=weather.wind_direction_10m_dominant,
-            precipitation_probability_max=weather.precipitation_probability_max,
-            # Same rule as WeatherDisplay: the wall-clock time AT THE
-            # LOCATION, in the row's stored offset.
-            sunrise_local=weather.sunrise.strftime("%H:%M"),
-            sunset_local=weather.sunset.strftime("%H:%M"),
-            hourly=(lead_hourly := list(weather.hourly or [])),
-            selectable=bool(lead_hourly),
-        )
-    ]
-    for entry in weather.forecast or []:
-        day = _forecast_day_context(entry, now)
-        if day is not None:
-            days.append(day)
-    return ForecastPanel(days=days)
+    rows = following_rows(weather) if following is None else following
+    return ForecastPanel(days=[_row_day_context(row, now) for row in (weather, *rows)])
 
 
 # ---------------------------------------------------------------------------
@@ -607,20 +547,22 @@ class PointWeatherDay(TypedDict):
 
 
 def build_point_weather_days(
-    weather: "Weather | None",
+    weather: Weather | None,
+    following: Sequence[Weather] = (),
 ) -> dict[str, PointWeatherDay]:
-    """Project one row and its forward days into the map feed's ``days`` dict.
+    """Project a lead row and the rows after it into the map feed's ``days``.
 
     Takes no ``now``: there is no day/night decision here. A map symbol
     summarises a whole calendar day, so where the set draws a day/night
     pair the map always takes the DAY variant — switching every station to
     a moon because the reader is up late would describe the reader, not the
-    day. A forward day's bucket is its stored ``icon_bucket`` when it has
-    one, else derived from its ``weather_code``; the row's own day always
-    derives.
+    day.
 
     Args:
-        weather: The row to project, or ``None``.
+        weather: The lead day's row, or ``None``.
+        following: The rows after it, oldest first. The map feed reads the
+            whole week for every place in one query and hands each place's
+            rows in here, so this never queries.
 
     Returns:
         A dict keyed by ISO date string (``"2026-08-30"``). Empty when
@@ -629,24 +571,13 @@ def build_point_weather_days(
     """
     if weather is None:
         return {}
-    days: dict[str, PointWeatherDay] = {
-        weather.observed_on.isoformat(): PointWeatherDay(
-            code=weather.weather_code,
+    return {
+        row.observed_on.isoformat(): PointWeatherDay(
+            code=row.weather_code,
             icon=weather_icon_filename(
-                weather_code_icon_bucket(weather.weather_code), "day"
+                weather_code_icon_bucket(row.weather_code), "day"
             ),
-            tmax=weather.temperature_2m_max,
+            tmax=row.temperature_2m_max,
         )
+        for row in (weather, *following)
     }
-    for entry in weather.forecast or []:
-        try:
-            date_key = datetime.date.fromisoformat(entry["date"]).isoformat()
-            code = int(entry["weather_code"])
-        except KeyError, TypeError, ValueError:
-            continue
-        days[date_key] = PointWeatherDay(
-            code=code,
-            icon=weather_icon_filename(_stored_icon_bucket(entry), "day"),
-            tmax=entry.get("temperature_2m_max"),
-        )
-    return days
