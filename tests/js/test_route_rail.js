@@ -400,6 +400,29 @@ describe('open', () => {
       expect(window.pwaSkiTours.savedBlock).toHaveBeenCalledWith({ grade: 'AD' });
     });
 
+    it('ends a saved copy\'s title with the guide pill (SNOW-1354)', () => {
+      const pill = document.createElement('a');
+      pill.setAttribute('data-route-rail-guide', '');
+      window.pwaSkiTours.guidePill = vi.fn(() => pill);
+      window.pwaRouteRail.open(feature({ sac: { sac_url: 'https://sac.example/t' } }));
+
+      const title = rail.querySelector('[data-route-rail-title]');
+      expect(title.lastElementChild).toBe(pill);
+      expect(window.pwaSkiTours.guidePill).toHaveBeenCalledWith({ sac_url: 'https://sac.example/t' });
+
+      // The next route, no SAC copy, takes the pill away.
+      window.pwaRouteRail.open(feature());
+      expect(title.querySelector('[data-route-rail-guide]')).toBeNull();
+    });
+
+    it('gives an SAC tour not yet saved no pill: it keeps the button (SNOW-1354)', () => {
+      window.pwaSkiTours.guidePill = vi.fn(() => document.createElement('a'));
+      window.pwaRouteRail.open(feature({ uuid: undefined, tour: true, tour_uuid: 'abc' }));
+
+      expect(window.pwaSkiTours.guidePill).not.toHaveBeenCalled();
+      expect(rail.querySelector('[data-route-rail-guide]')).toBeNull();
+    });
+
     it('seats the SAC block above a shared copy\'s Save', () => {
       const save = document.createElement('button');
       window.pwaRouteRail.open(

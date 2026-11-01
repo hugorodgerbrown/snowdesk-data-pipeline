@@ -247,7 +247,8 @@ const OVERLAY_LAYERS = Object.freeze({
   // SNOW-1019's route-cursor dot appends on those terms once more: a
   // mark on a route the reader has switched off would be a mark on
   // nothing. SNOW-1052 removed the two selection-stretch layers.
-  // SNOW-1145's three cursor-segment layers append on the same terms.
+  // SNOW-1145's three cursor-segment layers append on the same terms, and
+  // SNOW-1354's ring round the segment after them.
   // SNOW-1019 also took the fall-line arrows' 'routes-fall-lines' and
   // SNOW-964's two passage layers off the map, and out of this list: the
   // line carries no terrain marks.
@@ -259,6 +260,8 @@ const OVERLAY_LAYERS = Object.freeze({
     'routes-cursor-segment-casing',
     'routes-cursor-segment-halo',
     'routes-cursor-segment',
+    'routes-cursor-ring-casing',
+    'routes-cursor-ring',
     'routes-cursor-point-halo',
     'routes-cursor-point',
   ],

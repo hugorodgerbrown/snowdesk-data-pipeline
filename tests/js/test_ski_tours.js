@@ -87,7 +87,8 @@ async function boot(answer) {
   document.body.innerHTML = `
     <div id="ski-tours-config" data-geojson-url="${GEOJSON_URL}"></div>
     <div id="ski-tours-hint" hidden><span data-ski-tours-hint-text></span></div>
-    <template id="ski-tour-claim-template"><div></div></template>`;
+    <template id="ski-tour-claim-template"><div><div data-ski-tour-actions><a data-ski-tour-guide href="#">SAC guide</a></div><p data-credit></p></div></template>
+    <template id="ski-tour-guide-pill-template"><a data-route-rail-guide href="#">SAC guide</a></template>`;
   toast = vi.fn();
   window.MapSheet = { toast };
   const map = stubMap();
@@ -228,5 +229,28 @@ describe('the layer turned on any other way', () => {
     await settle();
 
     expect(toast).not.toHaveBeenCalled();
+  });
+});
+
+describe('a saved copy\'s guide (SNOW-1354)', () => {
+  it('is a pill for the title, not a button in the block', async () => {
+    await boot(lands);
+    const sac = { sac_url: 'https://www.sac-cas.ch/de/' };
+
+    const block = window.pwaSkiTours.savedBlock(sac);
+    expect(block.querySelector('[data-ski-tour-guide]')).toBeNull();
+    expect(block.querySelector('[data-ski-tour-actions]')).toBeNull();
+    expect(block.querySelector('[data-credit]')).not.toBeNull();
+
+    const pill = window.pwaSkiTours.guidePill(sac);
+    expect(pill.getAttribute('href')).toBe('https://www.sac-cas.ch/de/');
+    expect(pill.hasAttribute('data-route-rail-guide')).toBe(true);
+  });
+
+  it('has no pill without a guide URL', async () => {
+    await boot(lands);
+
+    expect(window.pwaSkiTours.guidePill({})).toBeNull();
+    expect(window.pwaSkiTours.guidePill(null)).toBeNull();
   });
 });

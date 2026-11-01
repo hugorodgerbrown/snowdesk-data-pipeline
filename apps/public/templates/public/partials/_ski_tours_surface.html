@@ -91,6 +91,21 @@ Context expected:
         <p class="text-meta text-text-3">{% trans "SAC ski tours © swisstopo" %}</p>
     </div>
 </template>
+{# SNOW-1354: a saved copy's guide, at the end of its title in the route  #}
+{# panel, in place of the outlined button an unsaved tour keeps: once the  #}
+{# route is the reader's, the guide is a reference, not an action.         #}
+<template id="ski-tour-guide-pill-template">
+    <a
+        data-route-rail-guide
+        href="#"
+        target="_blank"
+        rel="noopener"
+        class="hover-affordance ml-1 inline-flex items-center gap-0.5 whitespace-nowrap rounded-pill bg-status-info-bg px-2 py-0.5 align-[2px] text-pill font-semibold text-status-info-text"
+    >
+        {% trans "SAC guide" %}
+        {% include "includes/_icon_external_link.html" with size=11 %}
+    </a>
+</template>
 {# Every user-facing string ski_tours.js writes (docs/i18n.md).            #}
 <template id="ski-tours-strings-template">
     <span data-string="hint">{% trans "Tap a route" %}</span>

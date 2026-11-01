@@ -156,18 +156,6 @@ Context:
         <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
                 {% include "includes/_eyebrow.html" with text=route_rail_eyebrow tag="h2" heading_id="route-rail-eyebrow" class_extra="truncate" %}
-                {# The route's name.                                          #}
-                <p data-route-rail-title class="mt-1 text-sm font-semibold text-text-1 text-balance">
-                    <span data-row-label data-route-rail-name></span>
-                </p>
-                <input
-                    type="text"
-                    data-row-rename-input
-                    hidden
-                    maxlength="{{ route_name_max_length }}"
-                    aria-label="{% trans 'Route name' %}"
-                    class="mt-1 w-full rounded-tag border border-border bg-card px-2 py-1 text-sm text-text-1"
-                >
             </div>
             <div class="-mr-3 -mt-3 flex flex-none items-start">
                 {# Centre on route (Hugo, 2026-10-31): with no point, frames   #}
@@ -198,6 +186,21 @@ Context:
                 </button>
             </div>
         </div>
+        {# The route's name, the full width of the panel under the icon   #}
+        {# row, wrapping only where it must (SNOW-1354: beside the icons, #}
+        {# and balanced, a long SAC name took three lines). A saved SAC   #}
+        {# copy's "SAC guide ↗" pill follows the name (route_rail.js).    #}
+        <p data-route-rail-title class="mt-1 text-sm font-semibold text-text-1">
+            <span data-row-label data-route-rail-name></span>
+        </p>
+        <input
+            type="text"
+            data-row-rename-input
+            hidden
+            maxlength="{{ route_name_max_length }}"
+            aria-label="{% trans 'Route name' %}"
+            class="mt-1 w-full rounded-tag border border-border bg-card px-2 py-1 text-sm text-text-1"
+        >
         {# The meta line: the route's, in the routes list's format.       #}
         {# Filled by static/js/route_rail.js.                             #}
         {# PEEK ends at the foot of the meta line (data-sheet-peek,        #}
