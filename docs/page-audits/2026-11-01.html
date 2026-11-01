@@ -1,0 +1,428 @@
+<title>Snowdesk page audit — 25 October 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&amp;family=DM+Mono:wght@400;500&amp;display=swap">
+<style>
+:root {
+  --ground:      #F4F6F8;
+  --card:        #FFFFFF;
+  --card-sunk:   #EDF1F4;
+  --text-1:      #0F1519;
+  --text-2:      #48545E;
+  --text-3:      #7A8792;
+  --border:      #DDE3E8;
+  --border-soft: #E9EEF1;
+  --accent:      #0B6273;
+  --accent-soft: #E2F0F3;
+  --sev-broken:  #A32E27;
+  --sev-broken-bg: #F8EAE9;
+  --sev-orphan:  #8A6210;
+  --sev-orphan-bg: #F8F0DF;
+  --sev-thin:    #0B6273;
+  --sev-thin-bg: #E2F0F3;
+  --ok:          #2E6B4F;
+  --ok-bg:       #E4F0EA;
+  --new:         #5B4B9E;
+  --new-bg:      #ECE9F6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #0C1013;
+    --card:        #141A1F;
+    --card-sunk:   #10161A;
+    --text-1:      #E7EDF1;
+    --text-2:      #A0ABB5;
+    --text-3:      #6B7781;
+    --border:      #222A31;
+    --border-soft: #1B2229;
+    --accent:      #4FC6DC;
+    --accent-soft: #0E2A31;
+    --sev-broken:  #EC7B72;
+    --sev-broken-bg: #2A1614;
+    --sev-orphan:  #DDA544;
+    --sev-orphan-bg: #271D0D;
+    --sev-thin:    #4FC6DC;
+    --sev-thin-bg: #0E2A31;
+    --ok:          #6FBF95;
+    --ok-bg:       #12241B;
+    --new:         #A99AE0;
+    --new-bg:      #1C1830;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:      #0C1013;
+  --card:        #141A1F;
+  --card-sunk:   #10161A;
+  --text-1:      #E7EDF1;
+  --text-2:      #A0ABB5;
+  --text-3:      #6B7781;
+  --border:      #222A31;
+  --border-soft: #1B2229;
+  --accent:      #4FC6DC;
+  --accent-soft: #0E2A31;
+  --sev-broken:  #EC7B72;
+  --sev-broken-bg: #2A1614;
+  --sev-orphan:  #DDA544;
+  --sev-orphan-bg: #271D0D;
+  --sev-thin:    #4FC6DC;
+  --sev-thin-bg: #0E2A31;
+  --ok:          #6FBF95;
+  --ok-bg:       #12241B;
+  --new:         #A99AE0;
+  --new-bg:      #1C1830;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--text-1);
+  font-family: 'DM Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 61rem; margin: 0 auto; padding: 0 1.5rem 6rem; }
+.col { max-width: 43rem; }
+
+.eyebrow {
+  font-family: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+  margin: 0;
+}
+
+.masthead { padding: 4.5rem 0 2.5rem; border-bottom: 1px solid var(--border); }
+.masthead h1 {
+  font-size: clamp(2rem, 5vw, 2.9rem);
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  font-weight: 600;
+  text-wrap: balance;
+  margin: 0.75rem 0 0;
+  max-width: 20ch;
+}
+.standfirst {
+  font-size: 1.125rem;
+  line-height: 1.55;
+  color: var(--text-2);
+  margin: 1.25rem 0 0;
+  max-width: 52ch;
+}
+.masthead-meta { display: flex; flex-wrap: wrap; gap: 0.4rem 1.5rem; margin-top: 2rem; }
+.masthead-meta p { margin: 0; }
+
+section { padding-top: 3.5rem; }
+section > .eyebrow { margin-bottom: 0.6rem; }
+
+h2 {
+  font-size: 1.5rem;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  font-weight: 600;
+  margin: 0 0 1rem;
+  text-wrap: balance;
+}
+h3 { font-size: 1.0625rem; line-height: 1.35; font-weight: 600; margin: 0; text-wrap: balance; }
+p { margin: 0 0 1rem; }
+p:last-child { margin-bottom: 0; }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+code, .mono { font-family: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.875em; }
+code {
+  background: var(--card-sunk);
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  padding: 0.08em 0.34em;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+strong { font-weight: 600; color: var(--text-1); }
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 2rem 0 0;
+}
+.metric { background: var(--card); padding: 1.05rem 1.15rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.metric .figure {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 1.6rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+}
+.metric .label { font-size: 0.8125rem; line-height: 1.35; color: var(--text-3); }
+
+.table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+table { border-collapse: collapse; width: 100%; min-width: 46rem; font-size: 0.875rem; }
+thead th {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+  text-align: left;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+tbody td { padding: 0.8rem 1rem; border-bottom: 1px solid var(--border-soft); vertical-align: top; color: var(--text-2); }
+tbody tr:last-child td { border-bottom: 0; }
+tbody td:first-child {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.8125rem;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+td.num { font-family: 'DM Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+
+.pill {
+  display: inline-block;
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.pill-broken { background: var(--sev-broken-bg); color: var(--sev-broken); }
+.pill-orphan { background: var(--sev-orphan-bg); color: var(--sev-orphan); }
+.pill-thin   { background: var(--sev-thin-bg);   color: var(--sev-thin); }
+.pill-ok     { background: var(--ok-bg);         color: var(--ok); }
+.pill-gone   { background: var(--card-sunk);     color: var(--text-3); }
+.pill-new    { background: var(--new-bg);        color: var(--new); }
+
+.findings { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.75rem; }
+.finding {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--stripe, var(--text-3));
+  border-radius: 0 10px 10px 0;
+  padding: 1.25rem 1.4rem;
+}
+.finding.broken { --stripe: var(--sev-broken); }
+.finding.orphan { --stripe: var(--sev-orphan); }
+.finding.thin   { --stripe: var(--sev-thin); }
+.finding.done   { --stripe: var(--ok); }
+.finding.newwork { --stripe: var(--new); }
+
+.finding-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 0.75rem; margin-bottom: 0.7rem; }
+.finding-head .ref { font-family: 'DM Mono', ui-monospace, monospace; font-size: 0.75rem; color: var(--text-3); letter-spacing: 0.02em; }
+.finding p { font-size: 0.9375rem; color: var(--text-2); }
+
+.evidence {
+  margin: 0.9rem 0 0;
+  padding: 0.75rem 0.95rem;
+  background: var(--card-sunk);
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--text-2);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.evidence li { padding-left: 1.1rem; position: relative; }
+.evidence li::before { content: ''; position: absolute; left: 0; top: 0.6em; width: 5px; height: 1px; background: var(--text-3); }
+.evidence .k { font-family: 'DM Mono', ui-monospace, monospace; font-size: 0.9em; color: var(--text-1); }
+
+.statement {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 10px 10px 0;
+  padding: 1.5rem 1.6rem;
+  margin-top: 1.75rem;
+}
+.statement p { font-size: 1.0625rem; line-height: 1.55; color: var(--text-1); }
+.statement p + p { color: var(--text-2); font-size: 0.9375rem; }
+
+.qgroups { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.75rem; }
+.qgroup { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.35rem 1.5rem; }
+.qgroup h3 { margin-bottom: 0.65rem; }
+.qgroup p { font-size: 0.9375rem; color: var(--text-2); }
+
+.note { border-left: 2px solid var(--border); padding-left: 1rem; color: var(--text-3); font-size: 0.875rem; margin-top: 1.5rem; }
+
+@media (prefers-reduced-motion: no-preference) { a { transition: color 120ms ease; } }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Page audit · 25 October – 1 November · 1 November 2026</p>
+    <h1>The reading guide finally covers all three providers after ten audits, bulletin alerts landed behind a superuser flag, and the homepage lost three panels and gained a daily read</h1>
+    <p class="standfirst">
+      165 commits, 1,004 files since the 25 October audit. Three tracked findings closed (the SLF-only guide,
+      the DRAFT header, the wrong footer comment), the alerting rebuild moved from zero models to a dark launch,
+      and <code>/compare/</code> is now genuinely unlinked from every page.
+    </p>
+    <div class="masthead-meta">
+      <p class="eyebrow">Baseline <span class="mono">b09d298</span> (25 Oct) → now <span class="mono">0b9ed87</span></p>
+      <p class="eyebrow">165 commits · 1,004 files</p>
+    </div>
+  </header>
+
+  <section>
+    <p class="eyebrow">The short version</p>
+    <h2>Three closures, one dark launch, and the explainers and connector still unlinked.</h2>
+    <div class="col">
+      <p>
+        SNOW-679 shipped (#1382): <code>docs/bulletin-guide.md</code> now names ALBINA and Météo-France, carries a
+        per-provider differences table, and the public reading-guide page intro names all three services. The
+        homepage was reworked by SNOW-1299 (Help, Compare and blog panels removed; <code>/resorts/</code> taken out of the footer,
+        which is back to four links) and SNOW-1357 added a templated "daily read" that is absent off season.
+      </p>
+      <p>
+        SNOW-937 Phase A shipped behind the <code>bulletin_alerts</code> flag (superusers only) with the send job's schedule switch
+        deploying off. The public explainers and the Claude connector still have no inbound link from any page, and
+        <code>/compare/</code> is now reachable only from the sitemap.
+      </p>
+    </div>
+    <div class="metrics">
+      <div class="metric"><span class="figure">3</span><span class="label">providers named in the bulletin guide (was 1)</span></div>
+      <div class="metric"><span class="figure">0</span><span class="label">inbound links to the public explainers</span></div>
+      <div class="metric"><span class="figure">4</span><span class="label">footer links (was 5)</span></div>
+      <div class="metric"><span class="figure">1</span><span class="label">alert model, <code>BulletinAlert</code> (was 0)</span></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Closed</p>
+    <h2>Fixed since 25 October</h2>
+    <div class="findings">
+      <article class="finding done">
+        <div class="finding-head"><span class="ref">B3</span><h3>Bulletin guide is SLF-only</h3><span class="pill pill-ok">SNOW-679</span></div>
+        <p>Closed after ten audits. Commit 40e32215 is the change.</p>
+        <ul class="evidence">
+          <li><span class="k">docs/bulletin-guide.md</span>: ALBINA 3 mentions, Météo-France 4, SLF 6; <code>last-reviewed</code> 2026-11-01; provider table at lines 149-157</li>
+          <li><span class="k">how_to_read_bulletin.html:40-46</span> now says "Snowdesk shows bulletins from three services" and names each</li>
+          <li>Residual: the page says its worked examples are still drawn from SLF bulletins.</li>
+        </ul>
+      </article>
+      <article class="finding done">
+        <div class="finding-head"><span class="ref">H1</span><h3>Footer comment claimed nothing links to /compare/</h3><span class="pill pill-orphan">No ticket</span></div>
+        <p>The comment is now true: <code>home.html</code> no longer links it.</p>
+        <ul class="evidence">
+          <li><span class="k">_site_footer.html:28-30</span> says the link was removed and nothing links to it</li>
+          <li>Grep for <code>compare</code> in templates finds no <code>href</code>, only <code>compare.html</code> itself and a guide comment</li>
+        </ul>
+      </article>
+      <article class="finding done">
+        <div class="finding-head"><span class="ref">H2</span><h3>Homepage header calls itself a DRAFT</h3><span class="pill pill-orphan">No ticket</span></div>
+        <p><code>grep DRAFT home.html</code> returns nothing; the header comment was rewritten by SNOW-1299/1357.</p>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">New</p>
+    <h2>What the audit didn't anticipate</h2>
+    <div class="findings">
+      <article class="finding newwork">
+        <div class="finding-head"><span class="ref">N9</span><h3>Bulletin alerts exist, but nobody outside the superuser flag can reach them</h3><span class="pill pill-new">SNOW-937 · 942 · 947 · 1356</span></div>
+        <p>
+          <code>BulletinAlert</code> (<code>apps/bulletins/models.py:1131</code>), <code>/account/alerts/…</code> endpoints,
+          an email template and a <code>/alerts/&lt;day&gt;/</code> landing page all exist. The <code>bulletin_alerts</code> flag is
+          superusers-only and <code>schedule_send_bulletin_alerts</code> deploys off, waiting on the sender's SPF/DKIM/DMARC.
+          The privacy policy (v1.4, <code>privacy.html:166-168</code>) already describes alert emails and a one-click
+          unsubscribe. Help has no alerts topic (only <code>_topic_accounts.html</code> mentions alerts).
+        </p>
+      </article>
+      <article class="finding newwork">
+        <div class="finding-head"><span class="ref">N10</span><h3>A daily read on the homepage</h3><span class="pill pill-new">SNOW-1357</span></div>
+        <p>
+          <code>apps/public/daily_read.py</code> builds a per-country "what moved since yesterday" from day ratings,
+          templated and cached 15 minutes, and absent off season. This run read the code, not the rendered page.
+        </p>
+      </article>
+      <article class="finding newwork">
+        <div class="finding-head"><span class="ref">N11</span><h3>Homepage and footer shrank</h3><span class="pill pill-new">SNOW-1299</span></div>
+        <p>
+          Four cards remain (conditions, routes, weather, trips). <code>/resorts/</code> is linked from the homepage weather card
+          (<code>home.html:180</code>) and resort pages (<code>resort.html:160</code>) but no longer the footer.
+        </p>
+      </article>
+      <article class="finding newwork">
+        <div class="finding-head"><span class="ref">N12</span><h3>Colophon credits widened</h3><span class="pill pill-new">SNOW-1276 and others</span></div>
+        <p>The colophon now credits Open-Meteo (CC BY 4.0) and the swisstopo / SAC ski-route data alongside the three bulletin providers.</p>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Unchanged</p>
+    <h2>Re-verified against <span class="mono">0b9ed87</span></h2>
+    <div class="table-scroll" style="margin-top:1.75rem">
+      <table>
+        <thead><tr><th>Finding</th><th>Re-verified state</th><th>Ticket</th></tr></thead>
+        <tbody>
+          <tr><td>Public explainers unreachable</td><td><code>grep explainers</code> over <code>apps</code>, <code>templates</code> and <code>static/js</code> finds no link.</td><td>SNOW-977 (Duplicate, carried forward)</td></tr>
+          <tr><td>OAuth/MCP / Claude connector not named on the site</td><td>Only <code>privacy.html</code> (lines 312, 320) among public templates; homepage and Help silent.</td><td><span class="pill pill-orphan">No ticket</span></td></tr>
+          <tr><td>C2 · <code>/examples/</code> orphaned</td><td>Only a comment at <code>bulletin.html:90</code>; no link.</td><td>SNOW-678 (Canceled, carried forward)</td></tr>
+          <tr><td>C3 · no regions index</td><td>No template links a regions index.</td><td>SNOW-674 (Canceled, carried forward)</td></tr>
+          <tr><td><code>/compare/</code> orphan</td><td>Now unlinked everywhere; still in the sitemap and the page still exists. The removal's own comment says the panels return "when reworked".</td><td><span class="pill pill-orphan">No ticket</span></td></tr>
+          <tr><td>Alerting rebuild (SNOW-937)</td><td>Moved: code shipped as a dark launch (see N9). No longer a zero-model finding.</td><td>Linear state not checked</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Linear was not queried in this run, so the ticket column carries forward the previous audit's states and the commit subjects above.</p>
+  </section>
+
+  <section>
+    <p class="eyebrow">Consequences</p>
+    <h2>What this week changes</h2>
+    <div class="qgroups">
+      <div class="qgroup">
+        <h3>The footer ceiling is no longer a constraint</h3>
+        <p>With four links there is room for one more, so the explainers or connector can go in the footer without displacing a link.</p>
+      </div>
+      <div class="qgroup">
+        <h3>Alerts are documented to the public before they exist for the public</h3>
+        <p>The privacy policy describes bulletin alerts and an alert unsubscribe link while the feature is superuser-only and the send is switched off. The claim is ahead of the engineering, the same shape as the unsent-email finding of August; nothing promises delivery to visitors yet, but Help should gain an alerts topic when the flag widens.</p>
+      </div>
+      <div class="qgroup">
+        <h3>SNOW-679 closing removes the loudest standing gap</h3>
+        <p>The explainers and connector are now the longest-running unlinked surfaces, with the homepage's cleared panels as a natural home.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Recommendation</p>
+    <h2>What I'd do next</h2>
+    <div class="col">
+      <p><strong>1. Link the explainers and the Claude connector</strong> from the homepage or footer; there is now room.</p>
+      <p><strong>2. Decide the fate of <code>/compare/</code></strong>: rework and relink, or drop it from the sitemap.</p>
+      <p><strong>3. Add an alerts topic to Help</strong> before widening the <code>bulletin_alerts</code> flag.</p>
+      <p><strong>4. Confirm <code>set_example_route</code> has run in production</strong> (carried from last week; not checkable from code).</p>
+      <p><strong>5. Replace the SLF-only worked examples</strong> in the guide with one ALBINA and one Météo-France example.</p>
+    </div>
+    <p class="note">
+      Re-verified against <span class="mono">0b9ed87</span> on 1 November 2026. Nothing was changed and no
+      tickets were created or edited. Not rendered or read in full: the daily read, the alert pages, the Help topics and the Plan page copy.
+    </p>
+  </section>
+
+</div>
