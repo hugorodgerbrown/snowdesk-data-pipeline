@@ -49,12 +49,17 @@
   // from an href that already names the previous `next`.
   const ORIGINAL_HREF_ATTR = 'data-signin-href';
 
+  // A path on this origin (but not a protocol-relative `//host`), or an
+  // absolute http(s) url — the only hrefs `bindNext` will write.
+  const SAFE_HREF = /^(?:\/(?!\/)|https?:\/\/)/i;
+
   /**
    * Give a sign-in url a `next` naming the page as it is now.
    *
    * @param {string} url The sign-in url, relative or absolute.
    * @returns {string} The url with `next=<path + query>`, or the url
-   *   unchanged when it already carries a `next` (or cannot be parsed).
+   *   unchanged when it already carries a `next`, points at another origin
+   *   or scheme, or cannot be parsed.
    */
   function withNext(url) {
     if (!url) return url;
@@ -64,11 +69,15 @@
     } catch (_err) {
       return url;
     }
+    // Only this site's own sign-in page is given a `next`: any other scheme
+    // or origin (a `//host` included) is handed back untouched, so the page
+    // url is never sent anywhere else.
+    if (parsed.origin !== window.location.origin) return url;
     if (parsed.searchParams.has('next')) return url;
     parsed.searchParams.set('next', window.location.pathname + window.location.search);
     // Keep a relative url relative: the server rendered a path, and an
     // absolute href would be a different-looking link for the same place.
-    if (parsed.origin === window.location.origin && !/^[a-z][a-z0-9+.-]*:/i.test(url)) {
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) {
       return parsed.pathname + parsed.search + parsed.hash;
     }
     return parsed.toString();
@@ -88,7 +97,12 @@
     if (!bound) anchor.setAttribute(ORIGINAL_HREF_ATTR, anchor.getAttribute('href') || '');
     const refresh = () => {
       const original = anchor.getAttribute(ORIGINAL_HREF_ATTR);
-      if (original) anchor.setAttribute('href', withNext(original));
+      if (!original) return;
+      const next = withNext(original);
+      // Only ever write back a same-origin path or an http(s) url: the href
+      // is read from the DOM, so a `javascript:` (or any other scheme) left
+      // there is never re-emitted by this code.
+      if (SAFE_HREF.test(next)) anchor.setAttribute('href', next);
     };
     refresh();
     // Capture phase, so the href is current before any other click handler

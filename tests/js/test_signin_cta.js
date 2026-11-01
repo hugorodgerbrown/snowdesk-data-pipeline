@@ -119,6 +119,23 @@ describe('withNext and bindNext (SNOW-903)', () => {
     a.remove();
   });
 
+  it('never rewrites a non-http href or a protocol-relative one', () => {
+    window.history.replaceState(null, '', '/map/');
+    // eslint-disable-next-line no-script-url -- the hostile input under test
+    const hostile = 'javascript:alert(1)';
+    expect(cta().withNext(hostile)).toBe(hostile);
+
+    const a = document.createElement('a');
+    a.setAttribute('href', hostile);
+    cta().bindNext(a);
+    expect(a.getAttribute('href')).toBe(hostile);
+
+    const b = document.createElement('a');
+    b.setAttribute('href', '//evil.example/accounts/sign-in/');
+    cta().bindNext(b);
+    expect(b.getAttribute('href')).toBe('//evil.example/accounts/sign-in/');
+  });
+
   it('binds an anchor once, however often it is bound', () => {
     const a = document.createElement('a');
     a.setAttribute('href', URL);
