@@ -73,6 +73,9 @@ class Command(RegisteredCommand):
     the batch — and the command exits non-zero when any failed.
     """
 
+    # Offered to the ops MCP server's run_command (apps.core.remote_commands).
+    mcp_runnable = True
+
     help = (
         "Fetch today's Open-Meteo forecast — one Weather row per active "
         "location (one reachable from a resort or a region centroid — the "

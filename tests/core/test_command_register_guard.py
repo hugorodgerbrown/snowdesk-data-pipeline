@@ -100,3 +100,53 @@ def test_every_data_changing_command_tallies() -> None:
         and "self.tally(" not in inspect.getsource(type(load_command_class(app, name)))
     )
     assert silent == [], f"Call self.tally() for what these change: {silent}"
+
+
+def test_mcp_runnable_commands_are_pinned() -> None:
+    """Offering a command to the ops MCP server's run_command is deliberate.
+
+    Each one runs on the task worker that also sends email, so it must
+    finish in minutes (a long job enqueues a task per row, CLAUDE.md rule
+    7). Adding one is an edit here, which is a reviewer's prompt to ask.
+    """
+    runnable = sorted(
+        name
+        for name, app in _project_commands().items()
+        if getattr(load_command_class(app, name), "mcp_runnable", False)
+    )
+    assert runnable == [
+        "backfill_trip_slope_samples",
+        "backfill_weather",
+        "diagnose_region_coverage",
+        "fetch_bulletins",
+        "fetch_weather",
+        "link_region_centroid_locations",
+        "link_resort_locations",
+        "mirror_reference_data",
+        "prune_command_runs",
+        "purge_expired_oauth_tokens",
+        "purge_request_logs",
+        "rebuild_render_models",
+        "rebuild_source_render_models",
+        "render_ski_tours",
+        "sync_waffle_flags",
+        "sync_waffle_switches",
+    ]
+
+
+def test_mcp_runnable_commands_are_recorded_and_captured() -> None:
+    """A remotely run command is always in the register, output and all.
+
+    The register row is the only record of a run started over MCP, and a
+    command that prints a credential would put it in the task result too.
+    """
+    unsafe = sorted(
+        name
+        for name, app in _project_commands().items()
+        if getattr(load_command_class(app, name), "mcp_runnable", False)
+        and not (
+            getattr(load_command_class(app, name), "record_runs", True)
+            and getattr(load_command_class(app, name), "capture_output", True)
+        )
+    )
+    assert unsafe == []

@@ -72,6 +72,9 @@ class Command(RegisteredCommand):
     reconciled as name sets via bulk create/delete.
     """
 
+    # Offered to the ops MCP server's run_command (apps.core.remote_commands).
+    mcp_runnable = True
+
     help = (
         "Reconcile waffle.Flag rows to the declarative manifest at "
         "apps/core/fixtures/waffle_flags.json by create + delete only (never "

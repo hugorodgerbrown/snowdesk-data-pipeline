@@ -68,6 +68,9 @@ logger = logging.getLogger(__name__)
 class Command(RegisteredCommand):
     """Enqueue the rebuild of the weather service's render models and ratings."""
 
+    # Offered to the ops MCP server's run_command (apps.core.remote_commands).
+    mcp_runnable = True
+
     help = (
         "Enqueue one background task per bulletin whose service render model "
         "predates RENDER_MODEL_VERSION (or every bulletin, with --all); each "

@@ -86,6 +86,9 @@ class Command(RegisteredCommand):
     trip failed, so a partial run is detectable.
     """
 
+    # Offered to the ops MCP server's run_command (apps.core.remote_commands).
+    mcp_runnable = True
+
     help = (
         "Give every Trip created before SNOW-962 the terrain record its "
         "page draws from — copied from the source route where that is "

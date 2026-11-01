@@ -88,6 +88,9 @@ class Command(RegisteredCommand):
     counted; the command exits non-zero when any failed.
     """
 
+    # Offered to the ops MCP server's run_command (apps.core.remote_commands).
+    mcp_runnable = True
+
     help = (
         "Backfill Resort.location — the resort's pin as a Location — for "
         "every resort with a coordinate, through set_resort_pin. Offline. "

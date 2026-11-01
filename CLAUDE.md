@@ -435,6 +435,9 @@ These rules apply to **every** new or refactored management command
    `self.tally(name, n)` for what it changes (or would change in a dry
    run), zeros included. A test fails a command that skips it
    ([why](docs/decisions/every-command-run-is-registered.md)).
+   `mcp_runnable = True` offers it to the ops MCP server's `run_command`,
+   which queues it on the task worker — only for a command that finishes
+   in minutes ([why](docs/decisions/a-remote-command-runs-on-the-task-worker.md)).
 7. **Long work made of independent updates goes on the task runner** —
    a command that would walk thousands of rows, each its own update,
    enqueues one `django_tasks` task per row and returns, rather than
@@ -867,6 +870,7 @@ Read these when working in the relevant area:
 | Query-count monitoring (SNOW-13) | [`docs/query-counts.md`](docs/query-counts.md) |
 | Weekly churn chart (bin/render-churn, report-churn skill, what is excluded from churn) | [`docs/churn-report.md`](docs/churn-report.md) |
 | Why every management command run is recorded (CommandRun, RegisteredCommand, tally, SNOWDESK_OPERATOR, SNOWDESK_INVOKED_VIA, prune_command_runs; why not django-command-log) | [`docs/decisions/every-command-run-is-registered.md`](docs/decisions/every-command-run-is-registered.md) |
+| Why a command started from the ops MCP server runs on the task worker, never in the request (mcp_runnable, run_command / list_runnable_commands / get_command_task, apps/core/remote_commands.py, run_command_task, remote_invocation, CommandRun invoked_via MCP / reason / task_id, DENIED_OPTIONS, refused under ImmediateBackend on staging) | [`docs/decisions/a-remote-command-runs-on-the-task-worker.md`](docs/decisions/a-remote-command-runs-on-the-task-worker.md) |
 | Management commands (design rules, catalogue, scheduled jobs) | [`docs/management-commands.md`](docs/management-commands.md) |
 | Météo-France DPBRA → CAAML field mapping | [`docs/meteofrance-mapping.md`](docs/meteofrance-mapping.md) |
 | Météo-France bulletin identity (publication-stamped bulletin_id) | [`docs/decisions/meteofrance-bulletin-identity.md`](docs/decisions/meteofrance-bulletin-identity.md) |

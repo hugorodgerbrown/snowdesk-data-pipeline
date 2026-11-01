@@ -764,6 +764,7 @@ class CommandRun(BaseModel):
         SCHEDULER = "SCHEDULER", "Scheduler"
         BUILD = "BUILD", "Build"
         CALL_COMMAND = "CALL_COMMAND", "call_command"
+        MCP = "MCP", "Ops MCP server"
 
     command = models.CharField(
         max_length=100,
@@ -879,6 +880,24 @@ class CommandRun(BaseModel):
         on_delete=models.SET_NULL,
         related_name="children",
         help_text="The run that started this one through call_command, if any.",
+    )
+    reason = models.TextField(
+        blank=True,
+        default="",
+        help_text=(
+            "Why the run was started, as the operator gave it — set for a run "
+            "started from the ops MCP server's run_command."
+        ),
+    )
+    task_id = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text=(
+            "The background task that ran the command, for a run started from "
+            "the ops MCP server's run_command."
+        ),
     )
 
     objects = CommandRunQuerySet.as_manager()

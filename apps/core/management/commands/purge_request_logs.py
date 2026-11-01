@@ -72,6 +72,9 @@ RETENTION_DAYS: int = 365
 class Command(RegisteredCommand):
     """Delete RequestLog rows past the retention window."""
 
+    # Offered to the ops MCP server's run_command (apps.core.remote_commands).
+    mcp_runnable = True
+
     help = (
         "Deletes RequestLog rows older than the retention window "
         f"(default {RETENTION_DAYS} days). Read-only without --commit."

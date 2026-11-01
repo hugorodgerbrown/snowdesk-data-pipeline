@@ -45,6 +45,9 @@ logger = logging.getLogger(__name__)
 class Command(RegisteredCommand):
     """Diagnose RegionDayRating coverage gaps across the Swiss region fixture."""
 
+    # Offered to the ops MCP server's run_command (apps.core.remote_commands).
+    mcp_runnable = True
+
     help = (
         "Partition all regions in the fixture into three buckets per their "
         "RegionDayRating coverage: (A) has rating row(s), (B) appears in raw "
