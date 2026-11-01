@@ -96,11 +96,11 @@ describe('withNext and bindNext (SNOW-903)', () => {
     expect(cta().withNext(fixed)).toBe(fixed);
   });
 
-  it('keeps an absolute url absolute', () => {
+  it('writes this site\'s absolute url as a root-relative path', () => {
     window.history.replaceState(null, '', '/map/');
     const absolute = `${window.location.origin}${URL}`;
 
-    expect(cta().withNext(absolute)).toBe(`${absolute}?next=%2Fmap%2F`);
+    expect(cta().withNext(absolute)).toBe(`${URL}?next=%2Fmap%2F`);
   });
 
   it('recomputes a bound anchor when it is tapped after the url moved', () => {
