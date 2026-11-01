@@ -25,9 +25,10 @@
  *   leaderPath(points, axis?) → an SVG path `d`, or '' for fewer than two
  *     points; `axis` 'y' (the default) or 'x', the direction the line
  *     leaves and meets each stop
- *   swingPath(start, notch, depth) → an SVG path `d` from a point level
- *     with or above a notch on a panel's bottom edge: down past the edge
- *     by `depth` px, then up into the notch (SNOW-1354); '' for a
+ *   swingPath(start, notch, depth) → an SVG path `d` from a point beside
+ *     a panel, level with its bottom-edge notch or above it: straight
+ *     down past the edge, a quarter turn, then along under the edge and
+ *     up into the notch, never inside the panel (SNOW-1354); '' for a
  *     missing or non-finite end
  */
 
@@ -35,6 +36,9 @@
 
 (function () {
   'use strict';
+
+  /** A quarter circle's control-arm ratio, as a cubic Bézier draws it. */
+  const KAPPA = 0.5523;
 
   /**
    * Format one number for a path, trimmed to two decimals.
@@ -90,15 +94,17 @@
    * (SNOW-1354).
    *
    * A point level with the notch or above it would make `leaderPath`'s
-   * bend arrive at the notch from above, through the panel. This one
-   * cubic leaves the point downward and swings under the panel's edge,
-   * `depth` px below the lower of the two ends, to arrive at the notch
-   * going up, as the leader always does: control points
-   * `(start.x, k)` and `(notch.x, k)` with k that depth below.
+   * bend arrive at the notch from above, through the panel. This path
+   * keeps clear of the panel by construction: it drops STRAIGHT down from
+   * the point, so it stays at the point's x, beside the panel, until it is
+   * below the panel's edge; turns a quarter round there, `depth / 2` px
+   * in radius; and runs to the notch with every point at or below the
+   * notch's y, arriving going up, as the leader always does. The run sits
+   * `depth` px below the lower of the two ends.
    *
    * @param {?{x: number, y: number}} start The point on the map.
    * @param {?{x: number, y: number}} notch The notch on the panel's edge.
-   * @param {number} depth How far below the lower end the swing reaches.
+   * @param {number} depth How far below the lower end the run reaches.
    * @returns {string} The path `d`, or ''.
    */
   function swingPath(start, notch, depth) {
@@ -107,9 +113,19 @@
     if (!ok(start) || !ok(notch)) return '';
     const s = /** @type {{x: number, y: number}} */ (start);
     const n = /** @type {{x: number, y: number}} */ (notch);
-    const k = Math.max(s.y, n.y) + (Number.isFinite(depth) ? depth : 0);
+    const d = Number.isFinite(depth) && depth > 0 ? depth : 0;
+    const k = Math.max(s.y, n.y) + d;
+    const r = d / 2;
+    // Toward the notch; the quarter turn bends that way.
+    const sign = n.x < s.x ? -1 : 1;
+    // A circle's quarter as a cubic: the control arms are KAPPA × r.
+    const arm = KAPPA * r;
     return 'M' + num(s.x) + ' ' + num(s.y)
-      + ' C' + num(s.x) + ' ' + num(k)
+      + ' L' + num(s.x) + ' ' + num(k - r)
+      + ' C' + num(s.x) + ' ' + num(k - r + arm)
+      + ', ' + num(s.x + sign * (r - arm)) + ' ' + num(k)
+      + ', ' + num(s.x + sign * r) + ' ' + num(k)
+      + ' C' + num(n.x) + ' ' + num(k)
       + ', ' + num(n.x) + ' ' + num(k)
       + ', ' + num(n.x) + ' ' + num(n.y);
   }

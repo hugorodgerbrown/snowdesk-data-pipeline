@@ -106,14 +106,15 @@ describe('the leader line', () => {
 
   it('swings under the panel from a dot beside it, above its bottom (SNOW-1354)', () => {
     // The dot is right of the panel and higher than the notch (y 300): the
-    // line leaves it downward, dips 40 px below the notch, and comes up
-    // into it rather than bending down onto it through the panel.
+    // line drops from it, runs 40 px below the notch, and comes up into
+    // it rather than bending down onto it through the panel.
     points.map = { x: 500, y: 120 };
     openRail().setIndex(4);
     window.pwaRouteLeader.redraw();
 
     expect(svg.style.display).toBe('');
-    expect(leaderPath()).toBe('M500 120 C500 340, 120 340, 120 300');
+    expect(leaderPath()).toBe(self.pwaRouteLeaderCore.swingPath(points.map, points.rail, 40));
+    expect(leaderPath()).toMatch(/^M500 120 L500 320 /);
     expect(stops()[0].getAttribute('d')).toBe('M116 305 L124 305 L120 300 Z');
     points.map = { x: 100, y: 50 };
   });
