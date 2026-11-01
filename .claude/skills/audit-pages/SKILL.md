@@ -139,7 +139,10 @@ Then update the "Most recent audit" pointer and the History table in
 
 - **Create or edit Linear tickets.** This audit reports; it does not act.
   Findings that warrant tickets are raised with the user, or in routine mode
-  listed in the PR body under "worth ticketing" for a human to decide.
+  listed in the PR body under "worth ticketing" for a human to decide. Describe
+  each finding in words and cite no existing SNOW id or Linear issue link
+  there: the GitHub–Linear integration closes a ticket linked from a merged PR
+  body.
 - **Fix anything you find.** A page audit that also edits pages stops being a
   measurement.
 - **Restate the site from scratch.** After the first audit, the delta is the

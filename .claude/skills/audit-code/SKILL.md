@@ -241,9 +241,13 @@ Open the PR with `gh pr create`:
 
 - **Title:** `SNOW-NNN: code review pass YYYY-MM-DD`.
 - **Body:** what the cycle found (counts: inline-fixed / spun off / watching),
-  a link to the dated doc, the tox baseline, the list of child tickets, and
-  the magic line `Closes SNOW-NNN` so Linear's GitHub integration closes the
-  cycle ticket on merge.
+  a link to the dated doc, the tox baseline, and the magic line
+  `Closes SNOW-NNN` so Linear's GitHub integration closes the cycle ticket on
+  merge. **`Closes SNOW-NNN` is the only SNOW id the body may contain.** List
+  no child tickets and link no Linear issue: the integration closes a ticket
+  linked from a merged PR body, which is how #331 closed SNOW-166 and
+  SNOW-363–366 with nothing fixed. The child tickets are linked from the dated
+  doc, and the body links to that doc.
 
 Then move the cycle ticket to `In Review` (`save_issue`) and post the PR URL
 as a comment (`save_comment`). Linear's integration handles `In Review`/`Done`
@@ -272,3 +276,6 @@ misses.
 - **Pushing red.** Run `tox` to green before push. Routine mode exits
   non-zero rather than shipping a failing branch.
 - **Hardcoding Linear ids.** Resolve team/state ids at runtime — they drift.
+- **Naming child tickets in the PR body.** A SNOW id or Linear link in a merged
+  PR body closes that ticket. The body carries counts and the doc link, and
+  `Closes SNOW-NNN` is its only SNOW id (see Step 10).
