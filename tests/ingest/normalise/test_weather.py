@@ -6,8 +6,7 @@ The Open-Meteo parsing moved here from apps/weather/services/fetch.py
 through ``fetch_weather_for_location``; these tests pin each function on its
 own, against hand-built ``daily`` / ``hourly`` blocks, with no location and no
 database. Also the WMO code → icon bucket table in
-apps.ingest.normalise.weather_icons, which ``forecast_entry`` writes into every
-forward day (SNOW-1343).
+apps.ingest.normalise.weather_icons (SNOW-1343).
 """
 
 from __future__ import annotations
@@ -24,7 +23,6 @@ from apps.ingest.normalise.weather import (
     daily_fields,
     daily_max_freezing_level,
     day_is_complete,
-    forecast_entry,
     hourly_rows_for_day,
     parse_dt_preserve_offset,
 )
@@ -169,36 +167,6 @@ class TestDailyFields:
         assert fields["temperature_2m_max"] == 1.5
         assert fields["snowfall_sum"] is None
         assert fields["uv_index_max"] is None
-
-
-class TestForecastEntry:
-    """forecast_entry."""
-
-    def test_keeps_sunrise_as_a_string_and_nests_hours(self) -> None:
-        """JSON has no datetime; the first forward days carry their hours."""
-        entry = forecast_entry(_daily(), _hourly(), 0, DAY_ONE, with_hourly=True)
-        assert entry["date"] == "2026-01-10"
-        assert entry["sunrise"] == "2026-01-10T08:05+01:00"
-        assert entry["freezing_level_height"] == 1200.0
-        assert len(entry["hourly"]) == 2
-
-    def test_later_days_carry_no_hourly_key(self) -> None:
-        """Past HOURLY_DAYS the key is absent, not empty."""
-        entry = forecast_entry(_daily(), _hourly(), 1, DAY_TWO, with_hourly=False)
-        assert "hourly" not in entry
-
-    def test_writes_the_days_icon_bucket(self) -> None:
-        """Each forward day carries the service's reading of its code."""
-        snowy = forecast_entry(_daily(), _hourly(), 0, DAY_ONE, with_hourly=True)
-        overcast = forecast_entry(_daily(), _hourly(), 1, DAY_TWO, with_hourly=False)
-        assert snowy["icon_bucket"] == "light_snow"
-        assert overcast["icon_bucket"] == "cloudy"
-
-    def test_an_unknown_code_writes_cloudy(self) -> None:
-        """A code outside the table still stores a renderable bucket."""
-        daily = _daily(weather_code=[4, 3])
-        entry = forecast_entry(daily, None, 0, DAY_ONE, with_hourly=False)
-        assert entry["icon_bucket"] == "cloudy"
 
 
 # The twelve drawings the icon set ships (apps/weather/services/

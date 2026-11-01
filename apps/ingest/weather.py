@@ -6,11 +6,11 @@ reference places (``SourceLocation``) and its own account of each day
 (``SourceWeather``); every instance, production included, applies those rows
 into its own ``Weather`` table through ``Location.source_uuid``.
 
-  forecast_fields(latitude, longitude, elevation_m, observed_on, *, label, base_url)
+  forecast_rows(latitude, longitude, elevation_m, observed_on, *, label, base_url)
       One Open-Meteo forecast request for one coordinate, parsed into the
-      row it describes: ``(row_date, fields)``. The parsing rules that were
-      ``fetch_weather_for_location``'s live here now, so the service and the
-      app's own fetch of a user point cannot drift apart.
+      rows it describes: one ``(day, fields)`` pair per day of the window,
+      each with its own hourly series (SNOW-1337). The parsing rules live
+      here so the service and the app's own fetch cannot drift apart.
 
   store_source_weather(location, observed_on, **fields)
       The write rule — create when absent, refine today or later, refuse a
@@ -52,21 +52,22 @@ from apps.ingest.normalise.weather import (
     daily_fields,
     daily_max_freezing_level,
     day_is_complete,
-    forecast_entry,
     hourly_rows_for_day,
 )
 from apps.ingest.sources.open_meteo import fetch_forecast
 
 logger = logging.getLogger(__name__)
 
-# How many days each request covers: the day itself plus a week-ahead
-# outlook. The first day becomes the row; the rest become ``forecast``.
+# How many days each request covers: today and the six days after it. Each
+# day becomes its own row (SNOW-1337), created when it first enters the
+# window at six days out and refined by every fetch until its day passes.
 FORECAST_DAYS = 7
 
-# How many days carry an hourly series: the row's own day, in its column,
-# and the next one nested in its ``forecast`` entry. Bounded because the
-# series is the bulk of the stored JSON.
-HOURLY_DAYS = 2
+# How many days of the window carry an hourly series: every one (Hugo,
+# 2026-11-01). Open-Meteo returns the whole window's hourly block in the
+# one request, so this costs storage, not calls. Kept as a name because the
+# readers that decide which days reveal an hourly drawing still ask it.
+HOURLY_DAYS = FORECAST_DAYS
 
 
 @dataclass(frozen=True)
@@ -92,7 +93,7 @@ class LocationRecord:
     document: dict[str, Any] = field(default_factory=dict)
 
 
-def forecast_fields(
+def forecast_rows(
     latitude: float,
     longitude: float,
     elevation_m: float | None,
@@ -100,26 +101,31 @@ def forecast_fields(
     *,
     label: object,
     base_url: str | None = None,
-) -> tuple[date, dict[str, Any]]:
-    """Fetch one coordinate's forecast and parse it into one row's columns.
+) -> list[tuple[date, dict[str, Any]]]:
+    """Fetch one coordinate's forecast and parse it into one row per day.
 
-    The first storable day becomes the row; the days after it become its
-    ``forecast`` column, the first ``HOURLY_DAYS`` of the window also
-    carrying an hourly series. Days the backing model did not resolve are
-    dropped first (SNOW-628), so a short window is normal, not a failure.
+    One request covers ``FORECAST_DAYS`` days from ``observed_on``. Every
+    storable day becomes its own row (SNOW-1337): its daily scalars, its
+    freezing level and its own hourly series, plus ``forecast_on`` — the
+    day of this fetch, so a row's lead time is ``observed_on - forecast_on``.
+    Days the backing model did not resolve are dropped first (SNOW-628), so
+    a short window is normal, not a failure, and a provider date outside the
+    window asked for is dropped too, so a shifted response can never reach a
+    past day's row.
 
     Args:
         latitude: Exact latitude.
         longitude: Exact longitude.
         elevation_m: The point's height, for downscaling; None for the
             model cell's mean.
-        observed_on: The first day of the window.
+        observed_on: The first day of the window — today — and every row's
+            ``forecast_on``.
         label: What to call the point in log lines and errors.
         base_url: Overrides the configured Open-Meteo host.
 
     Returns:
-        ``(row_date, fields)`` — the day the row is of, normally
-        ``observed_on``, and its columns (no ``fetched_at``).
+        ``(day, fields)`` pairs in date order, ``fields`` holding every
+        column but ``fetched_at``.
 
     Raises:
         requests.HTTPError: The API returned a non-2xx status.
@@ -137,7 +143,11 @@ def forecast_fields(
     hourly: dict[str, Any] | None = data.get("hourly")
 
     dates = daily_dates(daily, label)
-    storable = [idx for idx in range(len(dates)) if day_is_complete(daily, idx)]
+    storable = [
+        idx
+        for idx in range(len(dates))
+        if observed_on <= dates[idx] <= end_date and day_is_complete(daily, idx)
+    ]
     if not storable:
         raise ValueError(
             f"Open-Meteo forecast for location={label}: no day carries a "
@@ -151,32 +161,24 @@ def forecast_fields(
             len(storable),
             len(dates),
         )
-
-    first = storable[0]
-    if first != 0:
+    if storable[0] != 0:
         logger.warning(
             "Open-Meteo forecast for location=%s: day 0 (%s) carries no usable "
-            "data — recording %s instead",
+            "data — the window starts at %s",
             label,
             dates[0],
-            dates[first],
+            dates[storable[0]],
         )
 
-    row_date = dates[first]
-    fields = daily_fields(daily, first)
-    fields["freezing_level_height"] = daily_max_freezing_level(hourly, row_date)
-    fields["hourly"] = hourly_rows_for_day(hourly, row_date) or None
-    fields["forecast"] = [
-        forecast_entry(
-            daily,
-            hourly,
-            idx,
-            dates[idx],
-            with_hourly=position < HOURLY_DAYS,
-        )
-        for position, idx in enumerate(storable[1:], start=1)
-    ]
-    return row_date, fields
+    rows: list[tuple[date, dict[str, Any]]] = []
+    for idx in storable:
+        day = dates[idx]
+        fields = daily_fields(daily, idx)
+        fields["freezing_level_height"] = daily_max_freezing_level(hourly, day)
+        fields["hourly"] = hourly_rows_for_day(hourly, day) or None
+        fields["forecast_on"] = observed_on
+        rows.append((day, fields))
+    return rows
 
 
 def store_source_weather(
@@ -191,7 +193,8 @@ def store_source_weather(
     Args:
         location: The place.
         observed_on: The day the row is of.
-        **fields: Column values. ``fetched_at`` defaults to now.
+        **fields: Column values. ``fetched_at`` defaults to now, and
+            ``forecast_on`` to today (the day itself for a past day).
 
     Returns:
         ``(row, created)``.
@@ -201,6 +204,7 @@ def store_source_weather(
 
     """
     fields.setdefault("fetched_at", timezone.now())
+    fields.setdefault("forecast_on", min(observed_on, timezone.localdate()))
     existing = SourceWeather.objects.filter(
         location=location, observed_on=observed_on
     ).first()
@@ -284,21 +288,22 @@ def fetch_source_location(
     *,
     commit: bool,
     base_url: str | None = None,
-) -> tuple[SourceWeather, bool] | None:
-    """Fetch and, with ``commit``, store one place's row.
+) -> list[tuple[SourceWeather, bool]] | None:
+    """Fetch and, with ``commit``, store one place's week as one row per day.
 
     Args:
         location: The place.
-        observed_on: The first day of the window.
+        observed_on: The first day of the window — today.
         commit: When False the request still runs (a real probe) but
             nothing is written.
         base_url: Overrides the configured Open-Meteo host.
 
     Returns:
-        ``(row, created)`` when committed, else None.
+        One ``(row, created)`` pair per day written when committed, else
+        None.
 
     """
-    row_date, fields = forecast_fields(
+    rows = forecast_rows(
         location.latitude,
         location.longitude,
         location.elevation_m,
@@ -308,8 +313,11 @@ def fetch_source_location(
     )
     if not commit:
         return None
+    # One transaction for the place's whole week (SNOW-546): a failure on
+    # day four cannot leave days one to three refined and the rest stale
+    # while the batch counts the place as failed.
     with transaction.atomic():
-        return store_source_weather(location, row_date, **fields)
+        return [store_source_weather(location, day, **fields) for day, fields in rows]
 
 
 def fetch_source_weather(
@@ -333,7 +341,8 @@ def fetch_source_weather(
         on_row: Called with each row written — the host applies it.
 
     Returns:
-        Counts: ``created``, ``updated``, ``failed``.
+        Counts: ``created`` and ``updated`` rows (up to ``FORECAST_DAYS`` a
+        place), and ``failed`` places.
 
     """
     counts = {"created": 0, "updated": 0, "failed": 0}
@@ -348,7 +357,8 @@ def fetch_source_weather(
                 location, observed_on, commit=commit, base_url=base_url
             )
             if result is not None and on_row is not None:
-                on_row(result[0])
+                for row, _ in result:
+                    on_row(row)
         except Exception:  # noqa: BLE001 — broad catch intentional: one place must not abort the batch
             logger.exception(
                 "Failed to fetch weather for source location=%s observed_on=%s",
@@ -357,8 +367,8 @@ def fetch_source_weather(
             )
             counts["failed"] += 1
             continue
-        if result is not None:
-            counts["created" if result[1] else "updated"] += 1
+        for _, created in result or []:
+            counts["created" if created else "updated"] += 1
 
     logger.info(
         "fetch_source_weather done: observed_on=%s %s commit=%s",

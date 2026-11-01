@@ -2,7 +2,7 @@
 name: management-commands
 description: Commands — RegisteredCommand / CommandRun register, fetch_bulletins, fetch_weather, purge_*, prune_command_runs, backfill_*
 status: current
-last-reviewed: 2026-10-31
+last-reviewed: 2026-11-01
 ---
 
 # Management commands
@@ -1552,32 +1552,15 @@ incident that invalidates derived state:
   one task per stale `SourceBulletin`, one per stale `SourceDayRating`.
   Their order is convention, not a dependency
   ([why](decisions/day-ratings-are-recomputed-inside-each-rebuild-task.md)).
-- `reformat_mf_comments --commit` — one-off retroactive formatter for FR bulletins
-  ingested before SNOW-207 added the HTML formatter (plain-text prose fields only;
-  already-HTML rows are skipped). Filters to `bulletin_id__startswith='FR'`.
-  Rebuilds render models and refreshes RegionDayRating for all touched rows.
-  Read-only by default; pass `--commit` to persist. Exits non-zero if any
-  render-model build or day-rating recompute fails.
-
-  ```bash
-  # Read-only walk — counts what would change, no DB writes.
-  uv run python manage.py reformat_mf_comments
-
-  # Persist (run on Render after merge).
-  uv run python manage.py reformat_mf_comments --commit
-
-  # Single bulletin (must start with 'FR').
-  uv run python manage.py reformat_mf_comments --bulletin-id FR-11-2026-05-18 --commit
-
-  # Persist without refreshing day ratings.
-  uv run python manage.py reformat_mf_comments --commit --skip-day-ratings
-  ```
-
-  Flags: `--commit`, `--bulletin-id ID`, `--batch-size N` (default 500 —
-  the streamed-queryset iterator's chunk size, SNOW-602), `--skip-day-ratings`.
+- *Retired by SNOW-1337:* `reformat_mf_comments`, `rekey_meteofrance_bulletins`,
+  `backfill_pdf_urls` and `backfill_bulletin_source`. Each was a finished
+  one-off that rewrote or read `Bulletin.raw_data`, which the same ticket
+  dropped (the CAAML stays in ingest's `SourceBulletin`). Their last
+  versions are in git history.
 - `relink_bulletin_regions --source albina --commit` — rebuilds one
-  provider's `RegionBulletin` links from each bulletin's stored `raw_data`
-  (SNOW-1187). Every 2025/26 ALBINA bulletin was found linked to the wrong
+  provider's `RegionBulletin` links from each bulletin's CAAML as the ingest
+  service stored it (`SourceBulletin.caaml`; SNOW-1187, SNOW-1337). A
+  bulletin the service holds no CAAML for is left alone. Every 2025/26 ALBINA bulletin was found linked to the wrong
   micro regions — `region_name_at_time` was right, the `MicroRegion` pks had
   moved under it — so Tyrol's danger painted onto South Tyrol and regions
   ALBINA never publishes read as covered. Skips bulletins already linked as
@@ -1596,34 +1579,6 @@ incident that invalidates derived state:
 
   Flags: `--source {slf,albina,meteofrance}` (required), `--commit`,
   `--bulletin-id ID`, `--batch-size N` (default 500).
-- `rekey_meteofrance_bulletins --commit` — one-off migration of FR bulletins from
-  the old `FR-{NN}-{covered date}` identifier to
-  `FR-{NN}-{covered date}-{publication timestamp}` (SNOW-559). The old id could
-  not distinguish the two BRAs Météo-France publishes for one massif-day, so one
-  silently overwrote the other. Derives each new id from that row's own
-  `raw_data`, skips rows already on the new grammar (so it is idempotent), and
-  refreshes `RegionDayRating` for every touched (region, day). Exits non-zero if
-  any row cannot be re-keyed — a row with no usable publication timestamp is
-  reported and left alone rather than given a guessed identity.
-
-  ```bash
-  # Read-only walk — reports what would change.
-  uv run python manage.py rekey_meteofrance_bulletins
-
-  # Persist.
-  uv run python manage.py rekey_meteofrance_bulletins --commit
-  ```
-
-  Flags: `--commit`, `--bulletin-id ID`, `--batch-size N` (default 500 —
-  the streamed-queryset iterator's chunk size, SNOW-602), `--skip-day-ratings`.
-
-  Re-keying alone does not restore the issues that were previously overwritten.
-  It also cannot run against a database still holding a full season of
-  pre-SNOW-559 rows — none of them carry a usable publication timestamp, so
-  every row fails. For that population, load the rebuilt archive and then use
-  `purge_legacy_meteofrance_bulletins` below
-  ([runbook](runbooks/rebuild-meteofrance-archive.md),
-  [why](decisions/meteofrance-archive-replace-not-merge.md)).
 - `purge_legacy_meteofrance_bulletins --commit` — deletes old-grammar
   `FR-{NN}-{covered date}` bulletins once the rebuilt archive has already
   supplied a new-grammar `FR-{NN}-{covered date}-{publication timestamp}`
@@ -1654,27 +1609,6 @@ incident that invalidates derived state:
   `--skip-day-ratings`, `--allow-orphaned-shares`.
 - `recompute_day_ratings --commit` — after a `DAY_RATING_VERSION` bump or
   any day-rating policy change. Re-derives every `RegionDayRating`.
-- `backfill_pdf_urls --commit` — populate `Bulletin.pdf_url` for rows
-  where it is currently empty. Dispatches by detecting the source from
-  the raw payload's `customData` (via `render_model.detect_source()` —
-  deliberately not `render_model["source"]`, which can be stale) to the
-  correct per-provider URL helper (SLF / ALBINA / Météo-France).
-  Read-only by default; pass `--commit` to persist. Idempotent — rows
-  with an existing `pdf_url` are skipped unconditionally. For Météo-France
-  rows the command hits the archive index endpoint (one call per bulletin)
-  with a 0.2 s polite delay between requests; the endpoint is being
-  decommissioned so failures fail open (empty URL, no abort).
-
-  ```bash
-  # Dry-run — counts what would be populated, no DB writes.
-  uv run python manage.py backfill_pdf_urls
-
-  # Persist (run on Render after deploying SNOW-295).
-  uv run python manage.py backfill_pdf_urls --commit
-  ```
-
-  Flags: `--commit`.
-
 - `backfill_bulletin_groupings --commit` — one-off post-deploy step
   after SNOW-323: computes `BulletinGrouping` rows for all bulletins
   that lack one. Groupings are normally created inline by `upsert_bulletin`
@@ -1753,30 +1687,6 @@ incident that invalidates derived state:
 
   # Persist (run on Render after deploying SNOW-560).
   uv run python manage.py backfill_bulletin_target_dates --commit
-  ```
-
-  Flags: `--commit`.
-
-- `backfill_bulletin_source --commit` — one-off post-deploy step after
-  SNOW-581: populates `Bulletin.source` for rows that predate the field.
-  The provider is normally set inline by `upsert_bulletin` at ingest time.
-  Detection reads `raw_data.properties.customData` via `detect_source` —
-  deliberately **not** `render_model["source"]`, which can hold a stale
-  legacy value (`"euregio"`), is absent when the render model failed to
-  build, and is rewritten wholesale by `rebuild_render_models`. Provenance
-  is an ingest fact, so it is derived from the raw payload every time.
-  Read-only by default; the dry-run prints a per-provider breakdown of what
-  would be written. The queryset (`source=""`) is the idempotency
-  mechanism — a second run selects only rows whose payload carries no known
-  marker. Raises `CommandError` and exits non-zero if any row fails to
-  detect, after writing the ones that succeeded.
-
-  ```bash
-  # Dry-run — per-provider breakdown of what would be populated.
-  uv run python manage.py backfill_bulletin_source
-
-  # Persist (run on Render after deploying SNOW-581).
-  uv run python manage.py backfill_bulletin_source --commit
   ```
 
   Flags: `--commit`.
@@ -2070,7 +1980,7 @@ uv run python manage.py fetch_bulletins --source slf \
 # CLAUDE.md command rule 7 (SNOW-1346): --commit only ENQUEUES one rebuild_bulletin_task per
 # bulletin, at priority -50, and returns; each task re-checks its row (a
 # current one is skipped, so a duplicate enqueue is a no-op), rebuilds the
-# model and danger_levels from raw_data, and recomputes RegionDayRating for
+# model and danger_levels from the service's stored CAAML, and recomputes RegionDayRating for
 # every (region, day) it governs in the same transaction. Prints
 # "<pk> <source> <day> <bulletin_id>" per bulletin, newest first. Tallies
 # enqueued / failed; failed counts tasks that come back FAILED under an

@@ -144,22 +144,28 @@ class SourceLocationAdmin(_ReadOnly, admin.ModelAdmin[SourceLocation]):
 class SourceWeatherAdmin(_ReadOnly, admin.ModelAdmin[SourceWeather]):
     """Read-only admin for the weather service's place-days."""
 
-    list_display = ("location", "observed_on", "weather_code", "fetched_at")
+    list_display = (
+        "location",
+        "observed_on",
+        "forecast_on",
+        "weather_code",
+        "fetched_at",
+    )
     list_select_related = ("location",)
     date_hierarchy = "observed_on"
     search_fields = ("location__name", "location__uuid")
     ordering = ("-observed_on",)
     raw_id_fields = ("location",)
-    exclude = ("hourly", "forecast")
+    exclude = ("hourly",)
 
     def get_readonly_fields(
         self, request: HttpRequest, obj: SourceWeather | None = None
     ) -> list[str]:
-        """Return every column but the two JSON ones, which are excluded."""
+        """Return every column but the hourly JSON, which is excluded."""
         return [
             field.name
             for field in SourceWeather._meta.concrete_fields
-            if field.name not in ("id", "hourly", "forecast")
+            if field.name not in ("id", "hourly")
         ]
 
 

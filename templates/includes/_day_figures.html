@@ -1,16 +1,15 @@
 {% load i18n %}
 {% comment %}
-templates/includes/_day_figures.html — a day past the hourly window, read as
+templates/includes/_day_figures.html — a day with no hourly series, read as
 the day strips' rows with one figure each (SNOW-1219).
 
 The map's weather sheet draws _day_strips.html for the days that carry an
-hourly series (HOURLY_DAYS, today and tomorrow) and this for the rest of
-the week, so a later day keeps the same rows in the same order —
-temperature, freezing level, snow, wind — and says when its hours arrive rather than leaving a gap where the strips would be.
+hourly series (every live day since SNOW-1337) and this for a day without
+one, so that day keeps the same rows in the same order —
+temperature, freezing level, snow, wind — and says it has no hours rather than leaving a gap where the strips would be.
 
 Context:
     day           — ForecastPanelDay.
-    hourly_from   — datetime.date: the day its hourly forecast arrives.
     testid_prefix — str, optional.
 {% endcomment %}
 {% firstof testid_prefix "day-figures" as prefix %}
@@ -88,8 +87,6 @@ Context:
         </dd>
     </div>
 </dl>
-<p class="mt-2.5 text-xs text-text-3" data-testid="{{ prefix }}-hourly-from">
-    {% blocktrans with weekday=hourly_from|date:"l" trimmed %}
-        Hour by hour from {{ weekday }}.
-    {% endblocktrans %}
+<p class="mt-2.5 text-xs text-text-3" data-testid="{{ prefix }}-no-hours">
+    {% translate "No hour-by-hour forecast was recorded for this day." %}
 </p>

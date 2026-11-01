@@ -503,10 +503,10 @@ def forecast_new_snow(
     """
     Return the new snow forecast for a region's day, as known today (SNOW-944).
 
-    Read from today's row for the region's centroid location: its own
-    ``snowfall_sum`` for today, its ``forecast[]`` entry for a later day.
-    A forecast never reads a past row, so this is what the weather sheet
-    says now.
+    Read from the row for that day at the region's centroid location: one
+    row per day, refined by every fetch until the day passes (SNOW-1337), so
+    a later day's row holds what the weather sheet says about it now. A past
+    day is never read.
 
     Args:
         region: The micro-region.
@@ -514,28 +514,17 @@ def forecast_new_snow(
         today: The local send date.
 
     Returns:
-        The snowfall in cm, or None with no centroid, no row or no entry.
+        The snowfall in cm, or None with no centroid, no row or a past day.
 
     """
-    if region.centroid_location_id is None:
+    if region.centroid_location_id is None or day < today:
         return None
     row = (
-        Weather.objects.filter(
-            location_id=region.centroid_location_id, observed_on=today
-        )
-        .only("snowfall_sum", "forecast")
+        Weather.objects.filter(location_id=region.centroid_location_id, observed_on=day)
+        .only("snowfall_sum")
         .first()
     )
-    if row is None:
-        return None
-    if day == today:
-        return row.snowfall_sum
-    iso = day.isoformat()
-    for entry in row.forecast or []:
-        if entry.get("date") == iso:
-            value = entry.get("snowfall_sum")
-            return float(value) if value is not None else None
-    return None
+    return row.snowfall_sum if row is not None else None
 
 
 def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:

@@ -67,7 +67,7 @@ WEATHER_FIELDS: tuple[str, ...] = (
     "sunshine_duration",
     "freezing_level_height",
     "hourly",
-    "forecast",
+    "forecast_on",
 )
 # The row's identity travels as keys, and the bookkeeping is each side's own.
 WEATHER_NOT_SENT = frozenset(

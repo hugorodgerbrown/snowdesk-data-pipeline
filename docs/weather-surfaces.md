@@ -2,14 +2,14 @@
 name: weather-surfaces
 description: Weather UI — _weather_detail, _weather_panel, _weather_day_picker, _weather_day_line, _resort_forecast, build_weather_display, geojson
 status: current
-last-reviewed: 2026-10-31
+last-reviewed: 2026-11-01
 ---
 
 # Weather surfaces
 
 Everything a user can see of the Open-Meteo domain. The data behind it —
-one `Weather` row per `(location, observed_on)`, with the forward days in
-its `forecast` column — is
+one `Weather` row per `(location, observed_on)`, today and the six days
+ahead written by every fetch, each with its own hourly series (SNOW-1337) — is
 [`docs/decisions/weather-is-one-immutable-location-row.md`](decisions/weather-is-one-immutable-location-row.md);
 this document is the places that row is read.
 
@@ -44,9 +44,10 @@ points are the resort's `ResortLocation` links by role (primary first
 within a role); the resort's pin stands in for Base when no link has
 that role, a role with no location gets no chip, and a link with a blank
 role is no point at all. `_resort_forecast_points` reads every point's
-row in one batched `Weather.objects.on_date(timezone.localdate())` query
-and builds each week with `build_point_forecast_panel` — the row's own
-day, then its `forecast[]` — capped at `FORECAST_DAYS`. Today's tile
+week in one batched `Weather.objects.window(today, FORECAST_DAYS)` query
+and builds each week with `build_point_forecast_panel` — today's row,
+then the rows after it (SNOW-1337: one row per day) — capped at
+`FORECAST_DAYS`. Today's tile
 leads, wider, with a Max / Min / New snow list; the six after it carry a
 weekday, an icon, high, low and new snow, and zero new snow reads "0 cm".
 Each pane closes with `_weather_provenance.html` in its linked shape and
@@ -148,9 +149,10 @@ first; the page keeps the meteogram until the hourly follow-up.
   dots are block-indexed, so the two inside the capsule invert with it.
   00 and 24 centre on their instant like every other label. The day line
   states the same two times, so the shading is never the only channel.
-- **A later day keeps the rows**: temperature, freezing level (the day's
-  highest), snow and wind, one figure each, and "Hour by hour
-  from {weekday}" — the day it becomes tomorrow, `HOURLY_DAYS - 1` before.
+- **A day without hours keeps the rows**: temperature, freezing level (the
+  day's highest), snow and wind, one figure each, and "No hour-by-hour
+  forecast was recorded for this day." Every fetched row carries its hours
+  since SNOW-1337, so this is only a row written without them.
 
 **The picker fits its container.** A cell needs about 42px, so the picker
 holds seven cells from 330px, six from 282px and five below that, dropping
@@ -169,10 +171,10 @@ hands the symbol's coordinate to `pwaWeatherDetail.open` (and a resort's
 to `pwaPlaceSheet.open`) and publishes
 `window.pwaMapProjection` to turn it into a screen point.
 
-**A forward day is a forecast, and the sheet says so (SNOW-1105).** The
-fetch writes no row ahead of today; the days after it live in today's row's
-`forecast` column. So for a scrubbed date after today the sheet reads
-today's row and the matching entry, opens its peek line with "Forecast",
+**A forward day is a forecast, and the sheet says so (SNOW-1105).** Each
+day ahead is its own row since SNOW-1337, written by today's fetch. For a
+scrubbed date after today the sheet opens today's week (today's row and
+the rows after it) on that day's cell, opens its peek line with "Forecast",
 and states at half when it was issued ("Forecast issued Sat 17 Oct, 12:20.
 It may change before the day."). Today and the past carry no tag. A date
 past the seven-day window reads "The forecast does not reach this day
@@ -206,18 +208,16 @@ eventually write a query that picks the wrong one.
   run (see below). Every surface must degrade to *no panel* — not an empty
   shell, not a "no data" notice, and certainly not an exception.
 
-### A backfilled row is one day, not a week
+### A backfilled row is one day, lead time zero
 
 `backfill_weather` and the `LocationAdmin` "Backfill missing weather"
 action (SNOW-731) fill missing past days. A row they write carries its
-daily scalars and its 24 hourly readings, but its `forecast[]` is **null on
-purpose** — the historical endpoint serves a stitched timeline, not the
-outlook as issued that morning, and that column means the latter.
-
-One day is the location forecast page's second shape — no day picker at
-all; see [Three page shapes](#three-page-shapes) below, which states what
-renders rather than repeating it here. The missing week is correct. Do not
-close it by inventing forward days from the stitched timeline.
+daily scalars and its 24 hourly readings, with `forecast_on` equal to its
+own day — lead time zero, the value every fetched row ends with
+(SNOW-1337). Since a day's outlook is the rows after it, a backfilled day
+followed by other backfilled days reads as a week like any other; one
+with no rows after it is the location forecast page's second shape — no
+day picker at all; see [Three page shapes](#three-page-shapes) below.
 
 ## The display service
 
@@ -230,16 +230,16 @@ what they carried. There is one model now.)
 | Function | Returns | Read by |
 |----------|---------|---------|
 | `build_weather_display(weather, now)` | `WeatherDisplay \| None` | `_weather_panel.html` |
-| `build_point_forecast_panel(weather, now)` | `ForecastPanel \| None` | `_weather_day_picker.html`, `_weather_day_line.html` |
-| `build_point_weather_days(weather)` | `{date: {code, icon, tmax}}` | `/api/weather.geojson` |
+| `build_point_forecast_panel(weather, now, following=None)` | `ForecastPanel \| None` | `_weather_day_picker.html`, `_weather_day_line.html` |
+| `build_point_weather_days(weather, following=())` | `{date: {code, icon, tmax}}` | `/api/weather.geojson` |
 
-`build_point_forecast_panel` builds the whole outlook from **one row**: its
-own `observed_on` leads, and the rest are the entries in its `forecast`
-column, in the provider's own `daily.time` order. The same list is drawn
-twice on the location forecast page — once as the picker's cells, once as
-the per-day lines the picker reveals — which is why every entry carries its
-own `sunrise_local` / `sunset_local` pair rather than the page reading the
-lead day's.
+`build_point_forecast_panel` builds the outlook from **the lead row and
+the rows after it** (SNOW-1337): the lead row's `observed_on` leads, and
+the rest are that place's next `FORECAST_DAYS - 1` rows in date order
+(`following_rows`, one query, unless a bulk caller hands them in). The
+same list is drawn twice on the location forecast page — once as the
+picker's cells, once as the per-day lines the picker reveals — and every
+day carries its own row's `sunrise_local` / `sunset_local` pair.
 
 ### Two bucket maps
 
@@ -256,13 +256,10 @@ can never take a page out.
 **The icon bucket is the weather service's reading, stored with the day**
 (SNOW-1343). The code → bucket table, `WMO_CODE_TO_ICON_BUCKET`, and
 `icon_bucket_for_code` live in `apps/ingest/normalise/weather_icons.py`
-(exported through `apps.ingest.public`), and `forecast_entry` writes each
-forward day's `icon_bucket` into the `forecast[]` entry it stores. Readers
-prefer that stored bucket and fall back to deriving one from `weather_code`:
-every day stored before SNOW-1343 lacks the key, and no past `Weather` or
-`SourceWeather` row is rewritten to add it. The row's own day has no column
-for a bucket and always derives (`weather_code_icon_bucket`, which delegates
-to ingest). The background buckets and the condition labels stay in
+(exported through `apps.ingest.public`). Each day is its own row since
+SNOW-1337, so every day's bucket is derived from its row's `weather_code`
+(`weather_code_icon_bucket`, which delegates to ingest); the `icon_bucket`
+SNOW-1343 stored on `forecast[]` entries went with the list. The background buckets and the condition labels stay in
 `weather_display.py`. Which variant of a day/night pair a panel shows is
 decided at read time, and only for the single-day header (below, `is_day`).
 Every tile of the week strip, the lead day included, draws the **day**
@@ -438,9 +435,10 @@ Discriminated by `show_day_picker`, computed once in
 a week-old one must render identically.
 
 | Row | Picker | Day 1–2 selected | Day 3–7 selected |
+|  |  | (a day whose row has no hours shows the figures instead) |  |
 |-----|--------|------------------|------------------|
-| Live (today) | 7 cells | day line + strips | day line + figures |
-| Backfilled (`forecast=None`) | none | day line + strips | n/a |
+| Live (today) | 7 cells | day line + strips | day line + strips |
+| One row, none after it (a lone backfilled day) | none | day line + strips | n/a |
 | No row at all | none | "No weather was recorded here for this day." | n/a |
 
 ### `includes/_weather_masthead.html`

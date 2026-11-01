@@ -100,7 +100,6 @@ from apps.bulletins.services.render_model import (
     danger_levels_column,
 )
 from apps.core.command_register import RegisteredCommand
-from apps.weather.services.fetch import HOURLY_DAYS
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -209,7 +208,7 @@ def _make_raw_data(
         danger_value: CAAML danger level key, e.g. ``"moderate"``.
 
     Returns:
-        A GeoJSON Feature dict suitable for storage in ``Bulletin.raw_data``.
+        A CAAML GeoJSON Feature dict, as the provider would publish it.
 
     """
     return {
@@ -446,7 +445,7 @@ def _make_bulletin_params(
         danger_value: Danger level key to embed in the CAAML payload.
 
     Returns:
-        A dict of Bulletin model field values.
+        A dict of BulletinFactory values (``raw_data`` is its CAAML param).
 
     """
     issued_dt = datetime(
@@ -660,22 +659,22 @@ def _seed_hourly(day: date, index: int, offset_c: float) -> list[dict[str, Any]]
     return rows
 
 
-def _seed_weather_fields(today: date, elevation_m: float | None) -> dict[str, Any]:
-    """Return the field values of one seeded ``Weather`` row for ``today``.
+def _seed_weather_days(today: date, elevation_m: float | None) -> list[dict[str, Any]]:
+    """Return the field values of one location's seeded week of ``Weather``.
 
-    The daily scalars describe today; ``hourly`` is today's 24 hours; and
-    ``forecast`` holds the six days after it. As in
-    ``apps.weather.services.fetch``, hours cover the first ``HOURLY_DAYS``
-    days counting today, so only forward days below that position carry
-    their own.
+    One row per day from today (SNOW-1337), as ``fetch_weather`` writes
+    them: each day's scalars and its own 24 hours, every row stamped with
+    today's ``forecast_on``.
 
     Args:
-        today: The row's ``observed_on``.
+        today: The first row's ``observed_on`` and every row's
+            ``forecast_on``.
         elevation_m: The location's height, or None for the reference
             height.
 
     Returns:
-        Keyword arguments for ``Weather.objects.create`` (location excluded).
+        Keyword arguments for ``Weather.objects.create`` (location excluded),
+        one per day, today first.
 
     """
     height = _SEED_WEATHER_REFERENCE_M if elevation_m is None else elevation_m
@@ -683,44 +682,31 @@ def _seed_weather_fields(today: date, elevation_m: float | None) -> dict[str, An
         -(height - _SEED_WEATHER_REFERENCE_M) * _SEED_WEATHER_LAPSE_C_PER_M, 1
     )
     tz = django_timezone.get_current_timezone()
-
-    def daily(index: int) -> dict[str, Any]:
-        """Return one day's daily scalars, shared by the row and forecast[]."""
-        return {
-            "weather_code": _SEED_WEATHER_CODES[index],
-            "temperature_2m_max": round(_SEED_WEATHER_TMAX_C[index] + offset_c, 1),
-            "temperature_2m_min": round(_SEED_WEATHER_TMIN_C[index] + offset_c, 1),
-            "snowfall_sum": _SEED_WEATHER_SNOWFALL_CM[index],
-            "precipitation_sum": round(_SEED_WEATHER_SNOWFALL_CM[index] * 0.7, 1),
-            "wind_speed_10m_max": float(26 + index * 2),
-            "wind_gusts_10m_max": float(46 + index * 3),
-            "wind_direction_10m_dominant": 255.0,
-            # The day's highest hourly value, as ``fetch`` derives it.
-            "freezing_level_height": float(1630 + index * 150),
-        }
-
-    forecast: list[dict[str, Any]] = []
-    for index in range(1, len(_SEED_WEATHER_CODES)):
+    now = django_timezone.now()
+    days: list[dict[str, Any]] = []
+    for index in range(len(_SEED_WEATHER_CODES)):
         day = today + timedelta(days=index)
-        entry: dict[str, Any] = {
-            "date": day.isoformat(),
-            **daily(index),
-            "sunrise": f"{day.isoformat()}T07:25",
-            "sunset": f"{day.isoformat()}T18:40",
-        }
-        if index < HOURLY_DAYS:
-            entry["hourly"] = _seed_hourly(day, index, offset_c)
-        forecast.append(entry)
-
-    return {
-        "observed_on": today,
-        "fetched_at": django_timezone.now(),
-        **daily(0),
-        "sunrise": datetime.combine(today, time(7, 25), tz),
-        "sunset": datetime.combine(today, time(18, 40), tz),
-        "hourly": _seed_hourly(today, 0, offset_c),
-        "forecast": forecast,
-    }
+        days.append(
+            {
+                "observed_on": day,
+                "forecast_on": today,
+                "fetched_at": now,
+                "weather_code": _SEED_WEATHER_CODES[index],
+                "temperature_2m_max": round(_SEED_WEATHER_TMAX_C[index] + offset_c, 1),
+                "temperature_2m_min": round(_SEED_WEATHER_TMIN_C[index] + offset_c, 1),
+                "snowfall_sum": _SEED_WEATHER_SNOWFALL_CM[index],
+                "precipitation_sum": round(_SEED_WEATHER_SNOWFALL_CM[index] * 0.7, 1),
+                "wind_speed_10m_max": float(26 + index * 2),
+                "wind_gusts_10m_max": float(46 + index * 3),
+                "wind_direction_10m_dominant": 255.0,
+                # The day's highest hourly value, as ``fetch`` derives it.
+                "freezing_level_height": float(1630 + index * 150),
+                "sunrise": datetime.combine(day, time(7, 25), tz),
+                "sunset": datetime.combine(day, time(18, 40), tz),
+                "hourly": _seed_hourly(day, index, offset_c),
+            }
+        )
+    return days
 
 
 def _seed_route_gpx() -> str:
@@ -1252,9 +1238,17 @@ class Command(RegisteredCommand):
         from tests.factories import BulletinFactory
 
         bulletins: list[Bulletin] = []
+        # A Bulletin keeps no CAAML (SNOW-1337): the seed holds each one's
+        # here, for the render model and the region links it is built into,
+        # and writes it as the bulletin's SourceBulletin (``held``) so the raw
+        # surfaces — the .caaml.json alternate, the admin, the MCP tool —
+        # answer on a seeded database as they do in production.
+        self._caaml_by_id: dict[str, dict[str, Any]] = {}
         for regions, target_date, danger in specs:
             params = _make_bulletin_params(list(regions), target_date, danger)
-            bulletin = BulletinFactory.create(**params)
+            properties = params["raw_data"]["properties"]
+            bulletin = BulletinFactory.create(**params, held=properties)
+            self._caaml_by_id[bulletin.bulletin_id] = properties
             self._build_render_model(bulletin)
             bulletins.append(bulletin)
 
@@ -1269,7 +1263,7 @@ class Command(RegisteredCommand):
             bulletin: A saved Bulletin instance.
 
         """
-        properties = (bulletin.raw_data or {}).get("properties", {})
+        properties = self._caaml_by_id.get(bulletin.bulletin_id, {})
         try:
             bulletin.render_model = build_render_model(properties)
             bulletin.render_model_version = RENDER_MODEL_VERSION
@@ -1307,7 +1301,7 @@ class Command(RegisteredCommand):
 
         created = 0
         for bulletin in bulletins:
-            properties = (bulletin.raw_data or {}).get("properties", {})
+            properties = getattr(self, "_caaml_by_id", {}).get(bulletin.bulletin_id, {})
             for region_entry in properties.get("regions", []):
                 micro = micro_map.get(region_entry["regionID"])
                 if micro is None:
@@ -1484,7 +1478,7 @@ class Command(RegisteredCommand):
         return created
 
     def _seed_weather(self, locations: "list[Location]", verbosity: int) -> int:
-        """Write today's Weather row for each seeded Location and a centroid.
+        """Write a week of Weather rows for each seeded Location and a centroid.
 
         The centroid is the CH-4115 region's, linked here exactly as
         ``link_region_centroid_locations`` links one — offline, from the
@@ -1501,41 +1495,61 @@ class Command(RegisteredCommand):
             The number of Weather rows created.
 
         """
-        from apps.locations.services.anchor import anchor_location
-        from apps.regions.fixture_utils import centre_from_bbox
         from apps.regions.models import MicroRegion
         from apps.weather.models import Weather
 
         targets = list(locations)
         for region in MicroRegion.objects.filter(region_id__in=DETAIL_REGIONS):
-            if region.centroid_location_id is None:
-                if not isinstance(region.boundary, dict):
-                    continue
-                try:
-                    centre = centre_from_bbox(region.boundary)
-                except KeyError, TypeError, ValueError, IndexError:
-                    # Mirrors link_region_centroid_locations: an unreadable
-                    # boundary is a region with no weather, not a failed seed.
-                    continue
-                region.centroid_location = anchor_location(
-                    float(centre["lat"]),
-                    float(centre["lon"]),
-                    region.centroid_elevation_m,
-                )
-                region.save(update_fields=["centroid_location", "updated_at"])
-            if region.centroid_location is not None:
-                targets.append(region.centroid_location)
+            centroid = self._seed_centroid(region)
+            if centroid is not None:
+                targets.append(centroid)
 
         today = django_timezone.localdate()
+        created = 0
         for location in targets:
-            Weather.objects.create(
-                location=location,
-                **_seed_weather_fields(today, location.elevation_m),
-            )
+            for fields in _seed_weather_days(today, location.elevation_m):
+                Weather.objects.create(location=location, **fields)
+                created += 1
 
         if verbosity >= 2:
-            self.stdout.write(f"  Created {len(targets)} Weather rows")
-        return len(targets)
+            self.stdout.write(f"  Created {created} Weather rows")
+        return created
+
+    def _seed_centroid(self, region: "MicroRegion") -> "Location | None":
+        """Return a region's centroid Location, linking it first when absent.
+
+        Linked exactly as ``link_region_centroid_locations`` links one —
+        offline, from the fixture's ``boundary`` and
+        ``centroid_elevation_m``.
+
+        Args:
+            region: The detail region.
+
+        Returns:
+            The centroid Location, or ``None`` when the region has no
+            readable boundary.
+
+        """
+        from apps.locations.services.anchor import anchor_location
+        from apps.regions.fixture_utils import centre_from_bbox
+
+        if region.centroid_location_id is not None:
+            return region.centroid_location
+        if not isinstance(region.boundary, dict):
+            return None
+        try:
+            centre = centre_from_bbox(region.boundary)
+        except KeyError, TypeError, ValueError, IndexError:
+            # Mirrors link_region_centroid_locations: an unreadable
+            # boundary is a region with no weather, not a failed seed.
+            return None
+        region.centroid_location = anchor_location(
+            float(centre["lat"]),
+            float(centre["lon"]),
+            region.centroid_elevation_m,
+        )
+        region.save(update_fields=["centroid_location", "updated_at"])
+        return region.centroid_location
 
     def _seed_trip_family(
         self, resolved: "set[SeedModel]", dev_user: "User | None", verbosity: int

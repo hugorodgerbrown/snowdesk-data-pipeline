@@ -34,9 +34,10 @@ import logging
 from argparse import ArgumentParser
 from typing import Any
 
-from apps.bulletins.models import Bulletin, RegionDayRating
+from apps.bulletins.models import RegionDayRating
 from apps.core.command_iteration import iterate_rows
 from apps.core.command_register import RegisteredCommand
+from apps.ingest.public import SourceBulletin
 from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
@@ -155,36 +156,29 @@ class Command(RegisteredCommand):
         """
         Return ``region_id``\u200bs appearing in any bulletin's raw payload.
 
-        Reads the regions list from each bulletin's
-        ``raw_data["properties"]["regions"]`` directly, rather than via the
-        ``RegionBulletin`` join, so the answer is independent of any local
-        linking step that might be the source of the gap under investigation.
+        Reads the regions list from each bulletin's CAAML as the ingest
+        service stored it (``SourceBulletin.caaml``, since SNOW-1337 the only
+        copy) directly, rather than via the ``RegionBulletin`` join, so the
+        answer is independent of any local linking step that might be the
+        source of the gap under investigation.
 
-        If ``target_date`` is given, restrict to bulletins whose stored
-        ``target_date`` equals that date — mirroring the candidate filter in
-        ``recompute_region_day``. Streams newest-id-first via ``iterate_rows``,
-        printing each scanned bulletin's id as a countdown line — ``id`` is
-        carried in the whole-archive scan's ``values_list`` tuple purely so
-        there is something to print.
+        If ``target_date`` is given, restrict to bulletins whose indexed
+        ``target_date`` equals that date — the same rule ``recompute_region_day``
+        filters on. Streams newest-id-first via ``iterate_rows``, printing
+        each scanned bulletin's id as a countdown line — ``id`` is carried in
+        the ``values_list`` tuple purely so there is something to print.
         """
-        if target_date is None:
-            seen: set[str] = set()
-            rows = Bulletin.objects.values_list("id", "bulletin_id", "raw_data")
-            for _pk, _bulletin_id, raw_data in iterate_rows(
-                self, rows, verbosity=verbosity, describe=lambda row: row[1]
-            ):
-                _collect_region_ids(raw_data, seen)
-            return seen
-
-        # Target-date scope: target_date is populated at ingest time by
-        # target_day_for_valid_from, so a single equality filter selects
-        # exactly the bulletins forecasting this day.
-        candidates = Bulletin.objects.for_target_date(target_date)
-        seen = set()
-        for bulletin in iterate_rows(
-            self, candidates, verbosity=verbosity, describe=Bulletin.row_label
+        rows = SourceBulletin.objects.all()
+        if target_date is not None:
+            rows = rows.filter(target_date=target_date)
+        seen: set[str] = set()
+        for _pk, _bulletin_id, caaml in iterate_rows(
+            self,
+            rows.values_list("id", "bulletin_id", "caaml"),
+            verbosity=verbosity,
+            describe=lambda row: row[1],
         ):
-            _collect_region_ids(bulletin.raw_data, seen)
+            _collect_region_ids(caaml, seen)
         return seen
 
     def _print_full_table(
@@ -205,16 +199,13 @@ class Command(RegisteredCommand):
             self.stdout.write(f"  [{bucket}] {region.region_id}  {region.name}")
 
 
-def _collect_region_ids(raw_data: Any, into: set[str]) -> None:
-    """Extract ``regionID`` strings from a bulletin ``raw_data`` blob.
+def _collect_region_ids(properties: Any, into: set[str]) -> None:
+    """Extract ``regionID`` strings from a bulletin's CAAML properties.
 
     Tolerates missing/empty payloads silently — the bulletin archive may
     contain partially populated rows from earlier ingest shapes, and the
     diagnostic shouldn't crash on them.
     """
-    if not isinstance(raw_data, dict):
-        return
-    properties = raw_data.get("properties")
     if not isinstance(properties, dict):
         return
     for entry in properties.get("regions") or []:

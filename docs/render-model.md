@@ -2,7 +2,7 @@
 name: render-model
 description: Bulletin.render_model shape — danger ratings, traits, prose, the derived block, RENDER_MODEL_VERSION, enrich_render_model, fidelity guard
 status: current
-last-reviewed: 2026-10-31
+last-reviewed: 2026-11-01
 ---
 
 # Render model
@@ -46,7 +46,7 @@ Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest t
 
 **On validation failure**: the caller stores `render_model = {"version": 0, "error": "...", "error_type": "..."}`. `fetch_bulletins` exits non-zero via `CommandError` when `run.records_failed > 0`. `rebuild_render_models` enqueues one task per bulletin (SNOW-1346); a build that fails commits the sentinel and fails its task, so under an inline backend the command exits non-zero, and on production's queued backend the failure is on the task result and in the worker log.
 
-**No rebuild on read** (SNOW-1342): `_get_render_model` in `apps/public/views.py` returns the stored model when `render_model_version` is current. A stale row is **not** rebuilt per request — it reads as the `{"version": 0, "error": …, "error_type": "StaleRenderModel"}` sentinel (a stored failure keeps its own error) and logs a warning naming both versions; the template renders the error card. That is why a version bump needs the `rebuild_render_models --commit` Deploy-Step. Read paths never read `raw_data` at all — [why](decisions/read-paths-never-read-raw-data.md).
+**No rebuild on read** (SNOW-1342): `_get_render_model` in `apps/public/views.py` returns the stored model when `render_model_version` is current. A stale row is **not** rebuilt per request — it reads as the `{"version": 0, "error": …, "error_type": "StaleRenderModel"}` sentinel (a stored failure keeps its own error) and logs a warning naming both versions; the template renders the error card. That is why a version bump needs the `rebuild_render_models --commit` Deploy-Step. Read paths never read CAAML at all (and since SNOW-1337 a `Bulletin` holds none) — [why](decisions/read-paths-never-read-raw-data.md).
 
 **Day character**: `compute_day_character(render_model)` is a pure function returning a `DayCharacter` with three fields — `key` (the locale-independent cascade key: `stable`, `manageable`, `hard_to_read`, `widespread`, `dangerous`), `label` (the display string), and `explainer` (the one-line day summary). Empty `traits` → the `stable` key immediately. Branch and export on `key`, never on `label`, which varies with the active locale.
 

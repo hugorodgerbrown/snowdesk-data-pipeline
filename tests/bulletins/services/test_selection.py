@@ -68,10 +68,8 @@ class TestSelectBulletinsForRegions:
 
         assert select_bulletins_for_regions([region], DAY) == {}
 
-    def test_is_one_query_and_defers_raw_data(
-        self, django_assert_num_queries: Any
-    ) -> None:
-        """Any number of regions is one query, and no CAAML is loaded."""
+    def test_is_one_query(self, django_assert_num_queries: Any) -> None:
+        """Any number of regions is one query."""
         regions = [
             MicroRegionFactory.create(region_id=f"CH-4{n:03d}") for n in range(5)
         ]
@@ -82,4 +80,3 @@ class TestSelectBulletinsForRegions:
             picked = select_bulletins_for_regions(regions, DAY)
 
         assert len(picked) == 5
-        assert all("raw_data" in b.get_deferred_fields() for b in picked.values())

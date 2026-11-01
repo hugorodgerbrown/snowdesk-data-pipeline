@@ -90,10 +90,10 @@ See "Going public" before turning either on.
   full sentences (`change_sentences`) stay for the since strip and
   `/alerts/<day>/`.
 - **New snow (SNOW-944).** A one-place alert ends "20 cm new snow
-  forecast." when today's `Weather` row for the region's
-  `centroid_location` forecasts 5 cm or more for the bulletin's day
-  (`alerts.forecast_new_snow`: the row's own `snowfall_sum` for today, its
-  `forecast[]` entry for tomorrow; `NEW_SNOW_MIN_CM`). The replay archive
+  forecast." when the `Weather` row for the bulletin's day at the region's
+  `centroid_location` forecasts 5 cm or more (`alerts.forecast_new_snow`:
+  that day's own row and its `snowfall_sum`, refined by every fetch until
+  the day passes, SNOW-1337; `NEW_SNOW_MIN_CM`). The replay archive
   carries no weather, so `/_alerts-replay/` names none unless
   `replay_region(new_snow=…)` is given it.
 - **One day per place.** If today and tomorrow both fire for one place,

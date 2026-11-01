@@ -2,7 +2,7 @@
 name: weather-day-picker-is-a-selector-not-navigation
 description: The weather day picker is a CSS radio group inside one Weather row's forecast window, not links pushing ?date= — no future row exists
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-11-01
 ---
 
 # The day picker selects inside a row; `?date=` selects the row
@@ -34,8 +34,8 @@ So the two are **independent axes**, not two spellings of one:
 
 | Control | Chooses | Range |
 |---------|---------|-------|
-| `?date=` | which row — which day the forecast was *made on* | today, and back to the day the estate was first fetched |
-| the picker | which day *inside* that row's window | day 0 to day 6 of `forecast[]` |
+| `?date=` | which week — the lead row's day | today, and back to the day the estate was first fetched |
+| the picker | which day *inside* that week | the lead row and the six rows after it (SNOW-1337) |
 
 A link-based picker would collapse them, and would 404-equivalent on six
 cells out of seven.

@@ -113,7 +113,11 @@ class TestApplySourceWeather:
         station = SourceLocationFactory.create()
         location = LocationFactory.create(source_uuid=station.uuid)
         row = SourceWeatherFactory.create(
-            location=station, weather_code=71, snowfall_sum=12.5, forecast=[{"d": 1}]
+            location=station,
+            weather_code=71,
+            snowfall_sum=12.5,
+            hourly=[{"time": "x"}],
+            forecast_on=timezone.localdate(),
         )
 
         weather, created = apply_source_weather(row)  # type: ignore[misc]
@@ -123,7 +127,8 @@ class TestApplySourceWeather:
         assert weather.observed_on == row.observed_on
         assert weather.weather_code == 71
         assert weather.snowfall_sum == 12.5
-        assert weather.forecast == [{"d": 1}]
+        assert weather.hourly == [{"time": "x"}]
+        assert weather.forecast_on == row.forecast_on
         assert weather.fetched_at == row.fetched_at
 
     def test_todays_row_is_refined_on_a_second_apply(self) -> None:

@@ -72,8 +72,8 @@ class TestFetchWeatherCommand:
         assert Weather.objects.count() == 0
         assert "READ-ONLY" in stdout.getvalue()
 
-    def test_commit_writes_one_row_per_active_location(self) -> None:
-        """--commit persists exactly one row per active location."""
+    def test_commit_writes_one_row_per_day_per_active_location(self) -> None:
+        """--commit persists one row per day of the window per location."""
         ResortLocationFactory.create()
         ResortLocationFactory.create()
         stdout = StringIO()
@@ -83,8 +83,9 @@ class TestFetchWeatherCommand:
         ):
             call_command("fetch_weather", "--commit", stdout=stdout)
 
-        assert Weather.objects.count() == 2
-        assert "2 row(s) created" in stdout.getvalue()
+        # Two locations, a two-day payload: four rows (SNOW-1337).
+        assert Weather.objects.count() == 4
+        assert "4 row(s) created" in stdout.getvalue()
 
     def test_a_second_run_refines_rather_than_appending(self) -> None:
         """The four daily runs must not accumulate rows for the same day."""
@@ -96,7 +97,7 @@ class TestFetchWeatherCommand:
             call_command("fetch_weather", "--commit", stdout=StringIO())
             call_command("fetch_weather", "--commit", stdout=StringIO())
 
-        assert Weather.objects.count() == 1
+        assert Weather.objects.count() == 2
 
     def test_a_favourite_or_a_trip_is_never_fetched(self) -> None:
         """Only Snowdesk decides where a forecast is fetched (2026-10-28).
@@ -151,9 +152,9 @@ class TestFetchWeatherCommand:
         assert f"{location.pk} " in stdout.getvalue()
 
     def test_a_past_row_is_left_alone(self) -> None:
-        """The command writes today; yesterday's account is not touched.
+        """The command writes today onwards; yesterday's account is not touched.
 
-        Today's row is created alongside it rather than the past one being
+        Today's week is created alongside it rather than the past one being
         rewritten, which is the whole point of the immutability rule.
         """
         location = LocationFactory.create()
@@ -170,7 +171,7 @@ class TestFetchWeatherCommand:
 
         past.refresh_from_db()
         assert past.weather_code == 3
-        assert Weather.objects.for_location(location).count() == 2
+        assert Weather.objects.for_location(location).count() == 3
 
 
 @pytest.mark.django_db
@@ -190,9 +191,14 @@ class TestReferencePlacesGoThroughTheService:
         assert get.call_count == 1
         station = SourceLocation.objects.get()
         assert station.uuid == link.location.uuid
-        assert SourceWeather.objects.get().location == station
-        weather = Weather.objects.get()
-        assert weather.location == link.location
+        assert set(SourceWeather.objects.values_list("location", flat=True)) == {
+            station.pk
+        }
+        assert SourceWeather.objects.count() == 2
+        assert set(Weather.objects.values_list("location", flat=True)) == {
+            link.location.pk
+        }
+        assert Weather.objects.count() == 2
         output = stdout.getvalue()
         assert "1 station(s)" in output
         assert "Stations: 1 created" in output
@@ -209,7 +215,7 @@ class TestReferencePlacesGoThroughTheService:
 
         assert get.call_count == 1
         assert SourceLocation.objects.count() == 1
-        assert Weather.objects.count() == 1
+        assert Weather.objects.count() == 2
 
     def test_read_only_mirrors_nothing(self) -> None:
         """Without --commit the station list is left as it is."""

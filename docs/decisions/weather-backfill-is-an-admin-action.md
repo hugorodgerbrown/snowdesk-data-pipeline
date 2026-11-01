@@ -1,8 +1,8 @@
 ---
 name: weather-backfill-is-an-admin-action
-description: The Weather backfill runs inline in a capped LocationAdmin action, not on the task queue, and a backfilled row's forecast[] stays null
+description: Weather backfill runs inline in a capped LocationAdmin action; a backfilled row is its day at lead zero (forecast_on)
 status: current
-last-reviewed: 2026-10-28
+last-reviewed: 2026-11-01
 ---
 
 # The weather backfill is an inline admin action, and writes no forecast
@@ -52,34 +52,31 @@ setting a sensible cap now. (SNOW-1245 took a cheaper route: the hourly
 email queue — see
 [`weather-backfill-sweeps-newest-fortnight-first.md`](weather-backfill-sweeps-newest-fortnight-first.md).)
 
-## Decision 2 — a backfilled row's `forecast[]` stays null
+## Decision 2 — a backfilled row is its day at lead time zero
 
-**Decision.** `backfill_location` writes `forecast=None` on every row (in `SourceWeather`, and so in the `Weather` row applied from it). It
-does not derive forward days from the historical response.
+*Amended by SNOW-1337 (Hugo, 1 Nov 2026).* Until then this said a
+backfilled row's `forecast[]` stays null: `forecast` meant *the days after
+`observed_on`, as known on `observed_on`*, and the historical API's
+stitched timeline is not that, so the backfill left the column empty
+rather than plausible. SNOW-1337 removed the column. A row is now the
+account of its own day only, and the outlook from any day is the rows
+after it.
 
-**Why.** `Weather.forecast` means *the days after `observed_on`, as known on
-`observed_on`* — the outlook as issued that morning. The historical forecast
-API serves something different: a continuous stitched timeline, one value
-per day, each as issued near that day. Writing the second into a column that
-means the first would be a quiet lie, and the surfaces that read
-`forecast[]` would present it as one. The whole point of `Weather` being an
-account of a day rather than a cache of it is that nothing afterwards can
-tell a rewrite from a record — so the column stays empty rather than
-plausible.
+**Decision.** `backfill_location` writes each past day as one row with its
+scalars and its hourly series and `forecast_on = observed_on` (lead time
+zero), in `SourceWeather` and so in the `Weather` row applied from it. It
+derives no other day from the historical response.
 
-**Consequences.** A null `forecast` yields exactly one day, which is the
-location forecast page's **second shape** (SNOW-789): masthead, that day's
-line, its meteogram, provenance — and **no day picker at all**. There is
-nothing to pick between, so the page renders the day line with no
-`.forecast-day-line` hiding class, because with no picker there is no radio
-and the `:has()` reveal could never match it. The week is what a backfilled
-day costs, and only the week. That absence is correct; do not "fix" it by
-inventing forward days from the stitched timeline. Why the missing picker is
-permanent rather than a gap:
+**Why.** A fetched row's lead time closes to zero on its own day and stays
+there once the day has passed, so a backfilled row of the same day says
+the same kind of thing: the day as it was known on the day. The stitched
+timeline is exactly that, one value per day, each as issued near that day.
+
+**Consequences.** A backfilled day followed by other recorded days reads as
+a week, like any other day. A backfilled day with no rows after it yields
+one day, which is the location forecast page's **second shape** (SNOW-789):
+masthead, that day's line, its strips, provenance — and **no day picker at
+all**, with the day line carrying no `.forecast-day-line` hiding class,
+because with no picker there is no radio and the `:has()` reveal could
+never match it. Why the picker is a selector rather than navigation:
 [`weather-day-picker-is-a-selector-not-navigation.md`](weather-day-picker-is-a-selector-not-navigation.md).
-
-`ForecastPanelDay.selectable` is true exactly when `hourly` is present. It
-no longer decides whether a day is a control — every cell in the picker is
-one — but it still decides whether a day has a meteogram, so backfilling
-`hourly` (which this does, all 24 hours per day) is what makes a historical
-meteogram work at all.

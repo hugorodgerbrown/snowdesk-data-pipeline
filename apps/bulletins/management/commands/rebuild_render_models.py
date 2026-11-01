@@ -5,7 +5,8 @@ Enqueues one background task per Bulletin whose ``render_model_version`` is
 older than the current ``RENDER_MODEL_VERSION`` (or per bulletin, with
 ``--all``, or one bulletin, with ``--bulletin-id``). Each task
 (``apps.bulletins.services.render_rebuild.rebuild_bulletin_task``) rebuilds
-the bulletin's ``render_model`` from its ``raw_data``, writes it with the
+the bulletin's ``render_model`` from the CAAML the ingest service stored
+for it (``SourceBulletin``, SNOW-1337), writes it with the
 ``danger_levels`` column read off its ``derived`` block (SNOW-1341), and
 recomputes the RegionDayRating of every (region, day) it governs, in one
 transaction (pass ``--skip-day-ratings`` to suppress the recompute).
@@ -26,7 +27,7 @@ nothing. ``--all`` and ``--bulletin-id`` force the rebuild of a current row.
 
 Streams slim rows newest-id-first via ``apps.core.command_iteration
 .iterate_rows`` (SNOW-602): the walk loads only what the countdown label
-reads, never ``raw_data``.
+reads, never CAAML.
 
 Read-only by default — pass ``--commit`` to enqueue (per the project-wide
 management command convention).

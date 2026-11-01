@@ -84,7 +84,7 @@ class TestItems:
         (item,) = _all("weather")
         assert item["observed_on"] == "2026-10-01"
         assert item["fields"]["temperature_2m_max"] == 4.5
-        assert item["fields"]["forecast"] == []
+        assert item["fields"]["forecast_on"] == "2026-10-01"
 
     def test_location_names_the_regions_it_is_centroid_of(self) -> None:
         """centroid_of carries region codes, not ids."""

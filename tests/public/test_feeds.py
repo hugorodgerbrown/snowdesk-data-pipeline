@@ -14,7 +14,7 @@ Covers ``CountryBulletinFeed`` in ``apps/public/feeds.py`` (SNOW-396):
 * Only regions from the requested country appear.
 * Entry descriptions are a plain-text summary of the render model's
   ``prose`` block — precedence, HTML stripped, 280-character cap — and
-  the feed query leaves ``raw_data`` behind (SNOW-1344).
+  the feed query loads only the columns it reads (SNOW-1344).
 * ``/llms.txt`` lists each country's feed under ``## Data``.
 * The homepage carries a ``<link rel="alternate" type="application/rss+xml">``
   for each country.
@@ -412,14 +412,14 @@ class TestFeedDescriptions:
         text = "x" * 280
         assert bulletin_summary(_prose_model(snowpack_structure=text)) == text
 
-    def test_items_defer_raw_data(self) -> None:
-        """The feed query leaves raw_data behind and keeps what it reads."""
+    def test_items_load_only_what_the_feed_reads(self) -> None:
+        """The feed query loads the columns it reads and leaves the rest."""
         _make_bulletin_for_region("CH-4115", "CH", name="Verbier")
 
         item = list(CountryBulletinFeed().items("ch"))[0]
 
         deferred = item.bulletin.get_deferred_fields()
-        assert "raw_data" in deferred
+        assert "content_hash" in deferred
         for field in ("render_model", "issued_at", "bulletin_id"):
             assert field not in deferred
         assert "region_name_at_time" not in item.get_deferred_fields()

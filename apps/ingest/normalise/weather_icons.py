@@ -3,9 +3,8 @@ apps/ingest/normalise/weather_icons.py — WMO weather code → icon bucket.
 
 The weather service's reading of a WMO weather interpretation code (0–99):
 which of the twelve Yr / MET Norway drawings stands for it. Moved here from
-``apps/weather/services/weather_display.py`` (SNOW-1343) so the service can
-write the bucket into each ``forecast[]`` day it stores
-(``apps.ingest.normalise.weather.forecast_entry``) and every reader — the
+``apps/weather/services/weather_display.py`` (SNOW-1343) so the service and
+every reader — the
 server-rendered panels and the map, which used to carry its own mirror of
 this table in ``static/js/map_weather_core.js`` — reads one answer instead of
 deriving its own.

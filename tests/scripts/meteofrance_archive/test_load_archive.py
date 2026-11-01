@@ -30,6 +30,7 @@ from apps.bulletins.models import Bulletin, PipelineRun  # noqa: E402
 from apps.bulletins.services.meteofrance_archive_loader import (  # noqa: E402
     fixup_envelope,
 )
+from apps.ingest.public import SourceBulletin  # noqa: E402
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 SAMPLE_NDJSON = FIXTURES_DIR / "sample_archive.ndjson"
@@ -239,10 +240,12 @@ class TestCommitMode:
         assert "FR-03-2026-01-15-20260114120000" in ids
 
     def test_region_id_translated(self) -> None:
-        """The stored raw_data uses FR-{NN} region IDs, not FR-{SLUG}."""
+        """The stored CAAML uses FR-{NN} region IDs, not FR-{SLUG}."""
         run_loader(SAMPLE_NDJSON, commit=True, verbose=False)
-        aravis = Bulletin.objects.get(bulletin_id="FR-02-2026-01-15-20260114120000")
-        regions = aravis.raw_data["properties"]["regions"]
+        aravis = SourceBulletin.objects.get(
+            bulletin_id="FR-02-2026-01-15-20260114120000"
+        )
+        regions = aravis.caaml["regions"]
         assert regions[0]["regionID"] == "FR-02"
 
     def test_unknown_slug_is_skipped_not_stored(self) -> None:

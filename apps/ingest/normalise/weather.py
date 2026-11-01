@@ -8,21 +8,13 @@ location, a setting or the database. ``apps/ingest/backfill.py`` reads the
 historical host's responses through the same functions, because the two
 endpoints answer in the same shape.
 
-Also the two shapes the parsing produces, which are the contract for the
-``Weather.hourly`` and ``Weather.forecast`` JSON columns:
+Also the shape of one hour, the contract for the ``hourly`` JSON column:
 
   HourlyRow    one hour of one day — the shape of every entry in
-               ``Weather.hourly`` and in a ``ForecastDay["hourly"]``.
-  ForecastDay  one forward day — the shape of every entry in
-               ``Weather.forecast``.
+               ``Weather.hourly`` and ``SourceWeather.hourly``.
 
-**``ForecastDay.hourly`` is optional.** The stored day carries its own hourly
-series in the ``hourly`` column; the forward days carry theirs nested in their
-``forecast[]`` entry, but only for the first ``HOURLY_DAYS`` of them (see
-``apps.weather.services.fetch``). Beyond that the key is **absent**, keeping
-the stored JSON bounded. Every consumer must test for it —
-``day.get("hourly")`` — rather than assuming it is there. ``NotRequired`` on
-the key is what makes that a type error to forget.
+Every day of the fetch window is its own row since SNOW-1337, each with its
+own hourly series, so there is no forward-day shape any more.
 
 Two behaviours here each have their own test, because each was a bug found the
 hard way: rows key off the provider's own ``daily.time`` (SNOW-466,
@@ -33,9 +25,7 @@ stored as null (SNOW-628, ``day_is_complete``).
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from typing import Any, NotRequired, TypedDict, cast
-
-from apps.ingest.normalise.weather_icons import icon_bucket_for_code
+from typing import Any, TypedDict, cast
 
 
 class HourlyRow(TypedDict):
@@ -55,50 +45,6 @@ class HourlyRow(TypedDict):
     wind_gusts_10m: float | None
     wind_direction_10m: float | None
     freezing_level_height: float | None
-
-
-class ForecastDay(TypedDict):
-    """One forward day, as known on the parent row's ``observed_on``.
-
-    The daily scalars mirror the model's own columns, so a forward day and
-    a stored day read the same way. ``date`` is an ISO-8601 date string —
-    JSON has no date type — and comes from the provider's own ``daily.time``
-    array rather than being derived by offset (SNOW-466).
-
-    ``sunrise`` and ``sunset`` are carried per entry so a forward day can
-    pick a day or night icon without a second lookup; they are already
-    fetched for every day in the window, so including them is free.
-
-    ``hourly`` is present only on the first ``HOURLY_DAYS`` entries — read
-    it with ``.get()``.
-
-    ``icon_bucket`` is the service's reading of ``weather_code`` — which
-    drawing stands for the day (SNOW-1343). It is absent on every day
-    stored before it was written, and no past row is rewritten, so a reader
-    prefers it and falls back to deriving one from ``weather_code``.
-    """
-
-    date: str
-    weather_code: int
-    sunrise: str
-    sunset: str
-    temperature_2m_max: float | None
-    temperature_2m_min: float | None
-    apparent_temperature_max: float | None
-    apparent_temperature_min: float | None
-    precipitation_sum: float | None
-    snowfall_sum: float | None
-    precipitation_probability_max: int | None
-    precipitation_hours: float | None
-    wind_speed_10m_max: float | None
-    wind_gusts_10m_max: float | None
-    wind_direction_10m_dominant: float | None
-    uv_index_max: float | None
-    daylight_duration: float | None
-    sunshine_duration: float | None
-    freezing_level_height: float | None
-    icon_bucket: NotRequired[str]
-    hourly: NotRequired[list[HourlyRow]]
 
 
 # The daily variables requested. Ordered as the model declares them so the
@@ -349,50 +295,3 @@ def daily_fields(daily: dict[str, Any], idx: int) -> dict[str, Any]:
     for key in _OPTIONAL_DAILY_FIELDS:
         fields[key] = _optional(key)
     return fields
-
-
-def forecast_entry(
-    daily: dict[str, Any],
-    hourly: dict[str, Any] | None,
-    idx: int,
-    day: date,
-    *,
-    with_hourly: bool,
-) -> ForecastDay:
-    """
-    Build one ``forecast[]`` entry for a forward day.
-
-    Mirrors the model's own columns so a forward day reads the same way as
-    a stored one, with ``sunrise``/``sunset`` kept as ISO strings (JSON has
-    no datetime) so a consumer can pick a day or night icon without a
-    second lookup, and with the day's ``icon_bucket`` (SNOW-1343) so no
-    consumer carries its own code → icon table.
-
-    Args:
-        daily: The ``"daily"`` block.
-        hourly: The ``"hourly"`` block, or None.
-        idx: Index of this day in the daily arrays.
-        day: The provider date for this day.
-        with_hourly: Whether to nest this day's hourly series. True only
-            for the first ``HOURLY_DAYS`` days of the window.
-
-    Returns:
-        The entry, ready to append to ``Weather.forecast``.
-
-    """
-    fields = daily_fields(daily, idx)
-    entry: dict[str, Any] = {
-        "date": day.isoformat(),
-        **fields,
-        # Back to ISO strings: these came out of daily_fields as datetimes
-        # for the model's columns, and this one is going into JSON.
-        "sunrise": daily["sunrise"][idx],
-        "sunset": daily["sunset"][idx],
-        "freezing_level_height": daily_max_freezing_level(hourly, day),
-        "icon_bucket": icon_bucket_for_code(fields["weather_code"]),
-    }
-    if with_hourly:
-        rows = hourly_rows_for_day(hourly, day)
-        if rows:
-            entry["hourly"] = rows
-    return cast(ForecastDay, entry)

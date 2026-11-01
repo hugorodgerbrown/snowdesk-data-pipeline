@@ -31,12 +31,11 @@ structured weather, etc.). Where possible, equivalent values are derived
 from the bulletin's stored render model; sections with no available data are
 omitted from the template context so the template hides them gracefully.
 
-A read path never reads ``Bulletin.raw_data`` and never rebuilds a render
-model (SNOW-1342; docs/decisions/read-paths-never-read-raw-data.md): the
-only raw readers here are the superuser / DEBUG raw embed in
-``_render_bulletin_page``, whose audience alone has ``issues_for_date``
-load it (``include_raw``), and
-``examples_category``'s filter (until SNOW-1341).
+A read path never reads CAAML and never rebuilds a render model (SNOW-1342;
+docs/decisions/read-paths-never-read-raw-data.md); a ``Bulletin`` holds none
+since SNOW-1337. The one raw reader here is the superuser / DEBUG raw embed
+in ``_render_bulletin_page``, which reads the service's stored CAAML through
+``apps.ingest.public.source_caaml`` and embeds nothing when it holds none.
 """
 
 from __future__ import annotations
@@ -49,6 +48,7 @@ import logging
 import random
 import unicodedata
 import uuid
+from collections import defaultdict
 from collections.abc import Mapping
 from typing import Any, cast
 from urllib.parse import urlencode
@@ -128,7 +128,13 @@ from apps.core.http import client_ip, is_speculative
 from apps.core.services.request_log import capture as capture_request_log
 from apps.core.sw_shell import inject_cache_version, served_cache_version
 from apps.favourites.models import Favourite
-from apps.ingest.public import derived_of, period_transition_of, state_of
+from apps.ingest.public import (
+    caaml_envelope,
+    derived_of,
+    period_transition_of,
+    source_caaml,
+    state_of,
+)
 from apps.locations.models import Location, ResortLocation
 from apps.observations.models import FieldObservation
 from apps.observations.services.ground import ground_for_region
@@ -138,7 +144,7 @@ from apps.routes.models import Route, RouteShare
 from apps.routes.services.shares import pending_tokens
 from apps.weather.models import Weather
 from apps.weather.services.day_strips import build_day_strips
-from apps.weather.services.fetch import FORECAST_DAYS, HOURLY_DAYS
+from apps.weather.services.fetch import FORECAST_DAYS
 from apps.weather.services.hourly_chart import build_hourly_chart
 from apps.weather.services.weather_display import build_point_forecast_panel
 
@@ -303,13 +309,15 @@ def _render_bulletin_page(
       carries the bulletin UUID so operators can identify exactly which
       row rendered this page from network tools.
     * When ``settings.DEBUG`` is True *or* the request comes from a
-      superuser, and a bulletin is present, its raw CAAML ``raw_data``
-      payload is embedded as a ``<script type="application/json">`` tag
-      so it is visible in the page source but invisible to the reader.
+      superuser, and a bulletin is present, the CAAML the ingest service
+      stored for it (``source_caaml``, SNOW-1337), in its GeoJSON Feature
+      envelope, is embedded as a ``<script type="application/json">`` tag
+      so it is visible in the page source but invisible to the reader. An
+      instance whose service holds no such bulletin embeds nothing.
 
     Args:
         request: The incoming HTTP request.
-        context: The template context (this helper adds ``raw_data_json``
+        context: The template context (this helper adds ``caaml_json``
             when appropriate but leaves the rest untouched).
         bulletin: The bulletin being rendered, or ``None`` for empty-state pages.
 
@@ -320,15 +328,16 @@ def _render_bulletin_page(
 
     """
     if bulletin is not None and (settings.DEBUG or request.user.is_superuser):
-        # The read path defers ``raw_data`` (SNOW-1342); the bulletin page
-        # asks issues_for_date for it explicitly for this audience
-        # (include_raw), and a caller that did not still loads it here, on
-        # access. Escape ``</`` so a stray ``</script>`` substring in the
-        # CAAML payload cannot terminate the embedding ``<script>`` tag.
-        # JSON decodes ``\/`` to ``/`` so round-tripping with JSON.parse is
-        # unaffected.
-        raw = json.dumps(bulletin.raw_data, ensure_ascii=False).replace("</", "<\\/")
-        context = {**context, "raw_data_json": raw}
+        # One query, for this audience only. Escape ``</`` so a stray
+        # ``</script>`` substring in the CAAML payload cannot terminate the
+        # embedding ``<script>`` tag. JSON decodes ``\/`` to ``/`` so
+        # round-tripping with JSON.parse is unaffected.
+        caaml = source_caaml(bulletin.bulletin_id)
+        if caaml is not None:
+            raw = json.dumps(caaml_envelope(caaml), ensure_ascii=False).replace(
+                "</", "<\\/"
+            )
+            context = {**context, "caaml_json": raw}
     response = render(request, "public/bulletin.html", context)
     if bulletin is not None:
         response["X-Bulletin-Id"] = str(bulletin.bulletin_id)
@@ -2878,7 +2887,7 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
     #
     # Since SNOW-1341 the filter is the ``danger_levels`` column — the
     # distinct levels of the render model's danger.ratings, stored as
-    # "|moderate|considerable|" — not a LIKE over raw_data cast to text,
+    # "|moderate|considerable|" — not a LIKE over the CAAML cast to text,
     # so the page reads no CAAML. The delimiters make the match exact
     # ("|high|" is not inside "|very_high|"), so no Python confirmation is
     # needed. Unindexed on purpose: a LIKE '%…%' cannot use one.
@@ -4209,13 +4218,7 @@ def _bulletin_detail_response(
     # the caller asked for; otherwise fall back to the day's latest
     # issue (SNOW-1207). Multi-issue days render the requested (or default) issue
     # as the page body.
-    # raw_data is deferred unless this request will render the raw embed
-    # (_render_bulletin_page); then it rides on the same query (SNOW-1342).
-    issues = _issues_for_date(
-        region,
-        target_date,
-        include_raw=settings.DEBUG or request.user.is_superuser,
-    )
+    issues = _issues_for_date(region, target_date)
     selected = _resolve_selected_issue(issues, target_date, requested_issue_id)
 
     # The page represents the calendar day chosen in the URL, independent
@@ -4464,20 +4467,20 @@ def _location_forecast_context(
     ``hourly_charts`` is one SNOW-723 meteogram per **selectable** day,
     indexed by that day's position in the picker so the two line up
     (SNOW-787): the picker is the selector and the meteograms are what it
-    selects between. ``HOURLY_DAYS`` is 2, so in practice this is the row's
-    own day and one forward day; the rest of the week has no ``hourly`` key
-    at all and contributes no meteogram rather than an empty frame.
+    selects between. Every day's row carries its own hourly series since
+    SNOW-1337, so every day of a live week is selectable; a row with no
+    hourly series (a backfilled day the archive gave no hours for)
+    contributes no meteogram rather than an empty frame.
 
     The index is the panel position, not an enumeration of the meteograms.
     A day that drops out of the picker for a malformed date would otherwise
     shift every later meteogram off its cell.
 
-    **A forward day opens today's row with that day selected** (SNOW-1105).
-    The fetch writes no row ahead of today — the days after it live in
-    today's ``forecast`` column — so ``?date=`` naming one used to find
-    nothing and render "nothing recorded". The map's sheet links here with
-    the day it was showing, so the row is read for today and
-    ``selected_index`` points the picker at the requested day. A day past
+    **A forward day opens today's week with that day selected** (SNOW-1105).
+    The week always leads with today, so the map's sheet, linking here with
+    the day it was showing, finds the same seven cells whichever day it
+    names: today's row and the rows after it (SNOW-1337), with
+    ``selected_index`` pointing the picker at the requested day. A day past
     the window falls back to the row's own day, the picker's default.
 
     **The map's sheet draws day strips, not the meteogram** (SNOW-1219).
@@ -4488,10 +4491,10 @@ def _location_forecast_context(
     four readings, one figure each.
 
     ``show_day_picker`` is the page's shape discriminator, precomputed here
-    rather than left to a ``|length`` test in the template (SNOW-789). A
-    backfilled row carries ``forecast=None`` and therefore exactly one day,
-    so the whole "live week vs one recovered day" distinction is this one
-    comparison, in the one place it can be tested.
+    rather than left to a ``|length`` test in the template (SNOW-789). A day
+    with no rows after it — the newest day a station holds — is exactly one
+    day, so the whole "week vs one day" distinction is this one comparison,
+    in the one place it can be tested.
 
     Args:
         location: The location to describe.
@@ -4526,16 +4529,10 @@ def _location_forecast_context(
     for index, day in enumerate(panel["days"] if panel else []):
         if not day["selectable"]:
             if strips:
-                # A day past the hourly window: its daily figures, and the
-                # day its hours arrive — when it is HOURLY_DAYS - 1 away.
-                day_figures.append(
-                    {
-                        "index": index,
-                        "day": day,
-                        "hourly_from": day["date"]
-                        - datetime.timedelta(days=HOURLY_DAYS - 1),
-                    }
-                )
+                # A day with no hourly series: its daily figures. Every
+                # fetched day carries hours since SNOW-1337, so this is only
+                # a day whose row was written without them.
+                day_figures.append({"index": index, "day": day})
             continue
         if strips:
             drawing = build_day_strips(day, elevation=location.elevation_m, now=now)
@@ -4773,10 +4770,10 @@ def location_weather(request: HttpRequest, short_id: str) -> HttpResponse:
     Three page shapes, discriminated by ``show_day_picker`` and never by
     the date:
 
-      * a **live** row carries a full ``forecast[]``, so seven cells with
-        strips behind the first two;
-      * a **backfilled** row (``forecast=None``) is one day: no picker, and
-        its day line and meteogram render plainly;
+      * a day with **rows after it** is a week: up to seven cells, each
+        with its strips behind it (SNOW-1337);
+      * a day with **no row after it** is one day: no picker, and its day
+        line and meteogram render plainly;
       * **no row at all** is the "nothing recorded" message.
 
     It exists because most weather symbols had nowhere to point. A location
@@ -5414,9 +5411,9 @@ def _resort_forecast_points(
     point, and a link with a blank role is not a point at all — it names no
     altitude the chips could offer.
 
-    Each point carries today's ``Weather`` row and the week built from it
-    by ``build_point_forecast_panel`` — the row's own day, then its
-    ``forecast[]`` — capped at ``FORECAST_DAYS``. The rows are read in ONE
+    Each point carries today's ``Weather`` row and the week built by
+    ``build_point_forecast_panel`` — today's row, then the rows after it
+    (SNOW-1337), ``FORECAST_DAYS`` in all. The rows are read in ONE
     batched query keyed by ``location_id``, so the page costs the same
     whatever the number of points (the pin rides on the caller's
     ``select_related("location")``). A point with no row today keeps its
@@ -5449,21 +5446,19 @@ def _resort_forecast_points(
         by_role[ResortLocation.ROLE.BASE] = resort.location
     if not by_role:
         return []
-    weather_by_location = {
-        row.location_id: row
-        for row in Weather.objects.on_date(today).filter(
-            location_id__in=[location.pk for location in by_role.values()]
-        )
-    }
+    week_by_location: dict[int, list[Weather]] = defaultdict(list)
+    for row in Weather.objects.filter(
+        location_id__in=[location.pk for location in by_role.values()]
+    ).window(today, FORECAST_DAYS):
+        week_by_location[row.location_id].append(row)
     points: list[dict[str, Any]] = []
     for role, label in _RESORT_FORECAST_ROLES:
         location = by_role.get(role)
         if location is None:
             continue
-        weather = weather_by_location.get(location.pk)
-        panel = build_point_forecast_panel(weather)
-        if panel is not None:
-            panel["days"] = panel["days"][:FORECAST_DAYS]
+        week = week_by_location.get(location.pk, [])
+        weather = week[0] if week and week[0].observed_on == today else None
+        panel = build_point_forecast_panel(weather, week[1:])
         points.append(
             {
                 "role": str(role).lower(),
@@ -5916,7 +5911,7 @@ def _resolve_period_danger_from_rm(
     Falls back to the render-model ``traits`` when no projected ratings cover
     the period — this matches the behaviour of the old
     :func:`_resolve_period_danger` fallback and keeps test fixtures that
-    populate only ``render_model`` (not ``raw_data``) rendering correctly.
+    populate only part of a ``render_model`` rendering correctly.
 
     Args:
         rm_ratings: The ``danger.ratings`` list from the render model.
@@ -5938,7 +5933,7 @@ def _resolve_period_danger_from_rm(
 
     # Fallback: derive the half's level from traits when projected ratings
     # are absent or omit a covering entry.  Tests populate ``render_model``
-    # directly and leave ``raw_data`` empty — without this fallback the
+    # directly and often leave its ratings empty — without this fallback the
     # headline band would read ``no_rating`` on every test bulletin.
     levels: list[int] = []
     for t in traits:
@@ -6817,7 +6812,7 @@ def _get_render_model(bulletin: Bulletin) -> dict[str, Any]:
 
     **A request never rebuilds a render model** (SNOW-1342). A row whose
     ``render_model_version`` is older than ``RENDER_MODEL_VERSION`` is not
-    rebuilt from ``raw_data`` here — that would load every bulletin's CAAML
+    rebuilt from its CAAML here — that would load every bulletin's CAAML
     on every read path and hide a missed rebuild behind a per-request
     cost. A version bump ships with ``Deploy-Step: rebuild_render_models
     --commit`` instead (docs/render-model.md), and a row the rebuild has
@@ -6913,7 +6908,7 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     Build the template context for a single compact bulletin panel.
 
     Reads ``bulletin.render_model`` and the row's own columns only — never
-    ``raw_data`` (SNOW-1342). A row whose ``render_model_version`` is older
+    CAAML (SNOW-1342). A row whose ``render_model_version`` is older
     than ``RENDER_MODEL_VERSION`` reads as the error sentinel
     :func:`_get_render_model` returns; it is not rebuilt per request.
 

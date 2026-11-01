@@ -2,7 +2,7 @@
 name: rebuild-meteofrance-archive
 description: Regenerate meteofrance_archive.ndjson from the local BRA PDFs — where they live, how to parallelise, what to assert before committing
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-11-01
 ---
 
 # Rebuild the Météo-France archive
@@ -80,11 +80,10 @@ means a crop bound has regressed.
 
 ## Then load it
 
-`rekey_meteofrance_bulletins --commit` **cannot** be the first step against a
-database that already holds a full season of pre-SNOW-559 rows: it derives the
-new id from each row's own `raw_data`, and none of those rows carry a
-publication timestamp, so every one fails with "no publication timestamp" and
-the command exits non-zero on the first row. Load first, purge second — see
+Re-keying the old rows was never a way out (SNOW-559's
+`rekey_meteofrance_bulletins` derived the new id from each row's own CAAML,
+which carried no publication timestamp, and SNOW-1337 retired it with the
+column it read). Load first, purge second — see
 [`meteofrance-archive-replace-not-merge`](../decisions/meteofrance-archive-replace-not-merge.md)
 for why that ordering (not delete-first, not re-keying) is the only safe one.
 

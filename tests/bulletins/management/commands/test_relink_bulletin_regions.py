@@ -29,8 +29,14 @@ from apps.bulletins.services.apply import upsert_bulletin
 from apps.bulletins.services.coverage import covered_region_ids
 from apps.bulletins.services.day_rating import refresh_day_ratings
 from apps.core.models import CommandRun
+from apps.ingest.public import SourceBulletin
 from apps.regions.models import MicroRegion, SubRegion
-from tests.factories import MicroRegionFactory, PipelineRunFactory, SubRegionFactory
+from tests.factories import (
+    MicroRegionFactory,
+    PipelineRunFactory,
+    SourceBulletinFactory,
+    SubRegionFactory,
+)
 
 _FIXTURE = (
     Path(__file__).resolve().parents[3] / "fixtures" / "albina_sample_bulletin.json"
@@ -91,6 +97,12 @@ def mislinked() -> Bulletin:
     wrong = [_region(region_id) for region_id in _WRONG_IDS]
 
     upsert_bulletin(raw, PipelineRunFactory.create())
+    # The command reads the payload from the service's copy (SNOW-1337).
+    SourceBulletinFactory.create(
+        bulletin_id=raw["bulletinID"],
+        provider=SourceBulletin.Provider.ALBINA,
+        caaml=raw,
+    )
     bulletin = Bulletin.objects.get(bulletin_id=raw["bulletinID"])
 
     RegionBulletin.objects.filter(bulletin=bulletin).delete()
@@ -218,12 +230,9 @@ class TestSafety:
 
     def test_unresolvable_payload_is_left_alone(self, mislinked: Bulletin) -> None:
         """A payload none of whose regions exist must not erase the links."""
-        raw_data = dict(mislinked.raw_data)
-        raw_data["properties"] = {
-            **raw_data["properties"],
-            "regions": [{"regionID": "AT-99-99", "name": "Nowhere"}],
-        }
-        Bulletin.objects.filter(pk=mislinked.pk).update(raw_data=raw_data)
+        row = SourceBulletin.objects.get(bulletin_id=mislinked.bulletin_id)
+        caaml = {**row.caaml, "regions": [{"regionID": "AT-99-99", "name": "Nowhere"}]}
+        SourceBulletin.objects.filter(pk=row.pk).update(caaml=caaml)
 
         call_command(
             "relink_bulletin_regions", source="albina", commit=True, verbosity=0

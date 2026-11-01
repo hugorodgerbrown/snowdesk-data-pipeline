@@ -3650,11 +3650,11 @@ def _build_weather_day_picker_variants() -> tuple[dict[str, Any], ...]:
             temp_min=temp_min,
             snowfall_sum=None,
             freezing_level_height=1200.0,
-            # Only the first two days carry a series — the real shape
-            # (``HOURLY_DAYS`` is 2), and what decides which cells have a
-            # meteogram behind them. It changes nothing here: every cell
-            # is a control regardless (SNOW-789).
-            hourly=({"time": "2026-01-12T09:00"},) if index < 2 else (),
+            # Every day carries a series — the real shape since SNOW-1337,
+            # and what decides which cells have a meteogram behind them.
+            # It changes nothing here: every cell is a control regardless
+            # (SNOW-789).
+            hourly=({"time": "2026-01-12T09:00"},),
         )
         for index, (bucket, label, temp_max, temp_min) in enumerate(conditions)
     ]
@@ -4177,7 +4177,7 @@ DAY_STRIPS_VARIANTS: tuple[dict[str, Any], ...] = _build_day_strips_variants()
 
 DAY_FIGURES_VARIANTS: tuple[dict[str, Any], ...] = (
     {
-        "caption": "A day past the hourly window — one figure a row",
+        "caption": "A day with no hourly series — one figure a row",
         "context": {
             "day": {
                 "temp_max": -1.0,
@@ -4189,7 +4189,6 @@ DAY_FIGURES_VARIANTS: tuple[dict[str, Any], ...] = (
                 "sunrise_local": "07:38",
                 "sunset_local": "17:52",
             },
-            "hourly_from": datetime.date(2026, 2, 18),
             "testid_prefix": "component-library-day-figures",
         },
     },
@@ -4206,7 +4205,6 @@ DAY_FIGURES_VARIANTS: tuple[dict[str, Any], ...] = (
                 "sunrise_local": "07:41",
                 "sunset_local": "17:49",
             },
-            "hourly_from": datetime.date(2026, 2, 20),
             "testid_prefix": "component-library-day-figures-snow",
         },
     },

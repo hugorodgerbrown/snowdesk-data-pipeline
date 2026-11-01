@@ -2,7 +2,7 @@
 name: day-ratings-are-recomputed-inside-each-rebuild-task
 description: rebuild_render_models / rebuild_source_render_models enqueue a task per bulletin that locks and recomputes its day ratings
 status: current
-last-reviewed: 2026-10-31
+last-reviewed: 2026-11-01
 ---
 
 # Day ratings are recomputed inside each rebuild task
@@ -39,8 +39,9 @@ commits the version-0 sentinel, recomputes nothing, and fails the task.
   rating wins whatever the order. Sorting the locks means two tasks that
   share several pairs cannot deadlock.
 - **The two Deploy-Steps are independent.** The instance rebuild builds
-  from its own `raw_data` and never reads the service's rebuilt model, and
-  the two write different tables. They keep their documented order as
+  from the service's stored CAAML (`SourceBulletin.caaml`, since SNOW-1337
+  the only copy) and never reads the service's rebuilt model, and the two
+  write different tables. They keep their documented order as
   convention only.
 
 ## Consequences

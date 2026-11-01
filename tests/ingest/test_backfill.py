@@ -18,8 +18,8 @@ directly rather than inferred:
 * **A re-run asks for nothing.** Idempotence here is the caller's, not
   ``store_source_weather``'s: the diff is what stops the second run raising.
 
-Plus the shape of what gets written — ``forecast`` null on purpose, hourly
-per day, freezing level derived — and the addressing: the history host, and
+Plus the shape of what gets written — a live row's shape with lead time
+zero, hourly per day, freezing level derived — and the addressing: the history host, and
 no ``apikey`` sent to it on the shipped free default.
 """
 
@@ -248,12 +248,8 @@ class TestBackfillLocation:
             )
         ) == set(days)
 
-    def test_a_backfilled_row_carries_no_forecast(self) -> None:
-        """``forecast`` stays null: a stitched timeline is not an outlook.
-
-        The visible consequence is that a historical page renders no outlook
-        chart, which is correct — see the module docstring.
-        """
+    def test_a_backfilled_row_has_lead_time_zero(self) -> None:
+        """``forecast_on`` is the day itself, as every past live row ends."""
         location = SourceLocationFactory.create()
         day = backfill.backfill_until()
 
@@ -261,7 +257,7 @@ class TestBackfillLocation:
             backfill.backfill_location(location, floor=day, until=day, commit=True)
 
         row = SourceWeather.objects.get(location=location, observed_on=day)
-        assert row.forecast is None
+        assert row.forecast_on == day
 
     def test_a_backfilled_row_carries_its_hourly_series(self) -> None:
         """The meteogram's data is written, one series per day."""

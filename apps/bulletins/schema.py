@@ -11,7 +11,7 @@ Provides:
 
 SNOW-1342 removed the ``DangerRating`` and ``AvalancheProblem`` dataclasses
 (and the ``AvalancheProblemType`` enum and wet/diurnal sets only they read):
-they parsed a bulletin's ``raw_data``, and no read path reads it any more —
+they parsed a bulletin's CAAML, which no read path reads any more —
 the render model is the parsed form (docs/render-model.md).
 """
 

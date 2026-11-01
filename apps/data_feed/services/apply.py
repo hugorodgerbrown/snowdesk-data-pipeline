@@ -12,10 +12,10 @@ and is not written, so a second pull of the same window writes nothing.
 **Each feed goes through the code path that owns its table** rather than
 around it:
 
-* a bulletin is replayed through ``upsert_bulletin`` with the provider's
-  CAAML, so its region links, day ratings, grouping outline and render
-  model are rebuilt by *this* environment's code — on staging, that is
-  the code under test, not production's output copied in;
+* a bulletin is filed through ``write_bulletin`` from the service's render
+  model and identity fields (SNOW-1337 — the feed serves no CAAML), so its
+  region links, day ratings and grouping outline are rebuilt by *this*
+  environment's code; the render model is the service's, copied;
 * weather goes through ``upsert_weather``, so the immutability rule holds:
   a past day already recorded here is kept, never rewritten (``KEPT``);
 * locations and resorts are curated reference data with no ingest service,
@@ -96,8 +96,8 @@ class PageLookups:
             for the locations feed, those centred on the page's locations.
         resorts: Resorts here by slug, with region, pin, passes and links
             loaded.
-        bulletins: Bulletins here by ``bulletin_id`` (pk, CAAML and PDF
-            link only).
+        bulletins: Bulletins here by ``bulletin_id`` (pk, content hash,
+            PDF link and render model only).
         weather: Weather rows here by ``(location pk, observed_on)``.
         planned: Location uuids a dry run has counted as created. The
             command shares one set across a run's feeds.
@@ -201,7 +201,7 @@ def lookups_for(
             bulletin.bulletin_id: bulletin
             for bulletin in Bulletin.objects.filter(
                 bulletin_id__in={item["bulletin_id"] for item in items}
-            ).only("pk", "bulletin_id", "raw_data", "pdf_url", "render_model")
+            ).only("pk", "bulletin_id", "content_hash", "pdf_url", "render_model")
         }
     elif feed == "weather":
         lookups.locations = _locations(item.get("location") for item in items)
@@ -534,12 +534,15 @@ def apply_bulletin(
     run: PipelineRun | None,
     lookups: PageLookups | None = None,
 ) -> Outcome:
-    """Replay a bulletin's CAAML through this database's ``upsert_bulletin``.
+    """File a bulletin item in this database from its explicit fields.
 
     The comparison and the write are ``apply_feed_item``, the step a
     production fetch applies its own stored bulletins through (SNOW-1250),
     so an item is applied the same way whichever side of the feed it is
-    on. Unchanged when the stored CAAML and PDF link are identical.
+    on. The item carries the service's render model and identity fields
+    and no CAAML (SNOW-1337); one from an older service that still sends
+    CAAML is read the same way. Unchanged when the item's ``content_hash``
+    and PDF link match the stored row's.
 
     Args:
         item: A ``bulletins`` feed item.
@@ -552,11 +555,15 @@ def apply_bulletin(
         The outcome.
 
     Raises:
-        ApplyError: The item carries no CAAML.
+        ApplyError: The item carries neither a render model nor CAAML.
 
     """
-    if not isinstance(item.get("caaml"), dict):
-        raise ApplyError(f"bulletin {item.get('bulletin_id')!r} carries no CAAML")
+    if not isinstance(item.get("render_model"), dict) and not isinstance(
+        item.get("caaml"), dict
+    ):
+        raise ApplyError(
+            f"bulletin {item.get('bulletin_id')!r} carries no render model"
+        )
     lookups = lookups or lookups_for("bulletins", [item])
     if commit and run is None:
         raise ValueError("apply_bulletin needs a PipelineRun to commit")

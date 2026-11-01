@@ -80,7 +80,7 @@ import math
 import re
 import secrets
 import uuid
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable
 from datetime import date, datetime
 from typing import Any, cast
@@ -119,6 +119,7 @@ from apps.bulletins.services.selection import select_bulletin_for_date
 from apps.bulletins.services.settled import earliest_mutable_date
 from apps.core.freshness import apply_freshness_headers
 from apps.core.sw_shell import served_cache_version
+from apps.ingest.public import caaml_envelope, source_caaml
 from apps.locations.models import Location, LocationQuerySet, ResortLocation
 from apps.locations.services.prime import enqueue_location_prime
 from apps.observations.models import FieldObservation, leading_family
@@ -156,6 +157,7 @@ from apps.routes.services.ski_tours import (
     tour_overview,
 )
 from apps.weather.models import Weather
+from apps.weather.services.fetch import FORECAST_DAYS
 from apps.weather.services.weather_display import build_point_weather_days
 
 from .decorators import lowercase_region_id
@@ -833,9 +835,9 @@ def _build_weather_payload(
     Build the weather FeatureCollection from the DB.
 
     Two queries and no N+1: one over ``Location.objects.public()``, then one
-    bulk ``Weather`` fetch for ``observed_on`` across those locations,
-    grouped by ``location_id`` in Python. The forward days ride in each
-    row's ``forecast`` column, so the week costs nothing extra.
+    bulk ``Weather`` fetch for the week from ``observed_on`` across those
+    locations, grouped by ``location_id`` in Python. Each day of the week is
+    its own row (SNOW-1337), so the week is that one query.
 
     The row lookup is keyed on the ``(location, observed_on)`` unique
     constraint — never ordered by ``fetched_at``, since today's row is
@@ -853,20 +855,29 @@ def _build_weather_payload(
 
     """
     locations = list(Location.objects.public().order_by("id"))
+    week: dict[int, list[Weather]] = defaultdict(list)
+    for row in (
+        Weather.objects.filter(location__in=locations)
+        .window(observed_on, FORECAST_DAYS)
+        .defer("hourly")
+    ):
+        week[row.location_id].append(row)
+    # A place's map entry leads with today's row; one with no row for today
+    # has no entry at all, whatever later rows it holds.
     rows = {
-        row.location_id: row
-        for row in Weather.objects.filter(
-            location__in=locations, observed_on=observed_on
-        ).defer("hourly")
+        location_id: days
+        for location_id, days in week.items()
+        if days[0].observed_on == observed_on
     }
     oldest_fetched_at: datetime | None = None
     features: list[dict[str, Any]] = []
     for location in locations:
-        row = rows.get(location.pk)
-        if row is not None and (
-            oldest_fetched_at is None or row.fetched_at < oldest_fetched_at
+        days = rows.get(location.pk, [])
+        today = days[0] if days else None
+        if today is not None and (
+            oldest_fetched_at is None or today.fetched_at < oldest_fetched_at
         ):
-            oldest_fetched_at = row.fetched_at
+            oldest_fetched_at = today.fetched_at
         features.append(
             {
                 "type": "Feature",
@@ -879,7 +890,7 @@ def _build_weather_payload(
                     "short_id": location.short_id,
                     "name": location.name,
                     "elevation_m": location.elevation_m,
-                    "days": build_point_weather_days(row),
+                    "days": build_point_weather_days(today, days[1:]),
                 },
             }
         )
@@ -4085,21 +4096,31 @@ def bulletin_caaml(request: HttpRequest, bulletin_id: str) -> JsonResponse:
     """
     Serve the raw CAAML payload (in its GeoJSON Feature envelope) as JSON.
 
-    The stored shape is the source-of-truth representation for the
-    bulletin — every provider's CAAML v6 JSON wrapped in a
+    Every provider's CAAML v6 JSON wrapped in a
     ``{"type": "Feature", "geometry": null, "properties": {…}}``
     envelope (see the ``geojson-feature-envelope`` ADR). Consumers who
     want just the CAAML take ``.properties``; consumers who want the
     Feature envelope take the whole payload.
+
+    Since SNOW-1337 the CAAML is the ingest service's (``source_caaml``,
+    matched on ``bulletin_id``): a ``Bulletin`` keeps none. An instance
+    whose service holds no such bulletin (staging, which pulls its
+    bulletins from production's feed) answers 404, as for an unknown id.
 
     Args:
         request: The incoming HTTP request (unused).
         bulletin_id: The public identifier of the bulletin.
 
     Returns:
-        A ``JsonResponse`` with the stored raw payload as the body, or
-        404 if no bulletin exists for that id.
+        A ``JsonResponse`` with the payload as the body, or 404 when no
+        bulletin, or no stored CAAML, exists for that id.
+
+    Raises:
+        Http404: No bulletin, or no stored CAAML, for ``bulletin_id``.
 
     """
     bulletin = get_object_or_404(Bulletin, bulletin_id=bulletin_id)
-    return JsonResponse(bulletin.raw_data or {})
+    caaml = source_caaml(bulletin.bulletin_id)
+    if caaml is None:
+        raise Http404("No CAAML is held for this bulletin.")
+    return JsonResponse(caaml_envelope(caaml))

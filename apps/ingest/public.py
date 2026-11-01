@@ -25,10 +25,10 @@ The names are grouped by what they are for:
       The DPBRA translator, the bulletin identity grammar and the Alpine
       massif catalogue.
   Weather
-      Parsing an Open-Meteo forecast response, and the two shapes it returns;
-      the WMO code → icon bucket table (``WMO_CODE_TO_ICON_BUCKET``,
-      ``icon_bucket_for_code``) the service writes into each forecast day,
-      and the buckets drawn as a day/night pair (SNOW-1343).
+      Parsing an Open-Meteo forecast response, and the hourly shape it
+      returns; the WMO code → icon bucket table (``WMO_CODE_TO_ICON_BUCKET``,
+      ``icon_bucket_for_code``), and the buckets drawn as a day/night pair
+      (SNOW-1343).
   A point
       What Open-Meteo says about one coordinate — ``fetch_forecast`` over a
       date range (``history_base_url`` for the backfill) and
@@ -51,8 +51,9 @@ The names are grouped by what they are for:
       ``SourceWeather``, its account of each day (SNOW-1253).
       ``sync_source_locations`` makes the place list equal what a host hands
       it, ``fetch_source_weather`` walks it, ``store_source_weather`` holds
-      the past-day rule, and ``forecast_fields`` is the one request-and-parse
-      both the service and a host's fetch of a user point share.
+      the past-day rule, and ``forecast_rows`` is the one request-and-parse —
+      one row per day of the window (SNOW-1337) — that both the service and
+      a host's own fetch share.
       ``WEATHER_COLUMNS`` names what an apply copies.
   Reading a bulletin
       The render model (SNOW-1270): ``build_render_model`` and its version,
@@ -103,6 +104,7 @@ import apps.ingest.normalise.prose.en  # noqa: F401, I001 — registers the "en"
 from apps.ingest.api.bulletins import (
     BULLETINS_FEED,
     BULLETINS_FEED_V2,
+    bulletin_identity,
     serialise_source_bulletin,
 )
 from apps.ingest.api.day_ratings import DAY_RATINGS_FEED, serialise_source_day_rating
@@ -163,6 +165,7 @@ from apps.ingest.models import (
     SourceSkiSegment,
     SourceSkiTour,
     SourceWeather,
+    content_hash,
 )
 from apps.ingest.normalise.albina import albina_pdf_url
 from apps.ingest.normalise.fetcher_common import (
@@ -253,13 +256,11 @@ from apps.ingest.normalise.slf_archive import (
 from apps.ingest.normalise.weather import (
     DAILY_VARIABLES,
     HOURLY_VARIABLES,
-    ForecastDay,
     HourlyRow,
     daily_dates,
     daily_fields,
     daily_max_freezing_level,
     day_is_complete,
-    forecast_entry,
     hourly_rows_for_day,
     parse_dt_preserve_offset,
 )
@@ -310,7 +311,9 @@ from apps.ingest.store import (
     OUTCOME_UNCHANGED,
     REBUILD_FAILED,
     REBUILT,
+    caaml_envelope,
     rebuild_render_model,
+    source_caaml,
     store_bulletin,
 )
 from apps.ingest.weather import (
@@ -319,7 +322,7 @@ from apps.ingest.weather import (
     LocationRecord,
     fetch_source_location,
     fetch_source_weather,
-    forecast_fields,
+    forecast_rows,
     store_source_weather,
     sync_source_locations,
 )
@@ -403,7 +406,6 @@ __all__ = [
     "FeedQueryError",
     "FetchOutcome",
     "FetchStats",
-    "ForecastDay",
     "HourlyRow",
     "ImmutableSourceWeatherError",
     "LocationRecord",
@@ -458,8 +460,7 @@ __all__ = [
     "fetch_forecast",
     "fetch_source_location",
     "fetch_source_weather",
-    "forecast_entry",
-    "forecast_fields",
+    "forecast_rows",
     "format_comment_as_html",
     "history_base_url",
     "import_ski_archive",
@@ -484,10 +485,14 @@ __all__ = [
     "rate_render_model",
     "read_slf_archive",
     "rebuild_render_model",
+    "source_caaml",
+    "caaml_envelope",
+    "content_hash",
     "refresh_source_day_ratings",
     "request_weight",
     "resolve_issued_at",
     "serialise_source_bulletin",
+    "bulletin_identity",
     "serialise_source_day_rating",
     "serialise_source_document",
     "serialise_source_ski_tour",

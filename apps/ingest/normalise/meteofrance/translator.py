@@ -1007,7 +1007,7 @@ def parse_dpbra_xml(xml_bytes: bytes) -> dict[str, Any]:
     Parse a single DPBRA XML document and return a CAAML v6 JSON dict.
 
     The returned dict has the same top-level keys as the SLF and ALBINA
-    payloads stored in ``Bulletin.raw_data.properties`` so it can be fed
+    payloads stored in ``SourceBulletin.caaml`` so it can be fed
     directly into ``upsert_bulletin(raw, run)``.
 
     Args:

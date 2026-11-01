@@ -11,9 +11,9 @@ because each is a bug that was found in production rather than in review:
 * **SNOW-546** — the write is atomic per location, so one bad location
   fails alone.
 
-Plus the shape of what gets written: the row is ``observed_on``, the days
-after it go in ``forecast``, and only the first ``HOURLY_DAYS`` entries
-carry a nested hourly series.
+Plus the shape of what gets written (SNOW-1337): one row per day of the
+window, each with its own scalars, its own hourly series and today's
+``forecast_on``.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from django.utils import timezone
 
 from apps.weather.models import Weather
 from apps.weather.services.fetch import (
-    HOURLY_DAYS,
+    FORECAST_DAYS,
     fetch_all_locations,
     fetch_weather_for_location,
 )
@@ -107,15 +107,33 @@ class TestProviderDatesAreAuthoritative:
         """
         location = LocationFactory.create()
         today = timezone.localdate()
-        provider_days = _window(today, 3)
+        provider_days = _window(today + datetime.timedelta(days=1), 3)
         payload = {"daily": _daily(provider_days), "hourly": _hourly(provider_days)}
 
         with mock.patch("requests.get", return_value=_response(payload)):
             result = fetch_weather_for_location(location, today, commit=True)
 
         assert result is not None
-        weather, _ = result
-        assert weather.observed_on == provider_days[0]
+        assert [weather.observed_on for weather, _ in result] == provider_days
+
+    def test_a_provider_day_outside_the_window_is_never_written(self) -> None:
+        """A shifted response cannot reach yesterday's row, or past the week.
+
+        Yesterday's row is immutable and the write would raise, costing the
+        place its whole week; a day past the window is not one asked for.
+        """
+        location = LocationFactory.create()
+        today = timezone.localdate()
+        provider_days = _window(today - datetime.timedelta(days=1), FORECAST_DAYS + 2)
+        payload = {"daily": _daily(provider_days), "hourly": _hourly(provider_days)}
+
+        with mock.patch("requests.get", return_value=_response(payload)):
+            result = fetch_weather_for_location(location, today, commit=True)
+
+        assert result is not None
+        assert [weather.observed_on for weather, _ in result] == _window(
+            today, FORECAST_DAYS
+        )
 
     def test_a_misaligned_daily_array_is_rejected_whole(self) -> None:
         """A short required array fails loudly rather than storing a shifted batch.
@@ -172,14 +190,9 @@ class TestShortModelHorizon:
             result = fetch_weather_for_location(location, today, commit=True)
 
         assert result is not None
-        weather, created = result
-        assert created is True
-        assert weather.observed_on == days[0]
-        assert weather.forecast is not None
-        # Three storable days: the row itself plus two forward days.
-        assert [entry["date"] for entry in weather.forecast] == [
-            days[1].isoformat(),
-            days[2].isoformat(),
+        # Three storable days, three rows, all new.
+        assert [(weather.observed_on, created) for weather, created in result] == [
+            (day, True) for day in days[:3]
         ]
 
     def test_an_unusable_day_zero_records_the_first_day_that_resolves(self) -> None:
@@ -200,8 +213,7 @@ class TestShortModelHorizon:
             result = fetch_weather_for_location(location, today, commit=True)
 
         assert result is not None
-        weather, _ = result
-        assert weather.observed_on == days[1]
+        assert [weather.observed_on for weather, _ in result] == days[1:]
 
     def test_a_payload_with_no_complete_day_raises(self) -> None:
         """No storable day at all is a malformed payload, not a short horizon."""
@@ -239,8 +251,8 @@ class TestOneBadLocationFailsAlone:
         with mock.patch("requests.get", side_effect=_get):
             counts = fetch_all_locations(today, commit=True, locations=[good, bad])
 
-        assert counts == {"created": 1, "updated": 0, "failed": 1}
-        assert Weather.objects.for_location(good).count() == 1
+        assert counts == {"created": 2, "updated": 0, "failed": 1}
+        assert Weather.objects.for_location(good).count() == 2
         assert Weather.objects.for_location(bad).count() == 0
 
     def test_a_partial_write_is_rolled_back(self) -> None:
@@ -272,8 +284,8 @@ class TestOneBadLocationFailsAlone:
 class TestWrittenShape:
     """What one successful fetch actually stores."""
 
-    def test_the_row_is_the_day_and_forecast_is_the_days_after(self) -> None:
-        """observed_on gets columns; the forward days go in the JSON column."""
+    def test_each_day_of_the_window_is_its_own_row(self) -> None:
+        """One fetch writes one row per day, each with its own scalars."""
         location = LocationFactory.create()
         today = timezone.localdate()
         days = _window(today, 4)
@@ -283,50 +295,63 @@ class TestWrittenShape:
             result = fetch_weather_for_location(location, today, commit=True)
 
         assert result is not None
-        weather, _ = result
-        assert weather.weather_code == 3
-        assert weather.temperature_2m_max == 4.5
-        assert weather.forecast is not None
-        assert [entry["date"] for entry in weather.forecast] == [
-            day.isoformat() for day in days[1:]
-        ]
+        assert [weather.observed_on for weather, _ in result] == days
+        assert all(weather.weather_code == 3 for weather, _ in result)
+        assert all(weather.temperature_2m_max == 4.5 for weather, _ in result)
 
-    def test_only_the_first_forecast_days_carry_an_hourly_series(self) -> None:
-        """hourly nests in the first HOURLY_DAYS entries and is absent beyond.
-
-        It is an optional key by design — the stored JSON stays bounded —
-        so a consumer must read it with .get(). This is the assertion that
-        keeps that contract honest.
-        """
+    def test_every_row_is_stamped_with_todays_forecast_on(self) -> None:
+        """forecast_on is the fetch day, so lead times run 0 to 6."""
         location = LocationFactory.create()
         today = timezone.localdate()
-        days = _window(today, 5)
+        days = _window(today, FORECAST_DAYS)
         payload = {"daily": _daily(days), "hourly": _hourly(days)}
 
         with mock.patch("requests.get", return_value=_response(payload)):
             result = fetch_weather_for_location(location, today, commit=True)
 
         assert result is not None
-        weather, _ = result
-        assert weather.forecast is not None
-        with_hourly = [e for e in weather.forecast if "hourly" in e]
-        assert len(with_hourly) == HOURLY_DAYS - 1
-        assert "hourly" not in weather.forecast[-1]
+        assert {weather.forecast_on for weather, _ in result} == {today}
+        assert [weather.lead_days for weather, _ in result] == list(
+            range(FORECAST_DAYS)
+        )
 
-    def test_the_day_itself_carries_its_own_hourly_series(self) -> None:
-        """observed_on's hourly lives in its own column, not in forecast."""
+    def test_a_second_fetch_refines_every_row_in_place(self) -> None:
+        """The week is upserted, never appended: one row per day, always."""
         location = LocationFactory.create()
         today = timezone.localdate()
-        days = _window(today, 2)
+        days = _window(today, FORECAST_DAYS)
+        payload = {"daily": _daily(days), "hourly": _hourly(days)}
+
+        with mock.patch("requests.get", return_value=_response(payload)):
+            fetch_weather_for_location(location, today, commit=True)
+            payload["daily"]["temperature_2m_max"] = [9.0] * FORECAST_DAYS
+            result = fetch_weather_for_location(location, today, commit=True)
+
+        assert result is not None
+        assert [created for _, created in result] == [False] * FORECAST_DAYS
+        assert Weather.objects.for_location(location).count() == FORECAST_DAYS
+        assert set(
+            Weather.objects.for_location(location).values_list(
+                "temperature_2m_max", flat=True
+            )
+        ) == {9.0}
+
+    def test_every_day_carries_its_own_hourly_series(self) -> None:
+        """Hourly on all seven days (Hugo, 2026-11-01), each in its own row."""
+        location = LocationFactory.create()
+        today = timezone.localdate()
+        days = _window(today, FORECAST_DAYS)
         payload = {"daily": _daily(days), "hourly": _hourly(days)}
 
         with mock.patch("requests.get", return_value=_response(payload)):
             result = fetch_weather_for_location(location, today, commit=True)
 
         assert result is not None
-        weather, _ = result
-        assert weather.hourly is not None
-        assert {row["time"][:10] for row in weather.hourly} == {today.isoformat()}
+        for weather, _ in result:
+            assert weather.hourly is not None
+            assert {row["time"][:10] for row in weather.hourly} == {
+                weather.observed_on.isoformat()
+            }
 
     def test_hourly_rows_carry_wind_direction(self) -> None:
         """Direction is stored per hour, not only as the daily dominant.
@@ -346,7 +371,7 @@ class TestWrittenShape:
 
         assert "wind_direction_10m" in get.call_args.kwargs["params"]["hourly"]
         assert result is not None
-        weather, _ = result
+        weather, _ = result[0]
         assert weather.hourly is not None
         assert [row["wind_direction_10m"] for row in weather.hourly] == [270.0, 315.0]
 
@@ -361,8 +386,7 @@ class TestWrittenShape:
             result = fetch_weather_for_location(location, today, commit=True)
 
         assert result is not None
-        weather, _ = result
-        assert weather.freezing_level_height == 2600.0
+        assert {weather.freezing_level_height for weather, _ in result} == {2600.0}
 
     def test_elevation_is_sent_when_the_location_has_one(self) -> None:
         """A resolved elevation downscales the forecast to the point's altitude."""
@@ -408,7 +432,7 @@ class TestWrittenShape:
         # The resort's location only — a favourite's and an observation's
         # are excluded.
         assert get.call_count == 1
-        assert counts["created"] == 1
+        assert counts["created"] == 2
 
     def test_on_location_is_called_once_per_location(self) -> None:
         """The progress hook fires per location, for the command's countdown."""

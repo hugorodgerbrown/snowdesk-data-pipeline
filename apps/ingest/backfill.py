@@ -46,12 +46,11 @@ with a stitched historical timeline. Two guards, because this is the one
 genuinely destructive failure mode here: the window ends at yesterday, and
 the write loop skips any provider date that was not in the set we asked for.
 
-**``forecast`` stays null on a backfilled row, deliberately.** The upstream
-serves a continuous stitched timeline — one value per day, each as issued
-near that day. That is not the same object as ``forecast[]``, which records
-what the following week looked like *on one particular morning*. Writing a
-stitched timeline into that column would be a quiet lie. See
-docs/decisions/weather-backfill-is-an-admin-action.md.
+**A backfilled row has the live row's shape** (SNOW-1337): one day, its
+scalars and its hourly series. Its ``forecast_on`` is its own day, so its
+lead time is zero — the same value every past live row ends with. The
+upstream's stitched timeline (one value per day, each as issued near that
+day) is the closest the archive has to that final account.
 
 **The upstream is the historical forecast API, not ERA5.** Probed
 2026-09-01: ERA5 returns ``freezing_level_height`` as a key whose values are
@@ -458,10 +457,8 @@ def _write_window(
             fields = daily_fields(daily, idx)
             fields["freezing_level_height"] = daily_max_freezing_level(hourly, day)
             fields["hourly"] = hourly_rows_for_day(hourly, day) or None
-            # Null, not []: see the module docstring. A stitched timeline is
-            # not the outlook as issued on this day, and this column means
-            # the latter.
-            fields["forecast"] = None
+            # Lead time zero: see the module docstring.
+            fields["forecast_on"] = day
 
             row, _ = store_source_weather(location, day, **fields)
             if on_row is not None:

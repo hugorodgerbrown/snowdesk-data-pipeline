@@ -887,21 +887,24 @@ class TestStoredState:
 
 @pytest.mark.django_db
 class TestForecastNewSnow:
-    """The new snow line reads today's row for the region's centroid (SNOW-944)."""
+    """The new snow line reads the day's own row at the region's centroid.
+
+    One row per day, refined by every fetch until it passes (SNOW-1337).
+    """
 
     def centroid_region(self) -> Any:
         """Return a region with a centroid location."""
         location = LocationFactory.create()
         return MicroRegionFactory.create(centroid_location=location)
 
-    def test_tomorrow_reads_the_forecast_entry(self) -> None:
-        """A later day reads its entry in today's forecast[]."""
+    def test_tomorrow_reads_its_own_row(self) -> None:
+        """A later day reads that day's row, not today's."""
         region = self.centroid_region()
         WeatherFactory.create(
-            location=region.centroid_location,
-            observed_on=TODAY,
-            snowfall_sum=1.0,
-            forecast=[{"date": TOMORROW.isoformat(), "snowfall_sum": 22.4}],
+            location=region.centroid_location, observed_on=TODAY, snowfall_sum=1.0
+        )
+        WeatherFactory.create(
+            location=region.centroid_location, observed_on=TOMORROW, snowfall_sum=22.4
         )
         assert forecast_new_snow(region, TOMORROW, TODAY) == 22.4
 
@@ -914,18 +917,21 @@ class TestForecastNewSnow:
         assert forecast_new_snow(region, TODAY, TODAY) == 8.0
 
     def test_nothing_known(self) -> None:
-        """No centroid, no row, or no entry: None."""
+        """No centroid, no row, no figure, or a past day: None."""
         assert forecast_new_snow(MicroRegionFactory.create(), TODAY, TODAY) is None
         region = self.centroid_region()
         assert forecast_new_snow(region, TODAY, TODAY) is None
         WeatherFactory.create(
-            location=region.centroid_location,
-            observed_on=TODAY,
-            forecast=[{"date": TOMORROW.isoformat(), "snowfall_sum": None}],
+            location=region.centroid_location, observed_on=TOMORROW, snowfall_sum=None
         )
         assert forecast_new_snow(region, TOMORROW, TODAY) is None
         later = TODAY + datetime.timedelta(days=3)
         assert forecast_new_snow(region, later, TODAY) is None
+        yesterday = TODAY - datetime.timedelta(days=1)
+        WeatherFactory.create(
+            location=region.centroid_location, observed_on=yesterday, snowfall_sum=5.0
+        )
+        assert forecast_new_snow(region, yesterday, TODAY) is None
 
     def test_one_place_alert_names_it(self, follower: tuple) -> None:
         """A one-place alert carries the snow; the body names it."""
@@ -933,9 +939,7 @@ class TestForecastNewSnow:
         region.centroid_location = LocationFactory.create()
         region.save(update_fields=["centroid_location"])
         WeatherFactory.create(
-            location=region.centroid_location,
-            observed_on=TODAY,
-            forecast=[{"date": TOMORROW.isoformat(), "snowfall_sum": 20.0}],
+            location=region.centroid_location, observed_on=TOMORROW, snowfall_sum=20.0
         )
         publish(region, TODAY, render())
         publish(region, TOMORROW, render("considerable", [WIND_RM]))

@@ -2,7 +2,7 @@
 name: deployment
 description: Path-to-live: main→staging, release→production, release PR via bin/cut-release, Deploy-Step trailer, release-sync fast-forward, CalVer tags
 status: current
-last-reviewed: 2026-10-31
+last-reviewed: 2026-11-01
 ---
 
 # Deployment / path-to-live
@@ -333,9 +333,9 @@ Since SNOW-1346 both steps only **enqueue** — one task per stale bulletin
 on the `db_worker` runner, at priority -50 — so each returns in seconds and
 the rebuild finishes in the background; re-run either command without
 `--commit` to read how many rows are still stale. Their order is
-convention, not a dependency: the instance rebuild builds from its own
-`raw_data`, never from the service's model, and the two write different
-tables
+convention, not a dependency: the instance rebuild builds from the
+service's stored CAAML (`SourceBulletin.caaml`, SNOW-1337), never from the
+service's model, and the two write different tables
 ([why](decisions/day-ratings-are-recomputed-inside-each-rebuild-task.md)).
 
 **Shipping the list.** The same steps go into a tracked `DEPLOY_STEPS`

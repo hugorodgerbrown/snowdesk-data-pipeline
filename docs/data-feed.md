@@ -2,7 +2,7 @@
 name: data-feed
 description: Data feed /api/data/v1/ + v2, from/to windows, service clients, pull_reference_data, pull_production_data, DATA_FEED_*, mint_feed_token
 status: current
-last-reviewed: 2026-10-31
+last-reviewed: 2026-11-01
 ---
 
 # The production data feed
@@ -31,7 +31,7 @@ All ten are `GET`, take the same parameters and answer the same shape.
 
 | URL | Item key | What is served |
 |-----|----------|----------------|
-| `/api/data/v1/bulletins/` | `bulletin_id` | Every bulletin ingest has stored (`SourceBulletin`): its CAAML as normalised, plus `pdf_url`, the render model (with its `derived` block) and the service's index — `valid_from`, `target_date`, `region_codes` (SNOW-1341) |
+| `/api/data/v1/bulletins/` | `bulletin_id` | Every bulletin ingest has stored (`SourceBulletin`): its render model (with its `derived` block) and the identity fields a client files it by — never its CAAML (SNOW-1337) |
 | `/api/data/v1/weather/` | location `uuid` + `observed_on` | `Weather` rows for `Location.objects.public()` only |
 | `/api/data/v1/locations/` | `uuid` | `Location.objects.public()`, with `centroid_of` region codes |
 | `/api/data/v1/resorts/` | `slug` | Every resort with a slug: region code, pin uuid, passes, location links |
@@ -52,12 +52,12 @@ needs production's own location ids. v1 stays served until staging's pull
 moves to v2 (SNOW-1272). A token is bound to its URL prefix, so a client
 needs a token bound to `/api/data/v2/` to read it.
 
-**A forward day names its icon bucket (SNOW-1343).** Each entry of a weather
-item's `forecast` list written since SNOW-1343 carries `icon_bucket` — the
-service's reading of its `weather_code`, e.g. `"light_snow"` — on v1 and v2
-alike, since both serve the column as stored. Days stored before it lack
-the key and are never rewritten, so a client reads it with a fallback to
-the code (`icon_bucket_for_code` in `apps.ingest.public`).
+**A weather item is one place's one day (SNOW-1337).** Each fetch writes
+seven `SourceWeather` rows a place, today to six days ahead, each with its
+`hourly` and a `forecast_on` (the day of the fetch that wrote it); the feed
+serves them one-to-one, so a client's week is the next rows for that
+place. There is no `forecast` list any more, and a day's icon is derived
+from its own `weather_code`.
 
 **v2 places, passes and resorts (SNOW-1271).** Served from the
 reference-data service's own tables, which `mirror_reference_data` fills
@@ -100,23 +100,28 @@ filters on `updated_at`), `cursor` (the previous page's `next_cursor`) and
   "feed": "bulletins",
   "version": 1,
   "count": 412,
-  "results": [{"bulletin_id": "…", "updated_at": "…", "pdf_url": "…", "caaml": {…}, "render_model": {…}, "valid_from": "2026-03-06T16:00:00+00:00", "target_date": "2026-03-07", "region_codes": ["CH-4115", "CH-4116"]}],
+  "results": [{"bulletin_id": "…", "updated_at": "…", "pdf_url": "…", "content_hash": "…", "render_model": {…}, "valid_from": "2026-03-06T16:00:00+00:00", "target_date": "2026-03-07", "region_codes": ["CH-4115", "CH-4116"], "valid_to": "2026-03-07T16:00:00+00:00", "issued_at": "2026-03-06T16:00:00+00:00", "next_update": "2026-03-07T07:00:00+00:00", "lang": "en", "unscheduled": false, "source": "SLF", "regions": [{"regionID": "CH-4115", "name": "Martigny-Verbier"}, …]}],
   "next_cursor": "MjAyNi0xMC0yM1QwNjo…"
 }
 ```
 
-**What a bulletin item carries beyond the CAAML** (SNOW-1341). The
-service indexes every bulletin it stores — `valid_from` (the CAAML's
+**What a bulletin item carries** (SNOW-1341, SNOW-1337). Not the CAAML:
+the service keeps it, and serves the leanest dataset a client can display
+from ([reference-data-has-one-source-of-truth](decisions/reference-data-has-one-source-of-truth.md)).
+The service indexes every bulletin it stores — `valid_from` (the CAAML's
 `validTime.startTime`), `target_date` (the day it forecasts) and the sorted
-`region_codes` — and serves the three with the item; `upsert_bulletin`
-uses them as sent and reads them from the CAAML only when an item lacks
-them (`valid_from` / `target_date` are `null` until indexed). The render
-model carries its `derived` block — terrain rules, period transition,
-problem family, headline inputs, alert state and danger levels
-([render-model.md](render-model.md)) — so a client copying a current
-model derives none of it. Both additions are additive, so neither feed's
-version moved: an older client ignores the keys, a newer client reading
-an older service falls back.
+`region_codes` — and reads the rest of what a `Bulletin` is filed by off
+the CAAML at serialise time (`bulletin_identity`): `valid_to`, `issued_at`,
+`next_update`, `lang`, `unscheduled`, `source` and the CAAML's `regions`
+(each entry's `regionID` and `name`, which `RegionBulletin` records). A
+value the CAAML lacks is `null`, and the client refuses the item.
+`content_hash` is the sha256 of the CAAML the item was built from; a
+client stores it and treats an item with the same hash and PDF link as
+unchanged. The render model carries its `derived` block — terrain rules,
+period transition, problem family, headline inputs, alert state and danger
+levels ([render-model.md](render-model.md)) — so a client copying it
+derives none of it. A client still reads an item from an older service
+that sent `caaml` and no identity fields, reading them off that CAAML.
 
 **Where the bulletins come from** (SNOW-1250). The bulletins feed reads
 ingest's `SourceBulletin`, which `fetch_bulletins` writes before it applies
@@ -353,15 +358,16 @@ there. Identical rows are tallied `unchanged` and not written, so
 re-running is free. Each feed is written through the code that owns the
 table:
 
-- **Bulletins** are replayed through `upsert_bulletin`, so region links,
-  day ratings and grouping outlines are rebuilt by *staging's* code.
-  The render model is the service's (SNOW-1270): each item carries the
-  one production's service built, and staging copies it when it was built
-  at staging's own `RENDER_MODEL_VERSION`. When the versions differ —
-  staging is testing a builder change — staging builds its own, so a
-  branch is never held to production's output. An item whose CAAML is
-  unchanged but whose current-version model differs from the stored one
-  is a service rebuild, and is applied.
+- **Bulletins** are filed through `write_bulletin` from the item's fields,
+  so region links, day ratings and grouping outlines are rebuilt by
+  *staging's* code. The render model is the service's (SNOW-1270), copied
+  as served. Staging holds no CAAML (SNOW-1337), so it cannot build its
+  own: when production's service built the model at an older
+  `RENDER_MODEL_VERSION` than staging's — staging is testing a builder
+  change — the row reads as the stale-model sentinel until the service is
+  rebuilt and pulled again. An item whose `content_hash` is unchanged but
+  whose current-version model differs from the stored one is a service
+  rebuild, and is applied.
 - **Weather** goes through `upsert_weather`. A past day already recorded is
   `kept` and never rewritten.
 - **Locations and resorts** are written field by field. A resort's pin is

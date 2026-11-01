@@ -61,13 +61,15 @@ def _make_bulletin_with_region(
     pdf_url: str = "",
     centre: dict[str, float] | None = None,
     day: date | None = None,
+    held: dict[str, Any] | None = None,
 ) -> tuple[Bulletin, MicroRegion]:
     """Build a MicroRegion + a linked Bulletin with the given ``pdf_url``.
 
     ``centre`` overrides the factory default when supplied (so tests can
     assert the exact lat/lon in JSON-LD). ``day`` defaults to today so
     the evergreen URL resolves to this bulletin without needing a date
-    segment.
+    segment. ``held`` is the CAAML the ingest service holds for it, when the
+    test reads a raw surface (SNOW-1337).
     """
     major = MajorRegionFactory.create(
         prefix="CH-4",
@@ -94,6 +96,7 @@ def _make_bulletin_with_region(
         valid_to=when + timedelta(days=1),
         issued_at=when,
         pdf_url=pdf_url,
+        held=held,
     )
     RegionBulletinFactory.create(bulletin=bulletin, region=region)
     return bulletin, region
@@ -288,11 +291,11 @@ class TestBulletinRenderModelEndpoint:
 
 @pytest.mark.django_db
 class TestBulletinCaamlEndpoint:
-    """``/api/bulletins/<bulletin_id>.caaml.json`` returns the raw CAAML."""
+    """``/api/bulletins/<bulletin_id>.caaml.json`` returns the service's CAAML."""
 
-    def test_returns_200_with_raw_data_body(self, client: Client) -> None:
-        """A known bulletin returns 200 with its raw_data GeoJSON envelope."""
-        bulletin, _ = _make_bulletin_with_region()
+    def test_returns_200_with_the_services_caaml(self, client: Client) -> None:
+        """A bulletin the service holds returns its CAAML in a Feature envelope."""
+        bulletin, _ = _make_bulletin_with_region(held={"bulletinID": "held-caaml"})
         response = client.get(
             reverse(
                 "api:bulletin_caaml",
@@ -302,7 +305,22 @@ class TestBulletinCaamlEndpoint:
         assert response.status_code == 200
         assert response["Content-Type"].startswith("application/json")
         payload = json.loads(response.content.decode())
-        assert payload == (bulletin.raw_data or {})
+        assert payload == {
+            "type": "Feature",
+            "geometry": None,
+            "properties": {"bulletinID": "held-caaml"},
+        }
+
+    def test_returns_404_when_the_service_holds_no_caaml(self, client: Client) -> None:
+        """A bulletin with no SourceBulletin row has no CAAML to serve (SNOW-1337)."""
+        bulletin, _ = _make_bulletin_with_region()
+        response = client.get(
+            reverse(
+                "api:bulletin_caaml",
+                kwargs={"bulletin_id": bulletin.bulletin_id},
+            )
+        )
+        assert response.status_code == 404
 
     def test_returns_404_for_unknown_bulletin(self, client: Client) -> None:
         """An unknown bulletin_id returns 404."""
@@ -316,7 +334,7 @@ class TestBulletinCaamlEndpoint:
 
     def test_cache_control_public(self, client: Client) -> None:
         """Response carries Cache-Control: public, max-age=300."""
-        bulletin, _ = _make_bulletin_with_region()
+        bulletin, _ = _make_bulletin_with_region(held={"bulletinID": "held"})
         response = client.get(
             reverse(
                 "api:bulletin_caaml",

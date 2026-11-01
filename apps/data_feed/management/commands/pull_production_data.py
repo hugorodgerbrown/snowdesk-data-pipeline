@@ -15,9 +15,9 @@ staging looks stale. ``--type`` picks what to pull:
   centroid of), then the resorts with their pins, passes and location
   links. Always the whole estate: a few thousand rows, and a pass or a
   location link can change without the resort's ``updated_at`` moving.
-* ``bulletins`` — each changed bulletin's CAAML, replayed through this
-  database's own ``upsert_bulletin``, which rebuilds its region links, day
-  ratings, grouping outline and render model.
+* ``bulletins`` — each changed bulletin's render model and identity
+  fields, filed through this database's own ``write_bulletin``, which
+  rebuilds its region links, day ratings and grouping outline.
 * ``weather`` — each changed location-day, through ``upsert_weather``. A
   past day already recorded here is kept, never rewritten.
 
@@ -181,8 +181,8 @@ def describe_item(feed: str) -> Callable[[dict[str, Any]], str]:
 
         def bulletin(item: dict[str, Any]) -> str:
             """Name a bulletin by id and the day it is valid from."""
-            start = ((item.get("caaml") or {}).get("validTime") or {}).get(
-                "startTime", ""
+            start = item.get("valid_from") or (
+                ((item.get("caaml") or {}).get("validTime") or {}).get("startTime", "")
             )
             return f"{item['bulletin_id']} {start[:10]}"
 

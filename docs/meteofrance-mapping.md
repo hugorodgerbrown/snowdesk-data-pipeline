@@ -2,7 +2,7 @@
 name: meteofrance-mapping
 description: Field-by-field DPBRA XML to CAAML JSON mapping for meteofrance_translator — bulletinID synthesis, SAT_TO_EAWS, customData.MF
 status: current
-last-reviewed: 2026-10-28
+last-reviewed: 2026-11-01
 ---
 
 # MeteoFrance DPBRA → CAAML JSON mapping spec
@@ -17,7 +17,7 @@ ready to feed straight into `apps/bulletins/services/slf_fetcher.py::upsert_bull
 the root itself — there is no inner `<BULLETIN>` wrapper despite the
 plural element name).
 **Target:** CAAML v6 JSON dict, identical in shape to the SLF and ALBINA
-payloads already stored in `Bulletin.raw_data`. Provider-specific extras
+payloads stored in `SourceBulletin.caaml`. Provider-specific extras
 go under `customData.MF` (mirroring `customData.CH` for SLF and
 `customData.ALBINA` for ALBINA).
 **Evidence base:** 35 live bulletins covering every active French massif
@@ -308,8 +308,8 @@ DPBRA's `<QUALITE>/<TEXTE>` is a free-text description of snow quality
 and cover — semantically the same as CAAML's `snowpackStructure.comment`.
 The key is omitted when the element is absent. `format_comment_as_html`
 turns the plain-text `Heading : body` / `* bullet` lines into the limited
-HTML the page's `snowdesk_html` filter accepts; `reformat_mf_comments`
-re-runs it over stored rows after a formatting change. The same formatter
+HTML the page's `snowdesk_html` filter accepts (`reformat_mf_comments`,
+which re-ran it over stored rows, was retired by SNOW-1337). The same formatter
 is applied to `avalancheActivity.comment` and the tendency comment.
 
 ### 5.8 Avalanche activity (`avalancheActivity`)

@@ -45,6 +45,7 @@ from apps.bulletins.services.render_model import (
 from apps.ingest.models import SourceBulletin, SourceDayRating
 from apps.ingest.public import (
     NormalisedBulletin,
+    content_hash,
     parse_dt,
     slf_pdf_url,
     store_bulletin,
@@ -193,16 +194,15 @@ class TestUpsertBulletin:
         bulletin = Bulletin.objects.get(bulletin_id="test-001")
         assert bulletin.render_model_version == RENDER_MODEL_VERSION
 
-    def test_wraps_raw_data_in_geojson_feature(self) -> None:
-        """Raw data is wrapped in a GeoJSON Feature envelope."""
+    def test_keeps_the_content_hash_not_the_caaml(self) -> None:
+        """The row keeps the CAAML's hash; the CAAML is ingest's (SNOW-1337)."""
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
         upsert_bulletin(raw, run)
 
         bulletin = Bulletin.objects.get(bulletin_id="test-001")
-        assert bulletin.raw_data["type"] == "Feature"
-        assert bulletin.raw_data["geometry"] is None
-        assert bulletin.raw_data["properties"]["bulletinID"] == "test-001"
+        assert bulletin.content_hash == content_hash(raw)
+        assert not hasattr(bulletin, "raw_data")
 
     def test_creates_region_links(self) -> None:
         """Creates RegionBulletin rows for each seeded region covered."""
@@ -1060,7 +1060,8 @@ class TestStoreThenApply:
         assert outcome == "created"
         source = SourceBulletin.objects.get(bulletin_id="b-1")
         bulletin = Bulletin.objects.get(bulletin_id="b-1")
-        assert bulletin.raw_data["properties"] == source.caaml == raw
+        assert source.caaml == raw
+        assert bulletin.content_hash == source.content_hash
         assert bulletin.pdf_url == source.pdf_url == "https://x/a.pdf"
 
     def test_a_stored_bulletin_missing_here_is_applied_again(self) -> None:

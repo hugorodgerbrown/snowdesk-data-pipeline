@@ -362,9 +362,10 @@ class TestRunMeteofrance:
             )
 
         from apps.bulletins.models import Bulletin
+        from apps.ingest.public import source_caaml
 
-        b = Bulletin.objects.get(bulletin_id=_LIVE_ID)
-        raw_props = (b.raw_data or {}).get("properties", {})
+        assert Bulletin.objects.filter(bulletin_id=_LIVE_ID).exists()
+        raw_props = source_caaml(_LIVE_ID) or {}
         massif_slug: str = (
             raw_props.get("customData", {}).get("MF", {}).get("massif", "")
         )
@@ -505,7 +506,6 @@ class TestLatestMeteofrancoDate:
             valid_from=datetime(2026, 5, 18, 0, 0, tzinfo=UTC),
             valid_to=datetime(2026, 5, 19, 0, 0, tzinfo=UTC),
             pipeline_run=run,
-            raw_data={"type": "Feature", "geometry": None, "properties": {}},
             render_model={},
             render_model_version=0,
         )

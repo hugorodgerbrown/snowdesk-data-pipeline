@@ -927,10 +927,28 @@ class TestDebuggingAids:
     """
     The bulletin page always carries an ``X-Bulletin-Id`` header so
     operators can identify the rendered row from network tools.  When
-    ``settings.DEBUG`` is True (and a bulletin is present) the raw CAAML
-    ``raw_data`` is embedded as a ``<script type="application/json">``
-    tag for source-level inspection; the tag is absent in production.
+    ``settings.DEBUG`` is True (and a bulletin is present) the CAAML the
+    ingest service holds for it (``SourceBulletin.caaml``, SNOW-1337) is
+    embedded as a ``<script type="application/json">`` tag for
+    source-level inspection; the tag is absent in production, and absent
+    wherever the service holds no CAAML for the bulletin.
     """
+
+    def test_nothing_embedded_when_the_service_holds_no_caaml(
+        self, client: Client, region: MicroRegion, settings: Settings
+    ) -> None:
+        """DEBUG=True but no SourceBulletin → no tag, the page still renders."""
+        settings.DEBUG = True
+        day = date(2026, 3, 19)
+        _make_am_bulletin(
+            region,
+            day,
+            render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        response = client.get(_url("ch-4115", "valais", "2026-03-19"))
+        assert response.status_code == 200
+        assert 'id="bulletin-raw-data"' not in response.content.decode()
 
     def test_x_bulletin_id_header_present(
         self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
@@ -953,7 +971,7 @@ class TestDebuggingAids:
     def test_raw_data_embedded_when_debug_true(
         self, client: Client, region: MicroRegion, settings: Settings
     ) -> None:
-        """DEBUG=True → raw_data JSON embedded in page source."""
+        """DEBUG=True → the service's CAAML embedded in page source."""
         settings.DEBUG = True
         day = date(2026, 3, 17)
         bulletin = _make_am_bulletin(
@@ -961,7 +979,7 @@ class TestDebuggingAids:
             day,
             render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
             render_model_version=RENDER_MODEL_VERSION,
-            raw_data={"properties": {"bulletinID": "sentinel-uuid-12345"}},
+            held={"bulletinID": "sentinel-uuid-12345"},
         )
         url = _url("ch-4115", "valais", "2026-03-17")
         response = client.get(url)
@@ -1002,7 +1020,7 @@ class TestDebuggingAids:
             day,
             render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
             render_model_version=RENDER_MODEL_VERSION,
-            raw_data={"properties": {"comment": "hostile </script><b>pwn</b>"}},
+            held={"comment": "hostile </script><b>pwn</b>"},
         )
         url = _url("ch-4115", "valais", "2026-03-18")
         response = client.get(url)
@@ -1037,7 +1055,7 @@ class TestDebuggingAids:
             day,
             render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
             render_model_version=RENDER_MODEL_VERSION,
-            raw_data={"properties": {"bulletinID": "superuser-raw-check"}},
+            held={"bulletinID": "superuser-raw-check"},
         )
         client.force_login(superuser.user)
         url = _url("ch-4115", "valais", "2026-03-19")
@@ -1066,7 +1084,7 @@ class TestDebuggingAids:
             day,
             render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
             render_model_version=RENDER_MODEL_VERSION,
-            raw_data={"properties": {"bulletinID": "regular-hidden-check"}},
+            held={"bulletinID": "regular-hidden-check"},
         )
         client.force_login(user.user)
         url = _url("ch-4115", "valais", "2026-03-20")
@@ -1089,7 +1107,7 @@ class TestDebuggingAids:
             day,
             render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
             render_model_version=RENDER_MODEL_VERSION,
-            raw_data={"properties": {"bulletinID": "anon-hidden-check"}},
+            held={"bulletinID": "anon-hidden-check"},
         )
         url = _url("ch-4115", "valais", "2026-03-21")
         response = client.get(url)

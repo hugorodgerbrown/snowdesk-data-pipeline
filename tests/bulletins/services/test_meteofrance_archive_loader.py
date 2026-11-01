@@ -21,7 +21,7 @@ from apps.bulletins.services.meteofrance_archive_loader import (
     _slug_to_region_id,
     load_meteofrance_archive,
 )
-from apps.ingest.public import compact_publication_stamp
+from apps.ingest.public import SourceBulletin, compact_publication_stamp
 from apps.regions.models import MicroRegion
 
 # ---------------------------------------------------------------------------
@@ -441,15 +441,16 @@ class TestMultipleIssuesPerDay:
         lines = self._two_issues()
         load_meteofrance_archive(lines, commit=True)
         forward = {
-            b.bulletin_id: b.raw_data["properties"]["dangerRatings"][0]["mainValue"]
-            for b in Bulletin.objects.filter(bulletin_id__startswith="FR-02-")
+            b.bulletin_id: b.caaml["dangerRatings"][0]["mainValue"]
+            for b in SourceBulletin.objects.filter(bulletin_id__startswith="FR-02-")
         }
 
         Bulletin.objects.all().delete()
+        SourceBulletin.objects.all().delete()
         load_meteofrance_archive(list(reversed(lines)), commit=True)
         reverse = {
-            b.bulletin_id: b.raw_data["properties"]["dangerRatings"][0]["mainValue"]
-            for b in Bulletin.objects.filter(bulletin_id__startswith="FR-02-")
+            b.bulletin_id: b.caaml["dangerRatings"][0]["mainValue"]
+            for b in SourceBulletin.objects.filter(bulletin_id__startswith="FR-02-")
         }
 
         assert forward == reverse

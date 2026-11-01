@@ -43,6 +43,7 @@ from apps.bulletins.models import (
 from apps.bulletins.services.meteofrance_archive_loader import load_meteofrance_archive
 from apps.bulletins.services.slf_fetcher import run_slf_pipeline
 from apps.core.utils import html_to_markdown
+from apps.ingest.public import caaml_envelope, source_caaml
 
 logger = logging.getLogger(__name__)
 
@@ -212,13 +213,14 @@ class BulletinAdmin(admin.ModelAdmin):
         "snowpack_structure",
         "tendency",
         "pdf_url",
-        "raw_data_pretty",
+        "content_hash",
+        "caaml_pretty",
         "render_model_pretty",
         "created_at",
         "updated_at",
     ]
     inlines = [RegionBulletinInline]
-    exclude = ["raw_data", "render_model", "pipeline_run"]
+    exclude = ["render_model", "pipeline_run"]
 
     BACKFILL_START = date(2025, 12, 1)
 
@@ -287,16 +289,25 @@ class BulletinAdmin(admin.ModelAdmin):
 
     def _get_properties(self, obj: Bulletin) -> dict:
         """
-        Extract the CAAML properties dict from the GeoJSON raw_data envelope.
+        Return the bulletin's CAAML properties, as the ingest service stored them.
+
+        A ``Bulletin`` keeps no CAAML since SNOW-1337: the detail fields read
+        the matching ``SourceBulletin`` (``source_caaml``), once per object —
+        the result is kept on the instance for the rest of the page.
 
         Args:
             obj: The Bulletin instance.
 
         Returns:
-            The properties dict, or an empty dict if not present.
+            The properties dict, or an empty dict when the service holds no
+            CAAML for this bulletin.
 
         """
-        return obj.raw_data.get("properties", {}) if obj.raw_data else {}
+        cached: dict | None = getattr(obj, "_admin_caaml", None)
+        if cached is None:
+            cached = source_caaml(obj.bulletin_id) or {}
+            obj._admin_caaml = cached  # type: ignore[attr-defined]
+        return cached
 
     def _render_comment(self, text: str | None) -> str:
         """
@@ -618,10 +629,13 @@ class BulletinAdmin(admin.ModelAdmin):
         ]
         return self._render_comment("\n\n".join(comments) if comments else None)
 
-    @admin.display(description="Raw data")
-    def raw_data_pretty(self, obj: Bulletin) -> str:
-        """Render raw_data as syntax-highlighted, indented JSON."""
-        formatted = json.dumps(obj.raw_data, indent=2, ensure_ascii=False)
+    @admin.display(description="CAAML")
+    def caaml_pretty(self, obj: Bulletin) -> str:
+        """Render the service's stored CAAML as indented JSON, or say there is none."""
+        properties = self._get_properties(obj)
+        if not properties:
+            return "No CAAML is held for this bulletin."
+        formatted = json.dumps(caaml_envelope(properties), indent=2, ensure_ascii=False)
         return format_html(
             '<pre style="max-height:400px;overflow:auto;background:#f5f5f5;'
             "padding:0.75rem;border-radius:4px;"

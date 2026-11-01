@@ -1,8 +1,8 @@
 ---
 name: reference-data-has-one-source-of-truth
-description: apps/ingest serves all anonymous-map data (resorts, regions, weather, RegionDayRating) to every instance; reference_data()
+description: apps/ingest serves all anonymous-map data via reference_data(); CAAML never leaves it; a client stores only what it shows
 status: current
-last-reviewed: 2026-10-28
+last-reviewed: 2026-11-01
 ---
 
 # Reference data has one source of truth
@@ -25,10 +25,25 @@ from the service; if only a signed-in user does, it stays in the instance.
 | Code-held | the EAWS region tables (`apps/regions/fixtures/eaws_*.json`), the glossary | Ships with the code; every side loads the same commit |
 | Bulletin interpretation | the render model (`Bulletin.render_model`), day character, period transition | Built once in the service; synced with each bulletin |
 | Domain derivations | `RegionDayRating`, problem-terrain rules | Computed once in the service from the render model; synced (`SourceDayRating`), or read from the synced model by the service's code (the rules) |
-| Region projections | `RegionBulletin`, `BulletinGrouping` | Each instance, from the synced CAAML's region list and the code-held region tables: nothing to interpret, so nothing to sync (SNOW-1270) |
+| Region projections | `RegionBulletin`, `BulletinGrouping` | Each instance, from the bulletin item's region list and the code-held region tables: nothing to interpret, so nothing to sync (SNOW-1270) |
+| Raw provider payloads | the CAAML (`SourceBulletin.caaml`) | The service only — never served, never copied (SNOW-1337) |
 | Presentation | templates, translated labels and copy | Each instance, at render time |
 | User data | accounts, favourites, routes and shares, trips, downloads, field observations, bulletin shares, user-minted `Location` rows | Never leaves its instance |
 | Operations | `CommandRun`, `PipelineRun`, request logs, idempotency records, banners, flags | Per instance |
+
+**The service serves the cleanest, leanest dataset; a client stores only
+what it displays** (Hugo, 31 Oct 2026, SNOW-1337). The service ingests a
+provider's raw payload, cleans it up and interprets it; what it serves is
+the result, not the input. A bulletin item is its render model plus the few
+identity fields a client files it by (id, region codes and names, validity
+window, publication time, PDF link, a content hash) — never its CAAML. A
+weather item is one place's one day. A client, production's own site
+included, keeps no second copy of anything the service holds: `Bulletin`
+has no `raw_data` column, and a raw surface on the instance that hosts the
+service (the CAAML endpoint, the superuser embed, the admin, the MCP
+`get_bulletin_raw` tool) reads `SourceBulletin.caaml` through
+`apps.ingest.public.source_caaml` and answers 404 / no data where the
+service holds none.
 
 **Why.**
 
@@ -50,6 +65,12 @@ from the service; if only a signed-in user does, it stays in the instance.
   region per day and would break offline downloads, which hold rules.
 
 **Consequences.**
+
+- An instance that pulls its bulletins (staging) cannot rebuild a render
+  model: it holds no CAAML. It stores the served model at the service's
+  version, so after a `RENDER_MODEL_VERSION` bump that ships to staging
+  first, staging's bulletins read as the stale-model sentinel until the
+  service has rebuilt and the next pull copies the new models in.
 
 - `LocationQuerySet.reference_data()` is the line between a synced location
   and a user's own, keyed on the row carrying the service's uuid. `named()`

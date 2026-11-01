@@ -2,7 +2,7 @@
 name: mcp-server
 description: MCP JSON-RPC at POST /api/mcp/ and staff /api/ops/mcp/ (ops_tools) — mcp-auth bearer auth, tools, MCP Apps view
 status: current
-last-reviewed: 2026-10-31
+last-reviewed: 2026-11-01
 ---
 
 # MCP server
@@ -301,9 +301,10 @@ is ~10-30 KB per bulletin, so it is not the default.
 * **Returns:** `{region_id, region_name, date, has_bulletin, provider,
   issued_at, caaml: {type: "Feature", geometry, properties: {...}},
   summary}`. When no bulletin covers `date`, `has_bulletin` is `false`
-  and the `caaml` key is omitted. The one MCP tool that reads
-  `Bulletin.raw_data`: the read path defers the column, so the tool
-  loads it by an explicit fetch of its own.
+  and the `caaml` key is omitted. The one MCP tool that reads CAAML: a
+  `Bulletin` keeps none since SNOW-1337, so it reads the ingest service's
+  (`source_caaml`); where the service holds none (staging), `caaml` is
+  `null` and the summary says no CAAML is held.
 
 ### `bulk_current_conditions`
 
