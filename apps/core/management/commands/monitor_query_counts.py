@@ -91,6 +91,11 @@ def _build_monitored_urls() -> list[tuple[str, str]]:
         # middleware queries — tracking that against a "0 queries" target
         # would be monitoring the 404 handler, not a Snowdesk endpoint.
         ("bulletin_historic", "/ch-4115/martigny-verbier/2026-04-02/"),
+        # SNOW-768: the map's weather feed. The seed gives two public places
+        # a week of rows (the CH-4115 centroid and a resort pin), so a query
+        # per row or per place shows here; the cache is cleared before every
+        # monitored URL, so this is the cold-cache build.
+        ("api_weather_geojson", "/api/weather.geojson"),
     ]
 
 
