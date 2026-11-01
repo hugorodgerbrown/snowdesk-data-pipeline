@@ -46,8 +46,12 @@ fetcher writes them), so
 the meteogram draws without a fetch. So does the CH-4115 region's centroid
 Location, which the seed links offline the way
 ``link_region_centroid_locations`` does: a centroid is ``public()``, so it is
-the one weather symbol the map draws, and tapping it opens the weather sheet
-through peek, half and full. Dated relative to the run, like the trip below,
+a weather symbol the map draws, and tapping it opens the weather sheet
+through peek, half and full. So does the pin Location of the region's first
+resort by slug (SNOW-768): ``import_resorts`` mints it, the seed only reads
+it, and with two public places carrying rows an N+1 in ``/api/weather.geojson``
+shows in ``monitor_query_counts``. With no such resort the seed fails rather
+than seeding fewer rows. Dated relative to the run, like the trip below,
 because the weather surfaces read today's row and a pinned April date would
 seed weather nothing shows. The figures are invented and stable, not fetched.
 
@@ -73,7 +77,7 @@ were not named — those extra models are reported before seeding.
 
 Read-only by default (prints intended counts); pass ``--commit`` to persist. The
 command expects an empty/migrated database: it creates deterministic bulletin IDs
-and one WeatherSnapshot per (region, date), so re-seeding a populated DB raises a
+and one Weather row per (location, observed_on), so re-seeding a populated DB raises a
 ``CommandError`` rather than a raw ``IntegrityError``.
 """
 
@@ -849,7 +853,7 @@ class Command(RegisteredCommand):
             raise CommandError(
                 "Seeding hit a uniqueness constraint. seed_test_data expects an "
                 "empty database — it creates deterministic bulletin IDs and one "
-                "WeatherSnapshot per (region, date), which collide with existing "
+                "Weather row per (location, observed_on), which collide with existing "
                 "rows. Start from a fresh/migrated DB (or flush it) and retry. "
                 f"({exc})"
             ) from exc
@@ -1483,9 +1487,11 @@ class Command(RegisteredCommand):
         The centroid is the CH-4115 region's, linked here exactly as
         ``link_region_centroid_locations`` links one — offline, from the
         fixture's ``boundary`` and ``centroid_elevation_m``. It is the only
-        ``public()`` location the seed has, so it is what puts a weather
-        symbol on the map. A region with no readable boundary gets none, and
-        the pins still get their rows.
+        ``public()`` location the seed links itself. Beside it, the region's
+        first resort pin by slug (``_resort_pin``) gets rows too, so the
+        weather feed carries two public places and an N+1 in it shows in
+        ``monitor_query_counts`` (SNOW-768). A region with no readable
+        boundary gets no centroid, and the pins still get their rows.
 
         Args:
             locations: The seeded Location instances.
@@ -1503,6 +1509,7 @@ class Command(RegisteredCommand):
             centroid = self._seed_centroid(region)
             if centroid is not None:
                 targets.append(centroid)
+            targets.append(self._resort_pin(region))
 
         today = django_timezone.localdate()
         created = 0
@@ -1514,6 +1521,40 @@ class Command(RegisteredCommand):
         if verbosity >= 2:
             self.stdout.write(f"  Created {created} Weather rows")
         return created
+
+    def _resort_pin(self, region: "MicroRegion") -> "Location":
+        """Return the pin Location of a detail region's first resort, by slug.
+
+        ``import_resorts --commit`` owns resort pins (SNOW-1144); the seed
+        only reads one. Chosen by slug so the seeded dataset, and the query
+        baseline measured on it, never depends on incidental row order.
+
+        Args:
+            region: The detail region.
+
+        Returns:
+            The resort's pin Location.
+
+        Raises:
+            CommandError: The region has no resort with a pin, because the
+                resort sheet was not imported first.
+
+        """
+        from apps.regions.models import Resort
+
+        resort = (
+            Resort.objects.filter(region=region, location__isnull=False)
+            .select_related("location")
+            .order_by("slug")
+            .first()
+        )
+        if resort is None or resort.location is None:
+            raise CommandError(
+                f"No resort in {region.region_id} has a pin Location, so the "
+                "seed has no second public place to write weather for. Run "
+                "`manage.py import_resorts --commit` first."
+            )
+        return resort.location
 
     def _seed_centroid(self, region: "MicroRegion") -> "Location | None":
         """Return a region's centroid Location, linking it first when absent.

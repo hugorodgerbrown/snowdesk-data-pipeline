@@ -2,7 +2,7 @@
 name: query-counts
 description: Query-count monitoring — monitor_query_counts baseline in perf/query_counts.txt and the X-DB-Query-Count header
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-11-01
 ---
 
 # Query-count monitoring (SNOW-13)
@@ -27,7 +27,7 @@ way they see a Lighthouse-score delta.
 
 ## Adding a new monitored URL
 
-Append a `(name, url)` tuple to `MONITORED_URLS` in
+Append a `(name, url)` tuple to the list `_build_monitored_urls()` returns in
 `apps/core/management/commands/monitor_query_counts.py`, then run
 `uv run python manage.py monitor_query_counts --commit` to seed
 the new baseline row.

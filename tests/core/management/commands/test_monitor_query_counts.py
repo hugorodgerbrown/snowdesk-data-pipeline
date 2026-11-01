@@ -106,3 +106,16 @@ def test_malformed_baseline_raises(
     baseline_path.write_text("home\n")
     with pytest.raises(CommandError, match="Malformed"):
         call_command("monitor_query_counts", stdout=StringIO())
+
+
+def test_the_weather_feed_is_monitored_and_baselined() -> None:
+    """SNOW-768: /api/weather.geojson is measured and has a committed row."""
+    urls = dict(cmd_module._build_monitored_urls())
+    assert urls["api_weather_geojson"] == "/api/weather.geojson"
+
+    baseline = {
+        line.split()[0]
+        for line in cmd_module.BASELINE_PATH.read_text().splitlines()
+        if line and not line.startswith("#")
+    }
+    assert "api_weather_geojson" in baseline

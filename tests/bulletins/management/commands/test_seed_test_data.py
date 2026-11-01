@@ -70,7 +70,7 @@ from apps.bulletins.models import (
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.favourites.models import Favourite
 from apps.locations.models import Location, LocationQuerySet
-from apps.regions.models import MicroRegion
+from apps.regions.models import MicroRegion, Resort
 from apps.routes.models import Route
 from apps.routes.services.canonical import canonical_paths
 from apps.trips.models import Trip
@@ -732,18 +732,63 @@ class TestWeatherSeeding:
     """Today's weather, so the meteogram draws in a fresh database (SNOW-1108)."""
 
     def test_include_weather_pulls_in_location(self) -> None:
-        """Each seeded Location and the CH-4115 centroid gets a week of rows."""
+        """Each seeded Location, the centroid and a resort pin get a week of rows."""
         call_command("seed_test_data", "--include", "weather", commit=True, verbosity=0)
 
         centroid = MicroRegion.objects.get(region_id="CH-4115").centroid_location
         assert centroid is not None
         today = timezone.localdate()
         assert _seeded_locations().count() == _EXPECTED_LOCATIONS + 1
-        assert Weather.objects.count() == (_EXPECTED_LOCATIONS + 1) * FORECAST_DAYS
+        # The seeded pins, the centroid and one resort pin (SNOW-768).
+        assert Weather.objects.count() == (_EXPECTED_LOCATIONS + 2) * FORECAST_DAYS
         assert set(Weather.objects.values_list("observed_on", flat=True)) == {
             today + timedelta(days=n) for n in range(FORECAST_DAYS)
         }
         assert Weather.objects.filter(location=centroid).exists()
+
+    def test_the_first_ch4115_resort_pin_by_slug_gets_rows(self) -> None:
+        """SNOW-768: a second public place, chosen by slug, never by row order."""
+        call_command("seed_test_data", "--include", "weather", commit=True, verbosity=0)
+
+        expected = (
+            Resort.objects.filter(region__region_id="CH-4115", location__isnull=False)
+            .order_by("slug")
+            .first()
+        )
+        assert expected is not None
+        resort_rows = Weather.objects.filter(
+            location__pinned_resorts__isnull=False
+        ).values_list("location__pinned_resorts__slug", flat=True)
+        assert set(resort_rows) == {expected.slug}
+        assert len(resort_rows) == FORECAST_DAYS
+        public_with_rows = (
+            Location.objects.public()
+            .filter(weather__observed_on=timezone.localdate())
+            .distinct()
+        )
+        assert public_with_rows.count() >= 2
+
+    def test_no_ch4115_resort_pin_is_a_clear_error(self) -> None:
+        """Without import_resorts' pins the seed fails rather than seed fewer rows."""
+        Resort.objects.filter(region__region_id="CH-4115").update(location=None)
+
+        with pytest.raises(CommandError, match="import_resorts --commit"):
+            call_command(
+                "seed_test_data", "--include", "weather", commit=True, verbosity=0
+            )
+        assert not Weather.objects.exists()
+
+    def test_the_weather_feed_carries_two_places_with_days(
+        self, client: Client
+    ) -> None:
+        """After --all --commit the map's weather feed has two places to draw."""
+        call_command("seed_test_data", "--all", commit=True, verbosity=0)
+
+        response = client.get(reverse("api:weather_geojson"))
+
+        assert response.status_code == 200
+        with_days = [f for f in response.json()["features"] if f["properties"]["days"]]
+        assert len(with_days) >= 2
 
     def test_a_row_has_the_shape_fetch_writes(self) -> None:
         """One row per day, each with its own 24 hours, all forecast today."""
