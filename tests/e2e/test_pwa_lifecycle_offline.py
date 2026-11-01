@@ -29,7 +29,9 @@ def test_offline_reload_of_visited_date_url(pwa_page: PwaPage) -> None:
     dated_url = pwa_page.live_server_url + "/map/?d=2026-04-08"
     page.goto(dated_url)
     page.wait_for_load_state("load")
-    page.wait_for_selector("#season-scrubber")
+    # Attached, not visible: the map hides the scrubber on a day outside the
+    # current season, and from 1 Nov 2026 this fixed date is (SNOW-1353).
+    page.wait_for_selector('#season-scrubber[data-state="ready"]', state="attached")
 
     page.context.set_offline(True)
     try:
@@ -42,7 +44,7 @@ def test_offline_reload_of_visited_date_url(pwa_page: PwaPage) -> None:
         page.context.set_offline(False)
 
     assert page.url == dated_url
-    page.wait_for_selector("#season-scrubber")
+    page.wait_for_selector('#season-scrubber[data-state="ready"]', state="attached")
     assert page.locator("h1", has_text="This page isn't available offline").count() == 0
 
 
