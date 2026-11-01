@@ -85,12 +85,9 @@ def test_new_bulletin_schedule() -> None:
     """Every new bulletin: three messages, the night issue held to 06:30."""
     alerts = replay_region(RECORDS, source="SLF")
     sent = [a for a in alerts if a.sent]
-    assert [a.title for a in sent] == [
-        "Martigny-Verbier bulletin",
-        "Martigny-Verbier bulletin",
-        "Martigny-Verbier bulletin",
-    ]
-    assert sent[0].body.startswith("First of the season. Valid from")
+    assert all(a.title.startswith("Martigny-Verbier – ") for a in sent)
+    assert all(a.title.endswith(" bulletin") for a in sent)
+    assert sent[0].body.startswith("First of the season. ")
     held = sent[2].delivered_at.astimezone(ALERT_TZ)
     assert (held.hour, held.minute) == (6, 30)
 
@@ -135,6 +132,17 @@ def test_committed_slf_season() -> None:
     alerts = replay_archive(source="SLF")
     sent = [a for a in alerts if a.sent]
     assert 150 <= len(sent) <= 260
-    assert all(a.title.startswith("Martigny-Verbier bulletin") for a in sent)
-    # An open door: the place and the day, never the bulletin's content.
-    assert all(a.body.startswith(("Valid from", "First of")) for a in sent)
+    assert all(a.title.startswith("Martigny-Verbier – ") for a in sent)
+    # The level and what moved, never the problems themselves (SNOW-1356).
+    assert all("slab" not in a.body.lower() for a in sent)
+    assert any(a.body.endswith("no change.") for a in sent)
+
+
+@pytest.mark.usefixtures("_fakes")
+def test_new_snow_is_named_when_given() -> None:
+    """A day's snowfall reaches the body; the archive alone names none."""
+    plain = [a for a in replay_region(RECORDS, source="SLF") if a.sent]
+    assert not any("new snow" in a.body for a in plain)
+    snow = dict.fromkeys({a.target_date for a in plain}, 30.0)
+    snowy = [a for a in replay_region(RECORDS, source="SLF", new_snow=snow) if a.sent]
+    assert all(a.body.endswith("30 cm new snow forecast.") for a in snowy)

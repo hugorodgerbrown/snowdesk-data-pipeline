@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import datetime
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -148,6 +148,7 @@ def replay_region(
     region_id: str = DEFAULT_REGION,
     mode: str = "NEW_BULLETIN",
     label: str | None = None,
+    new_snow: Mapping[datetime.date, float] | None = None,
 ) -> list[ReplayedAlert]:
     """
     Replay every alert decision for one region across an archive.
@@ -159,6 +160,9 @@ def replay_region(
         mode: ``NEW_BULLETIN`` or ``CHANGES``.
         label: The place's name in the messages (defaults to the region's
             name in the first issue).
+        new_snow: Snowfall in cm per bulletin day, for the new snow line
+            (SNOW-944). The archive carries no weather, so without it the
+            replay names none.
 
     Returns:
         Every decision, sent or not, in delivery order.
@@ -223,6 +227,7 @@ def replay_region(
                     compared_to=decision.compared_to,
                     valid_from=valid_from,
                     valid_until=_valid_until(raw),
+                    new_snow_cm=(new_snow or {}).get(day),
                 )
             ],
             today,

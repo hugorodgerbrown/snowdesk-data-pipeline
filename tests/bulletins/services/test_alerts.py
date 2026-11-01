@@ -23,6 +23,7 @@ from apps.bulletins.services.alerts import (
     decide,
     deliver,
     evaluate_account,
+    forecast_new_snow,
     in_night_hold,
     places_on,
     recent_alerts,
@@ -40,12 +41,14 @@ from tests.factories import (
     BulletinAlertFactory,
     BulletinFactory,
     FavouriteFactory,
+    LocationFactory,
     MicroRegionFactory,
     PushSubscriptionFactory,
     RegionDayRatingFactory,
     ResortFactory,
     TripFactory,
     TripParticipantFactory,
+    WeatherFactory,
 )
 
 TODAY = datetime.date(2026, 1, 16)
@@ -214,7 +217,7 @@ class TestEvaluateAndDeliver:
         with patch.object(alerts, "dispatch_push", return_value=OK) as push:
             run = deliver(evaluate_account(account, NOW))
         assert run.message is not None
-        assert run.message.title == "Verbier bulletin"
+        assert run.message.title == "Verbier – Saturday bulletin"
         push.assert_called_once()
         # Today fired too (no row, alerts predate it) but one place is named
         # once: today is logged skipped, tomorrow is the message.
@@ -242,7 +245,7 @@ class TestEvaluateAndDeliver:
         (row,) = run.rows
         assert row.decision.kind == "update"
         assert run.message is not None
-        assert run.message.title == "Verbier bulletin updated"
+        assert run.message.title == "Verbier – Saturday bulletin update"
 
     def test_a_state_that_recurs_is_told_once(self, follower: tuple) -> None:
         """A, then B, then A again: the return of A sends once, not every run."""
@@ -593,8 +596,8 @@ class TestRecentAlerts:
         when = kwargs.pop("when", None)
         row = BulletinAlertFactory.create(
             account=account,
-            title=kwargs.pop("title", "Verbier bulletin"),
-            body=kwargs.pop("body", "Valid from Friday at 5 pm to Saturday at 5 pm."),
+            title=kwargs.pop("title", "Verbier – Saturday bulletin"),
+            body=kwargs.pop("body", "Considerable, no change."),
             url=kwargs.pop("url", "/alerts/2026-10-31/"),
             **kwargs,
         )
@@ -683,3 +686,62 @@ class TestStoredState:
         assert alerts.day_state(region, TODAY) == bulletin_state(
             render("considerable", [WIND_RM])
         )
+
+
+@pytest.mark.django_db
+class TestForecastNewSnow:
+    """The new snow line reads today's row for the region's centroid (SNOW-944)."""
+
+    def centroid_region(self) -> Any:
+        """Return a region with a centroid location."""
+        location = LocationFactory.create()
+        return MicroRegionFactory.create(centroid_location=location)
+
+    def test_tomorrow_reads_the_forecast_entry(self) -> None:
+        """A later day reads its entry in today's forecast[]."""
+        region = self.centroid_region()
+        WeatherFactory.create(
+            location=region.centroid_location,
+            observed_on=TODAY,
+            snowfall_sum=1.0,
+            forecast=[{"date": TOMORROW.isoformat(), "snowfall_sum": 22.4}],
+        )
+        assert forecast_new_snow(region, TOMORROW, TODAY) == 22.4
+
+    def test_today_reads_the_row(self) -> None:
+        """Today reads the row's own snowfall."""
+        region = self.centroid_region()
+        WeatherFactory.create(
+            location=region.centroid_location, observed_on=TODAY, snowfall_sum=8.0
+        )
+        assert forecast_new_snow(region, TODAY, TODAY) == 8.0
+
+    def test_nothing_known(self) -> None:
+        """No centroid, no row, or no entry: None."""
+        assert forecast_new_snow(MicroRegionFactory.create(), TODAY, TODAY) is None
+        region = self.centroid_region()
+        assert forecast_new_snow(region, TODAY, TODAY) is None
+        WeatherFactory.create(
+            location=region.centroid_location,
+            observed_on=TODAY,
+            forecast=[{"date": TOMORROW.isoformat(), "snowfall_sum": None}],
+        )
+        assert forecast_new_snow(region, TOMORROW, TODAY) is None
+        later = TODAY + datetime.timedelta(days=3)
+        assert forecast_new_snow(region, later, TODAY) is None
+
+    def test_one_place_alert_names_it(self, follower: tuple) -> None:
+        """A one-place alert carries the snow; the body names it."""
+        account, region = follower
+        region.centroid_location = LocationFactory.create()
+        region.save(update_fields=["centroid_location"])
+        WeatherFactory.create(
+            location=region.centroid_location,
+            observed_on=TODAY,
+            forecast=[{"date": TOMORROW.isoformat(), "snowfall_sum": 20.0}],
+        )
+        publish(region, TODAY, render())
+        publish(region, TOMORROW, render("considerable", [WIND_RM]))
+        run = evaluate_account(account, NOW)
+        assert run.message is not None
+        assert run.message.body.endswith("20 cm new snow forecast.")

@@ -8,6 +8,7 @@ reader would see.
 from __future__ import annotations
 
 import datetime
+from dataclasses import replace
 
 import pytest
 
@@ -102,60 +103,90 @@ class TestPhrases:
 
 
 class TestSinglePlace:
-    """One place says there is news, for which place and which day."""
+    """One place names its day, its level and what moved (SNOW-1356)."""
 
-    def test_new_day(self) -> None:
-        """A new bulletin names the place and the day, and opens its panel."""
+    def test_rise(self) -> None:
+        """A rise names the bulletin's day, the level and where it came from."""
         msg = alert_message(
             [place(state("moderate"), state("considerable", problems=(WIND,)))],
             TODAY,
         )
-        assert msg.title == "Verbier bulletin"
-        assert msg.body == "For tomorrow."
+        assert msg.title == "Verbier – Saturday bulletin"
+        assert msg.body == "Considerable, up from Moderate."
         assert msg.url == "/map/?d=2026-01-17#CH-4115"
 
-    def test_no_data(self) -> None:
-        """No level, no problems: the page has the detail."""
+    def test_fall(self) -> None:
+        """A fall says down."""
+        msg = alert_message([place(state("considerable"), state("moderate"))], TODAY)
+        assert msg.body == "Moderate, down from Considerable."
+
+    def test_no_change(self) -> None:
+        """A restatement says so, so a quiet week is not seven copies."""
+        msg = alert_message([place(state(), state())], TODAY)
+        assert msg.body == "Considerable, no change."
+
+    def test_problems_changed(self) -> None:
+        """The level held but the problems moved."""
+        msg = alert_message(
+            [place(state(problems=(WIND,)), state(problems=(WET,)))], TODAY
+        )
+        assert msg.body == "Considerable, avalanche problems changed."
+
+    @pytest.mark.parametrize(
+        ("before", "after", "expected"),
+        [
+            ("-", "+", "Considerable (3+), up from 3−."),
+            ("+", "-", "Considerable (3−), down from 3+."),
+        ],
+    )
+    def test_sub_level(self, before: str, after: str, expected: str) -> None:
+        """A move within the level names the figures."""
+        msg = alert_message(
+            [place(state(subdivision=before), state(subdivision=after))], TODAY
+        )
+        assert msg.body == expected
+
+    def test_no_detail(self) -> None:
+        """Problems, aspects and heights stay on the page."""
         msg = alert_message(
             [place(state("moderate"), state("considerable", problems=(WIND,)))],
             TODAY,
         )
         text = (msg.title + msg.body).lower()
-        assert "considerable" not in text
         assert "wind" not in text
+        assert "2,400" not in text
 
-    def test_same_words_whatever_moved(self) -> None:
-        """A rise and a restatement read alike."""
-        rise = alert_message([place(state("moderate"), state("high"))], TODAY)
-        same = alert_message([place(state(), state())], TODAY)
-        assert (rise.title, rise.body) == (same.title, same.body)
-
-    def test_later_day(self) -> None:
-        """A day past tomorrow is named."""
+    def test_day_is_the_bulletins_day(self) -> None:
+        """A later day is named by its weekday whatever the send date."""
         msg = alert_message(
             [place(state(), state(), day=TODAY + datetime.timedelta(days=2))], TODAY
         )
-        assert msg.body == "For Sunday."
+        assert msg.title == "Verbier – Sunday bulletin"
 
     def test_season_start(self) -> None:
-        """The first bulletin of a season says so."""
+        """The first bulletin of a season says so, with the bare level."""
         msg = alert_message(
             [place(None, state(problems=(WIND,)), kind="season_start")], TODAY
         )
-        assert msg.title == "Verbier bulletin"
-        assert msg.body == "First of the season. For tomorrow."
+        assert msg.title == "Verbier – Saturday bulletin"
+        assert msg.body == "First of the season. Considerable."
 
     def test_update_today(self) -> None:
-        """An update says the bulletin was updated."""
+        """A morning reissue is the day's bulletin update."""
         msg = alert_message(
             [place(state("moderate"), state("considerable"), kind="update", day=TODAY)],
             TODAY,
         )
-        assert msg.title == "Verbier bulletin updated"
-        assert msg.body == "For today."
+        assert msg.title == "Verbier – Friday bulletin update"
+        assert msg.body == "Considerable, up from Moderate."
+
+    def test_unrated(self) -> None:
+        """An unrated state reads as no rating."""
+        msg = alert_message([place(None, state(""))], TODAY)
+        assert msg.body == "No rating."
 
     def test_trip(self) -> None:
-        """A saved trip's alert names the trip and its day, and opens it."""
+        """A saved trip's alert leads with the trip, and opens it."""
         p = PlaceAlert(
             region_id="CH-4115",
             label="Mont Fort loop",
@@ -165,8 +196,8 @@ class TestSinglePlace:
             url="/trips/abc/",
         )
         msg = alert_message([p], TODAY)
-        assert msg.title == "Mont Fort loop bulletin"
-        assert msg.body == "For your trip on Saturday."
+        assert msg.title == "Mont Fort loop – Saturday bulletin"
+        assert msg.body == "For your trip. Considerable, no change."
         assert msg.url == "/trips/abc/"
 
     def test_as_push(self) -> None:
@@ -175,8 +206,32 @@ class TestSinglePlace:
         assert set(msg.as_push()) == {"title", "body", "url"}
 
 
-class TestValidity:
-    """The body says when the bulletin holds."""
+class TestNewSnow:
+    """The forecast new snow follows the level (SNOW-944)."""
+
+    def snowy(self, cm: float | None) -> PlaceAlert:
+        """Return a place with a forecast snowfall."""
+        return replace(place(state("moderate"), state()), new_snow_cm=cm)
+
+    def test_named(self) -> None:
+        """Five centimetres or more is named, rounded."""
+        msg = alert_message([self.snowy(19.6)], TODAY)
+        assert msg.body == "Considerable, up from Moderate. 20 cm new snow forecast."
+
+    @pytest.mark.parametrize("cm", [None, 0.0, 4.9])
+    def test_dusting_is_not_news(self, cm: float | None) -> None:
+        """Below five centimetres, or unknown, nothing is said."""
+        msg = alert_message([self.snowy(cm)], TODAY)
+        assert msg.body == "Considerable, up from Moderate."
+
+    def test_threshold(self) -> None:
+        """Exactly five is named."""
+        msg = alert_message([self.snowy(5.0)], TODAY)
+        assert msg.body.endswith("5 cm new snow forecast.")
+
+
+class TestBundleValidity:
+    """A bundle still says when its bulletins hold."""
 
     START = datetime.datetime(2026, 1, 16, 16, 0, tzinfo=datetime.UTC)
     UNTIL = datetime.datetime(2026, 1, 17, 16, 0, tzinfo=datetime.UTC)
@@ -195,11 +250,6 @@ class TestValidity:
         fields.update(kwargs)
         return PlaceAlert(**fields)  # type: ignore[arg-type]
 
-    def test_valid_from_to(self) -> None:
-        """The times read in the Alps' clock, 12-hour in English."""
-        msg = alert_message([self.timed()], TODAY)
-        assert msg.body == "Valid from Friday at 5 pm to Saturday at 5 pm."
-
     def test_minutes_and_morning(self) -> None:
         """Minutes show when there are any; a morning reads am."""
         msg = alert_message(
@@ -208,20 +258,18 @@ class TestValidity:
                     valid_from=datetime.datetime(
                         2026, 1, 16, 7, 30, tzinfo=datetime.UTC
                     )
-                )
+                ),
+                self.timed(
+                    label="Davos",
+                    region_id="CH-5",
+                    valid_from=datetime.datetime(
+                        2026, 1, 16, 7, 30, tzinfo=datetime.UTC
+                    ),
+                ),
             ],
             TODAY,
         )
-        assert msg.body.startswith("Valid from Friday at 8:30 am to")
-
-    def test_trip_and_season_lead(self) -> None:
-        """A trip and a season start lead with their own sentence."""
-        trip = alert_message([self.timed(url="/trips/abc/")], TODAY)
-        assert trip.body == (
-            "For your trip on Saturday. Valid from Friday at 5 pm to Saturday at 5 pm."
-        )
-        season = alert_message([self.timed(kind="season_start")], TODAY)
-        assert season.body.startswith("First of the season. Valid from")
+        assert msg.body.startswith("Davos and Verbier. Valid from Friday at 8:30 am to")
 
     def test_bundle_shares_times(self) -> None:
         """A bundle whose bulletins share their validity states it once."""

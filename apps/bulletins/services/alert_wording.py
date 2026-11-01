@@ -8,11 +8,15 @@ renders a season of them so the copy can be read in sequence.
 
 The rules:
 
-- **An open door, not the bulletin (SNOW-1332).** An alert says only
-  that there is a bulletin, for which place and when it holds: "Verbier
-  bulletin" / "Valid from Friday at 5 pm to Saturday at 5 pm." No level,
-  no problems: a message can never give the whole picture, so it sends
-  the reader to the page that does (Hugo, 2026-10-30).
+- **The day, the level and what moved (SNOW-1356).** The title names the
+  place and the day the bulletin is for: "Verbier – Thursday bulletin",
+  and a reissue "Verbier – Thursday bulletin update" (so Wednesday's
+  17:00 issue says Thursday). The body is the level and whether it moved,
+  then the forecast new snow when there is some: "Considerable, up from
+  Moderate. 20 cm new snow forecast." / "Moderate, no change." The
+  open-door wording of SNOW-1332 made a quiet week seven identical
+  messages (Hugo, 2026-11-01); the problems, aspects and heights still
+  live only on the page the tap opens.
 - **One message per person per run.** :func:`alert_message` takes every
   place that fired for an account and bundles them; a single place reads as
   that place, several as their names ("Chamonix, Davos and Verbier, for
@@ -57,6 +61,10 @@ ALERT_TZ = ZoneInfo("Europe/Zurich")
 # Places listed by name in a bundled body before "and N more".
 MAX_LISTED_PLACES: int = 4
 
+# The least forecast new snow, in cm, a one-place alert names (SNOW-944):
+# below it a dusting would read as news.
+NEW_SNOW_MIN_CM: float = 5.0
+
 AlertKind = Literal["new", "update", "season_start"]
 
 
@@ -79,6 +87,9 @@ class PlaceAlert:
     # to place "this alert" among the day's issues.
     valid_from: datetime.datetime | None = None
     valid_until: datetime.datetime | None = None
+    # The new snow forecast for ``target_date`` at the region's weather
+    # point, in cm (SNOW-944), or None when nothing is known.
+    new_snow_cm: float | None = None
 
 
 @dataclass(frozen=True)
@@ -482,44 +493,105 @@ def validity(
 
 def place_title(place: PlaceAlert) -> str:
     """
-    Write the title for a single place.
+    Write the title for a single place: the place and the day it is for.
 
     Args:
         place: The place that fired.
 
     Returns:
-        "Verbier bulletin", or "Verbier bulletin updated" for a reissue.
+        "Verbier – Thursday bulletin", or "Verbier – Thursday bulletin
+        update" for a reissue. The day is the one the bulletin forecasts,
+        so Wednesday's 17:00 issue names Thursday.
 
     """
+    values = {"place": place.label, "day": weekday(place.target_date)}
     if place.kind == "update":
-        return _("%(place)s bulletin updated") % {"place": place.label}
-    return _("%(place)s bulletin") % {"place": place.label}
+        return _("%(place)s – %(day)s bulletin update") % values
+    return _("%(place)s – %(day)s bulletin") % values
+
+
+def movement(change: BulletinChange) -> str:
+    """
+    Write the level and whether it moved.
+
+    Args:
+        change: The change that fired.
+
+    Returns:
+        "Considerable, up from Moderate.", "Considerable (3+), up from 3−."
+        for a sub-level move, "Moderate, avalanche problems changed." when
+        only the problems moved, "Moderate, no change." when nothing did,
+        and the bare "Moderate." with nothing to compare against.
+
+    """
+    current, previous = change.current, change.previous
+    word = level_word(current)
+    if previous is None:
+        return _("%(level)s.") % {"level": word}
+    if change.rating_direction > 0:
+        return _("%(level)s, up from %(previous)s.") % {
+            "level": word,
+            "previous": level_word(previous),
+        }
+    if change.rating_direction < 0:
+        return _("%(level)s, down from %(previous)s.") % {
+            "level": word,
+            "previous": level_word(previous),
+        }
+    if change.subdivision_moved:
+        values = {
+            "level": headline(current),
+            "previous": level_figure(previous) or level_word(previous),
+        }
+        if current.rank > previous.rank:
+            return _("%(level)s, up from %(previous)s.") % values
+        return _("%(level)s, down from %(previous)s.") % values
+    if change.added or change.removed or change.moved:
+        return _("%(level)s, avalanche problems changed.") % {"level": word}
+    return _("%(level)s, no change.") % {"level": word}
+
+
+def new_snow(cm: float | None) -> str:
+    """
+    Write the forecast new snow ("20 cm new snow forecast.").
+
+    Args:
+        cm: The day's forecast snowfall in cm, or None.
+
+    Returns:
+        The sentence, or an empty string below ``NEW_SNOW_MIN_CM``.
+
+    """
+    if cm is None or cm < NEW_SNOW_MIN_CM:
+        return ""
+    return _("%(cm)d cm new snow forecast.") % {"cm": round(cm)}
 
 
 def place_body(place: PlaceAlert, today: datetime.date) -> str:
     """
-    Write the body for a single place: when its bulletin holds.
+    Write the body for a single place: the level, what moved, new snow.
 
     Args:
         place: The place that fired.
-        today: The local date the message is sent on.
+        today: The local date the message is sent on (unused since the
+            title names the day; kept so every body takes the same pair).
 
     Returns:
-        "Valid from Friday at 5 pm to Saturday at 5 pm.", led by "For your
-        trip on Saturday." for a trip and "First of the season." at season
-        start. Without the times it falls back to the day: "For tomorrow."
+        "Considerable, up from Moderate. 20 cm new snow forecast.", led by
+        "For your trip." for a trip and "First of the season." at season
+        start.
 
     """
-    lead: list[str] = []
+    parts: list[str] = []
     if place.url:
-        day = weekday(place.target_date)
-        lead.append(_("For your trip on %(day)s.") % {"day": day})
+        parts.append(_("For your trip."))
     if place.kind == "season_start":
-        lead.append(_("First of the season."))
-    when = validity(place.valid_from, place.valid_until)
-    if not when and not place.url:
-        when = _("For %(day)s.") % {"day": day_phrase(place.target_date, today)}
-    return " ".join([*lead, when]).strip()
+        parts.append(_("First of the season."))
+    parts.append(movement(place.change))
+    snow = new_snow(place.new_snow_cm)
+    if snow:
+        parts.append(snow)
+    return " ".join(parts)
 
 
 def place_url(place: PlaceAlert) -> str:

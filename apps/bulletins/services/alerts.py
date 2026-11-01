@@ -78,6 +78,7 @@ from apps.favourites.models import Favourite
 from apps.ingest.public import state_of
 from apps.trips.models import Trip
 from apps.trips.services.plan_days import start_region
+from apps.weather.models import Weather
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -412,6 +413,47 @@ def _one_day_per_place(rows: list[PendingRow]) -> None:
             row.decision = replace(row.decision, outcome=BulletinAlert.Outcome.SKIPPED)
 
 
+def forecast_new_snow(
+    region: MicroRegion, day: datetime.date, today: datetime.date
+) -> float | None:
+    """
+    Return the new snow forecast for a region's day, as known today (SNOW-944).
+
+    Read from today's row for the region's centroid location: its own
+    ``snowfall_sum`` for today, its ``forecast[]`` entry for a later day.
+    A forecast never reads a past row, so this is what the weather sheet
+    says now.
+
+    Args:
+        region: The micro-region.
+        day: The bulletin's day.
+        today: The local send date.
+
+    Returns:
+        The snowfall in cm, or None with no centroid, no row or no entry.
+
+    """
+    if region.centroid_location_id is None:
+        return None
+    row = (
+        Weather.objects.filter(
+            location_id=region.centroid_location_id, observed_on=today
+        )
+        .only("snowfall_sum", "forecast")
+        .first()
+    )
+    if row is None:
+        return None
+    if day == today:
+        return row.snowfall_sum
+    iso = day.isoformat()
+    for entry in row.forecast or []:
+        if entry.get("date") == iso:
+            value = entry.get("snowfall_sum")
+            return float(value) if value is not None else None
+    return None
+
+
 def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
     """
     Work out every row and the one message for an account, writing nothing.
@@ -489,6 +531,11 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
                     url=r.place.trip_url,
                     valid_from=r.bulletin.valid_from,
                     valid_until=r.bulletin.valid_to,
+                    new_snow_cm=(
+                        forecast_new_snow(r.place.region, r.day, today)
+                        if len(sending) == 1
+                        else None
+                    ),
                 )
                 for r in sending
             ],
