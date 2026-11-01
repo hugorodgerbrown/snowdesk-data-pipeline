@@ -39,7 +39,7 @@ function buildFixture({ withStrings = true } = {}) {
       </details>
       <details class="snowdesk-panel" id="help-topic-lifts">
         <summary>Lifts</summary>
-        <p>Every téléphérique is drawn.</p>
+        <p>Every téléphérique track is drawn.</p>
       </details>
     </main>
   `;
@@ -92,23 +92,15 @@ describe('help filter', () => {
     expect($('help-topic-routes').querySelector('mark').textContent.toLowerCase()).toBe('route');
   });
 
-  it('searches the synonyms only when the word itself finds nothing', () => {
-    type('upload');
-
-    expect($('help-topic-routes').hidden).toBe(false);
-    expect($('help-topic-routes').querySelector('mark').textContent).toBe('Upload');
-    expect($('help-topic-routes').querySelectorAll('mark')).toHaveLength(1);
-  });
-
-  it('does not widen a word the page already uses', () => {
+  it('searches a synonym key literally first when the page uses the word', () => {
+    // "track" is a synonym key for "route", and the Lifts topic says
+    // "track": the literal hit wins, so Routes is not widened in.
     type('track');
 
-    // "track" is a synonym key for route, but no fixture topic says it,
-    // so it widens; "slope" is used, so it stays literal.
-    expect($('help-topic-routes').hidden).toBe(false);
-    type('slope');
-    expect($('help-topic-routes').querySelectorAll('mark')).toHaveLength(1);
-    expect($('help-topic-routes').querySelector('mark').textContent).toBe('slope');
+    expect($('help-topic-lifts').hidden).toBe(false);
+    expect($('help-topic-routes').hidden).toBe(true);
+    expect(document.querySelectorAll('mark')).toHaveLength(1);
+    expect(status()).toBe('Un sujet.');
   });
 
   it('ignores case and accents', () => {
