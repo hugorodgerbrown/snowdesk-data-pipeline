@@ -188,7 +188,17 @@ async function bootAt(url, fixtureOpts) {
   vi.stubGlobal('fetch', vi.fn((input) => {
     const href = String(input);
     let body = {};
-    if (href.includes('regions.geojson')) body = REGIONS_GEOJSON;
+    // Switzerland's regions only: boot also outlines the basemap's other
+    // countries, and answering them with the same features would merge a
+    // second copy of each, which only those countries' own ratings
+    // load ever painted. Since SNOW-957 a country no provider claims loads
+    // no ratings, so the copy would sit unpainted.
+    if (href.includes('regions.geojson')) {
+      const country = (href.match(/[?&]country=([a-z]+)/) || [])[1];
+      body = !country || country === 'ch'
+        ? REGIONS_GEOJSON
+        : { type: 'FeatureCollection', features: [] };
+    }
     else if (href.includes('/api/ratings/')) {
       // The endpoint answers with just the requested day when `?d=` is set,
       // and the whole season otherwise — the shape map.js and the scrubber
