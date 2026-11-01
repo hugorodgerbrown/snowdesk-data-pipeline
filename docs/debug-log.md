@@ -2,7 +2,7 @@
 name: debug-log
 description: On-device debug trace — window.pwaDebugLog, log:debug store, debug_log flag (GRP_DEBUG), sw classify/pinned.search, req serve request ledger
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-11-01
 ---
 
 # Debug log (SNOW-812)
@@ -120,6 +120,18 @@ the line that went wrong.
 it too: a trace is a point-in-time diagnostic, and one left on the device
 after the session that wanted it just means the next reader is looking at
 somebody else's afternoon.
+
+### A failed download names what failed
+
+The worker's `sw warm.done` line carries `failures` (SNOW-1331): the first
+five URLs the run counted as failed, each `{url, status, why, detail}` from
+its final attempt after the one retry. `status` is the HTTP status (`0` for
+an opaque answer) or `null` when no response came back; `detail` names the
+branch — `url` (malformed), `threw` (the fetch rejected), `status` (not ok),
+`type` (the wrong response type), `key` (a partial with no dated key),
+`no-store`, `principal` (no attested principal) or `write` (`cache.put`
+threw, quota included). `failed` still counts every failure; the sample is
+what to paste into the bug report.
 
 ## Cost, stated exactly
 

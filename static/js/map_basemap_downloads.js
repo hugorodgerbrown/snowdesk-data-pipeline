@@ -2756,11 +2756,21 @@ const BASEMAP_DOWNLOAD_ERROR_TOAST_REGION_IDS = {
 // variant of a quota/budget toast (BASEMAP_DOWNLOAD_ERROR_TOAST_REGION_IDS);
 // anything else, including absent, keeps the custom-area copy.
 //
+// SNOW-1331: `failures` is the worker's sample of what failed — up to five
+// `{url, status, why, detail}` from the warm run's reply. It is written to
+// the shown toast as `data-failures` (JSON) for the debug log's reader and
+// the weekly offline suite's diagnostics; nothing visible changes. Every
+// toast without a sample to carry has the attribute removed, so an earlier
+// run's URLs never survive onto a later failure.
+//
 // @param {string|null} reason
 // @param {string} [kind]
+// @param {Array<object>|null} [failures]
 // @returns {void}
-function revealBasemapDownloadError(reason, kind) {
+function revealBasemapDownloadError(reason, kind, failures) {
   try {
+    const sample =
+      Array.isArray(failures) && failures.length > 0 ? JSON.stringify(failures) : null;
     const regionId =
       kind === 'region' && reason ? BASEMAP_DOWNLOAD_ERROR_TOAST_REGION_IDS[reason] : null;
     const showId =
@@ -2785,6 +2795,11 @@ function revealBasemapDownloadError(reason, kind) {
       const show = id === showId;
       el.classList.toggle('hidden', !show);
       el.classList.toggle('flex', show);
+      if (show && sample) {
+        el.setAttribute('data-failures', sample);
+      } else {
+        el.removeAttribute('data-failures');
+      }
       if (offset === null) {
         el.style.removeProperty('bottom');
       } else {
@@ -2836,6 +2851,9 @@ function clearBasemapDownloadError() {
       // Drop the framing-aware offset with the toast itself, so a later
       // reveal with the overlay closed docks where the stylesheet says.
       el.style.removeProperty('bottom');
+      // SNOW-1331: and the failed urls it carried, which describe the run
+      // that just ended, not the one starting.
+      el.removeAttribute('data-failures');
     }
   } catch (_e) {
     // Non-fatal — a stale toast is still dismissible by its own "×".

@@ -1415,7 +1415,12 @@
           // ran and nothing was cached, which is still a failed download
           // from the user's point of view, just one with no reason to
           // report beyond the generic line.
-          revealBasemapDownloadError(result ? result.reason : null);
+          // SNOW-1331: with the worker's sample of failed urls, for diagnostics.
+          revealBasemapDownloadError(
+            result ? result.reason : null,
+            undefined,
+            result ? result.failures : null,
+          );
         }
         // SNOW-505/522: the warm-cache run has just warmed the shell +
         // pinned basemap caches; re-probe every sync dot against real
@@ -1737,7 +1742,14 @@
             ok = true;
           } else {
             await progressFill.finish(false);
-            if (!cancelled) revealBasemapDownloadError(result ? result.reason : null);
+            if (!cancelled) {
+              // SNOW-1331: with the worker's sample of failed urls.
+              revealBasemapDownloadError(
+                result ? result.reason : null,
+                undefined,
+                result ? result.failures : null,
+              );
+            }
           }
           // The same post-run refreshes `handleConfirm` makes.
           window.pwaLayerSyncStatus?.refresh();
