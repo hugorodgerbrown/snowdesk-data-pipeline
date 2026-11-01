@@ -115,7 +115,6 @@ def test_mcp_runnable_commands_are_pinned() -> None:
         if getattr(load_command_class(app, name), "mcp_runnable", False)
     )
     assert runnable == [
-        "backfill_trip_slope_samples",
         "backfill_weather",
         "diagnose_region_coverage",
         "fetch_bulletins",

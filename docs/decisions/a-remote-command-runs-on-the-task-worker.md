@@ -32,8 +32,9 @@ staging is its own infrastructure change.
 
 - An opted-in command must finish in minutes: the single worker that runs
   it also sends email and alerts. A long job fans out one task per row
-  (CLAUDE.md management-command rule 7) — `relink_bulletin_regions` and
-  `recompute_day_ratings` stay shell-only until they do.
+  (CLAUDE.md management-command rule 7) — `relink_bulletin_regions`,
+  `recompute_day_ratings` and `backfill_trip_slope_samples` stay shell-only
+  until they do.
 - A write is always the explicit `commit: true`; `--commit` in the
   arguments, `--settings`, `--pythonpath` and options naming a server file
   are refused, so the tool cannot reach outside this environment's database.
