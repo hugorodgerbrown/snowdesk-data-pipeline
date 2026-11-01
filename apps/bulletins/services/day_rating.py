@@ -300,7 +300,7 @@ def refresh_day_ratings(pairs: Iterable[tuple["MicroRegion", date]]) -> int:
     serving markup built from the old ratings. A region whose recompute
     failed is invalidated too: its rows may have changed before the
     failure, and a spare re-render is cheap. Cache errors are logged by
-    :func:`_invalidate_season_calendars` and never change the return value.
+    :func:`invalidate_season_calendars` and never change the return value.
 
     Args:
         pairs: (region, day) tuples, typically produced by
@@ -324,7 +324,7 @@ def refresh_day_ratings(pairs: Iterable[tuple["MicroRegion", date]]) -> int:
                 day,
             )
     regions = {region.pk: region for region, _day in pairs}
-    _invalidate_season_calendars(regions.values())
+    invalidate_season_calendars(regions.values())
     return failures
 
 
@@ -364,7 +364,7 @@ def season_calendar_cache_key(
     )
 
 
-def _invalidate_season_calendars(regions: Iterable["MicroRegion"]) -> None:
+def invalidate_season_calendars(regions: Iterable["MicroRegion"]) -> None:
     """
     Delete every language's cached season calendar for each of ``regions``.
 
@@ -494,7 +494,7 @@ def apply_bulletin_day_ratings(
                 )
 
     regions = {region.pk: region for region, _day in pairs.values()}
-    _invalidate_season_calendars(regions.values())
+    invalidate_season_calendars(regions.values())
 
     logger.debug(
         "apply_bulletin_day_ratings: bulletin=%s target_day=%s pairs=%d failed=%d",
@@ -549,7 +549,7 @@ def apply_day_rating_item(item: dict[str, Any], *, commit: bool = True) -> str:
     if item["version"] != DAY_RATING_VERSION or (item["bulletin_id"] and not bulletin):
         if commit:
             recompute_region_day(region, day)
-            _invalidate_season_calendars([region])
+            invalidate_season_calendars([region])
         return DAY_RATING_RECOMPUTED
 
     values: dict[str, Any] = {
@@ -568,5 +568,5 @@ def apply_day_rating_item(item: dict[str, Any], *, commit: bool = True) -> str:
         RegionDayRating.objects.update_or_create(
             region=region, date=day, defaults=values
         )
-        _invalidate_season_calendars([region])
+        invalidate_season_calendars([region])
     return OUTCOME_CREATED if existing is None else OUTCOME_UPDATED

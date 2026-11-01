@@ -61,7 +61,11 @@ from django.db import IntegrityError, models, transaction
 from django_tasks import task
 
 from apps.bulletins.models import Bulletin, RegionDayRating
-from apps.bulletins.services.day_rating import day_rating_pairs, recompute_region_day
+from apps.bulletins.services.day_rating import (
+    day_rating_pairs,
+    invalidate_season_calendars,
+    recompute_region_day,
+)
 from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
@@ -212,6 +216,11 @@ def rebuild_one_bulletin(
                 # Not refresh_day_ratings, which swallows a failure: one
                 # here must roll the rebuild back with it.
                 recompute_region_day(region, day, commit=True)
+            # The season calendar caches markup built from these ratings
+            # (SNOW-1172). Deleted only once the rebuild commits, so a
+            # rolled-back rebuild leaves the still-correct cache alone.
+            regions = list({region.pk: region for region, _day in pairs}.values())
+            transaction.on_commit(lambda: invalidate_season_calendars(regions))
     return REBUILT
 
 
