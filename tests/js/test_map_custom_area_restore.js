@@ -172,7 +172,7 @@ function installDbStub(initial) {
  * is the signed-in gate; a test that wants the signed-out path flips it
  * before booting.
  */
-function buildFixture(eligible) {
+function buildFixture(eligible, signinUrl = '') {
   document.body.innerHTML = `
     <div id="map"
          data-regions-url="/api/regions.geojson"
@@ -183,7 +183,7 @@ function buildFixture(eligible) {
          data-season-end="2026-05-31"></div>
     <button id="map-custom-download-control" type="button"
             data-downloads-eligible="${eligible ? 'true' : 'false'}"
-            data-signin-url=""></button>
+            data-signin-url="${signinUrl}"></button>
     <div id="map-frame-overlay" hidden>
       <div id="map-frame-instruction"></div>
       <div id="map-frame-area"><div id="map-frame-rect"></div></div>
@@ -205,8 +205,8 @@ function buildFixture(eligible) {
 const RESTORER = 'u-restorer';
 
 /** Boot the bundle against a fresh DOM, store and sync spy. */
-async function boot({ eligible = true, records = {} } = {}) {
-  buildFixture(eligible);
+async function boot({ eligible = true, records = {}, signinUrl = '' } = {}) {
+  buildFixture(eligible, signinUrl);
   stubMapLibre();
   const cachesStub = installCachesStub();
   const rows = installDbStub(records);
@@ -513,5 +513,30 @@ describe('restoring while signed out (SNOW-1136)', () => {
 
     expect(outcome).toEqual({ started: false, reason: 'signin' });
     expect(window.pwaWarmCache).not.toHaveBeenCalled();
+  });
+  it('sends the visitor to sign-in with the map url as it is now (SNOW-903)', async () => {
+    await boot({ eligible: false, signinUrl: '/accounts/sign-in/' });
+    const realLocation = window.location;
+    const assign = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: {
+        assign,
+        href: realLocation.href,
+        origin: realLocation.origin,
+        pathname: '/map/',
+        search: '?d=2026-01-07&panel=downloads',
+      },
+      configurable: true,
+      writable: true,
+    });
+    try {
+      await window.pwaCustomAreaDownload.restoreArea({ areaId: AREA_ID, bbox: BBOX });
+    } finally {
+      Object.defineProperty(window, 'location', { value: realLocation, configurable: true, writable: true });
+    }
+
+    expect(assign).toHaveBeenCalledWith(
+      `/accounts/sign-in/?next=${encodeURIComponent('/map/?d=2026-01-07&panel=downloads')}`,
+    );
   });
 });

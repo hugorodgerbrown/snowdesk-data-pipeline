@@ -10187,6 +10187,10 @@
         link.href = ROUTES_SIGNIN_URL;
         link.className = ROUTE_CLAIM_CTA_CLASS;
         link.textContent = MAP_STRINGS['route-save-signin'];
+        // SNOW-903: back to this shared route's map url as it is when the
+        // link is tapped — the popup and the rail stay open while `?d=`
+        // moves under them.
+        window.snowdeskSigninCta?.bindNext?.(link);
         return link;
       }
 

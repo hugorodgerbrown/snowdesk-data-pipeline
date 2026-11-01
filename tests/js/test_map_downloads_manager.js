@@ -3067,7 +3067,14 @@ describe('the sign-in gate (SNOW-749)', () => {
     // jsdom refuses a real navigation and will not let a spy take over
     // `assign` alone, so the whole object is replaced for these tests.
     Object.defineProperty(window, 'location', {
-      value: { assign: assign, href: realLocation.href, origin: realLocation.origin },
+      value: {
+        assign: assign,
+        href: realLocation.href,
+        origin: realLocation.origin,
+        // SNOW-903: the sign-in url's `next` is read off these.
+        pathname: '/map/',
+        search: '?d=2026-01-07&panel=downloads',
+      },
       configurable: true,
       writable: true,
     });
@@ -3107,7 +3114,10 @@ describe('the sign-in gate (SNOW-749)', () => {
     await settle();
 
     expect(window.MapSheet.toast).toHaveBeenCalledWith('Sign in to download a new area.');
-    expect(assign).toHaveBeenCalledWith(SIGNIN_URL);
+    // SNOW-903: and back to the map url as it is now.
+    expect(assign).toHaveBeenCalledWith(
+      `${SIGNIN_URL}?next=${encodeURIComponent('/map/?d=2026-01-07&panel=downloads')}`,
+    );
     expect(window.pwaCustomAreaDownload.openFraming).not.toHaveBeenCalled();
   });
 

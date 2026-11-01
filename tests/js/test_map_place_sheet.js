@@ -562,6 +562,22 @@ describe("the resort star, painted from the map's favourites (SNOW-1318)", () =>
     expect(signIn().hidden).toBe(false);
   });
 
+  it('sends the reader back to the map, never the fragment, once signed in (SNOW-903)', async () => {
+    stubResorts({ eligible: false });
+    window.history.replaceState(null, '', '/map/?d=2026-01-06&place=resort:verbier');
+    await openVerbier();
+    window.history.replaceState(null, '', '/map/?d=2026-01-07&place=resort:verbier');
+    const link = /** @type {HTMLAnchorElement} */ (signIn());
+    link.addEventListener('click', (event) => event.preventDefault());
+
+    link.click();
+
+    const next = new URL(link.getAttribute('href'), window.location.origin).searchParams.get('next');
+    expect(next).toBe('/map/?d=2026-01-07&place=resort:verbier');
+    expect(next).not.toContain('/partials/');
+    window.history.replaceState(null, '', '/');
+  });
+
   it('keeps the outline disabled while the feed is unread, and asks for it', async () => {
     const resorts = stubResorts({ state: null });
     // The feed is still in flight.

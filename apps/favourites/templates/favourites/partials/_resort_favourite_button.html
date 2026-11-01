@@ -1,4 +1,4 @@
-{% load i18n components %}
+{% load i18n components accounts_tags %}
 {% comment %}
 apps/favourites/templates/favourites/partials/_resort_favourite_button.html —
 Resort-page favourite/unfavourite toggle button (SNOW-504).
@@ -28,7 +28,12 @@ Context:
   favourited     — bool: True when the requesting user already has a
                    Favourite for this resort.
   can_favourite  — bool: True when the requesting user is authenticated.
-  signin_url     — str: accounts:sign_in URL, for the anonymous/ineligible CTA.
+
+SNOW-903: the anonymous link is {% sign_in_href %}, so signing in returns
+the visitor to this resort page. Safe here, though this is also a fragment:
+the toggle view re-renders it only for an authenticated user with
+can_favourite True, so the signed-out branch only ever renders in the full
+resort page, whose request path is the page's own.
 {% endcomment %}
 {% if can_favourite %}
     <button
@@ -51,7 +56,7 @@ Context:
     </button>
 {% else %}
     <a
-        href="{{ signin_url }}"
+        href="{% sign_in_href %}"
         data-testid="resort-favourite-signin"
         class="{% button_classes variant='secondary' size='compact' %} inline-flex min-h-11 flex-1 items-center justify-center gap-2 lg:flex-none"
     >

@@ -456,7 +456,6 @@ def favourite_resort_toggle(request: HttpRequest, slug: str) -> HttpResponse:
             "resort": resort,
             "favourited": favourited,
             "can_favourite": True,
-            "signin_url": reverse("accounts:sign_in"),
         },
     )
 

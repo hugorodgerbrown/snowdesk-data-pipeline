@@ -163,7 +163,11 @@
    * @returns {void}
    */
   function goToSignIn() {
-    if (DOWNLOADS_SIGNIN_URL) window.location.assign(DOWNLOADS_SIGNIN_URL);
+    // SNOW-903: back to the map url as it is now, not as it was at load.
+    if (DOWNLOADS_SIGNIN_URL) {
+      const cta = window.snowdeskSigninCta;
+      window.location.assign(cta && cta.withNext ? cta.withNext(DOWNLOADS_SIGNIN_URL) : DOWNLOADS_SIGNIN_URL);
+    }
   }
 
   // SNOW-570: the regions the user has downloaded, in meta:app under
