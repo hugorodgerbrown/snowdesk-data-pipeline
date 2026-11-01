@@ -1621,9 +1621,11 @@ class TestFavouriteList:
 
         client.force_login(user)
         content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        # SNOW-1359: "Today" above Places names the resort; Places does not.
+        places = content.split('id="favourites-roster-cache"', 1)[1]
 
-        assert "Car park" in content
-        assert "Wengen" not in content
+        assert "Car park" in places
+        assert "Wengen" not in places
 
     def test_map_variant_renders_the_lean_template(self, client: Client) -> None:
         """```` drops the card panel and the map link (SNOW-658)."""
@@ -2592,3 +2594,131 @@ def _extract_json_script(html: str, element_id: str) -> Any:
     content_start = html.index(">", tag_start) + 1
     content_end = html.index("</script>", content_start)
     return json.loads(html[content_start:content_end])
+
+
+@pytest.mark.django_db
+class TestSavedTodayInTheList:
+    """SNOW-1359: "Today" above Places, every kind, Places unchanged."""
+
+    def _everything(self, user: Any) -> tuple[Any, Any, Any]:
+        """Save a pin, a resort and a region pin in one rated region."""
+        region = MicroRegionFactory.create(name="Martigny-Verbier")
+        RegionDayRatingFactory.create(region=region, max_rating="considerable")
+        pin = FavouriteFactory.create(user=user, name="Car park", region=region)
+        resort = FavouriteFactory.create(
+            user=user,
+            region=region,
+            resort=ResortFactory.create(name="Verbier", region=region),
+        )
+        region_pin = FavouriteFactory.create(user=user, region=region, region_pin=True)
+        return pin, resort, region_pin
+
+    def test_today_renders_above_places_with_every_kind(self, client: Client) -> None:
+        user = UserFactory.create()
+        self._everything(user)
+        client.force_login(user)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        today = content.index('data-testid="saved-today"')
+        assert today < content.index('id="favourites-roster-cache"')
+        kinds = re.findall(
+            r'data-testid="saved-today-row"\s+data-kind="(\w+)"', content
+        )
+        assert sorted(kinds) == ["pin", "region", "resort"]
+        assert 'data-level="considerable"' in content
+
+    def test_a_region_row_opens_the_region_and_a_pin_row_frames_the_pin(
+        self, client: Client
+    ) -> None:
+        user = UserFactory.create()
+        pin, _, region_pin = self._everything(user)
+        client.force_login(user)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        today = content[: content.index('id="favourites-roster-cache"')]
+
+        assert re.search(
+            r'<a\s+href="%s"\s+data-panel-open="region"\s+data-panel-id="%s"'
+            % (
+                re.escape(region_pin.region.get_absolute_url()),
+                region_pin.region.region_id,
+            ),
+            today,
+        )
+        assert today.count("data-row-focus=") == 2
+
+    def test_today_is_absent_with_nothing_saved(self, client: Client) -> None:
+        user = UserFactory.create()
+        client.force_login(user)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert 'data-testid="saved-today"' not in content
+        assert 'data-testid="favourite-list-empty"' in content
+
+    def test_places_and_the_offline_roster_stay_dropped_pins_only(
+        self, client: Client
+    ) -> None:
+        """Regression: the all-kinds query must not leak into Places."""
+        user = UserFactory.create()
+        pin, resort, region_pin = self._everything(user)
+        client.force_login(user)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        roster = _extract_json_script(content, "favourites-roster-cache")
+        places = content.split('id="favourites-roster-cache"', 1)[1]
+
+        assert [record["uuid"] for record in roster] == [str(pin.uuid)]
+        assert f"favourite-{pin.uuid}" in places
+        assert f"favourite-{resort.uuid}" not in places
+        assert f"favourite-{region_pin.uuid}" not in places
+
+    def test_freshness_covers_a_rating_only_today_shows(self, client: Client) -> None:
+        """A region pin's rating is rendered by Today alone, and still counts."""
+        user = UserFactory.create()
+        region = MicroRegionFactory.create()
+        RegionDayRatingFactory.create(region=region, max_rating="high")
+        FavouriteFactory.create(user=user, region=region, region_pin=True)
+        client.force_login(user)
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        assert response["X-Data-Unsafe-After"] == "172800"
+
+    def test_still_htmx_only(self, client: Client) -> None:
+        user = UserFactory.create()
+        client.force_login(user)
+        assert client.get(LIST_URL).status_code == 400
+
+    def test_query_count_is_fixed_whatever_the_number_of_places(
+        self, client: Client
+    ) -> None:
+        """Several rows of every kind, sharing nearest points, cost the same."""
+        user = UserFactory.create()
+        client.force_login(user)
+        point = LocationFactory.create(latitude=46.1, longitude=7.2)
+        MicroRegionFactory.create(centroid_location=point)
+        WeatherFactory.create(location=point)
+
+        def add_round() -> None:
+            region = MicroRegionFactory.create(centroid_location=None)
+            RegionDayRatingFactory.create(region=region, max_rating="moderate")
+            FavouriteFactory.create(user=user, region=region)
+            FavouriteFactory.create(
+                user=user, region=region, resort=ResortFactory.create(region=region)
+            )
+            FavouriteFactory.create(user=user, region=region, region_pin=True)
+
+        add_round()
+        client.get(LIST_URL, **HTMX_HEADERS)  # warm the per-process caches
+        with CaptureQueriesContext(connection) as small:
+            client.get(LIST_URL, **HTMX_HEADERS)
+        for _ in range(3):
+            add_round()
+        with CaptureQueriesContext(connection) as large:
+            response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert response.content.decode().count('data-testid="saved-today-row"') == 12
+        assert len(large.captured_queries) == len(small.captured_queries)

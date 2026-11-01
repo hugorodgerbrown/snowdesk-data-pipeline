@@ -79,6 +79,7 @@ from apps.core.freshness import (
 )
 from apps.favourites.models import Favourite
 from apps.favourites.relevance import annotate_problem_relevance
+from apps.favourites.saved_today import build_saved_today
 from apps.favourites.services import (
     FavouriteLimitReached,
     ResortNotGeocoded,
@@ -1005,20 +1006,36 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
     # SNOW-1229: ``dropped_pins()`` — a favourited resort left this list for
     # search's "Pinned resorts", as region pins left it for search in
     # SNOW-814, and the map draws it as a blue resort dot, not a star.
-    favourites = list(
-        Favourite.objects.for_user(request.user)
-        .dropped_pins()
-        .select_related("region", "location")
+    #
+    # SNOW-1359: ONE owner-scoped query for every kind, partitioned here.
+    # The "Today" section above Places lists all three kinds; Places and
+    # its offline roster stay dropped pins only, by the same predicate
+    # ``dropped_pins()`` applies in SQL.
+    everything = list(
+        Favourite.objects.for_user(request.user).select_related(
+            "region",
+            "region__centroid_location",
+            "location",
+            "resort",
+            "resort__region",
+            "resort__region__centroid_location",
+        )
     )
+    favourites = [
+        f for f in everything if f.latitude is not None and f.resort_id is None
+    ]
 
     today = timezone.localdate()
-    region_ids = [f.region_id for f in favourites if f.region_id is not None]
+    region_ids = {f.region_id for f in everything if f.region_id is not None} | {
+        f.resort.region_id for f in everything if f.resort is not None
+    }
     ratings_by_region_id: dict[int, RegionDayRating] = {
         rating.region_id: rating
         for rating in RegionDayRating.objects.filter(
             region_id__in=region_ids, date=today
         )
     }
+    saved_today = build_saved_today(everything, today, ratings_by_region_id)
 
     _attach_share_text(request, favourites)
 
@@ -1043,6 +1060,9 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
         )
         if day_rating is not None:
             present_ratings.append(day_rating)
+    # Freshness covers what BOTH sections render: a rating Today shows is
+    # as stale as one Places shows.
+    present_ratings.extend(row.rating for row in saved_today if row.rating is not None)
 
     response_generated_at = (
         min(rating.updated_at for rating in present_ratings)
@@ -1056,6 +1076,7 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
         "favourites/partials/_favourite_list_map.html",
         {
             "favourites": favourites,
+            "saved_today": saved_today,
             "roster_payload": roster_payload,
             "rename_url_template": _rename_url_template(),
         },

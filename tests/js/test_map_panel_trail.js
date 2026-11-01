@@ -21,6 +21,7 @@ document.body.innerHTML = `
   <div id="region-sheet" hidden></div>
   <div id="place-sheet" hidden></div>
   <div id="weather-sheet" hidden></div>
+  <div id="favourite-sheet"></div>
   <template id="panel-trail-back-template">
     <button type="button" data-panel-back data-testid="panel-back">
       <span data-panel-back-name></span>
@@ -120,6 +121,18 @@ describe('a place row', () => {
     click(place.querySelector('[data-panel-open]'));
     expect(open).toHaveBeenCalledWith('ab12', '2026-02-03');
     document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: {} }));
+  });
+
+  it("follows a region row in the Favourites panel's Today list (SNOW-1359)", () => {
+    const favourites = /** @type {HTMLElement} */ (document.getElementById('favourite-sheet'));
+    favourites.innerHTML = REGION_ROW;
+    const asked = listen('snowdesk:region-open');
+    const ev = click(favourites.querySelector('[data-panel-open]'));
+    expect(ev.defaultPrevented).toBe(true);
+    expect(asked).toHaveBeenCalledTimes(1);
+    expect(asked.mock.calls[0][0].detail.region_id).toBe('CH-4115');
+    expect(region.querySelector('[data-panel-back]')).toBeNull();
+    favourites.innerHTML = '';
   });
 
   it('leaves a modified click to the link, for a new tab', () => {

@@ -290,11 +290,14 @@ class TestRegionPinSurfaces:
         placed = FavouriteFactory.create(user=user, name="Lac de Vaux")
 
         content = client.get(reverse("favourites:list"), **HTMX).content.decode()
+        # SNOW-1359: the "Today" block above Places lists every kind, the
+        # region pin included; the Places rows after it still do not.
+        places = content.split('id="favourites-roster-cache"', 1)[1]
 
-        assert "Lac de Vaux" in content
-        assert f"favourite-{pin.uuid}" not in content
-        assert "Valais" not in content
-        assert str(placed.uuid) in content
+        assert "Lac de Vaux" in places
+        assert f"favourite-{pin.uuid}" not in places
+        assert "Valais" not in places
+        assert str(placed.uuid) in places
 
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
     @freeze_time("2026-02-17")

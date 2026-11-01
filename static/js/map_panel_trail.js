@@ -50,6 +50,11 @@
   'use strict';
 
   var SHEET_IDS = ['region-sheet', 'place-sheet', 'weather-sheet'];
+  // SNOW-1359: the Favourites panel's "Today" rows open a region the same
+  // way, so a row in it is followed too. It is not one of the place
+  // sheets above (it has no panel key, gets no back pill and is not
+  // scrolled), so it joins only the list a followed row may sit in.
+  var LINK_SHEET_IDS = SHEET_IDS.concat(['favourite-sheet']);
   var found = document.getElementById('panel-trail-back-template');
   if (!(found instanceof HTMLTemplateElement)) return;
   var template = found;
@@ -201,7 +206,10 @@
     if (!target) return;
     var link = target.closest('a[data-panel-open]');
     if (!link) return;
-    var inSheet = sheets().some(function (sheet) { return sheet.contains(link); });
+    var inSheet = LINK_SHEET_IDS.some(function (id) {
+      var sheet = document.getElementById(id);
+      return sheet !== null && sheet.contains(link);
+    });
     if (!inSheet) return;
     var mouse = /** @type {MouseEvent} */ (ev);
     if (mouse.button !== 0 || mouse.metaKey || mouse.ctrlKey || mouse.shiftKey || mouse.altKey) return;
