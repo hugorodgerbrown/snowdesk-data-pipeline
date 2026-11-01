@@ -100,21 +100,70 @@ def _row(
 
     """
     previous_date = day - datetime.timedelta(days=1)
-    current = alerts_service.day_state(place.region, day)
-    previous = alerts_service.day_state(place.region, previous_date)
-    sentences: list[str] = []
-    if current is not None and previous is not None:
-        sentences = change_sentences(summarise_change(previous, current))
     label = place.label
     if day_label:
         label = f"{label} · {date_format(day, 'l')}"
+    if len(place.covered) > 1:
+        top, sentences, has_previous = _covered_regions(place, day, previous_date)
+    else:
+        current = alerts_service.day_state(place.region, day)
+        previous = alerts_service.day_state(place.region, previous_date)
+        sentences = []
+        if current is not None and previous is not None:
+            sentences = change_sentences(summarise_change(previous, current))
+        top = headline(current) if current is not None else ""
+        has_previous = previous is not None
     return {
         "label": label,
         "region": place.region,
-        "headline": headline(current) if current is not None else "",
+        "headline": top,
         "sentences": sentences,
         "since_heading": _("Since %(day)s") % {"day": date_format(previous_date, "l")},
-        "has_previous": previous is not None,
+        "has_previous": has_previous,
         "url": f"{reverse('public:map')}?d={day.isoformat()}#{place.region.region_id}",
         "trip_url": place.trip_url,
     }
+
+
+def _covered_regions(
+    place: alerts_service.AlertPlace,
+    day: datetime.date,
+    previous_date: datetime.date,
+) -> tuple[str, list[str], bool]:
+    """
+    Return a multi-region trip's card: a bulletin count, then each region.
+
+    One region's level would misstate the others (SNOW-945), so the card
+    says how many bulletins the trip covers and gives each region its own
+    line: its level, then what moved in it, named by region.
+
+    Args:
+        place: A trip place covering several regions.
+        day: The day its bulletins are read for.
+        previous_date: The day before, for what moved.
+
+    Returns:
+        The headline ("" when no region has a bulletin), the sentences, and
+        whether any region had a bulletin the day before.
+
+    """
+    sentences: list[str] = []
+    rated = 0
+    has_previous = False
+    for region in place.covered:
+        current = alerts_service.day_state(region, day)
+        if current is None:
+            continue
+        rated += 1
+        previous = alerts_service.day_state(region, previous_date)
+        has_previous = has_previous or previous is not None
+        values = {"region": region.name, "text": headline(current)}
+        sentences.append(_("%(region)s: %(text)s") % values)
+        if previous is not None:
+            for sentence in change_sentences(summarise_change(previous, current)):
+                values = {"region": region.name, "text": sentence}
+                sentences.append(_("%(region)s: %(text)s") % values)
+    if not rated:
+        return "", [], False
+    top = _("%(count)d bulletins") % {"count": rated}
+    return top, sentences, has_previous
