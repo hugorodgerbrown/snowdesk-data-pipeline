@@ -1072,14 +1072,23 @@
   // is therefore read BEFORE any of them run, on the window's capture
   // phase, and acted on after, on the document's bubble phase. An Escape
   // typed into a field (the rail's own rename) belongs to the field.
+  //
+  // SNOW-1335: the flyouts registered with window.pwaMapOverlays (the
+  // layers menu, zoom, the calendar, the alerts card, the help menu, the
+  // legend) carry neither attribute and close on their own listeners, so
+  // one Escape used to close the flyout AND clear the point or the route.
+  // The registry already knows what is open; the rail reads it and stays
+  // out of it (docs/decisions/the-route-rail-keeps-its-own-lifetime.md).
   var escapeWasTaken = false;
   window.addEventListener('keydown', function (event) {
     if (event.key !== 'Escape') return;
     var target = /** @type {Element} */ (event.target);
+    var overlays = window.pwaMapOverlays;
     escapeWasTaken = !!(
       (target && target.closest && target.closest('input, textarea, select'))
       || document.querySelector('[data-overlay]:not([hidden])')
       || document.querySelector('[data-overflow-open]')
+      || (overlays && overlays.openNames().length > 0)
     );
   }, true);
   document.addEventListener('keydown', function (event) {

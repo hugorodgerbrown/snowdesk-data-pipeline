@@ -942,6 +942,60 @@ describe('lifetime', () => {
     expect(rail.hidden).toBe(false);
   });
 
+  describe('a registered flyout takes the Escape (SNOW-1335)', () => {
+    const FLYOUTS = [
+      'basemap-menu',
+      'map-zoom-flyout',
+      'map-calendar',
+      'alerts',
+      'map-help-menu',
+      'map-legend-card',
+    ];
+    let open = [];
+
+    beforeEach(() => {
+      open = [];
+      window.pwaMapOverlays = { openNames: () => open.slice() };
+    });
+
+    afterEach(() => {
+      delete window.pwaMapOverlays;
+    });
+
+    it.each(FLYOUTS)('leaves the route open while %s is open', (name) => {
+      window.pwaRouteRail.open(feature());
+      open = [name];
+
+      pressEscape();
+
+      expect(rail.hidden).toBe(false);
+    });
+
+    it.each(FLYOUTS)('leaves the point placed while %s is open', (name) => {
+      window.pwaRouteRail.open(feature());
+      const cursor = window.pwaRouteRail.cursor();
+      cursor.setIndex(5);
+      open = [name];
+
+      pressEscape();
+
+      expect(cursor.state().index).toBe(5);
+      expect(rail.hidden).toBe(false);
+    });
+
+    it('clears the point, then closes, when nothing registered is open', () => {
+      window.pwaRouteRail.open(feature());
+      const cursor = window.pwaRouteRail.cursor();
+      cursor.setIndex(5);
+
+      pressEscape();
+      expect(cursor.state().index).toBeNull();
+
+      pressEscape();
+      expect(rail.hidden).toBe(true);
+    });
+  });
+
   it('replaces its contents when another route opens', () => {
     window.pwaRouteRail.open(feature());
     window.pwaRouteRail.open(feature({ name: 'Rosablanche' }));
