@@ -666,7 +666,8 @@ describe('the edge band and level label (SNOW-1375)', () => {
 
     window.pwaBulletinsLayer.setSuppressed('edit-resorts', false);
     expect(mapStub.layouts.get('regions-edge').visibility).toBe('visible');
-    expect(mapStub.paints.get('regions-edge')['line-opacity'][0]).toBe('case');
+    // SNOW-1392: a plain number, with no case to hide it under painted slopes.
+    expect(mapStub.paints.get('regions-edge')['line-opacity']).toBeGreaterThan(0);
   });
 
   it('labels a region with its level once the day is painted', async () => {

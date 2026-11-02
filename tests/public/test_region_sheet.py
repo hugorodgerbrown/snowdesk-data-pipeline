@@ -981,11 +981,10 @@ class TestSlopesNoticeKey:
         # Only the levels this bulletin paints: not the whole scale.
         assert "map-legend-swatch--terrain-high" not in content
         assert "map-legend-swatch--terrain-undecided" not in content
-        assert content.index("terrain-considerable") < content.index(
-            "terrain-undescribed"
-        )
-        assert content.index("terrain-undescribed") < content.index("terrain-nodata")
-        assert "Additional steep terrain (>30°)" in _text(content)
+        assert content.index("terrain-considerable") < content.index("terrain-nodata")
+        # SNOW-1392: undescribed steep ground is unpainted, so it has no row.
+        assert "terrain-undescribed" not in content
+        assert "Additional steep terrain (>30°)" not in _text(content)
         assert "No terrain data" in _text(content)
         assert "private" in response["Cache-Control"]
 

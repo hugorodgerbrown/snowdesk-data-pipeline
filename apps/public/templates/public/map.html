@@ -583,6 +583,12 @@ in addition to the shared map assets.
     {# its contiguous run because no bundle module reads it.                 #}
     <script defer src="{% static 'js/map_region_chip_core.js' %}"></script>
     <script defer src="{% static 'js/map_region_chip.js' %}"></script>
+    {% if status_bar_enabled %}
+        {# SNOW-1392: the map status bar — its pure half, then the DOM half. #}
+        {# Reads MAP and the same bridges as the chip; behind its flag.      #}
+        <script defer src="{% static 'js/map_status_bar_core.js' %}"></script>
+        <script defer src="{% static 'js/map_status_bar.js' %}"></script>
+    {% endif %}
     {# SNOW-1196: the problem-terrain layer's legend key and menu-row line. #}
     {# Reads window.pwaBulletinTerrain (map.js).                            #}
     <script defer src="{% static 'js/map_problem_terrain_key.js' %}"></script>

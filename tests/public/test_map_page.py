@@ -2596,7 +2596,8 @@ def test_sync_with_map_terrain_is_on_the_bulletins_page() -> None:
     assert re.search(r"data-problem-terrain-legend\s+hidden", legend)
     assert "#help-topic-bulletin-terrain" in legend
     assert "map-legend-swatch--terrain-very_high" in legend
-    assert "map-legend-swatch--terrain-undescribed" in legend
+    # SNOW-1392: undescribed steep ground is unpainted, so it has no row.
+    assert "map-legend-swatch--terrain-undescribed" not in legend
 
     strings = content[content.index('id="map-problem-terrain-strings-template"') :]
     strings = strings[: strings.index("</template>")]
@@ -2982,6 +2983,59 @@ def test_region_chip_renders_hidden_with_its_strings() -> None:
     assert content.index('id="map-region-chip"') < content.index('id="map-date-row"')
     assert "js/map_region_chip_core.js" in content
     assert "js/map_region_chip.js" in content
+
+
+# SNOW-1392: what the map status bar puts on the page.
+STATUS_BAR_MARKERS = (
+    'id="map-status-bar"',
+    'id="map-status-bar-strings-template"',
+    "/static/js/map_status_bar_core.js",
+    "/static/js/map_status_bar.js",
+)
+
+
+@pytest.mark.django_db
+def test_status_bar_renders_hidden_beside_the_chip_behind_its_flag() -> None:
+    """SNOW-1392: with ``map_status_bar`` on, the bar sits beside the chip.
+
+    It renders hidden in the chip's row, with its strings and both scripts;
+    map_status_bar.js fills it once the map has a camera.
+    """
+    client = Client()
+    client.force_login(UserFactory.create())
+    with override_flag("map_status_bar", active=True):
+        content = client.get(reverse("public:map")).content.decode()
+    for marker in STATUS_BAR_MARKERS:
+        assert marker in content, marker
+    row = content[content.index('class="map-status-row"') :]
+    row = row[: row.index('id="map-region-chip-strings-template"')]
+    assert 'id="map-region-chip"' in row
+    bar = row[row.index('id="map-status-bar"') :]
+    bar = bar[: bar.index(">")]
+    assert "hidden" in bar
+    assert 'role="status"' in bar
+    strings = content[content.index('id="map-status-bar-strings-template"') :]
+    strings = strings[: strings.index("</template>")]
+    for text in ("Region danger", "Problem slopes", "Steep terrain"):
+        assert text in strings
+    assert "Zoom in for the bulletin" in strings
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("signed_in", [True, False])
+def test_status_bar_is_absent_outside_its_flag(signed_in: bool) -> None:
+    """SNOW-1392: off for the flag, and for a signed-out visitor even with it
+    on — the view short-circuits the waffle read for an anonymous request.
+    """
+    client = Client()
+    if signed_in:
+        client.force_login(UserFactory.create())
+    with override_flag("map_status_bar", active=not signed_in):
+        content = client.get(reverse("public:map")).content.decode()
+    for marker in STATUS_BAR_MARKERS:
+        assert marker not in content, marker
+    # The chip's row is there either way.
+    assert 'class="map-status-row"' in content
 
 
 @pytest.mark.django_db

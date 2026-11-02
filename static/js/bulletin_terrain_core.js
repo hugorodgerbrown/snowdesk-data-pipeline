@@ -12,20 +12,23 @@
  * day's rules for every region (/api/problem-terrain/, grouped by
  * bulletin); this turns them into a per-pixel answer.
  *
- * FOUR STATES, and blank is never one of them for steep ground:
+ * FOUR STATES, three of them painted:
  *
  *   DESCRIBED   — ground of 30° or more inside a problem's aspects and
  *                 heights, painted the EAWS colour of the highest-rated
  *                 problem that admits it;
  *   UNDECIDED   — ground a problem describes but the pixel test cannot
  *                 place (a treeline band, a prose-only trait), a flat grey;
- *   UNDESCRIBED — steep ground no problem describes, a warm-grey hatch;
+ *   UNDESCRIBED — steep ground no problem describes, left transparent
+ *                 since SNOW-1392 (it was a warm-grey hatch);
  *   NODATA      — no terrain data, the terrain filter's own slate hatch.
  *
  * A bulletin's aspects and heights mark its core zone, not a boundary, so
- * UNDESCRIBED is not "safe": it is painted precisely so it cannot be read
- * as blank. Ground under 30° and level ground are left transparent, and so
- * is everything outside the region. See
+ * UNDESCRIBED is not "safe". SNOW-1392 (Hugo, 2 Nov 2026) stopped painting
+ * it anyway: the hatch covered most of the steep ground and buried the
+ * colour the layer exists to show, and the help page says in words that
+ * unpainted steep ground is not described, not safe. Ground under 30°,
+ * level ground and everything outside the region are transparent too. See
  * docs/decisions/the-bulletin-terrain-layer-paints-what-it-cannot-decide.md.
  *
  * CLIPPING. `regionMask` rasterises one region's boundary into a tile's
@@ -167,9 +170,8 @@
   const PALETTE = Object.freeze([
     TERRAIN.PALETTE[TERRAIN.PALETTE_INDEX.NONE],
     TERRAIN.PALETTE[TERRAIN.PALETTE_INDEX.NODATA],
-    // Strokes the other way from the no-data hatch, and warm rather than
-    // slate, so the two hatches are never mistaken for each other.
-    entry('undescribed', '--color-bulletin-terrain-undescribed', '#57534e', 150, { hatch: true, hatchBack: true }),
+    // SNOW-1392: kept as a state, painted with alpha 0 — nothing.
+    entry('undescribed', '--color-bulletin-terrain-undescribed', '#57534e', 0),
     entry('undecided', '--color-bulletin-terrain-undecided', '#78716c', 110),
     entry('low', '--color-eaws-low', '#ccff66', FILL_ALPHA),
     entry('moderate', '--color-eaws-moderate', '#ffff00', FILL_ALPHA),

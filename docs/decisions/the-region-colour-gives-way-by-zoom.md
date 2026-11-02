@@ -1,6 +1,6 @@
 ---
 name: the-region-colour-gives-way-by-zoom
-description: Region fill fades out over z8.5–10; from z10 an inside edge band, level label and region chip (regions-edge, region-labels, map-region-chip)
+description: Region fill fades out by z10; a thin inside edge band kept under painted slopes, level label, region chip (regions-edge, map-region-chip)
 status: current
 last-reviewed: 2026-11-02
 ---
@@ -12,7 +12,7 @@ across regions. From z8.5 it fades, and by z10 it is a faint trace (at most
 8%, `FILL_TRACE_OPACITY`). From z10 each region instead has:
 
 - **an edge band**: `regions-edge`, a line in the region's danger colour,
-  8 px wide, offset 4 px *inside* its own edge, so two neighbouring levels
+  4 px wide, offset 2 px *inside* its own edge (8 and 4 until SNOW-1392), so two neighbouring levels
   show as two bands side by side rather than one mixed line;
 - **a level label**: `regions-level-label`, "3 · Martigny-Verbier", drawn
   from its own point source (`region-labels`), placed at each region's
@@ -20,7 +20,15 @@ across regions. From z8.5 it fades, and by z10 it is a faint trace (at most
 
 The existing name label (`regions-label`) stops at z10, where the level
 label takes over. A region whose slopes the problem-terrain layer paints
-(feature-state `terrain`) draws no fill, band or label. The Bulletin
+(feature-state `terrain`) draws no fill or label, but keeps its band.
+
+**Amended (SNOW-1392, Hugo, 2 Nov 2026).** The trace is gone
+(`FILL_TRACE_OPACITY` 0): from z10 the band alone carries the colour. The
+band is half as wide, and it no longer drops out where the slopes are
+painted — `regionEdgeOpacityExpr` is a plain number, with no `terrain`
+case — so switching "Sync with map terrain" on only adds the problem
+colour and the region keeps its edge either way. Boards from staging at
+z9, 11, 12 and 14 agreed it. The Bulletin
 opacity step still sets the fill's strength up to z8.5, scales the trace
 and band, and turns all three off at 0
 ([`bulletin-fill-is-a-user-choice.md`](bulletin-fill-is-a-user-choice.md)).
@@ -43,7 +51,7 @@ and band, and turns all three off at 0
   `interpolate` outermost, as MapLibre requires for `['zoom']`, with a
   per-feature `case` at each stop.
 - For polygon features MapLibre's `line-offset` is an inset when positive
-  (the style spec), so the band is `+4` px (`EDGE_OFFSET_PX`). That reading
+  (the style spec), so the band is `+2` px (`EDGE_OFFSET_PX`, half its width). That reading
   depends on the rings sharing one winding, and the stored EAWS rings are
   mixed (746 outer rings clockwise, 50 counter-clockwise across the four
   fixtures), so `/api/regions.geojson` serves every geometry through

@@ -26,6 +26,11 @@
       "name": "bulletin_alerts",
       "note": "Gates bulletin alerts (SNOW-937): the Alerts group on /account/settings/, its endpoints, the region-pin prompt and the /alerts/<date>/ landing page. A rollout gate: superusers while the send is proven on staging. The send command reads Account.notify_when, not this flag, so an account that opted in keeps its alerts if the flag is narrowed; the flag decides who can turn them on.",
       "superusers": true
+    },
+    {
+      "name": "map_status_bar",
+      "note": "Gates the SNOW-1392 map status bar: the strip beside the region chip that names what the map's surface is painted with (region danger, the bulletin's problem slopes or Steep terrain, the basemap) and when zooming in would show more. A rollout gate: superusers while its copy settles on staging. While it shows, the region chip drops its second line.",
+      "superusers": true
     }
   ]
 }

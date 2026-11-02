@@ -1603,28 +1603,47 @@ Optional context:
         control out to the bottom-right chevron — the empty strip left once
         both clusters dropped to the map's own bottom edge.
         {% endcomment %}
-        {# SNOW-1376: the region at the map's centre and its level, from z10, #}
-        {# where the fill has faded (SNOW-1375). The stack's member just above #}
-        {# the date row, so it steps aside with the selection column like the #}
-        {# others. Drawn by map_region_chip.js; a tap opens the region.         #}
-        <button
-            type="button"
-            id="map-region-chip"
-            class="map-region-chip hover-affordance"
-            data-testid="map-region-chip"
-            hidden
-        >
-            <span
-                class="danger-tile map-region-chip-level"
-                data-region-chip-level
-                data-level="no_rating"
-                aria-hidden="true"
-            ></span>
-            <span class="map-region-chip-text">
-                <span class="map-region-chip-name" data-region-chip-name></span>
-                <span class="map-region-chip-detail" data-region-chip-detail hidden></span>
-            </span>
-        </button>
+        {# SNOW-1392: the chip's line. A row, so the status bar can sit beside #}
+        {# the chip; one stack member either way, so both step aside with the  #}
+        {# selection column. Hidden by map.css while neither child shows.     #}
+        <div class="map-status-row">
+            {# SNOW-1376: the region at the map's centre and its level, from z10, #}
+            {# where the fill has faded (SNOW-1375). The stack's member just above #}
+            {# the date row, so it steps aside with the selection column like the #}
+            {# others. Drawn by map_region_chip.js; a tap opens the region.         #}
+            <button
+                type="button"
+                id="map-region-chip"
+                class="map-region-chip hover-affordance"
+                data-testid="map-region-chip"
+                hidden
+            >
+                <span
+                    class="danger-tile map-region-chip-level"
+                    data-region-chip-level
+                    data-level="no_rating"
+                    aria-hidden="true"
+                ></span>
+                <span class="map-region-chip-text">
+                    <span class="map-region-chip-name" data-region-chip-name></span>
+                    <span class="map-region-chip-detail" data-region-chip-detail hidden></span>
+                </span>
+            </button>
+            {% if status_bar_enabled %}
+                {# SNOW-1392: what the map's SURFACE is painted with right now — #}
+                {# routes and resorts say what they are, the ground does not.    #}
+                {# Drawn by map_status_bar.js; behind the map_status_bar flag.   #}
+                {# Read-only, so not a control: a status region.                 #}
+                <div
+                    id="map-status-bar"
+                    class="map-status-bar"
+                    data-testid="map-status-bar"
+                    role="status"
+                    hidden
+                >
+                </div>
+            {% endif %}
+        </div>
         <template id="map-region-chip-strings-template">
             <span data-string="slopes">{% trans "slopes" %}</span>
             <span data-string="ch-only">{% trans "Slopes are drawn in Switzerland only" %}</span>
@@ -1634,6 +1653,23 @@ Optional context:
             {# the aria-hidden square only shows. {level} is the EAWS digit.   #}
             <span data-string="level">{% trans "danger level {level}" %}</span>
         </template>
+        {% if status_bar_enabled %}
+            {# SNOW-1392: map_status_bar.js's strings. Copy is a first pass. #}
+            <template id="map-status-bar-strings-template">
+                <span data-string="region">{% trans "Region danger" %}</span>
+                <span data-string="region-fill">{% trans "colour fill" %}</span>
+                <span data-string="region-edge">{% trans "at the edges" %}</span>
+                <span data-string="slopes">{% trans "Problem slopes" %}</span>
+                <span data-string="slopes-detail">{% trans "from the bulletin" %}</span>
+                <span data-string="slopes-off">{% trans "Problem slopes off" %}</span>
+                <span data-string="slopes-ch-only">{% trans "Problem slopes: Switzerland only" %}</span>
+                <span data-string="filter">{% trans "Steep terrain" %}</span>
+                <span data-string="filter-detail">{% trans "your filter" %}</span>
+                <span data-string="zoom-slopes">{% trans "Zoom in for the bulletin's slopes" %}</span>
+                <span data-string="zoom-filter">{% trans "Zoom in for Steep terrain" %}</span>
+                <span data-string="label">{% trans "The map shows" %}</span>
+            </template>
+        {% endif %}
         <div id="map-date-row" class="map-date-row">
             {% comment %}
             The date control (SNOW-794) — the map's one date affordance, and the
