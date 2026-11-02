@@ -32,6 +32,8 @@ Swiss region choropleth and back the per-region tooltip:
 * ``/api/community-reports.geojson``       — anonymised, clustered
   ``FieldObservation`` pins from the last 48 hours (SNOW-419).
 * ``/api/weather.geojson``                 — the weather overlay's pins.
+* ``/api/rest-zones.geojson``              — FOEN's wildlife rest zones in
+  one rectangle (SNOW-1384, behind the ``route_drawing`` flag).
 * ``/api/weather/<short_id>/detail/``      — one location's weather detail
   (``/api/weather/<int:location_id>/detail/`` survives as a legacy alias).
 
@@ -105,6 +107,7 @@ from django.views.decorators.cache import cache_control
 from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.vary import vary_on_headers
 from django_ratelimit.decorators import ratelimit
+from waffle import flag_is_active
 
 from apps.accounts.identity import attest_principal
 from apps.analytics.signals import emit_server_signal
@@ -143,7 +146,8 @@ from apps.regions.services.area_content import (
 )
 from apps.regions.services.basemap_tiles import blob_summary
 from apps.regions.services.resort_pin import set_resort_pin
-from apps.routes.models import SkiSegment, SkiTour
+from apps.routes.models import RestZone, SkiSegment, SkiTour
+from apps.routes.services.rest_zones import zone_feature
 from apps.routes.services.ski_network import network_overview
 from apps.routes.services.ski_tours import (
     Summit,
@@ -1646,6 +1650,102 @@ def ski_tours_geojson(request: HttpRequest) -> HttpResponse:
     payload = {
         "type": "FeatureCollection",
         "truncated": len(rows) > SKI_TOURS_MAX_FEATURES,
+        "features": features,
+    }
+    return _geojson_response(request, payload, empty=not features)
+
+
+# SNOW-1384: the widest rectangle /api/rest-zones.geojson answers, in degrees
+# each way. The layer is drawn from z11, where a phone's view is well inside
+# a degree; a wider ask is refused rather than truncated, as ski-network's.
+REST_ZONES_MAX_SPAN_DEG = 1.0
+# The most zones one answer carries. All of Switzerland holds about 1,040.
+REST_ZONES_MAX_FEATURES = 1500
+
+# FOEN's credit, carried in the payload for a client that draws it.
+REST_ZONES_ATTRIBUTION = "© BAFU"
+
+
+@vary_on_headers("Accept-Encoding", "Accept-Language", "Cookie")
+@require_GET
+def rest_zones_geojson(request: HttpRequest) -> HttpResponse:
+    """
+    Return FOEN's wildlife rest zones that touch one rectangle, for one day.
+
+    SNOW-1384. The map's "Wildlife rest zones" layer, behind the
+    ``route_drawing`` flag: a 404 for a request the flag does not cover.
+    Rows are selected by bounding box, edge-inclusive and over-inclusive,
+    as ``ski_network_geojson`` selects segments.
+
+    ``?bbox=west,south,east,north`` in degrees, at most
+    ``REST_ZONES_MAX_SPAN_DEG`` each way; ``?d=YYYY-MM-DD``, the map's
+    day, decides each zone's ``in_force`` (today when absent). Response
+    shape::
+
+        {"type": "FeatureCollection",
+         "truncated": false,
+         "attribution": "© BAFU",
+         "features": [{"type": "Feature", "id": "<service uuid>",
+                       "geometry": {"type": "MultiPolygon", ...},
+                       "properties": {"name": "…", "binding": true,
+                                      "restriction": "…",
+                                      "period": "21.12. - 30.04.",
+                                      "in_force": true, "canton": "GR",
+                                      "url": "https://…"}}, ...]}
+
+    The restriction is in the request's language where FOEN has one,
+    hence the Vary on Accept-Language; and the flag is read off the
+    session, hence the Vary on Cookie, so a shared cache never hands one
+    reader's answer to a reader the flag does not cover.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A JsonResponse with the payload above, or 400 for a bbox that is
+        missing, malformed or wider than the cap, or a malformed ``d``.
+
+    Raises:
+        Http404: The ``route_drawing`` flag is off for this request.
+
+    """
+    if not flag_is_active(request, "route_drawing"):
+        raise Http404("Not found.")
+    day = timezone.localdate()
+    raw_date = request.GET.get("d")
+    if raw_date:
+        # Strict YYYY-MM-DD: fromisoformat alone also accepts "20261102".
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_date):
+            return JsonResponse({"error": "invalid_date"}, status=400)
+        try:
+            day = date.fromisoformat(raw_date)
+        except ValueError:
+            return JsonResponse({"error": "invalid_date"}, status=400)
+    bbox = _parse_bbox_param(request.GET.get("bbox", ""))
+    if bbox is None:
+        return JsonResponse({"error": "invalid_bbox"}, status=400)
+    west, south, east, north = bbox
+    if east - west > REST_ZONES_MAX_SPAN_DEG or north - south > REST_ZONES_MAX_SPAN_DEG:
+        return JsonResponse({"error": "bbox_too_large"}, status=400)
+    rows = list(
+        RestZone.objects.intersecting(west, south, east, north)
+        .order_by("feature_id")
+        .only(
+            "source_uuid",
+            "name",
+            "binding",
+            "restriction",
+            "period",
+            "canton",
+            "url",
+            "geometry",
+        )[: REST_ZONES_MAX_FEATURES + 1]
+    )
+    features = [zone_feature(row, day) for row in rows[:REST_ZONES_MAX_FEATURES]]
+    payload = {
+        "type": "FeatureCollection",
+        "truncated": len(rows) > REST_ZONES_MAX_FEATURES,
+        "attribution": REST_ZONES_ATTRIBUTION,
         "features": features,
     }
     return _geojson_response(request, payload, empty=not features)
