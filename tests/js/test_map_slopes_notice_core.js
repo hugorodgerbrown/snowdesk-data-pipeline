@@ -100,3 +100,20 @@ describe('claim', () => {
     expect(core.claim(base, readOnly)).toBe(false);
   });
 });
+
+describe('unmarkSeen', () => {
+  it('takes back the record, and survives storage that throws', () => {
+    const store = new Map();
+    const storage = {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => { store.set(k, v); },
+      removeItem: (k) => { store.delete(k); },
+    };
+    storage.setItem(core.SEEN_KEY, 'seen');
+    core.unmarkSeen(storage);
+    expect(core.hasBeenSeen(storage)).toBe(false);
+    const broken = { getItem: () => null, setItem: () => {}, removeItem: () => { throw new Error('no'); } };
+    expect(() => core.unmarkSeen(broken)).not.toThrow();
+    expect(() => core.unmarkSeen(null)).not.toThrow();
+  });
+});

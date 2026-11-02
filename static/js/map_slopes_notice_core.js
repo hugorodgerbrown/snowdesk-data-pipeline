@@ -54,6 +54,7 @@
    * @typedef {Object} NoticeStorage
    * @property {function(string): ?string} getItem
    * @property {function(string, string): void} setItem
+   * @property {function(string): void} [removeItem]
    */
 
   /**
@@ -105,6 +106,23 @@
   }
 
   /**
+   * Take back a record whose showing never reached the screen: the reader
+   * closed it or tapped the map while its key was still loading, so the
+   * device has not in fact been shown the card.
+   *
+   * @param {?NoticeStorage} storage
+   * @returns {void}
+   */
+  function unmarkSeen(storage) {
+    if (!storage || !storage.removeItem) return;
+    try {
+      storage.removeItem(SEEN_KEY);
+    } catch (_) {
+      // Nothing to take back: the next claim reads the record as before.
+    }
+  }
+
+  /**
    * Whether to show the card now. True only when the map calls for it,
    * the device has not been shown it, and the showing has been recorded —
    * so a true answer has already marked it seen.
@@ -126,5 +144,6 @@
     eligible,
     hasBeenSeen,
     claim,
+    unmarkSeen,
   });
 })();

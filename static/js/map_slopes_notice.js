@@ -83,14 +83,28 @@
 
   /** @type {?AbortController} */
   let pending = null;
+  /**
+   * Set once the map is wired: listen for the next qualifying move again.
+   *
+   * @type {() => void}
+   */
+  let listenAgain = () => {};
 
   const isOpen = () => !notice.hidden;
 
-  /** Close the card, and drop a showing still waiting on its key. */
+  /**
+   * Close the card. A showing still waiting on its key is dropped, and
+   * since it never reached the screen the device is given its turn back:
+   * the seen record is taken back and the next qualifying move tries again.
+   */
   const hide = () => {
     if (pending) {
       pending.abort();
       pending = null;
+      if (notice.hidden) {
+        core.unmarkSeen(storage());
+        listenAgain();
+      }
     }
     notice.hidden = true;
   };
@@ -207,6 +221,10 @@
     show(String(props.id));
   };
 
+  listenAgain = () => {
+    MAP.off('moveend', consider);
+    MAP.on('moveend', consider);
+  };
   // Once seen, nothing here needs the map again but the tap that closes.
   if (!core.hasBeenSeen(storage())) MAP.on('moveend', consider);
   MAP.on('click', () => {

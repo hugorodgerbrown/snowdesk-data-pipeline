@@ -143,12 +143,19 @@ describe('the slopes notice', () => {
     expect(notice().hidden).toBe(true);
   });
 
-  it('is never shown when dismissed while its key is loading', async () => {
+  it('gives the device its turn back when dismissed while its key is loading', async () => {
     boot(() => Promise.resolve({ ok: true, text: () => Promise.resolve('') }));
     fire('moveend');
     fire('click');
     await flush();
+    // It never reached the screen, so it is not recorded as seen…
     expect(notice().hidden).toBe(true);
+    expect(localStorage.getItem('snowdesk.map.slopes_notice_seen')).toBeNull();
+    // …and the next qualifying move shows it.
+    fire('moveend');
+    await flush();
+    expect(notice().hidden).toBe(false);
+    expect(localStorage.getItem('snowdesk.map.slopes_notice_seen')).toBe('seen');
   });
 
   it('registers as a map overlay under its id', () => {
