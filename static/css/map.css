@@ -2604,13 +2604,17 @@ html[data-route-drawing] #map-slopes-notice {
    (window.pwaMapOverlays). It is a vertical scale, + over −, because zoom
    is height: each zoom-gated thing is named at the level it changes. */
 .map-zoom-flyout {
+    /* The scale's geometry. map_zoom_control.js reads these four to place
+       the labels and draw the connectors, and _component_fixtures.py
+       restates them for the library's variants. */
     --zoom-scale-h: 280px;
-    --zoom-track-x: 22px;
-    --zoom-label-x: 56px;
+    --zoom-track-x: 44px;
+    --zoom-label-x: 104px;
+    --zoom-label-pitch: 30px;
     position: absolute;
     left: calc(var(--map-control-sm) + 8px);
     bottom: calc(var(--map-control-sm) + 8px);
-    width: 248px;
+    width: 280px;
     max-width: calc(100vw - var(--map-control-sm) - 32px);
     padding: 2px 2px 6px;
     background: var(--color-glass);
@@ -2629,10 +2633,11 @@ html[data-route-drawing] #map-slopes-notice {
     display: none;
 }
 
-/* + and −: 44 px targets, stacked on the
-   track's line so the scale reads as running between them. */
+/* + and −: 44 px targets, centred on the track's line so the scale reads
+   as running between them. */
 .map-zoom-step {
     display: flex;
+    margin-left: calc(var(--zoom-track-x) - 22px);
     width: 44px;
     height: 44px;
     align-items: center;
@@ -2654,8 +2659,10 @@ html[data-route-drawing] #map-slopes-notice {
 }
 
 /* The scale: a vertical hairline across the map's zoom range, maximum at
-   the top, the camera marker on it, and one row per gate at its zoom.
-   Every `top` is a percentage of this box, written by the JS. */
+   the top, the level numbers to its LEFT, the camera marker on it, and the
+   gated features in a column to its right, each tied to its level by a
+   curve. The levels' and marker's `top` is a percentage of this box; the
+   labels' is px (zoom_control_core.labelRows). */
 .map-zoom-scale {
     position: relative;
     height: var(--zoom-scale-h);
@@ -2681,7 +2688,8 @@ html[data-route-drawing] #map-slopes-notice {
     list-style: none;
 }
 
-/* Every whole zoom level, numbered beside a short mark on the line. */
+/* Every whole zoom level, numbered left of the line with a dot on it, so
+   the connectors leave the line's right side with nothing to cross. */
 .map-zoom-levels {
     position: absolute;
     inset: 0;
@@ -2692,47 +2700,79 @@ html[data-route-drawing] #map-slopes-notice {
 
 .map-zoom-level {
     position: absolute;
-    left: calc(var(--zoom-track-x) - 4px);
+    left: 0;
+    width: calc(var(--zoom-track-x) - 1px);
     height: 12px;
     margin-top: -6px;
-    padding-left: 14px;
+    padding-right: 9px;
+    box-sizing: border-box;
+    text-align: right;
     font-family: var(--font-mono);
     font-size: 10px;
     line-height: 12px;
     color: var(--color-text-3);
 }
 
+/* A small dot on the line at every whole level, so the track has texture
+   between the gated levels' larger nodes (which the connector layer draws
+   over it). Centred on the track: the level's box ends 1px short of it. */
 .map-zoom-level::before {
     content: "";
     position: absolute;
-    left: 0;
-    top: 5px;
-    width: 8px;
-    height: 1px;
-    background: var(--color-border);
+    right: -3px;
+    top: 4px;
+    width: 4px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--color-text-3);
+    opacity: 0.6;
 }
 
-/* One feature: its name and threshold on its level's line. The whole row
-   is a button that zooms to the threshold. */
+/* The connectors: one curve and one node per feature, drawn in px over
+   the scale's left side, under the camera marker. */
+.map-zoom-connectors {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--zoom-label-x);
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.map-zoom-connector-line {
+    fill: none;
+    stroke: var(--color-text-3);
+    stroke-width: 1;
+    stroke-linecap: round;
+    opacity: 0.55;
+}
+
+.map-zoom-connector-node {
+    fill: var(--color-card);
+    stroke: var(--color-text-3);
+    stroke-width: 1;
+}
+
+.map-zoom-connector[data-reached] .map-zoom-connector-line {
+    stroke: var(--color-text-1);
+    stroke-width: 1.25;
+    opacity: 1;
+}
+
+.map-zoom-connector[data-reached] .map-zoom-connector-node {
+    fill: var(--color-text-1);
+    stroke: var(--color-text-1);
+}
+
+/* One feature: its name and threshold in the label column, where its
+   connector ends. The whole row is a button that zooms to the threshold;
+   its `top` is the row's centre, hence the half-height margin. */
 .map-zoom-tick {
     position: absolute;
-    left: calc(var(--zoom-label-x) - 6px);
+    left: var(--zoom-label-x);
     right: 4px;
-    /* Half the row's height, less a pixel: the name's x-height, not its
-       line box, reads as sitting on the level's line. */
-    margin-top: -13px;
-}
-
-/* Two gates on one level (the region selector's ≤10 and the ski-touring
-   routes' ≥10): the "from" row sits just above the line, the "up to" row
-   just below, rather than one over the other. zoom_control_core.js's
-   `side`. */
-.map-zoom-tick[data-zoom-side="above"] {
-    margin-top: -25px;
-}
-
-.map-zoom-tick[data-zoom-side="below"] {
-    margin-top: -1px;
+    margin-top: -14px;
 }
 
 .map-zoom-tick-button {
@@ -2740,7 +2780,7 @@ html[data-route-drawing] #map-slopes-notice {
     align-items: baseline;
     gap: 6px;
     width: 100%;
-    padding: 4px 6px;
+    padding: 6px;
     background: transparent;
     border: 0;
     border-radius: 6px;
@@ -2776,6 +2816,7 @@ html[data-route-drawing] #map-slopes-notice {
 
 .map-zoom-marker {
     position: absolute;
+    z-index: 1;
     left: var(--zoom-track-x);
     width: 12px;
     height: 12px;
@@ -2785,6 +2826,29 @@ html[data-route-drawing] #map-slopes-notice {
     background: var(--color-text-1);
     box-shadow: 0 0 0 0.5px var(--color-border);
     pointer-events: none;
+}
+
+/* The camera's zoom to one decimal, in the number column level with the
+   marker. It sits over the whole-level numbers it passes, on the flyout's
+   own surface, so it reads as the number column's current value. */
+.map-zoom-marker-value {
+    position: absolute;
+    top: 50%;
+    right: calc(100% + 3px);
+    padding: 1px 4px;
+    transform: translateY(-50%);
+    border-radius: 999px;
+    background: var(--color-text-1);
+    color: var(--color-card);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 12px;
+    white-space: nowrap;
+}
+
+.map-zoom-marker-value:empty {
+    display: none;
 }
 
 /* The one line of explanation over the scale. */

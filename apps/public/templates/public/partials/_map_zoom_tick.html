@@ -1,8 +1,9 @@
 {% load l10n %}
 {% comment %}
 public/partials/_map_zoom_tick.html — one zoom-gated feature on the zoom
-control's scale (SNOW-1077): its name and threshold, at the level it
-becomes available.
+control's scale (SNOW-1077): its name and threshold, in the label column
+beside the scale. A curve in _map_zoom_control.html's connector layer ties
+it to the level it becomes available.
 
 Rendered once per tick by the component library's variants, and once
 empty inside #map-zoom-tick-template, which static/js/map_zoom_control.js
@@ -11,12 +12,12 @@ zoom where the feature is available, which the scale shows in bold — not
 whether the reader has switched it on. The row is a button: a tap zooms
 the map to the feature's threshold, and the threshold reads ≥14, or ≤10
 for the region selector, which holds up to its level rather than from it.
-``data-zoom-side`` (above / below) is set only when two gates share a
-level, so their rows sit either side of its line instead of on top of
-each other.
+The row's ``top`` is its centre in px down the scale
+(zoom_control_core.labelRows): level with its gate where there is room,
+spread from its neighbours where there is not.
 
 Context:
-* tick — {key, label, threshold, zoom, pct, reached, side}; absent
+* tick — {key, label, threshold, zoom, row, reached}; absent
   for the template copy.
 {% endcomment %}
 {% localize off %}
@@ -24,8 +25,7 @@ Context:
         class="map-zoom-tick"
         data-zoom-tick="{{ tick.key|default:'' }}"
         {% if tick.reached %}data-reached{% endif %}
-        {% if tick.side %}data-zoom-side="{{ tick.side }}"{% endif %}
-        style="top: {{ tick.pct|default:0 }}%"
+        style="top: {{ tick.row|default:0 }}px"
     >
         {# A tap zooms the map to the level the feature starts at. #}
         <button

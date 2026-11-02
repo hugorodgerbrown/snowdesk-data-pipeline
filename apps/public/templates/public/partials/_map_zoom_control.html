@@ -16,8 +16,10 @@ Two things, both direct children of .map-legend once included:
   zoom the map never stated, and zooming was gesture-only (WCAG 2.5.1).
 * The FLYOUT it opens, into the crook between the stack and the date row
   where the legend card opens: − and + (44 px targets), a scale across the
-  map's zoom range with a marker at the camera, a tick for each zoom-gated
-  layer that is on, and one row per tick naming the layer. Under DEBUG it
+  map's zoom range with a marker at the camera, and one row per zoom-gated
+  feature naming it, in a column of its own away from the axis, joined to
+  the level it becomes available by a curved connector (2026-11-02:
+  several features crowd z9–z12, and two can share a level). Under DEBUG it
   also prints the camera zoom to two decimals — the figure the old readout
   gave developers working on the download bands.
 
@@ -29,7 +31,12 @@ Context (all optional):
 * zoom_face           — int; the roundel's face (the map never goes below z4, so 0 means unset).
 * zoom_open           — bool; render the flyout open.
 * zoom_marker_pct     — float 0..100; the camera marker's position.
-* zoom_ticks          — list of {key, label, zoom, pct, reached}.
+* zoom_marker_value   — float; the camera to one decimal, rounded down, which
+                        the marker reads out beside itself.
+* zoom_ticks          — list of {key, label, threshold, zoom, row, reached};
+                        ``row`` is the label's centre, px down the scale.
+* zoom_connectors     — list of {key, d, node_y, node_x, reached}, one per tick:
+                        the curve's path data and its node on the axis, px.
 * zoom_out_disabled   — bool; − at the minimum zoom.
 * zoom_in_disabled    — bool; + at the maximum zoom.
 * zoom_camera_visible — bool; render the DEBUG camera line.
@@ -67,10 +74,10 @@ Context (all optional):
     >
         {% include "includes/_icon_plus.html" with size=18 only %}
     </button>
-    {# The scale runs bottom to top, like the zoom: every whole level is #}
-    {# numbered on the line, and each gated feature sits at the level it  #}
-    {# becomes available, so the list IS the picture.                     #}
-    <div class="map-zoom-scale">
+    {# The scale runs bottom to top, like the zoom: every whole level is   #}
+    {# numbered left of the line, and each gated feature is named in the   #}
+    {# column to its right, a curve tying it to the level it starts at.    #}
+    <div class="map-zoom-scale" data-zoom-scale>
         <span class="map-zoom-track" aria-hidden="true"></span>
         <ol class="map-zoom-levels" data-zoom-levels aria-hidden="true">
             {% localize off %}
@@ -79,6 +86,25 @@ Context (all optional):
                 {% endfor %}
             {% endlocalize %}
         </ol>
+        {% localize off %}
+            <svg class="map-zoom-connectors" data-zoom-connectors aria-hidden="true" focusable="false">
+                {% for connector in zoom_connectors %}
+                    <g
+                        class="map-zoom-connector"
+                        data-zoom-connector="{{ connector.key }}"
+                        {% if connector.reached %}data-reached{% endif %}
+                    >
+                        <path class="map-zoom-connector-line" d="{{ connector.d }}" />
+                        <circle
+                            class="map-zoom-connector-node"
+                            cx="{{ connector.node_x }}"
+                            cy="{{ connector.node_y }}"
+                            r="3"
+                        />
+                    </g>
+                {% endfor %}
+            </svg>
+        {% endlocalize %}
         <ol class="map-zoom-ticks" data-zoom-ticks>
             {% for tick in zoom_ticks %}
                 {% include "public/partials/_map_zoom_tick.html" with tick=tick only %}
@@ -90,7 +116,15 @@ Context (all optional):
                 data-zoom-marker
                 aria-hidden="true"
                 style="top: {{ zoom_marker_pct|default_if_none:100 }}%"
-            ></span>
+            >
+                {# The exact camera zoom, to one decimal, in the number column #}
+                {# beside the marker: the face says the whole level, this says #}
+                {# how far into it the camera is.                              #}
+                <span
+                    class="map-zoom-marker-value"
+                    data-zoom-marker-value
+                >{% if zoom_marker_value is not None %}{% localize on %}{{ zoom_marker_value|floatformat:1 }}{% endlocalize %}{% endif %}</span>
+            </span>
         {% endlocalize %}
     </div>
     <button

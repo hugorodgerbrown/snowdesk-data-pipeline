@@ -835,12 +835,22 @@ stack and the date row, where the legend card opens:
 - **One line of explanation** at the top: "Some features are only
   available at certain zoom levels."
 - **A vertical scale**, + over −, across the map's whole zoom range,
-  every whole level numbered on the line, with a marker at the camera.
-- **Each zoom-gated feature, named at its level** with its threshold:
-  **Route slope angle ≥14** (§3.4a), **Steep terrain ≥12** (§3.5b, in
-  either of its modes) and **Region selector ≤10** (§1). A feature is in
-  strong text while the camera is at a zoom where it is available, and
-  muted otherwise — whether or not it is switched on, because the scale
+  every whole level numbered to the left of the line with a small dot on
+  it, and a marker at the camera that reads out the camera's zoom to one
+  decimal — rounded down, so camera 12.97 reads 12.9 beside a face of 12
+  (Hugo, 2 Nov 2026; `zoom_control_core.markerZoom`).
+- **Each zoom-gated feature, named in a column of its own** with its
+  threshold, and tied by a **curved connector** to a node on the line at
+  the level it becomes available: **Route slope angle ≥14** (§3.4a),
+  **Steep terrain ≥12** (§3.5b, in either of its modes), **Wildlife rest
+  zones ≥11**, **Region selector ≤10** (§1) and **SAC ski touring ≥9**.
+  A label sits level with its gate where there is room; where labels
+  would collide — z9–z12 hold four, and two gates can share a level —
+  they spread into one evenly spaced group centred on their levels, and
+  the curves fan back to each level (Hugo, 2 Nov 2026;
+  `zoom_control_core.labelRows`). A feature, its curve and its node are
+  strong while the camera is at a zoom where it is available, and muted
+  otherwise — whether or not it is switched on, because the scale
   answers "what can I do at this zoom". The rows stay put; only the marker
   and the styling move as the map zooms.
 - **Each row is a button** that eases the map to its threshold, so the
