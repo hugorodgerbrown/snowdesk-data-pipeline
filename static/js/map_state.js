@@ -610,8 +610,9 @@ function buildFallbackStyle() {
 // True while timelapse playback is running. Set directly by timelapseInit()'s
 // start() and stop() functions; after each mutation those functions also
 // dispatch ``snowdesk:timelapse-state`` so the main IIFE can call
-// clearTooltip(). The main IIFE reads IS_PLAYING to suppress redundant
-// /api/region/<id>/summary/ requests on every timelapse frame advance.
+// clearTooltip(). The main IIFE reads IS_PLAYING to suppress a region or
+// resort selection change from a tap on the map while a timelapse is
+// running (map.js's click handler and its resort-hit branch).
 let IS_PLAYING = false;
 
 // Resolved by the main IIFE once the MapLibre style has loaded and the
