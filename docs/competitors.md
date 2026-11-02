@@ -2,7 +2,7 @@
 name: competitors
 description: Competitor list — WhiteRisk, SnowSafe, Whympr, OpenSnow — with feature profiles and the feature ideas each one suggests for Snowdesk
 status: current
-last-reviewed: 2026-11-01
+last-reviewed: 2026-11-02
 ---
 
 # Competitor list
@@ -991,11 +991,16 @@ where today's persistent weak layer sits" is a sentence only a
 bulletin-first product can write, in a geography where nobody writes it
 yet. Note the corollary: don't try to build Whympr's 100,000-route
 library, and do read WhiteRisk's crux presentation carefully before
-designing ours. **2026-10 update (SNOW-1066):** Snowdesk built a static
-route-level crux (SNOW-911) and then removed it; it keeps no route crux.
-Where the dangerous ground is will be decided by the daily avalanche
-terrain layer (SNOW-979), so WhiteRisk's flagged cruxes have no
-counterpart on our side and the compare page claims none.
+designing ours. **2026-11 correction (SNOW-948):** Snowdesk built this
+reading — a route joined to the day's bulletin, stating where the line
+enters the ground each problem names (SNOW-839) — and then withdrew it
+(SNOW-1062) in favour of the daily problem-terrain map layer (SNOW-979),
+which is painted region-wide and reads nothing off a route. It keeps no
+route crux either (SNOW-911 built one, SNOW-1066 removed it). So
+WhiteRisk's flagged cruxes have no counterpart on our side, and the
+compare page's "Rates a specific tour" row says NO for Snowdesk, with the
+note "Shows SAC's grade, not today's risk": an SAC tour carries SAC's own
+grade, which is fixed and never a reading of the day.
 **2026-08-19 scan update:** the France-only piece of this idea is now live
 twice over — [Yéti](#skitourenguru--yéti) (Petzl Foundation-backed) does
 route-vs-bulletin risk colour-coding using the Météo-France bulletin

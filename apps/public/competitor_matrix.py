@@ -359,13 +359,17 @@ FEATURES: tuple[Feature, ...] = (
             skitourenguru=Cell(Support.YES, _("The whole product")),
             whympr=_NO,
             opensnow=_NO,
-            # SNOW-839. YES rather than PARTIAL, and the wording is the
-            # claim: what a trip page states is where the line ENTERS the
-            # ground each problem names, not a rating of the day. Every
-            # other YES in this row is a score or a flag; ours is
-            # deliberately neither, which is why the cell says what it
-            # does rather than borrowing their word for it.
-            snowdesk=Cell(Support.YES, _("Where your line meets each problem")),
+            # SNOW-948. NO since SNOW-1062 withdrew the per-route bulletin
+            # reading (there is no route_bulletin.py, bulletin_join.py or
+            # routes:bulletin left). The problem-terrain layer
+            # (apps/public/problem_terrain.py) paints region-wide and reads
+            # nothing off a route, so it is a map layer, not a tour score.
+            # What a tour DOES carry is SAC's grade — SkiTour.grade, shown on
+            # the route panel's meta line (data-string="meta-sac-grade" in
+            # templates/includes/_route_rail.html) — which is fixed, not a
+            # reading of today, and the note says exactly that (Hugo,
+            # 2026-11-02).
+            snowdesk=Cell(Support.NO, _("Shows SAC's grade, not today's risk")),
         ),
     ),
     Feature(

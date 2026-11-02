@@ -147,6 +147,16 @@ class TestComparePageIsHonest:
         """SNOW-1066 removed route-level cruxes; the page names none."""
         assert "crux" not in page.lower()
 
+    def test_claims_no_per_route_bulletin_reading(self, page: str) -> None:
+        """SNOW-948: the reading SNOW-1062 withdrew is not claimed anywhere."""
+        assert "where your line enters the ground" not in page
+        assert "meets each problem" not in page
+
+    def test_surfaces_sacs_grade_without_calling_it_a_rating(self, page: str) -> None:
+        """The tour row's note and the profile both name SAC's grade (SNOW-948)."""
+        assert "Shows SAC&#x27;s grade, not today&#x27;s risk" in page
+        assert "SAC's tours carry SAC's own grade" in page
+
     def test_discloses_that_snowdesk_publishes_it(self, page: str) -> None:
         """The conflict of interest is stated, not implied."""
         assert "published by Snowdesk, which is one of the products" in page
@@ -239,16 +249,17 @@ class TestSnowdeskEntryMatchesTheCode:
 
         **Per-tour scoring is a different kind of entry and the wording
         has to keep it that way.** SNOW-839 joined a route to the
-        bulletin, so the capability exists; what does not exist, and will
-        not, is a RATING. The page must go on naming scoring as something
-        Snowdesk does not do while no longer implying it cannot — which
-        is why the assertion below is on the refusal rather than on the
-        two words it used to match.
+        bulletin and SNOW-1062 withdrew that reading in favour of the
+        problem-terrain map layer; what does not exist, and will not, is a
+        RATING. The page must go on naming scoring as something Snowdesk
+        does not do, which is why the assertion below is on the refusal —
+        reworded by SNOW-948, which also names SAC's grade as the one fixed
+        fact a tour carries.
         """
         assert "alerting, which it does not do at all" in page
         assert "no live station network" in page
         assert "deliberately does not do" in page
-        assert "stops short of rating the day" in page
+        assert "nothing rates a tour for the day" in page
 
     def test_describes_weather_as_forecasts_not_observations(self, page: str) -> None:
         """The distinction is the whole of the claim.
@@ -326,16 +337,14 @@ class TestFeatureMatrix:
         # Alerts and station data were verified against the code when the
         # page was written and are still absent.
         #
-        # ``tour_score`` LEFT this list in SNOW-839, which is the one
-        # cell in our column to have moved. It is a YES whose wording is
-        # the whole claim — "where your line meets each problem" — and
-        # the cell's own text is asserted below rather than its support
-        # level alone, so a later edit cannot quietly turn it into the
-        # rating every other YES in that row means.
+        # ``tour_score`` is back in this list (SNOW-948). SNOW-839 made it a
+        # YES for a per-route bulletin reading that SNOW-1062 withdrew; the
+        # cell is NO again, and its note names the one tour fact we do
+        # show — SAC's grade — without claiming it reads the day.
         by_key = {feature.key: feature.cells["snowdesk"] for feature in FEATURES}
-        for key in ("alerts", "stations"):
+        for key in ("alerts", "stations", "tour_score"):
             assert by_key[key].support is Support.NO, f"{key} is not a gap any more"
-        assert "meets each problem" in str(by_key["tour_score"].note)
+        assert "SAC's grade" in str(by_key["tour_score"].note)
 
     def test_no_competitor_column_is_all_unknown(self) -> None:
         """A column of nothing but dots is a product we should not have listed."""
