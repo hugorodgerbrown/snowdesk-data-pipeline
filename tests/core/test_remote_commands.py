@@ -13,9 +13,11 @@ id, and a command's ``sys.exit`` never takes the worker down.
 from __future__ import annotations
 
 import datetime as dt
+from pathlib import Path
 from unittest import mock
 
 import pytest
+from django.conf import settings
 from django.test import override_settings
 from django.utils import timezone
 from django_tasks import TaskResultStatus
@@ -41,6 +43,24 @@ def _enqueue(name: str = "prune_command_runs", **kwargs: object) -> object:
 
 class TestRunnableCommands:
     """Only commands marked ``mcp_runnable`` are offered."""
+
+    def test_every_deploy_step_is_runnable(self) -> None:
+        """Every command the shipped ``DEPLOY_STEPS`` names can be run remotely.
+
+        A release's post-deploy commands are run from the ops MCP server.
+        v61 shipped two that were not ``mcp_runnable``, so neither could
+        be run without a shell on the production host.
+        """
+        steps_file = Path(settings.BASE_DIR) / "DEPLOY_STEPS"
+        if not steps_file.exists():
+            pytest.skip("this build ships no DEPLOY_STEPS file")
+        steps = [
+            line.split()[0]
+            for line in steps_file.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        runnable = remote_commands.runnable_commands()
+        assert [step for step in steps if step not in runnable] == []
 
     def test_offers_opted_in_commands(self) -> None:
         """A marked command is offered."""
