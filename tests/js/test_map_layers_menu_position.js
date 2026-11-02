@@ -34,9 +34,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '../../static/js/i18n_strings.js';
 
 /** Give an element a fixed rect, the way a real layout would. */
-function setRect(el, { top, bottom }) {
+function setRect(el, { top, bottom, left = 0, right = 375 }) {
   el.getBoundingClientRect = () => ({
-    top, bottom, height: bottom - top, left: 0, right: 375, width: 375, x: 0, y: top,
+    top, bottom, height: bottom - top, left, right, width: right - left, x: left, y: top,
   });
 }
 
@@ -48,9 +48,10 @@ function setRect(el, { top, bottom }) {
  *
  * `stackTop` is what varies with that height — the column grows upward.
  */
-function buildFixture({ stackTop = 319, bottomRow = true } = {}) {
+function buildFixture({ stackTop = 319, bottomRow = true, topRow = null } = {}) {
   document.body.innerHTML = `
     <div id="map"></div>
+    ${topRow ? '<div id="map-utility-cluster"></div>' : ''}
     <div class="map-controls-br" id="map-controls-br" data-expanded="true">
       <div class="map-control-group" id="map-control-group-map">
         <div id="basemap-pill" data-state="collapsed">
@@ -82,6 +83,10 @@ function buildFixture({ stackTop = 319, bottomRow = true } = {}) {
   setRect(document.getElementById('map'), { top: 114, bottom: 812 });
   setRect(document.getElementById('map-controls-br'), { top: stackTop, bottom: 752 });
   if (bottomRow) setRect(document.getElementById('map-date-row'), { top: 707, bottom: 739 });
+  if (topRow) {
+    setRect(document.getElementById('map-utility-cluster'), topRow);
+    setRect(document.getElementById('basemap-menu'), { top: 200, bottom: 699, left: 12, right: 363 });
+  }
 }
 
 /** Load the picker fresh and open the menu through its own toggle. */
@@ -155,6 +160,31 @@ describe('where the layers menu opens', () => {
     // so the offset goes negative and the menu hangs past it.
     expect(menu.style.bottom).toBe('-52px');
     expect(menu.style.maxHeight).toBe('682px');
+  });
+});
+
+describe('the menu stays below the top row of controls', () => {
+  // SNOW-1389. #map-utility-cluster (the date row and search) floats over
+  // the top of #map, so a cap measured from #map's top let a menu that had
+  // grown — a switch adding "Zoom in to view" under its row — climb behind
+  // that row and hide its own header.
+
+  it('stops one gap below the row where the row covers the menu', async () => {
+    // On a phone the row spans the width, as the menu does.
+    buildFixture({ topRow: { top: 126, bottom: 166, left: 12, right: 363 } });
+    const menu = await openMenu();
+
+    // floor (699) - the row's foot (166) - the 8px gap, tighter than the
+    // 577px #map's top would allow.
+    expect(menu.style.maxHeight).toBe('525px');
+  });
+
+  it('keeps the full cap where the row sits beside the menu', async () => {
+    // On a desktop the row stays on the left and the menu opens on the right.
+    buildFixture({ topRow: { top: 126, bottom: 166, left: -400, right: 0 } });
+    const menu = await openMenu();
+
+    expect(menu.style.maxHeight).toBe('577px');
   });
 });
 
