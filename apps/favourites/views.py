@@ -79,7 +79,6 @@ from apps.core.freshness import (
 )
 from apps.favourites.models import Favourite
 from apps.favourites.relevance import annotate_problem_relevance
-from apps.favourites.saved_today import build_saved_today
 from apps.favourites.services import (
     FavouriteLimitReached,
     ResortNotGeocoded,
@@ -89,6 +88,7 @@ from apps.favourites.services import (
     delete_favourite,
     delete_region_favourite,
 )
+from apps.favourites.today import build_today, today_region_pks, today_subjects
 from apps.locations.services.what3words import what3words_map_url
 from apps.public.templatetags.snowdesk_time import danger_level_digit
 from apps.public.views import problem_cards_for_bulletin
@@ -999,43 +999,31 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
     # batched rating lookup below exists to avoid.
     #
     # SNOW-814: ``placed()`` — a region pin is not a place, and its row now
-    # lives in the region + date panel (``region_pin_list`` above). This is
-    # the same predicate ``favourites_geojson`` has always filtered on, so
-    # the sheet and the map layer finally list the same set of pins.
+    # lives in search's "Pinned regions" (``region_pin_list`` above). This
+    # is the same predicate ``favourites_geojson`` has always filtered on.
     #
     # SNOW-1229: ``dropped_pins()`` — a favourited resort left this list for
     # search's "Pinned resorts", as region pins left it for search in
     # SNOW-814, and the map draws it as a blue resort dot, not a star.
     #
-    # SNOW-1359: ONE owner-scoped query for every kind, partitioned here.
-    # The "Today" section above Places lists all three kinds; Places and
-    # its offline roster stay dropped pins only, by the same predicate
-    # ``dropped_pins()`` applies in SQL.
-    everything = list(
-        Favourite.objects.for_user(request.user).select_related(
-            "region",
-            "region__centroid_location",
-            "location",
-            "resort",
-            "resort__region",
-            "resort__region__centroid_location",
-        )
+    # SNOW-1366: SNOW-1359's "Today" block, which listed every kind above
+    # these rows (and so listed each pin twice), moved out to the Today
+    # panel (``today`` below). This list is the dropped pins and nothing
+    # else.
+    favourites = list(
+        Favourite.objects.for_user(request.user)
+        .dropped_pins()
+        .select_related("region", "location")
     )
-    favourites = [
-        f for f in everything if f.latitude is not None and f.resort_id is None
-    ]
 
     today = timezone.localdate()
-    region_ids = {f.region_id for f in everything if f.region_id is not None} | {
-        f.resort.region_id for f in everything if f.resort is not None
-    }
+    region_ids = {f.region_id for f in favourites if f.region_id is not None}
     ratings_by_region_id: dict[int, RegionDayRating] = {
         rating.region_id: rating
         for rating in RegionDayRating.objects.filter(
             region_id__in=region_ids, date=today
         )
     }
-    saved_today = build_saved_today(everything, today, ratings_by_region_id)
 
     _attach_share_text(request, favourites)
 
@@ -1060,10 +1048,6 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
         )
         if day_rating is not None:
             present_ratings.append(day_rating)
-    # Freshness covers what BOTH sections render: a rating Today shows is
-    # as stale as one Places shows.
-    present_ratings.extend(row.rating for row in saved_today if row.rating is not None)
-
     response_generated_at = (
         min(rating.updated_at for rating in present_ratings)
         if present_ratings
@@ -1076,13 +1060,70 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
         "favourites/partials/_favourite_list_map.html",
         {
             "favourites": favourites,
-            "saved_today": saved_today,
             "roster_payload": roster_payload,
             "rename_url_template": _rename_url_template(),
         },
     )
     return apply_freshness_headers(
         response, response_generated_at, unsafe_after=response_unsafe_after
+    )
+
+
+@require_htmx
+@require_GET
+def today(request: HttpRequest) -> HttpResponse:
+    """Render the Today panel: the user's pinned regions and resorts today.
+
+    SNOW-1366. Opened from the sun roundel in the map's date row and always
+    about today, whatever day the map is showing. One row per region the
+    user pinned or holds a pinned resort in, with that region's danger and
+    its move since yesterday, and the pinned resorts nested under it with
+    their weather (``apps.favourites.today.build_today``). Dropped pins are
+    not listed: they are the Favourites panel's.
+
+    A fixed number of queries however many places there are: the user's
+    region pins and resorts in one, today's ratings for their regions in
+    one, then ``build_today``'s own (yesterday's ratings and the borrowed
+    forecasts). The freshness headers (SNOW-418) are stamped from the
+    oldest rating shown, as the favourites list's are.
+
+    Args:
+        request: The incoming HTMX GET request.
+
+    Returns:
+        Rendered ``_today.html``, or a 403 for a visitor.
+
+    """
+    if not request.user.is_authenticated:
+        return HttpResponse("Authentication required.", status=403)
+
+    subjects = today_subjects(
+        Favourite.objects.for_user(request.user)
+        .exclude(latitude__isnull=False, resort__isnull=True)
+        .select_related("region", "resort", "resort__region", "resort__location")
+    )
+    day = timezone.localdate()
+    ratings_by_region_pk: dict[int, RegionDayRating] = {
+        rating.region_id: rating
+        for rating in RegionDayRating.objects.filter(
+            region_id__in=today_region_pks(subjects), date=day
+        )
+    }
+    regions = build_today(subjects, day, ratings_by_region_pk)
+
+    present = [r.rating for r in regions if r.rating is not None]
+    generated_at = (
+        min(rating.updated_at for rating in present) if present else timezone.now()
+    )
+    response = render(
+        request,
+        "favourites/partials/_today.html",
+        {"today_regions": regions, "today_date": day},
+    )
+    return apply_freshness_headers(
+        response,
+        generated_at,
+        unsafe_after=DEFAULT_UNSAFE_AFTER_SECONDS if present else None,
     )
 
 

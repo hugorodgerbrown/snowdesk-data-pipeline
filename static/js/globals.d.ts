@@ -230,6 +230,8 @@ interface Window {
   pwaNetworkMode: any;
   /** static/js/map_weather_detail.js — the weather sheet; open/close/point. */
   pwaWeatherDetail: any;
+  /** SNOW-1366: the Today panel (static/js/today_panel.js). */
+  pwaTodayPanel: { open(): void; close(): void; isOpen(): boolean };
   /** static/js/map_sheet.js — the sheet controller; attach/bindDetents/handOff/toast. */
   MapSheet: any;
   /** static/js/route_rail.js — rail one below the map; open/close/cursor. */

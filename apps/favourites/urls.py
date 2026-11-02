@@ -83,6 +83,12 @@ urlpatterns = [
         views.region_pin_list,
         name="region_list",
     ),
+    # SNOW-1366: the Today panel — the pinned regions and resorts, today.
+    path(
+        "partials/today/",
+        views.today,
+        name="today",
+    ),
     path(
         "favourites.geojson",
         views.favourites_geojson,

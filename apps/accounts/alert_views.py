@@ -13,7 +13,8 @@ Five endpoints behind the ``bulletin_alerts`` flag:
                          land on the device they just turned on. Sent while
                          they wait, so the answer says whether it went.
 - ``alert_recent``       GET JSON — the messages sent in the past week, for
-                         the map's bell (SNOW-1333). Private, never cached.
+                         the Today sun's dot (SNOW-1333, SNOW-1366).
+                         Private, never cached.
 - ``alert_unsubscribe``  GET confirms, POST stops alert EMAIL (sets
                          ``alert_email`` to NEVER) — the signed link in every
                          alert email, and the RFC 8058 one-click target, so
@@ -69,10 +70,10 @@ def _account_or_404(request: HttpRequest) -> Account:
 
 def alert_list_url(request: HttpRequest) -> str:
     """
-    Return where the map's bell reads its list, or "" when there is no bell.
+    Return where the Today sun reads alerts for its dot, or "" for no dot.
 
-    No bell when signed out, with the flag off, without an Account, or with
-    alerts off (Hugo, 2026-10-30): the bell lists alerts and nothing else.
+    No dot when signed out, with the flag off, without an Account, or with
+    alerts off (Hugo, 2026-10-30). The bell this fed was retired by SNOW-1366.
 
     Args:
         request: The map page's request.
@@ -222,9 +223,10 @@ def alert_test(request: HttpRequest) -> HttpResponse:
 def alert_recent(request: HttpRequest) -> HttpResponse:
     """Return the alerts sent to the account in the past week, newest first.
 
-    The map's bell lists them (SNOW-1333). Each entry carries the message's
-    own title, body and link, and ``sent``, when it went ("Friday at 5 pm").
-    With alerts off the list is empty, so the bell stays hidden.
+    The Today sun's dot reads them (SNOW-1333, SNOW-1366). Each entry carries
+    the message's own title, body and link, and ``sent``, when it went
+    ("Friday at 5 pm").
+    With alerts off the list is empty, so the dot stays hidden.
     """
     account = _account_or_404(request)
     if account.notify_when == Account.NotifyWhen.OFF:

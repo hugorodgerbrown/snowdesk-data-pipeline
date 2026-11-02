@@ -1,17 +1,18 @@
 """
-tests/favourites/test_saved_today.py — "Today" for a user's saved places
-(SNOW-1359).
+tests/favourites/test_today.py — "Today" for a user's pinned regions and
+resorts (SNOW-1366, from SNOW-1359's "Saved today").
 
-Covers ``apps.favourites.saved_today``:
-  - every kind of saved place gets a row, named as the place;
-  - the level, "No bulletin" for no region, no row and ``no_rating``;
+Covers ``apps.favourites.today``:
+  - which favourites are listed: region pins and saved resorts, never a
+    dropped pin;
+  - the nesting: a resort under its region, a pinned resort bringing in an
+    unpinned parent region, a pinned region and its resort as one row;
+  - the level, "No bulletin" for no row and ``no_rating``;
   - the trend: up, down and same, subdivisions ignored, none when either
     day is missing;
-  - the borrowed forecast: from the place itself, from a region pin's
-    centroid, and none when there is nothing to borrow from;
-  - the order: highest level, then rising before steady before falling,
-    then by name;
-  - which point the forecast is from (``source``), for the caption;
+  - the resorts' weather and which point it is from; regions borrow none;
+  - the order: alphabetical, regions and the resorts in each, never by
+    danger;
   - a fixed number of queries however many places there are.
 """
 
@@ -27,15 +28,14 @@ from django.utils import timezone
 
 from apps.bulletins.models import RegionDayRating
 from apps.favourites.models import Favourite
-from apps.favourites.saved_today import (
+from apps.favourites.today import (
     DOWN,
-    PIN,
-    REGION,
-    RESORT,
     SAME,
     UP,
-    SavedToday,
-    build_saved_today,
+    TodayRegion,
+    build_today,
+    today_region_pks,
+    today_subjects,
     trend_between,
 )
 from apps.locations.models import Location
@@ -54,28 +54,25 @@ R = RegionDayRating.Rating
 
 
 def _favourites(user: User) -> list[Favourite]:
-    """Return a user's favourites joined the way ``favourite_list`` joins them."""
+    """Return a user's favourites joined the way the ``today`` view joins them."""
     return list(
         Favourite.objects.filter(user=user).select_related(
-            "region",
-            "region__centroid_location",
-            "location",
-            "resort",
-            "resort__region",
-            "resort__region__centroid_location",
+            "region", "resort", "resort__region", "resort__location"
         )
     )
 
 
-def _today_ratings(day: datetime.date) -> dict[int, RegionDayRating]:
-    """Return every rating for a day by region pk, as the view reads them."""
-    return {r.region_id: r for r in RegionDayRating.objects.filter(date=day)}
-
-
-def _build(user: User) -> list[SavedToday]:
-    """Build the rows for a user, today."""
+def _build(user: User) -> list[TodayRegion]:
+    """Build the rows for a user, today, reading ratings as the view does."""
     day = timezone.localdate()
-    return build_saved_today(_favourites(user), day, _today_ratings(day))
+    subjects = today_subjects(_favourites(user))
+    ratings = {
+        r.region_id: r
+        for r in RegionDayRating.objects.filter(
+            region_id__in=today_region_pks(subjects), date=day
+        )
+    }
+    return build_today(subjects, day, ratings)
 
 
 def _rate(
@@ -102,45 +99,55 @@ def _public_point(
 
 
 @pytest.mark.django_db
-class TestKinds:
-    """Every kind of saved place is a row, named as the place."""
+class TestWhatIsListed:
+    """Region pins and saved resorts; never a dropped pin."""
 
-    def test_a_pin_a_resort_and_a_region_pin(self) -> None:
+    def test_a_dropped_pin_is_not_listed(self) -> None:
+        user = UserFactory.create()
+        FavouriteFactory.create(
+            user=user, name="Car park", region=MicroRegionFactory.create()
+        )
+        assert _build(user) == []
+
+    def test_a_region_pin_is_a_pinned_region_with_no_resorts(self) -> None:
         user = UserFactory.create()
         region = MicroRegionFactory.create(name="Martigny-Verbier")
-        FavouriteFactory.create(user=user, name="Car park", region=region)
+        FavouriteFactory.create(user=user, region=region, region_pin=True)
+
+        [row] = _build(user)
+        assert row.name == "Martigny-Verbier"
+        assert row.region_id == region.region_id
+        assert row.url == region.get_absolute_url()
+        assert row.pinned is True
+        assert row.resorts == []
+
+    def test_a_resort_is_nested_under_its_resorts_region(self) -> None:
+        """The resort's own region, whatever the favourite's region says."""
+        user = UserFactory.create()
+        region = MicroRegionFactory.create(name="Martigny-Verbier")
         FavouriteFactory.create(
             user=user,
             name="my label",
-            region=region,
+            region=MicroRegionFactory.create(name="Elsewhere"),
             resort=ResortFactory.create(name="Verbier", region=region),
         )
-        FavouriteFactory.create(user=user, region=region, region_pin=True)
 
-        rows = {row.kind: row for row in _build(user)}
+        [row] = _build(user)
+        assert row.name == "Martigny-Verbier"
+        assert row.pinned is False
+        assert [r.name for r in row.resorts] == ["Verbier"]
 
-        assert rows[PIN].name == "Car park"
-        assert rows[RESORT].name == "Verbier"
-        assert rows[REGION].name == "Martigny-Verbier"
-        assert rows[REGION].latitude is None
-        assert rows[REGION].region_url == region.get_absolute_url()
-        assert rows[PIN].latitude is not None
-
-    def test_an_unnamed_pin_has_an_empty_name(self) -> None:
-        """The template supplies "Unnamed pin", as the Places row does."""
-        user = UserFactory.create()
-        FavouriteFactory.create(user=user)
-        assert _build(user)[0].name == ""
-
-    def test_a_resort_reads_its_resorts_region(self) -> None:
-        """A resort favourite with no region of its own reads the resort's."""
+    def test_a_pinned_region_and_its_resort_are_one_row(self) -> None:
         user = UserFactory.create()
         region = MicroRegionFactory.create()
-        _rate(region, R.HIGH)
-        FavouriteFactory.create(
-            user=user, region=None, resort=ResortFactory.create(region=region)
-        )
-        assert _build(user)[0].level == R.HIGH
+        FavouriteFactory.create(user=user, region=region, region_pin=True)
+        resort = ResortFactory.create(region=region)
+        FavouriteFactory.create(user=user, region=region, resort=resort)
+
+        [row] = _build(user)
+        assert row.pinned is True
+        assert [r.slug for r in row.resorts] == [resort.slug]
+        assert row.resorts[0].url == resort.get_absolute_url()
 
 
 @pytest.mark.django_db
@@ -151,9 +158,9 @@ class TestLevel:
         user = UserFactory.create()
         region = MicroRegionFactory.create()
         _rate(region, R.CONSIDERABLE, max_subdivision="+")
-        FavouriteFactory.create(user=user, region=region)
+        FavouriteFactory.create(user=user, region=region, region_pin=True)
 
-        row = _build(user)[0]
+        [row] = _build(user)
         assert row.level == R.CONSIDERABLE
         assert row.subdivision == "+"
         assert row.rating is not None
@@ -163,21 +170,19 @@ class TestLevel:
         user = UserFactory.create()
         region = MicroRegionFactory.create()
         _rate(region, today, R.MODERATE)
-        FavouriteFactory.create(user=user, region=region)
+        FavouriteFactory.create(user=user, region=region, region_pin=True)
 
-        row = _build(user)[0]
+        [row] = _build(user)
         assert row.level is None
         assert row.trend is None
         assert row.rating is None
 
-    def test_a_pin_outside_every_region_is_no_bulletin(self) -> None:
+    def test_the_trend_is_read_from_yesterday(self) -> None:
         user = UserFactory.create()
-        FavouriteFactory.create(user=user, region=None)
-
-        row = _build(user)[0]
-        assert row.level is None
-        assert row.region_id is None
-        assert row.region_url == ""
+        region = MicroRegionFactory.create()
+        _rate(region, R.HIGH, R.CONSIDERABLE)
+        FavouriteFactory.create(user=user, region=region, region_pin=True)
+        assert _build(user)[0].trend == UP
 
 
 class TestTrend:
@@ -224,83 +229,70 @@ class TestTrend:
 
 
 @pytest.mark.django_db
-class TestForecast:
-    """The forecast a place borrows from the nearest curated point."""
+class TestWeather:
+    """A resort's weather today; a region carries none."""
 
-    def test_a_pin_borrows_the_nearest_point(self) -> None:
+    def test_a_resort_reads_the_nearest_point(self) -> None:
         user = UserFactory.create()
         _public_point(46.10, 7.40, temp=-3.0)
         _public_point(47.50, 9.00, temp=12.0)
-        FavouriteFactory.create(user=user, latitude=46.11, longitude=7.41)
-
-        row = _build(user)[0]
-        assert row.temp_max == -3.0
-        assert row.icon is not None and row.icon.endswith(".svg")
-        assert row.source is not None
-        assert row.source.distance_km == pytest.approx(1.4, abs=0.1)
-        assert not row.source.is_same_place
-
-    def test_a_region_pin_borrows_from_its_centroid(self) -> None:
-        user = UserFactory.create()
-        near = _public_point(46.50, 8.00, temp=1.0)
-        _public_point(46.10, 7.40, temp=9.0)
-        region = MicroRegion.objects.get(centroid_location=near)
-        FavouriteFactory.create(user=user, region=region, region_pin=True)
-
-        row = _build(user)[0]
-        assert row.temp_max == 1.0
-        assert row.source is not None
-        assert row.source.is_same_place
-
-    def test_a_region_pin_with_no_centroid_has_no_forecast(self) -> None:
-        user = UserFactory.create()
-        _public_point(46.10, 7.40, temp=9.0)
         FavouriteFactory.create(
-            user=user, region=MicroRegionFactory.create(), region_pin=True
+            user=user,
+            latitude=46.11,
+            longitude=7.41,
+            resort=ResortFactory.create(),
         )
 
-        row = _build(user)[0]
-        assert row.icon is None
-        assert row.temp_max is None
-        assert row.source is None
+        resort = _build(user)[0].resorts[0]
+        assert resort.temp_max == -3.0
+        assert resort.icon is not None and resort.icon.endswith(".svg")
+        assert resort.source is not None
+        assert resort.source.distance_km == pytest.approx(1.4, abs=0.1)
 
-    def test_no_point_with_a_row_today_is_no_forecast(self) -> None:
+    def test_no_point_with_a_row_today_is_no_weather(self) -> None:
         user = UserFactory.create()
-        FavouriteFactory.create(user=user)
-        assert _build(user)[0].icon is None
+        FavouriteFactory.create(user=user, resort=ResortFactory.create())
+        resort = _build(user)[0].resorts[0]
+        assert resort.icon is None
+        assert resort.temp_max is None
+        assert resort.source is None
 
 
 @pytest.mark.django_db
 class TestOrder:
-    """Most urgent first."""
+    """Alphabetical, never by danger (Hugo, 2 Nov 2026)."""
 
-    def test_level_then_trend_then_name(self) -> None:
+    def test_regions_by_name_whatever_their_level(self) -> None:
         user = UserFactory.create()
-        rising = MicroRegionFactory.create()
-        steady = MicroRegionFactory.create()
-        falling = MicroRegionFactory.create()
-        higher = MicroRegionFactory.create()
-        _rate(rising, R.CONSIDERABLE, R.MODERATE)
-        _rate(steady, R.CONSIDERABLE, R.CONSIDERABLE)
-        _rate(falling, R.CONSIDERABLE, R.HIGH)
-        _rate(higher, R.HIGH, R.HIGH)
-        for name, region in [
-            ("a-falling", falling),
-            ("b-steady", steady),
-            ("c-rising", rising),
-            ("d-higher", higher),
+        for name, level in [
+            ("Zermatt", R.HIGH),
+            ("arolla", R.LOW),
+            ("Bex", None),
+            ("Champéry", R.CONSIDERABLE),
         ]:
-            FavouriteFactory.create(user=user, name=name, region=region)
-        FavouriteFactory.create(user=user, name="e-nothing", region=None)
-        FavouriteFactory.create(user=user, name="A-nothing", region=None)
+            region = MicroRegionFactory.create(name=name)
+            _rate(region, level)
+            FavouriteFactory.create(user=user, region=region, region_pin=True)
 
         assert [row.name for row in _build(user)] == [
-            "d-higher",
-            "c-rising",
-            "b-steady",
-            "a-falling",
-            "A-nothing",
-            "e-nothing",
+            "arolla",
+            "Bex",
+            "Champéry",
+            "Zermatt",
+        ]
+
+    def test_resorts_by_name_within_their_region(self) -> None:
+        user = UserFactory.create()
+        region = MicroRegionFactory.create()
+        for name in ["Verbier", "Bruson", "la Tzoumaz"]:
+            FavouriteFactory.create(
+                user=user, resort=ResortFactory.create(name=name, region=region)
+            )
+
+        assert [r.name for r in _build(user)[0].resorts] == [
+            "Bruson",
+            "la Tzoumaz",
+            "Verbier",
         ]
 
 
@@ -314,9 +306,6 @@ class TestQueries:
             region = MicroRegion.objects.get(centroid_location=point)
             _rate(region, R.MODERATE, R.LOW)
             FavouriteFactory.create(
-                user=user, region=region, latitude=46.0, longitude=7.0
-            )
-            FavouriteFactory.create(
                 user=user,
                 region=region,
                 resort=ResortFactory.create(region=region),
@@ -324,6 +313,7 @@ class TestQueries:
                 longitude=7.0,
             )
             FavouriteFactory.create(user=user, region=region, region_pin=True)
+            FavouriteFactory.create(user=user, region=region)  # a pin: ignored
 
     @pytest.mark.parametrize("n", [1, 4])
     def test_six_queries_once_the_favourites_and_todays_ratings_are_read(
@@ -334,10 +324,11 @@ class TestQueries:
         self._place_everything(user, n)
         favourites = _favourites(user)
         day = timezone.localdate()
-        ratings = _today_ratings(day)
+        ratings = {r.region_id: r for r in RegionDayRating.objects.filter(date=day)}
 
         with CaptureQueriesContext(connection) as queries:
-            rows = build_saved_today(favourites, day, ratings)
+            rows = build_today(favourites, day, ratings)
 
-        assert len(rows) == 3 * n
+        assert len(rows) == n
+        assert all(len(row.resorts) == 1 for row in rows)
         assert len(queries) == 6

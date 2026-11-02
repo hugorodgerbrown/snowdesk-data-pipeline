@@ -1,11 +1,15 @@
 ---
 name: the-bell-lists-your-alerts
 description: Why the map bell lists your past week's alerts only (map_alerts.js, #map-alerts, alert_recent, recent_alerts, alert_list_url)
-status: current
-last-reviewed: 2026-10-30
+status: historical
+last-reviewed: 2026-11-02
 ---
 
 # The bell lists your alerts
+
+> **Historical.** SNOW-1366 retired the bell: the Today panel behind the
+> date row's sun shows the same places' day, and the sun carries the dot.
+> See [today-is-its-own-panel](today-is-its-own-panel.md).
 
 **SNOW-1333.** The bell in the map's date row (`#map-alerts`,
 `static/js/map_alerts.js`) lists the bulletin alerts sent to the account

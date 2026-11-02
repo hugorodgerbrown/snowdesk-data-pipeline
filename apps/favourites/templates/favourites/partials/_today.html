@@ -1,0 +1,87 @@
+{% load i18n %}
+{% comment %}
+favourites/partials/_today.html — the Today panel's list (SNOW-1366).
+
+Rendered by apps.favourites.views.today and swapped into the Today panel
+(public/partials/_today_surface.html) by static/js/today_panel.js. Built by
+apps.favourites.today.build_today: one row per region the user pinned or
+holds a pinned resort in, in name order, and that region's pinned
+resorts nested under it, in name order too: never by urgency, so a
+place is where it was yesterday (Hugo, 2 Nov 2026). Always today, whatever day the map shows.
+
+The region row carries the danger: the region's EAWS tile for today and,
+under its name, how the level moved since yesterday, in words, so neither
+colour nor the digit carries it alone. A resort row carries no danger of its
+own (a resort has none, docs/decisions/a-resort-has-no-avalanche-danger.md);
+it carries the resort's weather. A region listed only because a resort in
+it is pinned says so ("not pinned").
+
+Both are includes/_place_link_row.html, the row every place sheet uses to
+open its neighbours: a real link to the place's page, which on the map
+static/js/map_panel_trail.js opens as that place's sheet instead. The root's
+``data-panel-key`` / ``data-panel-label`` are what that module names the back
+pill by, so the sheet a row opens offers the way back to Today.
+
+A borrowed forecast says where it is from (includes/_forecast_source.html),
+as docs/decisions/snowdesk-decides-where-a-forecast-is-fetched.md asks of
+every borrowing surface. A resort normally reads its own pin's forecast,
+and then the line would only repeat the resort's name, so it is shown only
+when the point is somewhere else.
+
+Context:
+    today_regions : list[TodayRegion]
+    today_date    : date — today, for the panel's header line.
+{% endcomment %}
+{% trans "Today" as today_label %}
+<div data-testid="today-list" data-panel-key="today:now" data-panel-label="{{ today_label }}">
+    <p class="pb-2 font-mono text-meta text-text-2" data-testid="today-date">{{ today_date|date:"D j M" }}</p>
+    {% if today_regions %}
+        <ul class="-mx-4 flex flex-col">
+            {% for region in today_regions %}
+                <li
+                    class="border-t border-border first:border-t-0"
+                    data-testid="today-region"
+                    data-region-id="{{ region.region_id }}"
+                >
+                    {% if not region.level %}
+                        {% trans "No bulletin today" as region_line %}
+                    {% elif region.trend == "up" %}
+                        {% trans "Up since yesterday" as region_line %}
+                    {% elif region.trend == "down" %}
+                        {% trans "Down since yesterday" as region_line %}
+                    {% elif region.trend == "same" %}
+                        {% trans "Same as yesterday" as region_line %}
+                    {% else %}
+                        {% trans "Today's level" as region_line %}
+                    {% endif %}
+                    {% if not region.pinned %}
+                        {% blocktrans trimmed with line=region_line asvar region_line %}{{ line }} · not
+                            pinned{% endblocktrans %}
+                    {% endif %}
+                    {% include "includes/_place_link_row.html" with kind="region" title=region.name subtitle=region_line href=region.url open_id=region.region_id day_rating=region.rating announce_level=True testid="today-region-link" only %}
+                    {% if region.resorts %}
+                        <ul class="flex flex-col pb-2">
+                            {% for resort in region.resorts %}
+                                <li data-testid="today-resort" data-resort-uuid="{{ resort.uuid }}">
+                                    {% include "includes/_place_link_row.html" with kind="resort" title=resort.name subtitle="" href=resort.url open_id=resort.slug forecast_icon=resort.icon forecast_temp=resort.temp_max nested=True testid="today-resort-link" only %}
+                                    {% if resort.source and not resort.source.is_same_place %}
+                                        <p
+                                            class="pb-1 pl-16 pr-4 text-meta text-text-3"
+                                            data-testid="today-resort-source"
+                                        >
+                                            {% include "includes/_forecast_source.html" with source=resort.source anchor="resort" only %}
+                                        </p>
+                                    {% endif %}
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p class="py-2 text-sm text-text-2" data-testid="today-empty">
+            {% trans "Pin a region from its bulletin, or a resort with the star on its sheet, to see its danger and weather here every day." %}
+        </p>
+    {% endif %}
+</div>

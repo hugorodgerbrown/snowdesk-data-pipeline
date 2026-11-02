@@ -132,7 +132,11 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  places", matched by name), regions (SNOW-814,
                  ``favourites:region_list``) and resorts (SNOW-1229),
                  the pins and resorts read from favourites.geojson. A
-                 pinned resort is drawn as a blue resort dot, not a star
+                 pinned resort is drawn as a blue resort dot, not a star.
+                 Region pins and resorts also make the Today panel behind
+                 the date row's sun (SNOW-1366, ``favourites:today``,
+                 today.py): today's danger per region, its resorts nested
+                 with their weather, alphabetical
   observations/  Community field reports — the ``FieldObservation`` model and
                  the /partials/report/ submission endpoints
   routes/        Uploaded GPX routes (SNOW-685/686/690) — the ``Route`` model
@@ -843,7 +847,8 @@ Read these when working in the relevant area:
 | Why a desktop map panel opens beside what opened it (selections — region, place, weather, route — in the left column under search via _overlay_sheet.html `side="left"`, map_overlay_bounds.js; roundel and form panels on the right; one object sheet at every width, closeOtherSheets; the bottom-left roundels step aside, the date row stays; no focus ring on a sheet) | [`docs/decisions/a-panel-opens-beside-what-opened-it.md`](docs/decisions/a-panel-opens-beside-what-opened-it.md) |
 | Why a phone map sheet rests at peek, half or full and a desktop one does not (_overlay_sheet.html `detents` / `initial`, data-sheet-peek, data-sheet-drag, data-sheet-detents, sheet_detents_core.js, MapSheet.bindDetents; forms declare none; the sheet covers the map controls and moves none; the region and place sheets are the desktop inset panel, docked left) | [`docs/decisions/sheet-detents-are-phone-only.md`](docs/decisions/sheet-detents-are-phone-only.md) |
 | Why moving between map places keeps the panel up instead of emptying it (MapSheet pending, data-sheet-stale, the desktop morph, open({awaiting}) and data-sheet-handover; the resort/region/weather "bob") | [`docs/decisions/the-panel-stays-up-between-places.md`](docs/decisions/the-panel-stays-up-between-places.md) |
-| Why the map's date-row bell lists your bulletin alerts of the past week and nothing else (map_alerts.js, #map-alerts, /account/alerts/recent/, alert_recent, recent_alerts, alert_list_url, the per-device dot in localStorage) | [`docs/decisions/the-bell-lists-your-alerts.md`](docs/decisions/the-bell-lists-your-alerts.md) |
+| Why today's danger and weather for your pinned regions and resorts is its own panel behind the date row's sun (favourites:today, build_today, TodayRegion / TodayResort, _today.html, _today_surface.html, today_panel.js, window.pwaTodayPanel, #map-today-panel-toggle; resorts nested under their region, alphabetical; dropped pins only on the Favourites panel; no ratings in search; the sun carries the alert dot) | [`docs/decisions/today-is-its-own-panel.md`](docs/decisions/today-is-its-own-panel.md) |
+| HISTORICAL — why the map's date-row bell listed your bulletin alerts of the past week and nothing else (retired by SNOW-1366; map_alerts.js, #map-alerts, /account/alerts/recent/, alert_recent, recent_alerts, alert_list_url, the per-device dot in localStorage) | [`docs/decisions/the-bell-lists-your-alerts.md`](docs/decisions/the-bell-lists-your-alerts.md) |
 | HISTORICAL — why what was true of the map's day sat behind the bell, not as pills (map_day_notes.js and window.pwaDayNotes, removed by SNOW-1333; why the problem-terrain chip went) | [`docs/decisions/notes-about-the-day-sit-behind-a-bell.md`](docs/decisions/notes-about-the-day-sit-behind-a-bell.md) |
 | Compressed-views peak rating rule (choropleth, tooltip, calendar) | [`docs/compressed-views-rating-rule.md`](docs/compressed-views-rating-rule.md) |
 | Why a grouping outline asserts an aggregation (BulletinGrouping, MIN_GROUPED_REGIONS, degenerate(), purge_degenerate_bulletin_groupings; why a day can return zero features) | [`docs/decisions/a-grouping-outline-asserts-an-aggregation.md`](docs/decisions/a-grouping-outline-asserts-an-aggregation.md) |

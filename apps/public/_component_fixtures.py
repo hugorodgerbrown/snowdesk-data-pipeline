@@ -655,68 +655,104 @@ CARD_VARIANTS: tuple[dict[str, Any], ...] = (
 # Rendered via the _status_page_demo.html wrapper template.
 
 
-# SNOW-1359: the Favourites panel's "Today" block, as build_saved_today()
-# hands it to favourites/partials/_saved_today.html — every kind of saved
-# place, one per trend, one with no bulletin and one with no forecast.
-def _saved_today_row(**fields: Any) -> Any:
-    """Build one SavedToday row for the library, defaults filled."""
-    from apps.favourites.saved_today import SavedToday
+# SNOW-1366: the Today panel, as build_today() hands it to
+# favourites/partials/_today.html — a pinned region with two resorts, one
+# reading a point elsewhere; a region listed only for its pinned resort; a
+# pinned region with no bulletin today. Alphabetical, as the panel is.
+def _today_resort(**fields: Any) -> Any:
+    """Build one TodayResort row for the library, defaults filled."""
+    from apps.favourites.today import TodayResort
 
     base: dict[str, Any] = {
         "uuid": "00000000-0000-0000-0000-000000000000",
-        "kind": "pin",
         "name": "",
+        "slug": "",
+        "url": "#",
+        "icon": "partly_cloudy-day.svg",
+        "temp_max": -2.0,
+        "source": None,
+    }
+    base.update(fields)
+    return TodayResort(**base)
+
+
+def _today_region(**fields: Any) -> Any:
+    """Build one TodayRegion row for the library, defaults filled."""
+    from apps.favourites.today import TodayRegion
+
+    base: dict[str, Any] = {
+        "region_id": "CH-4115",
+        "name": "",
+        "url": "#",
+        "pinned": True,
         "level": None,
         "subdivision": "",
         "trend": None,
-        "latitude": 46.1,
-        "longitude": 7.2,
-        "region_id": "CH-4115",
-        "region_url": "#",
-        "icon": "partly_cloudy-day.svg",
-        "temp_max": -2.0,
+        # The tile reads max_rating / max_subdivision off the rating row.
         "rating": None,
-        # The borrowed point, shaped as a NearestForecast reads in
-        # includes/_forecast_source.html.
-        "source": SimpleNamespace(
-            label="Mont Fort", elevation_m=3329, distance_km=2.1, is_same_place=False
-        ),
+        "resorts": [],
     }
     base.update(fields)
-    return SavedToday(**base)
+    return TodayRegion(**base)
 
 
-SAVED_TODAY_VARIANTS: tuple[dict[str, Any], ...] = (
+TODAY_VARIANTS: tuple[dict[str, Any], ...] = (
     {
-        "caption": "Every kind and every trend, most urgent first",
+        "caption": "Regions in name order, their pinned resorts nested",
         "solo": True,
         "context": {
-            "saved_today": [
-                _saved_today_row(
-                    kind="resort", name="Verbier", level="high", trend="up"
-                ),
-                _saved_today_row(
-                    kind="region",
+            "today_date": datetime.date(2026, 11, 2),
+            "today_regions": [
+                _today_region(
+                    region_id="CH-4115",
                     name="Martigny – Verbier",
                     level="considerable",
                     subdivision="+",
-                    trend="same",
-                    latitude=None,
-                    longitude=None,
-                    source=SimpleNamespace(
-                        label="Martigny – Verbier",
-                        elevation_m=2104,
-                        distance_km=0.0,
-                        is_same_place=True,
+                    trend="up",
+                    rating=SimpleNamespace(
+                        max_rating="considerable", max_subdivision="+"
                     ),
+                    resorts=[
+                        _today_resort(
+                            name="Bruson", slug="bruson", icon="light_snow.svg"
+                        ),
+                        _today_resort(
+                            name="Verbier",
+                            slug="verbier",
+                            icon="moderate_snow.svg",
+                            temp_max=-3.0,
+                            source=SimpleNamespace(
+                                label="Mont Fort",
+                                elevation_m=3329,
+                                distance_km=2.1,
+                                is_same_place=False,
+                            ),
+                        ),
+                    ],
                 ),
-                _saved_today_row(
-                    name="Col des Mines", level="moderate", trend="down", temp_max=3.0
+                _today_region(
+                    region_id="CH-2223",
+                    name="Obere Leventina",
+                    pinned=True,
                 ),
-                _saved_today_row(name="Car park", level="low", icon=None, source=None),
-                _saved_today_row(region_id=None, region_url="", temp_max=None),
+                _today_region(
+                    region_id="CH-2211",
+                    name="Südliches Urseren",
+                    pinned=False,
+                    level="moderate",
+                    trend="same",
+                    rating=SimpleNamespace(max_rating="moderate", max_subdivision=""),
+                    resorts=[
+                        _today_resort(name="Andermatt", slug="andermatt", temp_max=1.0)
+                    ],
+                ),
             ],
         },
+    },
+    {
+        "caption": "Nothing pinned yet",
+        "solo": True,
+        "context": {"today_date": datetime.date(2026, 11, 2), "today_regions": []},
     },
 )
 

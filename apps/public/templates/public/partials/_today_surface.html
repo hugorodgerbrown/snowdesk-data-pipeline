@@ -1,0 +1,47 @@
+{% load i18n static %}
+{% comment %}
+public/partials/_today_surface.html — the Today panel (SNOW-1366).
+
+Today's bulletin danger for the regions the reader has pinned, and the
+weather at the resorts they have pinned, each resort nested under its
+region (favourites/partials/_today.html, built by
+apps.favourites.today.build_today). Always today, whatever day the map is
+on: the panel answers "what is it like at my places this morning", and the
+date row beside its trigger is where the map's own day is chosen.
+
+Opened by the sun roundel in the date row (#map-today-panel-toggle in
+_map_embed.html), which it sits beside, so on a desktop it docks in the
+left column under search (``side="left"``), as the region, place and weather
+sheets do; on a phone it docks full width. A roundel panel: no detents, and
+the roundel toggles it (docs/design-system.md, "What opened a map panel
+decides its kind"). A row opens that region's or resort's own sheet in its
+place — one panel at a time — and map_panel_trail.js gives that sheet a back
+pill that reopens Today.
+
+Rendered only for a signed-in reader, the one who can have pinned anything
+(``favourites_eligible``); static/js/today_panel.js drives it.
+
+Context expected:
+  favourites_eligible — bool: the reader is signed in.
+{% endcomment %}
+{% if favourites_eligible %}
+    {% trans "Today" as today_title %}
+    {% include "includes/_overlay_sheet.html" with id="today-sheet" aria_label=today_title scroll_body=True side="left" %}
+    <template id="today-sheet-template">
+        {% include "includes/_sheet_header.html" with title=today_title icon_template="includes/_icon_sun.html" close_action="dismiss" title_class="text-lg font-semibold" %}
+        <p class="pb-3 text-sm text-text-2">
+            {% trans "Today's bulletin for the regions you've pinned, and the weather at your pinned resorts." %}
+        </p>
+        <div
+            class="min-h-0 flex-1 overflow-y-auto"
+            data-today-rows
+            data-today-url="{% url 'favourites:today' %}"
+        >
+            <p class="text-sm text-text-2">{% trans "Loading today…" %}</p>
+        </div>
+    </template>
+    <template id="today-strings-template">
+        <span data-string="error">{% trans "Today could not be loaded. Check your connection and try again." %}</span>
+    </template>
+    <script defer src="{% static 'js/today_panel.js' %}"></script>
+{% endif %}

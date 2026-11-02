@@ -302,6 +302,9 @@ in addition to the shared map assets.
         {# SNOW-1098: the region sheet a map tap opens on a phone. #}
         {% include "public/partials/_region_sheet_surface.html" %}
         {% include "public/partials/_place_sheet_surface.html" %}
+        {# SNOW-1366: the Today panel, opened from the date row's sun. Before  #}
+        {# the trail surface, whose module reopens it from a back pill.        #}
+        {% include "public/partials/_today_surface.html" %}
         {# The back pill between the three place panels (Hugo, 25 Oct 2026). #}
         {% include "public/partials/_panel_trail_surface.html" %}
         {# SNOW-1119: help mode — the "?" roundel names every control and guides #}
@@ -565,9 +568,6 @@ in addition to the shared map assets.
     {# bundle module reads it), which is what                                #}
     {# tests/public/test_map_script_order.py asks of a tag placed here.      #}
     <script defer src="{% static 'js/map_roundel_overlay_state.js' %}"></script>
-    {# SNOW-1333: the date row's bell, the account's alerts of the past    #}
-    {# week. Reads only its own markup and pwaMapOverlays.                  #}
-    <script defer src="{% static 'js/map_alerts.js' %}"></script>
     {# SNOW-1195: the date row's day steps and the scrubber's keys.        #}
     {# Dispatches into map_scrubber.js's         #}
     {# scrub-to and reads getSeasonRatings / COUNTRY_STATE, so after the    #}
