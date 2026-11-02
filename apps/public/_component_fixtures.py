@@ -2340,6 +2340,16 @@ CALLOUT_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
     {
+        # SNOW-1368: the body above a bulletin shown because a newer issue
+        # for the same day did not build.
+        "caption": "Info — a later update could not be processed",
+        "context": {
+            "kind": "info",
+            "heading": "The 24 Oct 06:00 UTC update couldn’t be processed.",
+            "body": "Showing the bulletin issued 23 Oct 15:00 UTC.",
+        },
+    },
+    {
         "caption": "Warning with diagnostic",
         "context": {
             "kind": "warning",

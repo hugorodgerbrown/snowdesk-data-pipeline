@@ -20,14 +20,15 @@ for all three detents:
 
 The body is ``public/partials/_region_body.html`` with its context from
 ``apps.public.views.build_bulletin_body``, and the bulletin is the page's
-own pick — the latest issue forecasting the day — so the sheet and the page
-cannot show different issues or describe them differently. It is usually
-the issue that rated the day, ``RegionDayRating.source_bulletin``, loaded
-with the rating the header already reads (SNOW-1341); one query asks
-whether a newer issue exists, which happens when that newer one failed to
-build (a rating never names a failed build, the page shows its error card;
-Codex on #1361), and then it is the newer one. A day with no rated issue
-asks the page's rule (``_resolve_selected_issue``) instead.
+own pick — the latest issue forecasting the day that built — so the sheet
+and the page cannot show different issues or describe them differently.
+That is the issue that rated the day, ``RegionDayRating.source_bulletin``,
+loaded with the rating the header already reads (SNOW-1341), since a rating
+names only a built issue. One query asks whether a newer issue exists: a
+newer one that failed to build is passed over and named in the body's
+notice (SNOW-1368), and a newer built one, which a rating not yet
+recomputed can miss, is shown. A day with no rated issue asks the page's
+rule (``_resolve_selected_pick``) instead.
 
 The body is the same for every reader but staff (SNOW-1317), so the copy
 an area download keeps unstamped (SNOW-1312) is sound to serve to whoever
@@ -61,6 +62,7 @@ from django.utils.cache import patch_cache_control
 
 from apps.bulletins.models import Bulletin, RegionDayRating
 from apps.bulletins.services.coverage import covered_region_ids
+from apps.bulletins.services.selection import select_default_pick
 from apps.core.decorators import require_htmx
 from apps.ingest.public import TerrainRule
 from apps.public.api import _PROVIDER_BY_COUNTRY, COUNTRY_NAMES
@@ -74,7 +76,7 @@ from apps.public.problem_terrain import (
 from apps.public.views import (
     _DANGER_PANEL_META,
     _issues_for_date,
-    _resolve_selected_issue,
+    _resolve_selected_pick,
     build_bulletin_body,
 )
 from apps.regions.models import MicroRegion, Resort
@@ -165,27 +167,30 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
     )
 
     # The issue that rated the day came with the rating (SNOW-1341), and is
-    # the page's pick unless a newer issue forecasts the day — one whose
-    # build failed, which no rating names; the page shows that one's error
-    # card, so the sheet must too. A day with no rated issue may still have
-    # one the page shows, so then the page's rule picks.
+    # the page's pick: a rating names only a built issue, and the page now
+    # prefers the latest built one too (SNOW-1368). Any newer issues are
+    # run through the page's own rule with it: the latest of them that built
+    # is shown (a rating not yet recomputed), and the newest one after that
+    # which did not build is named in the body's notice. A day with no rated
+    # issue may still have one the page shows, so the page's rule picks.
     selected: Bulletin | None = day_rating.source_bulletin if day_rating else None
+    skipped: Bulletin | None = None
     if selected is not None:
-        newer = (
-            Bulletin.objects.for_target_date(target_date)
-            .filter(regions=region, valid_from__gt=selected.valid_from)
-            .order_by("-valid_from")
-            .first()
+        newer = list(
+            Bulletin.objects.for_target_date(target_date).filter(
+                regions=region, valid_from__gt=selected.valid_from
+            )
         )
-        selected = newer or selected
+        if newer:
+            selected, skipped = select_default_pick([selected, *newer], target_date)
     else:
-        selected = _resolve_selected_issue(
+        selected, skipped = _resolve_selected_pick(
             _issues_for_date(region, target_date), target_date, None
         )
 
     level_meta = _DANGER_PANEL_META.get(day_rating.max_rating) if day_rating else None
 
-    body = build_bulletin_body(request, region, target_date, selected)
+    body = build_bulletin_body(request, region, target_date, selected, skipped)
     # SNOW-1374: no switch and no key for a reader outside the flag. The
     # sheet now differs by reader here too; the worker's per-device copy
     # can only ever have been fetched by someone using this device, and a

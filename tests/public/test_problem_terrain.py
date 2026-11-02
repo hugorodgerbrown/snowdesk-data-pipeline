@@ -249,25 +249,52 @@ class TestPayload:
         assert payload["regions"] == {region.region_id: key}
         assert payload["bulletins"] == {key: [WIND_SLAB_RULE]}
 
-    def test_a_failed_morning_update_is_served_as_the_page_shows_it(
+    def test_a_failed_morning_update_falls_back_to_the_evening(
         self, settings: Any
     ) -> None:
-        """Codex on #1361: evening built, morning failed — the morning's rules.
+        """SNOW-1368: evening built, morning failed — the evening's rules.
 
-        No rating names a failed build, so the day stays rated from the
-        evening issue, while the page shows the morning update's error
-        card. The feed follows the page: the morning issue, with no rules.
+        The page now shows the day's latest built issue, the one the rating
+        names, so the feed serves its rules rather than the failed
+        morning's empty list (which painted every steep pixel undescribed).
         """
         settings.TERRAIN_CLASS_TILE_URL = _TILES
         today = timezone.localdate()
         region = MicroRegionFactory.create()
-        evening, morning = _evening_and_failed_morning(today, region)
+        evening, _ = _evening_and_failed_morning(today, region)
         rating = RegionDayRating.objects.get(region=region, date=today)
         assert rating.source_bulletin_id == evening.pk
         payload = build_problem_terrain_payload(today)
-        key = str(morning.bulletin_id)
+        key = str(evening.bulletin_id)
         assert payload["regions"] == {region.region_id: key}
-        assert payload["bulletins"] == {key: []}
+        assert payload["bulletins"][key] != []
+
+    def test_a_region_with_only_failed_issues_is_left_out(self, settings: Any) -> None:
+        """SNOW-1368: nothing built, nothing described — keep the fill."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        today = timezone.localdate()
+        region = MicroRegionFactory.create()
+        start = datetime.datetime.combine(today, datetime.time(6), tzinfo=datetime.UTC)
+        failed = BulletinFactory.create(
+            issued_at=start,
+            valid_from=start,
+            valid_to=start + datetime.timedelta(hours=9),
+        )
+        RegionBulletinFactory.create(bulletin=failed, region=region)
+        payload = build_problem_terrain_payload(today)
+        assert region.region_id not in payload["regions"]
+
+    def test_a_stale_issue_is_treated_as_unbuilt(self, settings: Any) -> None:
+        """A render model below the current version is passed over too."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        today = timezone.localdate()
+        region = MicroRegionFactory.create()
+        evening, morning = _evening_and_failed_morning(today, region)
+        Bulletin.objects.filter(pk=morning.pk).update(
+            render_model_version=RENDER_MODEL_VERSION - 1
+        )
+        payload = build_problem_terrain_payload(today)
+        assert payload["regions"] == {region.region_id: str(evening.bulletin_id)}
 
     def test_empty_while_the_tiles_are_unconfigured(self, settings: Any) -> None:
         """The terrain filter's own gate."""
