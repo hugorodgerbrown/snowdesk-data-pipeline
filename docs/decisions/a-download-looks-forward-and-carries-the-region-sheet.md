@@ -1,8 +1,8 @@
 ---
 name: a-download-looks-forward-and-carries-the-region-sheet
-description: Why an area download saves forward days only and carries the region and resort sheets ('public-partial', path + d key, X-SW-Offline-Miss)
+description: Why an area download saves forward days and carries region/resort sheets ('public-partial', path + d) and problemTerrainUrls
 status: current
-last-reviewed: 2026-10-30
+last-reviewed: 2026-11-02
 ---
 
 # A download looks forward, and carries the region sheet
@@ -65,6 +65,21 @@ the warm, the offline-miss 504 and its "This day isn't downloaded" line.
 box), both validators require it, and `areaContentURLs` composes
 `resortSheetUrls`, one per resort and forward day, which the run tallies
 like the region sheets.
+
+## Amended 2026-11-02 by SNOW-1379: the problem-terrain feed joins it
+
+An area downloaded with terrain tiles (the record's `terrain` flag) whose
+regions include one in a terrain country (CH) also saves the
+problem-terrain feed, `/api/problem-terrain/?d=<day>`, once per forward
+day: `areaContentURLs` takes a `terrain` option and composes
+`problemTerrainUrls`, which both callers warm and tally. The feed joins
+`PUBLIC_JSON_PATH` in both copies — exact url, unstamped, as the weather
+sheet — because, like `/api/ratings/`, its url carries the date and no
+account. map.js's `refreshBulletinTerrainDay` is unchanged: offline with
+no copy it paints nothing and the region keeps its trace and edge band.
+The urls ride the stamped expectation (`withProblemTerrain`,
+`items.problemTerrain`), signed out too, so the `/offline/` panel's
+Conditions stage can count the days saved on a "Problem terrain" line.
 
 ## Why path + `d`, and only for this sheet
 
