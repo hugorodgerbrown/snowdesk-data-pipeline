@@ -281,8 +281,15 @@ def fetch_meteofrance_bulletin(
     )
 
     if session is None:
-        session = dpbra_session(api_key)
-    response = session.get(url, timeout=REQUEST_TIMEOUT)
+        # A lone call owns its one-off session, so it closes it too; the
+        # walk passes its own and closes that when the walk ends.
+        own = dpbra_session(api_key)
+        try:
+            response = own.get(url, timeout=REQUEST_TIMEOUT)
+        finally:
+            own.close()
+    else:
+        response = session.get(url, timeout=REQUEST_TIMEOUT)
 
     if response.status_code == 404:
         logger.debug("No bulletin for massif %d today (404)", massif_id)

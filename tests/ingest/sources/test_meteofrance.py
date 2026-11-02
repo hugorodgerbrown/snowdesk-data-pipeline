@@ -138,11 +138,27 @@ class TestFetchMeteofrance:
         assert "/massif/3/BRA" in session.get.call_args[0][0]
 
     def test_builds_a_dpbra_session_when_none_given(self) -> None:
-        """A lone call still goes through a keyed dpbra_session."""
+        """A lone call goes through a keyed dpbra_session and closes it."""
         with patch("apps.ingest.sources.meteofrance.dpbra_session") as build:
             build.return_value.get.return_value = _mock_404()
             fetch_meteofrance_bulletin(1, "https://api.example.com", "my-key")
         build.assert_called_once_with("my-key")
+        build.return_value.close.assert_called_once_with()
+
+    def test_a_lone_call_closes_its_session_when_the_request_fails(self) -> None:
+        """The one-off session is closed even when the request raises."""
+        with patch("apps.ingest.sources.meteofrance.dpbra_session") as build:
+            build.return_value.get.side_effect = requests.ConnectionError("refused")
+            with pytest.raises(requests.ConnectionError):
+                fetch_meteofrance_bulletin(1, "https://api.example.com", "my-key")
+        build.return_value.close.assert_called_once_with()
+
+    def test_a_given_session_is_left_open(self) -> None:
+        """A session the caller passes is the caller's to close."""
+        session = MagicMock()
+        session.get.return_value = _mock_404()
+        fetch_meteofrance_bulletin(1, "https://api.example.com", "k", session=session)
+        session.close.assert_not_called()
 
     def test_raises_when_no_api_key_and_live_url(self) -> None:
         """An empty api_key with a live URL raises RuntimeError."""
