@@ -465,6 +465,9 @@
     // ON by default (seeded below) — see OVERLAY_STORAGE_KEY.ski_tours.
     ski_tours: false,
     ski_summits: false,
+    // SNOW-1384: off by default (seeded below); window.pwaRestZones is its
+    // one writer.
+    rest_zones: false,
   };
 
   // SNOW-656: the Bulletins row's live state — the persisted preference plus
@@ -578,6 +581,8 @@
   // SNOW-1285: the two ski-touring parts, on unless switched off.
   overlayState.ski_tours = SKI_ROUTES_ELIGIBLE && readBoolStorage(OVERLAY_STORAGE_KEY.ski_tours, true);
   overlayState.ski_summits = SKI_ROUTES_ELIGIBLE && readBoolStorage(OVERLAY_STORAGE_KEY.ski_summits, true);
+  // SNOW-1384: the wildlife rest zones, off unless switched on.
+  overlayState.rest_zones = SKI_ROUTES_ELIGIBLE && readBoolStorage(OVERLAY_STORAGE_KEY.rest_zones, false);
   // 2026-10-23: "By bulletin" left the terrain filter for a row of its own,
   // "Highlight problem terrain". A device that left the filter switched on
   // in that colour comes back with problem terrain on and the filter off,
@@ -7927,9 +7932,15 @@
   //     classes at ROUTE_SLOPE_MINZOOM (z14).
   //   ski_routes — SAC's summits and tours from SKI_TOURING_MINZOOM (z9).
   //     Named only on a page that has the layers.
+  //   rest_zones — FOEN's wildlife rest zones from REST_ZONES_MINZOOM
+  //     (z11, SNOW-1384), on the same pages as ski_routes.
+  // rest_zones_core.js's MINZOOM, which loads after this file and so cannot
+  // be read here; tests/js/test_map_rest_zone_tap.js holds the two equal.
+  const REST_ZONES_MINZOOM = 11;
   const ZOOM_GATES = Object.freeze([
     Object.freeze({ key: 'region_select', zoom: REGION_SELECT_MAXZOOM, upTo: true }),
     ...(SKI_ROUTES_ELIGIBLE ? [Object.freeze({ key: 'ski_routes', zoom: SKI_TOURING_MINZOOM })] : []),
+    ...(SKI_ROUTES_ELIGIBLE ? [Object.freeze({ key: 'rest_zones', zoom: REST_ZONES_MINZOOM })] : []),
     Object.freeze({ key: 'terrain_filter', zoom: TERRAIN_CORE ? TERRAIN_CORE.MIN_ZOOM : 12 }),
     Object.freeze({ key: 'route_slopes', zoom: ROUTE_SLOPE_MINZOOM }),
   ]);
@@ -10601,7 +10612,7 @@
     // marker-vs-region, with no cross-handler ordering races.
     //
     // Priority: overlay controls > markers (exclusion zone) > resort pin >
-    // region fill > empty-area deselect.
+    // wildlife rest zone (SNOW-1384) > region fill > empty-area deselect.
     map.on('click', (e) => {
       // SNOW-1256: while a route is being drawn, a tap on the map is a
       // waypoint and nothing else — route_draw.js owns it. Without this a
@@ -10719,6 +10730,16 @@
       const features = layers.length
         ? map.queryRenderedFeatures(e.point, { layers })
         : [];
+
+      // SNOW-1384: a tap inside a wildlife rest zone opens the zone, and
+      // the region under it is not selected as well. A resort pin over the
+      // zone outranks it, as it outranks the region: the pin is the smaller
+      // target. Before the empty-map deselect below, because a zone can sit
+      // outside every region the map draws. Not during playback, which
+      // changes no selection either.
+      const resortUnderTap = resortFromWeather
+        || features.find((f) => f.layer.id === 'resorts-pin');
+      if (!resortUnderTap && !IS_PLAYING && window.pwaRestZones?.tap?.(e.point)) return;
 
       if (features.length === 0 && !resortFromWeather) {
         // Genuine tap on empty map area (outside any region) — deselects the
@@ -11695,6 +11716,7 @@
       overlayState.community_reports = readBoolStorage(OVERLAY_STORAGE_KEY.community_reports, true);
       overlayState.ski_tours = readSkiTouringPart('ski_tours');
       overlayState.ski_summits = readSkiTouringPart('ski_summits');
+      overlayState.rest_zones = SKI_ROUTES_ELIGIBLE && readBoolStorage(OVERLAY_STORAGE_KEY.rest_zones, false);
       // l1, l2, l4 and bulletins are re-seeded before any install fn runs: the
       // fill's layout is derived from l4 and bulletins, and the bulletin
       // boundary's visibility from bulletins alone rather than a key of its

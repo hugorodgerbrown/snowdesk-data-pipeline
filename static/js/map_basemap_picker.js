@@ -143,6 +143,8 @@
     // SNOW-1285: ski touring's two parts, under the "SAC ski touring" master.
     ski_tours: () => window.pwaSkiRoutes && window.pwaSkiRoutes.tours,
     ski_summits: () => window.pwaSkiRoutes && window.pwaSkiRoutes.summits,
+    // SNOW-1384: the wildlife rest zones, owned by static/js/rest_zones.js.
+    rest_zones: () => window.pwaRestZones,
   };
 
   // The two rows that need an account, and the sentence each hands off
