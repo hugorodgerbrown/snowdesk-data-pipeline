@@ -26,6 +26,7 @@ z  4    5    6    7    8    9   10   11   12   13   14   15 … 18
    region outline ...............................................  every zoom
    region fill ......................|fades 8.5→10, then an 8% trace (SNOW-1375)
                                   region edge band + "3 · Name" label 10 →
+                                  region chip (map-region-chip) 10 →, slopes line 12 → (SNOW-1376)
    major-region labels  [5–7)
                   sub-region labels [7–8.5)
                             region labels [8.5–10)

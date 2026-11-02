@@ -2903,3 +2903,30 @@ def test_the_search_dropdown_draws_only_with_tokens() -> None:
 
     assert not re.search(r"var\(--(ink|muted|border|paper)\)", block)
     assert not re.search(r"#[0-9a-fA-F]{3,8}\b", block)
+
+
+@pytest.mark.django_db
+def test_region_chip_renders_hidden_with_its_strings() -> None:
+    """SNOW-1376: the chip and its strings render on every map page, hidden.
+
+    map_region_chip.js shows it from z10 once there is a region and a
+    rating; there is no setting that hides it outright.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    chip = content[content.index('id="map-region-chip"') - 40 :]
+    chip = chip[: chip.index("</button>")]
+    assert "hidden" in chip
+    assert 'class="danger-tile map-region-chip-level"' in chip
+    strings = content[content.index('id="map-region-chip-strings-template"') :]
+    strings = strings[: strings.index("</template>")]
+    for text in (
+        "slopes",
+        "Slopes are drawn in Switzerland only",
+        "Your filter",
+        "Open the region",
+    ):
+        assert text in strings
+    # The chip sits in the bottom-left stack, just above the date row.
+    assert content.index('id="map-region-chip"') < content.index('id="map-date-row"')
+    assert "js/map_region_chip_core.js" in content
+    assert "js/map_region_chip.js" in content
