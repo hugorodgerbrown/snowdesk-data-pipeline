@@ -14,6 +14,7 @@ below (SNOW-1249):
   WEATHER_BACKFILL_FLOOR (the earliest day the backfill asks for)
   WHAT3WORDS_API_BASE_URL, WHAT3WORDS_API_KEY, WHAT3WORDS_FAKE
   SWISSTOPO_STAC_URL (the ski-touring GeoPackage's STAC host)
+  GEO_ADMIN_API_URL (the MapServer the wildlife rest zones are read from)
   TERRAIN_TILE_BASE_URL (the terrain model a tour is walked against)
   FEED_MAX_LIMIT, FEED_SKI_TOURS_MAX_LIMIT (the most rows one v2 feed
       page holds — apps/ingest/api/paging.py)

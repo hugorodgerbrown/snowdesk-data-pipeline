@@ -56,6 +56,7 @@ from apps.ingest.models import (
     SourceLocation,
     SourcePass,
     SourceResort,
+    SourceRestZone,
     SourceSkiSegment,
     SourceSkiTour,
     SourceWeather,
@@ -72,7 +73,7 @@ from apps.regions.models import (
     SubRegion,
 )
 from apps.regions.services.basemap_tiles import MICRO_BAND, build_blob
-from apps.routes.models import Route, RouteShare, SkiSegment, SkiTour
+from apps.routes.models import RestZone, Route, RouteShare, SkiSegment, SkiTour
 from apps.trips.models import Trip, TripParticipant
 from apps.weather.models import Weather
 from track.render import build_track_render
@@ -429,6 +430,50 @@ def _ski_line(n: int) -> dict[str, Any]:
         "type": "MultiLineString",
         "coordinates": [[[lon, lat], [lon + 0.002, lat + 0.001]]],
     }
+
+
+def _rest_zone_polygon(n: int) -> dict[str, Any]:
+    """A small square near the Silvrettahütte, offset by ``n`` (SNOW-1263)."""
+    lon, lat = 10.05 + n * 0.01, 46.86
+    ring = [[lon, lat], [lon + 0.005, lat], [lon + 0.005, lat + 0.005], [lon, lat]]
+    return {"type": "MultiPolygon", "coordinates": [[ring]]}
+
+
+def _ring_edge(geometry: dict[str, Any], axis: int, pick: Any) -> float:
+    """One edge of a MultiPolygon's first ring: ``pick`` over ``axis``."""
+    return float(pick(point[axis] for point in geometry["coordinates"][0][0]))
+
+
+def rest_zone_document(n: int) -> dict[str, Any]:
+    """A rest-zone document as ``rest_zone_document()`` builds it (SNOW-1263)."""
+    return {
+        "feature_id": 30000 + n,
+        "name": f"Zone {n}",
+        "binding": True,
+        "status": {"de": "rechtsverbindlich", "fr": "contraignant", "it": "vincolante"},
+        "restriction_code": "R20",
+        "restriction": {"de": "Zutrittsverbot", "fr": "Interdiction", "it": "Divieto"},
+        "period": "21.12. - 30.04.",
+        "basis": "Nutzungsplanung",
+        "decided": "2001",
+        "note": "",
+        "canton": "GR",
+        "url": None,
+        "geometry": _rest_zone_polygon(n),
+    }
+
+
+class SourceRestZoneFactory(factory.django.DjangoModelFactory[SourceRestZone]):
+    """Factory for ingest's SourceRestZone — one FOEN rest zone (SNOW-1263)."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = SourceRestZone
+
+    slug = factory.Sequence(lambda n: f"zone-{n}-{30000 + n}")
+    document = factory.Sequence(rest_zone_document)
+    content_hash = factory.LazyAttribute(lambda obj: content_hash(obj.document))
 
 
 class SourceSkiSegmentFactory(factory.django.DjangoModelFactory[SourceSkiSegment]):
@@ -1489,3 +1534,29 @@ def weather_rows_from_days(
             WeatherFactory.create(location=location, observed_on=observed_on, **fields)
         )
     return rows
+
+
+class RestZoneFactory(factory.django.DjangoModelFactory[RestZone]):
+    """Factory for RestZone — a synced FOEN rest zone (SNOW-1263).
+
+    Its bounding box is the default square's; a test placing a zone
+    elsewhere passes ``geometry`` and the four edges together.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = RestZone
+
+    source_uuid = factory.LazyFunction(uuid.uuid4)
+    source_updated_at = factory.LazyFunction(django_timezone.now)
+    feature_id = factory.Sequence(lambda n: 30000 + n)
+    name = factory.Sequence(lambda n: f"Zone {n}")
+    binding = True
+    period = "21.12. - 30.04."
+    canton = "GR"
+    geometry = factory.LazyFunction(lambda: _rest_zone_polygon(0))
+    west = factory.LazyAttribute(lambda o: _ring_edge(o.geometry, 0, min))
+    south = factory.LazyAttribute(lambda o: _ring_edge(o.geometry, 1, min))
+    east = factory.LazyAttribute(lambda o: _ring_edge(o.geometry, 0, max))
+    north = factory.LazyAttribute(lambda o: _ring_edge(o.geometry, 1, max))

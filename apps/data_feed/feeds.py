@@ -41,6 +41,7 @@ from apps.ingest.public import (
     LOCATIONS_FEED,
     PASSES_FEED,
     RESORTS_FEED,
+    REST_ZONES_FEED,
     SKI_NETWORK_FEED,
     SKI_TOURS_FEED,
     WEATHER_FEED_V2,
@@ -177,8 +178,9 @@ FEEDS: dict[str, Feed] = {
 # own ids, tombstones included. ``weather`` is SNOW-1253's; ``locations``,
 # ``passes`` and ``resorts`` SNOW-1271's; ``day-ratings`` SNOW-1270's, keyed
 # by region code and day; ``ski-network`` and ``ski-tours`` SNOW-1276's,
-# swisstopo's lines; ``bulletins`` is v1's feed, served here too so one
-# v2 token reads the whole service (SNOW-1272). v1 stays served until
+# swisstopo's lines; ``rest-zones`` SNOW-1263's, FOEN's polygons;
+# ``bulletins`` is v1's feed, served here too so one v2 token reads the
+# whole service (SNOW-1272). v1 stays served until
 # staging's pull has moved to pull_reference_data.
 FEEDS_V2: dict[str, Feed] = {
     "bulletins": BULLETINS_FEED_V2,
@@ -189,4 +191,5 @@ FEEDS_V2: dict[str, Feed] = {
     "day-ratings": DAY_RATINGS_FEED,
     "ski-network": SKI_NETWORK_FEED,
     "ski-tours": SKI_TOURS_FEED,
+    "rest-zones": REST_ZONES_FEED,
 }

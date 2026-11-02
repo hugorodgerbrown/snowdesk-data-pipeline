@@ -23,6 +23,7 @@ from apps.ingest.models import (
     SourceLocation,
     SourcePass,
     SourceResort,
+    SourceRestZone,
     SourceWeather,
     content_hash,
 )
@@ -31,6 +32,7 @@ from tests.factories import (
     SourceLocationFactory,
     SourcePassFactory,
     SourceResortFactory,
+    SourceRestZoneFactory,
     SourceWeatherFactory,
 )
 
@@ -163,7 +165,10 @@ class TestSourceWeather:
 class TestSourceDocument:
     """SourcePass and SourceResort share the document shape (SNOW-1271)."""
 
-    @pytest.mark.parametrize("factory_class", [SourcePassFactory, SourceResortFactory])
+    @pytest.mark.parametrize(
+        "factory_class",
+        [SourcePassFactory, SourceResortFactory, SourceRestZoneFactory],
+    )
     def test_to_string_is_the_slug_marked_when_tombstoned(
         self, factory_class: Any
     ) -> None:
@@ -173,12 +178,18 @@ class TestSourceDocument:
         row.deleted_at = timezone.now()
         assert row.to_string() == "verbier (deleted)"
 
-    @pytest.mark.parametrize("model", [SourcePass, SourceResort])
-    def test_live_and_tombstoned_split_the_table(self, model: Any) -> None:
+    @pytest.mark.parametrize(
+        ("model", "factory_class"),
+        [
+            (SourcePass, SourcePassFactory),
+            (SourceResort, SourceResortFactory),
+            (SourceRestZone, SourceRestZoneFactory),
+        ],
+    )
+    def test_live_and_tombstoned_split_the_table(
+        self, model: Any, factory_class: Any
+    ) -> None:
         """``live()`` is what a host still curates; ``tombstoned()`` the rest."""
-        factory_class = (
-            SourcePassFactory if model is SourcePass else SourceResortFactory
-        )
         live = factory_class.create()
         gone = factory_class.create(deleted_at=timezone.now())
         assert list(model.objects.live()) == [live]

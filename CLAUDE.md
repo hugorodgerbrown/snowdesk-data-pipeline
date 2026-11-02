@@ -74,6 +74,9 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  SourceSkiTour are swisstopo's ski-touring network and
                  SAC's tours, imported weekly by import_ski_tours and
                  served at /api/data/v2/ski-{network,tours}/ (SNOW-1276).
+                 SourceRestZone holds FOEN's wildlife rest zones,
+                 imported weekly by import_rest_zones and served at
+                 /api/data/v2/rest-zones/ (SNOW-1263).
                  Read
                  docs/decisions/ingestion-is-a-rehostable-unit.md before
                  importing from it
@@ -822,6 +825,7 @@ Read these when working in the relevant area:
 | Why a field observation's address is owner-only (observation_list vs community_reports_geojson, the 3m square vs the rounded coordinate) | [`docs/decisions/an-address-is-owner-only-on-observations.md`](docs/decisions/an-address-is-owner-only-on-observations.md) |
 | Why a route drawn on the map is an ordinary Route (Route.source DRAWN, drawn.clean_waypoints / draft_route, routes:draw_preview answering the routes layer's own Feature, routes:create_drawn, routes:gpx, estimate_duration_s and `estimate_s`, the route_drawing flag on minting surfaces only, route_draw.js / route_draw_core.js, the swisstopo ski-routes guide) | [`docs/decisions/a-drawn-route-is-a-route.md`](docs/decisions/a-drawn-route-is-a-route.md) |
 | Why an SAC ski tour is a template for a route (SkiTour, Route.source SKI_TOUR, ski_tour_uuid, save_ski_tour, build_summits and the summit as a label, a tap opening the nearest tour (nearestTour), runs_reversed and a way down from its top, /api/ski-tours.geojson and its ?overview=1 (tour_overview), the Ski touring layer's Tours and Summits switches (OVERLAY_LAYERS.ski_tours / ski_summits, swisstopo's raster removed), routes:ski_tour_feature / ski_tour_terrain / ski_tour_save, terrain_pending and SkiTour.slope_samples, window.pwaSkiTourRoute, ski_tours.js, the Find / Create / Upload rows) | [`docs/decisions/an-sac-tour-is-a-template-for-a-route.md`](docs/decisions/an-sac-tour-is-a-template-for-a-route.md) |
+| Why the wildlife rest zones are imported all or nothing and keyed by feature id (import_rest_zones, SourceRestZone, RestZone, fetch_all_cantons, RestZoneImportError, collect_documents, rest_zone_uuid, /api/data/v2/rest-zones/) | [`docs/decisions/rest-zones-are-imported-whole.md`](docs/decisions/rest-zones-are-imported-whole.md) |
 | Why the pure track maths is a root package and the service renders SAC tours (track/ — geo, terrain, terrain_grid, slope_samples, legs, render, sac; no Django, no apps.*; render_fingerprint, same_render, fp; SourceSkiTour slope_samples / track_render / render_input_fp; render_ski_tours; the v2 ski-tours feed carries the drawing) | [`docs/decisions/pure-track-maths-is-a-package.md`](docs/decisions/pure-track-maths-is-a-package.md) |
 | Why a track is rendered once and stored (track_render on Route, Trip and SkiTour; build_track_render, store_terrain as the one writer of slope_samples, current_render, stamp_render / stamped_fields, cleared_terrain, TRACK_RENDER_VERSION, rebuild_track_renders --commit as a Deploy-Step; drawn_tours / leg_lines for the tours layer) | [`docs/decisions/a-track-is-rendered-once-and-stored.md`](docs/decisions/a-track-is-rendered-once-and-stored.md) |
 | Why a followed-but-unclaimed route share lives in the session (and what it widens) | [`docs/decisions/route-share-pending-claim-in-session.md`](docs/decisions/route-share-pending-claim-in-session.md) |

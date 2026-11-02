@@ -21,6 +21,10 @@ Defines four models:
   (every other instance), never edited here. Each row carries its line's
   bounding box, so "what crosses this map view" is four comparisons.
 
+- ``RestZone`` (SNOW-1263): the same kind of copy of FOEN's wildlife rest
+  zones, filled by ``import_rest_zones`` or ``pull_reference_data`` and
+  carrying its polygon's bounding box.
+
 The uploaded ``.gpx`` is parsed and discarded — there is no ``FileField``
 here and no copy of the original on disk. See
 ``docs/decisions/gpx-uploads-are-parsed-not-stored.md`` for why.
@@ -831,6 +835,90 @@ class SkiTour(_SkiLine):
     def to_string(self) -> str:
         """Return ``<name> (<grade>)``, or the name alone when ungraded."""
         return f"{self.name} ({self.grade})" if self.grade else self.name
+
+    def __str__(self) -> str:
+        """Return ``to_string()``."""
+        return self.to_string()
+
+
+# ---------------------------------------------------------------------------
+# Wildlife rest zones (SNOW-1263)
+# ---------------------------------------------------------------------------
+
+
+class RestZoneQuerySet(SkiLineQuerySet):
+    """Custom queryset for RestZone.
+
+    Inherits ``intersecting``, the indexed, edge-inclusive bounding-box
+    prefilter: a zone whose box touches the rectangle is returned even when
+    its polygon misses it, so an exact test runs on the candidates only.
+    """
+
+    def binding(self) -> RestZoneQuerySet:
+        """Return the legally binding zones, leaving out the recommended ones.
+
+        Returns:
+            The filtered queryset.
+
+        """
+        return self.filter(binding=True)
+
+
+class RestZone(BaseModel):
+    """One of FOEN's wildlife rest zones (Wildruhezonen), synced from the service.
+
+    A copy of the reference-data service's ``SourceRestZone``, applied by
+    ``apps/routes/services/ski_network.py`` from the v2 ``rest-zones`` feed
+    (SNOW-1263). Nobody owns one and nothing a user owns points at one, so a
+    zone FOEN drops is deleted here. ``period`` is FOEN's text ("21.12. -
+    30.04."), kept as published; ``binding`` is False for a zone that is
+    only recommended.
+    """
+
+    source_uuid = models.UUIDField(
+        unique=True, help_text="The reference-data service's id for this zone."
+    )
+    source_updated_at = models.DateTimeField(
+        help_text="When the service last changed the item this row copies."
+    )
+    feature_id = models.PositiveIntegerField(help_text="geo.admin's feature id.")
+    name = models.CharField(max_length=255)
+    binding = models.BooleanField(
+        help_text="Legally binding (rechtsverbindlich); False when recommended."
+    )
+    restriction = models.JSONField(
+        default=dict, help_text="FOEN's restriction by language (de, fr, it)."
+    )
+    period = models.CharField(
+        max_length=64, blank=True, default="", help_text="The protected period."
+    )
+    canton = models.CharField(max_length=2, blank=True, default="")
+    url = models.URLField(
+        max_length=500, blank=True, default="", help_text="The canton's rules page."
+    )
+    geometry = models.JSONField(
+        help_text="The zone as a WGS84 GeoJSON Polygon or MultiPolygon."
+    )
+    west = models.FloatField(help_text="Bounding box: western longitude.")
+    south = models.FloatField(help_text="Bounding box: southern latitude.")
+    east = models.FloatField(help_text="Bounding box: eastern longitude.")
+    north = models.FloatField(help_text="Bounding box: northern latitude.")
+
+    objects = RestZoneQuerySet.as_manager()
+
+    class Meta(BaseModel.Meta):
+        """Model metadata."""
+
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(
+                fields=["west", "east", "south", "north"], name="routes_restzone_bbox"
+            ),
+        ]
+
+    def to_string(self) -> str:
+        """Return ``<name> (<canton>)``, or the name alone when no canton."""
+        return f"{self.name} ({self.canton})" if self.canton else self.name
 
     def __str__(self) -> str:
         """Return ``to_string()``."""

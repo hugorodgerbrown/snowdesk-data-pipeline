@@ -20,6 +20,9 @@ or deleted here.
 * ``SourceSkiSegmentAdmin`` and ``SourceSkiTourAdmin`` — swisstopo's
   ski-touring network and SAC's tours (SNOW-1276), imported weekly by
   ``import_ski_tours``; a wrong line is swisstopo's to correct.
+* ``SourceRestZoneAdmin`` — FOEN's wildlife rest zones (SNOW-1263),
+  imported weekly by ``import_rest_zones``; a wrong zone is FOEN's to
+  correct.
 * ``SourceDayRatingAdmin`` — the service's day ratings (SNOW-1270),
   computed from its bulletins; a wrong one is fixed by fixing the rule.
 """
@@ -38,6 +41,7 @@ from .models import (
     SourceLocation,
     SourcePass,
     SourceResort,
+    SourceRestZone,
     SourceSkiSegment,
     SourceSkiTour,
     SourceWeather,
@@ -212,6 +216,11 @@ class SourceSkiTourAdmin(_SourceDocumentAdmin):
         "slope_samples",
         "track_render",
     )
+
+
+@admin.register(SourceRestZone)
+class SourceRestZoneAdmin(_SourceDocumentAdmin):
+    """Read-only admin for FOEN's wildlife rest zones (SNOW-1263)."""
 
 
 @admin.register(SourceDayRating)
