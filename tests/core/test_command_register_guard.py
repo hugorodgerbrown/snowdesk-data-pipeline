@@ -115,10 +115,12 @@ def test_mcp_runnable_commands_are_pinned() -> None:
         if getattr(load_command_class(app, name), "mcp_runnable", False)
     )
     assert runnable == [
+        "backfill_crossed_regions",
         "backfill_weather",
         "diagnose_region_coverage",
         "fetch_bulletins",
         "fetch_weather",
+        "import_rest_zones",
         "link_region_centroid_locations",
         "link_resort_locations",
         "mirror_reference_data",
