@@ -321,7 +321,8 @@ def snippet(text: str, terms: Iterable[str]) -> str:
     starts = [lowered.find(term) for term in wanted if lowered.find(term) >= 0]
     start = max(0, min(starts) - 60) if starts else 0
     cut = flat[start : start + _SNIPPET_CHARS]
-    return ("…" if start else "") + cut + "…"
+    tail = "…" if start + _SNIPPET_CHARS < len(flat) else ""
+    return ("…" if start else "") + cut + tail
 
 
 # ---------------------------------------------------------------------------
@@ -429,7 +430,8 @@ class _TextExtractor(HTMLParser):
         """Track skipped regions, headings and block breaks."""
         if tag in self._SKIP:
             self._skip_depth += 1
-        elif tag == "title":
+        elif tag == "title" and not self._skip_depth:
+            # An SVG figure's <title> is a tooltip, not the page's.
             self._in_title = True
         elif tag == "meta" and dict(attrs).get("name") == "description":
             self.description = dict(attrs).get("content") or ""

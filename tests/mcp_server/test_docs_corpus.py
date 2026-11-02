@@ -106,6 +106,14 @@ class TestHtmlText:
         ]
 
 
+def test_an_svg_title_is_not_the_page_title() -> None:
+    """A figure's <title> before the page's h1 does not title the page."""
+    page = html_text(
+        "<body><svg><title>Tooltip</title></svg><h1>Real</h1><p>x</p></body>"
+    )
+    assert page.title == "Real"
+
+
 class TestSearch:
     """BM25 over sections."""
 
@@ -172,6 +180,12 @@ class TestSnippet:
         text = "word " * 100 + "needle " + "word " * 100
         cut = snippet(text, ["needle"])
         assert cut.startswith("…") and cut.endswith("…") and "needle" in cut
+
+    def test_no_trailing_ellipsis_when_the_cut_reaches_the_end(self) -> None:
+        """A term near the end is cut from the left only."""
+        text = "word " * 100 + "needle"
+        cut = snippet(text, ["needle"])
+        assert cut.startswith("…") and cut.endswith("needle")
 
     def test_empty_text(self) -> None:
         """No text, no snippet."""
