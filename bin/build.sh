@@ -36,10 +36,12 @@ node bin/minify-js
 # built with --minify above and is skipped, as is the vendored maplibre-gl.css.
 node bin/minify-css
 
-# GeoIP — download GeoLite2-City.mmdb from MaxMind. Best-effort: retries
-# transient failures (429 rate-limit / 5xx) with backoff and never blocks
-# the deploy. When credentials are unset or MaxMind stays unreachable it
-# continues with GeoIP disabled (geo fields go empty). See the script header.
+# GeoIP — download GeoLite2-City.mmdb from MaxMind. Best-effort: one retry on
+# a 5xx / network error, none on a 429 rate-limit, and it never blocks the
+# deploy. When credentials are unset, GEOIP_DOWNLOAD=off (staging, so its
+# per-merge deploys don't spend production's 30-a-day quota) or MaxMind stays
+# unreachable it continues with GeoIP disabled (geo fields go empty). See the
+# script header.
 ./bin/fetch-geoip-data
 
 uv run --no-sync python manage.py collectstatic --no-input

@@ -131,6 +131,13 @@ projects:
               # not dependent on a manual dashboard edit to the env group.
               - key: DJANGO_SETTINGS_MODULE
                 value: config.settings.staging
+              # Staging never downloads the GeoLite2 database. It redeploys on
+              # every merge to main from a fresh checkout, so each deploy spent
+              # one of MaxMind's 30 downloads per account per 24h and pushed
+              # production's release deploys into 429s. RequestLog geo fields
+              # are empty on staging as a result. See bin/fetch-geoip-data.
+              - key: GEOIP_DOWNLOAD
+                value: "off"
               # The production data feed client (SNOW-1197): staging pulls
               # bulletins, weather and resorts with `pull_production_data`.
               # The URL is production's https://…/api/data/v1/; the id and
