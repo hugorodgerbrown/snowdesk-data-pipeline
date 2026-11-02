@@ -97,10 +97,17 @@ def search_docs(corpus: Corpus, arguments: dict[str, Any]) -> dict[str, Any]:
     if not rows:
         summary = f"No docs match {query!r}. Try other words, or list_docs."
     else:
-        summary = (
-            f"{len(rows)} sections match {query!r}; read one with read_doc "
-            "(doc, and section for just that part)."
-        )
+        # The text content is all some clients read, so it carries every
+        # hit's id, section and snippet, not only a count.
+        lines = [
+            f"{len(rows)} sections match {query!r}. Read one with read_doc "
+            "(doc, and section for just that part):"
+        ]
+        lines += [
+            f"- {row['doc']} § {row['section']} ({row['kind']}): {row['snippet']}"
+            for row in rows
+        ]
+        summary = "\n".join(lines)
     return {"query": query, "hits": rows, "summary": summary}
 
 
@@ -123,15 +130,18 @@ def read_doc(corpus: Corpus, arguments: dict[str, Any]) -> dict[str, Any]:
 
     Args:
         corpus: The corpus to read from.
-        arguments: ``doc`` (an id from search or list) and ``section``.
+        arguments: ``doc`` (an id from search or list), ``section`` and
+            ``offset`` — the character to start from, for the rest of a
+            text cut at :data:`MAX_READ_CHARS`.
 
     Returns:
-        The doc's metadata, its section headings, the ``text`` and
-        ``truncated``. ``summary`` is the text itself, so a client that
-        reads only the text content reads the doc.
+        The doc's metadata, its section headings, the ``text``,
+        ``truncated`` and, when cut, ``next_offset``. ``summary`` is the
+        text itself, so a client that reads only the text content reads
+        the doc.
 
     Raises:
-        ToolError: An unknown doc or section.
+        ToolError: An unknown doc or section, or a bad offset.
 
     """
     reference = arguments.get("doc")
@@ -155,21 +165,31 @@ def read_doc(corpus: Corpus, arguments: dict[str, Any]) -> dict[str, Any]:
         text = f"# {doc.title}\n\n## {section.heading}\n\n{section.text}"
     else:
         text = doc.text()
-    truncated = len(text) > MAX_READ_CHARS
-    if truncated:
-        text = (
-            text[:MAX_READ_CHARS]
-            + "\n\n[Cut short. Read the rest by section: "
-            + "; ".join(headings)
-            + "]"
-        )
-    return {
+    offset = arguments.get("offset", 0)
+    if (
+        not isinstance(offset, int)
+        or isinstance(offset, bool)
+        or not 0 <= offset < max(len(text), 1)
+    ):
+        raise ToolError(f"'offset' must be an integer from 0 to {len(text) - 1}.")
+    end = offset + MAX_READ_CHARS
+    truncated = end < len(text)
+    page = text[offset:end]
+    result: dict[str, Any] = {
         **doc.listing(),
         "sections": headings,
         "truncated": truncated,
-        "text": text,
-        "summary": text,
     }
+    if truncated:
+        # A single section can outrun the limit (CLAUDE.md's routing
+        # table does), so "read by section" alone cannot reach the rest:
+        # the offset always can.
+        result["next_offset"] = end
+        page += (
+            f"\n\n[Cut short at character {end} of {len(text)}. Call read_doc "
+            f"again with the same doc and section and offset={end} for the rest.]"
+        )
+    return {**result, "text": page, "summary": page}
 
 
 def list_docs(corpus: Corpus, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -191,7 +211,10 @@ def list_docs(corpus: Corpus, arguments: dict[str, Any]) -> dict[str, Any]:
     return {
         "docs": docs,
         "kinds": kinds,
-        "summary": f"{len(docs)} docs ({', '.join(kinds)}).",
+        "summary": "\n".join(
+            [f"{len(docs)} docs ({', '.join(kinds)}):"]
+            + [f"- {doc['id']}: {doc['title']}. {doc['description']}" for doc in docs]
+        ),
     }
 
 
@@ -256,7 +279,8 @@ def docs_tools(corpus: Callable[[], Corpus], audience: str) -> dict[str, ToolSpe
             description=(
                 "Read one Snowdesk doc as Markdown: the whole doc, or one "
                 "section when 'section' names a heading. 'doc' is an id "
-                "from search_docs or list_docs."
+                "from search_docs or list_docs. A long reply is cut short "
+                "and names the offset to call again with."
             ),
             input_schema={
                 "type": "object",
@@ -265,6 +289,14 @@ def docs_tools(corpus: Callable[[], Corpus], audience: str) -> dict[str, ToolSpe
                     "section": {
                         "type": "string",
                         "description": "A section heading, or words from one.",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": (
+                            "Character to start from — the next_offset of a "
+                            "reply that was cut short."
+                        ),
                     },
                 },
                 "required": ["doc"],

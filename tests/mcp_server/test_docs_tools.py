@@ -55,6 +55,9 @@ class TestSearchDocs:
             hits[0]
         )
         assert "help/downloads" in {hit["doc"] for hit in hits}
+        text = result["content"][0]["text"]
+        for hit in hits:
+            assert f"{hit['doc']} § {hit['section']}" in text
 
     def test_no_match_says_so(self) -> None:
         """A query no doc holds is a result, not an error."""
@@ -129,8 +132,9 @@ class TestReadDoc:
             assert _call("read_doc", {"doc": doc})["isError"] is True
             assert _call("read_doc", {"doc": doc}, OPS_SERVER)["isError"] is False
 
-    def test_cuts_a_long_doc_and_names_its_sections(self) -> None:
-        """Past MAX_READ_CHARS the text is cut and points at the sections."""
+    def test_pages_a_long_section_by_offset(self) -> None:
+        """A section past MAX_READ_CHARS is cut, and offset reads the rest."""
+        body_text = "a" * docs_tools.MAX_READ_CHARS + "TAIL"
         corpus = Corpus(
             "t",
             {
@@ -140,13 +144,41 @@ class TestReadDoc:
                     description="",
                     kind="doc",
                     status="current",
-                    sections=(Section("Part", "x" * (docs_tools.MAX_READ_CHARS + 10)),),
+                    sections=(Section("Part", body_text),),
                 )
             },
         )
-        body = docs_tools.read_doc(corpus, {"doc": "big"})
-        assert body["truncated"] is True
-        assert body["text"].endswith("[Cut short. Read the rest by section: Part]")
+        first = docs_tools.read_doc(corpus, {"doc": "big", "section": "Part"})
+        assert first["truncated"] is True
+        assert f"offset={first['next_offset']}" in first["text"]
+        rest = docs_tools.read_doc(
+            corpus, {"doc": "big", "section": "Part", "offset": first["next_offset"]}
+        )
+        assert rest["truncated"] is False
+        assert "next_offset" not in rest
+        assert rest["text"].endswith("TAIL")
+
+    @pytest.mark.parametrize("offset", [-1, True, "1", 10**9])
+    def test_rejects_a_bad_offset(self, offset: object) -> None:
+        """An offset outside the text is a tool error."""
+        result = _call("read_doc", {"doc": "help/overview", "offset": offset})
+        assert result["isError"] is True
+
+    def test_the_real_routing_table_is_reachable(self) -> None:
+        """CLAUDE.md's longest section reads to its end by offset."""
+        arguments: dict[str, Any] = {
+            "doc": "CLAUDE",
+            "section": "Feature-specific reference",
+        }
+        pages = []
+        while True:
+            body = _call("read_doc", arguments, OPS_SERVER)["structuredContent"]
+            pages.append(body)
+            if not body["truncated"]:
+                break
+            arguments["offset"] = body["next_offset"]
+        assert len(pages) > 1
+        assert "environment-network-allowlist.md" in pages[-1]["text"]
 
     def test_exact_heading_wins_over_partial(self) -> None:
         """An exact heading is picked even when another contains it."""
@@ -176,6 +208,8 @@ class TestListDocs:
         body = _call("list_docs", {})["structuredContent"]
         assert body["kinds"] == ["explainer", "guide", "help"]
         assert any(doc["id"] == "help/overview" for doc in body["docs"])
+        text = _call("list_docs", {})["content"][0]["text"]
+        assert "- help/overview: What is Snowdesk." in text
 
     def test_lists_one_kind_on_ops(self) -> None:
         """kind=runbook lists only the runbooks."""

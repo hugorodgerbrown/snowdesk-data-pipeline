@@ -655,8 +655,8 @@ can see is split by audience (`apps/mcp_server/docs_corpus.py`):
 
 | Tool | Does |
 |------|------|
-| `search_docs` | `query` (required), `limit` (1–25, default 8), `kind`. BM25 over sections — a heading's words weigh three times the body's, at most two hits per doc — each hit with its doc id, section heading, kind, status and a snippet |
-| `read_doc` | `doc` (an id, a path with `.md`, a `docs://` URI or a unique slug) and `section` (a heading, or words from exactly one). The text is Markdown and is also the tool's text content; past 40,000 characters it is cut and names the sections to read instead |
+| `search_docs` | `query` (required), `limit` (1–25, default 8), `kind`. BM25 over sections — a heading's words weigh three times the body's, at most two hits per doc — each hit with its doc id, section heading, kind, status and a snippet. The text content lists every hit too, for a client that reads only text |
+| `read_doc` | `doc` (an id, a path with `.md`, a `docs://` URI or a unique slug) and `section` (a heading, or words from exactly one). `offset` (the `next_offset` of a cut reply). The text is Markdown and is also the tool's text content; a reply holds at most 40,000 characters and, when cut, gives `next_offset` and says so in the text — a single section can run past the limit (CLAUDE.md's routing table does), so the offset, not the section, is what reaches the rest |
 | `list_docs` | Every doc's id, title, description, kind and status; `kind` lists one kind |
 
 Kinds: `help`, `guide`, `explainer` (both servers); `doc`, `decision`,
