@@ -14,7 +14,10 @@
  * removed it. The tour offer that replaced it (#map-tour-offer) registers
  * too, but no control opens it — it appears by itself once the map settles
  * — so it sits outside the matrix; tests/js/test_map_tour_offer.js covers
- * both of its directions through the registry.
+ * both of its directions through the registry. SNOW-1378's slopes notice
+ * (#map-slopes-notice) is the same kind of card, shown by the map rather
+ * than by a control, so it is registered and outside the matrix too, with
+ * its one direction — another overlay opening closes it — asserted below.
  *
  * SNOW-686 added the eighth (the routes panel) and is exactly the case this
  * shape was built for: registering it took no edit to any other surface,
@@ -227,6 +230,10 @@ function buildFixture() {
       <button id="map-tour-offer-later" type="button"></button>
       <button id="map-tour-offer-start" type="button"></button>
     </div>
+    <div id="map-slopes-notice" hidden data-key-url="/partials/slopes-notice-key/XX-0000/">
+      <div data-slopes-notice-key></div>
+      <button id="map-slopes-notice-ok" type="button"></button>
+    </div>
     <div id="map-help-overlay" hidden role="dialog" data-overlay data-map-help-no-autostart>
       <div id="map-help-ring"></div>
       <div id="map-help-tooltip" tabindex="-1">
@@ -277,6 +284,8 @@ async function loadSurfaces() {
   globalThis.MAP = null;
   await import('../../static/js/overlays.js');
   await import('../../static/js/map_tour_offer.js');
+  await import('../../static/js/map_slopes_notice_core.js');
+  await import('../../static/js/map_slopes_notice.js');
   await import('../../static/js/map_help.js');
 }
 
@@ -330,12 +339,27 @@ describe('the registered set', () => {
     // A new overlay that forgets to register fails HERE, naming itself,
     // rather than opening over whatever happens to be up. `map-detail-popup`
     // is map.js's and is not loaded by this fixture.
-    // The tour offer registers but opens itself (see the header), so it is
-    // the one registered name outside the matrix.
+    // The tour offer and the slopes notice register but open themselves
+    // (see the header), so they are the registered names outside the
+    // matrix.
     expect(window.pwaMapOverlays.names()).toEqual(
-      [...SURFACE_NAMES, 'map-tour-offer'].sort(),
+      [...SURFACE_NAMES, 'map-slopes-notice', 'map-tour-offer'].sort(),
     );
   });
+
+  for (const name of SURFACE_NAMES) {
+    it(`the slopes notice closes when ${name} opens`, async () => {
+      // The map shows it by itself; here it is put on screen directly.
+      document.getElementById('map-slopes-notice').hidden = false;
+      expect(window.pwaMapOverlays.openNames()).toContain('map-slopes-notice');
+
+      openSurface(name);
+      await settle();
+
+      expect(document.getElementById('map-slopes-notice').hidden).toBe(true);
+      expect(isOpen(name)).toBe(true);
+    });
+  }
 });
 
 describe('opening one overlay closes every other', () => {
