@@ -130,6 +130,9 @@ Optional context:
     {# would be an invitation to install the layer anyway.                    #}
     {% if terrain_filter_eligible %}data-terrain-class-tile-url="{{ terrain_class_tile_url }}"{% endif %}
     data-terrain-filter-eligible="{{ terrain_filter_eligible|yesno:'true,false' }}"
+    {# SNOW-1374: the problem-terrain layer, behind its flag while its     #}
+    {# controls are redesigned. Off, map.js never draws it.                 #}
+    data-problem-terrain-enabled="{{ problem_terrain_enabled|yesno:'true,false' }}"
     {# swisstopo's ski-touring routes layer: behind the route_drawing flag  #}
     {# with draw mode, whose guide it is                                     #}
     {# (docs/decisions/a-drawn-route-is-a-route.md).                         #}
@@ -969,7 +972,8 @@ Optional context:
                 {# window.pwaBulletinTerrain; the region sheet's switch writes   #}
                 {# the same state; map_problem_terrain_key.js swaps the second   #}
                 {# line for "No bulletin for this day".                          #}
-                {% if terrain_filter_eligible %}
+                {# SNOW-1374: behind the problem_terrain flag.                   #}
+                {% if problem_terrain_enabled %}
                     <li role="separator" class="basemap-menu-separator"></li>
                     <li role="none">
                         <button
@@ -1333,21 +1337,23 @@ Optional context:
                 </section>
                 {# Problem terrain's key, at the whole scale: every region is   #}
                 {# painted by its own bulletin. Hidden until the layer is on    #}
-                {# (map_problem_terrain_key.js).                                #}
-                <section
-                    class="map-legend-section"
-                    data-testid="map-legend-problem-terrain"
-                    data-problem-terrain-legend
-                    hidden
-                >
-                    <div class="map-legend-title">
-                        <a
-                            class="map-legend-attribution-link"
-                            href="{% url 'public:help' %}#help-topic-bulletin-terrain"
-                        >{% trans "Problem terrain" %}</a>
-                    </div>
-                    {% include "includes/_bulletin_terrain_key.html" with key=bulletin_terrain_key %}
-                </section>
+                {# (map_problem_terrain_key.js). SNOW-1374: behind its flag.    #}
+                {% if problem_terrain_enabled %}
+                    <section
+                        class="map-legend-section"
+                        data-testid="map-legend-problem-terrain"
+                        data-problem-terrain-legend
+                        hidden
+                    >
+                        <div class="map-legend-title">
+                            <a
+                                class="map-legend-attribution-link"
+                                href="{% url 'public:help' %}#help-topic-bulletin-terrain"
+                            >{% trans "Problem terrain" %}</a>
+                        </div>
+                        {% include "includes/_bulletin_terrain_key.html" with key=bulletin_terrain_key %}
+                    </section>
+                {% endif %}
             {% endif %}
             {% comment %}
                 SNOW-1017: what a saved route's line means. Hidden until

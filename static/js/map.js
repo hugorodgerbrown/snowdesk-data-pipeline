@@ -116,6 +116,12 @@
   const TERRAIN_CLASS_TILE_URL = mapEl.dataset.terrainClassTileUrl || null;
   const TERRAIN_FILTER_ELIGIBLE =
     mapEl.dataset.terrainFilterEligible === 'true' && !!TERRAIN_CLASS_TILE_URL;
+  // SNOW-1374: the problem-terrain layer, behind the problem_terrain flag
+  // while its controls are redesigned. Off, the layer is never drawn,
+  // whatever the device stored: the stored choice is kept (never written
+  // here), so it comes back if the flag is turned on for this reader.
+  const PROBLEM_TERRAIN_ENABLED =
+    TERRAIN_FILTER_ELIGIBLE && mapEl.dataset.problemTerrainEnabled === 'true';
   // swisstopo's ski-touring routes (ch.swisstopo-karto.skitouren): a raster
   // of the SAC/swisstopo winter routes, drawn from z10 inside Switzerland.
   // Gated with draw mode behind the route_drawing flag, whose guide it is.
@@ -565,6 +571,8 @@
   for (const key of ['resorts', 'weather', 'routes', 'terrain_filter', 'problem_terrain', 'unsupported']) {
     overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
   }
+  // SNOW-1374: outside the flag the layer is off, not merely uncontrolled.
+  if (!PROBLEM_TERRAIN_ENABLED) overlayState.problem_terrain = false;
   // SNOW-1290: on unless switched off.
   overlayState.community_reports = readBoolStorage(OVERLAY_STORAGE_KEY.community_reports, true);
   // SNOW-1285: the two ski-touring parts, on unless switched off.
@@ -583,7 +591,9 @@
       storedFilter = null;
     }
     if (storedFilter && storedFilter.mode === 'bulletin') {
-      if (overlayState.terrain_filter) {
+      // SNOW-1374: outside the flag there is no layer to carry over to, so
+      // the filter stays on in its default colour instead.
+      if (overlayState.terrain_filter && PROBLEM_TERRAIN_ENABLED) {
         overlayState.terrain_filter = false;
         overlayState.problem_terrain = true;
         writeStorage(OVERLAY_STORAGE_KEY.terrain_filter, 'false');
@@ -5084,11 +5094,12 @@
     : null;
 
   /**
-   * Whether the layer should be drawn: its row switched on.
+   * Whether the layer should be drawn: its row switched on, and the
+   * problem_terrain flag on for this reader (SNOW-1374).
    *
    * @returns {boolean}
    */
-  const bulletinTerrainShown = () => !!overlayState.problem_terrain;
+  const bulletinTerrainShown = () => PROBLEM_TERRAIN_ENABLED && !!overlayState.problem_terrain;
 
   /**
    * Tell the menu row, the region sheet's switch and the legend key that
@@ -5382,6 +5393,8 @@
      * @returns {void}
      */
     const setProblemTerrainEnabled = (on) => {
+      // SNOW-1374: no control renders outside the flag; refuse a stray call.
+      if (!PROBLEM_TERRAIN_ENABLED) return;
       overlayState.problem_terrain = on;
       writeStorage(OVERLAY_STORAGE_KEY.problem_terrain, String(on));
       syncBulletinTerrain();
@@ -11678,6 +11691,7 @@
       for (const key of ['resorts', 'weather', 'routes', 'terrain_filter', 'problem_terrain', 'unsupported']) {
         overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
       }
+      if (!PROBLEM_TERRAIN_ENABLED) overlayState.problem_terrain = false;
       overlayState.community_reports = readBoolStorage(OVERLAY_STORAGE_KEY.community_reports, true);
       overlayState.ski_tours = readSkiTouringPart('ski_tours');
       overlayState.ski_summits = readSkiTouringPart('ski_summits');

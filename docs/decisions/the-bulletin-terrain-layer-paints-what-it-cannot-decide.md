@@ -72,6 +72,12 @@ orange; below z12 nothing paints and the choropleth shows as ever.
   `snowdesk:problem-terrain-changed`. Separate stored states would drift.
   The Steep terrain sheet's is a switch for this layer, not a third colour
   of the filter, so the 23 Oct separation holds.
+- **Behind a flag while the controls are redesigned (SNOW-1374, Hugo,
+  2 Nov 2026).** The three switches, the legend's key and the `/help/`
+  topic render only for a reader the `problem_terrain` waffle flag is on
+  for (superusers by default), and `map.js` draws the layer for nobody
+  else, whatever a device stored. The controls go back to first principles
+  in SNOW-1371; what they become supersedes the bullet above.
 - **Held to z12 by the layer, not only the source.** The tiles are 256 px,
   so MapLibre asks for z12 tiles at map zoom 11 and the source's `minzoom`
   alone let the layer draw there, over a choropleth that only drops out

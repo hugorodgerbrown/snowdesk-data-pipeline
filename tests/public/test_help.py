@@ -34,6 +34,7 @@ banners landed, every page extending ``public/base.html`` looks them up
 from __future__ import annotations
 
 import re
+from typing import Any
 
 import pytest
 from django.db import connection
@@ -41,6 +42,11 @@ from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from waffle.testutils import override_flag
+
+from tests.factories import UserFactory
+
+# SNOW-1374: the problem-terrain topic needs the terrain tiles configured.
+_TERRAIN_TILES = "https://tiles.example.invalid/terrain-class/v1/{z}/{x}/{y}.png"
 
 # `client` is pytest-django's built-in fixture (an anonymous ``Client()``);
 # no local override needed.
@@ -122,16 +128,24 @@ class TestHelpTopicAnchorsAndFilter:
 
     @pytest.mark.parametrize("gated_on", [False, True])
     def test_every_topic_carries_its_testid_as_its_id(
-        self, client: Client, gated_on: bool
+        self, client: Client, settings: Any, gated_on: bool
     ) -> None:
-        """Both gated states: the id equals the testid, and none repeats."""
+        """Both gated states: the id equals the testid, and none repeats.
+
+        SNOW-1374's problem_terrain flag short-circuits a signed-out
+        visitor, so the gated-on read is a signed-in one.
+        """
+        settings.TERRAIN_CLASS_TILE_URL = _TERRAIN_TILES
+        if gated_on:
+            client.force_login(UserFactory.create())
         with (
             override_flag("sync_log", active=gated_on),
             override_flag("what3words", active=gated_on),
+            override_flag("problem_terrain", active=gated_on),
         ):
             content = client.get(reverse("public:help")).content.decode()
         panels = _panel_attrs(content)
-        assert len(panels) == (20 if gated_on else 18)
+        assert len(panels) == (20 if gated_on else 17)
         for attrs in panels:
             assert attrs.get("id") == attrs["data-testid"], attrs
         ids = re.findall(r'\bid="(help-topic-[a-z0-9-]+)"', content)
@@ -776,8 +790,35 @@ class TestTerrainFilterHelpTopic:
 
 
 @pytest.mark.django_db
+class TestBulletinTerrainHelpTopicFlag:
+    """SNOW-1374: no problem-terrain documentation outside the flag."""
+
+    def test_signed_out_reader_sees_none_of_it(
+        self, client: Client, settings: Any
+    ) -> None:
+        """Neither the topic nor the layers topic's sentences about it."""
+        settings.TERRAIN_CLASS_TILE_URL = _TERRAIN_TILES
+        with override_flag("problem_terrain", active=True):
+            content = client.get(reverse("public:help")).content.decode()
+        assert 'data-testid="help-topic-bulletin-terrain"' not in content
+        assert "Highlight problem terrain" not in content
+
+
+@pytest.mark.django_db
 class TestBulletinTerrainHelpTopic:
-    """SNOW-979: the problem-terrain layer's caveats live on /help/."""
+    """SNOW-979: the problem-terrain layer's caveats live on /help/.
+
+    SNOW-1374: shown only to a reader the problem_terrain flag is on for,
+    so every test here reads as one.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _flagged_reader(self, client: Client, settings: Any) -> Any:
+        """Sign the client in and turn the flag on, with the tiles set."""
+        settings.TERRAIN_CLASS_TILE_URL = _TERRAIN_TILES
+        client.force_login(UserFactory.create())
+        with override_flag("problem_terrain", active=True):
+            yield
 
     def test_topic_is_an_anchor_target(self, client: Client) -> None:
         """The region sheet's switch links to this fragment."""
