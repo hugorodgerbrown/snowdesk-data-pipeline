@@ -22,6 +22,7 @@ from typing import Any
 
 from django.db.models import QuerySet
 
+from apps.ingest import conf
 from apps.ingest.api.paging import Feed
 from apps.ingest.models import (
     SourceDocument,
@@ -34,6 +35,14 @@ from apps.ingest.models import (
 
 # The version these feeds are served under — the /v2/ in their URLs.
 REFERENCE_FEED_VERSION = 2
+
+# The most SAC tours one page holds, unless the FEED_SKI_TOURS_MAX_LIMIT
+# setting says otherwise. Once render_ski_tours had drawn them (SNOW-1345)
+# a tour carries its slope_samples and track_render, and a 500-tour page
+# took production's 512 MB web worker past its limit: the worker was
+# killed mid-request and every feed asked of it in the next seconds
+# answered 502, so staging's daily pull stored no bulletins.
+SKI_TOURS_MAX_LIMIT = 25
 
 
 def _iso(value: Any) -> str | None:
@@ -134,6 +143,11 @@ def _ski_segments() -> QuerySet[SourceSkiSegment]:
     return SourceSkiSegment.objects.all()
 
 
+def _ski_tours_max_limit() -> int:
+    """Return the most SAC tours one page holds."""
+    return conf.positive_int("FEED_SKI_TOURS_MAX_LIMIT", SKI_TOURS_MAX_LIMIT)
+
+
 def _ski_tours() -> QuerySet[SourceSkiTour]:
     """Return every SAC ski tour, tombstones included."""
     return SourceSkiTour.objects.all()
@@ -168,4 +182,5 @@ SKI_TOURS_FEED = Feed(
     _ski_tours,
     serialise_source_ski_tour,
     version=REFERENCE_FEED_VERSION,
+    max_limit=_ski_tours_max_limit,
 )

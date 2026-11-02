@@ -604,8 +604,8 @@ class _Counting(_ReplaySession):
 @pytest.mark.parametrize(
     ("args", "days", "pages"),
     [
-        (("--recent", "14"), 14, 9),
-        (("--golden-week",), 7, 5),
+        (("--recent", "14"), 14, 42),
+        (("--golden-week",), 7, 21),
     ],
     ids=["recent-14", "golden-week"],
 )

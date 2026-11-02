@@ -2,7 +2,7 @@
 name: data-feed
 description: Data feed /api/data/v1/ + v2, from/to windows, service clients, pull_reference_data, pull_production_data, DATA_FEED_*, mint_feed_token
 status: current
-last-reviewed: 2026-11-01
+last-reviewed: 2026-11-02
 ---
 
 # The production data feed
@@ -89,7 +89,13 @@ what production shows.
 
 Parameters, all optional: `since` (ISO 8601 datetime **with an offset**,
 filters on `updated_at`), `cursor` (the previous page's `next_cursor`) and
-`limit` (default 100, at most 500). The dated v2 feeds also take `from` and
+`limit` (default 100, at most 100 — the `FEED_MAX_LIMIT` setting; `ski-tours`
+at most 25, `FEED_SKI_TOURS_MAX_LIMIT`, because a rendered tour carries its
+whole drawing and 500 of them on one page ran production's web worker out of
+memory on 1 November 2026). A page is built whole in a web worker, so the
+ceilings are kept small and a client drips through on `next_cursor`; both are
+read per request, so either can be changed in the environment without a
+release. The dated v2 feeds also take `from` and
 `to` (ISO dates, inclusive), which window them by the day each row is about
 — a bulletin's `target_date`, a day rating's `date`, a weather row's
 `observed_on` (SNOW-1272). An undated feed answers `from` or `to` with a
@@ -148,7 +154,7 @@ rather than scanning and sorting the table. `count` costs one extra query,
 on the first page only. Locations and resorts have no such index because
 they are a few thousand rows, read whole. On the client,
 `FeedClient.pages` is a generator and the command applies items as they
-arrive, so a pull holds only one page (at most 500 items) in memory.
+arrive, so a pull holds only one page (at most 100 items) in memory.
 
 **What is never served.** The eight querysets are the only reads, and no
 user-owned table is among them. A favourite's pin is never fetched: it

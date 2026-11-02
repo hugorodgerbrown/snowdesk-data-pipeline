@@ -650,6 +650,15 @@ SWISSTOPO_STAC_URL = config(
     default="https://data.geo.admin.ch/api/stac/v1",
 )
 
+# The most rows one page of a /api/data/v2/ feed holds (apps/ingest/api/
+# paging.py). A page is built whole in a web worker's memory and a client
+# follows next_cursor, so these are kept small; raise or lower them here
+# (or in the environment) if a feed's rows grow. 500 rendered SAC tours
+# on one page killed production's 512 MB worker on every staging pull
+# from 1 November 2026, which is why the tours have a ceiling of their own.
+FEED_MAX_LIMIT = config("FEED_MAX_LIMIT", default=100, cast=int)
+FEED_SKI_TOURS_MAX_LIMIT = config("FEED_SKI_TOURS_MAX_LIMIT", default=25, cast=int)
+
 # The earliest day ``backfill_weather`` and the LocationAdmin action will
 # ask the upstream for. The API reaches back to roughly 2021 (probed), but
 # one full season across the estate is already ~95,000 rows against the
