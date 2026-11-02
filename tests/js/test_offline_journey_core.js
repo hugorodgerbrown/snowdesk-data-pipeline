@@ -387,12 +387,24 @@ describe("the conditions stage's problem-terrain line (SNOW-1379)", () => {
     expect(p.verdict).toBe('ready');
   });
 
-  it('counts a missing day as No, without moving the stage or the verdict', () => {
+  it('turns a missing day into a No stage and "Needs a refresh" (SNOW-1387)', () => {
     const p = panel(withDays([terrainArea()], DAYS.slice(0, 1)));
 
-    expect(p.stages.conditions.terrain).toEqual({ status: 'no', held: 1, total: 2 });
-    expect(p.stages.conditions.status).toBe('yes');
-    expect(p.verdict).toBe('ready');
+    expect(p.stages.conditions).toEqual({
+      status: 'no',
+      reason: 'terrain',
+      terrain: { status: 'no', held: 1, total: 2 },
+    });
+    expect(p.verdict).toBe('refresh');
+  });
+
+  it("keeps a stale stage's own reason over a missing day", () => {
+    const stale = terrainArea({ contentAt: '2026-09-08T07:00:00.000Z' });
+    const p = panel(withDays([stale], DAYS.slice(0, 1)));
+
+    expect(p.stages.conditions.status).toBe('no');
+    expect(p.stages.conditions.reason).toBe('stale');
+    expect(p.verdict).toBe('refresh');
   });
 
   it('counts the feed for a signed-out reader too: it is public', () => {
@@ -401,10 +413,11 @@ describe("the conditions stage's problem-terrain line (SNOW-1379)", () => {
     expect(p.stages.conditions.terrain).toEqual({ status: 'yes', held: 2, total: 2 });
   });
 
-  it('is unknown when the shell cache could not be listed', () => {
+  it('is unknown when the shell cache could not be listed, and so is the stage', () => {
     const p = panel(withDays([terrainArea()], DAYS, { cachesReadable: false }));
 
     expect(p.stages.conditions.terrain).toEqual({ status: 'unknown', held: 0, total: 2 });
+    expect(p.stages.conditions.status).not.toBe('yes');
   });
 
   it('is absent for an area without terrain tiles', () => {
