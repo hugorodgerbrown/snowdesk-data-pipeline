@@ -284,7 +284,9 @@
  *     weather sheet is one url per location, and (SNOW-965) why it is
  *     dated with the download's day when the caller names one. SNOW-1312
  *     adds the region sheets per region and day, and the dated ratings
- *     feed per day; SNOW-1318 a resort's place sheet per resort and day.
+ *     feed per day; SNOW-1318 a resort's place sheet per resort and day;
+ *     SNOW-1379 the problem-terrain feed per day, for an area with
+ *     terrain tiles in a terrain country.
  *   areaItemURLs(items, templates, alreadyPlanned)
  *     SNOW-965: the reader's OWN things inside an area, as urls, over the
  *     answer ``/api/area-items/`` gives — each trip's page and its
@@ -296,6 +298,9 @@
  *     SNOW-1308: the same composition as ``areaItemURLs``, kept per item
  *     with its name — what a sync stamps onto the area record so the
  *     ``/offline/`` panels can ask, offline, whether each thing is cached.
+ *   withProblemTerrain(expectation, urls) / problemTerrainURL(day)
+ *     SNOW-1379: the problem-terrain urls a sync warmed, added to the
+ *     expectation it stamps, and one day's feed url as map.js asks for it.
  *   stampContentRecord(entry, complete, expectation, nowIso)
  *     SNOW-1308: the one rule every content sync writes back with —
  *     ``contentAt`` / ``contentIncomplete`` (SNOW-932) and the ``items``
@@ -2580,6 +2585,20 @@
   // exact url, so the warmed url is built in the boot's own parameter order.
   const BOOT_RATINGS_COUNTRY = 'ch';
 
+  // SNOW-1379: the problem-terrain feed the map paints the day's slopes
+  // from — map.js's `refreshBulletinTerrainDay` asks for
+  // `/api/problem-terrain/?d=<day>` and nothing else, and the worker
+  // answers it offline on that exact url ('public-json'), so the warmed url
+  // is built the same way, byte for byte.
+  const PROBLEM_TERRAIN_URL = '/api/problem-terrain/';
+
+  // SNOW-1379: the countries the terrain-class tiles cover, by the prefix
+  // of a region id ("CH-4115" → "CH"). The same list as `TERRAIN_COUNTRIES`
+  // in map_region_chip_core.js and apps/public/problem_terrain.py; held
+  // here rather than imported because this core loads on pages that load
+  // neither.
+  const TERRAIN_COUNTRIES = Object.freeze(['CH']);
+
   /**
    * The days a download takes its content for: today and forward only
    * (SNOW-1312).
@@ -2712,6 +2731,14 @@
    * same way, so a resort sheet that fails to warm makes the download
    * short.
    *
+   * SNOW-1379: and, per day, the problem-terrain feed the map paints the
+   * day's slopes from (`/api/problem-terrain/?d=<day>`) — only for an area
+   * downloaded WITH terrain tiles (`options.terrain`) whose regions
+   * include one in a terrain country (`TERRAIN_COUNTRIES`, read off the
+   * region ids the endpoint answered with). Without the tiles there is
+   * nothing for the feed to paint on, and outside those countries the
+   * feed describes no slope of the area's.
+   *
    * A weather sheet is ONE URL per location, not one per day: a forward
    * `?date=` opens the same week as today's — today's row and the rows
    * after it (SNOW-1337) — and the day picker selects among them
@@ -2748,11 +2775,15 @@
    *   Omitted, no resort sheets.
    * @param {string} [options.ratingsUrl] SNOW-1312: the ratings feed's
    *   base url (`/api/ratings/`). Omitted, no dated ratings.
+   * @param {boolean} [options.terrain] SNOW-1379: whether the area was
+   *   downloaded with terrain tiles (the area record's `terrain`). Omitted
+   *   or false, no problem-terrain feed.
    * @returns {{bulletinUrls: string[], weatherDetailUrls: string[],
    *   regionSheetUrls: string[], resortSheetUrls: string[],
-   *   ratingsUrls: string[]}} Each list
+   *   ratingsUrls: string[], problemTerrainUrls: string[]}} Each list
    *   deduplicated and stable in the server's order, so a run's URL list
-   *   is reproducible. The sheet and ratings lists are empty without days.
+   *   is reproducible. The sheet, ratings and problem-terrain lists are
+   *   empty without days.
    */
   function areaContentURLs(options) {
     const opts = options || {};
@@ -2762,11 +2793,13 @@
       regionSheetUrls: [],
       resortSheetUrls: [],
       ratingsUrls: [],
+      problemTerrainUrls: [],
     };
 
     const days = Array.isArray(opts.days) ? Array.from(new Set(opts.days.filter(Boolean))) : [];
     const sheetTemplate = opts.regionSheetTemplate || '';
     const seenRegion = new Set();
+    let inTerrainCountry = false;
     for (const region of opts.regions || []) {
       const regionId = region && region.id;
       const slug = region && region.slug;
@@ -2776,6 +2809,7 @@
       const key = String(regionId).toLowerCase();
       if (seenRegion.has(key)) continue;
       seenRegion.add(key);
+      if (TERRAIN_COUNTRIES.includes(key.split('-')[0].toUpperCase())) inTerrainCountry = true;
       for (const day of days) {
         out.bulletinUrls.push('/' + key + '/' + slug + '/' + day + '/');
         if (sheetTemplate) out.regionSheetUrls.push(regionSheetURL(sheetTemplate, key, day));
@@ -2801,6 +2835,10 @@
       }
     }
 
+    if (opts.terrain && inTerrainCountry) {
+      for (const day of days) out.problemTerrainUrls.push(problemTerrainURL(day));
+    }
+
     const template = opts.weatherDetailTemplate;
     if (template) {
       const seenLocation = new Set();
@@ -2813,6 +2851,20 @@
     }
 
     return out;
+  }
+
+  /**
+   * The problem-terrain feed's url for one day (SNOW-1379).
+   *
+   * The url map.js's `refreshBulletinTerrainDay` fetches —
+   * `/api/problem-terrain/?d=<day>`, `d` alone — so the copy a download
+   * warms is the one the worker finds offline.
+   *
+   * @param {string} day An ISO date key.
+   * @returns {string}
+   */
+  function problemTerrainURL(day) {
+    return PROBLEM_TERRAIN_URL + '?d=' + encodeURIComponent(day);
   }
 
   /**
@@ -2988,6 +3040,27 @@
   }
 
   /**
+   * An expectation with the problem-terrain urls a sync warmed (SNOW-1379).
+   *
+   * The `/offline/` panel's Conditions stage counts the area's saved
+   * problem-terrain days, and like the reader's own things it cannot ask
+   * offline what it should expect — so the urls ride the expectation a
+   * sync stamps (`stampContentRecord`). Unlike those things they are
+   * public and every reader's, so a signed-out sync, which has no things
+   * to stamp, still carries them: a null expectation becomes one holding
+   * the urls alone.
+   *
+   * @param {Object|null} expectation From `attestedExpectation`, or null.
+   * @param {string[]|null|undefined} urls The plan's `problemTerrainUrls`.
+   * @returns {Object} A new expectation.
+   */
+  function withProblemTerrain(expectation, urls) {
+    return Object.assign({}, expectation || {}, {
+      problemTerrain: Array.isArray(urls) ? urls.slice() : [],
+    });
+  }
+
+  /**
    * One area record after a content sync — the ONE stamping rule
    * (SNOW-1308).
    *
@@ -3008,14 +3081,19 @@
    * device, and the names written are the syncing account's. The
    * `/offline/` panels show them only to that account (SNOW-1308 review).
    *
+   * SNOW-1379: an expectation carrying `problemTerrain`
+   * (`withProblemTerrain`) stamps it as `items.problemTerrain` — with the
+   * things when there are some, and on its own (keeping whatever things
+   * the record already held) when a signed-out sync had none to stamp.
+   *
    * Synchronous, because every caller runs it inside a `readModifyWrite`
    * mutator, which must not await.
    *
    * @param {Object} entry The stored record.
    * @param {boolean} complete Whether the content half landed in full.
-   * @param {{trips: Array<Object>, pins: Array<Object>,
-   *   principal?: string}|null} [expectation] With the syncing session's
-   *   principal.
+   * @param {{trips?: Array<Object>, pins?: Array<Object>,
+   *   principal?: string, problemTerrain?: string[]}|null} [expectation]
+   *   With the syncing session's principal.
    * @param {string} [nowIso] The stamp; the clock when absent.
    * @returns {Object} A new record.
    */
@@ -3026,12 +3104,21 @@
     // "nothing wrong" every reader shares.
     delete next.contentIncomplete;
     next.contentAt = nowIso || new Date().toISOString();
+    const terrain =
+      expectation && Array.isArray(expectation.problemTerrain)
+        ? { problemTerrain: expectation.problemTerrain }
+        : {};
     if (expectation && Array.isArray(expectation.trips) && Array.isArray(expectation.pins)) {
-      next.items = {
-        trips: expectation.trips,
-        pins: expectation.pins,
-        principal: typeof expectation.principal === 'string' ? expectation.principal : null,
-      };
+      next.items = Object.assign(
+        {
+          trips: expectation.trips,
+          pins: expectation.pins,
+          principal: typeof expectation.principal === 'string' ? expectation.principal : null,
+        },
+        terrain,
+      );
+    } else if (terrain.problemTerrain) {
+      next.items = Object.assign({}, next.items || {}, terrain);
     }
     return next;
   }
@@ -3500,6 +3587,8 @@
     areaItemURLs: areaItemURLs,
     areaItemExpectation: areaItemExpectation,
     attestedExpectation: attestedExpectation,
+    withProblemTerrain: withProblemTerrain,
+    problemTerrainURL: problemTerrainURL,
     stampContentRecord: stampContentRecord,
     favouriteSheetURL: favouriteSheetURL,
     weatherDetailURL: weatherDetailURL,
