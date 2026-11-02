@@ -37,11 +37,17 @@ from django_ratelimit.decorators import ratelimit
 from mcp_auth.resource import mcp_endpoint as require_mcp_token
 
 from apps.mcp_server import protocol
+from apps.mcp_server.docs_corpus import ops_corpus
+from apps.mcp_server.docs_tools import ResourceCatalogue
 from apps.mcp_server.ops_tools import OPS_TOOLS
 
 logger = logging.getLogger(__name__)
 
-OPS_SERVER = protocol.ToolServer("snowdesk-ops", OPS_TOOLS, {})
+#: The staff ops server. Its resources are the full docs corpus (SNOW-1393),
+#: whose tools ``ops_tools`` merges into ``OPS_TOOLS``.
+OPS_SERVER = protocol.ToolServer(
+    "snowdesk-ops", OPS_TOOLS, ResourceCatalogue({}, ops_corpus)
+)
 
 
 def _answer(request: HttpRequest, server: protocol.ToolServer) -> HttpResponse:

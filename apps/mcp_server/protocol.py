@@ -26,6 +26,8 @@ from typing import Any, NamedTuple
 
 from django.conf import settings
 
+from apps.mcp_server.docs_corpus import public_corpus
+from apps.mcp_server.docs_tools import ResourceCatalogue, docs_tools
 from apps.mcp_server.tools import TOOLS, ToolError
 from apps.mcp_server.ui_resources import UI_RESOURCES
 
@@ -140,8 +142,19 @@ class ToolServer(NamedTuple):
     actor: Any = None
 
 
-#: The public avalanche-data server at ``/api/mcp/``.
-PUBLIC_SERVER = ToolServer(name="snowdesk", tools=TOOLS, resources=UI_RESOURCES)
+#: The public avalanche-data server at ``/api/mcp/``, with the docs tools
+#: over the rider-facing corpus (SNOW-1393): the help topics, the bulletin
+#: guide and the explainers, each also a ``docs://`` resource.
+PUBLIC_SERVER = ToolServer(
+    name="snowdesk",
+    tools={
+        **TOOLS,
+        **docs_tools(
+            public_corpus, "the help pages, the bulletin guide and the explainers"
+        ),
+    },
+    resources=ResourceCatalogue(UI_RESOURCES, public_corpus),
+)
 
 
 class _ParsedRequest(NamedTuple):
@@ -355,14 +368,14 @@ def _tool_listing(spec: Any) -> dict[str, Any]:
 def _handle_resources_list(
     params: dict[str, Any], server: ToolServer
 ) -> dict[str, Any]:  # noqa: ARG001 — no pagination, so no params
-    """Handle ``resources/list`` — advertise the MCP Apps ``ui://`` views.
+    """Handle ``resources/list`` — the MCP Apps ``ui://`` views and the docs.
 
     Args:
         params: Unused.
-        server: The server whose views to list (none, for ops).
+        server: The server whose resources to list.
 
     Returns:
-        ``{"resources": [...]}`` — one entry per view.
+        ``{"resources": [...]}`` — one entry per view or ``docs://`` doc.
 
     """
     return {"resources": [resource.listing() for resource in server.resources.values()]}
@@ -371,10 +384,10 @@ def _handle_resources_list(
 def _handle_resources_read(
     params: dict[str, Any], server: ToolServer
 ) -> dict[str, Any]:
-    """Handle ``resources/read`` — return one view's HTML and CSP metadata.
+    """Handle ``resources/read`` — one view's HTML, or one doc's Markdown.
 
     Args:
-        params: ``{"uri": <ui:// uri>}``.
+        params: ``{"uri": <ui:// or docs:// uri>}``.
         server: The server whose views to read from.
 
     Returns:
@@ -382,7 +395,7 @@ def _handle_resources_read(
 
     Raises:
         ProtocolError: ``INVALID_PARAMS`` when ``uri`` is missing, or
-            ``RESOURCE_NOT_FOUND`` when no view has that URI.
+            ``RESOURCE_NOT_FOUND`` when no resource has that URI.
 
     """
     uri = params.get("uri")

@@ -198,8 +198,8 @@ def test_tools_list_returns_all_registered_tools() -> None:
     response = protocol.dispatch(_request("tools/list"))
     assert response is not None
     names = {t["name"] for t in response["result"]["tools"]}
-    assert names == set(TOOLS.keys())
-    assert names == {
+    assert names == set(TOOLS.keys()) | {"search_docs", "read_doc", "list_docs"}
+    assert names - {"search_docs", "read_doc", "list_docs"} == {
         "search_regions",
         "get_current_conditions",
         "get_avalanche_problems",
@@ -248,17 +248,20 @@ def test_initialize_advertises_resources_capability() -> None:
 
 
 def test_resources_list_returns_the_danger_map_view() -> None:
-    """``resources/list`` lists the ui:// view with the Apps MIME type."""
+    """``resources/list`` lists the ui:// view first, with the Apps MIME type.
+
+    The rider-facing docs follow it as ``docs://`` resources (SNOW-1393).
+    """
     response = protocol.dispatch(_request("resources/list"))
     assert response is not None
-    assert response["result"]["resources"] == [
-        {
-            "uri": DANGER_MAP_URI,
-            "name": "Avalanche danger map",
-            "description": UI_RESOURCES[DANGER_MAP_URI].description,
-            "mimeType": RESOURCE_MIME_TYPE,
-        }
-    ]
+    resources = response["result"]["resources"]
+    assert resources[0] == {
+        "uri": DANGER_MAP_URI,
+        "name": "Avalanche danger map",
+        "description": UI_RESOURCES[DANGER_MAP_URI].description,
+        "mimeType": RESOURCE_MIME_TYPE,
+    }
+    assert all(r["uri"].startswith("docs://") for r in resources[1:])
 
 
 def test_resources_read_returns_html_and_csp() -> None:

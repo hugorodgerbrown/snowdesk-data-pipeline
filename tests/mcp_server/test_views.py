@@ -389,3 +389,23 @@ def test_valid_repeat_of_a_key_re_executes(client: Client, token: str) -> None:
         _prime(client, "/api/mcp/", token)
     assert dispatch.call_count == 2
     assert not IdempotencyRecord.objects.exists()
+
+
+@pytest.mark.django_db
+def test_docs_are_split_by_endpoint(client: Client) -> None:
+    """A builder's doc reads on the ops endpoint and not on the public one.
+
+    SNOW-1393: both endpoints carry read_doc; only what it can see differs.
+    """
+    call = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "read_doc", "arguments": {"doc": "CLAUDE"}},
+    }
+    public = _post(client, call, _token(PUBLIC, is_staff=True))
+    assert json.loads(public.content)["result"]["isError"] is True
+    ops = _post(client, call, _token(OPS, is_staff=True), url="/api/ops/mcp/")
+    result = json.loads(ops.content)["result"]
+    assert result["isError"] is False
+    assert result["structuredContent"]["text"].startswith("# CLAUDE.md")
