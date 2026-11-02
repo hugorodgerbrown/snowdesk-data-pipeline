@@ -23,8 +23,10 @@
  *     carries the problem-terrain feed (downloaded with terrain tiles, in
  *     a terrain country) adds a "Problem terrain" line counting the days
  *     saved, from the urls the last sync stamped (`items.problemTerrain`,
- *     `withProblemTerrain`). The line informs; it does not move the
- *     stage's answer.
+ *     `withProblemTerrain`). SNOW-1387: a day not held makes the stage
+ *     No (reason `terrain`), so the area reads "Needs a refresh" and Sync
+ *     now fetches it again; a line that could not be read makes a Yes
+ *     unknown. The stage's own No (stale, never) keeps its reason.
  *   - **Your things.** Each trip and pin in the area, by name, Yes only
  *     when every url it needs is in Cache Storage. What "needs" means is
  *     stamped on the record by the sync that fetched them
@@ -440,14 +442,29 @@
   }
 
   /**
-   * A stage with its "Problem terrain" line, where the area has one.
+   * A stage with its "Problem terrain" line, where the area has one, and
+   * the line folded into the stage's answer (SNOW-1387, Hugo 2 Nov 2026):
+   * an area missing a day of the bulletin's slopes is not ready for
+   * offline, so a No line makes the stage No and the verdict "Needs a
+   * refresh". The stage's own No outranks it and keeps its reason (the
+   * bulletins themselves are stale, which the note says); an unread line
+   * makes a Yes unknown, never a Yes. A `terrain` reason has no note of
+   * its own: the line under the stage already says how many days are
+   * saved.
    *
    * @param {Stage} stage
    * @param {TerrainLine|null} line
    * @returns {Stage}
    */
   function withTerrainLine(stage, line) {
-    return line ? Object.assign({}, stage, { terrain: line }) : stage;
+    if (!line) return stage;
+    var out = Object.assign({}, stage, { terrain: line });
+    if (stage.status === 'no') return out;
+    if (line.status === 'no') return Object.assign(out, { status: 'no', reason: 'terrain' });
+    if (line.status === 'unknown' && stage.status === 'yes') {
+      return Object.assign(out, { status: 'unknown' });
+    }
+    return out;
   }
 
   /**

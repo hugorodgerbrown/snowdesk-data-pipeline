@@ -81,6 +81,11 @@ The urls ride the stamped expectation (`withProblemTerrain`,
 `items.problemTerrain`), signed out too, so the `/offline/` panel's
 Conditions stage can count the days saved on a "Problem terrain" line.
 
+Amended the same day by SNOW-1387 (Hugo): a day the area does not hold
+turns the Conditions stage No, so the area reads "Needs a refresh" and
+Sync now fetches it again. The line no longer only informs; the
+bulletin's slopes are part of what "ready for offline" promises.
+
 ## Why path + `d`, and only for this sheet
 
 `r` is the reports cache-buster SNOW-1295 stamps into the sheet's url after
