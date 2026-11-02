@@ -2,7 +2,7 @@
 name: the-layers-menu-is-on-off-then-options
 description: Layers menu #basemap-menu — one switch per layer, options pages (data-layers-page), master switches, zoom-limited rows (data-zoom-gate)
 status: current
-last-reviewed: 2026-10-28
+last-reviewed: 2026-11-02
 ---
 
 # The layers menu is on/off first, options one level down
@@ -58,8 +58,10 @@ Field observations are user-generated content, so they belong in Your data.
   needed no change.
 - A master switch only clicks the rows it governs. Nothing downstream knows
   that masters exist, and a master never writes a layer's own storage key.
-- Highlight problem terrain is on the bulletins page while the steep-terrain
-  layer is rethought.
+- "Sync with map terrain" (SNOW-1377; it was "Highlight problem terrain")
+  is on the bulletins page, a switch row drawn with
+  `includes/_switch_track.html`, on by default. It left the Steep terrain
+  sheet, whose colours take precedence over it while that layer is on.
 - The per-section storage keys (`snowdesk.map.layers.section.*`) are
   abandoned and are no longer read.
 - A new layer is a new level-one row, using

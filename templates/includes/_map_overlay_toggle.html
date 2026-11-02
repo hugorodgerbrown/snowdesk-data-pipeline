@@ -29,10 +29,10 @@ selects each switch by id — `#map-favourites-overlay-toggle`,
 `#map-community-reports-overlay-toggle`, `#map-routes-overlay-toggle`,
 `#map-downloads-overlay-toggle` — and delegates on the document, because
 every panel body is re-cloned on every open. Two instances are bound by
-their own sheet's module instead, both for the problem-terrain layer:
-`#region-sheet-terrain-toggle` (static/js/map_region_sheet.js) and
-`#terrain-filter-problem-terrain-toggle` (static/js/terrain_filter_sheet.js,
-SNOW-1297).
+their own sheet's module instead: `#region-sheet-terrain-toggle`, the
+problem-terrain layer's (static/js/map_region_sheet.js). The Steep terrain
+sheet's `#terrain-filter-problem-terrain-toggle` (SNOW-1297) was removed by
+SNOW-1377.
 
 Parameters (passed via {% include … with … %}):
   id    (string) — DOM id for the switch input, so the label's `for`
@@ -40,10 +40,12 @@ Parameters (passed via {% include … with … %}):
         Required. An illustration (the component library, the /help/
         mocks) passes a namespaced id, so the module never finds it.
   label (string) — the visible, translated label text. Required.
-  detail (string, optional) — one small line under the label. It renders
-        ``hidden`` with ``data-panel-overlay-toggle-detail``, so the owning
-        module decides when it shows (the region sheet's problem-terrain
-        switch: "Zoom in on the map to see it", only while zoomed out).
+  detail (string, optional) — one small line under the label, carrying
+        ``data-panel-overlay-toggle-detail``. It renders ``hidden``, so an
+        owning module decides when it shows, unless ``detail_shown``.
+  detail_shown (bool, optional) — render the detail line visible: a fixed
+        second line, as the region sheet's "Sync with map terrain" switch
+        carries ("From zoom 12, Switzerland", SNOW-1377).
 {% endcomment %}
 {# `data-panel-overlay-toggle` marks the strip itself, so a test or an    #}
 {# owning module can address the whole control rather than reaching for  #}
@@ -58,7 +60,11 @@ Parameters (passed via {% include … with … %}):
     {% if detail %}
         <div class="min-w-0">
             <label for="{{ id }}" class="block text-sm font-medium text-text-1">{{ label }}</label>
-            <span class="block text-xs text-text-3" data-panel-overlay-toggle-detail hidden>{{ detail }}</span>
+            <span
+                class="block text-xs text-text-3"
+                data-panel-overlay-toggle-detail
+                {% if not detail_shown %}hidden{% endif %}
+            >{{ detail }}</span>
         </div>
     {% else %}
         <label for="{{ id }}" class="text-sm font-medium text-text-1">{{ label }}</label>

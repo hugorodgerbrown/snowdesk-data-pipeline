@@ -1,16 +1,20 @@
 ---
 name: the-bulletin-terrain-layer-paints-what-it-cannot-decide
-description: Problem terrain (SNOW-979, SNOW-1194) — four states, never blank; Highlight problem terrain, /api/problem-terrain/, bulletin_terrain_core
+description: Problem terrain, four states, never blank; Sync with map terrain, on by default, Steep terrain first; /api/problem-terrain/
 status: current
 last-reviewed: 2026-11-02
 ---
 
 # The problem-terrain layer paints what it cannot decide
 
-**Decision.** The layers menu has a "Highlight problem terrain" row under
-Conditions, and the region sheet a switch of the same name below the
-bulletin that writes the same state (Hugo, 23 Oct 2026; until then it was
-the terrain filter's third colour, "By bulletin", SNOW-1194). Switched on, every region's ground of 30° and over is painted on the device
+**Decision.** The layers menu has a "Sync with map terrain" row under
+Avalanche bulletins, second line "From zoom 12, Switzerland", and the
+region sheet a switch of the same name below the bulletin that writes the
+same state (SNOW-1377, 2 Nov 2026; "Highlight problem terrain" from Hugo's
+23 Oct 2026 split, and until then the terrain filter's third colour, "By
+bulletin", SNOW-1194). It is on by default, for every reader wherever the
+terrain tiles are, and gives way to Steep terrain while that is on.
+Switched on, every region's ground of 30° and over is painted on the device
 from the terrain filter's class tiles, by rules read from that region's
 bulletin for the day (`apps/ingest/normalise/problem_terrain.py`, the
 service's since SNOW-1270 →
@@ -59,25 +63,40 @@ orange; below z12 nothing paints and the choropleth shows as ever.
   the same `paintTile`. Hugo found it hidden there (Layers → Basemap →
   Terrain filter → adjust → By bulletin) and not a filter at all: it is the
   bulletin drawn another way, and from z12 it replaces the region colour.
-  So it is a row under Conditions, next to the bulletins it comes from,
+  So it is a row next to the bulletins it comes from (under Avalanche
+  bulletins since SNOW-1266),
   with its own state, `overlayState.problem_terrain`
   (`snowdesk.map.overlay.problem_terrain`), and the filter is back to "One
-  tint" and "By slope". It still shares the filter's tiles and LRU, and
-  the two can both be on: the filter draws under the choropleth, this
-  above it. A device that left the filter on in "By bulletin" comes back
-  with this on and the filter off (map.js, once, at boot).
-- **One state, three switches.** The menu row, the region sheet's switch
-  and, since SNOW-1297, the switch at the top of the Steep terrain sheet all
+  tint" and "By slope". It still shares the filter's tiles and LRU. (The
+  two could both be drawn until SNOW-1377, below.) A device that left the
+  filter on in "By bulletin" comes back with this on and the filter off
+  (map.js, once, at boot) — kept by SNOW-1377.
+- **One state, two switches.** The menu row and the region sheet's switch
   write `window.pwaBulletinTerrain`, and each reads it back from
   `snowdesk:problem-terrain-changed`. Separate stored states would drift.
-  The Steep terrain sheet's is a switch for this layer, not a third colour
-  of the filter, so the 23 Oct separation holds.
-- **Behind a flag while the controls are redesigned (SNOW-1374, Hugo,
-  2 Nov 2026).** The three switches, the legend's key and the `/help/`
-  topic render only for a reader the `problem_terrain` waffle flag is on
-  for (superusers by default), and `map.js` draws the layer for nobody
-  else, whatever a device stored. The controls go back to first principles
-  in SNOW-1371; what they become supersedes the bullet above.
+  SNOW-1297 had put a third at the top of the Steep terrain sheet;
+  SNOW-1377 took it out.
+- **Behind a flag while the controls were redesigned (SNOW-1374, Hugo,
+  2 Nov 2026).** The switches, the legend's key and the `/help/` topic
+  rendered only for a reader the `problem_terrain` waffle flag was on for
+  (superusers by default). Superseded the same day by the bullet below.
+- **On by default, and Steep terrain takes precedence (SNOW-1377, Hugo,
+  2026-11-02).** The flag came off: every reader gets the controls
+  wherever the terrain tiles are configured (`data-problem-terrain-enabled`
+  follows `terrain_filter_eligible`). The layer stays something a reader
+  can turn off, but `overlayState.problem_terrain` reads its stored value
+  with a default of `true`, so a device that never touched it gets it on
+  and one that switched it off keeps it off. Renamed "Sync with map
+  terrain", it lives under Avalanche bulletins and in the region sheet,
+  and left the Steep terrain sheet: Steep terrain is the reader's own
+  tool. While it is on, its colours replace the bulletin's slopes —
+  `bulletinTerrainShown()` is `problem_terrain && !terrain_filter`, and
+  `setTerrainFilterEnabled` calls `syncBulletinTerrain()`, so the raster
+  hides and no region's `terrain` feature state is set (the edge band
+  shows) without the stored switch being rewritten. Turning the filter off
+  brings the slopes back; switching "Sync with map terrain" on turns the
+  filter off. The switches read what is drawn, so they read off while the
+  filter is on. This replaces SNOW-1370's "last tap wins".
 - **Held to z12 by the layer, not only the source.** The tiles are 256 px,
   so MapLibre asks for z12 tiles at map zoom 11 and the source's `minzoom`
   alone let the layer draw there, over a choropleth that only drops out
@@ -85,8 +104,9 @@ orange; below z12 nothing paints and the choropleth shows as ever.
   `minzoom: 12` too.
 - **The region sheet's key is folded away.** The strip under the switch is
   a `<details>` that renders closed on every bulletin (Hugo, 23 Oct: a
-  reader needs the key once). Its summary asks "What is problem terrain?". The zoom hint is the switch's
-  own small second line, which shows only while the map is too far out. Inside are one key
+  reader needs the key once). Its summary asks "What is problem terrain?". The switch's own second
+  line is "From zoom 12, Switzerland", always shown (SNOW-1377; it was a
+  zoom hint shown only while the map was too far out). Inside are one key
   row per line, the steep hatch named "Additional steep terrain (>30°)",
   and one sentence on what the highlight claims. The map legend's
   "Problem terrain" section is unchanged, because the reader opens it on
@@ -104,8 +124,7 @@ orange; below z12 nothing paints and the choropleth shows as ever.
 - The layer sits ABOVE the choropleth, unlike the terrain filter, which
   sits under it: here the layer is the danger for the regions it paints.
 - Switching on from a region's sheet below z12 takes the camera to the
-  region's middle at z12, because the tiles start there; zooming out
-  afterwards shows the sheet's "Zoom in" line.
+  region's middle at z12, because the tiles start there.
 - A failed tile gives the regions in it their danger fill back rather than
   leave them blank; a failed feed paints nothing and hides no fill.
 - **Offline** the feed is not precached: the browser's HTTP cache holds a

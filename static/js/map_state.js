@@ -156,10 +156,11 @@ const OVERLAY_STORAGE_KEY = {
   // is a separate JSON blob under TERRAIN_FILTER_STORAGE_KEY below; this key
   // is only the switch.
   terrain_filter: 'snowdesk.map.overlay.terrain_filter',
-  // The Conditions section's "Highlight problem terrain" row: every
-  // region's steep ground painted by its own bulletin, from z12. Gated as
-  // the terrain filter is (the same class tiles). Defaults OFF for the
-  // same reason. Until 2026-10-23 this was the terrain filter's third
+  // The Avalanche bulletins page's "Sync with map terrain" row (SNOW-1377;
+  // "Highlight problem terrain" before): every region's steep ground
+  // painted by its own bulletin, from z12. Gated as the terrain filter is
+  // (the same class tiles). Defaults ON since SNOW-1377 — map.js reads it
+  // with a default of true. Until 2026-10-23 this was the terrain filter's third
   // colour, "By bulletin"; map.js carries a stored filter in that mode
   // over to this key once (see migrateBulletinMode there).
   problem_terrain: 'snowdesk.map.overlay.problem_terrain',

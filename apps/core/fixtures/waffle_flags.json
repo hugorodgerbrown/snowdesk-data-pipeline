@@ -26,11 +26,6 @@
       "name": "bulletin_alerts",
       "note": "Gates bulletin alerts (SNOW-937): the Alerts group on /account/settings/, its endpoints, the region-pin prompt and the /alerts/<date>/ landing page. A rollout gate: superusers while the send is proven on staging. The send command reads Account.notify_when, not this flag, so an account that opted in keeps its alerts if the flag is narrowed; the flag decides who can turn them on.",
       "superusers": true
-    },
-    {
-      "name": "problem_terrain",
-      "note": "Gates the problem-terrain layer (SNOW-1374) while its controls are redesigned from first principles (SNOW-1371): the layers menu's Highlight problem terrain row, the Steep terrain sheet's switch, the region sheet's switch and key, the map legend's Problem terrain section and the /help/ topic. Off, map.js never draws the layer, so a device that stored it on stops painting it. Superusers only; anonymous requests are short-circuited before waffle (apps.public.problem_terrain.problem_terrain_enabled).",
-      "superusers": true
     }
   ]
 }

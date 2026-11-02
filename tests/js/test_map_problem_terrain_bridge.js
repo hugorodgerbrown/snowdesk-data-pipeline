@@ -1,24 +1,29 @@
 /*
  * tests/js/test_map_problem_terrain_bridge.js — window.pwaBulletinTerrain
- * and the layers menu's "Highlight problem terrain" row (2026-10-23).
+ * and the layers menu's "Sync with map terrain" row (SNOW-1377; it was
+ * "Highlight problem terrain", its own row since 2026-10-23).
  *
- * Problem terrain was the terrain filter's third colour, "By bulletin"
- * (SNOW-1194), until Hugo found it hidden there; it is now a row of its own
- * under Conditions with its own stored switch. What is pinned, because each
- * is the way this goes wrong:
- *   - a device that left the filter on in "By bulletin" comes back with
- *     problem terrain on and the filter off, its own settings kept, and the
- *     carry-over runs once;
- *   - the row toggles the layer through the bridge, which persists it and
- *     announces snowdesk:problem-terrain-changed;
- *   - the layer and the terrain filter are independent switches.
+ * SNOW-1377 made the layer on by default for everyone and gave Steep
+ * terrain precedence over it. What is pinned, because each is the way this
+ * goes wrong:
+ *   - a device that never touched the switch gets the layer on; one that
+ *     switched it off keeps it off;
+ *   - while Steep terrain (the terrain filter) is on, the bulletin's raster
+ *     is hidden and no region's `terrain` feature state is set, so the
+ *     choropleth's edge band shows — WITHOUT the stored switch being
+ *     rewritten, so turning Steep terrain off brings both back;
+ *   - switching "Sync with map terrain" on turns Steep terrain off;
+ *   - a device that left the filter on in the retired "By bulletin" colour
+ *     comes back with problem terrain on and the filter off, its own
+ *     settings kept, and the carry-over runs once.
  *
- * Harness follows test_map_terrain_filter_bridge.js. The MapLibre stub has
- * no addProtocol, so neither layer is installed and the bridges' own
- * behaviour is what is under test.
+ * Each case boots the bundle afresh from its own stored state. The MapLibre
+ * stub has addProtocol, a regions source and a z12 camera, so the layer is
+ * installed and the day's one region is painted, and it records layouts and
+ * feature state for the assertions.
  */
 
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
 import { loadMapBundle } from './_load_map_bundle.js';
@@ -27,10 +32,22 @@ const FILTER_SWITCH_KEY = 'snowdesk.map.overlay.terrain_filter';
 const FILTER_KEY = 'snowdesk.map.terrain_filter';
 const SWITCH_KEY = 'snowdesk.map.overlay.problem_terrain';
 const TILE_URL = 'https://tiles.example.invalid/terrain-class/v1/{z}/{x}/{y}.png';
-const REGIONS_GEOJSON = { type: 'FeatureCollection', features: [] };
+const DAY = '2026-03-15';
+const RASTER = 'bulletin-terrain-raster';
+const REGIONS_GEOJSON = {
+  type: 'FeatureCollection',
+  features: [{
+    type: 'Feature',
+    properties: { id: 'CH-4115', name: 'CH-4115', covered: true },
+    geometry: { type: 'Polygon', coordinates: [[[7, 46], [7, 47], [8, 47], [7, 46]]] },
+  }],
+};
+// The day's one region, painted by a bulletin that describes no ground.
+const PROBLEM_TERRAIN = { date: DAY, bulletins: { b1: [] }, regions: { 'CH-4115': 'b1' } };
 
 /**
- * Minimal MapLibre stub — the bridge needs only the camera.
+ * MapLibre stub recording layouts and feature state, with the sources the
+ * layer reads and a camera at the tiles' zoom.
  *
  * @returns {object} The stub map.
  */
@@ -38,6 +55,8 @@ function stubMapLibre() {
   const handlers = {};
   const layers = new Map();
   const layouts = new Map();
+  const sources = new Map();
+  const featureState = new Map();
   const map = {
     on: (ev, a, b) => { (handlers[ev] ||= []).push(typeof a === 'function' ? a : b); },
     once: (ev, cb) => { (handlers[ev] ||= []).push(cb); },
@@ -48,16 +67,22 @@ function stubMapLibre() {
     getFilter: () => null,
     getLayoutProperty: (id, prop) => (layouts.get(id) || {})[prop],
     getPaintProperty: () => undefined,
-    getFeatureState: () => ({}),
+    getFeatureState: (target) => featureState.get(target.id) || {},
     isSourceLoaded: () => true,
-    getSource: () => null,
-    addSource: () => {},
+    // Only the two sources this layer reads: every other overlay stays
+    // uninstalled, as in the sibling bridge suites.
+    getSource: (id) => sources.get(id) || null,
+    addSource: (id) => {
+      if (id === 'regions' || id === 'bulletin-terrain') {
+        sources.set(id, { setData: () => {}, setTiles: () => {} });
+      }
+    },
     addLayer: (def) => {
       layers.set(def.id, def);
       layouts.set(def.id, { ...(def.layout || {}) });
     },
     removeLayer: (id) => { layers.delete(id); layouts.delete(id); },
-    removeSource: () => {},
+    removeSource: (id) => { sources.delete(id); },
     setLayoutProperty: (id, prop, value) => {
       const layout = layouts.get(id) || {};
       layout[prop] = value;
@@ -65,7 +90,10 @@ function stubMapLibre() {
     },
     setPaintProperty: () => {},
     setFilter: () => {},
-    setFeatureState: () => {},
+    setFeatureState: (target, state) => {
+      if (target.source !== 'regions') return;
+      featureState.set(target.id, { ...(featureState.get(target.id) || {}), ...state });
+    },
     removeFeatureState: () => {},
     setStyle: () => {},
     isStyleLoaded: () => true,
@@ -75,19 +103,19 @@ function stubMapLibre() {
     loaded: () => true,
     areTilesLoaded: () => true,
     listImages: () => [],
-    hasImage: () => false,
+    hasImage: () => true,
     addImage: () => {},
     triggerRepaint: () => {},
     fitBounds: () => {},
     easeTo: () => {},
     flyTo: () => {},
-    getZoom: () => 8,
-    getCenter: () => ({ lng: 8, lat: 46.5 }),
+    getZoom: () => 12,
+    getCenter: () => ({ lng: 7.5, lat: 46.5 }),
     getBounds: () => ({
-      getWest: () => 5, getSouth: () => 45, getEast: () => 10, getNorth: () => 48,
+      getWest: () => 7, getSouth: () => 46, getEast: () => 8, getNorth: () => 47,
     }),
     project: () => ({ x: 0, y: 0 }),
-    unproject: () => ({ lng: 8, lat: 46.5 }),
+    unproject: () => ({ lng: 7.5, lat: 46.5 }),
     queryRenderedFeatures: () => [],
     resize: () => {},
     handlers,
@@ -100,16 +128,17 @@ function stubMapLibre() {
     GeolocateControl: function () { return { on: () => {} }; },
     AttributionControl: function () { return {}; },
     MercatorCoordinate: { fromLngLat: () => ({ x: 0, y: 0 }) },
+    addProtocol: () => {},
   };
   return map;
 }
 
-/** The DOM map.js's boot reads, carrying the row under test. */
+/** The DOM map.js's boot reads, carrying the two rows under test. */
 function buildFixture() {
   document.body.innerHTML = `
     <div id="map"
          data-regions-url="/api/regions.geojson"
-         data-ratings-url="/api/ratings.json"
+         data-ratings-url="/api/ratings/"
          data-resorts-url="/api/resorts.json"
          data-default-basemap-key="openfreemap_liberty"
          data-terrain-filter-eligible="true"
@@ -129,10 +158,10 @@ function buildFixture() {
           <button
             type="button"
             role="menuitemcheckbox"
-            class="basemap-menu-item basemap-menu-item--overlay"
+            class="basemap-menu-item basemap-menu-item--overlay basemap-menu-layer-row group"
             data-overlay-key="problem_terrain"
             aria-checked="false"
-          ><span data-row-label>Highlight problem terrain</span></button>
+          ><span data-row-label>Sync with map terrain</span></button>
         </li>
         <li role="none">
           <button
@@ -150,7 +179,7 @@ function buildFixture() {
             class="basemap-menu-item basemap-menu-item--overlay"
             data-overlay-key="terrain"
             aria-checked="false"
-          ><span data-row-label>Terrain filter</span></button>
+          ><span data-row-label>Steep terrain</span></button>
         </li>
       </ul>
     </div>`;
@@ -158,29 +187,38 @@ function buildFixture() {
 
 const row = () => document.querySelector('[data-overlay-key="problem_terrain"]');
 const filterRow = () => document.querySelector('[data-overlay-key="terrain"]');
-const announced = [];
+const settle = () => new Promise((r) => setTimeout(r, 50));
 
-beforeAll(async () => {
-  // The state SNOW-1194 left behind: the filter switched on, in "By bulletin".
-  window.localStorage.removeItem(SWITCH_KEY);
-  window.localStorage.setItem(FILTER_SWITCH_KEY, 'true');
-  window.localStorage.setItem(
-    FILTER_KEY,
-    JSON.stringify({ mode: 'bulletin', aspects: [0, 1], minSlope: 35 }),
-  );
+/**
+ * Boot the bundle from `stored`, run the load handlers and let the day's
+ * problem-terrain fetch land.
+ *
+ * @param {Object<string, string>} stored localStorage to start from.
+ * @returns {Promise<object>} The stub map.
+ */
+async function boot(stored) {
+  localStorage.clear();
+  for (const [key, value] of Object.entries(stored)) localStorage.setItem(key, value);
+  window.history.replaceState({}, '', `/?d=${DAY}`);
   buildFixture();
-  document.addEventListener('snowdesk:problem-terrain-changed', (e) => announced.push(e.detail));
   window.pwaDb = {
     get: vi.fn(async () => undefined),
     put: vi.fn(async () => {}),
     delete: vi.fn(async () => {}),
   };
-  stubMapLibre();
+  const map = stubMapLibre();
   vi.stubGlobal(
     'fetch',
     vi.fn((url) => {
-      const body = String(url).includes('regions.geojson') ? REGIONS_GEOJSON : {};
-      return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
+      const href = String(url);
+      let body = {};
+      if (href.includes('regions.geojson')) {
+        const country = (href.match(/[?&]country=([a-z]+)/) || [])[1];
+        body = !country || country === 'ch' ? REGIONS_GEOJSON : { type: 'FeatureCollection', features: [] };
+      } else if (href.startsWith('/api/problem-terrain/')) {
+        body = PROBLEM_TERRAIN;
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
     }),
   );
   vi.resetModules();
@@ -191,52 +229,134 @@ beforeAll(async () => {
   await import('../../static/js/terrain_filter_core.js');
   await import('../../static/js/bulletin_terrain_core.js');
   loadMapBundle();
+  for (const handler of map.handlers.load || []) await handler();
+  await settle();
+  return map;
+}
+
+/** Whether the day's region has its danger fill dropped for the slopes. */
+const regionPainted = (map) => !!map.getFeatureState({ source: 'regions', id: 0 }).terrain;
+const rasterVisibility = (map) => map.getLayoutProperty(RASTER, 'visibility');
+
+/**
+ * Count the writes to the stored switch from here on.
+ *
+ * @returns {Array<string>} The values written, appended as they happen.
+ */
+function watchSwitchWrites() {
+  const writes = [];
+  const original = Storage.prototype.setItem;
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+    if (key === SWITCH_KEY) writes.push(value);
+    return original.call(this, key, value);
+  });
+  return writes;
+}
+
+beforeEach(() => {
+  vi.restoreAllMocks();
 });
 
 afterAll(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
-  for (const key of [SWITCH_KEY, FILTER_SWITCH_KEY, FILTER_KEY]) window.localStorage.removeItem(key);
+  localStorage.clear();
+  window.history.replaceState({}, '', '/');
   delete globalThis.maplibregl;
   delete window.pwaDb;
 });
 
-describe('carrying "By bulletin" over to its own row', () => {
-  it('turns problem terrain on and the filter off', () => {
+describe('on by default', () => {
+  it('is on with nothing stored, and paints the day', async () => {
+    const map = await boot({});
     expect(window.pwaBulletinTerrain.isEnabled()).toBe(true);
-    expect(window.pwaTerrainFilter.isEnabled()).toBe(false);
-    expect(window.localStorage.getItem(SWITCH_KEY)).toBe('true');
-    expect(window.localStorage.getItem(FILTER_SWITCH_KEY)).toBe('false');
     expect(row().getAttribute('aria-checked')).toBe('true');
-    expect(filterRow().getAttribute('aria-checked')).toBe('false');
+    expect(rasterVisibility(map)).toBe('visible');
+    expect(regionPainted(map)).toBe(true);
   });
 
-  it('keeps the reader\'s own filter settings, in one tint, so it runs once', () => {
-    expect(JSON.parse(window.localStorage.getItem(FILTER_KEY)).mode).toBe('match');
-    expect(window.pwaTerrainFilter.getFilter()).toMatchObject({
-      mode: 'match', aspects: [0, 1], minSlope: 35,
-    });
+  it('stays off on a device that switched it off', async () => {
+    const map = await boot({ [SWITCH_KEY]: 'false' });
+    expect(window.pwaBulletinTerrain.isEnabled()).toBe(false);
+    expect(row().getAttribute('aria-checked')).toBe('false');
+    expect(rasterVisibility(map)).toBe('none');
+    expect(regionPainted(map)).toBe(false);
   });
 });
 
-describe('the row and the bridge', () => {
-  it('switches the layer off and on, remembering it and announcing it', () => {
-    announced.length = 0;
-    row().click();
+describe('Steep terrain takes precedence', () => {
+  it('hides the slopes while it is on, and brings them back, never rewriting the switch', async () => {
+    const map = await boot({});
+    const writes = watchSwitchWrites();
+
+    window.pwaTerrainFilter.show();
+    expect(rasterVisibility(map)).toBe('none');
+    expect(regionPainted(map)).toBe(false);
     expect(window.pwaBulletinTerrain.isEnabled()).toBe(false);
-    expect(window.localStorage.getItem(SWITCH_KEY)).toBe('false');
     expect(row().getAttribute('aria-checked')).toBe('false');
-    expect(announced.at(-1)).toMatchObject({ enabled: false });
-    window.pwaBulletinTerrain.show();
-    expect(window.localStorage.getItem(SWITCH_KEY)).toBe('true');
+    expect(localStorage.getItem(SWITCH_KEY)).toBe(null);
+
+    window.pwaTerrainFilter.hide();
+    expect(rasterVisibility(map)).toBe('visible');
+    expect(regionPainted(map)).toBe(true);
+    expect(window.pwaBulletinTerrain.isEnabled()).toBe(true);
     expect(row().getAttribute('aria-checked')).toBe('true');
-    expect(announced.at(-1)).toMatchObject({ enabled: true });
+    expect(writes).toEqual([]);
   });
 
-  it('is independent of the terrain filter', () => {
-    window.pwaTerrainFilter.show();
-    expect(window.pwaBulletinTerrain.isEnabled()).toBe(true);
-    window.pwaBulletinTerrain.setEnabled(false);
+  it('opens with the slopes hidden on a device that left Steep terrain on', async () => {
+    const map = await boot({ [FILTER_SWITCH_KEY]: 'true' });
     expect(window.pwaTerrainFilter.isEnabled()).toBe(true);
-    window.pwaTerrainFilter.hide();
+    expect(window.pwaBulletinTerrain.isEnabled()).toBe(false);
+    expect(row().getAttribute('aria-checked')).toBe('false');
+    expect(rasterVisibility(map)).toBe('none');
+    expect(regionPainted(map)).toBe(false);
+  });
+
+  it('turns Steep terrain off when "Sync with map terrain" is switched on', async () => {
+    const map = await boot({ [FILTER_SWITCH_KEY]: 'true' });
+    row().click();
+    expect(window.pwaTerrainFilter.isEnabled()).toBe(false);
+    expect(localStorage.getItem(FILTER_SWITCH_KEY)).toBe('false');
+    expect(filterRow().getAttribute('aria-checked')).toBe('false');
+    expect(window.pwaBulletinTerrain.isEnabled()).toBe(true);
+    expect(localStorage.getItem(SWITCH_KEY)).toBe('true');
+    expect(row().getAttribute('aria-checked')).toBe('true');
+    expect(rasterVisibility(map)).toBe('visible');
+    // The day was never fetched while the slopes were hidden; it is now.
+    await settle();
+    expect(regionPainted(map)).toBe(true);
+  });
+
+  it('leaves Steep terrain alone when the layer is switched off', async () => {
+    await boot({});
+    window.pwaBulletinTerrain.setEnabled(false);
+    expect(localStorage.getItem(SWITCH_KEY)).toBe('false');
+    window.pwaTerrainFilter.show();
+    expect(window.pwaTerrainFilter.isEnabled()).toBe(true);
+    expect(localStorage.getItem(SWITCH_KEY)).toBe('false');
+  });
+});
+
+describe('carrying "By bulletin" over to its own row', () => {
+  it('turns problem terrain on and the filter off, keeping the filter\'s settings in one tint', async () => {
+    // The state SNOW-1194 left behind: the filter switched on, in "By
+    // bulletin", and the problem-terrain switch stored off.
+    await boot({
+      [SWITCH_KEY]: 'false',
+      [FILTER_SWITCH_KEY]: 'true',
+      [FILTER_KEY]: JSON.stringify({ mode: 'bulletin', aspects: [0, 1], minSlope: 35 }),
+    });
+    expect(window.pwaBulletinTerrain.isEnabled()).toBe(true);
+    expect(window.pwaTerrainFilter.isEnabled()).toBe(false);
+    expect(localStorage.getItem(SWITCH_KEY)).toBe('true');
+    expect(localStorage.getItem(FILTER_SWITCH_KEY)).toBe('false');
+    expect(row().getAttribute('aria-checked')).toBe('true');
+    expect(filterRow().getAttribute('aria-checked')).toBe('false');
+    // Its own filter settings, in one tint, so the carry-over runs once.
+    expect(JSON.parse(localStorage.getItem(FILTER_KEY)).mode).toBe('match');
+    expect(window.pwaTerrainFilter.getFilter()).toMatchObject({
+      mode: 'match', aspects: [0, 1], minSlope: 35,
+    });
   });
 });

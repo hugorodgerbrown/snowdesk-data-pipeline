@@ -116,10 +116,10 @@
   const TERRAIN_CLASS_TILE_URL = mapEl.dataset.terrainClassTileUrl || null;
   const TERRAIN_FILTER_ELIGIBLE =
     mapEl.dataset.terrainFilterEligible === 'true' && !!TERRAIN_CLASS_TILE_URL;
-  // SNOW-1374: the problem-terrain layer, behind the problem_terrain flag
-  // while its controls are redesigned. Off, the layer is never drawn,
-  // whatever the device stored: the stored choice is kept (never written
-  // here), so it comes back if the flag is turned on for this reader.
+  // The problem-terrain layer ("Sync with map terrain"). SNOW-1374 put it
+  // behind a waffle flag; SNOW-1377 took the flag off, so it is offered
+  // wherever the terrain tiles are (data-problem-terrain-enabled follows
+  // terrain_filter_eligible).
   const PROBLEM_TERRAIN_ENABLED =
     TERRAIN_FILTER_ELIGIBLE && mapEl.dataset.problemTerrainEnabled === 'true';
   // swisstopo's ski-touring routes (ch.swisstopo-karto.skitouren): a raster
@@ -456,8 +456,9 @@
     // map with it on would greet a visitor who came to read the ratings
     // with terrain. window.pwaTerrainFilter is its one writer.
     terrain_filter: false,
-    // "Highlight problem terrain": off by default, for the terrain filter's
-    // reason. window.pwaBulletinTerrain is its one writer.
+    // "Sync with map terrain": ON by default (SNOW-1377, seeded below) — it
+    // is the bulletin drawn on the ground, not a second colour scheme the
+    // reader chose. window.pwaBulletinTerrain is its one writer.
     problem_terrain: false,
     // SNOW-1185: regions no provider has ever rated stay off the map unless
     // asked for — see applyCountryFilters.
@@ -568,18 +569,20 @@
   // SNOW-473: this seed is re-run inside the ``styledata`` handler after a
   // basemap swap (search "SNOW-473") — keep the two blocks in sync when adding
   // an overlay key.
-  for (const key of ['resorts', 'weather', 'routes', 'terrain_filter', 'problem_terrain', 'unsupported']) {
+  for (const key of ['resorts', 'weather', 'routes', 'terrain_filter', 'unsupported']) {
     overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
   }
-  // SNOW-1374: outside the flag the layer is off, not merely uncontrolled.
-  if (!PROBLEM_TERRAIN_ENABLED) overlayState.problem_terrain = false;
+  // SNOW-1377: on unless switched off. A page without the terrain tiles has
+  // no layer to draw, so it is off there.
+  overlayState.problem_terrain =
+    PROBLEM_TERRAIN_ENABLED && readBoolStorage(OVERLAY_STORAGE_KEY.problem_terrain, true);
   // SNOW-1290: on unless switched off.
   overlayState.community_reports = readBoolStorage(OVERLAY_STORAGE_KEY.community_reports, true);
   // SNOW-1285: the two ski-touring parts, on unless switched off.
   overlayState.ski_tours = SKI_ROUTES_ELIGIBLE && readBoolStorage(OVERLAY_STORAGE_KEY.ski_tours, true);
   overlayState.ski_summits = SKI_ROUTES_ELIGIBLE && readBoolStorage(OVERLAY_STORAGE_KEY.ski_summits, true);
   // 2026-10-23: "By bulletin" left the terrain filter for a row of its own,
-  // "Highlight problem terrain". A device that left the filter switched on
+  // now "Sync with map terrain". A device that left the filter switched on
   // in that colour comes back with problem terrain on and the filter off,
   // and the stored filter's mode becomes 'match' so this runs once. Before
   // the menu rows are seeded below, so they open on the carried-over state.
@@ -591,8 +594,8 @@
       storedFilter = null;
     }
     if (storedFilter && storedFilter.mode === 'bulletin') {
-      // SNOW-1374: outside the flag there is no layer to carry over to, so
-      // the filter stays on in its default colour instead.
+      // A page without the layer has nothing to carry over to, so the
+      // filter stays on in its default colour instead.
       if (overlayState.terrain_filter && PROBLEM_TERRAIN_ENABLED) {
         overlayState.terrain_filter = false;
         overlayState.problem_terrain = true;
@@ -711,6 +714,11 @@
         // SNOW-1109: the terrain filter's row. Its state is overlayState's
         // ``terrain_filter`` (the storage key's name), not a key of its own.
         checked = overlayState.terrain_filter;
+      } else if (key === 'problem_terrain') {
+        // SNOW-1377: the row says what is drawn, and Steep terrain's
+        // colours replace the bulletin's slopes while it is on — the
+        // bulletinTerrainShown() rule, which is declared further down.
+        checked = overlayState.problem_terrain && !overlayState.terrain_filter;
       } else {
         checked = overlayState[key];
       }
@@ -5017,6 +5025,14 @@
     writeStorage(OVERLAY_STORAGE_KEY.terrain_filter, String(on));
     installTerrainFilterLayer();
     syncTerrainFilterRaster();
+    // SNOW-1377: the bulletin's slopes give way to the filter while it is
+    // on, and come back when it goes off — the raster, the regions'
+    // `terrain` state (so the edge band shows) and the switches' state.
+    // The stored problem-terrain choice is not written.
+    if (BULLETIN_TERRAIN_ELIGIBLE) {
+      syncBulletinTerrain();
+      announceProblemTerrain();
+    }
     document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
     announceTerrainFilter();
   };
@@ -5067,7 +5083,8 @@
   // SNOW-979, SNOW-1194: problem terrain — every region's steep ground
   // painted by what its own bulletin says about it.
   //
-  // Its own layers-menu row, "Highlight problem terrain", under Conditions
+  // Its own layers-menu row, "Sync with map terrain" (SNOW-1377; it was
+  // "Highlight problem terrain"), under Avalanche bulletins
   // (2026-10-23; SNOW-1194 had made it the terrain filter's third colour,
   // "By bulletin", and Hugo found it hidden there: it is the bulletin drawn
   // another way, not a filter the reader sets). It is still the filter's
@@ -5089,9 +5106,14 @@
   // selected region alone, from rules in its sheet, and clicking from
   // region to region repainted one at a time (Hugo, 22 Oct: choppy). The
   // menu row and the region sheet's switch both write one
-  // state, overlayState.problem_terrain, so they cannot disagree. It is
-  // independent of the terrain filter: the filter draws under the
-  // choropleth, this above it, and both can be on.
+  // state, overlayState.problem_terrain, so they cannot disagree.
+  //
+  // SNOW-1377: Steep terrain takes precedence. While the terrain filter is
+  // on, the reader's own colours replace the bulletin's slopes: this layer
+  // is not drawn and no region's fill drops out for it, but its stored
+  // state is left alone, so turning the filter off brings the slopes back.
+  // Turning this layer on turns the filter off. (It replaces both layers
+  // being drawn at once, one above the choropleth and one under it.)
   //
   // The tiles exist from z12, so below it nothing paints and the choropleth
   // shows as ever. From z12 each painted region's danger fill drops out
@@ -5154,11 +5176,12 @@
 
   /**
    * Whether the layer should be drawn: its row switched on, and the
-   * problem_terrain flag on for this reader (SNOW-1374).
+   * terrain filter off (SNOW-1377 — Steep terrain takes precedence).
    *
    * @returns {boolean}
    */
-  const bulletinTerrainShown = () => PROBLEM_TERRAIN_ENABLED && !!overlayState.problem_terrain;
+  const bulletinTerrainShown = () =>
+    PROBLEM_TERRAIN_ENABLED && !!overlayState.problem_terrain && !overlayState.terrain_filter;
 
   /**
    * Tell the menu row, the region sheet's switch and the legend key that
@@ -5456,20 +5479,24 @@
      * @returns {void}
      */
     const setProblemTerrainEnabled = (on) => {
-      // SNOW-1374: no control renders outside the flag; refuse a stray call.
+      // No control renders on a page without the layer; refuse a stray call.
       if (!PROBLEM_TERRAIN_ENABLED) return;
       overlayState.problem_terrain = on;
       writeStorage(OVERLAY_STORAGE_KEY.problem_terrain, String(on));
+      // SNOW-1377: the reader asked for the bulletin's slopes, which the
+      // terrain filter would hide, so it goes off. Its settings are kept.
+      if (on && overlayState.terrain_filter) setTerrainFilterEnabled(false);
       syncBulletinTerrain();
       document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
       announceProblemTerrain();
     };
 
-    // The layer's one owner of state. Three controls write it — the layers
-    // menu's "Highlight problem terrain" row (map_basemap_picker.js), the
-    // region sheet's switch and the Steep terrain sheet's (SNOW-1297,
-    // terrain_filter_sheet.js) — and each reads it back
-    // from snowdesk:problem-terrain-changed, so they cannot disagree.
+    // The layer's one owner of state. Two controls write it — the layers
+    // menu's "Sync with map terrain" row (map_basemap_picker.js) and the
+    // region sheet's switch (SNOW-1377 took the Steep terrain sheet's out)
+    // — and each reads it back from snowdesk:problem-terrain-changed, so
+    // they cannot disagree. isEnabled() is what is DRAWN: false while the
+    // terrain filter is on, whatever the stored choice.
     window.pwaBulletinTerrain = Object.freeze({
       isEnabled: bulletinTerrainShown,
       show: () => setProblemTerrainEnabled(true),
@@ -8845,7 +8872,7 @@
     installTerrainFilterLayer();
     installRegionsLayers(geojson);
     // SNOW-979: after the regions — it sits above the choropleth. A reader
-    // who left "Highlight problem terrain" on gets the day now.
+    // who has "Sync with map terrain" on gets the day now.
     installBulletinTerrainLayer();
     if (BULLETIN_TERRAIN_ELIGIBLE) syncBulletinTerrain();
     // The downloaded-areas overlay is a persisted preference now, so a
@@ -11776,10 +11803,11 @@
       // downloadedOverlayVisible instead, which this handler must not touch
       // — a basemap swap must not silently close the downloads overlay out
       // from under an open "Manage downloads" sheet.
-      for (const key of ['resorts', 'weather', 'routes', 'terrain_filter', 'problem_terrain', 'unsupported']) {
+      for (const key of ['resorts', 'weather', 'routes', 'terrain_filter', 'unsupported']) {
         overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
       }
-      if (!PROBLEM_TERRAIN_ENABLED) overlayState.problem_terrain = false;
+      overlayState.problem_terrain =
+        PROBLEM_TERRAIN_ENABLED && readBoolStorage(OVERLAY_STORAGE_KEY.problem_terrain, true);
       overlayState.community_reports = readBoolStorage(OVERLAY_STORAGE_KEY.community_reports, true);
       overlayState.ski_tours = readSkiTouringPart('ski_tours');
       overlayState.ski_summits = readSkiTouringPart('ski_summits');

@@ -36,14 +36,10 @@
  * ``window.pwaStrings.read`` — makemessages never scans JavaScript — with the
  * English literals below as the fallback.
  *
- * SNOW-1297: the sheet also carries the problem-terrain switch, at its top
- * (#terrain-filter-problem-terrain-toggle, includes/_map_overlay_toggle.html).
- * It is the third control on one state, window.pwaBulletinTerrain, beside
- * the layers menu's "Highlight problem terrain" row and the region sheet's
- * switch, so it writes nothing of the filter's: it reads isEnabled() on every
- * open and on ``snowdesk:problem-terrain-changed``, and writes setEnabled()
- * with no region, so the camera stays where it is. With no bridge on the page
- * the strip is hidden.
+ * SNOW-1377: the problem-terrain switch SNOW-1297 put at the sheet's top
+ * left it. The bulletin's own layer, "Sync with map terrain", is switched
+ * from the layers menu and the region sheet; while this filter is on, its
+ * colours replace the bulletin's slopes (map.js's bulletinTerrainShown).
  *
  * map.js announces every change on ``snowdesk:terrain-filter-changed``
  * (on/off, a new filter, the camera moving into or out of a state where the
@@ -346,45 +342,6 @@
     elevation('[data-terrain-filter-max-elevation]', 'maxElevation');
   };
 
-  const PROBLEM_TERRAIN_TOGGLE_ID = 'terrain-filter-problem-terrain-toggle';
-
-  /**
-   * Bring the problem-terrain switch and its detail line in line with the
-   * layer, or hide the strip when this page has no such layer.
-   *
-   * @returns {void}
-   */
-  const syncProblemTerrain = () => {
-    const input = /** @type {HTMLInputElement|null} */ (
-      sheetEl.querySelector('#' + PROBLEM_TERRAIN_TOGGLE_ID)
-    );
-    if (!input) return;
-    const strip = input.closest('[data-panel-overlay-toggle]');
-    const layer = window.pwaBulletinTerrain;
-    if (strip) strip.hidden = !layer;
-    if (!layer) return;
-    const on = !!layer.isEnabled();
-    input.checked = on;
-    const detail = strip && strip.querySelector('[data-panel-overlay-toggle-detail]');
-    if (detail) detail.hidden = !on;
-  };
-
-  /**
-   * Wire the problem-terrain switch on a freshly cloned body.
-   *
-   * @returns {void}
-   */
-  const bindProblemTerrain = () => {
-    const input = sheetEl.querySelector('#' + PROBLEM_TERRAIN_TOGGLE_ID);
-    if (!input) return;
-    input.addEventListener('change', () => {
-      const layer = window.pwaBulletinTerrain;
-      if (!layer) return;
-      layer.setEnabled(/** @type {HTMLInputElement} */ (input).checked);
-    });
-    syncProblemTerrain();
-  };
-
   /**
    * Open the sheet with a fresh body, turning the filter on if it is off.
    *
@@ -396,7 +353,6 @@
     if (!b.isEnabled()) b.show();
     sheetEl.replaceChildren(template.content.cloneNode(true));
     bindSheet();
-    bindProblemTerrain();
     sheet.open();
     renderSheet();
   };
@@ -446,9 +402,6 @@
     renderChrome();
     renderSheet();
   });
-
-  // Another of the layer's switches moved it, or this one did.
-  document.addEventListener('snowdesk:problem-terrain-changed', syncProblemTerrain);
 
   window.pwaTerrainFilterSheet = Object.freeze({
     open: open,
