@@ -38,9 +38,12 @@ def ring_area(ring: Ring) -> float:
 
     """
     total = 0.0
-    for i in range(len(ring) - 1):
+    count = len(ring)
+    for i in range(count):
+        # The modulo closes an open ring; on a closed one (last == first)
+        # the wrapped term is zero, so both shapes give the same area.
         x1, y1 = ring[i][0], ring[i][1]
-        x2, y2 = ring[i + 1][0], ring[i + 1][1]
+        x2, y2 = ring[(i + 1) % count][0], ring[(i + 1) % count][1]
         total += x1 * y2 - x2 * y1
     return total / 2.0
 

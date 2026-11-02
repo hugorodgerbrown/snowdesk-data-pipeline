@@ -1,9 +1,9 @@
 """
 tests/regions/services/test_geometry.py — RFC 7946 ring winding (SNOW-1375).
 
-The map draws each region's edge band with a negative ``line-offset``, which
-lands inside only for RFC 7946 winding: outer rings counter-clockwise, holes
-clockwise. The stored fixtures are mixed, so ``rfc7946_rewind`` orients
+The map draws each region's edge band with a positive ``line-offset`` (an
+inset for a polygon), which follows ring direction, so every served ring is
+RFC 7946 wound: outer rings counter-clockwise, holes clockwise. The stored fixtures are mixed, so ``rfc7946_rewind`` orients
 every served geometry.
 """
 
@@ -24,6 +24,13 @@ def test_ring_area_sign() -> None:
     """Counter-clockwise is positive, clockwise negative."""
     assert ring_area(CCW) == 1.0
     assert ring_area(CW) == -1.0
+
+
+def test_an_open_ring_far_from_the_origin_has_the_same_area() -> None:
+    """The closing edge is counted, so an unclosed ring's sign holds anywhere."""
+    shifted = [[x + 7.0, y + 46.0] for x, y in CCW[:-1]]
+    assert ring_area(shifted) == ring_area(CCW) == 1.0
+    assert ring_area(list(reversed(shifted))) == -1.0
 
 
 def test_a_clockwise_outer_ring_is_reversed() -> None:
