@@ -142,6 +142,7 @@ from apps.regions.services.area_content import (
     weather_location_index,
 )
 from apps.regions.services.basemap_tiles import blob_summary
+from apps.regions.services.geometry import rfc7946_rewind
 from apps.regions.services.resort_pin import set_resort_pin
 from apps.routes.models import SkiSegment, SkiTour
 from apps.routes.services.ski_network import network_overview
@@ -207,7 +208,8 @@ _GEOJSON_CACHE_MAX_AGE = 86400
 # The ``v1`` segment is a manual bust: region geometry only changes when an
 # operator runs a fixture import, and an import is a deploy, so a stale entry
 # cannot outlive a restart. Bump it if the FEATURE SHAPE changes mid-deploy.
-_REGION_GEOJSON_CACHE_PREFIX = "region-geojson:v1"
+# ``v2`` (SNOW-1375): RFC 7946 winding and ``properties.label``.
+_REGION_GEOJSON_CACHE_PREFIX = "region-geojson:v2"
 
 # SNOW-902: how long a region-GeoJSON answer may be REUSED WITHOUT ASKING once
 # it has gone stale — the HTTP ``stale-while-revalidate`` window. Same value as
@@ -978,7 +980,7 @@ def _build_micro_regions_payload(country_param: str) -> dict[str, Any]:
             subregion__major__display_on_map=True,
             boundary__isnull=False,
         )
-        .select_related("subregion__major")
+        .select_related("subregion__major", "centroid_location")
         .iterator()
     )
     for region in qs:
@@ -1015,10 +1017,21 @@ def _build_micro_regions_payload(country_param: str) -> dict[str, Any]:
         download = _download_summary_or_none(region.basemap_download)
         if download is not None:
             properties["download"] = download
+        # SNOW-1375: where the map's level label sits — the region's centroid
+        # Location, which link_region_centroid_locations derives from the
+        # boundary. A region without one simply has no label.
+        centroid = region.centroid_location
+        if centroid is not None:
+            properties["label"] = [
+                round(centroid.longitude, 5),
+                round(centroid.latitude, 5),
+            ]
         features.append(
             {
                 "type": "Feature",
-                "geometry": region.boundary,
+                # SNOW-1375: RFC 7946 winding, so the map's inside edge band
+                # (a negative line-offset) lands inside every region.
+                "geometry": rfc7946_rewind(region.boundary),
                 "properties": properties,
             }
         )

@@ -65,7 +65,10 @@ const featureCollection = () => ({
   type: 'FeatureCollection',
   features: ['CH', 'FR', 'AT', 'IT'].map((country, i) => ({
     type: 'Feature',
-    properties: { id: `${country}-${i}`, prefix: `${country}-${i}`, name: country, country },
+    // SNOW-1375: `label` is where the level label sits.
+    properties: {
+      id: `${country}-${i}`, prefix: `${country}-${i}`, name: country, country, label: [7.5, 46.5],
+    },
     geometry: { type: 'Polygon', coordinates: [[[7, 46], [7, 47], [8, 47], [7, 46]]] },
   })),
 });
@@ -97,10 +100,14 @@ const responseFor = (url) => {
 /** Minimal MapLibre stub — this suite reads filters, not paint. */
 function stubMapLibre() {
   const featureState = new Map();
+  const defs = new Map();
   const handlers = {};
   const layers = new Set();
   const filters = new Map();
   const sourceData = {};
+  // SNOW-1375: recorded, so the edge band's opacity and visibility can be read.
+  const layouts = new Map();
+  const paints = new Map();
   const map = {
     on: (ev, a, b) => { (handlers[ev] ||= []).push(typeof a === 'function' ? a : b); },
     once: () => {},
@@ -124,12 +131,19 @@ function stubMapLibre() {
     addLayer: (def) => {
       layers.add(def.id);
       if (def.filter !== undefined) filters.set(def.id, def.filter);
+      layouts.set(def.id, { ...(def.layout || {}) });
+      paints.set(def.id, { ...(def.paint || {}) });
+      defs.set(def.id, def);
     },
     removeLayer: (id) => { layers.delete(id); filters.delete(id); },
     removeSource: () => {},
     moveLayer: () => {},
-    setLayoutProperty: () => {},
-    setPaintProperty: () => {},
+    setLayoutProperty: (id, prop, value) => {
+      layouts.set(id, { ...(layouts.get(id) || {}), [prop]: value });
+    },
+    setPaintProperty: (id, prop, value) => {
+      paints.set(id, { ...(paints.get(id) || {}), [prop]: value });
+    },
     setFilter: (id, filter) => { filters.set(id, filter); },
     setFeatureState: (target, state) => {
       const id = target && target.id;
@@ -161,6 +175,9 @@ function stubMapLibre() {
     resize: () => {},
     handlers,
     sourceData,
+    layouts,
+    paints,
+    defs,
   };
   globalThis.maplibregl = {
     Map: function () { return map; },
@@ -585,5 +602,68 @@ describe('regions no provider has ever rated (SNOW-1185)', () => {
 
     expect(dropsUnsupported(mapStub, 'regions-fill')).toBe(false);
     expect(filterCodes(mapStub, 'regions-fill')).toEqual(['CH', 'AT']);
+  });
+});
+
+describe('the edge band and level label (SNOW-1375)', () => {
+  const SUPPORTED_ONLY = ['!=', ['get', 'covered'], false];
+  const dropsUnsupported = (mapStub, layerId) => {
+    const filter = mapStub.getFilter(layerId);
+    return Array.isArray(filter) && filter[0] === 'all'
+      && filter.some((term) => JSON.stringify(term) === JSON.stringify(SUPPORTED_ONLY));
+  };
+
+  it('installs both from z10 and filters them as bulletin data', async () => {
+    const mapStub = await boot({ providers: 'country.ch', countries: 'ch fr at it' });
+
+    for (const layerId of ['regions-edge', 'regions-level-label']) {
+      expect(mapStub.defs.get(layerId).minzoom).toBe(10);
+      // The provider filter, not the basemap's, and the unsupported rule.
+      expect(filterCodes(mapStub, layerId)).toEqual(['CH']);
+      expect(dropsUnsupported(mapStub, layerId)).toBe(true);
+    }
+    expect(mapStub.defs.get('regions-label').maxzoom).toBe(10);
+    expect(mapStub.defs.get('regions-edge').paint['line-offset']).toBeLessThan(0);
+    // The level label hides where the region's slopes are painted.
+    expect(JSON.stringify(mapStub.getFilter('regions-level-label')))
+      .toContain(JSON.stringify(['!=', ['get', 'painted'], true]));
+  });
+
+  it('follows the provider rows', async () => {
+    const mapStub = await boot({ providers: 'country.ch', countries: 'ch fr at it' });
+    document.dispatchEvent(new CustomEvent('snowdesk:country-toggle', {
+      detail: { code: 'at', next: true },
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(filterCodes(mapStub, 'regions-edge')).toEqual(['CH', 'AT']);
+    expect(filterCodes(mapStub, 'regions-level-label')).toEqual(['CH', 'AT']);
+  });
+
+  it('turns off with the bulletin layer and back on with it', async () => {
+    const mapStub = await boot({ providers: 'country.ch', countries: 'ch fr at it' });
+    expect(mapStub.layouts.get('regions-edge').visibility).toBe('visible');
+
+    window.pwaBulletinsLayer.setSuppressed('edit-resorts', true);
+    expect(mapStub.layouts.get('regions-edge').visibility).toBe('none');
+    expect(mapStub.layouts.get('regions-level-label').visibility).toBe('none');
+    expect(mapStub.paints.get('regions-edge')['line-opacity']).toBe(0);
+
+    window.pwaBulletinsLayer.setSuppressed('edit-resorts', false);
+    expect(mapStub.layouts.get('regions-edge').visibility).toBe('visible');
+    expect(mapStub.paints.get('regions-edge')['line-opacity'][0]).toBe('case');
+  });
+
+  it('labels a region with its level once the day is painted', async () => {
+    const mapStub = await boot({ providers: 'country.ch', countries: 'ch fr at it' });
+    commitPaintDay();
+    document.dispatchEvent(new CustomEvent('snowdesk:country-toggle', {
+      detail: { code: 'at', next: true },
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(paintedRating(mapStub, 'AT-2')).toBe('high');
+    const labels = mapStub.sourceData['region-labels'];
+    const austria = labels.features.find((f) => f.properties.country === 'AT');
+    expect(austria.properties.text).toBe('4 · AT');
+    expect(austria.geometry.coordinates).toEqual([7.5, 46.5]);
   });
 });

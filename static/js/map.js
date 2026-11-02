@@ -1263,39 +1263,24 @@
   // mirrors the old 0.55/0.85 weights so a selected region still reads
   // stronger than its neighbours at every step.
   const EMPHASIS_RATIO = 0.85 / 0.55;
-  const emphasisOpacity = (resting) => Math.min(1, +(resting * EMPHASIS_RATIO).toFixed(3));
-
-  // "This region is selected or being previewed from the sheet." Module scope
-  // because both the install path and applyBulletinsVisibility build the
-  // opacity expression, and a second copy would be free to drift.
-  const REGION_EMPHASISED = [
-    'any',
-    ['boolean', ['feature-state', 'selected'], false],
-    ['boolean', ['feature-state', 'previewing'], false],
-  ];
-
-  // SNOW-979: a region whose ground the problem-terrain layer is painting
-  // drops its choropleth fill. The layer paints each problem's ground in
-  // the problem's own EAWS colour, and the region's flat danger tint under
-  // it would mix into every one of them — a moderate problem's yellow
-  // reading orange through a considerable region's fill. The outline stays.
-  const REGION_TERRAIN_PAINTED = ['boolean', ['feature-state', 'terrain'], false];
 
   /**
    * ``fill-opacity`` for the choropleth at a given resting opacity: that
-   * value, stepped up for a selected or previewed region.
+   * value, stepped up for a selected or previewed region, fading from z8.5
+   * to a faint trace at z10 (SNOW-1375), and 0 where the problem-terrain
+   * layer paints the region's slopes (SNOW-979: the region's flat tint under
+   * a problem's own EAWS colour would mix into it). The expression lives in
+   * choropleth_core.js, where it is tested.
    *
-   * A plain number when the resting value is 0 — at the off step there is
+   * A plain 0 when the resting value is 0 — at the off step there is
    * nothing to emphasise, and a selected region must not be the one thing
    * still painted after the user switched the layer off.
    *
    * @param {number} resting The effective resting opacity, 0–1.
-   * @returns {Array|number} A MapLibre ``case`` expression, or 0.
+   * @returns {Array|number} A MapLibre zoom ``interpolate``, or 0.
    */
   const regionFillOpacity = (resting) => (
-    resting > 0
-      ? ['case', REGION_TERRAIN_PAINTED, 0, REGION_EMPHASISED, emphasisOpacity(resting), resting]
-      : 0
+    self.pwaChoroplethCore.regionFillOpacityExpr(resting, EMPHASIS_RATIO)
   );
 
   // ``compositeOverBackdrop`` was destructured here for the choropleth's
@@ -1510,11 +1495,14 @@
         // layer throws.
         'cached-tiles-fill', 'cached-tiles-line', 'cached-tiles-line-elsewhere',
         'regions-label',
+        // SNOW-1375: the edge band and the level label.
+        'regions-edge', 'regions-level-label',
       ]) {
         if (map.getLayer(id)) map.removeLayer(id);
       }
       map.removeSource('regions');
     }
+    if (map.getSource('region-labels')) map.removeSource('region-labels');
     map.addSource('regions', { type: 'geojson', data: geojson });
 
     // Fill layer — the choropleth.
@@ -1579,6 +1567,29 @@
       },
     });
     BASE_LAYER_FILTERS['regions-fill'] = map.getFilter('regions-fill') ?? null;
+
+    // SNOW-1375: from z10, a band of the region's colour just inside its
+    // edge, where the fill has faded to a trace. Same colours as the fill,
+    // scaled by the same opacity step, and 0 where the region's slopes are
+    // painted. The negative offset lands inside because the regions payload
+    // is served in RFC 7946 winding.
+    map.addLayer({
+      id: 'regions-edge',
+      type: 'line',
+      source: 'regions',
+      minzoom: self.pwaChoroplethCore.EDGE_MIN_ZOOM,
+      layout: {
+        visibility: fillLayout.opacity > 0 ? 'visible' : 'none',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': fillColours,
+        'line-width': self.pwaChoroplethCore.EDGE_WIDTH_PX,
+        'line-offset': self.pwaChoroplethCore.EDGE_OFFSET_PX,
+        'line-opacity': self.pwaChoroplethCore.regionEdgeOpacityExpr(fillLayout.opacity),
+      },
+    });
+    BASE_LAYER_FILTERS['regions-edge'] = null;
 
     // Outline — base unselected ring.
     //
@@ -1796,6 +1807,8 @@
       type: 'symbol',
       source: 'regions',
       minzoom: 8.5,
+      // SNOW-1375: from z10 the level label below carries the name.
+      maxzoom: self.pwaChoroplethCore.EDGE_MIN_ZOOM,
       layout: {
         visibility: overlayState.l4 ? 'visible' : 'none',
         'text-field': ['get', 'name'],
@@ -1810,6 +1823,36 @@
       },
     });
     BASE_LAYER_FILTERS['regions-label'] = map.getFilter('regions-label') ?? null;
+
+    // SNOW-1375: the level label, "3 · Martigny-Verbier", from z10. Its own
+    // point source because text-field cannot read feature-state, where the
+    // rating lives; refreshRegionLabels rebuilds it when a day is painted
+    // and when the painted-slopes set changes.
+    map.addSource('region-labels', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+    });
+    map.addLayer({
+      id: 'regions-level-label',
+      type: 'symbol',
+      source: 'region-labels',
+      minzoom: self.pwaChoroplethCore.EDGE_MIN_ZOOM,
+      filter: ['!=', ['get', 'painted'], true],
+      layout: {
+        visibility: fillLayout.opacity > 0 ? 'visible' : 'none',
+        'text-field': ['get', 'text'],
+        'text-font': overlayTextFont,
+        'text-size': 12,
+        'text-allow-overlap': false,
+      },
+      paint: {
+        'text-color': '#1a1916',
+        'text-halo-color': 'rgba(255,255,255,0.9)',
+        'text-halo-width': 1.4,
+      },
+    });
+    BASE_LAYER_FILTERS['regions-level-label'] = map.getFilter('regions-level-label') ?? null;
+    refreshRegionLabels();
     raiseMarkerLayers();
     // SNOW-656: mirror the Bulletins step onto the menu control. The layers
     // above were just built from ``bulletinsVisibility``, but the control is
@@ -5051,7 +5094,7 @@
   //
   // The tiles exist from z12, so below it nothing paints and the choropleth
   // shows as ever. From z12 each painted region's danger fill drops out
-  // (feature-state `terrain`, REGION_TERRAIN_PAINTED), because the layer IS
+  // (feature-state `terrain`, read by regionFillOpacity), because the layer IS
   // its danger there.
   // docs/decisions/the-bulletin-terrain-layer-paints-what-it-cannot-decide.md
   const BULLETIN_TERRAIN_CORE = self.pwaBulletinTerrainCore;
@@ -5088,6 +5131,21 @@
   // Feature ids whose danger fill is dropped right now, and whether the
   // camera was at the tiles' zoom when that was last decided.
   let bulletinTerrainHidden = new Set();
+
+  /**
+   * Rebuild the level labels' source from the painted ratings and the
+   * regions whose slopes are painted (SNOW-1375).
+   *
+   * @returns {void}
+   */
+  const refreshRegionLabels = () => {
+    const source = map.getSource('region-labels');
+    if (!source || typeof source.setData !== 'function') return;
+    source.setData(self.pwaChoroplethCore.regionLabelFeatures(
+      Object.values(FEATURE_BY_REGION_ID), REGION_RATINGS, bulletinTerrainHidden,
+    ));
+  };
+  refreshRegionLabelsHook = refreshRegionLabels;
   let bulletinTerrainAtZoom = false;
   const bulletinTerrainMasks = BULLETIN_TERRAIN_ELIGIBLE
     ? TERRAIN_CORE.createTileCache(BULLETIN_TERRAIN_MASK_TILES)
@@ -5197,7 +5255,7 @@
     });
     // ABOVE the choropleth, unlike the terrain filter: this layer IS the
     // danger for the regions it paints (whose own fill drops out, see
-    // REGION_TERRAIN_PAINTED), and the region outlines stay on top of it.
+    // regionFillOpacity), and the region outlines stay on top of it.
     const beforeId = map.getLayer('regions-line') ? 'regions-line' : undefined;
     map.addLayer(
       {
@@ -5247,7 +5305,11 @@
     for (const id of want) {
       if (!bulletinTerrainHidden.has(id)) map.setFeatureState({ source: 'regions', id }, { terrain: true });
     }
+    const changed = want.size !== bulletinTerrainHidden.size
+      || [...want].some((id) => !bulletinTerrainHidden.has(id));
     bulletinTerrainHidden = want;
+    // SNOW-1375: a region whose slopes are painted carries no level label.
+    if (changed) refreshRegionLabels();
   };
 
   /**
@@ -5661,7 +5723,8 @@
   // all — Major / Minor / Micro still ticked, no outlines anywhere. SNOW-658
   // relabelled these rows from countries to providers without narrowing what
   // they filtered, and this is that narrowing.
-  const BULLETIN_DATA_LAYER_IDS = ['regions-fill'];
+  // SNOW-1375: the edge band and level label are bulletin data too.
+  const BULLETIN_DATA_LAYER_IDS = ['regions-fill', 'regions-edge', 'regions-level-label'];
   const BOUNDARY_LAYER_IDS = [
     'regions-line', 'regions-line-unsupported', 'regions-label',
     'sub-regions-line', 'sub-regions-label',
@@ -5696,7 +5759,9 @@
   // SNOW-1196: regions-line takes the covered-only term ALWAYS, since the
   // uncovered ring is the dashed 'regions-line-unsupported', which takes
   // NOTHING_FILTER while the row is off.
-  const UNSUPPORTED_REGION_LAYER_IDS = new Set(['regions-fill', 'regions-label']);
+  const UNSUPPORTED_REGION_LAYER_IDS = new Set([
+    'regions-fill', 'regions-label', 'regions-edge', 'regions-level-label',
+  ]);
   const SUPPORTED_ONLY_FILTER = ['!=', ['get', 'covered'], false];
   const NOTHING_FILTER = ['==', ['literal', 1], ['literal', 0]];
   const unsupportedTerm = (layerId) => {
@@ -6711,6 +6776,20 @@
     if (map.getLayer('regions-fill')) {
       map.setLayoutProperty('regions-fill', 'visibility', fill.visibility);
       map.setPaintProperty('regions-fill', 'fill-opacity', regionFillOpacity(fill.opacity));
+    }
+    // SNOW-1375: the band and label follow the same step, and the off step
+    // hides both (the fill stays installed at 0 so borders remain tappable;
+    // these have nothing to tap).
+    const closeZoomShown = fill.opacity > 0 ? 'visible' : 'none';
+    if (map.getLayer('regions-edge')) {
+      map.setLayoutProperty('regions-edge', 'visibility', closeZoomShown);
+      map.setPaintProperty(
+        'regions-edge', 'line-opacity',
+        self.pwaChoroplethCore.regionEdgeOpacityExpr(fill.opacity),
+      );
+    }
+    if (map.getLayer('regions-level-label')) {
+      map.setLayoutProperty('regions-level-label', 'visibility', closeZoomShown);
     }
     if (map.getLayer('bulletin-groupings-line')) {
       map.setLayoutProperty(
@@ -8825,8 +8904,10 @@
         {
           featureById: FEATURE_BY_REGION_ID,
           intToRating: INT_TO_RATING,
-          setRating: (featureId, rating) =>
-            map.setFeatureState({ source: 'regions', id: featureId }, { rating }),
+          setRating: (featureId, rating) => {
+            map.setFeatureState({ source: 'regions', id: featureId }, { rating });
+            recordRegionRating(featureId, rating);
+          },
         },
         bootRatings,
         { clearMissing: false },

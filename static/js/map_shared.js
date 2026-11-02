@@ -262,9 +262,39 @@ const fetchBulletinGroupingsForDate = (dateKey) => {
 const choroplethDeps = () => ({
   featureById: FEATURE_BY_REGION_ID,
   intToRating: INT_TO_RATING,
-  setRating: (featureId, rating) =>
-    MAP.setFeatureState({ source: 'regions', id: featureId }, { rating }),
+  setRating: (featureId, rating) => {
+    MAP.setFeatureState({ source: 'regions', id: featureId }, { rating });
+    recordRegionRating(featureId, rating);
+  },
 });
+
+// SNOW-1375: each region's painted rating, by feature id, for the level
+// labels (choropleth_core.js regionLabelFeatures). The rating's home is
+// feature-state, which a symbol's text-field cannot read, so every paint
+// also lands here and the label source is rebuilt once per frame.
+// ``refreshRegionLabelsHook`` is map.js's refreshRegionLabels, set at boot.
+const REGION_RATINGS = new Map();
+let refreshRegionLabelsHook = null;
+let regionLabelsQueued = false;
+
+/**
+ * Record one region's painted rating and queue a label rebuild.
+ *
+ * @param {number} featureId The region's feature id.
+ * @param {string} rating The rating key just painted.
+ * @returns {void}
+ */
+const recordRegionRating = (featureId, rating) => {
+  REGION_RATINGS.set(featureId, rating);
+  if (regionLabelsQueued) return;
+  regionLabelsQueued = true;
+  const run = () => {
+    regionLabelsQueued = false;
+    if (refreshRegionLabelsHook) refreshRegionLabelsHook();
+  };
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+  else setTimeout(run, 0);
+};
 
 // Repaint every known region's choropleth fill for the supplied date.
 // `clearMissing: true` — a region with no rating on this date must go back

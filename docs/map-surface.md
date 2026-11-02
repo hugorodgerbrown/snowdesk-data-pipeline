@@ -23,10 +23,12 @@ reads 10 and behaves as 10.
 ```
 z  4    5    6    7    8    9   10   11   12   13   14   15 … 18
    |----|----|----|----|----|----|----|----|----|----|----|----|
-   region fill + outline ........................................  every zoom
+   region outline ...............................................  every zoom
+   region fill ......................|fades 8.5→10, then an 8% trace (SNOW-1375)
+                                  region edge band + "3 · Name" label 10 →
    major-region labels  [5–7)
                   sub-region labels [7–8.5)
-                            region labels [8.5 →
+                            region labels [8.5–10)
    TAP SELECTS A REGION ===========|  ≤ 10 (REGION_SELECT_MAXZOOM)
    region fit / search frame stops at 10 (REGION_FIT_MAX_ZOOM)
                             favourite labels 8 →
