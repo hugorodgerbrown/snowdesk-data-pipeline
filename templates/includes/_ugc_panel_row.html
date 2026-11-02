@@ -126,6 +126,13 @@ Parameters (passed via {% include … with … %}):
                 its age sits in (static/js/relative_time.js keeps that age
                 true on a page left open, which a plain string cannot be).
                 `meta` and `meta_template` are alternatives — pass one.
+  notice        (string, optional) — one plain-text line under the meta
+                line, for something the row has to SAY rather than measure
+                (SNOW-996: the routes upload's "Imported the first of 3
+                tracks"). Kept apart from `meta` because that slot is one
+                opaque string of measured quantities four panels share, set
+                mono; a sentence is not a quantity. Inside the row's own
+                `<li>`, so one item stays one list item.
   value         (string, optional) — trailing mono figure. Measured
                 quantities only, and no current caller — see the note at
                 the top of this file. NOT rendered for a `js_filled` row
@@ -339,6 +346,9 @@ buildRow still finds its hooks by attribute, not by depth.
                         {{ meta }}
                     {% endif %}
                 </span>
+            {% endif %}
+            {% if notice %}
+                <span data-row-notice data-testid="ugc-row-notice" class="text-caption text-text-2">{{ notice }}</span>
             {% endif %}
         </span>
         {# SNOW-832: `value` alone, no longer `value or js_filled` — see    #}
