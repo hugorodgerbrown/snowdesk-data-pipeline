@@ -2072,144 +2072,6 @@ html[data-route-drawing] #map-slopes-notice {
     display: none;
 }
 
-/* —— The chip's line and the status bar (SNOW-1392) ————————————————
-   One stack member holding the region chip and, behind the map_status_bar
-   flag, the status bar beside it. Hidden while neither shows, so an empty
-   row costs the stack no gap. */
-.map-status-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    max-width: 100%;
-}
-
-.map-status-row:not(:has(> :not([hidden]))) {
-    display: none;
-}
-
-/* Read-only: names what the ground is painted with right now. Glass, like
-   the chip; it hands pointer events through, having nothing to press. */
-.map-status-bar {
-    display: inline-flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px 12px;
-    min-height: 44px;
-    padding: 6px 14px;
-    border: 0.5px solid var(--color-border);
-    border-radius: var(--radius-card);
-    background: var(--color-glass);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    box-shadow: var(--shadow-glass);
-    font-size: 0.8125rem;
-    line-height: 1.3;
-    color: var(--color-text-1);
-    pointer-events: none;
-}
-
-.map-status-bar[hidden] {
-    display: none;
-}
-
-.map-status-segment {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    white-space: nowrap;
-}
-
-.map-status-segment[data-muted='true'] {
-    color: var(--color-text-3);
-}
-
-.map-status-label {
-    font-weight: 600;
-}
-
-.map-status-segment[data-kind='basemap'] .map-status-label {
-    font-weight: 500;
-}
-
-.map-status-detail {
-    color: var(--color-text-2);
-}
-
-/* The swatches are .danger-tile squares in the centre region's colour,
-   cut to what each layer paints: the whole square for the fill, its rim
-   for the edge band, a ridge for the slopes. */
-/* Scoped to the bar so it outranks .danger-tile's 36px square and padding. */
-.map-status-bar .map-status-swatch {
-    position: relative;
-    flex: none;
-    width: 16px;
-    min-width: 0;
-    height: 16px;
-    padding: 0;
-    border-radius: 3px;
-}
-
-.map-status-swatch--region-edge::after {
-    content: '';
-    position: absolute;
-    inset: 3px;
-    border-radius: 1px;
-    background: var(--color-card);
-}
-
-.map-status-bar .map-status-swatch--slopes,
-.map-status-bar .map-status-swatch--slopes-off,
-.map-status-bar .map-status-swatch--slopes-ch-only,
-.map-status-bar .map-status-swatch--slopes-none,
-.map-status-bar .map-status-swatch--filter,
-.map-status-bar .map-status-swatch--filter-ch-only {
-    border-radius: 0;
-    clip-path: polygon(0 100%, 32% 30%, 52% 62%, 74% 8%, 100% 100%);
-}
-
-.map-status-bar .map-status-swatch--slopes-off,
-.map-status-bar .map-status-swatch--slopes-ch-only,
-.map-status-bar .map-status-swatch--slopes-none,
-.map-status-bar .map-status-swatch--filter-ch-only {
-    background: var(--color-text-3);
-    opacity: 0.45;
-}
-
-.map-status-bar .map-status-swatch--filter {
-    background: var(--color-terrain-match);
-}
-
-.map-status-swatch--basemap {
-    border: 1.5px solid var(--color-text-3);
-    border-radius: 3px;
-    background: linear-gradient(135deg, transparent 45%, var(--color-text-3) 45%, var(--color-text-3) 55%, transparent 55%);
-}
-
-.map-status-hint {
-    display: inline-flex;
-    align-items: center;
-    padding: 2px 10px;
-    border-radius: 999px;
-    background: var(--color-card-subtle);
-    border: 0.5px solid var(--color-border);
-    white-space: nowrap;
-}
-
-/* The route rail reads the ground itself; the bar withdraws with the chip. */
-#map[data-route-rail-open] .map-status-bar {
-    display: none;
-}
-
-/* A phone has no room for the quieter halves or the basemap: the bar keeps
-   the layers' names and the hint. */
-@media (max-width: 639.98px) {
-    .map-status-detail,
-    .map-status-segment[data-kind='basemap'] {
-        display: none;
-    }
-}
-
 /* ``.map-date-pill`` (the 28px readout that floated above the scrubber thumb)
    was removed along with its mapDatePillInit IIFE in static/js/map.js. The
    scrubbed date has been reported by .map-date-ribbon in the bottom-left row
@@ -3116,7 +2978,7 @@ html[data-route-drawing] #map-slopes-notice {
 /* SNOW-979: the region sheet's problem-terrain key. A problem's ground is
    its EAWS colour at the two-thirds the map paints it at
    (bulletin_terrain_core.js FILL_ALPHA); steep ground no problem describes
-   is unpainted and has no swatch (SNOW-1392); ground a problem
+   is a hatch the other way from no data, and warm; ground a problem
    describes but cannot be placed is a flat grey at the map's ~43%. */
 .map-legend-swatch--terrain-low          { background: color-mix(in srgb, var(--color-eaws-low) 68%, transparent); }
 .map-legend-swatch--terrain-moderate     { background: color-mix(in srgb, var(--color-eaws-moderate) 68%, transparent); }
@@ -3125,6 +2987,16 @@ html[data-route-drawing] #map-slopes-notice {
 .map-legend-swatch--terrain-very_high    { background: color-mix(in srgb, var(--color-eaws-very-high) 68%, transparent); }
 .map-legend-swatch--terrain-undecided {
     background: color-mix(in srgb, var(--color-bulletin-terrain-undecided) 43%, transparent);
+}
+.map-legend-swatch--terrain-undescribed {
+    /* The map's strokes where (px - py) is constant: "\", a 45deg gradient. */
+    background: repeating-linear-gradient(
+        45deg,
+        var(--color-bulletin-terrain-undescribed) 0,
+        var(--color-bulletin-terrain-undescribed) 1.5px,
+        transparent 1.5px,
+        transparent 4px
+    );
 }
 
 /* SNOW-1017: the route's two kinds of leg, drawn as the lines they are —

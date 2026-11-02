@@ -1,6 +1,6 @@
 ---
 name: the-bulletin-terrain-layer-paints-what-it-cannot-decide
-description: Problem terrain, four states, undescribed unpainted; Sync with map terrain, on by default, Steep terrain first; /api/problem-terrain/
+description: Problem terrain, four states, never blank; Sync with map terrain, on by default, Steep terrain first; /api/problem-terrain/
 status: current
 last-reviewed: 2026-11-02
 ---
@@ -19,13 +19,13 @@ from the terrain filter's class tiles, by rules read from that region's
 bulletin for the day (`apps/ingest/normalise/problem_terrain.py`, the
 service's since SNOW-1270 →
 `/api/problem-terrain/` → `static/js/bulletin_terrain_core.js`), in four
-states, three of them painted:
+states:
 
 | State | When | Painted |
 |---|---|---|
 | described | a problem's aspects and heights take the pixel in | that problem's EAWS colour; the highest level wins |
 | undecided | only a problem the pixel test cannot place takes it in (a treeline band; a prose-only trait) | flat grey, `--color-bulletin-terrain-undecided` |
-| undescribed | steep, and no problem describes it | nothing since SNOW-1392 (was a warm-grey `\` hatch, `--color-bulletin-terrain-undescribed`) |
+| undescribed | steep, and no problem describes it | warm-grey `\` hatch, `--color-bulletin-terrain-undescribed` |
 | no data | the tiles have nothing | the terrain filter's slate `/` hatch |
 
 Ground under 30°, level ground and everything outside a painted region is
@@ -34,20 +34,7 @@ drawn — the peak rule of `docs/compressed-views-rating-rule.md`. An empty
 aspect list matches every aspect. From z12, where the tiles start, each
 painted region's choropleth fill drops out (`feature-state` `terrain`), so
 a moderate problem's yellow is not read through a considerable region's
-orange; below z12 nothing paints and the choropleth shows as ever. Since
-SNOW-1392 the region's thin edge band stays, so switching the slopes on
-only adds their colour
-([`the-region-colour-gives-way-by-zoom.md`](the-region-colour-gives-way-by-zoom.md)).
-
-**Amended (SNOW-1392, Hugo, 2 Nov 2026): undescribed ground is unpainted.**
-The mockups at z12 over Val d'Hérens showed the warm-grey hatch covering
-most of the steep ground and burying the problem colour the layer exists
-to show; a grey wash and a faint yellow were tried in its place and both
-dropped. The reasoning in the first bullet below still holds — unpainted
-is not "safe" — but it now lives in words, not paint: the help topic's
-"Unpainted is not safe" paragraph, and the key no longer lists the state.
-The state stays in `bulletin_terrain_core.js` (alpha 0), so restoring a
-mark is a palette change.
+orange; below z12 nothing paints and the choropleth shows as ever.
 
 **Why.**
 

@@ -38,8 +38,6 @@
 
   /** @type {?string} */
   let shownRegion = null;
-  /** SNOW-1392: the status bar is on this page (its map_status_bar flag). */
-  const barShown = !!document.getElementById('map-status-bar');
 
   /**
    * The region feature under the map's centre, if any.
@@ -86,11 +84,7 @@
     levelEl.dataset.level = state.level;
     levelEl.textContent = state.digit;
     nameEl.textContent = state.name;
-    // SNOW-1392: where the status bar is shown it says what the slopes
-    // show, so the chip keeps to the region and its level.
-    const detail = barShown
-      ? ''
-      : (state.detail === 'filter' ? filterSummary() : (STRINGS[state.detail] || ''));
+    const detail = state.detail === 'filter' ? filterSummary() : (STRINGS[state.detail] || '');
     detailEl.textContent = detail;
     detailEl.hidden = !detail;
     // The square is aria-hidden and this label replaces the text contents,

@@ -299,10 +299,9 @@ describe('the fill gives way to the edge by zoom (SNOW-1375)', () => {
     expect(expr[6].at(-1)).toBe(core.FILL_TRACE_OPACITY);
   });
 
-  it('leaves no trace from z10 (SNOW-1392)', () => {
-    expect(core.FILL_TRACE_OPACITY).toBe(0);
+  it('never makes the trace stronger than a weak resting step', () => {
     const expr = core.regionFillOpacityExpr(0.05, 1.5);
-    expect(expr[6].at(-1)).toBe(0);
+    expect(expr[6].at(-1)).toBe(0.05);
   });
 
   it('is off at the off step', () => {
@@ -310,16 +309,15 @@ describe('the fill gives way to the edge by zoom (SNOW-1375)', () => {
     expect(core.regionEdgeOpacityExpr(0)).toBe(0);
   });
 
-  it('draws a thin band inside, from z10, scaled by the step and kept where slopes are painted', () => {
-    // MapLibre: a positive line-offset on a polygon is an inset, and half
-    // the width keeps the whole band on the region's own side.
+  it('draws the band inside, from z10, scaled by the step and 0 where slopes are painted', () => {
+    // MapLibre: a positive line-offset on a polygon is an inset.
     expect(core.EDGE_OFFSET_PX).toBeGreaterThan(0);
-    expect(core.EDGE_OFFSET_PX).toBe(core.EDGE_WIDTH_PX / 2);
-    expect(core.EDGE_WIDTH_PX).toBe(4);
     expect(core.EDGE_MIN_ZOOM).toBe(core.FILL_FADE_END_ZOOM);
-    // A plain number: no per-feature case, so painted slopes never hide it.
-    expect(core.regionEdgeOpacityExpr(0.5)).toBeCloseTo(0.55);
-    expect(core.regionEdgeOpacityExpr(1)).toBeLessThanOrEqual(0.9);
+    const expr = core.regionEdgeOpacityExpr(0.5);
+    expect(expr[0]).toBe('case');
+    expect(expr[2]).toBe(0);
+    expect(expr[3]).toBeCloseTo(0.55);
+    expect(core.regionEdgeOpacityExpr(1)[3]).toBeLessThanOrEqual(0.9);
   });
 
   it('builds one label point per positioned region, level first', () => {
