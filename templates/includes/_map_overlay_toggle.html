@@ -28,7 +28,11 @@ NOTHING here binds a listener. static/js/map_panel_overlay_switch.js
 selects each switch by id — `#map-favourites-overlay-toggle`,
 `#map-community-reports-overlay-toggle`, `#map-routes-overlay-toggle`,
 `#map-downloads-overlay-toggle` — and delegates on the document, because
-every panel body is re-cloned on every open.
+every panel body is re-cloned on every open. Two instances are bound by
+their own sheet's module instead, both for the problem-terrain layer:
+`#region-sheet-terrain-toggle` (static/js/map_region_sheet.js) and
+`#terrain-filter-problem-terrain-toggle` (static/js/terrain_filter_sheet.js,
+SNOW-1297).
 
 Parameters (passed via {% include … with … %}):
   id    (string) — DOM id for the switch input, so the label's `for`

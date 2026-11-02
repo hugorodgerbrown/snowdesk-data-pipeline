@@ -2,7 +2,7 @@
 name: the-bulletin-terrain-layer-paints-what-it-cannot-decide
 description: Problem terrain (SNOW-979, SNOW-1194) — four states, never blank; Highlight problem terrain, /api/problem-terrain/, bulletin_terrain_core
 status: current
-last-reviewed: 2026-10-23
+last-reviewed: 2026-11-02
 ---
 
 # The problem-terrain layer paints what it cannot decide
@@ -66,10 +66,12 @@ orange; below z12 nothing paints and the choropleth shows as ever.
   the two can both be on: the filter draws under the choropleth, this
   above it. A device that left the filter on in "By bulletin" comes back
   with this on and the filter off (map.js, once, at boot).
-- **One state, two switches.** The menu row and the region sheet's switch
-  both write `window.pwaBulletinTerrain`, and each
-  reads it back from `snowdesk:problem-terrain-changed`. Two stored states
-  would drift.
+- **One state, three switches.** The menu row, the region sheet's switch
+  and, since SNOW-1297, the switch at the top of the Steep terrain sheet all
+  write `window.pwaBulletinTerrain`, and each reads it back from
+  `snowdesk:problem-terrain-changed`. Separate stored states would drift.
+  The Steep terrain sheet's is a switch for this layer, not a third colour
+  of the filter, so the 23 Oct separation holds.
 - **Held to z12 by the layer, not only the source.** The tiles are 256 px,
   so MapLibre asks for z12 tiles at map zoom 11 and the source's `minzoom`
   alone let the layer draw there, over a choropleth that only drops out

@@ -43,6 +43,16 @@ The visual states (wedge, ramp tile, mountain) are the .terrain-* rules in
 src/css/main.css: they hang off aria-pressed and the ramp's data-mode,
 which Tailwind's utilities cannot combine.
 
+SNOW-1297: directly under the context line, above COLOUR, the
+problem-terrain switch (includes/_map_overlay_toggle.html,
+#terrain-filter-problem-terrain-toggle), labelled "Highlight problem
+terrain" as the layers-menu row and the region sheet's switch are. It is
+not a colour: it switches the bulletin's own layer, the third control on
+window.pwaBulletinTerrain's one state, so turning that layer off is found
+where a reader goes to change what is painted on the ground. At the top
+because on a phone this sheet's foot can sit below the fold.
+terrain_filter_sheet.js binds it.
+
 MapSheet.attach empties the sheet on every close, so the body is a
 <template> cloned on every open (static/js/terrain_filter_sheet.js) — the
 shape the sign-in sheet in _map_embed.html uses. The JS talks only to
@@ -59,6 +69,12 @@ Included by public/map.html only for an eligible page
     {# at the same -mt-1.5 / px-2 / text-summary the UGC panels use.       #}
     {% include "includes/_sheet_header.html" with title=terrain_filter_title icon_template="includes/_icon_layers.html" close_action="dismiss" title_class="text-lg font-semibold" %}
     <p class="-mt-1.5 px-2 text-summary text-text-3">{% trans "The map changes as you change these." %}</p>
+    {# SNOW-1297: the bulletin's own layer, switched from here too. #}
+    <div class="mt-3">
+        {% translate "Highlight problem terrain" as problem_terrain_label %}
+        {% translate "Painted from each region's bulletin, over this filter" as problem_terrain_detail %}
+        {% include "includes/_map_overlay_toggle.html" with id="terrain-filter-problem-terrain-toggle" label=problem_terrain_label detail=problem_terrain_detail %}
+    </div>
     {# SNOW-1194: the swatch sits above the word, which three tiles needed. #}
     {% with mode_tile="flex min-h-11 cursor-pointer flex-col items-center justify-center gap-1 rounded-sm border border-border bg-card px-2 py-2 text-center text-sm text-text-2 has-checked:border-accent has-checked:bg-accent-tint has-checked:text-accent has-focus-visible:outline-2 has-focus-visible:outline-accent" %}
         <fieldset class="mt-4">

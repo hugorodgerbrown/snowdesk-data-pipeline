@@ -9,6 +9,9 @@
  * seeded from the bridge, edits handed back to it, and every word read from
  * the strings template rather than the English fallback.
  *
+ * SNOW-1297: the sheet's problem-terrain switch writes window.pwaBulletinTerrain,
+ * stubbed here too, and never the filter.
+ *
  * The fixture mirrors the hooks of
  * apps/public/templates/public/partials/_map_terrain_filter_sheet.html.
  */
@@ -41,6 +44,21 @@ function stubBridge() {
   return bridge;
 }
 
+/** The problem-terrain layer's bridge, announcing as map.js's does. */
+function stubBulletinTerrain() {
+  const state = { enabled: false };
+  const layer = {
+    state,
+    isEnabled: () => state.enabled,
+    setEnabled: vi.fn((on) => {
+      state.enabled = on;
+      document.dispatchEvent(new CustomEvent('snowdesk:problem-terrain-changed'));
+    }),
+  };
+  window.pwaBulletinTerrain = layer;
+  return layer;
+}
+
 /** The sheet, its two templates, the menu row and the legend. */
 function buildFixture() {
   document.documentElement.lang = 'en';
@@ -61,6 +79,11 @@ function buildFixture() {
     <div id="map-terrain-filter-sheet" hidden tabindex="-1" data-overlay></div>
     <template id="map-terrain-filter-template">
       <h2>Terrain filter</h2>
+      <div data-panel-overlay-toggle>
+        <label for="terrain-filter-problem-terrain-toggle">Highlight problem terrain</label>
+        <span data-panel-overlay-toggle-detail hidden>Painted from each region's bulletin</span>
+        <input type="checkbox" id="terrain-filter-problem-terrain-toggle">
+      </div>
       <input type="radio" name="terrain-filter-mode" value="match" checked>
       <input type="radio" name="terrain-filter-mode" value="slope">
       <span data-terrain-filter-slope-line></span>
@@ -98,6 +121,8 @@ function buildFixture() {
 
 /** @type {ReturnType<typeof stubBridge>} */
 let bridge;
+/** @type {ReturnType<typeof stubBulletinTerrain>} */
+let problemTerrain;
 const sheetEl = () => document.getElementById('map-terrain-filter-sheet');
 const q = (selector) => sheetEl().querySelector(selector);
 const changeEvent = () => new Event('change', { bubbles: true });
@@ -110,6 +135,7 @@ const optionValues = (select) => [...select.options].map((o) => o.value);
 beforeAll(async () => {
   buildFixture();
   bridge = stubBridge();
+  problemTerrain = stubBulletinTerrain();
   vi.resetModules();
   await import('../../static/js/map_sheet.js');
   await import('../../static/js/slope_classes_core.js');
@@ -119,6 +145,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   delete window.pwaTerrainFilter;
+  delete window.pwaBulletinTerrain;
   delete window.pwaTerrainFilterSheet;
   delete window.MapSheet;
 });
@@ -130,6 +157,9 @@ beforeEach(() => {
   bridge.state.availability = 'ok';
   bridge.setFilter.mockClear();
   bridge.show.mockClear();
+  window.pwaBulletinTerrain = problemTerrain;
+  problemTerrain.state.enabled = false;
+  problemTerrain.setEnabled.mockClear();
 });
 
 describe('opening the sheet', () => {
@@ -328,5 +358,54 @@ describe('the menu row and legend', () => {
     expect(summary().textContent).toBe('');
     expect(document.querySelector('[data-terrain-filter-legend-summary]').textContent).toBe('');
     expect(document.querySelector('[data-terrain-filter-legend]').hidden).toBe(true);
+  });
+});
+
+describe('the problem-terrain switch (SNOW-1297)', () => {
+  const toggle = () => /** @type {HTMLInputElement} */ (q('#terrain-filter-problem-terrain-toggle'));
+  const detail = () => q('[data-panel-overlay-toggle-detail]');
+  const strip = () => q('[data-panel-overlay-toggle]');
+
+  it('opens on the layer\'s state, either way', () => {
+    window.pwaTerrainFilterSheet.open();
+    expect(toggle().checked).toBe(false);
+    expect(detail().hidden).toBe(true);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+    problemTerrain.state.enabled = true;
+    window.pwaTerrainFilterSheet.open();
+    expect(toggle().checked).toBe(true);
+    expect(detail().hidden).toBe(false);
+  });
+
+  it('switches the layer, with no region, and leaves the filter alone', () => {
+    window.pwaTerrainFilterSheet.open();
+    toggle().checked = true;
+    toggle().dispatchEvent(changeEvent());
+    expect(problemTerrain.setEnabled).toHaveBeenLastCalledWith(true);
+    expect(detail().hidden).toBe(false);
+
+    toggle().checked = false;
+    toggle().dispatchEvent(changeEvent());
+    expect(problemTerrain.setEnabled).toHaveBeenLastCalledWith(false);
+    expect(detail().hidden).toBe(true);
+    expect(bridge.setFilter).not.toHaveBeenCalled();
+    expect(bridge.isEnabled()).toBe(true);
+  });
+
+  it('follows the layer when another switch moves it', () => {
+    window.pwaTerrainFilterSheet.open();
+    problemTerrain.setEnabled(true);
+    expect(toggle().checked).toBe(true);
+    expect(detail().hidden).toBe(false);
+    problemTerrain.setEnabled(false);
+    expect(toggle().checked).toBe(false);
+    expect(detail().hidden).toBe(true);
+  });
+
+  it('is hidden on a page with no problem-terrain layer', () => {
+    delete window.pwaBulletinTerrain;
+    window.pwaTerrainFilterSheet.open();
+    expect(strip().hidden).toBe(true);
   });
 });
