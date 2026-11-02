@@ -29,6 +29,16 @@
  * where it sits on the scale and whether the camera is at a zoom where it
  * is available. `levels` numbers every whole zoom on the line.
  *
+ * THE LABELS sit in their own column, away from the axis, and a curved
+ * connector runs from each gate's level to its label (2026-11-02: five
+ * gates crowd z9–z12, and two can share a level). `labelRows` places the
+ * labels: each wants to sit level with its gate, and where neighbours
+ * would overlap they are spread as one evenly spaced group centred on
+ * where they want to be, so no label strays further than it must and any
+ * number can share a level. `connectorPath` draws the curve between the
+ * two — horizontal at both ends, so it leaves the axis and meets the label
+ * square on.
+ *
  * Every function here is pure.
  *
  * Exports (frozen `self.pwaZoomControlCore`):
@@ -41,6 +51,8 @@
  *   levels(minZoom, maxZoom)                → Array<{zoom, position}>
  *   isReached(gate, zoom)                   → boolean
  *   zoomRange(gates)                        → "10–12" | "10" | ""
+ *   labelRows(ticks, height, pitch)         → Array<number> (px, top-down)
+ *   connectorPath(x0, y0, x1, y1)           → SVG path data
  *
  * The last two serve the layers menu too (SNOW-1280,
  * static/js/map_layers_zoom_gates.js): a zoom-limited row fades while its
@@ -69,9 +81,6 @@
    * @property {boolean} upTo Whether the gate holds up to its zoom.
    * @property {boolean} reached Whether the feature is available at the
    *   camera's zoom.
-   * @property {?('above'|'below')} side Set only when two gates share a
-   *   zoom: their rows would sit on the same line, so the first is drawn
-   *   just above it and the second just below. Null otherwise.
    */
 
   /**
@@ -174,10 +183,9 @@
    * @param {number} zoom The camera's zoom.
    * @param {number} minZoom The map's minimum zoom.
    * @param {number} maxZoom The map's maximum zoom.
-   * At a shared zoom an `upTo` gate sorts after a `from` one, and is the
-   * one drawn below the line: it holds from there DOWN the scale, and the
-   * other from there up (the region selector's ≤10 and the ski-touring
-   * routes' ≥10).
+   * At a shared zoom an `upTo` gate sorts after a `from` one, so
+   * `labelRows` sets it below: it holds from there DOWN the scale, and the
+   * other from there up.
    *
    * @returns {Array<Tick>} Sorted by zoom, then from-before-upTo, then key.
    */
@@ -193,16 +201,10 @@
         position: scalePosition(gate.zoom, minZoom, maxZoom),
         upTo: !!gate.upTo,
         reached: isReached(gate, zoom),
-        side: /** @type {?('above'|'below')} */ (null),
       }))
       .sort((a, b) => a.zoom - b.zoom
         || Number(a.upTo) - Number(b.upTo)
         || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
-    for (let i = 1; i < out.length; i += 1) {
-      if (out[i].zoom !== out[i - 1].zoom) continue;
-      out[i - 1].side = out[i - 1].side || 'above';
-      out[i].side = 'below';
-    }
     return out;
   }
 
@@ -222,7 +224,77 @@
     return out;
   }
 
+  /**
+   * Where each tick's label sits, in px down the scale.
+   *
+   * Each label wants the height of its gate's level. Labels closer than
+   * `pitch` are merged into one group, spaced `pitch` apart and centred on
+   * the mean of where its members want to be — then kept inside the scale,
+   * which can push a group into its neighbour, so merging repeats until
+   * nothing overlaps. Two gates on one level fan either side of it, the
+   * one listed first (a `from` gate, by `ticks`' order) above.
+   *
+   * @param {ReadonlyArray<{position: number}>} items Ticks, as `ticks` sorts them.
+   * @param {number} height The scale's height in px.
+   * @param {number} pitch The distance between two labels' centres in px.
+   * @returns {Array<number>} One centre per item, in the items' order.
+   */
+  function labelRows(items, height, pitch) {
+    if (!Array.isArray(items) || !items.length) return [];
+    const ideal = items.map((item) => (1 - item.position) * height);
+    // Top of the scale first; on a shared level, the earlier tick first.
+    const order = ideal.map((_y, i) => i).sort((a, b) => ideal[a] - ideal[b] || a - b);
+    const lo = pitch / 2;
+    const hi = height - pitch / 2;
+    /** @type {Array<{members: Array<number>, sum: number, top: number}>} */
+    const groups = [];
+    const place = (/** @type {{members: Array<number>, sum: number, top: number}} */ g) => {
+      const span = (g.members.length - 1) * pitch;
+      const centred = g.sum / g.members.length - span / 2;
+      g.top = Math.max(lo, Math.min(hi - span, centred));
+    };
+    for (const index of order) {
+      const group = { members: [index], sum: ideal[index], top: 0 };
+      place(group);
+      groups.push(group);
+      while (groups.length > 1) {
+        const last = groups[groups.length - 1];
+        const prev = groups[groups.length - 2];
+        if (prev.top + prev.members.length * pitch <= last.top + EPSILON) break;
+        prev.members.push(...last.members);
+        prev.sum += last.sum;
+        groups.pop();
+        place(prev);
+      }
+    }
+    const out = new Array(items.length);
+    for (const g of groups) {
+      g.members.forEach((index, k) => { out[index] = g.top + k * pitch; });
+    }
+    return out;
+  }
+
+  /**
+   * The connector from a gate's level on the axis to its label: a cubic
+   * curve, horizontal where it leaves the axis and where it meets the
+   * label, so a label level with its gate gets a straight line.
+   *
+   * @param {number} x0 The axis, in px.
+   * @param {number} y0 The gate's level, in px down the scale.
+   * @param {number} x1 Where the label begins, in px.
+   * @param {number} y1 The label's centre, in px down the scale.
+   * @returns {string} SVG path data.
+   */
+  function connectorPath(x0, y0, x1, y1) {
+    const r = (/** @type {number} */ n) => Math.round(n * 100) / 100;
+    const mid = x0 + (x1 - x0) * 0.55;
+    return 'M' + r(x0) + ' ' + r(y0)
+      + ' C' + r(mid) + ' ' + r(y0) + ' ' + r(mid) + ' ' + r(y1) + ' ' + r(x1) + ' ' + r(y1);
+  }
+
   self.pwaZoomControlCore = Object.freeze({
+    labelRows: labelRows,
+    connectorPath: connectorPath,
     levels: levels,
     EPSILON: EPSILON,
     scalePosition: scalePosition,

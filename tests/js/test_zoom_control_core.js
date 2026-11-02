@@ -3,8 +3,8 @@
  * (static/js/zoom_control_core.js, SNOW-1077).
  *
  * Where a zoom sits on the scale, the whole zoom the face shows, − and +
- * disabled at the map's bounds, and ticks only for the gated layers that
- * are on.
+ * disabled at the map's bounds, a tick for every gated layer, and where
+ * each tick's label and connector sit.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -104,18 +104,13 @@ describe('ticks', () => {
     expect(core.levels(NaN, MAX)).toEqual([]);
   });
 
-  it('sets two gates on one level either side of its line, from above up-to', () => {
+  it('orders a from gate before an up-to gate on a shared level', () => {
     const shared = [
       { key: 'region_select', zoom: 10, upTo: true },
       { key: 'ski_routes', zoom: 10 },
-      { key: 'terrain_filter', zoom: 12 },
     ];
-    const out = core.ticks(shared, 11, MIN, MAX);
-    expect(out.map((t) => [t.key, t.side])).toEqual([
-      ['ski_routes', 'above'],
-      ['region_select', 'below'],
-      ['terrain_filter', null],
-    ]);
+    expect(core.ticks(shared, 11, MIN, MAX).map((t) => t.key))
+      .toEqual(['ski_routes', 'region_select']);
   });
 
   it('drops a gate outside the range, and survives a missing list', () => {
@@ -150,5 +145,54 @@ describe('zoomRange', () => {
     expect(core.zoomRange([{ key: 'a', zoom: 10 }, { key: 'b', zoom: 10 }])).toBe('10');
     expect(core.zoomRange([])).toBe('');
     expect(core.zoomRange(null)).toBe('');
+  });
+});
+
+// 2026-11-02: the labels sit in their own column, tied to their levels by
+// curves, so a crowded or shared level spreads its labels apart.
+describe('labelRows', () => {
+  const H = 280;
+  const PITCH = 30;
+  const at = (zoom) => ({ position: core.scalePosition(zoom, MIN, MAX) });
+
+  it('leaves a label with room level with its gate', () => {
+    expect(core.labelRows([at(10), at(14)], H, PITCH)).toEqual([160, 80]);
+  });
+
+  it('spreads a crowded run evenly, centred on where it wants to be', () => {
+    const rows = core.labelRows([at(9), at(10), at(11), at(12), at(14)], H, PITCH);
+    // Five labels want 180, 160, 140, 120 and 80: one group, mean 136.
+    expect(rows).toEqual([196, 166, 136, 106, 76]);
+  });
+
+  it('fans two gates on one level either side of it, the first above', () => {
+    const rows = core.labelRows([at(10), at(10)], H, PITCH);
+    expect(rows).toEqual([145, 175]);
+  });
+
+  it('never lets two labels overlap, nor leave the scale', () => {
+    const many = [4, 4, 4, 5, 18, 18].map(at);
+    const rows = core.labelRows(many, H, PITCH);
+    const sorted = [...rows].sort((a, b) => a - b);
+    for (let i = 1; i < sorted.length; i += 1) {
+      expect(sorted[i] - sorted[i - 1]).toBeGreaterThanOrEqual(PITCH - 1e-9);
+    }
+    expect(sorted[0]).toBeGreaterThanOrEqual(PITCH / 2);
+    expect(sorted.at(-1)).toBeLessThanOrEqual(H - PITCH / 2);
+  });
+
+  it('answers nothing for no ticks', () => {
+    expect(core.labelRows([], H, PITCH)).toEqual([]);
+    expect(core.labelRows(null, H, PITCH)).toEqual([]);
+  });
+});
+
+describe('connectorPath', () => {
+  it('leaves the axis and meets the label horizontally', () => {
+    expect(core.connectorPath(36, 180, 96, 196)).toBe('M36 180 C69 180 69 196 96 196');
+  });
+
+  it('is a straight line for a label level with its gate', () => {
+    expect(core.connectorPath(36, 80, 96, 80)).toBe('M36 80 C69 80 69 80 96 80');
   });
 });

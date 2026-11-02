@@ -20,7 +20,10 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import translation
 
-from apps.public._component_fixtures import MAP_ZOOM_CONTROL_VARIANTS
+from apps.public._component_fixtures import (
+    MAP_ZOOM_CONTROL_VARIANTS,
+    _zoom_label_rows,
+)
 from tests.factories import UserFactory
 
 PARTIAL = "public/partials/_map_zoom_control.html"
@@ -128,9 +131,22 @@ def test_the_library_panel_renders(staff_client: Client) -> None:
     assert "Camera zoom 12.47" in body
 
 
-def test_a_gate_alone_on_its_level_sits_on_its_line() -> None:
-    """SNOW-1285: ski touring's ≥9 and the region selector's ≤10 share no level."""
-    html = render_to_string(PARTIAL, _variant("At z12")["context"])
-    for key in ("ski_routes", "region_select", "terrain_filter"):
-        tick = html[html.index(f'data-zoom-tick="{key}"') :]
-        assert "data-zoom-side" not in tick[: tick.index(">")]
+def test_crowded_labels_are_spread_and_tied_to_their_levels() -> None:
+    """2026-11-02: z9–z12 crowd, so the labels fan out and a curve ties each back."""
+    context = _variant("At z12")["context"]
+    rows = [tick["row"] for tick in context["zoom_ticks"]]
+    # ski_routes, region_select, rest_zones, terrain_filter, route_slopes:
+    # one group, 30px apart, centred on the levels they want.
+    assert rows == [196.0, 166.0, 136.0, 106.0, 76.0]
+    html = render_to_string(PARTIAL, context)
+    assert html.count('class="map-zoom-connector"') == len(rows)
+    assert 'style="top: 106.0px"' in html
+    connector = html[html.index('data-zoom-connector="terrain_filter"') :]
+    assert "data-reached" in connector[: connector.index(">")]
+    assert 'd="M36 120 C69 120 69 106 96 106"' in connector
+
+
+def test_a_label_with_room_has_a_straight_connector() -> None:
+    """A lone gate's label sits level with it, so its curve is a straight line."""
+    assert _zoom_label_rows([160.0, 80.0]) == [160.0, 80.0]
+    assert _zoom_label_rows([160.0, 160.0]) == [145.0, 175.0]

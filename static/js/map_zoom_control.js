@@ -81,6 +81,8 @@
   const marker = flyout.querySelector('[data-zoom-marker]');
   const tickList = flyout.querySelector('[data-zoom-ticks]');
   const levelList = flyout.querySelector('[data-zoom-levels]');
+  const scale = flyout.querySelector('[data-zoom-scale]');
+  const connectorLayer = flyout.querySelector('[data-zoom-connectors]');
   const cameraLine = flyout.querySelector('[data-zoom-camera]');
   const tickTemplate = document.getElementById('map-zoom-tick-template');
 
@@ -136,46 +138,76 @@
     return first ? /** @type {HTMLElement} */ (first.cloneNode(true)) : null;
   }
 
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+
+  /**
+   * The scale's geometry in px, read from the flyout's CSS custom
+   * properties (map.css .map-zoom-flyout) so the stylesheet stays the one
+   * place they are set; the fallbacks are the same values, for a page
+   * (or jsdom) with no stylesheet.
+   *
+   * @returns {{height: number, trackX: number, labelX: number, pitch: number}}
+   */
+  function geometry() {
+    const style = getComputedStyle(flyout);
+    const px = (/** @type {string} */ name, /** @type {number} */ fallback) => {
+      const value = parseFloat(style.getPropertyValue(name));
+      return Number.isFinite(value) && value > 0 ? value : fallback;
+    };
+    const measured = scale ? scale.clientHeight : 0;
+    return {
+      height: measured > 0 ? measured : px('--zoom-scale-h', 280),
+      trackX: px('--zoom-track-x', 36),
+      labelX: px('--zoom-label-x', 96),
+      pitch: px('--zoom-label-pitch', 30),
+    };
+  }
+
   // The ticks last drawn, as one string, so a frame of a pinch that moves
   // no tick across its gate rebuilds nothing.
   let drawnTicks = null;
 
   /**
-   * Redraw the ticks, when they changed.
+   * Redraw the ticks and their connectors, when they changed.
    *
    * Each tick names one zoom-gated feature and its threshold (≥12, ≤10),
-   * placed
-   * at the height of the level it becomes available. It is bold while the
-   * camera is at a zoom where the feature works, switched on or not: the
-   * scale answers "what can I do at this zoom", which is what a reader
-   * who switched something on and saw nothing needs.
+   * in the label column, joined by a curve to a node on the axis at the
+   * level it becomes available (zoom_control_core.labelRows places the
+   * labels, connectorPath draws the curve). It is bold, and its curve
+   * dark, while the camera is at a zoom where the feature works, switched
+   * on or not: the scale answers "what can I do at this zoom", which is
+   * what a reader who switched something on and saw nothing needs.
    *
    * @param {Array<{key: string, zoom: number, position: number, reached: boolean, upTo: boolean}>} ticks
    * @returns {void}
    */
   function renderTicks(ticks) {
-    // The rows themselves change only when the gates do. A zoom past a
-    // threshold restyles the row in place rather than rebuilding it, so a
-    // row that holds keyboard focus — the one just tapped, say — keeps it
-    // while the map animates through its threshold.
-    const signature = ticks.map((t) => [t.key, t.zoom, t.upTo].join(':')).join('|');
+    const geo = geometry();
+    // The rows themselves change only when the gates (or the scale's
+    // size) do. A zoom past a threshold restyles the row in place rather
+    // than rebuilding it, so a row that holds keyboard focus — the one
+    // just tapped, say — keeps it while the map animates through its
+    // threshold.
+    const signature = geo.height + '#' + ticks.map((t) => [t.key, t.zoom, t.upTo].join(':')).join('|');
     if (signature === drawnTicks && tickList) {
       ticks.forEach((tick, i) => {
         tickList.children[i]?.toggleAttribute('data-reached', tick.reached);
+        connectorLayer?.children[i]?.toggleAttribute('data-reached', tick.reached);
       });
       return;
     }
     drawnTicks = signature;
 
+    const rows = core.labelRows(ticks, geo.height, geo.pitch);
     const tickNodes = [];
-    for (const tick of ticks) {
+    const connectorNodes = [];
+    ticks.forEach((tick, i) => {
       const tickNode = cloneRow(tickTemplate);
-      if (!tickNode) continue;
+      if (!tickNode) return;
+      const levelY = (1 - tick.position) * geo.height;
       tickNode.dataset.zoomTick = tick.key;
       tickNode.toggleAttribute('data-reached', tick.reached);
-      if (tick.side) tickNode.dataset.zoomSide = tick.side;
-      else delete tickNode.dataset.zoomSide;
-      tickNode.style.top = ((1 - tick.position) * 100).toFixed(2) + '%';
+      tickNode.style.top = rows[i].toFixed(2) + 'px';
       const button = tickNode.querySelector('[data-zoom-tick-button]');
       if (button) button.dataset.zoomTarget = String(tick.zoom);
       const label = tickNode.querySelector('[data-zoom-tick-label]');
@@ -187,8 +219,26 @@
         );
       }
       tickNodes.push(tickNode);
-    }
+
+      // One <g> per tick, in the ticks' order, so the restyle above can
+      // find a tick's connector by its index.
+      const group = document.createElementNS(SVG_NS, 'g');
+      group.setAttribute('class', 'map-zoom-connector');
+      group.setAttribute('data-zoom-connector', tick.key);
+      group.toggleAttribute('data-reached', tick.reached);
+      const path = document.createElementNS(SVG_NS, 'path');
+      path.setAttribute('class', 'map-zoom-connector-line');
+      path.setAttribute('d', core.connectorPath(geo.trackX, levelY, geo.labelX, rows[i]));
+      const node = document.createElementNS(SVG_NS, 'circle');
+      node.setAttribute('class', 'map-zoom-connector-node');
+      node.setAttribute('cx', String(geo.trackX));
+      node.setAttribute('cy', levelY.toFixed(2));
+      node.setAttribute('r', '3');
+      group.append(path, node);
+      connectorNodes.push(group);
+    });
     if (tickList) tickList.replaceChildren(...tickNodes);
+    if (connectorLayer) connectorLayer.replaceChildren(...connectorNodes);
   }
 
   // The level range last numbered, so the numbers are written once per

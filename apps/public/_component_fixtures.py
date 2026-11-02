@@ -3107,19 +3107,77 @@ SEASON_SCRUBBER_VARIANTS: tuple[dict[str, Any], ...] = (
 # opens. On /map/ static/js/map_zoom_control.js fills every value from the
 # map; here each variant sets them, across the map's range of z4 to z18.
 # The gates are the ones window.pwaZoomGates publishes on a page with every
-# layer: the ski-touring routes from z10, the region selector at z10 and
-# below, the terrain overlay from z12 and the route slope angle from z14.
-# All four are named on every variant, bold where the camera's zoom makes
-# them available — switched on or not. The two at z10 sit either side of
-# its line (``side``).
+# layer: the ski-touring routes from z9, the region selector at z10 and
+# below, the rest zones from z11, the terrain overlay from z12 and the
+# route slope angle from z14. All five are named on every variant, bold
+# where the camera's zoom makes them available — switched on or not — in
+# the label column, each tied to its level by a curve. The labels are
+# placed by the same rule as zoom_control_core.labelRows, in the px
+# map.css sets on .map-zoom-flyout.
 
 _MAP_MIN_ZOOM = 4
 _MAP_MAX_ZOOM = 18
+# map.css .map-zoom-flyout: --zoom-scale-h, --zoom-track-x, --zoom-label-x,
+# --zoom-label-pitch.
+_ZOOM_SCALE_H = 280.0
+_ZOOM_TRACK_X = 36.0
+_ZOOM_LABEL_X = 96.0
+_ZOOM_LABEL_PITCH = 30.0
 
 
 def _zoom_pct(zoom: float) -> float:
     """Return how far down the vertical scale ``zoom`` sits, 0..100 (top = z18)."""
     return round((_MAP_MAX_ZOOM - zoom) / (_MAP_MAX_ZOOM - _MAP_MIN_ZOOM) * 100, 2)
+
+
+def _zoom_level_y(zoom: float) -> float:
+    """Return how far down the scale ``zoom`` sits, in px."""
+    return (_MAP_MAX_ZOOM - zoom) / (_MAP_MAX_ZOOM - _MAP_MIN_ZOOM) * _ZOOM_SCALE_H
+
+
+def _zoom_label_rows(levels: list[float]) -> list[float]:
+    """Return each label's centre in px, spread so no two overlap.
+
+    The Python twin of ``zoom_control_core.labelRows``: overlapping labels
+    merge into one group spaced a pitch apart, centred on where its members
+    want to be and kept inside the scale. ``levels`` are px, in tick order.
+    """
+    pitch, low, high = _ZOOM_LABEL_PITCH, _ZOOM_LABEL_PITCH / 2, _ZOOM_SCALE_H
+    high -= _ZOOM_LABEL_PITCH / 2
+    order = sorted(range(len(levels)), key=lambda i: (levels[i], i))
+    groups: list[dict[str, Any]] = []
+
+    def place(group: dict[str, Any]) -> None:
+        """Centre ``group`` on its members' mean, inside the scale."""
+        span = (len(group["members"]) - 1) * pitch
+        centred = group["sum"] / len(group["members"]) - span / 2
+        group["top"] = max(low, min(high - span, centred))
+
+    for index in order:
+        group: dict[str, Any] = {"members": [index], "sum": levels[index]}
+        place(group)
+        groups.append(group)
+        while len(groups) > 1:
+            last, prev = groups[-1], groups[-2]
+            if prev["top"] + len(prev["members"]) * pitch <= last["top"] + 0.001:
+                break
+            prev["members"] += last["members"]
+            prev["sum"] += last["sum"]
+            groups.pop()
+            place(prev)
+    rows = [0.0] * len(levels)
+    for group in groups:
+        for k, index in enumerate(group["members"]):
+            rows[index] = round(group["top"] + k * pitch, 2)
+    return rows
+
+
+def _zoom_connector_path(y0: float, y1: float) -> str:
+    """Return the curve from the axis at ``y0`` to a label at ``y1`` (connectorPath)."""
+    x0, x1 = _ZOOM_TRACK_X, _ZOOM_LABEL_X
+    mid = round(x0 + (x1 - x0) * 0.55, 2)
+    y0, y1 = round(y0, 2), round(y1, 2)
+    return f"M{x0:g} {y0:g} C{mid:g} {y0:g} {mid:g} {y1:g} {x1:g} {y1:g}"
 
 
 def _zoom_tick(
@@ -3129,15 +3187,12 @@ def _zoom_tick(
     camera: float,
     *,
     up_to: bool = False,
-    side: str | None = None,
 ) -> dict[str, Any]:
     """Return one tick, reached when ``camera`` is where the feature works."""
     return {
-        "side": side,
         "key": key,
         "label": label,
         "zoom": gate,
-        "pct": _zoom_pct(gate),
         "threshold": f"≤{gate}" if up_to else f"≥{gate}",
         "reached": int(camera) <= gate if up_to else camera >= gate,
     }
@@ -3157,32 +3212,26 @@ def _zoom_variant(
 ) -> dict[str, Any]:
     """Return one zoom-control variant at a camera zoom."""
     ticks = [
-        _zoom_tick(
-            "ski_routes",
-            "SAC ski touring",
-            9,
-            camera,
-        ),
-        _zoom_tick(
-            "region_select",
-            "Region selector",
-            10,
-            camera,
-            up_to=True,
-        ),
-        _zoom_tick(
-            "terrain_filter",
-            "Steep terrain",
-            12,
-            camera,
-        ),
-        _zoom_tick(
-            "route_slopes",
-            "Route slope angle",
-            14,
-            camera,
-        ),
+        _zoom_tick("ski_routes", "SAC ski touring", 9, camera),
+        _zoom_tick("region_select", "Region selector", 10, camera, up_to=True),
+        _zoom_tick("rest_zones", "Wildlife rest zones", 11, camera),
+        _zoom_tick("terrain_filter", "Steep terrain", 12, camera),
+        _zoom_tick("route_slopes", "Route slope angle", 14, camera),
     ]
+    level_ys = [_zoom_level_y(tick["zoom"]) for tick in ticks]
+    rows = _zoom_label_rows(level_ys)
+    connectors = []
+    for tick, level_y, row in zip(ticks, level_ys, rows, strict=True):
+        tick["row"] = row
+        connectors.append(
+            {
+                "key": tick["key"],
+                "d": _zoom_connector_path(level_y, row),
+                "node_x": f"{_ZOOM_TRACK_X:g}",
+                "node_y": f"{level_y:g}",
+                "reached": tick["reached"],
+            }
+        )
     return {
         "caption": caption,
         "context": {
@@ -3191,6 +3240,7 @@ def _zoom_variant(
             "zoom_marker_pct": _zoom_pct(camera),
             "zoom_levels": _ZOOM_LEVELS,
             "zoom_ticks": ticks,
+            "zoom_connectors": connectors,
             "zoom_out_disabled": camera <= _MAP_MIN_ZOOM,
             "zoom_in_disabled": camera >= _MAP_MAX_ZOOM,
             "zoom_camera_visible": debug,

@@ -30,7 +30,8 @@ document.body.innerHTML = `
     </button>
     <div id="map-zoom-flyout" role="dialog" aria-label="Zoom" hidden>
       <button type="button" data-zoom-step="out">-</button>
-      <div>
+      <div data-zoom-scale>
+        <svg data-zoom-connectors></svg>
         <ol data-zoom-levels></ol>
         <ol data-zoom-ticks></ol>
         <span data-zoom-marker></span>
@@ -254,8 +255,24 @@ describe('the ticks', () => {
       .toEqual(['region_select', 'terrain_filter', 'route_slopes']);
     expect(tick('terrain_filter').querySelector('[data-zoom-tick-label]').textContent)
       .toBe('Steep terrain');
-    // z12 sits 8/14 of the way up z4..z18.
-    expect(tick('terrain_filter').style.top).toBe('42.86%');
+    // z12 sits 8/14 of the way up z4..z18: 120px down a 280px scale (the
+    // CSS fallbacks — jsdom lays nothing out), and its label has room to
+    // sit level with it.
+    expect(tick('terrain_filter').style.top).toBe('120px');
+  });
+
+  it('tie each label to its level with a curve and a node on the axis', () => {
+    toggle.click();
+    const connectors = [...flyout.querySelectorAll('[data-zoom-connectors] > g')];
+    expect(connectors.map((g) => g.dataset.zoomConnector))
+      .toEqual(['region_select', 'terrain_filter', 'route_slopes']);
+    const terrain = connectors[1];
+    expect(terrain.querySelector('path').getAttribute('d')).toBe('M36 120 C69 120 69 120 96 120');
+    expect(terrain.querySelector('circle').getAttribute('cy')).toBe('120.00');
+    expect(terrain.hasAttribute('data-reached')).toBe(false);
+    zoom = 12.2;
+    fireZoom();
+    expect(terrain.hasAttribute('data-reached')).toBe(true);
   });
 
   it('number every whole level on the line, z18 at the top', () => {
