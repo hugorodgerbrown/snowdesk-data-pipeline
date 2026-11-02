@@ -1,8 +1,8 @@
 ---
 name: mcp-server
-description: MCP JSON-RPC at POST /api/mcp/ and staff /api/ops/mcp/ (ops_tools) — mcp-auth bearer auth, tools, MCP Apps view
+description: MCP JSON-RPC at POST /api/mcp/ and staff /api/ops/mcp/ — mcp-auth auth, tools, MCP Apps view, search_docs / read_doc
 status: current
-last-reviewed: 2026-11-01
+last-reviewed: 2026-11-02
 ---
 
 # MCP server
@@ -96,10 +96,10 @@ endpoints in `tests/mcp_server/test_views.py`.
 | `initialize` | Returns `protocolVersion`, `capabilities: {"tools": {}, "resources": {}}`, `serverInfo: {name: "snowdesk", version: <APP_VERSION>}`. |
 | `notifications/initialized` | A notification (no `id`) — accepted, no response body (`202 Accepted` — the Streamable HTTP transport requires 202; a `204` stalled Claude's connector after the handshake). |
 | `ping` | Liveness check; empty result `{}`. |
-| `tools/list` | Returns all seventeen tools below with `name`, `description`, `inputSchema`, and `_meta` for the two MCP Apps tools. |
+| `tools/list` | Returns all seventeen tools below, plus the three [docs tools](#documentation-tools), with `name`, `description`, `inputSchema`, and `_meta` for the two MCP Apps tools. |
 | `tools/call` | `{"name": ..., "arguments": {...}}` → a `CallToolResult` (`content`, `structuredContent`, `isError`). |
-| `resources/list` | Lists the MCP Apps `ui://` views (see [MCP Apps](#mcp-apps-danger-map-view)). |
-| `resources/read` | `{"uri": "ui://…"}` → the view's HTML plus `_meta.ui.csp`; an unknown URI is `-32002`. |
+| `resources/list` | Lists the MCP Apps `ui://` views (see [MCP Apps](#mcp-apps-danger-map-view)), then one `docs://<id>` resource per doc in the server's [corpus](#documentation-tools). |
+| `resources/read` | `{"uri": "ui://…"}` → the view's HTML plus `_meta.ui.csp`; `{"uri": "docs://…"}` → the doc as `text/markdown`; an unknown URI is `-32002`. |
 
 ## Tools
 
@@ -641,6 +641,35 @@ A user behind such a filter still gets the tool's text result; only the
 map is lost. The blocked host is Anthropic's, so it cannot be worked
 around from this server.
 
+## Documentation tools
+
+SNOW-1393. Both servers carry `search_docs`, `read_doc` and `list_docs`
+(`apps/mcp_server/docs_tools.py`) so an LLM can answer "how does Snowdesk
+work?" without the codebase. Same names and arguments on both; what they
+can see is split by audience (`apps/mcp_server/docs_corpus.py`):
+
+| Server | Corpus | Holds |
+|--------|--------|-------|
+| `/api/mcp/` | `public_corpus()` | The `/help/` topics (`help/<slug>`, rendered from `public/help/_topic_*.html` in English; the flag-gated `what3words` and `sync-log` topics left out), `docs/bulletin-guide`, and `docs/explainers/*` reduced to text |
+| `/api/ops/mcp/` | `ops_corpus()` | All of the above, plus `CLAUDE.md`, `apps/*/CLAUDE.md` and every `docs/**/*.md` outside the dated folders (`code-reviews`, `page-audits`, `qa`, `research`) |
+
+| Tool | Does |
+|------|------|
+| `search_docs` | `query` (required), `limit` (1–25, default 8), `kind`. BM25 over sections — a heading's words weigh three times the body's, at most two hits per doc — each hit with its doc id, section heading, kind, status and a snippet. The text content lists every hit too, for a client that reads only text |
+| `read_doc` | `doc` (an id, a path with `.md`, a `docs://` URI or a unique slug) and `section` (a heading, or words from exactly one). `offset` (the `next_offset` of a cut reply). The text is Markdown and is also the tool's text content; a reply holds at most 40,000 characters and, when cut, gives `next_offset` and says so in the text — a single section can run past the limit (CLAUDE.md's routing table does), so the offset, not the section, is what reaches the rest |
+| `list_docs` | Every doc's id, title, description, kind and status; `kind` lists one kind |
+
+Kinds: `help`, `guide`, `explainer` (both servers); `doc`, `decision`,
+`runbook`, `claude-md` (ops). `status` comes from the frontmatter, so a
+superseded decision reads `historical`.
+
+The corpora are read from the files the running build ships, once per
+process (`functools.cache`) — a deploy is the only way a doc changes, so
+the answer always matches the code it describes. Building the public one
+renders eighteen templates (about two seconds, cold); a search is a few
+milliseconds. Why it is built this way:
+[`docs/decisions/docs-are-served-from-the-build.md`](decisions/docs-are-served-from-the-build.md).
+
 ## The ops server (staff only)
 
 `apps/mcp_server/ops_tools.py` (SNOW-1191) is a second catalogue served by
@@ -668,6 +697,7 @@ read-only except the two waffle setters and `run_command` below.
 | `list_runnable_commands` | The commands `run_command` can start (`mcp_runnable = True`): help, options, whether each has `--commit`, its last run, and whether this environment has a task worker |
 | `run_command` | **Writes.** Queues one runnable command on the task worker and returns its task id at once — see [Running commands](#running-commands) |
 | `get_command_task` | A queued command's task state and, once it has started, its register row: status, counts, duration, output tail |
+| `search_docs` / `read_doc` / `list_docs` | The full docs corpus — see [Documentation tools](#documentation-tools) |
 | `set_flag` | **Writes.** Sets an existing flag's `everyone` override `on` or `off`, or `targeted` to clear it so percent, staff, groups and users decide again |
 
 ### The waffle setters
@@ -831,9 +861,9 @@ challenge.
   alphabetically-first child `MicroRegion`'s `region_id` — a best-effort
   representative for major regions with multiple children, since a major
   region has no bulletin page of its own.
-* **Resources are views only.** Reference data (`list_regions`,
+* **Resources are views and docs only.** Reference data (`list_regions`,
   `region_info`) is exposed as `tools/call` methods, not as MCP resources;
-  `resources/list` holds only the MCP Apps `ui://` views.
+  `resources/list` holds the MCP Apps `ui://` views and the `docs://` docs.
 
 ## See also
 

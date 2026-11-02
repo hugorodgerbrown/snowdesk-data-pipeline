@@ -24,6 +24,9 @@ Two families:
   queues an ``mcp_runnable`` command on the task worker) and
   ``get_command_task``, defined in ``apps.mcp_server.command_tools`` and
   merged in at the end of this module.
+* **Docs** (SNOW-1393) — ``search_docs``, ``read_doc`` and ``list_docs``
+  over the full documentation corpus, from ``apps.mcp_server.docs_tools``
+  and also merged in at the end.
 * **Waffle writes** — ``set_switch`` and ``set_flag`` turn an existing
   switch or flag on or off. Each needs the name, the state and a reason,
   changes nothing when the row is already in that state, never creates a
@@ -64,6 +67,8 @@ from apps.core.command_register import _environment
 from apps.core.models import CommandRun
 from apps.locations.models import Location
 from apps.mcp_server.command_tools import COMMAND_TOOLS
+from apps.mcp_server.docs_corpus import ops_corpus
+from apps.mcp_server.docs_tools import docs_tools
 from apps.mcp_server.resolvers import _PROVIDER_BY_COUNTRY
 from apps.mcp_server.tools import (
     ToolError,
@@ -1485,3 +1490,10 @@ OPS_TOOLS: dict[str, ToolSpec] = {
 
 # The command runner (list_runnable_commands, run_command, get_command_task).
 OPS_TOOLS.update(COMMAND_TOOLS)
+OPS_TOOLS.update(
+    docs_tools(
+        ops_corpus,
+        "every doc, decision record, runbook and CLAUDE.md in the repo, "
+        "plus the help pages and explainers",
+    )
+)

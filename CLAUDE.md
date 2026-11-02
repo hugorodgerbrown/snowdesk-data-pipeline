@@ -189,6 +189,10 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
   mcp_server/    JSON-RPC MCP tools at POST /api/mcp/ (docs/mcp-server.md);
                  no models of its own — it reads the bulletins/regions tables.
                  Every call needs an mcp-auth bearer token (SNOW-1193).
+                 Both servers carry the docs tools (SNOW-1393,
+                 docs_tools.py / docs_corpus.py): the public one over
+                 the help topics, bulletin guide and explainers, ops
+                 over every doc, decision and CLAUDE.md.
                  ops_tools.py is the staff ops catalogue, served at the
                  sibling POST /api/ops/mcp/ (SNOW-1191) — never nest it
                  under /api/mcp/: token audience is a URL prefix
@@ -923,6 +927,7 @@ Read these when working in the relevant area:
 | Web Push (VAPID keypair, Render wiring, smoke test) | [`docs/push-notifications.md`](docs/push-notifications.md) |
 | Telemetry pipeline (/api/telemetry receiver, event allowlist, pwa.* signals) | [`docs/telemetry-pipeline.md`](docs/telemetry-pipeline.md) |
 | MCP server (POST /api/mcp/ JSON-RPC tools, season cost caps, fuzzy region search; the staff ops catalogue ops_tools — CommandRun register, build_info, ingest and estate health) | [`docs/mcp-server.md`](docs/mcp-server.md) |
+| Why the MCP docs tools read the deployed docs, split by audience (search_docs, read_doc, list_docs, docs:// resources; docs_corpus public_corpus — help topics, bulletin guide, explainers — vs ops_corpus — every living doc, decision, runbook and CLAUDE.md; BM25 in process, no embeddings; GATED_HELP_TOPICS, DATED_FOLDERS) | [`docs/decisions/docs-are-served-from-the-build.md`](docs/decisions/docs-are-served-from-the-build.md) |
 | OAuth for the MCP endpoints (mcp-auth on django-oauth-toolkit; /.well-known/oauth-protected-resource, /oauth/authorize, token, register, revoke; verified_account; the verify-first gate; connected apps + oauth:disconnect; CONSENT_RETURN page; MCPAuthContract; mint_mcp_token) | [`docs/oauth.md`](docs/oauth.md) |
 | Why mcp-auth replaced the hand-written OAuth server (SNOW-1193; shared contract test, sibling /api/ops/mcp/, the CSP and the meta-refresh return) | [`docs/decisions/mcp-auth-replaces-the-hand-written-oauth-server.md`](docs/decisions/mcp-auth-replaces-the-hand-written-oauth-server.md) |
 | HISTORICAL — why Snowdesk was its own hand-written OAuth server (SNOW-1035; superseded by SNOW-1193) | [`docs/decisions/snowdesk-is-its-own-oauth-server.md`](docs/decisions/snowdesk-is-its-own-oauth-server.md) |
