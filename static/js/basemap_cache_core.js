@@ -94,7 +94,13 @@
   // this ticket, a branch that never reads the cache, so every warmed
   // sheet was unservable offline. An all-digit segment is the legacy
   // integer form, a 301, and stays network-only.
-  const PUBLIC_JSON_PATH = /^\/api\/weather\/(?!\d+\/)[A-Za-z0-9_-]+\/detail\/$/;
+  //
+  // SNOW-1379: and the problem-terrain feed, ``/api/problem-terrain/?d=``,
+  // which an area downloaded with terrain tiles warms per forward day so
+  // the map paints the day's slopes offline. Like ``/api/ratings/`` the
+  // url carries the date and no account, and the answer is the same for
+  // every reader; exact-url, so the warmed ``?d=`` is the one map.js asks.
+  const PUBLIC_JSON_PATH = /^\/api\/(?:weather\/(?!\d+\/)[A-Za-z0-9_-]+\/detail|problem-terrain)\/$/;
 
   // SNOW-1312: the map's region sheet, ``/partials/region-sheet/<id>/``.
   // Public — its body reads no ``request.user`` — and warmed by every area

@@ -147,6 +147,14 @@ describe('classifySync — the SNOW-965 JSON classes', () => {
     expect(classify('/api/weather/Ab3dE_fGh1J/detail/?date=2026-01-06')).toBe('public-json');
   });
 
+  it('classifies the problem-terrain feed as public-json (SNOW-1379)', () => {
+    // Dated, account-free and the same for every reader, as /api/ratings/.
+    expect(classify('/api/problem-terrain/?d=2026-01-06')).toBe('public-json');
+    expect(classify('/api/problem-terrain/')).toBe('public-json');
+    expect(classify('/api/problem-terrain/?d=2026-01-06', 'POST')).toBe('network');
+    expect(classify('/api/problem-terrain/extra/')).toBe('network');
+  });
+
   it("classifies the map's region sheet as public-partial (SNOW-1312)", () => {
     expect(classify('/partials/region-sheet/ch-4115/?d=2026-01-06&r=1')).toBe('public-partial');
     expect(classify('/partials/region-sheet/AT-07-14-01/')).toBe('public-partial');

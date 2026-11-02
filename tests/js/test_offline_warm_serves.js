@@ -147,6 +147,9 @@ const CONTENT_INPUT = {
   regionSheetTemplate: TEMPLATES.regionSheet,
   resortSheetTemplate: TEMPLATES.resortSheet,
   ratingsUrl: TEMPLATES.ratings,
+  // SNOW-1379: an area with terrain tiles, so the problem-terrain feed is
+  // in the plan (CH-4115 is in a terrain country).
+  terrain: true,
 };
 
 // What `/api/area-items/` answers: a trip, a pin that borrows a forecast
@@ -226,6 +229,13 @@ const FAMILIES = [
     producer: 'areaContentURLs.ratingsUrls',
     match: new RegExp(`^/api/ratings/\\?d=${DAY}&country=[a-z]{2}$`),
     swClass: 'static',
+    principal: 'independent',
+  },
+  {
+    name: 'problem terrain',
+    producer: 'areaContentURLs.problemTerrainUrls',
+    match: new RegExp(`^/api/problem-terrain/\\?d=${DAY}$`),
+    swClass: 'public-json',
     principal: 'independent',
   },
   {
