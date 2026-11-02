@@ -32,8 +32,14 @@ Context expected:
         <p class="pb-3 text-sm text-text-2">
             {% trans "Today's bulletin for the regions you've pinned, and the weather at your pinned resorts." %}
         </p>
+        {% comment %}
+        The list's rows bleed to the panel's edges (-mx-4 on its <ul>), so
+        the scroll box spans them too (-mx-4 px-4): a scroll box narrower
+        than its content scrolls sideways, as overflow-y-auto implies
+        overflow-x auto.
+        {% endcomment %}
         <div
-            class="min-h-0 flex-1 overflow-y-auto"
+            class="-mx-4 min-h-0 flex-1 overflow-y-auto px-4"
             data-today-rows
             data-today-url="{% url 'favourites:today' %}"
         >

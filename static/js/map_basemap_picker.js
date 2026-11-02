@@ -337,6 +337,11 @@
   // height no longer enters into it.
   const stack = document.getElementById('map-controls-br');
 
+  // The gap kept between the top row of controls and a menu under it — the
+  // same 8px the column keeps between its roundels, and the same gap
+  // map_overlay_bounds.js leaves under that row for a left-hand sheet.
+  const TOP_ROW_GAP = 8;
+
   /**
    * Place the menu's lower edge and cap its height to the room that leaves.
    *
@@ -364,7 +369,30 @@
 
     // Then the height that baseline leaves above it, so the first rows never
     // clip behind the header (SNOW-511's original point).
-    menu.style.maxHeight = `${bounds.maxHeight}px`;
+    //
+    // That room is measured from #map's top, but the top row of controls
+    // (#map-utility-cluster: the date row and search) floats OVER the map.
+    // On a phone it spans the full width, so the menu sits under it, and a
+    // menu that fit when it opened grew up behind that row once a switch
+    // added a second line to its row ("Zoom in to view"), hiding its own
+    // header (SNOW-1389). Where the row covers the menu's columns, the
+    // menu's top stops one gap below the row instead. On a desktop the row
+    // stays on the left, the menu opens on the right, and the cap stays as
+    // it was.
+    let maxHeight = bounds.maxHeight;
+    const cluster = document.getElementById('map-utility-cluster');
+    const clusterBox = cluster ? cluster.getBoundingClientRect() : null;
+    const menuBox = menu.getBoundingClientRect();
+    if (
+      clusterBox && clusterBox.height > 0
+      && clusterBox.left < menuBox.right && clusterBox.right > menuBox.left
+    ) {
+      maxHeight = Math.min(
+        maxHeight,
+        Math.max(0, Math.round(bounds.floorY - clusterBox.bottom - TOP_ROW_GAP)),
+      );
+    }
+    menu.style.maxHeight = `${maxHeight}px`;
   };
 
   /**
