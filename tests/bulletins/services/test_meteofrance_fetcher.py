@@ -22,6 +22,7 @@ import tempfile
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -163,8 +164,9 @@ class TestRunMeteofrance:
         assert run.records_failed == 1
 
     @pytest.mark.django_db
-    def test_http_error_increments_records_failed(self) -> None:
+    def test_http_error_increments_records_failed(self, settings: Any) -> None:
         """An HTTP error for a massif increments records_failed."""
+        settings.METEOFRANCE_API_KEY = "test-key"
         with patch(
             "apps.ingest.sources.meteofrance.fetch_meteofrance_bulletin"
         ) as mock_fetch:

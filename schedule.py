@@ -4,8 +4,12 @@ schedule.py — APScheduler job registry for Snowdesk.
 Defines ``build_scheduler()``, which constructs a :class:`BlockingScheduler`
 pre-loaded with the recurring data-pipeline jobs:
 
-- **fetch_bulletins** — fires at ``:00`` and ``:05`` of every hour,
+- **fetch_bulletins** — fires at ``:02`` and ``:07`` of every hour,
   running ``fetch_bulletins --source SLF ALBINA METEOFRANCE --commit``.
+  Moved off ``:00``/``:05`` by SNOW-1380: the first run of the hour drew
+  three in four of Météo-France's connection refusals. The five-minute gap
+  is kept, and even the slowest run seen (about 3 min) ends before
+  ``send_bulletin_alerts`` at ``:10``.
 - **send_bulletin_alerts** — fires at ``:10`` of every hour, running
   ``send_bulletin_alerts --commit``. After both bulletin fetches, so a new
   issue is announced the hour it lands; it sends only when a place's
@@ -354,7 +358,7 @@ def build_scheduler() -> BlockingScheduler:
         A scheduler with thirteen jobs pre-registered:
 
         ``fetch_bulletins``
-            Cron: ``minute=0,5`` (every hour at :00 and :05 UTC).
+            Cron: ``minute=2,7`` (every hour at :02 and :07 UTC, SNOW-1380).
         ``send_bulletin_alerts``
             Cron: ``minute=10`` (every hour, after the fetches, SNOW-942).
         ``fetch_weather``
@@ -389,9 +393,11 @@ def build_scheduler() -> BlockingScheduler:
         "misfire_grace_time": 300,
     }
 
+    # SNOW-1380: at :02 and :07, off the top of the hour. Before :10
+    # (send_bulletin_alerts) even for the slowest run seen, about 3 min.
     scheduler.add_job(
         switched("fetch_bulletins", _run_fetch_bulletins),
-        trigger=CronTrigger(minute="0,5", timezone="UTC"),
+        trigger=CronTrigger(minute="2,7", timezone="UTC"),
         id="fetch_bulletins",
         **_common,
     )
@@ -411,8 +417,8 @@ def build_scheduler() -> BlockingScheduler:
         **_common,
     )
 
-    # SNOW-1245: at :20, clear of fetch_weather and fetch_bulletins at :00
-    # and :05. The two weather jobs share Open-Meteo's per-IP quota; the
+    # SNOW-1245: at :20, clear of fetch_weather at :00 and fetch_bulletins
+    # at :02 and :07. The two weather jobs share Open-Meteo's per-IP quota; the
     # sweep's default budget is derived from fetch_weather's share of it
     # (backfill.LIVE_FETCHES_PER_DAY must match the trigger above).
     scheduler.add_job(
@@ -422,7 +428,7 @@ def build_scheduler() -> BlockingScheduler:
         **_common,
     )
 
-    # SNOW-1271: at :40, clear of the :00/:05 fetches and the :20 sweep.
+    # SNOW-1271: at :40, clear of the :02/:07 fetches and the :20 sweep.
     # Database-only — no upstream call — so it competes for nothing else.
     scheduler.add_job(
         switched("mirror_reference_data", _run_mirror_reference_data),

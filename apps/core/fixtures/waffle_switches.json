@@ -7,7 +7,7 @@
     },
     {
       "name": "schedule_fetch_bulletins",
-      "note": "SNOW-1201: the scheduled job fetch_bulletins, hourly at :00 and :05 (schedule.py). Off skips its runs from the next firing; on resumes them.",
+      "note": "SNOW-1201: the scheduled job fetch_bulletins, hourly at :02 and :07 (schedule.py, SNOW-1380). Off skips its runs from the next firing; on resumes them.",
       "active": true
     },
     {

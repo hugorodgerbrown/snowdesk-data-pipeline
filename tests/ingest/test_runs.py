@@ -10,6 +10,7 @@ pipelines that consume them are tested in tests/bulletins/services/
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -176,6 +177,11 @@ class TestAlbinaWalk:
 class TestMeteofranceWalk:
     """iter_meteofrance, through fetch_bulletins."""
 
+    @pytest.fixture(autouse=True)
+    def _api_key(self, settings: Any) -> None:
+        """A live walk needs a key; it is checked once, up front (SNOW-1380)."""
+        settings.METEOFRANCE_API_KEY = "test-key"
+
     @patch("apps.ingest.runs.parse_dpbra_xml")
     @patch("apps.ingest.sources.meteofrance.fetch_meteofrance_bulletin")
     def test_every_way_a_massif_can_end(
@@ -208,3 +214,82 @@ class TestMeteofranceWalk:
         assert record.bulletin_id == "FR-01"
         # No customData.MF.massif, so no archive lookup and no URL.
         assert record.pdf_url() == ""
+
+    @patch("apps.ingest.sources.meteofrance.fetch_meteofrance_bulletin")
+    def test_one_dpbra_session_serves_every_massif(self, fetch: MagicMock) -> None:
+        """The walk builds one keyed session and hands it to every massif (SNOW-1380)."""
+        fetch.return_value = None
+        with patch("apps.ingest.sources.meteofrance.dpbra_session") as build:
+            list(
+                fetch_bulletins(
+                    "METEOFRANCE",
+                    DAY,
+                    DAY,
+                    massif_ids=(1, 2, 3),
+                    base_url="https://mf.example",
+                )
+            )
+        build.assert_called_once_with("test-key")
+        sessions = {call.kwargs["session"] for call in fetch.call_args_list}
+        assert sessions == {build.return_value}
+        assert fetch.call_count == 3
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            requests.ConnectionError("[Errno 111] Connection refused"),
+            requests.Timeout("read timed out"),
+        ],
+    )
+    @patch("apps.ingest.sources.meteofrance.fetch_meteofrance_bulletin")
+    def test_a_failed_request_fails_only_its_massif(
+        self, fetch: MagicMock, error: requests.RequestException
+    ) -> None:
+        """A refused or timed-out massif is a failure; the next is still fetched."""
+        fetch.side_effect = [None, error, None]
+        items = list(
+            fetch_bulletins(
+                "METEOFRANCE",
+                DAY,
+                DAY,
+                massif_ids=(1, 2, 3),
+                base_url="https://mf.example",
+            )
+        )
+        assert items == [
+            FetchOutcome(OUTCOME_SKIPPED),
+            FetchOutcome(OUTCOME_FAILED),
+            FetchOutcome(OUTCOME_SKIPPED),
+        ]
+        assert [call.args[0] for call in fetch.call_args_list] == [1, 2, 3]
+
+    @patch("apps.ingest.sources.meteofrance.fetch_meteofrance_bulletin")
+    def test_a_missing_key_fails_the_walk_once(
+        self, fetch: MagicMock, settings: Any
+    ) -> None:
+        """A live URL with no key raises before any request is made."""
+        settings.METEOFRANCE_API_KEY = ""
+        walk = fetch_bulletins(
+            "METEOFRANCE", DAY, DAY, massif_ids=(1, 2), base_url="https://mf.example"
+        )
+        with pytest.raises(RuntimeError, match="METEOFRANCE_API_KEY"):
+            list(walk)
+        fetch.assert_not_called()
+
+    def test_a_mirror_walks_without_a_key_or_a_session(
+        self, tmp_path: Path, settings: Any
+    ) -> None:
+        """A file:// mirror needs no key and builds no DPBRA session."""
+        settings.METEOFRANCE_API_KEY = ""
+        with patch("apps.ingest.sources.meteofrance.dpbra_session") as build:
+            items = list(
+                fetch_bulletins(
+                    "METEOFRANCE",
+                    DAY,
+                    DAY,
+                    massif_ids=(1,),
+                    base_url=f"file://{tmp_path}",
+                )
+            )
+        assert items == [FetchOutcome(OUTCOME_SKIPPED)]
+        build.assert_not_called()
