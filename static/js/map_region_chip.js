@@ -31,6 +31,7 @@
     'ch-only': 'Slopes are drawn in Switzerland only',
     filter: 'Your filter',
     open: 'Open the region',
+    level: 'danger level {level}',
   });
 
   /** @type {?string} */
@@ -84,7 +85,12 @@
     const detail = state.detail === 'filter' ? filterSummary() : (STRINGS[state.detail] || '');
     detailEl.textContent = detail;
     detailEl.hidden = !detail;
-    chip.setAttribute('aria-label', `${STRINGS.open}: ${state.name}`);
+    // The square is aria-hidden and this label replaces the text contents,
+    // so it says everything the chip shows: the region, its level and the
+    // slopes line.
+    const label = [`${STRINGS.open}: ${state.name}`, STRINGS.level.replace('{level}', state.digit)];
+    if (detail) label.push(detail);
+    chip.setAttribute('aria-label', label.join(', '));
   };
 
   chip.addEventListener('click', () => {

@@ -1617,6 +1617,9 @@ Optional context:
             <span data-string="ch-only">{% trans "Slopes are drawn in Switzerland only" %}</span>
             <span data-string="filter">{% trans "Your filter" %}</span>
             <span data-string="open">{% trans "Open the region" %}</span>
+            {# SNOW-1376: the chip's accessible name carries the level, which  #}
+            {# the aria-hidden square only shows. {level} is the EAWS digit.   #}
+            <span data-string="level">{% trans "danger level {level}" %}</span>
         </template>
         <div id="map-date-row" class="map-date-row">
             {% comment %}

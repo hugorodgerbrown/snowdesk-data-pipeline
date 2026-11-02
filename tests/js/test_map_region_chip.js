@@ -54,6 +54,7 @@ beforeAll(() => {
         <span data-string="ch-only">Slopes are drawn in Switzerland only</span>
         <span data-string="filter">Your filter</span>
         <span data-string="open">Open the region</span>
+        <span data-string="level">danger level {level}</span>
       </template>
       <span data-terrain-filter-summary>35–40° NE E SE</span>
     </div>`;
@@ -86,6 +87,13 @@ describe('the region chip', () => {
     expect(level.dataset.level).toBe('considerable');
     expect(level.textContent).toBe('3');
     expect(chip().querySelector('[data-region-chip-detail]').textContent).toBe('slopes');
+  });
+
+  it('names the level and the slopes line to a screen reader', () => {
+    // The square is aria-hidden and the label replaces the text, so the
+    // label alone has to carry what the chip shows.
+    expect(chip().getAttribute('aria-label'))
+      .toBe('Open the region: Martigny-Verbier, danger level 3, slopes');
   });
 
   it('hides at z9', () => {
