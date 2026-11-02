@@ -16,9 +16,10 @@ import '../../static/js/i18n_strings.js';
 
 const GEOJSON_URL = '/api/rest-zones.geojson';
 const KEY = 'snowdesk.map.overlay.rest_zones';
+// As MapLibre hands a hit back: no top-level id, the uuid in the properties.
 const ZONE = {
-  id: 'uuid-1',
   properties: {
+    uuid: 'uuid-1',
     name: 'Silvretta',
     binding: true,
     restriction: 'Betretungsverbot',
@@ -102,11 +103,21 @@ async function boot(options = {}) {
       <a data-rest-zone-rules href="#">Rules</a>
     </div></template>`;
   const sheetEl = document.getElementById('rest-zone-sheet');
+  let teardown = () => {};
   sheet = {
     open: vi.fn(() => sheetEl.removeAttribute('hidden')),
-    close: vi.fn(() => sheetEl.setAttribute('hidden', '')),
+    close: vi.fn(() => {
+      sheetEl.setAttribute('hidden', '');
+      teardown();
+    }),
+    isOpen: () => !sheetEl.hasAttribute('hidden'),
   };
-  window.MapSheet = { attach: vi.fn(() => sheet) };
+  window.MapSheet = {
+    attach: vi.fn((_el, opts) => {
+      teardown = (opts && opts.onTeardown) || teardown;
+      return sheet;
+    }),
+  };
   const map = stubMap();
   if (options.zoom !== undefined) map.view.zoom = options.zoom;
   window.snowdeskMapState = { map, overlayStorageKey: { rest_zones: KEY } };
@@ -160,6 +171,8 @@ describe('switched off', () => {
     expect(map.layers.get('rest-zones-fill').layout.visibility).toBe('none');
     expect(map.layers.get('rest-zones-line').layout.visibility).toBe('none');
     expect(map.layers.get('rest-zones-fill').minzoom).toBe(11);
+    // MapLibre drops a string Feature id: the uuid property stands in.
+    expect(map.sources.get('rest-zones').def.promoteId).toBe('uuid');
     expect(fetches).toEqual([]);
     expect(window.pwaRestZones.isEnabled()).toBe(false);
   });
@@ -258,8 +271,7 @@ describe('switched on', () => {
   it('says what a recommended zone out of season with nothing stated is', async () => {
     const map = await boot({ on: true });
     map.hits = [{
-      id: 'uuid-2',
-      properties: { name: 'Z', binding: false, in_force: false, period: '', restriction: '', canton: '', url: '' },
+      properties: { uuid: 'uuid-2', name: 'Z', binding: false, in_force: false, period: '', restriction: '', canton: '', url: '' },
     }];
     expect(window.pwaRestZones.tap({ x: 0, y: 0 })).toBe(true);
     const el = document.getElementById('rest-zone-sheet');
@@ -275,7 +287,7 @@ describe('switched on', () => {
     'drops a rules link that is not http(s): %s',
     async (url) => {
       const map = await boot({ on: true });
-      map.hits = [{ id: 'uuid-3', properties: { ...ZONE.properties, url } }];
+      map.hits = [{ properties: { ...ZONE.properties, uuid: 'uuid-3', url } }];
       expect(window.pwaRestZones.tap({ x: 0, y: 0 })).toBe(true);
       const el = document.getElementById('rest-zone-sheet');
       expect(el.querySelector('[data-rest-zone-rules]')).toBeNull();
@@ -287,6 +299,103 @@ describe('switched on', () => {
     map.hits = [];
     expect(window.pwaRestZones.tap({ x: 0, y: 0 })).toBe(false);
     expect(sheet.open).not.toHaveBeenCalled();
+  });
+});
+
+describe('a change of day', () => {
+  /** A fetch answer the test settles by hand. */
+  function deferred() {
+    let resolve;
+    const promise = new Promise((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  }
+  const answering = (body) => ({ ok: true, json: () => Promise.resolve(body) });
+  const withForce = (inForce) => ({
+    type: 'FeatureCollection',
+    features: [{ ...ZONE, properties: { ...ZONE.properties, in_force: inForce } }],
+  });
+  const dayChange = (date) => document.dispatchEvent(
+    new CustomEvent('snowdesk:date-changed', { detail: { date } }),
+  );
+
+  it('drops a superseded day once the map is back on the drawn one', async () => {
+    const map = await boot({ on: true, search: '?d=2027-01-10' });
+    await settle();
+    const source = map.sources.get('rest-zones');
+    expect(source.setData).toHaveBeenCalledTimes(1);
+
+    const july = deferred();
+    answer = () => july.promise;
+    dayChange('2027-07-10');
+    await vi.advanceTimersByTimeAsync(300);
+    expect(fetches).toHaveLength(2);
+
+    // Back to January before July answers: January is what is drawn.
+    dayChange('2027-01-10');
+    await vi.advanceTimersByTimeAsync(300);
+    expect(fetches).toHaveLength(2);
+
+    july.resolve(answering(withForce(false)));
+    await vi.runAllTimersAsync();
+    expect(source.setData).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops an answer for a day the map has left', async () => {
+    const map = await boot({ on: true, search: '?d=2027-01-10' });
+    await settle();
+    const source = map.sources.get('rest-zones');
+    const july = deferred();
+    answer = () => july.promise;
+    dayChange('2027-07-10');
+    await vi.advanceTimersByTimeAsync(300);
+    // The day moves on before the debounce asks again.
+    dayChange('2027-08-10');
+    july.resolve(answering(withForce(false)));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(source.setData).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes the open sheet for the new day', async () => {
+    const map = await boot({ on: true, search: '?d=2027-01-10' });
+    await settle();
+    map.hits = [ZONE];
+    window.pwaRestZones.tap({ x: 0, y: 0 });
+    const el = document.getElementById('rest-zone-sheet');
+    expect(el.querySelector('[data-rest-zone-status]').textContent).toBe('Protected on this day');
+
+    answer = () => Promise.resolve(answering(withForce(false)));
+    dayChange('2027-07-10');
+    await settle();
+    expect(sheet.isOpen()).toBe(true);
+    expect(el.querySelector('[data-rest-zone-status]').textContent)
+      .toBe('Not protected on this day');
+  });
+
+  it('closes the open sheet when its zone is no longer loaded', async () => {
+    const map = await boot({ on: true, search: '?d=2027-01-10' });
+    await settle();
+    map.hits = [ZONE];
+    window.pwaRestZones.tap({ x: 0, y: 0 });
+    answer = () => Promise.resolve(answering({ type: 'FeatureCollection', features: [] }));
+    dayChange('2027-07-10');
+    await settle();
+    expect(sheet.isOpen()).toBe(false);
+  });
+
+  it('leaves a closed sheet closed', async () => {
+    const map = await boot({ on: true, search: '?d=2027-01-10' });
+    await settle();
+    map.hits = [ZONE];
+    window.pwaRestZones.tap({ x: 0, y: 0 });
+    sheet.close();
+    answer = () => Promise.resolve(answering(withForce(false)));
+    dayChange('2027-07-10');
+    await settle();
+    expect(sheet.isOpen()).toBe(false);
+    expect(sheet.open).toHaveBeenCalledTimes(1);
   });
 });
 

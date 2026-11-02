@@ -92,9 +92,16 @@
     inflight: null,
     /** @type {?number} */
     timer: null,
+    /** The uuid of the zone the sheet shows, or null when it is closed. */
+    /** @type {?string} */
+    openUuid: null,
   };
 
-  const sheet = window.MapSheet.attach(SHEET, {});
+  const sheet = window.MapSheet.attach(SHEET, {
+    onTeardown: function () {
+      state.openUuid = null;
+    },
+  });
 
   /**
    * The map's day at boot: `?d=`, else today as the page states it.
@@ -163,6 +170,9 @@
     map.addSource(SOURCE, {
       type: 'geojson',
       data: state.data,
+      // MapLibre keeps a Feature's top-level id only when it is a number;
+      // the uuid is a string, so a tap reads it back from the properties.
+      promoteId: 'uuid',
       attribution: '© BAFU',
     });
     const before = map.getLayer('regions-line') ? 'regions-line' : undefined;
@@ -196,6 +206,21 @@
     const source = map.getSource(SOURCE);
     if (source) source.setData(body);
     else installLayers(map);
+    refreshOpenZone();
+  }
+
+  /**
+   * The open sheet follows the zones just loaded: a new day can change
+   * whether its zone is protected. A zone no longer loaded closes it.
+   */
+  function refreshOpenZone() {
+    if (!state.openUuid || !sheet.isOpen()) return;
+    const uuid = state.openUuid;
+    const feature = state.data.features.find(
+      (f) => f && f.properties && f.properties.uuid === uuid,
+    );
+    if (feature) renderZone(feature.properties);
+    else sheet.close();
   }
 
   // ---------------------------------------------------------------------------
@@ -210,7 +235,13 @@
     const b = map.getBounds();
     /** @type {[number, number, number, number]} */
     const view = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
-    if (state.loadedDate === state.date && core.covers(state.loaded, view)) return;
+    if (state.loadedDate === state.date && core.covers(state.loaded, view)) {
+      // What is drawn is what is wanted: a request still in flight was for
+      // something since given up (another day), and must not land on it.
+      if (state.inflight) state.inflight.abort();
+      state.inflight = null;
+      return;
+    }
     const box = core.loadBox(view);
     if (!box) return;
     const date = state.date;
@@ -228,6 +259,8 @@
       .then(function (body) {
         if (state.inflight !== inflight) return;
         state.inflight = null;
+        // The map moved to another day while this was in flight.
+        if (date !== state.date) return;
         if (!body || !Array.isArray(body.features)) throw new Error('not a FeatureCollection');
         state.loaded = box;
         state.loadedDate = date;
@@ -308,11 +341,11 @@
   }
 
   /**
-   * Fill the sheet from one zone's properties and open it.
+   * Fill the sheet from one zone's properties.
    *
    * @param {Object<string, any>} props
    */
-  function openZone(props) {
+  function renderZone(props) {
     const node = /** @type {DocumentFragment} */ (BODY.content.cloneNode(true));
     fill(node, 'name', String(props.name || ''));
     fill(node, 'kind', props.binding ? STRINGS.binding : STRINGS.recommended);
@@ -327,7 +360,17 @@
       else link.remove();
     }
     SHEET.replaceChildren(node);
+  }
+
+  /**
+   * Fill the sheet from one zone's properties and open it.
+   *
+   * @param {Object<string, any>} props
+   */
+  function openZone(props) {
+    renderZone(props);
     sheet.open();
+    state.openUuid = props.uuid ? String(props.uuid) : null;
   }
 
   /**

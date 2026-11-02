@@ -118,6 +118,7 @@ def test_a_zone_is_drawn_as_a_feature() -> None:
         "id": str(zone.source_uuid),
         "geometry": zone.geometry,
         "properties": {
+            "uuid": str(zone.source_uuid),
             "name": "Piz Buin",
             "binding": False,
             "restriction": "Interdiction",

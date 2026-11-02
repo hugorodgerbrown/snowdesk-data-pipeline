@@ -38,10 +38,23 @@ def signed_in(client: Client) -> Client:
     return client
 
 
-def _get(client: Client, **params: str) -> Any:
+def _get(client: Client, etag: str | None = None, **params: str) -> Any:
     """GET the endpoint with the box and any other parameters."""
     query = {"bbox": BOX, **params}
-    return client.get(reverse("api:rest_zones_geojson"), query)
+    headers = {"If-None-Match": etag} if etag else {}
+    return client.get(reverse("api:rest_zones_geojson"), query, headers=headers)
+
+
+def _zone_at(west: float, south: float, east: float, north: float) -> Any:
+    """A zone whose polygon is the rectangle given."""
+    ring = [[west, south], [east, south], [east, north], [west, south]]
+    return RestZoneFactory.create(
+        geometry={"type": "MultiPolygon", "coordinates": [[ring]]},
+        west=west,
+        south=south,
+        east=east,
+        north=north,
+    )
 
 
 def _far_zone() -> Any:
@@ -98,6 +111,7 @@ def test_the_zones_in_the_box_are_served(signed_in: Client) -> None:
     assert feature["id"] == str(inside.source_uuid)
     assert feature["geometry"] == inside.geometry
     assert feature["properties"] == {
+        "uuid": str(inside.source_uuid),
         "name": "Silvretta",
         "binding": True,
         "restriction": "Betretungsverbot",
@@ -170,3 +184,27 @@ def test_past_the_cap_the_answer_says_truncated(
     body = _get(signed_in).json()
     assert body["truncated"] is True
     assert [f["id"] for f in body["features"]] == [str(first.source_uuid)]
+
+
+@override_flag("route_drawing", active=True)
+def test_the_answer_is_revalidatable(signed_in: Client) -> None:
+    """An ETag, a stale window when non-empty, and a 304 on a match."""
+    RestZoneFactory.create()
+    first = _get(signed_in)
+    assert first["ETag"]
+    assert "stale-while-revalidate" in first["Cache-Control"]
+    again = _get(signed_in, etag=first["ETag"])
+    assert again.status_code == 304
+    empty = _get(signed_in, bbox="1.0,1.0,1.1,1.1")
+    assert empty.json()["features"] == []
+    assert "stale-while-revalidate" not in empty["Cache-Control"]
+
+
+@override_flag("route_drawing", active=True)
+def test_a_zone_touching_the_box_edge_is_included(signed_in: Client) -> None:
+    """Edge-inclusive: a box that only touches BOX's west or north edge counts."""
+    west = _zone_at(9.9, 46.85, 10.0, 46.9)
+    north = _zone_at(10.1, 46.95, 10.2, 47.0)
+    _zone_at(9.8, 46.85, 9.99, 46.9)
+    ids = {f["id"] for f in _get(signed_in).json()["features"]}
+    assert ids == {str(west.source_uuid), str(north.source_uuid)}

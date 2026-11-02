@@ -129,7 +129,8 @@ def zone_feature(zone: RestZone, day: date) -> dict[str, Any]:
         day: The day the map is showing, for ``in_force``.
 
     Returns:
-        A GeoJSON Feature, its id the service's uuid, with the name, whether
+        A GeoJSON Feature, its id the service's uuid (repeated as the
+        ``uuid`` property, which the client promotes), with the name, whether
         it is binding, the restriction in the request's language (German
         when FOEN has none in it), the period as published, whether it is
         in force on ``day``, the canton and the rules page.
@@ -141,6 +142,9 @@ def zone_feature(zone: RestZone, day: date) -> dict[str, Any]:
         "id": str(zone.source_uuid),
         "geometry": zone.geometry,
         "properties": {
+            # Again as a property: MapLibre keeps a Feature's top-level id
+            # only when it is a number, so the client promotes this one.
+            "uuid": str(zone.source_uuid),
             "name": zone.name,
             "binding": zone.binding,
             "restriction": localised(restriction, restriction.get("de", "")),

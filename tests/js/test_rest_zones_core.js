@@ -123,14 +123,16 @@ describe('the paint', () => {
 });
 
 describe('pickZone', () => {
+  // As MapLibre answers: no top-level id (a string id is dropped), the uuid
+  // in the properties the source promotes.
   it('takes the topmost zone', () => {
-    const top = { id: 'a', properties: { name: 'Top' } };
-    const under = { id: 'b', properties: { name: 'Under' } };
+    const top = { properties: { uuid: 'a', name: 'Top' } };
+    const under = { properties: { uuid: 'b', name: 'Under' } };
     expect(core.pickZone([top, under])).toBe(top);
   });
 
-  it('skips a hit with no id or no properties', () => {
-    const zone = { id: 'b', properties: { name: 'Zone' } };
+  it('skips a hit with no properties or no uuid', () => {
+    const zone = { properties: { uuid: 'b', name: 'Zone' } };
     expect(core.pickZone([{ properties: {} }, { id: 'x' }, zone])).toBe(zone);
   });
 

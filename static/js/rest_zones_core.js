@@ -147,7 +147,8 @@
   /**
    * The zone a tap opens: the topmost one under it. queryRenderedFeatures
    * answers topmost first, and a zone's outline and fill both answer for
-   * the same zone.
+   * the same zone. Keyed on `properties.uuid`: MapLibre drops a Feature's
+   * string id, so the source promotes the uuid property instead.
    *
    * @param {?Array<ZoneFeature>} features What the tap landed on.
    * @returns {?ZoneFeature}
@@ -155,7 +156,7 @@
   function pickZone(features) {
     if (!Array.isArray(features)) return null;
     for (const feature of features) {
-      if (feature && feature.properties && feature.id != null) return feature;
+      if (feature && feature.properties && feature.properties.uuid) return feature;
     }
     return null;
   }
