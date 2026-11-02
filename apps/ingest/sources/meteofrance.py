@@ -6,6 +6,9 @@ The HTTP half of the Météo-France pipeline, moved out of
 
   resolve_base_url            an explicit override, else
                               ``METEOFRANCE_API_BASE_URL``.
+  dpbra_session               one keep-alive session per run for the DPBRA
+                              API, carrying the key and a bounded connect
+                              retry (SNOW-1380).
   fetch_meteofrance_bulletin  one massif's DPBRA XML, behind the APIM key —
                               or, for a ``file://`` base URL, read from a
                               local mirror so a keyless session can run it.
@@ -27,12 +30,24 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from apps.ingest import conf
 
 logger = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT = 30  # seconds
+
+# How many times a refused or failed connect to the DPBRA API is retried
+# (SNOW-1380). Météo-France's gateway occasionally refuses a new TCP
+# connection outright; a retry after a short pause almost always lands.
+# Only the connect is retried: a read error or any HTTP status (404, 401,
+# 429, 5xx) surfaces at once, exactly as before.
+CONNECT_RETRIES = 3
+# urllib3 2.x waits 0 s before the first retry, then factor × 2^(n-1):
+# 0, 1 s, 2 s at 0.5 — about three seconds added in the worst case.
+CONNECT_BACKOFF_FACTOR = 0.5
 
 MF_ARCHIVE_BASE = "https://donneespubliques.meteofrance.fr/donnees_libres/Pdf/BRA"
 MF_USER_AGENT = "snowdesk/1.0 (contact@snowdesk.app)"
@@ -49,6 +64,43 @@ def pdf_session() -> requests.Session:
     """
     session = requests.Session()
     session.headers["User-Agent"] = MF_USER_AGENT
+    return session
+
+
+def dpbra_session(api_key: str) -> requests.Session:
+    """Return a keep-alive session for the DPBRA API (SNOW-1380).
+
+    A run fetches every massif over this one session, so it opens one
+    TCP+TLS connection instead of one per massif — the gateway's refusals
+    were of new connections, 35 of which a run used to open in four
+    seconds. The mounted adapter retries a failed connect a bounded number
+    of times and nothing else.
+
+    Separate from ``pdf_session``: that one talks to the archive portal,
+    a different host, and carries no key.
+
+    Args:
+        api_key: The APIM key, sent as the ``apikey`` header.
+
+    Returns:
+        A ``requests.Session`` carrying the key, ``MF_USER_AGENT`` and the
+        connect retry.
+
+    """
+    retry = Retry(
+        total=CONNECT_RETRIES,
+        connect=CONNECT_RETRIES,
+        read=0,
+        status=0,
+        other=0,
+        backoff_factor=CONNECT_BACKOFF_FACTOR,
+        allowed_methods=frozenset({"GET"}),
+        raise_on_status=False,
+    )
+    session = requests.Session()
+    session.headers["apikey"] = api_key
+    session.headers["User-Agent"] = MF_USER_AGENT
+    session.mount("https://", HTTPAdapter(max_retries=retry))
     return session
 
 
@@ -184,6 +236,7 @@ def fetch_meteofrance_bulletin(
     massif_id: int,
     base_url: str,
     api_key: str,
+    session: requests.Session | None = None,
 ) -> bytes | None:
     """
     Fetch the DPBRA XML for one massif from the MeteoFrance APIM.
@@ -198,6 +251,8 @@ def fetch_meteofrance_bulletin(
             mirror use.
         api_key: The MeteoFrance APIM key sent as the ``apikey`` header.
             Unused for ``file://`` base URLs.
+        session: The run's ``dpbra_session``. A one-off session is built
+            when ``None``, so a lone call still gets the connect retry.
 
     Returns:
         The raw XML bytes, or ``None`` when the API returns 404 (no
@@ -207,6 +262,7 @@ def fetch_meteofrance_bulletin(
         RuntimeError: ``base_url`` is a live HTTP(S) URL and ``api_key``
             is empty.
         requests.HTTPError: The API returns a non-2xx, non-404 status code.
+        requests.ConnectionError: Every connect attempt failed.
 
     """
     if base_url.startswith("file://"):
@@ -224,11 +280,16 @@ def fetch_meteofrance_bulletin(
         url,
     )
 
-    response = requests.get(
-        url,
-        headers={"apikey": api_key},
-        timeout=REQUEST_TIMEOUT,
-    )
+    if session is None:
+        # A lone call owns its one-off session, so it closes it too; the
+        # walk passes its own and closes that when the walk ends.
+        own = dpbra_session(api_key)
+        try:
+            response = own.get(url, timeout=REQUEST_TIMEOUT)
+        finally:
+            own.close()
+    else:
+        response = session.get(url, timeout=REQUEST_TIMEOUT)
 
     if response.status_code == 404:
         logger.debug("No bulletin for massif %d today (404)", massif_id)

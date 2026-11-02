@@ -26,6 +26,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import RequestFactory, override_settings
@@ -1362,3 +1363,42 @@ class TestFetchBulletinsPerRegionSlice:
         assert not Bulletin.objects.filter(
             bulletin_id=bulletins[0]["bulletinID"]
         ).exists()
+
+
+@pytest.mark.django_db
+class TestFetchBulletinsMeteofranceRefusal:
+    """A refused Météo-France massif fails alone, not the run (SNOW-1380)."""
+
+    def test_a_refused_massif_fails_one_record_and_the_rest_are_fetched(
+        self, settings: Any
+    ) -> None:
+        """One refusal among three massifs: one failed record, a non-zero exit.
+
+        Before SNOW-1380 the ConnectionError escaped the walk, the pipeline
+        run was marked FAILED and the massifs after it were never asked for.
+        """
+        settings.METEOFRANCE_API_KEY = "test-key"
+        settings.METEOFRANCE_API_BASE_URL = "https://mf.example"
+        settings.METEOFRANCE_MASSIF_IDS = (1, 2, 3)
+        refusal = requests.ConnectionError("[Errno 111] Connection refused")
+
+        with (
+            patch(
+                "apps.ingest.sources.meteofrance.fetch_meteofrance_bulletin",
+                side_effect=[None, refusal, None],
+            ) as fetch,
+            pytest.raises(CommandError, match="1 failed record"),
+        ):
+            call_command(
+                "fetch_bulletins",
+                "--source",
+                "meteofrance",
+                "--today",
+                "--commit",
+                stdout=StringIO(),
+            )
+
+        assert [call.args[0] for call in fetch.call_args_list] == [1, 2, 3]
+        run = PipelineRun.objects.get()
+        assert run.status == PipelineRun.Status.PARTIAL
+        assert run.records_failed == 1

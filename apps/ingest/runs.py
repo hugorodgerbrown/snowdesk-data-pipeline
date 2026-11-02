@@ -455,16 +455,39 @@ def iter_meteofrance(
     )
     resolved_base_url = meteofrance_source.resolve_base_url(base_url)
     api_key = conf.text("METEOFRANCE_API_KEY")
+    # SNOW-1380: a live run without a key fails once, before any request,
+    # rather than once per massif. A ``file://`` mirror needs no key and
+    # makes no HTTP request, so it gets no DPBRA session either.
+    dpbra: requests.Session | None = None
+    if not resolved_base_url.startswith("file://"):
+        if not api_key:
+            raise RuntimeError(
+                "METEOFRANCE_API_KEY must be set when base_url is not a file:// mirror."
+            )
+        # One keep-alive connection for the whole walk (SNOW-1380).
+        dpbra = meteofrance_source.dpbra_session(api_key)
     stats = stats if stats is not None else FetchStats()
     # One shared session for PDF index lookups — connection reuse across massifs.
     session = meteofrance_source.pdf_session()
-    for i, massif_id in enumerate(resolved_ids):
-        if delay > 0 and i > 0:
-            time.sleep(delay)
-        yield _meteofrance_item(
-            massif_id, resolved_base_url, api_key, session, on_item=on_item
-        )
-        stats.requests += 1
+    try:
+        for i, massif_id in enumerate(resolved_ids):
+            if delay > 0 and i > 0:
+                time.sleep(delay)
+            yield _meteofrance_item(
+                massif_id,
+                resolved_base_url,
+                api_key,
+                session,
+                dpbra=dpbra,
+                on_item=on_item,
+            )
+            stats.requests += 1
+    finally:
+        # The DPBRA session is used only inside the walk; release its
+        # connection when the walk ends, however it ends. The archive
+        # session stays open: a bulletin's PDF URL resolves lazily, later.
+        if dpbra is not None:
+            dpbra.close()
 
 
 def _meteofrance_item(
@@ -473,15 +496,21 @@ def _meteofrance_item(
     api_key: str,
     session: requests.Session,
     *,
+    dpbra: requests.Session | None,
     on_item: OnItem | None,
 ) -> Item:
     """Fetch and translate one massif's bulletin.
+
+    A failed request — a refused connection, a timeout or an HTTP error —
+    is this massif's failure alone: it returns ``OUTCOME_FAILED`` and the
+    walk moves on to the next massif (SNOW-1380).
 
     Args:
         massif_id: The Météo-France massif id.
         base_url: The resolved API or mirror base URL.
         api_key: The APIM key.
         session: The run's archive session, for the PDF lookup.
+        dpbra: The run's DPBRA session; ``None`` for a ``file://`` mirror.
         on_item: The walk's per-bulletin callback.
 
     Returns:
@@ -490,9 +519,9 @@ def _meteofrance_item(
     """
     try:
         xml_bytes = meteofrance_source.fetch_meteofrance_bulletin(
-            massif_id, base_url, api_key
+            massif_id, base_url, api_key, session=dpbra
         )
-    except (requests.HTTPError, RuntimeError) as exc:
+    except requests.RequestException as exc:
         logger.exception("Error fetching MeteoFrance massif %d: %s", massif_id, exc)
         return FetchOutcome(OUTCOME_FAILED)
     if xml_bytes is None:

@@ -4,7 +4,10 @@ tests/ingest/sources/test_meteofrance.py — Tests for apps.ingest.sources.meteo
 Moved from tests/bulletins/services/test_meteofrance_fetcher.py with the HTTP
 code (SNOW-1249):
   - fetch_meteofrance_bulletin: HTTP success, 404 → None, HTTP error, live URL
-    construction, missing API key error, file:// local mirror path.
+    construction, missing API key error, file:// local mirror path, the
+    session it is given (SNOW-1380).
+  - dpbra_session: the key header, a connect-only retry, a refused connect
+    retried then raised (SNOW-1380).
   - _read_local_mirror: file present → bytes, file absent → None.
   - resolve_base_url: live by default, mirror only when explicit.
   - meteofrance_pdf_url: 200-with-match, 200-without-match, 404, network
@@ -19,9 +22,16 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 from django.test import override_settings
+from requests.adapters import HTTPAdapter
+from urllib3.connection import HTTPConnection
+from urllib3.exceptions import NewConnectionError
 
 from apps.ingest.sources.meteofrance import (
+    CONNECT_BACKOFF_FACTOR,
+    CONNECT_RETRIES,
+    MF_USER_AGENT,
     _read_local_mirror,
+    dpbra_session,
     fetch_meteofrance_bulletin,
     meteofrance_pdf_url,
     resolve_base_url,
@@ -85,28 +95,28 @@ def _mock_http_error(status: int = 500) -> MagicMock:
 class TestFetchMeteofrance:
     """fetch_meteofrance_bulletin handles HTTP and file:// paths."""
 
-    @patch("apps.ingest.sources.meteofrance.requests.get")
+    @patch("apps.ingest.sources.meteofrance.requests.Session.get")
     def test_returns_bytes_on_200(self, mock_get: MagicMock) -> None:
         """A 200 response returns the content bytes."""
         mock_get.return_value = _mock_ok(b"<xml/>")
         result = fetch_meteofrance_bulletin(1, "https://api.example.com", "key123")
         assert result == b"<xml/>"
 
-    @patch("apps.ingest.sources.meteofrance.requests.get")
+    @patch("apps.ingest.sources.meteofrance.requests.Session.get")
     def test_returns_none_on_404(self, mock_get: MagicMock) -> None:
         """A 404 response returns None (no bulletin today)."""
         mock_get.return_value = _mock_404()
         result = fetch_meteofrance_bulletin(1, "https://api.example.com", "key123")
         assert result is None
 
-    @patch("apps.ingest.sources.meteofrance.requests.get")
+    @patch("apps.ingest.sources.meteofrance.requests.Session.get")
     def test_raises_on_http_error(self, mock_get: MagicMock) -> None:
         """A 500 response raises requests.HTTPError."""
         mock_get.return_value = _mock_http_error(500)
         with pytest.raises(requests.HTTPError):
             fetch_meteofrance_bulletin(1, "https://api.example.com", "key123")
 
-    @patch("apps.ingest.sources.meteofrance.requests.get")
+    @patch("apps.ingest.sources.meteofrance.requests.Session.get")
     def test_url_uses_massif_id(self, mock_get: MagicMock) -> None:
         """The request URL includes the massif ID at the correct path."""
         mock_get.return_value = _mock_ok(b"<xml/>")
@@ -114,18 +124,107 @@ class TestFetchMeteofrance:
         call_url = mock_get.call_args[0][0]
         assert "/massif/7/BRA" in call_url
 
-    @patch("apps.ingest.sources.meteofrance.requests.get")
-    def test_api_key_sent_as_header(self, mock_get: MagicMock) -> None:
-        """The apikey header is sent with the request."""
-        mock_get.return_value = _mock_ok(b"<xml/>")
-        fetch_meteofrance_bulletin(1, "https://api.example.com", "my-secret-key")
-        headers = mock_get.call_args[1]["headers"]
-        assert headers.get("apikey") == "my-secret-key"
+    def test_uses_the_session_it_is_given(self) -> None:
+        """A passed session makes the request; no other session is built."""
+        session = MagicMock()
+        session.get.return_value = _mock_ok(b"<xml/>")
+        with patch("apps.ingest.sources.meteofrance.dpbra_session") as build:
+            result = fetch_meteofrance_bulletin(
+                3, "https://api.example.com", "key", session=session
+            )
+        assert result == b"<xml/>"
+        build.assert_not_called()
+        session.get.assert_called_once()
+        assert "/massif/3/BRA" in session.get.call_args[0][0]
+
+    def test_builds_a_dpbra_session_when_none_given(self) -> None:
+        """A lone call goes through a keyed dpbra_session and closes it."""
+        with patch("apps.ingest.sources.meteofrance.dpbra_session") as build:
+            build.return_value.get.return_value = _mock_404()
+            fetch_meteofrance_bulletin(1, "https://api.example.com", "my-key")
+        build.assert_called_once_with("my-key")
+        build.return_value.close.assert_called_once_with()
+
+    def test_a_lone_call_closes_its_session_when_the_request_fails(self) -> None:
+        """The one-off session is closed even when the request raises."""
+        with patch("apps.ingest.sources.meteofrance.dpbra_session") as build:
+            build.return_value.get.side_effect = requests.ConnectionError("refused")
+            with pytest.raises(requests.ConnectionError):
+                fetch_meteofrance_bulletin(1, "https://api.example.com", "my-key")
+        build.return_value.close.assert_called_once_with()
+
+    def test_a_given_session_is_left_open(self) -> None:
+        """A session the caller passes is the caller's to close."""
+        session = MagicMock()
+        session.get.return_value = _mock_404()
+        fetch_meteofrance_bulletin(1, "https://api.example.com", "k", session=session)
+        session.close.assert_not_called()
 
     def test_raises_when_no_api_key_and_live_url(self) -> None:
         """An empty api_key with a live URL raises RuntimeError."""
         with pytest.raises(RuntimeError, match="METEOFRANCE_API_KEY"):
             fetch_meteofrance_bulletin(1, "https://api.example.com", "")
+
+
+# ---------------------------------------------------------------------------
+# dpbra_session — one keep-alive session with a bounded connect retry
+# ---------------------------------------------------------------------------
+
+
+class TestDpbraSession:
+    """dpbra_session carries the key and retries a failed connect only (SNOW-1380)."""
+
+    def test_sends_the_api_key_and_user_agent(self) -> None:
+        """The key rides on every request as the apikey header."""
+        session = dpbra_session("my-secret-key")
+        assert session.headers["apikey"] == "my-secret-key"
+        assert session.headers["User-Agent"] == MF_USER_AGENT
+
+    def test_retries_connects_and_nothing_else(self) -> None:
+        """The https adapter retries a connect three times, never a read or status."""
+        adapter = dpbra_session("k").get_adapter("https://public-api.meteofrance.fr/")
+        assert isinstance(adapter, HTTPAdapter)
+        retry = adapter.max_retries
+        assert retry.connect == CONNECT_RETRIES == 3
+        assert retry.total == CONNECT_RETRIES
+        assert retry.read == 0
+        assert retry.status == 0
+        assert retry.other == 0
+        assert retry.backoff_factor == CONNECT_BACKOFF_FACTOR
+
+    def test_a_refused_connect_is_retried_then_raises(self) -> None:
+        """Every refused connect is retried; the last refusal is a ConnectionError.
+
+        No network: urllib3's connect is replaced by a refusal, so the test
+        counts the attempts the adapter makes (one plus three retries).
+        """
+
+        def refuse(conn: HTTPConnection) -> None:
+            raise NewConnectionError(conn, "[Errno 111] Connection refused")
+
+        with (
+            patch("apps.ingest.sources.meteofrance.CONNECT_BACKOFF_FACTOR", 0),
+            patch.object(
+                HTTPConnection, "_new_conn", autospec=True, side_effect=refuse
+            ) as connect,
+        ):
+            session = dpbra_session("k")
+            with pytest.raises(requests.ConnectionError):
+                fetch_meteofrance_bulletin(
+                    18, "https://public-api.example", "k", session=session
+                )
+        assert connect.call_count == 1 + CONNECT_RETRIES
+
+    @patch("apps.ingest.sources.meteofrance.requests.Session.get")
+    def test_one_session_serves_many_fetches(self, mock_get: MagicMock) -> None:
+        """Successive fetches reuse the session's connection pool."""
+        mock_get.return_value = _mock_404()
+        session = dpbra_session("k")
+        for massif_id in (1, 2, 3):
+            fetch_meteofrance_bulletin(
+                massif_id, "https://api.example.com", "k", session=session
+            )
+        assert mock_get.call_count == 3
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +319,19 @@ class TestFetchMeteofrancoLocalMirror:
             # Must not raise even though api_key is ""
             result = fetch_meteofrance_bulletin(2, f"file://{tmp}", "")
             assert result == b"<local/>"
+
+    def test_mirror_never_touches_a_session(self) -> None:
+        """A file:// read builds no session and makes no request (SNOW-1380)."""
+        session = MagicMock()
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch("apps.ingest.sources.meteofrance.dpbra_session") as build,
+        ):
+            (Path(tmp) / "massif-003.xml").write_bytes(b"<local/>")
+            result = fetch_meteofrance_bulletin(3, f"file://{tmp}", "", session=session)
+        assert result == b"<local/>"
+        build.assert_not_called()
+        session.get.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

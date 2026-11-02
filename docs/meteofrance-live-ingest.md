@@ -2,7 +2,7 @@
 name: meteofrance-live-ingest
 description: Météo-France DPBRA ingest operations — fetch_bulletins --source meteofrance, METEOFRANCE_API_KEY on Render, --local-mirror
 status: current
-last-reviewed: 2026-10-31
+last-reviewed: 2026-11-02
 ---
 
 # Météo-France live ingest — operations guide
@@ -31,7 +31,7 @@ This is part of the combined bulletin-ingestion job in
 fetch_bulletins --source slf albina meteofrance --commit
 ```
 
-Cadence: every hour at :00 and :05 UTC (`0,5 * * * *`), driven by the
+Cadence: every hour at :02 and :07 UTC (`2,7 * * * *`, off the top of the hour since SNOW-1380), driven by the
 `snowdesk-scheduler` Background Worker. See
 [`docs/management-commands.md`](management-commands.md#operational-requirements)
 for the full operational-requirements table.
@@ -65,6 +65,38 @@ Météo-France publishes one BRA per massif per day at approximately
 16:00 Europe/Paris. The DPBRA API serves only today's live bulletin per
 massif; there is no date-range parameter. For historical data, see the
 [archive ingest path](../scripts/meteofrance-archive/README.md).
+
+Off-season (roughly late spring to mid-December) every massif answers
+404, which the walk logs as "No bulletin for MeteoFrance massif N today"
+and counts as skipped. That is not a fault: a run with 35 skips and no
+failures is the expected shape between seasons.
+
+### Connection refused (SNOW-1380)
+
+`[Errno 111] Connection refused` from `public-api.meteofrance.fr` means
+Météo-France's gateway rejected the TCP connection before any HTTP was
+exchanged, so it is never the key (that is a 401), the APIM quota (a 429)
+or an empty feed (a 404). Through October 2026 it hit about one run in
+twenty, at a random massif, most often in the run at the top of the hour.
+
+What a run does about it:
+
+- **One connection per run.** `dpbra_session` is a keep-alive session the
+  walk builds once, so a run opens one TCP+TLS connection rather than one
+  per massif.
+- **A bounded connect retry.** That session retries a failed connect up
+  to `CONNECT_RETRIES` (3) times, immediately and then after 1 s and 2 s.
+  Nothing else is retried: an HTTP status surfaces at once.
+- **One massif, one failure.** If every attempt fails, that massif counts
+  as `meteofrance_failed` and the walk carries on. The command still exits
+  non-zero, so the scheduler and Sentry see it, but every other massif is
+  fetched that hour.
+- **Off the hour.** The schedule fires at :02 and :07, not :00 and :05.
+
+A refusal that persists across a whole run (every massif failed) is an
+outage on Météo-France's side or a block on Render's egress address, not
+something a retry fixes. A missing `METEOFRANCE_API_KEY` on a live URL now
+fails the run once, before any request, instead of once per massif.
 
 ---
 
@@ -163,8 +195,12 @@ live path.
 
 ## Implementation notes
 
-- **`apps/bulletins/services/meteofrance_fetcher.py`** — HTTP/local-mirror
-  fetch, pipeline orchestration, stash writer, `latest_meteofrance_date`.
+- **`apps/ingest/sources/meteofrance.py`** — the HTTP/local-mirror fetch
+  (`fetch_meteofrance_bulletin`), the per-run `dpbra_session` and its
+  connect retry; the walk across massifs is `iter_meteofrance` in
+  `apps/ingest/runs.py`.
+- **`apps/bulletins/services/meteofrance_fetcher.py`** — pipeline
+  orchestration, stash writer, `latest_meteofrance_date`.
 - **`apps/ingest/normalise/meteofrance/translator.py`** — pure DPBRA XML →
   CAAML JSON translator; no I/O. Raises `MeteoFranceDelegatedRegionError`
   or `MeteoFranceTranslationError` on bad input.

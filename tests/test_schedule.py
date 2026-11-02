@@ -90,7 +90,7 @@ def test_send_bulletin_alerts_commits() -> None:
 
 
 def test_backfill_weather_runs_hourly_at_twenty_past(jobs: dict) -> None:
-    """:20 every hour — clear of the :00 and :05 fetches (SNOW-1245)."""
+    """:20 every hour — clear of the :02 and :07 fetches (SNOW-1245)."""
     trigger = jobs["backfill_weather"].trigger
     assert str(_get_field(trigger, "hour")) == "*"
     assert str(_get_field(trigger, "minute")) == "20"
@@ -269,14 +269,14 @@ def test_fetch_bulletins_trigger_type(jobs: dict) -> None:
 
 
 def test_fetch_bulletins_minute_field(jobs: dict) -> None:
-    """fetch_bulletins fires at minute 0 and 5 (two RangeExpressions)."""
+    """fetch_bulletins fires at minute 2 and 7, off the top of the hour (SNOW-1380)."""
     trigger: CronTrigger = jobs["fetch_bulletins"].trigger
     minute_field = _get_field(trigger, "minute")
     assert not minute_field.is_default
-    # Two expressions: one for 0 and one for 5.
+    # Two expressions: one for 2 and one for 7.
     assert len(minute_field.expressions) == 2
     expr_strs = {str(e) for e in minute_field.expressions}
-    assert expr_strs == {"0", "5"}
+    assert expr_strs == {"2", "7"}
 
 
 def test_fetch_bulletins_hour_field_is_wildcard(jobs: dict) -> None:
