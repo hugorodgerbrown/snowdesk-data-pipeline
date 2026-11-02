@@ -58,7 +58,7 @@ Context:
                         {% blocktrans trimmed with line=region_line asvar region_line %}{{ line }} · not
                             pinned{% endblocktrans %}
                     {% endif %}
-                    {% include "includes/_place_link_row.html" with kind="region" title=region.name subtitle=region_line href=region.url open_id=region.region_id day_rating=region.rating testid="today-region-link" only %}
+                    {% include "includes/_place_link_row.html" with kind="region" title=region.name subtitle=region_line href=region.url open_id=region.region_id day_rating=region.rating announce_level=True testid="today-region-link" only %}
                     {% if region.resorts %}
                         <ul class="flex flex-col pb-2">
                             {% for resort in region.resorts %}

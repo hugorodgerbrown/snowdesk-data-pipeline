@@ -2702,6 +2702,61 @@ class TestTodayView:
         assert "Car park" not in content
         assert 'data-panel-key="today:now"' in content
 
+    def test_a_screen_reader_hears_the_level(self, client: Client) -> None:
+        """The tile is aria-hidden, so the level is said in words too."""
+        user = UserFactory.create()
+        region = MicroRegionFactory.create()
+        RegionDayRatingFactory.create(region=region, max_rating="considerable")
+        FavouriteFactory.create(user=user, region=region, region_pin=True)
+        client.force_login(user)
+        content = client.get(TODAY_URL, **HTMX_HEADERS).content.decode()
+        announce = re.search(
+            r'data-testid="place-link-level-announce"\s*>(.*?)</span>', content, re.S
+        )
+        assert announce
+        assert " ".join(announce.group(1).split()) == "Danger today: Considerable"
+
+    @staticmethod
+    def _resort_with_forecast(user: Any, km_east: float) -> None:
+        """Save a resort whose nearest curated forecast is ``km_east`` away."""
+        point = LocationFactory.create(
+            name="Les Ruinettes",
+            latitude=46.10,
+            longitude=7.40 + km_east / 77.0,
+        )
+        MicroRegionFactory.create(centroid_location=point)
+        WeatherFactory.create(location=point, temperature_2m_max=-3.0, weather_code=71)
+        FavouriteFactory.create(
+            user=user,
+            latitude=46.10,
+            longitude=7.40,
+            resort=ResortFactory.create(name="Verbier"),
+        )
+
+    def test_a_borrowed_forecast_names_where_it_is_from(self, client: Client) -> None:
+        user = UserFactory.create()
+        self._resort_with_forecast(user, km_east=4.0)
+        client.force_login(user)
+        content = client.get(TODAY_URL, **HTMX_HEADERS).content.decode()
+        assert 'data-testid="place-link-forecast"' in content
+        source = re.search(
+            r'data-testid="today-resort-source"\s*>(.*?)</p>', content, re.S
+        )
+        assert source
+        line = " ".join(source.group(1).split())
+        assert "Les Ruinettes" in line
+        assert "km from the resort" in line
+
+    def test_a_forecast_at_the_resort_itself_says_nothing_more(
+        self, client: Client
+    ) -> None:
+        user = UserFactory.create()
+        self._resort_with_forecast(user, km_east=0.0)
+        client.force_login(user)
+        content = client.get(TODAY_URL, **HTMX_HEADERS).content.decode()
+        assert 'data-testid="place-link-forecast"' in content
+        assert 'data-testid="today-resort-source"' not in content
+
     def test_a_resorts_region_is_listed_even_unpinned(self, client: Client) -> None:
         user = UserFactory.create()
         region = MicroRegionFactory.create(name="Südliches Urseren")

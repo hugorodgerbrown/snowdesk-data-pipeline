@@ -40,8 +40,12 @@ Context:
   forecast_temp — optional, with ``forecast_icon``: the day's maximum, °C.
   nested   — optional: indent the row under the one above it, as the Today
              panel nests a region's resorts (SNOW-1366).
+  announce_level — optional, with ``day_rating``: say the level to a screen
+             reader ("Danger today: Considerable"), since the tile is
+             aria-hidden. The Today panel passes it; the resort sheet does
+             not, because its title already names the level.
 {% endcomment %}
-{% load snowdesk_time weather_icons %}
+{% load i18n snowdesk_time weather_icons %}
 <a
     href="{{ href }}"
     data-panel-open="{{ kind }}"
@@ -60,6 +64,13 @@ Context:
             aria-hidden="true"
             data-testid="place-link-region-level"
         >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
+        {% if announce_level %}
+            <span
+                class="sr-only"
+                data-testid="place-link-level-announce"
+            >{% blocktrans trimmed with level=day_rating.max_rating|danger_level_digit|danger_level_label %}Danger
+                    today: {{ level }}{% endblocktrans %}</span>
+        {% endif %}
     {% else %}
         {# A region's square, without a level: the tile says "region", not "danger". #}
         <span
