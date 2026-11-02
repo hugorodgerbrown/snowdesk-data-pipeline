@@ -130,9 +130,9 @@ Optional context:
     {# would be an invitation to install the layer anyway.                    #}
     {% if terrain_filter_eligible %}data-terrain-class-tile-url="{{ terrain_class_tile_url }}"{% endif %}
     data-terrain-filter-eligible="{{ terrain_filter_eligible|yesno:'true,false' }}"
-    {# SNOW-1374: the problem-terrain layer, behind its flag while its     #}
-    {# controls are redesigned. Off, map.js never draws it.                 #}
-    data-problem-terrain-enabled="{{ problem_terrain_enabled|yesno:'true,false' }}"
+    {# The problem-terrain layer ("Sync with map terrain"): offered wherever #}
+    {# the terrain tiles are (SNOW-1377 took SNOW-1374's flag off).          #}
+    data-problem-terrain-enabled="{{ terrain_filter_eligible|yesno:'true,false' }}"
     {# swisstopo's ski-touring routes layer: behind the route_drawing flag  #}
     {# with draw mode, whose guide it is                                     #}
     {# (docs/decisions/a-drawn-route-is-a-route.md).                         #}
@@ -969,30 +969,37 @@ Optional context:
                         </span>
                     </button>
                 </li>
-                {# "Highlight problem terrain" (2026-10-23): the bulletin drawn   #}
-                {# another way, so it stays with the bulletins while the steep-  #}
-                {# terrain layer is rethought. Toggles through                   #}
+                {# "Sync with map terrain" (SNOW-1377; "Highlight problem        #}
+                {# terrain" from 2026-10-23): the bulletin drawn on the ground,  #}
+                {# so it lives with the bulletins. ON by default (map.js). A     #}
+                {# switch row, drawn by includes/_switch_track.html off the      #}
+                {# button's aria-checked; no data-layer-switch, because it is    #}
+                {# not a level-one layer the menu's count reads. Toggles through #}
                 {# window.pwaBulletinTerrain; the region sheet's switch writes   #}
                 {# the same state; map_problem_terrain_key.js swaps the second   #}
-                {# line for "No bulletin for this day".                          #}
-                {# SNOW-1374: behind the problem_terrain flag.                   #}
-                {% if problem_terrain_enabled %}
+                {# line for "No bulletin for this day". While Steep terrain is   #}
+                {# on, its colours replace the bulletin's slopes and this row    #}
+                {# reads off; switching it on turns Steep terrain off.           #}
+                {% if terrain_filter_eligible %}
                     <li role="separator" class="basemap-menu-separator"></li>
                     <li role="none">
                         <button
                             type="button"
                             role="menuitemcheckbox"
-                            class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                            class="basemap-menu-item basemap-menu-item--overlay basemap-menu-layer-row group hover-affordance"
                             data-overlay-key="problem_terrain"
                             aria-checked="false"
                         >
                             <span class="basemap-menu-item-text">
-                                <span data-row-label>{% trans "Highlight problem terrain" %}</span>
+                                <span data-row-label>{% trans "Sync with map terrain" %}</span>
                                 <span
                                     class="basemap-menu-item-detail"
                                     data-problem-terrain-detail
-                                >{% trans "Replaces the region colour from zoom 12" %}</span>
+                                >{% trans "From zoom 12, Switzerland" %}</span>
                             </span>
+                            <span
+                                class="basemap-menu-switch-slot"
+                            >{% include "includes/_switch_track.html" only %}</span>
                         </button>
                     </li>
                 {% endif %}
@@ -1340,23 +1347,21 @@ Optional context:
                 </section>
                 {# Problem terrain's key, at the whole scale: every region is   #}
                 {# painted by its own bulletin. Hidden until the layer is on    #}
-                {# (map_problem_terrain_key.js). SNOW-1374: behind its flag.    #}
-                {% if problem_terrain_enabled %}
-                    <section
-                        class="map-legend-section"
-                        data-testid="map-legend-problem-terrain"
-                        data-problem-terrain-legend
-                        hidden
-                    >
-                        <div class="map-legend-title">
-                            <a
-                                class="map-legend-attribution-link"
-                                href="{% url 'public:help' %}#help-topic-bulletin-terrain"
-                            >{% trans "Problem terrain" %}</a>
-                        </div>
-                        {% include "includes/_bulletin_terrain_key.html" with key=bulletin_terrain_key %}
-                    </section>
-                {% endif %}
+                {# (map_problem_terrain_key.js).                                #}
+                <section
+                    class="map-legend-section"
+                    data-testid="map-legend-problem-terrain"
+                    data-problem-terrain-legend
+                    hidden
+                >
+                    <div class="map-legend-title">
+                        <a
+                            class="map-legend-attribution-link"
+                            href="{% url 'public:help' %}#help-topic-bulletin-terrain"
+                        >{% trans "Problem terrain" %}</a>
+                    </div>
+                    {% include "includes/_bulletin_terrain_key.html" with key=bulletin_terrain_key %}
+                </section>
             {% endif %}
             {% comment %}
                 SNOW-1017: what a saved route's line means. Hidden until
@@ -1593,6 +1598,37 @@ Optional context:
         control out to the bottom-right chevron — the empty strip left once
         both clusters dropped to the map's own bottom edge.
         {% endcomment %}
+        {# SNOW-1376: the region at the map's centre and its level, from z10, #}
+        {# where the fill has faded (SNOW-1375). The stack's member just above #}
+        {# the date row, so it steps aside with the selection column like the #}
+        {# others. Drawn by map_region_chip.js; a tap opens the region.         #}
+        <button
+            type="button"
+            id="map-region-chip"
+            class="map-region-chip hover-affordance"
+            data-testid="map-region-chip"
+            hidden
+        >
+            <span
+                class="danger-tile map-region-chip-level"
+                data-region-chip-level
+                data-level="no_rating"
+                aria-hidden="true"
+            ></span>
+            <span class="map-region-chip-text">
+                <span class="map-region-chip-name" data-region-chip-name></span>
+                <span class="map-region-chip-detail" data-region-chip-detail hidden></span>
+            </span>
+        </button>
+        <template id="map-region-chip-strings-template">
+            <span data-string="slopes">{% trans "slopes" %}</span>
+            <span data-string="ch-only">{% trans "Slopes are drawn in Switzerland only" %}</span>
+            <span data-string="filter">{% trans "Your filter" %}</span>
+            <span data-string="open">{% trans "Open the region" %}</span>
+            {# SNOW-1376: the chip's accessible name carries the level, which  #}
+            {# the aria-hidden square only shows. {level} is the EAWS digit.   #}
+            <span data-string="level">{% trans "danger level {level}" %}</span>
+        </template>
         <div id="map-date-row" class="map-date-row">
             {% comment %}
             The date control (SNOW-794) — the map's one date affordance, and the
@@ -1764,7 +1800,7 @@ Optional context:
                 {# shared a template with.                                     #}
                 <template id="map-problem-terrain-strings-template">
                     {# The menu row's second line, and (SNOW-1195) what it says on a day no bulletin covers. #}
-                    <span data-string="detail">{% trans "Replaces the region colour from zoom 12" %}</span>
+                    <span data-string="detail">{% trans "From zoom 12, Switzerland" %}</span>
                     <span data-string="no-bulletin">{% trans "No bulletin for this day" %}</span>
                 </template>
             {% endif %}

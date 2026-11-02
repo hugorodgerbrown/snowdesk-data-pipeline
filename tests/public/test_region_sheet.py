@@ -11,8 +11,9 @@ Covers:
   - The detents: the body narrows none, so all three on every day — a
     day with no bulletin still has "On the ground" and the resorts to
     reach (``data-sheet-detents``, read by static/js/map_sheet.js).
-  - SNOW-979: the "Highlight problem terrain" switch above the
-    bulletin and its key — only for a region inside the terrain tiles,
+  - SNOW-979: the "Sync with map terrain" switch (SNOW-1377; it was
+    "Highlight problem terrain") below the bulletin and its key, for
+    every reader — only for a region inside the terrain tiles,
     with the tiles configured, on a day with a bulletin. Since SNOW-1194
     the rules come from /api/problem-terrain/ (tests/public/
     test_problem_terrain.py), not the body.
@@ -38,7 +39,6 @@ from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
-from waffle.testutils import override_flag
 
 from apps.accounts.models import Account
 from apps.bulletins.models import RegionDayRating
@@ -457,19 +457,11 @@ _TILES = "https://tiles.example/terrain-class/v1/{z}/{x}/{y}.png"
 
 @pytest.mark.django_db
 class TestProblemTerrainSwitch:
-    """SNOW-979: the "Highlight problem terrain" switch below the bulletin.
+    """SNOW-979: the "Sync with map terrain" switch below the bulletin.
 
-    SNOW-1374 put it behind the ``problem_terrain`` flag, so every test here
-    reads the sheet as a signed-in reader the flag is on for;
-    ``TestProblemTerrainFlag`` covers the readers it is off for.
+    SNOW-1377 took SNOW-1374's flag off, so every test here reads the sheet
+    as an anonymous reader.
     """
-
-    @pytest.fixture(autouse=True)
-    def _flagged_reader(self, client: Client) -> Any:
-        """Sign the client in and turn the flag on for the test."""
-        client.force_login(UserFactory.create())
-        with override_flag("problem_terrain", active=True):
-            yield
 
     def test_rated_swiss_region_carries_the_switch_and_its_key(
         self, client: Client, settings: Any
@@ -481,8 +473,9 @@ class TestProblemTerrainSwitch:
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert 'data-testid="region-sheet-terrain"' in content
         assert 'id="region-sheet-terrain-toggle"' in content
-        # The layers menu's row's name: one state, one name.
-        assert "Highlight problem terrain" in content
+        # The layers menu's row's name: one state, one name (SNOW-1377).
+        assert "Sync with map terrain" in content
+        assert "Highlight problem terrain" not in content
         # SNOW-1194: the map paints every region from /api/problem-terrain/,
         # so the body no longer carries its own region's rules.
         assert "region-sheet-terrain-rules" not in content
@@ -505,20 +498,26 @@ class TestProblemTerrainSwitch:
             'data-testid="region-sheet-bulletin"'
         )
 
-    def test_key_and_zoom_line_render_hidden(
+    def test_key_renders_hidden_and_the_second_line_shown(
         self, client: Client, settings: Any
     ) -> None:
-        """The script shows them once it has read the switch's state."""
+        """The script shows the key once it has read the switch's state.
+
+        SNOW-1377: the switch's second line is fixed — "From zoom 12,
+        Switzerland", the layers-menu row's — so it renders shown.
+        """
         settings.TERRAIN_CLASS_TILE_URL = _TILES
         region = MicroRegionFactory.create()
         _rated_today(region)
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert re.search(r"data-region-sheet-terrain-key\s+hidden", content)
-        # The zoom hint is the switch's own second line, under its label.
         strip = content[content.index('data-testid="region-sheet-terrain"') :]
         toggle = strip[: strip.index("data-region-sheet-terrain-key")]
-        assert re.search(r"data-panel-overlay-toggle-detail\s+hidden", toggle)
-        assert "Zoom in on the map to see it" in toggle
+        detail = re.search(r"<span[^>]*data-panel-overlay-toggle-detail[^>]*>", toggle)
+        assert detail is not None
+        assert "hidden" not in detail.group(0)
+        assert "From zoom 12, Switzerland" in toggle
+        assert "Zoom in on the map to see it" not in toggle
 
     def test_key_and_explainer_start_closed(
         self, client: Client, settings: Any
@@ -592,32 +591,22 @@ class TestProblemTerrainSwitch:
 
 
 @pytest.mark.django_db
-class TestProblemTerrainFlag:
-    """SNOW-1374: no switch and no key for a reader outside the flag."""
+class TestProblemTerrainForEveryReader:
+    """SNOW-1377: the flag is gone, so signed in or out, the switch renders."""
 
-    def test_anonymous_reader_gets_no_switch(
-        self, client: Client, settings: Any
+    @pytest.mark.parametrize("signed_in", [False, True])
+    def test_every_reader_gets_the_switch(
+        self, client: Client, settings: Any, signed_in: bool
     ) -> None:
-        """A signed-out visitor never reaches waffle, so never the switch."""
+        """Wherever the tiles cover the region, whoever is reading."""
         settings.TERRAIN_CLASS_TILE_URL = _TILES
         region = MicroRegionFactory.create()
         _rated_today(region)
-        with override_flag("problem_terrain", active=True):
-            content = _get(client, _url(region.region_id.lower())).content.decode()
-        assert 'data-testid="region-sheet-terrain"' not in content
-        assert "Highlight problem terrain" not in content
-
-    def test_signed_in_reader_outside_the_flag_gets_no_switch(
-        self, client: Client, settings: Any
-    ) -> None:
-        """Signed in is not enough: the flag decides."""
-        settings.TERRAIN_CLASS_TILE_URL = _TILES
-        region = MicroRegionFactory.create()
-        _rated_today(region)
-        client.force_login(UserFactory.create())
-        with override_flag("problem_terrain", active=False):
-            content = _get(client, _url(region.region_id.lower())).content.decode()
-        assert 'data-testid="region-sheet-terrain"' not in content
+        if signed_in:
+            client.force_login(UserFactory.create())
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-testid="region-sheet-terrain"' in content
+        assert "Sync with map terrain" in content
 
 
 @pytest.mark.django_db

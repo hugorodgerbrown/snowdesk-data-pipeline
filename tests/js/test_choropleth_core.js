@@ -285,3 +285,55 @@ describe('selectedOutlinePaint (2026-10-19)', () => {
     expect(core.SELECTED_OUTLINE_ROUTE_OPACITY).toBeLessThan(1);
   });
 });
+
+describe('the fill gives way to the edge by zoom (SNOW-1375)', () => {
+  it('fades from the resting strength at z8.5 to the trace at z10', () => {
+    const expr = core.regionFillOpacityExpr(0.5, 0.85 / 0.55);
+    expect(expr.slice(0, 3)).toEqual(['interpolate', ['linear'], ['zoom']]);
+    expect(expr[3]).toBe(core.FILL_FADE_START_ZOOM);
+    expect(expr[5]).toBe(core.FILL_FADE_END_ZOOM);
+    // Each stop: painted slopes → 0, emphasised → stronger, else the value.
+    expect(expr[4][2]).toBe(0);
+    expect(expr[4].at(-1)).toBe(0.5);
+    expect(expr[6][2]).toBe(0);
+    expect(expr[6].at(-1)).toBe(core.FILL_TRACE_OPACITY);
+  });
+
+  it('never makes the trace stronger than a weak resting step', () => {
+    const expr = core.regionFillOpacityExpr(0.05, 1.5);
+    expect(expr[6].at(-1)).toBe(0.05);
+  });
+
+  it('is off at the off step', () => {
+    expect(core.regionFillOpacityExpr(0, 1.5)).toBe(0);
+    expect(core.regionEdgeOpacityExpr(0)).toBe(0);
+  });
+
+  it('draws the band inside, from z10, scaled by the step and 0 where slopes are painted', () => {
+    // MapLibre: a positive line-offset on a polygon is an inset.
+    expect(core.EDGE_OFFSET_PX).toBeGreaterThan(0);
+    expect(core.EDGE_MIN_ZOOM).toBe(core.FILL_FADE_END_ZOOM);
+    const expr = core.regionEdgeOpacityExpr(0.5);
+    expect(expr[0]).toBe('case');
+    expect(expr[2]).toBe(0);
+    expect(expr[3]).toBeCloseTo(0.55);
+    expect(core.regionEdgeOpacityExpr(1)[3]).toBeLessThanOrEqual(0.9);
+  });
+
+  it('builds one label point per positioned region, level first', () => {
+    const features = [
+      { id: 1, properties: { name: 'Martigny-Verbier', country: 'CH', covered: true, label: [7.2, 46.1] } },
+      { id: 2, properties: { name: 'Val de Bagnes', country: 'CH', covered: true, label: [7.3, 46.0] } },
+      { id: 3, properties: { name: 'No point', country: 'CH', covered: true } },
+    ];
+    const ratings = new Map([[1, 'considerable']]);
+    const out = core.regionLabelFeatures(features, ratings, new Set([2]));
+    expect(out.type).toBe('FeatureCollection');
+    expect(out.features).toHaveLength(2);
+    const [first, second] = out.features;
+    expect(first.geometry).toEqual({ type: 'Point', coordinates: [7.2, 46.1] });
+    expect(first.properties).toMatchObject({ text: '3 · Martigny-Verbier', country: 'CH', painted: false });
+    // No rating painted: the name alone. Slopes painted: flagged for the filter.
+    expect(second.properties).toMatchObject({ text: 'Val de Bagnes', painted: true });
+  });
+});

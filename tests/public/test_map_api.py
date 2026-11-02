@@ -549,6 +549,41 @@ def test_regions_geojson_features_carry_slug() -> None:
     assert by_id["CH-4115"]["properties"]["slug"] == "martigny-verbier"
 
 
+@pytest.mark.django_db
+def test_regions_geojson_serves_rfc7946_winding_and_a_label() -> None:
+    """SNOW-1375: outer rings counter-clockwise, and a label at the centroid.
+
+    The map's edge band is a negative line-offset, inside only for RFC 7946
+    winding, and the stored boundary here is clockwise. The level label sits
+    at the region's centroid Location; a region without one has no label.
+    """
+    from apps.regions.services.geometry import ring_area  # noqa: PLC0415 — this test alone needs it
+
+    clockwise = {
+        "type": "Polygon",
+        "coordinates": [
+            [[6.9, 46.4], [6.9, 46.5], [7.0, 46.5], [7.0, 46.4], [6.9, 46.4]]
+        ],
+    }
+    ch_major = MajorRegionFactory.create(prefix="CH-4", country="CH")
+    sub = SubRegionFactory.create(prefix="CH-41", major=ch_major)
+    centroid = LocationFactory.create(latitude=46.45, longitude=6.95)
+    MicroRegionFactory.create(
+        region_id="CH-4115",
+        boundary=clockwise,
+        subregion=sub,
+        centroid_location=centroid,
+    )
+    MicroRegionFactory.create(region_id="CH-4116", boundary=clockwise, subregion=sub)
+    cache.clear()
+    data = Client().get(reverse("api:regions_geojson") + "?country=ch").json()
+    by_id = {f["properties"]["id"]: f for f in data["features"]}
+    for feature in by_id.values():
+        assert ring_area(feature["geometry"]["coordinates"][0]) > 0
+    assert by_id["CH-4115"]["properties"]["label"] == [6.95, 46.45]
+    assert "label" not in by_id["CH-4116"]["properties"]
+
+
 # ---------------------------------------------------------------------------
 # major-regions.geojson / sub-regions.geojson  (SNOW-59)
 # ---------------------------------------------------------------------------

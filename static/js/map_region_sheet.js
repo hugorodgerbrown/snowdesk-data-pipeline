@@ -369,24 +369,25 @@
   });
 
   // SNOW-979: THE PROBLEM-TERRAIN SWITCH. A body for a region inside the
-  // terrain tiles, on a day with a bulletin, carries the "Highlight
-  // problem terrain" strip (public/partials/_region_sheet_terrain.html).
+  // terrain tiles, on a day with a bulletin, carries the "Sync with map
+  // terrain" strip (public/partials/_region_sheet_terrain.html; SNOW-1377
+  // renamed it from "Highlight problem terrain").
   // Since SNOW-1194 the layer paints every region at once from map.js, and
   // this switch writes the same state as the layers menu's row of the same
   // name — so closing the sheet or moving to another region changes nothing
-  // on the map. This owns the switch, the key under it and the zoom line; map.js's
-  // window.pwaBulletinTerrain owns the state.
+  // on the map. This owns the switch and the key under it; map.js's
+  // window.pwaBulletinTerrain owns the state. The switch's second line is
+  // fixed text (SNOW-1377), so nothing here shows or hides it.
   const TERRAIN_TOGGLE_ID = 'region-sheet-terrain-toggle';
 
   /**
-   * Bring the switch, its key and the zoom line in line with the layer.
-   * A cloned or cached body's checkbox starts unchecked, so this runs after
-   * every paint as well as on every announcement.
+   * Bring the switch and its key in line with the layer. A cloned or
+   * cached body's checkbox starts unchecked, so this runs after every
+   * paint as well as on every announcement.
    *
-   * @param {string} [availability] From the announcement, when there is one.
    * @returns {void}
    */
-  const syncTerrainControls = (availability) => {
+  const syncTerrainControls = () => {
     const input = /** @type {HTMLInputElement|null} */ (sheet.querySelector('#' + TERRAIN_TOGGLE_ID));
     if (!input) return;
     const bridge = window.pwaBulletinTerrain;
@@ -394,9 +395,6 @@
     input.checked = on;
     const key = sheet.querySelector('[data-region-sheet-terrain-key]');
     if (key) key.hidden = !on;
-    const zoom = sheet.querySelector('[data-testid="region-sheet-terrain"] [data-panel-overlay-toggle-detail]');
-    const where = availability || (bridge ? bridge.availability() : 'ok');
-    if (zoom) zoom.hidden = !(on && where === 'zoom-in');
   };
 
   sheet.addEventListener('change', (ev) => {
@@ -405,14 +403,10 @@
     window.pwaBulletinTerrain.setEnabled(target.checked, regionId || undefined);
   });
 
-  // The menu row switches the same state.
+  // The menu row switches the same state, and Steep terrain going on or
+  // off moves what is drawn (SNOW-1377); map.js announces both here.
   document.addEventListener('snowdesk:problem-terrain-changed', () => {
     syncTerrainControls();
-  });
-  // The camera moves the zoom line; the terrain filter announces where the
-  // tiles can draw, which is where this layer can too.
-  document.addEventListener('snowdesk:terrain-filter-changed', (ev) => {
-    syncTerrainControls(ev.detail?.availability);
   });
 
   /**

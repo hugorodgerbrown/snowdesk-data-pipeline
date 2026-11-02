@@ -134,8 +134,10 @@
     // SNOW-1109: the terrain filter's row is a checkbox now, not an action
     // row, so it toggles through its bridge like the four above.
     terrain: () => window.pwaTerrainFilter,
-    // "Highlight problem terrain" (2026-10-23): the bulletins' own terrain,
-    // its own row under Conditions rather than a colour of the filter.
+    // "Sync with map terrain" (SNOW-1377; "Highlight problem terrain" from
+    // 2026-10-23): the bulletins' own terrain, a switch row under Avalanche
+    // bulletins rather than a colour of the filter. isEnabled() is what is
+    // drawn, so the row reads off while Steep terrain is on.
     problem_terrain: () => window.pwaBulletinTerrain,
     // SNOW-1185: "Show unsupported regions" — a re-filter of the micro
     // regions that only map.js's applyCountryFilters can compose.

@@ -48,7 +48,7 @@
  * SNOW-1194 added a third, 'bulletin' ("By bulletin"), and 2026-10-23 took
  * it out again: the bulletins' own terrain is not a filter the reader sets
  * but the bulletin drawn another way, so it became its own layers-menu row,
- * "Highlight problem terrain" (bulletin_terrain_core.js; map.js's
+ * now "Sync with map terrain" (bulletin_terrain_core.js; map.js's
  * pwaBulletinTerrain). A stored 'bulletin' now reads back as 'match', with
  * the reader's own settings intact; map.js carries its switch over first.
  *

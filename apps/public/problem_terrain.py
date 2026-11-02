@@ -4,7 +4,7 @@ apps/public/problem_terrain.py — every region's problem-terrain rules (SNOW-11
 SNOW-979 painted one region's steep ground by its bulletin, with the rules
 carried in that region's sheet. Clicking from region to region repainted
 one at a time, and Hugo found it choppy (22 Oct), so the layer — the
-layers menu's "Highlight problem terrain" row — paints every region at
+layers menu's "Sync with map terrain" row — paints every region at
 once, and this feed is where the map gets every region's rules from:
 
     GET /api/problem-terrain/?d=2026-04-27
@@ -39,10 +39,9 @@ the map cannot paint is a promise nothing keeps.
 The URL carries the date, so a response is safe to cache publicly for the
 same five minutes as ``/api/ratings/``.
 
-SNOW-1374: every control that turns the layer on is behind the
-``problem_terrain`` waffle flag (``problem_terrain_enabled``) while the
-controls are redesigned. The feed itself stays open: it is public data,
-and nothing calls it for a reader outside the flag.
+SNOW-1374 put every control that turns the layer on behind a waffle flag;
+SNOW-1377 took it off, and the layer is on by default wherever the
+terrain-class tiles are configured.
 """
 
 from __future__ import annotations
@@ -52,7 +51,6 @@ import re
 from datetime import date
 from typing import Any, cast
 
-import waffle
 from django.conf import settings
 from django.core.cache import cache
 from django.http import HttpRequest, JsonResponse
@@ -79,31 +77,6 @@ _CACHE_TTL_S = 300
 # on the bulletin itself and through a rating's ``source_bulletin``.
 _RULE_FIELDS_OWN = ("bulletin_id", "render_model", "render_model_version")
 _RULE_FIELDS = tuple(f"source_bulletin__{name}" for name in _RULE_FIELDS_OWN)
-
-
-def problem_terrain_enabled(request: HttpRequest) -> bool:
-    """Whether this reader may see and use the problem-terrain layer.
-
-    The terrain-class tiles must be configured (the layer has nothing to
-    paint without them) and the ``problem_terrain`` flag must be on for the
-    reader. An anonymous request is answered before waffle is asked, so a
-    signed-out visitor pays no flag query on the map page (the rule
-    ``route_drawing_enabled`` follows; docs/feature-flags.md).
-
-    Args:
-        request: The incoming request.
-
-    Returns:
-        True when the layer's controls should render for this reader.
-
-    """
-    if not settings.TERRAIN_CLASS_TILE_URL:
-        return False
-    if not request.user.is_authenticated:
-        return False
-    # A literal name: tests/core/services/test_waffle_manifest_call_sites.py
-    # finds a flag's call sites by it.
-    return bool(waffle.flag_is_active(request, "problem_terrain"))
 
 
 # Rule rating → the EAWS level key the legend swatch and label read.

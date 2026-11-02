@@ -9,8 +9,8 @@
  * seeded from the bridge, edits handed back to it, and every word read from
  * the strings template rather than the English fallback.
  *
- * SNOW-1297: the sheet's problem-terrain switch writes window.pwaBulletinTerrain,
- * stubbed here too, and never the filter.
+ * SNOW-1377: the problem-terrain switch SNOW-1297 put in the sheet is gone;
+ * a stubbed window.pwaBulletinTerrain checks the sheet never touches it.
  *
  * The fixture mirrors the hooks of
  * apps/public/templates/public/partials/_map_terrain_filter_sheet.html.
@@ -44,7 +44,7 @@ function stubBridge() {
   return bridge;
 }
 
-/** The problem-terrain layer's bridge, announcing as map.js's does. */
+/** The problem-terrain layer's bridge, which the sheet must leave alone. */
 function stubBulletinTerrain() {
   const state = { enabled: false };
   const layer = {
@@ -79,11 +79,6 @@ function buildFixture() {
     <div id="map-terrain-filter-sheet" hidden tabindex="-1" data-overlay></div>
     <template id="map-terrain-filter-template">
       <h2>Terrain filter</h2>
-      <div data-panel-overlay-toggle>
-        <label for="terrain-filter-problem-terrain-toggle">Highlight problem terrain</label>
-        <span data-panel-overlay-toggle-detail hidden>Painted from each region's bulletin</span>
-        <input type="checkbox" id="terrain-filter-problem-terrain-toggle">
-      </div>
       <input type="radio" name="terrain-filter-mode" value="match" checked>
       <input type="radio" name="terrain-filter-mode" value="slope">
       <span data-terrain-filter-slope-line></span>
@@ -361,51 +356,20 @@ describe('the menu row and legend', () => {
   });
 });
 
-describe('the problem-terrain switch (SNOW-1297)', () => {
-  const toggle = () => /** @type {HTMLInputElement} */ (q('#terrain-filter-problem-terrain-toggle'));
-  const detail = () => q('[data-panel-overlay-toggle-detail]');
-  const strip = () => q('[data-panel-overlay-toggle]');
-
-  it('opens on the layer\'s state, either way', () => {
+describe('no problem-terrain switch (SNOW-1377)', () => {
+  it('opens with no switch for the bulletin\'s layer', () => {
     window.pwaTerrainFilterSheet.open();
-    expect(toggle().checked).toBe(false);
-    expect(detail().hidden).toBe(true);
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-
-    problemTerrain.state.enabled = true;
-    window.pwaTerrainFilterSheet.open();
-    expect(toggle().checked).toBe(true);
-    expect(detail().hidden).toBe(false);
+    expect(q('#terrain-filter-problem-terrain-toggle')).toBe(null);
+    expect(q('[data-panel-overlay-toggle]')).toBe(null);
+    expect(sheetEl().textContent).not.toContain('problem terrain');
   });
 
-  it('switches the layer, with no region, and leaves the filter alone', () => {
+  it('never writes the layer, whatever the filter does', () => {
     window.pwaTerrainFilterSheet.open();
-    toggle().checked = true;
-    toggle().dispatchEvent(changeEvent());
-    expect(problemTerrain.setEnabled).toHaveBeenLastCalledWith(true);
-    expect(detail().hidden).toBe(false);
-
-    toggle().checked = false;
-    toggle().dispatchEvent(changeEvent());
-    expect(problemTerrain.setEnabled).toHaveBeenLastCalledWith(false);
-    expect(detail().hidden).toBe(true);
-    expect(bridge.setFilter).not.toHaveBeenCalled();
-    expect(bridge.isEnabled()).toBe(true);
-  });
-
-  it('follows the layer when another switch moves it', () => {
-    window.pwaTerrainFilterSheet.open();
-    problemTerrain.setEnabled(true);
-    expect(toggle().checked).toBe(true);
-    expect(detail().hidden).toBe(false);
-    problemTerrain.setEnabled(false);
-    expect(toggle().checked).toBe(false);
-    expect(detail().hidden).toBe(true);
-  });
-
-  it('is hidden on a page with no problem-terrain layer', () => {
-    delete window.pwaBulletinTerrain;
-    window.pwaTerrainFilterSheet.open();
-    expect(strip().hidden).toBe(true);
+    document.dispatchEvent(new CustomEvent('snowdesk:problem-terrain-changed'));
+    press(q('[data-octant="4"]'));
+    bridge.hide();
+    bridge.show();
+    expect(problemTerrain.setEnabled).not.toHaveBeenCalled();
   });
 });

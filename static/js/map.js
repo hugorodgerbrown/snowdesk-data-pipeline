@@ -116,10 +116,10 @@
   const TERRAIN_CLASS_TILE_URL = mapEl.dataset.terrainClassTileUrl || null;
   const TERRAIN_FILTER_ELIGIBLE =
     mapEl.dataset.terrainFilterEligible === 'true' && !!TERRAIN_CLASS_TILE_URL;
-  // SNOW-1374: the problem-terrain layer, behind the problem_terrain flag
-  // while its controls are redesigned. Off, the layer is never drawn,
-  // whatever the device stored: the stored choice is kept (never written
-  // here), so it comes back if the flag is turned on for this reader.
+  // The problem-terrain layer ("Sync with map terrain"). SNOW-1374 put it
+  // behind a waffle flag; SNOW-1377 took the flag off, so it is offered
+  // wherever the terrain tiles are (data-problem-terrain-enabled follows
+  // terrain_filter_eligible).
   const PROBLEM_TERRAIN_ENABLED =
     TERRAIN_FILTER_ELIGIBLE && mapEl.dataset.problemTerrainEnabled === 'true';
   // swisstopo's ski-touring routes (ch.swisstopo-karto.skitouren): a raster
@@ -456,8 +456,9 @@
     // map with it on would greet a visitor who came to read the ratings
     // with terrain. window.pwaTerrainFilter is its one writer.
     terrain_filter: false,
-    // "Highlight problem terrain": off by default, for the terrain filter's
-    // reason. window.pwaBulletinTerrain is its one writer.
+    // "Sync with map terrain": ON by default (SNOW-1377, seeded below) — it
+    // is the bulletin drawn on the ground, not a second colour scheme the
+    // reader chose. window.pwaBulletinTerrain is its one writer.
     problem_terrain: false,
     // SNOW-1185: regions no provider has ever rated stay off the map unless
     // asked for — see applyCountryFilters.
@@ -571,11 +572,13 @@
   // SNOW-473: this seed is re-run inside the ``styledata`` handler after a
   // basemap swap (search "SNOW-473") — keep the two blocks in sync when adding
   // an overlay key.
-  for (const key of ['resorts', 'weather', 'routes', 'terrain_filter', 'problem_terrain', 'unsupported']) {
+  for (const key of ['resorts', 'weather', 'routes', 'terrain_filter', 'unsupported']) {
     overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
   }
-  // SNOW-1374: outside the flag the layer is off, not merely uncontrolled.
-  if (!PROBLEM_TERRAIN_ENABLED) overlayState.problem_terrain = false;
+  // SNOW-1377: on unless switched off. A page without the terrain tiles has
+  // no layer to draw, so it is off there.
+  overlayState.problem_terrain =
+    PROBLEM_TERRAIN_ENABLED && readBoolStorage(OVERLAY_STORAGE_KEY.problem_terrain, true);
   // SNOW-1290: on unless switched off.
   overlayState.community_reports = readBoolStorage(OVERLAY_STORAGE_KEY.community_reports, true);
   // SNOW-1285: the two ski-touring parts, on unless switched off.
@@ -584,7 +587,7 @@
   // SNOW-1384: the wildlife rest zones, off unless switched on.
   overlayState.rest_zones = SKI_ROUTES_ELIGIBLE && readBoolStorage(OVERLAY_STORAGE_KEY.rest_zones, false);
   // 2026-10-23: "By bulletin" left the terrain filter for a row of its own,
-  // "Highlight problem terrain". A device that left the filter switched on
+  // now "Sync with map terrain". A device that left the filter switched on
   // in that colour comes back with problem terrain on and the filter off,
   // and the stored filter's mode becomes 'match' so this runs once. Before
   // the menu rows are seeded below, so they open on the carried-over state.
@@ -596,8 +599,8 @@
       storedFilter = null;
     }
     if (storedFilter && storedFilter.mode === 'bulletin') {
-      // SNOW-1374: outside the flag there is no layer to carry over to, so
-      // the filter stays on in its default colour instead.
+      // A page without the layer has nothing to carry over to, so the
+      // filter stays on in its default colour instead.
       if (overlayState.terrain_filter && PROBLEM_TERRAIN_ENABLED) {
         overlayState.terrain_filter = false;
         overlayState.problem_terrain = true;
@@ -716,6 +719,11 @@
         // SNOW-1109: the terrain filter's row. Its state is overlayState's
         // ``terrain_filter`` (the storage key's name), not a key of its own.
         checked = overlayState.terrain_filter;
+      } else if (key === 'problem_terrain') {
+        // SNOW-1377: the row says what is drawn, and Steep terrain's
+        // colours replace the bulletin's slopes while it is on — the
+        // bulletinTerrainShown() rule, which is declared further down.
+        checked = overlayState.problem_terrain && !overlayState.terrain_filter;
       } else {
         checked = overlayState[key];
       }
@@ -1268,39 +1276,24 @@
   // mirrors the old 0.55/0.85 weights so a selected region still reads
   // stronger than its neighbours at every step.
   const EMPHASIS_RATIO = 0.85 / 0.55;
-  const emphasisOpacity = (resting) => Math.min(1, +(resting * EMPHASIS_RATIO).toFixed(3));
-
-  // "This region is selected or being previewed from the sheet." Module scope
-  // because both the install path and applyBulletinsVisibility build the
-  // opacity expression, and a second copy would be free to drift.
-  const REGION_EMPHASISED = [
-    'any',
-    ['boolean', ['feature-state', 'selected'], false],
-    ['boolean', ['feature-state', 'previewing'], false],
-  ];
-
-  // SNOW-979: a region whose ground the problem-terrain layer is painting
-  // drops its choropleth fill. The layer paints each problem's ground in
-  // the problem's own EAWS colour, and the region's flat danger tint under
-  // it would mix into every one of them — a moderate problem's yellow
-  // reading orange through a considerable region's fill. The outline stays.
-  const REGION_TERRAIN_PAINTED = ['boolean', ['feature-state', 'terrain'], false];
 
   /**
    * ``fill-opacity`` for the choropleth at a given resting opacity: that
-   * value, stepped up for a selected or previewed region.
+   * value, stepped up for a selected or previewed region, fading from z8.5
+   * to a faint trace at z10 (SNOW-1375), and 0 where the problem-terrain
+   * layer paints the region's slopes (SNOW-979: the region's flat tint under
+   * a problem's own EAWS colour would mix into it). The expression lives in
+   * choropleth_core.js, where it is tested.
    *
-   * A plain number when the resting value is 0 — at the off step there is
+   * A plain 0 when the resting value is 0 — at the off step there is
    * nothing to emphasise, and a selected region must not be the one thing
    * still painted after the user switched the layer off.
    *
    * @param {number} resting The effective resting opacity, 0–1.
-   * @returns {Array|number} A MapLibre ``case`` expression, or 0.
+   * @returns {Array|number} A MapLibre zoom ``interpolate``, or 0.
    */
   const regionFillOpacity = (resting) => (
-    resting > 0
-      ? ['case', REGION_TERRAIN_PAINTED, 0, REGION_EMPHASISED, emphasisOpacity(resting), resting]
-      : 0
+    self.pwaChoroplethCore.regionFillOpacityExpr(resting, EMPHASIS_RATIO)
   );
 
   // ``compositeOverBackdrop`` was destructured here for the choropleth's
@@ -1515,11 +1508,14 @@
         // layer throws.
         'cached-tiles-fill', 'cached-tiles-line', 'cached-tiles-line-elsewhere',
         'regions-label',
+        // SNOW-1375: the edge band and the level label.
+        'regions-edge', 'regions-level-label',
       ]) {
         if (map.getLayer(id)) map.removeLayer(id);
       }
       map.removeSource('regions');
     }
+    if (map.getSource('region-labels')) map.removeSource('region-labels');
     map.addSource('regions', { type: 'geojson', data: geojson });
 
     // Fill layer — the choropleth.
@@ -1584,6 +1580,30 @@
       },
     });
     BASE_LAYER_FILTERS['regions-fill'] = map.getFilter('regions-fill') ?? null;
+
+    // SNOW-1375: from z10, a band of the region's colour just inside its
+    // edge, where the fill has faded to a trace. Same colours as the fill,
+    // scaled by the same opacity step, and 0 where the region's slopes are
+    // painted. A positive offset on a polygon is an inset (MapLibre's
+    // line-offset), and the regions payload serves one consistent winding
+    // (RFC 7946) so every region's band lands on its own side.
+    map.addLayer({
+      id: 'regions-edge',
+      type: 'line',
+      source: 'regions',
+      minzoom: self.pwaChoroplethCore.EDGE_MIN_ZOOM,
+      layout: {
+        visibility: fillLayout.opacity > 0 ? 'visible' : 'none',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': fillColours,
+        'line-width': self.pwaChoroplethCore.EDGE_WIDTH_PX,
+        'line-offset': self.pwaChoroplethCore.EDGE_OFFSET_PX,
+        'line-opacity': self.pwaChoroplethCore.regionEdgeOpacityExpr(fillLayout.opacity),
+      },
+    });
+    BASE_LAYER_FILTERS['regions-edge'] = null;
 
     // Outline — base unselected ring.
     //
@@ -1801,6 +1821,8 @@
       type: 'symbol',
       source: 'regions',
       minzoom: 8.5,
+      // SNOW-1375: from z10 the level label below carries the name.
+      maxzoom: self.pwaChoroplethCore.EDGE_MIN_ZOOM,
       layout: {
         visibility: overlayState.l4 ? 'visible' : 'none',
         'text-field': ['get', 'name'],
@@ -1815,6 +1837,36 @@
       },
     });
     BASE_LAYER_FILTERS['regions-label'] = map.getFilter('regions-label') ?? null;
+
+    // SNOW-1375: the level label, "3 · Martigny-Verbier", from z10. Its own
+    // point source because text-field cannot read feature-state, where the
+    // rating lives; refreshRegionLabels rebuilds it when a day is painted
+    // and when the painted-slopes set changes.
+    map.addSource('region-labels', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+    });
+    map.addLayer({
+      id: 'regions-level-label',
+      type: 'symbol',
+      source: 'region-labels',
+      minzoom: self.pwaChoroplethCore.EDGE_MIN_ZOOM,
+      filter: ['!=', ['get', 'painted'], true],
+      layout: {
+        visibility: fillLayout.opacity > 0 ? 'visible' : 'none',
+        'text-field': ['get', 'text'],
+        'text-font': overlayTextFont,
+        'text-size': 12,
+        'text-allow-overlap': false,
+      },
+      paint: {
+        'text-color': '#1a1916',
+        'text-halo-color': 'rgba(255,255,255,0.9)',
+        'text-halo-width': 1.4,
+      },
+    });
+    BASE_LAYER_FILTERS['regions-level-label'] = map.getFilter('regions-level-label') ?? null;
+    refreshRegionLabels();
     raiseMarkerLayers();
     // SNOW-656: mirror the Bulletins step onto the menu control. The layers
     // above were just built from ``bulletinsVisibility``, but the control is
@@ -4978,6 +5030,14 @@
     writeStorage(OVERLAY_STORAGE_KEY.terrain_filter, String(on));
     installTerrainFilterLayer();
     syncTerrainFilterRaster();
+    // SNOW-1377: the bulletin's slopes give way to the filter while it is
+    // on, and come back when it goes off — the raster, the regions'
+    // `terrain` state (so the edge band shows) and the switches' state.
+    // The stored problem-terrain choice is not written.
+    if (BULLETIN_TERRAIN_ELIGIBLE) {
+      syncBulletinTerrain();
+      announceProblemTerrain();
+    }
     document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
     announceTerrainFilter();
   };
@@ -5028,7 +5088,8 @@
   // SNOW-979, SNOW-1194: problem terrain — every region's steep ground
   // painted by what its own bulletin says about it.
   //
-  // Its own layers-menu row, "Highlight problem terrain", under Conditions
+  // Its own layers-menu row, "Sync with map terrain" (SNOW-1377; it was
+  // "Highlight problem terrain"), under Avalanche bulletins
   // (2026-10-23; SNOW-1194 had made it the terrain filter's third colour,
   // "By bulletin", and Hugo found it hidden there: it is the bulletin drawn
   // another way, not a filter the reader sets). It is still the filter's
@@ -5050,13 +5111,18 @@
   // selected region alone, from rules in its sheet, and clicking from
   // region to region repainted one at a time (Hugo, 22 Oct: choppy). The
   // menu row and the region sheet's switch both write one
-  // state, overlayState.problem_terrain, so they cannot disagree. It is
-  // independent of the terrain filter: the filter draws under the
-  // choropleth, this above it, and both can be on.
+  // state, overlayState.problem_terrain, so they cannot disagree.
+  //
+  // SNOW-1377: Steep terrain takes precedence. While the terrain filter is
+  // on, the reader's own colours replace the bulletin's slopes: this layer
+  // is not drawn and no region's fill drops out for it, but its stored
+  // state is left alone, so turning the filter off brings the slopes back.
+  // Turning this layer on turns the filter off. (It replaces both layers
+  // being drawn at once, one above the choropleth and one under it.)
   //
   // The tiles exist from z12, so below it nothing paints and the choropleth
   // shows as ever. From z12 each painted region's danger fill drops out
-  // (feature-state `terrain`, REGION_TERRAIN_PAINTED), because the layer IS
+  // (feature-state `terrain`, read by regionFillOpacity), because the layer IS
   // its danger there.
   // docs/decisions/the-bulletin-terrain-layer-paints-what-it-cannot-decide.md
   const BULLETIN_TERRAIN_CORE = self.pwaBulletinTerrainCore;
@@ -5093,6 +5159,21 @@
   // Feature ids whose danger fill is dropped right now, and whether the
   // camera was at the tiles' zoom when that was last decided.
   let bulletinTerrainHidden = new Set();
+
+  /**
+   * Rebuild the level labels' source from the painted ratings and the
+   * regions whose slopes are painted (SNOW-1375).
+   *
+   * @returns {void}
+   */
+  const refreshRegionLabels = () => {
+    const source = map.getSource('region-labels');
+    if (!source || typeof source.setData !== 'function') return;
+    source.setData(self.pwaChoroplethCore.regionLabelFeatures(
+      Object.values(FEATURE_BY_REGION_ID), REGION_RATINGS, bulletinTerrainHidden,
+    ));
+  };
+  refreshRegionLabelsHook = refreshRegionLabels;
   let bulletinTerrainAtZoom = false;
   const bulletinTerrainMasks = BULLETIN_TERRAIN_ELIGIBLE
     ? TERRAIN_CORE.createTileCache(BULLETIN_TERRAIN_MASK_TILES)
@@ -5100,11 +5181,12 @@
 
   /**
    * Whether the layer should be drawn: its row switched on, and the
-   * problem_terrain flag on for this reader (SNOW-1374).
+   * terrain filter off (SNOW-1377 — Steep terrain takes precedence).
    *
    * @returns {boolean}
    */
-  const bulletinTerrainShown = () => PROBLEM_TERRAIN_ENABLED && !!overlayState.problem_terrain;
+  const bulletinTerrainShown = () =>
+    PROBLEM_TERRAIN_ENABLED && !!overlayState.problem_terrain && !overlayState.terrain_filter;
 
   /**
    * Tell the menu row, the region sheet's switch and the legend key that
@@ -5202,7 +5284,7 @@
     });
     // ABOVE the choropleth, unlike the terrain filter: this layer IS the
     // danger for the regions it paints (whose own fill drops out, see
-    // REGION_TERRAIN_PAINTED), and the region outlines stay on top of it.
+    // regionFillOpacity), and the region outlines stay on top of it.
     const beforeId = map.getLayer('regions-line') ? 'regions-line' : undefined;
     map.addLayer(
       {
@@ -5252,7 +5334,11 @@
     for (const id of want) {
       if (!bulletinTerrainHidden.has(id)) map.setFeatureState({ source: 'regions', id }, { terrain: true });
     }
+    const changed = want.size !== bulletinTerrainHidden.size
+      || [...want].some((id) => !bulletinTerrainHidden.has(id));
     bulletinTerrainHidden = want;
+    // SNOW-1375: a region whose slopes are painted carries no level label.
+    if (changed) refreshRegionLabels();
   };
 
   /**
@@ -5398,20 +5484,24 @@
      * @returns {void}
      */
     const setProblemTerrainEnabled = (on) => {
-      // SNOW-1374: no control renders outside the flag; refuse a stray call.
+      // No control renders on a page without the layer; refuse a stray call.
       if (!PROBLEM_TERRAIN_ENABLED) return;
       overlayState.problem_terrain = on;
       writeStorage(OVERLAY_STORAGE_KEY.problem_terrain, String(on));
+      // SNOW-1377: the reader asked for the bulletin's slopes, which the
+      // terrain filter would hide, so it goes off. Its settings are kept.
+      if (on && overlayState.terrain_filter) setTerrainFilterEnabled(false);
       syncBulletinTerrain();
       document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
       announceProblemTerrain();
     };
 
-    // The layer's one owner of state. Three controls write it — the layers
-    // menu's "Highlight problem terrain" row (map_basemap_picker.js), the
-    // region sheet's switch and the Steep terrain sheet's (SNOW-1297,
-    // terrain_filter_sheet.js) — and each reads it back
-    // from snowdesk:problem-terrain-changed, so they cannot disagree.
+    // The layer's one owner of state. Two controls write it — the layers
+    // menu's "Sync with map terrain" row (map_basemap_picker.js) and the
+    // region sheet's switch (SNOW-1377 took the Steep terrain sheet's out)
+    // — and each reads it back from snowdesk:problem-terrain-changed, so
+    // they cannot disagree. isEnabled() is what is DRAWN: false while the
+    // terrain filter is on, whatever the stored choice.
     window.pwaBulletinTerrain = Object.freeze({
       isEnabled: bulletinTerrainShown,
       show: () => setProblemTerrainEnabled(true),
@@ -5666,7 +5756,8 @@
   // all — Major / Minor / Micro still ticked, no outlines anywhere. SNOW-658
   // relabelled these rows from countries to providers without narrowing what
   // they filtered, and this is that narrowing.
-  const BULLETIN_DATA_LAYER_IDS = ['regions-fill'];
+  // SNOW-1375: the edge band and level label are bulletin data too.
+  const BULLETIN_DATA_LAYER_IDS = ['regions-fill', 'regions-edge', 'regions-level-label'];
   const BOUNDARY_LAYER_IDS = [
     'regions-line', 'regions-line-unsupported', 'regions-label',
     'sub-regions-line', 'sub-regions-label',
@@ -5701,7 +5792,9 @@
   // SNOW-1196: regions-line takes the covered-only term ALWAYS, since the
   // uncovered ring is the dashed 'regions-line-unsupported', which takes
   // NOTHING_FILTER while the row is off.
-  const UNSUPPORTED_REGION_LAYER_IDS = new Set(['regions-fill', 'regions-label']);
+  const UNSUPPORTED_REGION_LAYER_IDS = new Set([
+    'regions-fill', 'regions-label', 'regions-edge', 'regions-level-label',
+  ]);
   const SUPPORTED_ONLY_FILTER = ['!=', ['get', 'covered'], false];
   const NOTHING_FILTER = ['==', ['literal', 1], ['literal', 0]];
   const unsupportedTerm = (layerId) => {
@@ -5919,6 +6012,9 @@
   const sourceBatch = self.pwaCountryLoadCore.createSourceBatch((id, data) => {
     const source = map.getSource(id);
     if (source) source.setData(data);
+    // SNOW-1375: a country's regions just joined the map — their level
+    // labels with them, even on a day with no rating to paint for them.
+    if (id === 'regions') refreshRegionLabels();
   });
 
   const _loadCountry = async (
@@ -6716,6 +6812,20 @@
     if (map.getLayer('regions-fill')) {
       map.setLayoutProperty('regions-fill', 'visibility', fill.visibility);
       map.setPaintProperty('regions-fill', 'fill-opacity', regionFillOpacity(fill.opacity));
+    }
+    // SNOW-1375: the band and label follow the same step, and the off step
+    // hides both (the fill stays installed at 0 so borders remain tappable;
+    // these have nothing to tap).
+    const closeZoomShown = fill.opacity > 0 ? 'visible' : 'none';
+    if (map.getLayer('regions-edge')) {
+      map.setLayoutProperty('regions-edge', 'visibility', closeZoomShown);
+      map.setPaintProperty(
+        'regions-edge', 'line-opacity',
+        self.pwaChoroplethCore.regionEdgeOpacityExpr(fill.opacity),
+      );
+    }
+    if (map.getLayer('regions-level-label')) {
+      map.setLayoutProperty('regions-level-label', 'visibility', closeZoomShown);
     }
     if (map.getLayer('bulletin-groupings-line')) {
       map.setLayoutProperty(
@@ -8773,7 +8883,7 @@
     installTerrainFilterLayer();
     installRegionsLayers(geojson);
     // SNOW-979: after the regions — it sits above the choropleth. A reader
-    // who left "Highlight problem terrain" on gets the day now.
+    // who has "Sync with map terrain" on gets the day now.
     installBulletinTerrainLayer();
     if (BULLETIN_TERRAIN_ELIGIBLE) syncBulletinTerrain();
     // The downloaded-areas overlay is a persisted preference now, so a
@@ -8836,8 +8946,10 @@
         {
           featureById: FEATURE_BY_REGION_ID,
           intToRating: INT_TO_RATING,
-          setRating: (featureId, rating) =>
-            map.setFeatureState({ source: 'regions', id: featureId }, { rating }),
+          setRating: (featureId, rating) => {
+            map.setFeatureState({ source: 'regions', id: featureId }, { rating });
+            recordRegionRating(featureId, rating);
+          },
         },
         bootRatings,
         { clearMissing: false },
@@ -9299,7 +9411,10 @@
       }
       if (feature.id === selectedId) window.pwaRegionSheet?.reopen?.();
       selectFeature(feature.id);
-      window.pwaMapFocus?.region?.(regionID);
+      // SNOW-1376: the region chip asks with `frame: false` — the reader is
+      // already looking at the region, close in, and framing it would zoom
+      // them back out to the whole region.
+      if (!(ev.detail && ev.detail.frame === false)) window.pwaMapFocus?.region?.(regionID);
     });
 
     // Pin-positioning focus (static/js/map_placement_focus.js) clears every
@@ -11709,10 +11824,11 @@
       // downloadedOverlayVisible instead, which this handler must not touch
       // — a basemap swap must not silently close the downloads overlay out
       // from under an open "Manage downloads" sheet.
-      for (const key of ['resorts', 'weather', 'routes', 'terrain_filter', 'problem_terrain', 'unsupported']) {
+      for (const key of ['resorts', 'weather', 'routes', 'terrain_filter', 'unsupported']) {
         overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
       }
-      if (!PROBLEM_TERRAIN_ENABLED) overlayState.problem_terrain = false;
+      overlayState.problem_terrain =
+        PROBLEM_TERRAIN_ENABLED && readBoolStorage(OVERLAY_STORAGE_KEY.problem_terrain, true);
       overlayState.community_reports = readBoolStorage(OVERLAY_STORAGE_KEY.community_reports, true);
       overlayState.ski_tours = readSkiTouringPart('ski_tours');
       overlayState.ski_summits = readSkiTouringPart('ski_summits');

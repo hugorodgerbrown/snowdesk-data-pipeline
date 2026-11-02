@@ -578,6 +578,11 @@ in addition to the shared map assets.
     {# SNOW-1196: the weather layer's "forecast only" line in its layers    #}
     {# row. Reads window.pwaWeatherWindow (map.js).  #}
     <script defer src="{% static 'js/map_weather_window.js' %}"></script>
+    {# SNOW-1376: the region chip — its pure half, then the DOM half. Reads #}
+    {# MAP and the bridges map.js publishes, so after the bundle; outside    #}
+    {# its contiguous run because no bundle module reads it.                 #}
+    <script defer src="{% static 'js/map_region_chip_core.js' %}"></script>
+    <script defer src="{% static 'js/map_region_chip.js' %}"></script>
     {# SNOW-1196: the problem-terrain layer's legend key and menu-row line. #}
     {# Reads window.pwaBulletinTerrain (map.js).                            #}
     <script defer src="{% static 'js/map_problem_terrain_key.js' %}"></script>

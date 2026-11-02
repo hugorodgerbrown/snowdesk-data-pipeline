@@ -9,7 +9,9 @@
  * What is pinned, because each is the way this goes wrong:
  *   - the legend's problem-terrain key shows exactly while the layer is on;
  *   - the layers-menu row's second line says when the day has no bulletin
- *     to paint (SNOW-1195), and follows a day change.
+ *     to paint (SNOW-1195), and follows a day change;
+ *   - with no strings template its English fallback is SNOW-1377's
+ *     "From zoom 12, Switzerland".
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,9 +20,9 @@ import '../../static/js/i18n_strings.js';
 
 const MARKUP = `
   <section data-problem-terrain-legend hidden>Problem terrain</section>
-  <span data-problem-terrain-detail>Replaces the region colour from zoom 12</span>
+  <span data-problem-terrain-detail>From zoom 12, Switzerland</span>
   <template id="map-problem-terrain-strings-template">
-    <span data-string="detail">Ersetzt die Regionsfarbe ab Zoom 12</span>
+    <span data-string="detail">Ab Zoom 12, Schweiz</span>
     <span data-string="no-bulletin">Kein Bulletin für diesen Tag</span>
   </template>`;
 
@@ -83,7 +85,7 @@ describe('the problem-terrain key', () => {
 describe("the layers-menu row's second line", () => {
   it('says when the day has no bulletin to paint', async () => {
     await load();
-    expect(detail()).toBe('Ersetzt die Regionsfarbe ab Zoom 12');
+    expect(detail()).toBe('Ab Zoom 12, Schweiz');
     dayEmpty = true;
     document.dispatchEvent(new CustomEvent('snowdesk:problem-terrain-changed'));
     expect(detail()).toBe('Kein Bulletin für diesen Tag');
@@ -94,6 +96,15 @@ describe("the layers-menu row's second line", () => {
     await load();
     dayEmpty = false;
     document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date: '2026-02-14' } }));
-    expect(detail()).toBe('Ersetzt die Regionsfarbe ab Zoom 12');
+    expect(detail()).toBe('Ab Zoom 12, Schweiz');
+  });
+});
+
+describe('the English fallback (SNOW-1377)', () => {
+  it('reads "From zoom 12, Switzerland" with no strings template', async () => {
+    document.getElementById('map-problem-terrain-strings-template').remove();
+    document.querySelector('[data-problem-terrain-detail]').textContent = '';
+    await load();
+    expect(detail()).toBe('From zoom 12, Switzerland');
   });
 });

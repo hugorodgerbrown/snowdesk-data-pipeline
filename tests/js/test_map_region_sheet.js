@@ -410,7 +410,7 @@ describe('the problem-terrain switch', () => {
     <div data-testid="region-sheet-terrain">
       <input type="checkbox" id="region-sheet-terrain-toggle">
       <div data-region-sheet-terrain-key hidden></div>
-      <span data-panel-overlay-toggle-detail hidden></span>
+      <span data-panel-overlay-toggle-detail>From zoom 12, Switzerland</span>
     </div>`;
 
   /** A bridge whose state the test drives, as map.js's would. */
@@ -428,7 +428,7 @@ describe('the problem-terrain switch', () => {
     delete window.pwaBulletinTerrain;
   });
 
-  it('starts at the layer\'s state, key shown and zoom line when the map is too far out', async () => {
+  it('starts at the layer\'s state, key shown and the second line left alone', async () => {
     bridge(true, 'zoom-in');
     fetchMock.mockImplementation(() => Promise.resolve({ ok: true, text: () => Promise.resolve(TERRAIN_BODY) }));
     select('CH-4115', 'tap');
@@ -436,6 +436,7 @@ describe('the problem-terrain switch', () => {
     const input = /** @type {HTMLInputElement} */ (sheet.querySelector('#region-sheet-terrain-toggle'));
     expect(input.checked).toBe(true);
     expect(sheet.querySelector('[data-region-sheet-terrain-key]').hidden).toBe(false);
+    // SNOW-1377: "From zoom 12, Switzerland" is fixed text, rendered shown.
     expect(sheet.querySelector('[data-panel-overlay-toggle-detail]').hidden).toBe(false);
   });
 
@@ -458,18 +459,19 @@ describe('the problem-terrain switch', () => {
     expect(sheet.querySelector('[data-region-sheet-terrain-key]').hidden).toBe(true);
   });
 
-  it('moves the zoom line with the camera, which the terrain filter announces', async () => {
-    const state = bridge(true, 'ok');
+  it('reads off while the layer is not drawn, as Steep terrain going on makes it', async () => {
+    const state = bridge(true);
     fetchMock.mockImplementation(() => Promise.resolve({ ok: true, text: () => Promise.resolve(TERRAIN_BODY) }));
     select('CH-4115', 'tap');
     await settle();
-    const zoom = sheet.querySelector('[data-panel-overlay-toggle-detail]');
-    expect(zoom.hidden).toBe(true);
-    state.where = 'zoom-in';
-    document.dispatchEvent(new CustomEvent('snowdesk:terrain-filter-changed', {
-      detail: { enabled: false, availability: 'zoom-in' },
+    const input = /** @type {HTMLInputElement} */ (sheet.querySelector('#region-sheet-terrain-toggle'));
+    expect(input.checked).toBe(true);
+    state.on = false;
+    document.dispatchEvent(new CustomEvent('snowdesk:problem-terrain-changed', {
+      detail: { enabled: false },
     }));
-    expect(zoom.hidden).toBe(false);
+    expect(input.checked).toBe(false);
+    expect(sheet.querySelector('[data-panel-overlay-toggle-detail]').hidden).toBe(false);
   });
 });
 

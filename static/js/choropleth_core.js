@@ -34,6 +34,18 @@
  *   repaintDateForStyleSwap(committed, urlParam)
  *   SELECTED_OUTLINE_ROUTE_OPACITY
  *   selectedOutlinePaint(routeOpen)
+ *   FILL_FADE_START_ZOOM / FILL_FADE_END_ZOOM / FILL_TRACE_OPACITY /
+ *   EDGE_MIN_ZOOM / EDGE_WIDTH_PX / EDGE_OFFSET_PX
+ *   regionFillOpacityExpr(resting, emphasisRatio)
+ *   regionEdgeOpacityExpr(resting)
+ *   regionLabelFeatures(features, ratingById, paintedIds)
+ *
+ * SNOW-1375 (Hugo, 2 Nov 2026): the region colour gives way by zoom. The
+ * fill fades from its resting strength at z8.5 to a faint trace at z10, and
+ * from z10 a band of the region's colour runs just inside its edge, with a
+ * label giving its level and name. A region whose slopes the problem-terrain
+ * layer paints (feature-state ``terrain``) draws none of the three. See
+ * docs/decisions/the-region-colour-gives-way-by-zoom.md.
  */
 
 // @ts-check
@@ -251,6 +263,126 @@
     };
   }
 
+  // SNOW-1375: the zooms and sizes of the hand-over from fill to edge.
+  const FILL_FADE_START_ZOOM = 8.5;
+  const FILL_FADE_END_ZOOM = 10;
+  const FILL_TRACE_OPACITY = 0.08;
+  const EDGE_MIN_ZOOM = 10;
+  const EDGE_WIDTH_PX = 8;
+  // Positive: for polygon features MapLibre's line-offset is an INSET when
+  // positive and an outset when negative (the style spec's line-offset). That
+  // holds for rings in one consistent winding, so /api/regions.geojson serves
+  // RFC 7946 winding — outer rings counter-clockwise, holes clockwise,
+  // apps/regions/services/geometry.py — and every region gets its band on its
+  // own side of the edge.
+  const EDGE_OFFSET_PX = 4;
+  // The band at the default 0.5 resting strength reads at about 0.55.
+  const EDGE_OPACITY_RATIO = 1.1;
+  const EDGE_OPACITY_MAX = 0.9;
+
+  /** Feature-state: the region's slopes are being painted (SNOW-979). */
+  const SLOPES_PAINTED = ['boolean', ['feature-state', 'terrain'], false];
+  /** Feature-state: the region is selected or previewed from its sheet. */
+  const EMPHASISED = [
+    'any',
+    ['boolean', ['feature-state', 'selected'], false],
+    ['boolean', ['feature-state', 'previewing'], false],
+  ];
+
+  /**
+   * One stop's per-feature fill opacity: 0 where slopes are painted, the
+   * emphasised strength for a selected region, else the value.
+   *
+   * @param {number} value The resting opacity at this stop.
+   * @param {number} emphasisRatio How much stronger a selected region is.
+   * @returns {Array<*>}
+   */
+  function fillStop(value, emphasisRatio) {
+    const emphasised = Math.min(1, +(value * emphasisRatio).toFixed(3));
+    return ['case', SLOPES_PAINTED, 0, EMPHASISED, emphasised, value];
+  }
+
+  /**
+   * The choropleth's ``fill-opacity``: the resting strength up to z8.5,
+   * fading to a faint trace by z10 and holding there.
+   *
+   * MapLibre accepts ``['zoom']`` only at the top of a paint expression, so
+   * the zoom ``interpolate`` is outermost and each stop carries its own
+   * per-feature ``case``.
+   *
+   * @param {number} resting The user's resting opacity, 0–1 (the Bulletin
+   *   opacity steps); 0 is off.
+   * @param {number} emphasisRatio The selected-region multiplier.
+   * @returns {Array<*>|number} A paint expression, or 0 when off.
+   */
+  function regionFillOpacityExpr(resting, emphasisRatio) {
+    if (!(resting > 0)) return 0;
+    const trace = Math.min(resting, FILL_TRACE_OPACITY);
+    return [
+      'interpolate', ['linear'], ['zoom'],
+      FILL_FADE_START_ZOOM, fillStop(resting, emphasisRatio),
+      FILL_FADE_END_ZOOM, fillStop(trace, emphasisRatio),
+    ];
+  }
+
+  /**
+   * The edge band's ``line-opacity``: scaled from the resting strength, 0
+   * where slopes are painted, 0 altogether when the layer is off.
+   *
+   * @param {number} resting The user's resting opacity, 0–1.
+   * @returns {Array<*>|number}
+   */
+  function regionEdgeOpacityExpr(resting) {
+    if (!(resting > 0)) return 0;
+    const value = Math.min(EDGE_OPACITY_MAX, +(resting * EDGE_OPACITY_RATIO).toFixed(3));
+    return ['case', SLOPES_PAINTED, 0, value];
+  }
+
+  /**
+   * A rating key → the EAWS level digit the label leads with.
+   *
+   * @type {Readonly<Object<string, string>>}
+   */
+  const LEVEL_DIGIT = Object.freeze({
+    low: '1', moderate: '2', considerable: '3', high: '4', very_high: '5',
+  });
+
+  /**
+   * The ``region-labels`` source's features: one point per region that has
+   * a label position, carrying the text the label layer draws.
+   *
+   * ``text-field`` cannot read feature-state, where the rating lives, so the
+   * level comes in as data and the source is rebuilt when a day's ratings
+   * are painted.
+   *
+   * @param {Array<{id: number, properties: Object<string, *>}>} features
+   *   The loaded region features (``FEATURE_BY_REGION_ID``'s values).
+   * @param {Map<number, string>} ratingById Each feature id's painted rating.
+   * @param {Set<number>} paintedIds Feature ids whose slopes are painted.
+   * @returns {{type: string, features: Array<Object>}}
+   */
+  function regionLabelFeatures(features, ratingById, paintedIds) {
+    const out = [];
+    for (const f of features) {
+      const props = (f && f.properties) || {};
+      const at = props.label;
+      if (!Array.isArray(at) || at.length !== 2) continue;
+      const digit = LEVEL_DIGIT[ratingById.get(f.id) || ''] || '';
+      out.push({
+        type: 'Feature',
+        id: f.id,
+        geometry: { type: 'Point', coordinates: [at[0], at[1]] },
+        properties: {
+          text: digit ? digit + ' · ' + props.name : String(props.name || ''),
+          country: props.country,
+          covered: props.covered,
+          painted: paintedIds.has(f.id),
+        },
+      });
+    }
+    return { type: 'FeatureCollection', features: out };
+  }
+
   self.pwaChoroplethCore = Object.freeze({
     paintRatingsFrame: paintRatingsFrame,
     BACKDROP_COLOUR: BACKDROP_COLOUR,
@@ -258,5 +390,14 @@
     repaintDateForStyleSwap: repaintDateForStyleSwap,
     SELECTED_OUTLINE_ROUTE_OPACITY: SELECTED_OUTLINE_ROUTE_OPACITY,
     selectedOutlinePaint: selectedOutlinePaint,
+    FILL_FADE_START_ZOOM: FILL_FADE_START_ZOOM,
+    FILL_FADE_END_ZOOM: FILL_FADE_END_ZOOM,
+    FILL_TRACE_OPACITY: FILL_TRACE_OPACITY,
+    EDGE_MIN_ZOOM: EDGE_MIN_ZOOM,
+    EDGE_WIDTH_PX: EDGE_WIDTH_PX,
+    EDGE_OFFSET_PX: EDGE_OFFSET_PX,
+    regionFillOpacityExpr: regionFillOpacityExpr,
+    regionEdgeOpacityExpr: regionEdgeOpacityExpr,
+    regionLabelFeatures: regionLabelFeatures,
   });
 })();

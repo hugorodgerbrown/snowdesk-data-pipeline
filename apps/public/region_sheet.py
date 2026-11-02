@@ -70,7 +70,6 @@ from apps.public.decorators import lowercase_region_id
 from apps.public.problem_terrain import (
     TERRAIN_COUNTRIES,
     bulletin_terrain_rules,
-    problem_terrain_enabled,
     problem_terrain_key,
 )
 from apps.public.views import (
@@ -98,7 +97,7 @@ def _problem_terrain_rules(
     """Return the rules behind the sheet's problem-terrain key (SNOW-979).
 
     Since SNOW-1194 the switch turns on the problem-terrain layer (the
-    layers menu's "Highlight problem terrain" row), which paints every
+    layers menu's "Sync with map terrain" row), which paints every
     region from ``/api/problem-terrain/``; the sheet keeps the switch, and
     these rules only decide its key — the levels this region's bulletin
     paints today.
@@ -191,16 +190,9 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
     level_meta = _DANGER_PANEL_META.get(day_rating.max_rating) if day_rating else None
 
     body = build_bulletin_body(request, region, target_date, selected, skipped)
-    # SNOW-1374: no switch and no key for a reader outside the flag. The
-    # sheet now differs by reader here too; the worker's per-device copy
-    # can only ever have been fetched by someone using this device, and a
-    # switch it shows to someone outside the flag does nothing (map.js
-    # refuses to draw the layer for them).
-    terrain = (
-        _problem_terrain_rules(country, selected)
-        if problem_terrain_enabled(request)
-        else None
-    )
+    # SNOW-1377: every reader gets the switch wherever the tiles cover the
+    # region (SNOW-1374's flag is gone).
+    terrain = _problem_terrain_rules(country, selected)
     context = {
         # The bulletin page's body (SNOW-1164), from the page's own builder.
         **body,
@@ -218,7 +210,7 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
         "covered": region.region_id in covered_region_ids(),
         "provider_name": _PROVIDER_BY_COUNTRY.get(country, ""),
         "resorts": list(Resort.objects.resorts().filter(region=region)),
-        # SNOW-979: the "Highlight problem terrain" switch and its key;
+        # SNOW-979: the "Sync with map terrain" switch and its key;
         # SNOW-1194 moved the rules themselves to /api/problem-terrain/.
         "terrain_switch": terrain is not None,
         "terrain_key": problem_terrain_key(terrain or []),

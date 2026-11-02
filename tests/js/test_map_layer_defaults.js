@@ -290,9 +290,13 @@ function checkedStep() {
   return seg ? Number(seg.dataset.bulletinsStep) : null;
 }
 
-/** `regions-fill`'s resting opacity — the last arm of its `case` expression. */
+/**
+ * `regions-fill`'s resting opacity — the last arm of the `case` at the z8.5
+ * stop of its zoom `interpolate` (SNOW-1375), or the flat 0 when off.
+ */
 function fillOpacity() {
-  const opacity = mapStub.getPaintProperty('regions-fill', 'fill-opacity');
+  let opacity = mapStub.getPaintProperty('regions-fill', 'fill-opacity');
+  if (Array.isArray(opacity) && opacity[0] === 'interpolate') opacity = opacity[4];
   return Array.isArray(opacity) ? opacity[opacity.length - 1] : opacity;
 }
 
