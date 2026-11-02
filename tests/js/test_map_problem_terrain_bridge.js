@@ -113,6 +113,7 @@ function buildFixture() {
          data-resorts-url="/api/resorts.json"
          data-default-basemap-key="openfreemap_liberty"
          data-terrain-filter-eligible="true"
+         data-problem-terrain-enabled="true"
          data-terrain-class-tile-url="${TILE_URL}"
          data-season-end="2026-05-31"></div>
     <div id="search-pill" data-state="collapsed">

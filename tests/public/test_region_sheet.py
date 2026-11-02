@@ -38,6 +38,7 @@ from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
+from waffle.testutils import override_flag
 
 from apps.accounts.models import Account
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
@@ -49,6 +50,7 @@ from tests.factories import (
     RegionBulletinFactory,
     RegionDayRatingFactory,
     ResortFactory,
+    UserFactory,
 )
 
 
@@ -454,7 +456,19 @@ _TILES = "https://tiles.example/terrain-class/v1/{z}/{x}/{y}.png"
 
 @pytest.mark.django_db
 class TestProblemTerrainSwitch:
-    """SNOW-979: the "Highlight problem terrain" switch below the bulletin."""
+    """SNOW-979: the "Highlight problem terrain" switch below the bulletin.
+
+    SNOW-1374 put it behind the ``problem_terrain`` flag, so every test here
+    reads the sheet as a signed-in reader the flag is on for;
+    ``TestProblemTerrainFlag`` covers the readers it is off for.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _flagged_reader(self, client: Client) -> Any:
+        """Sign the client in and turn the flag on for the test."""
+        client.force_login(UserFactory.create())
+        with override_flag("problem_terrain", active=True):
+            yield
 
     def test_rated_swiss_region_carries_the_switch_and_its_key(
         self, client: Client, settings: Any
@@ -573,6 +587,35 @@ class TestProblemTerrainSwitch:
         settings.TERRAIN_CLASS_TILE_URL = _TILES
         region = MicroRegionFactory.create()
         content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-testid="region-sheet-terrain"' not in content
+
+
+@pytest.mark.django_db
+class TestProblemTerrainFlag:
+    """SNOW-1374: no switch and no key for a reader outside the flag."""
+
+    def test_anonymous_reader_gets_no_switch(
+        self, client: Client, settings: Any
+    ) -> None:
+        """A signed-out visitor never reaches waffle, so never the switch."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        with override_flag("problem_terrain", active=True):
+            content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-testid="region-sheet-terrain"' not in content
+        assert "Highlight problem terrain" not in content
+
+    def test_signed_in_reader_outside_the_flag_gets_no_switch(
+        self, client: Client, settings: Any
+    ) -> None:
+        """Signed in is not enough: the flag decides."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        client.force_login(UserFactory.create())
+        with override_flag("problem_terrain", active=False):
+            content = _get(client, _url(region.region_id.lower())).content.decode()
         assert 'data-testid="region-sheet-terrain"' not in content
 
 

@@ -2416,6 +2416,17 @@ def test_steep_terrain_row_is_a_switch_and_an_options_opener() -> None:
     assert ">Steep terrain<" in li
 
 
+def _problem_terrain_map() -> str:
+    """The map page as a signed-in reader the problem_terrain flag is on for.
+
+    SNOW-1374 put every problem-terrain control behind the flag.
+    """
+    client = Client()
+    client.force_login(UserFactory.create())
+    with override_flag("problem_terrain", active=True):
+        return client.get(reverse("public:map")).content.decode()
+
+
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
 def test_terrain_filter_sheet_opens_on_the_problem_terrain_switch() -> None:
@@ -2424,7 +2435,7 @@ def test_terrain_filter_sheet_opens_on_the_problem_terrain_switch() -> None:
     One overlay-toggle strip, above the Colour tiles, labelled as the
     layers-menu row is. It is not a third colour: the tiles stay two.
     """
-    content = Client().get(reverse("public:map")).content.decode()
+    content = _problem_terrain_map()
     sheet = content[content.index('id="map-terrain-filter-template"') :]
     sheet = sheet[: sheet.index("</template>")]
 
@@ -2503,7 +2514,7 @@ def test_highlight_problem_terrain_is_on_the_bulletins_page() -> None:
     with a second line saying what it does. Its key is its own legend
     section, at the whole scale, hidden until the layer is on.
     """
-    content = Client().get(reverse("public:map")).content.decode()
+    content = _problem_terrain_map()
     bulletins = _layers_page(content, "bulletins")
     row = bulletins[bulletins.index('data-overlay-key="problem_terrain"') - 250 :]
     row = row[: row.index("</button>")]
@@ -2522,6 +2533,36 @@ def test_highlight_problem_terrain_is_on_the_bulletins_page() -> None:
     assert "#help-topic-bulletin-terrain" in legend
     assert "map-legend-swatch--terrain-very_high" in legend
     assert "map-legend-swatch--terrain-undescribed" in legend
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_problem_terrain_is_enabled_for_a_flagged_reader() -> None:
+    """SNOW-1374: the map's script is told the layer may be drawn."""
+    assert 'data-problem-terrain-enabled="true"' in _problem_terrain_map()
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+@pytest.mark.parametrize("signed_in", [False, True])
+def test_no_problem_terrain_control_outside_the_flag(signed_in: bool) -> None:
+    """SNOW-1374: outside the flag no surface offers the layer.
+
+    The layers-menu row, the Steep terrain sheet's switch and the legend's
+    key are all absent, and the map's script is told the layer is off, so a
+    device that stored it on stops painting it. A signed-out visitor is
+    turned away before waffle is asked, whatever the flag says.
+    """
+    client = Client()
+    if signed_in:
+        client.force_login(UserFactory.create())
+    with override_flag("problem_terrain", active=not signed_in):
+        content = client.get(reverse("public:map")).content.decode()
+    assert 'data-problem-terrain-enabled="false"' in content
+    assert 'data-overlay-key="problem_terrain"' not in content
+    assert 'id="terrain-filter-problem-terrain-toggle"' not in content
+    assert "data-problem-terrain-legend" not in content
+    assert "Highlight problem terrain" not in content
 
 
 @pytest.mark.django_db
