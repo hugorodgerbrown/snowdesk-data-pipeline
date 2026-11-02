@@ -1849,6 +1849,13 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
             request.user.is_authenticated
             and waffle.flag_is_active(request, "route_drawing")
         ),
+        # SNOW-1392: the map status bar, behind the map_status_bar flag while
+        # its copy settles. Short-circuited for an anonymous request like
+        # route_drawing above, so a signed-out visitor pays no waffle query.
+        "status_bar_enabled": (
+            request.user.is_authenticated
+            and waffle.flag_is_active(request, "map_status_bar")
+        ),
         "route_draw_preview_url": reverse("routes:draw_preview"),
         "route_create_drawn_url": reverse("routes:create_drawn"),
         # Where an anonymous drawer's Save sends them. The draft waits on

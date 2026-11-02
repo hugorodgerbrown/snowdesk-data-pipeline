@@ -41,10 +41,12 @@
  *   regionLabelFeatures(features, ratingById, paintedIds)
  *
  * SNOW-1375 (Hugo, 2 Nov 2026): the region colour gives way by zoom. The
- * fill fades from its resting strength at z8.5 to a faint trace at z10, and
- * from z10 a band of the region's colour runs just inside its edge, with a
- * label giving its level and name. A region whose slopes the problem-terrain
- * layer paints (feature-state ``terrain``) draws none of the three. See
+ * fill fades from its resting strength at z8.5 to nothing at z10, and from
+ * z10 a band of the region's colour runs just inside its edge, with a label
+ * giving its level and name. SNOW-1392 took the faint trace out (it was 8%)
+ * and halved the band, and keeps the band where the problem-terrain layer
+ * paints a region's slopes (feature-state ``terrain``): switching the slopes
+ * on only adds their colour. See
  * docs/decisions/the-region-colour-gives-way-by-zoom.md.
  */
 
@@ -266,16 +268,19 @@
   // SNOW-1375: the zooms and sizes of the hand-over from fill to edge.
   const FILL_FADE_START_ZOOM = 8.5;
   const FILL_FADE_END_ZOOM = 10;
-  const FILL_TRACE_OPACITY = 0.08;
+  // SNOW-1392: no trace. From z10 the band alone carries the region's colour.
+  const FILL_TRACE_OPACITY = 0;
   const EDGE_MIN_ZOOM = 10;
-  const EDGE_WIDTH_PX = 8;
+  // SNOW-1392: half SNOW-1375's 8 px, so the band reads as an edge.
+  const EDGE_WIDTH_PX = 4;
+  // Half the width, so the band sits wholly inside the region's own line.
   // Positive: for polygon features MapLibre's line-offset is an INSET when
   // positive and an outset when negative (the style spec's line-offset). That
   // holds for rings in one consistent winding, so /api/regions.geojson serves
   // RFC 7946 winding — outer rings counter-clockwise, holes clockwise,
   // apps/regions/services/geometry.py — and every region gets its band on its
   // own side of the edge.
-  const EDGE_OFFSET_PX = 4;
+  const EDGE_OFFSET_PX = 2;
   // The band at the default 0.5 resting strength reads at about 0.55.
   const EDGE_OPACITY_RATIO = 1.1;
   const EDGE_OPACITY_MAX = 0.9;
@@ -304,7 +309,7 @@
 
   /**
    * The choropleth's ``fill-opacity``: the resting strength up to z8.5,
-   * fading to a faint trace by z10 and holding there.
+   * fading to the trace (none, since SNOW-1392) by z10 and holding there.
    *
    * MapLibre accepts ``['zoom']`` only at the top of a paint expression, so
    * the zoom ``interpolate`` is outermost and each stop carries its own
@@ -327,15 +332,16 @@
 
   /**
    * The edge band's ``line-opacity``: scaled from the resting strength, 0
-   * where slopes are painted, 0 altogether when the layer is off.
+   * when the layer is off. SNOW-1392: it no longer steps aside where the
+   * slopes are painted, so the region keeps its edge and switching the
+   * slopes on only adds their colour.
    *
    * @param {number} resting The user's resting opacity, 0–1.
-   * @returns {Array<*>|number}
+   * @returns {number}
    */
   function regionEdgeOpacityExpr(resting) {
     if (!(resting > 0)) return 0;
-    const value = Math.min(EDGE_OPACITY_MAX, +(resting * EDGE_OPACITY_RATIO).toFixed(3));
-    return ['case', SLOPES_PAINTED, 0, value];
+    return Math.min(EDGE_OPACITY_MAX, +(resting * EDGE_OPACITY_RATIO).toFixed(3));
   }
 
   /**
