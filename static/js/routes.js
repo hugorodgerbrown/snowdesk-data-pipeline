@@ -707,6 +707,28 @@
     return window.pwaRowFocus.parse(row.getAttribute('data-row-focus'));
   }
 
+  /** Read the import line off route_create's row, or '' when there is none.
+   *
+   * SNOW-996: when the file held more than one track the row carries one
+   * `[data-row-notice]` line ("Imported the first of 3 tracks"). The row
+   * itself is never swapped in, so this is the only way the line reaches
+   * the user: the confirmation card repeats it. The text is the server's,
+   * already translated.
+   *
+   * @param {string} html route_create's response body.
+   * @returns {string} The line's text, trimmed, or ''.
+   */
+  function uploadedNotice(html) {
+    if (!html) return '';
+    try {
+      const parsed = new DOMParser().parseFromString(html, 'text/html');
+      const notice = parsed.querySelector('[data-row-notice]');
+      return notice ? notice.textContent.trim() : '';
+    } catch (err) {
+      return '';
+    }
+  }
+
   /** POST one chosen file to routes:create, then show what was created.
    *
    * The response row is still not SWAPPED in — the authoritative list is
@@ -798,6 +820,13 @@
         if (template) {
           sheet.replaceChildren();
           sheet.appendChild(template.content.cloneNode(true));
+          // SNOW-996: which track of a multi-track file was imported.
+          const notice = uploadedNotice(html);
+          const slot = sheet.querySelector('[data-route-confirmation-notice]');
+          if (notice && slot) {
+            slot.textContent = notice;
+            slot.hidden = false;
+          }
         }
 
         // The map draws the same routes this panel lists, and an upload

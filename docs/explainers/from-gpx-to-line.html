@@ -323,7 +323,7 @@ footer p + p { margin-top: 6px; }
           <p>Three kinds of thing in a GPX file can carry coordinates, and they mean different things. <b>Waypoints</b> (<code>&lt;wpt&gt;</code>) are loose pins — a car park, a hut — with no order and no path between them. A <b>route</b> (<code>&lt;rte&gt;</code>) is a path somebody planned. A <b>track</b> (<code>&lt;trk&gt;</code>) is a path somebody recorded, cut into <b>segments</b> wherever the receiver lost the sky.</p>
           <p>We treat a planned route and a recorded track as the same thing — an ordered list of places — because for drawing a line on a map they are. A track wins when a file holds both, since it is the more precise record. Waypoints are ignored entirely, and a file holding nothing but waypoints has no route in it and is refused.</p>
           <p>Segments are joined in the order they appear. A break in a recording is a gap in the signal, not the start of a different journey, so stitching them together gives back the single line that was walked.</p>
-          <p>When a file holds several tracks, <b>the first one wins</b>. The others are counted but not imported, and — today — you are not told. That is a gap rather than a decision, and one we intend to close.</p>
+          <p>When a file holds several tracks, <b>the first one with at least two points wins</b>. The others are counted but not imported, and the uploaded route says so: “Imported the first of 3 tracks”, or “Imported track 2 of 2” when an empty first track was passed over. The count is of every track the file holds, usable or not, so it agrees with what you see if you open the file. The line is said once, as the upload lands; nothing about it is stored.</p>
           <p><b>Two tiers of file, and the poorer one is the normal one.</b> Export a <em>course</em> from a planning tool and you get positions and usually heights, but no times — nothing has happened yet. Export an <em>activity</em> from a watch and every point carries the moment it was recorded. Most files that arrive here are the first kind, so everything time-derived has to be an addition to a working untimed route rather than something the app leans on.</p>
         </div>
         <div class="side">
@@ -508,7 +508,7 @@ footer p + p { margin-top: 6px; }
             <li><span class="label">The file</span><span>Never kept. No copy you could ask us for.</span></li>
             <li><span class="label">Per-point times</span><span>Only the two ends survive — for now.</span></li>
             <li><span class="label">Heart rate &amp;c.</span><span>Never read in the first place.</span></li>
-            <li><span class="label">Other tracks</span><span>Everything after the first.</span></li>
+            <li><span class="label">Other tracks</span><span>Every track but the one imported — counted, named in the upload’s reply, and dropped.</span></li>
             <li><span class="label">Full precision</span><span>Reduced to at most 2,000 points — though now we record how many there were.</span></li>
           </ul>
         </div>
@@ -666,13 +666,13 @@ footer p + p { margin-top: 6px; }
         <tr><td>Carries an entity trick or an expansion bomb</td><td><span class="pill no">refused</span></td><td>Stopped by the XML reader itself, before any of our own checks.</td></tr>
         <tr><td>Waypoints only — no track, no route</td><td><span class="pill no">refused</span></td><td>Loose pins are not a path.</td></tr>
         <tr><td>A track with a single point</td><td><span class="pill no">refused</span></td><td>A line needs two ends.</td></tr>
-        <tr><td>An empty first track, with a good one after it</td><td><span class="pill no">refused</span></td><td>The first track wins, and it is chosen before anything counts its points. A sharp edge, and a fair thing to change.</td></tr>
+        <tr><td>An empty first track, with a good one after it</td><td><span class="pill ok">second one</span></td><td>A track needs two points to be chosen, so the empty one is passed over and the reply says “Imported track 2 of 2”.</td></tr>
         <tr><td>A point off the globe, or NaN, or infinity</td><td><span class="pill no">refused</span></td><td>Checked before anything is stored or drawn.</td></tr>
         <tr><td>Over 5 MB</td><td><span class="pill no">refused</span></td><td>Rejected on its reported size, before the parser sees a byte.</td></tr>
         <tr><td>One unreadable <code>&lt;ele&gt;</code> among thousands</td><td><span class="pill ok">accepted</span></td><td>A gap in the heights, not a broken file. The point keeps its place.</td></tr>
         <tr><td>No <code>&lt;ele&gt;</code> anywhere</td><td><span class="pill ok">accepted</span></td><td>Stored with no climb or drop figure — not with zero.</td></tr>
         <tr><td>No <code>&lt;time&gt;</code>, or a finish earlier than the start</td><td><span class="pill ok">accepted</span></td><td>Stored with no duration. Only the two ends are checked, so a stamp out of order in the middle is not noticed. A planned route has no times by nature.</td></tr>
-        <tr><td>Several tracks</td><td><span class="pill part">first one</span></td><td>The rest are dropped, and nothing on screen says so yet.</td></tr>
+        <tr><td>Several tracks</td><td><span class="pill part">first one</span></td><td>The rest are dropped, and the uploaded route says so: “Imported the first of 3 tracks”.</td></tr>
         <tr><td>A track cut into many segments</td><td><span class="pill ok">accepted</span></td><td>Joined in order — a signal gap is not a new journey.</td></tr>
         <tr><td>A planned <code>&lt;rte&gt;</code> rather than a recording</td><td><span class="pill ok">accepted</span></td><td>An ordered list of places either way.</td></tr>
       </tbody>

@@ -53,7 +53,13 @@ from apps.routes.services.gpx import (
     _total_distance_m,
     parse_gpx,
 )
-from apps.routes.services.routes import RouteLimitReached, create_route, delete_route
+from apps.routes.services.routes import (
+    RouteLimitReached,
+    TrackImport,
+    create_route,
+    delete_route,
+    upload_route,
+)
 from tests.factories import MicroRegionFactory, RouteFactory, UserFactory
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -217,6 +223,86 @@ class TestParseGpxMultipleTracks:
     def test_track_count_reports_the_dropped_tracks(self) -> None:
         """track_count lets the caller say what it took."""
         assert parse_gpx(_fixture("multi_track.gpx")).track_count == 2
+
+
+_GPX_HEAD = b'<?xml version="1.0"?><gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">'
+
+
+def _trk(name: str, points: int, lat: float = 46.0) -> bytes:
+    """Return one ``<trk>`` holding ``points`` points one hundredth apart."""
+    body = b"".join(
+        b'<trkpt lat="%.2f" lon="7.0"></trkpt>' % (lat + index / 100)
+        for index in range(points)
+    )
+    return b"<trk><name>%s</name><trkseg>%s</trkseg></trk>" % (name.encode(), body)
+
+
+def _rte(name: str, points: int) -> bytes:
+    """Return one ``<rte>`` holding ``points`` points."""
+    body = b"".join(
+        b'<rtept lat="%.2f" lon="8.0"></rtept>' % (47 + index / 100)
+        for index in range(points)
+    )
+    return b"<rte><name>%s</name>%s</rte>" % (name.encode(), body)
+
+
+def _gpx(*elements: bytes) -> bytes:
+    """Wrap ``<trk>`` / ``<rte>`` elements in a GPX 1.1 document."""
+    return _GPX_HEAD + b"".join(elements) + b"</gpx>"
+
+
+class TestParseGpxFirstUsableTrack:
+    """The first track with two points wins, and its position is reported (SNOW-996)."""
+
+    def test_an_empty_first_track_is_skipped(self) -> None:
+        """An empty first <trk> no longer sinks a file whose second is fine."""
+        parsed = parse_gpx(_gpx(_trk("Empty", 0), _trk("Real", 3)))
+        assert parsed.name == "Real"
+        assert (parsed.track_position, parsed.track_count) == (2, 2)
+
+    def test_a_one_point_first_track_is_skipped(self) -> None:
+        """One point is not a polyline, so it is skipped like an empty one."""
+        parsed = parse_gpx(_gpx(_trk("Dot", 1), _trk("Real", 2), _trk("Later", 2)))
+        assert parsed.name == "Real"
+        assert (parsed.track_position, parsed.track_count) == (2, 3)
+
+    def test_single_track_is_one_of_one(self) -> None:
+        """A one-track file reports position 1 of 1."""
+        parsed = parse_gpx(_fixture("single_track.gpx"))
+        assert (parsed.track_position, parsed.track_count) == (1, 1)
+
+    def test_a_usable_first_track_is_position_one(self) -> None:
+        """The first track still wins when it is usable."""
+        parsed = parse_gpx(_fixture("multi_track.gpx"))
+        assert (parsed.track_position, parsed.track_count) == (1, 2)
+
+    def test_unusable_tracks_fall_back_to_a_route_counting_routes(self) -> None:
+        """Every <trk> unusable: the <rte> is read, and the count is of routes."""
+        parsed = parse_gpx(_gpx(_trk("Empty", 0), _trk("Dot", 1), _rte("Planned", 3)))
+        assert parsed.name == "Planned"
+        assert (parsed.track_position, parsed.track_count) == (1, 1)
+
+    def test_fallback_counts_every_route(self) -> None:
+        """With two routes, the first usable one is taken, counted among both."""
+        raw = _gpx(_trk("Empty", 0), _rte("Short", 1), _rte("Planned", 2))
+        parsed = parse_gpx(raw)
+        assert parsed.name == "Planned"
+        assert (parsed.track_position, parsed.track_count) == (2, 2)
+
+    def test_nothing_usable_is_still_rejected(self) -> None:
+        """No candidate with two points keeps the old point-count rejection."""
+        with pytest.raises(GPXParseError, match="at least 2 points; found 0"):
+            parse_gpx(_gpx(_trk("Empty", 0), _trk("Also empty", 0)))
+
+    def test_malformed_coordinates_in_the_chosen_track_still_raise(self) -> None:
+        """Selection counts point elements; coordinates are checked after."""
+        raw = _gpx(
+            _trk("Empty", 0),
+            b'<trk><trkseg><trkpt lat="x" lon="7.0"></trkpt>'
+            b'<trkpt lat="46.0" lon="7.0"></trkpt></trkseg></trk>',
+        )
+        with pytest.raises(GPXParseError):
+            parse_gpx(raw)
 
 
 class TestParseGpxMissingElevation:
@@ -697,6 +783,35 @@ class TestCreateRoute:
 
         route = create_route(user_b, _fixture("single_track.gpx"))
         assert route.user == user_b
+
+
+@pytest.mark.django_db
+class TestUploadRoute:
+    """upload_route stores the route and says which track it took (SNOW-996)."""
+
+    def test_returns_the_route_and_its_track_import(self) -> None:
+        """An empty first track: the second is stored, reported as 2 of 2."""
+        user = UserFactory.create()
+        route, track_import = upload_route(
+            user, _gpx(_trk("Empty", 0), _trk("Real", 3))
+        )
+        assert route.name == "Real"
+        assert Route.objects.filter(user=user).count() == 1
+        assert track_import == TrackImport(count=2, position=2)
+
+    def test_a_route_fallback_reports_the_routes(self) -> None:
+        """Every <trk> unusable: the import is the routes' count and position."""
+        user = UserFactory.create()
+        _, track_import = upload_route(
+            user, _gpx(_trk("Empty", 0), _trk("Dot", 1), _rte("Planned", 3))
+        )
+        assert track_import == TrackImport(count=1, position=1)
+
+    def test_create_route_still_returns_the_route(self) -> None:
+        """The seeding commands' entry point keeps its return contract."""
+        route = create_route(UserFactory.create(), _fixture("multi_track.gpx"))
+        assert isinstance(route, Route)
+        assert route.name == "First track"
 
 
 @pytest.mark.django_db
