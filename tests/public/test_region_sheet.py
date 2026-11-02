@@ -940,3 +940,105 @@ def test_three_issues_show_the_latest_built_and_name_the_failed_one(
     assert page.context["bulletin"].pk == reissue.pk
     assert sheet.context["bulletin"].pk == reissue.pk
     assert sheet.context["skipped_issue"].pk == morning.pk
+
+
+def _key_url(region_id: str, day: str | None = None) -> str:
+    """Build the slopes notice's key URL (SNOW-1378), with an optional ``?d=``."""
+    url = reverse("public:slopes_notice_key_partial", kwargs={"region_id": region_id})
+    return f"{url}?d={day}" if day else url
+
+
+@pytest.mark.django_db
+class TestSlopesNoticeKey:
+    """SNOW-1378: the slopes notice's key is the region sheet's own key."""
+
+    def test_plain_get_is_rejected(self, client: Client, settings: Any) -> None:
+        """A fragment: require_htmx gives a plain request a 400."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        region = MicroRegionFactory.create()
+        assert client.get(_key_url(region.region_id.lower())).status_code == 400
+
+    def test_unknown_region_is_404(self, client: Client) -> None:
+        assert _get(client, _key_url("xx-9999")).status_code == 404
+
+    def test_malformed_date_is_400(self, client: Client) -> None:
+        region = MicroRegionFactory.create()
+        response = _get(client, _key_url(region.region_id.lower(), "not-a-date"))
+        assert response.status_code == 400
+
+    def test_the_regions_levels_then_steep_and_no_data(
+        self, client: Client, settings: Any
+    ) -> None:
+        """The levels its bulletin paints today, then the two hatches."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        response = _get(client, _key_url(region.region_id.lower()))
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "map-legend-swatch--terrain-considerable" in content
+        assert "Considerable problem" in _text(content)
+        # Only the levels this bulletin paints: not the whole scale.
+        assert "map-legend-swatch--terrain-high" not in content
+        assert "map-legend-swatch--terrain-undecided" not in content
+        assert content.index("terrain-considerable") < content.index(
+            "terrain-undescribed"
+        )
+        assert content.index("terrain-undescribed") < content.index("terrain-nodata")
+        assert "Additional steep terrain (>30°)" in _text(content)
+        assert "No terrain data" in _text(content)
+        assert "private" in response["Cache-Control"]
+
+    def test_the_same_key_as_the_sheet(self, client: Client, settings: Any) -> None:
+        """Built exactly as the sheet builds its own, so the rows match."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        key = _get(client, _key_url(region.region_id.lower())).content.decode()
+        sheet = _get(client, _url(region.region_id.lower())).content.decode()
+        sheet = sheet[sheet.index("data-region-sheet-terrain-key") :]
+        sheet_key = sheet[: sheet.index("</details>")]
+        swatch = r"map-legend-swatch--terrain-[a-z_]+"
+        assert re.findall(swatch, key) == re.findall(swatch, sheet_key)
+
+    def test_reads_the_day_asked_for(self, client: Client, settings: Any) -> None:
+        """``?d=`` picks the day, as the sheet's does."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        region = MicroRegionFactory.create()
+        day = timezone.localdate() - datetime.timedelta(days=3)
+        _rated_on(region, day)
+        assert not _get(client, _key_url(region.region_id.lower())).content.strip()
+        content = _get(
+            client, _key_url(region.region_id.lower(), day.isoformat())
+        ).content.decode()
+        assert "map-legend-swatch--terrain-considerable" in content
+
+    def test_empty_outside_the_terrain_countries(
+        self, client: Client, settings: Any
+    ) -> None:
+        """No slopes are painted outside the tiles, so no key."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        region = MicroRegionFactory.create(region_id="AT-07-01")
+        region.subregion.major.country = "AT"
+        region.subregion.major.save()
+        _rated_today(region)
+        response = _get(client, _key_url(region.region_id.lower()))
+        assert response.status_code == 200
+        assert response.content == b""
+
+    def test_empty_while_the_terrain_tiles_are_unconfigured(
+        self, client: Client, settings: Any
+    ) -> None:
+        """The terrain filter's own gate."""
+        settings.TERRAIN_CLASS_TILE_URL = ""
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        assert _get(client, _key_url(region.region_id.lower())).content == b""
+
+    def test_empty_on_a_day_without_a_bulletin(
+        self, client: Client, settings: Any
+    ) -> None:
+        """Nothing painted, so the card keeps its whole-scale key."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        region = MicroRegionFactory.create()
+        assert _get(client, _key_url(region.region_id.lower())).content == b""
