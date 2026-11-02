@@ -39,6 +39,12 @@ Set `MAXMIND_ACCOUNT_ID` and `MAXMIND_LICENSE_KEY` in the Render environment
 variables dashboard. The script is idempotent and exits 0 even if MaxMind is
 temporarily unreachable as long as a stale database already exists on disk.
 
+Staging does **not** download it: `render.yaml` sets `GEOIP_DOWNLOAD=off` on
+the staging web service. Staging redeploys on every merge to `main`, each from
+a fresh checkout, and the GeoLite free tier allows 30 downloads per account
+per 24 hours — so staging alone could exhaust the quota and leave production's
+release deploy with a 429 and no database. Geo fields are empty on staging.
+
 ## Refresh cadence
 
 MaxMind publishes a new GeoLite2-City build roughly every two weeks.
