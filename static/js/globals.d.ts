@@ -262,9 +262,6 @@ interface Window {
   pwaRegionChipCore: any;
   /** static/js/map_region_chip.js — the region chip: update() (SNOW-1376). */
   pwaRegionChip: any;
-  /** SNOW-1392: map_status_bar_core.js / map_status_bar.js. */
-  pwaStatusBarCore: any;
-  pwaStatusBar: any;
   /** static/js/map_slopes_notice_core.js — when the "Now showing the bulletin's slopes" card shows: eligible, hasBeenSeen, claim (SNOW-1378). */
   pwaSlopesNoticeCore: any;
 }

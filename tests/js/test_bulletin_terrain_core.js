@@ -249,10 +249,13 @@ describe('the key swatches', () => {
   };
   const stripes = (angle) => ({ 45: 'difference', 135: 'sum' })[angle];
 
-  it('draws no data the way the map strokes it', () => {
-    // Hugo, 23 Oct: the key's hatch was swapped against the map.
+  it('draws no data and steep-not-described the way the map strokes them', () => {
+    // Hugo, 23 Oct: the key's two hatches were swapped against the map.
+    const steep = [2500 >> 8, 2500 & 255, (4 << 5) | 8, 255];
     const nodata = [0, 0, 255, 255];
     expect(stripes(swatchAngle('terrain-nodata'))).toBe(painted(core.STATE.NODATA, nodata));
+    expect(stripes(swatchAngle('terrain-undescribed'))).toBe(painted(core.STATE.UNDESCRIBED, steep));
+    expect(swatchAngle('terrain-nodata')).not.toBe(swatchAngle('terrain-undescribed'));
   });
 });
 
@@ -272,10 +275,10 @@ describe('palette', () => {
     expect(core.PALETTE).toHaveLength(core.STATE.DESCRIBED_BASE + 6);
   });
 
-  it('paints nothing on steep ground no problem describes (SNOW-1392)', () => {
+  it('hatches undescribed ground the other way from no data', () => {
     const size = 256;
     const src = new Uint8ClampedArray(size * size * 4);
-    // Every pixel steep and south-facing, and no rules: every pixel is UNDESCRIBED.
+    // Row 0: one steep south-facing pixel per column, so every pixel is UNDESCRIBED.
     for (let i = 0; i < src.length; i += 4) {
       src[i] = 2500 >> 8;
       src[i + 1] = 2500 & 255;
@@ -284,9 +287,9 @@ describe('palette', () => {
     }
     const out = new Uint8ClampedArray(src.length);
     terrain.paintTile(src, out, core.createClassifier([]), core.PALETTE, { z: 13, x: 0, y: 0 });
-    let painted = 0;
-    for (let i = 3; i < out.length; i += 4) if (out[i] > 0) painted += 1;
-    expect(painted).toBe(0);
-    expect(core.PALETTE[core.STATE.UNDESCRIBED].hatch).toBeUndefined();
+    const alphaAt = (px, py) => out[(py * size + px) * 4 + 3];
+    // The 135° hatch: px - py ≡ 0 (mod 8) is a stroke; px + py ≡ 0 is not, off the diagonal.
+    expect(alphaAt(9, 1)).toBeGreaterThan(0);
+    expect(alphaAt(7, 1)).toBe(0);
   });
 });

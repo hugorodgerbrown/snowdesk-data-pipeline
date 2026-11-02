@@ -1582,9 +1582,9 @@
     BASE_LAYER_FILTERS['regions-fill'] = map.getFilter('regions-fill') ?? null;
 
     // SNOW-1375: from z10, a band of the region's colour just inside its
-    // edge, where the fill has faded out. Same colours as the fill, scaled
-    // by the same opacity step, and (SNOW-1392) kept where the region's
-    // slopes are painted, so they only add colour. A positive offset on a polygon is an inset (MapLibre's
+    // edge, where the fill has faded to a trace. Same colours as the fill,
+    // scaled by the same opacity step, and 0 where the region's slopes are
+    // painted. A positive offset on a polygon is an inset (MapLibre's
     // line-offset), and the regions payload serves one consistent winding
     // (RFC 7946) so every region's band lands on its own side.
     map.addLayer({
