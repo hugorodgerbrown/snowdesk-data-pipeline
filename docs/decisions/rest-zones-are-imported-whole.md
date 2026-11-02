@@ -31,6 +31,12 @@ its name or its canton.
 
 ## Consequences
 
+- An empty answer is treated as a failure too: from a canton that holds
+  zones, or from every canton at once. geo.admin answering an empty 200
+  (a renamed layer or field) is far likelier than a canton repealing every
+  zone in one week, and the sync cannot tell them apart. A canton that
+  genuinely drops its last zone needs an operator to clear it by hand.
+
 - One unreachable canton holds back every canton's update for that week.
 - A zone whose geometry geo.admin re-issues under a new feature id is a
   delete and an insert, not an edit. Nothing user-owned points at a zone,

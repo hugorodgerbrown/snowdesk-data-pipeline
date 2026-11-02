@@ -3,7 +3,8 @@ tests/ingest/test_rest_zones.py — The service's rest-zone import (SNOW-1263).
 
 Against a fake geo.admin: a first import creates, a second changes
 nothing, a vanished zone is tombstoned, and a failing canton — or an
-unreadable zone — writes nothing, so the zones already held survive.
+unreadable zone, or an empty answer for a canton that holds zones —
+writes nothing, so the zones already held survive.
 """
 
 from __future__ import annotations
@@ -90,3 +91,19 @@ def test_an_unreadable_zone_writes_nothing() -> None:
     with pytest.raises(RestZoneImportError, match="no polygon"):
         import_rest_zones(geo_admin({"GR": [broken]}))
     assert SourceRestZone.objects.live().count() == 1
+
+
+def test_a_canton_that_answers_empty_while_holding_zones_writes_nothing() -> None:
+    """An empty 200 for GR is not a repeal of every zone in GR."""
+    import_rest_zones(geo_admin({"GR": [feature(1), feature(2)]}))
+    with pytest.raises(RestZoneImportError, match="GR answered no zones but 2"):
+        import_rest_zones(geo_admin({}))
+    assert SourceRestZone.objects.live().count() == 2
+    assert not SourceRestZone.objects.tombstoned().exists()
+
+
+def test_an_empty_answer_everywhere_is_refused_even_on_a_first_import() -> None:
+    """Nothing held and nothing answered: a broken layer, not an empty country."""
+    with pytest.raises(RestZoneImportError, match="no zones at all"):
+        import_rest_zones(geo_admin({}))
+    assert not SourceRestZone.objects.exists()

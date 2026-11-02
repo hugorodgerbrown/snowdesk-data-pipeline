@@ -11,12 +11,15 @@ whole list it is given, so a list missing one canton would tombstone every
 zone in it. Every canton is therefore fetched, and every feature read,
 before anything is synchronised: a canton that cannot be read, or a
 feature that cannot, raises ``RestZoneImportError`` naming it, and the
-stored zones are left exactly as they were.
+stored zones are left exactly as they were. So does an empty answer from
+a canton that holds zones, and an empty answer overall: an empty 200 is
+indistinguishable from a repeal and would tombstone them.
 """
 
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from collections.abc import Callable
 from typing import Any
 
@@ -54,17 +57,39 @@ def fetch_all_cantons(
         Every feature, cantons in ``CANTONS`` order.
 
     Raises:
-        RestZoneImportError: A canton could not be read.
+        RestZoneImportError: A canton could not be read, a canton that
+            holds zones answered none, or no canton answered any.
 
     """
     read = fetch or fetch_canton
+    held = held_by_canton()
     features: list[dict[str, Any]] = []
     for canton in CANTONS:
         try:
-            features.extend(read(canton))
+            answer = read(canton)
         except GeoAdminError as exc:
             raise RestZoneImportError(f"canton {canton} failed: {exc}") from exc
+        if not answer and held.get(canton):
+            raise RestZoneImportError(
+                f"canton {canton} answered no zones but {held[canton]} are held"
+            )
+        features.extend(answer)
+    if not features:
+        raise RestZoneImportError("geo.admin answered no zones at all")
     return features
+
+
+def held_by_canton() -> Counter[str]:
+    """Return how many live zones the service holds in each canton.
+
+    An empty answer for a canton that holds zones is far likelier to be
+    geo.admin misbehaving (a renamed layer or field, an empty 200) than
+    a canton repealing every zone at once, and the sync would tombstone
+    them all, so ``fetch_all_cantons`` refuses it.
+    """
+    return Counter(
+        SourceRestZone.objects.live().values_list("document__canton", flat=True)
+    )
 
 
 def rest_zone_records(features: list[dict[str, Any]]) -> list[DocumentRecord]:
