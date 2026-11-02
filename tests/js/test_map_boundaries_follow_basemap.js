@@ -37,6 +37,8 @@ const BOUNDARY_LAYERS = [
 
 /** The day the toggle tests commit and expect Austria painted for. */
 const PAINT_DAY = '2026-01-05';
+/** The day after, on which Austria is rated Moderate (SNOW-1375's label test). */
+const NEXT_DAY = '2026-01-06';
 
 /**
  * Commit `PAINT_DAY` the way the scrubber does, so a paint has a day.
@@ -86,7 +88,8 @@ const responseFor = (url) => {
   const code = (String(url).match(/country=([a-z]+)/) || [])[1];
   // A season payload: Austria's one region is rated High on the painted day.
   if (String(url).includes('/api/ratings.json')) {
-    return code === 'at' ? { [PAINT_DAY]: { 'AT-2': 4 } } : {};
+    // SNOW-1375: and Moderate the day after, so a date change repaints it.
+    return code === 'at' ? { [PAINT_DAY]: { 'AT-2': 4 }, [NEXT_DAY]: { 'AT-2': 2 } } : {};
   }
   const all = featureCollection();
   if (!code) return all;
@@ -136,6 +139,13 @@ function stubMapLibre() {
       defs.set(def.id, def);
     },
     removeLayer: (id) => { layers.delete(id); filters.delete(id); },
+    // SNOW-1375: what a real setStyle does — every source and layer the app
+    // added goes — for the basemap-swap test, which then fires `styledata`.
+    dropStyle: () => {
+      layers.clear();
+      filters.clear();
+      for (const id of Object.keys(sourceData)) delete sourceData[id];
+    },
     removeSource: () => {},
     moveLayer: () => {},
     setLayoutProperty: (id, prop, value) => {
@@ -200,7 +210,7 @@ function stubMapLibre() {
  *   on); `countries` is the ACTIVE basemap row's declared coverage, or null
  *   to omit the attribute entirely.
  */
-function buildFixture({ providers, countries, activeBasemap = 'openfreemap_liberty' }) {
+function buildFixture({ providers, countries, activeBasemap = 'openfreemap_liberty', scrubber = false }) {
   const basemapRow = (key, coverage) => `
     <li role="none">
       <button class="basemap-menu-item" role="menuitemradio"
@@ -225,6 +235,11 @@ function buildFixture({ providers, countries, activeBasemap = 'openfreemap_liber
       <input id="search-input">
     </div>
     <ul id="search-results" hidden></ul>
+    ${scrubber ? `
+    <div id="season-scrubber" role="slider" data-season-start="2025-11-01" data-season-end="2026-05-31">
+      <div class="season-scrubber-track"><div class="season-scrubber-thumb"></div></div>
+      <span class="season-scrubber-loading" hidden></span>
+    </div>` : ''}
     <div class="map-controls-br" id="map-controls-br" data-expanded="true">
       <div id="basemap-pill" data-state="collapsed">
         <button id="basemap-toggle" aria-expanded="false"></button>
@@ -623,7 +638,8 @@ describe('the edge band and level label (SNOW-1375)', () => {
       expect(dropsUnsupported(mapStub, layerId)).toBe(true);
     }
     expect(mapStub.defs.get('regions-label').maxzoom).toBe(10);
-    expect(mapStub.defs.get('regions-edge').paint['line-offset']).toBeLessThan(0);
+    // A positive offset on a polygon is an inset (MapLibre's line-offset).
+    expect(mapStub.defs.get('regions-edge').paint['line-offset']).toBeGreaterThan(0);
     // The level label hides where the region's slopes are painted.
     expect(JSON.stringify(mapStub.getFilter('regions-level-label')))
       .toContain(JSON.stringify(['!=', ['get', 'painted'], true]));
@@ -665,5 +681,47 @@ describe('the edge band and level label (SNOW-1375)', () => {
     const austria = labels.features.find((f) => f.properties.country === 'AT');
     expect(austria.properties.text).toBe('4 · AT');
     expect(austria.geometry.coordinates).toEqual([7.5, 46.5]);
+  });
+
+  const austriaText = (mapStub) => mapStub.sourceData['region-labels'].features
+    .find((f) => f.properties.country === 'AT').properties.text;
+
+  it('rebuilds the labels when the day changes', async () => {
+    const mapStub = await boot({ providers: 'country.ch', countries: 'ch fr at it', scrubber: true });
+    commitPaintDay();
+    document.dispatchEvent(new CustomEvent('snowdesk:country-toggle', {
+      detail: { code: 'at', next: true },
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(austriaText(mapStub)).toBe('4 · AT');
+    // The scrubber's own commit path: it repaints the fill for the day.
+    document.dispatchEvent(new CustomEvent('snowdesk:scrub-to', { detail: { date: NEXT_DAY } }));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(paintedRating(mapStub, 'AT-2')).toBe('moderate');
+    expect(austriaText(mapStub)).toBe('2 · AT');
+  });
+
+  it('comes back, filtered and labelled as the fill is, after a basemap swap', async () => {
+    const mapStub = await boot({ providers: 'country.ch', countries: 'ch fr at it' });
+    commitPaintDay();
+    document.dispatchEvent(new CustomEvent('snowdesk:country-toggle', {
+      detail: { code: 'at', next: true },
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    mapStub.dropStyle();
+    expect(mapStub.getLayer('regions-edge')).toBe(null);
+    for (const handler of mapStub.handlers.styledata || []) await handler();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    for (const layerId of ['regions-edge', 'regions-level-label']) {
+      expect(mapStub.getLayer(layerId)).not.toBe(null);
+      expect(filterCodes(mapStub, layerId)).toEqual(['CH', 'AT']);
+      expect(dropsUnsupported(mapStub, layerId)).toBe(true);
+    }
+    // The label source is rebuilt with the reinstalled regions, and each
+    // label says what that region's fill now paints.
+    const labels = mapStub.sourceData['region-labels'].features;
+    expect(labels).toHaveLength(4);
+    const rating = paintedRating(mapStub, 'AT-2');
+    expect(austriaText(mapStub)).toBe(rating === 'high' ? '4 · AT' : 'AT');
   });
 });

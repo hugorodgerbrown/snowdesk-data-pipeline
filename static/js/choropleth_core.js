@@ -269,10 +269,13 @@
   const FILL_TRACE_OPACITY = 0.08;
   const EDGE_MIN_ZOOM = 10;
   const EDGE_WIDTH_PX = 8;
-  // Negative: to the LEFT of each ring's direction, which is the region's
-  // inside once /api/regions.geojson serves RFC 7946 winding (outer rings
-  // counter-clockwise, holes clockwise; apps/regions/services/geometry.py).
-  const EDGE_OFFSET_PX = -4;
+  // Positive: for polygon features MapLibre's line-offset is an INSET when
+  // positive and an outset when negative (the style spec's line-offset). That
+  // holds for rings in one consistent winding, so /api/regions.geojson serves
+  // RFC 7946 winding — outer rings counter-clockwise, holes clockwise,
+  // apps/regions/services/geometry.py — and every region gets its band on its
+  // own side of the edge.
+  const EDGE_OFFSET_PX = 4;
   // The band at the default 0.5 resting strength reads at about 0.55.
   const EDGE_OPACITY_RATIO = 1.1;
   const EDGE_OPACITY_MAX = 0.9;
@@ -335,7 +338,11 @@
     return ['case', SLOPES_PAINTED, 0, value];
   }
 
-  // A rating key → the EAWS level digit the label leads with.
+  /**
+   * A rating key → the EAWS level digit the label leads with.
+   *
+   * @type {Readonly<Object<string, string>>}
+   */
   const LEVEL_DIGIT = Object.freeze({
     low: '1', moderate: '2', considerable: '3', high: '4', very_high: '5',
   });

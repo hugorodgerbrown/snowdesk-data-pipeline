@@ -2,9 +2,10 @@
 apps/regions/services/geometry.py — ring winding for served region polygons.
 
 SNOW-1375 draws a band of each region's danger colour just inside its edge,
-as a MapLibre line with a negative ``line-offset``: to the LEFT of each
-ring's direction of travel. That lands inside the region only when rings
-follow RFC 7946 §3.1.6 — outer rings counter-clockwise, holes clockwise.
+as a MapLibre line with a positive ``line-offset``, which for a polygon is
+an inset. That reading needs every ring in one winding, and RFC 7946
+§3.1.6 is the one this serves: outer rings counter-clockwise, holes
+clockwise.
 The stored EAWS fixtures are mixed (measured 2 Nov 2026 across the four
 ``eaws_*.json`` files: 746 outer rings clockwise and 50 counter-clockwise;
 98 holes clockwise and 130 counter-clockwise), so ``/api/regions.geojson``

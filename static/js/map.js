@@ -1571,8 +1571,9 @@
     // SNOW-1375: from z10, a band of the region's colour just inside its
     // edge, where the fill has faded to a trace. Same colours as the fill,
     // scaled by the same opacity step, and 0 where the region's slopes are
-    // painted. The negative offset lands inside because the regions payload
-    // is served in RFC 7946 winding.
+    // painted. A positive offset on a polygon is an inset (MapLibre's
+    // line-offset), and the regions payload serves one consistent winding
+    // (RFC 7946) so every region's band lands on its own side.
     map.addLayer({
       id: 'regions-edge',
       type: 'line',
@@ -5979,6 +5980,9 @@
   const sourceBatch = self.pwaCountryLoadCore.createSourceBatch((id, data) => {
     const source = map.getSource(id);
     if (source) source.setData(data);
+    // SNOW-1375: a country's regions just joined the map — their level
+    // labels with them, even on a day with no rating to paint for them.
+    if (id === 'regions') refreshRegionLabels();
   });
 
   const _loadCountry = async (

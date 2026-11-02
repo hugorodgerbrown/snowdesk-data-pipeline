@@ -1030,7 +1030,7 @@ def _build_micro_regions_payload(country_param: str) -> dict[str, Any]:
             {
                 "type": "Feature",
                 # SNOW-1375: RFC 7946 winding, so the map's inside edge band
-                # (a negative line-offset) lands inside every region.
+                # (a positive line-offset, an inset) lands inside every region.
                 "geometry": rfc7946_rewind(region.boundary),
                 "properties": properties,
             }

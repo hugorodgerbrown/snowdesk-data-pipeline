@@ -310,7 +310,8 @@ describe('the fill gives way to the edge by zoom (SNOW-1375)', () => {
   });
 
   it('draws the band inside, from z10, scaled by the step and 0 where slopes are painted', () => {
-    expect(core.EDGE_OFFSET_PX).toBeLessThan(0);
+    // MapLibre: a positive line-offset on a polygon is an inset.
+    expect(core.EDGE_OFFSET_PX).toBeGreaterThan(0);
     expect(core.EDGE_MIN_ZOOM).toBe(core.FILL_FADE_END_ZOOM);
     const expr = core.regionEdgeOpacityExpr(0.5);
     expect(expr[0]).toBe('case');

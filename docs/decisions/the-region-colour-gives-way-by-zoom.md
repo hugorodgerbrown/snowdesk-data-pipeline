@@ -42,11 +42,15 @@ and band, and turns all three off at 0
 - `regionFillOpacityExpr` (`static/js/choropleth_core.js`) puts the zoom
   `interpolate` outermost, as MapLibre requires for `['zoom']`, with a
   per-feature `case` at each stop.
-- A negative `line-offset` is to the left of each ring's direction, which is
-  inside only for RFC 7946 winding. The stored EAWS rings are mixed (746
-  outer rings clockwise, 50 counter-clockwise across the four fixtures), so
-  `/api/regions.geojson` serves every geometry through `rfc7946_rewind`
-  (`apps/regions/services/geometry.py`).
+- For polygon features MapLibre's `line-offset` is an inset when positive
+  (the style spec), so the band is `+4` px (`EDGE_OFFSET_PX`). That reading
+  depends on the rings sharing one winding, and the stored EAWS rings are
+  mixed (746 outer rings clockwise, 50 counter-clockwise across the four
+  fixtures), so `/api/regions.geojson` serves every geometry through
+  `rfc7946_rewind` (`apps/regions/services/geometry.py`): RFC 7946 rings,
+  counter-clockwise in lon/lat, which become the clockwise exterior rings
+  of the vector-tile convention once tile y runs downward. The first build
+  used `-4`, which put each band on its neighbour's ground (Codex on #1411).
 - `text-field` cannot read feature-state, where the rating lives. Every
   rating paint is recorded in `REGION_RATINGS` (`map_shared.js`), and
   `refreshRegionLabels` (`map.js`) rebuilds the label source once per

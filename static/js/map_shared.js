@@ -271,7 +271,10 @@ const choroplethDeps = () => ({
 // SNOW-1375: each region's painted rating, by feature id, for the level
 // labels (choropleth_core.js regionLabelFeatures). The rating's home is
 // feature-state, which a symbol's text-field cannot read, so every paint
-// also lands here and the label source is rebuilt once per frame.
+// also lands here and the label source is rebuilt once per paint: a frame
+// paints every region in one synchronous loop, so a microtask coalesces it
+// into one rebuild. (Not requestAnimationFrame, which a backgrounded tab
+// holds back, leaving the labels on the previous day when it returns.)
 // ``refreshRegionLabelsHook`` is map.js's refreshRegionLabels, set at boot.
 const REGION_RATINGS = new Map();
 let refreshRegionLabelsHook = null;
@@ -292,8 +295,7 @@ const recordRegionRating = (featureId, rating) => {
     regionLabelsQueued = false;
     if (refreshRegionLabelsHook) refreshRegionLabelsHook();
   };
-  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
-  else setTimeout(run, 0);
+  queueMicrotask(run);
 };
 
 // Repaint every known region's choropleth fill for the supplied date.
