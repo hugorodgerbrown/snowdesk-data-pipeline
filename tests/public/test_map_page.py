@@ -2417,34 +2417,29 @@ def test_steep_terrain_row_is_a_switch_and_an_options_opener() -> None:
 
 
 def _problem_terrain_map() -> str:
-    """The map page as a signed-in reader the problem_terrain flag is on for.
+    """The map page as an anonymous reader, with the terrain tiles configured.
 
-    SNOW-1374 put every problem-terrain control behind the flag.
+    SNOW-1377 took SNOW-1374's flag off: every reader gets the controls.
     """
-    client = Client()
-    client.force_login(UserFactory.create())
-    with override_flag("problem_terrain", active=True):
-        return client.get(reverse("public:map")).content.decode()
+    return Client().get(reverse("public:map")).content.decode()
 
 
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
-def test_terrain_filter_sheet_opens_on_the_problem_terrain_switch() -> None:
-    """SNOW-1297: the bulletin's layer is switched from the top of the sheet.
+def test_terrain_filter_sheet_has_no_problem_terrain_switch() -> None:
+    """SNOW-1377: the bulletin's layer left the Steep terrain sheet.
 
-    One overlay-toggle strip, above the Colour tiles, labelled as the
-    layers-menu row is. It is not a third colour: the tiles stay two.
+    SNOW-1297 had put its switch at the sheet's top; it is switched from
+    the layers menu and the region sheet now.
     """
     content = _problem_terrain_map()
     sheet = content[content.index('id="map-terrain-filter-template"') :]
     sheet = sheet[: sheet.index("</template>")]
 
-    toggle = sheet.index('id="terrain-filter-problem-terrain-toggle"')
-    assert "data-panel-overlay-toggle" in sheet
-    assert "Highlight problem terrain" in sheet
-    assert "Painted from each region" in sheet
-    assert "bulletin, over this filter" in sheet
-    assert toggle < sheet.index('name="terrain-filter-mode"')
+    assert 'id="terrain-filter-problem-terrain-toggle"' not in sheet
+    assert "data-panel-overlay-toggle" not in sheet
+    assert "Sync with map terrain" not in sheet
+    assert "Highlight problem terrain" not in sheet
     assert sheet.count('name="terrain-filter-mode"') == 2
 
 
@@ -2505,14 +2500,16 @@ def test_terrain_filter_sheet_renders_the_compact_controls() -> None:
 
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
-def test_highlight_problem_terrain_is_on_the_bulletins_page() -> None:
-    """Hugo, 23 Oct: its own row, next to the bulletins it comes from.
+def test_sync_with_map_terrain_is_on_the_bulletins_page() -> None:
+    """SNOW-1377: "Sync with map terrain", a switch row under the bulletins.
 
-    SNOW-1266 moved it onto the Avalanche bulletins options page, after the
-    opacity steps, while the steep-terrain layer is rethought. A checkbox
-    like the rows round it, off as rendered (map.js seeds it from storage),
-    with a second line saying what it does. Its key is its own legend
-    section, at the whole scale, hidden until the layer is on.
+    Hugo, 23 Oct: its own row, next to the bulletins it comes from; SNOW-1266
+    moved it onto the Avalanche bulletins options page, after the opacity
+    steps. SNOW-1377 renamed it and drew it as a switch track; it renders
+    unchecked (map.js seeds it, on by default) for an anonymous reader, with
+    the second line "From zoom 12, Switzerland". It is not a level-one layer,
+    so it carries no data-layer-switch for the menu's count. Its key is its
+    own legend section, at the whole scale, hidden until the layer is on.
     """
     content = _problem_terrain_map()
     bulletins = _layers_page(content, "bulletins")
@@ -2520,8 +2517,12 @@ def test_highlight_problem_terrain_is_on_the_bulletins_page() -> None:
     row = row[: row.index("</button>")]
     assert 'role="menuitemcheckbox"' in row
     assert 'aria-checked="false"' in row
-    assert ">Highlight problem terrain<" in row
-    assert "Replaces the region colour from zoom 12" in row
+    assert "basemap-menu-layer-row" in row
+    assert "group-aria-checked:bg-accent" in row
+    assert "data-layer-switch" not in row
+    assert ">Sync with map terrain<" in row
+    assert "From zoom 12, Switzerland" in row
+    assert "Highlight problem terrain" not in content
     assert bulletins.index('id="map-bulletin-opacity"') < bulletins.index(
         'data-overlay-key="problem_terrain"'
     )
@@ -2534,35 +2535,22 @@ def test_highlight_problem_terrain_is_on_the_bulletins_page() -> None:
     assert "map-legend-swatch--terrain-very_high" in legend
     assert "map-legend-swatch--terrain-undescribed" in legend
 
-
-@pytest.mark.django_db
-@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
-def test_problem_terrain_is_enabled_for_a_flagged_reader() -> None:
-    """SNOW-1374: the map's script is told the layer may be drawn."""
-    assert 'data-problem-terrain-enabled="true"' in _problem_terrain_map()
+    strings = content[content.index('id="map-problem-terrain-strings-template"') :]
+    strings = strings[: strings.index("</template>")]
+    assert "From zoom 12, Switzerland" in strings
 
 
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
 @pytest.mark.parametrize("signed_in", [False, True])
-def test_no_problem_terrain_control_outside_the_flag(signed_in: bool) -> None:
-    """SNOW-1374: outside the flag no surface offers the layer.
-
-    The layers-menu row, the Steep terrain sheet's switch and the legend's
-    key are all absent, and the map's script is told the layer is off, so a
-    device that stored it on stops painting it. A signed-out visitor is
-    turned away before waffle is asked, whatever the flag says.
-    """
+def test_problem_terrain_is_enabled_for_every_reader(signed_in: bool) -> None:
+    """SNOW-1377: no flag — the map's script is told the layer may be drawn."""
     client = Client()
     if signed_in:
         client.force_login(UserFactory.create())
-    with override_flag("problem_terrain", active=not signed_in):
-        content = client.get(reverse("public:map")).content.decode()
-    assert 'data-problem-terrain-enabled="false"' in content
-    assert 'data-overlay-key="problem_terrain"' not in content
-    assert 'id="terrain-filter-problem-terrain-toggle"' not in content
-    assert "data-problem-terrain-legend" not in content
-    assert "Highlight problem terrain" not in content
+    content = client.get(reverse("public:map")).content.decode()
+    assert 'data-problem-terrain-enabled="true"' in content
+    assert 'data-overlay-key="problem_terrain"' in content
 
 
 @pytest.mark.django_db
@@ -2570,6 +2558,7 @@ def test_no_problem_terrain_control_outside_the_flag(signed_in: bool) -> None:
 def test_no_problem_terrain_row_without_the_terrain_tiles() -> None:
     """It paints from the terrain filter's tiles, so it shares their gate."""
     content = Client().get(reverse("public:map")).content.decode()
+    assert 'data-problem-terrain-enabled="false"' in content
     assert 'data-overlay-key="problem_terrain"' not in content
     assert "data-problem-terrain-legend" not in content
 

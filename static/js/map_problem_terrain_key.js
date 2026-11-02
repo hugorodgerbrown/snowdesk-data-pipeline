@@ -2,8 +2,9 @@
  * static/js/map_problem_terrain_key.js — the problem-terrain layer's key and
  * its layers-menu row keep in step with the layer (SNOW-1196).
  *
- * The layer is switched by the layers menu's "Highlight problem terrain"
- * row and by the region sheet's switch. While it paints, this module:
+ * The layer is switched by the layers menu's "Sync with map terrain" row
+ * (SNOW-1377; it was "Highlight problem terrain") and by the region sheet's
+ * switch. While it paints, this module:
  *
  *   - shows the legend's problem-terrain section
  *     ([data-problem-terrain-legend]), the layer's key;
@@ -23,7 +24,7 @@
   'use strict';
 
   const STRINGS = self.pwaStrings.read('map-problem-terrain-strings-template', {
-    detail: 'Replaces the region colour from zoom 12',
+    detail: 'From zoom 12, Switzerland',
     'no-bulletin': 'No bulletin for this day',
   });
 

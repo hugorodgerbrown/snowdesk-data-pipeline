@@ -3,7 +3,7 @@ apps/ingest/normalise/problem_terrain.py — problem-terrain rules (SNOW-979).
 
 A bulletin's problems as rules the map can test a pixel of terrain against.
 
-The region sheet's "Highlight problem terrain" switch paints the
+The region sheet's "Sync with map terrain" switch paints the
 region's steep ground by what the day's bulletin says about it. The tiles
 carry the facts — each pixel's height, aspect octant and slope band — and
 the device does the painting (``static/js/bulletin_terrain_core.js``), so

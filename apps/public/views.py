@@ -798,13 +798,6 @@ def map_page(request: HttpRequest) -> HttpResponse:
     community_reports_ctx = _community_reports_context(request)
     weather_ctx = _weather_overlay_context()
     terrain_filter_ctx = _terrain_filter_context()
-    # SNOW-1374: every problem-terrain control is behind the flag while
-    # they are redesigned; anonymous requests never reach waffle. A
-    # function-local import, as in _terrain_filter_context: that module
-    # imports this one.
-    from apps.public.problem_terrain import problem_terrain_enabled  # noqa: PLC0415
-
-    terrain_filter_ctx["problem_terrain_enabled"] = problem_terrain_enabled(request)
     trips_ctx = _trips_context()
     # SNOW-1230/1231: one query answers both the welcome card's example
     # link (is one set?) and the resort guide's off-season day (its day).
@@ -1191,9 +1184,9 @@ def help_page(request: HttpRequest) -> HttpResponse:
     builtin. ``sync_log_visible`` (SNOW-482) mirrors the same flag gating
     the manage-page sync-log panel, and ``what3words_visible`` (SNOW-840)
     the flag gating the three word address on a trip's meeting point —
-    and ``problem_terrain_visible`` (SNOW-1374) the problem-terrain
-    layer's flag — the three gated topics; every other section renders for
-    everyone (SNOW-724). A reader is never shown documentation for a feature their
+    the two gated topics; every other section renders for everyone
+    (SNOW-724; SNOW-1377 took the problem-terrain topic's flag off with
+    the layer's). A reader is never shown documentation for a feature their
     own pages do not have.
 
     Args:
@@ -1208,14 +1201,9 @@ def help_page(request: HttpRequest) -> HttpResponse:
     this view still issues no queries — a property its own test pins.
 
     """
-    # Function-local: apps.public.problem_terrain imports this module.
-    from apps.public.problem_terrain import problem_terrain_enabled  # noqa: PLC0415
-
     context: dict[str, Any] = {
         "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
         "what3words_visible": waffle.flag_is_active(request, "what3words"),
-        # SNOW-1374: the problem-terrain topic follows the layer's flag.
-        "problem_terrain_visible": problem_terrain_enabled(request),
     }
     context.update(help_illustrations())
     return render(request, "public/help.html", context)
