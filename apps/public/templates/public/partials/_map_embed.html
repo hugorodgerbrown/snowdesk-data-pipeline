@@ -43,6 +43,11 @@ Optional context:
                         static/js/map_tour_offer.js reveals once per device
                         after the map settles (SNOW-1117). It replaced the
                         #home-intro welcome panel.
+  terrain_filter_eligible — bool: also renders the hidden
+                        #map-slopes-notice card (SNOW-1378), which
+                        static/js/map_slopes_notice.js shows once per device
+                        the first time the map settles over the bulletin's
+                        slopes.
   is_offseason        — bool: True when today is past the season end.
                         Drives the archive note inside #map-tour-offer.
   map_help_autostart  — bool (default True): when False, #map-help-overlay
@@ -2243,6 +2248,49 @@ Optional context:
         {% include "public/partials/_map_resort_guide.html" %}
         {% include "public/partials/_map_between_seasons.html" %}
         {% include "public/partials/_map_help_menu.html" %}
+    {% endif %}
+    {% if terrain_filter_eligible %}
+        {# SNOW-1378: "Now showing the bulletin's slopes". Since SNOW-1377   #}
+        {# the bulletin's slopes paint from z12 by default and the region   #}
+        {# colour drops out, so the surface changes by itself as a reader   #}
+        {# zooms in. static/js/map_slopes_notice.js shows this card the     #}
+        {# first time a device's map settles there, once per device; it     #}
+        {# says what has changed and names the marks, and gives no advice   #}
+        {# (Hugo, 2 Nov 2026). Rendered HIDDEN. The key starts as the whole #}
+        {# scale the legend shows and is swapped for the region sheet's own #}
+        {# key (public:slopes_notice_key_partial) when that fetch lands.    #}
+        {# A card, not a dialog: the map stays usable around it. It wears   #}
+        {# the tour offer's card classes, so it sits where that card does.  #}
+        <div
+            id="map-slopes-notice"
+            class="map-tour-offer map-slopes-notice"
+            role="region"
+            aria-labelledby="map-slopes-notice-title"
+            data-testid="map-slopes-notice"
+            data-key-url="{% url 'public:slopes_notice_key_partial' region_id='XX-0000' %}"
+            hidden
+        >
+            <div class="map-tour-offer-card">
+                <h2 class="map-slopes-notice-title" id="map-slopes-notice-title">
+                    {% trans "Now showing the bulletin's slopes" %}
+                </h2>
+                <p class="map-tour-offer-body">
+                    {% trans "Close in, the region colour gives way to the slopes the bulletin's problems describe. Zoom out to see regions again." %}
+                </p>
+                <div class="map-slopes-notice-key" data-slopes-notice-key>
+                    {% include "includes/_bulletin_terrain_key.html" with key=bulletin_terrain_key %}
+                </div>
+                <div class="map-slopes-notice-actions">
+                    {% translate "Got it" as got_it %}
+                    {% include "includes/_button.html" with label=got_it button_type="button" button_id="map-slopes-notice-ok" size="compact" %}
+                    <a
+                        id="map-slopes-notice-more"
+                        class="map-slopes-notice-more"
+                        href="{% url 'public:help' %}#help-topic-bulletin-terrain"
+                    >{% trans "What's shown?" %}</a>
+                </div>
+            </div>
+        </div>
     {% endif %}
     {# SNOW-522: framing overlay for "Download a custom area" — reached      #}
     {# (SNOW-634) via [data-panel-add] inside the downloads sheet            #}

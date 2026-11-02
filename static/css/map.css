@@ -318,7 +318,8 @@
    the fade, so the fade is seen; the return is immediate. Nothing in
    static/js sets these containers' visibility or opacity inline, so no
    script can re-show one under this rule. */
-#map[data-route-rail-open] #map-tour-offer {
+#map[data-route-rail-open] #map-tour-offer,
+#map[data-route-rail-open] #map-slopes-notice {
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -363,7 +364,8 @@
     #map[data-route-rail-open] #season-ribbon,
     #map[data-route-rail-open] #map-utility-cluster,
     #map[data-route-rail-open] #map-legend,
-    #map[data-route-rail-open] #map-tour-offer {
+    #map[data-route-rail-open] #map-tour-offer,
+    #map[data-route-rail-open] #map-slopes-notice {
         transition: none;
     }
 }
@@ -1866,7 +1868,8 @@ body.map-fullscreen > nav {
    between-seasons note and the tour offer sit where the cross needs the
    ground to be seen. Set on <html> by route_draw.js. */
 html[data-route-drawing] #map-between-seasons,
-html[data-route-drawing] #map-tour-offer {
+html[data-route-drawing] #map-tour-offer,
+html[data-route-drawing] #map-slopes-notice {
     display: none !important;
 }
 
@@ -1978,7 +1981,8 @@ html[data-route-drawing] #map-tour-offer {
 
     /* The tour offer floats over the same corner and is an offer, not a
        control, so it withdraws for the sheet as it does for a route. */
-    :root:has([data-sheet-side='left']:not([hidden])) #map-tour-offer {
+    :root:has([data-sheet-side='left']:not([hidden])) #map-tour-offer,
+    :root:has([data-sheet-side='left']:not([hidden])) #map-slopes-notice {
         visibility: hidden;
         pointer-events: none;
     }
@@ -4426,6 +4430,60 @@ html[data-route-drawing] #map-tour-offer {
 /* The "×" sits over the title on the welcome card; clear it. */
 .map-tour-offer-title {
     padding-right: 28px;
+}
+
+/* —————————————————————————————————————————————————————————
+   SNOW-1378 — "Now showing the bulletin's slopes" (#map-slopes-notice)
+   A once-per-device card, shown the first time the map settles at z12 or
+   closer over the bulletin's slopes (static/js/map_slopes_notice.js). It
+   wears .map-tour-offer and .map-tour-offer-card, so it takes the tour
+   offer's place and its responsive rules: above the bottom-left stack in
+   the left column on a desktop, across the foot of the map on a phone,
+   hidden by default. It withdraws with the tour offer for a route and a
+   left-column sheet (the rules above). It has no "×", so its title runs
+   the card's width.
+   ————————————————————————————————————————————————————————— */
+
+.map-slopes-notice-title {
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.3;
+    margin: 0 0 6px;
+    color: var(--color-text-1);
+}
+
+/* The region sheet's key rows (includes/_bulletin_terrain_key.html). */
+.map-slopes-notice-key {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0 0 14px;
+    font-size: 12px;
+    line-height: 1.35;
+    color: var(--color-text-2);
+}
+
+.map-slopes-notice-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.map-slopes-notice-more {
+    font-size: 13px;
+    color: var(--color-text-2);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.map-slopes-notice-more:hover {
+    color: var(--color-text-1);
+}
+
+.map-slopes-notice-more:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: 2px;
+    border-radius: 4px;
 }
 
 /* —————————————————————————————————————————————————————————
