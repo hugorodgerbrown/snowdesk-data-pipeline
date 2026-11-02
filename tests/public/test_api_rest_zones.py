@@ -63,6 +63,22 @@ def test_the_flag_off_is_404(signed_in: Client) -> None:
     assert _get(signed_in).status_code == 404
 
 
+@override_flag("route_drawing", active=False)
+def test_the_flag_off_is_404_signed_out(client: Client) -> None:
+    """Signed out and outside the flag: no layer either."""
+    RestZoneFactory.create()
+    assert _get(client).status_code == 404
+
+
+@override_flag("route_drawing", active=True)
+def test_the_flag_on_serves_a_signed_out_reader(client: Client) -> None:
+    """The endpoint reads the flag alone; the page decides who sees the row."""
+    RestZoneFactory.create()
+    response = _get(client)
+    assert response.status_code == 200
+    assert len(response.json()["features"]) == 1
+
+
 @override_flag("route_drawing", active=True)
 def test_the_zones_in_the_box_are_served(signed_in: Client) -> None:
     """A zone in the box, with its properties; a far zone is not."""

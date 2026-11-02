@@ -41,9 +41,6 @@ from tests.factories import RestZoneFactory
         # A leap day is a day, and the 28th of a common year is before it.
         ("01.12. - 29.02.", date(2027, 2, 28), True),
         ("01.12. - 29.02.", date(2027, 3, 1), False),
-        # Without the trailing stops, and with an en dash.
-        ("1.12 - 31.3", date(2027, 3, 31), True),
-        ("1.12.–31.3.", date(2027, 4, 1), False),
     ],
 )
 def test_a_period_covers_its_days(period: str, day: date, expected: bool) -> None:
@@ -52,7 +49,23 @@ def test_a_period_covers_its_days(period: str, day: date, expected: bool) -> Non
 
 
 @pytest.mark.parametrize(
-    "period", ["", "ganzjährig", "Winter", "31.04. - 30.05.", "01.13. - 01.01."]
+    "period",
+    [
+        "",
+        "ganzjährig",
+        "Winter",
+        "31.04. - 30.05.",
+        "01.13. - 01.01.",
+        "20.12 - 30.04",
+        "32.01. - 30.04.",
+        "31.02. - 01.03.",
+        "20.12. -",
+        "01.05.\u201315.07.",
+        "En cas de neige",
+        "Betriebszeiten der Bahn",
+        "16.12. bis Ende Skisaison",
+        "keine definierte Periode",
+    ],
 )
 def test_a_period_it_cannot_read_is_in_force(period: str) -> None:
     """No text, prose, or a day that does not exist: taken as protected."""
@@ -66,6 +79,25 @@ def test_the_rules_page_is_the_cantons_or_the_national_site() -> None:
     without = RestZoneFactory.create(url="")
     assert rules_url(with_page) == "https://www.gr.ch/wildruhe"
     assert rules_url(without) == NATIONAL_RULES_URL == "https://www.wildruhezonen.ch"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "url",
+    [
+        "javascript:alert(1)",
+        "JavaScript:alert(1)",
+        "data:text/html,<script>alert(1)</script>",
+        "www.gr.ch/wildruhe",
+        "https://",
+        "ftp://example.ch/zone",
+    ],
+)
+def test_a_rules_page_that_is_not_http_is_the_national_site(url: str) -> None:
+    """FOEN's url is outside data: only an absolute http(s) URL is passed on."""
+    zone = RestZoneFactory.create()
+    zone.url = url
+    assert rules_url(zone) == NATIONAL_RULES_URL
 
 
 @pytest.mark.django_db

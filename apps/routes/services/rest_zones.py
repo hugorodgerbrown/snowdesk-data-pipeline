@@ -26,6 +26,7 @@ import logging
 import re
 from datetime import date
 from typing import Any
+from urllib.parse import urlsplit
 
 from apps.routes.models import RestZone
 from apps.routes.services.ski_tours import localised
@@ -36,11 +37,10 @@ logger = logging.getLogger(__name__)
 # no rules page of its own sends a reader.
 NATIONAL_RULES_URL = "https://www.wildruhezonen.ch"
 
-# "21.12. - 30.04.": a day and a month at each end, each end's trailing
-# full stop optional, a hyphen or a dash between them.
-_PERIOD_RE = re.compile(
-    r"^\s*(\d{1,2})\.(\d{1,2})\.?\s*[-–—]\s*(\d{1,2})\.(\d{1,2})\.?\s*$"
-)
+# "21.12. - 30.04.": a day and a month at each end, each followed by its
+# full stop, an ASCII hyphen between them. Nothing looser: a period this
+# cannot read with certainty counts as in force.
+_PERIOD_RE = re.compile(r"^\s*(\d{1,2})\.(\d{1,2})\.\s*-\s*(\d{1,2})\.(\d{1,2})\.\s*$")
 
 # A leap year, so a period ending on 29.02. reads as a real day.
 _LEAP_YEAR = 2000
@@ -67,7 +67,9 @@ def in_force(period: str, day: date) -> bool:
     """Return whether a zone's protected period covers ``day``.
 
     Both ends are inclusive. A period whose end falls before its start
-    runs across the new year ("21.12. - 30.04." covers 1 January).
+    runs across the new year ("21.12. - 30.04." covers 1 January). Only
+    the strict form "DD.MM. - DD.MM." is read; anything else (FOEN's free
+    text, a missing stop, a day that does not exist) counts as in force.
 
     Args:
         period: FOEN's period text, as stored on ``RestZone.period``.
@@ -100,12 +102,23 @@ def rules_url(zone: RestZone) -> str:
     Args:
         zone: The zone.
 
+    FOEN's ``url_kanton`` is outside data, so only an absolute http or
+    https URL is passed on: anything else (``javascript:``, ``data:``, a
+    bare string) would become a link's href on the sheet.
+
     Returns:
         The canton's rules page, or ``NATIONAL_RULES_URL`` when FOEN gives
-        none.
+        none, or gives one that is not an http(s) URL.
 
     """
-    return zone.url or NATIONAL_RULES_URL
+    url = (zone.url or "").strip()
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return NATIONAL_RULES_URL
+    if parts.scheme.lower() in ("http", "https") and parts.netloc:
+        return url
+    return NATIONAL_RULES_URL
 
 
 def zone_feature(zone: RestZone, day: date) -> dict[str, Any]:

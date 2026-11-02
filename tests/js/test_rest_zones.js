@@ -271,6 +271,17 @@ describe('switched on', () => {
     expect(el.querySelector('[data-rest-zone-rules]')).toBeNull();
   });
 
+  it.each(['javascript:alert(1)', 'data:text/html,x', 'www.gr.ch'])(
+    'drops a rules link that is not http(s): %s',
+    async (url) => {
+      const map = await boot({ on: true });
+      map.hits = [{ id: 'uuid-3', properties: { ...ZONE.properties, url } }];
+      expect(window.pwaRestZones.tap({ x: 0, y: 0 })).toBe(true);
+      const el = document.getElementById('rest-zone-sheet');
+      expect(el.querySelector('[data-rest-zone-rules]')).toBeNull();
+    },
+  );
+
   it('takes no tap where there is no zone', async () => {
     const map = await boot({ on: true });
     map.hits = [];

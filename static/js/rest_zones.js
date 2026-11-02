@@ -290,6 +290,24 @@
   }
 
   /**
+   * The rules page as a link target, only when it is an absolute http(s)
+   * URL. The server already checks it; this is the second line, because a
+   * `javascript:` href would run on a tap.
+   *
+   * @param {unknown} value
+   * @returns {?string}
+   */
+  function safeHref(value) {
+    if (!value) return null;
+    try {
+      const url = new URL(String(value));
+      return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Fill the sheet from one zone's properties and open it.
    *
    * @param {Object<string, any>} props
@@ -304,7 +322,8 @@
     fill(node, 'restriction', props.restriction ? String(props.restriction) : null);
     const link = /** @type {HTMLAnchorElement|null} */ (node.querySelector('[data-rest-zone-rules]'));
     if (link) {
-      if (props.url) link.href = String(props.url);
+      const href = safeHref(props.url);
+      if (href) link.href = href;
       else link.remove();
     }
     SHEET.replaceChildren(node);
