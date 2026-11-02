@@ -24,6 +24,9 @@ from pathlib import Path
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "bin" / "fetch-geoip-data"
+DOWNLOAD_URL = (
+    "https://download.maxmind.com/geoip/databases/GeoLite2-City/download?suffix=tar.gz"
+)
 
 # Answers like curl --write-out "%{http_code}" for a rate-limited request.
 STUB_CURL = """#!/usr/bin/env bash
@@ -77,4 +80,4 @@ def test_unset_or_enabled_still_downloads(tmp_path: Path, value: str | None) -> 
 
     assert code == 0
     assert len(calls) == 1
-    assert "download.maxmind.com" in calls[0]
+    assert calls[0].split()[-1] == DOWNLOAD_URL
