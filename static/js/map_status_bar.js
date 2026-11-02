@@ -30,6 +30,8 @@
     'slopes-detail': 'from the bulletin',
     'slopes-off': 'Problem slopes off',
     'slopes-ch-only': 'Problem slopes: Switzerland only',
+    'slopes-none': 'No problem slopes here today',
+    'filter-ch-only': 'Steep terrain: Switzerland only',
     filter: 'Steep terrain',
     'filter-detail': 'your filter',
     'zoom-slopes': "Zoom in for the bulletin's slopes",
@@ -48,6 +50,8 @@
     slopes: [STRINGS.slopes, STRINGS['slopes-detail']],
     'slopes-off': [STRINGS['slopes-off'], ''],
     'slopes-ch-only': [STRINGS['slopes-ch-only'], ''],
+    'slopes-none': [STRINGS['slopes-none'], ''],
+    'filter-ch-only': [STRINGS['filter-ch-only'], ''],
     filter: [STRINGS.filter, STRINGS['filter-detail']],
   };
 
@@ -127,6 +131,9 @@
       country: props.country || null,
       slopesEligible: !!window.pwaBulletinTerrain,
       slopesOn: !!(window.pwaBulletinTerrain && window.pwaBulletinTerrain.isEnabled()),
+      // What is PAINTED, not what is switched on: no bulletin that day, or
+      // a feed that failed, leaves the region's terrain state false.
+      slopesPainted: !!(feature && (map.getFeatureState({ source: 'regions', id: feature.id }) || {}).terrain),
       filterOn: !!(window.pwaTerrainFilter && window.pwaTerrainFilter.isEnabled()),
       basemap: basemapLabel(),
     });

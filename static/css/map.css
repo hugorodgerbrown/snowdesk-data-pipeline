@@ -2161,13 +2161,17 @@ html[data-route-drawing] #map-slopes-notice {
 .map-status-bar .map-status-swatch--slopes,
 .map-status-bar .map-status-swatch--slopes-off,
 .map-status-bar .map-status-swatch--slopes-ch-only,
-.map-status-bar .map-status-swatch--filter {
+.map-status-bar .map-status-swatch--slopes-none,
+.map-status-bar .map-status-swatch--filter,
+.map-status-bar .map-status-swatch--filter-ch-only {
     border-radius: 0;
     clip-path: polygon(0 100%, 32% 30%, 52% 62%, 74% 8%, 100% 100%);
 }
 
 .map-status-bar .map-status-swatch--slopes-off,
-.map-status-bar .map-status-swatch--slopes-ch-only {
+.map-status-bar .map-status-swatch--slopes-ch-only,
+.map-status-bar .map-status-swatch--slopes-none,
+.map-status-bar .map-status-swatch--filter-ch-only {
     background: var(--color-text-3);
     opacity: 0.45;
 }

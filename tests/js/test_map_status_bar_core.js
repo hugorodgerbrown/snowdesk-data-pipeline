@@ -20,6 +20,7 @@ const base = {
   country: 'CH',
   slopesEligible: true,
   slopesOn: true,
+  slopesPainted: true,
   filterOn: false,
   basemap: 'Swisstopo winter',
 };
@@ -45,6 +46,17 @@ describe('statusState', () => {
     expect(kinds({ slopesOn: false })).toEqual(['region-edge', 'slopes-off', 'basemap']);
     expect(core.statusState({ ...base, slopesOn: false }).segments[1].muted).toBe(true);
     expect(hint({ slopesOn: false, zoom: 11 })).toBe('');
+  });
+
+  it('says there are none when the region has no slopes painted (Codex on #1425)', () => {
+    // A day with no bulletin, or a feed that failed: switched on, nothing painted.
+    expect(kinds({ slopesPainted: false })).toEqual(['region-edge', 'slopes-none', 'basemap']);
+    expect(core.statusState({ ...base, slopesPainted: false }).segments[1].muted).toBe(true);
+  });
+
+  it('says Steep terrain is Switzerland only outside the tiles (Codex on #1425)', () => {
+    expect(kinds({ filterOn: true, slopesOn: false, country: 'FR' }))
+      .toEqual(['region-edge', 'filter-ch-only', 'basemap']);
   });
 
   it('lets Steep terrain replace the slopes', () => {

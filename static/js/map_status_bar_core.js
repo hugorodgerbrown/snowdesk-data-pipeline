@@ -37,6 +37,9 @@
    * @property {?string} [level] The centre region's rating key, for the swatches.
    * @property {?string} [country] The centre region's country, when there is one.
    * @property {boolean} slopesOn "Sync with map terrain" is on and drawn.
+   * @property {boolean} [slopesPainted] The centre region's slopes are painted
+   *   (its feature-state ``terrain``) — false on a day with no bulletin, or
+   *   while the day's rules have not arrived.
    * @property {boolean} slopesEligible The page has the slopes layer at all.
    * @property {boolean} filterOn Steep terrain is on.
    * @property {string} [basemap] The basemap's label.
@@ -44,7 +47,7 @@
 
   /**
    * @typedef {Object} Segment
-   * @property {'region-fill'|'region-edge'|'slopes'|'slopes-off'|'slopes-ch-only'|'filter'|'basemap'} kind
+   * @property {'region-fill'|'region-edge'|'slopes'|'slopes-off'|'slopes-none'|'slopes-ch-only'|'filter'|'filter-ch-only'|'basemap'} kind
    * @property {string} level The rating key its swatch is coloured by.
    * @property {boolean} muted Says something is off or out of reach.
    * @property {string} [text] Literal text (the basemap's label).
@@ -62,9 +65,11 @@
    * The region segment while the bulletin layer is on: a fill below z10,
    * the edges from it. Then, from z12, the reader's Steep terrain filter
    * when it is on (it replaces the slopes), else the bulletin's slopes —
-   * named as off when switched off, and as Switzerland only for a region
-   * outside the tiles. Below z12 a switched-on layer that would paint
-   * becomes the hint instead. The basemap last, always.
+   * named as off when switched off, as none when the centre region has no
+   * slopes painted (no bulletin that day, or its rules not yet arrived),
+   * and as Switzerland only, for either layer, for a region outside the
+   * tiles. Below z12 a switched-on layer that would paint becomes the hint
+   * instead. The basemap last, always.
    *
    * @param {StatusInput} input
    * @returns {StatusState}
@@ -83,7 +88,7 @@
     }
 
     if (input.filterOn) {
-      if (close) segments.push({ kind: 'filter', level, muted: false });
+      if (close) segments.push(outside ? { kind: 'filter-ch-only', level, muted: true } : { kind: 'filter', level, muted: false });
       else if (!outside) hint = 'zoom-filter';
     } else if (input.slopesEligible) {
       if (!input.slopesOn) {
@@ -91,7 +96,9 @@
       } else if (outside) {
         if (close) segments.push({ kind: 'slopes-ch-only', level, muted: true });
       } else if (close) {
-        segments.push({ kind: 'slopes', level, muted: false });
+        segments.push(input.slopesPainted
+          ? { kind: 'slopes', level, muted: false }
+          : { kind: 'slopes-none', level, muted: true });
       } else {
         hint = 'zoom-slopes';
       }
