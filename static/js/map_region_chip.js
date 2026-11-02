@@ -21,7 +21,9 @@
 (function regionChipInit() {
   const chip = document.getElementById('map-region-chip');
   const core = self.pwaRegionChipCore;
-  if (!chip || !core || !MAP || !self.pwaStrings) return;
+  // typeof, not !MAP: a bare read of an undeclared MAP would throw rather
+  // than return, on any page that loads this without the map bundle.
+  if (!chip || !core || typeof MAP === 'undefined' || !MAP || !self.pwaStrings) return;
 
   const levelEl = chip.querySelector('[data-region-chip-level]');
   const nameEl = chip.querySelector('[data-region-chip-name]');
