@@ -2,3 +2,4 @@
 # Written by bin/cut-release from the Deploy-Step: trailers in the release.
 # Read by the ops MCP tool deploy_steps_status (SNOW-1192).
 backfill_crossed_regions --commit
+import_rest_zones --commit
