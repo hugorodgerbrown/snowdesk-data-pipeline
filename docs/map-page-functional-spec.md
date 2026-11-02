@@ -835,8 +835,10 @@ stack and the date row, where the legend card opens:
 - **One line of explanation** at the top: "Some features are only
   available at certain zoom levels."
 - **A vertical scale**, + over −, across the map's whole zoom range,
-  every whole level numbered to the left of the line, with a marker at
-  the camera.
+  every whole level numbered to the left of the line with a small dot on
+  it, and a marker at the camera that reads out the camera's zoom to one
+  decimal — rounded down, so camera 12.97 reads 12.9 beside a face of 12
+  (Hugo, 2 Nov 2026; `zoom_control_core.markerZoom`).
 - **Each zoom-gated feature, named in a column of its own** with its
   threshold, and tied by a **curved connector** to a node on the line at
   the level it becomes available: **Route slope angle ≥14** (§3.4a),

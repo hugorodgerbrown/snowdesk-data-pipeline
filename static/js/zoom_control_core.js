@@ -46,6 +46,7 @@
  *   EPSILON
  *   scalePosition(zoom, minZoom, maxZoom)   → 0..1
  *   faceZoom(tileZoom, cameraZoom)          → whole number
+ *   markerZoom(cameraZoom)                  → the camera to 1 dp, rounded down
  *   buttonState(zoom, minZoom, maxZoom)     → { canZoomOut, canZoomIn }
  *   ticks(gates, zoom, minZoom, maxZoom)    → Array<Tick>
  *   levels(minZoom, maxZoom)                → Array<{zoom, position}>
@@ -121,6 +122,19 @@
       return Math.floor(tileZoom);
     }
     return Math.floor(cameraZoom + EPSILON);
+  }
+
+  /**
+   * The camera's zoom as the marker's readout gives it: one decimal place,
+   * rounded DOWN, so it never disagrees with the face — camera 12.97 reads
+   * 12.9 beside a face of 12, where rounding would say 13.0.
+   *
+   * @param {number} cameraZoom The camera's continuous zoom.
+   * @returns {number} e.g. 12.9.
+   */
+  function markerZoom(cameraZoom) {
+    if (!Number.isFinite(cameraZoom)) return 0;
+    return Math.floor((cameraZoom + EPSILON) * 10) / 10;
   }
 
   /**
@@ -294,6 +308,7 @@
 
   self.pwaZoomControlCore = Object.freeze({
     labelRows: labelRows,
+    markerZoom: markerZoom,
     connectorPath: connectorPath,
     levels: levels,
     EPSILON: EPSILON,

@@ -79,6 +79,12 @@
   const zoomOut = flyout.querySelector('[data-zoom-step="out"]');
   const zoomIn = flyout.querySelector('[data-zoom-step="in"]');
   const marker = flyout.querySelector('[data-zoom-marker]');
+  const markerValue = flyout.querySelector('[data-zoom-marker-value]');
+  // The readout's one decimal, in the page's language (12,4 in German).
+  const tenths = new Intl.NumberFormat(document.documentElement.lang || undefined, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
   const tickList = flyout.querySelector('[data-zoom-ticks]');
   const levelList = flyout.querySelector('[data-zoom-levels]');
   const scale = flyout.querySelector('[data-zoom-scale]');
@@ -157,8 +163,8 @@
     const measured = scale ? scale.clientHeight : 0;
     return {
       height: measured > 0 ? measured : px('--zoom-scale-h', 280),
-      trackX: px('--zoom-track-x', 36),
-      labelX: px('--zoom-label-x', 96),
+      trackX: px('--zoom-track-x', 44),
+      labelX: px('--zoom-label-x', 104),
       pitch: px('--zoom-label-pitch', 30),
     };
   }
@@ -307,6 +313,7 @@
     if (marker) {
       marker.style.top = ((1 - core.scalePosition(camera, min, max)) * 100).toFixed(2) + '%';
     }
+    if (markerValue) markerValue.textContent = tenths.format(core.markerZoom(camera));
 
     renderLevels(min, max);
     const gates = window.pwaZoomGates ? window.pwaZoomGates.list() : [];

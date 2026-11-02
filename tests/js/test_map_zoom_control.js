@@ -34,7 +34,7 @@ document.body.innerHTML = `
         <svg data-zoom-connectors></svg>
         <ol data-zoom-levels></ol>
         <ol data-zoom-ticks></ol>
-        <span data-zoom-marker></span>
+        <span data-zoom-marker><span data-zoom-marker-value></span></span>
       </div>
       <button type="button" data-zoom-step="in">+</button>
     </div>
@@ -243,6 +243,13 @@ describe('the flyout', () => {
     // The scale runs bottom to top: z11 is halfway up z4..z18.
     expect(flyout.querySelector('[data-zoom-marker]').style.top).toBe('50%');
   });
+
+  it('reads out the camera zoom to one decimal beside the marker', () => {
+    toggle.click();
+    zoom = 12.37;
+    fireZoom();
+    expect(flyout.querySelector('[data-zoom-marker-value]').textContent).toBe('12.3');
+  });
 });
 
 describe('the ticks', () => {
@@ -267,7 +274,7 @@ describe('the ticks', () => {
     expect(connectors.map((g) => g.dataset.zoomConnector))
       .toEqual(['region_select', 'terrain_filter', 'route_slopes']);
     const terrain = connectors[1];
-    expect(terrain.querySelector('path').getAttribute('d')).toBe('M36 120 C69 120 69 120 96 120');
+    expect(terrain.querySelector('path').getAttribute('d')).toBe('M44 120 C77 120 77 120 104 120');
     expect(terrain.querySelector('circle').getAttribute('cy')).toBe('120.00');
     expect(terrain.hasAttribute('data-reached')).toBe(false);
     zoom = 12.2;

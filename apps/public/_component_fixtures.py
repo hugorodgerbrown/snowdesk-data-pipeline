@@ -21,6 +21,7 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import json
+import math
 import pathlib
 from types import SimpleNamespace
 from typing import Any
@@ -3120,8 +3121,8 @@ _MAP_MAX_ZOOM = 18
 # map.css .map-zoom-flyout: --zoom-scale-h, --zoom-track-x, --zoom-label-x,
 # --zoom-label-pitch.
 _ZOOM_SCALE_H = 280.0
-_ZOOM_TRACK_X = 36.0
-_ZOOM_LABEL_X = 96.0
+_ZOOM_TRACK_X = 44.0
+_ZOOM_LABEL_X = 104.0
 _ZOOM_LABEL_PITCH = 30.0
 
 
@@ -3238,6 +3239,8 @@ def _zoom_variant(
             "zoom_face": int(camera),
             "zoom_open": is_open,
             "zoom_marker_pct": _zoom_pct(camera),
+            # zoom_control_core.markerZoom: one decimal, rounded down.
+            "zoom_marker_value": math.floor((camera + 0.001) * 10) / 10,
             "zoom_levels": _ZOOM_LEVELS,
             "zoom_ticks": ticks,
             "zoom_connectors": connectors,

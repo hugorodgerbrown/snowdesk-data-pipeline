@@ -47,6 +47,22 @@ describe('faceZoom', () => {
   });
 });
 
+describe('markerZoom', () => {
+  it('gives the camera to one decimal, rounded down to agree with the face', () => {
+    expect(core.markerZoom(12.37)).toBe(12.3);
+    expect(core.markerZoom(12.97)).toBe(12.9);
+    expect(core.markerZoom(14)).toBe(14);
+  });
+
+  it('counts a camera a hair short of a tenth as at it', () => {
+    expect(core.markerZoom(12.39999)).toBe(12.4);
+  });
+
+  it('answers 0 for a non-number', () => {
+    expect(core.markerZoom(Number.NaN)).toBe(0);
+  });
+});
+
 describe('buttonState', () => {
   it('disables − at the minimum and + at the maximum', () => {
     expect(core.buttonState(MIN, MIN, MAX)).toEqual({ canZoomOut: false, canZoomIn: true });

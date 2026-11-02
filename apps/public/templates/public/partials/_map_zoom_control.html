@@ -31,6 +31,8 @@ Context (all optional):
 * zoom_face           — int; the roundel's face (the map never goes below z4, so 0 means unset).
 * zoom_open           — bool; render the flyout open.
 * zoom_marker_pct     — float 0..100; the camera marker's position.
+* zoom_marker_value   — float; the camera to one decimal, rounded down, which
+                        the marker reads out beside itself.
 * zoom_ticks          — list of {key, label, threshold, zoom, row, reached};
                         ``row`` is the label's centre, px down the scale.
 * zoom_connectors     — list of {key, d, node_y, node_x, reached}, one per tick:
@@ -77,6 +79,13 @@ Context (all optional):
     {# column to its right, a curve tying it to the level it starts at.    #}
     <div class="map-zoom-scale" data-zoom-scale>
         <span class="map-zoom-track" aria-hidden="true"></span>
+        <ol class="map-zoom-levels" data-zoom-levels aria-hidden="true">
+            {% localize off %}
+                {% for level in zoom_levels %}
+                    <li class="map-zoom-level" style="top: {{ level.pct }}%">{{ level.zoom }}</li>
+                {% endfor %}
+            {% endlocalize %}
+        </ol>
         {% localize off %}
             <svg class="map-zoom-connectors" data-zoom-connectors aria-hidden="true" focusable="false">
                 {% for connector in zoom_connectors %}
@@ -96,13 +105,6 @@ Context (all optional):
                 {% endfor %}
             </svg>
         {% endlocalize %}
-        <ol class="map-zoom-levels" data-zoom-levels aria-hidden="true">
-            {% localize off %}
-                {% for level in zoom_levels %}
-                    <li class="map-zoom-level" style="top: {{ level.pct }}%">{{ level.zoom }}</li>
-                {% endfor %}
-            {% endlocalize %}
-        </ol>
         <ol class="map-zoom-ticks" data-zoom-ticks>
             {% for tick in zoom_ticks %}
                 {% include "public/partials/_map_zoom_tick.html" with tick=tick only %}
@@ -114,7 +116,15 @@ Context (all optional):
                 data-zoom-marker
                 aria-hidden="true"
                 style="top: {{ zoom_marker_pct|default_if_none:100 }}%"
-            ></span>
+            >
+                {# The exact camera zoom, to one decimal, in the number column #}
+                {# beside the marker: the face says the whole level, this says #}
+                {# how far into it the camera is.                              #}
+                <span
+                    class="map-zoom-marker-value"
+                    data-zoom-marker-value
+                >{% if zoom_marker_value is not None %}{% localize on %}{{ zoom_marker_value|floatformat:1 }}{% endlocalize %}{% endif %}</span>
+            </span>
         {% endlocalize %}
     </div>
     <button

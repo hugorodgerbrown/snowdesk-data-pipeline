@@ -2608,13 +2608,13 @@ html[data-route-drawing] #map-slopes-notice {
        the labels and draw the connectors, and _component_fixtures.py
        restates them for the library's variants. */
     --zoom-scale-h: 280px;
-    --zoom-track-x: 36px;
-    --zoom-label-x: 96px;
+    --zoom-track-x: 44px;
+    --zoom-label-x: 104px;
     --zoom-label-pitch: 30px;
     position: absolute;
     left: calc(var(--map-control-sm) + 8px);
     bottom: calc(var(--map-control-sm) + 8px);
-    width: 272px;
+    width: 280px;
     max-width: calc(100vw - var(--map-control-sm) - 32px);
     padding: 2px 2px 6px;
     background: var(--color-glass);
@@ -2688,8 +2688,8 @@ html[data-route-drawing] #map-slopes-notice {
     list-style: none;
 }
 
-/* Every whole zoom level, numbered left of the line beside a short mark,
-   so the connectors leave the line's right side with nothing to cross. */
+/* Every whole zoom level, numbered left of the line with a dot on it, so
+   the connectors leave the line's right side with nothing to cross. */
 .map-zoom-levels {
     position: absolute;
     inset: 0;
@@ -2713,14 +2713,19 @@ html[data-route-drawing] #map-slopes-notice {
     color: var(--color-text-3);
 }
 
-.map-zoom-level::after {
+/* A small dot on the line at every whole level, so the track has texture
+   between the gated levels' larger nodes (which the connector layer draws
+   over it). Centred on the track: the level's box ends 1px short of it. */
+.map-zoom-level::before {
     content: "";
     position: absolute;
-    right: 0;
-    top: 5px;
-    width: 5px;
-    height: 1px;
-    background: var(--color-border);
+    right: -3px;
+    top: 4px;
+    width: 4px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--color-text-3);
+    opacity: 0.6;
 }
 
 /* The connectors: one curve and one node per feature, drawn in px over
@@ -2811,6 +2816,7 @@ html[data-route-drawing] #map-slopes-notice {
 
 .map-zoom-marker {
     position: absolute;
+    z-index: 1;
     left: var(--zoom-track-x);
     width: 12px;
     height: 12px;
@@ -2820,6 +2826,29 @@ html[data-route-drawing] #map-slopes-notice {
     background: var(--color-text-1);
     box-shadow: 0 0 0 0.5px var(--color-border);
     pointer-events: none;
+}
+
+/* The camera's zoom to one decimal, in the number column level with the
+   marker. It sits over the whole-level numbers it passes, on the flyout's
+   own surface, so it reads as the number column's current value. */
+.map-zoom-marker-value {
+    position: absolute;
+    top: 50%;
+    right: calc(100% + 3px);
+    padding: 1px 4px;
+    transform: translateY(-50%);
+    border-radius: 999px;
+    background: var(--color-text-1);
+    color: var(--color-card);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 12px;
+    white-space: nowrap;
+}
+
+.map-zoom-marker-value:empty {
+    display: none;
 }
 
 /* The one line of explanation over the scale. */

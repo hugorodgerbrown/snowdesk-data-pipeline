@@ -143,10 +143,17 @@ def test_crowded_labels_are_spread_and_tied_to_their_levels() -> None:
     assert 'style="top: 106.0px"' in html
     connector = html[html.index('data-zoom-connector="terrain_filter"') :]
     assert "data-reached" in connector[: connector.index(">")]
-    assert 'd="M36 120 C69 120 69 106 96 106"' in connector
+    assert 'd="M44 120 C77 120 77 106 104 106"' in connector
 
 
 def test_a_label_with_room_has_a_straight_connector() -> None:
     """A lone gate's label sits level with it, so its curve is a straight line."""
     assert _zoom_label_rows([160.0, 80.0]) == [160.0, 80.0]
     assert _zoom_label_rows([160.0, 160.0]) == [145.0, 175.0]
+
+
+def test_the_marker_reads_out_the_camera_to_one_decimal() -> None:
+    """The marker carries the camera zoom, rounded down to one decimal (12.4 here)."""
+    html = render_to_string(PARTIAL, _variant("At z12")["context"])
+    value = html[html.index("data-zoom-marker-value") :]
+    assert value[value.index(">") + 1 : value.index("<")] == "12.4"
