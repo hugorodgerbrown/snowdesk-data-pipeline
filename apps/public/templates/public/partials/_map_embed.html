@@ -759,6 +759,9 @@ Optional context:
                             {% include "includes/_switch_track.html" only %}
                         </button>
                     </li>
+                    {# SNOW-1384: FOEN's wildlife rest zones, drawn from z11 by #}
+                    {# rest_zones.js, which owns the switch. OFF by default.     #}
+                    {% include "public/partials/_map_layers_switch_row.html" with key="rest_zones" label=_("Wildlife rest zones") icon="rest_zone" zoom_gate="rest_zones" only %}
                 {% endif %}
                 {% trans "Boundaries" as layer_boundaries %}
                 <li role="none" class="basemap-menu-layer">

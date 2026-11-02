@@ -1038,6 +1038,66 @@ def test_map_layer_menu_ski_routes_row_follows_resorts() -> None:
     assert positions == sorted(positions), markers
 
 
+# SNOW-1384: what the wildlife rest zones layer puts on the page — the
+# switch row, the config, the sheet, its body and strings, and both scripts.
+REST_ZONE_MARKERS = (
+    'data-overlay-key="rest_zones"',
+    'id="rest-zones-config"',
+    'id="rest-zone-sheet"',
+    'id="rest-zone-body-template"',
+    'id="rest-zone-strings-template"',
+    "/static/js/rest_zones_core.js",
+    "/static/js/rest_zones.js",
+)
+
+
+@pytest.mark.django_db
+def test_rest_zones_layer_is_absent_signed_out() -> None:
+    """SNOW-1384: the layer rides on route_drawing, which needs an account."""
+    with override_flag("route_drawing", active=True):
+        content = Client().get(reverse("public:map")).content.decode()
+    for marker in REST_ZONE_MARKERS:
+        assert marker not in content, marker
+
+
+@pytest.mark.django_db
+def test_rest_zones_layer_is_absent_without_the_flag() -> None:
+    """SNOW-1384: signed in, but outside the flag, nothing of the layer."""
+    client = Client()
+    client.force_login(UserFactory.create())
+    with override_flag("route_drawing", active=False):
+        content = client.get(reverse("public:map")).content.decode()
+    for marker in REST_ZONE_MARKERS:
+        assert marker not in content, marker
+
+
+@pytest.mark.django_db
+def test_rest_zones_layer_renders_once_behind_the_flag() -> None:
+    """SNOW-1384: signed in with the flag, each piece once; the row after the
+    ski-touring row and before Boundaries; the core before the module; the
+    config naming the endpoint.
+    """
+    client = Client()
+    client.force_login(UserFactory.create())
+    with override_flag("route_drawing", active=True):
+        content = client.get(reverse("public:map")).content.decode()
+    for marker in REST_ZONE_MARKERS:
+        assert content.count(marker) == 1, marker
+    main = _layers_page(content, "main")
+    markers = [
+        'data-layer-master="ski_touring"',
+        'data-overlay-key="rest_zones"',
+        'data-layers-open="boundaries"',
+    ]
+    positions = [main.index(marker) for marker in markers]
+    assert positions == sorted(positions), markers
+    assert content.index("/static/js/rest_zones_core.js") < content.index(
+        "/static/js/rest_zones.js"
+    )
+    assert f'data-geojson-url="{reverse("api:rest_zones_geojson")}"' in content
+    assert 'data-string="gate-rest_zones"' in content
+
+
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
 def test_layers_menu_marks_its_zoom_limited_rows() -> None:
@@ -1056,10 +1116,12 @@ def test_layers_menu_marks_its_zoom_limited_rows() -> None:
         content = client.get(reverse("public:map")).content.decode()
 
     main = _layers_page(content, "main")
-    assert main.count("data-zoom-gate=") == 2
+    # SNOW-1384: and Wildlife rest zones, on the drawing flag's pages.
+    assert main.count("data-zoom-gate=") == 3
     for key, label in (
         ("terrain_filter", "Steep terrain"),
         ("ski_routes", "SAC ski touring"),
+        ("rest_zones", "Wildlife rest zones"),
     ):
         start = main.index(f'data-zoom-gate="{key}"')
         row = main[start : main.index("</li>", start)]
