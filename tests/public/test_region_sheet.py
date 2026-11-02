@@ -41,6 +41,7 @@ from django.utils import timezone
 from waffle.testutils import override_flag
 
 from apps.accounts.models import Account
+from apps.bulletins.models import RegionDayRating
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.regions.models import Resort
 from tests.factories import (
@@ -913,3 +914,40 @@ def test_a_requested_failed_issue_shows_its_error_card(client: Client) -> None:
     body = page.content.decode()
     assert "We couldn" in body
     assert 'data-testid="skipped-issue-notice"' not in body
+
+
+@pytest.mark.django_db
+def test_three_issues_show_the_latest_built_and_name_the_failed_one(
+    client: Client,
+) -> None:
+    """Codex on #1406: rated A, newer built B, newest failed C — B, naming C.
+
+    A day can carry a third issue (an unscheduled reissue). The rating may
+    not yet have caught up with B; the sheet must still show what the page
+    shows, the latest built issue, and name the newest failed one after it.
+    """
+    from tests.public.test_problem_terrain import (  # noqa: PLC0415 — the shared fixture lives with the feed's tests
+        _evening_and_failed_morning,
+    )
+
+    region = MicroRegionFactory.create()
+    day = timezone.localdate()
+    evening, morning = _evening_and_failed_morning(day, region)
+    built_start = morning.valid_from - datetime.timedelta(hours=2)
+    reissue = BulletinFactory.create(
+        issued_at=built_start,
+        valid_from=built_start,
+        valid_to=built_start + datetime.timedelta(hours=9),
+        render_model=evening.render_model,
+        render_model_version=RENDER_MODEL_VERSION,
+    )
+    RegionBulletinFactory.create(bulletin=reissue, region=region)
+    # The rating still names the evening issue: it has not been recomputed.
+    assert RegionDayRating.objects.get(region=region, date=day).source_bulletin_id == (
+        evening.pk
+    )
+    page = client.get(region.get_absolute_url(day))
+    sheet = _get(client, _url(region.region_id.lower()))
+    assert page.context["bulletin"].pk == reissue.pk
+    assert sheet.context["bulletin"].pk == reissue.pk
+    assert sheet.context["skipped_issue"].pk == morning.pk

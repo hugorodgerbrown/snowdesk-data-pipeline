@@ -62,7 +62,7 @@ from django.utils.cache import patch_cache_control
 
 from apps.bulletins.models import Bulletin, RegionDayRating
 from apps.bulletins.services.coverage import covered_region_ids
-from apps.bulletins.services.selection import is_built
+from apps.bulletins.services.selection import select_default_pick
 from apps.core.decorators import require_htmx
 from apps.ingest.public import TerrainRule
 from apps.public.api import _PROVIDER_BY_COUNTRY, COUNTRY_NAMES
@@ -168,24 +168,21 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
 
     # The issue that rated the day came with the rating (SNOW-1341), and is
     # the page's pick: a rating names only a built issue, and the page now
-    # prefers the latest built one too (SNOW-1368). A newer issue that did
-    # not build is passed over and named in the body's notice; a newer one
-    # that did build (a rating not yet recomputed) is shown. A day with no
-    # rated issue may still have one the page shows, so the page's rule
-    # picks.
+    # prefers the latest built one too (SNOW-1368). Any newer issues are
+    # run through the page's own rule with it: the latest of them that built
+    # is shown (a rating not yet recomputed), and the newest one after that
+    # which did not build is named in the body's notice. A day with no rated
+    # issue may still have one the page shows, so the page's rule picks.
     selected: Bulletin | None = day_rating.source_bulletin if day_rating else None
     skipped: Bulletin | None = None
     if selected is not None:
-        newer = (
-            Bulletin.objects.for_target_date(target_date)
-            .filter(regions=region, valid_from__gt=selected.valid_from)
-            .order_by("-valid_from")
-            .first()
+        newer = list(
+            Bulletin.objects.for_target_date(target_date).filter(
+                regions=region, valid_from__gt=selected.valid_from
+            )
         )
-        if newer is not None and is_built(newer):
-            selected = newer
-        else:
-            skipped = newer
+        if newer:
+            selected, skipped = select_default_pick([selected, *newer], target_date)
     else:
         selected, skipped = _resolve_selected_pick(
             _issues_for_date(region, target_date), target_date, None
