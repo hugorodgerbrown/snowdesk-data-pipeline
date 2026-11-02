@@ -58,6 +58,9 @@ urlpatterns = [
     # the vector network a drawn route snaps to. Public reference data.
     path("ski-network.geojson", api.ski_network_geojson, name="ski_network_geojson"),
     path("ski-tours.geojson", api.ski_tours_geojson, name="ski_tours_geojson"),
+    # SNOW-1384: FOEN's wildlife rest zones in one rectangle, for one day —
+    # the map's "Wildlife rest zones" layer, behind the route_drawing flag.
+    path("rest-zones.geojson", api.rest_zones_geojson, name="rest_zones_geojson"),
     # SNOW-1294: every SAC summit and hut as a search row, read once.
     path("ski-summits.json", api.ski_summits_json, name="ski_summits_json"),
     path("weather.geojson", api.weather_geojson, name="weather_geojson"),

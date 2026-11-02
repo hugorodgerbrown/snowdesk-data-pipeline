@@ -107,6 +107,12 @@ const OVERLAY_STORAGE_KEY = {
   // switched that off keeps the tours off.
   ski_tours: 'snowdesk.map.overlay.ski_routes',
   ski_summits: 'snowdesk.map.overlay.ski_summits',
+  // SNOW-1384: FOEN's wildlife rest zones, drawn from z11 by
+  // static/js/rest_zones.js, which owns the switch (window.pwaRestZones).
+  // Eligible only behind the route_drawing flag, as the ski-touring parts
+  // are. Defaults OFF: polygons over whole hillsides are a second layer of
+  // colour over the danger ratings someone opened the map to read.
+  rest_zones: 'snowdesk.map.overlay.rest_zones',
   // The layers menu's "Display downloaded areas" row (SNOW-904; the
   // downloads panel's own switch before that). PERSISTED — this reverses
   // SNOW-645's "session-scoped inspection mode", which is what Hugo
@@ -229,6 +235,8 @@ const OVERLAY_LAYERS = Object.freeze({
   // summits, which are labels.
   ski_tours: ['ski-tours-line', 'ski-tours-line-down'],
   ski_summits: ['ski-tours-summit', 'ski-tours-summit-label'],
+  // SNOW-1384: the rest zones' fill first, the layer a reader sees.
+  rest_zones: ['rest-zones-fill', 'rest-zones-line'],
   // SNOW-687: the coloured line FIRST and the casing second — deliberately
   // the inverse of the order installRoutesLayer adds them in, where the
   // casing has to be added first to paint underneath. (SNOW-764's

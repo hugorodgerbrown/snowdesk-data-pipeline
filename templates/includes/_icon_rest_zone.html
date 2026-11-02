@@ -1,0 +1,29 @@
+{% comment %}
+templates/includes/_icon_rest_zone.html — the wildlife rest zone glyph: a
+ring struck through, the "keep out" a zone asks of a skier (SNOW-1384).
+
+Leads the "Wildlife rest zones" row in the map's layers menu
+(public/partials/_map_embed.html), the same 24-grid 2px stroke as the rest
+of the house set (docs/decisions/ui-icons-are-house-stroke-partials.md).
+No existing glyph says "protected ground": the boundary is the regions'
+outline and the triangle is the bulletin's hazard.
+
+Parameters (passed via {% include … with … %}):
+  size (int, optional) — rendered px, both axes. Default 18.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:18 }}"
+    height="{{ size|default:18 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <circle cx="12" cy="12" r="9" />
+    <path d="m5.6 5.6 12.8 12.8" />
+</svg>

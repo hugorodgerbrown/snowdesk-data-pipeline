@@ -67,6 +67,7 @@
     'toggle-label': 'Zoom level %(zoom)s',
     'gate-region_select': 'Region selector',
     'gate-ski_routes': 'SAC ski touring',
+    'gate-rest_zones': 'Wildlife rest zones',
     'gate-terrain_filter': 'Steep terrain',
     'gate-route_slopes': 'Route slope angle',
     'threshold-from': '≥%(zoom)s',

@@ -2,7 +2,7 @@
 name: map-surface
 description: Map zoom bands (REGION_SELECT_MAXZOOM), tap priority, overlay kinds, pwaMapOverlays, one bottom sheet, camera padding owner
 status: current
-last-reviewed: 2026-10-26
+last-reviewed: 2026-11-02
 ---
 
 # The map surface: zoom, taps and overlays
@@ -36,6 +36,7 @@ z  4    5    6    7    8    9   10   11   12   13   14   15 … 18
                                   resort labels, route endpoints 10 →
                                   swisstopo ski-touring routes 10 → (SKI_ROUTES_MINZOOM, CH only)
                                        route transitions 11 →
+                                       wildlife rest zones 11 → (rest_zones_core MINZOOM, CH only)
                                        pin / report focus 11 (POINT_FOCUS_ZOOM)
                                                  terrain filter / slope tiles 12–14, overzoomed above
    route drawn as LEGS (climb / descent) ..........|
@@ -83,19 +84,28 @@ map click dispatcher"). It stops at the first rule that claims the tap:
    Under its peek row the sheet shows the resort page's own body for the
    map's day, as the region sheet shows the bulletin page's
    ([`decisions/the-sheet-is-the-page.md`](decisions/the-sheet-is-the-page.md)).
-6. **On the region already selected, with its sheet closed**: reopens
+6. **Inside a wildlife rest zone** (SNOW-1384, behind the `route_drawing`
+   flag, with the layer switched on): the zone's sheet opens — its name,
+   binding or recommended, whether it is protected on the map's day, its
+   period, restriction and rules page — and the region under it is not
+   selected. Only when no resort pin is under the tap (rule 5 outranks
+   it, the pin being the smaller target) and not during timelapse
+   playback. Asked before the empty-map rule, because a zone can lie
+   outside every region the map draws (`window.pwaRestZones.tap`,
+   `static/js/rest_zones.js`).
+7. **On the region already selected, with its sheet closed**: reopens
    the sheet, at any zoom, and changes nothing else
    (`window.pwaRegionSheet.reopen`). The sheet closes while the region stays
    selected (its ×, a route opening over it), and past z10 this is the only
    way back to it. It works during timelapse playback too, because it
    changes no selection.
-7. **On a region, at z10 or below**: selects it, or deselects it if it was
+8. **On a region, at z10 or below**: selects it, or deselects it if it was
    already selected. The selection opens the region sheet, on every width
    (SNOW-1173: a desktop opened nothing for a region until then, while a
    resort or a weather symbol opened the inset panel).
    **Above z10**: closes the place sheet or popup and leaves the selection
    alone.
-8. **On empty map**: deselects the region and closes any popup.
+9. **On empty map**: deselects the region and closes any popup.
 
 A double-click on a region at z10 or below zooms to the region; above z10 it
 is the map's own zoom-in.
@@ -107,7 +117,7 @@ opens, closes and coexists (CLAUDE.md, design-system rule 6).
 
 | Kind | Examples | Opened by | Phone shape | Closed by |
 |---|---|---|---|---|
-| **Object sheet** | region sheet, place sheet, weather sheet, route rail | a tap on something on the map | bottom sheet with detents (peek, half, full) | ×, drag below peek, Escape, deselecting, another object sheet |
+| **Object sheet** | region sheet, place sheet, weather sheet, rest zone sheet, route rail | a tap on something on the map | bottom sheet with detents (peek, half, full) | ×, drag below peek, Escape, deselecting, another object sheet |
 | **Roundel panel** | routes, favourites, reports, downloads lists | its roundel | full-width docked panel, no detents | its roundel, its ×, another overlay |
 | **Form panel** | field report, terrain filter | a call to action | docked panel, no detents, no drag-to-close | its own buttons, its × |
 | **Flyout / card** | layers menu, zoom flyout, calendar, legend card, help coachmark, tour offer, a saved pin's desktop popup | its toggle | anchored card | a click away, another overlay |

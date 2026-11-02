@@ -1,0 +1,82 @@
+{% load i18n static components %}
+{% comment %}
+public/partials/_rest_zones_surface.html — the "Wildlife rest zones" map
+layer's config, sheet and strings (SNOW-1384, behind the ``route_drawing``
+flag).
+
+The layers menu's "Wildlife rest zones" row (_map_embed.html) switches the
+layer; static/js/rest_zones.js draws FOEN's zones from z11 for the view and
+the map's day, and a tap inside one opens this sheet. The sheet is an
+object sheet like the place and weather sheets: docked left on a desktop,
+resting at peek on a phone, one open at a time.
+
+The body is a ``<template>`` the module clones per tap and fills from the
+tapped Feature's properties (``textContent`` only): the zone's name, whether
+it is binding or recommended, its canton, whether it is protected on the
+map's day, its period as FOEN publishes it, the restriction, the rules
+page, and FOEN's credit. A slot with nothing to say is removed.
+
+Context expected:
+  (None.)
+{% endcomment %}
+<div id="rest-zones-config" hidden data-geojson-url="{% url 'api:rest_zones_geojson' %}"></div>
+{% trans "Wildlife rest zone" as rest_zone_sheet_aria_label %}
+{% include "includes/_overlay_sheet.html" with id="rest-zone-sheet" aria_label=rest_zone_sheet_aria_label detents="peek,half,full" initial="peek" side="left" %}
+<template id="rest-zone-body-template">
+    <div class="space-y-4" data-testid="rest-zone-sheet-body">
+        <div data-sheet-peek data-sheet-drag>
+            <div class="flex items-center gap-4">
+                <div class="min-w-0 flex-1">
+                    {% include "includes/_eyebrow.html" with tag="p" text=rest_zone_sheet_aria_label data_testid="sheet-kind" only %}
+                    <h2 data-rest-zone-name class="break-words text-lg font-semibold leading-tight text-text-1"></h2>
+                    <p class="text-sm text-text-2">
+                        <span data-rest-zone-kind></span>
+                        <span data-rest-zone-row>· <span data-rest-zone-canton></span></span>
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    data-action="dismiss"
+                    aria-label="{% trans 'Close' %}"
+                    class="{% icon_button_classes extra='-mr-3' %}"
+                >
+                    {% include "includes/_icon_close.html" only %}
+                </button>
+            </div>
+            <p data-rest-zone-status class="pt-2 text-sm font-medium text-text-1"></p>
+        </div>
+        <dl class="space-y-3">
+            <div>
+                {% trans "Protected period" as rest_zone_period_label %}
+                {% include "includes/_meta_cell.html" with tag="dt" text=rest_zone_period_label only %}
+                <dd data-rest-zone-period class="text-sm text-text-1"></dd>
+            </div>
+            <div data-rest-zone-row>
+                {% trans "Restriction" as rest_zone_restriction_label %}
+                {% include "includes/_meta_cell.html" with tag="dt" text=rest_zone_restriction_label only %}
+                <dd data-rest-zone-restriction class="text-sm leading-prose text-text-1"></dd>
+            </div>
+        </dl>
+        <a
+            data-rest-zone-rules
+            href="#"
+            target="_blank"
+            rel="noopener"
+            class='{% button_classes variant="secondary" size="compact" is_anchor=True %} hover-affordance inline-flex h-11 items-center justify-center gap-1'
+        >
+            {% trans "Rules for this zone" %}
+            {% include "includes/_icon_external_link.html" with size=14 %}
+        </a>
+        <p class="text-meta text-text-3">{% trans "Wildlife rest zones © BAFU" %}</p>
+    </div>
+</template>
+{# Every user-facing string rest_zones.js writes (docs/i18n.md). #}
+<template id="rest-zone-strings-template">
+    <span data-string="binding">{% trans "Legally binding" %}</span>
+    <span data-string="recommended">{% trans "Recommended" %}</span>
+    <span data-string="in_force_today">{% trans "Protected on this day" %}</span>
+    <span data-string="not_in_force">{% trans "Not protected on this day" %}</span>
+    <span data-string="period_unknown">{% trans "Period not stated" %}</span>
+</template>
+<script defer src="{% static 'js/rest_zones_core.js' %}"></script>
+<script defer src="{% static 'js/rest_zones.js' %}"></script>
