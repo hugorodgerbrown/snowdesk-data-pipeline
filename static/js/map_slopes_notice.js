@@ -191,6 +191,38 @@
    *
    * @param {string} regionId
    */
+  /**
+   * What the core decides on: the map's state now, and the region at the
+   * centre.
+   *
+   * @returns {{input: Object, regionId: ?string}}
+   */
+  const readMap = () => {
+    const feature = regionAtCentre();
+    const props = (feature && feature.properties) || {};
+    return {
+      regionId: props.id ? String(props.id) : null,
+      input: {
+        zoom: MAP.getZoom(),
+        slopesOn: !!(window.pwaBulletinTerrain && window.pwaBulletinTerrain.isEnabled()),
+        filterOn: !!(window.pwaTerrainFilter && window.pwaTerrainFilter.isEnabled()),
+        country: props.country || null,
+        sheetOpen: sheetOpen(),
+        overlayOpen: overlayOpen(),
+        tourRunning: tourRunning(),
+      },
+    };
+  };
+
+  /**
+   * Show the card for a region once its key has settled. The map is read
+   * again first: if the reader opened another overlay or a sheet, zoomed
+   * out or switched the slopes off while the key loaded, the card stays
+   * hidden rather than closing what they opened, and the device is given
+   * its turn back for a later move.
+   *
+   * @param {string} regionId
+   */
   const show = (regionId) => {
     const ask = new AbortController();
     pending = ask;
@@ -198,6 +230,11 @@
       // hide() cleared it: dismissed before it ever appeared.
       if (pending !== ask) return;
       pending = null;
+      if (!core.eligible(readMap().input)) {
+        core.unmarkSeen(storage());
+        listenAgain();
+        return;
+      }
       window.pwaMapOverlays?.opening(OVERLAY_NAME);
       notice.hidden = false;
     });
@@ -205,20 +242,10 @@
 
   /** After a camera move: show the card if the core says this is the moment. */
   const consider = () => {
-    const feature = regionAtCentre();
-    const props = (feature && feature.properties) || {};
-    const input = {
-      zoom: MAP.getZoom(),
-      slopesOn: !!(window.pwaBulletinTerrain && window.pwaBulletinTerrain.isEnabled()),
-      filterOn: !!(window.pwaTerrainFilter && window.pwaTerrainFilter.isEnabled()),
-      country: props.country || null,
-      sheetOpen: sheetOpen(),
-      overlayOpen: overlayOpen(),
-      tourRunning: tourRunning(),
-    };
-    if (!props.id || !core.claim(input, storage())) return;
+    const { input, regionId } = readMap();
+    if (!regionId || !core.claim(input, storage())) return;
     MAP.off('moveend', consider);
-    show(String(props.id));
+    show(regionId);
   };
 
   listenAgain = () => {

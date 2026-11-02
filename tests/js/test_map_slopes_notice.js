@@ -158,6 +158,33 @@ describe('the slopes notice', () => {
     expect(localStorage.getItem('snowdesk.map.slopes_notice_seen')).toBe('seen');
   });
 
+  it('stays hidden, unseen, when another overlay opened while its key loaded', async () => {
+    let settle;
+    boot(() => new Promise((resolve) => { settle = resolve; }));
+    let menuOpen = false;
+    window.pwaMapOverlays.register('basemap-menu', {
+      isOpen: () => menuOpen,
+      close: () => { menuOpen = false; },
+    });
+    fire('moveend');
+    // The reader opens the layers menu while the key is still loading.
+    window.pwaMapOverlays.opening('basemap-menu');
+    menuOpen = true;
+    settle({ ok: true, text: () => Promise.resolve('') });
+    await flush();
+    await flush();
+    expect(notice().hidden).toBe(true);
+    expect(menuOpen).toBe(true);
+    expect(localStorage.getItem('snowdesk.map.slopes_notice_seen')).toBeNull();
+    // With the menu closed again, the next qualifying move shows it.
+    menuOpen = false;
+    fire('moveend');
+    settle({ ok: true, text: () => Promise.resolve('') });
+    await flush();
+    await flush();
+    expect(notice().hidden).toBe(false);
+  });
+
   it('registers as a map overlay under its id', () => {
     boot(() => Promise.resolve({ ok: true, text: () => Promise.resolve('') }));
     expect(window.pwaMapOverlays.names()).toContain('map-slopes-notice');
