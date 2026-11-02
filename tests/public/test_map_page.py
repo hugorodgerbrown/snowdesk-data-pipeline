@@ -530,42 +530,51 @@ def test_the_date_control_has_day_steps_either_side() -> None:
 
 
 @pytest.mark.django_db
-def test_the_alert_bell_ships_hidden_for_an_account_with_alerts_on() -> None:
-    """SNOW-1333: the bell lists alerts, hidden until map_alerts.js has one.
+def test_the_today_sun_follows_today_and_carries_the_alert_dot() -> None:
+    """SNOW-1366: the sun opens Today; it took the bell's place and its dot.
 
-    The bell follows "Today" in the date row and names where it reads its
-    list; its card is a closed dialog the bell controls.
+    It follows "Today" in the date row, controls the Today sheet, and for
+    an account with alerts on names where the dot reads the alerts from.
+    The bell (SNOW-1333) and its card are gone.
     """
     account = AccountFactory.create(notify_when="NEW_BULLETIN")
     client = Client()
     client.force_login(account.user)
     with override_flag("bulletin_alerts", active=True):
         content = client.get(reverse("public:map")).content.decode()
-    start = content.index('id="map-alerts"')
-    tag = content[content.rindex("<div", 0, start) : content.index(">", start)]
-    assert "hidden" in tag
-    assert 'data-alerts-url="/account/alerts/recent/"' in tag
+    start = content.index('id="map-today-panel-toggle"')
+    tag = content[content.rindex("<button", 0, start) : content.index(">", start)]
     assert content.index('id="map-today-control"') < start
-    assert 'aria-controls="map-alerts-card"' in content
-    assert "aria-label='Your alerts'" in content
-    card = content.index('id="map-alerts-card"')
-    tag = content[content.rindex("<div", 0, card) : content.index(">", card)]
-    assert "hidden" in tag
-    assert 'role="dialog"' in tag
-    assert "/static/js/map_alerts.js" in content
+    assert 'aria-controls="today-sheet"' in tag
+    assert "aria-label='Your places today'" in tag
+    assert 'data-alerts-url="/account/alerts/recent/"' in tag
+    assert "data-today-dot" in content
+    assert 'id="today-sheet"' in content
+    assert "/favourites/partials/today/" in content
+    assert "/static/js/today_panel.js" in content
+    assert 'id="map-alerts"' not in content
+    assert "/static/js/map_alerts.js" not in content
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("case", ["anonymous", "flag_off", "alerts_off"])
-def test_no_alert_bell_without_alerts(case: str) -> None:
-    """SNOW-1333: no bell signed out, with the flag off, or with alerts off."""
+@pytest.mark.parametrize("case", ["flag_off", "alerts_off"])
+def test_the_sun_has_no_alerts_to_read_without_alerts(case: str) -> None:
+    """SNOW-1366: signed in with alerts off (or the flag off), no dot to read."""
     client = Client()
-    if case != "anonymous":
-        notify = "OFF" if case == "alerts_off" else "NEW_BULLETIN"
-        client.force_login(AccountFactory.create(notify_when=notify).user)
+    notify = "OFF" if case == "alerts_off" else "NEW_BULLETIN"
+    client.force_login(AccountFactory.create(notify_when=notify).user)
     with override_flag("bulletin_alerts", active=case != "flag_off"):
         content = client.get(reverse("public:map")).content.decode()
-    assert 'id="map-alerts"' not in content
+    assert 'id="map-today-panel-toggle"' in content
+    assert "data-alerts-url" not in content
+
+
+@pytest.mark.django_db
+def test_no_today_sun_for_a_visitor() -> None:
+    """SNOW-1366: a visitor has pinned nothing, so has no Today panel."""
+    content = Client().get(reverse("public:map")).content.decode()
+    assert 'id="map-today-panel-toggle"' not in content
+    assert 'id="today-sheet"' not in content
     assert "map-day-notes" not in content
 
 

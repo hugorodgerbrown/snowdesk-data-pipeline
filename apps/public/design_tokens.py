@@ -81,7 +81,6 @@ from apps.public._component_fixtures import (
     ROUTE_PROFILE_VARIANTS,
     ROUTE_RAIL_VARIANTS,
     ROW_DISCLOSURE_VARIANTS,
-    SAVED_TODAY_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
     SEASON_CELL_VARIANTS,
     SEASON_SCRUBBER_VARIANTS,
@@ -98,6 +97,7 @@ from apps.public._component_fixtures import (
     THREE_WORD_ADDRESS_VARIANTS,
     TOAST_BANNER_VARIANTS,
     TOAST_VARIANTS,
+    TODAY_VARIANTS,
     UGC_PANEL_GROUP_VARIANTS,
     UGC_PANEL_ROW_VARIANTS,
     UGC_PANEL_VARIANTS,
@@ -1277,17 +1277,18 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         panel_layout="stack",
     ),
     FoundationCategory(
-        slug="saved-today",
-        label="Saved today",
+        slug="today-panel",
+        label="Today panel",
         description=(
-            'The Favourites panel\'s "Today" block (SNOW-1359): one row per '
-            "saved place, every kind, with the region's danger today, its "
-            "move since yesterday and the borrowed nearest forecast, most "
-            "urgent first. Built by apps/favourites/saved_today.py."
+            "The map's Today panel (SNOW-1366): one row per region the "
+            "reader pinned or holds a pinned resort in, with the region's "
+            "danger today and its move since yesterday, and the pinned "
+            "resorts nested under it with their weather. Alphabetical, "
+            "always today. Built by apps/favourites/today.py."
         ),
         kind="components",
-        partial="favourites/partials/_saved_today.html",
-        variants=SAVED_TODAY_VARIANTS,
+        partial="favourites/partials/_today.html",
+        variants=TODAY_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

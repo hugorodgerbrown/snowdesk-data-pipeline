@@ -33,15 +33,22 @@ Context:
   testid   — optional ``data-testid``.
   day_rating — optional, kind "region" only: a RegionDayRating whose
              ``max_rating`` the square shows as the EAWS danger tile.
+  forecast_icon — optional: a weather icon filename (``weather_icon_filename``)
+             drawn before the chevron, with ``forecast_temp`` beside it. The
+             Today panel's resort rows (SNOW-1366) carry the resort's
+             weather this way; no other caller passes it.
+  forecast_temp — optional, with ``forecast_icon``: the day's maximum, °C.
+  nested   — optional: indent the row under the one above it, as the Today
+             panel nests a region's resorts (SNOW-1366).
 {% endcomment %}
-{% load snowdesk_time %}
+{% load snowdesk_time weather_icons %}
 <a
     href="{{ href }}"
     data-panel-open="{{ kind }}"
     data-panel-id="{{ open_id }}"
     {% if kind == "resort" %}data-resort-slug="{{ open_id }}"{% endif %}
     {% if testid %}data-testid="{{ testid }}"{% endif %}
-    class="flex min-w-0 items-center gap-3 px-4 py-3 hover:bg-card-hover"
+    class="flex min-w-0 items-center gap-3 {% if nested %}py-2 pl-16 pr-4{% else %}px-4 py-3{% endif %} hover:bg-card-hover"
 >
     {% if kind == "resort" %}
         {% include "includes/_resort_tile.html" with kind="resort" only %}
@@ -67,6 +74,17 @@ Context:
         <span class="block truncate text-label font-semibold text-text-1">{{ title }}</span>
         {% if subtitle %}<span class="block truncate text-sm text-text-3">{{ subtitle }}</span>{% endif %}
     </span>
+    {% if forecast_icon %}
+        <span class="flex flex-none items-center gap-1 text-sm text-text-1" data-testid="place-link-forecast">
+            <img
+                src="{% weather_icon_url forecast_icon %}"
+                class="{% weather_icon_class %} h-6 w-6"
+                alt=""
+                aria-hidden="true"
+            >
+            {% if forecast_temp is not None %}{{ forecast_temp|floatformat:0 }}&deg;{% endif %}
+        </span>
+    {% endif %}
     <span
         class="flex-none text-text-3"
     >{% include "includes/_icon_chevron.html" with svg_class="-rotate-90" only %}</span>

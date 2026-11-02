@@ -1587,9 +1587,9 @@
 }
 
 /* SNOW-1173: a row's leading tile — the resort's round pin tile, or the
-   region's square .danger-tile (its colours come from main.css; this only
-   sizes it to the row). Different shapes because they are different things:
-   a resort is a place on the map, a region a bulletin with a level. */
+   region's square (a .danger-tile until SNOW-1366; the map glyph since).
+   Different shapes because they are different things: a resort is a place
+   on the map, a region a bulletin's area. */
 .search-result-tile {
     flex: 0 0 auto;
     min-width: 32px;
@@ -1606,6 +1606,19 @@
     border-radius: 999px;
     background: var(--color-tag);
     color: var(--color-text-1);
+}
+
+/* SNOW-1366: a region's tile — square, because it is a bulletin's area, and
+   carrying the map glyph rather than the day's level, the square the place
+   sheets' region rows draw (includes/_place_link_row.html). */
+.search-result-tile--region {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-tag);
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-card-hover);
+    color: var(--color-text-2);
 }
 
 /* SNOW-1264: a dropped pin's tile — round, because it is a place, and
@@ -2158,7 +2171,7 @@ html[data-route-drawing] #map-tour-offer {
     #map-date-row > #map-calendar-toggle,
     #map-date-row > #map-today-control,
     #map-date-row > .map-day-step,
-    #map-date-row > .map-alerts {
+    #map-date-row > .map-today-panel-toggle {
         display: none;
     }
 }
@@ -2294,27 +2307,14 @@ html[data-route-drawing] #map-tour-offer {
     border-bottom-right-radius: 0;
 }
 
-/* SNOW-1333: the bell — the account's bulletin alerts from the past week
-   (map_alerts.js), drawn only for an account with alerts on and shown only
-   while there is one to list, carrying a dot while one is new, and the card
-   it opens. SNOW-1206 put the day's notes here; the bell now lists alerts
-   and nothing else. The bell is the legend toggle's roundel; the card opens
-   upward from it, as the calendar does from the date control. */
-.map-alerts {
+/* SNOW-1366: the Today panel's sun — an icon roundel in the date row. It
+   took the place of SNOW-1333's bell, which listed the account's alerts of
+   the past week: Today shows the same places' state, so the bell's list
+   went and its red dot came here (Hugo, 2 Nov 2026). */
+.map-today-panel-toggle {
     position: relative;
     display: inline-flex;
     flex: none;
-}
-
-.map-alerts[hidden],
-.map-alerts-dot[hidden],
-.map-alerts-card[hidden] {
-    display: none;
-}
-
-.map-alerts-toggle {
-    position: relative;
-    display: inline-flex;
     align-items: center;
     justify-content: center;
     width: var(--map-control-sm);
@@ -2330,10 +2330,14 @@ html[data-route-drawing] #map-tour-offer {
     cursor: pointer;
 }
 
-/* The dot: an alert sent since this device last opened the list. The
+.map-today-panel-toggle[aria-expanded="true"] {
+    background: var(--color-card);
+}
+
+/* The dot: an alert sent since this device last opened Today. The
    high-danger red is the map's one "look here" colour, ringed in the card
    colour so it reads on the glass at either theme. */
-.map-alerts-dot {
+.map-today-dot {
     position: absolute;
     top: 5px;
     right: 6px;
@@ -2344,78 +2348,8 @@ html[data-route-drawing] #map-tour-offer {
     box-shadow: 0 0 0 2px var(--color-card);
 }
 
-/* Opens upward from the bell, on the stack's own bound so it cannot run off
-   the top of the map. map_alerts.js shifts `left` clear of a left-hand
-   sheet on a desktop. */
-.map-alerts-card {
-    position: absolute;
-    left: 0;
-    bottom: calc(var(--map-control-sm) + 8px);
-    z-index: 1;
-    width: 18rem;
-    max-width: calc(100vw - var(--map-edge-inset-left) - var(--map-edge-inset-right));
-    max-height: calc(100dvh - var(--map-edge-inset-top) - var(--map-legend-card-bottom-offset));
-    overflow-y: auto;
-    padding: 6px 0;
-    background: var(--color-card);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-card);
-    box-shadow: var(--shadow-glass);
-    color: var(--color-text-1);
-    font-size: 13px;
-    line-height: 1.4;
-    white-space: normal;
-}
-
-/* "Your alerts", in the eyebrow's face. */
-.map-alerts-heading {
-    margin: 4px 14px 2px;
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--color-text-3);
-}
-
-.map-alerts-list {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-}
-
-.map-alerts-item + .map-alerts-item {
-    border-top: 0.5px solid var(--color-border);
-}
-
-.map-alerts-item-title {
-    margin: 0;
-    font-weight: 600;
-}
-
-.map-alerts-item-detail {
-    margin: 2px 0 0;
-    font-size: 12px;
-    color: var(--color-text-2);
-}
-
-.map-alerts-item-sent {
-    margin: 2px 0 0;
-    font-size: 11px;
-    color: var(--color-text-3);
-}
-
-/* Each alert is the link its push opened. */
-.map-alerts-link {
-    display: block;
-    padding: 8px 14px;
-    color: inherit;
-    text-decoration: none;
-}
-
-.map-alerts-link:hover,
-.map-alerts-link:focus-visible {
-    background: var(--color-chip);
+.map-today-dot[hidden] {
+    display: none;
 }
 
 /* SNOW-794: the date control — one pill that both SAYS the day and OPENS
@@ -6557,24 +6491,10 @@ body.map-framing #map-legend {
         width: 34px;
     }
 
-    /* SNOW-1206: the bell takes the top row's height, and its card
-       drops under the row, where the calendar card drops, so a peeking
-       sheet never covers it. The wrapper stops being the card's anchor so
-       the card spans from the cluster's own left edge. */
-    .map-utility-cluster > .map-alerts {
-        position: static;
-    }
-
-    .map-utility-cluster > .map-alerts > .map-alerts-toggle {
+    /* The Today sun takes the top row's height, as the date control does. */
+    .map-utility-cluster > .map-today-panel-toggle {
         width: var(--map-control-lg);
         height: var(--map-control-lg);
-    }
-
-    .map-utility-cluster > .map-alerts > .map-alerts-card {
-        top: calc(var(--map-control-lg) + 8px);
-        left: 0;
-        bottom: auto;
-        max-height: min(420px, calc(100dvh - 120px));
     }
 
     .search-results {

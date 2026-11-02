@@ -277,6 +277,10 @@ Optional context:
         <template id="search-resort-icon-template">
             {% include "includes/_icon_resort.html" with svg_class="search-result-pin" %}
         </template>
+        {# SNOW-1366: a region's row leads with the map glyph, not its level. #}
+        <template id="search-region-icon-template">
+            {% include "includes/_icon_map.html" with size=16 only %}
+        </template>
         {# SNOW-1264: a dropped pin's row leads with the favourites star. #}
         <template id="search-pin-icon-template">
             {% include "includes/_icon_favourite.html" with svg_class="search-result-pin" filled=True %}
@@ -1715,53 +1719,35 @@ Optional context:
                 <span>{% trans "Today" %}</span>
             </button>
             {% comment %}
-            SNOW-1333: the bell lists the account's bulletin alerts from the
-            past week, the messages its pushes and emails carried, each
-            linking where the push did. Rendered only for an account with
-            alerts on (alert_list_url); shown by static/js/map_alerts.js only
-            once the list has an alert in it, with a dot while one has
-            arrived since this device last opened it. SNOW-1206 put the
-            day's notes here; Hugo gave the bell to alerts and nothing else.
-            On a phone map_calendar.js moves it up with the date control.
+            SNOW-1366: the Today panel's roundel — the reader's pinned regions
+            and resorts, today (public/partials/_today_surface.html,
+            static/js/today_panel.js). In the date row because it is about a
+            day, and icon-only so it does not repeat the "Today" beside it,
+            which moves the map and not a panel. Signed in only: a visitor
+            has pinned nothing. On a phone map_calendar.js moves it up with
+            the date control.
+
+            It took the place of SNOW-1333's bell, which listed the account's
+            alerts of the past week: Today shows the same places as they are
+            now, so the list went (Hugo, 2 Nov 2026) and the bell's red dot
+            came here. For an account with alerts on (alert_list_url) the
+            dot shows while an alert has been sent since this device last
+            opened Today; static/js/today_panel.js reads it.
             {% endcomment %}
-            {% if alert_list_url %}
-                <div id="map-alerts" class="map-alerts" data-alerts-url="{{ alert_list_url }}" hidden>
-                    <button
-                        id="map-alerts-toggle"
-                        type="button"
-                        class="map-alerts-toggle hover-affordance"
-                        aria-label='{% trans "Your alerts" %}'
-                        aria-expanded="false"
-                        aria-controls="map-alerts-card"
-                    >
-                        <svg
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            aria-hidden="true"
-                        >
-                            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-                            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-                        </svg>
-                        <span class="map-alerts-dot" data-alerts-dot hidden></span>
-                    </button>
-                    <div
-                        id="map-alerts-card"
-                        class="map-alerts-card"
-                        role="dialog"
-                        aria-modal="false"
-                        aria-labelledby="map-alerts-heading"
-                        hidden
-                    >
-                        <p id="map-alerts-heading" class="map-alerts-heading">{% trans "Your alerts" %}</p>
-                        <ul class="map-alerts-list" data-alerts-list></ul>
-                    </div>
-                </div>
+            {% if favourites_eligible %}
+                <button
+                    id="map-today-panel-toggle"
+                    type="button"
+                    class="map-today-panel-toggle hover-affordance"
+                    aria-label='{% trans "Your places today" %}'
+                    aria-expanded="false"
+                    aria-controls="today-sheet"
+                    data-testid="today-panel-toggle"
+                    {% if alert_list_url %}data-alerts-url="{{ alert_list_url }}"{% endif %}
+                >
+                    {% include "includes/_icon_sun.html" with size=16 only %}
+                    <span class="map-today-dot" data-today-dot hidden></span>
+                </button>
             {% endif %}
             {% if terrain_filter_eligible %}
                 {# map_problem_terrain_key.js's strings: the layers-menu row's #}

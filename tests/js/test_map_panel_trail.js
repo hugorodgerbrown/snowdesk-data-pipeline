@@ -21,7 +21,7 @@ document.body.innerHTML = `
   <div id="region-sheet" hidden></div>
   <div id="place-sheet" hidden></div>
   <div id="weather-sheet" hidden></div>
-  <div id="favourite-sheet"></div>
+  <div id="today-sheet"></div>
   <template id="panel-trail-back-template">
     <button type="button" data-panel-back data-testid="panel-back">
       <span data-panel-back-name></span>
@@ -123,16 +123,15 @@ describe('a place row', () => {
     document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: {} }));
   });
 
-  it("follows a region row in the Favourites panel's Today list (SNOW-1359)", () => {
-    const favourites = /** @type {HTMLElement} */ (document.getElementById('favourite-sheet'));
-    favourites.innerHTML = REGION_ROW;
+  it('follows a region row in the Today panel (SNOW-1366)', () => {
+    const today = /** @type {HTMLElement} */ (document.getElementById('today-sheet'));
+    today.innerHTML = REGION_ROW;
     const asked = listen('snowdesk:region-open');
-    const ev = click(favourites.querySelector('[data-panel-open]'));
+    const ev = click(today.querySelector('[data-panel-open]'));
     expect(ev.defaultPrevented).toBe(true);
     expect(asked).toHaveBeenCalledTimes(1);
     expect(asked.mock.calls[0][0].detail.region_id).toBe('CH-4115');
-    expect(region.querySelector('[data-panel-back]')).toBeNull();
-    favourites.innerHTML = '';
+    today.innerHTML = '';
   });
 
   it('leaves a modified click to the link, for a new tab', () => {
@@ -236,6 +235,21 @@ describe('a panel opening', () => {
 });
 
 describe('the back pill', () => {
+  it('leads back to the Today panel, which reopens itself (SNOW-1366)', async () => {
+    const today = /** @type {HTMLElement} */ (document.getElementById('today-sheet'));
+    today.innerHTML = `<div data-panel-key="today:now" data-panel-label="Today">${REGION_ROW}</div>`;
+    window.pwaTodayPanel = { open: vi.fn(), close: vi.fn(), isOpen: () => false };
+    click(today.querySelector('[data-panel-open]'));
+    today.innerHTML = '';
+    show(region, 'region:CH-4115', 'Martigny-Verbier');
+    await settle();
+    const pill = region.querySelector('[data-panel-back]');
+    expect(pill.querySelector('[data-panel-back-name]').textContent).toBe('Today');
+    click(pill);
+    expect(window.pwaTodayPanel.open).toHaveBeenCalledTimes(1);
+    delete window.pwaTodayPanel;
+  });
+
   it('names the panel the reader came from, at the top of the new one', async () => {
     show(place, 'resort:veysonnaz', 'Veysonnaz', REGION_ROW);
     click(place.querySelector('[data-panel-open]'));

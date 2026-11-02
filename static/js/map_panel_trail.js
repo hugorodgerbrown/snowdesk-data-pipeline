@@ -26,7 +26,10 @@
  *             all the same, without one). A resort row in the region sheet is
  *             already opened by map_region_sheet.js, which prevents the
  *             link's default; this module then only records the trail;
- *   weather — `window.pwaWeatherDetail.open(shortId, dateKey)`.
+ *   weather — `window.pwaWeatherDetail.open(shortId, dateKey)`;
+ *   today   — `window.pwaTodayPanel.open()`, the Today panel (SNOW-1366):
+ *             never a row's target, only the back pill's, for a region or
+ *             resort reached from it.
  *
  * A NEW PANEL OPENS AT THE HEIGHT THE OLD ONE HAD. On a phone a row or the
  * back pill tells map_sheet.js (`MapSheet.handOff`) the detent the open
@@ -50,11 +53,13 @@
   'use strict';
 
   var SHEET_IDS = ['region-sheet', 'place-sheet', 'weather-sheet'];
-  // SNOW-1359: the Favourites panel's "Today" rows open a region the same
-  // way, so a row in it is followed too. It is not one of the place
-  // sheets above (it has no panel key, gets no back pill and is not
-  // scrolled), so it joins only the list a followed row may sit in.
-  var LINK_SHEET_IDS = SHEET_IDS.concat(['favourite-sheet']);
+  // SNOW-1366: the Today panel's rows open a region or a resort the same
+  // way, so a row in it is followed too. It is not one of the place sheets
+  // above (it gets no back pill of its own and is not scrolled), so it
+  // joins only the list a followed row may sit in; its list's root carries
+  // `data-panel-key="today:now"`, so the sheet a row opens offers the way
+  // back to it (the `today` kind in openKey).
+  var LINK_SHEET_IDS = SHEET_IDS.concat(['today-sheet']);
   var found = document.getElementById('panel-trail-back-template');
   if (!(found instanceof HTMLTemplateElement)) return;
   var template = found;
@@ -119,6 +124,8 @@
       document.dispatchEvent(new CustomEvent('snowdesk:resort-open', {
         detail: { slug: id, href: href },
       }));
+    } else if (kind === 'today') {
+      if (window.pwaTodayPanel) window.pwaTodayPanel.open();
     } else if (kind === 'weather') {
       if (window.pwaWeatherDetail) window.pwaWeatherDetail.open(id, dateKey || undefined);
       else if (href) window.location.assign(href);

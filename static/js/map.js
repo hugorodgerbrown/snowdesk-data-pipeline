@@ -11223,11 +11223,14 @@
 
     // The day's level as a .danger-tile digit, keyed as the feature-state
     // `rating` the choropleth paints from.
-    const DANGER_DIGIT = { low: '1', moderate: '2', considerable: '3', high: '4', very_high: '5' };
 
     // SNOW-1177: the resort glyph the embed renders from _icon_resort.html.
     const resortIconTemplate = /** @type {HTMLTemplateElement|null} */ (
       document.getElementById('search-resort-icon-template')
+    );
+    // SNOW-1366: a region's map glyph, from the partial the place rows use.
+    const regionIconTemplate = /** @type {HTMLTemplateElement|null} */ (
+      document.getElementById('search-region-icon-template')
     );
     // SNOW-1264: the favourites star, from the partial the roundel uses.
     const pinIconTemplate = /** @type {HTMLTemplateElement|null} */ (
@@ -11240,10 +11243,9 @@
      * A resort is a place and a region is a bulletin, so the two lead with
      * different things: a resort a round tile with the gondola cabin
      * (SNOW-1177), round like its marker on the map; a region a square
-     * .danger-tile carrying the displayed day's level, as the region
-     * sheet's header does — read off the same feature-state the map is
-     * painted from, so the row and the polygon cannot disagree. A region
-     * with no rating that day gets the tile's no_rating state with a dash.
+     * with the map glyph, as the place sheets' region rows draw it. Until
+     * SNOW-1366 the region's square was a .danger-tile carrying the day's
+     * level; search carries no readings now, the Today panel does.
      *
      * @param {{type: string, regionID: string}} r The row.
      * @returns {Element} The tile, decorative (aria-hidden).
@@ -11286,14 +11288,17 @@
         if (pin) tile.append(pin);
         return tile;
       }
-      const feature = FEATURE_BY_REGION_ID[r.regionID];
-      const state = feature && map ? map.getFeatureState({ source: 'regions', id: feature.id }) : null;
-      const level = state && DANGER_DIGIT[state.rating] ? state.rating : 'no_rating';
+      // SNOW-1366: a region leads with the square the place sheets give a
+      // region (includes/_place_link_row.html), carrying the map glyph, not
+      // the day's level: search says what a place IS, and today's readings
+      // are the Today panel's (Hugo, 2 Nov 2026).
       const tile = document.createElement('span');
-      tile.className = 'danger-tile search-result-tile';
-      tile.dataset.level = level;
+      tile.className = 'search-result-tile search-result-tile--region';
       tile.setAttribute('aria-hidden', 'true');
-      tile.textContent = DANGER_DIGIT[level] || '–';
+      const glyph = regionIconTemplate
+        ? regionIconTemplate.content.firstElementChild.cloneNode(true)
+        : null;
+      if (glyph) tile.append(glyph);
       return tile;
     };
 

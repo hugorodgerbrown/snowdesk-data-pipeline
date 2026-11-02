@@ -8,7 +8,7 @@ Rewritten to describe the panel the star roundel opens (SNOW-658) rather
 than the pin-placement flow it used to start directly. SNOW-904 took the
 panel's "Display on the map" switch away; the two-capsule control column
 gave it back as "Show on the map", bound to the layers menu's Favourites
-row, so either control draws them.
+row, so either control draws them. SNOW-1366 added the Today paragraph.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
@@ -30,6 +30,13 @@ row, so either control draws them.
         {% blocktrans trimmed %}
             To pin a resort, open it and press the star in its header. A pinned resort turns blue on the map, and search
             lists it under "Pinned resorts" before you type anything, beside the regions you have pinned.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-favourites-today">
+        {% blocktrans trimmed %}
+            The sun next to "Today" above the map opens Today: each region you have pinned, and each region a pinned
+            resort is in, with today's avalanche danger and how it moved since yesterday, and your resorts listed under
+            their region with today's weather. Tap a row to open that place. A red dot on the sun means a new alert.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0">

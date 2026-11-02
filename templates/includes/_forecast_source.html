@@ -20,7 +20,8 @@ Context:
              ``distance_km`` and ``is_same_place`` — a TripWeather or a
              NearestForecast.
     anchor : what borrows it — "start" (a route's start), "meeting" (a
-             trip's meeting point) or "pin" (a saved pin).
+             trip's meeting point), "pin" (a saved pin) or "resort" (a
+             saved resort, in the Today panel, SNOW-1366).
 {% endcomment %}
 {% if source.is_same_place %}
     {% if source.elevation_m is not None %}
@@ -40,6 +41,16 @@ Context:
     {% else %}
         {% blocktrans trimmed with place=source.label km=source.distance_km|floatformat:"-1" %}
             Forecast for {{ place }}, {{ km }} km from the meeting point.
+        {% endblocktrans %}
+    {% endif %}
+{% elif anchor == "resort" %}
+    {% if source.elevation_m is not None %}
+        {% blocktrans trimmed with place=source.label height=source.elevation_m km=source.distance_km|floatformat:"-1" %}
+            Forecast for {{ place }} ({{ height }} m), {{ km }} km from the resort.
+        {% endblocktrans %}
+    {% else %}
+        {% blocktrans trimmed with place=source.label km=source.distance_km|floatformat:"-1" %}
+            Forecast for {{ place }}, {{ km }} km from the resort.
         {% endblocktrans %}
     {% endif %}
 {% elif anchor == "pin" %}
