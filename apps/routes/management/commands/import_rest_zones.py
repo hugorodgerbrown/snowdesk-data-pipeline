@@ -72,6 +72,10 @@ def _any_failed(applied: dict[str, Counter[str]]) -> bool:
 class Command(RegisteredCommand):
     """Import FOEN's wildlife rest zones, and apply them here."""
 
+    # Offered to the ops MCP server's run_command (apps.core.remote_commands):
+    # it is a release Deploy-Step and finishes in minutes.
+    mcp_runnable = True
+
     help = (
         "Import FOEN's wildlife rest zones from geo.admin into the "
         "reference-data service and apply them to this instance. Read-only "

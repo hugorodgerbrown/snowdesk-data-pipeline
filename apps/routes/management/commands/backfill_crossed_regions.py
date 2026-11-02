@@ -66,6 +66,10 @@ def describe_trip(trip: Trip) -> str:
 class Command(RegisteredCommand):
     """Fill Route.crossed_regions and Trip.crossed_regions where null."""
 
+    # Offered to the ops MCP server's run_command (apps.core.remote_commands):
+    # it is a release Deploy-Step and finishes in minutes.
+    mcp_runnable = True
+
     help = (
         "Resolve the regions each route's and trip's track crosses and store "
         "them in crossed_regions where it is still null. Read-only unless "
