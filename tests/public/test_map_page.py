@@ -2409,6 +2409,27 @@ def test_steep_terrain_row_is_a_switch_and_an_options_opener() -> None:
 
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_terrain_filter_sheet_opens_on_the_problem_terrain_switch() -> None:
+    """SNOW-1297: the bulletin's layer is switched from the top of the sheet.
+
+    One overlay-toggle strip, above the Colour tiles, labelled as the
+    layers-menu row is. It is not a third colour: the tiles stay two.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    sheet = content[content.index('id="map-terrain-filter-template"') :]
+    sheet = sheet[: sheet.index("</template>")]
+
+    toggle = sheet.index('id="terrain-filter-problem-terrain-toggle"')
+    assert "data-panel-overlay-toggle" in sheet
+    assert "Highlight problem terrain" in sheet
+    assert "Painted from each region" in sheet
+    assert "bulletin, over this filter" in sheet
+    assert toggle < sheet.index('name="terrain-filter-mode"')
+    assert sheet.count('name="terrain-filter-mode"') == 2
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
 def test_terrain_filter_sheet_renders_the_compact_controls() -> None:
     """SNOW-1073, SNOW-1109: two mode tiles, the ramp, the rose, the lists.
 

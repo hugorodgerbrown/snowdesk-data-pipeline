@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-10-28
+last-reviewed: 2026-11-02
 ---
 
 # Map page — functional specification
@@ -639,6 +639,10 @@ layer sits **under the region choropleth**.
 the hairline: **"Terrain filter"**, a checkbox like the overlay rows round
 it (SNOW-1109), with an icon-only **adjust** button beside it that opens
 the filter's sheet — and turns the filter on first if it is off. The sheet
+opens on the **"Highlight problem terrain"** switch (SNOW-1297): the
+bulletin's own layer, the same state as its layers-menu row and the region
+sheet's switch, not a mode of the filter, so it can be turned off where a
+reader goes to change what is painted on the ground. Below it the sheet
 carries the mode as two tiles ("One tint" / "By slope"), the slope range as
 a ramp of five class buttons that doubles as the slope key, an aspect rose
 of eight wedges with an "All" centre, an elevation mountain over two lists

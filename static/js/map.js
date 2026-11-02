@@ -5389,9 +5389,10 @@
       announceProblemTerrain();
     };
 
-    // The layer's one owner of state. Two controls write it — the layers
-    // menu's "Highlight problem terrain" row (map_basemap_picker.js) and the
-    // region sheet's switch — and each reads it back
+    // The layer's one owner of state. Three controls write it — the layers
+    // menu's "Highlight problem terrain" row (map_basemap_picker.js), the
+    // region sheet's switch and the Steep terrain sheet's (SNOW-1297,
+    // terrain_filter_sheet.js) — and each reads it back
     // from snowdesk:problem-terrain-changed, so they cannot disagree.
     window.pwaBulletinTerrain = Object.freeze({
       isEnabled: bulletinTerrainShown,
