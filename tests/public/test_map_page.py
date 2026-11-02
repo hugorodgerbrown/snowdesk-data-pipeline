@@ -3068,7 +3068,9 @@ def test_slopes_notice_renders_hidden_with_its_strings() -> None:
     # The fallback is the legend's whole-scale key.
     assert "data-slopes-notice-key" in card
     assert "map-legend-swatch--terrain-very_high" in card
-    assert "Additional steep terrain (>30°)" in text
+    # SNOW-1392: undescribed steep ground is unpainted, so the key has no row.
+    assert "Additional steep terrain (>30°)" not in text
+    assert "No terrain data" in text
     assert "js/map_slopes_notice_core.js" in content
     assert "js/map_slopes_notice.js" in content
 

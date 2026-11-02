@@ -482,7 +482,8 @@ class TestProblemTerrainSwitch:
         key = content[content.index("data-region-sheet-terrain-key") :]
         assert "map-legend-swatch--terrain-considerable" in key
         assert "Considerable problem" in _text(key)
-        assert "Additional steep terrain (>30°)" in _text(key)
+        # SNOW-1392: undescribed steep ground is unpainted, so no row.
+        assert "Additional steep terrain (>30°)" not in _text(key)
         # No undecided rule, so no undecided swatch.
         assert "map-legend-swatch--terrain-undecided" not in key
 
@@ -578,7 +579,9 @@ class TestProblemTerrainSwitch:
         assert 'data-testid="region-sheet-terrain"' in content
         key = content[content.index("data-region-sheet-terrain-key") :]
         assert "map-legend-swatch--terrain-considerable" not in key
-        assert "Additional steep terrain (>30°)" in _text(key)
+        # SNOW-1392: nothing it paints but the no-data hatch.
+        assert "Additional steep terrain (>30°)" not in _text(key)
+        assert "No terrain data" in _text(key)
 
     def test_no_switch_on_a_day_without_a_bulletin(
         self, client: Client, settings: Any
