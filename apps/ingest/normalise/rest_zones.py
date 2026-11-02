@@ -41,8 +41,6 @@ BINDING = "rechtsverbindlich"
 # The languages FOEN states a zone's status and restriction in.
 LANGUAGES: tuple[str, ...] = ("de", "fr", "it")
 
-_POLYGONS = ("Polygon", "MultiPolygon")
-
 
 class RestZoneError(ValueError):
     """A feature that cannot be read, or two that disagree about one zone."""
@@ -72,6 +70,44 @@ def feature_id(feature: Mapping[str, Any]) -> int:
         raise RestZoneError(f"a rest zone has no feature id: {raw!r}") from None
 
 
+def _is_ring(ring: Any) -> bool:
+    """Return whether ``ring`` is a closed GeoJSON ring of [lon, lat] positions."""
+    return (
+        isinstance(ring, list)
+        and len(ring) >= 4
+        and all(
+            isinstance(position, list)
+            and len(position) >= 2
+            and all(isinstance(n, int | float) for n in position[:2])
+            for position in ring
+        )
+    )
+
+
+def _is_polygon_rings(rings: Any) -> bool:
+    """Return whether ``rings`` is one polygon: an outer ring, then any holes."""
+    return isinstance(rings, list) and bool(rings) and all(map(_is_ring, rings))
+
+
+def _is_polygon(geometry: Mapping[str, Any]) -> bool:
+    """Return whether a geometry is a Polygon or MultiPolygon with real rings.
+
+    Checked before the sync, because the sync tombstones what it does not
+    see: an empty ring that only failed at apply would already have
+    replaced the stored zone.
+    """
+    coordinates = geometry.get("coordinates")
+    if geometry.get("type") == "Polygon":
+        return _is_polygon_rings(coordinates)
+    if geometry.get("type") == "MultiPolygon":
+        return (
+            isinstance(coordinates, list)
+            and bool(coordinates)
+            and all(map(_is_polygon_rings, coordinates))
+        )
+    return False
+
+
 def rest_zone_document(feature: Mapping[str, Any]) -> dict[str, Any]:
     """Return one geo.admin feature as the document the service stores.
 
@@ -87,7 +123,7 @@ def rest_zone_document(feature: Mapping[str, Any]) -> dict[str, Any]:
     """
     key = feature_id(feature)
     geometry = feature.get("geometry") or {}
-    if geometry.get("type") not in _POLYGONS or not geometry.get("coordinates"):
+    if not _is_polygon(geometry):
         raise RestZoneError(f"rest zone {key} has no polygon")
     props = feature.get("properties") or {}
     return {

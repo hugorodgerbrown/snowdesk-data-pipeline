@@ -119,6 +119,35 @@ def test_a_feature_without_a_polygon_is_refused() -> None:
         rest_zone_document(broken)
 
 
+@pytest.mark.parametrize(
+    "geometry",
+    [
+        {"type": "Polygon", "coordinates": []},
+        {"type": "Polygon", "coordinates": [[]]},
+        {"type": "Polygon", "coordinates": [[[10.1, 46.7], [10.2, 46.7]]]},
+        {"type": "Polygon", "coordinates": [[["a", "b"]] * 4]},
+        {"type": "MultiPolygon", "coordinates": [[[]]]},
+        {"type": "MultiPolygon", "coordinates": [[]]},
+        {"type": "MultiPolygon", "coordinates": []},
+    ],
+)
+def test_a_polygon_with_no_usable_ring_is_refused(geometry: dict) -> None:
+    """An empty or degenerate ring is refused here, before the sync sees it."""
+    broken = feature()
+    broken["geometry"] = geometry
+    with pytest.raises(RestZoneError, match="no polygon"):
+        rest_zone_document(broken)
+
+
+def test_a_multipolygon_with_a_hole_is_kept() -> None:
+    """Holes are rings too; a well-formed MultiPolygon passes whole."""
+    outer = [[10.0, 46.0], [10.1, 46.0], [10.1, 46.1], [10.0, 46.0]]
+    hole = [[10.02, 46.02], [10.05, 46.02], [10.05, 46.05], [10.02, 46.02]]
+    whole = feature()
+    whole["geometry"] = {"type": "MultiPolygon", "coordinates": [[outer, hole]]}
+    assert rest_zone_document(whole)["geometry"]["type"] == "MultiPolygon"
+
+
 def test_a_feature_without_an_id_is_refused() -> None:
     """Identity is the id, so a feature without one cannot be stored."""
     broken = feature()

@@ -4,11 +4,13 @@ tests/routes/management/commands/test_import_rest_zones.py — import_rest_zones
 The command end to end against a fake geo.admin: a preview that writes
 nothing, a commit that fills the service and this instance, a second
 commit that changes nothing, and a failing canton that writes nothing and
-exits non-zero, with the zones already held intact.
+exits non-zero, with the zones already held intact; the same for a zone
+with an empty ring, and for a zone that fails to apply.
 """
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Iterator
 from io import StringIO
 from typing import Any
@@ -101,6 +103,37 @@ def test_a_failing_canton_writes_nothing_and_exits_non_zero(
     assert not SourceRestZone.objects.tombstoned().exists()
     assert RestZone.objects.count() == 2
     assert not RestZone.objects.filter(feature_id=3).exists()
+
+
+def test_an_empty_ring_writes_nothing_and_exits_non_zero(
+    geo_admin: mock.MagicMock,
+) -> None:
+    """A zone with an empty ring is refused before the sync tombstones anything."""
+    _run("--commit")
+    broken = feature(3)
+    broken["geometry"] = {"type": "Polygon", "coordinates": [[]]}
+    geo_admin.side_effect = lambda canton: [broken] if canton == "GR" else []
+    with pytest.raises(CommandError, match="no polygon.*Nothing was written"):
+        _run("--commit")
+    assert SourceRestZone.objects.live().count() == 2
+    assert not SourceRestZone.objects.tombstoned().exists()
+    assert not SourceRestZone.objects.filter(document__feature_id=3).exists()
+
+
+def test_a_zone_that_fails_to_apply_rolls_the_sync_back(
+    geo_admin: mock.MagicMock,
+) -> None:
+    """A failed apply undoes the service's sync as well, then exits non-zero."""
+    failed = {"rest-zones": Counter({"failed": 1})}
+    with (
+        mock.patch(
+            "apps.routes.management.commands.import_rest_zones.apply_from_service",
+            return_value=failed,
+        ),
+        pytest.raises(CommandError, match="1 zone.*Nothing was written"),
+    ):
+        _run("--commit")
+    assert not SourceRestZone.objects.exists()
 
 
 def test_the_run_is_registered() -> None:

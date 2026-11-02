@@ -64,6 +64,11 @@ class _Rollback(Exception):
     """Raised inside a preview's transaction so that nothing it wrote stays."""
 
 
+def _any_failed(applied: dict[str, Counter[str]]) -> bool:
+    """Return whether any kind's apply counted a failed zone."""
+    return any(outcomes[FAILED] for outcomes in applied.values())
+
+
 class Command(RegisteredCommand):
     """Import FOEN's wildlife rest zones, and apply them here."""
 
@@ -95,7 +100,10 @@ class Command(RegisteredCommand):
         failed = self._report(synced, applied, verbosity=verbosity)
         logger.info("import_rest_zones: commit=%s %s %s", commit, synced, applied)
         if failed:
-            raise CommandError(f"import_rest_zones: {failed} zone(s) failed to apply")
+            raise CommandError(
+                f"import_rest_zones: {failed} zone(s) failed to apply. "
+                "Nothing was written."
+            )
 
         if verbosity >= 1:
             if commit:
@@ -130,7 +138,9 @@ class Command(RegisteredCommand):
             with transaction.atomic():
                 synced = import_rest_zones()
                 applied = apply_from_service(commit=True, kinds=REST_ZONE_KINDS)
-                if not commit:
+                # A zone that fails to apply rolls the sync back too, so
+                # the feed never carries a document no instance can hold.
+                if not commit or _any_failed(applied):
                     raise _Rollback
         except _Rollback:
             pass
