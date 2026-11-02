@@ -295,7 +295,7 @@ class SourceLocation(models.Model):
 
 
 class SourceDocumentQuerySet(models.QuerySet[Any]):
-    """Queryset shared by the document tables, ``SourcePass`` and ``SourceResort``."""
+    """Queryset shared by the document tables (``SourcePass``, ``SourceResort``, …)."""
 
     def live(self) -> SourceDocumentQuerySet:
         """Return the documents not tombstoned.
@@ -357,8 +357,8 @@ class SourceDocument(models.Model):
     def changed_document_resets(cls) -> dict[str, Any]:
         """Return the fields to reset when a row's document changes.
 
-        None for a pass, a resort or a segment: the document is the whole
-        row. ``SourceSkiTour`` clears what it derived from the old line.
+        None for a pass, a resort, a segment or a rest zone: the document
+        is the whole row. ``SourceSkiTour`` clears what it derived from the old line.
         """
         return {}
 
@@ -481,6 +481,25 @@ class SourceSkiTour(SourceDocument):
         indexes = [
             models.Index(fields=["updated_at", "id"], name="ingest_srcst_keyset"),
             models.Index(fields=["slug"], name="ingest_srcst_slug"),
+        ]
+
+
+class SourceRestZone(SourceDocument):
+    """One of FOEN's wildlife rest zones (Wildruhezonen), SNOW-1263.
+
+    The document is ``rest_zone_document()``'s: geo.admin's feature id, the
+    zone's name, whether it is legally binding or recommended, the
+    restriction and protected period as FOEN states them, the canton and its
+    rules page, and the polygon as WGS84 GeoJSON. The ``uuid`` is a uuid5 of
+    the feature id, so it is the same on every import.
+    """
+
+    class Meta(SourceDocument.Meta):
+        """Model metadata."""
+
+        indexes = [
+            models.Index(fields=["updated_at", "id"], name="ingest_srcrz_keyset"),
+            models.Index(fields=["slug"], name="ingest_srcrz_slug"),
         ]
 
 

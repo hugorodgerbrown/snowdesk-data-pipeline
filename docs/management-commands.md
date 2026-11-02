@@ -211,6 +211,7 @@ worker logs.
 | Weather history sweep | `backfill_weather --commit` | `20 * * * *` (hourly, at :20 UTC) | One budgeted sweep of the missing past `Weather` days, newest fortnight first (SNOW-1245). The budget is this hour's share of what `fetch_weather` leaves of Open-Meteo's free daily quota, so the two never throttle each other; each run resumes where the last stopped, and a run with nothing missing issues no request. Exits non-zero on a 429. |
 | Reference-data mirror | `mirror_reference_data --commit` | `40 * * * *` (hourly, at :40 UTC) | Copies the curated places, passes and resorts into the reference-data service's `SourceLocation`, `SourcePass` and `SourceResort`, which the v2 data feeds serve (SNOW-1271). Hourly so an edit in the resort sheet or the map-admin overlays reaches the feed within the hour; database-only, and a run with nothing changed writes nothing. |
 | Ski-touring import | `import_ski_tours --commit` | `30 2 * * 1` (weekly, Mondays 02:30 UTC) | Downloads swisstopo's ski-touring GeoPackage, makes the service's `SourceSkiSegment` and `SourceSkiTour` equal it and applies what changed to `SkiSegment` and `SkiTour` (SNOW-1276). Weekly because swisstopo releases the data about once a year; a run against an unchanged release writes nothing. |
+| Wildlife rest-zone import | `import_rest_zones --commit` | `50 2 * * 1` (weekly, Mondays 02:50 UTC) | Fetches FOEN's wildlife rest zones from geo.admin canton by canton, makes the service's `SourceRestZone` equal them and applies what changed to `RestZone` (SNOW-1263). All or nothing: a canton that fails writes no zone. Switch `schedule_import_rest_zones`. |
 | Bulletin alerts | `send_bulletin_alerts --commit` | `10 * * * *` (hourly, at :10 UTC, after the :02/:07 fetch) | Sends each opted-in account one message naming every place whose bulletin is new or changed, push first and email as the account asks, and logs each decision as a `BulletinAlert` (SNOW-942). Holds 22:00–06:30 Zurich time. Deploys switched off (`schedule_send_bulletin_alerts`) — see [`alerts.md`](alerts.md). |
 | Request-log retention | `purge_request_logs --commit` | `30 3 * * *` (daily, 03:30 UTC) | Deletes `RequestLog` rows past the twelve-month retention window the Privacy Policy states (SNOW-775). Runs at :30 on an hour no fetch job uses, because it holds a delete transaction over a table the request path writes to. |
 | OAuth token purge | `purge_expired_oauth_tokens --commit` | `45 3 * * *` (daily, 03:45 UTC) | Deletes expired MCP OAuth tokens and authorization codes with django-oauth-toolkit's `clear_expired()` (SNOW-1193). A connected Claude refreshing hourly writes two token rows an hour, and nothing else deletes them. |
@@ -806,6 +807,34 @@ A first import takes about 20 seconds; an unchanged one about 9.
 uv run python manage.py import_ski_tours                 # preview
 uv run python manage.py import_ski_tours --commit        # write
 uv run python manage.py import_ski_tours --archive skitouren_2056.gpkg.zip --commit
+```
+
+### `import_rest_zones` — FOEN's wildlife rest zones into the service
+
+SNOW-1263. FOEN publishes the wildlife rest zones (layer
+`ch.bafu.wrz-wildruhezonen_portal`, OGD licence, "© BAFU") through the
+geo.admin REST API. This command asks `find` for each of the 26 cantons
+(`GEO_ADMIN_API_URL`), about 1,000 zones in all, and:
+
+1. makes the service's `SourceRestZone` rows equal them, keyed by a uuid5
+   of the zone's geo.admin feature id. Each document holds the name, the
+   binding status, the restriction and its period, the canton, the
+   canton's page for the zone (or null) and the polygon in WGS84. Unchanged
+   rows are not rewritten, and a zone FOEN dropped is tombstoned;
+2. applies what changed to this instance's `RestZone`, through the same
+   apply as the ski-touring lines.
+
+**All or nothing:** if any canton's request fails, or a feature has no id
+or polygon, nothing is written and the command exits non-zero — a partial
+fetch would otherwise tombstone every zone in the missing cantons
+([why](decisions/rest-zones-are-imported-whole.md)). Read-only by default:
+both steps run inside a transaction that is rolled back. Tallies
+`service_rest-zones_<outcome>` and `rest-zones_<outcome>`. Exempt from the
+row countdown: each step reconciles the whole layer.
+
+```bash
+uv run python manage.py import_rest_zones            # preview
+uv run python manage.py import_rest_zones --commit   # write
 ```
 
 ### `backfill_weather` — sweep up the missing days, newest fortnight first

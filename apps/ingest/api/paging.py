@@ -33,13 +33,20 @@ from typing import Any
 from django.db.models import Q, QuerySet
 from django.utils.dateparse import parse_date, parse_datetime
 
+from apps.ingest import conf
+
 # Bumped on a breaking change to any feed's shape; it is also the URL's /v1/.
 VERSION = 1
 
-# Page size: the default, and the most a client may ask for. A bulletin's
-# CAAML runs to tens of kilobytes, so the ceiling keeps a page to a few MB.
+# Page size: the default, and the most a client may ask for unless the
+# FEED_MAX_LIMIT setting says otherwise (``max_limit``). A page is built
+# whole in one web worker's memory, so it is kept small and a pull drips
+# through on ``next_cursor`` instead: more requests, never a page big
+# enough to take the worker down (500 rendered SAC tours did, on every
+# staging pull from 1 November 2026). A feed with heavy rows holds itself
+# lower still with ``Feed.max_limit``.
 DEFAULT_LIMIT = 100
-MAX_LIMIT = 500
+MAX_LIMIT = 100
 
 
 class FeedQueryError(ValueError):
@@ -84,6 +91,15 @@ class Feed:
             changed shape (SNOW-1253's v2 weather).
         day_field: The date column ``?from=``/``?to=`` filter on; None
             for a feed with no day, which refuses a window.
+        max_limit: Returns this feed's own page ceiling, below the shared
+            one, for a feed whose rows are heavy enough that a full page
+            would not fit in a web worker's memory: a rendered SAC tour
+            carries its whole slope sampling and drawing, and 500 of them
+            killed production's worker on every staging pull from 1
+            November 2026. Read per request, so its setting can be changed
+            without a code change. None holds the feed to the shared
+            ceiling alone. A client follows ``next_cursor``, so a smaller
+            page costs requests, not rows.
 
     """
 
@@ -92,6 +108,7 @@ class Feed:
     serialise: Callable[[Any], dict[str, Any]]
     version: int = VERSION
     day_field: str | None = None
+    max_limit: Callable[[], int] | None = None
 
 
 def encode_cursor(updated_at: dt.datetime, pk: int) -> str:
@@ -181,8 +198,36 @@ def parse_day(raw: str | None, param: str) -> dt.date | None:
     return parsed
 
 
+def max_limit() -> int:
+    """Return the most rows a page of any feed holds.
+
+    The ``FEED_MAX_LIMIT`` setting, ``MAX_LIMIT`` when it is unset.
+
+    Returns:
+        The shared ceiling.
+
+    """
+    return conf.positive_int("FEED_MAX_LIMIT", MAX_LIMIT)
+
+
+def feed_max_limit(feed: Feed) -> int:
+    """Return the most rows a page of ``feed`` holds.
+
+    Args:
+        feed: The feed being read.
+
+    Returns:
+        The shared ceiling, or the feed's own when it is lower.
+
+    """
+    ceiling = max_limit()
+    if feed.max_limit is not None:
+        ceiling = min(ceiling, feed.max_limit())
+    return ceiling
+
+
 def parse_limit(raw: str | None) -> int:
-    """Return ``?limit=``, defaulted and held to ``MAX_LIMIT``.
+    """Return ``?limit=``, defaulted and held to ``max_limit()``.
 
     Args:
         raw: The parameter.
@@ -202,7 +247,7 @@ def parse_limit(raw: str | None) -> int:
         raise FeedQueryError("limit", f"limit {raw!r} is not an integer") from exc
     if limit < 1:
         raise FeedQueryError("limit", "limit must be at least 1")
-    return min(limit, MAX_LIMIT)
+    return min(limit, max_limit())
 
 
 def page(
@@ -223,7 +268,8 @@ def page(
         feed: The feed to read.
         since: Only rows updated at or after this, when given.
         cursor: Resume after this cursor, when given.
-        limit: The page size.
+        limit: The page size the client asked for, held to the feed's
+            ``feed_max_limit``.
         day_from: Only rows whose ``day_field`` is on or after this.
         day_to: Only rows whose ``day_field`` is on or before this.
 
@@ -237,6 +283,7 @@ def page(
             of a feed with no day.
 
     """
+    limit = min(limit, feed_max_limit(feed))
     queryset = feed.queryset()
     if since is not None:
         queryset = queryset.filter(updated_at__gte=since)

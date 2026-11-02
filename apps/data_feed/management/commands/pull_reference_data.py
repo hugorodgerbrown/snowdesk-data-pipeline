@@ -21,6 +21,8 @@ instance loads with its migrations, so the pull starts after them:
    (``apps/routes/services/ski_network.py``). Incremental: only what
    changed since the newest line held, tombstones deleting theirs, since
    the whole network is tens of megabytes and changes about once a year.
+   ``rest-zones`` — FOEN's wildlife rest zones (SNOW-1263), copied into
+   ``RestZone`` by the same apply and the same incremental rule.
 3. ``bulletins`` — each bulletin's CAAML with the service's render model,
    replayed through ``upsert_bulletin``.
 4. ``day-ratings`` — the service's ``SourceDayRating``, copied over
@@ -101,6 +103,7 @@ from apps.data_feed.services.reference import (
 from apps.routes.services.ski_network import (
     FAILED as SKI_FAILED,
     OUTCOMES as SKI_OUTCOMES,
+    REST_ZONE_KINDS,
     SKI_KINDS,
     apply_ski_items,
     synced_since,
@@ -138,7 +141,7 @@ OUTCOMES: dict[str, tuple[str, ...]] = {
     "bulletins": (CREATED, UPDATED, UNCHANGED, FAILED),
     "day-ratings": (CREATED, UPDATED, UNCHANGED, RECOMPUTED, SKIPPED, FAILED),
     "weather": (CREATED, UPDATED, UNCHANGED, KEPT, SKIPPED, FAILED),
-    **dict.fromkeys(SKI_KINDS, SKI_OUTCOMES),
+    **dict.fromkeys((*SKI_KINDS, *REST_ZONE_KINDS), SKI_OUTCOMES),
 }
 
 DEFAULT_RECENT_DAYS = 14
@@ -184,7 +187,7 @@ def describe_item(
     """
     if feed == "locations":
         return place_label
-    if feed in ("passes", "resorts", *SKI_KINDS):
+    if feed in ("passes", "resorts", *SKI_KINDS, *REST_ZONE_KINDS):
         return lambda item: str(item.get("slug") or item["uuid"])
     if feed == "bulletins":
         return lambda item: f"{item['bulletin_id']} {item.get('target_date') or ''}"
@@ -314,7 +317,7 @@ class Command(RegisteredCommand):
 
         """
         self._pull_estate(client)
-        for feed in SKI_KINDS:
+        for feed in (*SKI_KINDS, *REST_ZONE_KINDS):
             self._isolated(feed, lambda f: self._pull_ski(client, f))
         for feed in SERIES_FEEDS:
             self._isolated(
@@ -580,14 +583,14 @@ class Command(RegisteredCommand):
         self._report(feed)
 
     def _pull_ski(self, client: FeedClient, feed: str) -> None:
-        """Apply what changed in one ski-touring feed since the newest line held.
+        """Apply what changed in one ski or rest-zone feed since the newest row held.
 
         A page is applied in one go (one read of the rows it names, one
         bulk insert), after its items have been counted down.
 
         Args:
             client: The feed client.
-            feed: ``ski-network`` or ``ski-tours``.
+            feed: ``ski-network``, ``ski-tours`` or ``rest-zones``.
 
         """
         since = synced_since(feed)

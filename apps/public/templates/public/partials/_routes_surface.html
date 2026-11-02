@@ -172,6 +172,11 @@ Context expected:
         <p class="text-sm text-text-2">
             {% trans "Your route has been added to the map." %}
         </p>
+        {# SNOW-996: "Imported the first of 3 tracks", copied in by routes.js #}
+        {# from route_create's own row — its server-translated text — when    #}
+        {# the file held more than one track. Hidden otherwise.               #}
+        <p data-route-confirmation-notice data-testid="route-confirmation-notice" hidden class="text-sm text-text-2">
+        </p>
         <button
             type="button"
             data-action="dismiss"

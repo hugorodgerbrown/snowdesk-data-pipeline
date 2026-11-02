@@ -125,8 +125,8 @@ from apps.routes.services.gpx_export import build_gpx, gpx_filename
 from apps.routes.services.routes import (
     RouteLimitReached,
     create_drawn_route,
-    create_route,
     delete_route,
+    upload_route,
 )
 from apps.routes.services.shares import (
     RouteShareTokenCollision,
@@ -502,7 +502,7 @@ def route_create(request: HttpRequest) -> HttpResponse:
         )
 
     try:
-        route = create_route(
+        route, track_import = upload_route(
             request.user, upload.read(), source_filename=upload.name or ""
         )
     except GPXParseError as exc:
@@ -517,8 +517,13 @@ def route_create(request: HttpRequest) -> HttpResponse:
         logger.info("Route create blocked: user=%s hit the cap", request.user.pk)
         return render(request, "routes/partials/_route_limit.html", {}, status=409)
 
+    # SNOW-996: say which track of a multi-track file this is. Only here —
+    # route_list re-renders the same row with no such context, so the line
+    # is gone the next time the panel opens, and nothing is stored.
     return render(
-        request, "routes/partials/_route.html", {"route": route, "map_focus": True}
+        request,
+        "routes/partials/_route.html",
+        {"route": route, "map_focus": True, "track_import": track_import},
     )
 
 

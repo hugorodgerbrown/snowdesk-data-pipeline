@@ -134,6 +134,11 @@ Context:
     map_focus     : bool, optional — render the name as a control that
                     frames this route on the map. Passed by
                     _route_list_map.html; see above.
+    track_import  : TrackImport, optional — passed by route_create alone
+                    (SNOW-996). When the upload held more than one track,
+                    the row says which it imported, through the shared
+                    row's `notice` slot; never stored, so no other render
+                    of this row carries it.
 {% endcomment %}
 {% with climb=route.climb %}
     {% with uuid=route.uuid|stringformat:"s" km=route.distance_km|floatformat:1 ascent=climb.ascent_m|floatformat:0 descent=climb.descent_m|floatformat:0 %}
@@ -187,6 +192,27 @@ Context:
                 {{ figures }} · {{ duration }}
             {% endblocktrans %}
         {% endif %}
+        {# SNOW-996: which track of a multi-track upload this is. Only        #}
+        {# route_create passes `track_import`, so re-rendering the row later #}
+        {# (route_list, a rename) drops the line. N counts every track of    #}
+        {# the chosen type in the file, usable or not (Hugo, 2026-11-02), so #}
+        {# an empty first track reads "track 2 of 2". `count` is plural-     #}
+        {# selected even though N > 1 here: other locales have more forms.   #}
+        {% if track_import and track_import.count > 1 %}
+            {% if track_import.position == 1 %}
+                {% blocktrans trimmed count count=track_import.count asvar row_notice %}
+                    Imported the first of {{ count }} track
+                {% plural %}
+                    Imported the first of {{ count }} tracks
+                {% endblocktrans %}
+            {% else %}
+                {% blocktrans trimmed count count=track_import.count with position=track_import.position asvar row_notice %}
+                    Imported track {{ position }} of {{ count }}
+                {% plural %}
+                    Imported track {{ position }} of {{ count }}
+                {% endblocktrans %}
+            {% endif %}
+        {% endif %}
         {% trans "Route name" as rename_label %}
         {# The bbox, only on the map variant. Four indexes off the JSON field    #}
         {# rather than the field itself: the tag formats each ordinate through   #}
@@ -220,7 +246,7 @@ Context:
             {% endif %}
             {% include "includes/_ugc_panel_row.html" with row_id="route-share-"|add:pending_share.token row_target="#route-share-"|add:pending_share.token label=row_label label_testid="route-list-row-label" meta=shared_meta focus_target=row_focus_target focus_label=row_focus_label actions_template="routes/partials/_route_row_actions.html" %}
         {% else %}
-            {% include "includes/_ugc_panel_row.html" with row_id="route-"|add:uuid row_target="#route-"|add:uuid label=row_label label_testid="route-list-row-label" meta=row_meta renameable=True rename_label=rename_label focus_target=row_focus_target focus_label=row_focus_label actions_template="routes/partials/_route_row_actions.html" %}
+            {% include "includes/_ugc_panel_row.html" with row_id="route-"|add:uuid row_target="#route-"|add:uuid label=row_label label_testid="route-list-row-label" meta=row_meta notice=row_notice renameable=True rename_label=rename_label focus_target=row_focus_target focus_label=row_focus_label actions_template="routes/partials/_route_row_actions.html" %}
         {% endif %}
     {% endwith %}
 {% endwith %}

@@ -327,6 +327,23 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         validator=absolute_url,
         note="STAC API the ski-touring GeoPackage is read from",
     ),
+    # --- v2 feed page ceilings (2 Nov 2026) --------------------------------
+    SettingSpec(
+        "FEED_MAX_LIMIT",
+        validator=positive_int,
+        note="Most rows one /api/data/v2/ page holds",
+    ),
+    SettingSpec(
+        "FEED_SKI_TOURS_MAX_LIMIT",
+        validator=positive_int,
+        note="Most SAC tours one ski-tours page holds",
+    ),
+    # --- geo.admin (SNOW-1263) --------------------------------------------
+    SettingSpec(
+        "GEO_ADMIN_API_URL",
+        validator=absolute_url,
+        note="MapServer API FOEN's wildlife rest zones are read from",
+    ),
     # --- what3words (SNOW-840) --------------------------------------------
     # NOT required_in_production: the feature is gated on a waffle flag and
     # an empty key makes no request at all, so an environment with no

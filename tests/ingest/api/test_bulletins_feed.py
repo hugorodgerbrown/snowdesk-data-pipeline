@@ -222,7 +222,7 @@ class TestParameters:
     def test_limit(self) -> None:
         """Defaulted, capped at MAX_LIMIT, refused below one."""
         assert parse_limit(None) == 100
-        assert parse_limit("9999") == 500
+        assert parse_limit("9999") == 100
         assert parse_limit("7") == 7
         for bad in ("0", "-1", "ten"):
             with pytest.raises(FeedQueryError):

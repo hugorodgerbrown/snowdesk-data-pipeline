@@ -1,8 +1,9 @@
 """
 apps/routes/services/routes.py — Business logic for creating and deleting Routes.
 
-Provides ``create_route``, ``create_drawn_route`` (SNOW-1255) and
-``delete_route`` — the mutating entry points used by
+Provides ``create_route`` (and ``upload_route``, which also says which
+track of a multi-track file it took — SNOW-996), ``create_drawn_route``
+(SNOW-1255) and ``delete_route`` — the mutating entry points used by
 ``apps/routes/views.py``. Parsing itself lives next door in
 ``gpx.py``; this module owns the per-user cap and the database write.
 
@@ -28,6 +29,7 @@ race for both.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -113,8 +115,54 @@ def _locked_cap_recheck(user: "User") -> None:
     _assert_under_cap(user)
 
 
+@dataclass(frozen=True)
+class TrackImport:
+    """Which track of an uploaded file became the route (SNOW-996).
+
+    Per-upload only — never stored — so the upload's own response can say
+    so and a later re-render of the same row cannot.
+
+    Attributes:
+        count: How many elements of the chosen type the file held, every
+            one counted, usable or not.
+        position: The chosen one's 1-based position among them.
+
+    """
+
+    count: int
+    position: int
+
+
 def create_route(user: "User", raw: bytes, source_filename: str = "") -> Route:
     """Parse GPX bytes and store the result as a Route for the given user.
+
+    The seeding commands' entry point; the upload view calls
+    ``upload_route`` instead, for the ``TrackImport`` it also returns.
+
+    Args:
+        user: The authenticated user uploading the route.
+        raw: The raw bytes of the uploaded ``.gpx`` file.
+        source_filename: The uploaded file's name, kept as a label.
+            Defaults to "".
+
+    Returns:
+        The newly created Route.
+
+    Raises:
+        RouteLimitReached: When the user already holds
+            ``settings.ROUTES_MAX_PER_USER`` routes.
+        apps.routes.services.gpx.GPXParseError: When the bytes are not a
+            GPX file we can import.
+
+    """
+    route, _ = upload_route(user, raw, source_filename=source_filename)
+    return route
+
+
+def upload_route(
+    user: "User", raw: bytes, source_filename: str = ""
+) -> tuple[Route, TrackImport]:
+    """Parse GPX bytes, store a Route, and say which track it took.
 
     The per-user cap is checked once up front — so a file that cannot be
     stored is never parsed — and again inside the transaction after locking
@@ -135,7 +183,8 @@ def create_route(user: "User", raw: bytes, source_filename: str = "") -> Route:
             Defaults to "".
 
     Returns:
-        The newly created Route.
+        The newly created Route, and the ``TrackImport`` naming which of
+        the file's tracks it was built from.
 
     Raises:
         RouteLimitReached: When the user already holds
@@ -179,11 +228,12 @@ def create_route(user: "User", raw: bytes, source_filename: str = "") -> Route:
         )
 
     logger.info(
-        "Route created: user=%s uuid=%s points=%d/%d tracks=%d",
+        "Route created: user=%s uuid=%s points=%d/%d track=%d/%d",
         user.pk,
         route.uuid,
         parsed.point_count,
         parsed.source_point_count,
+        parsed.track_position,
         parsed.track_count,
     )
 
@@ -200,7 +250,7 @@ def create_route(user: "User", raw: bytes, source_filename: str = "") -> Route:
     # sampling lands, and a first paint is worth more than a coloured one
     # twenty seconds later.
     enqueue_route_slope_sampling(route)
-    return route
+    return route, TrackImport(count=parsed.track_count, position=parsed.track_position)
 
 
 def create_drawn_route(

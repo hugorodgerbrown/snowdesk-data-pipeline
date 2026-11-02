@@ -152,6 +152,53 @@ class TestRouteCreateSuccess:
         assert route.point_count == 4
         assert route.ascent_m == pytest.approx(300.0)
 
+    def test_a_multi_track_upload_says_it_took_the_first(self, client: Client) -> None:
+        """SNOW-996: a two-track file's row says which one it imported."""
+        client.force_login(UserFactory.create())
+
+        response = client.post(
+            CREATE_URL, {"file": _upload("multi_track.gpx")}, **HTMX_HEADERS
+        )
+
+        body = response.content.decode()
+        assert "Imported the first of 2 tracks" in body
+        # The line is part of the row's one list item, not a sibling of it.
+        notice = body.index("ugc-row-notice")
+        assert body.index('id="route-') < notice < body.rindex("</li>")
+        assert body.rstrip().endswith("</li>")
+
+    def test_a_skipped_empty_track_is_named_by_position(self, client: Client) -> None:
+        """An empty first track: the second is imported and called 2 of 2."""
+        client.force_login(UserFactory.create())
+        raw = _fixture("multi_track.gpx").replace(
+            b'<trkpt lat="46.0000" lon="7.0000"><ele>1000.0</ele></trkpt>\n'
+            b'      <trkpt lat="46.0100" lon="7.0000"><ele>1100.0</ele></trkpt>',
+            b"",
+        )
+        upload = SimpleUploadedFile("two.gpx", raw, content_type="application/gpx+xml")
+
+        response = client.post(CREATE_URL, {"file": upload}, **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert "Imported track 2 of 2" in response.content.decode()
+
+    def test_a_single_track_upload_says_nothing_about_tracks(
+        self, client: Client
+    ) -> None:
+        """One track, no line."""
+        client.force_login(UserFactory.create())
+        response = client.post(CREATE_URL, {"file": _upload()}, **HTMX_HEADERS)
+        assert "ugc-row-notice" not in response.content.decode()
+
+    def test_the_list_never_shows_the_import_line(self, client: Client) -> None:
+        """Nothing is stored, so reopening the panel drops the line."""
+        client.force_login(UserFactory.create())
+        client.post(CREATE_URL, {"file": _upload("multi_track.gpx")}, **HTMX_HEADERS)
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "Imported" not in body
+
     def test_a_failed_sampling_enqueue_still_answers_the_upload(
         self, client: Client
     ) -> None:

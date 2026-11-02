@@ -18,8 +18,9 @@ from django.test import RequestFactory
 from django.urls import reverse
 
 from apps.routes.admin import RouteAdmin, RouteShareAdmin
-from apps.routes.models import Route, RouteShare, SkiSegment, SkiTour
+from apps.routes.models import RestZone, Route, RouteShare, SkiSegment, SkiTour
 from tests.factories import (
+    RestZoneFactory,
     RouteFactory,
     SkiSegmentFactory,
     SkiTourFactory,
@@ -197,7 +198,7 @@ class TestTerrainDetailLink:
 class TestSkiLineAdmins:
     """SNOW-1276: the synced ski-touring tables are read-only windows."""
 
-    @pytest.mark.parametrize("model", [SkiSegment, SkiTour])
+    @pytest.mark.parametrize("model", [SkiSegment, SkiTour, RestZone])
     def test_nothing_can_be_added_changed_or_deleted(self, model: type) -> None:
         """A hand edit would be undone by the next sync."""
         model_admin = admin.site._registry[model]
@@ -208,7 +209,7 @@ class TestSkiLineAdmins:
 
     def test_the_lists_leave_out_the_geometry(self) -> None:
         """The line is the whole geometry, as ``points`` is for a route."""
-        for model in (SkiSegment, SkiTour):
+        for model in (SkiSegment, SkiTour, RestZone):
             assert "geometry" not in admin.site._registry[model].list_display
 
     def test_the_lists_and_rows_render(self, admin_client: Any) -> None:
@@ -216,6 +217,7 @@ class TestSkiLineAdmins:
         for name, row in (
             ("skisegment", SkiSegmentFactory.create()),
             ("skitour", SkiTourFactory.create()),
+            ("restzone", RestZoneFactory.create()),
         ):
             changelist = reverse(f"admin:routes_{name}_changelist")
             assert admin_client.get(changelist).status_code == 200

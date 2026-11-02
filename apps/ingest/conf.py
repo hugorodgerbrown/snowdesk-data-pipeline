@@ -14,7 +14,10 @@ below (SNOW-1249):
   WEATHER_BACKFILL_FLOOR (the earliest day the backfill asks for)
   WHAT3WORDS_API_BASE_URL, WHAT3WORDS_API_KEY, WHAT3WORDS_FAKE
   SWISSTOPO_STAC_URL (the ski-touring GeoPackage's STAC host)
+  GEO_ADMIN_API_URL (the MapServer the wildlife rest zones are read from)
   TERRAIN_TILE_BASE_URL (the terrain model a tour is walked against)
+  FEED_MAX_LIMIT, FEED_SKI_TOURS_MAX_LIMIT (the most rows one v2 feed
+      page holds — apps/ingest/api/paging.py)
   DEBUG (only to gate the what3words fake)
 
 Each accessor reads the setting at call time, not import time, so a test's
@@ -23,9 +26,12 @@ Each accessor reads the setting at call time, not import time, so a test's
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 
 def get(name: str, default: Any = None) -> Any:
@@ -53,3 +59,30 @@ def text(name: str) -> str:
 
     """
     return str(get(name, "") or "")
+
+
+def positive_int(name: str, default: int) -> int:
+    """Return a whole-number setting of at least one, or ``default``.
+
+    A value that is absent, not a whole number, or below one falls back to
+    ``default`` with a warning, so a mistyped override degrades to the
+    shipped value rather than breaking every request that reads it.
+
+    Args:
+        name: The setting's name.
+        default: What to return when the setting is absent or unusable.
+
+    Returns:
+        The value as an int.
+
+    """
+    raw = get(name, default)
+    try:
+        value = int(raw)
+    except TypeError, ValueError:
+        logger.warning("%s=%r is not a whole number; using %d", name, raw, default)
+        return default
+    if value < 1:
+        logger.warning("%s=%r is below one; using %d", name, raw, default)
+        return default
+    return value

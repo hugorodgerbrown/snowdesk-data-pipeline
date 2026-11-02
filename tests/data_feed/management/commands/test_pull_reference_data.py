@@ -53,8 +53,8 @@ from apps.ingest.public import (
 from apps.locations.models import Location, ResortLocation
 from apps.regions.models import MicroRegion, Pass, Resort
 from apps.regions.services.reference import mirror_reference_data
-from apps.routes.models import SkiSegment, SkiTour
-from apps.routes.services.ski_network import apply_from_service
+from apps.routes.models import RestZone, SkiSegment, SkiTour
+from apps.routes.services.ski_network import REST_ZONE_KINDS, apply_from_service
 from apps.weather.models import Weather
 from apps.weather.services.reference import apply_source_weather
 from tests.data_feed.management.commands.test_pull_production_data import (
@@ -72,6 +72,7 @@ from tests.factories import (
     ResortFactory,
     ResortLocationFactory,
     SkiSegmentFactory,
+    SourceRestZoneFactory,
     SourceSkiSegmentFactory,
     SourceSkiTourFactory,
     SourceWeatherFactory,
@@ -92,6 +93,7 @@ FEEDS = (
     "resorts",
     "ski-network",
     "ski-tours",
+    "rest-zones",
     "bulletins",
     "day-ratings",
     "weather",
@@ -152,6 +154,9 @@ def estate(db: None) -> dict[str, Any]:
     SourceSkiSegmentFactory.create()
     SourceSkiTourFactory.create()
     apply_from_service(commit=True)
+    # SNOW-1263: a rest zone, imported and applied the same way.
+    SourceRestZoneFactory.create()
+    apply_from_service(commit=True, kinds=REST_ZONE_KINDS)
     return {"resort": resort, "link": link, "centroid": centroid}
 
 
@@ -220,6 +225,7 @@ def test_live_pull_against_itself_changes_nothing(
     assert counts["day-ratings_unchanged"] == 1
     assert counts["weather_unchanged"] == 1
     assert counts["ski-network_unchanged"] == counts["ski-tours_unchanged"] == 1
+    assert counts["rest-zones_unchanged"] == 1
     assert counts["failed"] == 0
     assert _written(counts) == 0
     assert "verbier" in output  # the countdown names each resort
@@ -251,6 +257,7 @@ def test_replay_into_an_empty_instance_restores_everything(
     Pass.objects.all().delete()
     SkiSegment.objects.all().delete()
     SkiTour.objects.all().delete()
+    RestZone.objects.all().delete()
     monkeypatch.setattr(
         "apps.data_feed.client.requests.Session", lambda: _ReplaySession(capture)
     )
@@ -263,6 +270,7 @@ def test_replay_into_an_empty_instance_restores_everything(
     assert counts["locations_created"] == 3
     assert counts["weather_created"] == 1
     assert counts["ski-network_created"] == counts["ski-tours_created"] == 1
+    assert counts["rest-zones_created"] == 1
     assert not Location.objects.exists()
     assert not SkiSegment.objects.exists()
 
@@ -283,6 +291,8 @@ def test_replay_into_an_empty_instance_restores_everything(
     assert RegionDayRating.objects.filter(region__region_id="CH-4115").exists()
     assert Weather.objects.count() == 1
     assert SkiSegment.objects.count() == SkiTour.objects.count() == 1
+    zone = RestZone.objects.get()
+    assert zone.binding and zone.canton == "GR"
 
     _run("--commit")
     assert _written(_counts()) == 0
@@ -386,7 +396,14 @@ def test_the_window_reaches_the_series_and_not_the_estate(
     for feed in ("bulletins", "day-ratings", "weather"):
         assert session.seen[feed].get("from") == day_from
         assert session.seen[feed].get("to") == day_to
-    for feed in ("locations", "passes", "resorts", "ski-network", "ski-tours"):
+    for feed in (
+        "locations",
+        "passes",
+        "resorts",
+        "ski-network",
+        "ski-tours",
+        "rest-zones",
+    ):
         assert "from" not in session.seen[feed]
         assert "since" not in session.seen[feed]
     assert "/api/data/v2/" in output
@@ -604,8 +621,8 @@ class _Counting(_ReplaySession):
 @pytest.mark.parametrize(
     ("args", "days", "pages"),
     [
-        (("--recent", "14"), 14, 9),
-        (("--golden-week",), 7, 5),
+        (("--recent", "14"), 14, 42),
+        (("--golden-week",), 7, 21),
     ],
     ids=["recent-14", "golden-week"],
 )

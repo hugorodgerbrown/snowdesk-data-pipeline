@@ -162,8 +162,11 @@ Routes and Offline downloads came to have neither.
         {% include "includes/_collapsible_panel.html" with title=t_slope data_testid="help-topic-slope" anchor_id="help-topic-slope" body_template="public/help/_topic_slope.html" %}
         {% translate "Terrain filter" as t_terrain_filter %}
         {% include "includes/_collapsible_panel.html" with title=t_terrain_filter data_testid="help-topic-terrain-filter" anchor_id="help-topic-terrain-filter" body_template="public/help/_topic_terrain_filter.html" %}
-        {% translate "Problem terrain" as t_bulletin_terrain %}
-        {% include "includes/_collapsible_panel.html" with title=t_bulletin_terrain data_testid="help-topic-bulletin-terrain" anchor_id="help-topic-bulletin-terrain" body_template="public/help/_topic_bulletin_terrain.html" %}
+        {# SNOW-1374: behind the problem_terrain flag, as the layer is.     #}
+        {% if problem_terrain_visible %}
+            {% translate "Problem terrain" as t_bulletin_terrain %}
+            {% include "includes/_collapsible_panel.html" with title=t_bulletin_terrain data_testid="help-topic-bulletin-terrain" anchor_id="help-topic-bulletin-terrain" body_template="public/help/_topic_bulletin_terrain.html" %}
+        {% endif %}
 
         {# SNOW-744: these four topics illustrate themselves with the SAME    #}
         {# component (includes/_ugc_panel.html), each passing its own entry   #}

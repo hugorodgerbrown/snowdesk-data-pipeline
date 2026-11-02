@@ -239,6 +239,7 @@ class TestAnswer:
             "bulletins",
             "ski-network",
             "ski-tours",
+            "rest-zones",
         ],
     )
     def test_the_v2_reference_feeds_answer(

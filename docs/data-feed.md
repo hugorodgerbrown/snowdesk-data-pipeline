@@ -2,7 +2,7 @@
 name: data-feed
 description: Data feed /api/data/v1/ + v2, from/to windows, service clients, pull_reference_data, pull_production_data, DATA_FEED_*, mint_feed_token
 status: current
-last-reviewed: 2026-11-01
+last-reviewed: 2026-11-02
 ---
 
 # The production data feed
@@ -42,6 +42,7 @@ All ten are `GET`, take the same parameters and answer the same shape.
 | `/api/data/v2/resorts/` | `uuid` (`SourceResort`) | Every resort, with `slug`, `deleted_at` and the `document`: `fields`, `region` code, pin, `passes` and `locations` roles, each named by a source uuid (SNOW-1271) |
 | `/api/data/v2/ski-network/` | `uuid` (`SourceSkiSegment`) | Every segment of swisstopo's ski-touring network, with `slug`, `deleted_at` and the `document`: `segment_id`, `discipline`, the undocumented `direction` / `access` / `route_info` codes as published, and the line as a WGS84 `MultiLineString` simplified to 5 m (SNOW-1276) |
 | `/api/data/v2/ski-tours/` | `uuid` (`SourceSkiTour`, swisstopo's `route_uuid`) | Every named SAC ski tour, in the same shape: SAC ids, `name` and `names` by language, `grade` and `difficulty`, `ascent_m` and time, `descent_m`, the summit, the SAC `urls` and the line (SNOW-1276); beside `document`, the service's walk and drawing of it, `slope_samples` and `track_render`, null until `render_ski_tours` reaches it (SNOW-1316) |
+| `/api/data/v2/rest-zones/` | `uuid` (`SourceRestZone`, a uuid5 of the geo.admin feature id) | Every FOEN wildlife rest zone, with `slug`, `deleted_at` and the `document`: `feature_id`, `name`, `binding`, `status` and `restriction` by language, `restriction_code`, `period`, `basis`, `decided`, `note`, `canton`, the canton's `url` (or null) and the polygon as WGS84 GeoJSON (SNOW-1263) |
 | `/api/data/v2/day-ratings/` | `region_code` + `date` | Every `SourceDayRating`: the danger range the governing bulletin gives a region's day, naming that bulletin by `bulletin_id`, with the `version` of the rule it was computed under (SNOW-1270) |
 
 **v2 weather (SNOW-1253).** The item has the same shape and the same columns
@@ -76,6 +77,12 @@ client pulls them incrementally (`since` the newest line it holds) rather
 than whole. A tombstone deletes the line: no user data points at one.
 Licence OGD, credit "© swisstopo".
 
+**v2 wildlife rest zones (SNOW-1263).** FOEN's rest zones, imported weekly
+into the service by `import_rest_zones` and served as a document feed like
+the ski-touring lines, about 1,000 polygons and 9 MB. A client pulls them
+`since` the newest zone it holds, into `RestZone`; a tombstone deletes the
+zone. Licence OGD, credit "© BAFU".
+
 **v2 day ratings (SNOW-1270).** The service rates every (region, day) from
 its own bulletins whenever it stores one, by the rule an instance uses: the
 latest-`valid_from` bulletin targeting the day, read by
@@ -89,7 +96,13 @@ what production shows.
 
 Parameters, all optional: `since` (ISO 8601 datetime **with an offset**,
 filters on `updated_at`), `cursor` (the previous page's `next_cursor`) and
-`limit` (default 100, at most 500). The dated v2 feeds also take `from` and
+`limit` (default 100, at most 100 — the `FEED_MAX_LIMIT` setting; `ski-tours`
+at most 25, `FEED_SKI_TOURS_MAX_LIMIT`, because a rendered tour carries its
+whole drawing and 500 of them on one page ran production's web worker out of
+memory on 1 November 2026). A page is built whole in a web worker, so the
+ceilings are kept small and a client drips through on `next_cursor`; both are
+read per request, so either can be changed in the environment without a
+release. The dated v2 feeds also take `from` and
 `to` (ISO dates, inclusive), which window them by the day each row is about
 — a bulletin's `target_date`, a day rating's `date`, a weather row's
 `observed_on` (SNOW-1272). An undated feed answers `from` or `to` with a
@@ -148,7 +161,7 @@ rather than scanning and sorting the table. `count` costs one extra query,
 on the first page only. Locations and resorts have no such index because
 they are a few thousand rows, read whole. On the client,
 `FeedClient.pages` is a generator and the command applies items as they
-arrive, so a pull holds only one page (at most 500 items) in memory.
+arrive, so a pull holds only one page (at most 100 items) in memory.
 
 **What is never served.** The eight querysets are the only reads, and no
 user-owned table is among them. A favourite's pin is never fetched: it
@@ -303,6 +316,8 @@ uv run python manage.py pull_reference_data --golden-week --commit   # estate + 
   `SkiSegment` and `SkiTour`. An item whose `updated_at` matches the row's
   is `unchanged` without its geometry being compared; a tombstone deletes
   (`deleted`, or `absent` when never held).
+- **The wildlife rest zones are pulled the same way:** `rest-zones`,
+  `since` the newest `source_updated_at` held, into `RestZone`.
 - **The time series are a window of days:** bulletins, then day ratings,
   then weather, with `from`/`to` sent to the feed. `--recent N` (default 14)
   is from N days ago with no upper bound, so forecasts come too;

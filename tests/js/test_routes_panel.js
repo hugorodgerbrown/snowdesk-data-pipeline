@@ -96,6 +96,7 @@ document.body.innerHTML = `
   <template id="route-confirmation-template">
     <div>
       <p>Route saved!</p>
+      <p data-route-confirmation-notice hidden></p>
       <button type="button" data-action="dismiss">Close</button>
     </div>
   </template>
@@ -608,6 +609,41 @@ describe('uploading a chosen file', () => {
     await settleUpload();
 
     expect(sheet.textContent).toContain('Route saved!');
+  });
+
+  it('says which track a multi-track file imported (SNOW-996)', async () => {
+    // The row is never swapped in, so the card is the only place its
+    // import line can reach the user.
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        text: () =>
+          Promise.resolve(
+            '<li id="route-1"><button type="button">Haute Route</button>' +
+              '<span data-row-notice> Imported track 2 of 2 </span></li>',
+          ),
+      }),
+    );
+    btn.click();
+
+    choose(gpxFile());
+    await settleUpload();
+
+    const slot = sheet.querySelector('[data-route-confirmation-notice]');
+    expect(slot.hidden).toBe(false);
+    expect(slot.textContent).toBe('Imported track 2 of 2');
+  });
+
+  it('keeps the track line hidden for a one-track file', async () => {
+    btn.click();
+
+    choose(gpxFile());
+    await settleUpload();
+
+    const slot = sheet.querySelector('[data-route-confirmation-notice]');
+    expect(slot.hidden).toBe(true);
+    expect(slot.textContent).toBe('');
   });
 
   it('fits the camera to the route it just uploaded', async () => {

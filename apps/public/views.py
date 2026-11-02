@@ -120,8 +120,9 @@ from apps.bulletins.services.render_model import (
     problem_types_for,
 )
 from apps.bulletins.services.selection import (
+    IssuePick,
     issues_for_date as _issues_for_date,
-    select_default_issue as _select_default_issue,
+    select_default_pick,
 )
 from apps.core.decorators import require_htmx
 from apps.core.http import client_ip, is_speculative
@@ -344,18 +345,20 @@ def _render_bulletin_page(
     return response
 
 
-def _resolve_selected_issue(
+def _resolve_selected_pick(
     issues: list[Bulletin],
     target_date: datetime.date,
     requested_id: str | None,
-) -> Bulletin | None:
+) -> IssuePick:
     """
     Resolve which issue should render given a user-requested override.
 
     When ``?issue=<uuid>`` names one of the day's issues, return that
-    bulletin.  Otherwise fall back to :func:`_select_default_issue`.
-    Silently ignores unknown / malformed IDs so stale bookmarks degrade
-    to the default view rather than 404ing.
+    bulletin, built or not, with nothing skipped: the reader asked for it.
+    Otherwise fall back to the shared pick, which prefers the latest issue
+    that built (SNOW-1368, ``select_default_pick``). Silently ignores
+    unknown / malformed IDs so stale bookmarks degrade to the default view
+    rather than 404ing.
 
     Args:
         issues: The bulletins forecasting ``target_date``.
@@ -363,14 +366,35 @@ def _resolve_selected_issue(
         requested_id: The ``?issue`` query param value, or ``None``.
 
     Returns:
-        The issue to render, or ``None`` when ``issues`` is empty.
+        The issue to render (``None`` when ``issues`` is empty) and the
+        newer unbuilt issue passed over for it, if any.
 
     """
     if requested_id:
         for b in issues:
             if str(b.bulletin_id) == requested_id:
-                return b
-    return _select_default_issue(issues, target_date)
+                return IssuePick(b, None)
+    return select_default_pick(issues, target_date)
+
+
+def _resolve_selected_issue(
+    issues: list[Bulletin],
+    target_date: datetime.date,
+    requested_id: str | None,
+) -> Bulletin | None:
+    """
+    Resolve which issue should render, without the skipped one.
+
+    Args:
+        issues: The bulletins forecasting ``target_date``.
+        target_date: Calendar date identifying the day being displayed.
+        requested_id: The ``?issue`` query param value, or ``None``.
+
+    Returns:
+        The issue :func:`_resolve_selected_pick` chooses.
+
+    """
+    return _resolve_selected_pick(issues, target_date, requested_id).bulletin
 
 
 def _get_nav_dates(
@@ -774,6 +798,13 @@ def map_page(request: HttpRequest) -> HttpResponse:
     community_reports_ctx = _community_reports_context(request)
     weather_ctx = _weather_overlay_context()
     terrain_filter_ctx = _terrain_filter_context()
+    # SNOW-1374: every problem-terrain control is behind the flag while
+    # they are redesigned; anonymous requests never reach waffle. A
+    # function-local import, as in _terrain_filter_context: that module
+    # imports this one.
+    from apps.public.problem_terrain import problem_terrain_enabled  # noqa: PLC0415
+
+    terrain_filter_ctx["problem_terrain_enabled"] = problem_terrain_enabled(request)
     trips_ctx = _trips_context()
     # SNOW-1230/1231: one query answers both the welcome card's example
     # link (is one set?) and the resort guide's off-season day (its day).
@@ -1160,8 +1191,9 @@ def help_page(request: HttpRequest) -> HttpResponse:
     builtin. ``sync_log_visible`` (SNOW-482) mirrors the same flag gating
     the manage-page sync-log panel, and ``what3words_visible`` (SNOW-840)
     the flag gating the three word address on a trip's meeting point —
-    the two gated topics; every other section renders for everyone
-    (SNOW-724). A reader is never shown documentation for a feature their
+    and ``problem_terrain_visible`` (SNOW-1374) the problem-terrain
+    layer's flag — the three gated topics; every other section renders for
+    everyone (SNOW-724). A reader is never shown documentation for a feature their
     own pages do not have.
 
     Args:
@@ -1176,9 +1208,14 @@ def help_page(request: HttpRequest) -> HttpResponse:
     this view still issues no queries — a property its own test pins.
 
     """
+    # Function-local: apps.public.problem_terrain imports this module.
+    from apps.public.problem_terrain import problem_terrain_enabled  # noqa: PLC0415
+
     context: dict[str, Any] = {
         "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
         "what3words_visible": waffle.flag_is_active(request, "what3words"),
+        # SNOW-1374: the problem-terrain topic follows the layer's flag.
+        "problem_terrain_visible": problem_terrain_enabled(request),
     }
     context.update(help_illustrations())
     return render(request, "public/help.html", context)
@@ -3955,6 +3992,7 @@ def build_bulletin_body(
     region: MicroRegion,
     page_date: datetime.date,
     selected: Bulletin | None,
+    skipped: Bulletin | None = None,
 ) -> dict[str, Any]:
     """
     Build what ``public/partials/_region_body.html`` reads for one bulletin.
@@ -3971,6 +4009,9 @@ def build_bulletin_body(
         page_date: The calendar day the body describes.
         selected: The bulletin chosen for that day, or ``None`` when no
             issue covers it.
+        skipped: A newer issue for the same day that could not be shown
+            because it did not build (SNOW-1368); the body names both
+            issues' times in a notice above the bulletin.
 
     Returns:
         ``bulletin``, ``page_date``, ``is_today`` and ``ground`` (the
@@ -4066,6 +4107,7 @@ def build_bulletin_body(
         "bulletin_source_url": bulletin_source_url,
         "ground": ground,
         "headline": headline,
+        "skipped_issue": skipped,
     }
 
 
@@ -4219,7 +4261,7 @@ def _bulletin_detail_response(
     # issue (SNOW-1207). Multi-issue days render the requested (or default) issue
     # as the page body.
     issues = _issues_for_date(region, target_date)
-    selected = _resolve_selected_issue(issues, target_date, requested_issue_id)
+    selected, skipped = _resolve_selected_pick(issues, target_date, requested_issue_id)
 
     # The page represents the calendar day chosen in the URL, independent
     # of which issue the viewer has selected — otherwise flipping to the
@@ -4281,7 +4323,7 @@ def _bulletin_detail_response(
         patch_cache_control(response, public=True, max_age=60)
         return response
 
-    body = build_bulletin_body(request, region, page_date, selected)
+    body = build_bulletin_body(request, region, page_date, selected, skipped)
     panel = body["panel"]
     next_update_time = body["next_update_time"]
     season_calendar = season_header(today)

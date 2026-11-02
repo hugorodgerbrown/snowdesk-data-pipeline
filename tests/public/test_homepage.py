@@ -77,6 +77,12 @@ class TestHomepage:
         assert f'href="{reverse("public:compare")}"' not in content
         assert 'href="https://build.snowdesk.info/"' not in content
 
+    def test_promises_no_per_route_bulletin_reading(self, client: Client) -> None:
+        """SNOW-948: the home page does not claim the reading SNOW-1062 withdrew."""
+        body = client.get(reverse("public:home")).content.decode()
+        assert "each avalanche problem names" not in body
+        assert "No score and no verdict" in body
+
     @pytest.mark.parametrize(
         "query", ["utm_source=newsletter&utm_medium=email", "ref=producthunt"]
     )

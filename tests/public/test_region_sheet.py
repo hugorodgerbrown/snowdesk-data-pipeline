@@ -38,8 +38,10 @@ from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
+from waffle.testutils import override_flag
 
 from apps.accounts.models import Account
+from apps.bulletins.models import RegionDayRating
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.regions.models import Resort
 from tests.factories import (
@@ -49,6 +51,7 @@ from tests.factories import (
     RegionBulletinFactory,
     RegionDayRatingFactory,
     ResortFactory,
+    UserFactory,
 )
 
 
@@ -454,7 +457,19 @@ _TILES = "https://tiles.example/terrain-class/v1/{z}/{x}/{y}.png"
 
 @pytest.mark.django_db
 class TestProblemTerrainSwitch:
-    """SNOW-979: the "Highlight problem terrain" switch below the bulletin."""
+    """SNOW-979: the "Highlight problem terrain" switch below the bulletin.
+
+    SNOW-1374 put it behind the ``problem_terrain`` flag, so every test here
+    reads the sheet as a signed-in reader the flag is on for;
+    ``TestProblemTerrainFlag`` covers the readers it is off for.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _flagged_reader(self, client: Client) -> Any:
+        """Sign the client in and turn the flag on for the test."""
+        client.force_login(UserFactory.create())
+        with override_flag("problem_terrain", active=True):
+            yield
 
     def test_rated_swiss_region_carries_the_switch_and_its_key(
         self, client: Client, settings: Any
@@ -573,6 +588,35 @@ class TestProblemTerrainSwitch:
         settings.TERRAIN_CLASS_TILE_URL = _TILES
         region = MicroRegionFactory.create()
         content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-testid="region-sheet-terrain"' not in content
+
+
+@pytest.mark.django_db
+class TestProblemTerrainFlag:
+    """SNOW-1374: no switch and no key for a reader outside the flag."""
+
+    def test_anonymous_reader_gets_no_switch(
+        self, client: Client, settings: Any
+    ) -> None:
+        """A signed-out visitor never reaches waffle, so never the switch."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        with override_flag("problem_terrain", active=True):
+            content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-testid="region-sheet-terrain"' not in content
+        assert "Highlight problem terrain" not in content
+
+    def test_signed_in_reader_outside_the_flag_gets_no_switch(
+        self, client: Client, settings: Any
+    ) -> None:
+        """Signed in is not enough: the flag decides."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        client.force_login(UserFactory.create())
+        with override_flag("problem_terrain", active=False):
+            content = _get(client, _url(region.region_id.lower())).content.decode()
         assert 'data-testid="region-sheet-terrain"' not in content
 
 
@@ -819,25 +863,91 @@ class TestIssueFromTheDayRating:
         response = _get(client, _url(region.region_id.lower()))
         assert response.status_code == 200
         assert response.context["bulletin"].pk == failed.pk
+        # SNOW-1368: nothing built, so nothing was passed over.
+        assert response.context.get("skipped_issue") is None
+        assert 'data-testid="skipped-issue-notice"' not in response.content.decode()
 
 
 @pytest.mark.django_db
-def test_a_failed_morning_update_shows_as_the_page_shows_it(client: Client) -> None:
-    """Codex on #1361: the rating names the evening, the page the morning.
+def test_a_failed_morning_update_falls_back_to_the_evening(client: Client) -> None:
+    """SNOW-1368: evening built, morning failed — both surfaces show the evening.
 
-    A failed build is never rated, so the day keeps the evening issue as
-    its source; the page picks the newer morning update and shows its error
-    card, and the sheet must show the same issue.
+    The rating names the evening (a failed build is never rated), and the
+    page and the sheet now pick the day's latest built issue too, so the
+    chip, the body and the map describe one issue. The body names both
+    issues' times in a notice above the bulletin.
     """
-    from tests.public.test_problem_terrain import (  # noqa: PLC0415
+    from tests.public.test_problem_terrain import (  # noqa: PLC0415 — the shared fixture lives with the feed's tests
+        _evening_and_failed_morning,
+    )
+
+    region = MicroRegionFactory.create()
+    day = timezone.localdate()
+    evening, morning = _evening_and_failed_morning(day, region)
+    page = client.get(region.get_absolute_url(day))
+    sheet = _get(client, _url(region.region_id.lower()))
+    assert page.context["bulletin"].pk == evening.pk
+    assert page.context["skipped_issue"].pk == morning.pk
+    assert sheet.status_code == 200
+    assert sheet.context["bulletin"].pk == evening.pk
+    assert sheet.context["skipped_issue"].pk == morning.pk
+    body = sheet.content.decode()
+    assert 'data-testid="skipped-issue-notice"' in body
+    assert f"The {morning.valid_from:%-d %b %H:%M} UTC update couldn" in body
+    assert f"Showing the bulletin issued {evening.valid_from:%-d %b %H:%M} UTC." in body
+    assert "We couldn" not in body
+
+
+@pytest.mark.django_db
+def test_a_requested_failed_issue_shows_its_error_card(client: Client) -> None:
+    """SNOW-1368: ``?issue=`` naming the failed issue shows it, with no notice."""
+    from tests.public.test_problem_terrain import (  # noqa: PLC0415 — the shared fixture lives with the feed's tests
         _evening_and_failed_morning,
     )
 
     region = MicroRegionFactory.create()
     day = timezone.localdate()
     _, morning = _evening_and_failed_morning(day, region)
+    page = client.get(f"{region.get_absolute_url(day)}?issue={morning.bulletin_id}")
+    assert page.context["bulletin"].pk == morning.pk
+    assert page.context["skipped_issue"] is None
+    body = page.content.decode()
+    assert "We couldn" in body
+    assert 'data-testid="skipped-issue-notice"' not in body
+
+
+@pytest.mark.django_db
+def test_three_issues_show_the_latest_built_and_name_the_failed_one(
+    client: Client,
+) -> None:
+    """Codex on #1406: rated A, newer built B, newest failed C — B, naming C.
+
+    A day can carry a third issue (an unscheduled reissue). The rating may
+    not yet have caught up with B; the sheet must still show what the page
+    shows, the latest built issue, and name the newest failed one after it.
+    """
+    from tests.public.test_problem_terrain import (  # noqa: PLC0415 — the shared fixture lives with the feed's tests
+        _evening_and_failed_morning,
+    )
+
+    region = MicroRegionFactory.create()
+    day = timezone.localdate()
+    evening, morning = _evening_and_failed_morning(day, region)
+    built_start = morning.valid_from - datetime.timedelta(hours=2)
+    reissue = BulletinFactory.create(
+        issued_at=built_start,
+        valid_from=built_start,
+        valid_to=built_start + datetime.timedelta(hours=9),
+        render_model=evening.render_model,
+        render_model_version=RENDER_MODEL_VERSION,
+    )
+    RegionBulletinFactory.create(bulletin=reissue, region=region)
+    # The rating still names the evening issue: it has not been recomputed.
+    assert RegionDayRating.objects.get(region=region, date=day).source_bulletin_id == (
+        evening.pk
+    )
     page = client.get(region.get_absolute_url(day))
     sheet = _get(client, _url(region.region_id.lower()))
-    assert page.context["bulletin"].pk == morning.pk
-    assert sheet.status_code == 200
-    assert sheet.context["bulletin"].pk == morning.pk
+    assert page.context["bulletin"].pk == reissue.pk
+    assert sheet.context["bulletin"].pk == reissue.pk
+    assert sheet.context["skipped_issue"].pk == morning.pk

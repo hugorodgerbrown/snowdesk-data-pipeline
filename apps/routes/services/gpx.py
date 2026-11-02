@@ -18,9 +18,13 @@ What the parser accepts, and why:
 * **``<wpt>`` is ignored.** A waypoint is a standalone marker, not part of
   any path — a file holding only waypoints has no route in it and is
   rejected.
-* **The first track wins** when a file holds several. The caller is told
-  how many were present (``track_count``) so the response can say which
-  one it took rather than silently dropping the rest.
+* **The first usable track wins** when a file holds several (SNOW-996) —
+  the first ``<trk>`` with at least two points, so an empty first track
+  no longer sinks a file whose second one is fine; a ``<rte>`` is read
+  only when no ``<trk>`` qualifies. The caller is told how many elements
+  of the chosen type the file held (``track_count``, every one, usable or
+  not) and which it took (``track_position``), so the upload can say so
+  rather than silently dropping the rest.
 * **Missing ``<ele>`` leaves ``ascent_m`` and ``descent_m`` as ``None``.**
   Reporting zero climb for a file that simply never recorded elevation
   would state a fact we do not have. The two figures are always known or
@@ -115,9 +119,13 @@ class ParsedRoute:
         point_count: ``len(points)`` — what is stored, not what was read.
         bounds: GeoJSON bbox over ``points``:
             ``[min_lon, min_lat, max_lon, max_lat]``.
-        track_count: How many ``<trk>``/``<rte>`` elements the file held.
-            Greater than 1 means the rest were dropped, and the caller is
-            expected to say so.
+        track_count: How many elements of the chosen type (``<trk>``, or
+            ``<rte>`` when the import fell back to one) the file held,
+            usable or not. Greater than 1 means the rest were dropped, and
+            the caller is expected to say so.
+        track_position: The chosen element's 1-based position among those
+            ``track_count``, in document order — above 1 when earlier ones
+            were skipped as too short to be a polyline.
         source_point_count: How many coordinates were read before
             simplification, so a caller can report what was thinned.
 
@@ -134,6 +142,7 @@ class ParsedRoute:
     bounds: list[float]
     track_count: int
     source_point_count: int
+    track_position: int = 1
 
 
 # ---------------------------------------------------------------------------
@@ -311,16 +320,45 @@ def _track_span(
     return started_at, finished_at
 
 
-def _select_track(root: "Element") -> tuple[list["Element"], int, str]:
+def _first_usable(candidates: list["Element"], point_tag: str) -> int | None:
+    """Return the index of the first candidate with enough points, or ``None``.
+
+    Only point *elements* are counted — whether their coordinates parse is
+    checked after selection, so a malformed point in the chosen track still
+    fails the upload as it always has.
+
+    Args:
+        candidates: The file's ``<trk>`` (or ``<rte>``) elements, in
+            document order.
+        point_tag: ``"trkpt"`` or ``"rtept"``.
+
+    Returns:
+        The 0-based index of the first candidate holding at least
+        ``_MIN_POINTS`` point elements, or ``None`` when none does.
+
+    """
+    for index, candidate in enumerate(candidates):
+        if len(_find_all(candidate, point_tag)) >= _MIN_POINTS:
+            return index
+    return None
+
+
+def _select_track(root: "Element") -> tuple[list["Element"], int, int, str]:
     """Choose the element list to read points from, preferring ``<trk>``.
+
+    The first ``<trk>`` with at least two points wins; a ``<rte>`` is read
+    only when no ``<trk>`` qualifies, under the same rule. When nothing
+    qualifies the first element of the preferred type is returned, so the
+    caller's "needs at least 2 points" check rejects it exactly as before.
 
     Args:
         root: The parsed ``<gpx>`` root element.
 
     Returns:
-        A ``(point_elements, track_count, name)`` triple — the chosen
-        track's points in document order, how many tracks the file held,
-        and the chosen track's own ``<name>`` (or "").
+        A ``(point_elements, track_count, track_position, name)`` tuple —
+        the chosen track's points in document order, how many elements of
+        the chosen type the file held, the chosen one's 1-based position
+        among them, and its own ``<name>`` (or "").
 
     Raises:
         GPXParseError: When the file holds neither a ``<trk>`` nor a
@@ -328,16 +366,32 @@ def _select_track(root: "Element") -> tuple[list["Element"], int, str]:
 
     """
     tracks = _find_all(root, "trk")
-    if tracks:
-        track = tracks[0]
-        # Every <trkpt> under the track, across all its <trkseg> children,
-        # in document order — which concatenates the segments for free.
-        return _find_all(track, "trkpt"), len(tracks), _child_text(track, "name")
-
     routes = _find_all(root, "rte")
+    for candidates, point_tag in ((tracks, "trkpt"), (routes, "rtept")):
+        index = _first_usable(candidates, point_tag)
+        if index is not None:
+            chosen = candidates[index]
+            # Every point under the element, across all its <trkseg>
+            # children, in document order — concatenating the segments.
+            points = _find_all(chosen, point_tag)
+            return points, len(candidates), index + 1, _child_text(chosen, "name")
+
+    # Nothing usable: hand back the preferred type's first element so the
+    # caller's point-count check names what it found, as it always has.
+    if tracks:
+        return (
+            _find_all(tracks[0], "trkpt"),
+            len(tracks),
+            1,
+            _child_text(tracks[0], "name"),
+        )
     if routes:
-        route = routes[0]
-        return _find_all(route, "rtept"), len(routes), _child_text(route, "name")
+        return (
+            _find_all(routes[0], "rtept"),
+            len(routes),
+            1,
+            _child_text(routes[0], "name"),
+        )
 
     raise GPXParseError(
         "No <trk> or <rte> found — a file of waypoints alone has no route in it."
@@ -586,7 +640,7 @@ def parse_gpx(raw: bytes) -> ParsedRoute:
     if _local(root.tag) != "gpx":
         raise GPXParseError(f"Root element is <{_local(root.tag)}>, not <gpx>.")
 
-    point_elements, track_count, track_name = _select_track(root)
+    point_elements, track_count, track_position, track_name = _select_track(root)
     source_points = [_point_from_element(element) for element in point_elements]
     if len(source_points) < _MIN_POINTS:
         raise GPXParseError(
@@ -619,4 +673,5 @@ def parse_gpx(raw: bytes) -> ParsedRoute:
         bounds=_bounds(points),
         track_count=track_count,
         source_point_count=len(source_points),
+        track_position=track_position,
     )

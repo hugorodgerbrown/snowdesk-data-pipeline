@@ -18,6 +18,14 @@ private helper to a service.
 SNOW-1207 made the rule the one the map already used: a bulletin belongs
 to the day it forecasts (``Bulletin.target_date``), and the day's latest
 such issue is the one shown, whatever the time of day.
+
+SNOW-1368 narrowed "latest" to "latest that built": an issue whose render
+model failed to build, or is older than ``RENDER_MODEL_VERSION``, is passed
+over for the day's latest built issue — the one ``recompute_region_day``
+already rated — so the chip, the body and the map describe one issue. Only
+when no issue for the day built is the latest unbuilt one returned, so its
+error card still shows. The fallback never leaves the day: every candidate
+forecasts ``target_date``.
 """
 
 from __future__ import annotations
@@ -25,9 +33,42 @@ from __future__ import annotations
 import datetime
 from collections import defaultdict
 from collections.abc import Iterable
+from typing import NamedTuple
 
 from apps.bulletins.models import Bulletin, RegionBulletin
+from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.regions.models import MicroRegion
+
+
+class IssuePick(NamedTuple):
+    """The issue a day shows, and the newer one passed over to show it.
+
+    Attributes:
+        bulletin: The issue to render, or ``None`` when the day has none.
+        skipped: The newest issue for the day that was passed over because
+            it did not build; ``None`` when nothing was skipped.
+
+    """
+
+    bulletin: Bulletin | None
+    skipped: Bulletin | None
+
+
+def is_built(bulletin: Bulletin) -> bool:
+    """Whether a bulletin's stored render model is current and readable.
+
+    The rule ``recompute_region_day`` rates by: a failed build stores
+    version 0, and a row the last rebuild did not reach is below the
+    current version; both read as the error sentinel.
+
+    Args:
+        bulletin: The issue to check.
+
+    Returns:
+        True when its render model can be shown.
+
+    """
+    return bulletin.render_model_version >= RENDER_MODEL_VERSION
 
 
 def issues_for_date(
@@ -69,12 +110,44 @@ def issues_for_date(
     return list(issues.order_by("valid_from"))
 
 
+def select_default_pick(
+    issues: list[Bulletin],
+    target_date: datetime.date,
+) -> IssuePick:
+    """
+    Pick a day's issue, preferring the latest that built (SNOW-1368).
+
+    Args:
+        issues: The day's issues, every one forecasting ``target_date``.
+        target_date: The day being displayed; kept for symmetry with
+            :func:`select_default_issue`, the pick does not read it.
+
+    Returns:
+        The latest built issue and the newest unbuilt issue after it, if
+        any; or, when none built, the latest issue and no skipped one.
+
+    """
+    if not issues:
+        return IssuePick(None, None)
+    built = [b for b in issues if is_built(b)]
+    if not built:
+        return IssuePick(max(issues, key=lambda b: b.valid_from), None)
+    chosen = max(built, key=lambda b: b.valid_from)
+    newer = [b for b in issues if not is_built(b) and b.valid_from > chosen.valid_from]
+    skipped = max(newer, key=lambda b: b.valid_from) if newer else None
+    return IssuePick(chosen, skipped)
+
+
 def select_default_issue(
     issues: list[Bulletin],
     target_date: datetime.date,
 ) -> Bulletin | None:
     """
-    Pick the default bulletin from a day's issues: the latest one.
+    Pick the default bulletin from a day's issues: the latest that built.
+
+    SNOW-1368: an issue that did not build is passed over for the latest
+    one that did (:func:`select_default_pick`); only a day with no built
+    issue returns its latest unbuilt one.
 
     ``issues`` holds only the issues that forecast ``target_date`` (see
     :func:`issues_for_date`), so the latest ``valid_from`` is the morning
@@ -93,9 +166,7 @@ def select_default_issue(
         The default Bulletin to render, or ``None`` when no issues exist.
 
     """
-    if not issues:
-        return None
-    return max(issues, key=lambda b: b.valid_from)
+    return select_default_pick(issues, target_date).bulletin
 
 
 def select_bulletin_for_date(
@@ -119,6 +190,27 @@ def select_bulletin_for_date(
 
     """
     return select_default_issue(issues_for_date(region, target_date), target_date)
+
+
+def select_pick_for_date(
+    region: MicroRegion,
+    target_date: datetime.date,
+) -> IssuePick:
+    """
+    Return a region's pick for a day, with the issue it passed over.
+
+    The form of :func:`select_bulletin_for_date` for a caller that tells the
+    reader a newer update could not be processed.
+
+    Args:
+        region: The MicroRegion to look up.
+        target_date: Calendar date identifying the day to display.
+
+    Returns:
+        The day's :class:`IssuePick`.
+
+    """
+    return select_default_pick(issues_for_date(region, target_date), target_date)
 
 
 def select_bulletins_for_regions(

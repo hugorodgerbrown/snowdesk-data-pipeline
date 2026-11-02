@@ -19,12 +19,13 @@ from django.core.cache import cache
 from django.utils import timezone
 
 from apps.ingest.public import serialise_source_document, serialise_source_ski_tour
-from apps.routes.models import SkiSegment, SkiTour
+from apps.routes.models import RestZone, SkiSegment, SkiTour
 from apps.routes.services.ski_network import (
     ABSENT,
     CREATED,
     DELETED,
     FAILED,
+    REST_ZONE_KINDS,
     UNCHANGED,
     UPDATED,
     SkiItemError,
@@ -36,6 +37,7 @@ from apps.routes.services.ski_network import (
 )
 from tests.factories import (
     SkiSegmentFactory,
+    SourceRestZoneFactory,
     SourceSkiSegmentFactory,
     SourceSkiTourFactory,
 )
@@ -339,3 +341,53 @@ def test_the_overview_is_rebuilt_after_a_sync_rewrites_a_line() -> None:
     )
     assert apply_ski_items("ski-network", [moved], commit=True)[UPDATED] == 1
     assert network_overview()[0]["geometry"] == moved_line
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1263: rest zones, applied by the same rule
+# ---------------------------------------------------------------------------
+
+
+def test_bbox_of_a_polygon_and_a_multipolygon() -> None:
+    """Every ring of every polygon counts."""
+    ring = [[10.0, 46.0], [10.2, 46.0], [10.2, 46.1], [10.0, 46.0]]
+    assert bbox_of({"type": "Polygon", "coordinates": [ring]}) == (
+        10.0,
+        46.0,
+        10.2,
+        46.1,
+    )
+    far = [[11.0, 47.0], [11.1, 47.0], [11.1, 47.2], [11.0, 47.0]]
+    multi = {"type": "MultiPolygon", "coordinates": [[ring], [far]]}
+    assert bbox_of(multi) == (10.0, 46.0, 11.1, 47.2)
+
+
+def test_a_rest_zone_is_created_from_its_document() -> None:
+    """The columns from the document, the box from the polygon."""
+    source = SourceRestZoneFactory.create()
+    item = serialise_source_document(source)
+    assert apply_ski_items("rest-zones", [item], commit=True)[CREATED] == 1
+    zone = RestZone.objects.get()
+    assert zone.source_uuid == source.uuid
+    assert zone.feature_id == source.document["feature_id"]
+    assert zone.binding is True
+    assert zone.period == "21.12. - 30.04."
+    assert zone.url == ""
+    ring = source.document["geometry"]["coordinates"][0][0]
+    assert zone.west == min(lon for lon, _lat in ring)
+    assert zone.north == max(lat for _lon, lat in ring)
+
+
+def test_the_service_host_applies_only_the_kinds_it_is_given() -> None:
+    """import_rest_zones applies rest zones and leaves the ski lines alone."""
+    SourceRestZoneFactory.create_batch(2)
+    SourceSkiSegmentFactory.create()
+    result = apply_from_service(commit=True, kinds=REST_ZONE_KINDS)
+    assert set(result) == {"rest-zones"}
+    assert result["rest-zones"][CREATED] == 2
+    assert not SkiSegment.objects.exists()
+    zone = SourceRestZoneFactory.create()
+    zone.deleted_at = timezone.now()
+    zone.save()
+    gone = apply_from_service(commit=True, kinds=REST_ZONE_KINDS)["rest-zones"]
+    assert gone[ABSENT] == 1

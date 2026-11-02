@@ -1,8 +1,8 @@
 ---
 name: a-bulletin-belongs-to-the-day-it-forecasts
-description: Why every surface files a bulletin under the day it forecasts (target_date, issues_for_date, select_default_issue, recompute_region_day)
+description: A bulletin belongs to the day it forecasts; the latest BUILT issue shows (target_date, select_default_pick, IssuePick, is_built)
 status: current
-last-reviewed: 2026-10-23
+last-reviewed: 2026-11-02
 ---
 
 # A bulletin belongs to the day it forecasts
@@ -13,6 +13,19 @@ whose window starts from 12:00 UTC on forecasts the next day). A day shows
 the **latest** issue that forecasts it: the morning update when there is
 one, otherwise the previous evening's issue. The time of day plays no part.
 
+**Latest that built (SNOW-1368, Hugo, 2 Nov 2026).** "Latest" means the
+latest issue whose render model built at the current version
+(`render_model_version >= RENDER_MODEL_VERSION`, `selection.is_built`), the
+same issue `recompute_region_day` rates. A newer issue that failed to build,
+or that the last rebuild did not reach, is passed over, and the body names
+both issues' times in a notice (`select_default_pick` returns it as
+`IssuePick.skipped`). Only when no issue for the day built is the latest
+unbuilt one shown, with its error card. The fallback never leaves the day:
+every candidate forecasts it. An explicit `?issue=` still shows the issue it
+names. Until then the chip and map showed the rated (built) evening issue
+while the body showed the failed morning update's error card, and the map
+painted that region's steep ground as described by nothing.
+
 The rule is in one place for every surface:
 
 - the map fill and the calendar read `RegionDayRating`, which
@@ -20,7 +33,9 @@ The rule is in one place for every surface:
 - the region and resort panels, the bulletin and resort pages, problem
   terrain, the place sheet, favourites and the MCP tools read
   `apps.bulletins.services.selection` (`issues_for_date`,
-  `select_default_issue`), which filters on the same column.
+  `select_default_issue`, `select_default_pick`), which filters on the same
+  column. `/api/problem-terrain/`'s batched `_page_picks` applies the same
+  built-only threshold on the values it fetches.
 
 ## Why
 

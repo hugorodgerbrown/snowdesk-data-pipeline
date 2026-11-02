@@ -20,8 +20,9 @@ builder both containers call.
 Context:
   bulletin, panel, page_date, is_today, day_windows,
   show_day_risk_profile, day_movement,
-  bulletin_source_label, bulletin_source_url, ground — from
-  ``build_bulletin_body``.
+  bulletin_source_label, bulletin_source_url, ground, skipped_issue — from
+  ``build_bulletin_body``. ``skipped_issue`` is a newer issue for the same
+  day that did not build (SNOW-1368); the body names both issues' times.
   map_url — the bulletin page's link to this region on the map (page only;
             "On the ground"'s call to report on the page goes there).
   in_map — True inside the map's sheet: the superuser debug block, which
@@ -63,6 +64,23 @@ Context:
         {% endwith %}
     {% else %}
         {% with rm=panel.render_model %}
+            {% comment %}
+                   SNOW-1368: a newer issue for this same day did not build,
+                   so the body shows the latest one that did. Both times are
+                   named, in the page's own format, so the reader knows which
+                   issue they are reading. The fallback never leaves the day.
+            {% endcomment %}
+            {% if skipped_issue %}
+                {% blocktrans with skipped=skipped_issue.valid_from|date:"j M H:i" trimmed asvar skipped_heading %}
+                    The {{ skipped }} UTC update couldn’t be processed.
+                {% endblocktrans %}
+                {% blocktrans with shown=bulletin.valid_from|date:"j M H:i" trimmed asvar skipped_body %}
+                    Showing the bulletin issued {{ shown }} UTC.
+                {% endblocktrans %}
+                <div data-testid="skipped-issue-notice">
+                    {% include "includes/_callout.html" with kind="info" heading=skipped_heading body=skipped_body only %}
+                </div>
+            {% endif %}
             {% comment %}
                    Off-schedule marker (SNOW-670).
 
