@@ -19,7 +19,12 @@
  *   - **The conditions.** The bulletins and weather inside the boundary
  *     were fetched today (`areaContentState` is `fresh`). Stale or never
  *     is a No here, not a caveat: the panel's question is whether the area
- *     is ready, and yesterday's bulletin is not.
+ *     is ready, and yesterday's bulletin is not. SNOW-1379: an area that
+ *     carries the problem-terrain feed (downloaded with terrain tiles, in
+ *     a terrain country) adds a "Problem terrain" line counting the days
+ *     saved, from the urls the last sync stamped (`items.problemTerrain`,
+ *     `withProblemTerrain`). The line informs; it does not move the
+ *     stage's answer.
  *   - **Your things.** Each trip and pin in the area, by name, Yes only
  *     when every url it needs is in Cache Storage. What "needs" means is
  *     stamped on the record by the sync that fetched them
@@ -62,10 +67,18 @@
    */
 
   /**
+   * @typedef {Object} TerrainLine
+   * @property {StageStatus} status Yes when every day is held.
+   * @property {number} held The days in Cache Storage.
+   * @property {number} total The days the last sync saved.
+   */
+
+  /**
    * @typedef {Object} Stage
    * @property {StageStatus} status
    * @property {string} [reason]
    * @property {ThingRow[]} [rows] Your things only.
+   * @property {TerrainLine} [terrain] The conditions stage only (SNOW-1379).
    */
 
   /**
@@ -298,6 +311,35 @@
   }
 
   /**
+   * The conditions stage's "Problem terrain" line: how many of the days
+   * the last sync saved are in Cache Storage (SNOW-1379).
+   *
+   * Only for an area that carries the feed: one downloaded with terrain
+   * tiles (`area.terrain`) whose last sync stamped a non-empty
+   * `items.problemTerrain` — the stamp is empty for an area outside the
+   * terrain countries, and absent for one not synced since this ticket.
+   * The feed is public, so presence is enough (`urlState`). A cache that
+   * could not be read counts nothing and is unknown.
+   *
+   * @param {any} area
+   * @param {{urls: Map<string, any>|null, origin: string,
+   *   principal?: string|null}} ctx
+   * @returns {TerrainLine|null} Null where the area carries no feed.
+   */
+  function problemTerrainLine(area, ctx) {
+    if (!area || !area.terrain) return null;
+    var stamped = area.items && area.items.problemTerrain;
+    if (!Array.isArray(stamped) || stamped.length === 0) return null;
+    var total = stamped.length;
+    if (!ctx.urls) return { status: 'unknown', held: 0, total: total };
+    var held = /** @type {Map<string, any>} */ (ctx.urls);
+    var count = stamped.filter(function (/** @type {string} */ url) {
+      return urlState(absolute(url, ctx.origin), held, ctx.principal || null) === 'yes';
+    }).length;
+    return { status: count === total ? 'yes' : 'no', held: count, total: total };
+  }
+
+  /**
    * The "your things" stage: each trip and pin, Yes only when every url
    * it needs is cached.
    *
@@ -398,6 +440,17 @@
   }
 
   /**
+   * A stage with its "Problem terrain" line, where the area has one.
+   *
+   * @param {Stage} stage
+   * @param {TerrainLine|null} line
+   * @returns {Stage}
+   */
+  function withTerrainLine(stage, line) {
+    return line ? Object.assign({}, stage, { terrain: line }) : stage;
+  }
+
+  /**
    * Every panel, in paint order.
    *
    * @param {any} readings What `offline_audit.js` collected.
@@ -440,7 +493,7 @@
               }
             : {
                 map: mapStage(area, tiles[area.id]),
-                conditions: conditionsStage(area, r.now),
+                conditions: withTerrainLine(conditionsStage(area, r.now), problemTerrainLine(area, ctx)),
                 things: thingsStage(area, ctx),
               };
           panels.push({
@@ -465,6 +518,7 @@
     mapStage: mapStage,
     conditionsStage: conditionsStage,
     thingsStage: thingsStage,
+    problemTerrainLine: problemTerrainLine,
     tileReading: tileReading,
     isSignedIn: isSignedIn,
     areaName: areaName,

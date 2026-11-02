@@ -130,6 +130,10 @@ A caller must load, after offline_audit.js:
         {# SNOW-1139: the day the bulletins were fetched, dated. #}
         <span data-string="note-conditions-stale">{% translate "from %(day)s, an earlier day" %}</span>
         <span data-string="note-conditions-never">{% translate "never saved" %}</span>
+        {# SNOW-1379: the conditions stage's problem-terrain line, for an #}
+        {# area downloaded with terrain tiles.                            #}
+        <span data-string="line-problem-terrain">{% translate "Problem terrain" %}</span>
+        <span data-string="problem-terrain-count">{% translate "%(held)s of %(total)s days saved" %}</span>
         <span
             data-string="note-things-unrecorded"
         >{% translate "not recorded yet — sync this area to list them" %}</span>
