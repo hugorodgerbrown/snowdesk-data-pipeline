@@ -1,6 +1,6 @@
 ---
 name: the-region-colour-gives-way-by-zoom
-description: Map region fill fades out over z8.5–10; from z10 an inside edge band and "3 · Name" label (regions-edge, region-labels, rfc7946_rewind)
+description: Region fill fades out over z8.5–10; from z10 an inside edge band, level label and region chip (regions-edge, region-labels, map-region-chip)
 status: current
 last-reviewed: 2026-11-02
 ---
@@ -59,6 +59,17 @@ and band, and turns all three off at 0
 - Both new layers are bulletin data: they take the provider filter and the
   unsupported-region rule (`BULLETIN_DATA_LAYER_IDS`,
   `UNSUPPORTED_REGION_LAYER_IDS`).
+
+**The region chip (SNOW-1376).** From z10 a chip in the bottom-left stack,
+just above the date row (`#map-region-chip`, `map_region_chip.js` with its
+rules in `map_region_chip_core.js`), names the region at the map's centre
+and its level, so the level stays on screen when one region fills it. Its
+second line, from z12, says what the slopes show: "slopes" where they are
+painted, the reader's own Steep terrain filter when that is on, or "Slopes
+are drawn in Switzerland only" outside the tiles. It hides with no region
+or no rating, and while the route rail is open. A tap opens the region's
+sheet through `snowdesk:region-open` with `frame: false`, so the camera
+stays where the reader put it.
 
 **Consequences.**
 

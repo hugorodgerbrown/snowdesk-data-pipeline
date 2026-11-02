@@ -9373,7 +9373,10 @@
       }
       if (feature.id === selectedId) window.pwaRegionSheet?.reopen?.();
       selectFeature(feature.id);
-      window.pwaMapFocus?.region?.(regionID);
+      // SNOW-1376: the region chip asks with `frame: false` — the reader is
+      // already looking at the region, close in, and framing it would zoom
+      // them back out to the whole region.
+      if (!(ev.detail && ev.detail.frame === false)) window.pwaMapFocus?.region?.(regionID);
     });
 
     // Pin-positioning focus (static/js/map_placement_focus.js) clears every
