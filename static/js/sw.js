@@ -33,6 +33,7 @@
  *     served offline to that principal only (_privateJsonNetworkFirst).
  *
  *   - A weather sheet           (SNOW-965: /api/weather/<id>/detail/)
+ *     and the problem-terrain feed (SNOW-1379: /api/problem-terrain/?d=)
  *     → network-first, kept unstamped, served offline on an exact url
  *     match only (_publicJsonNetworkFirst).
  *
@@ -1229,9 +1230,10 @@ const STATIC_PATHS = new Set([
 // SNOW-965: the two JSON classes, for ``_classifySync``'s inline fallback.
 // basemap_cache_core.js holds the same two literals and the reasoning;
 // changing one copy means changing the other (tests/js/test_sw.js runs
-// both paths over the same urls).
+// both paths over the same urls). SNOW-1379 added the problem-terrain
+// feed to the public class.
 const PRIVATE_JSON_PATH = /^\/trips\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/route\.geojson$/i;
-const PUBLIC_JSON_PATH = /^\/api\/weather\/(?!\d+\/)[A-Za-z0-9_-]+\/detail\/$/;
+const PUBLIC_JSON_PATH = /^\/api\/(?:weather\/(?!\d+\/)[A-Za-z0-9_-]+\/detail|problem-terrain)\/$/;
 // SNOW-1312: the map's region sheet — the third copy-pair, held to the
 // core's by the same tests. SNOW-1318: and a resort's place sheet.
 const PUBLIC_PARTIAL_PATH = /^\/partials\/(?:region-sheet\/[a-z]{2}-(?=[a-z0-9-]*\d)[a-z0-9]+(?:-[a-z0-9]+)*|place-sheet\/resort\/[a-z0-9_-]+)\/$/i;

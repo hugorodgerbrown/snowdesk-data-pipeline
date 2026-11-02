@@ -95,6 +95,9 @@
  * enough (no service-worker environment or MapLibre instance needed).
  */
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import '../../static/js/basemap_download_core.js';
@@ -1860,6 +1863,7 @@ describe('areaContentURLs', () => {
       regionSheetUrls: [],
       resortSheetUrls: [],
       ratingsUrls: [],
+      problemTerrainUrls: [],
     });
   });
 
@@ -2202,6 +2206,101 @@ describe('areaItemExpectation and stampContentRecord (SNOW-1308)', () => {
   it('a short sync flags the record and touches neither stamp', () => {
     const entry = { id: 'a', contentAt: 'old', items: { trips: [], pins: [] } };
     const next = core.stampContentRecord(entry, false, { trips: [{ uuid: 'n' }], pins: [] });
+    expect(next).toEqual({ ...entry, contentIncomplete: true });
+  });
+});
+
+describe('areaContentURLs — the problem-terrain feed (SNOW-1379)', () => {
+  const DAYS = ['2026-01-06', '2026-01-07'];
+  const SWISS = [{ id: 'CH-4115', slug: 'martigny-verbier' }];
+  const FRENCH = [{ id: 'FR-01', slug: 'chablais' }];
+
+  it('takes one url per forward day for a terrain area inside CH', () => {
+    const plan = core.areaContentURLs({ regions: SWISS, days: DAYS, terrain: true });
+
+    expect(plan.problemTerrainUrls).toEqual([
+      '/api/problem-terrain/?d=2026-01-06',
+      '/api/problem-terrain/?d=2026-01-07',
+    ]);
+  });
+
+  it('takes it once per day however many Swiss regions the area holds', () => {
+    const plan = core.areaContentURLs({
+      regions: [...SWISS, { id: 'CH-4116', slug: 'next-door' }, ...FRENCH],
+      days: ['2026-01-06', '2026-01-06'],
+      terrain: true,
+    });
+
+    expect(plan.problemTerrainUrls).toEqual(['/api/problem-terrain/?d=2026-01-06']);
+  });
+
+  it('takes none without terrain tiles', () => {
+    expect(core.areaContentURLs({ regions: SWISS, days: DAYS }).problemTerrainUrls).toEqual([]);
+    expect(
+      core.areaContentURLs({ regions: SWISS, days: DAYS, terrain: false }).problemTerrainUrls,
+    ).toEqual([]);
+  });
+
+  it('takes none for an area with no region in a terrain country', () => {
+    const plan = core.areaContentURLs({ regions: FRENCH, days: DAYS, terrain: true });
+
+    expect(plan.problemTerrainUrls).toEqual([]);
+    expect(core.areaContentURLs({ days: DAYS, terrain: true }).problemTerrainUrls).toEqual([]);
+  });
+
+  it('takes none without days', () => {
+    expect(
+      core.areaContentURLs({ regions: SWISS, days: [], terrain: true }).problemTerrainUrls,
+    ).toEqual([]);
+  });
+
+  it("is the url map.js's refreshBulletinTerrainDay fetches, byte for byte", () => {
+    // The worker answers 'public-json' on an exact url, so a warmed copy
+    // under any other spelling would never be found offline.
+    const source = readFileSync(resolve(__dirname, '../../static/js/map.js'), 'utf8');
+    const match = /fetch\(`(\/api\/problem-terrain\/[^`]*)`/.exec(source);
+    expect(match).not.toBeNull();
+    const day = '2026-01-06';
+    const mapUrl = match[1].replace('${encodeURIComponent(date)}', encodeURIComponent(day));
+
+    expect(core.problemTerrainURL(day)).toBe(mapUrl);
+  });
+});
+
+describe('withProblemTerrain and its stamp (SNOW-1379)', () => {
+  const URLS = ['/api/problem-terrain/?d=2026-01-06'];
+
+  it('adds the urls to an expectation, and makes one from nothing', () => {
+    const things = { trips: [], pins: [], principal: 'acct-A' };
+
+    expect(core.withProblemTerrain(things, URLS)).toEqual({ ...things, problemTerrain: URLS });
+    expect(core.withProblemTerrain(null, URLS)).toEqual({ problemTerrain: URLS });
+    expect(core.withProblemTerrain(null, undefined)).toEqual({ problemTerrain: [] });
+  });
+
+  it('stamps the urls with the things', () => {
+    const expectation = core.withProblemTerrain({ trips: [], pins: [], principal: 'p' }, URLS);
+    const next = core.stampContentRecord({ id: 'a' }, true, expectation, 'x');
+
+    expect(next.items).toEqual({ trips: [], pins: [], principal: 'p', problemTerrain: URLS });
+  });
+
+  it('stamps them alone after a signed-out sync, keeping the things already held', () => {
+    const old = { trips: [{ uuid: 't' }], pins: [], principal: 'p' };
+    const next = core.stampContentRecord(
+      { id: 'a', items: old },
+      true,
+      core.withProblemTerrain(null, URLS),
+      'x',
+    );
+
+    expect(next.items).toEqual({ ...old, problemTerrain: URLS });
+  });
+
+  it('a short sync stamps none', () => {
+    const entry = { id: 'a', contentAt: 'old' };
+    const next = core.stampContentRecord(entry, false, core.withProblemTerrain(null, URLS));
+
     expect(next).toEqual({ ...entry, contentIncomplete: true });
   });
 });

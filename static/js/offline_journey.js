@@ -66,6 +66,9 @@
     'note-map-tiles-unread': 'its map tiles could not be checked here',
     'note-conditions-stale': 'from %(day)s, an earlier day',
     'note-conditions-never': 'never saved',
+    // SNOW-1379: the conditions stage's problem-terrain line.
+    'line-problem-terrain': 'Problem terrain',
+    'problem-terrain-count': '%(held)s of %(total)s days saved',
     'note-things-unrecorded': 'not recorded yet — sync this area to list them',
     'note-things-none': 'none of your trips or pins are in this area',
     'note-things-other-account': 'saved by another account',
@@ -232,6 +235,35 @@
   }
 
   /**
+   * The conditions stage's "Problem terrain" line (SNOW-1379): the days
+   * of the feed the last sync saved that are still on the device, in the
+   * stage's own list, as a thing is in its stage.
+   *
+   * @param {Document} doc
+   * @param {HTMLElement} row The conditions stage row.
+   * @param {{status: string, held: number, total: number}} line
+   * @param {Record<string, string>} t
+   * @returns {void}
+   */
+  function renderTerrainLine(doc, row, line, t) {
+    var list = /** @type {HTMLElement|null} */ (row.querySelector('[data-journey-things]'));
+    var item = clone(doc, 'offline-journey-thing-template');
+    if (!list || !item) return;
+    item.setAttribute('data-journey-thing', 'problem-terrain');
+    item.setAttribute('data-journey-status', line.status);
+    fillSlot(item, 'data-journey-thing-name', say(t, 'line-problem-terrain'));
+    fillSlot(
+      item,
+      'data-journey-thing-value',
+      line.status === 'unknown'
+        ? say(t, 'answer-unknown')
+        : say(t, 'problem-terrain-count', { held: String(line.held), total: String(line.total) }),
+    );
+    list.appendChild(item);
+    list.hidden = false;
+  }
+
+  /**
    * Paint one panel.
    *
    * @param {Document} doc
@@ -290,7 +322,10 @@
         conditionsNote = say(t, 'note-conditions-never');
       }
       var conditionsRow = renderStage(doc, 'conditions', conditions, conditionsNote, t);
-      if (conditionsRow) stages.appendChild(conditionsRow);
+      if (conditionsRow) {
+        if (conditions.terrain) renderTerrainLine(doc, conditionsRow, conditions.terrain, t);
+        stages.appendChild(conditionsRow);
+      }
 
       var things = panel.stages.things;
       if (things) {

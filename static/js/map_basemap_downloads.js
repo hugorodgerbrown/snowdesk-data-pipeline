@@ -815,14 +815,23 @@ async function downloadContentDays() {
  * not a shortfall. Every weather sheet is dated with today, the url the
  * map's sheet asks for and the only one the worker answers offline.
  *
- * @param {Object} blob The run's download blob, for its tile ranges.
+ * SNOW-1379: and, for an area downloaded with terrain tiles, the
+ * problem-terrain feed per forward day (`problemTerrainUrls`), which the
+ * expectation carries too (`withProblemTerrain`) so the `/offline/` panel
+ * can count the days saved.
+ *
+ * @param {Object} blob The run's download blob, for its tile ranges — or
+ *   an area record, which carries its own `terrain`.
+ * @param {boolean} [terrain] SNOW-1379: whether the area has terrain
+ *   tiles. A first run passes the opt-in it carries, since its blob has no
+ *   record yet; omitted, the record's own `terrain` is read.
  * @returns {Promise<{urls: string[], short: boolean}>} `urls` is possibly
  *   empty, which every caller reads as "nothing to add" rather than as a
  *   failure. `short` is true when either endpoint could not be read, so the
  *   list is missing urls it should have named — a shortfall no tally
  *   over that list can detect, because every url in it can land.
  */
-async function assembleAreaContentURLs(blob) {
+async function assembleAreaContentURLs(blob, terrain) {
   const core = self.pwaBasemapDownloadCore;
   const mapEl = document.getElementById('map');
   if (!core || !core.areaContentURLs || !mapEl) return { urls: [], short: false };
@@ -877,13 +886,24 @@ async function assembleAreaContentURLs(blob) {
       regionSheetTemplate: mapEl.dataset.regionSheetUrl || '',
       resortSheetTemplate: mapEl.dataset.resortSheetUrl || '',
       ratingsUrl: mapEl.dataset.ratingsUrl || '',
+      // SNOW-1379: the problem-terrain feed per day, for an area with
+      // terrain tiles.
+      terrain: terrain === undefined ? !!(blob && blob.terrain) : !!terrain,
     })
-    : { bulletinUrls: [], weatherDetailUrls: [], regionSheetUrls: [], resortSheetUrls: [], ratingsUrls: [] };
+    : {
+      bulletinUrls: [],
+      weatherDetailUrls: [],
+      regionSheetUrls: [],
+      resortSheetUrls: [],
+      ratingsUrls: [],
+      problemTerrainUrls: [],
+    };
   const planned = [
     ...plan.bulletinUrls,
     ...(plan.regionSheetUrls || []),
     ...(plan.resortSheetUrls || []),
     ...(plan.ratingsUrls || []),
+    ...(plan.problemTerrainUrls || []),
     ...plan.weatherDetailUrls,
   ];
   const itemTemplates = {
@@ -909,7 +929,7 @@ async function assembleAreaContentURLs(blob) {
   //
   // Attributed to the account the SERVER answered for, and only where that
   // is the account this page was rendered for (`attestedExpectation`).
-  const expectation =
+  const attested =
     items && typeof core.areaItemExpectation === 'function' && typeof core.attestedExpectation === 'function'
       ? core.attestedExpectation(
         core.areaItemExpectation(items, itemTemplates),
@@ -917,6 +937,12 @@ async function assembleAreaContentURLs(blob) {
         document.querySelector('meta[name="pwa-user-id"]')?.getAttribute('content') || '',
       )
       : null;
+  // SNOW-1379: and the problem-terrain days, which are every reader's, so
+  // a signed-out plan carries them too.
+  const expectation =
+    typeof core.withProblemTerrain === 'function'
+      ? core.withProblemTerrain(attested, plan.problemTerrainUrls)
+      : attested;
   return {
     urls: [...planned, ...itemUrls],
     short: !content || itemsShort,
@@ -3419,7 +3445,10 @@ const PINNED_DOWNLOAD_DEPS = {
   // SNOW-932: answers with `{urls, short}` rather than a bare list. The
   // runner accepts either, so this is not a breaking change for a shell
   // mid-rollout; what the pair buys is the shortfall the tally cannot see.
-  contentUrls: (blob) => assembleAreaContentURLs(blob),
+  //
+  // SNOW-1379: with the run's terrain opt-in, which decides whether the
+  // problem-terrain feed is part of the plan.
+  contentUrls: (blob, run) => assembleAreaContentURLs(blob, !!(run && run.terrain)),
   // SNOW-844: the subset of `feedUrls` that is a RENDER dependency of the
   // active style, captured at run start alongside `tileSources` so the
   // record stores the list this run actually fetched rather than whatever
@@ -3682,7 +3711,7 @@ async function refreshAreaContent(areaId) {
   // unreachable is short however many of its urls land, and a refresh that
   // reported success on one would clear the very flag it was called to
   // clear. See `assembleAreaContentURLs`.
-  const content = await assembleAreaContentURLs(found.record);
+  const content = await assembleAreaContentURLs(found.record, !!found.record.terrain);
   if (content.urls.length === 0) {
     // SNOW-932 review: an empty plan is not automatically a failed one. A
     // plan assembled against the WHOLE country set that resolves to no

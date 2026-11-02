@@ -211,6 +211,32 @@ describe('painting', () => {
     expect(note.textContent).toBe('from 2026-09-01, an earlier day');
   });
 
+  it('counts the problem-terrain days under the conditions for a terrain area (SNOW-1379)', () => {
+    const days = ['/api/problem-terrain/?d=2026-09-11', '/api/problem-terrain/?d=2026-09-12'];
+    const r = readings([area({ terrain: true, items: { ...area().items, problemTerrain: days } })]);
+    r.shellEntries.push({ url: window.location.origin + days[0] });
+    mount();
+    announce(r);
+
+    const line = panelFor('region-CH-4115').querySelector(
+      '[data-journey-stage="conditions"] [data-journey-thing="problem-terrain"]',
+    );
+    expect(line).not.toBeNull();
+    expect(line.closest('[data-journey-things]').hidden).toBe(false);
+    expect(line.getAttribute('data-journey-status')).toBe('no');
+    expect(line.querySelector('[data-journey-thing-name]').textContent).toBe('Problem terrain');
+    expect(line.querySelector('[data-journey-thing-value]').textContent).toBe('1 of 2 days saved');
+  });
+
+  it('draws no problem-terrain line for an area without terrain tiles (SNOW-1379)', () => {
+    mount();
+    announce(readings());
+
+    const conditions = panelFor('region-CH-4115').querySelector('[data-journey-stage="conditions"]');
+    expect(conditions.querySelector('[data-journey-thing]')).toBeNull();
+    expect(conditions.querySelector('[data-journey-things]').hidden).toBe(true);
+  });
+
   it('shows an orphaned bucket with its Remove and no Sync', () => {
     mount();
     announce(

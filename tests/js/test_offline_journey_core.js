@@ -362,6 +362,69 @@ describe('your things', () => {
   });
 });
 
+describe("the conditions stage's problem-terrain line (SNOW-1379)", () => {
+  const DAYS = ['/api/problem-terrain/?d=2026-09-11', '/api/problem-terrain/?d=2026-09-12'];
+
+  /** An area downloaded with terrain tiles whose last sync saved `DAYS`. */
+  function terrainArea(overrides) {
+    return area({ terrain: true, items: { ...area().items, problemTerrain: DAYS }, ...(overrides || {}) });
+  }
+
+  /** Readings holding `held` of the feed's days. */
+  function withDays(areas, held, overrides) {
+    const r = readings(areas, overrides);
+    r.shellEntries = r.shellEntries.concat(held.map((url) => ({ url: ORIGIN + url })));
+    return r;
+  }
+
+  it('counts every saved day as held, and says Yes', () => {
+    const p = panel(withDays([terrainArea()], DAYS));
+
+    expect(p.stages.conditions).toEqual({
+      status: 'yes',
+      terrain: { status: 'yes', held: 2, total: 2 },
+    });
+    expect(p.verdict).toBe('ready');
+  });
+
+  it('counts a missing day as No, without moving the stage or the verdict', () => {
+    const p = panel(withDays([terrainArea()], DAYS.slice(0, 1)));
+
+    expect(p.stages.conditions.terrain).toEqual({ status: 'no', held: 1, total: 2 });
+    expect(p.stages.conditions.status).toBe('yes');
+    expect(p.verdict).toBe('ready');
+  });
+
+  it('counts the feed for a signed-out reader too: it is public', () => {
+    const p = panel(withDays([terrainArea()], DAYS, { currentPrincipal: null }));
+
+    expect(p.stages.conditions.terrain).toEqual({ status: 'yes', held: 2, total: 2 });
+  });
+
+  it('is unknown when the shell cache could not be listed', () => {
+    const p = panel(withDays([terrainArea()], DAYS, { cachesReadable: false }));
+
+    expect(p.stages.conditions.terrain).toEqual({ status: 'unknown', held: 0, total: 2 });
+  });
+
+  it('is absent for an area without terrain tiles', () => {
+    const p = panel(withDays([terrainArea({ terrain: false })], DAYS));
+
+    expect('terrain' in p.stages.conditions).toBe(false);
+  });
+
+  it('is absent where the last sync saved no day, or recorded none', () => {
+    const outside = terrainArea({ items: { ...area().items, problemTerrain: [] } });
+    const unsynced = terrainArea({ items: area().items });
+
+    expect('terrain' in panel(readings([outside])).stages.conditions).toBe(false);
+    expect('terrain' in panel(readings([unsynced])).stages.conditions).toBe(false);
+    expect('terrain' in panel(readings([terrainArea({ items: null })])).stages.conditions).toBe(
+      false,
+    );
+  });
+});
+
 describe('the panel list', () => {
   it('is empty with no areas, and with no audit core', () => {
     expect(journey.buildPanels(readings([]), {}, {})).toEqual([]);

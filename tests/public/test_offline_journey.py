@@ -149,6 +149,22 @@ class TestTemplates:
         ):
             assert words in html, words
 
+    def test_the_conditions_stage_carries_the_problem_terrain_line(self) -> None:
+        """Its label and its count are server-translated (SNOW-1379).
+
+        The line is drawn into the conditions stage's own list from the
+        thing template, so it needs no template of its own, only its copy.
+        """
+        html = render_to_string(PARTIAL, {})
+
+        assert '<span data-string="line-problem-terrain">Problem terrain</span>' in html
+        assert (
+            '<span data-string="problem-terrain-count">%(held)s of %(total)s days saved</span>'
+            in html
+        )
+        assert "'line-problem-terrain'" in MODULE.read_text()
+        assert "'problem-terrain-count'" in MODULE.read_text()
+
 
 class TestServiceWorkerPrecache:
     """The worker carries the panels onto the fallback page."""

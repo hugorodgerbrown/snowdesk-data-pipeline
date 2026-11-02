@@ -2018,6 +2018,35 @@ describe('Sync now, on the area panels (SNOW-925/951, SNOW-1308)', () => {
     expect(urls.some((url) => url.includes('?d=' + dayFrom(-1)))).toBe(false);
   });
 
+  it('takes no problem-terrain feed for an area without terrain tiles (SNOW-1379)', async () => {
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+    row.querySelector('[data-journey-sync]').click();
+    await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+    expect(warmed.flat().some((url) => url.startsWith('/api/problem-terrain/'))).toBe(false);
+  });
+
+  it('takes the problem-terrain feed per forward day for a terrain area, and stamps it (SNOW-1379)', async () => {
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z', terrain: true });
+
+    row.querySelector('[data-journey-sync]').click();
+    await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+    // map.js's own url, `d` alone — the worker answers it exactly.
+    const days = [0, 1].map((delta) => '/api/problem-terrain/?d=' + dayFrom(delta));
+    expect(warmed.flat().filter((url) => url.startsWith('/api/problem-terrain/'))).toEqual(days);
+    await vi.waitUntil(
+      async () => {
+        const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
+        return stored.value[0].contentAt !== '2026-09-01T10:00:00.000Z';
+      },
+      { timeout: 5000 },
+    );
+    const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
+    expect(stored.value[0].items.problemTerrain).toEqual(days);
+  });
+
   it('counts a sheet or ratings warm that fails against the area (SNOW-1312)', async () => {
     const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
     window.pwaWarmCache.mockImplementation(async (urls) => {
@@ -2094,7 +2123,9 @@ describe('Sync now, on the area panels (SNOW-925/951, SNOW-1308)', () => {
     // SNOW-1308: the reader's things the sync expected, stamped by the
     // shared rule — the same `areaItemExpectation` the map's syncs stamp
     // (tests/js/test_map_download_content.js), over this page's templates.
-    const { principal, ...names } = stored.value[0].items;
+    const { principal, problemTerrain, ...names } = stored.value[0].items;
+    // SNOW-1379: no problem-terrain days for an area without terrain tiles.
+    expect(problemTerrain).toEqual([]);
     // Stamped with the syncing session's principal (SNOW-1308 review) —
     // this page's `pwa-user-id`, set to 'acct-B' below.
     expect(principal).toBe('acct-B');

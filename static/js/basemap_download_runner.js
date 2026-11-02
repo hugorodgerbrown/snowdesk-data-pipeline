@@ -68,7 +68,7 @@
    *   evict: function(string[]): Promise<void>,
    *   feedUrls: function(): string[],
    *   terrainClassUrls?: function(Object): string[],
-   *   contentUrls?: function(Object): Promise<string[]|{urls: string[],
+   *   contentUrls?: function(Object, {terrain: boolean}): Promise<string[]|{urls: string[],
    *     short?: boolean}>,
    *   renderDeps?: function(): string[],
    *   glyphPrefix?: function(): string,
@@ -93,6 +93,8 @@
    *   that still carries it is simply not asked.
    *   SNOW-1072: `terrainClassUrls` is the terrain-class tiles over the
    *   blob's ground — read only when `options.terrain` is set.
+   *   SNOW-1379: `contentUrls` is handed the run's `terrain` too, which
+   *   decides whether the problem-terrain feed is in the content plan.
    * @param {{
    *   areaId: string,
    *   mb: number,
@@ -360,7 +362,9 @@
     // deps bundle. An array normalises to `short: false`, which is exactly
     // the pre-ticket behaviour.
     const contentReply =
-      typeof deps.contentUrls === 'function' ? (await deps.contentUrls(blob)) || [] : [];
+      typeof deps.contentUrls === 'function'
+        ? (await deps.contentUrls(blob, { terrain: terrain })) || []
+        : [];
     const contentUrls = Array.isArray(contentReply)
       ? contentReply
       : contentReply.urls || [];

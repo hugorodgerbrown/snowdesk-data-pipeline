@@ -3971,6 +3971,10 @@ describe('a trip route and a weather sheet are read offline (SNOW-965)', () => {
 
       expect(classify(ROUTE)).toBe('private-json');
       expect(classify(`${SHEET}?date=${TODAY}`)).toBe('public-json');
+      // SNOW-1379: and the problem-terrain feed, on both copies of the
+      // pattern — the core's and the worker's inline fallback.
+      expect(classify(`${ORIGIN}/api/problem-terrain/?d=${TODAY}`)).toBe('public-json');
+      expect(classify(`${ORIGIN}/api/problem-terrain/extra/`)).toBe('network');
       expect(classify(SHARE_ROUTE)).toBe('network');
       expect(classify(`${ORIGIN}/api/area-items/?bbox=7,46,8,47`)).toBe('network');
     }
