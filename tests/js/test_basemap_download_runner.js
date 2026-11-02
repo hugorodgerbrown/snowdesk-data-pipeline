@@ -837,6 +837,16 @@ describe('the content phase', () => {
     expect(calls.indexOf('contentUrls')).toBeLessThan(calls.indexOf('warmCache'));
   });
 
+  it("hands it the run's terrain opt-in, which decides the problem-terrain feed (SNOW-1379)", async () => {
+    const without = withContent([]);
+    await runAndSettle(without, options());
+    expect(without.contentUrls.mock.calls[0][1]).toEqual({ terrain: false });
+
+    const opted = withContent([]);
+    await runAndSettle(opted, options({ terrain: true }));
+    expect(opted.contentUrls.mock.calls[0][1]).toEqual({ terrain: true });
+  });
+
   it('widens the progress-grid offset to cover it', async () => {
     // Two content urls and one feed url, so the tiles start at index 3. An
     // offset left at `feedUrls.length` would put every tile two cells out.

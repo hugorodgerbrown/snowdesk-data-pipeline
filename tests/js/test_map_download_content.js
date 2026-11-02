@@ -1367,6 +1367,41 @@ describe('terrain data on a region download (SNOW-1072)', () => {
     expect(JSON.stringify(record).includes('terrain.example.invalid')).toBe(false);
   });
 
+  it('posts no problem-terrain feed without the opt-in (SNOW-1379)', async () => {
+    await forgetRegion();
+    window.pwaWarmCache.mockClear();
+
+    await clickControl();
+
+    expect(warmedUrls(0).some((url) => url.startsWith('/api/problem-terrain/'))).toBe(false);
+    expect((await recordedRegion()).items.problemTerrain).toEqual([]);
+  });
+
+  it('posts the problem-terrain feed per forward day when opted in, and stamps it (SNOW-1379)', async () => {
+    await forgetRegion();
+    window.pwaBasemapDownloads.setTerrainDataPreferred(true);
+    window.pwaWarmCache.mockClear();
+
+    await clickControl();
+
+    // map.js's own url, `d` alone: the worker answers it on that exact url.
+    const days = [`/api/problem-terrain/?d=${TODAY}`, `/api/problem-terrain/?d=${TOMORROW}`];
+    expect(warmedUrls(0).filter((url) => url.startsWith('/api/problem-terrain/'))).toEqual(days);
+    expect((await recordedRegion()).items.problemTerrain).toEqual(days);
+  });
+
+  it("refreshes the problem-terrain feed of an opted-in area from its record's flag (SNOW-1379)", async () => {
+    // Downloaded with terrain by the test above; the preference is off now
+    // (afterEach), so only the record can say the area carries terrain.
+    expect((await recordedRegion()).terrain).toBe(true);
+    window.pwaWarmCache.mockClear();
+
+    expect(await window.pwaBasemapDownloads.refreshAreaContent(`region-${REGION_ID}`)).toBe(true);
+
+    expect(warmedUrls(0)).toContain(`/api/problem-terrain/?d=${TODAY}`);
+    expect(warmedUrls(0)).toContain(`/api/problem-terrain/?d=${TOMORROW}`);
+  });
+
   it('reads an opted-in region missing a class tile as incomplete, and the tap repairs it', async () => {
     // Downloaded by the test above, flag and all.
     const btn = document.getElementById('map-download-control');
@@ -1556,6 +1591,9 @@ describe("the map's syncs stamp what they expected of your things (SNOW-1308)", 
       weatherDay: TODAY,
       favouriteSheet: '/partials/place-sheet/favourite/00000000-0000-0000-0000-000000000000/',
       }),
+      // SNOW-1379: and the problem-terrain days — none for an area
+      // downloaded without terrain tiles.
+      problemTerrain: [],
     };
   }
 

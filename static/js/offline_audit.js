@@ -1763,11 +1763,15 @@
       regionSheetTemplate: data.regionSheetUrl || '',
       resortSheetTemplate: data.resortSheetUrl || '',
       ratingsUrl: data.ratingsUrl || '',
+      // SNOW-1379: the problem-terrain feed per day, for an area the map
+      // downloaded with terrain tiles — the record's own opt-in.
+      terrain: !!record.terrain,
     });
     var planned = plan.bulletinUrls
       .concat(plan.regionSheetUrls || [])
       .concat(plan.resortSheetUrls || [])
       .concat(plan.ratingsUrls || [])
+      .concat(plan.problemTerrainUrls || [])
       .concat(plan.weatherDetailUrls);
     // SNOW-965: each trip's page and route, and the sheet each pin
     // borrows — composed by the same core the map's download uses.
@@ -1802,6 +1806,11 @@
             sessionPrincipal(),
           )
         : null;
+    // SNOW-1379: and the problem-terrain days, every reader's, so the
+    // panel's Conditions stage can count them after a signed-out sync too.
+    if (typeof core.withProblemTerrain === 'function') {
+      expectation = core.withProblemTerrain(expectation, plan.problemTerrainUrls);
+    }
 
     var urls = regionUrls
       .concat(seasonRatingsUrls)
