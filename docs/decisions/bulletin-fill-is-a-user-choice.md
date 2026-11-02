@@ -2,7 +2,7 @@
 name: bulletin-fill-is-a-user-choice
 description: The danger choropleth is translucent at one of five user-chosen opacity steps, 0 being off — replacing the opaque pre-blended fill
 status: current
-last-reviewed: 2026-10-19
+last-reviewed: 2026-11-02
 ---
 
 # How strongly the choropleth paints is the user's call
@@ -11,6 +11,13 @@ last-reviewed: 2026-10-19
 0.25, 0.5, 0.75, 1** — chosen by the user and persisted per device under
 `snowdesk.map.overlay.bulletins`. The default is **0.5**. The colours are the
 raw `RATING_COLOURS`, not composited against anything.
+
+**Amended by SNOW-1375 (Hugo, 2 Nov 2026).** The chosen step is the fill's
+strength up to z8.5. From there the fill fades to a faint trace (at most 8%)
+at z10, and from z10 each region has a band of its colour inside its edge
+and a level label; the step scales the trace and the band, and the off step
+turns all three off. See
+[`the-region-colour-gives-way-by-zoom.md`](the-region-colour-gives-way-by-zoom.md).
 
 **0 is the off position.** It is not a separate control: the step control
 replaced an on/off toggle, and off is simply the weakest end of the range.

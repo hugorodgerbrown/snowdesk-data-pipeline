@@ -175,9 +175,21 @@ function checkedStep() {
   return seg ? Number(seg.dataset.bulletinsStep) : null;
 }
 
+/**
+ * The per-feature `case` at the resting (z8.5) stop of `regions-fill`'s
+ * opacity. SNOW-1375 made the expression a zoom `interpolate` — the resting
+ * strength at z8.5, a faint trace at z10 — with a `case` at each stop.
+ *
+ * @param {*} opacity The painted `fill-opacity`.
+ * @returns {*} The resting stop's `case`, or the flat value when off.
+ */
+function restingStop(opacity) {
+  return Array.isArray(opacity) && opacity[0] === 'interpolate' ? opacity[4] : opacity;
+}
+
 /** `regions-fill`'s layout + paint, the pair the hit-test depends on. */
 function fillState(map) {
-  const opacity = map.getPaintProperty('regions-fill', 'fill-opacity');
+  const opacity = restingStop(map.getPaintProperty('regions-fill', 'fill-opacity'));
   return {
     visibility: map.getLayoutProperty('regions-fill', 'visibility'),
     // A `case` expression when painted (resting value last), a flat 0 when not.
@@ -282,7 +294,7 @@ describe('the step control paints regions-fill', () => {
     // translucent it is opacity, and it has to scale with the step rather
     // than sit at a fixed value that could fall below the resting one.
     clickStep(0.5);
-    const expr = mapStub.getPaintProperty('regions-fill', 'fill-opacity');
+    const expr = restingStop(mapStub.getPaintProperty('regions-fill', 'fill-opacity'));
     expect(expr[0]).toBe('case');
     // expr[1..2] is SNOW-979's arm (below); the emphasis is the next pair.
     expect(expr[4]).toBeGreaterThan(expr[expr.length - 1]);
@@ -293,7 +305,7 @@ describe('the step control paints regions-fill', () => {
     // colour, so the region's flat tint under it must not mix in. First
     // arm, so it beats the selection's emphasis.
     clickStep(0.5);
-    const expr = mapStub.getPaintProperty('regions-fill', 'fill-opacity');
+    const expr = restingStop(mapStub.getPaintProperty('regions-fill', 'fill-opacity'));
     expect(expr[1]).toEqual(['boolean', ['feature-state', 'terrain'], false]);
     expect(expr[2]).toBe(0);
   });
