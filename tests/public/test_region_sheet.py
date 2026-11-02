@@ -862,25 +862,54 @@ class TestIssueFromTheDayRating:
         response = _get(client, _url(region.region_id.lower()))
         assert response.status_code == 200
         assert response.context["bulletin"].pk == failed.pk
+        # SNOW-1368: nothing built, so nothing was passed over.
+        assert response.context.get("skipped_issue") is None
+        assert 'data-testid="skipped-issue-notice"' not in response.content.decode()
 
 
 @pytest.mark.django_db
-def test_a_failed_morning_update_shows_as_the_page_shows_it(client: Client) -> None:
-    """Codex on #1361: the rating names the evening, the page the morning.
+def test_a_failed_morning_update_falls_back_to_the_evening(client: Client) -> None:
+    """SNOW-1368: evening built, morning failed — both surfaces show the evening.
 
-    A failed build is never rated, so the day keeps the evening issue as
-    its source; the page picks the newer morning update and shows its error
-    card, and the sheet must show the same issue.
+    The rating names the evening (a failed build is never rated), and the
+    page and the sheet now pick the day's latest built issue too, so the
+    chip, the body and the map describe one issue. The body names both
+    issues' times in a notice above the bulletin.
     """
-    from tests.public.test_problem_terrain import (  # noqa: PLC0415
+    from tests.public.test_problem_terrain import (  # noqa: PLC0415 — the shared fixture lives with the feed's tests
+        _evening_and_failed_morning,
+    )
+
+    region = MicroRegionFactory.create()
+    day = timezone.localdate()
+    evening, morning = _evening_and_failed_morning(day, region)
+    page = client.get(region.get_absolute_url(day))
+    sheet = _get(client, _url(region.region_id.lower()))
+    assert page.context["bulletin"].pk == evening.pk
+    assert page.context["skipped_issue"].pk == morning.pk
+    assert sheet.status_code == 200
+    assert sheet.context["bulletin"].pk == evening.pk
+    assert sheet.context["skipped_issue"].pk == morning.pk
+    body = sheet.content.decode()
+    assert 'data-testid="skipped-issue-notice"' in body
+    assert f"The {morning.valid_from:%-d %b %H:%M} UTC update couldn" in body
+    assert f"Showing the bulletin issued {evening.valid_from:%-d %b %H:%M} UTC." in body
+    assert "We couldn" not in body
+
+
+@pytest.mark.django_db
+def test_a_requested_failed_issue_shows_its_error_card(client: Client) -> None:
+    """SNOW-1368: ``?issue=`` naming the failed issue shows it, with no notice."""
+    from tests.public.test_problem_terrain import (  # noqa: PLC0415 — the shared fixture lives with the feed's tests
         _evening_and_failed_morning,
     )
 
     region = MicroRegionFactory.create()
     day = timezone.localdate()
     _, morning = _evening_and_failed_morning(day, region)
-    page = client.get(region.get_absolute_url(day))
-    sheet = _get(client, _url(region.region_id.lower()))
+    page = client.get(f"{region.get_absolute_url(day)}?issue={morning.bulletin_id}")
     assert page.context["bulletin"].pk == morning.pk
-    assert sheet.status_code == 200
-    assert sheet.context["bulletin"].pk == morning.pk
+    assert page.context["skipped_issue"] is None
+    body = page.content.decode()
+    assert "We couldn" in body
+    assert 'data-testid="skipped-issue-notice"' not in body

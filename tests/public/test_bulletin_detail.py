@@ -27,13 +27,15 @@ from django.urls import reverse
 from apps.bulletins.models import Bulletin, RegionDayRating
 from apps.bulletins.services.day_rating import recompute_region_day
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
-from apps.bulletins.services.selection import select_bulletin_for_date
+from apps.bulletins.services.selection import (
+    select_bulletin_for_date,
+    select_default_issue as _select_default_issue,
+)
 from apps.public.views import (
     _get_nav_dates,
     _has_later_bulletin,
     _issues_for_date,
     _resolve_selected_issue,
-    _select_default_issue,
 )
 from apps.regions.models import MicroRegion
 from tests.factories import (

@@ -25,10 +25,12 @@ whose render model comes with the rating); a newer issue whose build
 failed is never rated, so there the page's pick is used instead. The rules
 themselves are the service's, stored with the render model
 (``derived.terrain_rules``, SNOW-1341), so the feed computes nothing. A
-region with a bulletin but no rules (a low day, a favourable situation, a
-failed build) is still listed, with an empty list: the client paints its
-steep ground as undescribed, never blank. A region with no bulletin that
-day is left out, and keeps its danger colour.
+region with a bulletin but no rules (a low day, a favourable situation) is
+still listed, with an empty list: the client paints its steep ground as
+undescribed, never blank. A region with no bulletin that day, or none that
+built (SNOW-1368: a failed build describes nothing, so painting its steep
+ground as undescribed would claim the bulletin named nothing there), is
+left out, and keeps its danger colour.
 
 Empty unless the terrain-class tiles are configured, and only the
 countries those tiles cover (``TERRAIN_COUNTRIES``): a rule for ground
@@ -59,6 +61,7 @@ from django.views.decorators.cache import cache_control
 from django.views.decorators.vary import vary_on_headers
 
 from apps.bulletins.models import Bulletin, RegionBulletin, RegionDayRating
+from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.ingest.public import TerrainRule, derived_of
 from apps.public.views import _DANGER_PANEL_META, _get_render_model
 
@@ -195,22 +198,33 @@ def _page_picks(target_date: date, rated: dict[str, Bulletin]) -> dict[str, int]
     """Return each covered region's page pick for a day, as a bulletin pk.
 
     The pick ``select_default_issue`` makes — the latest issue forecasting
-    the day — read from the day's links as ids and start times only. A tie
-    with the rated issue is the rated issue: the page's pick is one of the
-    latest, and the rating named one of them.
+    the day that built (SNOW-1368) — read from the day's links as ids, start
+    times and render-model versions only. A tie with the rated issue is the
+    rated issue: the page's pick is one of the latest, and the rating named
+    one of them. A region none of whose issues built is left out, so the
+    map keeps its danger colour rather than paint its steep ground as
+    described by nothing.
 
     Args:
         target_date: The day.
         rated: ``_rated_bulletins`` for the day.
 
     Returns:
-        ``{region_id: bulletin pk}`` for every region with a bulletin.
+        ``{region_id: bulletin pk}`` for every region with a built bulletin.
 
     """
     latest: dict[str, tuple[Any, int]] = {}
-    for region_id, pk, valid_from in RegionBulletin.objects.filter(
+    for region_id, pk, valid_from, version in RegionBulletin.objects.filter(
         **_COVERED, bulletin__target_date=target_date
-    ).values_list("region__region_id", "bulletin_id", "bulletin__valid_from"):
+    ).values_list(
+        "region__region_id",
+        "bulletin_id",
+        "bulletin__valid_from",
+        "bulletin__render_model_version",
+    ):
+        # The threshold ``is_built`` reads, on the values already fetched.
+        if version < RENDER_MODEL_VERSION:
+            continue
         source = rated.get(region_id)
         held = latest.get(region_id)
         if (
@@ -229,12 +243,13 @@ def build_problem_terrain_payload(target_date: date) -> dict[str, Any]:
     The day's ratings with the bulletin that rated each
     (``RegionDayRating.source_bulletin``), its CAAML deferred; and the
     day's region↔bulletin links, as ids and start times only. A region's
-    issue is the one its page shows — the latest forecasting the day, the
-    pick ``select_default_issue`` makes — which is its rated bulletin
-    except when a newer issue failed to build (a rating never names a
-    failed build; Codex on #1361) or the day has no rating at all. Those
-    few are loaded by id. Each issue's rules are read from its render
-    model's ``derived.terrain_rules`` — a failed issue's sentinel has none.
+    issue is the one its page shows — the latest forecasting the day that
+    built, the pick ``select_default_issue`` makes (SNOW-1368) — which is
+    its rated bulletin, a rating naming only a built issue, unless that
+    rating has not yet been recomputed for a newer built one or the day has
+    no rating at all. Those few are loaded by id. A region with no built
+    issue is left out. Each issue's rules are read from its render model's
+    ``derived.terrain_rules``.
 
     Args:
         target_date: The day the map is showing.
