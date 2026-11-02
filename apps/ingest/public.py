@@ -89,11 +89,18 @@ The names are grouped by what they are for:
       per run, or ``tour_summit`` for one tour rendered as a task
       (SNOW-1345), which ``needs_render`` re-checks; ``RenderOutcome``
       names what it did.
+  Wildlife rest zones
+      ``SourceRestZone``, FOEN's Wildruhezonen as polygons, and
+      ``import_rest_zones``, which makes them equal what geo.admin holds —
+      every canton read before anything is written, so one failed canton
+      raises ``RestZoneImportError`` and changes nothing (SNOW-1263).
+      ``REST_ZONES`` names the kind.
   The data feed
       ``WEATHER_FEED_V2`` (``/api/data/v2/weather/``, keyed by the
       service's place uuid, SNOW-1253), the v2 ``LOCATIONS_FEED``,
       ``PASSES_FEED`` and ``RESORTS_FEED`` (SNOW-1271), the
-      ``SKI_NETWORK_FEED`` and ``SKI_TOURS_FEED`` (SNOW-1276) and
+      ``SKI_NETWORK_FEED`` and ``SKI_TOURS_FEED`` (SNOW-1276), the
+      ``REST_ZONES_FEED`` (SNOW-1263) and
       ``BULLETINS_FEED``, with their serialisers, and the keyset paging every
       feed shares (``feed_page``, ``parse_feed_since``, ``parse_feed_limit``
       and the ``FEED_*`` constants). The host mounts them behind its own
@@ -130,6 +137,7 @@ from apps.ingest.api.reference import (
     LOCATIONS_FEED,
     PASSES_FEED,
     RESORTS_FEED,
+    REST_ZONES_FEED,
     SKI_NETWORK_FEED,
     SKI_TOURS_FEED,
     serialise_source_document,
@@ -162,6 +170,7 @@ from apps.ingest.models import (
     SourceLocation,
     SourcePass,
     SourceResort,
+    SourceRestZone,
     SourceSkiSegment,
     SourceSkiTour,
     SourceWeather,
@@ -289,6 +298,11 @@ from apps.ingest.sources.open_meteo import (
     fetch_forecast,
     history_base_url,
 )
+from apps.ingest.rest_zones import (
+    REST_ZONES,
+    RestZoneImportError,
+    import_rest_zones,
+)
 from apps.ingest.ski import (
     SKI_NETWORK,
     SKI_TOURS,
@@ -386,6 +400,8 @@ __all__ = [
     "REBUILT",
     "RENDER_MODEL_VERSION",
     "RESORTS_FEED",
+    "REST_ZONES",
+    "REST_ZONES_FEED",
     "SKI_NETWORK",
     "SKI_NETWORK_FEED",
     "SKI_TOURS",
@@ -420,6 +436,8 @@ __all__ = [
     "SourceLocation",
     "SourcePass",
     "SourceResort",
+    "SourceRestZone",
+    "RestZoneImportError",
     "SourceSkiSegment",
     "SourceSkiTour",
     "SourceWeather",
@@ -463,6 +481,7 @@ __all__ = [
     "forecast_rows",
     "format_comment_as_html",
     "history_base_url",
+    "import_rest_zones",
     "import_ski_archive",
     "hourly_rows_for_day",
     "icon_bucket_for_code",

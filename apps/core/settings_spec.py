@@ -338,6 +338,12 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         validator=positive_int,
         note="Most SAC tours one ski-tours page holds",
     ),
+    # --- geo.admin (SNOW-1263) --------------------------------------------
+    SettingSpec(
+        "GEO_ADMIN_API_URL",
+        validator=absolute_url,
+        note="MapServer API FOEN's wildlife rest zones are read from",
+    ),
     # --- what3words (SNOW-840) --------------------------------------------
     # NOT required_in_production: the feature is gated on a waffle flag and
     # an empty key makes no request at all, so an environment with no

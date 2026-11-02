@@ -26,9 +26,10 @@ from datetime import UTC, timedelta
 import pytest
 from django.utils import timezone
 
-from apps.routes.models import Route, RouteShare, SkiSegment, SkiTour
+from apps.routes.models import RestZone, Route, RouteShare, SkiSegment, SkiTour
 from tests.factories import (
     DRIFTING_TRACK,
+    RestZoneFactory,
     RouteFactory,
     RouteShareFactory,
     SkiSegmentFactory,
@@ -445,3 +446,42 @@ class TestSkiLines:
         SkiSegmentFactory.create(discipline="ski_snowshoe_tour")
         assert list(SkiSegment.objects.skiable()) == [ski]
         assert SkiTour.objects.intersecting(0, 0, 1, 1).count() == 0
+
+
+@pytest.mark.django_db
+class TestRestZone:
+    """SNOW-1263: FOEN's wildlife rest zones, synced from the service."""
+
+    def test_to_string_names_the_zone_and_its_canton(self) -> None:
+        """By name and canton; the name alone without a canton."""
+        zone = RestZoneFactory.create(name="Plan Mezdi", canton="GR")
+        assert zone.to_string() == str(zone) == "Plan Mezdi (GR)"
+        zone.canton = ""
+        assert zone.to_string() == "Plan Mezdi"
+
+    def test_newest_first(self) -> None:
+        """The default ordering is -created_at."""
+        older = RestZoneFactory.create()
+        newer = RestZoneFactory.create()
+        assert list(RestZone.objects.all()) == [newer, older]
+
+    def test_intersecting_is_an_edge_inclusive_box_overlap(self) -> None:
+        """The prefilter a drawn route's check will run before the exact test."""
+        inside = RestZoneFactory.create(west=10.0, south=46.0, east=10.1, north=46.1)
+        touching = RestZoneFactory.create(west=10.2, south=46.0, east=10.3, north=46.1)
+        RestZoneFactory.create(west=11.0, south=46.0, east=11.1, north=46.1)
+        found = RestZone.objects.intersecting(10.05, 46.05, 10.2, 46.2)
+        assert set(found) == {inside, touching}
+
+    def test_binding_leaves_out_the_recommended_zones(self) -> None:
+        """A recommended zone is not legally binding."""
+        binding = RestZoneFactory.create()
+        RestZoneFactory.create(binding=False)
+        assert list(RestZone.objects.binding()) == [binding]
+
+    def test_the_factory_builds_a_polygon_inside_its_box(self) -> None:
+        """The default square sits in the default bounding box."""
+        zone = RestZoneFactory.create()
+        ring = zone.geometry["coordinates"][0][0]
+        assert all(zone.west <= lon <= zone.east for lon, _lat in ring)
+        assert all(zone.south <= lat <= zone.north for _lon, lat in ring)

@@ -24,6 +24,7 @@ from apps.ingest.models import (
     SourceLocation,
     SourcePass,
     SourceResort,
+    SourceRestZone,
     SourceSkiSegment,
     SourceSkiTour,
     SourceWeather,
@@ -34,6 +35,7 @@ from tests.factories import (
     SourceLocationFactory,
     SourcePassFactory,
     SourceResortFactory,
+    SourceRestZoneFactory,
     SourceSkiSegmentFactory,
     SourceSkiTourFactory,
     SourceWeatherFactory,
@@ -99,6 +101,7 @@ def test_the_weather_service_pages_render(admin_client: Client) -> None:
         SourceDayRating,
         SourceSkiSegment,
         SourceSkiTour,
+        SourceRestZone,
     ],
 )
 def test_the_weather_service_is_read_only(rf: RequestFactory, model: type) -> None:
@@ -118,6 +121,7 @@ def test_the_document_pages_render(admin_client: Client) -> None:
         ("sourcedayrating", SourceDayRatingFactory.create()),
         ("sourceskisegment", SourceSkiSegmentFactory.create()),
         ("sourceskitour", SourceSkiTourFactory.create()),
+        ("sourcerestzone", SourceRestZoneFactory.create()),
     ):
         assert (
             admin_client.get(reverse(f"admin:ingest_{name}_changelist")).status_code

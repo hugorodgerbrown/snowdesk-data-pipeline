@@ -34,6 +34,12 @@ pre-loaded with the recurring data-pipeline jobs:
   and SAC's tours into the reference-data service and applies them here
   (SNOW-1276). Weekly because swisstopo releases the data about once a
   year; a run against an unchanged release writes nothing.
+- **import_rest_zones** — fires on Mondays at 02:50 UTC, running
+  ``import_rest_zones --commit``. Imports FOEN's wildlife rest zones from
+  geo.admin into the reference-data service and applies them here
+  (SNOW-1263). Weekly because FOEN edits the zones a few times a year; a
+  run against unchanged zones writes nothing, and one whose canton fails
+  writes nothing and exits non-zero.
 - **purge_request_logs** — fires at 03:30 UTC, running
   ``purge_request_logs --commit``. Enforces the ``RequestLog`` retention
   window the Privacy Policy states (SNOW-775); until this job existed
@@ -246,6 +252,16 @@ def _run_import_ski_tours() -> None:
     call_command("import_ski_tours", "--commit")
 
 
+def _run_import_rest_zones() -> None:
+    """Invoke ``import_rest_zones``: FOEN's rest zones into the service (SNOW-1263)."""
+    from django.core.management import (
+        call_command,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
+    )
+
+    logger.info("schedule: firing import_rest_zones")
+    call_command("import_rest_zones", "--commit")
+
+
 def _run_purge_request_logs() -> None:
     """Invoke ``purge_request_logs`` to enforce the RequestLog retention window."""
     from django.core.management import (
@@ -365,6 +381,8 @@ def build_scheduler() -> BlockingScheduler:
             Cron: ``minute=40`` (every hour, SNOW-1271).
         ``import_ski_tours``
             Cron: ``day_of_week=mon, hour=2, minute=30`` (weekly, SNOW-1276).
+        ``import_rest_zones``
+            Cron: ``day_of_week=mon, hour=2, minute=50`` (weekly, SNOW-1263).
         ``purge_request_logs``
             Cron: ``hour=3, minute=30`` (once a day, off the fetch hours).
         ``fill_what3words``
@@ -437,6 +455,15 @@ def build_scheduler() -> BlockingScheduler:
         switched("import_ski_tours", _run_import_ski_tours),
         trigger=CronTrigger(day_of_week="mon", hour=2, minute=30, timezone="UTC"),
         id="import_ski_tours",
+        **_common,
+    )
+
+    # SNOW-1263: after the ski import, still before the 03:xx purges. 26
+    # small geo.admin requests and a reconcile of about a thousand zones.
+    scheduler.add_job(
+        switched("import_rest_zones", _run_import_rest_zones),
+        trigger=CronTrigger(day_of_week="mon", hour=2, minute=50, timezone="UTC"),
+        id="import_rest_zones",
         **_common,
     )
 

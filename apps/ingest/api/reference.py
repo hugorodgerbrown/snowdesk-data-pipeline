@@ -14,6 +14,8 @@ removal. All three serve tombstoned rows too.
 * ``ski-network`` and ``ski-tours`` — ``SourceSkiSegment`` and
   ``SourceSkiTour`` (SNOW-1276), in the same shape: swisstopo's segments
   and SAC's tours, each document carrying its line as WGS84 GeoJSON.
+* ``rest-zones`` — ``SourceRestZone`` (SNOW-1263), FOEN's wildlife rest
+  zones, each document carrying its polygon as WGS84 GeoJSON.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from apps.ingest.models import (
     SourceLocation,
     SourcePass,
     SourceResort,
+    SourceRestZone,
     SourceSkiSegment,
     SourceSkiTour,
 )
@@ -153,6 +156,11 @@ def _ski_tours() -> QuerySet[SourceSkiTour]:
     return SourceSkiTour.objects.all()
 
 
+def _rest_zones() -> QuerySet[SourceRestZone]:
+    """Return every wildlife rest zone, tombstones included."""
+    return SourceRestZone.objects.all()
+
+
 LOCATIONS_FEED = Feed(
     "locations",
     _locations,
@@ -183,4 +191,10 @@ SKI_TOURS_FEED = Feed(
     serialise_source_ski_tour,
     version=REFERENCE_FEED_VERSION,
     max_limit=_ski_tours_max_limit,
+)
+REST_ZONES_FEED = Feed(
+    "rest-zones",
+    _rest_zones,
+    serialise_source_document,
+    version=REFERENCE_FEED_VERSION,
 )

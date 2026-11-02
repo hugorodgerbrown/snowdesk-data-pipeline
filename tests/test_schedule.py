@@ -52,7 +52,7 @@ def test_build_scheduler_returns_blocking_scheduler(
 
 def test_scheduler_has_exactly_thirteen_jobs(scheduler: BlockingScheduler) -> None:
     """The scheduler has exactly thirteen registered jobs."""
-    assert len(scheduler.get_jobs()) == 13
+    assert len(scheduler.get_jobs()) == 14
 
 
 def test_job_ids(jobs: dict) -> None:
@@ -64,6 +64,7 @@ def test_job_ids(jobs: dict) -> None:
         "backfill_weather",
         "mirror_reference_data",
         "import_ski_tours",
+        "import_rest_zones",
         "purge_request_logs",
         "fill_what3words",
         "check_resort_locations",
@@ -383,6 +384,21 @@ def test_purge_runs_clear_of_the_fetch_hours(jobs: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_import_rest_zones_runs_weekly_after_the_ski_import(jobs: dict) -> None:
+    """Mondays at 02:50 UTC — after import_ski_tours, before the purges (SNOW-1263)."""
+    trigger = jobs["import_rest_zones"].trigger
+    assert str(_get_field(trigger, "day_of_week")) == "mon"
+    assert str(_get_field(trigger, "hour")) == "2"
+    assert str(_get_field(trigger, "minute")) == "50"
+
+
+def test_import_rest_zones_commits() -> None:
+    """Firing the job runs the import with --commit."""
+    with mock.patch("django.core.management.call_command") as mock_cc:
+        schedule_module._run_import_rest_zones()
+    mock_cc.assert_called_once_with("import_rest_zones", "--commit")
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize(
     "job_id",
@@ -392,6 +408,7 @@ def test_purge_runs_clear_of_the_fetch_hours(jobs: dict) -> None:
         "backfill_weather",
         "mirror_reference_data",
         "import_ski_tours",
+        "import_rest_zones",
         "purge_request_logs",
         "fill_what3words",
         "check_resort_locations",

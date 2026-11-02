@@ -659,6 +659,14 @@ SWISSTOPO_STAC_URL = config(
 FEED_MAX_LIMIT = config("FEED_MAX_LIMIT", default=100, cast=int)
 FEED_SKI_TOURS_MAX_LIMIT = config("FEED_SKI_TOURS_MAX_LIMIT", default=25, cast=int)
 
+# SNOW-1263: geo.admin's MapServer API, where FOEN's wildlife rest zones
+# (ch.bafu.wrz-wildruhezonen_portal) are read, one canton at a time, by
+# import_rest_zones. Public, no key; the data is OGD, credited to FOEN.
+GEO_ADMIN_API_URL = config(
+    "GEO_ADMIN_API_URL",
+    default="https://api3.geo.admin.ch/rest/services/api/MapServer",
+)
+
 # The earliest day ``backfill_weather`` and the LocationAdmin action will
 # ask the upstream for. The API reaches back to roughly 2021 (probed), but
 # one full season across the estate is already ~95,000 rows against the
