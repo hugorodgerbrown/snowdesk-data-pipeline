@@ -124,6 +124,50 @@ def _problem_terrain_rules(
     return bulletin_terrain_rules(selected)
 
 
+def _sheet_pick(
+    region: MicroRegion, target_date: date, day_rating: RegionDayRating | None
+) -> tuple[Bulletin | None, Bulletin | None]:
+    """Return the issue the sheet shows for a region's day, and any skipped.
+
+    The issue that rated the day came with the rating (SNOW-1341), and is
+    the page's pick: a rating names only a built issue, and the page now
+    prefers the latest built one too (SNOW-1368). Any newer issues are
+    run through the page's own rule with it: the latest of them that built
+    is shown (a rating not yet recomputed), and the newest one after that
+    which did not build is named in the body's notice. A day with no rated
+    issue may still have one the page shows, so the page's rule picks.
+
+    Shared by the sheet and the slopes notice's key (SNOW-1378), so the two
+    describe the same issue.
+
+    Args:
+        region: The region.
+        target_date: The day the map is showing.
+        day_rating: The region's rating for the day, with its
+            ``source_bulletin`` loaded, or None.
+
+    Returns:
+        ``(selected, skipped)`` — the issue shown (None on a day with none)
+        and a newer issue that failed to build (or None).
+
+    """
+    selected: Bulletin | None = day_rating.source_bulletin if day_rating else None
+    skipped: Bulletin | None = None
+    if selected is not None:
+        newer = list(
+            Bulletin.objects.for_target_date(target_date).filter(
+                regions=region, valid_from__gt=selected.valid_from
+            )
+        )
+        if newer:
+            selected, skipped = select_default_pick([selected, *newer], target_date)
+    else:
+        selected, skipped = _resolve_selected_pick(
+            _issues_for_date(region, target_date), target_date, None
+        )
+    return selected, skipped
+
+
 @lowercase_region_id
 @require_htmx
 def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
@@ -165,27 +209,7 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
         .first()
     )
 
-    # The issue that rated the day came with the rating (SNOW-1341), and is
-    # the page's pick: a rating names only a built issue, and the page now
-    # prefers the latest built one too (SNOW-1368). Any newer issues are
-    # run through the page's own rule with it: the latest of them that built
-    # is shown (a rating not yet recomputed), and the newest one after that
-    # which did not build is named in the body's notice. A day with no rated
-    # issue may still have one the page shows, so the page's rule picks.
-    selected: Bulletin | None = day_rating.source_bulletin if day_rating else None
-    skipped: Bulletin | None = None
-    if selected is not None:
-        newer = list(
-            Bulletin.objects.for_target_date(target_date).filter(
-                regions=region, valid_from__gt=selected.valid_from
-            )
-        )
-        if newer:
-            selected, skipped = select_default_pick([selected, *newer], target_date)
-    else:
-        selected, skipped = _resolve_selected_pick(
-            _issues_for_date(region, target_date), target_date, None
-        )
+    selected, skipped = _sheet_pick(region, target_date, day_rating)
 
     level_meta = _DANGER_PANEL_META.get(day_rating.max_rating) if day_rating else None
 
@@ -254,3 +278,74 @@ def _renders_staff_callout(request: HttpRequest, panel: dict[str, Any] | None) -
         return False
     render_model = panel.get("render_model") or {}
     return render_model.get("version") == 0
+
+
+@lowercase_region_id
+@require_htmx
+def slopes_notice_key_partial(request: HttpRequest, region_id: str) -> HttpResponse:
+    """Render the slopes notice's colour key for one region and day (SNOW-1378).
+
+    The first time a device's map settles at z12 or closer over painted
+    slopes, ``static/js/map_slopes_notice.js`` shows a card saying the
+    region colour has given way to the bulletin's slopes, and names the
+    marks with this key: the region sheet's own
+    (``includes/_bulletin_terrain_key.html`` with ``problem_terrain_key``),
+    built from the same issue (``_sheet_pick``) and the same gate
+    (``_problem_terrain_rules``), so the card and the sheet list the same
+    levels.
+
+    Query parameters:
+        d (optional): ISO date ``YYYY-MM-DD`` — the day the map is showing.
+            Defaults to today. A malformed value is a 400.
+
+    Args:
+        request: The incoming HTMX GET request.
+        region_id: EAWS micro-region identifier (e.g. ``"ch-4115"``).
+
+    Returns:
+        The key's rows; an empty body where the layer paints nothing for
+        the region — outside the terrain countries, with the tiles
+        unconfigured, or on a day with no bulletin — which the card reads
+        as "keep the whole-scale key". 404 for an unknown region.
+
+    """
+    raw_date = request.GET.get("d")
+    if raw_date:
+        try:
+            target_date = date.fromisoformat(raw_date)
+        except ValueError:
+            return JsonResponse({"error": "bad_date"}, status=400)
+    else:
+        target_date = timezone.localdate()
+
+    region = get_object_or_404(
+        MicroRegion.objects.select_related("subregion__major"),
+        region_id__iexact=region_id,
+    )
+    country = region.subregion.major.country
+    # Outside the tiles the sheet's gate needs no bulletin to say no.
+    if not settings.TERRAIN_CLASS_TILE_URL or country not in TERRAIN_COUNTRIES:
+        response = HttpResponse("")
+    else:
+        day_rating = (
+            RegionDayRating.objects.filter(region=region, date=target_date)
+            .select_related("source_bulletin")
+            .first()
+        )
+        selected, _skipped = _sheet_pick(region, target_date, day_rating)
+        rules = _problem_terrain_rules(country, selected)
+        if rules is None:
+            response = HttpResponse("")
+        else:
+            response = render(
+                request,
+                "includes/_bulletin_terrain_key.html",
+                {"key": problem_terrain_key(rules)},
+            )
+    settled = target_date < timezone.localdate()
+    patch_cache_control(
+        response,
+        private=True,
+        max_age=PAST_DAY_MAX_AGE_S if settled else CURRENT_DAY_MAX_AGE_S,
+    )
+    return response

@@ -14,6 +14,7 @@ own integration tests in ``test_map_api.py``.
 from __future__ import annotations
 
 import datetime
+import html
 import re
 from html.parser import HTMLParser
 from pathlib import Path
@@ -2981,3 +2982,46 @@ def test_region_chip_renders_hidden_with_its_strings() -> None:
     assert content.index('id="map-region-chip"') < content.index('id="map-date-row"')
     assert "js/map_region_chip_core.js" in content
     assert "js/map_region_chip.js" in content
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_slopes_notice_renders_hidden_with_its_strings() -> None:
+    """SNOW-1378: the card, its copy and its fallback key render, hidden.
+
+    map_slopes_notice.js shows it once per device, the first time the map
+    settles at z12 or closer over the bulletin's slopes.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    start = content.index('id="map-slopes-notice"')
+    opening = content[content.rindex("<div", 0, start) : content.index(">", start)]
+    assert re.search(r"\shidden\b", opening)
+    assert 'role="region"' in opening
+    key_url = reverse(
+        "public:slopes_notice_key_partial", kwargs={"region_id": "XX-0000"}
+    )
+    assert f'data-key-url="{key_url}"' in opening
+    card = content[start : content.index('id="map-slopes-notice-more"', start) + 300]
+    text = html.unescape(" ".join(re.sub(r"<[^>]+>", " ", card).split()))
+    assert "Now showing the bulletin's slopes" in text
+    assert (
+        "Close in, the region colour gives way to the slopes the bulletin's "
+        "problems describe. Zoom out to see regions again."
+    ) in text
+    assert "Got it" in text
+    assert "What's shown?" in text
+    assert f"{reverse('public:help')}#help-topic-bulletin-terrain" in card
+    # The fallback is the legend's whole-scale key.
+    assert "data-slopes-notice-key" in card
+    assert "map-legend-swatch--terrain-very_high" in card
+    assert "Additional steep terrain (>30°)" in text
+    assert "js/map_slopes_notice_core.js" in content
+    assert "js/map_slopes_notice.js" in content
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL="")
+def test_no_slopes_notice_without_the_terrain_tiles() -> None:
+    """No tiles, no slopes painted, nothing to announce."""
+    content = Client().get(reverse("public:map")).content.decode()
+    assert 'id="map-slopes-notice"' not in content

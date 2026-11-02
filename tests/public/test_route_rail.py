@@ -515,9 +515,13 @@ class TestTheRouteOpenFurniture:
         assert "calc(var(--map-control-lg) + 1px)" in opened
 
     def test_desktop_withdraws_nothing_but_the_tour_offer(self) -> None:
-        """From 640 px every control returns; the tour offer is not a control."""
+        """From 640 px every control returns; the tour offer is not a control.
+
+        Nor is SNOW-1378's slopes notice, which sits in the tour offer's place
+        and withdraws with it.
+        """
         _phone, rest = _split_phone_blocks(_MAP_CSS.read_text(encoding="utf-8"))
-        assert _withdrawn_ids(rest) == {"map-tour-offer"}
+        assert _withdrawn_ids(rest) == {"map-tour-offer", "map-slopes-notice"}
 
     def test_the_containers_exist_in_the_map_partials(self) -> None:
         """A renamed container would leave its controls over the panel.

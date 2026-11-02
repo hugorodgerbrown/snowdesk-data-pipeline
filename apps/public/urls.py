@@ -255,6 +255,12 @@ urlpatterns += [
         region_sheet.region_sheet_partial,
         name="region_sheet_partial",
     ),
+    # SNOW-1378: the slopes notice's colour key, the region sheet's own.
+    path(
+        "partials/slopes-notice-key/<region_id:region_id>/",
+        region_sheet.slopes_notice_key_partial,
+        name="slopes_notice_key_partial",
+    ),
     # SNOW-1100: the body of the phone place sheet a resort or pin tap opens.
     path(
         "partials/place-sheet/resort/<slug:slug>/",

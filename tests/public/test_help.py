@@ -817,6 +817,14 @@ class TestBulletinTerrainHelpTopic:
         ):
             assert testid in content, testid
 
+    def test_topic_says_the_change_is_automatic(self, client: Client) -> None:
+        """SNOW-1378: the slopes take over by themselves, and a card says so."""
+        content = client.get(reverse("public:help")).content.decode()
+        para = content[content.index('data-testid="help-bulletin-terrain-automatic"') :]
+        para = _text(para[: para.index("</p>")])
+        assert "by itself as you zoom in past level 12" in para
+        assert "a card on the map says what has changed" in para
+
     def test_topic_names_the_control_and_its_precedence(self, client: Client) -> None:
         """SNOW-1377: "Sync with map terrain", on to start with, under the
         bulletins and in the region sheet — no longer the Steep terrain panel.

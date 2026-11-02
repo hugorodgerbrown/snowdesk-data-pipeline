@@ -120,7 +120,7 @@ opens, closes and coexists (CLAUDE.md, design-system rule 6).
 | **Object sheet** | region sheet, place sheet, weather sheet, rest zone sheet, route rail | a tap on something on the map | bottom sheet with detents (peek, half, full) | ×, drag below peek, Escape, deselecting, another object sheet |
 | **Roundel panel** | routes, favourites, reports, downloads lists | its roundel | full-width docked panel, no detents | its roundel, its ×, another overlay |
 | **Form panel** | field report, terrain filter | a call to action | docked panel, no detents, no drag-to-close | its own buttons, its × |
-| **Flyout / card** | layers menu, zoom flyout, calendar, legend card, help coachmark, tour offer, a saved pin's desktop popup | its toggle | anchored card | a click away, another overlay |
+| **Flyout / card** | layers menu, zoom flyout, calendar, legend card, help coachmark, tour offer, slopes notice (SNOW-1378, shown by the map once per device at z12 over the bulletin's slopes; closes on a map tap too), a saved pin's desktop popup | its toggle | anchored card | a click away, another overlay |
 
 Help mode (SNOW-1119, the "?" roundel) is none of these: it is a layer
 over the whole map that names the controls and keys whichever object sheet

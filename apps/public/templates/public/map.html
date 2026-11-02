@@ -586,6 +586,12 @@ in addition to the shared map assets.
     {# SNOW-1196: the problem-terrain layer's legend key and menu-row line. #}
     {# Reads window.pwaBulletinTerrain (map.js).                            #}
     <script defer src="{% static 'js/map_problem_terrain_key.js' %}"></script>
+    {# SNOW-1378: the once-per-device card that says the bulletin's slopes #}
+    {# have taken over from z12 — its pure half, then the DOM half. Reads   #}
+    {# MAP and window.pwaBulletinTerrain / pwaTerrainFilter (map.js), so     #}
+    {# after the bundle and outside its contiguous run, like the chip.       #}
+    <script defer src="{% static 'js/map_slopes_notice_core.js' %}"></script>
+    <script defer src="{% static 'js/map_slopes_notice.js' %}"></script>
     {# Each panel's "Show on the map" switch, bound to its layers-menu row.  #}
     {# Reads the bridges and the rows lazily, so it only has to run before   #}
     {# the first panel opens; outside the bundle for the same reason as the  #}
