@@ -19,14 +19,16 @@ pre-loaded with the recurring data-pipeline jobs:
   ``fetch_weather --commit``. Four times a day because a location has no
   live on-demand fetch behind its page render the way a bulletin region
   does: the scheduled batch is the only thing that keeps today's row
-  current, and today's row is the one every surface reads.
+  current, and today's row is the one every surface reads. Only enqueues
+  since SNOW-1399, one paced task per station.
 - **backfill_weather** — fires at :20 every hour, running
   ``backfill_weather --commit``. One budgeted sweep of the missing past
   ``Weather`` days, newest fortnight first (SNOW-1245): the budget is this
   hour's share of what ``fetch_weather`` leaves of Open-Meteo's free daily
   quota, so the two never throttle each other, and each run resumes where
   the last one stopped. At :20 so it never starts beside ``fetch_weather``
-  or ``fetch_bulletins``.
+  or ``fetch_bulletins``. Since SNOW-1399 it plans and enqueues one task
+  per station-block; the budget is the enqueue limit.
 - **mirror_reference_data** — fires at :40 every hour, running
   ``mirror_reference_data --commit``. Copies the curated places, passes
   and resorts into the reference-data service's tables, which the v2 data

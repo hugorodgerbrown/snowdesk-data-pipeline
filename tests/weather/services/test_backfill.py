@@ -20,6 +20,7 @@ from apps.locations.models import Location
 from apps.weather.models import Weather
 from apps.weather.services import backfill
 from apps.weather.services.reference import mirror_reference_locations
+from apps.weather.services.station_tasks import backfill_unit_task
 from tests.factories import (
     LocationFactory,
     ResortLocationFactory,
@@ -90,18 +91,15 @@ class TestApply:
         assert counts["filled"] == 1
 
     def test_the_sweep_applies_each_row(self) -> None:
-        """The hourly path writes both tables."""
+        """The hourly path's task writes both tables (SNOW-1399)."""
         location = _station()
         day = backfill.backfill_until()
+        station = SourceLocation.objects.get(uuid=str(location.source_uuid))
         with mock.patch("requests.get", return_value=_response([day])):
-            backfill.sweep(
-                Location.objects.filter(pk=location.pk),
-                floor=day,
-                until=day,
-                commit=True,
-                budget=None,
-                delay=0,
+            filled = backfill_unit_task.call(
+                station.pk, day.isoformat(), day.isoformat()
             )
+        assert filled == 1
         assert Weather.objects.filter(location=location, observed_on=day).exists()
 
     def test_a_day_this_instance_already_holds_is_kept(self) -> None:

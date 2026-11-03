@@ -43,19 +43,20 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
 from django.core.cache import cache
+from django.db.models import QuerySet
 from django.utils import timezone
 from django_tasks import TaskResultStatus
 from django_tasks.base import Task
 from django_tasks_db import DatabaseBackend
 from django_tasks_db.models import DBTaskResult
 
-from apps.core.command_iteration import iterate_rows
+from apps.core.command_iteration import countdown, iterate_rows
 from apps.core.command_register import RegisteredCommand
 
 logger = logging.getLogger(__name__)
@@ -292,9 +293,40 @@ def _enqueue_one(
     return False
 
 
+def _walk(
+    command: RegisteredCommand,
+    rows: QuerySet[Any] | Sequence[Any],
+    describe: Callable[[Any], object],
+    verbosity: int,
+    chunk_size: int | None,
+) -> Iterable[Any]:
+    """Stream a queryset as a countdown of rows, or a list as one of units.
+
+    Args:
+        command: The calling command, for its stdout.
+        rows: A queryset, or a list of derived units.
+        describe: A row's or unit's countdown label.
+        verbosity: Django's ``--verbosity``.
+        chunk_size: Forwarded to the queryset iterator.
+
+    """
+    if isinstance(rows, QuerySet):
+        return iterate_rows(
+            command, rows, verbosity=verbosity, describe=describe, chunk_size=chunk_size
+        )
+    return countdown(
+        command,
+        rows,
+        total=len(rows),
+        verbosity=verbosity,
+        label="unit(s)",
+        describe=describe,
+    )
+
+
 def enqueue_each(
     command: RegisteredCommand,
-    rows: Iterable[Any],
+    rows: QuerySet[Any] | Sequence[Any],
     task: Task[Any, Any],
     *,
     args: Callable[[Any], tuple[Any, ...]],
@@ -315,8 +347,10 @@ def enqueue_each(
     Args:
         command: The calling command, for its stdout and its tally.
         rows: The candidates: a queryset of rows still needing work, slim
-            (only what ``args`` and ``describe`` read). Streamed newest id
-            first.
+            (only what ``args`` and ``describe`` read), streamed newest id
+            first. Or a list of derived units with no row of their own (a
+            station and a fortnight, SNOW-1399), walked in the order given
+            with a ``countdown``.
         task: The row task. Its priority must be ``BULK_TASK_PRIORITY``
             or lower.
         args: Returns a row's task arguments, JSON-serialisable (a primary
@@ -343,9 +377,7 @@ def enqueue_each(
     waiting = _waiting(task) if commit else set()
     start = timezone.now()
     enqueued = already_queued = failed = 0
-    for row in iterate_rows(
-        command, rows, verbosity=verbosity, describe=describe, chunk_size=chunk_size
-    ):
+    for row in _walk(command, rows, describe, verbosity, chunk_size):
         if limit and enqueued >= limit:
             break
         row_args = args(row)

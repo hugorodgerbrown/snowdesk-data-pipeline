@@ -11,6 +11,7 @@ Covers:
   - An inline task that fails is counted.
   - An outside task with no pace, or one above the bulk priority, is refused.
   - The breaker: ``back_off`` opens it, ``backing_off`` reads it, it closes.
+  - A list of derived units is walked in order, with a countdown.
   - ``wait_for_slot`` spaces calls ``pace`` apart even when several tasks
     are due at once, and banks no burst across an idle spell.
 """
@@ -135,6 +136,25 @@ def test_tally_as_names_the_count() -> None:
         "already_queued": 0,
         "failed": 0,
     }
+
+
+def test_a_list_of_units_is_walked_in_order() -> None:
+    """Derived units keep the order given and count down by their label."""
+    command = _command()
+    counts = enqueue_each(
+        command,
+        [3, 1, 2],
+        record_task,
+        args=lambda unit: (unit,),
+        describe=lambda unit: f"unit {unit}",
+        commit=True,
+        verbosity=1,
+    )
+    assert counts.enqueued == 3
+    assert SEEN == [3, 1, 2]
+    out = command.stdout.getvalue()
+    assert "3 unit(s) remaining" in out
+    assert "unit 2" in out
 
 
 def test_limit_caps_what_is_enqueued() -> None:

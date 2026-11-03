@@ -2,8 +2,10 @@
 tests/weather/management/test_fetch_weather.py — Tests for the fetch_weather command.
 
 Covers the command contract from CLAUDE.md's management-command rules: it
-runs with no arguments, it writes nothing without ``--commit``, it streams
-rather than materialising, and it exits non-zero when any location failed.
+runs with no arguments, it writes nothing (and asks nothing) without
+``--commit``, it streams rather than materialising, and it exits non-zero
+when any location failed. Since SNOW-1399 it enqueues one task per station;
+the tasks run inline here, and a 429 opens the Open-Meteo breaker.
 """
 
 from __future__ import annotations
@@ -19,7 +21,9 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.utils import timezone
 
+from apps.core.command_tasks import backing_off
 from apps.ingest.public import SourceLocation, SourceWeather
+from apps.locations.services.elevation import OPEN_METEO
 from apps.weather.models import Weather
 from tests.factories import (
     FavouriteFactory,
@@ -59,7 +63,7 @@ class TestFetchWeatherCommand:
     """Tests for the fetch_weather management command."""
 
     def test_runs_with_no_arguments_and_writes_nothing(self) -> None:
-        """The bare invocation is a read-only probe — the command-design rule."""
+        """The bare invocation counts — it asks nothing and writes nothing."""
         ResortLocationFactory.create()
         stdout = StringIO()
 
@@ -68,9 +72,10 @@ class TestFetchWeatherCommand:
         ) as get:
             call_command("fetch_weather", stdout=stdout)
 
-        assert get.call_count == 1
+        assert get.call_count == 0
         assert Weather.objects.count() == 0
         assert "READ-ONLY" in stdout.getvalue()
+        assert "1 station(s) would be enqueued" in stdout.getvalue()
 
     def test_commit_writes_one_row_per_day_per_active_location(self) -> None:
         """--commit persists one row per day of the window per location."""
@@ -85,7 +90,7 @@ class TestFetchWeatherCommand:
 
         # Two locations, a two-day payload: four rows (SNOW-1337).
         assert Weather.objects.count() == 4
-        assert "4 row(s) created" in stdout.getvalue()
+        assert "2 station(s) enqueued" in stdout.getvalue()
 
     def test_a_second_run_refines_rather_than_appending(self) -> None:
         """The four daily runs must not accumulate rows for the same day."""
@@ -134,9 +139,41 @@ class TestFetchWeatherCommand:
 
         with (
             mock.patch("requests.get", side_effect=requests.HTTPError("boom")),
-            pytest.raises(CommandError, match="1 location failure"),
+            pytest.raises(CommandError, match="1 station failure"),
         ):
             call_command("fetch_weather", "--commit", stdout=StringIO())
+
+    def test_a_429_opens_the_breaker_for_the_rest(self) -> None:
+        """The next station's task returns without asking; the run exits 1."""
+        ResortLocationFactory.create()
+        ResortLocationFactory.create()
+        refused = requests.HTTPError("429", response=mock.Mock(status_code=429))
+
+        with (
+            mock.patch("requests.get", side_effect=refused) as get,
+            pytest.raises(CommandError, match="1 station failure"),
+        ):
+            call_command("fetch_weather", "--commit", stdout=StringIO())
+
+        assert get.call_count == 1
+        assert backing_off(OPEN_METEO)
+
+    def test_a_station_waits_for_its_slot(self) -> None:
+        """The pace is the gap on the slot it shares with the backfill."""
+        ResortLocationFactory.create()
+
+        with (
+            mock.patch(
+                "requests.get",
+                return_value=_response(_payload(timezone.localdate())),
+            ),
+            mock.patch("apps.weather.services.station_tasks.wait_for_slot") as wait,
+        ):
+            call_command(
+                "fetch_weather", "--commit", "--delay", "0.25", stdout=StringIO()
+            )
+
+        wait.assert_called_once_with(OPEN_METEO, 0.25)
 
     def test_prints_a_countdown_line_per_location(self) -> None:
         """Streamed output reads as a countdown, per the SNOW-602 rule."""

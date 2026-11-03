@@ -2,7 +2,7 @@
 name: weather-backfill-sweeps-newest-fortnight-first
 description: backfill_weather as an hourly budgeted sweep — fortnight blocks newest first, sweep_budget from Open-Meteo weighted quota
 status: current
-last-reviewed: 2026-10-28
+last-reviewed: 2026-11-03
 ---
 
 # The weather backfill sweeps newest fortnight first, inside a derived budget
@@ -16,6 +16,24 @@ stations (`SourceLocation`), diffs and writes `SourceWeather`, and hands
 each row to the host, which applies it into `Weather`, keeping a past day
 it already holds. Read "location" below as "station". The budget's live
 term counts the service's live stations, which are the curated estate.
+
+**Since SNOW-1399 (3 Nov 2026) a sweep is planned, then enqueued.** The
+command no longer walks the requests itself. `plan_sweep` yields the
+station-blocks the budget buys, in the same order and under the same
+budget rule, and the command enqueues one `backfill_unit_task` per unit
+through `enqueue_each` ([`bulk-commands-enqueue-each-row.md`](bulk-commands-enqueue-each-row.md)).
+Each task fills its unit with `sweep_block`, which re-reads the gap, so a
+unit filled since it was planned costs nothing. Two rules below change:
+
+- **The budget is the enqueue limit.** It bounds what one run plans, and a
+  unit still waiting from an earlier run is planned again, found already
+  queued and not enqueued twice — so it counts against this run's budget,
+  and a stalled worker never lets the queue grow past one hour's worth.
+- **A 429 trips the breaker instead of stopping a loop.** The task that
+  met it opens the `open-meteo` breaker for five minutes and fails; every
+  task behind it, the live fetch's included, returns without asking, and
+  their units stay gaps for the next plan. `--delay` staggers the tasks and
+  is each one's gap on the shared `open-meteo` slot (`wait_for_slot`).
 
 ## Decision
 
@@ -54,10 +72,11 @@ sweep:
   quota. A fixed number would silently start throttling the live fetch —
   the job that keeps today current — as the estate grew. The derived budget
   shrinks instead, and reaches zero rather than going negative.
-- **On the scheduler, not the task queue.** The original ADR ruled out
-  `db_worker` because it would block subscription email. The scheduler is
-  its own worker, so that objection does not apply; a sweep is ~57 requests,
-  a couple of minutes.
+- **On the task queue since SNOW-1399.** The original ADR ruled out
+  `db_worker` because it would block subscription email, and this ADR kept
+  the sweep on the scheduler for that reason. The bulk tasks now run at
+  `BULK_TASK_PRIORITY` (−50), below email and pushes, so that objection no
+  longer holds; the scheduler only plans and enqueues.
 
 ## Consequences
 
@@ -66,7 +85,9 @@ sweep:
   `--resort` or `--location`, and an explicit `--budget`.
 - A location whose day never resolves upstream is requested again every
   run. It costs 2.4 calls an hour and blocks nothing else, because the
-  sweep moves past it.
+  plan moves past it.
+- A read-only run plans and counts; it asks Open-Meteo nothing (it used
+  to issue the requests and discard them).
 - `LIVE_FETCHES_PER_DAY` must follow `fetch_weather`'s trigger; a test
   holds the two together. On a paid key, pass `--budget` — the free-tier
   arithmetic no longer applies.

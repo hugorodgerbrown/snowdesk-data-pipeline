@@ -10,17 +10,23 @@ day is recorded once, on the day it is current, and that record then stands
 — so this command is not a re-fetch. It asks only for the days a location
 has no row for, and a location with no gaps costs no request at all.
 
-**A budgeted sweep, newest fortnight first (SNOW-1245).** The window is cut
-into fourteen-day blocks — the unit Open-Meteo charges one weighted call
-for — and walked newest first. Each block is finished across every selected
-location before the next one starts, with one request per location per
-block. The run stops before the request that would take it past
-``--budget`` weighted calls, and at once on a 429. The default budget is
-this hour's share of what ``fetch_weather`` leaves of the free tier's daily
-quota (``backfill.sweep_budget``), so a bare ``--commit`` run is exactly
-what the scheduler fires every hour, and an operator who wants more passes
-a bigger number. A run that stops partway through a block resumes it next
-time: the locations it finished no longer select.
+**A budgeted sweep, newest fortnight first (SNOW-1245), planned here and
+filled on the task runner (SNOW-1399).** The window is cut into
+fourteen-day blocks — the unit Open-Meteo charges one weighted call for —
+and planned newest first (``plan_sweep``): each block across every selected
+location before the next, one unit (one request) per location per block.
+The plan stops before the unit that would take it past ``--budget``
+weighted calls, and one ``backfill_unit_task`` per unit is enqueued through
+``enqueue_each``. The default budget is this hour's share of what
+``fetch_weather`` leaves of the free tier's daily quota
+(``backfill.sweep_budget``), so a bare ``--commit`` run is exactly what the
+scheduler fires every hour, and an operator who wants more passes a bigger
+number. A unit whose task has not run yet is planned again next hour,
+found already queued and not enqueued twice — and it counts against that
+hour's budget, so a stalled worker never lets the queue grow past one
+hour's worth. A 429 opens the ``open-meteo`` breaker for five minutes
+rather than stopping a loop: the tasks behind it return without asking,
+and their units stay gaps for the next plan.
 
 The first unattended full-estate run asked each location for its whole
 season in one request, ~63 weighted calls apiece, and was throttled after
@@ -42,10 +48,10 @@ locations' whole windows inline; neither owns the logic — the service does
 (``apps.ingest.public``), behind ``apps.weather.services.backfill``.
 
 Usage:
-    # Preview this hour's sweep — calls the API, writes nothing.
+    # Preview this hour's plan — asks the API nothing, writes nothing.
     uv run python manage.py backfill_weather
 
-    # Persist one sweep (what the scheduler runs).
+    # Enqueue one sweep (what the scheduler runs).
     uv run python manage.py backfill_weather --commit
 
     # One day, for four resorts, with no budget to speak of.
@@ -66,21 +72,22 @@ from typing import Any
 from django.core.management.base import CommandError
 from django.db.models import Q, QuerySet
 
-from apps.core.command_iteration import iterate_rows, non_negative_float
+from apps.core.command_iteration import non_negative_float
 from apps.core.command_register import RegisteredCommand
+from apps.core.command_tasks import enqueue_each
 from apps.ingest.public import SourceLocation
 from apps.locations.models import Location
 from apps.weather.services import backfill
+from apps.weather.services.station_tasks import backfill_unit_task
 
 logger = logging.getLogger(__name__)
 
 
 class Command(RegisteredCommand):
-    """Sweep the missing Weather days, newest fortnight first, within a budget.
+    """Enqueue the missing Weather days, newest fortnight first, within a budget.
 
-    Read-only by default; pass --commit to persist. Per-location failures
-    are caught, logged and counted — they never abort the walk — and the
-    command exits non-zero when any failed or the upstream throttled it.
+    Read-only by default; pass --commit to enqueue. Exits non-zero when a
+    task run inline failed or was throttled.
     """
 
     # Offered to the ops MCP server's run_command (apps.core.remote_commands).
@@ -99,8 +106,8 @@ class Command(RegisteredCommand):
             "--commit",
             action="store_true",
             help=(
-                "Persist the Weather rows. Without this flag the command "
-                "calls the API (a real probe) but writes nothing."
+                "Enqueue one task per planned station-block. Without this "
+                "flag the command plans and counts, and asks nothing."
             ),
         )
         parser.add_argument(
@@ -160,8 +167,8 @@ class Command(RegisteredCommand):
             type=non_negative_float,
             default=backfill.INTER_LOCATION_DELAY,
             help=(
-                "Seconds to wait between requests, so a long walk does not "
-                "read as abuse from one IP. 0 disables the throttle."
+                "Seconds between one request's start and the next, so a long "
+                "walk does not read as abuse from one IP. 0 disables it."
             ),
         )
 
@@ -196,17 +203,8 @@ class Command(RegisteredCommand):
             commit,
         )
 
-        def on_block(start: date, end: date, count: int) -> None:
-            """Head each block's countdown with its dates and its size."""
-            if verbosity >= 1:
-                self.stdout.write(
-                    self.style.MIGRATE_LABEL(
-                        f"{start} → {end}: {count} location(s) with a gap"
-                    )
-                )
-
         # Days the service already holds but this instance lacks cost no
-        # request: copy them across before the sweep looks for gaps.
+        # request: copy them across before the plan looks for gaps.
         replayed = backfill.replay_held(
             locations, floor=floor, until=until, commit=commit
         )
@@ -217,35 +215,59 @@ class Command(RegisteredCommand):
             )
         self.tally("replayed", replayed)
 
-        result = backfill.sweep(
-            locations,
-            floor=floor,
-            until=until,
-            commit=commit,
-            budget=budget,
-            delay=options["delay"],
-            # Streamed, not materialised: iterate_rows orders -id and prints
-            # a countdown line per location in the block (SNOW-602).
-            stream=lambda queryset: iterate_rows(
-                self,
-                queryset,
-                verbosity=verbosity,
-                describe=lambda row: row.to_string(),
-            ),
-            on_block=on_block,
-        )
-
-        self._report_outcome(result, commit=commit, verbosity=verbosity)
-
-        if result.stopped == "throttled":
-            raise CommandError(
-                "backfill_weather was throttled by Open-Meteo (429) after "
-                f"{result.weight:.0f} weighted call(s); the next run resumes."
+        # Bounded by the budget, so a list: enqueue_each counts it down.
+        units = list(
+            backfill.plan_sweep(
+                backfill.stations_for(locations),
+                floor=floor,
+                until=until,
+                budget=budget,
             )
-        if result.failed > 0:
+        )
+        weight = sum(unit.weight for unit in units)
+        delay: float = options["delay"]
+        counts = enqueue_each(
+            self,
+            units,
+            backfill_unit_task,
+            args=lambda unit: (
+                unit.location_id,
+                unit.start.isoformat(),
+                unit.end.isoformat(),
+                delay,
+            ),
+            describe=lambda unit: f"{unit.label} {unit.start} → {unit.end}",
+            commit=commit,
+            verbosity=verbosity,
+            pace=delay,
+        )
+        # Counts for the command run register (SNOW-1190).
+        self.tally("weighted_calls", round(weight))
+        logger.info(
+            "backfill_weather finished: units=%d weight=%.1f enqueued=%d "
+            "already_queued=%d failed=%d commit=%s",
+            len(units),
+            weight,
+            counts.enqueued,
+            counts.already_queued,
+            counts.failed,
+            commit,
+        )
+        if verbosity >= 1:
+            verb = "enqueued" if commit else "would be enqueued"
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Done. {len(units)} station-block(s) planned, "
+                    f"{weight:.1f} weighted call(s): {counts.enqueued} {verb}, "
+                    f"{counts.already_queued} already queued, "
+                    f"{counts.failed} failed."
+                )
+            )
+        if counts.failed:
             raise CommandError(
-                f"backfill_weather completed with {result.failed} location "
-                f"failure(s). Check logs for details."
+                f"backfill_weather completed with {counts.failed} failed "
+                f"station-block(s) (a 429 among them opens the breaker); "
+                f"the next run resumes."
             )
 
     def _select(self, options: dict[str, Any]) -> QuerySet[Location]:
@@ -285,71 +307,3 @@ class Command(RegisteredCommand):
             )
             locations = Location.objects.filter(pk__in=newest)
         return locations
-
-    def _report_outcome(
-        self,
-        result: backfill.SweepResult,
-        *,
-        commit: bool,
-        verbosity: int,
-    ) -> None:
-        """Emit the post-run summary to stdout and the structured log.
-
-        Args:
-            result: The counters returned by ``backfill.sweep``.
-            commit: Whether --commit was passed.
-            verbosity: Django's ``--verbosity`` level.
-
-        """
-        if verbosity >= 1:
-            if result.stopped == "budget":
-                ending = "Stopped at the budget; the next run resumes this block."
-            elif result.stopped == "throttled":
-                ending = "Stopped by an Open-Meteo throttle (429)."
-            elif not result.blocks:
-                ending = "Nothing missing in the window."
-            else:
-                ending = "Every block in the window walked."
-            summary = (
-                f"{result.requests} request(s), {result.weight:.1f} weighted "
-                f"call(s) over {result.locations} location-block(s); "
-                f"{result.blocks_finished} of {len(result.blocks)} block(s) "
-                f"finished, {result.unresolved} day(s) unresolved, "
-                f"{result.failed} failed. {ending}"
-            )
-            if commit:
-                self.stdout.write(
-                    self.style.SUCCESS(
-                        f"Done. {result.filled} day(s) written — {summary}"
-                    )
-                )
-            else:
-                self.stdout.write(
-                    self.style.SUCCESS(
-                        f"Read-only run complete — {summary} No data written. "
-                        "Pass --commit to persist."
-                    )
-                )
-        # Counts for the command run register (SNOW-1190).
-        self.tally("locations", result.locations)
-        self.tally("filled", result.filled)
-        self.tally("unresolved", result.unresolved)
-        self.tally("requests", result.requests)
-        self.tally("weighted_calls", round(result.weight))
-        self.tally("blocks_finished", result.blocks_finished)
-        self.tally("failed", result.failed)
-        logger.info(
-            "backfill_weather finished: locations=%d filled=%d unresolved=%d "
-            "requests=%d weight=%.1f blocks=%d finished=%d failed=%d "
-            "stopped=%s commit=%s",
-            result.locations,
-            result.filled,
-            result.unresolved,
-            result.requests,
-            result.weight,
-            len(result.blocks),
-            result.blocks_finished,
-            result.failed,
-            result.stopped or "-",
-            commit,
-        )
