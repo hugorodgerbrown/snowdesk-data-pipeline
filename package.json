@@ -7,7 +7,7 @@
     "build:splash": "node bin/build-pwa-splash",
     "test:js": "vitest run",
     "types:js": "tsc --noEmit",
-    "build:js": "node bin/minify-js",
+    "build:js": "node bin/minify-js && node bin/bundle-js",
     "build:css": "node bin/minify-css"
   },
   "engines": {

@@ -132,6 +132,11 @@ jobs:
       - name: Check query-count baseline (SNOW-13)
         run: uv run python manage.py monitor_query_counts
 
+      # SNOW-1412: perf sets JS_BUNDLES, so the map page references the
+      # built bundles; collectstatic must find them to hash them.
+      - name: Build the JS bundles
+        run: node bin/bundle-js
+
       - name: Collect static files (perf settings — ManifestStaticFilesStorage)
         env:
           DJANGO_SETTINGS_MODULE: config.settings.perf

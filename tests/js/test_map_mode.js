@@ -106,6 +106,19 @@ afterEach(() => {
   }
 });
 
+describe('without the flag', () => {
+  // SNOW-1412: map_mode.js is in the map bundle, so it loads for everyone;
+  // only the flagged template renders the button it needs.
+  it('does nothing when the page renders no Terrain button', async () => {
+    document.getElementById('map-mode-terrain').remove();
+    const before = added.length;
+    await load();
+    expect(window.pwaMapMode).toBeUndefined();
+    expect(document.documentElement.dataset.mapMode).toBeUndefined();
+    expect(added.length).toBe(before);
+  });
+});
+
 describe('the control', () => {
   it('opens in Dated on a bare URL', async () => {
     await load();

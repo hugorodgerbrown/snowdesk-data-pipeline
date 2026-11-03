@@ -3490,8 +3490,10 @@ legitimate cache name.
 
 **Tracked shell sources** (`apps.core.sw_shell.SHELL_SOURCES`): every
 `static/js/*.js` file (globbed live — vendored library bumps like
-`htmx.min.js` / `maplibre-gl.min.js` correctly change the hash too),
-`src/css/main.css` (the committed Tailwind source — `static/css/output.css`
+`htmx.min.js` / `maplibre-gl.min.js` correctly change the hash too), the
+map page's bundle membership lists `static/js/bundles/*.txt` (SNOW-1412: the
+built bundles are gitignored, so a list-only reorder would otherwise ship
+without a new worker), `src/css/main.css` (the committed Tailwind source — `static/css/output.css`
 is a gitignored build artefact and is never hashed), and the shell
 templates `base.html`, `map.html`, `offline.html` (SNOW-930's `/offline/`
 page, the second `SHELL_PAGES` entry), `partials/_map_embed.html`, and

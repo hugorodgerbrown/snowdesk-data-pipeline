@@ -128,3 +128,8 @@ help, the zoom control and the "today" control.
 The ceiling is now 400. `tests/public/test_offline_audit_panel.py` renders
 `/map/` signed in and signed out and fails once the page names more than
 half of it, so the next rise is a deliberate edit rather than a silent loss.
+
+On staging and production the map now names two script bundles in place of
+its ~125 modules (SNOW-1412,
+[decision](the-map-page-ships-one-script-bundle.md)), so a device holds all
+of the map or none of it. The ceiling test checks both forms.

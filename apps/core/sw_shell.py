@@ -133,7 +133,10 @@ def _default_shell_sources() -> tuple[Path, ...]:
     Includes every ``static/js/*.js`` file (globbed live, so a new script
     is picked up automatically without editing this module), the committed
     Tailwind source ``src/css/main.css`` (``static/css/output.css`` is a
-    gitignored build artefact and must NOT be hashed), and the shell
+    gitignored build artefact and must NOT be hashed), the map page's
+    bundle membership lists ``static/js/bundles/*.txt`` (SNOW-1412: the
+    built bundles are gitignored, so a list-only reorder or removal would
+    otherwise change what ships without changing the worker), and the shell
     templates from ``_shell_template_paths()``.
 
     ``static/js/sw.js`` is included like any other script. Under SNOW-590
@@ -142,8 +145,11 @@ def _default_shell_sources() -> tuple[Path, ...]:
     the chicken-and-egg normalisation SNOW-517 needed is gone with it.
     """
     js_sources = sorted((REPO_ROOT / "static" / "js").glob("*.js"))
+    bundle_lists = sorted((REPO_ROOT / "static" / "js" / "bundles").glob("*.txt"))
     css_source = (REPO_ROOT / "src" / "css" / "main.css",)
-    return tuple(js_sources) + css_source + _shell_template_paths()
+    return (
+        tuple(js_sources) + tuple(bundle_lists) + css_source + _shell_template_paths()
+    )
 
 
 # Computed once at import time from the current tree. Tests that need to

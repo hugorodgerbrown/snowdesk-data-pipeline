@@ -207,40 +207,6 @@ Context expected:
     {# bytes and answers 400 for anything it cannot parse as GPX.            #}
     <input type="file" id="route-upload-input" name="file" accept=".gpx, application/gpx+xml">
 </form>
-{# SNOW-686: routes panel JS. Deliberately NOT part of the map bundle —     #}
-{# like favourites.js it is loaded from its own surface partial and reaches  #}
-{# shared map state through window.snowdeskMapState, so it is not listed in  #}
-{# MAP_BUNDLE (tests/js/_load_map_bundle.js) and does not sit inside the     #}
-{# bundle's contiguous run (tests/public/test_map_script_order.py).          #}
-{# SNOW-764: the native-share/clipboard helper, loaded BEFORE routes.js —   #}
-{# SNOW-887 moved share.js to map.html: the favourites panel became its    #}
-{# second consumer on this page, and a second tag here would run the module #}
-{# twice — browsers do not deduplicate script elements by URL. Same move,   #}
-{# same reason, as SNOW-867 made for overflow_menu.js.                      #}
-{# The row's "…" menu is NOT loaded here either. SNOW-830 loaded          #}
-{# overflow_menu.js from this partial as this surface's own dependency;    #}
-{# SNOW-867 moved the tag to map.html once the downloads panel wanted one #}
-{# too, and SNOW-887 made it three panels. What was left behind here was   #}
-{# the old comment, mid-sentence, describing a script tag that is not on   #}
-{# this page — removed by SNOW-886.                                        #}
-{# SNOW-950: the panel's offline row store — written on every successful  #}
-{# list swap AND on routes.js's idle warm, read back when the request     #}
-{# fails. Sits between the two scripts it talks to, and both edges are    #}
-{# document order between deferred scripts: map.html's                   #}
-{# panel_rows_cache.js is above (this registers its onWarmed hook at      #}
-{# parse time), and routes.js is below (it reads                          #}
-{# window.pwaRoutesOffline). Map page only, like                          #}
-{# observations_offline.js and unlike favourites_offline.js, which        #}
-{# base.html loads site-wide.                                             #}
-<script defer src="{% static 'js/routes_offline.js' %}"></script>
-{# SNOW-1262: the pure half of route drawing, loaded here rather than by  #}
-{# _route_draw_surface.html so it is on the page with the route_drawing   #}
-{# flag off too: a route queued while it was on can still be discarded    #}
-{# here, and its stored draft has to go with it (forgetDraftFor). This    #}
-{# partial is included before the draw surface, so route_draw.js still    #}
-{# finds it.                                                              #}
-<script defer src="{% static 'js/route_draw_core.js' %}"></script>
-<script defer src="{% static 'js/routes.js' %}"></script>
 {# Every user-facing string routes.js writes into the DOM. makemessages     #}
 {# never scans static/js, so a literal there ships as English to every      #}
 {# locale — `tox -e i18n-lint` fails the build on one. Read back via        #}
@@ -315,3 +281,5 @@ Context expected:
     {# string is rendered into the attribute by Django, so it needs no      #}
     {# runtime lookup and no entry in this template.                        #}
 </template>
+{# SNOW-1412: this surface's scripts are listed, with their ordering notes, in #}
+{# static/js/bundles/map_surfaces.txt and loaded by map.html.               #}

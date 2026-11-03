@@ -1059,8 +1059,9 @@ REST_ZONE_MARKERS = (
     'id="rest-zone-sheet"',
     'id="rest-zone-body-template"',
     'id="rest-zone-strings-template"',
-    "/static/js/rest_zones_core.js",
-    "/static/js/rest_zones.js",
+    # Not the two scripts: since SNOW-1412 they load for everyone, from
+    # static/js/bundles/map_surfaces.txt, and rest_zones.js returns early
+    # without #rest-zones-config.
 )
 
 
@@ -2662,7 +2663,8 @@ def test_terrain_filter_absent_without_tile_url() -> None:
     assert "data-terrain-filter-open" not in content
     assert 'data-overlay-key="terrain"' not in content
     assert 'id="map-terrain-filter-sheet"' not in content
-    assert "js/terrain_filter_sheet" not in content
+    # SNOW-1412: the sheet's script loads for everyone (a member of
+    # static/js/bundles/map.txt) and returns early without the sheet above.
     # The core is a plain library and loads either way.
     assert "js/terrain_filter_core" in content
 
@@ -3057,7 +3059,8 @@ MAP_MODE_MARKERS = (
     ' id="map-mode-terrain"',
     ' id="map-mode-strings-template"',
     "data-today-label='Today'",
-    "/static/js/map_mode.js",
+    # Not map_mode.js: since SNOW-1412 it loads for everyone and returns
+    # early without #map-mode-terrain (test_map_script_order.py).
 )
 
 
