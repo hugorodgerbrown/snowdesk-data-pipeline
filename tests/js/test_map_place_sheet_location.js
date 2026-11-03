@@ -5,8 +5,9 @@
  * map_geolocate.js opens `{kind: 'location', lat, lon, altitude}` when the
  * reader taps the locate-me dot. The sheet opens at HALF on every width,
  * asks for the fix on the map's day, degrades to the device's altitude and
- * a "needs a connection" line when the fetch fails, and its star queues a
- * dropped pin through the favourites create. Its own file because the
+ * a "needs a connection" line when the fetch fails or stalls, and its star
+ * turns at once (favourites.js queues the save — see
+ * test_favourites_location_star.js). Its own file because the
  * module wires itself once at import (see test_map_place_sheet.js).
  */
 
@@ -101,24 +102,59 @@ describe('the Your location sheet', () => {
     expect(sheet.textContent).toContain('Your location');
   });
 
-  it('the star queues a dropped pin at the fix', async () => {
+  it('the star turns at once and leaves the write to favourites.js', async () => {
     const enqueue = vi.fn(() => Promise.resolve());
     window.pwaMutationQueue = { enqueue };
     window.MapSheet.canQueueMutations = () => true;
-    const pending = vi.fn();
-    document.addEventListener('snowdesk:favourite-pending', pending, { once: true });
     window.pwaPlaceSheet.open(FIX);
     await settle();
     const star = /** @type {HTMLButtonElement} */ (sheet.querySelector('[data-location-star]'));
     star.click();
-    expect(enqueue).toHaveBeenCalledTimes(1);
-    const call = enqueue.mock.calls[0][0];
-    expect(call.url).toBe('/favourites/create/');
-    expect(call.body).toContain('lat=46.0905');
-    expect(call.body).toContain('lon=7.2737');
-    expect(pending.mock.calls[0][0].detail).toMatchObject({ lat: 46.0905, lon: 7.2737 });
-    expect(star.disabled).toBe(true);
     expect(star.getAttribute('aria-pressed')).toBe('true');
+    expect(enqueue).not.toHaveBeenCalled();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(star.disabled).toBe(true);
+  });
+
+  it('a device that cannot queue leaves the star off', async () => {
+    window.pwaMutationQueue = { enqueue: vi.fn() };
+    window.MapSheet.canQueueMutations = () => false;
+    window.pwaPlaceSheet.open(FIX);
+    await settle();
+    const star = /** @type {HTMLButtonElement} */ (sheet.querySelector('[data-location-star]'));
+    star.click();
+    expect(star.getAttribute('aria-pressed')).toBe('false');
+    expect(star.disabled).toBe(false);
+  });
+
+  it('a stalled read paints the offline fallback when its budget runs out', async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock.mockImplementation(() => new Promise(() => {}));
+      window.pwaPlaceSheet.open(FIX);
+      expect(sheet.textContent).not.toContain('The bulletin and weather need a connection.');
+      vi.advanceTimersByTime(5000);
+      expect(sheet.textContent).toContain('2,385\u00a0m');
+      expect(sheet.textContent).toContain('The bulletin and weather need a connection.');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a late answer replaces the fallback', async () => {
+    vi.useFakeTimers();
+    try {
+      /** @type {(v: unknown) => void} */
+      let answer = () => {};
+      fetchMock.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+      window.pwaPlaceSheet.open(FIX);
+      vi.advanceTimersByTime(5000);
+      answer({ ok: true, text: () => Promise.resolve(LOCATION_BODY) });
+      await vi.runAllTimersAsync();
+      expect(sheet.querySelector('[data-testid="location-title"]')).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('a favourites change does not re-read the body', async () => {

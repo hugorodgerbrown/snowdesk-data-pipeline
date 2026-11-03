@@ -75,8 +75,13 @@ class TestGuards:
         response = client.get(_url(lat=LAT), HTTP_HX_REQUEST="true")
         assert response.status_code == 400
 
-    def test_malformed_coordinate_is_400(self, client: Client) -> None:
-        response = client.get(_url(lat="north", lon=LON), HTTP_HX_REQUEST="true")
+    @pytest.mark.parametrize(
+        ("lat", "lon"), [("north", LON), ("91", LON), (LAT, "181"), ("nan", LON)]
+    )
+    def test_malformed_coordinate_is_400(
+        self, client: Client, lat: Any, lon: Any
+    ) -> None:
+        response = client.get(_url(lat=lat, lon=lon), HTTP_HX_REQUEST="true")
         assert response.status_code == 400
 
     def test_malformed_date_is_400(self, client: Client) -> None:
@@ -97,7 +102,7 @@ class TestGuards:
             client.get(_url(lat=LAT, lon=LON, alt="2385"), HTTP_HX_REQUEST="true")
         assert read.call_args.args == (LAT, LON, 2385.0)
 
-    @pytest.mark.parametrize("alt", ["high", "12000", ""])
+    @pytest.mark.parametrize("alt", ["high", "12000", "", "nan", "inf"])
     def test_an_unusable_altitude_is_dropped(self, client: Client, alt: str) -> None:
         with (
             mock.patch(

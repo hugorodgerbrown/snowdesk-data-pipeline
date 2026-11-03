@@ -69,9 +69,10 @@
  * locate-me dot — on every width, as a resort's, and at HALF. The body is
  * read for the fix on the map's day (place_sheet.location_sheet_partial,
  * `no-store`: nothing keeps where the reader stood). Its star saves the
- * spot as a dropped pin through the same queued create the favourites
- * panel's form posts. OFFLINE it still opens: the device's own altitude
- * reading (when it gave one) and a line saying the rest needs a
+ * spot as a dropped pin: this module turns it, favourites.js queues the
+ * same create the favourites panel's form posts. OFFLINE — or when the
+ * read outlasts LOCATION_BUDGET_MS — it still opens: the device's own
+ * altitude reading (when it gave one) and a line saying the rest needs a
  * connection (Hugo, 3 Nov 2026: degrade gracefully).
  *
  * PAUSED DURING PLAYBACK (SNOW-1239). While the timeline plays the sheet
@@ -112,6 +113,10 @@
   // SNOW-1313: the header the service worker's offline-miss 504 carries
   // (`OFFLINE_MISS_HEADER` in sw.js; map_region_sheet.js holds a third copy).
   const OFFLINE_MISS_HEADER = 'X-SW-Offline-Miss';
+
+  // SNOW-1395: how long the "Your location" read may take before the sheet
+  // paints what the device knows — the worker's own navigation budget.
+  const LOCATION_BUDGET_MS = 5000;
 
   // One request in flight: a newer open supersedes it, and a close by any
   // route (onTeardown) aborts it.
@@ -287,12 +292,27 @@
     if (!sheet.querySelector('[data-testid="place-sheet-body"]')) {
       paintLines(current && current.name ? current.name : '', STRINGS.loading);
     }
+    // SNOW-1395: the reader's fix is fetched past the worker (`network`,
+    // never cached), so nothing else bounds it. A stalled radio paints the
+    // offline fallback once the budget runs out; a late answer still
+    // replaces it (docs/decisions/bounded-offline-read-paths.md).
+    let painted = false;
+    const budget = current && current.kind === 'location'
+      ? setTimeout(() => {
+          if (!painted && ask.isCurrent() && controller.isOpen()) paintLocationOffline(current);
+        }, LOCATION_BUDGET_MS)
+      : 0;
+    const settled = () => {
+      painted = true;
+      clearTimeout(budget);
+    };
     return fetch(url, {
       headers: { 'HX-Request': 'true' },
       credentials: 'same-origin',
       signal: ask.signal,
     })
       .then((resp) => {
+        settled();
         if (!resp.ok) {
           const err = new Error('place sheet ' + resp.status);
           // SNOW-1313: offline, and the device holds no sheet for this pin
@@ -312,6 +332,7 @@
         if (signIn) window.snowdeskSigninCta?.bindNext?.(signIn, signIn.dataset.signinUrl);
       })
       .catch((err) => {
+        settled();
         if (!ask.isCurrent() || !controller.isOpen() || playback.isAbort(err)) return;
         // Offline, a saved pin still has what its popup showed: its name
         // and when it was saved, both on the feature the map holds.
@@ -445,39 +466,18 @@
    * @returns {void}
    */
   const saveLocation = (star) => {
-    const addBtn = document.getElementById('favourite-add-btn');
-    const url = addBtn ? addBtn.dataset.favouriteCreateUrl || '' : '';
-    const lat = parseFloat(star.getAttribute('data-lat') || '');
-    const lon = parseFloat(star.getAttribute('data-lon') || '');
-    if (!url || !isFinite(lat) || !isFinite(lon)) return;
+    // favourites.js owns the write (a document listener, which runs after
+    // this one) — the same queued create the favourites panel's form posts.
+    // Turn the star now, since the create is queued, but only when the
+    // queue can take it: on a device that cannot, nothing is saved.
     if (!window.MapSheet.canQueueMutations?.() || !window.pwaMutationQueue) {
       toast(STRINGS['location-save-failed']);
       return;
     }
-    const body = new URLSearchParams({
-      csrfmiddlewaretoken: csrfToken(),
-      lat: String(lat),
-      lon: String(lon),
-      name: '',
-    }).toString();
-    window.pwaMutationQueue
-      .enqueue({
-        method: 'POST',
-        url: url,
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          // favourite_create is @require_htmx; the replay is a plain fetch.
-          'HX-Request': 'true',
-        },
-        body: body,
-      })
-      .catch(() => {});
-    document.dispatchEvent(
-      new CustomEvent('snowdesk:favourite-pending', { detail: { lat: lat, lon: lon, name: '' } }),
-    );
     star.setAttribute('aria-pressed', 'true');
     star.querySelector('svg')?.setAttribute('fill', 'currentColor');
-    star.disabled = true;
+    // After this click has reached favourites.js's document listener.
+    setTimeout(() => { star.disabled = true; }, 0);
     toast(STRINGS['location-saved']);
   };
 

@@ -949,4 +949,55 @@
         showToast('Could not remove this favourite — please try again.');
       });
   });
+
+  // ---------------------------------------------------------------------------
+  // Location star (SNOW-1395) — save the "Your location" sheet's fix as a
+  // dropped pin. The same queued create as the create form above, posted to
+  // the same endpoint with an empty name, so there is one save path for a
+  // coordinate: offline-capable, the optimistic marker, the layer revealed.
+  // map_place_sheet.js turns the star and toasts; this owns the write.
+  // ---------------------------------------------------------------------------
+
+  document.addEventListener('click', function (event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    const star = target && target.closest ? target.closest('[data-location-star]') : null;
+    if (!star) return;
+    event.preventDefault();
+    if (!IS_ELIGIBLE || !CREATE_URL || star.getAttribute('aria-pressed') !== 'true') return;
+    // The place sheet turns the star only when the queue can take the save
+    // (canQueueMutations), so a star still off here was refused there.
+    const lat = parseFloat(star.dataset.lat || '');
+    const lon = parseFloat(star.dataset.lon || '');
+    if (!isFinite(lat) || !isFinite(lon)) return;
+
+    window.pwaMutationQueue
+      .enqueue({
+        method: 'POST',
+        url: CREATE_URL,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          // favourite_create is @require_htmx; the replay is a plain fetch.
+          'HX-Request': 'true',
+        },
+        body: new URLSearchParams({
+          csrfmiddlewaretoken: getCsrfToken(),
+          lat: String(lat),
+          lon: String(lon),
+          name: '',
+        }).toString(),
+      })
+      .catch(function () {});
+
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:favourite-pending', {
+        detail: { lat: lat, lon: lon, name: '' },
+      }),
+    );
+    window.pwaTelemetry?.emit('map.favourite.created', {
+      offline: !networkInUse(),
+    });
+    // SNOW-886's rule: the optimistic marker is drawn by the favourites
+    // layer, so a save onto a map with that layer off must switch it on.
+    window.pwaRowFocus?.reveal({ overlay: window.pwaFavouritesOverlay });
+  });
 }());
