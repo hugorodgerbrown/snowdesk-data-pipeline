@@ -166,6 +166,7 @@ from apps.ingest.backfill import (
     request_weight,
     sweep_block,
     sweep_budget,
+    upstream_unavailable,
 )
 from apps.ingest.models import (
     WEATHER_COLUMNS,
@@ -543,6 +544,7 @@ __all__ = [
     "sync_source_documents",
     "sync_source_locations",
     "target_day_for_valid_from",
+    "upstream_unavailable",
     "terrain_rules",
     "unrated_day",
     "write_ndjson_archive",

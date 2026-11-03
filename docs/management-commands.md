@@ -252,7 +252,7 @@ worker logs.
 |-----|---------|---------|---------|
 | Bulletin ingestion | `fetch_bulletins --source slf albina meteofrance --commit` | `2,7 * * * *` (every hour at :02 and :07 UTC — off the top of the hour, SNOW-1380) | Fetches the latest bulletins from all three providers. Walks from each source's latest stored `valid_from` day up to today (UTC), so a missed run self-heals on the next invocation. |
 | Weather ingestion | `fetch_weather --commit` | `0 0,6,12,18 * * *` (four times a day, on the hour UTC) | Fetches today's Open-Meteo forecast for every curated location, through the weather service (SNOW-1253). Four runs because a location has no live on-demand fetch behind its page render the way a bulletin region does — the scheduled batch is the only thing keeping today's row current. |
-| Weather history sweep | `backfill_weather --commit` | `20 * * * *` (hourly, at :20 UTC) | One budgeted sweep of the missing past `Weather` days, newest fortnight first (SNOW-1245). The budget is this hour's share of what `fetch_weather` leaves of Open-Meteo's free daily quota, so the two never throttle each other; each run resumes where the last stopped, and a run with nothing missing issues no request. Since SNOW-1399 it plans and enqueues one task per station-block, and a 429 opens the `open-meteo` breaker. |
+| Weather history sweep | `backfill_weather --commit` | `20 * * * *` (hourly, at :20 UTC) | One budgeted sweep of the missing past `Weather` days, newest fortnight first (SNOW-1245). The budget is this hour's share of what `fetch_weather` leaves of Open-Meteo's free daily quota, so the two never throttle each other; each run resumes where the last stopped, and a run with nothing missing issues no request. Since SNOW-1399 it plans and enqueues one task per station-block, and a 429 or an outage (timeout, refused connection, 5xx) opens the `open-meteo` breaker. |
 | Reference-data mirror | `mirror_reference_data --commit` | `40 * * * *` (hourly, at :40 UTC) | Copies the curated places, passes and resorts into the reference-data service's `SourceLocation`, `SourcePass` and `SourceResort`, which the v2 data feeds serve (SNOW-1271). Hourly so an edit in the resort sheet or the map-admin overlays reaches the feed within the hour; database-only, and a run with nothing changed writes nothing. |
 | Ski-touring import | `import_ski_tours --commit` | `30 2 * * 1` (weekly, Mondays 02:30 UTC) | Downloads swisstopo's ski-touring GeoPackage, makes the service's `SourceSkiSegment` and `SourceSkiTour` equal it and applies what changed to `SkiSegment` and `SkiTour` (SNOW-1276). Weekly because swisstopo releases the data about once a year; a run against an unchanged release writes nothing. |
 | Wildlife rest-zone import | `import_rest_zones --commit` | `50 2 * * 1` (weekly, Mondays 02:50 UTC) | Fetches FOEN's wildlife rest zones from geo.admin canton by canton, makes the service's `SourceRestZone` equal them and applies what changed to `RestZone` (SNOW-1263). All or nothing: a canton that fails writes no zone. Switch `schedule_import_rest_zones`. |
@@ -730,7 +730,8 @@ through `upsert_weather`, the same apply a pull from
 `fetch_station_task` per station (`apps/weather/services/station_tasks.py`),
 enqueued through `enqueue_each` and paced by `--delay` (half a second by
 default, the gap each waits for on the shared `open-meteo` slot); a 429
-opens the `open-meteo` breaker for five minutes. A task reads today when it
+or an outage (timeout, refused connection, 5xx) opens the `open-meteo`
+breaker for five minutes, while a 4xx fails its station alone. A task reads today when it
 runs. A read-only run mirrors nothing, asks nothing and writes nothing: it
 counts. The register tallies
 `stations_created`, `stations_updated`, `stations_deleted` and
@@ -931,7 +932,7 @@ request that would overspend `--budget`. Since SNOW-1399 that walk is a
 plan (`plan_sweep`): the command enqueues one `backfill_unit_task` per
 station-block and each fills its unit with `sweep_block`. A unit still
 queued from an earlier run counts against this run's budget and is not
-enqueued twice, and a 429 opens the `open-meteo` breaker so the tasks behind
+enqueued twice, and a 429 or an outage opens the `open-meteo` breaker so the tasks behind
 it leave their units as gaps. A run that stopped partway through a block
 resumes it next time, because the locations it finished no longer select. Why this shape:
 [`decisions/weather-backfill-sweeps-newest-fortnight-first.md`](decisions/weather-backfill-sweeps-newest-fortnight-first.md).

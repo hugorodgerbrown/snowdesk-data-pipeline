@@ -158,6 +158,44 @@ class TestFetchWeatherCommand:
         assert get.call_count == 1
         assert backing_off(OPEN_METEO)
 
+    @pytest.mark.parametrize(
+        "outage",
+        [
+            requests.Timeout("slow"),
+            requests.ConnectionError("refused"),
+            requests.HTTPError("503", response=mock.Mock(status_code=503)),
+        ],
+        ids=["timeout", "connection", "5xx"],
+    )
+    def test_an_outage_opens_the_breaker_for_the_rest(self, outage: Exception) -> None:
+        """Open-Meteo down: one station asks, the rest wait for the next run."""
+        ResortLocationFactory.create()
+        ResortLocationFactory.create()
+
+        with (
+            mock.patch("requests.get", side_effect=outage) as get,
+            pytest.raises(CommandError, match="1 station failure"),
+        ):
+            call_command("fetch_weather", "--commit", stdout=StringIO())
+
+        assert get.call_count == 1
+        assert backing_off(OPEN_METEO)
+
+    def test_a_4xx_fails_its_station_alone(self) -> None:
+        """A refused input leaves the breaker shut; every station still asks."""
+        ResortLocationFactory.create()
+        ResortLocationFactory.create()
+        refused = requests.HTTPError("400", response=mock.Mock(status_code=400))
+
+        with (
+            mock.patch("requests.get", side_effect=refused) as get,
+            pytest.raises(CommandError, match="2 station failure"),
+        ):
+            call_command("fetch_weather", "--commit", stdout=StringIO())
+
+        assert get.call_count == 2
+        assert not backing_off(OPEN_METEO)
+
     def test_a_station_waits_for_its_slot(self) -> None:
         """The pace is the gap on the slot it shares with the backfill."""
         ResortLocationFactory.create()

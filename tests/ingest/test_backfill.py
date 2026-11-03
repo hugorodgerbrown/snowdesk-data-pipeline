@@ -676,6 +676,41 @@ class TestSweepBlock:
         assert result.blocks_finished == 0
         assert not SourceWeather.objects.exists()
 
+    @pytest.mark.parametrize(
+        "outage",
+        [
+            requests.Timeout("slow"),
+            requests.ConnectionError("refused"),
+            requests.HTTPError("503", response=mock.Mock(status_code=503)),
+        ],
+        ids=["timeout", "connection", "5xx"],
+    )
+    def test_an_outage_stops_the_unit_and_is_not_its_fault(
+        self, outage: Exception
+    ) -> None:
+        """The host opens its breaker; the station is not counted as failed."""
+        location = SourceLocationFactory.create()
+        day = backfill.backfill_until()
+
+        with mock.patch("requests.get", side_effect=outage):
+            result = backfill.sweep_block(location, day, day)
+
+        assert result.stopped == "unavailable"
+        assert result.failed == 0
+        assert result.blocks_finished == 0
+
+    def test_a_4xx_is_the_stations_own_failure(self) -> None:
+        """A refused input is counted, and the sweep is not stopped."""
+        location = SourceLocationFactory.create()
+        day = backfill.backfill_until()
+        refused = requests.HTTPError("400", response=mock.Mock(status_code=400))
+
+        with mock.patch("requests.get", side_effect=refused):
+            result = backfill.sweep_block(location, day, day)
+
+        assert result.failed == 1
+        assert not result.stopped
+
     def test_a_failed_request_is_counted(self) -> None:
         """Any other error is a failure the host raises on."""
         location = SourceLocationFactory.create()
@@ -761,3 +796,24 @@ class TestOnRow:
         with mock.patch("requests.get", return_value=_response(_payload([day]))):
             backfill.sweep_block(location, day, day, on_row=seen.append)
         assert [row.observed_on for row in seen] == [day]
+
+
+class TestUpstreamUnavailable:
+    """Which request errors are an outage rather than the request's fault."""
+
+    @pytest.mark.parametrize(
+        ("exc", "expected"),
+        [
+            (requests.Timeout("slow"), True),
+            (requests.ConnectionError("refused"), True),
+            (requests.HTTPError("500", response=mock.Mock(status_code=500)), True),
+            (requests.HTTPError("502", response=mock.Mock(status_code=502)), True),
+            (requests.HTTPError("404", response=mock.Mock(status_code=404)), False),
+            (requests.HTTPError("429", response=mock.Mock(status_code=429)), False),
+            (requests.HTTPError("no response"), False),
+            (ValueError("bad payload"), False),
+        ],
+    )
+    def test_classifies(self, exc: Exception, expected: bool) -> None:
+        """Timeouts, connection errors and 5xx are outages; nothing else is."""
+        assert backfill.upstream_unavailable(exc) is expected

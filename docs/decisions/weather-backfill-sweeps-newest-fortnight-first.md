@@ -29,8 +29,11 @@ unit filled since it was planned costs nothing. Two rules below change:
   unit still waiting from an earlier run is planned again, found already
   queued and not enqueued twice — so it counts against this run's budget,
   and a stalled worker never lets the queue grow past one hour's worth.
-- **A 429 trips the breaker instead of stopping a loop.** The task that
-  met it opens the `open-meteo` breaker for five minutes and fails; every
+- **A 429 or an outage trips the breaker instead of stopping a loop.** A
+  timeout, a refused connection or a 5xx counts as an outage
+  (`upstream_unavailable`); a 4xx is the station's own failure and trips
+  nothing. The task that met it opens the `open-meteo` breaker for five
+  minutes and fails; every
   task behind it, the live fetch's included, returns without asking, and
   their units stay gaps for the next plan. `--delay` staggers the tasks and
   is each one's gap on the shared `open-meteo` slot (`wait_for_slot`).

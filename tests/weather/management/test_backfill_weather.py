@@ -370,6 +370,27 @@ class TestBackfillWeatherBudget:
         assert get.call_count == 1
         assert backing_off(OPEN_METEO)
 
+    def test_an_outage_opens_the_breaker(self, yesterday: datetime.date) -> None:
+        """A 5xx is treated as a 429: one unit asks, the rest wait."""
+        _active_location()
+        _active_location()
+        down = requests.HTTPError("503", response=mock.Mock(status_code=503))
+
+        with (
+            mock.patch("requests.get", side_effect=down) as get,
+            pytest.raises(CommandError, match="1 failed station-block"),
+        ):
+            call_command(
+                "backfill_weather",
+                "--commit",
+                "--floor",
+                yesterday.isoformat(),
+                stdout=StringIO(),
+            )
+
+        assert get.call_count == 1
+        assert backing_off(OPEN_METEO)
+
     def test_a_unit_waits_for_its_slot(self, yesterday: datetime.date) -> None:
         """The pace is the gap on the slot it shares with the live fetch."""
         _active_location()

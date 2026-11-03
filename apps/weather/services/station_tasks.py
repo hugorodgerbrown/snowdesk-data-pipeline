@@ -17,9 +17,12 @@ through ``apps.core.command_tasks.enqueue_each``, one task per unit:
 
 Both call Open-Meteo, so both are registered with ``calls_outside`` and
 take their turn on the shared ``OPEN_METEO`` slot (with the elevation
-lookups) before they call out. A 429 opens the ``OPEN_METEO`` breaker for
-``OPEN_METEO_BACK_OFF_S`` and fails the task: every task after it, of
-either kind, returns without asking and leaves its unit for the next run.
+lookups) before they call out. A 429, or an outage — a timeout, a refused
+connection, a 5xx (``upstream_unavailable``) — opens the ``OPEN_METEO``
+breaker for ``OPEN_METEO_BACK_OFF_S`` and fails the task: every task after
+it, of either kind, returns without asking and leaves its unit for the
+next run. A failure that is the station's own (a 4xx, a bad payload, a
+write) fails its task alone and leaves the breaker shut.
 """
 
 from __future__ import annotations
@@ -39,7 +42,12 @@ from apps.core.command_tasks import (
     calls_outside,
     wait_for_slot,
 )
-from apps.ingest.public import SourceLocation, fetch_source_location, sweep_block
+from apps.ingest.public import (
+    SourceLocation,
+    fetch_source_location,
+    sweep_block,
+    upstream_unavailable,
+)
 from apps.locations.services.elevation import OPEN_METEO, OPEN_METEO_BACK_OFF_S
 from apps.weather.services.backfill import apply_backfilled_row
 from apps.weather.services.reference import apply_source_weather
@@ -48,7 +56,7 @@ logger = logging.getLogger(__name__)
 
 
 class OpenMeteoThrottled(RuntimeError):
-    """Open-Meteo answered 429: the breaker is open and the task fails."""
+    """Open-Meteo refused (429) or is down: the breaker is open, the task fails."""
 
 
 def _station(station_pk: int, kind: str) -> SourceLocation | None:
@@ -69,16 +77,17 @@ def _station(station_pk: int, kind: str) -> SourceLocation | None:
     return SourceLocation.objects.live().filter(pk=station_pk).first()
 
 
-def _throttled(station_pk: int, kind: str) -> OpenMeteoThrottled:
+def _throttled(station_pk: int, kind: str, why: str) -> OpenMeteoThrottled:
     """Open the breaker and return the error the task raises.
 
     Args:
-        station_pk: The station that was refused.
+        station_pk: The station whose request was refused or met the outage.
         kind: What the task does, for the message.
+        why: ``"throttled"`` or ``"unavailable"``.
 
     """
     back_off(OPEN_METEO, OPEN_METEO_BACK_OFF_S)
-    return OpenMeteoThrottled(f"{kind}: Open-Meteo throttled station pk={station_pk}")
+    return OpenMeteoThrottled(f"{kind}: Open-Meteo {why} at station pk={station_pk}")
 
 
 @task(priority=BULK_TASK_PRIORITY)
@@ -94,7 +103,8 @@ def fetch_station_task(station_pk: int, delay_s: float = 0.0) -> dict[str, int] 
         None when the station is gone or the breaker is open.
 
     Raises:
-        OpenMeteoThrottled: Open-Meteo answered 429; the breaker is open.
+        OpenMeteoThrottled: Open-Meteo answered 429 or is down; the breaker
+            is open.
 
     """
     station = _station(station_pk, "fetch_weather")
@@ -111,9 +121,15 @@ def fetch_station_task(station_pk: int, delay_s: float = 0.0) -> dict[str, int] 
             ):
                 apply_source_weather(row)
                 counts["created" if created else "updated"] += 1
-    except requests.HTTPError as exc:
-        if exc.response is not None and exc.response.status_code == 429:
-            raise _throttled(station_pk, "fetch_weather") from exc
+    except requests.RequestException as exc:
+        if (
+            isinstance(exc, requests.HTTPError)
+            and exc.response is not None
+            and exc.response.status_code == 429
+        ):
+            raise _throttled(station_pk, "fetch_weather", "throttled") from exc
+        if upstream_unavailable(exc):
+            raise _throttled(station_pk, "fetch_weather", "unavailable") from exc
         raise
     return counts
 
@@ -135,7 +151,8 @@ def backfill_unit_task(
         is gone or the breaker is open.
 
     Raises:
-        OpenMeteoThrottled: Open-Meteo answered 429; the breaker is open.
+        OpenMeteoThrottled: Open-Meteo answered 429 or is down; the breaker
+            is open.
         RuntimeError: The request or the write failed for another reason.
 
     """
@@ -149,8 +166,8 @@ def backfill_unit_task(
         before_request=lambda: wait_for_slot(OPEN_METEO, delay_s),
         on_row=apply_backfilled_row,
     )
-    if result.stopped == "throttled":
-        raise _throttled(station_pk, "backfill_weather")
+    if result.stopped in ("throttled", "unavailable"):
+        raise _throttled(station_pk, "backfill_weather", result.stopped)
     if result.failed:
         raise RuntimeError(
             f"backfill_weather: station pk={station_pk} {start}..{end} failed"

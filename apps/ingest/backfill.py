@@ -660,7 +660,9 @@ class SweepResult:
         blocks: The ``(start, end)`` blocks the run worked in, newest first.
         blocks_finished: How many of ``blocks`` the run walked to the end.
         stopped: ``"budget"`` when the next request would have overspent,
-            ``"throttled"`` when the upstream answered 429, otherwise empty.
+            ``"throttled"`` when the upstream answered 429,
+            ``"unavailable"`` when it timed out, refused the connection or
+            answered 5xx, otherwise empty.
 
     """
 
@@ -729,6 +731,24 @@ def _complete_in(start: date, end: date) -> QuerySet[Any, Any]:
 def _is_throttled(exc: requests.HTTPError) -> bool:
     """Return True when ``exc`` is Open-Meteo refusing for rate, not for input."""
     return exc.response is not None and exc.response.status_code == 429
+
+
+def upstream_unavailable(exc: BaseException) -> bool:
+    """Return True when ``exc`` says the upstream is down, not that the input was bad.
+
+    A timeout, a refused or dropped connection, or a 5xx: the next request
+    would most likely fail the same way, so a host stops asking (SNOW-1399).
+    A 4xx other than 429 is the request's own fault.
+
+    Args:
+        exc: What a request raised.
+
+    """
+    if isinstance(exc, requests.ConnectionError | requests.Timeout):
+        return True
+    if isinstance(exc, requests.HTTPError) and exc.response is not None:
+        return int(exc.response.status_code) >= 500
+    return False
 
 
 @dataclass(frozen=True)
@@ -815,8 +835,9 @@ def sweep_block(
     Fill one station's gap in one block: one planned unit, end to end.
 
     Re-reads what is missing, so a unit whose days were filled since it was
-    planned costs no request. A 429 sets ``stopped = "throttled"``; any
-    other failure counts in ``failed``. Neither raises: the host decides.
+    planned costs no request. A 429 sets ``stopped = "throttled"``, an
+    outage (timeout, refused connection, 5xx) ``stopped = "unavailable"``;
+    any other failure counts in ``failed``. None raises: the host decides.
 
     Args:
         location: The station.
@@ -915,6 +936,25 @@ def _sweep_location(
     result.unresolved += written.unresolved
 
 
+def _stop_unavailable(
+    location: SourceLocation, exc: BaseException, result: SweepResult
+) -> None:
+    """Record an upstream outage: the sweep stops, the station is not at fault.
+
+    Args:
+        location: The station whose request met the outage.
+        exc: What the request raised.
+        result: The run's counters, mutated in place.
+
+    """
+    logger.warning(
+        "Backfill sweep: Open-Meteo unavailable at location=%s: %s; stopping",
+        location.pk,
+        exc,
+    )
+    result.stopped = "unavailable"
+
+
 def _sweep_request(
     location: SourceLocation,
     start: date,
@@ -935,8 +975,8 @@ def _sweep_request(
         base_url: Overrides the configured historical host.
 
     Returns:
-        The parsed body, or None when the request failed or was throttled —
-        a throttle also sets ``result.stopped``.
+        The parsed body, or None when the request failed, was throttled or
+        met an outage — the last two also set ``result.stopped``.
 
     """
     try:
@@ -951,13 +991,19 @@ def _sweep_request(
             )
             result.stopped = "throttled"
             return None
+        if upstream_unavailable(exc):
+            _stop_unavailable(location, exc, result)
+            return None
         # Refused for its input, so the upstream counted it.
         logger.exception("Failed to backfill weather for location=%s", location.pk)
         result.failed += 1
         result.requests += 1
         result.weight += weight
         return None
-    except Exception:  # noqa: BLE001 — broad catch intentional: one location must not abort the sweep
+    except Exception as exc:  # noqa: BLE001 — broad catch intentional: one location must not abort the sweep
+        if upstream_unavailable(exc):
+            _stop_unavailable(location, exc, result)
+            return None
         logger.exception("Failed to backfill weather for location=%s", location.pk)
         result.failed += 1
         return None
