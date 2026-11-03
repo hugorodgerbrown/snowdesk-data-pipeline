@@ -8,14 +8,14 @@
  * and its strings.
  *
  * WHAT IS DRAWN. FOEN's wildlife rest zones (RestZone, synced weekly from
- * the reference-data service), from z11, for the view's own rectangle and
+ * the reference-data service), from z10, for the view's own rectangle and
  * the map's day: the server marks each zone `in_force` for that day, and a
  * zone out of its period is drawn muted rather than left off. Two layers,
  * `rest-zones-fill` and `rest-zones-line` (map_state.js OVERLAY_LAYERS),
  * under the region boundaries and every pin.
  *
  * WHEN IT LOADS. After the map settles (`moveend`, a quarter-second
- * debounce), only while the switch is on and the map is at z11 or closer,
+ * debounce), only while the switch is on and the map is at z10 or closer,
  * and only when the loaded rectangle no longer holds the view or the map's
  * day changed (`snowdesk:date-changed`, never the scrubber's preview). A
  * newer request aborts the one in flight. A failed request leaves the last

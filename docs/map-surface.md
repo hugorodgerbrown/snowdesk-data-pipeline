@@ -35,10 +35,10 @@ z  4    5    6    7    8    9   10   11   12   13   14   15 … 18
                             favourite labels 8 →
                                   resort labels, route endpoints 10 →
                                   swisstopo ski-touring routes 10 → (SKI_ROUTES_MINZOOM, CH only)
+                                  wildlife rest zones 10 → (rest_zones_core MINZOOM, CH only)
                                        route transitions 11 →
-                                       wildlife rest zones 11 → (rest_zones_core MINZOOM, CH only)
                                        pin / report focus 11 (POINT_FOCUS_ZOOM)
-                                                 terrain filter / slope tiles 12–14, overzoomed above
+                                       Steep terrain drawn 11 → (DRAW_MIN_ZOOM; its tiles are 12–14, overzoomed above)
    route drawn as LEGS (climb / descent) ..........|
                                                       route drawn in SLOPE CLASSES 14 → (ROUTE_SLOPE_MINZOOM)
    route cursor a DOT ..................................|  its 25 m SEGMENT 14 → (SNOW-1145)

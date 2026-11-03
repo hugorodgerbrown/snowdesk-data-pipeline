@@ -8231,10 +8231,10 @@
   //   ski_routes — SAC's summits and tours from SKI_TOURING_MINZOOM (z9).
   //     Named only on a page that has the layers.
   //   rest_zones — FOEN's wildlife rest zones from REST_ZONES_MINZOOM
-  //     (z11, SNOW-1384), on the same pages as ski_routes.
+  //     (z10, SNOW-1384), on the same pages as ski_routes.
   // rest_zones_core.js's MINZOOM, which loads after this file and so cannot
   // be read here; tests/js/test_map_rest_zone_tap.js holds the two equal.
-  const REST_ZONES_MINZOOM = 11;
+  const REST_ZONES_MINZOOM = 10;
   const ZOOM_GATES = Object.freeze([
     Object.freeze({ key: 'region_select', zoom: REGION_SELECT_MAXZOOM, upTo: true }),
     ...(SKI_ROUTES_ELIGIBLE ? [Object.freeze({ key: 'ski_routes', zoom: SKI_TOURING_MINZOOM })] : []),

@@ -170,7 +170,7 @@ describe('switched off', () => {
     await settle();
     expect(map.layers.get('rest-zones-fill').layout.visibility).toBe('none');
     expect(map.layers.get('rest-zones-line').layout.visibility).toBe('none');
-    expect(map.layers.get('rest-zones-fill').minzoom).toBe(11);
+    expect(map.layers.get('rest-zones-fill').minzoom).toBe(10);
     // MapLibre drops a string Feature id: the uuid property stands in.
     expect(map.sources.get('rest-zones').def.promoteId).toBe('uuid');
     expect(fetches).toEqual([]);
@@ -201,8 +201,8 @@ describe('switched on', () => {
     expect(fetches[0]).toMatch(/&d=2026-11-02$/);
   });
 
-  it('loads nothing zoomed out past z11', async () => {
-    const map = await boot({ on: true, zoom: 10.5 });
+  it('loads nothing zoomed out past z10', async () => {
+    const map = await boot({ on: true, zoom: 9.5 });
     map.fire('moveend');
     await settle();
     expect(fetches).toEqual([]);

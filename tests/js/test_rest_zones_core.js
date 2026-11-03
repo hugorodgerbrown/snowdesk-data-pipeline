@@ -14,9 +14,9 @@ import '../../static/js/rest_zones_core.js';
 const core = self.pwaRestZonesCore;
 
 describe('the limits', () => {
-  it('draws from z11 and loads at most a degree each way', () => {
-    expect(core.MINZOOM).toBe(11);
-    expect(core.MAX_SPAN_DEG).toBe(1.0);
+  it('draws from z10 and loads at most two degrees each way', () => {
+    expect(core.MINZOOM).toBe(10);
+    expect(core.MAX_SPAN_DEG).toBe(2.0);
   });
 });
 
@@ -26,16 +26,16 @@ describe('loadBox', () => {
   });
 
   it('drops the padding before refusing a view near the limit', () => {
-    const box = core.loadBox([10.0, 46.0, 10.98, 46.5]);
+    const box = core.loadBox([10.0, 46.0, 11.98, 46.5]);
     expect(box).not.toBeNull();
     expect(box[2] - box[0]).toBeLessThanOrEqual(core.MAX_SPAN_DEG);
     expect(box[0]).toBeLessThanOrEqual(10.0);
-    expect(box[2]).toBeGreaterThanOrEqual(10.98);
+    expect(box[2]).toBeGreaterThanOrEqual(11.98);
   });
 
   it('loads nothing for a view wider than the limit', () => {
-    expect(core.loadBox([9.0, 46.0, 10.5, 46.5])).toBeNull();
-    expect(core.loadBox([9.0, 46.0, 9.5, 47.2])).toBeNull();
+    expect(core.loadBox([8.0, 46.0, 10.5, 46.5])).toBeNull();
+    expect(core.loadBox([9.0, 45.5, 9.5, 47.6])).toBeNull();
   });
 });
 
