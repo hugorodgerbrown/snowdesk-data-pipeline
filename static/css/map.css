@@ -2922,9 +2922,13 @@ html[data-route-drawing] #map-slopes-notice {
     background: color-mix(in srgb, var(--color-rest-recommended) 25%, transparent);
     border: 1.5px solid var(--color-rest-recommended);
 }
-.map-legend-swatch--rest-out-of-season {
+.map-legend-swatch--rest-binding-out-of-season {
     background: color-mix(in srgb, var(--color-rest-binding) 8%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-rest-binding) 40%, transparent);
+}
+.map-legend-swatch--rest-recommended-out-of-season {
+    background: color-mix(in srgb, var(--color-rest-recommended) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-rest-recommended) 40%, transparent);
 }
 
 /* The second page lays a key's rows out two to a line; a note takes the

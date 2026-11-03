@@ -157,7 +157,10 @@
     const inForce = (/** @type {RenderedFeature} */ f) => props(f).in_force === true;
     items['rest-binding'] = zones.some((f) => inForce(f) && props(f).binding === true);
     items['rest-recommended'] = zones.some((f) => inForce(f) && props(f).binding !== true);
-    items['rest-out-of-season'] = zones.some((f) => !inForce(f));
+    // Out of season a zone is still drawn in its own colour, faintly, so the
+    // key keeps the two kinds apart there too (Hugo, 3 Nov 2026).
+    items['rest-binding-out-of-season'] = zones.some((f) => !inForce(f) && props(f).binding === true);
+    items['rest-recommended-out-of-season'] = zones.some((f) => !inForce(f) && props(f).binding !== true);
 
     // A pinned resort is a resort dot in the favourites blue, drawn with
     // the resorts; a resort feature's `id` is its slug.

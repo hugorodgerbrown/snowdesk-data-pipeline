@@ -247,15 +247,21 @@ class TestRestZones:
     """The wildlife zones' key ships with the layer, behind route_drawing."""
 
     @override_flag("route_drawing", active=True)
-    def test_three_rows_in_the_readers_words(self, signed_in_drawer: Client) -> None:
-        """Hugo's labels: by law, advised, and the faint one out of season."""
+    def test_four_rows_in_the_readers_words(self, signed_in_drawer: Client) -> None:
+        """Hugo's labels: by law and advised, each in season and faint out of it."""
         now = _panel(_map(signed_in_drawer), "now")
         zones = now[now.index('data-legend-key="rest_zones"') :]
         zones = zones[: zones.index("</section>")]
         assert "Closed by law" in zones
         assert "Advised" in zones
-        assert "Closed out of season" in zones
-        for kind in ("binding", "recommended", "out-of-season"):
+        assert "Closed by law, out of season" in zones
+        assert "Advised, out of season" in zones
+        for kind in (
+            "binding",
+            "recommended",
+            "binding-out-of-season",
+            "recommended-out-of-season",
+        ):
             assert f'data-legend-item="rest-{kind}"' in zones
             assert f"map-legend-swatch--rest-{kind}" in zones
 
@@ -354,4 +360,5 @@ class TestMapKeyHelpTopic:
             "downloads",
         ):
             assert f'data-testid="help-map-key-{part}"' in content, part
-        assert "Closed out of season" in content
+        assert "Closed by law, out of season" in content
+        assert "Advised, out of season" in content
