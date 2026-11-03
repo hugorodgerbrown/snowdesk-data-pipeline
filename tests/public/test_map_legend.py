@@ -30,12 +30,31 @@ KEYS = [
     "danger",
     "problem_terrain",
     "community_reports",
+    "weather",
     "terrain_filter",
+    "ski_tours",
     "rest_zones",
     "routes",
     "pins",
+    "boundaries",
+    "location",
     "downloads",
 ]
+
+
+def _section(page: str, marker: str) -> str:
+    """Return the section a marker opens, to its closing tag.
+
+    Args:
+        page: One of the card's pages.
+        marker: An attribute that names the section.
+
+    Returns:
+        The section's markup.
+
+    """
+    section = page[page.index(marker) :]
+    return section[: section.index("</section>")]
 
 
 def _map(client: Client | None = None) -> str:
@@ -126,7 +145,7 @@ class TestFirstTier:
 
     @override_flag("route_drawing", active=True)
     def test_every_key_is_there_in_order(self, signed_in_drawer: Client) -> None:
-        """The eight keys appear once each, the day's first."""
+        """Every overlay has a key, once each, the day's first."""
         now = _panel(_map(signed_in_drawer), "now")
         found = re.findall(r'data-legend-key="([a-z_]+)"', now)
         assert found == KEYS
@@ -162,8 +181,47 @@ class TestFirstTier:
             "pin-resort",
             "pin-pinned",
             "pin-favourite",
+            "route-climb",
+            "route-descent",
+            "route-slope",
+            "route-flat",
+            "route-transition",
+            "route-ends",
+            "boundary-major",
+            "boundary-minor",
+            "boundary-micro",
+            "boundary-unsupported",
+            "boundary-grouping",
         ):
             assert f'data-legend-item="{item}"' in now, item
+
+    @override_flag("route_drawing", active=True)
+    def test_ski_tours_are_keyed_as_drawn(self, signed_in_drawer: Client) -> None:
+        """A way up, a way down, a summit and a hut, each a mark of its own."""
+        tours = _section(
+            _panel(_map(signed_in_drawer), "now"), 'data-legend-key="ski_tours"'
+        )
+        for item, mark in (
+            ("tour-up", "map-legend-line--tour-up"),
+            ("tour-down", "map-legend-line--tour-down"),
+            ("tour-summit", "map-legend-mark--summit"),
+            ("tour-hut", "map-legend-mark--hut"),
+        ):
+            assert f'data-legend-item="{item}"' in tours
+            assert mark in tours
+
+    def test_weather_boundaries_and_position_are_keyed(self) -> None:
+        """The weather symbol, the boundary tiers and the position dot."""
+        now = _panel(_map(), "now")
+        weather = _section(now, 'data-legend-key="weather"')
+        assert "partly_cloudy-day.svg" in weather
+        assert "Height of the point" in weather
+        boundaries = _section(now, 'data-legend-key="boundaries"')
+        for tier in ("major", "minor", "micro", "unsupported", "grouping"):
+            assert f"map-legend-line--{tier}" in boundaries
+        assert "map-legend-mark--location" in _section(
+            now, 'data-legend-key="location"'
+        )
 
     def test_it_says_so_when_nothing_needs_a_key(self) -> None:
         """An empty view gets a line, hidden until map_legend.js shows it."""
@@ -232,6 +290,30 @@ class TestSecondTier:
             assert label in everything
         assert "#help-topic-map-key" in everything
 
+    @override_flag("route_drawing", active=True)
+    def test_every_key_is_drawn_not_described(self, signed_in_drawer: Client) -> None:
+        """Hugo: "the entries must be visual" — each key is its marks, no prose.
+
+        Every section of the second page but the sources carries a swatch,
+        a line sample or a mark, and none carries a paragraph.
+        """
+        everything = _panel(_map(signed_in_drawer), "all")
+        keys = everything[: everything.index("map-legend-help-link")]
+        sections = keys.split('<section class="map-legend-section">')[1:]
+        assert len(sections) == len(KEYS)
+        for section in sections:
+            assert re.search(r"map-legend-(swatch|line|mark|pin|icon)", section), (
+                section[:200]
+            )
+            assert "map-legend-attribution" not in section, section[:200]
+
+    def test_the_second_page_rows_are_not_view_tested(self) -> None:
+        """Page two shows every row: it carries no data-legend-item, no test ids."""
+        everything = _panel(_map(), "all")
+        assert "data-legend-item" not in everything
+        assert 'data-testid="map-legend-observations-' not in everything
+        assert "data-terrain-filter-key" not in everything
+
 
 @pytest.mark.django_db
 class TestMapDemoMoved:
@@ -261,10 +343,14 @@ class TestMapKeyHelpTopic:
             "danger",
             "problem-terrain",
             "field-reports",
+            "weather",
             "steep-terrain",
+            "ski-tours",
             "rest-zones",
             "routes",
             "pins",
+            "boundaries",
+            "location",
             "downloads",
         ):
             assert f'data-testid="help-map-key-{part}"' in content, part

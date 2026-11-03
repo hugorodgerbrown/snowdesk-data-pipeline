@@ -155,7 +155,24 @@
   }
 
   /**
-   * Ask the map what the current view draws.
+   * Whether the reader's position dot (MapLibre's, or the spoofed beacon,
+   * map_geolocate.js) is inside the map's box: it is a DOM marker, not a
+   * layer, so queryRenderedFeatures cannot see it.
+   *
+   * @param {any} map
+   * @returns {boolean}
+   */
+  function locationInView(map) {
+    const dot = document.querySelector('.maplibregl-user-location-dot, .map-fake-beacon');
+    if (!dot || !map || typeof map.getContainer !== 'function') return false;
+    const box = dot.getBoundingClientRect();
+    const view = map.getContainer().getBoundingClientRect();
+    return box.width > 0 && box.right > view.left && box.left < view.right
+      && box.bottom > view.top && box.top < view.bottom;
+  }
+
+  /**
+   * Ask the map what the current view draws, for legendState.
    *
    * @returns {any}
    */
@@ -196,6 +213,7 @@
       switchedOn,
       routeLegsOn: sectionOn('routes'),
       downloads: sectionOn('downloads'),
+      location: locationInView(map),
       rendered,
     };
   }

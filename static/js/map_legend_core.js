@@ -38,10 +38,14 @@
     'danger',
     'problem_terrain',
     'community_reports',
+    'weather',
     'terrain_filter',
+    'ski_tours',
     'rest_zones',
     'routes',
     'pins',
+    'boundaries',
+    'location',
     'downloads',
   ]);
 
@@ -53,11 +57,26 @@
   const LAYERS = Object.freeze({
     danger: Object.freeze(['regions-fill', 'regions-edge', 'regions-level-label']),
     community_reports: Object.freeze(['community-reports-point', 'community-reports-clusters']),
+    weather: Object.freeze(['weather-point']),
+    ski_tours: Object.freeze(['ski-tours-line', 'ski-tours-line-down']),
+    ski_marks: Object.freeze(['ski-tours-summit']),
     rest_zones: Object.freeze(['rest-zones-fill']),
     routes: Object.freeze(['routes-leg-climb', 'routes-leg-descent']),
+    route_line: Object.freeze(['routes-line']),
+    route_slope: Object.freeze(['routes-slope-line', 'routes-slope-unknown']),
+    route_transitions: Object.freeze(['routes-transitions']),
+    route_ends: Object.freeze(['routes-endpoints']),
     resorts: Object.freeze(['resorts-pin']),
     favourites: Object.freeze(['favourites-pin']),
+    boundary_major: Object.freeze(['major-regions-line']),
+    boundary_minor: Object.freeze(['sub-regions-line']),
+    boundary_micro: Object.freeze(['regions-line']),
+    boundary_unsupported: Object.freeze(['regions-line-unsupported']),
+    boundary_grouping: Object.freeze(['bulletin-groupings-line']),
   });
+
+  /** The boundary tiers, each a row of the boundaries key. */
+  const BOUNDARIES = Object.freeze(['major', 'minor', 'micro', 'unsupported', 'grouping']);
 
   /** The field-report families the key has a row for. */
   const FAMILIES = Object.freeze(['WARNING', 'SURFACE', 'TRAIL']);
@@ -73,8 +92,10 @@
    * @property {boolean} [terrainFilter] Steep terrain is on, and the view
    *   is one it paints.
    * @property {boolean} [routeLegsOn] The routes overlay is drawn with at
-   *   least one route cut into legs (map.js's own condition).
+   *   least one route on it (map.js's own condition).
    * @property {boolean} [downloads] The downloaded-maps overlay is drawn.
+   * @property {boolean} [location] The reader's position dot is inside
+   *   the view.
    * @property {boolean} [problemTerrainOn] Problem terrain is switched
    *   on, whether or not this view is one it paints.
    * @property {boolean} [terrainFilterOn] Steep terrain likewise.
@@ -148,6 +169,32 @@
     items['pin-pinned'] = resortList.some((f) => pinned(String(props(f).id)));
     items['pin-favourite'] = favourites;
 
+    const tours = rendered(v, 'ski_tours');
+    const marks = rendered(v, 'ski_marks');
+    // A tour with no terrain yet is one line, `climbing` null, drawn as
+    // the way up.
+    items['tour-up'] = tours.some((f) => props(f).climbing !== false);
+    items['tour-down'] = tours.some((f) => props(f).climbing === false);
+    items['tour-summit'] = marks.some((f) => props(f).kind !== 'hut');
+    items['tour-hut'] = marks.some((f) => props(f).kind === 'hut');
+
+    // A route is its legs, or one flat line until it has them; from z14
+    // the line is coloured by slope, and its marks join it from z10–11.
+    const legs = rendered(v, 'routes');
+    items['route-climb'] = legs.some((f) => props(f).climbing === true);
+    items['route-descent'] = legs.some((f) => props(f).climbing !== true);
+    items['route-flat'] = rendered(v, 'route_line').length > 0;
+    items['route-slope'] = rendered(v, 'route_slope').length > 0;
+    items['route-transition'] = rendered(v, 'route_transitions').length > 0;
+    items['route-ends'] = rendered(v, 'route_ends').length > 0;
+    const routeParts = ['route-climb', 'route-descent', 'route-flat', 'route-slope'];
+
+    let boundaries = false;
+    for (const tier of BOUNDARIES) {
+      items['boundary-' + tier] = rendered(v, 'boundary_' + tier).length > 0;
+      boundaries = boundaries || items['boundary-' + tier];
+    }
+
     const keys = {
       // Problem slopes are painted in the danger colours and their key
       // says so, so the scale shows while either one needs it — even with
@@ -155,10 +202,14 @@
       danger: (!!v.bulletins && rendered(v, 'danger').length > 0) || !!v.problemTerrain,
       problem_terrain: !!v.problemTerrain,
       community_reports: reports.length > 0,
+      weather: rendered(v, 'weather').length > 0,
       terrain_filter: !!v.terrainFilter,
+      ski_tours: tours.length > 0 || marks.length > 0,
       rest_zones: zones.length > 0,
-      routes: !!v.routeLegsOn && rendered(v, 'routes').length > 0,
+      routes: !!v.routeLegsOn && routeParts.some((name) => items[name]),
       pins: resorts || favourites,
+      boundaries: boundaries,
+      location: !!v.location,
       downloads: !!v.downloads,
     };
     // The second page's marks say what is SWITCHED ON, wherever the view
@@ -168,10 +219,16 @@
       danger: !!v.bulletins,
       problem_terrain: !!(v.problemTerrainOn ?? v.problemTerrain),
       community_reports: !!switched.community_reports || reports.length > 0,
+      weather: !!switched.weather || keys.weather,
       terrain_filter: !!(v.terrainFilterOn ?? v.terrainFilter),
+      ski_tours: !!switched.ski_tours || !!switched.ski_marks || keys.ski_tours,
       rest_zones: !!switched.rest_zones || zones.length > 0,
       routes: !!v.routeLegsOn,
       pins: !!switched.resorts || !!switched.favourites || resorts || favourites,
+      // The grouping outline is the bulletins' own, not a boundary tier's.
+      boundaries: ['major', 'minor', 'micro'].some((tier) => !!switched['boundary_' + tier])
+        || boundaries,
+      location: !!v.location,
       downloads: !!v.downloads,
     };
     return { keys, items, on };

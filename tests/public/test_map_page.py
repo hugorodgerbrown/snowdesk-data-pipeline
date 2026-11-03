@@ -2286,6 +2286,10 @@ def test_the_route_key_names_the_two_kinds_of_leg() -> None:
     assert "Climbing" in key
     assert "map-legend-swatch--leg-descent" in key
     assert "Descending" in key
+    # From ROUTE_SLOPE_MINZOOM the line is coloured by slope, which has
+    # its own one row (the legend's every-overlay pass, 3 Nov 2026), not
+    # SNOW-910's six bands.
+    assert "map-legend-line--route-slope" in key
     assert "map-legend-swatch--slope-" not in key
     assert "Not surveyed" not in key
 
@@ -2307,14 +2311,9 @@ def test_the_route_key_has_no_row_for_marks_the_map_no_longer_draws() -> None:
     assert "Key passage" not in key
     assert "No-fall passage" not in key
     assert "point the way the ground falls" not in key
-    # What the key sends the reader to instead: the route's profile, whose
-    # legs highlight on a press (SNOW-1065) — pinned top-left since
-    # SNOW-1068, so the key no longer says where. Since the two-tier legend
-    # (3 Nov 2026) that sentence is the card's second page, not the
-    # compact first-tier key.
-    all_keys = content.split('data-legend-panel="all"', 1)[1]
-    assert "profile to highlight it" in all_keys
-    assert "below the map" not in all_keys
+    # The profile's leg highlight (SNOW-1065) is described in the help
+    # page's Map key topic since the legend's keys became marks only.
+    assert "below the map" not in key
 
 
 @pytest.mark.django_db

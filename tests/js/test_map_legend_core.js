@@ -29,8 +29,9 @@ const feature = (properties) => ({ properties });
 describe('KEYS and LAYERS', () => {
   it('lists the day\'s keys first, then every day\'s', () => {
     expect(core.KEYS).toEqual([
-      'danger', 'problem_terrain', 'community_reports', 'terrain_filter',
-      'rest_zones', 'routes', 'pins', 'downloads',
+      'danger', 'problem_terrain', 'community_reports', 'weather',
+      'terrain_filter', 'ski_tours', 'rest_zones', 'routes', 'pins',
+      'boundaries', 'location', 'downloads',
     ]);
   });
 
@@ -137,6 +138,60 @@ describe('legendState', () => {
     expect(pins.items).toMatchObject({
       'pin-resort': false, 'pin-pinned': false, 'pin-favourite': true,
     });
+  });
+
+  it('keys a ski tour\'s way up and down, and summits apart from huts', () => {
+    const { keys, items } = core.legendState({
+      rendered: {
+        ski_tours: [feature({ climbing: null })],
+        ski_marks: [feature({ kind: 'hut' })],
+      },
+    });
+    expect(keys.ski_tours).toBe(true);
+    // A tour with no terrain yet is drawn as the way up.
+    expect(items).toMatchObject({
+      'tour-up': true, 'tour-down': false, 'tour-summit': false, 'tour-hut': true,
+    });
+  });
+
+  it('keys the weather symbols and the position dot when in view', () => {
+    expect(core.legendState({ rendered: { weather: [feature({})] } }).keys.weather).toBe(true);
+    expect(core.legendState({ location: true }).keys.location).toBe(true);
+    expect(core.legendState({}).keys.location).toBe(false);
+  });
+
+  it('shows a boundary row per tier in view, and the key with any', () => {
+    const { keys, items } = core.legendState({
+      rendered: { boundary_minor: [feature({})], boundary_grouping: [feature({})] },
+    });
+    expect(keys.boundaries).toBe(true);
+    expect(items).toMatchObject({
+      'boundary-major': false, 'boundary-minor': true, 'boundary-micro': false,
+      'boundary-unsupported': false, 'boundary-grouping': true,
+    });
+  });
+
+  it('does not mark boundaries On for the bulletins\' grouping outline alone', () => {
+    const { on } = core.legendState({ switchedOn: { boundary_grouping: true } });
+    expect(on.boundaries).toBe(false);
+    expect(core.legendState({ switchedOn: { boundary_micro: true } }).on.boundaries).toBe(true);
+  });
+
+  it('keys a route by its legs, its flat line, its slope colours and its marks', () => {
+    const { keys, items } = core.legendState({
+      routeLegsOn: true,
+      rendered: { route_line: [feature({})], route_ends: [feature({})] },
+    });
+    expect(keys.routes).toBe(true);
+    expect(items).toMatchObject({
+      'route-flat': true, 'route-climb': false, 'route-descent': false,
+      'route-slope': false, 'route-transition': false, 'route-ends': true,
+    });
+    const legs = core.legendState({
+      routeLegsOn: true,
+      rendered: { routes: [feature({ climbing: true })], route_slope: [feature({})] },
+    }).items;
+    expect(legs).toMatchObject({ 'route-climb': true, 'route-descent': false, 'route-slope': true });
   });
 
   it('needs a leg in view as well as the routes key on', () => {

@@ -62,6 +62,13 @@ are token utilities (bg-eaws-*, bg-slope-*, bg-rest-*), not the card's
             trail. A filled pin was reported on the map's day; a ring, in the three days before.
         {% endblocktrans %}
     </p>
+    <h3 class="mb-1 font-medium text-text-1">{% trans "Weather" %}</h3>
+    <p class="mb-3" data-testid="help-map-key-weather">
+        {% blocktrans trimmed %}
+            From zoom 7, each weather point shows the map's day as a symbol and a temperature, and under them the
+            point's own height, which is where the forecast is for. Tap one for the day hour by hour.
+        {% endblocktrans %}
+    </p>
     <h3 class="mb-1 font-medium text-text-1">{% trans "Steep terrain" %}</h3>
     <p class="mb-1" data-testid="help-map-key-steep-terrain">
         {% blocktrans trimmed %}
@@ -76,6 +83,13 @@ are token utilities (bg-eaws-*, bg-slope-*, bg-rest-*), not the card's
         <li><span class="inline-block size-3 rounded-sm bg-slope-45 align-middle"></span> {% trans "45–50°" %}</li>
         <li><span class="inline-block size-3 rounded-sm bg-slope-50 align-middle"></span> {% trans "Over 50°" %}</li>
     </ul>
+    <h3 class="mb-1 font-medium text-text-1">{% trans "Ski tours" %}</h3>
+    <p class="mb-3" data-testid="help-map-key-ski-tours">
+        {% blocktrans trimmed %}
+            The Swiss Alpine Club's ski tours, from zoom 9: deep blue on the way up, sky blue on the way down, never
+            dashed. A dark dot is a summit a tour goes to and a ring a hut. Tap a line to open the tour.
+        {% endblocktrans %}
+    </p>
     <h3 class="mb-1 font-medium text-text-1">{% trans "Wildlife rest zones" %}</h3>
     <p class="mb-1" data-testid="help-map-key-rest-zones">
         {% blocktrans trimmed %}
@@ -97,12 +111,14 @@ are token utilities (bg-eaws-*, bg-slope-*, bg-rest-*), not the card's
             {% trans "Closed out of season" %}
         </li>
     </ul>
-    <h3 class="mb-1 font-medium text-text-1">{% trans "Route legs" %}</h3>
+    <h3 class="mb-1 font-medium text-text-1">{% trans "Your routes" %}</h3>
     <p class="mb-3" data-testid="help-map-key-routes">
         {% blocktrans trimmed %}
             A saved route is drawn as its legs, each running between two transitions and numbered along the track:
-            dashed where it climbs, solid where it descends. Press a leg on the route's profile to highlight it, or tap
-            the line to read one point.
+            dashed where it climbs, solid where it descends. A route whose legs are not worked out yet is one plain
+            line. Close in, from zoom 14, the line is coloured by the slope of the ground under it instead. A dot marks
+            the start and a chequered flag the finish. Press a leg on the route's profile to highlight it, or tap the
+            line to read one point.
         {% endblocktrans %}
     </p>
     <h3 class="mb-1 font-medium text-text-1">{% trans "Pins" %}</h3>
@@ -110,6 +126,22 @@ are token utilities (bg-eaws-*, bg-slope-*, bg-rest-*), not the card's
         {% blocktrans trimmed %}
             A dark dot is a ski resort and a blue dot a resort you have pinned. A blue star is a place you dropped a pin
             on.
+        {% endblocktrans %}
+    </p>
+    <h3 class="mb-1 font-medium text-text-1">{% trans "Boundaries" %}</h3>
+    <p class="mb-3" data-testid="help-map-key-boundaries">
+        {% blocktrans trimmed %}
+            The avalanche regions at the levels the layers menu turns on: a heavy dark red line round a major region, a
+            blue one round a minor region, a thin grey one round each micro region, the smallest area a bulletin rates.
+            A dashed outline is a region no provider has ever rated. On a day's map, a green outline joins the regions
+            one bulletin covers together.
+        {% endblocktrans %}
+    </p>
+    <h3 class="mb-1 font-medium text-text-1">{% trans "Your position" %}</h3>
+    <p class="mb-3" data-testid="help-map-key-location">
+        {% blocktrans trimmed %}
+            Once you ask the map to find you, a blue dot with a white ring is where your device says you are. Tap it for
+            what is there.
         {% endblocktrans %}
     </p>
     <h3 class="mb-1 font-medium text-text-1">{% trans "Downloaded maps" %}</h3>

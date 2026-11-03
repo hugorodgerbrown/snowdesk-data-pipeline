@@ -1268,32 +1268,7 @@ Optional context:
                             >{% trans "Problem slopes" %}</a>
                         </div>
                         <div class="map-legend-items">
-                            <div class="map-legend-row map-legend-row--note">
-                                {% trans "Same colours, on the slopes" %}
-                            </div>
-                            {% if bulletin_terrain_key.undecided %}
-                                <div class="map-legend-row">
-                                    <span
-                                        class="map-legend-swatch map-legend-swatch--terrain-undecided"
-                                        aria-hidden="true"
-                                    ></span>
-                                    {% translate "Described, can't be placed" %}
-                                </div>
-                            {% endif %}
-                            <div class="map-legend-row">
-                                <span
-                                    class="map-legend-swatch map-legend-swatch--terrain-undescribed"
-                                    aria-hidden="true"
-                                ></span>
-                                {% translate "Other steep ground" %}
-                            </div>
-                            <div class="map-legend-row">
-                                <span
-                                    class="map-legend-swatch map-legend-swatch--terrain-nodata"
-                                    aria-hidden="true"
-                                ></span>
-                                {% translate "No terrain data" %}
-                            </div>
+                            {% include "public/partials/_map_legend_key.html" with key="problem_terrain" now=True %}
                         </div>
                     </section>
                 {% endif %}
@@ -1306,41 +1281,18 @@ Optional context:
                 >
                     <div class="map-legend-title">{% trans "Field reports" %}</div>
                     <div class="map-legend-items">
-                        {% for family, label in observation_families %}
-                            <div
-                                class="map-legend-row"
-                                data-testid="map-legend-observations-{{ family|lower }}"
-                                data-legend-item="report-{{ family }}"
-                            >
-                                <span
-                                    class="map-legend-icon {% if family == "SURFACE" %}text-obs-surface{% elif family == "TRAIL" %}text-obs-trail{% else %}text-obs-warning{% endif %}"
-                                    aria-hidden="true"
-                                >{% include "includes/_icon_observation_family.html" with family=family size=12 only %}</span>{{ label }}
-                            </div>
-                        {% endfor %}
-                        <div
-                            class="map-legend-row"
-                            data-testid="map-legend-observations-live"
-                            data-legend-item="report-live"
-                        >
-                            <span class="map-legend-icon text-obs-warning" aria-hidden="true">
-                                <svg width="12" height="12" viewBox="0 0 12 12">
-                                    <circle cx="6" cy="6" r="6" fill="currentColor" opacity="0.25" />
-                                    <circle cx="6" cy="6" r="3.5" fill="currentColor" />
-                                </svg>
-                            </span>{% trans "Today" %}
-                        </div>
-                        <div
-                            class="map-legend-row"
-                            data-testid="map-legend-observations-recent"
-                            data-legend-item="report-recent"
-                        >
-                            <span class="map-legend-icon text-obs-warning" aria-hidden="true">
-                                <svg width="12" height="12" viewBox="0 0 12 12">
-                                    <circle cx="6" cy="6" r="4" fill="none" stroke="currentColor" stroke-width="1.5" />
-                                </svg>
-                            </span>{% trans "The 3 days before" %}
-                        </div>
+                        {% include "public/partials/_map_legend_key.html" with key="community_reports" now=True %}
+                    </div>
+                </section>
+                {# The weather symbols: one per point, from zoom 7. #}
+                <section
+                    class="map-legend-section"
+                    data-testid="map-legend-weather"
+                    data-legend-key="weather"
+                >
+                    <div class="map-legend-title">{% trans "Weather" %}</div>
+                    <div class="map-legend-items">
+                        {% include "public/partials/_map_legend_key.html" with key="weather" now=True %}
                     </div>
                 </section>
                 {# SNOW-978: the terrain filter's key. Hidden until it is on  #}
@@ -1367,7 +1319,7 @@ Optional context:
                             >{% trans "Slope angle" %}</a>
                         </div>
                         <div class="map-legend-items">
-                            {% include "includes/_terrain_filter_key.html" %}
+                            {% include "public/partials/_map_legend_key.html" with key="terrain_filter" now=True %}
                             {# What the filter is set to, in words — "N, NE, NW · 35°+ · #}
                             {# above 2,400 m" — written by terrain_filter_sheet.js.     #}
                             <p class="map-legend-attribution" data-terrain-filter-legend-summary></p>
@@ -1375,10 +1327,17 @@ Optional context:
                     </section>
                 {% endif %}
                 {% if route_drawing_enabled %}
-                    {# SNOW-1384's rest zones had no key at all. Two colours (the #}
-                    {# law, FOEN's advice) and a faint drawing for a zone the    #}
-                    {# map's day is outside the period of; each row shows only   #}
-                    {# while a zone of its kind is in view.                     #}
+                    {# SAC's tours and SNOW-1384's rest zones, behind the layers' flag. #}
+                    <section
+                        class="map-legend-section"
+                        data-testid="map-legend-ski-tours"
+                        data-legend-key="ski_tours"
+                    >
+                        <div class="map-legend-title">{% trans "Ski tours" %}</div>
+                        <div class="map-legend-items">
+                            {% include "public/partials/_map_legend_key.html" with key="ski_tours" now=True %}
+                        </div>
+                    </section>
                     <section
                         class="map-legend-section"
                         data-testid="map-legend-rest-zones"
@@ -1386,35 +1345,15 @@ Optional context:
                     >
                         <div class="map-legend-title">{% trans "Wildlife zones" %}</div>
                         <div class="map-legend-items">
-                            <div class="map-legend-row" data-legend-item="rest-binding">
-                                <span
-                                    class="map-legend-swatch map-legend-swatch--rest-binding"
-                                    aria-hidden="true"
-                                ></span>{% trans "Closed by law" %}
-                            </div>
-                            <div class="map-legend-row" data-legend-item="rest-recommended">
-                                <span
-                                    class="map-legend-swatch map-legend-swatch--rest-recommended"
-                                    aria-hidden="true"
-                                ></span>{% trans "Advised" %}
-                            </div>
-                            <div class="map-legend-row" data-legend-item="rest-out-of-season">
-                                <span
-                                    class="map-legend-swatch map-legend-swatch--rest-out-of-season"
-                                    aria-hidden="true"
-                                ></span>{% trans "Closed out of season" %}
-                            </div>
+                            {% include "public/partials/_map_legend_key.html" with key="rest_zones" now=True %}
                         </div>
                     </section>
                 {% endif %}
                 {% comment %}
-                    SNOW-1017: what a saved route's line means. Hidden by
-                    map.js until the routes overlay is drawn and a route on
-                    it has legs (syncRouteLegLegend); map_legend.js adds
-                    "and a leg is in view". The dash is named because it
-                    carries the direction for a reader who cannot tell the
-                    colours apart. SNOW-1019 took every terrain mark off the
-                    line, and their rows with them.
+                    SNOW-1017: what a saved route's line means. Hidden by map.js
+                    until the routes overlay is drawn with a route on it
+                    (syncRouteLegLegend); map_legend.js adds "and the route is in
+                    view", row by row.
                 {% endcomment %}
                 <section
                     id="map-route-legs-section"
@@ -1427,56 +1366,41 @@ Optional context:
                         <a
                             class="map-legend-attribution-link"
                             href="{% url 'public:help' %}#help-topic-slope"
-                        >{% trans "Route legs" %}</a>
+                        >{% trans "Your routes" %}</a>
                     </div>
                     <div class="map-legend-items">
-                        <div class="map-legend-row">
-                            <span
-                                class="map-legend-swatch map-legend-swatch--leg-climb"
-                                aria-hidden="true"
-                            ></span>{% trans "Climbing" %}
-                        </div>
-                        <div class="map-legend-row">
-                            <span
-                                class="map-legend-swatch map-legend-swatch--leg-descent"
-                                aria-hidden="true"
-                            ></span>{% trans "Descending" %}
-                        </div>
+                        {% include "public/partials/_map_legend_key.html" with key="routes" now=True %}
                     </div>
                 </section>
-                <section class="map-legend-section" data-testid="map-legend-pins" data-legend-key="pins">
+                <section
+                    class="map-legend-section"
+                    data-testid="map-legend-pins"
+                    data-legend-key="pins"
+                >
                     <div class="map-legend-title">{% trans "Pins" %}</div>
                     <div class="map-legend-items">
-                        {# SNOW-78: the resorts overlay's dot. #}
-                        <div class="map-legend-row" data-testid="map-legend-resorts" data-legend-item="pin-resort">
-                            <span class="map-legend-pin" aria-hidden="true"></span>{% trans "Resort" %}
-                        </div>
-                        {# SNOW-1229: a resort you have pinned, drawn blue by map.js. #}
-                        <div
-                            class="map-legend-row"
-                            data-testid="map-legend-pinned-resorts"
-                            data-legend-item="pin-pinned"
-                        >
-                            <span
-                                class="map-legend-pin map-legend-pin--pinned"
-                                aria-hidden="true"
-                            ></span>{% trans "Pinned" %}
-                        </div>
-                        {# The solid star reproduces the on-map marker           #}
-                        {# (favourite-star in map.js). Font Awesome Free v7 path, #}
-                        {# CC BY 4.0 — see map.js for the retained attribution.   #}
-                        {# Fill from --color-marker-favourite (SNOW-672).         #}
-                        <div
-                            class="map-legend-row"
-                            data-testid="map-legend-favourites"
-                            data-legend-item="pin-favourite"
-                        >
-                            <span class="map-legend-icon" aria-hidden="true">
-                                <svg width="12" height="12" viewBox="0 0 576 512" class="fill-marker-favourite">
-                                    <path d="M316.9 18C311.6 7 300.4 0 288.1 0s-23.4 7-28.8 18L195 150.3 51.4 171.5c-12 1.8-22 10.2-25.7 21.7s-.7 24.2 7.9 32.7L137.8 329 113.2 474.7c-2 12 3 24.2 12.9 31.3s23 8 33.8 2.3l128.3-68.5 128.3 68.5c10.8 5.7 23.9 4.9 33.8-2.3s14.9-19.3 12.9-31.3L442.2 329 546.6 225.9c8.6-8.5 11.7-21.2 7.9-32.7s-13.7-19.9-25.7-21.7L385.1 150.3 316.9 18z" />
-                                </svg>
-                            </span>{% trans "Favourite" %}
-                        </div>
+                        {% include "public/partials/_map_legend_key.html" with key="pins" now=True %}
+                    </div>
+                </section>
+                {# The layers menu's boundary tiers and the bulletins' groupings. #}
+                <section
+                    class="map-legend-section"
+                    data-testid="map-legend-boundaries"
+                    data-legend-key="boundaries"
+                >
+                    <div class="map-legend-title">{% trans "Boundaries" %}</div>
+                    <div class="map-legend-items">
+                        {% include "public/partials/_map_legend_key.html" with key="boundaries" now=True %}
+                    </div>
+                </section>
+                <section
+                    class="map-legend-section"
+                    data-testid="map-legend-location"
+                    data-legend-key="location"
+                >
+                    <div class="map-legend-title">{% trans "Your position" %}</div>
+                    <div class="map-legend-items">
+                        {% include "public/partials/_map_legend_key.html" with key="location" now=True %}
                     </div>
                 </section>
                 {% comment %}
@@ -1494,18 +1418,7 @@ Optional context:
                 >
                     <div class="map-legend-title">{% trans "Downloaded maps" %}</div>
                     <div class="map-legend-items">
-                        <div class="map-legend-row">
-                            <span
-                                class="map-legend-swatch map-legend-swatch--downloaded-here"
-                                aria-hidden="true"
-                            ></span>{% trans "For this map" %}
-                        </div>
-                        <div class="map-legend-row">
-                            <span
-                                class="map-legend-swatch map-legend-swatch--downloaded-elsewhere"
-                                aria-hidden="true"
-                            ></span>{% trans "For another map" %}
-                        </div>
+                        {% include "public/partials/_map_legend_key.html" with key="downloads" now=True %}
                     </div>
                 </section>
                 <p class="map-legend-empty" data-legend-empty hidden>
@@ -1590,12 +1503,9 @@ Optional context:
                                 hidden
                             >{% trans "On" %}</span>
                         </div>
-                        <p class="map-legend-attribution">
-                            {% blocktrans trimmed %}
-                                Steep ground a bulletin problem describes, in that problem's danger colour. From zoom
-                                12, in Switzerland. Unpainted is not described, which is not the same as safe.
-                            {% endblocktrans %}
-                        </p>
+                        <div class="map-legend-grid">
+                            {% include "public/partials/_map_legend_key.html" with key="problem_terrain" now=False %}
+                        </div>
                     </section>
                 {% endif %}
                 <section class="map-legend-section">
@@ -1606,12 +1516,21 @@ Optional context:
                             hidden
                         >{% trans "On" %}</span>
                     </div>
-                    <p class="map-legend-attribution">
-                        {% blocktrans trimmed %}
-                            Warning signs, snow surface and on the trail. Filled: reported today. A ring: the three days
-                            before.
-                        {% endblocktrans %}
-                    </p>
+                    <div class="map-legend-grid">
+                        {% include "public/partials/_map_legend_key.html" with key="community_reports" now=False %}
+                    </div>
+                </section>
+                <section class="map-legend-section">
+                    <div class="map-legend-title">
+                        {% trans "Weather" %}<span
+                            class="map-legend-on"
+                            data-legend-on="weather"
+                            hidden
+                        >{% trans "On" %}</span>
+                    </div>
+                    <div class="map-legend-grid">
+                        {% include "public/partials/_map_legend_key.html" with key="weather" now=False %}
+                    </div>
                 </section>
                 <div class="map-legend-eyebrow">{% trans "Any day" %}</div>
                 {% if terrain_filter_eligible %}
@@ -1623,15 +1542,24 @@ Optional context:
                                 hidden
                             >{% trans "On" %}</span>
                         </div>
-                        <p class="map-legend-attribution">
-                            {% blocktrans trimmed %}
-                                By slope: 30–35°, 35–40°, 40–45°, 45–50° and over 50°. One tint: the ground your filter
-                                matches. Hatched: no terrain data. From zoom 12, in Switzerland.
-                            {% endblocktrans %}
-                        </p>
+                        <div class="map-legend-grid">
+                            {% include "public/partials/_map_legend_key.html" with key="terrain_filter" now=False %}
+                        </div>
                     </section>
                 {% endif %}
                 {% if route_drawing_enabled %}
+                    <section class="map-legend-section">
+                        <div class="map-legend-title">
+                            {% trans "Ski tours" %}<span
+                                class="map-legend-on"
+                                data-legend-on="ski_tours"
+                                hidden
+                            >{% trans "On" %}</span>
+                        </div>
+                        <div class="map-legend-grid">
+                            {% include "public/partials/_map_legend_key.html" with key="ski_tours" now=False %}
+                        </div>
+                    </section>
                     <section class="map-legend-section">
                         <div class="map-legend-title">
                             {% trans "Wildlife rest zones" %}<span
@@ -1640,28 +1568,22 @@ Optional context:
                                 hidden
                             >{% trans "On" %}</span>
                         </div>
-                        <p class="map-legend-attribution">
-                            {% blocktrans trimmed %}
-                                Red: closed by law. Amber: closure FOEN advises. Strong on the map's day when the zone
-                                is protected, faint when it is out of season.
-                            {% endblocktrans %}
-                        </p>
+                        <div class="map-legend-grid">
+                            {% include "public/partials/_map_legend_key.html" with key="rest_zones" now=False %}
+                        </div>
                     </section>
                 {% endif %}
                 <section class="map-legend-section">
                     <div class="map-legend-title">
-                        {% trans "Routes" %}<span
+                        {% trans "Your routes" %}<span
                             class="map-legend-on"
                             data-legend-on="routes"
                             hidden
                         >{% trans "On" %}</span>
                     </div>
-                    <p class="map-legend-attribution">
-                        {% blocktrans trimmed %}
-                            Your routes, in legs between their transitions: dashed where the track climbs, solid where
-                            it descends. Press a leg on the profile to highlight it, or tap the line to read one point.
-                        {% endblocktrans %}
-                    </p>
+                    <div class="map-legend-grid">
+                        {% include "public/partials/_map_legend_key.html" with key="routes" now=False %}
+                    </div>
                 </section>
                 <section class="map-legend-section">
                     <div class="map-legend-title">
@@ -1671,12 +1593,33 @@ Optional context:
                             hidden
                         >{% trans "On" %}</span>
                     </div>
-                    <p class="map-legend-attribution">
-                        {% blocktrans trimmed %}
-                            A dark dot is a resort, a blue one a resort you have pinned, and a blue star a place you
-                            saved.
-                        {% endblocktrans %}
-                    </p>
+                    <div class="map-legend-grid">
+                        {% include "public/partials/_map_legend_key.html" with key="pins" now=False %}
+                    </div>
+                </section>
+                <section class="map-legend-section">
+                    <div class="map-legend-title">
+                        {% trans "Boundaries" %}<span
+                            class="map-legend-on"
+                            data-legend-on="boundaries"
+                            hidden
+                        >{% trans "On" %}</span>
+                    </div>
+                    <div class="map-legend-grid">
+                        {% include "public/partials/_map_legend_key.html" with key="boundaries" now=False %}
+                    </div>
+                </section>
+                <section class="map-legend-section">
+                    <div class="map-legend-title">
+                        {% trans "Your position" %}<span
+                            class="map-legend-on"
+                            data-legend-on="location"
+                            hidden
+                        >{% trans "On" %}</span>
+                    </div>
+                    <div class="map-legend-grid">
+                        {% include "public/partials/_map_legend_key.html" with key="location" now=False %}
+                    </div>
                 </section>
                 <section class="map-legend-section">
                     <div class="map-legend-title">
@@ -1686,12 +1629,9 @@ Optional context:
                             hidden
                         >{% trans "On" %}</span>
                     </div>
-                    <p class="map-legend-attribution">
-                        {% blocktrans trimmed %}
-                            Hatched: downloaded for this map. Outlined: downloaded for another map. Zoom in to check:
-                            zoomed out, you see the low-detail overview map.
-                        {% endblocktrans %}
-                    </p>
+                    <div class="map-legend-grid">
+                        {% include "public/partials/_map_legend_key.html" with key="downloads" now=False %}
+                    </div>
                 </section>
                 <p class="map-legend-help-link">
                     <a

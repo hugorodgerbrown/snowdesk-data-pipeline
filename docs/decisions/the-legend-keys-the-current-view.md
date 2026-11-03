@@ -69,10 +69,18 @@ legend."
   should be in help, not info"). It shows how the map works, not what is on
   it.
 
-## Not done
+- **Everything drawn over the map has a key, and every key is drawn.**
+  Hugo, the same day: "Everything that renders over the map need a entry.
+  And the entries must be visual". Weather symbols, SAC ski tours (way
+  up, way down, summit, hut), the boundary tiers and the bulletins'
+  grouping outline, a route's flat line, slope colours and marks, and the
+  reader's position joined the keys. Both pages draw a key's rows from
+  one partial (`public/partials/_map_legend_key.html`); the second page
+  shows every row as swatches, line samples and marks, two to a line, and
+  the prose is the help topic's alone. The route key now shows for any
+  route on the map, not only a legged one, since it has a row for the flat
+  line.
 
-- Ski tours, weather symbols and region boundaries carry no key line yet.
-  Each is self-describing on the map or named by its sheet, but the first
-  tier can take one the same way.
+## Not done
 - A pinned resort is keyed whenever resorts are in view, not only when a
   pinned one is: which resorts are pinned is private to map.js.
