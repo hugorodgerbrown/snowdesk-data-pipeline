@@ -1303,6 +1303,22 @@ describe('the app-opens row', () => {
     );
     expect(row(report, 'app-opens').status).toBe('blocked');
     expect(row(report, 'app-opens').reason).toBe('scripts');
+    expect(row(report, 'app-opens').missing).toEqual(['https://snowdesk.info/static/js/map.abc.js']);
+  });
+
+  it('names the cause and the missing scripts in the copied text', () => {
+    // A pasted "No" could not say whether the page or a script was the
+    // gap (staging, Android, 2026-11-03).
+    const report = core.buildReport(
+      healthy({
+        shellEntries: [{ url: 'https://snowdesk.info/map/', isPage: true, principal: 'anonymous' }],
+        mapDependencies: ['https://snowdesk.info/static/bundles/map.bundle.abc.js'],
+      }),
+      {},
+    );
+    const text = core.reportText(report, {});
+    expect(text).toMatch(/\[blocked\] .*: .* \(scripts\)/);
+    expect(text).toContain('      missing: /static/bundles/map.bundle.abc.js');
   });
 
   it('refuses a page whose body could not be read', () => {
@@ -1565,6 +1581,21 @@ describe('the text form', () => {
     // Spelled out rather than coloured: a pasted report has no CSS, and
     // this is the only way the data leaves the device.
     expect(text).toContain('[yes]');
+  });
+});
+
+describe('the missing line', () => {
+  it('lists paths and counts what it leaves out', () => {
+    const urls = Array.from({ length: 12 }, (_, i) => `https://snowdesk.info/static/js/m${i}.js`);
+    const line = core.missingLine(urls);
+    expect(line.startsWith('/static/js/m0.js, /static/js/m1.js')).toBe(true);
+    expect(line).toContain('/static/js/m9.js and 2 more');
+    expect(line).not.toContain('m10');
+  });
+
+  it('is empty when nothing is missing', () => {
+    expect(core.missingLine([])).toBe('');
+    expect(core.missingLine(undefined)).toBe('');
   });
 });
 

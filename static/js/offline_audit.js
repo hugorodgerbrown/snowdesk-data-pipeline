@@ -2845,6 +2845,11 @@
 
       try {
         lastReport = core.buildReport(readings, t);
+        try {
+          logReport(lastReport);
+        } catch (_logErr) {
+          // The trace must never cost the report.
+        }
         output.hidden = false;
         await build(output, lastReport, t);
       } catch (err) {
@@ -3168,6 +3173,33 @@
     return null;
   }
 
+
+  /**
+   * Write each row that is not Yes to the debug log, with its reason.
+   *
+   * The check used to leave no trace there, so a recorded session showed
+   * the page loading and nothing about why "The app opens" said No. One
+   * line per such row, and only while recording is on.
+   *
+   * @param {*} report
+   * @returns {void}
+   */
+  function logReport(report) {
+    var log = window.pwaDebugLog;
+    var core = self.pwaOfflineAuditCore;
+    if (!log || !log.on || !core || !report || !Array.isArray(report.sections)) return;
+    report.sections.forEach(function (/** @type {*} */ section) {
+      (section.checks || []).forEach(function (/** @type {*} */ check) {
+        if (check.status === 'yes') return;
+        log.record('cache', 'audit.row', {
+          id: check.id,
+          status: check.status,
+          reason: check.reason || null,
+          missing: core.missingLine(check.missing) || null,
+        });
+      });
+    });
+  }
 
   /**
    * One line naming what went wrong, for the failure report.

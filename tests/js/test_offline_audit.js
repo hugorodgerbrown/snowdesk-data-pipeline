@@ -1382,6 +1382,58 @@ describe('a run that throws outright', () => {
   });
 });
 
+describe('a run writes its reasons to the debug log', () => {
+  /*
+   * A recorded session used to show the page loading and nothing about
+   * the check (staging, Android, 2026-11-03), so "The app opens: No" came
+   * with no cause. Each row that is not Yes is now one line.
+   */
+  afterEach(() => {
+    delete window.pwaDebugLog;
+    document.body.innerHTML = '';
+  });
+
+  it('records the app-opens row with its reason', async () => {
+    installCachesStub({});
+    const record = vi.fn();
+    window.pwaDebugLog = { on: true, record };
+    document.body.innerHTML = `
+      <div data-offline-audit>
+        <button data-offline-audit-run></button>
+        <div data-offline-audit-output hidden></div>
+        <button data-offline-audit-copy hidden></button>
+        <p data-offline-audit-status></p>
+      </div>
+    `;
+    audit.init();
+    document.querySelector('[data-offline-audit-run]').click();
+    await vi.waitUntil(() => record.mock.calls.length > 0, { timeout: 5000 });
+
+    const opens = record.mock.calls.find(([, , detail]) => detail.id === 'app-opens');
+    expect(opens[0]).toBe('cache');
+    expect(opens[1]).toBe('audit.row');
+    expect(opens[2]).toMatchObject({ status: 'blocked', reason: 'absent' });
+  });
+
+  it('records nothing while recording is off', async () => {
+    installCachesStub({});
+    const record = vi.fn();
+    window.pwaDebugLog = { on: false, record };
+    document.body.innerHTML = `
+      <div data-offline-audit>
+        <button data-offline-audit-run></button>
+        <div data-offline-audit-output hidden></div>
+        <button data-offline-audit-copy hidden></button>
+        <p data-offline-audit-status></p>
+      </div>
+    `;
+    audit.init();
+    document.querySelector('[data-offline-audit-run]').click();
+    await vi.waitUntil(() => document.querySelector('[data-audit-summary]'), { timeout: 5000 });
+    expect(record).not.toHaveBeenCalled();
+  });
+});
+
 describe('canOpenMap — the offline page’s one way forward', () => {
   /*
    * `static/offline.html` tells its reader, in its own body copy, that

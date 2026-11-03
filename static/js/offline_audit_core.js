@@ -88,6 +88,8 @@
    * @property {AuditStatus} status
    * @property {string} [reason] An untranslated discriminator, where the
    *   verdict has to tell two failures of the same row apart.
+   * @property {string[]} [missing] The same-origin urls a No is missing,
+   *   for the copied report and the debug log (app-opens: its scripts).
    * @property {string} [group] Which remedy this row's No shares with
    *   others, for ``composeSummary``.
    * @property {string} [effect] What the user will notice, as a verb
@@ -1332,7 +1334,7 @@
    * @param {AuditReadings} r
    * @param {Record<string, string>} t
    * @returns {{status: AuditStatus, reason?: string, group?: string,
-   *   effect?: string, note?: string}}
+   *   effect?: string, note?: string, missing?: string[]}}
    */
   function answer(id, r, t) {
     var sw = r.serviceWorker || {};
@@ -1437,8 +1439,11 @@
       // open is neither — folding them together would block the verdict
       // over a missing stylesheet.
       var scripts = dependenciesOfKind(r.mapDependencies, 'js');
-      if (missingFrom(scripts, urlsIn(r)).length > 0) {
-        return { status: 'no', reason: 'scripts' };
+      var missingScripts = missingFrom(scripts, urlsIn(r));
+      if (missingScripts.length > 0) {
+        // Which ones, for the copied report and the debug log: "No" alone
+        // could not say whether the page or a script was the gap.
+        return { status: 'no', reason: 'scripts', missing: missingScripts };
       }
       if (scripts.length === 0) {
         // A page that names no JavaScript at all. Unknown, not Yes — the
@@ -2210,10 +2215,42 @@
       lines.push('');
       lines.push('## ' + section.title);
       section.checks.forEach(function (check) {
-        lines.push('  [' + check.status + '] ' + check.label + ': ' + check.value);
+        var line = '  [' + check.status + '] ' + check.label + ': ' + check.value;
+        // Why a row is not Yes, in the discriminator's own word. The
+        // panel shows the note; whoever is sent the text needs the cause.
+        if (check.reason && check.status !== 'yes') line += ' (' + check.reason + ')';
+        lines.push(line);
+        var missing = missingLine(check.missing);
+        if (missing) lines.push('      missing: ' + missing);
       });
     });
     return lines.join('\n');
+  }
+
+  /** How many missing urls a copied row names before it counts the rest. */
+  var MISSING_LISTED = 10;
+
+  /**
+   * A row's missing urls as one line of paths, for the copied report.
+   *
+   * Paths rather than urls, because every one is same-origin and the
+   * origin is already the report's third line. Capped, because a page
+   * whose whole cache is gone would otherwise paste a hundred lines.
+   *
+   * @param {string[]|undefined} missing
+   * @returns {string} Empty when there is nothing to name.
+   */
+  function missingLine(missing) {
+    if (!Array.isArray(missing) || missing.length === 0) return '';
+    var paths = missing.slice(0, MISSING_LISTED).map(function (url) {
+      try {
+        return new URL(url).pathname;
+      } catch (_err) {
+        return String(url);
+      }
+    });
+    var rest = missing.length - paths.length;
+    return paths.join(', ') + (rest > 0 ? ' and ' + rest + ' more' : '');
   }
 
   self.pwaOfflineAuditCore = Object.freeze({
@@ -2225,6 +2262,7 @@
     buildReport: buildReport,
     pendingReport: pendingReport,
     reportText: reportText,
+    missingLine: missingLine,
     composeSummary: composeSummary,
     countChecks: countChecks,
     missingFrom: missingFrom,
