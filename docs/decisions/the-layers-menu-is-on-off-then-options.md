@@ -2,7 +2,7 @@
 name: the-layers-menu-is-on-off-then-options
 description: Layers menu #basemap-menu — one switch per layer, options pages (data-layers-page), master switches, zoom-limited rows (data-zoom-gate)
 status: current
-last-reviewed: 2026-11-02
+last-reviewed: 2026-11-03
 ---
 
 # The layers menu is on/off first, options one level down
@@ -10,8 +10,10 @@ last-reviewed: 2026-11-02
 **Decision.** The map's layers menu (`#basemap-menu`, SNOW-1266) has two
 levels. Level one has one row per layer, in two groups:
 
-- **Reference data**: Avalanche bulletins, Steep terrain, Weather, Resorts,
-  Boundaries, Basemap.
+- **Reference data**: Avalanche bulletins, Weather, Boundaries, Resorts,
+  Steep terrain, Basemap. The dated layers come first and together, because
+  Terrain mode switches them off together (Hugo, 3 Nov 2026); the SAC
+  ski-touring and rest-zone rows, behind their flag, follow Steep terrain.
 - **Your data**: Favourites, Routes, Field observations, Downloaded areas.
 
 Every row has the same shape. A switch on the right says whether the layer

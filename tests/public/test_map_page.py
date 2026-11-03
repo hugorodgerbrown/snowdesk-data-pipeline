@@ -980,7 +980,9 @@ def test_map_layer_menu_level_one_order() -> None:
 
     Hugo's design F (28 Oct 2026): "Reference data" — the layers Snowdesk draws
     from the providers and its own reference data — then "Your data", what the
-    reader made. Each row is a switch; bulletins, boundaries and basemap
+    reader made. Within "Reference data" the dated layers come first and
+    together, since Terrain mode switches them off together (Hugo, 3 Nov
+    2026): bulletins, weather, boundaries; then resorts and the basemap. Each row is a switch; bulletins, boundaries and basemap
     also open a page of options. SNOW-904's four collapsible sections
     (Places, Conditions, Boundaries, Basemap) are asserted gone, because a
     stale heading beside a new one is exactly the drift this pins.
@@ -993,8 +995,8 @@ def test_map_layer_menu_level_one_order() -> None:
         ">Reference data<",
         'data-layers-open="bulletins"',
         'data-overlay-key="weather"',
-        'data-overlay-key="resorts"',
         'data-layers-open="boundaries"',
+        'data-overlay-key="resorts"',
         'data-layers-open="basemap"',
         ">Your data<",
         'data-overlay-key="favourites"',
@@ -1015,9 +1017,10 @@ def test_map_layer_menu_level_one_order() -> None:
 
 
 @pytest.mark.django_db
-def test_map_layer_menu_ski_routes_row_follows_resorts() -> None:
+def test_map_layer_menu_ski_routes_row_follows_steep_terrain() -> None:
     """SNOW-1267: with ``route_drawing`` on, the ski-touring row sits in
-    "Reference data" straight after Resorts and before Boundaries.
+    "Reference data" among the static layers: after Resorts and Steep
+    terrain, before the Basemap (the order of 3 Nov 2026).
 
     The row rides on the drawing flag, which needs a signed-in user, so the
     level-one order test above (anonymous) never sees it.
@@ -1030,9 +1033,10 @@ def test_map_layer_menu_ski_routes_row_follows_resorts() -> None:
     main = _layers_page(content, "main")
     markers = [
         ">Reference data<",
+        'data-layers-open="boundaries"',
         'data-overlay-key="resorts"',
         'data-layer-master="ski_touring"',
-        'data-layers-open="boundaries"',
+        'data-layers-open="basemap"',
         ">Your data<",
     ]
     positions = [main.index(marker) for marker in markers]
@@ -1075,7 +1079,7 @@ def test_rest_zones_layer_is_absent_without_the_flag() -> None:
 @pytest.mark.django_db
 def test_rest_zones_layer_renders_once_behind_the_flag() -> None:
     """SNOW-1384: signed in with the flag, each piece once; the row after the
-    ski-touring row and before Boundaries; the core before the module; the
+    ski-touring row and before the Basemap; the core before the module; the
     config naming the endpoint.
     """
     client = Client()
@@ -1088,7 +1092,7 @@ def test_rest_zones_layer_renders_once_behind_the_flag() -> None:
     markers = [
         'data-layer-master="ski_touring"',
         'data-overlay-key="rest_zones"',
-        'data-layers-open="boundaries"',
+        'data-layers-open="basemap"',
     ]
     positions = [main.index(marker) for marker in markers]
     assert positions == sorted(positions), markers
@@ -2650,7 +2654,8 @@ def test_terrain_filter_absent_without_tile_url() -> None:
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
 def test_steep_terrain_is_a_level_one_row_whose_options_are_the_filter_sheet() -> None:
-    """SNOW-1266: "Steep terrain" sits under The map, after the bulletins.
+    """SNOW-1266: "Steep terrain" sits in "Reference data" after Resorts,
+    with the static layers, below the dated ones (the order of 3 Nov 2026).
 
     It is the terrain filter (SNOW-978/1109) named for what it draws. Its
     switch is the ``terrain`` overlay row; its options half opens the
@@ -2661,8 +2666,8 @@ def test_steep_terrain_is_a_level_one_row_whose_options_are_the_filter_sheet() -
     main = _layers_page(content, "main")
     opener = main.index("data-terrain-filter-open")
     switch = main.index('data-overlay-key="terrain"')
-    assert main.index('data-layers-open="bulletins"') < opener < switch
-    assert switch < main.index('data-overlay-key="weather"')
+    assert main.index('data-overlay-key="resorts"') < opener < switch
+    assert switch < main.index('data-layers-open="basemap"')
     assert ">Steep terrain<" in main
     assert 'aria-controls="map-terrain-filter-sheet"' in main
 
