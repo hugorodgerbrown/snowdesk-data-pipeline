@@ -57,8 +57,33 @@ const OUT_DIR = path.join(REPO_ROOT, 'static', 'bundles');
 
 const SEPARATOR = '\n;\n';
 const SOURCE_MAP_LINE = /^\/\/# sourceMappingURL=.*$/gm;
-// A directive prologue: optional comments and whitespace, then the string.
-const LEADING_USE_STRICT = /^(?:\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*(['"])use strict\1/;
+
+/**
+ * Whether `source` opens with a 'use strict' directive: optional whitespace
+ * and comments, then the string. A linear scan rather than one regex, whose
+ * comment alternation inside a `*` could backtrack exponentially.
+ *
+ * @param {string} source
+ * @returns {boolean}
+ */
+function opensWithUseStrict(source) {
+  let i = 0;
+  for (;;) {
+    while (i < source.length && /\s/.test(source[i])) i += 1;
+    if (source.startsWith('//', i)) {
+      const end = source.indexOf('\n', i);
+      if (end === -1) return false;
+      i = end + 1;
+    } else if (source.startsWith('/*', i)) {
+      const end = source.indexOf('*/', i + 2);
+      if (end === -1) return false;
+      i = end + 2;
+    } else {
+      break;
+    }
+  }
+  return source.startsWith("'use strict'", i) || source.startsWith('"use strict"', i);
+}
 
 /**
  * The filenames a list names, in order.
@@ -81,7 +106,7 @@ function parseList(text) {
  * @returns {string}
  */
 function prepareMember(name, source) {
-  if (LEADING_USE_STRICT.test(source)) {
+  if (opensWithUseStrict(source)) {
     throw new Error(
       `${name} opens with a 'use strict' directive, which would change the ` +
         'strictness of every other member of the bundle. Move it inside the ' +

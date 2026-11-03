@@ -115,6 +115,19 @@ describe('what it refuses', () => {
     expect(() => buildBundle(['strict.js'], jsDir)).toThrow(/use strict/);
   });
 
+  it('scans a long run of comments in linear time', () => {
+    // CodeQL flagged the old regex: '/*' then many '*//*' backtracked.
+    members({ 'comments.js': `/*${'*//*'.repeat(50000)}*/\nlog.push(1);` });
+    const started = Date.now();
+    expect(execute(buildBundle(['comments.js'], jsDir)).log).toEqual([1]);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it('accepts a source that is only a comment', () => {
+    members({ 'note.js': '// nothing else' });
+    expect(buildBundle(['note.js'], jsDir)).toBe('// nothing else\n');
+  });
+
   it('accepts use strict inside a function', () => {
     members({ 'iife.js': "(function () { 'use strict'; log.push(1); })();" });
     expect(execute(buildBundle(['iife.js'], jsDir)).log).toEqual([1]);
