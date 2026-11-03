@@ -31,6 +31,8 @@ import pytest
 from django.core.management import call_command, load_command_class
 from django.core.management.base import CommandError
 
+from apps.core.command_tasks import back_off, clear_back_off
+from apps.routes.services.slope_segments import TILE_ORIGIN
 from apps.trips.services.slope import backfill_trip_slopes_task
 from tests.factories import RouteFactory, TripFactory, UserFactory
 
@@ -320,3 +322,29 @@ class TestTask:
             assert backfill_trip_slopes_task.call(trip.pk, 1.0) == "copied"
 
         wait.assert_not_called()
+
+    def test_an_open_breaker_stops_a_walk_but_not_a_copy(self) -> None:
+        """The copy asks the origin nothing, so only the walk waits it out."""
+        organiser = UserFactory.create()
+        route = RouteFactory.create(
+            user=organiser, points=MERIDIAN_TRACK, slope_samples=RECORD
+        )
+        copyable = TripFactory.create(
+            created_by=organiser,
+            route=route,
+            points=MERIDIAN_TRACK,
+            point_count=2,
+            slope_samples=None,
+        )
+        walkable = TripFactory.create(
+            points=MERIDIAN_TRACK, point_count=2, slope_samples=None, route=None
+        )
+        back_off(TILE_ORIGIN, 60)
+        try:
+            with patch(_BUILDER) as builder:
+                assert backfill_trip_slopes_task.call(copyable.pk) == "copied"
+                assert backfill_trip_slopes_task.call(walkable.pk) is None
+        finally:
+            clear_back_off(TILE_ORIGIN)
+
+        builder.assert_not_called()

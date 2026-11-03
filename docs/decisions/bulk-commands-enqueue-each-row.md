@@ -67,6 +67,8 @@ the rules in one place, and a guard test holds rule 5.
 - A task opens the breaker only when its failure means the service.
   The slope backfills open none: their walk answers None for a track too
   short to sample as well as for an outage, and a degenerate route that
-  stays a candidate would close the origin every night.
+  stays a candidate would close the origin every night. They still honour
+  one the tour render opened: a walk returns and leaves its row for the
+  next run (a trip's copy, which asks nothing, goes ahead).
 - A command that walked its rows inline now reports what it enqueued, not
   what each row did; the task result holds the outcome.

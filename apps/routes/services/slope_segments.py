@@ -23,7 +23,9 @@ Two workers walk a route, one per caller:
       ``TILE_ORIGIN`` slot the SAC tour render takes, so the two bulk runs
       together never ask the origin faster than one of them would.
 
-No breaker is opened on an unanswered walk, unlike the tour render:
+No breaker is OPENED on an unanswered walk, unlike the tour render, but
+one the tour render opened is honoured: the task returns without walking
+and its row stays a candidate.
 ``build_slope_samples`` answers None for a track too short to sample as
 well as for an outage, and a degenerate route that stays a candidate
 would otherwise close the origin for every task behind it, every night.
@@ -38,7 +40,12 @@ from django.conf import settings
 from django.db.models import Q
 from django_tasks import task
 
-from apps.core.command_tasks import BULK_TASK_PRIORITY, calls_outside, wait_for_slot
+from apps.core.command_tasks import (
+    BULK_TASK_PRIORITY,
+    backing_off,
+    calls_outside,
+    wait_for_slot,
+)
 from apps.routes.models import Route
 from track.slope_samples import build_slope_samples as walk_slope_samples
 from track.terrain_grid import load_grid
@@ -160,9 +167,16 @@ def backfill_route_slopes_task(route_pk: int, delay_s: float = 0.0) -> str | Non
 
     Returns:
         ``"sampled"`` or ``"unanswered"``, kept on the task result, or None
-        when the route no longer needed a walk.
+        when the route no longer needed a walk or the tile origin's
+        breaker is open.
 
     """
+    if backing_off(TILE_ORIGIN):
+        logger.info(
+            "route pk=%s: backing off the tile origin; left for the next run",
+            route_pk,
+        )
+        return None
     route = Route.objects.filter(STALE_TERRAIN, pk=route_pk).first()
     if route is None:
         logger.info("route pk=%s needs no walk; skipping backfill task", route_pk)

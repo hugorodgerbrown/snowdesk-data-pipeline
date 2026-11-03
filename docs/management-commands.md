@@ -1239,8 +1239,9 @@ and returns when it no longer needs work; `--delay` staggers the tasks and
 is the gap each waits for on the `terrain-tiles` slot (`wait_for_slot`) before it
 calls out. A read-only run asks nothing.
 That slot is `TILE_ORIGIN`, shared with `render_ski_tours`. An unanswered
-walk opens no breaker: the walk answers None for a track too short to
-sample as well as for an outage.
+walk opens no breaker (the walk answers None for a track too short to
+sample as well as for an outage), but a task honours one the tour render
+opened and leaves its row for the next run.
 
 `--delay` defaults to a second between routes (politeness towards the tile
 origin, not a limit it imposes); `--limit` takes a first batch so an

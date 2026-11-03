@@ -40,7 +40,12 @@ from typing import Any
 
 from django_tasks import task
 
-from apps.core.command_tasks import BULK_TASK_PRIORITY, calls_outside, wait_for_slot
+from apps.core.command_tasks import (
+    BULK_TASK_PRIORITY,
+    backing_off,
+    calls_outside,
+    wait_for_slot,
+)
 from apps.routes.services.slope_segments import (
     STALE_TERRAIN,
     TILE_ORIGIN,
@@ -161,7 +166,8 @@ def backfill_trip_slopes_task(trip_pk: int, delay_s: float = 0.0) -> str | None:
 
     Returns:
         ``"copied"``, ``"sampled"`` or ``"unanswered"``, kept on the task
-        result, or None when the trip no longer needed filling in.
+        result, or None when the trip no longer needed filling in or it
+        needed a walk while the tile origin's breaker was open.
 
     """
     trip = (
@@ -175,6 +181,13 @@ def backfill_trip_slopes_task(trip_pk: int, delay_s: float = 0.0) -> str | None:
         # SNOW-1309: the record and its render, written together.
         store_terrain(trip, inherited)
         return "copied"
+    if backing_off(TILE_ORIGIN):
+        # The copy above needs no origin; only a walk waits out the breaker.
+        logger.info(
+            "trip pk=%s: backing off the tile origin; left for the next run",
+            trip_pk,
+        )
+        return None
     wait_for_slot(TILE_ORIGIN, delay_s)
     return _walk_and_store(trip)
 

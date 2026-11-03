@@ -31,6 +31,7 @@ import pytest
 from django.core.management import call_command, load_command_class
 from django.core.management.base import CommandError
 
+from apps.core.command_tasks import back_off
 from apps.routes.services.slope_segments import (
     TILE_ORIGIN,
     backfill_route_slopes_task,
@@ -258,3 +259,13 @@ class TestTask:
             assert backfill_route_slopes_task.call(route.pk, 1.5) == "sampled"
 
         wait.assert_called_once_with(TILE_ORIGIN, 1.5)
+
+    def test_an_open_breaker_leaves_the_route_for_the_next_run(self) -> None:
+        """The tour render's outage mark keeps this task off the origin too."""
+        route = RouteFactory.create()
+        back_off(TILE_ORIGIN, 60)
+
+        with patch(_BUILDER) as builder:
+            assert backfill_route_slopes_task.call(route.pk) is None
+
+        builder.assert_not_called()
