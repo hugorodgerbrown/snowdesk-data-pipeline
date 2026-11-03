@@ -13,15 +13,17 @@
  *
  * WHAT IT DOES, in order:
  *
- *   1. open() — `PlacementFocus.enter()` clears the app's overlays down to
+ *   1. open() — the panel opens (`MapSheet.attach` on #region-pick-sheet,
+ *      a form panel on includes/_overlay_sheet.html: design rule 6, as the
+ *      route-drawing panel is), `PlacementFocus.enter()` clears the app's overlays down to
  *      the basemap (its rest-zone exception stands), `body.map-framing`
  *      takes the day's furniture away exactly as the custom-area framing
  *      overlay does, and three layers of this module's own go on the
  *      existing `regions` source: a fill that is the tap target and tints
  *      the chosen region, a neutral outline, and the names. No danger
  *      colour anywhere.
- *   2. A tap on a region chooses it: its outline thickens, and the bar at
- *      the foot names it and says what it costs on this device
+ *   2. A tap on a region chooses it: its outline thickens, and the panel
+ *      names it and says what it costs on this device
  *      (`pwaRegionDownload.estimate`, the same priced figure the region
  *      roundel shows).
  *   3. Download closes the task FIRST and then calls
@@ -37,8 +39,11 @@
  * also why close() removes them BEFORE `PlacementFocus.exit()` — they are
  * not in the snapshot, so exit() would leave them drawn.
  *
- * WHAT ENDS IT: Download, Cancel, Escape, a mode change and a basemap
- * change (a style swap drops the task's layers with the rest). map.js's
+ * WHAT ENDS IT: Download, Cancel, the ×, Escape, another panel opening, a
+ * mode change and a basemap change (a style swap drops the task's layers
+ * with the rest). Every one of them goes through the sheet controller, whose
+ * teardown is `exitMode`, so there is one way out. A tap on the map does
+ * not close it: MapSheet's click-outside spares #map. map.js's
  * one click handler steps aside while `isActive()` is true, as it does for
  * route drawing, so a tap here never also opens a region sheet or a pin.
  *
@@ -55,23 +60,23 @@
   'use strict';
 
   const core = self.pwaRegionPickCore;
-  const found = {
-    overlay: document.getElementById('map-region-pick-overlay'),
-    name: document.getElementById('map-region-pick-name'),
-    readout: document.getElementById('map-region-pick-readout'),
-    confirm: document.getElementById('map-region-pick-confirm'),
-    cancel: document.getElementById('map-region-pick-cancel'),
-  };
-  if (!core || !found.overlay || !found.name || !found.readout || !found.confirm || !found.cancel) {
-    return;
-  }
+  const sheetEl = document.getElementById('region-pick-sheet');
+  const bodyTemplate = /** @type {HTMLTemplateElement|null} */ (
+    document.getElementById('map-region-pick-template')
+  );
+  if (!core || !sheetEl || !bodyTemplate || !window.MapSheet) return;
   // Narrowed once here: the functions below are hoisted, so the checker
   // cannot carry the guard above into them.
-  const overlayEl = /** @type {HTMLElement} */ (found.overlay);
-  const nameEl = /** @type {HTMLElement} */ (found.name);
-  const readoutEl = /** @type {HTMLElement} */ (found.readout);
-  const confirmBtn = /** @type {HTMLButtonElement} */ (found.confirm);
-  const cancelBtn = /** @type {HTMLElement} */ (found.cancel);
+  const sheet = /** @type {HTMLElement} */ (sheetEl);
+  const template = /** @type {HTMLTemplateElement} */ (bodyTemplate);
+
+  /**
+   * The panel's body, cloned in on every open (MapSheet empties the sheet
+   * on close).
+   *
+   * @type {?{body: HTMLElement, name: HTMLElement, readout: HTMLElement, confirm: HTMLButtonElement}}
+   */
+  let ui = null;
 
   // bin/i18n-lint: every user-facing string is rendered by the server into
   // this module's own template and read back here, with the English literal
@@ -215,20 +220,21 @@
   }
 
   /**
-   * Paint the bar for the current choice.
+   * Paint the panel for the current choice.
    *
    * @param {any} bar A `pwaRegionPickCore.barState` result.
    * @returns {void}
    */
   function paintBar(bar) {
+    if (!ui) return;
     const S = core.STATES;
-    overlayEl.dataset.pickState = bar.state;
+    ui.body.dataset.pickState = bar.state;
     if (bar.state === S.CHOOSING) {
-      nameEl.textContent = STRINGS.choosing;
-      readoutEl.textContent = STRINGS.hint;
+      ui.name.textContent = STRINGS.choosing;
+      ui.readout.textContent = STRINGS.hint;
     } else {
-      nameEl.textContent = bar.name;
-      readoutEl.textContent =
+      ui.name.textContent = bar.name;
+      ui.readout.textContent =
         bar.state === S.UNAVAILABLE
           ? STRINGS.unavailable
           : self.pwaStrings.interpolate(
@@ -236,8 +242,8 @@
               { mb: bar.mb },
             );
     }
-    confirmBtn.disabled = !bar.canDownload;
-    confirmBtn.setAttribute('aria-disabled', bar.canDownload ? 'false' : 'true');
+    ui.confirm.disabled = !bar.canDownload;
+    ui.confirm.setAttribute('aria-disabled', bar.canDownload ? 'false' : 'true');
   }
 
   /**
@@ -266,13 +272,24 @@
   }
 
   /**
-   * Escape closes the task, as Cancel does.
+   * Clone the panel's body into the sheet and find its parts.
    *
-   * @param {KeyboardEvent} event
-   * @returns {void}
+   * @returns {boolean} Whether every part the task writes was found.
    */
-  function onKeydown(event) {
-    if (event.key === 'Escape') close();
+  function renderBody() {
+    sheet.replaceChildren(template.content.cloneNode(true));
+    const body = /** @type {HTMLElement|null} */ (sheet.querySelector('[data-region-pick-body]'));
+    const name = /** @type {HTMLElement|null} */ (sheet.querySelector('[data-region-pick-name]'));
+    const readout = /** @type {HTMLElement|null} */ (
+      sheet.querySelector('[data-region-pick-readout]')
+    );
+    const confirmBtn = /** @type {HTMLButtonElement|null} */ (
+      sheet.querySelector('#region-pick-confirm')
+    );
+    if (!body || !name || !readout || !confirmBtn) return false;
+    ui = { body, name, readout, confirm: confirmBtn };
+    confirmBtn.addEventListener('click', confirm);
+    return true;
   }
 
   /**
@@ -284,33 +301,47 @@
     if (activeMap) return true;
     const map = getMap();
     if (!map || !map.getSource(SOURCE)) return false;
+    controller.open();
+    if (!renderBody()) {
+      controller.close();
+      return false;
+    }
     activeMap = map;
+    // Overlays step aside FIRST, so the task's own layers, added next, are
+    // not among the layers PlacementFocus hides.
     window.PlacementFocus?.enter();
     addLayers(map);
     document.body.classList.add('map-framing');
-    overlayEl.hidden = false;
     paintBar(core.barState(null, null, null));
     map.on('click', onMapClick);
-    document.addEventListener('keydown', onKeydown);
     return true;
   }
 
   /**
-   * End the task and put the map back as it was: the task's layers come off
-   * first, then `PlacementFocus.exit()` restores what it hid.
+   * The sheet's teardown: put the map back as it was. The task's layers
+   * come off first, then `PlacementFocus.exit()` restores what it hid.
    *
    * @returns {void}
    */
-  function close() {
+  function exitMode() {
+    ui = null;
     const map = activeMap;
     if (!map) return;
     activeMap = null;
     map.off('click', onMapClick);
-    document.removeEventListener('keydown', onKeydown);
     removeLayers(map);
     window.PlacementFocus?.exit();
     document.body.classList.remove('map-framing');
-    overlayEl.hidden = true;
+  }
+
+  /**
+   * End the task, through the sheet, so every way out is the same one.
+   *
+   * @returns {void}
+   */
+  function close() {
+    if (controller.isOpen()) controller.close();
+    else exitMode();
   }
 
   /**
@@ -321,7 +352,7 @@
   function confirm() {
     const regionId = pickedRegionId;
     const download = window.pwaRegionDownload;
-    if (!regionId || !download || confirmBtn.disabled) return;
+    if (!regionId || !download || !ui || ui.confirm.disabled) return;
     close();
     Promise.resolve(download.start(regionId)).then(
       (outcome) => {
@@ -332,8 +363,14 @@
     );
   }
 
-  confirmBtn.addEventListener('click', confirm);
-  cancelBtn.addEventListener('click', close);
+  // The trigger (the Downloads sheet's "Download a region") opens the task
+  // through the downloads manager; naming it here keeps the click that
+  // opens the panel from being read as one outside it.
+  const controller = window.MapSheet.attach(sheet, {
+    triggerSelector: '[data-panel-add-region]',
+    onTeardown: exitMode,
+  });
+
   document.addEventListener('snowdesk:map-mode-changed', close);
   document.addEventListener('snowdesk:basemap-changed', close);
 

@@ -37,20 +37,35 @@ def _downloads_body(html: str) -> str:
 
 
 @pytest.mark.django_db
-class TestTheBar:
-    """The pick task's bar and its strings template."""
+class TestThePanel:
+    """The pick task's form panel and its strings template."""
 
-    def test_the_bar_renders_hidden_with_download_disabled(
+    def test_the_panel_is_a_hidden_form_panel(self, client: Client) -> None:
+        """A shared map sheet with no detents (design rule 6), shut until opened."""
+        html = _map_page(client)
+        sheet = re.search(r'<div[^>]*id="region-pick-sheet"[^>]*>', html)
+        assert sheet is not None
+        assert "hidden" in sheet.group(0)
+        assert "data-overlay" in sheet.group(0)
+        assert "data-detents" not in sheet.group(0)
+
+    def test_the_body_template_has_every_part_the_task_writes(
         self, client: Client
     ) -> None:
-        """The bar waits, closed, until the task opens; Download waits for a tap."""
+        """Name, readout, Download and a dismissing Cancel, cloned in on open."""
         html = _map_page(client)
-        bar = re.search(r'<div\s+id="map-region-pick-overlay"[^>]*>', html)
-        assert bar is not None
-        assert "hidden" in bar.group(0)
-        confirm = re.search(r'<button[^>]*id="map-region-pick-confirm"[^>]*>', html)
-        assert confirm is not None
-        assert "disabled" in confirm.group(0)
+        start = html.index('<template id="map-region-pick-template">')
+        body = html[start : html.index("</template>", start)]
+        for hook in (
+            "data-region-pick-body",
+            "data-region-pick-name",
+            "data-region-pick-readout",
+        ):
+            assert hook in body, hook
+        assert 'id="region-pick-confirm"' in body
+        cancel = re.search(r"<button[^>]*>\s*Cancel\s*</button>", body)
+        assert cancel is not None
+        assert 'data-action="dismiss"' in cancel.group(0)
 
     def test_every_string_the_task_reads_is_rendered(self, client: Client) -> None:
         """Each key the module reads has a server-rendered, translatable copy."""

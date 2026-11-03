@@ -1,58 +1,50 @@
 {% load i18n %}
 {% comment %}
-public/partials/_map_region_pick.html — the "Download a region" bar
+public/partials/_map_region_pick.html — the "Download a region" panel
 (SNOW-1414).
 
 The whole surface of the pick task static/js/map_region_pick.js runs: the
 Downloads sheet's "Download a region" opens it, the map behind it shows
 plain region outlines, and a tap on one names it here with what it costs.
-Hidden until the task opens.
 
-It is the drop-zone bar's surface (``.map-drop-zone-cta`` and the
-framing overlay's buttons, static/css/map.css), not a sheet: the three
-download tasks answer the same question ("this area, for this many MB?")
-and read as one family, docked at the foot with the map live above. The
-first line is the instruction until a region is chosen, then its name; the
-second is the hint, then the size.
+A FORM PANEL, in the design system's three kinds (AGENTS.md, design rule
+6): a task, opened from the Downloads sheet, so it is the shared
+includes/_overlay_sheet.html primitive with no detents and no
+drag-to-close, as the route-drawing panel is. Escape, the × and Cancel
+close it, and so does another panel opening. A tap on the map does not:
+MapSheet's click-outside spares ``#map``, which is where the choosing is
+done.
 
-``data-pick-state`` mirrors ``pwaRegionPickCore.STATES``.
+The sheet is an empty container, as every map sheet is; the task clones
+``#map-region-pick-template`` into it on open, and MapSheet empties it on
+close. The first line is the instruction until a region is chosen, then
+its name; the second is the hint, then the size. ``data-pick-state`` on
+the body mirrors ``pwaRegionPickCore.STATES``.
 {% endcomment %}
-<div
-    id="map-region-pick-overlay"
-    class="map-drop-zone-cta"
-    hidden
-    role="dialog"
-    aria-modal="false"
-    aria-label='{% trans "Download a region" %}'
-    data-pick-state="choosing"
->
-    <div class="map-drop-zone-lines">
-        <span
-            id="map-region-pick-name"
-            class="map-frame-readout"
-            aria-live="polite"
-        >{% trans "Tap a region to download it" %}</span>
-        <span
-            id="map-region-pick-readout"
-            class="map-drop-zone-hint"
-            aria-live="polite"
-        >{% trans "Region outlines only, no danger ratings" %}</span>
+{% trans "Download a region" as region_pick_title %}
+{% include "includes/_overlay_sheet.html" with id="region-pick-sheet" aria_label=region_pick_title %}
+<template id="map-region-pick-template">
+    <div data-region-pick-body data-pick-state="choosing" class="flex flex-col gap-2.5">
+        {% include "includes/_sheet_header.html" with title=region_pick_title icon_template="includes/_icon_downloads.html" close_action="dismiss" title_class="text-lg font-semibold" %}
+        <div class="flex flex-col gap-0.5 px-2">
+            <p data-region-pick-name aria-live="polite" class="text-sm font-semibold text-text-1">
+                {% trans "Tap a region to download it" %}
+            </p>
+            <p data-region-pick-readout aria-live="polite" class="text-summary text-text-3">
+                {% trans "Region outlines only, no danger ratings" %}
+            </p>
+        </div>
+        {# Cancel, then the task's one primary action, as the route-drawing #}
+        {# panel orders Undo before Add. Download starts disabled: the task  #}
+        {# enables it once a region that can be downloaded is chosen.       #}
+        <div class="flex gap-2">
+            {% trans "Cancel" as cancel_label %}
+            {% include "includes/_button.html" with label=cancel_label button_type="button" variant="secondary" size="compact" data_action="dismiss" extra_classes="hover-affordance h-11" %}
+            {% trans "Download" as download_label %}
+            {% include "includes/_button.html" with label=download_label button_type="button" button_id="region-pick-confirm" size="compact" extra_classes="hover-affordance h-11 flex-1 disabled:opacity-50" %}
+        </div>
     </div>
-    <div class="map-frame-cta-actions">
-        <button type="button" id="map-region-pick-cancel" class="map-frame-btn map-frame-btn--text">
-            {% trans "Cancel" %}
-        </button>
-        <button
-            type="button"
-            id="map-region-pick-confirm"
-            class="map-frame-btn map-frame-btn--primary"
-            disabled
-            aria-disabled="true"
-        >
-            {% trans "Download" %}
-        </button>
-    </div>
-</div>
+</template>
 {# The task's own strings. Its own template id, because                       #}
 {# tests/test_js_strings_are_translatable.py maps each template id to the ONE #}
 {# module that reads it.                                                      #}

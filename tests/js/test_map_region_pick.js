@@ -9,13 +9,18 @@
  * and off, a tap choosing a region, and Download closing the task BEFORE
  * the region download it starts has settled.
  *
- * The bar's markup mirrors public/partials/_map_region_pick.html; Vitest
- * cannot render a Django template.
+ * The panel's markup mirrors public/partials/_map_region_pick.html (the
+ * _overlay_sheet.html container plus the body template); Vitest cannot
+ * render a Django template. The real MapSheet controller and the shared
+ * dismiss handler run, so Cancel, the ×, Escape and a tap on the map are
+ * the panel's own behaviour, not a stub's.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
+import '../../static/js/overlays.js';
+import '../../static/js/map_sheet.js';
 
 const LAYERS = ['region-pick-fill', 'region-pick-line', 'region-pick-label'];
 
@@ -55,12 +60,17 @@ function makeMap(hit) {
 
 function buildFixture() {
   document.body.innerHTML = `
-    <div id="map-region-pick-overlay" hidden data-pick-state="choosing">
-      <span id="map-region-pick-name"></span>
-      <span id="map-region-pick-readout"></span>
-      <button type="button" id="map-region-pick-cancel">Cancel</button>
-      <button type="button" id="map-region-pick-confirm" disabled>Download</button>
-    </div>
+    <div id="map"></div>
+    <div id="region-pick-sheet" data-overlay hidden tabindex="-1"></div>
+    <template id="map-region-pick-template">
+      <div data-region-pick-body data-pick-state="choosing">
+        <button type="button" data-action="dismiss" aria-label="Close">×</button>
+        <p data-region-pick-name></p>
+        <p data-region-pick-readout></p>
+        <button type="button" data-action="dismiss" data-region-pick-cancel>Cancel</button>
+        <button type="button" id="region-pick-confirm">Download</button>
+      </div>
+    </template>
     <template id="map-region-pick-strings-template">
       <span data-string="choosing">Tap a region to download it</span>
       <span data-string="hint">Region outlines only, no danger ratings</span>
@@ -92,14 +102,16 @@ async function load({ hit = HIT, estimate = { mb: 40, terrainMb: 0, tooBig: fals
     exit: vi.fn(() => focusLog.push('exit')),
   };
   toast = vi.fn();
-  window.MapSheet = { toast };
+  window.MapSheet.toast = toast;
   start = vi.fn();
   window.pwaRegionDownload = { start, estimate: vi.fn(() => estimate) };
   await import('../../static/js/map_region_pick_core.js');
   await import('../../static/js/map_region_pick.js');
 }
 
-const el = (id) => document.getElementById(id);
+const sheet = () => document.getElementById('region-pick-sheet');
+const part = (name) => sheet().querySelector(`[data-region-pick-${name}]`);
+const confirmBtn = () => document.getElementById('region-pick-confirm');
 
 beforeEach(async () => {
   await load();
@@ -114,14 +126,19 @@ afterEach(() => {
   delete window.snowdeskMapState;
 });
 
+const realToast = window.MapSheet.toast;
+afterEach(() => {
+  window.MapSheet.toast = realToast;
+});
+
 describe('open', () => {
   it('clears the overlays, then draws its own outlines and shows the bar', () => {
     expect(window.pwaRegionPick.open()).toBe(true);
     expect(focusLog).toEqual(['enter', ...LAYERS.map((id) => `add:${id}`)]);
-    expect(el('map-region-pick-overlay').hidden).toBe(false);
+    expect(sheet().hidden).toBe(false);
     expect(document.body.classList.contains('map-framing')).toBe(true);
-    expect(el('map-region-pick-name').textContent).toBe('Tap a region to download it');
-    expect(el('map-region-pick-confirm').disabled).toBe(true);
+    expect(part('name').textContent).toBe('Tap a region to download it');
+    expect(confirmBtn().disabled).toBe(true);
     expect(window.pwaRegionPick.isActive()).toBe(true);
   });
 
@@ -139,30 +156,37 @@ describe('open', () => {
 });
 
 describe('a tap', () => {
+  it('on the map leaves the panel open', () => {
+    window.pwaRegionPick.open();
+    document.getElementById('map').click();
+    expect(sheet().hidden).toBe(false);
+    expect(window.pwaRegionPick.isActive()).toBe(true);
+  });
+
   it('chooses the region under it and prices it', () => {
     window.pwaRegionPick.open();
     map.click();
     expect(map.setFeatureState).toHaveBeenCalledWith({ source: 'regions', id: 7 }, { picked: true });
     expect(window.pwaRegionDownload.estimate).toHaveBeenCalledWith('CH-2101');
-    expect(el('map-region-pick-name').textContent).toBe('Aletsch');
-    expect(el('map-region-pick-readout').textContent).toBe('Up to 40 MB');
-    expect(el('map-region-pick-confirm').disabled).toBe(false);
+    expect(part('name').textContent).toBe('Aletsch');
+    expect(part('readout').textContent).toBe('Up to 40 MB');
+    expect(confirmBtn().disabled).toBe(false);
   });
 
   it('cannot download a region too large for this device', async () => {
     await load({ estimate: { mb: 900, terrainMb: 0, tooBig: true } });
     window.pwaRegionPick.open();
     map.click();
-    expect(el('map-region-pick-readout').textContent).toBe('Up to 900 MB, too large for this device');
-    expect(el('map-region-pick-confirm').disabled).toBe(true);
+    expect(part('readout').textContent).toBe('Up to 900 MB, too large for this device');
+    expect(confirmBtn().disabled).toBe(true);
   });
 
   it('cannot download a region with no download summary', async () => {
     await load({ estimate: null });
     window.pwaRegionPick.open();
     map.click();
-    expect(el('map-region-pick-readout').textContent).toBe("This region can't be downloaded");
-    expect(el('map-region-pick-confirm').disabled).toBe(true);
+    expect(part('readout').textContent).toBe("This region can't be downloaded");
+    expect(confirmBtn().disabled).toBe(true);
   });
 });
 
@@ -173,12 +197,12 @@ describe('Download', () => {
     window.pwaRegionPick.open();
     map.click();
     focusLog.length = 0;
-    el('map-region-pick-confirm').click();
+    confirmBtn().click();
     expect(start).toHaveBeenCalledWith('CH-2101');
     // Closed while the run is still going: layers off, THEN focus left.
     expect(window.pwaRegionPick.isActive()).toBe(false);
     expect(focusLog).toEqual([...LAYERS.map((id) => `remove:${id}`), 'exit']);
-    expect(el('map-region-pick-overlay').hidden).toBe(true);
+    expect(sheet().hidden).toBe(true);
     settle({ started: true, reason: '' });
   });
 
@@ -186,7 +210,7 @@ describe('Download', () => {
     start.mockResolvedValue({ started: false, reason: 'busy' });
     window.pwaRegionPick.open();
     map.click();
-    el('map-region-pick-confirm').click();
+    confirmBtn().click();
     await vi.waitFor(() => expect(toast).toHaveBeenCalledWith('Another region is still downloading.'));
   });
 
@@ -194,7 +218,7 @@ describe('Download', () => {
     start.mockResolvedValue({ started: false, reason: 'signin' });
     window.pwaRegionPick.open();
     map.click();
-    el('map-region-pick-confirm').click();
+    confirmBtn().click();
     await Promise.resolve();
     await Promise.resolve();
     expect(toast).not.toHaveBeenCalled();
@@ -203,7 +227,8 @@ describe('Download', () => {
 
 describe('closing', () => {
   it.each([
-    ['Cancel', () => el('map-region-pick-cancel').click()],
+    ['Cancel', () => part('cancel').click()],
+    ['the ×', () => sheet().querySelector('[aria-label="Close"]').click()],
     ['Escape', () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))],
     ['a mode change', () => document.dispatchEvent(new CustomEvent('snowdesk:map-mode-changed', { detail: { mode: 'terrain' } }))],
   ])('%s removes the layers, then leaves placement focus', (_name, act) => {
