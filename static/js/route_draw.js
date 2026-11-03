@@ -14,9 +14,9 @@
  *      closes that panel and opens #route-draw-sheet, a form panel.
  *   2. Every app overlay steps aside (window.PlacementFocus, which hides
  *      every GeoJSON layer that exists AT THAT MOMENT — so the draft's own
- *      layers are added after it, and stay) except the wildlife rest
- *      zones, passed as its `keep`: where a route may not go stays on the
- *      map while one is drawn, if its switch is on. SAC's tours and summits are
+ *      layers are added after it, and stay). The wildlife rest zones are
+ *      the exception PlacementFocus never hides: where a route may not go
+ *      stays on the map while one is drawn. SAC's tours and summits are
  *      among them; the guide under the draft is swisstopo's network, below.
  *   3. Each added or removed point redraws the guide at once, stores the
  *      draft on the device, and — debounced, the previous request aborted
@@ -1313,7 +1313,7 @@
 
     // Overlays step aside FIRST, so the draft's own layers, added next,
     // are not among the layers PlacementFocus hides.
-    window.PlacementFocus?.enter({ keep: [...(window.pwaRestZones?.LAYERS || [])] });
+    window.PlacementFocus?.enter();
     installLayers(map);
     drawNetwork();
 

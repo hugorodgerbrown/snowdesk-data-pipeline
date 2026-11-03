@@ -7,23 +7,24 @@
  * the terrain and the pin being placed. The moment the pin is submitted or
  * the flow is cancelled, every hidden layer comes back exactly as it was.
  *
- * Exposes ``window.PlacementFocus`` with four methods:
+ * Exposes ``window.PlacementFocus`` with three methods:
  *
- *   enter(options)
- *               Snapshot each overlay layer's current ``visibility`` and
+ *   enter()     Snapshot each overlay layer's current ``visibility`` and
  *               hide them all. Idempotent — a second call while already
  *               focused is a no-op, so the original (pre-focus) snapshot is
- *               never clobbered by a re-arm. ``options.keep`` names layer
- *               ids that stay as they are: route drawing keeps the
- *               wildlife rest zones, because where a route may not go is
- *               the one overlay drawing it needs (Hugo, 3 Nov 2026).
+ *               never clobbered by a re-arm.
  *   exit()      Restore every snapshotted layer to its pre-focus
  *               visibility. Idempotent, and safe to call having never
  *               entered.
  *   isActive()  True between enter() and the matching exit().
- *   hides(id)   True while focused and the layer is not kept — what a
- *               layer added mid-placement (rest_zones.js, ski_tours.js)
- *               asks before drawing itself.
+ *
+ * The one exception: the wildlife rest zones
+ * ------------------------------------------
+ * FOEN's rest zones (rest_zones.js) are never hidden. They are legally
+ * binding ground, still there while a pin is placed or a route drawn, and
+ * where someone may not go is exactly what placing something needs (Hugo,
+ * 3 Nov 2026). Their layers are left out of the snapshot, so their own
+ * switch keeps deciding whether they are drawn.
  *
  * Which layers count as "over the basemap"
  * ----------------------------------------
@@ -73,11 +74,10 @@
    */
   let snapshot = null;
 
-  /** Layer ids the current placement keeps visible (enter's ``keep``).
-   * Empty whenever focus is inactive.
-   * @type {Set<string>}
+  /** Overlay layers no placement hides — see "The one exception" above.
+   * @type {ReadonlySet<string>}
    */
-  let kept = new Set();
+  const ALWAYS_SHOWN = new Set(['rest-zones-fill', 'rest-zones-line']);
 
   /** Return the global MAP object if available, else null. Guards against
    * the case where map.js has not yet initialised.
@@ -87,9 +87,9 @@
     return typeof MAP !== 'undefined' ? MAP : null;
   }
 
-  /** Ids of every layer this app draws over the basemap, less the layers
-   * the placement keeps — see the header comment for why a geojson-source
-   * test is the definition. Returns an
+  /** Ids of every layer this app draws over the basemap, less the rest
+   * zones — see the header comment for why a geojson-source test is the
+   * definition. Returns an
    * empty list when the style isn't readable yet (getStyle() throws before
    * the style loads), so a placement armed against a half-booted map
    * degrades to "hide nothing" rather than throwing.
@@ -108,7 +108,7 @@
     const ids = [];
     for (const layer of style.layers) {
       const source = sources[layer.source];
-      if (source && source.type === 'geojson' && !kept.has(layer.id)) ids.push(layer.id);
+      if (source && source.type === 'geojson' && !ALWAYS_SHOWN.has(layer.id)) ids.push(layer.id);
     }
     return ids;
   }
@@ -183,16 +183,11 @@
   window.PlacementFocus = {
     /** Hide every app overlay, remembering what was visible. No-op when
      * already focused or when the map isn't up yet.
-     *
-     * @param {{keep?: string[]}} [options] — ``keep``: layer ids left as
-     *   they are, neither hidden nor snapshotted, so exit() never writes
-     *   over what their own module decided meanwhile.
      */
-    enter: function enter(options) {
+    enter: function enter() {
       if (snapshot !== null) return;
       const map = getMap();
       if (!map) return;
-      kept = new Set((options && options.keep) || []);
       snapshot = hideOverlays(map);
       announce(true);
     },
@@ -202,7 +197,6 @@
       if (snapshot === null) return;
       const previous = snapshot;
       snapshot = null;
-      kept = new Set();
       const map = getMap();
       if (map) {
         for (const layerId of Object.keys(previous)) {
@@ -217,14 +211,6 @@
      */
     isActive: function isActive() {
       return snapshot !== null;
-    },
-
-    /**
-     * @param {string} layerId
-     * @returns {boolean} True while focused and ``layerId`` is not kept.
-     */
-    hides: function hides(layerId) {
-      return snapshot !== null && !kept.has(layerId);
     },
   };
 

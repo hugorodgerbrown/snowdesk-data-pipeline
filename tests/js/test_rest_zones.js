@@ -430,47 +430,44 @@ describe('the bridge', () => {
 });
 
 describe('placement modes', () => {
-  /**
-   * A PlacementFocus stub: active, keeping the named layers.
-   *
-   * @param {string[]} keep
-   */
-  function focusKeeping(keep) {
-    window.PlacementFocus = {
-      isActive: () => true,
-      hides: (id) => !keep.includes(id),
-    };
-  }
-
+  // Hugo, 3 Nov 2026: the zones are legally binding and still there while
+  // a pin is placed or a route drawn, so no placement hides them.
   afterEach(() => {
     delete window.PlacementFocus;
   });
 
-  it('stays drawn and loads while a route is drawn', async () => {
+  it('stays drawn and loads while a placement has the map', async () => {
+    window.PlacementFocus = { isActive: () => true };
     const map = await boot({ on: true });
-    // Draw mode passes the module's own LAYERS as PlacementFocus's keep.
-    focusKeeping([...window.pwaRestZones.LAYERS]);
-    document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
     await settle();
     expect(fetches).toHaveLength(1);
     expect(map.layers.get('rest-zones-fill').layout.visibility).toBe('visible');
     expect(map.layers.get('rest-zones-line').layout.visibility).toBe('visible');
   });
 
-  it('steps aside while a pin is placed', async () => {
+  it('takes no tap while a placement has the map', async () => {
+    window.PlacementFocus = { isActive: () => true };
     const map = await boot({ on: true });
     await settle();
-    focusKeeping([]);
-    document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
-    expect(map.layers.get('rest-zones-fill').layout.visibility).toBe('none');
+    map.hits = [ZONE];
+    expect(window.pwaRestZones.tap({ x: 1, y: 2 })).toBe(false);
+    expect(sheet.open).not.toHaveBeenCalled();
   });
 
-  it('stays off in draw mode when switched off', async () => {
+  it('shows while a route is drawn with the switch off, then hides again', async () => {
     const map = await boot();
-    focusKeeping([...window.pwaRestZones.LAYERS]);
-    document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
     await settle();
     expect(fetches).toEqual([]);
+
+    document.dispatchEvent(new CustomEvent('snowdesk:route-draw', { detail: { active: true } }));
+    await settle();
+    expect(fetches).toHaveLength(1);
+    expect(map.layers.get('rest-zones-fill').layout.visibility).toBe('visible');
+    // The switch itself is untouched.
+    expect(window.pwaRestZones.isEnabled()).toBe(false);
+
+    document.dispatchEvent(new CustomEvent('snowdesk:route-draw', { detail: { active: false } }));
     expect(map.layers.get('rest-zones-fill').layout.visibility).toBe('none');
+    expect(map.layers.get('rest-zones-line').layout.visibility).toBe('none');
   });
 });
