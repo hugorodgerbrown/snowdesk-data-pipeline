@@ -1307,6 +1307,41 @@ describe('the app-opens row', () => {
     expect(row(report, 'app-opens').status).toBe('yes');
   });
 
+  it('judges the copy this account is served, not the oldest under the path', () => {
+    // Android, staging, 2026-11-03: a /map/?… link cached for another
+    // principal sat first in the cache, and a fresh /map/ saved behind it
+    // still read "belongs to another account". The worker serves any copy
+    // under the path that matches (_searchlessMatch), so this one opens.
+    const report = core.buildReport(
+      healthy({
+        currentPrincipal: 'acct-uuid-a',
+        shellEntries: [
+          { url: 'https://snowdesk.info/map/?r=CH-4115', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/map/', isPage: true, principal: 'acct-uuid-a' },
+          { url: 'https://snowdesk.info/static/js/a.js', isPage: false },
+        ],
+        mapDependencies: ['https://snowdesk.info/static/js/a.js'],
+      }),
+      {},
+    );
+    expect(row(report, 'app-opens').status).toBe('yes');
+  });
+
+  it('names the searchless page when no copy belongs to this account', () => {
+    const report = core.buildReport(
+      healthy({
+        currentPrincipal: 'acct-uuid-a',
+        shellEntries: [
+          { url: 'https://snowdesk.info/map/?r=CH-4115', isPage: true, principal: 'unknown' },
+          { url: 'https://snowdesk.info/map/', isPage: true, principal: 'anonymous' },
+        ],
+      }),
+      {},
+    );
+    expect(row(report, 'app-opens').reason).toBe('principal');
+    expect(row(report, 'app-opens').stamped).toBe('anonymous');
+  });
+
   it('refuses a page whose own modules are not cached', () => {
     // The false green this row existed to prevent and did not. A device
     // holding the HTML and none of the JavaScript it boots from opens to

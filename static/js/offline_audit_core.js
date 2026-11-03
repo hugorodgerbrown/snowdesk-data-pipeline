@@ -775,6 +775,20 @@
   }
 
   /**
+   * The query part of a URL, ``''`` when it has none.
+   *
+   * @param {string} url
+   * @returns {string}
+   */
+  function searchOf(url) {
+    try {
+      return new URL(url, 'https://snowdesk.info').search;
+    } catch (_err) {
+      return '';
+    }
+  }
+
+  /**
    * The path part of a URL, query dropped.
    *
    * @param {string} url
@@ -926,17 +940,29 @@
     // ``history.replaceState`` while the user scrubs, those URLs are never
     // fetched and never cached, and ``_networkFirstFallback`` does the same
     // ``ignoreSearch`` lookup before giving up.
+    //
+    // Several entries can share the path (``/map/`` and a ``/map/?…`` link
+    // that was navigated to), each with its own stamp. The worker serves
+    // any of them that was rendered for this account (``_searchlessMatch``
+    // in sw.js), so the one judged is the first that would be served, and
+    // only when none would is it the searchless page, or else the first.
+    // Taking the first in cache order judged the oldest, and a page cached
+    // signed out stood in front of a fresh ``/map/`` for good.
     var wanted = r.mapPath || '/map/';
-    var mapEntry = /** @type {ShellEntry|null} */ (null);
-    entries.forEach(function (entry) {
-      if (!mapEntry && pathOf(entry.url) === wanted) mapEntry = entry;
+    var usable = entries.filter(function (entry) {
+      return principalMatches(entry.principal, r.currentPrincipal);
     });
-    return {
-      usable: entries.filter(function (entry) {
-        return principalMatches(entry.principal, r.currentPrincipal);
-      }),
-      mapEntry: mapEntry,
-    };
+    var atPath = entries.filter(function (entry) {
+      return pathOf(entry.url) === wanted;
+    });
+    var served = atPath.filter(function (entry) {
+      return usable.indexOf(entry) >= 0;
+    });
+    var bare = atPath.filter(function (entry) {
+      return !searchOf(entry.url);
+    });
+    var mapEntry = /** @type {ShellEntry|null} */ (served[0] || bare[0] || atPath[0] || null);
+    return { usable: usable, mapEntry: mapEntry };
   }
 
   /**

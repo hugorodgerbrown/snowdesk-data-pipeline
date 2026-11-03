@@ -3157,13 +3157,14 @@ async function _canOpenOffline() {
     const cache = await caches.open(CACHE_VERSION);
     const current = await _currentPrincipal();
     const request = new Request(new URL(SHELL_PAGE, self.location.origin).toString());
-    const cached =
-      (await cache.match(request)) || (await cache.match(request, { ignoreSearch: true }));
     // The offline fallback is deliberately not a hit: it is precached,
     // carries no principal, and is the page whose appearance means the app
-    // did NOT open. Counting it would answer yes to every device.
-    if (!cached) return false;
-    return _principalMatches(cached, current);
+    // did NOT open. Counting it would answer yes to every device. The
+    // lookups are `_networkFirstFallback`'s own, so the answer is the one
+    // an offline launch would get.
+    const cached = await cache.match(request);
+    if (cached && _principalMatches(cached, current)) return true;
+    return (await _searchlessMatch(cache, request, current)) !== null;
   } catch (_err) {
     // No Cache Storage, an unreadable entry, a DB that would not open for the
     // principal: all of them mean the same thing to the caller.
@@ -4583,6 +4584,35 @@ function _cacheNavigation(cache, request, forCache, forSniff) {
  * can be.
  */
 /**
+ * The cached page this navigation can be served when its exact url is not
+ * cached: one stored under the same path with any query, rendered for the
+ * principal signed in now. ``null`` when there is none.
+ *
+ * Every entry under the path is asked, not only the first. A real Cache
+ * keeps its entries in insertion order and a ``put`` over an existing key
+ * moves that key to the end, so ``cache.match(request, {ignoreSearch:
+ * true})`` answers with the OLDEST entry under the path. A ``/map/?…``
+ * navigation cached while signed out, or for another account, would then
+ * stand in front of a fresh ``/map/`` for good: re-saving ``/map/`` lands
+ * behind it and the shell carry copies both, in order, into every new
+ * cache. The searchless url itself, which "Save the map page" refreshes,
+ * is preferred, then the rest in cache order.
+ *
+ * @param {Cache} cache The open shell cache.
+ * @param {Request} request
+ * @param {string} current The principal signed in now.
+ * @returns {Promise<Response|null>}
+ */
+async function _searchlessMatch(cache, request, current) {
+  const bare = new URL(request.url);
+  bare.search = '';
+  const exact = await cache.match(bare.toString());
+  if (exact && _principalMatches(exact, current)) return exact;
+  const all = await cache.matchAll(request, { ignoreSearch: true });
+  return all.find((response) => _principalMatches(response, current)) || null;
+}
+
+/**
  * The cached answer for a navigation the network could not serve, or ``null``
  * when neither the cache nor the offline fallback page has one.
  *
@@ -4633,8 +4663,8 @@ async function _networkFirstFallback(request, cache, startedAt) {
     return hit;
   }
   if (request.mode === 'navigate' || request.destination === 'document') {
-    const searchless = await cache.match(request, { ignoreSearch: true });
-    if (searchless && _principalMatches(searchless, current)) {
+    const searchless = await _searchlessMatch(cache, request, current);
+    if (searchless) {
       const hit = _stampCacheHit(searchless);
       _debugServe(request, 'navigate', 'shell', hit, startedAt);
       return hit;

@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal partitioning, Download basemap, custom-area download, overlay offline caches
 status: current
-last-reviewed: 2026-10-30
+last-reviewed: 2026-11-03
 ---
 
 # PWA shell
@@ -473,11 +473,16 @@ The SW classifies every fetch into one of four buckets:
   per-page cache fallback so an offline reload still surfaces the
   last-seen page, and the pre-cached `/static/offline.html` if the
   requested URL has never been visited (SNOW-118). The offline
-  fallback also does one retry with `cache.match(request, { ignoreSearch:
-  true })` before giving up, so a reload of `/map/?d=YYYY-MM-DD` — a URL
+  fallback also retries without the query (`_searchlessMatch`) before
+  giving up, so a reload of `/map/?d=YYYY-MM-DD` — a URL
   that the map page only ever writes via `history.replaceState` and never
   fetches from the server — serves the cached `/map/` shell instead of the
-  offline page. Both the write and the two cache-fallback reads are
+  offline page. That retry tries the searchless url first and then every
+  entry under the path (`cache.matchAll` with `ignoreSearch: true`), taking
+  the first rendered for this account. A bare `cache.match` with
+  `ignoreSearch` answers with the oldest entry under the path, because a
+  re-put moves its key to the end, so a `/map/?…` cached signed out used to
+  hide a fresh `/map/` for good. Both the write and the two cache-fallback reads are
   partitioned by the account the HTML was rendered for — see
   "Principal-partitioned navigations" below.
 
@@ -649,7 +654,7 @@ below is the reason it has to.
 the account its HTML was rendered for. The offline read serves an entry
 only when that stamp equals the principal signed in now
 (`_principalMatches`, `static/js/sw.js`), on the exact-match read
-and on the `ignoreSearch: true` retry. `_cacheNavigation`
+and on the searchless retry. `_cacheNavigation`
 (`static/js/sw.js`) takes two clones of the response — one body for
 the cache write, one to read the stamp out of — and writes off the
 response path, so buffering the HTML never delays the page.

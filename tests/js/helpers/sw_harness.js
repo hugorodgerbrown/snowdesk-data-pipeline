@@ -317,6 +317,19 @@ export function makeCaches(options = {}) {
           }
           return undefined;
         },
+        // Every entry under the url, in insertion order, as a real Cache's
+        // ``matchAll`` answers.
+        async matchAll(request, matchOptions) {
+          const url = new URL(typeof request === 'string' ? request : request.url, ORIGIN);
+          const wanted = matchOptions && matchOptions.ignoreSearch ? url.href.split('?')[0] : url.href;
+          const out = [];
+          for (const [key, value] of entries) {
+            const absolute = new URL(key, ORIGIN).href;
+            const candidate = matchOptions && matchOptions.ignoreSearch ? absolute.split('?')[0] : absolute;
+            if (candidate === wanted) out.push(value.clone());
+          }
+          return out;
+        },
         // SNOW-1311: the carry walks an old shell cache's entries. A
         // Request-alike per url, as a real Cache's ``keys()`` answers.
         async keys() {
@@ -334,9 +347,13 @@ export function makeCaches(options = {}) {
           // be rebuilt around a body — the Response constructor throws —
           // and a real Cache stores it without one.
           const nullBody = [101, 204, 205, 304].includes(response.status);
+          // A real Cache drops the old entry and appends the new one, so a
+          // rewritten key moves to the end of ``keys()``.
+          const body = nullBody ? null : await response.arrayBuffer();
+          entries.delete(url);
           entries.set(
             url,
-            new Response(nullBody ? null : await response.arrayBuffer(), {
+            new Response(body, {
               status: response.status,
               headers: response.headers,
             }),
