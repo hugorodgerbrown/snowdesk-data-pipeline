@@ -60,8 +60,8 @@ Version 4 changes:
   - Added ``source`` top-level key: ``"slf"``, ``"albina"``, or
     ``"meteofrance"``. (SNOW-582 later upper-cased these to ``"SLF"`` /
     ``"ALBINA"`` / ``"METEOFRANCE"`` without bumping the version — stored
-    values were converted in place by ``uppercase_bulletin_choice_values``,
-    so a v8 render model built before that command ran carries the old
+    values were converted in place by a one-time command, since removed,
+    so a v8 render model built before it ran carries the old
     casing. Read the key case-insensitively if it matters.)
   - ``_resolve_aggregations()`` synthesises aggregation from problem types
     for ALBINA and MeteoFrance bulletins (no CH aggregation in either).

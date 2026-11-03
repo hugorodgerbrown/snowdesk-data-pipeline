@@ -1692,8 +1692,8 @@ class TestFavouriteList:
         """The panel survives an environment the short-id backfill has not reached.
 
         SNOW-810, and the reason this ticket exists: ``short_id`` is
-        nullable between the SNOW-797 migration and
-        ``backfill_location_short_ids``, and this endpoint reached
+        nullable for a row from before the SNOW-797 column, and this
+        endpoint reached
         ``Location.get_absolute_url()`` for every row's chevron target.
         Reversing on ``None`` raised ``NoReverseMatch``, so the whole
         partial 500'd — HTMX fired ``htmx:responseError`` and

@@ -2,7 +2,7 @@
 name: location-migration-backfill
 description: Backfill an environment onto the Location model — the --commit commands, Open-Meteo elevation cost, per-environment progress log
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-11-03
 ---
 
 # Runbook — bring an environment onto the Location model
@@ -40,17 +40,16 @@ management command an operator runs by hand**, per
 
 ## Order
 
-The three remaining commands are independent — the ordering edge
+The remaining commands are independent — the ordering edge
 (`import_locations` before the cell resolution) went with the deleted
 command.
 
 ## Cost
 
-None of the three calls Open-Meteo any more:
+None of these calls Open-Meteo any more:
 
 | Command | Calls | Notes |
 |---|---|---|
-| `backfill_observation_locations` | 0 | reads existing rows |
 | `import_locations` | 0 | reads two TSVs |
 | `link_region_centroid_locations` | 0 | coordinate and elevation both come from the fixture (SNOW-771) |
 
@@ -75,8 +74,8 @@ bare first and read the plan before committing.
 uv run --no-sync python manage.py showmigrations \
     locations regions favourites observations
 
-# 1. One Location per existing field observation.
-uv run --no-sync python manage.py backfill_observation_locations --commit
+# 1. (Retired.) Field observations were given their Locations by a
+#    one-off backfill, removed by SNOW-1396; new reports mint their own.
 
 # 2. The curated estate — four villages and their resort links.
 uv run --no-sync python manage.py import_locations --commit

@@ -298,7 +298,7 @@ def list_command_runs(
     """Return runs matching every filter given, newest first.
 
     Args:
-        command: Exact command name, e.g. ``relink_bulletin_regions``.
+        command: Exact command name, e.g. ``rebuild_render_models``.
         status: A ``CommandRun.STATUS`` value.
         mode: A ``CommandRun.MODE`` value.
         invoked_via: A ``CommandRun.INVOKED_VIA`` value.
@@ -520,7 +520,7 @@ def _step_status(step: str, release: str, known: set[str]) -> dict[str, Any]:
     rehearsed, not the step done.
 
     Args:
-        step: The step as written, e.g. ``backfill_resort_slugs --commit``.
+        step: The step as written, e.g. ``rebuild_track_renders --commit``.
         release: The release now deployed.
         known: The project's command names.
 

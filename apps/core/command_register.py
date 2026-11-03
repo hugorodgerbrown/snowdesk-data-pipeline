@@ -479,7 +479,7 @@ class RegisteredCommand(BaseCommand):
             return status, code
         exit_code = exc.returncode if isinstance(exc, CommandError) else 1
         # A command that counted some failures and then raised (as
-        # relink_bulletin_regions does) did the rest of its work.
+        # rebuild_track_renders does) did the rest of its work.
         if isinstance(exc, CommandError) and self._counts.get("failed", 0) > 0:
             return CommandRun.STATUS.PARTIAL, exit_code
         return CommandRun.STATUS.FAILED, exit_code

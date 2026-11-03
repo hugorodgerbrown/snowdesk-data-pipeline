@@ -30,7 +30,7 @@ def _project_commands() -> dict[str, str]:
 
 def test_there_are_project_commands_to_check() -> None:
     """The walk finds the project's commands, so the guard is not vacuous."""
-    assert "relink_bulletin_regions" in _project_commands()
+    assert "rebuild_render_models" in _project_commands()
 
 
 def test_every_project_command_is_registered() -> None:
@@ -115,7 +115,6 @@ def test_mcp_runnable_commands_are_pinned() -> None:
         if getattr(load_command_class(app, name), "mcp_runnable", False)
     )
     assert runnable == [
-        "backfill_crossed_regions",
         "backfill_weather",
         "diagnose_region_coverage",
         "fetch_bulletins",

@@ -184,8 +184,8 @@ def _place_context(
     )
     weather = source.row if source is not None else None
     now = timezone.now()
-    # The week is on the forecast point's own page. "" for a location
-    # backfill_location_short_ids has not reached: it has no page yet, so
+    # The week is on the forecast point's own page. "" for a location with
+    # no short id (from before SNOW-797): it has no page yet, so
     # the sheet offers no link rather than a bare "?date=".
     base_url = source.location.get_absolute_url() if source is not None else ""
     forecast_panel = build_point_forecast_panel(weather)
@@ -335,7 +335,7 @@ def favourite_sheet_partial(request: HttpRequest, uuid: UUID) -> HttpResponse:
             "name": favourite.name,
             "favourite": favourite,
             "resort": favourite.resort,
-            # A resort backfill_resort_slugs has not reached has no page yet,
+            # A resort with no slug (from before SNOW-796) has no page yet,
             # and reversing a null slug raises.
             "resort_url": favourite.resort.get_absolute_url()
             if favourite.resort is not None and favourite.resort.slug

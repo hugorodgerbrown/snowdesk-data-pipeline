@@ -1,8 +1,8 @@
 ---
 name: reference-data-cut-over
-description: Deploy the reference-data stack — schedule_backfill_weather pause, mirror, copy_weather_to_service, rebuild_source_render_models, v2 tokens
+description: Deploy the reference-data stack — schedule_backfill_weather pause, mirror, rebuild_source_render_models, v2 tokens
 status: current
-last-reviewed: 2026-10-28
+last-reviewed: 2026-11-03
 ---
 
 # Runbook — cutting over to the reference-data service
@@ -58,14 +58,13 @@ In this order:
 
 ```bash
 # a. The estate: places, passes, resorts into the service's tables.
-#    Also runs hourly at :40; running it now is what step b needs.
+#    Also runs hourly at :40; running it now is what step c needs.
 uv run python manage.py mirror_reference_data            # preview
 uv run python manage.py mirror_reference_data --commit
 
-# b. The weather history: every past Weather day of a reference place,
-#    into SourceWeather. Re-run after (a) if it reports any `unstationed`.
-uv run python manage.py copy_weather_to_service           # preview
-uv run python manage.py copy_weather_to_service --commit
+# b. (Done on production 2026-10-28.) The one-off copy of every past
+#    Weather day into SourceWeather, copy_weather_to_service, was retired
+#    by SNOW-1396. A new source environment has no history to copy.
 
 # c. Every stored bulletin's render model, index and day ratings.
 #    Enqueues one task per bulletin (SNOW-1346) and returns; the db_worker

@@ -1087,7 +1087,7 @@ class Resort(BaseModel):
         and a changed slug is a broken URL). Every creation path — the
         admin, the ``?edit=resorts`` panel, ``import_resorts`` — comes
         through here, so none can mint a row with no slug. Rows that
-        pre-date the column are ``backfill_resort_slugs``'s job.
+        pre-date the column were filled by a one-time backfill (SNOW-796).
         """
         if not self.slug:
             self.slug = unique_resort_slug(self.name)

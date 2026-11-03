@@ -448,7 +448,7 @@ def _has_later_bulletin(region: MicroRegion, page_date: datetime.date) -> bool:
     ``valid_to``: an issue whose validity runs past midnight but which
     forecasts today is not a later bulletin, and counting it hid the
     "next update" notice (SNOW-1344). A row with no ``target_date`` is
-    ignored — ``backfill_bulletin_target_dates`` fills them.
+    ignored; ingest sets one on every bulletin.
 
     The check is a cheap EXISTS query; callers should short-circuit behind
     ``is_today`` so it only fires on the current-day page.

@@ -10,11 +10,10 @@ last-reviewed: 2026-10-01
 **Decision.** A `BulletinGrouping` row is written only when a bulletin links
 **at least two** micro-regions carrying a `boundary`. The threshold is
 `MIN_GROUPED_REGIONS` in `apps/bulletins/models.py`, read by the ingest-time
-writer (`compute_bulletin_grouping_boundary`), by
-`BulletinGroupingQuerySet.degenerate()`, and by the candidate queryset in
-`backfill_bulletin_groupings`. A bulletin below the threshold gets no row, and
-any row it already has is deleted — on re-ingest by the writer, and in bulk by
-`purge_degenerate_bulletin_groupings` (SNOW-1001).
+writer (`compute_bulletin_grouping_boundary`). A bulletin below the threshold
+gets no row, and any row it already has is deleted on re-ingest by the writer
+(SNOW-1001). The rows stored before then were removed in bulk by a one-off
+purge, since retired with its sibling backfill (SNOW-1396).
 
 **Why.** The layer exists to say *these regions are covered by one text*. With
 one region there is nothing to say: `unary_union` over a single polygon returns
@@ -43,18 +42,14 @@ lands, at which point its rows join the same category.
 - **The threshold counts boundaried regions, not links.** A bulletin covering
   three regions of which one has geometry dissolves to that one polygon, so it
   is degenerate too. Every query that selects on the count must carry the same
-  `boundary__isnull=False` filter; the constant is shared but the filter shape
-  is not, which is what the partition test in
-  `tests/bulletins/test_bulletin_grouping_model.py` pins.
+  `boundary__isnull=False` filter.
 - **Deletion is a command, not a migration.** A bulk delete inside a migration
-  locks the table for the length of a Render deploy, so the existing rows are
-  removed by `purge_degenerate_bulletin_groupings --commit` as a post-deploy
-  step ([catalogue entry](../management-commands.md)).
-- **`backfill_bulletin_groupings` cannot select on `grouping__isnull=True`
-  alone.** A bulletin below the threshold matches that filter for ever, so a
-  backfill using it re-attempts the whole Météo-France archive on every run and
-  reports the result as a backlog of skips. Its candidate queryset carries the
-  boundaried-region count for that reason.
+  locks the table for the length of a Render deploy, so the existing rows were
+  removed by a post-deploy command, since retired (SNOW-1396).
+- **A backfill cannot select on `grouping__isnull=True` alone.** A bulletin
+  below the threshold matches that filter for ever, so a backfill using it
+  re-attempts the whole Météo-France archive on every run. Any future backfill
+  must carry the boundaried-region count.
 - **This is not a fidelity reduction.** Nothing about the bulletin's content is
   hidden; the row was a cache of geometry the micro-region layer already
   carries. The provider's text, ratings and problems are unaffected.

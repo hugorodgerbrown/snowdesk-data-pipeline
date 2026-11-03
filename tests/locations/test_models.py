@@ -88,9 +88,8 @@ class TestLocationModel:
     def test_get_absolute_url_is_empty_without_a_short_id(self) -> None:
         """A row the backfill has not reached has no page (SNOW-810).
 
-        ``short_id`` is nullable until a later migration tightens it, so
-        every environment spends time between the SNOW-797 migration and
-        ``backfill_location_short_ids``. Reversing on ``None`` raises
+        ``short_id`` is nullable until a later migration tightens it
+        (SNOW-1400). Reversing on ``None`` raises
         ``NoReverseMatch``, which is a 500 on every surface that links to a
         location; the empty string is the answer a caller can act on.
         """

@@ -92,9 +92,8 @@ summarised in CLAUDE.md; this is the full contract. Rationale:
    over a full-season rebuild (SNOW-1054). Accumulate primary keys, or
    instances loaded with only the fields the later step reads, never full
    rows. Slim the load where it happens: a streamed queryset that prefetches
-   a relation must prefetch the slim queryset
-   (`prefetch_related(slim_regions_prefetch())`, which loads `pk` and
-   `region_id`), because chaining `.only()` onto an already-prefetched
+   a relation must prefetch a slim queryset (a `Prefetch` whose queryset is
+   `.only()` the fields read), because chaining `.only()` onto an already-prefetched
    manager bypasses the cache and queries once per row.
 
    Never hand-roll OFFSET/LIMIT batching to page through a queryset —
@@ -855,9 +854,7 @@ kept. A day the service already holds but `Weather` lacks — its apply
 failed once, or it was written before the place was mirrored here — is
 copied across first (`replay_held`, tallied `replayed`) with no upstream
 call, since the service's diff would never select it again. The service
-therefore holds the history it serves at `/api/data/v2/weather/`. Before the first sweep after the deploy, run
-`copy_weather_to_service --commit` once (below), or the sweep re-fetches a
-season production already holds.
+therefore holds the history it serves at `/api/data/v2/weather/`.
 
 **Not a re-fetch.** It diffs first and requests only what is missing — a
 complete location costs no call at all. That diff is what makes a re-run
@@ -920,23 +917,6 @@ uv run python manage.py backfill_weather --commit        # one sweep (what the s
 uv run python manage.py backfill_weather --commit \
     --floor 2026-04-10 --until 2026-04-10 --resort verbier --resort zermatt
 uv run python manage.py backfill_weather --commit --location 42 --budget 100
-```
-
-### `copy_weather_to_service` — seed the service with production's history (once)
-
-SNOW-1275. Run once on production after the deploy that moves the backfill
-into the weather service, and before the next sweep. Copies every past
-`Weather` row of a reference location (`Location.objects.reference_data()`)
-into `SourceWeather` for its station, where the service does not hold that
-day. Today is never copied, a day the service holds is left alone, and a
-user's point is never reached, so a re-run copies nothing. A location with
-no station yet is counted `unstationed`; run `mirror_reference_data
---commit` and re-run. Streams the locations as a countdown and tallies
-`copied` and `unstationed`.
-
-```bash
-uv run python manage.py copy_weather_to_service           # preview
-uv run python manage.py copy_weather_to_service --commit  # copy
 ```
 
 ### `link_region_centroid_locations` — anchor each region to a Location
@@ -1157,69 +1137,6 @@ uv run python manage.py refresh_centroid_elevations --commit --force   # re-reso
 Flags: `--commit`, `--force`, `--delay SECONDS` (default 1.0 — paces the
 lookups inside Open-Meteo's free-tier rate limit).
 
-### `backfill_observation_locations` — mint a Location per field report
-
-One-shot backfill for SNOW-709, the sibling of the since-deleted
-`backfill_favourite_locations` (SNOW-762). Mints the `Location` each pre-SNOW-709
-report happened at and points its FK there. **Not a data migration**, for
-the same reason.
-
-**Field observations are user data and immutable event records.** The
-provenance model does not move and is not touched: `gps_latitude` /
-`gps_longitude` (the raw device fix), `location_source` and
-`accuracy_radius_km` are data about the *report*, not about the place. The
-gap between the report coordinate and the device fix — "I was standing
-here" versus "I tapped roughly here" — stays recoverable.
-
-**No forecast cell.** An observation shows no forecast panel, so resolving
-one would mean an Open-Meteo round trip per historical report for a figure
-nothing renders.
-
-One row per report — coordinates are not merged on equality. Exact float
-equality on a user coordinate is a false economy, and wrongly merging two
-reports into one place is worse than an extra row. Locations are shared by
-*curation*, not by automatic dedup.
-
-```bash
-uv run python manage.py backfill_observation_locations           # preview
-uv run python manage.py backfill_observation_locations --commit  # apply
-```
-
-Run it before SNOW-714 drops `FieldObservation.latitude`/`longitude`.
-
-### `backfill_resort_slugs` — mint `Resort.slug` where it is null
-
-One-shot backfill for SNOW-796. `Resort.slug` is the resort's URL identifier
-(`/resorts/<slug>/`) and the `id` that `resorts.geojson` emits, replacing the
-integer primary key ([`no-integer-pks-in-urls`](decisions/no-integer-pks-in-urls.md)).
-`Resort.save()` mints a slug for every row created after the column landed;
-this reaches the rows that pre-date it. **Not a data migration**: the schema
-migration adds a nullable column and writes nothing, and a later migration
-tightens it to `null=False` once every environment has run this. A collision
-is a failure, not a suffix — the command exits non-zero and leaves both rows
-alone. Idempotent; a slug is never regenerated.
-
-```bash
-uv run python manage.py backfill_resort_slugs           # preview
-uv run python manage.py backfill_resort_slugs --commit  # apply
-```
-
-### `backfill_location_short_ids` — mint `Location.short_id` where it is null
-
-One-shot backfill for SNOW-797. `Location.short_id` is the key of
-`/weather/<short_id>/` and of `weather.geojson`'s features. The field's
-`default=` mints one for every new row; this reaches the rows that pre-date
-the column. It cannot be a migration even in principle: Django evaluates a
-callable default once and stamps every existing row with the same token,
-which the unique constraint rejects — so the migration adds the column with
-no database-side default (`SeparateDatabaseAndState`) and this fills it.
-Idempotent; a short id is never regenerated.
-
-```bash
-uv run python manage.py backfill_location_short_ids           # preview
-uv run python manage.py backfill_location_short_ids --commit  # apply
-```
-
 ### `backfill_route_slope_samples` — sample the terrain under old routes
 
 One-shot backfill for SNOW-910. Every `Route` uploaded before that ticket
@@ -1337,24 +1254,6 @@ drawing for.
 uv run python manage.py render_ski_tours                  # preview
 uv run python manage.py render_ski_tours --commit         # enqueue every candidate
 uv run python manage.py render_ski_tours --commit --limit 20
-```
-
-### `backfill_crossed_regions` — store the regions each track crosses
-
-SNOW-945. Fills `crossed_regions` on every `Route` and `Trip` that has
-none, by `resolve_track_regions` (one sample every 50 m). Without
-`--commit` it reports what it would write. It writes with a queryset
-`update()`, so `updated_at` does not move. A row the backfill has not
-reached still reads correctly, because `track_regions` resolves a missing
-list live. Run once after the deploy that adds the column, as a
-`Deploy-Step: backfill_crossed_regions --commit` trailer, and again after
-clearing the column for an EAWS boundary change. Tallies `routes`,
-`trips`, `outside_coverage` and `failed`; exits non-zero when any row
-failed.
-
-```bash
-uv run python manage.py backfill_crossed_regions            # preview
-uv run python manage.py backfill_crossed_regions --commit   # apply
 ```
 
 ### `rebuild_track_renders` — store a current render on every track
@@ -1586,140 +1485,18 @@ incident that invalidates derived state:
   one-off that rewrote or read `Bulletin.raw_data`, which the same ticket
   dropped (the CAAML stays in ingest's `SourceBulletin`). Their last
   versions are in git history.
-- `relink_bulletin_regions --source albina --commit` — rebuilds one
-  provider's `RegionBulletin` links from each bulletin's CAAML as the ingest
-  service stored it (`SourceBulletin.caaml`; SNOW-1187, SNOW-1337). A
-  bulletin the service holds no CAAML for is left alone. Every 2025/26 ALBINA bulletin was found linked to the wrong
-  micro regions — `region_name_at_time` was right, the `MicroRegion` pks had
-  moved under it — so Tyrol's danger painted onto South Tyrol and regions
-  ALBINA never publishes read as covered. Skips bulletins already linked as
-  their payload says (idempotent) and leaves alone any whose payload resolves
-  to no region at all. Each relinked bulletin is one transaction: the links,
-  a refresh of every (region, day) pair on both sides of the relink, the
-  grouping outline, and the deletion of the sourceless `no_rating` rows left
-  on regions no bulletin is linked to, so coverage follows. A failure rolls
-  that bulletin back (so a re-run retries it) and the command exits non-zero.
-  No network. Read-only by default.
-
-  ```bash
-  uv run python manage.py relink_bulletin_regions --source albina
-  uv run python manage.py relink_bulletin_regions --source albina --commit
-  ```
-
-  Flags: `--source {slf,albina,meteofrance}` (required), `--commit`,
-  `--bulletin-id ID`, `--batch-size N` (default 500).
-- `purge_legacy_meteofrance_bulletins --commit` — deletes old-grammar
-  `FR-{NN}-{covered date}` bulletins once the rebuilt archive has already
-  supplied a new-grammar `FR-{NN}-{covered date}-{publication timestamp}`
-  replacement (SNOW-559, SNOW-562). A candidate is deleted only when that
-  exact replacement already exists — never guessed, never deleted on a
-  region/date match alone. Reports a per-massif candidate/replaceable/
-  unreplaced table, plus the `RegionBulletin`/`BulletinGrouping` rows that will
-  cascade, the `RegionDayRating` rows whose `source_bulletin` will be nulled,
-  and any `BulletinShare` rows referencing a candidate. Refreshes
-  `RegionDayRating` for every touched (region, day) after deleting. Exits
-  non-zero if any candidate is unreplaced, if a live `BulletinShare` references
-  a candidate (without `--allow-orphaned-shares`), or if a day-rating
-  recompute fails.
-
-  ```bash
-  # Read-only walk — reports the pre-flight table, deletes nothing.
-  uv run python manage.py purge_legacy_meteofrance_bulletins
-
-  # Persist.
-  uv run python manage.py purge_legacy_meteofrance_bulletins --commit
-
-  # Persist even though some candidates have a live BulletinShare.
-  uv run python manage.py purge_legacy_meteofrance_bulletins --commit --allow-orphaned-shares
-  ```
-
-  Flags: `--commit`, `--batch-size N` (default 500 — the streamed-queryset
-  iterator's chunk size and the delete step's chunk size, SNOW-602),
-  `--skip-day-ratings`, `--allow-orphaned-shares`.
+- *Retired by SNOW-1396:* `backfill_bulletin_groupings`,
+  `backfill_bulletin_target_dates`, `backfill_location_short_ids`,
+  `backfill_resort_slugs`, `backfill_observation_locations`,
+  `backfill_crossed_regions`, `copy_weather_to_service`,
+  `relink_bulletin_regions`, `purge_legacy_meteofrance_bulletins`,
+  `purge_degenerate_bulletin_groupings` and the three
+  `uppercase_*_choice_values`. Each was a one-off backfill or repair whose
+  work is done, and whose ongoing case the write path now covers. One-off
+  commands are deleted once spent rather than kept. Their last versions are
+  in git history.
 - `recompute_day_ratings --commit` — after a `DAY_RATING_VERSION` bump or
   any day-rating policy change. Re-derives every `RegionDayRating`.
-- `backfill_bulletin_groupings --commit` — one-off post-deploy step
-  after SNOW-323: computes `BulletinGrouping` rows for all bulletins
-  that lack one. Groupings are normally created inline by `upsert_bulletin`
-  at ingest time (via `compute_bulletin_grouping_boundary`); this command
-  backfills historical rows that pre-date the ingest hook. Read-only by
-  default; pass `--commit` to persist. Idempotent — bulletins that already
-  have a grouping are skipped, and so are bulletins that can never have one:
-  since SNOW-1001 a grouping needs at least two boundaried micro-regions, and
-  the candidate queryset carries that count so a single-region bulletin is
-  not re-attempted on every run. Raises `CommandError` and exits non-zero
-  if any bulletin fails so cron/CI can detect partial failures.
-
-  ```bash
-  # Dry-run — counts how many bulletins would be processed.
-  uv run python manage.py backfill_bulletin_groupings
-
-  # Persist (run on Render after deploying SNOW-323).
-  uv run python manage.py backfill_bulletin_groupings --commit
-  ```
-
-  Flags: `--commit`.
-
-- `purge_degenerate_bulletin_groupings --commit` — one-off post-deploy step
-  after SNOW-1001: deletes `BulletinGrouping` rows whose bulletin links fewer
-  than `MIN_GROUPED_REGIONS` (two) boundaried micro-regions. Dissolving one
-  polygon returns that polygon, so such a row caches a duplicate of the
-  region's own `MicroRegion.boundary` and `/api/bulletin-groupings.geojson`
-  serves an outline that lands exactly on `regions-line`, asserting an
-  aggregation the provider never made. `compute_bulletin_grouping_boundary`
-  refuses to write these rows and clears any it meets on re-ingest, so this
-  command is for the rows in a database that will not be re-ingested — that
-  is Météo-France in bulk, 1:1 across its whole archive, with SLF joining it
-  once SNOW-998 lands. Selection is `BulletinGrouping.objects.degenerate()`, the same
-  predicate the writer reads, so the two cannot drift. Read-only by default;
-  pass `--commit` to delete. Idempotent — a second run selects nothing.
-  Deliberately not a data migration: a bulk delete there locks the table for
-  the length of a Render deploy. Raises `CommandError` and exits non-zero if
-  any `DELETE` fails. Why a degenerate row is worse than no row:
-  [`decisions/a-grouping-outline-asserts-an-aggregation.md`](decisions/a-grouping-outline-asserts-an-aggregation.md).
-
-  ```bash
-  # Dry-run — counts the degenerate rows.
-  uv run python manage.py purge_degenerate_bulletin_groupings
-
-  # Persist (run on Render after deploying SNOW-1001).
-  uv run python manage.py purge_degenerate_bulletin_groupings --commit
-  ```
-
-  Flags: `--commit`, `--batch-size N` (default 500 — rows per DELETE
-  statement; must be a positive integer, rejected at parse time by
-  `apps.core.command_iteration.positive_int`).
-
-  **What returning clients see.** A settled groupings response is served
-  `public, max-age=604800, immutable` and persisted by the service worker,
-  so a client that cached a day before the purge keeps drawing an outline
-  the server no longer sends — a duplicate of `regions-line`, which is the
-  shape the purge removes, so it is visually what that client already had.
-  The purge bumps no `CACHE_VERSION` and invalidates no Cache Storage
-  entry; the 7-day shared-cache bound is the mitigation, sized for exactly
-  this kind of deliberate rewrite
-  ([`docs/decisions/date-aware-cache-policy.md`](decisions/date-aware-cache-policy.md)).
-
-- `backfill_bulletin_target_dates --commit` — one-off post-deploy step
-  after SNOW-560: populates `Bulletin.target_date` for rows that predate
-  the field. `target_date` is normally set inline by `upsert_bulletin` at
-  ingest time (`target_day_for_valid_from(valid_from)`, the same rule
-  `recompute_region_day` uses); this command back-fills historical rows.
-  Read-only by default; pass `--commit` to persist. The queryset
-  (`target_date__isnull=True`) is itself the idempotency mechanism — a
-  second run selects zero rows. Raises `CommandError` and exits non-zero
-  if any row fails to derive a value so cron/CI can detect partial failures.
-
-  ```bash
-  # Dry-run — counts how many bulletins would be populated.
-  uv run python manage.py backfill_bulletin_target_dates
-
-  # Persist (run on Render after deploying SNOW-560).
-  uv run python manage.py backfill_bulletin_target_dates --commit
-  ```
-
-  Flags: `--commit`.
-
 - `fetch_bulletins --source <src> --start-date <YYYY-MM-DD> --commit` —
   to backfill bulletins after a multi-day outage. Add `--delay 5` for
   multi-year backfills to stay polite to the public APIs.
@@ -1729,67 +1506,6 @@ incident that invalidates derived state:
   `fetch_bulletins` block below).
 
   Flags: `--commit`.
-
-- `uppercase_resort_choice_values --commit` — one-off post-deploy step for
-  SNOW-582: rewrites `Resort.geocode_source` from its legacy lower-case
-  stored values (`"manual"`, `"import"`) to the upper-case `GeocodeSource`
-  choices. Read-only by default; the dry-run prints a breakdown of what
-  would convert, grouped by target value. Idempotent by queryset — a
-  second run selects nothing, because no lower-case values remain.
-
-  ```bash
-  # Dry-run — breakdown of what would be converted.
-  uv run python manage.py uppercase_resort_choice_values
-
-  # Persist.
-  uv run python manage.py uppercase_resort_choice_values --commit
-  ```
-
-  Flags: `--commit`.
-
-- `uppercase_account_choice_values --commit` — one-off post-deploy step for
-  SNOW-582: rewrites `PushSubscription.mechanism` from its legacy
-  lower-case stored values to its upper-case `TextChoices` members. It
-  covered `Subscription.geo_match_kind` too until SNOW-805 dropped that
-  model. Read-only by default; idempotent by queryset per field.
-
-  ```bash
-  # Dry-run — breakdown of what would be converted.
-  uv run python manage.py uppercase_account_choice_values
-
-  # Persist.
-  uv run python manage.py uppercase_account_choice_values --commit
-  ```
-
-  Flags: `--commit`.
-
-- `uppercase_bulletin_choice_values --commit` — one-off post-deploy step for
-  SNOW-582: rewrites `PipelineRun.status`, `Bulletin.source`, and
-  `RegionDayRating.source` from their legacy lower-case stored values, plus
-  a targeted rewrite of the `render_model["source"]` JSON key on rows whose
-  stored value is still lower case (a plain `rebuild_render_models --commit`
-  would be a no-op once every row's `render_model_version` is current, and
-  `--all` would regenerate every render-model field for ~8,000 production
-  rows — this rewrites exactly the one key). Read-only by default;
-  idempotent by queryset/JSON-path lookup per field/key.
-
-  ```bash
-  # Dry-run — breakdown of what would be converted, all fields plus the JSON key.
-  uv run python manage.py uppercase_bulletin_choice_values
-
-  # Persist.
-  uv run python manage.py uppercase_bulletin_choice_values --commit
-  ```
-
-  Flags: `--commit`.
-
-  **Post-deploy ordering.** Between deploying the SNOW-582 choices change
-  and running the three `uppercase_*_choice_values` commands above, stored
-  values are lower case while the enums are upper case — reads that compare
-  against an enum member (the ALBINA calendar CSS selectors, the headline
-  variant matrix) fall back to their default/generic branch rather than
-  erroring. Run the three commands in any order immediately after deploy,
-  then verify with a read-only invocation of each (nothing left to convert).
 
 ### Health checks (read-only)
 

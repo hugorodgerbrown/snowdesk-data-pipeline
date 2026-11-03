@@ -125,7 +125,7 @@ class TestListCommands:
         result = ops_tools.list_commands()
 
         [entry] = result["commands"]
-        assert entry["command"] == "relink_bulletin_regions"
+        assert entry["command"] == "rebuild_render_models"
         assert entry["runs"] == 2
         assert entry["commit_runs"] == 1
         assert entry["last_run"]["mode"] == CommandRun.MODE.DRY_RUN
@@ -137,7 +137,7 @@ class TestListCommands:
         result = ops_tools.list_commands()
 
         assert "fetch_bulletins" in result["never_run"]
-        assert "relink_bulletin_regions" not in result["never_run"]
+        assert "rebuild_render_models" not in result["never_run"]
         assert "migrate" not in result["never_run"]
 
 
@@ -264,7 +264,7 @@ class TestCommandHistory:
         )
         CommandRunFactory.create(git_sha="sha-current", counts={"relinked": 3})
 
-        result = ops_tools.command_history("relink_bulletin_regions")
+        result = ops_tools.command_history("rebuild_render_models")
 
         assert result["committed_on_current_build"] is True
         current = next(b for b in result["builds"] if b["git_sha"] == "sha-current")
@@ -278,7 +278,7 @@ class TestCommandHistory:
             git_sha="sha-current", status=CommandRun.STATUS.FAILED, exit_code=1
         )
 
-        result = ops_tools.command_history("relink_bulletin_regions")
+        result = ops_tools.command_history("rebuild_render_models")
 
         assert result["committed_on_current_build"] is False
         assert "no successful commit" in result["summary"]
@@ -750,10 +750,10 @@ class TestDeployStepsStatus:
             "# Deploy steps for release v46: run each once after production "
             "deploys.\n"
             "# Written by bin/cut-release from the Deploy-Step: trailers.\n"
-            "relink_bulletin_regions --commit\n"
+            "rebuild_render_models --commit\n"
             "fill_what3words --commit\n"
             "fetch_weather --commit\n"
-            "backfill_resort_slugs --commit\n"
+            "rebuild_track_renders --commit\n"
             "no_such_command --commit\n"
         )
         return path
@@ -771,16 +771,16 @@ class TestDeployStepsStatus:
             command="fetch_weather", release="46", mode=CommandRun.MODE.DRY_RUN
         )
         # Committed on the previous release: rehearsed, not done here.
-        CommandRunFactory.create(command="backfill_resort_slugs", release="45")
+        CommandRunFactory.create(command="rebuild_track_renders", release="45")
 
         result = ops_tools.deploy_steps_status(steps_file)
 
         states = {entry["command"]: entry["state"] for entry in result["steps"]}
         assert states == {
-            "relink_bulletin_regions": "DONE",
+            "rebuild_render_models": "DONE",
             "fill_what3words": "FAILED",
             "fetch_weather": "DRY_RUN_ONLY",
-            "backfill_resort_slugs": "PENDING",
+            "rebuild_track_renders": "PENDING",
             "no_such_command": "UNKNOWN_COMMAND",
         }
         assert result["outstanding"] == 4

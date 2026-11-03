@@ -223,8 +223,8 @@ def rebuild_one_bulletin(
             pairs = day_rating_pairs([bulletin])
             _lock_region_day_ratings(pairs)
             for region, day in sorted(pairs, key=lambda p: (p[0].pk, p[1])):
-                # Not refresh_day_ratings, which swallows a failure: one
-                # here must roll the rebuild back with it.
+                # Not caught: a failure here must roll the rebuild back
+                # with it.
                 recompute_region_day(region, day, commit=True)
             # The season calendar caches markup built from these ratings
             # (SNOW-1172). Deleted only once the rebuild commits, so a

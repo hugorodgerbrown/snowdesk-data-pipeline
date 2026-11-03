@@ -208,7 +208,7 @@ def resort_index() -> list[ResortPoint]:
     The filter is ``resorts_geojson``'s — ``Resort.objects.resorts()``,
     ``geocoded()``, the coordinate read through ``pin_coordinates`` — so a
     plan names exactly the resorts a reader can tap. A resort
-    ``backfill_resort_slugs`` has not reached is skipped: its sheet's URL
+    with no slug (from before SNOW-796) is skipped: its sheet's URL
     cannot be built.
 
     Returns:

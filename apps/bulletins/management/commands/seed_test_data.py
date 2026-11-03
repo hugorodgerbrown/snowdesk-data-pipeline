@@ -1363,8 +1363,7 @@ class Command(RegisteredCommand):
         bypasses ``upsert_bulletin`` entirely, so without this step a seeded DB
         has no groupings at all and ``/api/bulletin-groupings.geojson`` returns
         an empty FeatureCollection for every date — the L3 boundary layer draws
-        nothing until someone runs ``backfill_bulletin_groupings`` by hand
-        (SNOW-534).
+        nothing (SNOW-534).
 
         A bulletin the service declines to write a row for yields ``None`` and
         is counted as skipped, matching the service's own contract: that is

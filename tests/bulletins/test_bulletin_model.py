@@ -48,8 +48,8 @@ class TestBulletinRowLabel:
         """With no target_date, the day follows target_day_for_valid_from.
 
         Without the rule an evening issue would be labelled a day early —
-        one day before the value backfill_bulletin_target_dates is about to
-        store for the very row the label announces.
+        one day before the value ingest stores for the very row the label
+        announces.
         """
         bulletin = BulletinFactory.create(
             bulletin_id="row-label-002",
