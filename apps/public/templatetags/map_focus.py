@@ -6,7 +6,7 @@ One tag, ``{% focus_target %}``, which formats WGS-84 degrees into the string
 ``data-row-focus``: two ordinates for a point ("lon,lat"), four for a bbox
 ("west,south,east,north").
 
-Why a tag and not ``{{ favourite.longitude }}``.  Django renders a float
+Why a tag and not ``{{ location.longitude }}``.  Django renders a float
 through the active locale, so a template that interpolates one directly emits
 ``7,53`` under a German UI — a decimal comma that ``Number()`` reads as NaN
 and that a comma-separated attribute cannot even be split apart again.  The

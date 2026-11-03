@@ -680,8 +680,8 @@ class TestReportSubmitSuccess:
         assert response.status_code == 200
         assert FieldObservation.objects.filter(user=user).count() == 1
         obs = FieldObservation.objects.get(user=user)
-        assert obs.latitude == 46.1
-        assert obs.longitude == 7.1
+        assert obs.location.latitude == 46.1
+        assert obs.location.longitude == 7.1
         assert obs.location_source == FieldObservation.LOCATION_SOURCE.GPS
         assert obs.gps_latitude == 46.1
         assert obs.gps_longitude == 7.1
@@ -882,8 +882,8 @@ class TestReportSubmitSuccess:
 
         assert response.status_code == 200
         obs = FieldObservation.objects.get(user=user)
-        assert obs.latitude == pytest.approx(46.15)
-        assert obs.longitude == pytest.approx(7.15)
+        assert obs.location.latitude == pytest.approx(46.15)
+        assert obs.location.longitude == pytest.approx(7.15)
         assert obs.location_source == FieldObservation.LOCATION_SOURCE.GPS_REFINED
         assert obs.gps_latitude == pytest.approx(46.10)
         assert obs.gps_longitude == pytest.approx(7.10)
@@ -1182,18 +1182,6 @@ class TestObservationListThreeWordAddress:
         content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
 
         assert "filled.count.soap" not in content
-
-    @override_flag("what3words", active=True)
-    def test_a_report_with_no_location_still_renders(self, client: Client) -> None:
-        """Pre-SNOW-704 rows carry no location and must not 500 the panel."""
-        user = _verified_user()
-        client.force_login(user)
-        FieldObservationFactory.create(user=user, location=None)
-
-        response = client.get(LIST_URL, **HTMX_HEADERS)
-
-        assert response.status_code == 200
-        assert "observation-w3w" not in response.content.decode()
 
     @override_flag("what3words", active=True)
     def test_rendering_the_list_makes_no_outbound_call(self, client: Client) -> None:

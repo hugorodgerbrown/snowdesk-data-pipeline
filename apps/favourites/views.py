@@ -219,11 +219,12 @@ def _build_favourite_cache_record(
             "max_subdivision": day_rating.max_subdivision,
             "digit": danger_level_digit(day_rating.max_rating),
         }
+    location = favourite.location
     return {
         "uuid": str(favourite.uuid),
         "name": favourite.name,
-        "latitude": favourite.latitude,
-        "longitude": favourite.longitude,
+        "latitude": location.latitude if location is not None else None,
+        "longitude": location.longitude if location is not None else None,
         "elevation": favourite.pin_elevation,
         "region": region_payload,
         "rating": rating_payload,
@@ -481,7 +482,12 @@ def favourite_rename(request: HttpRequest, uuid: UUID) -> HttpResponse:
         return HttpResponse("Authentication required.", status=403)
 
     try:
-        favourite = Favourite.objects.for_user(request.user).get(uuid=uuid)
+        # ``location`` joined: the re-rendered row reads its coordinate.
+        favourite = (
+            Favourite.objects.for_user(request.user)
+            .select_related("location")
+            .get(uuid=uuid)
+        )
     except Favourite.DoesNotExist:
         return HttpResponse("Favourite not found.", status=404)
 
@@ -800,8 +806,8 @@ def favourite_detail_redirect(request: HttpRequest, uuid: UUID) -> HttpResponse:
 
     Same gating and owner scoping as ``favourite_card``: 403 for an
     anonymous request, and 404 (never 403) for a non-owner or unknown
-    uuid — no existence oracle. A favourite with no ``location`` (a row
-    the SNOW-704 backfill has not reached) has no page to reach, so it is
+    uuid — no existence oracle. A favourite with no ``location`` (a
+    region pin) has no page to reach, so it is
     a 404 rather than a redirect to a broken target. SNOW-810: so is one
     whose location has no ``short_id`` yet (a row from before the
     SNOW-797 column) — ``get_absolute_url``
@@ -1105,10 +1111,12 @@ def today(request: HttpRequest) -> HttpResponse:
 
     subjects = today_subjects(
         Favourite.objects.for_user(request.user)
-        .exclude(latitude__isnull=False, resort__isnull=True)
+        .exclude(location__isnull=False, resort__isnull=True)
         # SNOW-1404: a retired resort has no today to show.
         .listed()
-        .select_related("region", "resort", "resort__region", "resort__location")
+        .select_related(
+            "region", "location", "resort", "resort__region", "resort__location"
+        )
     )
     day = timezone.localdate()
     ratings_by_region_pk: dict[int, RegionDayRating] = {
@@ -1185,11 +1193,14 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
         Favourite.objects.for_user(request.user)
         .placed()
         .listed()
-        .select_related("resort__region", "region")
+        .select_related("resort__region", "region", "location")
     )
 
     features: list[dict[str, Any]] = []
     for favourite in favourites:
+        location = favourite.location
+        if location is None:  # ``placed()`` excludes it; this is mypy's.
+            continue
         properties: dict[str, Any] = {
             "uuid": str(favourite.uuid),
             "name": favourite.name,
@@ -1219,7 +1230,7 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
                 "type": "Feature",
                 "geometry": {
                     "type": "Point",
-                    "coordinates": [favourite.longitude, favourite.latitude],
+                    "coordinates": [location.longitude, location.latitude],
                 },
                 "properties": properties,
             }

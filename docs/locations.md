@@ -2,7 +2,7 @@
 name: locations
 description: Coordinate reference — Location, Favourite, Resort, FieldObservation, MicroRegion.centre, Route.points, GeoIP; track/geo haversine
 status: current
-last-reviewed: 2026-10-27
+last-reviewed: 2026-11-03
 ---
 
 # Locations — what every coordinate in this codebase means
@@ -27,13 +27,12 @@ it, and what may I safely conclude from it?**
 
 | Model · field | Shape | Exact? | Derived by |
 |---|---|---|---|
-| `Location.latitude/longitude` | **The primitive** | Exact; immovable but correctable | Whoever curated or minted the row |
+| `Location.latitude/longitude` | **The primitive** | Exact; immovable but correctable; WGS-84 range-checked in the database | Whoever curated or minted the row |
 | `Location.elevation_m` | Derived | Approximate | `fetch_elevation` (Open-Meteo) |
 | `Location.what3words` (+ `_fetched_at`) | Derived, permanent | Exact — it encodes the same 3m square | `convert_to_3wa` (what3words), out of band |
-| `Favourite.latitude/longitude` | Precise, user-supplied | Exact | The user, dropping a pin |
-| `Favourite.elevation` | Derived | Approximate | `fetch_elevation` (Open-Meteo) |
+| `Favourite.location` | Precise, user-supplied | Exact | The user, dropping a pin; null on a region pin |
 | `Resort.location` (mirrored on `Resort.latitude/longitude`) | Precise, curated | Exact as a *village* | Geocoder, on the resort's **name**; written by `set_resort_pin` (SNOW-1144) |
-| `FieldObservation.latitude/longitude` | Report location | Exact as *reported* | The user, possibly by dragging |
+| `FieldObservation.location` | Report location | Exact as *reported* | The user, possibly by dragging |
 | `FieldObservation.gps_latitude/gps_longitude` | Raw device fix | Exact as *measured* | The device |
 | `MicroRegion.centre` (and `SubRegion` / `MajorRegion`) | Derived centroid | Approximate | Polygon centroid, `refresh_eaws_fixtures` |
 | `Route.points` / `Route.bounds` | Polyline | Exact, simplified | Uploaded GPX, Douglas-Peucker thinned |
@@ -120,13 +119,16 @@ standing example.
 resort. They are not duplicates: one point can be a small area's top and
 Verbier's mid-station.
 
-The sections below describe what *feeds* a location, and what the migration
-tickets (SNOW-696, SNOW-704, SNOW-709) are moving onto it.
+The sections below describe what *feeds* a location. The migration tickets
+(SNOW-696, SNOW-704, SNOW-709) moved favourites and reports onto it, and
+SNOW-714 took their own copies of the coordinate off the models.
 
 ### Precise, user-supplied — `Favourite`
 
-`latitude`/`longitude` are exactly where the user dropped the pin. Nothing
-rounds them and nothing should.
+A placed pin's `location` is a `Location` minted where the user dropped the
+pin; its `latitude`/`longitude` are exactly that point. Nothing rounds them
+and nothing should. A region pin (SNOW-802) has no `location`: its subject
+is the region itself.
 
 The pin's **name** is the user's own text, and a saved place must not be
 indexed: the favourite has no page of its own (`/favourites/<uuid>/` 301s
@@ -136,9 +138,10 @@ say: the coordinate is not anonymised anywhere. See
 [`location-is-the-primitive`](decisions/location-is-the-primitive.md),
 which corrected exactly that misreading.
 
-`elevation` is not user-supplied. It is resolved once from the pin's own
-coordinates via `fetch_elevation`, so it is the ground height Open-Meteo
-reports there — approximate, not surveyed.
+The pin's height, `location.elevation_m` (read as `Favourite.pin_elevation`),
+is not user-supplied. It is resolved once from the pin's coordinates via
+`fetch_elevation`, so it is the ground height Open-Meteo reports there —
+approximate, not surveyed.
 
 ### Precise, curated — `Resort`
 
@@ -162,16 +165,16 @@ needs several locations. See
 
 ### Dual, with provenance — `FieldObservation`
 
-The only model carrying two coordinate pairs, and the distinction is
+The only model carrying two coordinates, and the distinction is
 load-bearing for a safety report:
 
-- `latitude`/`longitude` — where the report says it happened, possibly after
-  the user dragged the pin.
+- `location` — where the report says it happened, possibly after the user
+  dragged the pin. Required since SNOW-714.
 - `gps_latitude`/`gps_longitude` — the raw device fix.
 - `location_source` — `GPS` / `GPS_REFINED` / `MANUAL`.
 - `accuracy_radius_km` — how far to trust it.
 
-Since SNOW-709 the report coordinate also reaches a `Location`, and several
+Since SNOW-709 the report coordinate is a `Location`, and several
 observations sharing one is correct — that is what makes "three reports near
 Mont Fort this week" a join rather than a distance scan over every row. The
 provenance fields above stay on the report: they are data about the

@@ -11,13 +11,14 @@ Covers:
   - PROTECT on ResortLocation.location and CASCADE on .resort.
   - unique_together (resort, location).
   - three_word_address: the 30-day licence cap on the what3words cache.
+  - WGS-84 range guards (SNOW-714), which reach every pin and report.
 """
 
 import datetime
 
 import pytest
 from django.contrib.auth.models import AnonymousUser
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 from django.utils import timezone
 from freezegun import freeze_time
@@ -33,6 +34,38 @@ from tests.factories import (
     TripFactory,
     UserFactory,
 )
+
+
+@pytest.mark.django_db
+class TestLocationCoordinateConstraints:
+    """DB check constraints reject an out-of-range coordinate (SNOW-714).
+
+    Belt-and-braces for a write path that bypasses the view-layer
+    validators. They moved here from ``Favourite`` and ``FieldObservation``,
+    so a pin or a report with a bad coordinate is refused through its
+    Location.
+    """
+
+    @pytest.mark.parametrize(
+        ("latitude", "longitude"),
+        [(90.5, 7.0), (-90.5, 7.0), (46.0, 180.5), (46.0, -180.5)],
+    )
+    def test_out_of_range_is_refused(self, latitude: float, longitude: float) -> None:
+        """Beyond WGS-84 bounds on either axis raises IntegrityError."""
+        with pytest.raises(IntegrityError), transaction.atomic():
+            LocationFactory.create(latitude=latitude, longitude=longitude)
+
+    def test_the_bounds_themselves_are_accepted(self) -> None:
+        """The inclusive edges are valid places."""
+        LocationFactory.create(latitude=90.0, longitude=-180.0)
+        LocationFactory.create(latitude=-90.0, longitude=180.0)
+
+    def test_a_pin_and_a_report_are_guarded_through_their_location(self) -> None:
+        """The guard reaches a Favourite and a FieldObservation too."""
+        with pytest.raises(IntegrityError), transaction.atomic():
+            FavouriteFactory.create(latitude=999.0)
+        with pytest.raises(IntegrityError), transaction.atomic():
+            FieldObservationFactory.create(longitude=999.0)
 
 
 @pytest.mark.django_db

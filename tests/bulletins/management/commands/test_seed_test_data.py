@@ -342,13 +342,12 @@ class TestCommit:
         assert Favourite.objects.placed().count() == _EXPECTED_FAVOURITES
 
     def test_favourites_reference_seeded_locations(self) -> None:
-        """Each Favourite points at a seeded Location with matching coords."""
+        """Each placed Favourite points at a seeded Location."""
         call_command("seed_test_data", "--all", commit=True, verbosity=0)
         seeded_ids = set(_seeded_locations().values_list("pk", flat=True))
         for favourite in Favourite.objects.placed().select_related("location"):
             assert favourite.location is not None
             assert favourite.location.pk in seeded_ids
-            assert favourite.latitude == favourite.location.latitude
 
     def test_every_seeded_location_carries_a_fake_address(self) -> None:
         """SNOW-881: the feature is invisible locally without one.

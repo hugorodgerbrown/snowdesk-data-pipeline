@@ -49,4 +49,6 @@ def test_every_existing_row_is_its_own_submission() -> None:
     assert None not in submissions
     assert len(set(submissions)) == 3
 
+    # These rows have no Location, which 0011's guard refuses (SNOW-714).
+    migrated.objects.all().delete()
     _migrate(MigrationExecutor(connection).loader.graph.leaf_nodes())

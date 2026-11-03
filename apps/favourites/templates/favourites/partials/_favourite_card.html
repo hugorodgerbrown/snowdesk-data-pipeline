@@ -150,7 +150,7 @@ has no section heading to rank under either.
         data-testid="favourite-card-locate-link"
     >
         {% include "includes/_icon_locate.html" only %}
-        {{ favourite.latitude|floatformat:5 }}, {{ favourite.longitude|floatformat:5 }}
+        {{ favourite.location.latitude|floatformat:5 }}, {{ favourite.location.longitude|floatformat:5 }}
     </a>
     {# SNOW-882: the three word address on its own line, BENEATH the locate
        link rather than replacing its text, for two reasons. The link above

@@ -123,15 +123,6 @@ class TestDeleteObservationInstance:
 
         assert Location.objects.filter(pk=trip.meeting_point.pk).exists()
 
-    def test_a_report_with_no_location_deletes_cleanly(self) -> None:
-        """A pre-SNOW-709 row has nothing to sweep."""
-        observation = FieldObservationFactory.create(location=None)
-        observation_pk = observation.pk
-
-        delete_observation_instance(observation)
-
-        assert not FieldObservation.objects.filter(pk=observation_pk).exists()
-
 
 @pytest.mark.django_db
 class TestDeleteObservationsForUser:

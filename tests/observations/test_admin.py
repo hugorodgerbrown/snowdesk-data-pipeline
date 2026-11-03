@@ -75,11 +75,10 @@ class TestFieldObservationAdminRegistration:
         registered = admin.site._registry[FieldObservation]
         assert "subscriber" not in registered.readonly_fields
 
-    def test_readonly_fields_includes_coordinates(self) -> None:
-        """latitude and longitude are read-only."""
+    def test_readonly_fields_includes_the_location(self) -> None:
+        """The report's Location is read-only (SNOW-714)."""
         registered = admin.site._registry[FieldObservation]
-        assert "latitude" in registered.readonly_fields
-        assert "longitude" in registered.readonly_fields
+        assert "location" in registered.readonly_fields
 
     def test_readonly_fields_includes_location_source(self) -> None:
         """location_source is read-only (SNOW-330)."""

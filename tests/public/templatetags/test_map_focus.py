@@ -78,7 +78,7 @@ class TestFocusTargetLocale:
 
         Exercised through ``Template`` rather than by calling the function,
         because the failure this guards against is a rendering one: the
-        same value interpolated as ``{{ favourite.longitude }}`` under this
+        same value interpolated as ``{{ location.longitude }}`` under this
         locale is what produced ``7,5`` and would split into three
         ordinates instead of two.
         """

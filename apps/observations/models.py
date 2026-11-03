@@ -3,8 +3,8 @@ apps/observations/models.py — Database models for the observations application
 
 Defines ``FieldObservation``: a field report submitted by an authenticated
 user from the map page.  Each row captures the single observation type
-selected (e.g. whumpfing, pinwheels), the report location (latitude,
-longitude, accuracy), the raw device GPS fix (when available), how the
+selected (e.g. whumpfing, pinwheels), the report location (a ``Location``,
+plus an accuracy radius), the raw device GPS fix (when available), how the
 location was determined (``location_source``), the wall-clock time, and a
 best-effort resolution to the MicroRegion containing the point.
 
@@ -119,8 +119,7 @@ class FieldObservationQuerySet(models.QuerySet["FieldObservation"]):
         report (SNOW-709). Several reports at one spot is the common case
         this model expects, and each one used to pay for the same
         arithmetic; sharing a ``Location`` is what makes the saving
-        available. A report the backfill has not reached yet has no
-        location and falls back to its own coordinates.
+        available.
 
         Args:
             latitude: WGS-84 latitude of the centre point, in degrees.
@@ -138,8 +137,6 @@ class FieldObservationQuerySet(models.QuerySet["FieldObservation"]):
             "location_id",
             "location__latitude",
             "location__longitude",
-            "latitude",
-            "longitude",
         )
         # location_id -> whether that location is inside the radius. Keyed on
         # the id rather than the coordinate pair so two locations that
@@ -147,13 +144,7 @@ class FieldObservationQuerySet(models.QuerySet["FieldObservation"]):
         # to stop N reports at one location costing N haversines.
         by_location: dict[int, bool] = {}
         near_pks = []
-        for pk, location_id, loc_lat, loc_lon, own_lat, own_lon in candidates:
-            if location_id is None:
-                # Pre-backfill row: no location to share, so no saving to be
-                # had. Its own coordinates are still authoritative.
-                if haversine_km(latitude, longitude, own_lat, own_lon) <= radius_km:
-                    near_pks.append(pk)
-                continue
+        for pk, location_id, loc_lat, loc_lon in candidates:
             near = by_location.get(location_id)
             if near is None:
                 near = haversine_km(latitude, longitude, loc_lat, loc_lon) <= radius_km
@@ -364,16 +355,15 @@ class FieldObservation(BaseModel):
     The provenance model stays **on the observation**, because it is data
     about the *report* and not about the place: ``gps_latitude`` /
     ``gps_longitude`` (the raw device fix), ``location_source`` and
-    ``accuracy_radius_km`` do not move. ``latitude``/``longitude`` are
-    retained but superseded by ``location``, and drop in a later ticket
-    (SNOW-714) once nothing reads them.
+    ``accuracy_radius_km`` do not move. The report's own ``latitude`` /
+    ``longitude`` copies went in SNOW-714.
 
     ``location_source`` records how the report coordinate was obtained:
     raw GPS fix (``GPS``), GPS fix manually refined by dragging the pin
     (``GPS_REFINED``), or entirely manual placement with no GPS involved
     (``MANUAL``).  When a raw GPS fix was available, it is stored in
     ``gps_latitude``/``gps_longitude``; the report location (which may
-    differ after refinement) is in ``latitude``/``longitude``.
+    differ after refinement) is ``location``.
 
     Ordering is newest-first so the admin list and queryset slices show
     recent reports at the top.
@@ -456,35 +446,17 @@ class FieldObservation(BaseModel):
         ),
     )
 
+    # Report location — the point attributed to this observation, from the
+    # GPS fix (GPS path) or from a pin placed/dragged by the user
+    # (GPS_REFINED / MANUAL paths).
     location = models.ForeignKey(
         "locations.Location",
-        null=True,
-        blank=True,
         on_delete=models.PROTECT,
         related_name="field_observations",
         help_text=(
-            "Where this observation happened. Shared with any other "
-            "observation at the same point. Null only for a row the "
-            "SNOW-709 backfill has not reached yet."
-        ),
-    )
-
-    # Report location — the point attributed to this observation.
-    # Populated from the GPS fix (GPS path) or from a pin placed/dragged
-    # by the user (GPS_REFINED / MANUAL paths). Superseded by ``location``
-    # (SNOW-709); dropped once nothing reads them (SNOW-714).
-    latitude = models.FloatField(
-        help_text=(
-            "WGS-84 latitude of the report location "
-            "(GPS fix, refined pin, or manually-placed pin). Superseded by "
-            "location.latitude."
-        ),
-    )
-    longitude = models.FloatField(
-        help_text=(
-            "WGS-84 longitude of the report location "
-            "(GPS fix, refined pin, or manually-placed pin). Superseded by "
-            "location.longitude."
+            "Where this observation happened: the GPS fix, refined pin or "
+            "manually-placed pin. Shared with any other observation at the "
+            "same point."
         ),
     )
     accuracy_radius_km = models.FloatField(
@@ -498,7 +470,7 @@ class FieldObservation(BaseModel):
 
     # Raw device GPS fix — null when no GPS fix was obtained (MANUAL path).
     # When present alongside a GPS_REFINED location, the pin-vs-GPS distance
-    # is recoverable from the difference between these and latitude/longitude.
+    # is recoverable from the difference between these and ``location``.
     gps_latitude = models.FloatField(
         null=True,
         blank=True,
@@ -560,15 +532,8 @@ class FieldObservation(BaseModel):
         # WGS-84 range guards (SNOW-464). A range check also rejects NaN/±Inf
         # (which compare false against the bounds), so a bad value can't land
         # via a path that bypasses the view-layer validators (admin, shell).
+        # The report location's own guards live on ``Location``.
         constraints = [
-            models.CheckConstraint(
-                condition=models.Q(latitude__gte=-90, latitude__lte=90),
-                name="fieldobservation_latitude_within_wgs84",
-            ),
-            models.CheckConstraint(
-                condition=models.Q(longitude__gte=-180, longitude__lte=180),
-                name="fieldobservation_longitude_within_wgs84",
-            ),
             models.CheckConstraint(
                 condition=models.Q(gps_latitude__isnull=True)
                 | models.Q(gps_latitude__gte=-90, gps_latitude__lte=90),

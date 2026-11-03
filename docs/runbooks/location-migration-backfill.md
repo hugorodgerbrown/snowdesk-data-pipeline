@@ -229,7 +229,9 @@ would delete every location the sheets do not list. Curate locally.
 ## Not part of this runbook
 
 Dropping the superseded coordinate columns from `Favourite` and
-`FieldObservation` (SNOW-714) is a separate ticket that must not ship with
+`FieldObservation` (SNOW-714, which took them off the models once every
+environment had been backfilled; its migrations refuse to run while a row
+still lacks a `Location`) was a separate ticket that could not ship with
 its backfill (`Resort.forecast_point`, SNOW-715's subject, went with the
 `ForecastCell` estate in SNOW-762) —
 `build.sh` auto-migrates, so a drop lands the moment its PR merges, before
