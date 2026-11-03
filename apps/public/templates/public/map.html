@@ -374,6 +374,14 @@ in addition to the shared map assets.
     {# resolves the Bulletins preference through seedFromLegacy), so it must #}
     {# load before the bundle.                                              #}
     <script defer src="{% static 'js/layer_visibility_core.js' %}"></script>
+    {% if map_modes_enabled %}
+        {# SNOW-1394: the Dated / Terrain mode (window.pwaMapModeCore). Read #}
+        {# by map.js at parse time — the boot mode decides each layer's     #}
+        {# first visibility, so ?mode=terrain never flashes the dated      #}
+        {# layers — and by map_shared.js's date write, which keeps ?mode=.  #}
+        {# So before the bundle, and only behind the map_modes flag.       #}
+        <script defer src="{% static 'js/map_mode_core.js' %}"></script>
+    {% endif %}
     {# SNOW-1212: how a saved route is drawn (window.pwaRouteDrawingCore) —  #}
     {# the legs, the slope classes from z14 and the end markers, shared     #}
     {# with the trip page and the meeting picker. Read by map.js at parse   #}
@@ -578,6 +586,14 @@ in addition to the shared map assets.
     {# SNOW-1196: the weather layer's "forecast only" line in its layers    #}
     {# row. Reads window.pwaWeatherWindow (map.js).  #}
     <script defer src="{% static 'js/map_weather_window.js' %}"></script>
+    {% if map_modes_enabled %}
+        {# SNOW-1394: the Dated / Terrain toggle. Calls the suppression     #}
+        {# hooks map.js publishes, binds over map_calendar.js's date       #}
+        {# control and map_day_nav.js's steps, so after all three; before  #}
+        {# map_region_chip.js, which reads window.pwaMapMode. Outside the  #}
+        {# bundle's contiguous run because no bundle module reads it.      #}
+        <script defer src="{% static 'js/map_mode.js' %}"></script>
+    {% endif %}
     {# SNOW-1376: the region chip — its pure half, then the DOM half. Reads #}
     {# MAP and the bridges map.js publishes, so after the bundle; outside    #}
     {# its contiguous run because no bundle module reads it.                 #}

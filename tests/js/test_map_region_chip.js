@@ -118,4 +118,20 @@ describe('the region chip', () => {
     chip().click();
     expect(opened.at(-1)).toEqual({ region_id: 'CH-4115', frame: false });
   });
+
+  it('hides in Terrain mode and comes back in Dated (SNOW-1394)', () => {
+    // Terrain holds the regions with the bulletins, so the chip has no
+    // region and level to name; it hears the mode change, not just a move.
+    let terrain = true;
+    window.pwaMapMode = { isTerrain: () => terrain };
+    document.dispatchEvent(new CustomEvent('snowdesk:map-mode-changed', { detail: { mode: 'terrain' } }));
+    expect(chip().hidden).toBe(true);
+    chip().click();
+    expect(opened).toHaveLength(1);
+
+    terrain = false;
+    document.dispatchEvent(new CustomEvent('snowdesk:map-mode-changed', { detail: { mode: 'dated' } }));
+    expect(chip().hidden).toBe(false);
+    delete window.pwaMapMode;
+  });
 });

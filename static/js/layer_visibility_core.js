@@ -23,8 +23,8 @@
  *     active suppression.
  *
  * A suppression is a reason some other mode is temporarily overriding the
- * preference — today only staff resort-edit mode
- * (`SUPPRESSION.EDIT_RESORTS`). It has to restore CLEANLY: a user who had
+ * preference — staff resort-edit mode (`SUPPRESSION.EDIT_RESORTS`) and the
+ * map's Terrain mode (`SUPPRESSION.MAP_MODE`, SNOW-1394). It has to restore CLEANLY: a user who had
  * already switched Bulletins off must not find it switched back on for them
  * when the suppression lifts. Keeping the preference as the only persisted
  * value gets that for free — there is no "remembered" second copy to drift,
@@ -68,17 +68,18 @@
    *
    * `EDIT_RESORTS` is the staff resort-edit mode, which hid `regions-fill`
    * directly before this module existed — routing it through the same path
-   * keeps the number of writers of that layer's visibility at one. It is the
-   * only reason left: `DOWNLOADS` went with the exclusivity SNOW-663 removed
+   * keeps the number of writers of that layer's visibility at one. `DOWNLOADS` went with the exclusivity SNOW-663 removed
    * (see the module header).
    *
-   * Still an object rather than a bare string constant. `suppress` /
-   * `unsuppress` take a reason and hold a LIST of them precisely so a second
-   * one can be added without either function changing, and a one-member enum
-   * is what that shape looks like while there is one mode.
+   * `MAP_MODE` is the map's Terrain mode (SNOW-1394), which takes every
+   * dated overlay off the map — the bulletins first among them — while the
+   * reader's own preference stays exactly as they set it. It is the second
+   * reason the LIST was kept for: neither `suppress` nor `unsuppress`
+   * changed to take it.
    */
   const SUPPRESSION = Object.freeze({
     EDIT_RESORTS: 'edit-resorts',
+    MAP_MODE: 'map-mode',
   });
 
   /**

@@ -1,0 +1,44 @@
+{% comment %}
+apps/public/templates/public/help/_topic_map_modes.html — "Dated and
+Terrain" panel body (SNOW-1394).
+
+Content partial for the help page; included via the body_template
+parameter of includes/_collapsible_panel.html. Rendered only behind the
+map_modes flag (help_page's ``map_modes_visible``), with the toggle it
+describes, and listed in apps.mcp_server.docs_corpus.GATED_HELP_TOPICS so
+the public MCP docs tools do not answer from it until it is ungated.
+
+It answers the question a reader asks of the toggle — "what does the date
+/ terrain switch do?" — in the words the toggle uses: what Terrain takes
+away, what it leaves, and that the day is kept.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3 last:mb-0" data-testid="help-map-modes-two">
+        {% blocktrans trimmed %}
+            The switch at the start of the date row puts the map in one of two modes. The date half is the map for a
+            day: the avalanche bulletin, the weather and the field reports, all for the date it shows. The mountain half
+            is Terrain: the map for planning and browsing, with nothing on it that changes from one day to the next.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-map-modes-terrain">
+        {% blocktrans trimmed %}
+            Terrain takes the day's layers off the map: the danger colours and the avalanche regions they are drawn in,
+            the bulletin's problem slopes, the weather symbols, the field reports and the season timeline. Their rows in
+            the layers menu are greyed out while you are in Terrain. It switches nothing on.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-map-modes-kept">
+        {% blocktrans trimmed %}
+            Everything else stays as you set it, in both modes: Steep terrain, your routes, resorts, ski tours, wildlife
+            rest zones and your pins. Turning one on or off in Terrain changes that layer alone.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-map-modes-back">
+        {% blocktrans trimmed %}
+            In Terrain the date shrinks to a calendar icon. Tap it to come back to the dated map, on the day you left,
+            with each of the day's layers just as you had it. The map remembers which mode you were in, and a link you
+            share opens in the same mode.
+        {% endblocktrans %}
+    </p>
+</div>

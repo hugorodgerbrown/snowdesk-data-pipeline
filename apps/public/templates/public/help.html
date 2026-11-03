@@ -13,7 +13,8 @@ apps/public/templates/public/help/.
 The Sync-log panel is gated on the per-user ``sync_log_visible`` waffle
 boolean computed by apps.public.views.help_page — a user never sees
 documentation for a feature they cannot use. The what3words panel is gated
-the same way, on ``what3words_visible``; SNOW-724 opened the slope-angle
+the same way, on ``what3words_visible``, and the Dated / Terrain panel on
+``map_modes_visible`` (SNOW-1394); SNOW-724 opened the slope-angle
 topic to everyone.
 
 SNOW-743: every topic's ``<details>`` carries ``id == data-testid`` through
@@ -142,6 +143,15 @@ Routes and Offline downloads came to have neither.
         {# that need a demo form of their own.                                #}
         {% translate "The season timeline" as t_timeline %}
         {% include "includes/_collapsible_panel.html" with title=t_timeline data_testid="help-topic-timeline" anchor_id="help-topic-timeline" body_template="public/help/_topic_timeline.html" %}
+
+        {# SNOW-1394: the Dated / Terrain toggle at the start of the date  #}
+        {# row. Gated on the flag the toggle is behind, and listed in       #}
+        {# docs_corpus.GATED_HELP_TOPICS so the public MCP docs tools wait #}
+        {# for the rollout too.                                            #}
+        {% if map_modes_visible %}
+            {% translate "Dated and Terrain" as t_map_modes %}
+            {% include "includes/_collapsible_panel.html" with title=t_map_modes data_testid="help-topic-map-modes" anchor_id="help-topic-map-modes" body_template="public/help/_topic_map_modes.html" %}
+        {% endif %}
 
         {% translate "Layers" as t_layers %}
         {% include "includes/_collapsible_panel.html" with title=t_layers data_testid="help-topic-layers" anchor_id="help-topic-layers" body_template="public/help/_topic_layers.html" %}

@@ -105,11 +105,9 @@ describe('preference and suppression', () => {
   });
 
   it('stays suppressed while a second, independent reason is still in force', () => {
-    // `suppressedBy` is a LIST, and one mode currently uses it. That shape is
-    // the module's answer to "what happens when two things suppress at once",
-    // so it is worth holding even while only one enum member exists — the
-    // literal below stands in for whatever the next mode turns out to be.
-    const SOME_OTHER_MODE = 'some-other-mode';
+    // `suppressedBy` is a LIST: resort-edit mode and the map's Terrain mode
+    // (SNOW-1394) can both be in force, and lifting one must leave the other.
+    const SOME_OTHER_MODE = core.SUPPRESSION.MAP_MODE;
     let state = core.suppress(core.create(0.5), core.SUPPRESSION.EDIT_RESORTS);
     state = core.suppress(state, SOME_OTHER_MODE);
     state = core.unsuppress(state, core.SUPPRESSION.EDIT_RESORTS);

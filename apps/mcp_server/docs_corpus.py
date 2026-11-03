@@ -50,7 +50,7 @@ DATED_FOLDERS = frozenset({"code-reviews", "page-audits", "qa", "research"})
 #: Help topics gated on a waffle flag. The help page renders them only for a
 #: reader with the flag, so the public corpus — which has no reader — never
 #: carries them (``apps.public.views.help_page``).
-GATED_HELP_TOPICS = frozenset({"what3words", "sync-log"})
+GATED_HELP_TOPICS = frozenset({"what3words", "sync-log", "map-modes"})
 
 #: URI scheme of a doc listed as an MCP resource.
 RESOURCE_SCHEME = "docs://"

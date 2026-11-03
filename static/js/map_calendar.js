@@ -487,6 +487,8 @@
       document.getElementById('map-day-prev'),
       toggle,
       document.getElementById('map-day-next'),
+      // SNOW-1394: the Terrain half of the Dated / Terrain toggle.
+      document.getElementById('map-mode-terrain'),
       document.getElementById('map-today-control'),
       document.getElementById('map-today-panel-toggle'),
       root,

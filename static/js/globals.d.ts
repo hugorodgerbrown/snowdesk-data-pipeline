@@ -264,6 +264,14 @@ interface Window {
   pwaRegionChip: any;
   /** static/js/map_slopes_notice_core.js — when the "Now showing the bulletin's slopes" card shows: eligible, hasBeenSeen, claim (SNOW-1378). */
   pwaSlopesNoticeCore: any;
+  /** static/js/map_mode_core.js — the Dated / Terrain mode's pure rules: readMode, withMode, withDate, isSuppressed, effective, problemTerrainShown (SNOW-1394). */
+  pwaMapModeCore: any;
+  /** static/js/map_mode.js — the Dated / Terrain toggle: get() / set(mode) / isTerrain() (SNOW-1394). */
+  pwaMapMode: any;
+  /** static/js/map.js — the weather symbols' Terrain-mode hook: setSuppressed(reason, active) / isSuppressed() (SNOW-1394). */
+  pwaWeatherLayer: any;
+  /** static/js/map.js — the Bulletins layer: setSuppressed(reason, active) / isVisible(). */
+  pwaBulletinsLayer: any;
 }
 
 /**

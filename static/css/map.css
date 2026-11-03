@@ -2253,6 +2253,7 @@ html[data-route-drawing] #map-slopes-notice {
     #map-date-row > #map-calendar-toggle,
     #map-date-row > #map-today-control,
     #map-date-row > .map-day-step,
+    #map-date-row > .map-mode-terrain,
     #map-date-row > .map-today-panel-toggle {
         display: none;
     }
@@ -2373,6 +2374,98 @@ html[data-route-drawing] #map-slopes-notice {
 
 .map-day-step:disabled {
     cursor: default;
+}
+
+/* SNOW-1394: with the Dated / Terrain toggle the Terrain segment follows
+   the next-day step, so the step keeps its square right end. */
+.map-day-step--next:has(+ .map-mode-terrain) {
+    padding-right: 0;
+    border-radius: 0;
+}
+
+/* SNOW-1394: the Dated / Terrain toggle. The date and its day steps are the
+   Dated segment; this mountain is the Terrain one, joined to the step's
+   right end as "Today" was. The active segment carries the label and the
+   inactive one collapses to its icon, so in Dated this is the mountain
+   alone and in Terrain it reads "Terrain" while the date shrinks to its
+   calendar glyph. <html data-map-mode> is written by map_mode.js. */
+.map-mode-terrain {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-width: 34px;
+    height: var(--map-control-sm);
+    margin-left: -8px;
+    padding: 0 10px 0 8px;
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--color-border);
+    border-radius: 0 999px 999px 0;
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-2);
+    /* The readout's face, so the two segments read as one pill. */
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.map-mode-terrain-label {
+    display: none;
+}
+
+:root[data-map-mode="terrain"] .map-mode-terrain {
+    padding: 0 12px 0 10px;
+    background: var(--color-card);
+    color: var(--color-text-1);
+}
+
+:root[data-map-mode="terrain"] .map-mode-terrain-label {
+    display: inline;
+}
+
+/* In Terrain the Dated segment is its calendar glyph alone: no day steps,
+   no date, the left end rounded again. A tap on it comes back to the day. */
+:root[data-map-mode="terrain"] .map-day-step,
+:root[data-map-mode="terrain"] .map-date-control > .map-date-ribbon,
+:root[data-map-mode="terrain"] .map-date-control > .map-example-day-badge {
+    display: none;
+}
+
+:root[data-map-mode="terrain"] .map-date-control {
+    justify-content: center;
+    width: var(--map-control-sm);
+    padding: 0;
+    border-radius: 999px 0 0 999px;
+    color: var(--color-text-2);
+}
+
+/* The season scrubber is a dated control: Terrain has no day to scrub. */
+:root[data-map-mode="terrain"] #season-scrubber {
+    display: none;
+}
+
+/* A dated layers-menu row in Terrain: shown, dimmed, and a tap does
+   nothing (map_mode.js stops it in the capture phase). */
+#basemap-menu [data-map-mode-disabled] > * {
+    opacity: 0.4;
+    cursor: default;
+}
+
+@media (max-width: 639.98px) {
+    .map-utility-cluster > .map-mode-terrain {
+        min-width: 38px;
+        height: var(--map-control-lg);
+    }
+
+    :root[data-map-mode="terrain"] .map-utility-cluster > .map-date-control {
+        width: var(--map-control-lg);
+    }
 }
 
 .map-day-step:disabled > * {

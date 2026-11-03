@@ -841,7 +841,31 @@ def map_page(request: HttpRequest) -> HttpResponse:
             # SNOW-1333: the date row's bell lists the account's alerts, and
             # is not drawn at all without them to list.
             "alert_list_url": alert_list_url(request),
+            # SNOW-1394: the Dated / Terrain toggle, behind its flag.
+            "map_modes_enabled": map_modes_enabled(request),
         },
+    )
+
+
+def map_modes_enabled(request: HttpRequest) -> bool:
+    """Whether this request gets the map's Dated / Terrain toggle (SNOW-1394).
+
+    Behind the ``map_modes`` waffle flag, superusers first. Short-circuited
+    for an anonymous request, as ``route_drawing_enabled`` is, so a
+    signed-out visitor pays no waffle query for it; rolling it out to
+    signed-out visitors means removing that guard deliberately. The /help/
+    page reads the same answer, so the topic describing the toggle shows
+    exactly where the toggle does.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        True when the toggle (and its help topic) should render.
+
+    """
+    return bool(
+        request.user.is_authenticated and waffle.flag_is_active(request, "map_modes")
     )
 
 
@@ -1187,7 +1211,8 @@ def help_page(request: HttpRequest) -> HttpResponse:
     the two gated topics; every other section renders for everyone
     (SNOW-724; SNOW-1377 took the problem-terrain topic's flag off with
     the layer's). A reader is never shown documentation for a feature their
-    own pages do not have.
+    own pages do not have. ``map_modes_visible`` (SNOW-1394) is the third
+    gated topic, the Dated / Terrain toggle, read from ``map_modes_enabled``.
 
     Args:
         request: The incoming HTTP request.
@@ -1204,6 +1229,8 @@ def help_page(request: HttpRequest) -> HttpResponse:
     context: dict[str, Any] = {
         "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
         "what3words_visible": waffle.flag_is_active(request, "what3words"),
+        # SNOW-1394: the map-modes topic, with the toggle it describes.
+        "map_modes_visible": map_modes_enabled(request),
     }
     context.update(help_illustrations())
     return render(request, "public/help.html", context)

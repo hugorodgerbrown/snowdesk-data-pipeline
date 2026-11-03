@@ -1,0 +1,26 @@
+{% comment %}
+templates/includes/_icon_mountain.html — the terrain glyph: two peaks, the nearer one snow-capped, for the map's Terrain mode.
+
+The Terrain half of the map's Dated / Terrain toggle (SNOW-1394,
+public/partials/_map_embed.html), the same 24-grid 2px stroke as the rest
+of the house set (docs/decisions/ui-icons-are-house-stroke-partials.md).
+
+Parameters (passed via {% include … with … %}):
+  size (int, optional) — rendered px, both axes. Default 18.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:18 }}"
+    height="{{ size|default:18 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="m8 3 4 8 5-5 5 14H2z" />
+    <path d="M4.14 15.08c2.62-1.57 5.24-1.43 7.86.42 2.74 1.94 5.46 2 8.2.18" />
+</svg>

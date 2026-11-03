@@ -212,6 +212,8 @@ class TestRealCorpora:
         ids = docs_corpus.public_corpus().docs
         assert "help/what3words" not in ids
         assert "help/sync-log" not in ids
+        # SNOW-1394: the Dated / Terrain toggle's topic waits for its rollout.
+        assert "help/map-modes" not in ids
 
     def test_help_topics_follow_the_page(self) -> None:
         """Every ungated topic template on the help page is in the corpus, rendered."""
