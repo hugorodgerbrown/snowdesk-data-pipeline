@@ -381,3 +381,12 @@ class TestRetiredResorts:
             self._item(source), commit=True, index=ReferenceIndex.load()
         )
         assert Resort.objects.filter(source_uuid=source).exists()
+
+    def test_a_retired_resort_still_holds_its_slug(self) -> None:
+        """A recreated resort waits for the retired one's tombstone (SlugTaken)."""
+        MicroRegionFactory.create(region_id="CH-4115")
+        ResortFactory.create(slug="aigle", source_uuid=uuid.uuid4(), retired=True)
+        with pytest.raises(SlugTaken):
+            apply_reference_resort(
+                self._item(uuid.uuid4()), commit=True, index=ReferenceIndex.load()
+            )

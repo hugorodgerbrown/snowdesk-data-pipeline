@@ -2900,6 +2900,13 @@ class TestRetiredResortFavourites:
         # One control: the bare Remove form, no overflow menu.
         assert f"favourite-actions-{gone.uuid}" not in html
         assert _delete_url(gone.uuid) in html
+        # The offline roster carries the state, so the cached card says so too.
+        roster = json.loads(
+            re.search(
+                r'id="favourites-roster-cache"[^>]*>(.*?)</script>', html, re.S
+            ).group(1)  # type: ignore[union-attr]
+        )
+        assert [r["retired"] for r in roster] == [True]
 
     def test_left_out_of_the_map_feed(self, client: Client) -> None:
         """favourites.geojson draws and searches live resorts only."""

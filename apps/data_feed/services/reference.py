@@ -327,7 +327,10 @@ def _claim_slug(model: type[Pass] | type[Resort], slug: str, row: Any) -> None:
         SlugTaken: Another row holds the slug.
 
     """
-    if model.objects.filter(slug=slug).exclude(pk=row.pk).exists():
+    # A retired resort still holds its slug (SNOW-1404), so look in the
+    # whole table: missing it would turn SlugTaken into an IntegrityError.
+    manager = Resort.all_objects if model is Resort else Pass.objects
+    if manager.filter(slug=slug).exclude(pk=row.pk).exists():
         raise SlugTaken(f"slug {slug!r} is held by another {model.__name__}")
 
 

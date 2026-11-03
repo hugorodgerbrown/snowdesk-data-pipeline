@@ -229,6 +229,8 @@ def _build_favourite_cache_record(
         "rating": rating_payload,
         "generated_at": generated_at.isoformat(timespec="seconds"),
         "unsafe_after_seconds": unsafe_after,
+        # SNOW-1404: the offline card says "No longer listed" too.
+        "retired": favourite.is_retired_resort,
     }
 
 

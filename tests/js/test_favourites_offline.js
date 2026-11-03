@@ -193,6 +193,18 @@ describe('translated card copy (SNOW-620)', () => {
     expect(altitude.textContent).toBe('1500 m altitude');
   });
 
+  it('renders a retired resort as no longer listed (SNOW-1404)', async () => {
+    await replayRoster([{ ...record('u-ret', 'Gone Hill'), retired: true }]);
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+
+    await failListRequest(target);
+
+    const line = target.querySelector('[data-testid="favourite-card-retired"]');
+    expect(line.textContent).toBe('No longer listed');
+    expect(target.querySelector('[data-testid="favourite-card-altitude"]')).toBeNull();
+  });
+
   it('renders the no-coverage line as words, not undefined', async () => {
     await replayRoster([record('u-cov', 'Verbier')]);
     const target = document.createElement('div');
