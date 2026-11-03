@@ -269,6 +269,29 @@ describe('_networkFirst principal partitioning (C1)', () => {
     expect(body).not.toContain('a@example.com');
     expect(body).toContain("This page isn't available offline");
   });
+  it('serves the copy rendered for this account when an older one sits first', async () => {
+    // A real Cache keeps insertion order and a re-put moves the key to the
+    // end, so the first ignoreSearch match is the OLDEST entry under the
+    // path. A /map/?… cached signed out must not hide a fresh /map/.
+    const caches = makeCaches();
+    let online = basicResponse(pageHtml('', 'signed-out map'));
+    const sw = loadSw({
+      caches,
+      fetch: () => (online ? Promise.resolve(online) : Promise.reject(new TypeError('offline'))),
+    });
+
+    await sw._networkFirst(navRequest('/map/?r=CH-4115'));
+    await flush();
+    online = basicResponse(pageHtml('acct-uuid-a', 'my map'));
+    await sw._networkFirst(navRequest('/map/'));
+    await flush();
+    await setStoredPrincipal('acct-uuid-a');
+    online = null;
+
+    const offline = await sw._networkFirst(navRequest('/map/?d=2026-02-16'));
+    expect(await offline.text()).toContain('my map');
+    expect(offline.headers.get('X-SW-Cache')).toBe('hit');
+  });
 });
 
 describe('/offline/ is public but still principal-partitioned (SNOW-930)', () => {

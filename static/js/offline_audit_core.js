@@ -90,6 +90,10 @@
    *   verdict has to tell two failures of the same row apart.
    * @property {string[]} [missing] The same-origin urls a No is missing,
    *   for the copied report and the debug log (app-opens: its scripts).
+   * @property {string} [stamped] For a ``principal`` No: whom the saved
+   *   copy was rendered for, shortened.
+   * @property {string} [current] For a ``principal`` No: who this device
+   *   records as signed in, shortened.
    * @property {string} [group] Which remedy this row's No shares with
    *   others, for ``composeSummary``.
    * @property {string} [effect] What the user will notice, as a verb
@@ -771,6 +775,20 @@
   }
 
   /**
+   * The query part of a URL, ``''`` when it has none.
+   *
+   * @param {string} url
+   * @returns {string}
+   */
+  function searchOf(url) {
+    try {
+      return new URL(url, 'https://snowdesk.info').search;
+    } catch (_err) {
+      return '';
+    }
+  }
+
+  /**
    * The path part of a URL, query dropped.
    *
    * @param {string} url
@@ -878,6 +896,19 @@
   }
 
   /**
+   * A principal short enough to paste: an account uuid's first segment,
+   * or the sentinel itself.
+   *
+   * @param {string|null|undefined} principal
+   * @returns {string}
+   */
+  function shortPrincipal(principal) {
+    if (!principal) return 'none';
+    if (principal === 'anonymous' || principal === 'unknown') return principal;
+    return String(principal).slice(0, 8);
+  }
+
+  /**
    * A stamp in words. The account uuid is never shown whole — it names an
    * account to anyone reading over a shoulder and means nothing to the
    * person holding the phone; the first segment tells two apart.
@@ -909,17 +940,29 @@
     // ``history.replaceState`` while the user scrubs, those URLs are never
     // fetched and never cached, and ``_networkFirstFallback`` does the same
     // ``ignoreSearch`` lookup before giving up.
+    //
+    // Several entries can share the path (``/map/`` and a ``/map/?…`` link
+    // that was navigated to), each with its own stamp. The worker serves
+    // any of them that was rendered for this account (``_searchlessMatch``
+    // in sw.js), so the one judged is the first that would be served, and
+    // only when none would is it the searchless page, or else the first.
+    // Taking the first in cache order judged the oldest, and a page cached
+    // signed out stood in front of a fresh ``/map/`` for good.
     var wanted = r.mapPath || '/map/';
-    var mapEntry = /** @type {ShellEntry|null} */ (null);
-    entries.forEach(function (entry) {
-      if (!mapEntry && pathOf(entry.url) === wanted) mapEntry = entry;
+    var usable = entries.filter(function (entry) {
+      return principalMatches(entry.principal, r.currentPrincipal);
     });
-    return {
-      usable: entries.filter(function (entry) {
-        return principalMatches(entry.principal, r.currentPrincipal);
-      }),
-      mapEntry: mapEntry,
-    };
+    var atPath = entries.filter(function (entry) {
+      return pathOf(entry.url) === wanted;
+    });
+    var served = atPath.filter(function (entry) {
+      return usable.indexOf(entry) >= 0;
+    });
+    var bare = atPath.filter(function (entry) {
+      return !searchOf(entry.url);
+    });
+    var mapEntry = /** @type {ShellEntry|null} */ (served[0] || bare[0] || atPath[0] || null);
+    return { usable: usable, mapEntry: mapEntry };
   }
 
   /**
@@ -1334,7 +1377,8 @@
    * @param {AuditReadings} r
    * @param {Record<string, string>} t
    * @returns {{status: AuditStatus, reason?: string, group?: string,
-   *   effect?: string, note?: string, missing?: string[]}}
+   *   effect?: string, note?: string, missing?: string[], stamped?: string,
+   *   current?: string}}
    */
   function answer(id, r, t) {
     var sw = r.serviceWorker || {};
@@ -1422,6 +1466,10 @@
         return {
           status: 'no',
           reason: 'principal',
+          // Both sides, shortened, for the copied report and the debug log:
+          // the note alone could not say which of the two was wrong.
+          stamped: shortPrincipal(page.mapEntry.principal),
+          current: shortPrincipal(r.currentPrincipal || 'anonymous'),
           note: fill(s(t, 'note-other-account'), {
             stamped: describePrincipal(page.mapEntry.principal, t),
           }),
@@ -2222,6 +2270,9 @@
         lines.push(line);
         var missing = missingLine(check.missing);
         if (missing) lines.push('      missing: ' + missing);
+        if (check.stamped) {
+          lines.push('      saved for: ' + check.stamped + ', signed in: ' + check.current);
+        }
       });
     });
     return lines.join('\n');
@@ -2263,6 +2314,7 @@
     pendingReport: pendingReport,
     reportText: reportText,
     missingLine: missingLine,
+    shortPrincipal: shortPrincipal,
     composeSummary: composeSummary,
     countChecks: countChecks,
     missingFrom: missingFrom,

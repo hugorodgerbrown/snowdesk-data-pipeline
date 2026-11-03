@@ -738,6 +738,29 @@ describe('the verdict', () => {
     expect(report.verdict.text).toBe('verdict-other-account');
   });
 
+  it('names both sides of a principal mismatch in the copied text', () => {
+    // The verdict hides the row's note, so the text has to say whose copy
+    // it is and who the device thinks is signed in (staging, 2026-11-03).
+    const report = core.buildReport(
+      healthy({
+        shellEntries: [
+          {
+            url: 'https://snowdesk.info/map/',
+            isPage: true,
+            principal: '1234abcd-0000-0000-0000-000000000000',
+          },
+        ],
+        currentPrincipal: null,
+      }),
+      {},
+    );
+    expect(row(report, 'app-opens').stamped).toBe('1234abcd');
+    expect(row(report, 'app-opens').current).toBe('anonymous');
+    expect(core.reportText(report, {})).toContain(
+      '      saved for: 1234abcd, signed in: anonymous',
+    );
+  });
+
   it('fails when there is no worker, ahead of everything below it', () => {
     const report = core.buildReport(
       healthy({
@@ -1282,6 +1305,41 @@ describe('the app-opens row', () => {
       {},
     );
     expect(row(report, 'app-opens').status).toBe('yes');
+  });
+
+  it('judges the copy this account is served, not the oldest under the path', () => {
+    // Android, staging, 2026-11-03: a /map/?… link cached for another
+    // principal sat first in the cache, and a fresh /map/ saved behind it
+    // still read "belongs to another account". The worker serves any copy
+    // under the path that matches (_searchlessMatch), so this one opens.
+    const report = core.buildReport(
+      healthy({
+        currentPrincipal: 'acct-uuid-a',
+        shellEntries: [
+          { url: 'https://snowdesk.info/map/?r=CH-4115', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/map/', isPage: true, principal: 'acct-uuid-a' },
+          { url: 'https://snowdesk.info/static/js/a.js', isPage: false },
+        ],
+        mapDependencies: ['https://snowdesk.info/static/js/a.js'],
+      }),
+      {},
+    );
+    expect(row(report, 'app-opens').status).toBe('yes');
+  });
+
+  it('names the searchless page when no copy belongs to this account', () => {
+    const report = core.buildReport(
+      healthy({
+        currentPrincipal: 'acct-uuid-a',
+        shellEntries: [
+          { url: 'https://snowdesk.info/map/?r=CH-4115', isPage: true, principal: 'unknown' },
+          { url: 'https://snowdesk.info/map/', isPage: true, principal: 'anonymous' },
+        ],
+      }),
+      {},
+    );
+    expect(row(report, 'app-opens').reason).toBe('principal');
+    expect(row(report, 'app-opens').stamped).toBe('anonymous');
   });
 
   it('refuses a page whose own modules are not cached', () => {
