@@ -1,11 +1,20 @@
 """
 apps/locations/services/what3words.py — a Location's three word address.
 
-Contains two functions:
+Contains:
 
   fill_what3words(location)
       Returns a ``Location``'s stored address, converting and storing it
       first if there is not one yet.
+
+  fill_what3words_task(location_pk, delay_s)
+      The ``fill_what3words`` command's one task per unaddressed location
+      (SNOW-1398, through ``apps.core.command_tasks.enqueue_each``). It
+      re-reads the row, skips it once addressed, takes its turn on the
+      ``WHAT3WORDS`` slot, and on a failed conversion opens that breaker
+      for ``W3W_BACK_OFF_S`` — a failure is nearly always the upstream or
+      the key, so the tasks behind it leave their rows for the next run
+      rather than each failing in turn.
 
   what3words_map_url(words)
       Returns where one address links to on what3words' own map. Lives
@@ -28,11 +37,28 @@ import logging
 
 from django.conf import settings
 from django.utils import timezone
+from django_tasks import task
 
+from apps.core.command_tasks import (
+    BULK_TASK_PRIORITY,
+    back_off,
+    backing_off,
+    calls_outside,
+    wait_for_slot,
+)
 from apps.ingest.public import convert_to_3wa
 from apps.locations.models import Location
 
 logger = logging.getLogger(__name__)
+
+# The slot and breaker name for the what3words API, and how long a failed
+# conversion keeps every later task off it.
+WHAT3WORDS = "what3words"
+W3W_BACK_OFF_S = 300.0
+
+
+class What3wordsUnavailable(RuntimeError):
+    """A conversion came back empty, so the task fails and the row waits."""
 
 
 def what3words_map_url(words: str | None) -> str | None:
@@ -115,3 +141,41 @@ def fill_what3words(location: Location) -> str | None:
     location.what3words_fetched_at = timezone.now()
     location.save(update_fields=["what3words", "what3words_fetched_at", "updated_at"])
     return words
+
+
+@task(priority=BULK_TASK_PRIORITY)
+def fill_what3words_task(location_pk: int, delay_s: float = 0.0) -> str | None:
+    """Background worker: address one location for the backfill (SNOW-1398).
+
+    Args:
+        location_pk: Primary key of the ``Location`` to address.
+        delay_s: Seconds between one conversion's start and the next.
+
+    Returns:
+        The three word address, kept on the task result, or None when the
+        location is gone or addressed already, or the breaker is open.
+
+    Raises:
+        What3wordsUnavailable: The conversion failed. The breaker is open
+            by then, and the row stays a candidate.
+
+    """
+    if backing_off(WHAT3WORDS):
+        logger.info(
+            "what3words: backing off; location id=%s left for the next run",
+            location_pk,
+        )
+        return None
+    location = Location.objects.unaddressed().filter(pk=location_pk).first()
+    if location is None:
+        return None
+    wait_for_slot(WHAT3WORDS, delay_s)
+    words = fill_what3words(location)
+    if words is None:
+        back_off(WHAT3WORDS, W3W_BACK_OFF_S)
+        raise What3wordsUnavailable(f"no address for location id={location_pk}")
+    return words
+
+
+# Each task calls the what3words API, so enqueue_each refuses it unpaced.
+calls_outside(fill_what3words_task)

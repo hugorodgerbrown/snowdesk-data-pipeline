@@ -55,7 +55,8 @@ pre-loaded with the recurring data-pipeline jobs:
   is why it can be registered unconditionally (SNOW-881). Daily rather than
   hourly because the estate grows with user activity, not with the clock,
   and an address that arrives a few hours late costs nothing — the surface
-  renders a coordinate pair until it does.
+  renders a coordinate pair until it does. Only enqueues since SNOW-1398,
+  one paced task per location.
 - **reconcile_slope_samples** — fires at 04:30 UTC, running
   ``backfill_route_slope_samples --commit``, then
   ``backfill_trip_slope_samples --commit``. The safety net for
@@ -66,7 +67,9 @@ pre-loaded with the recurring data-pipeline jobs:
   (SNOW-1243): both commands walk newest-first and leave an unsampleable
   row (a route outside terrain coverage) eligible, so a cap would let the
   newest few such rows crowd out older ones whose enqueue really failed.
-  The commands' own one-second ``--delay`` paces the tile requests. The
+  Since SNOW-1398 both only enqueue, one task per row, and the commands'
+  one-second ``--delay`` paces the tasks on the tile origin's shared slot;
+  a row whose task is still waiting is not enqueued again. The
   trip pass runs even if the route pass raises, and the first failure is
   re-raised afterwards, so it still reaches the worker log.
 - **render_ski_tours** — fires at 05:30 UTC, running

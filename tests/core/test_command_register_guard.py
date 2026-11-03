@@ -91,13 +91,23 @@ _WRITING_PREFIXES = (
 )
 
 
+def _tallies(source: str) -> bool:
+    """Return whether a command's source records its counts.
+
+    ``enqueue_each`` tallies on the command it is handed (SNOW-1397), so a
+    command that enqueues through it records its counts without calling
+    ``self.tally(`` itself.
+    """
+    return "self.tally(" in source or "enqueue_each(" in source
+
+
 def test_every_data_changing_command_tallies() -> None:
     """A backfill, relink, import, purge or fetch records its counts."""
     silent = sorted(
         name
         for name, app in _project_commands().items()
         if name.startswith(_WRITING_PREFIXES)
-        and "self.tally(" not in inspect.getsource(type(load_command_class(app, name)))
+        and not _tallies(inspect.getsource(type(load_command_class(app, name))))
     )
     assert silent == [], f"Call self.tally() for what these change: {silent}"
 
@@ -115,10 +125,14 @@ def test_mcp_runnable_commands_are_pinned() -> None:
         if getattr(load_command_class(app, name), "mcp_runnable", False)
     )
     assert runnable == [
+        "backfill_route_slope_samples",
+        "backfill_trip_slope_samples",
         "backfill_weather",
         "diagnose_region_coverage",
         "fetch_bulletins",
         "fetch_weather",
+        "fill_location_elevations",
+        "fill_what3words",
         "import_rest_zones",
         "link_region_centroid_locations",
         "link_resort_locations",

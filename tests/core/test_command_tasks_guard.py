@@ -18,10 +18,15 @@ from __future__ import annotations
 
 import inspect
 
+import pytest
 from django.core.management import get_commands, load_command_class
 
 from apps.core.command_tasks import is_outside
+from apps.locations.services.elevation import fill_elevation_task
+from apps.locations.services.what3words import fill_what3words_task
 from apps.routes.services.ski_tour_render import render_tour_task
+from apps.routes.services.slope_segments import backfill_route_slopes_task
+from apps.trips.services.slope import backfill_trip_slopes_task
 
 
 def _bulk_commands() -> list[str]:
@@ -37,8 +42,12 @@ def _bulk_commands() -> list[str]:
 
 
 def test_the_walk_finds_the_bulk_commands() -> None:
-    """The guard is not vacuous: the three SNOW-1397 commands are found."""
+    """The guard is not vacuous: the SNOW-1397 and SNOW-1398 commands are found."""
     assert {
+        "backfill_route_slope_samples",
+        "backfill_trip_slope_samples",
+        "fill_location_elevations",
+        "fill_what3words",
         "rebuild_render_models",
         "rebuild_source_render_models",
         "render_ski_tours",
@@ -58,6 +67,17 @@ def test_every_bulk_command_is_mcp_runnable() -> None:
     )
 
 
-def test_the_tour_render_task_is_registered_as_outside() -> None:
-    """It asks the tile origin, so enqueue_each refuses it unpaced."""
-    assert is_outside(render_tour_task)
+@pytest.mark.parametrize(
+    "the_task",
+    [
+        render_tour_task,
+        backfill_route_slopes_task,
+        backfill_trip_slopes_task,
+        fill_what3words_task,
+        fill_elevation_task,
+    ],
+    ids=lambda t: t.name,
+)
+def test_the_outside_tasks_are_registered(the_task: object) -> None:
+    """Each calls an outside service, so enqueue_each refuses it unpaced."""
+    assert is_outside(the_task)  # type: ignore[arg-type]

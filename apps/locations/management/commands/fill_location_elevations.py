@@ -18,8 +18,16 @@ mis-pinned, and this command is where that shows up — at import time, against
 a list, rather than on a resort page months later. ``--report`` prints those
 disagreements and writes nothing.
 
-Re-runnable: a location that already carries an elevation is skipped, so an
-interrupted run costs only the rows it had not reached. ``--force`` re-resolves
+**It only enqueues (SNOW-1398).** One ``fill_elevation_task`` per candidate,
+through ``apps.core.command_tasks.enqueue_each``, so a run returns in
+seconds and is offered to the ops MCP server's ``run_command``. ``--delay``
+paces the tasks, and each also waits for it on the shared ``open-meteo``
+slot. A failed lookup opens that breaker, so the tasks behind it leave
+their rows for the next run.
+
+Re-runnable: a location that already carries an elevation is skipped (the
+task re-checks), so an interrupted run costs only the rows it had not
+reached. ``--force`` re-resolves
 every row, which is what a re-pinned coordinate needs — moving a location
 leaves a stale elevation behind and nothing else would notice.
 
@@ -27,7 +35,7 @@ Usage:
     # Preview — reports what it would resolve, writes nothing.
     uv run python manage.py fill_location_elevations
 
-    # Resolve the missing ones.
+    # Enqueue one lookup per location still missing its elevation.
     uv run python manage.py fill_location_elevations --commit
 
     # Re-resolve everything after coordinates moved.
@@ -41,16 +49,16 @@ from __future__ import annotations
 
 import logging
 import re
-import time
 from argparse import ArgumentParser
 from typing import Any
 
-from apps.core.command_iteration import iterate_rows, non_negative_float
+from apps.core.command_iteration import non_negative_float
 from apps.core.command_register import RegisteredCommand
-from apps.ingest.public import fetch_elevation
+from apps.core.command_tasks import enqueue_each
 from apps.locations.management.commands.dump_locations_sheets import notes_from
 from apps.locations.management.commands.import_locations import DEFAULT_SHEET_PATH
 from apps.locations.models import Location
+from apps.locations.services.elevation import fill_elevation_task
 
 logger = logging.getLogger(__name__)
 
@@ -71,11 +79,17 @@ ELEVATION_DISAGREEMENT_M = 60.0
 # against, which is not an error.
 _CLAIMED_RE = re.compile(r"ele=(\d+(?:\.\d+)?)\s*m")
 
+# What Location.to_string reads, and the pk the task is handed.
+_LABEL_FIELDS = ("pk", "name", "kind", "latitude", "longitude", "elevation_m")
+
 
 class Command(RegisteredCommand):
     """Resolve the elevation of every Location that has none."""
 
     help = "Resolve Location.elevation_m from each location's coordinate."
+
+    # It only enqueues, so it finishes in seconds (SNOW-1398).
+    mcp_runnable = True
 
     def add_arguments(self, parser: ArgumentParser) -> None:
         """Register the command's flags.
@@ -87,7 +101,10 @@ class Command(RegisteredCommand):
         parser.add_argument(
             "--commit",
             action="store_true",
-            help="Write the resolved elevations. Without it, nothing is saved.",
+            help=(
+                "Enqueue one lookup per location. Without it, nothing is "
+                "asked and nothing is saved."
+            ),
         )
         parser.add_argument(
             "--force",
@@ -106,7 +123,10 @@ class Command(RegisteredCommand):
             "--delay",
             type=non_negative_float,
             default=DEFAULT_DELAY_SECONDS,
-            help=f"Seconds between lookups (default {DEFAULT_DELAY_SECONDS}).",
+            help=(
+                f"Seconds between one lookup and the next "
+                f"(default {DEFAULT_DELAY_SECONDS})."
+            ),
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -131,62 +151,28 @@ class Command(RegisteredCommand):
         delay = float(options["delay"])
 
         queryset = Location.objects.all() if force else Location.objects.unresolved()
-        counts = {"resolved": 0, "failed": 0}
-
-        for location in iterate_rows(
-            self, queryset, verbosity=verbosity, describe=Location.to_string
-        ):
-            self._resolve_one(
-                location, counts, commit=commit, delay=delay, verbosity=verbosity
-            )
-
-        # Counts for the command run register (SNOW-1190).
-        self.tally("resolved", counts["resolved"])
-        self.tally("failed", counts["failed"])
-        self.stdout.write(f"{counts['resolved']} resolved, {counts['failed']} failed.")
+        counts = enqueue_each(
+            self,
+            queryset.only(*_LABEL_FIELDS),
+            fill_elevation_task,
+            args=lambda row: (row.pk, delay, force),
+            describe=Location.to_string,
+            commit=commit,
+            verbosity=verbosity,
+            pace=delay,
+        )
+        verb = "enqueued" if commit else "would be enqueued"
+        self.stdout.write(
+            f"{counts.enqueued} {verb}, {counts.already_queued} already queued, "
+            f"{counts.failed} failed."
+        )
         if not commit:
             self.stdout.write("Dry-run (no --commit) — nothing written.")
         # A partially failed batch exits non-zero so cron and CI can see it,
-        # per CLAUDE.md's management-command contract.
-        if counts["failed"]:
+        # per CLAUDE.md's management-command contract. Only an inline
+        # backend reports one here; a queued task reports its own.
+        if counts.failed:
             raise SystemExit(1)
-
-    def _resolve_one(
-        self,
-        location: Location,
-        counts: dict[str, int],
-        *,
-        commit: bool,
-        delay: float,
-        verbosity: int,
-    ) -> None:
-        """Resolve one location's elevation.
-
-        Args:
-            location: The location to resolve.
-            counts: The running tally, mutated in place.
-            commit: Whether to persist the resolved value.
-            delay: Seconds to sleep after a successful lookup.
-            verbosity: Django's ``--verbosity`` level.
-
-        """
-        try:
-            elevation = fetch_elevation(location.latitude, location.longitude)
-        except Exception:  # noqa: BLE001 — one location must not abort the run
-            logger.exception(
-                "fill_location_elevations: failed to resolve %s", location.pk
-            )
-            counts["failed"] += 1
-            return
-
-        counts["resolved"] += 1
-        if verbosity >= 2:
-            self.stdout.write(f"{location.name} -> {elevation:.0f}m")
-        if commit:
-            location.elevation_m = elevation
-            location.save(update_fields=["elevation_m"])
-        if delay > 0:
-            time.sleep(delay)
 
     def _report(self) -> None:
         """Print locations whose resolved elevation disagrees with the sheet.

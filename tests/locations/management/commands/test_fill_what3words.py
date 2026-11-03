@@ -13,7 +13,9 @@ actually wants the command to do something.
 
 The rest are the command contract from CLAUDE.md: nothing is written
 without ``--commit``, the walk is idempotent, and a partial batch exits
-non-zero rather than reporting success.
+non-zero rather than reporting success. Since SNOW-1398 each location is
+one task (run inline here): a failed conversion opens the what3words
+breaker, so the tasks behind it leave their rows rather than each failing.
 """
 
 from __future__ import annotations
@@ -24,11 +26,13 @@ from unittest.mock import MagicMock, _patch, patch
 
 import pytest
 import requests
-from django.core.management import call_command
+from django.core.management import call_command, load_command_class
 from django.core.management.base import CommandError
 from pytest_django.fixtures import Settings
 
+from apps.core.command_tasks import backing_off
 from apps.locations.models import Location
+from apps.locations.services.what3words import WHAT3WORDS, fill_what3words_task
 from tests.factories import LocationFactory
 
 COMMAND = "fill_what3words"
@@ -56,13 +60,21 @@ class TestFillWhat3Words:
     """The walk, its candidate set, and its exit code."""
 
     def test_writes_nothing_without_commit(self, keyed: None) -> None:
-        """Read-only by default — the command contract in CLAUDE.md."""
+        """Read-only by default — and asks the upstream nothing either."""
         location = LocationFactory.create(what3words=None)
-        with _mock_get(_GOOD_BODY):
+        with _mock_get(_GOOD_BODY) as mock_get:
             call_command(COMMAND, delay=0, stdout=StringIO())
 
+        mock_get.assert_not_called()
         location.refresh_from_db()
         assert location.what3words is None
+
+    def test_it_is_offered_to_the_ops_server(self) -> None:
+        """It only enqueues, so run_command may start it."""
+        assert (
+            getattr(load_command_class("apps.locations", COMMAND), "mcp_runnable")
+            is True
+        )
 
     def test_commit_fills_every_unaddressed_location(self, keyed: None) -> None:
         """The whole candidate set, not just the trip meeting points."""
@@ -107,11 +119,13 @@ class TestFillWhat3Words:
             call_command(COMMAND, commit=True, delay=0, stdout=StringIO())
         mock_get.assert_not_called()
 
-    def test_one_failure_does_not_abort_the_batch(self, keyed: None) -> None:
-        """A row that cannot convert keeps its null; the walk carries on.
+    def test_a_failure_backs_off_the_rest(self, keyed: None) -> None:
+        """A row that cannot convert keeps its null, and opens the breaker.
 
+        A failure is nearly always the upstream or the key, so the task
+        behind it returns without asking and its row stays a candidate.
         The exit is non-zero so a partial run is never mistaken for a
-        clean one — but only after every other row has been filled.
+        clean one.
         """
         LocationFactory.create(what3words=None)
         LocationFactory.create(what3words=None)
@@ -119,12 +133,24 @@ class TestFillWhat3Words:
             patch(
                 "apps.ingest.sources.what3words.requests.get",
                 side_effect=requests.Timeout("too slow"),
-            ),
-            pytest.raises(CommandError, match="2 of 2"),
+            ) as mock_get,
+            pytest.raises(CommandError, match="1 of 2"),
         ):
             call_command(COMMAND, commit=True, delay=0, stdout=StringIO())
 
+        assert mock_get.call_count == 1
+        assert backing_off(WHAT3WORDS)
         assert Location.objects.unaddressed().count() == 2
+
+    def test_the_task_waits_for_its_slot(self, keyed: None) -> None:
+        """The pace is the gap each conversion waits for on the API's slot."""
+        location = LocationFactory.create(what3words=None)
+        with (
+            _mock_get(_GOOD_BODY),
+            patch("apps.locations.services.what3words.wait_for_slot") as wait,
+        ):
+            assert fill_what3words_task.call(location.pk, 0.5) == "filled.count.soap"
+        wait.assert_called_once_with(WHAT3WORDS, 0.5)
 
 
 @pytest.mark.django_db

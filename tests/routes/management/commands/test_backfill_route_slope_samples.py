@@ -1,7 +1,8 @@
 """
 tests/routes/management/commands/test_backfill_route_slope_samples.py
 
-Covers ``backfill_route_slope_samples`` (SNOW-910):
+Covers ``backfill_route_slope_samples`` (SNOW-910; one task per route since
+SNOW-1398, run inline here under ``ImmediateBackend``):
   - Dry-run makes NO REQUEST and writes nothing — the read-only default
     this command's rules require, and stricter than "no write", because the
     work here is outbound traffic rather than a UPDATE.
@@ -12,6 +13,8 @@ Covers ``backfill_route_slope_samples`` (SNOW-910):
     is not counted as a failure.
   - One failing route does not abort the batch; the command exits non-zero.
   - ``--limit`` stops where it says it will.
+  - It is offered to the ops MCP server, and a task whose route was
+    sampled since it was enqueued walks nothing.
 
 ``build_slope_samples`` is patched throughout: the walk and the record are
 ``tests/routes/test_slope_segments.py``'s subject, and what this file
@@ -25,15 +28,17 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-from django.core.management import call_command
+from django.core.management import call_command, load_command_class
 from django.core.management.base import CommandError
 
+from apps.routes.services.slope_segments import (
+    TILE_ORIGIN,
+    backfill_route_slopes_task,
+)
 from tests.factories import RouteFactory
 
 COMMAND = "backfill_route_slope_samples"
-_BUILDER = (
-    "apps.routes.management.commands.backfill_route_slope_samples.build_slope_samples"
-)
+_BUILDER = "apps.routes.services.slope_segments.build_slope_samples"
 
 # A record of the shape build_slope_samples returns: one segment, bounded
 # by the two coordinates the module's N + 1 rule requires.
@@ -171,7 +176,7 @@ class TestCommit:
 
         route.refresh_from_db()
         assert route.slope_samples is None
-        assert "1 left null" in output
+        assert "1 route(s) enqueued" in output
 
     def test_an_unanswered_route_is_not_a_failure(self) -> None:
         """An unreachable origin is retryable, not a partial run to alert on."""
@@ -222,3 +227,34 @@ class TestFailures:
         # one that survived is the one created earlier.
         assert first.slope_samples == RECORD
         assert second.slope_samples is None
+
+
+@pytest.mark.django_db
+class TestTask:
+    """The row task is idempotent and takes its turn on the tile origin."""
+
+    def test_the_command_is_offered_to_the_ops_server(self) -> None:
+        """It only enqueues, so run_command may start it."""
+        command = load_command_class("apps.routes", COMMAND)
+        assert getattr(command, "mcp_runnable") is True
+
+    def test_a_route_sampled_since_is_not_walked(self) -> None:
+        """A duplicate or late task re-reads the row and does nothing."""
+        route = RouteFactory.create(slope_samples=RECORD)
+
+        with patch(_BUILDER) as builder:
+            assert backfill_route_slopes_task.call(route.pk) is None
+
+        builder.assert_not_called()
+
+    def test_a_walk_waits_for_the_tile_origin_slot(self) -> None:
+        """The pace is the gap on the slot the SAC tour render shares."""
+        route = RouteFactory.create()
+
+        with (
+            patch(_BUILDER, return_value=RECORD),
+            patch("apps.routes.services.slope_segments.wait_for_slot") as wait,
+        ):
+            assert backfill_route_slopes_task.call(route.pk, 1.5) == "sampled"
+
+        wait.assert_called_once_with(TILE_ORIGIN, 1.5)

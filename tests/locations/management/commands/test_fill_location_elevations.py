@@ -9,7 +9,9 @@ this pass and never had one, so every imported location sat at a null
 elevation. These tests are the CLAUDE.md command contract — nothing written
 without ``--commit``, the walk is idempotent, a partial batch exits non-zero
 — plus the ``--report`` comparison, which is the ticket's own check on
-whether a curated coordinate is pinned where its note claims.
+whether a curated coordinate is pinned where its note claims. Since
+SNOW-1398 each location is one task (run inline here), and a failed lookup
+opens the Open-Meteo breaker for the tasks behind it.
 """
 
 from __future__ import annotations
@@ -19,15 +21,15 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from django.core.management import call_command
+from django.core.management import call_command, load_command_class
 
+from apps.core.command_tasks import backing_off
 from apps.locations.models import Location
+from apps.locations.services.elevation import OPEN_METEO, fill_elevation_task
 from tests.factories import LocationFactory
 
 COMMAND = "fill_location_elevations"
-ELEVATION_FN = (
-    "apps.locations.management.commands.fill_location_elevations.fetch_elevation"
-)
+ELEVATION_FN = "apps.locations.services.elevation.fetch_elevation"
 
 
 @pytest.mark.django_db
@@ -35,12 +37,20 @@ class TestFillLocationElevations:
     """The walk, its candidate set, and its exit code."""
 
     def test_writes_nothing_without_commit(self) -> None:
-        """A bare run resolves but persists nothing."""
+        """A bare run asks nothing and persists nothing."""
         location = LocationFactory.create(elevation_m=None)
-        with patch(ELEVATION_FN, return_value=3329.0):
+        with patch(ELEVATION_FN, return_value=3329.0) as fetch:
             call_command(COMMAND, stdout=StringIO(), verbosity=0)
+        fetch.assert_not_called()
         location.refresh_from_db()
         assert location.elevation_m is None
+
+    def test_it_is_offered_to_the_ops_server(self) -> None:
+        """It only enqueues, so run_command may start it."""
+        assert (
+            getattr(load_command_class("apps.locations", COMMAND), "mcp_runnable")
+            is True
+        )
 
     def test_commit_persists_the_resolved_elevation(self) -> None:
         """``--commit`` writes the value the service returned."""
@@ -65,14 +75,32 @@ class TestFillLocationElevations:
         location.refresh_from_db()
         assert location.elevation_m == 3329.0
 
-    def test_one_failure_does_not_abort_the_others(self) -> None:
-        """A single bad lookup must not cost the whole batch."""
+    def test_a_failure_backs_off_the_rest(self) -> None:
+        """A failed lookup is the upstream, so the tasks behind it wait.
+
+        Their rows stay candidates for the next run rather than each
+        failing in turn against a service that is down.
+        """
         LocationFactory.create(elevation_m=None, name="first")
         LocationFactory.create(elevation_m=None, name="second")
-        with patch(ELEVATION_FN, side_effect=[RuntimeError("boom"), 2000.0]):
+        with patch(ELEVATION_FN, side_effect=RuntimeError("boom")) as fetch:
             with pytest.raises(SystemExit):
-                call_command(COMMAND, "--commit", stdout=StringIO(), verbosity=0)
-        assert Location.objects.exclude(elevation_m__isnull=True).count() == 1
+                call_command(
+                    COMMAND, "--commit", "--delay", "0", stdout=StringIO(), verbosity=0
+                )
+        assert fetch.call_count == 1
+        assert backing_off(OPEN_METEO)
+        assert Location.objects.unresolved().count() == 2
+
+    def test_the_task_waits_for_its_slot(self) -> None:
+        """The pace is the gap each lookup waits for on Open-Meteo's slot."""
+        location = LocationFactory.create(elevation_m=None)
+        with (
+            patch(ELEVATION_FN, return_value=2000.0),
+            patch("apps.locations.services.elevation.wait_for_slot") as wait,
+        ):
+            assert fill_elevation_task.call(location.pk, 0.5) == 2000.0
+        wait.assert_called_once_with(OPEN_METEO, 0.5)
 
     def test_partial_batch_exits_non_zero(self) -> None:
         """cron and CI must see a partial run as bad, per the command contract."""

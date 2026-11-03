@@ -5,8 +5,28 @@ The walk itself — the record's shape, the stride, the outage rules — is
 ``track.slope_samples`` (SNOW-1316), pure of Django so the ingest service
 renders SAC's tours with the same code. This module is a route's half of
 it: ``build_slope_samples`` loads the grid from ``TERRAIN_TILE_BASE_URL``
-and walks, and the ``@task`` worker stores a route's result through
+and walks, and the ``@task`` workers store a route's result through
 ``store_terrain``, off the request cycle.
+
+Two workers walk a route, one per caller:
+
+  _worker_sample_route_slopes(route_pk)
+      An upload's, at the default priority: the owner is looking at a
+      flat line until it runs.
+
+  backfill_route_slopes_task(route_pk, delay_s)
+      ``backfill_route_slope_samples``' (SNOW-1398), one task per stale
+      route through ``apps.core.command_tasks.enqueue_each``, at
+      ``BULK_TASK_PRIORITY`` so an upload never waits behind a backfill.
+      It re-reads the row and returns when it is no longer stale, and
+      takes its turn on the tile origin with ``wait_for_slot`` — the same
+      ``TILE_ORIGIN`` slot the SAC tour render takes, so the two bulk runs
+      together never ask the origin faster than one of them would.
+
+No breaker is opened on an unanswered walk, unlike the tour render:
+``build_slope_samples`` answers None for a track too short to sample as
+well as for an outage, and a degenerate route that stays a candidate
+would otherwise close the origin for every task behind it, every night.
 """
 
 from __future__ import annotations
@@ -15,13 +35,25 @@ import logging
 from typing import Any
 
 from django.conf import settings
+from django.db.models import Q
 from django_tasks import task
 
+from apps.core.command_tasks import BULK_TASK_PRIORITY, calls_outside, wait_for_slot
 from apps.routes.models import Route
 from track.slope_samples import build_slope_samples as walk_slope_samples
 from track.terrain_grid import load_grid
 
 logger = logging.getLogger(__name__)
+
+# The shared name for the terrain tile origin, for wait_for_slot and the
+# breaker: every bulk task that asks it takes its turn under this one name.
+TILE_ORIGIN = "terrain-tiles"
+
+# A row whose terrain needs a walk: never sampled (null), or sampled before
+# SNOW-1043 added ``heights``, so it still draws the device's altimeter. A
+# record carrying the key is current even when the list holds nulls ("no
+# ground there" is an answer). Routes and trips share the rule.
+STALE_TERRAIN = Q(slope_samples__isnull=True) | ~Q(slope_samples__has_key="heights")
 
 
 def build_slope_samples(
@@ -79,11 +111,24 @@ def _worker_sample_route_slopes(route_pk: int) -> None:
         )
         return
 
+    _walk_and_store(route)
+
+
+def _walk_and_store(route: Route) -> str:
+    """Walk one route's terrain and store it; both workers' shared body.
+
+    Args:
+        route: The route, loaded.
+
+    Returns:
+        ``"sampled"``, or ``"unanswered"`` when the walk learned nothing.
+
+    """
     samples = build_slope_samples(route.points, f"route pk={route.pk}")
     if samples is None:
         # Left null on purpose: null is "never sampled", which is what a
         # run that learned nothing leaves true. See the module docstring.
-        return
+        return "unanswered"
 
     # SNOW-1309: the record and its render, written together. Imported
     # here: the render's builders import this module's stride walk.
@@ -97,6 +142,37 @@ def _worker_sample_route_slopes(route_pk: int) -> None:
         len(samples["segments"]),
         sum(1 for segment in samples["segments"] if "unknown" in segment),
     )
+    return "sampled"
+
+
+@task(priority=BULK_TASK_PRIORITY)
+def backfill_route_slopes_task(route_pk: int, delay_s: float = 0.0) -> str | None:
+    """Background worker: walk one stale route for the backfill (SNOW-1398).
+
+    Re-reads the row through ``STALE_TERRAIN``, so a duplicate enqueue, a
+    route the upload worker reached first, or one deleted since, is a
+    no-op. ``store_terrain`` writes the record and its render in one
+    UPDATE.
+
+    Args:
+        route_pk: Primary key of the ``Route`` to sample.
+        delay_s: Seconds between one walk's start and the next.
+
+    Returns:
+        ``"sampled"`` or ``"unanswered"``, kept on the task result, or None
+        when the route no longer needed a walk.
+
+    """
+    route = Route.objects.filter(STALE_TERRAIN, pk=route_pk).first()
+    if route is None:
+        logger.info("route pk=%s needs no walk; skipping backfill task", route_pk)
+        return None
+    wait_for_slot(TILE_ORIGIN, delay_s)
+    return _walk_and_store(route)
+
+
+# Each task asks the tile origin, so enqueue_each refuses it unpaced.
+calls_outside(backfill_route_slopes_task)
 
 
 def enqueue_route_slope_sampling(route: Route) -> None:
