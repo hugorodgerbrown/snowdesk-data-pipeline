@@ -15,7 +15,7 @@ running build ships, split by audience, ranked in process.** SNOW-1393.
 * The public server (`/api/mcp/`) reads `public_corpus()`: the `/help/`
   topics, the bulletin guide and the explainers — what a rider is already
   shown. The staff ops server reads `ops_corpus()`: that, plus every
-  living doc, decision record, runbook and `CLAUDE.md`.
+  living doc, decision record, runbook and `AGENTS.md`.
 * Both are built from files on disk once per process. Nothing is copied
   into a table, an index file or a vector store.
 * Search is BM25 over headed sections in pure Python. There are no

@@ -54,8 +54,9 @@ and only then post **the review request** from `docs/linear-workflow.md` →
 "The review request", verbatim, as a new comment. Requesting the review
 first would start Codex on a ticket with no scope to review. **Never set a
 delegate**: delegating an issue tells Codex to implement it. Every scoped
-ticket goes through Codex's one review — there is no direct route to
-`Ready for dev`.
+ticket of size S and above, or unsized, goes through Codex's one review. An XS
+ticket with no open questions goes straight to `Ready for dev`; with any, to
+`Requires input`.
 
 Before creating anything, apply `scope`'s Step 1b to the idea itself. If it
 duplicates an open ticket, is already done or rests on a premise the code no

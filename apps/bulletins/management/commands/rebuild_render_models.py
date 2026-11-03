@@ -11,7 +11,7 @@ for it (``SourceBulletin``, SNOW-1337), writes it with the
 recomputes the RegionDayRating of every (region, day) it governs, in one
 transaction (pass ``--skip-day-ratings`` to suppress the recompute).
 
-**SNOW-1346: the command enqueues, the task runner works** (CLAUDE.md
+**SNOW-1346: the command enqueues, the task runner works** (AGENTS.md
 command rule 7). Walking every bulletin in one process held a shell for as
 long as the archive took; now ``--commit`` returns in seconds on a queued
 backend (``DatabaseBackend`` + ``db_worker`` in production), and the tasks

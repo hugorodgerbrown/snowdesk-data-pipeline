@@ -188,7 +188,7 @@ class Command(RegisteredCommand):
         self._report_outcome(counts, commit=commit, verbosity=verbosity)
 
         # Non-zero on ANY failure, partial batches included — the command
-        # contract in CLAUDE.md. One unwritable resort never aborts the
+        # contract in AGENTS.md. One unwritable resort never aborts the
         # walk, but the operator must not read a half-linked estate as a
         # clean run.
         if counts["failed"] > 0:

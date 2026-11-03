@@ -5,7 +5,7 @@ rules:
     message: >
       Call factories with the explicit classmethod — SomeFactory.create(...)
       (or .build() / .create_batch()) — never the bare SomeFactory(...) form.
-      See CLAUDE.md "Testing".
+      See AGENTS.md "Testing".
     paths:
       include:
         - tests/

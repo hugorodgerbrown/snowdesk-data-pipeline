@@ -5,7 +5,7 @@ Add ``Resort.slug`` (SNOW-796) — nullable, so the column lands on a
 populated table without a value this migration would have to invent.
 ``backfill_resort_slugs --commit`` fills it, and a later migration tightens
 the column to ``null=False`` once every environment has run that command.
-No data is written here (CLAUDE.md: no bulk data updates in migrations).
+No data is written here (AGENTS.md: no bulk data updates in migrations).
 """
 
 from django.db import migrations, models

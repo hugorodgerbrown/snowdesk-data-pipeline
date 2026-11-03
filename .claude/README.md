@@ -61,7 +61,7 @@ commands and skills are now a unified mechanism, and the one command,
   procedure for making a ticket and is now simply `create-ticket`. If a skill
   earns its keep, it is because Claude *does* something with it — name the
   act. Genuine background knowledge that isn't an action belongs in
-  `CLAUDE.md` or `docs/`, not in a skill with a noun for a name.
+  `AGENTS.md` or `docs/`, not in a skill with a noun for a name.
 - **Agents are agent-nouns naming the role** (`scoper`, `implementer`,
   `reviewer`, `code-auditor`, `security-auditor`). Where an agent is the sole
   worker for a skill, the pair should read as verb → actor on the same
@@ -329,7 +329,7 @@ local server also *shadows* the connector of the same name — that is what
 authentication" forever while the connectors worked and stayed invisible.
 Remote access already works via the connectors. An API key must never be
 committed here, including through `${VAR}` interpolation — see invariant 5 in
-[`CLAUDE.md`](../CLAUDE.md).
+[`AGENTS.md`](../AGENTS.md).
 
 ### Where the Bash grants live
 
@@ -404,8 +404,9 @@ where nobody can answer the prompt.
 - **Autonomous merging or releasing.** `merge-prs` and `release` both exist,
   but both carry `disable-model-invocation: true` — you start them, never
   Claude.
-- **Workflow logic in CLAUDE.md.** CLAUDE.md is reserved for taste (code
-  style, conventions) and project facts. Workflow lives in the skills.
+- **Workflow procedures in AGENTS.md or CLAUDE.md.** Those files state rules:
+  conventions, project facts and the workflow's rules. Procedures live in the
+  skills.
 
 ## Iterating
 

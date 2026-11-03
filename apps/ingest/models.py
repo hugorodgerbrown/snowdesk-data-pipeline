@@ -36,7 +36,7 @@ Eight models:
 **Not a ``BaseModel``.** ``apps/ingest`` imports no other ``apps.*`` package
 (``docs/decisions/ingestion-is-a-rehostable-unit.md``), so the id, uuid and
 timestamps ``BaseModel`` would give are declared here, with the same types
-and defaults. The rest of the model kit is as CLAUDE.md asks: an admin
+and defaults. The rest of the model kit is as AGENTS.md asks: an admin
 class, ``to_string()``, ``Meta.ordering`` and a custom queryset.
 
 **``updated_at`` moves only when the content does.** ``store_bulletin``

@@ -181,7 +181,7 @@ def read_doc(corpus: Corpus, arguments: dict[str, Any]) -> dict[str, Any]:
         "truncated": truncated,
     }
     if truncated:
-        # A single section can outrun the limit (CLAUDE.md's routing
+        # A single section can outrun the limit (docs/README.md's
         # table does), so "read by section" alone cannot reach the rest:
         # the offset always can.
         result["next_offset"] = end

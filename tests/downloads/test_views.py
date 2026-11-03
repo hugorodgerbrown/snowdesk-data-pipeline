@@ -28,7 +28,7 @@ Covers:
                 shape, including that no byte count or band is exposed;
                 served without an HX-Request header.
 
-Scoped to the Django test client throughout — per CLAUDE.md's layer rules
+Scoped to the Django test client throughout — per AGENTS.md's layer rules
 there is nothing browser-shaped here, and a 403 needs no browser.
 """
 

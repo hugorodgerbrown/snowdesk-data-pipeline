@@ -13,7 +13,7 @@ default in the migration STATE (so ``makemigrations --check`` is quiet)
 while the DATABASE gets a plain nullable column — existing rows land as
 NULL, and ``backfill_location_short_ids --commit`` mints each one its own
 id. A later migration tightens the column to ``null=False`` once every
-environment has run that command. No data is written here (CLAUDE.md: no
+environment has run that command. No data is written here (AGENTS.md: no
 bulk data updates in migrations).
 """
 

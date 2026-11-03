@@ -123,8 +123,9 @@ class TestReadDoc:
         assert _call("read_doc", {"doc": doc})["isError"] is True
 
     def test_public_cannot_read_a_builders_doc(self) -> None:
-        """The split holds: CLAUDE.md and decisions are ops only."""
+        """The split holds: the rulebook and decisions are ops only."""
         for doc in (
+            "AGENTS",
             "CLAUDE",
             "docs/decisions/the-sheet-is-the-page",
             "docs/runbooks/reset-live-db",
@@ -165,10 +166,10 @@ class TestReadDoc:
         assert result["isError"] is True
 
     def test_the_real_routing_table_is_reachable(self) -> None:
-        """CLAUDE.md's longest section reads to its end by offset."""
+        """The index's table reads to its end by offset."""
         arguments: dict[str, Any] = {
-            "doc": "CLAUDE",
-            "section": "Feature-specific reference",
+            "doc": "docs/README",
+            "section": "Documentation index",
         }
         pages = []
         while True:

@@ -106,7 +106,7 @@ a `DEBUG` check, so they exist in production and must stay staff-only.
 
 Fragment endpoints return an inner HTML snippet, not a full page, and are
 guarded by `require_htmx` (a plain HTTP request gets a 400 — invariant 4 in
-[`CLAUDE.md`](../CLAUDE.md)). They live under a `partials/` prefix:
+[`AGENTS.md`](../AGENTS.md)). They live under a `partials/` prefix:
 
 - `/partials/season/<region_id>/` — season calendar ([`docs/calendar.md`](calendar.md))
 - `/partials/region-sheet/<region_id>/` — the phone region sheet's body, opened by any region selection on a phone (SNOW-1098, `apps/public/region_sheet.py`)

@@ -6,7 +6,7 @@ resolves ``Location.elevation_m`` from each location's coordinate.
 
 The command exists because ``Location.objects.unresolved()`` was written for
 this pass and never had one, so every imported location sat at a null
-elevation. These tests are the CLAUDE.md command contract — nothing written
+elevation. These tests are the AGENTS.md command contract — nothing written
 without ``--commit``, the walk is idempotent, a partial batch exits non-zero
 — plus the ``--report`` comparison, which is the ticket's own check on
 whether a curated coordinate is pinned where its note claims. Since

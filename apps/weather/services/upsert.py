@@ -13,7 +13,7 @@ rule is not "write the row"; it is "a day's account stands once the day is
 over". That is a domain rule with one correct answer, and the three
 behaviours it has to distinguish — create, refine, refuse — are not visible
 in an ``update_or_create`` call. Business logic belongs in ``services/``
-(CLAUDE.md); this is that logic.
+(AGENTS.md); this is that logic.
 
 **It raises rather than skipping.** The bug this model replaces (SNOW-628)
 wrote zero rows for months without anyone noticing, because the write path

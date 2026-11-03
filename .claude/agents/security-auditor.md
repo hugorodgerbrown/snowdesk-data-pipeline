@@ -267,7 +267,7 @@ Snowdesk uses HTMX heavily — fragment templates live under
 `apps/<app>/templates/<app>/partials/` (`public`, `accounts`,
 `favourites`, `observations`, `routes`, `trips`), fragment routes carry
 a `partials/` prefix in each app's `urls.py`, and every fragment view
-is guarded by `require_htmx` (invariant 4 in `CLAUDE.md`). Audit:
+is guarded by `require_htmx` (invariant 4 in `AGENTS.md`). Audit:
 
 ```bash
 grep -rEn --include='*.html' '(hx-post|hx-put|hx-delete|hx-patch|hx-vals|hx-headers|hx-include|hx-swap-oob|hx-trigger)' templates/ apps/ 2>/dev/null | head -100

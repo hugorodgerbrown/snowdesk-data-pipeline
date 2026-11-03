@@ -8,7 +8,7 @@ COLUMNS ONLY. NO BACKFILL HERE, AND THAT IS NOT BECAUSE ONE IS IMPOSSIBLE.
 Unlike migration 0003's timing, every existing row CAN be sampled — the
 stored ``points`` are all the walk needs. But sampling one route is
 roughly one HTTP request per terrain tile it crosses, against an origin
-outside this process, and CLAUDE.md forbids bulk dataset updates in a
+outside this process, and AGENTS.md forbids bulk dataset updates in a
 migration for exactly that reason: a deploy's ``migrate`` step would sit
 on the table making network calls. ``backfill_route_slope_samples`` is the
 ``--commit``-gated command that does it afterwards, on an operator's

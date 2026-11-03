@@ -27,7 +27,7 @@ be null, and a trip may outlive the route it came from; copying a record
 belonging to a different track would paint one track's steepness onto
 another's, which is the failure this whole feature exists to prevent.
 
-**Not a data migration.** CLAUDE.md forbids bulk dataset updates in
+**Not a data migration.** AGENTS.md forbids bulk dataset updates in
 migrations, and the fallback path makes outbound requests besides.
 Migration ``0003`` adds the column and nothing else.
 

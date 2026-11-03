@@ -237,7 +237,9 @@ class TestRealCorpora:
         public = docs_corpus.public_corpus()
         ops = docs_corpus.ops_corpus()
         assert set(public.docs) < set(ops.docs)
+        assert "AGENTS" in ops.docs
         assert "CLAUDE" in ops.docs
+        assert ops.docs["AGENTS"].kind == "rulebook"
         assert "apps/bulletins/CLAUDE" in ops.docs
         assert ops.docs["docs/decisions/the-sheet-is-the-page"].kind == "decision"
         assert ops.docs["docs/runbooks/reset-live-db"].kind == "runbook"

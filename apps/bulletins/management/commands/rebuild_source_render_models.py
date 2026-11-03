@@ -10,7 +10,7 @@ rule change bumps ``DAY_RATING_VERSION``, the stored values are stale: a
 bulletin is rebuilt when it is next fetched, but the history is not, so
 this command rebuilds it.
 
-**SNOW-1346: the command enqueues, the task runner works** (CLAUDE.md
+**SNOW-1346: the command enqueues, the task runner works** (AGENTS.md
 command rule 7). Two walks, each enqueuing one task per row at priority
 -50 (``apps.bulletins.services.render_rebuild``):
 

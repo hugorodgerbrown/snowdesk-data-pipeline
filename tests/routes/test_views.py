@@ -31,7 +31,7 @@ Covers:
                  pending FEATURE carrying token + pending and NO uuid; and
                  the headers unchanged.
 
-Scoped to the Django test client throughout — per CLAUDE.md's layer rules
+Scoped to the Django test client throughout — per AGENTS.md's layer rules
 there is nothing browser-shaped in this ticket, and a 404 needs no browser.
 """
 

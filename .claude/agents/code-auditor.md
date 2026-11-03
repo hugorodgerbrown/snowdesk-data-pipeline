@@ -42,7 +42,7 @@ open, what's carried forward under "watching").
   `analytics`, `mcp_server`, `oauth`, `public`. The `--cov` list in
   `tox.ini`'s `[testenv:test]` is enumerated by hand; an app missing from
   it is unmeasured, so cross-check it against `ls apps/` (item 16).
-- **Conventions are in `CLAUDE.md`** — read it. The invariants, model kit,
+- **Conventions are in `AGENTS.md`** — read it. The invariants, model kit,
   management-command contract, and design-system rules there are the
   yardstick you measure drift against.
 - **`uv` is at `~/.local/bin`** — prefix Bash calls with
@@ -113,7 +113,7 @@ exercise. Ground every finding with a file path (and line where it helps).
     `--dry-run` ones prompt or accept `--no-input`), respects `--verbosity`,
     exits non-zero on failure (incl. partial-batch `records_failed > 0`).
     Enumerate commands and note any that violate the contract.
-12. **Project invariants** (from `CLAUDE.md`) — `mark_safe` never on
+12. **Project invariants** (from `AGENTS.md`) — `mark_safe` never on
     user-supplied content; emails lowercased at every entry point; subscription
     emails always async (`@task` + `.enqueue()`, no synchronous `send_mail`
     on the request path); `@require_htmx` on every partial; no secrets in

@@ -1,7 +1,7 @@
 """
 tests/weather/management/test_backfill_weather.py — Tests for backfill_weather.
 
-Covers the command contract from CLAUDE.md's management-command rules: it
+Covers the command contract from AGENTS.md's management-command rules: it
 runs with no arguments, it writes (and asks) nothing without ``--commit``,
 it prints a countdown, and it exits non-zero when any unit failed. Since
 SNOW-1399 it plans and enqueues one task per station-block; the tasks run

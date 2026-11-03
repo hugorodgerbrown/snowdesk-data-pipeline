@@ -116,7 +116,7 @@ def test_mcp_runnable_commands_are_pinned() -> None:
     """Offering a command to the ops MCP server's run_command is deliberate.
 
     Each one runs on the task worker that also sends email, so it must
-    finish in minutes (a long job enqueues a task per row, CLAUDE.md rule
+    finish in minutes (a long job enqueues a task per row, AGENTS.md rule
     7). Adding one is an edit here, which is a reviewer's prompt to ask.
     """
     runnable = sorted(

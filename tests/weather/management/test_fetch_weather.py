@@ -1,7 +1,7 @@
 """
 tests/weather/management/test_fetch_weather.py — Tests for the fetch_weather command.
 
-Covers the command contract from CLAUDE.md's management-command rules: it
+Covers the command contract from AGENTS.md's management-command rules: it
 runs with no arguments, it writes nothing (and asks nothing) without
 ``--commit``, it streams rather than materialising, and it exits non-zero
 when any location failed. Since SNOW-1399 it enqueues one task per station;

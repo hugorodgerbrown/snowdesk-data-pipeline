@@ -169,7 +169,7 @@ class Command(RegisteredCommand):
         if not commit:
             self.stdout.write("Dry-run (no --commit) — nothing written.")
         # A partially failed batch exits non-zero so cron and CI can see it,
-        # per CLAUDE.md's management-command contract. Only an inline
+        # per AGENTS.md's management-command contract. Only an inline
         # backend reports one here; a queued task reports its own.
         if counts.failed:
             raise SystemExit(1)

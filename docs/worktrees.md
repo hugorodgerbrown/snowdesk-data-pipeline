@@ -154,7 +154,7 @@ missing CSS.
 
 To rebuild after editing `src/css/main.css`, either re-run the command above
 or use the Tailwind watcher under "Running locally" in
-[`CLAUDE.md`](../CLAUDE.md).
+[`AGENTS.md`](../AGENTS.md).
 
 ## Dev shell-cache bypass
 

@@ -1,9 +1,9 @@
 ---
 name: implement
 description: |
-  Take a scoped Linear ticket from Ready-for-dev through to an open PR in one
+  Take a scoped Linear ticket from Ready-for-dev through to a merged PR in one
   flow: create the branch, plan, wait for plan approval, implement + review,
-  push, and open the PR. Use when the user says "implement SNOW-NN", "implement
+  push, open the PR, and merge once CI and Codex are clean. Use when the user says "implement SNOW-NN", "implement
   this", "go on SNOW-NN", or just "implement" / "go" / "continue" when a
   feature branch is already checked out. Do NOT use for: scoping a ticket
   (`scope` skill), ad-hoc edits unrelated to a ticket, or any message without
@@ -311,9 +311,9 @@ Produce:
   - **Why** — link to the Linear ticket, brief context
   - **How** — bullet list of the main changes
   - **Testing** — what tests cover this, anything to verify manually
-  - **Agreed scope** — the scope Codex reviewed, so its PR review can check
-    the diff against it without reaching Linear (`AGENTS.md` → "Review
-    guidelines"). Copy the scoping comment as it now stands **verbatim** —
+  - **Agreed scope** — the ticket's scope, so Codex's PR review can check
+    the diff against it without reaching Linear (`AGENTS.md` → "Code Review
+    Rules"). Copy the scoping comment as it now stands **verbatim** —
     Approach, Touch
     list, Tests, Open questions — under a `## Agreed scope` heading. Under
     it, link the Linear comment it came from, and copy the Notes from
@@ -363,6 +363,12 @@ gh pr checks <pr-number> --watch
 If the reviewer left non-blocking suggestions earlier, list them here so the
 user can decide whether to address them in a follow-up.
 
-Once CI is green, stop. The user takes it from here — review, merge. Linear's
-GitHub integration will auto-transition to Done on merge if the
-`Closes SNOW-NN` line is in the PR body.
+## Step 7 — Merge
+
+The PR needs no human approval. Squash-merge it once every required check is
+green and Codex's one PR review has arrived and is resolved: a 👍, or each
+comment verified, fixed or answered, and resolved. Green CI alone is not enough,
+and `gh pr merge --auto` merges before Codex has reported, so do not use it.
+Stop before merging only if the user added a pause directive. Linear's GitHub
+integration moves the ticket to Done if the `Closes SNOW-NN` line is in the PR
+body.

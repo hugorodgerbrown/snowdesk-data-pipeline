@@ -118,7 +118,7 @@ is the map's own zoom-in.
 ## 3. The four kinds of overlay
 
 Every surface over the map is one of four kinds, and the kind decides how it
-opens, closes and coexists (CLAUDE.md, design-system rule 6).
+opens, closes and coexists (AGENTS.md, design-system rule 6).
 
 | Kind | Examples | Opened by | Phone shape | Closed by |
 |---|---|---|---|---|

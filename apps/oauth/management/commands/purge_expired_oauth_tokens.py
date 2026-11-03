@@ -85,7 +85,7 @@ class Command(RegisteredCommand):
     def handle(self, *args: Any, **options: Any) -> None:
         """Report, and with --commit clear, the expired rows.
 
-        Exempt from row-by-row streaming (CLAUDE.md management-command rule
+        Exempt from row-by-row streaming (AGENTS.md management-command rule
         5): the toolkit deletes in batches of its own, with no per-row work
         to show a countdown for.
 

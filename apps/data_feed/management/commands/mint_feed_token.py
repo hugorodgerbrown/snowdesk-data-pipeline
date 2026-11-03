@@ -104,7 +104,7 @@ class Command(RegisteredCommand):
     def handle(self, *args: Any, **options: Any) -> None:
         """Validate the client, then mint (or with no --commit, describe) a token.
 
-        Exempt from row-by-row streaming (CLAUDE.md management-command rule
+        Exempt from row-by-row streaming (AGENTS.md management-command rule
         5): it writes one row and walks none.
 
         Args:

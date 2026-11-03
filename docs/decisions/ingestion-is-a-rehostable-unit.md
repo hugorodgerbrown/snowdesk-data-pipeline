@@ -7,6 +7,9 @@ last-reviewed: 2026-10-28
 
 # Ingestion is a rehostable unit
 
+**Status, 3 November 2026.** No extraction is planned. The boundary stays as a
+design discipline, so that one remains possible (Hugo).
+
 **Decision.** Fetching the providers' data, normalising it and serving it is
 one package, `apps/ingest`, that imports nothing from any other `apps.*`
 package (SNOW-1247). The rest of Snowdesk reaches it only through

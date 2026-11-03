@@ -12,7 +12,8 @@ corpora, one engine, split by who is asking:
   Served at ``POST /api/mcp/``.
 * :func:`ops_corpus` — the public corpus plus everything written for the
   people building the app: every ``docs/**/*.md`` outside the dated
-  artefact folders, the root ``CLAUDE.md`` and each app's ``CLAUDE.md``.
+  artefact folders, the root ``AGENTS.md`` and ``CLAUDE.md`` and each app's
+  ``CLAUDE.md``.
   Served at the staff-only ``POST /api/ops/mcp/``.
 
 Both are read from the files the running build ships, once per process, so
@@ -44,7 +45,7 @@ from django.utils import translation
 logger = logging.getLogger(__name__)
 
 #: ``docs/`` subfolders holding dated artefacts rather than living
-#: documentation — the same four ``bin/docs-lint`` exempts (CLAUDE.md).
+#: documentation — the same four ``bin/docs-lint`` exempts (AGENTS.md).
 DATED_FOLDERS = frozenset({"code-reviews", "page-audits", "qa", "research"})
 
 #: Help topics gated on a waffle flag. The help page renders them only for a
@@ -608,8 +609,8 @@ def _public_docs(root: Path) -> list[Doc]:
 def _kind_of(path: Path, root: Path) -> str:
     """Name the kind of an ops Markdown file from where it lives."""
     parts = path.relative_to(root).parts
-    if path.name == "CLAUDE.md":
-        return "claude-md"
+    if path.name in {"AGENTS.md", "CLAUDE.md"}:
+        return "rulebook"
     if len(parts) > 2 and parts[1] in {"decisions", "runbooks"}:
         return parts[1].rstrip("s")
     return "doc"
@@ -617,6 +618,7 @@ def _kind_of(path: Path, root: Path) -> str:
 
 def _ops_paths(root: Path) -> Iterator[Path]:
     """Every Markdown file the ops corpus holds, in a stable order."""
+    yield root / "AGENTS.md"
     yield root / "CLAUDE.md"
     yield from sorted((root / "apps").glob("*/CLAUDE.md"))
     for path in sorted((root / "docs").rglob("*.md")):

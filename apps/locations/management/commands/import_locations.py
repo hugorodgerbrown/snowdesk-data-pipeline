@@ -40,7 +40,7 @@ Like ``import_resorts``, this is deliberately **not** wired into
 ``build.sh``: location rows are editable data owned by each environment's
 database, and a deploy that re-imported them would discard admin edits.
 
-Safe-by-default (CLAUDE.md Option A): read-only unless ``--commit`` is
+Safe-by-default (AGENTS.md Option A): read-only unless ``--commit`` is
 passed. A bare invocation prints the diff and exits 0.
 
 Usage:

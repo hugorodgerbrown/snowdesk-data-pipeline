@@ -6,7 +6,7 @@
 # are scoped to this workflow. SNOW-495 adds this harness alongside the
 # existing Playwright suite (tests/e2e/) — see docs/client-side-tests.md for
 # when to reach for which. Not yet registered as a required status check in
-# any ruleset (see the "CI enforced via rulesets" note in CLAUDE.md) — that
+# any ruleset (see the "CI enforced via rulesets" note in AGENTS.md) — that
 # is a deliberate follow-up, not an oversight.
 #
 # The ``pull_request`` trigger has no path filter, mirroring e2e.yml's

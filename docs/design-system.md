@@ -235,7 +235,7 @@ how it *behaves* — where a control goes and what shape it takes. They are
 constraints in the same way, and for the same reason: a user who has
 learned one surface should not have to relearn the next.
 
-Unlike the three numbered rules in CLAUDE.md's design-system section, these
+Unlike the three numbered rules in AGENTS.md's design-system section, these
 have **no linter behind them**. `ds-lint` cannot count a row's calls to
 action or judge whether a menu is in the expected order. They hold because
 a reviewer holds them.
@@ -333,7 +333,7 @@ only: [`docs/decisions/sheet-detents-are-phone-only.md`](decisions/sheet-detents
 Tokens are only half the system. The other half is the set of partials and
 template tags that own a *shape*, so the same card, button or page title is not
 re-typed as a utility string in the next template. The rules and the guards
-that enforce them live in `CLAUDE.md` ("Design system"); this section records
+that enforce them live in `AGENTS.md` ("Design system"); this section records
 what the layer is for and where its edges are.
 
 **Reuse first, extract second, inline never.** The registry in

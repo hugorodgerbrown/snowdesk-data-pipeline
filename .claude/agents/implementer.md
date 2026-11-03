@@ -80,14 +80,14 @@ uv run tox -e fmt
 
 All three must pass. If they don't, fix before reporting. (`tox -e test` is
 the full suite with the 90% coverage gate; the tox envs install from
-`uv.lock`, which is why CLAUDE.md says to run the suite through tox rather
+`uv.lock`, which is why AGENTS.md says to run the suite through tox rather
 than a bare `uv run pytest`.)
 
 If you edited any JavaScript, the Vitest env is in the default envlist, so
 `uv run tox -e js` runs it locally (fast, deterministic) — use it to check
 JS changes as you go. Client-side behaviour that jsdom can observe is tested
 in `tests/js/`, not `tests/e2e/` (see "Which layer does a test belong in?"
-in CLAUDE.md).
+in AGENTS.md).
 
 **Do not run the slow suites in the loop.** `tox -e e2e` (Playwright) and
 `npm run lh` (Lighthouse) are delegated to CI — they run as required checks

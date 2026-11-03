@@ -10,7 +10,7 @@
 # to 110 tests on 2026-07-22; sixteen days later it was 280 tests across
 # 18,309 lines, because every UI ticket dutifully bundled a browser test
 # and no check ever said stop. This is that check (SNOW-649). Conventions
-# in CLAUDE.md did not hold the line; a failing build does.
+# in AGENTS.md did not hold the line; a failing build does.
 #
 # Three invariants:
 #

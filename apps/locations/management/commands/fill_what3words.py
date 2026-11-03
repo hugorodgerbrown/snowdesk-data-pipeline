@@ -197,7 +197,7 @@ class Command(RegisteredCommand):
                 )
 
         # Non-zero on ANY failure, partial batches included — the command
-        # contract in CLAUDE.md. Only an inline backend reports one here; a
+        # contract in AGENTS.md. Only an inline backend reports one here; a
         # queued task reports its own on the task result.
         if counts.failed:
             raise CommandError(

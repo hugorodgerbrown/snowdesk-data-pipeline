@@ -18,7 +18,7 @@ below (read-only by default; opt in to writes with `--commit`).
 These rules apply to **every** new or refactored management command.
 Existing commands that pre-date these rules are being migrated; don't
 copy their old shape when adding new ones. (The headline rules are
-summarised in CLAUDE.md; this is the full contract. Rationale:
+summarised in AGENTS.md; this is the full contract. Rationale:
 [`dry-run-default-commands`](decisions/dry-run-default-commands.md).)
 
 1. **Sensible defaults — runs with no arguments.** The bare invocation
@@ -1569,7 +1569,7 @@ These are not scheduled. Reach for them after a code change or data
 incident that invalidates derived state:
 
 - `rebuild_render_models --commit` — after bumping `RENDER_MODEL_VERSION`.
-  Enqueues one task per stale `Bulletin` (CLAUDE.md command rule 7, SNOW-1346); each task
+  Enqueues one task per stale `Bulletin` (AGENTS.md command rule 7, SNOW-1346); each task
   re-derives its render model and recomputes its day ratings. The bump's
   commit carries a `Deploy-Step: rebuild_render_models --commit` trailer:
   since SNOW-1342 no request rebuilds a stale model, so until this runs a
@@ -1581,7 +1581,7 @@ incident that invalidates derived state:
   (`SourceDayRating`, SNOW-1270). Run on production after a
   `RENDER_MODEL_VERSION` or `DAY_RATING_VERSION` bump, and once when
   SNOW-1270 first deploys: rows stored before it carry no model, no index
-  and no ratings. Like its sibling it only enqueues (CLAUDE.md command rule 7, SNOW-1346):
+  and no ratings. Like its sibling it only enqueues (AGENTS.md command rule 7, SNOW-1346):
   one task per stale `SourceBulletin`, one per stale `SourceDayRating`.
   Their order is convention, not a dependency
   ([why](decisions/day-ratings-are-recomputed-inside-each-rebuild-task.md)).
@@ -1828,7 +1828,7 @@ uv run python manage.py fetch_bulletins --source slf \
 #   Incremental additions handled by: fetch_bulletins --source albina --stash
 
 # Rebuild the render model on stale bulletins (render_model_version < RENDER_MODEL_VERSION).
-# CLAUDE.md command rule 7 (SNOW-1346): --commit only ENQUEUES one rebuild_bulletin_task per
+# AGENTS.md command rule 7 (SNOW-1346): --commit only ENQUEUES one rebuild_bulletin_task per
 # bulletin, at priority -50, and returns; each task re-checks its row (a
 # current one is skipped, so a duplicate enqueue is a no-op), rebuilds the
 # model and danger_levels from the service's stored CAAML, and recomputes RegionDayRating for

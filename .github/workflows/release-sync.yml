@@ -13,7 +13,7 @@
 # what gates a release. Enumerating the contexts here would duplicate that
 # list and silently rot the day someone edits the ruleset — and waiting on
 # *all* check runs instead would block on this very job, and on non-gating
-# ones like `Dependency audit (dev + npm)`, which CLAUDE.md marks
+# ones like `Dependency audit (dev + npm)`, which AGENTS.md marks
 # detection-only.
 #
 # Merge method does not matter. Squash and merge-commit both leave the bump

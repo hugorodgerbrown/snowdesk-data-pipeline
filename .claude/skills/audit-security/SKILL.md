@@ -66,7 +66,7 @@ surface pre-loaded, so you don't have to describe the stack each time.
 3. After the auditor completes, summarise:
    - Count of Critical / High / Medium / Low findings
    - Top 3 issues with one-line descriptions
-   - Whether any of the `## Invariants` in [CLAUDE.md](../../../CLAUDE.md)
+   - Whether any of the `## Invariants` in [AGENTS.md](../../../AGENTS.md)
      are violated
 
 4. Ask the user if they want to create Linear tickets for any Critical or
