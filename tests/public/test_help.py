@@ -42,6 +42,8 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from waffle.testutils import override_flag
 
+from tests.factories import UserFactory
+
 # `client` is pytest-django's built-in fixture (an anonymous ``Client()``);
 # no local override needed.
 
@@ -306,6 +308,36 @@ class TestHelpPageFlagGating:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-topic-what3words"' in response.content
         assert b"help-what3words-fallback" in response.content
+
+    def test_map_modes_panel_absent_by_default(self, client: Client) -> None:
+        """SNOW-1394: no documentation for a toggle the map does not show."""
+        response = client.get(reverse("public:help"))
+        assert b'data-testid="help-topic-map-modes"' not in response.content
+
+    def test_map_modes_panel_absent_signed_out_even_with_the_flag(
+        self, client: Client
+    ) -> None:
+        """The toggle needs an account during the rollout, so its topic does."""
+        with override_flag("map_modes", active=True):
+            response = client.get(reverse("public:help"))
+        assert b'data-testid="help-topic-map-modes"' not in response.content
+
+    def test_map_modes_panel_present_behind_the_flag(self, client: Client) -> None:
+        """Signed in with the flag, the topic answers "what does the date /
+        terrain toggle do": what Terrain takes away, what it keeps, the way
+        back.
+        """
+        client.force_login(UserFactory.create())
+        with override_flag("map_modes", active=True):
+            content = client.get(reverse("public:help")).content.decode()
+        assert _details_id_of(content, "help-topic-map-modes") == "help-topic-map-modes"
+        for testid in (
+            "help-map-modes-two",
+            "help-map-modes-terrain",
+            "help-map-modes-kept",
+            "help-map-modes-back",
+        ):
+            assert f'data-testid="{testid}"' in content
 
     def test_downloads_account_paragraphs_are_always_present(
         self, client: Client

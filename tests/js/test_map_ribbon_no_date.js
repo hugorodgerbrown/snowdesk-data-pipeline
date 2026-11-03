@@ -151,6 +151,25 @@ describe('#map-date-ribbon with no ?d=', () => {
     expect(ribbon.textContent).toBe('No date selected');
   });
 
+  it('says "Today" on today when the Dated / Terrain toggle renders (SNOW-1394)', async () => {
+    // With the toggle the separate "Today" button goes, so the date says it.
+    withScrubberToday(TODAY);
+    document.getElementById('map-date-ribbon').dataset.todayLabel = 'Today';
+
+    await loadRibbon('/');
+
+    expect(document.getElementById('map-date-ribbon').textContent).toBe('Today');
+  });
+
+  it('still names any other day by its date with the toggle', async () => {
+    withScrubberToday(TODAY);
+    document.getElementById('map-date-ribbon').dataset.todayLabel = 'Today';
+
+    await loadRibbon(`/?d=${DATED}`);
+
+    expect(document.getElementById('map-date-ribbon').textContent).toBe(`formatted:${DATED}`);
+  });
+
   it('shows the date a ?d= asked for', async () => {
     await loadRibbon(`/?d=${DATED}`);
 

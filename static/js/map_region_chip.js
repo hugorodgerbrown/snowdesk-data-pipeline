@@ -63,6 +63,13 @@
 
   /** Read the map and redraw the chip. */
   const update = () => {
+    // SNOW-1394: Terrain mode holds the regions with the bulletins, so the
+    // chip — a region and its level — has nothing to name.
+    if (window.pwaMapMode && window.pwaMapMode.isTerrain()) {
+      chip.hidden = true;
+      shownRegion = null;
+      return;
+    }
     const feature = regionAtCentre();
     const props = (feature && feature.properties) || {};
     const state = core.chipState({
@@ -108,6 +115,7 @@
     'snowdesk:date-changed',
     'snowdesk:problem-terrain-changed',
     'snowdesk:terrain-filter-changed',
+    'snowdesk:map-mode-changed',
   ]) {
     document.addEventListener(name, update);
   }

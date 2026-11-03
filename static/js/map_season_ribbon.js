@@ -235,8 +235,13 @@
     // still has to read as a state rather than as a fault.
     if (dateRibbonEl) {
       dateRibbonEl.hidden = false;
+      // SNOW-1394: with the Dated / Terrain toggle the separate "Today"
+      // button goes, and the date says "Today" itself on today — the
+      // template carries the word only when the toggle renders.
+      const todayLabel = dateRibbonEl.dataset.todayLabel;
+      const todayKey = document.getElementById('season-scrubber')?.dataset.today;
       dateRibbonEl.textContent = dateKey
-        ? formatDatePopup(dateKey)
+        ? (todayLabel && dateKey === todayKey ? todayLabel : formatDatePopup(dateKey))
         : MAP_STRINGS['map-date-none'];
     }
     if (!readoutEl) return;

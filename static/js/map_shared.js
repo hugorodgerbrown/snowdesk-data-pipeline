@@ -101,8 +101,19 @@ const readDisplayDate = () => readUrlDateParam() || readTodayDateParam();
 //     down the running timer mid-season. The intermediate frames are also
 //     not days anyone asked to keep: the day that matters is the one
 //     playback leaves on screen.
+//
+// SNOW-1394: the map's mode (``?mode=terrain``) is the one other parameter a
+// date write carries through — a reader in Terrain who moves the day is
+// still in Terrain. pwaMapModeCore.withDate keeps it, but only where the
+// map_modes flag put data-map-modes-enabled on #map; anywhere else the write
+// is ``?d=`` alone, as it always was, so a pasted ?mode= is not carried on.
 const writeUrlDateParam = (dateKey) => {
-  history.replaceState(null, '', location.pathname + '?d=' + dateKey + location.hash);
+  const mapEl = document.getElementById('map');
+  const modesOn = !!mapEl && mapEl.dataset.mapModesEnabled === 'true';
+  const query = modesOn && self.pwaMapModeCore
+    ? self.pwaMapModeCore.withDate(location.search, dateKey)
+    : '?d=' + dateKey;
+  history.replaceState(null, '', location.pathname + query + location.hash);
 };
 
 // localStorage guarded by try/catch — private mode / disabled storage / quota

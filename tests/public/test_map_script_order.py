@@ -37,6 +37,9 @@ from pathlib import Path
 import pytest
 from django.test import Client
 from django.urls import reverse
+from waffle.testutils import override_flag
+
+from tests.factories import UserFactory
 
 # The three files that only declare — they must precede the boot IIFE.
 DECLARATION_FILES = frozenset(
@@ -184,6 +187,52 @@ class TestMapScriptOrder:
                 "its IIFE runs at parse time and depends on the boot IIFE "
                 "having already installed the map and its overlays."
             )
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1394 — the Dated / Terrain toggle's two scripts, behind map_modes
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_map_mode_scripts_load_in_their_places_behind_the_flag() -> None:
+    """The core before the bundle; the toggle after what it binds over.
+
+    ``map_mode_core.js`` is read by ``map.js`` at parse time — the boot mode
+    decides each layer's first visibility — and by ``map_shared.js``'s date
+    write, so it precedes the whole bundle. ``map_mode.js`` calls the hooks
+    ``map.js`` publishes and binds over ``map_calendar.js``'s date control
+    and ``map_day_nav.js``'s steps, and ``map_region_chip.js`` reads the
+    ``window.pwaMapMode`` it publishes, so it sits between those. Neither
+    breaks the bundle's contiguous run (the class above, without the flag).
+    """
+    client = Client()
+    client.force_login(UserFactory.create())
+    with override_flag("map_modes", active=True):
+        content = client.get(reverse("public:map")).content.decode()
+    rendered = _SCRIPT_SRC_RE.findall(content)
+    bundle = _map_bundle()
+    assert rendered.index("map_mode_core.js") < rendered.index(bundle[0])
+    toggle_at = rendered.index("map_mode.js")
+    for before in (BOOT_FILE, "map_calendar.js", "map_day_nav.js"):
+        assert rendered.index(before) < toggle_at, before
+    assert toggle_at < rendered.index("map_region_chip.js")
+    positions = [i for i, name in enumerate(rendered) if name in set(bundle)]
+    span = rendered[positions[0] : positions[-1] + 1]
+    assert "map_mode.js" not in span
+    assert "map_mode_core.js" not in span
+
+
+@pytest.mark.django_db
+def test_map_mode_toggle_is_absent_without_the_flag() -> None:
+    """Off, the toggle is not loaded, so a stored or linked ?mode= has
+    nothing to apply it. The pure core still loads, before the bundle: every
+    core map.js reads is on the page (test_home_scripts.py), and map.js
+    ignores it until #map carries data-map-modes-enabled.
+    """
+    rendered = _rendered_script_filenames()
+    assert "map_mode.js" not in rendered
+    assert rendered.index("map_mode_core.js") < rendered.index(_map_bundle()[0])
 
 
 # ---------------------------------------------------------------------------

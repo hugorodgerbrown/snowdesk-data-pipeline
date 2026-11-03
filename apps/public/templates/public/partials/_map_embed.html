@@ -172,6 +172,9 @@ Optional context:
     {# no control at all.                                                   #}
     {% if routes_eligible %}data-routes-url="{{ routes_geojson_url }}"{% endif %}
     data-routes-eligible="{{ routes_eligible|yesno:'true,false' }}"
+    {# SNOW-1394: the Dated / Terrain toggle, behind the map_modes flag.    #}
+    {# map.js reads the boot mode before it installs a layer.              #}
+    data-map-modes-enabled="{{ map_modes_enabled|yesno:'true,false' }}"
     data-route-claim-url-template="{{ route_claim_url_template }}"
     data-routes-upload-eligible="{{ routes_upload_eligible|yesno:'true,false' }}"
     data-routes-signin-url="{{ routes_signin_url }}"
@@ -1707,7 +1710,15 @@ Optional context:
                     <path d="M8 3v4" />
                     <path d="M16 3v4" />
                 </svg>
-                <span id="map-date-ribbon" class="map-date-ribbon" aria-live="polite" hidden></span>
+                <span
+                    id="map-date-ribbon"
+                    class="map-date-ribbon"
+                    aria-live="polite"
+                    {# SNOW-1394: with the toggle, the date says "Today" on today #}
+                    {# and the separate "Today" button below is not rendered.     #}
+                    {% if map_modes_enabled %}data-today-label='{% trans "Today" %}'{% endif %}
+                    hidden
+                ></span>
                 {% if show_tour_offer %}
                     {# SNOW-1230: while the example route is open on its own day, #}
                     {# the date says so (static/js/map_example_guide.js). Inside  #}
@@ -1739,6 +1750,33 @@ Optional context:
                 </svg>
             </button>
             {% comment %}
+            SNOW-1394: the Terrain half of the Dated / Terrain toggle, behind
+            the map_modes flag. The date and its day steps above are the
+            Dated half: in Dated this is the mountain alone, and in Terrain
+            it reads "Terrain" while the date collapses to its calendar glyph,
+            a tap on which comes back to the dated map
+            (static/js/map_mode.js). Terrain takes the dated overlays off the
+            map — bulletins, regions, problem-terrain sync, weather, field
+            reports — and nothing else; the reader's own choices are kept.
+            On a phone map_calendar.js moves it up with the date control.
+            {% endcomment %}
+            {% if map_modes_enabled %}
+                <button
+                    id="map-mode-terrain"
+                    type="button"
+                    class="map-mode-terrain hover-affordance"
+                    aria-pressed="false"
+                    aria-label='{% trans "Terrain: hide what changes by the day" %}'
+                    data-testid="map-mode-terrain"
+                >
+                    {% include "includes/_icon_mountain.html" with size=16 only %}
+                    <span class="map-mode-terrain-label">{% trans "Terrain" %}</span>
+                </button>
+                <template id="map-mode-strings-template">
+                    <span data-string="back-to-date">{% trans "Back to the dated map" %}</span>
+                </template>
+            {% endif %}
+            {% comment %}
             SNOW-1165: "Today", joined to the date control's right-hand end.
             Always shown and disabled while the map is on today, so the way
             back is in the same place on every day; static/js/map_today.js
@@ -1746,29 +1784,31 @@ Optional context:
             to today. Rendered disabled: a bare /map/ is today (SNOW-793),
             and a ?d= for another day is enabled by the script on boot.
             {% endcomment %}
-            <button
-                id="map-today-control"
-                type="button"
-                class="map-today-control hover-affordance"
-                aria-label='{% trans "Back to today" %}'
-                disabled
-            >
-                <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
+            {% if not map_modes_enabled %}
+                <button
+                    id="map-today-control"
+                    type="button"
+                    class="map-today-control hover-affordance"
+                    aria-label='{% trans "Back to today" %}'
+                    disabled
                 >
-                    <path d="M9 14 4 9l5-5" />
-                    <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
-                </svg>
-                <span>{% trans "Today" %}</span>
-            </button>
+                    <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="M9 14 4 9l5-5" />
+                        <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+                    </svg>
+                    <span>{% trans "Today" %}</span>
+                </button>
+            {% endif %}
             {% comment %}
             SNOW-1366: the Today panel's roundel — the reader's pinned regions
             and resorts, today (public/partials/_today_surface.html,

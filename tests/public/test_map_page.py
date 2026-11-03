@@ -3025,3 +3025,57 @@ def test_no_slopes_notice_without_the_terrain_tiles() -> None:
     """No tiles, no slopes painted, nothing to announce."""
     content = Client().get(reverse("public:map")).content.decode()
     assert 'id="map-slopes-notice"' not in content
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1394: the Dated / Terrain toggle, behind the map_modes flag
+# ---------------------------------------------------------------------------
+
+MAP_MODE_MARKERS = (
+    # A leading space, so data-testid="map-mode-terrain" is not counted too.
+    ' id="map-mode-terrain"',
+    ' id="map-mode-strings-template"',
+    "data-today-label='Today'",
+    "/static/js/map_mode.js",
+)
+
+
+def _map_as(*, signed_in: bool, flag: bool) -> str:
+    """Render /map/ for a visitor or a signed-in user, with the flag set."""
+    client = Client()
+    if signed_in:
+        client.force_login(UserFactory.create())
+    with override_flag("map_modes", active=flag):
+        return client.get(reverse("public:map")).content.decode()
+
+
+@pytest.mark.django_db
+def test_map_modes_toggle_renders_only_behind_the_flag() -> None:
+    """Signed in with the flag: the control, its strings and both scripts,
+    each once, with the flag's data attribute on #map; the separate
+    "Today" button goes, because the date says "Today" itself.
+    """
+    content = _map_as(signed_in=True, flag=True)
+    for marker in MAP_MODE_MARKERS:
+        assert content.count(marker) == 1, marker
+    assert 'data-map-modes-enabled="true"' in content
+    # The pure core loads for everyone; the flag decides whether it is read.
+    assert content.count("/static/js/map_mode_core.js") == 1
+    assert 'id="map-today-control"' not in content
+    # The Today panel's sun is a panel, not a map surface: it stays.
+    assert 'id="map-today-panel-toggle"' in content
+    # The toggle follows the day steps, so it moves with them on a phone.
+    assert content.index('id="map-day-next"') < content.index('id="map-mode-terrain"')
+
+
+@pytest.mark.parametrize(("signed_in", "flag"), [(True, False), (False, True)])
+@pytest.mark.django_db
+def test_map_modes_toggle_is_absent_otherwise(signed_in: bool, flag: bool) -> None:
+    """Outside the flag, or signed out (no waffle query is paid for an
+    anonymous request), the date row is as it was before the toggle.
+    """
+    content = _map_as(signed_in=signed_in, flag=flag)
+    for marker in MAP_MODE_MARKERS:
+        assert marker not in content, marker
+    assert 'data-map-modes-enabled="false"' in content
+    assert 'id="map-today-control"' in content

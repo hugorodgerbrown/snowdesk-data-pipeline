@@ -126,6 +126,47 @@
   // of the SAC/swisstopo winter routes, drawn from z10 inside Switzerland.
   // Gated with draw mode behind the route_drawing flag, whose guide it is.
   const SKI_ROUTES_ELIGIBLE = mapEl.dataset.skiRoutesEligible === 'true';
+  // SNOW-1394: the map's Dated / Terrain mode, behind the map_modes flag.
+  // Read HERE, before a single layer is installed, so a page opened on
+  // ?mode=terrain paints its first frame without the dated overlays rather
+  // than drawing them and then taking them away. Every install below asks
+  // ``modeSuppressed`` for its initial visibility; map_mode.js drives the
+  // changes after boot through the setSuppressed hooks this IIFE exposes.
+  // Without the flag (or the core) the mode is Dated and nothing is held.
+  const MAP_MODE_CORE = self.pwaMapModeCore || null;
+  const MAP_MODES_ENABLED = mapEl.dataset.mapModesEnabled === 'true' && !!MAP_MODE_CORE;
+  /**
+   * The keys Terrain mode is currently holding off the map. A Set of
+   * ``overlayState`` keys (plus ``l3``), never a copy of any preference:
+   * what is drawn is the preference AND-ed with "not in here".
+   *
+   * @type {Set<string>}
+   */
+  const modeSuppressedKeys = new Set();
+  if (MAP_MODES_ENABLED) {
+    let storedMode = null;
+    try { storedMode = localStorage.getItem(MAP_MODE_CORE.STORAGE_KEY); } catch (_) { /* private mode */ }
+    const bootMode = MAP_MODE_CORE.readMode(location.search, storedMode);
+    for (const key of MAP_MODE_CORE.DATED_OVERLAYS) {
+      if (MAP_MODE_CORE.isSuppressed(key, bootMode)) modeSuppressedKeys.add(key);
+    }
+  }
+  /**
+   * Whether Terrain mode is holding an overlay off the map.
+   *
+   * @param {string} key An ``overlayState`` key, or ``l3``.
+   * @returns {boolean}
+   */
+  const modeSuppressed = (key) => modeSuppressedKeys.has(key);
+  /**
+   * Whether an overlay's layers should be visible: the reader has it on and
+   * the mode is not holding it off. Reads ``overlayState`` (declared below;
+   * only ever called after it is), never writes it.
+   *
+   * @param {string} key An ``overlayState`` key.
+   * @returns {boolean}
+   */
+  const overlayDrawn = (key) => !!overlayState[key] && !modeSuppressed(key);
   // SNOW-1294: SAC's summits and huts as search rows, read once on the
   // first focus of search. Emitted only for an eligible page: picking one
   // opens the ski-touring layer's tours list, which no other page has.
@@ -480,6 +521,20 @@
   // read out of localStorage.
   const BULLETINS_CORE = self.pwaLayerVisibilityCore;
   let bulletinsVisibility = BULLETINS_CORE.create(overlayState.bulletins);
+  /**
+   * A fresh Bulletins state for a preference, carrying Terrain mode's
+   * suppression when the mode is holding the bulletins off (SNOW-1394).
+   *
+   * @param {number} preference The stored step.
+   * @returns {object} A ``pwaLayerVisibilityCore`` state.
+   */
+  const createBulletinsVisibility = (preference) => {
+    const state = BULLETINS_CORE.create(preference);
+    return modeSuppressed('bulletins')
+      ? BULLETINS_CORE.suppress(state, BULLETINS_CORE.SUPPRESSION.MAP_MODE)
+      : state;
+  };
+  bulletinsVisibility = createBulletinsVisibility(overlayState.bulletins);
 
   // The downloaded-areas overlay's own state. Read by installRegionsLayers
   // (initial layout.visibility), refreshDownloadedOverlay, and
@@ -628,7 +683,7 @@
     // seedFromLegacy reads as "use DEFAULT_STEP".
     MAP_DEFAULTS.opacityStep,
   );
-  bulletinsVisibility = BULLETINS_CORE.create(overlayState.bulletins);
+  bulletinsVisibility = createBulletinsVisibility(overlayState.bulletins);
   /**
    * The favourites overlay's boot preference, gated on eligibility.
    *
@@ -1565,7 +1620,7 @@
     // see its own docstring for the four-quadrant table, including why the
     // layer IS dropped when neither row is on.
     const fillLayout = BULLETINS_CORE.regionsFillLayout(
-      overlayState.l4, bulletinsVisibility,
+      overlayDrawn('l4'), bulletinsVisibility,
     );
     map.addLayer({
       id: 'regions-fill',
@@ -1624,7 +1679,7 @@
       type: 'line',
       source: 'regions',
       layout: {
-        visibility: overlayState.l4 ? 'visible' : 'none',
+        visibility: overlayDrawn('l4') ? 'visible' : 'none',
         'line-join': 'round',
         'line-cap': 'round',
       },
@@ -1657,7 +1712,7 @@
       source: 'regions',
       filter: ['==', ['get', 'covered'], false],
       layout: {
-        visibility: overlayState.l4 ? 'visible' : 'none',
+        visibility: overlayDrawn('l4') ? 'visible' : 'none',
         'line-join': 'round',
       },
       paint: {
@@ -1824,7 +1879,7 @@
       // SNOW-1375: from z10 the level label below carries the name.
       maxzoom: self.pwaChoroplethCore.EDGE_MIN_ZOOM,
       layout: {
-        visibility: overlayState.l4 ? 'visible' : 'none',
+        visibility: overlayDrawn('l4') ? 'visible' : 'none',
         'text-field': ['get', 'name'],
         'text-font': overlayTextFont,
         'text-size': 11,
@@ -1905,7 +1960,7 @@
         type: 'line',
         source: 'sub-regions',
         layout: {
-          visibility: overlayState.l2 ? 'visible' : 'none',
+          visibility: overlayDrawn('l2') ? 'visible' : 'none',
           // SNOW-105: rounded join/cap to hide the closing-vertex seam.
           'line-join': 'round',
           'line-cap': 'round',
@@ -1924,7 +1979,7 @@
         minzoom: 7,
         maxzoom: 8.5,
         layout: {
-          visibility: overlayState.l2 ? 'visible' : 'none',
+          visibility: overlayDrawn('l2') ? 'visible' : 'none',
           'text-field': ['get', 'name_en'],
           'text-font': overlayTextFont,
           'text-size': 12,
@@ -1946,7 +2001,7 @@
         type: 'line',
         source: 'major-regions',
         layout: {
-          visibility: overlayState.l1 ? 'visible' : 'none',
+          visibility: overlayDrawn('l1') ? 'visible' : 'none',
           // SNOW-105: rounded join/cap to hide the closing-vertex seam.
           'line-join': 'round',
           'line-cap': 'round',
@@ -1965,7 +2020,7 @@
         minzoom: 5,
         maxzoom: 7,
         layout: {
-          visibility: overlayState.l1 ? 'visible' : 'none',
+          visibility: overlayDrawn('l1') ? 'visible' : 'none',
           'text-field': ['get', 'name_en'],
           'text-font': overlayTextFont,
           'text-size': 14,
@@ -3943,7 +3998,7 @@
         map.addImage(id, buildCommunityReportGlyphImageData(family, pixelRatio), { sdf: true, pixelRatio });
       }
     }
-    const visibility = overlayState.community_reports ? 'visible' : 'none';
+    const visibility = overlayDrawn('community_reports') ? 'visible' : 'none';
     const familyColour = communityFamilyColour();
     map.addSource('community-reports', {
       type: 'geojson',
@@ -4463,7 +4518,8 @@
   // forecast window, today onward — a past day has no symbol to draw, and
   // the layer used to go quiet without a word.
   window.pwaWeatherWindow = Object.freeze({
-    isOn: () => readBoolStorage(OVERLAY_STORAGE_KEY.weather, overlayState.weather),
+    isOn: () => readBoolStorage(OVERLAY_STORAGE_KEY.weather, overlayState.weather)
+      && !modeSuppressed('weather'),
     dates: () => (weatherGeojsonCache ? window.pwaWeatherCore.forecastWindowDates(weatherGeojsonCache) : []),
   });
 
@@ -4494,7 +4550,7 @@
       // also never reserves a collision box.
       filter: ['!=', ['get', 'icon'], ''],
       layout: {
-        visibility: overlayState.weather ? 'visible' : 'none',
+        visibility: overlayDrawn('weather') ? 'visible' : 'none',
         // TWO ROWS, and every part of both is inside `text-field`:
         //
         //     [WMO]  19°
@@ -5186,7 +5242,10 @@
    * @returns {boolean}
    */
   const bulletinTerrainShown = () =>
-    PROBLEM_TERRAIN_ENABLED && !!overlayState.problem_terrain && !overlayState.terrain_filter;
+    PROBLEM_TERRAIN_ENABLED && !!overlayState.problem_terrain && !overlayState.terrain_filter
+    // SNOW-1394: and Terrain mode is not holding it. The stored choice is
+    // untouched either way (pwaMapModeCore.problemTerrainShown).
+    && !modeSuppressed('problem_terrain');
 
   /**
    * Tell the menu row, the region sheet's switch and the legend key that
@@ -5522,6 +5581,21 @@
       // and the menu row says so.
       dayEmpty: () =>
         bulletinTerrainShown() && !!bulletinTerrainDay && bulletinTerrainDay.issued === 0,
+      /**
+       * SNOW-1394: hold or release the layer for Terrain mode, without
+       * writing the reader's choice — the bulletins' suppression shape.
+       *
+       * @param {string} reason A ``pwaLayerVisibilityCore.SUPPRESSION`` value.
+       * @param {boolean} active
+       */
+      setSuppressed(reason, active) {
+        if (reason !== BULLETINS_CORE.SUPPRESSION.MAP_MODE) return;
+        if (modeSuppressed('problem_terrain') === !!active) return;
+        setModeSuppressedKey('problem_terrain', !!active);
+        syncBulletinTerrain();
+        document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
+        announceProblemTerrain();
+      },
       availability: () => terrainAvailability || currentTerrainAvailability(),
     });
   }
@@ -6722,6 +6796,9 @@
         stillEnabled = readBoolStorage(OVERLAY_STORAGE_KEY[gov], overlayState[gov]);
         overlayState[gov] = stillEnabled;
       }
+      // SNOW-1394: Terrain mode holds the dated overlays whatever their
+      // preference; the preference itself was re-read above, not written.
+      if (modeSuppressed(key) || modeSuppressed(gov)) stillEnabled = false;
       const visibility = stillEnabled ? 'visible' : 'none';
       for (const layerId of OVERLAY_LAYERS[key]) {
         if (map.getLayer(layerId)) {
@@ -6781,6 +6858,98 @@
     });
   });
 
+  // ==== SNOW-1394: Terrain mode's suppression of the dated overlays ====
+  //
+  // SUPPRESSION, NEVER PREFERENCE. Terrain mode takes the dated overlays
+  // off the map without touching a single stored choice — no show(), no
+  // hide(), no writeStorage — so leaving it brings each one back exactly as
+  // the reader had it. The pieces:
+  //
+  //   - ``modeSuppressedKeys`` (seeded at boot, before any install, from
+  //     ?mode= or the stored mode) says which keys are held;
+  //   - every install asks ``overlayDrawn`` for its initial visibility, and
+  //     the overlay-load handler AND-s its re-read preference with it, so a
+  //     lazy load or a basemap swap never paints a held layer;
+  //   - ``holdOverlayLayers`` runs on every
+  //     ``snowdesk:overlay-visibility-changed`` as a backstop, for a panel
+  //     switch that paints a held overlay (the reports panel's "Show on the
+  //     map" records the reader's choice and is then held like any other);
+  //   - ``releaseOverlay`` brings a key back on its own load path, which
+  //     re-reads the preference and catches the layer up with the day.
+
+  /** The region tiers Terrain holds with the bulletins. */
+  const REGION_TIER_KEYS = Object.freeze(['l1', 'l2', 'l4']);
+  /** The lazily installed keys a release reloads through overlay-load. */
+  const MODE_LAZY_KEYS = Object.freeze(['l1', 'l2', 'weather', 'community_reports']);
+
+  /**
+   * Add or remove one key from Terrain's held set.
+   *
+   * @param {string} key
+   * @param {boolean} active
+   * @returns {void}
+   */
+  const setModeSuppressedKey = (key, active) => {
+    if (active) modeSuppressedKeys.add(key);
+    else modeSuppressedKeys.delete(key);
+  };
+
+  /**
+   * Hide every layer of a held overlay. Never shows anything.
+   *
+   * @param {string} key An ``OVERLAY_LAYERS`` key.
+   * @returns {void}
+   */
+  const holdOverlayLayers = (key) => {
+    for (const layerId of OVERLAY_LAYERS[key] || []) {
+      if (map.getLayer(layerId)) map.setLayoutProperty(layerId, 'visibility', 'none');
+    }
+  };
+
+  /**
+   * Bring a released overlay back as the reader left it. The preference is
+   * re-read from storage — the module's live source of truth for the
+   * picker's keys — and an overlay the reader had off stays off.
+   *
+   * @param {string} key
+   * @returns {void}
+   */
+  const releaseOverlay = (key) => {
+    if (modeSuppressed(key)) return;
+    const on = readBoolStorage(OVERLAY_STORAGE_KEY[key], overlayState[key]);
+    overlayState[key] = on;
+    if (!on) return;
+    if (MODE_LAZY_KEYS.includes(key)) {
+      document.dispatchEvent(new CustomEvent('snowdesk:overlay-load', { detail: { key } }));
+      return;
+    }
+    for (const layerId of OVERLAY_LAYERS[key] || []) {
+      if (map.getLayer(layerId)) map.setLayoutProperty(layerId, 'visibility', 'visible');
+    }
+  };
+
+  /**
+   * The weather and field-report hooks: hold or release one overlay for
+   * Terrain mode. Only ``SUPPRESSION.MAP_MODE`` is a reason these take.
+   *
+   * @param {string} key ``weather`` or ``community_reports``.
+   * @param {string} reason A ``pwaLayerVisibilityCore.SUPPRESSION`` value.
+   * @param {boolean} active Whether the reason is now in force.
+   * @returns {void}
+   */
+  const setOverlaySuppressed = (key, reason, active) => {
+    if (reason !== BULLETINS_CORE.SUPPRESSION.MAP_MODE) return;
+    if (modeSuppressed(key) === !!active) return;
+    setModeSuppressedKey(key, !!active);
+    if (active) holdOverlayLayers(key);
+    else releaseOverlay(key);
+    announceOverlayVisibility();
+  };
+
+  document.addEventListener('snowdesk:overlay-visibility-changed', () => {
+    for (const key of modeSuppressedKeys) holdOverlayLayers(key);
+  });
+
   // ==== SNOW-656: the Bulletins row ====
   //
   // Everything that can change what the choropleth and the bulletin boundary
@@ -6808,7 +6977,7 @@
    */
   const applyBulletinsVisibility = () => {
     const effective = BULLETINS_CORE.isEffective(bulletinsVisibility);
-    const fill = BULLETINS_CORE.regionsFillLayout(overlayState.l4, bulletinsVisibility);
+    const fill = BULLETINS_CORE.regionsFillLayout(overlayDrawn('l4'), bulletinsVisibility);
     if (map.getLayer('regions-fill')) {
       map.setLayoutProperty('regions-fill', 'visibility', fill.visibility);
       map.setPaintProperty('regions-fill', 'fill-opacity', regionFillOpacity(fill.opacity));
@@ -6862,10 +7031,32 @@
    * @returns {void}
    */
   const setBulletinsSuppressed = (reason, active) => {
+    const wasEffective = BULLETINS_CORE.isEffective(bulletinsVisibility);
     bulletinsVisibility = active
       ? BULLETINS_CORE.suppress(bulletinsVisibility, reason)
       : BULLETINS_CORE.unsuppress(bulletinsVisibility, reason);
+    // SNOW-1394: Terrain mode holds the regions with the bulletins — a
+    // region exists only to hold one — so the boundary tiers, their labels
+    // and the region tap (the fill, dropped by regionsFillLayout once no
+    // tier is drawn) go too. Resort-edit mode suppresses the colour alone.
+    if (reason === BULLETINS_CORE.SUPPRESSION.MAP_MODE) {
+      for (const key of ['bulletins', 'l3', ...REGION_TIER_KEYS]) {
+        setModeSuppressedKey(key, active);
+      }
+      for (const key of REGION_TIER_KEYS) {
+        if (active) holdOverlayLayers(key);
+        else releaseOverlay(key);
+      }
+    }
     applyBulletinsVisibility();
+    // The boundary is per-date and lazily fetched, so coming back may need
+    // the day now showing — the step control's own reasoning.
+    if (!wasEffective && BULLETINS_CORE.isEffective(bulletinsVisibility)) {
+      document.dispatchEvent(new CustomEvent('snowdesk:overlay-load', {
+        detail: { key: 'l3' },
+      }));
+    }
+    announceOverlayVisibility();
   };
 
   // The named channel for modules outside this IIFE — currently
@@ -6878,6 +7069,14 @@
   window.pwaBulletinsLayer = Object.freeze({
     setSuppressed: setBulletinsSuppressed,
     isVisible: () => BULLETINS_CORE.isEffective(bulletinsVisibility),
+  });
+
+  // SNOW-1394: the weather symbols' suppression hook, the bulletins' shape.
+  // The stored preference is never written: what is drawn is that
+  // preference AND-ed with "not held by Terrain mode".
+  window.pwaWeatherLayer = Object.freeze({
+    setSuppressed: (reason, active) => setOverlaySuppressed('weather', reason, active),
+    isSuppressed: () => modeSuppressed('weather'),
   });
 
   // The Micro regions row owns ``regions-line``/``regions-label`` — the
@@ -7997,6 +8196,9 @@
     },
     isVisible: () => panelOverlayPainted('community_reports'),
     isEnabled: () => !!overlayState.community_reports,
+    // SNOW-1394: Terrain mode's hook. isEnabled stays the reader's choice
+    // (the panel switch reads it); isVisible is what is drawn.
+    setSuppressed: (reason, active) => setOverlaySuppressed('community_reports', reason, active),
   });
 
   // SNOW-687: the fourth bridge, and the same shape as the three above —
@@ -9415,6 +9617,13 @@
       // already looking at the region, close in, and framing it would zoom
       // them back out to the whole region.
       if (!(ev.detail && ev.detail.frame === false)) window.pwaMapFocus?.region?.(regionID);
+    });
+
+    // SNOW-1394: Terrain mode holds the regions, so a region selected when
+    // the reader switches to it goes: its highlight would outline a region
+    // the map no longer draws, and its sheet is the day's danger.
+    document.addEventListener('snowdesk:map-mode-changed', (ev) => {
+      if (ev.detail && ev.detail.mode === 'terrain' && selectedId !== null) deselectRegion();
     });
 
     // Pin-positioning focus (static/js/map_placement_focus.js) clears every
