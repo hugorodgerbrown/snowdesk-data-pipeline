@@ -253,21 +253,6 @@ class TestExamplesCategory:
         assert response.status_code == 200
         assert "/ch-4115/valais/2025-03-15/" in response.context["canonical_url"]
 
-    def test_null_target_date_falls_back_to_valid_from(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """A row with no target_date takes the day from its valid_from."""
-        evening = datetime(2025, 3, 14, 16, 0, tzinfo=UTC)
-        bulletin = _make_bulletin_with_region(region, "considerable", evening)
-        Bulletin.objects.filter(pk=bulletin.pk).update(target_date=None)
-
-        response = client.get(
-            reverse("public:examples_category", kwargs={"danger_level": "considerable"})
-        )
-
-        assert response.status_code == 200
-        assert "/ch-4115/valais/2025-03-15/" in response.context["canonical_url"]
-
 
 def _slf_bulletin(
     region: MicroRegion,

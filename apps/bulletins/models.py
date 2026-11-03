@@ -388,14 +388,11 @@ class Bulletin(BaseModel):
     valid_from = models.DateTimeField()
     valid_to = models.DateTimeField()
     target_date = models.DateField(
-        null=True,
-        blank=True,
         db_index=True,
         help_text=(
             "Calendar date this bulletin is forecasting, as determined by "
-            "target_day_for_valid_from() from valid_from. Populated by "
-            "upsert_bulletin at ingest time and back-filled by the "
-            "backfill_bulletin_target_dates management command."
+            "target_day_for_valid_from() from valid_from. Set by "
+            "upsert_bulletin at ingest time."
         ),
     )
     next_update = models.DateTimeField(null=True, blank=True)

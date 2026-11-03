@@ -80,8 +80,8 @@ summarised in CLAUDE.md; this is the full contract. Rationale:
      key of its own (e.g. a `(region, date)` pair from a `values_list`).
      Prints `"N <label> remaining"` per item instead of a descending id,
      followed by `describe(item)` when given — pass it whenever the item
-     can name itself (`recompute_day_ratings` prints the region code and
-     date); `total` is typically a `.count()` taken before streaming
+     can name itself (`backfill_weather` prints the station and its
+     block); `total` is typically a `.count()` taken before streaming
      `items`.
 
    Streaming the queryset is only half of bounded memory. Whatever a run
@@ -105,9 +105,9 @@ summarised in CLAUDE.md; this is the full contract. Rationale:
    Two exemptions, each carrying an inline `# SNOW-602 exempt: …` reason
    rather than silent divergence:
 
-   - **Derived non-row unit of work** — the pair has no id, so `countdown`
-     replaces the `-id` half of the rule (`recompute_day_ratings` is the
-     reference example).
+   - **Derived non-row unit of work** — the unit has no id, so `countdown`
+     replaces the `-id` half of the rule (`backfill_weather`'s station-blocks
+     are the reference example).
    - **stdout is carrying a data artefact, not log output** — a command
      that defaults to writing e.g. CSV to stdout must not interleave
      countdown lines into it. Keep the export's own row ordering (it's the
@@ -851,7 +851,10 @@ back. Tallies `service_<kind>_<outcome>` for the sync and `<kind>_<outcome>`
 for the apply, kinds `ski-network` and `ski-tours`. Exempt from the row
 countdown: each step reconciles a whole layer. `--archive PATH` reads a
 local zip instead of downloading, for an instance with no outbound access.
-A first import takes about 20 seconds; an unchanged one about 9.
+A first import takes about 20 seconds; an unchanged one about 9. `mcp_runnable` since SNOW-1400: one download and one transaction per
+layer, so it finishes well inside the task worker's minutes, and it stays
+a single transaction because a half-applied layer would tombstone live
+rows.
 
 ```bash
 uv run python manage.py import_ski_tours                 # preview
@@ -1037,9 +1040,14 @@ nothing references it — an unreferenced curated place is a curation
 question, not garbage. Deleting a `Location` cascades to its `Weather`,
 which is the point: that data describes a place nothing can reach.
 
+Since SNOW-1400 `--commit` enqueues one `prune_orphan_location_task` per
+orphan (`apps/locations/services/orphans.py`). Each re-asks `orphaned()`
+for its row under a lock, so a location something points at again by the
+time it runs is kept. `mcp_runnable`.
+
 ```bash
 uv run python manage.py prune_orphan_locations           # preview
-uv run python manage.py prune_orphan_locations --commit  # delete
+uv run python manage.py prune_orphan_locations --commit  # enqueue the deletes
 ```
 
 ### `fill_what3words` — give every Location its three word address
@@ -1354,15 +1362,20 @@ SNOW-1309. Every `Route`, `Trip` and walked `SkiTour` stores its
 `track_render`, written by `store_terrain` with its terrain. This rebuilds
 every row whose render is missing or was built below
 `TRACK_RENDER_VERSION`. It is pure computation, with no request to any
-origin. A tour holding no terrain record for its line is left alone and
-counted `tours_unwalked`, because the tours layer draws SAC's own line
-for it. Run after a deploy that changes the builder, as a
-`Deploy-Step: rebuild_track_renders --commit` trailer. Tallies `routes`,
-`trips`, `tours`, `tours_unwalked` and `failed`.
+origin, so no pace. A tour holding no terrain record for its line is
+not a candidate, because the tours layer draws SAC's own line for it. Run
+after a deploy that changes the builder, as a
+`Deploy-Step: rebuild_track_renders --commit` trailer.
+
+Since SNOW-1400 `--commit` enqueues one task per stale row
+(`rebuild_route_render_task`, `rebuild_trip_render_task`,
+`rebuild_tour_render_task`), each re-reading its row through `stale_q`
+under a lock. Tallies `routes`, `trips`, `tours`, `already_queued` and
+`failed`. `mcp_runnable`.
 
 ```bash
 uv run python manage.py rebuild_track_renders            # preview
-uv run python manage.py rebuild_track_renders --commit   # apply
+uv run python manage.py rebuild_track_renders --commit   # enqueue
 ```
 
 ### `sync_waffle_switches` — reconcile waffle.Switch rows to the manifest
@@ -1587,8 +1600,9 @@ incident that invalidates derived state:
   work is done, and whose ongoing case the write path now covers. One-off
   commands are deleted once spent rather than kept. Their last versions are
   in git history.
-- `recompute_day_ratings --commit` — after a `DAY_RATING_VERSION` bump or
-  any day-rating policy change. Re-derives every `RegionDayRating`.
+- `recompute_day_ratings --commit` — after a `DAY_RATING_VERSION` bump
+  (`--all` after a policy change made without one). Enqueues a recompute
+  of each stale `RegionDayRating`.
 - `fetch_bulletins --source <src> --start-date <YYYY-MM-DD> --commit` —
   to backfill bulletins after a multi-day outage. Add `--delay 5` for
   multi-year backfills to stay polite to the public APIs.
@@ -1845,18 +1859,22 @@ uv run python manage.py rebuild_render_models --commit  # enqueue
 uv run python manage.py rebuild_source_render_models           # read-only
 uv run python manage.py rebuild_source_render_models --commit  # enqueue
 
-# Re-derive every RegionDayRating row under the current v9 policy: min/max
-# come from an elevation-band split (distinct all_day band keys) or, failing
-# that, a time-period split (afternoon level above morning level); otherwise
-# min_rating = max_rating = headline danger key. AM/PM fields are set whenever
-# both morning and afternoon trait levels exist. Intended as a post-deployment
-# step after a day-rating policy change. Read-only by default.
+# Re-derive this instance's RegionDayRating rows under the current policy
+# (DAY_RATING_VERSION): min/max come from an elevation-band split (distinct
+# all_day band keys) or, failing that, a time-period split (afternoon level
+# above morning level); otherwise min_rating = max_rating = headline danger
+# key. The instance counterpart of rebuild_source_render_models' stale-rating
+# refresh. By default only rows computed under an older version; --all takes
+# every row. Rule 7 (SNOW-1400): --commit only ENQUEUES one
+# recompute_day_rating_task per row at priority -50, each re-checking its
+# row and taking the bulletin rebuild's sorted rating lock. mcp_runnable.
+# Read-only by default.
 uv run python manage.py recompute_day_ratings                    # read-only
-uv run python manage.py recompute_day_ratings --commit           # persist all pairs
-uv run python manage.py recompute_day_ratings \
-    --start-date 2026-01-01 --end-date 2026-04-30 --commit          # narrow window
+uv run python manage.py recompute_day_ratings --commit           # enqueue the stale rows
+uv run python manage.py recompute_day_ratings --all \
+    --start-date 2026-01-01 --end-date 2026-04-30 --commit          # every row in a window
 
-# Flags: --commit, --start-date YYYY-MM-DD, --end-date YYYY-MM-DD
+# Flags: --commit, --all, --start-date YYYY-MM-DD, --end-date YYYY-MM-DD
 
 # Compare SQL query counts against the committed baseline (SNOW-13).
 # Read-only by default — --commit rewrites perf/query_counts.txt.

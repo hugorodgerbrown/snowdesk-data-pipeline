@@ -1117,20 +1117,6 @@ class TestDayRatingPairs:
 
         assert pairs == {(region, datetime.date(2026, 3, 2))}
 
-    def test_falls_back_to_target_day_for_valid_from_when_unbackfilled(self) -> None:
-        """A row with no stored target_date derives its day from valid_from."""
-        region = MicroRegionFactory.create(region_id="CH-3004")
-        vf = datetime.datetime(2026, 3, 3, 8, 0, tzinfo=UTC)
-        vt = datetime.datetime(2026, 3, 3, 17, 0, tzinfo=UTC)
-        bulletin = _make_bulletin_for_region(region, vf, vt)
-        # Simulate a pre-SNOW-560 row that was never backfilled.
-        Bulletin.objects.filter(pk=bulletin.pk).update(target_date=None)
-        bulletin.refresh_from_db()
-
-        pairs = day_rating_pairs([bulletin])
-
-        assert pairs == {(region, target_day_for_valid_from(vf))}
-
     def test_regions_load_without_their_boundary(self) -> None:
         """Only pk and region_id are loaded, so a held pair stays small (SNOW-1054).
 

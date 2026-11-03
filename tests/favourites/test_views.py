@@ -1333,7 +1333,7 @@ class TestFavouriteDetailRedirect:
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user)
         assert favourite.location is not None
-        favourite.location.short_id = None
+        favourite.location.short_id = ""
         favourite.location.save(update_fields=["short_id"])
 
         response = client.get(_detail_url(favourite.uuid))
@@ -1709,7 +1709,7 @@ class TestFavouriteList:
             user=user, name="Mine", latitude=46.1, longitude=7.5
         )
         assert favourite.location is not None
-        favourite.location.short_id = None
+        favourite.location.short_id = ""
         favourite.location.save(update_fields=["short_id"])
 
         response = client.get(LIST_URL, **HTMX_HEADERS)

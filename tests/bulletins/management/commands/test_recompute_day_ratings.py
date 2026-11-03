@@ -2,208 +2,191 @@
 tests/bulletins/management/commands/test_recompute_day_ratings.py — Tests
 for the recompute_day_ratings management command.
 
-Covers:
-  - Default mode (no --commit) is read-only — recompute_region_day is still
-    called (so the read-only run reports a real count) but with commit=False.
-  - --commit calls recompute_region_day with commit=True for every distinct
-    (region, date) pair.
-  - --start-date / --end-date narrow the pair set.
-  - Nothing-to-do path (no RegionDayRating rows) exits cleanly.
-  - A missing region (MicroRegion.DoesNotExist) is counted as a failure and
-    does not abort the run.
-  - A recompute_region_day exception is counted as a failure and does not
-    abort the run; the command exits non-zero (CommandError).
-  - Region objects are cached — MicroRegion.objects.get is called once per
-    distinct region, not once per pair (SNOW-602: the pair stream is driven
-    by countdown(), not iterate_rows(), since a pair has no id).
-  - stdout carries a decreasing "N pair(s) remaining" line per pair at
-    verbosity 1, none at verbosity 0.
+Since SNOW-1400 the command enqueues one ``recompute_day_rating_task`` per
+row through ``enqueue_each``; the tasks run inline here
+(``ImmediateBackend``). Covers:
+  - Read-only by default: it counts and recomputes nothing.
+  - --commit recomputes every stale row (an older ``DAY_RATING_VERSION``)
+    and leaves a current one alone; --all takes every row.
+  - --start-date / --end-date narrow the selection.
+  - A task that raises fails the run (CommandError) without aborting the
+    rest.
+  - stdout carries a countdown naming each row's region and day.
+  - The task itself skips a row gone or current, and recomputes under the
+    rebuild's lock.
 """
 
 from __future__ import annotations
 
 import datetime
+from io import StringIO
 from unittest.mock import patch
 
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from apps.regions.models import MicroRegion
+from apps.bulletins.services.render_rebuild import recompute_one_day_rating
+from apps.ingest.public import DAY_RATING_VERSION
 from tests.factories import MicroRegionFactory, RegionDayRatingFactory
 
-_PATCH_TARGET = (
-    "apps.bulletins.management.commands.recompute_day_ratings.recompute_region_day"
-)
+_PATCH_TARGET = "apps.bulletins.services.render_rebuild.recompute_region_day"
+
+
+def _run(*args: str, verbosity: int = 1) -> str:
+    """Run the command and return its stdout."""
+    out = StringIO()
+    call_command("recompute_day_ratings", *args, verbosity=verbosity, stdout=out)
+    return out.getvalue()
 
 
 @pytest.mark.django_db
 class TestRecomputeDayRatingsReadOnly:
-    """Tests for the default (no --commit) read-only mode."""
+    """The default (no --commit) read-only mode."""
 
-    def test_dry_run_does_not_persist(self) -> None:
-        """Without --commit, recompute_region_day is called with commit=False."""
-        rating = RegionDayRatingFactory.create()
+    def test_counts_and_recomputes_nothing(self) -> None:
+        """Without --commit, no task runs."""
+        RegionDayRatingFactory.create(version=0)
+        RegionDayRatingFactory.create(version=0)
 
-        with patch(_PATCH_TARGET) as mock_recompute:
-            call_command("recompute_day_ratings", verbosity=0)
+        with patch(_PATCH_TARGET) as recompute:
+            out = _run()
 
-        mock_recompute.assert_called_once_with(
-            mock_recompute.call_args[0][0], rating.date, commit=False
-        )
-
-    def test_dry_run_reports_correct_count(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """The read-only run reports the number of pairs it would process."""
-        RegionDayRatingFactory.create()
-        RegionDayRatingFactory.create()
-
-        call_command("recompute_day_ratings", verbosity=1)
-
-        out = capsys.readouterr().out
-        assert "(region, date) pairs to process: 2" in out
-        assert "READ-ONLY" in out
+        recompute.assert_not_called()
+        assert "Recomputing 2 stale day rating(s) [READ-ONLY]" in out
+        assert "2 day rating(s) would be enqueued" in out
 
 
 @pytest.mark.django_db
 class TestRecomputeDayRatingsCommit:
-    """Tests for --commit mode."""
+    """--commit mode."""
 
-    def test_commit_recomputes_every_distinct_pair(self) -> None:
-        """--commit calls recompute_region_day once per distinct (region, date)."""
+    def test_commit_recomputes_every_stale_row(self) -> None:
+        """A row under an older version is recomputed; a current one is not."""
         region = MicroRegionFactory.create()
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 1))
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 2))
+        stale = RegionDayRatingFactory.create(
+            region=region, date=datetime.date(2026, 3, 1), version=0
+        )
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2026, 3, 2),
+            version=DAY_RATING_VERSION,
+        )
 
-        with patch(_PATCH_TARGET) as mock_recompute:
-            call_command("recompute_day_ratings", commit=True, verbosity=0)
+        with patch(_PATCH_TARGET) as recompute:
+            _run("--commit", verbosity=0)
 
-        assert mock_recompute.call_count == 2
-        for call in mock_recompute.call_args_list:
-            assert call.kwargs == {"commit": True}
+        recompute.assert_called_once()
+        assert recompute.call_args.args[1] == stale.date
+        assert recompute.call_args.kwargs == {"commit": True}
 
-    def test_region_objects_are_cached(self) -> None:
-        """MicroRegion.objects.get is called once per region, not per pair."""
+    def test_all_takes_current_rows_too(self) -> None:
+        """--all is for a rule change made without a version bump."""
+        RegionDayRatingFactory.create(version=DAY_RATING_VERSION)
+
+        with patch(_PATCH_TARGET) as recompute:
+            _run("--commit", "--all", verbosity=0)
+
+        recompute.assert_called_once()
+
+    def test_a_real_recompute_makes_the_row_current(self) -> None:
+        """End to end: the row is rewritten under the current version."""
+        rating = RegionDayRatingFactory.create(version=0)
+
+        _run("--commit", verbosity=0)
+
+        rating.refresh_from_db()
+        assert rating.version == DAY_RATING_VERSION
+        assert "Recomputing 0 stale" in _run("--commit", verbosity=1)
+
+    def test_start_date_filters_rows(self) -> None:
+        """--start-date excludes rows before it."""
         region = MicroRegionFactory.create()
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 1))
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 2))
+        RegionDayRatingFactory.create(
+            region=region, date=datetime.date(2026, 1, 1), version=0
+        )
+        RegionDayRatingFactory.create(
+            region=region, date=datetime.date(2026, 3, 1), version=0
+        )
 
-        with (
-            patch(_PATCH_TARGET),
-            patch.object(
-                MicroRegion.objects, "get", wraps=MicroRegion.objects.get
-            ) as mock_get,
-        ):
-            call_command("recompute_day_ratings", commit=True, verbosity=0)
+        with patch(_PATCH_TARGET) as recompute:
+            _run("--commit", "--start-date", "2026-02-01", verbosity=0)
 
-        mock_get.assert_called_once_with(pk=region.pk)
+        recompute.assert_called_once()
+        assert recompute.call_args.args[1] == datetime.date(2026, 3, 1)
 
-    def test_start_date_filters_pairs(self) -> None:
-        """--start-date excludes pairs before the given date."""
+    def test_end_date_filters_rows(self) -> None:
+        """--end-date excludes rows after it."""
         region = MicroRegionFactory.create()
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 1, 1))
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 1))
+        RegionDayRatingFactory.create(
+            region=region, date=datetime.date(2026, 1, 1), version=0
+        )
+        RegionDayRatingFactory.create(
+            region=region, date=datetime.date(2026, 3, 1), version=0
+        )
 
-        with patch(_PATCH_TARGET) as mock_recompute:
-            call_command(
-                "recompute_day_ratings",
-                commit=True,
-                start_date="2026-02-01",
-                verbosity=0,
-            )
+        with patch(_PATCH_TARGET) as recompute:
+            _run("--commit", "--end-date", "2026-02-01", verbosity=0)
 
-        assert mock_recompute.call_count == 1
-        assert mock_recompute.call_args[0][1] == datetime.date(2026, 3, 1)
-
-    def test_end_date_filters_pairs(self) -> None:
-        """--end-date excludes pairs after the given date."""
-        region = MicroRegionFactory.create()
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 1, 1))
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 1))
-
-        with patch(_PATCH_TARGET) as mock_recompute:
-            call_command(
-                "recompute_day_ratings",
-                commit=True,
-                end_date="2026-02-01",
-                verbosity=0,
-            )
-
-        assert mock_recompute.call_count == 1
-        assert mock_recompute.call_args[0][1] == datetime.date(2026, 1, 1)
-
-    def test_nothing_to_do_exits_cleanly(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """With no RegionDayRating rows, the command reports and returns."""
-        call_command("recompute_day_ratings", commit=True, verbosity=1)
-
-        out = capsys.readouterr().out
-        assert "(region, date) pairs to process: 0" in out
-        assert "Nothing to do." in out
+        recompute.assert_called_once()
+        assert recompute.call_args.args[1] == datetime.date(2026, 1, 1)
 
 
 @pytest.mark.django_db
 class TestRecomputeDayRatingsFailureHandling:
-    """A missing region or a recompute exception is a per-pair failure."""
+    """A failed task is counted, and does not stop the rest."""
 
-    def test_missing_region_counts_as_failure(self) -> None:
-        """A region_id with no matching MicroRegion row is a failure.
+    def test_a_failure_does_not_abort_other_rows(self) -> None:
+        """Both rows are attempted; the run exits non-zero."""
+        RegionDayRatingFactory.create(date=datetime.date(2026, 3, 1), version=0)
+        RegionDayRatingFactory.create(date=datetime.date(2026, 3, 2), version=0)
 
-        The FK is enforced in practice (no genuinely orphaned row is
-        reachable), so the lookup failure is exercised directly against
-        ``MicroRegion.objects.get`` — the command guards against it
-        defensively regardless.
-        """
-        RegionDayRatingFactory.create()
-
-        with patch.object(
-            MicroRegion.objects, "get", side_effect=MicroRegion.DoesNotExist
+        with (
+            patch(_PATCH_TARGET, side_effect=[RuntimeError("boom"), None]) as rc,
+            pytest.raises(CommandError, match="1 failure"),
         ):
-            with pytest.raises(CommandError, match="failed"):
-                call_command("recompute_day_ratings", commit=True, verbosity=0)
+            _run("--commit", verbosity=0)
 
-    def test_recompute_exception_does_not_abort_other_pairs(self) -> None:
-        """One pair raising does not stop the others from being attempted."""
-        region = MicroRegionFactory.create()
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 1))
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 2))
-
-        with patch(
-            _PATCH_TARGET,
-            side_effect=[RuntimeError("boom"), None],
-        ):
-            with pytest.raises(CommandError, match="failed"):
-                call_command("recompute_day_ratings", commit=True, verbosity=0)
+        assert rc.call_count == 2
 
 
 @pytest.mark.django_db
 class TestRecomputeDayRatingsCountdown:
-    """SNOW-602: countdown output for the derived (region, date) pairs."""
+    """stdout reads as a countdown naming each row."""
 
-    def test_stdout_carries_a_decreasing_remaining_count(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """Two pairs print '2 pair(s) remaining' then '1 pair(s) remaining'."""
-        region = MicroRegionFactory.create()
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 1))
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 2))
+    def test_names_each_rows_region_and_day(self) -> None:
+        """The label is the region code and the day."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        RegionDayRatingFactory.create(
+            region=region, date=datetime.date(2026, 3, 1), version=0
+        )
 
-        with patch(_PATCH_TARGET):
-            call_command("recompute_day_ratings", commit=True, verbosity=1)
+        out = _run()
 
-        out = capsys.readouterr().out
-        assert "2 pair(s) remaining" in out
-        assert "1 pair(s) remaining" in out
+        assert "CH-4115 2026-03-01" in out
 
-    def test_no_countdown_lines_at_verbosity_0(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """Countdown lines are suppressed at verbosity 0."""
-        RegionDayRatingFactory.create()
+    def test_no_countdown_lines_at_verbosity_0(self) -> None:
+        """Verbosity 0 keeps the countdown quiet."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        RegionDayRatingFactory.create(region=region, version=0)
 
-        with patch(_PATCH_TARGET):
-            call_command("recompute_day_ratings", commit=True, verbosity=0)
+        assert "CH-4115" not in _run(verbosity=0)
 
-        assert "remaining" not in capsys.readouterr().out
+
+@pytest.mark.django_db
+class TestRecomputeOneDayRating:
+    """The task's body re-checks its row."""
+
+    def test_a_gone_row_is_a_no_op(self) -> None:
+        """Deleted since it was enqueued."""
+        assert recompute_one_day_rating(999_999) == 0
+
+    def test_a_current_row_is_skipped_unless_forced(self) -> None:
+        """A bulletin task reached it first."""
+        rating = RegionDayRatingFactory.create(version=DAY_RATING_VERSION)
+
+        with patch(_PATCH_TARGET) as recompute:
+            assert recompute_one_day_rating(rating.pk) == 0
+            assert recompute_one_day_rating(rating.pk, force=True) == 1
+
+        recompute.assert_called_once()

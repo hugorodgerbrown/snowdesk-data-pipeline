@@ -19,7 +19,6 @@ from django.test.utils import CaptureQueriesContext
 from apps.data_feed.feeds import FEEDS
 from apps.ingest.public import feed_page
 from apps.locations.models import ResortLocation
-from apps.regions.models import Resort
 from apps.weather.models import Weather
 from tests.factories import (
     FavouriteFactory,
@@ -64,13 +63,6 @@ class TestAllowlist:
         LocationFactory.create(name="Named but reached by nothing")
         served = {i["uuid"] for i in _all("locations")}
         assert served == {str(linked.uuid), str(centroid.uuid)}
-
-    def test_a_resort_without_a_slug_is_not_served(self) -> None:
-        """The slug is the key on the wire; a row with none cannot be sent."""
-        ResortFactory.create(name="Keyed")
-        unkeyed = ResortFactory.create(name="Unkeyed")
-        Resort.objects.filter(pk=unkeyed.pk).update(slug=None)
-        assert [i["slug"] for i in _all("resorts")] == ["keyed"]
 
 
 @pytest.mark.django_db

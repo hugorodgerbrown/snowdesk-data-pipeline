@@ -9,6 +9,10 @@ coordinate outlives the thing the person deleted (SNOW-1170).
 
 One shared, public function rather than a private copy per app: the
 erasure guarantee is the same everywhere, so it has one home.
+
+Also ``prune_orphan_location_task``, ``prune_orphan_locations``' one task
+per orphan (SNOW-1400): the sweep of anonymous rows left behind before the
+per-delete rule above existed.
 """
 
 from __future__ import annotations
@@ -17,7 +21,9 @@ import logging
 
 from django.db import transaction
 from django.db.models import ProtectedError
+from django_tasks import task
 
+from apps.core.command_tasks import BULK_TASK_PRIORITY
 from apps.locations.models import Location
 
 logger = logging.getLogger(__name__)
@@ -51,3 +57,35 @@ def delete_location_if_orphaned(location: Location) -> None:
             location.delete()
     except ProtectedError:
         logger.debug("Location id=%s still referenced; left in place.", location.pk)
+
+
+@task(priority=BULK_TASK_PRIORITY)
+def prune_orphan_location_task(location_pk: int) -> bool:
+    """Background worker: delete one orphaned location and its weather.
+
+    ``prune_orphan_locations --commit``'s one task per orphan (SNOW-1400).
+    Re-asks ``orphaned()`` for this pk under a row lock, so a location
+    something has pointed at since it was enqueued, or one already gone,
+    is left alone. Deleting it cascades to its ``Weather`` rows.
+
+    Args:
+        location_pk: The ``Location``'s primary key.
+
+    Returns:
+        Whether the location was deleted, kept on the task result.
+
+    """
+    with transaction.atomic():
+        location = (
+            Location.objects.select_for_update()
+            .filter(pk=location_pk)
+            .only("pk")
+            .first()
+        )
+        if location is None or not (
+            Location.objects.orphaned().filter(pk=location_pk).exists()
+        ):
+            logger.info("location pk=%s is not an orphan; left in place", location_pk)
+            return False
+        Location.objects.filter(pk=location_pk).delete()
+    return True

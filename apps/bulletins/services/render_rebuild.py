@@ -29,6 +29,11 @@ under ``ImmediateBackend`` in dev, test and staging):
       with no bulletin rebuild to reach it: re-check it is still stale,
       then recompute it.
 
+  recompute_day_rating_task.enqueue(rating_pk, force)
+      One instance ``RegionDayRating`` for ``recompute_day_ratings``
+      (SNOW-1400): re-check it is still stale (unless ``force``), lock it
+      as a bulletin rebuild would, then recompute it.
+
 Each body runs in one ``transaction.atomic()``: the row write and its
 day-rating recompute commit together, so a recompute that fails rolls the
 row back and it stays a candidate for the next run. Before the recompute
@@ -368,3 +373,55 @@ def refresh_source_day_rating_task(region_code: str, day: str) -> int:
 
     """
     return refresh_one_source_day_rating(region_code, date.fromisoformat(day))
+
+
+def recompute_one_day_rating(rating_pk: int, *, force: bool = False) -> int:
+    """Recompute one instance ``RegionDayRating``; the task's body (SNOW-1400).
+
+    Locks the row the way a bulletin rebuild does (``_lock_region_day_ratings``),
+    so it and a sibling bulletin's task on the same pair recompute one after
+    the other.
+
+    Args:
+        rating_pk: The ``RegionDayRating``'s primary key.
+        force: Recompute even when the row is current under
+            ``DAY_RATING_VERSION`` (``recompute_day_ratings --all``).
+
+    Returns:
+        How many rows were recomputed: 0 when the row is gone or (without
+        ``force``) no longer stale, else 1.
+
+    """
+    with transaction.atomic():
+        rating = (
+            RegionDayRating.objects.filter(pk=rating_pk)
+            .only("pk", "region_id", "date", "version")
+            .first()
+        )
+        if rating is None:
+            return 0
+        if not force and rating.version == DAY_RATING_VERSION:
+            return 0
+        region = MicroRegion.objects.get(pk=rating.region_id)
+        _lock_region_day_ratings({(region, rating.date)})
+        recompute_region_day(region, rating.date, commit=True)
+        transaction.on_commit(lambda: invalidate_season_calendars([region]))
+    return 1
+
+
+@task(priority=RENDER_TASK_PRIORITY)
+def recompute_day_rating_task(rating_pk: int, force: bool = False) -> int:
+    """Background worker: recompute one instance day rating (SNOW-1400).
+
+    ``recompute_day_ratings --commit``'s one task per row, the instance
+    counterpart of ``refresh_source_day_rating_task``.
+
+    Args:
+        rating_pk: The ``RegionDayRating``'s primary key.
+        force: Recompute even when the row is current.
+
+    Returns:
+        How many rows were recomputed.
+
+    """
+    return recompute_one_day_rating(rating_pk, force=force)

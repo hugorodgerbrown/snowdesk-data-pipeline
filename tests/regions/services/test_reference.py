@@ -18,7 +18,6 @@ from apps.regions.models import Pass, Resort
 from apps.regions.services.reference import (
     mirror_passes,
     mirror_reference_data,
-    mirror_resorts,
     resort_document,
 )
 from tests.factories import (
@@ -120,13 +119,6 @@ class TestMirrorResorts:
             str(u) for u in SourceLocation.objects.values_list("uuid", flat=True)
         }
         assert named <= stations
-
-    def test_a_resort_without_a_slug_is_left_out(self) -> None:
-        """A slug is a resort's key on the wire; until it has one it is not sent."""
-        resort = ResortFactory.create()
-        Resort.objects.filter(pk=resort.pk).update(slug=None)
-        mirror_passes()
-        assert mirror_resorts()["created"] == 0
 
     def test_a_second_run_changes_nothing_and_a_removed_resort_is_tombstoned(
         self,

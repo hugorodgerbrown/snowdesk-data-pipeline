@@ -13,7 +13,10 @@ import pytest
 from django.db import transaction
 
 from apps.locations.models import Location
-from apps.locations.services.orphans import delete_location_if_orphaned
+from apps.locations.services.orphans import (
+    delete_location_if_orphaned,
+    prune_orphan_location_task,
+)
 from apps.weather.models import Weather
 from tests.factories import (
     FavouriteFactory,
@@ -81,3 +84,37 @@ class TestDeleteLocationIfOrphaned:
             delete_location_if_orphaned(observation.location)
             # A broken transaction would raise TransactionManagementError here.
             assert Location.objects.filter(pk=observation.location.pk).exists()
+
+
+@pytest.mark.django_db
+class TestPruneOrphanLocationTask:
+    """``prune_orphan_location_task`` re-asks orphaned() for its row (SNOW-1400)."""
+
+    def test_an_orphan_is_deleted_with_its_weather(self) -> None:
+        """The case the task exists for."""
+        orphan = LocationFactory.create(anonymous=True)
+        WeatherFactory.create(location=orphan)
+
+        assert prune_orphan_location_task.call(orphan.pk) is True
+
+        assert not Location.objects.filter(pk=orphan.pk).exists()
+        assert not Weather.objects.exists()
+
+    def test_a_location_referenced_since_it_was_enqueued_is_kept(self) -> None:
+        """Something pinned it between the command's read and the task."""
+        location = LocationFactory.create(anonymous=True)
+        FavouriteFactory.create(location=location)
+
+        assert prune_orphan_location_task.call(location.pk) is False
+        assert Location.objects.filter(pk=location.pk).exists()
+
+    def test_a_named_location_is_never_deleted(self) -> None:
+        """Curated data, even unreferenced."""
+        location = LocationFactory.create(name="Mont Fort")
+
+        assert prune_orphan_location_task.call(location.pk) is False
+        assert Location.objects.filter(pk=location.pk).exists()
+
+    def test_a_gone_location_is_a_no_op(self) -> None:
+        """Already deleted."""
+        assert prune_orphan_location_task.call(999_999) is False

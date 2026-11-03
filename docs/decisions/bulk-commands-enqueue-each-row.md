@@ -58,7 +58,7 @@ the rules in one place, and a guard test holds rule 5.
   `enqueue_each` without `mcp_runnable = True`.
 - A whole-layer reconcile that is all or nothing by design
   (`import_ski_tours`, `import_rest_zones`, `mirror_reference_data`) is not
-  a bulk command. A half-applied layer would tombstone live rows.
+  a bulk command. A half-applied layer would tombstone live rows. It is still `mcp_runnable`, because it finishes in minutes.
 - One outside service is one slot name, whichever command calls it
   (SNOW-1398). `terrain-tiles` (`TILE_ORIGIN`) is shared by the SAC tour
   render and the route and trip slope backfills, so two runs together
