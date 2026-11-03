@@ -685,10 +685,8 @@ def _today_region(**fields: Any) -> Any:
         "region_id": "CH-4115",
         "name": "",
         "url": "#",
-        "pinned": True,
         "level": None,
         "subdivision": "",
-        "trend": None,
         # The tile reads max_rating / max_subdivision off the rating row.
         "rating": None,
         "resorts": [],
@@ -709,7 +707,6 @@ TODAY_VARIANTS: tuple[dict[str, Any], ...] = (
                     name="Martigny – Verbier",
                     level="considerable",
                     subdivision="+",
-                    trend="up",
                     rating=SimpleNamespace(
                         max_rating="considerable", max_subdivision="+"
                     ),
@@ -734,14 +731,11 @@ TODAY_VARIANTS: tuple[dict[str, Any], ...] = (
                 _today_region(
                     region_id="CH-2223",
                     name="Obere Leventina",
-                    pinned=True,
                 ),
                 _today_region(
                     region_id="CH-2211",
                     name="Südliches Urseren",
-                    pinned=False,
                     level="moderate",
-                    trend="same",
                     rating=SimpleNamespace(max_rating="moderate", max_subdivision=""),
                     resorts=[
                         _today_resort(name="Andermatt", slug="andermatt", temp_max=1.0)

@@ -29,9 +29,6 @@ Context expected:
     {% include "includes/_overlay_sheet.html" with id="today-sheet" aria_label=today_title scroll_body=True side="left" %}
     <template id="today-sheet-template">
         {% include "includes/_sheet_header.html" with title=today_title icon_template="includes/_icon_sun.html" close_action="dismiss" title_class="text-lg font-semibold" %}
-        <p class="pb-3 text-sm text-text-2">
-            {% trans "Today's bulletin for the regions you've pinned, and the weather at your pinned resorts." %}
-        </p>
         {% comment %}
         The list's rows bleed to the panel's edges (-mx-4 on its <ul>), so
         the scroll box spans them too (-mx-4 px-4): a scroll box narrower

@@ -8,8 +8,6 @@ Covers ``apps.favourites.today``:
   - the nesting: a resort under its region, a pinned resort bringing in an
     unpinned parent region, a pinned region and its resort as one row;
   - the level, "No bulletin" for no row and ``no_rating``;
-  - the trend: up, down and same, subdivisions ignored, none when either
-    day is missing;
   - the resorts' weather and which point it is from; regions borrow none;
   - the order: alphabetical, regions and the resorts in each, never by
     danger;
@@ -29,14 +27,10 @@ from django.utils import timezone
 from apps.bulletins.models import RegionDayRating
 from apps.favourites.models import Favourite
 from apps.favourites.today import (
-    DOWN,
-    SAME,
-    UP,
     TodayRegion,
     build_today,
     today_region_pks,
     today_subjects,
-    trend_between,
 )
 from apps.locations.models import Location
 from apps.regions.models import MicroRegion
@@ -118,7 +112,6 @@ class TestWhatIsListed:
         assert row.name == "Martigny-Verbier"
         assert row.region_id == region.region_id
         assert row.url == region.get_absolute_url()
-        assert row.pinned is True
         assert row.resorts == []
 
     def test_a_resort_is_nested_under_its_resorts_region(self) -> None:
@@ -134,7 +127,6 @@ class TestWhatIsListed:
 
         [row] = _build(user)
         assert row.name == "Martigny-Verbier"
-        assert row.pinned is False
         assert [r.name for r in row.resorts] == ["Verbier"]
 
     def test_a_pinned_region_and_its_resort_are_one_row(self) -> None:
@@ -145,7 +137,6 @@ class TestWhatIsListed:
         FavouriteFactory.create(user=user, region=region, resort=resort)
 
         [row] = _build(user)
-        assert row.pinned is True
         assert [r.slug for r in row.resorts] == [resort.slug]
         assert row.resorts[0].url == resort.get_absolute_url()
 
@@ -174,58 +165,7 @@ class TestLevel:
 
         [row] = _build(user)
         assert row.level is None
-        assert row.trend is None
         assert row.rating is None
-
-    def test_the_trend_is_read_from_yesterday(self) -> None:
-        user = UserFactory.create()
-        region = MicroRegionFactory.create()
-        _rate(region, R.HIGH, R.CONSIDERABLE)
-        FavouriteFactory.create(user=user, region=region, region_pin=True)
-        assert _build(user)[0].trend == UP
-
-
-class TestTrend:
-    """How the level moved: ranks only, none when a day is missing."""
-
-    @staticmethod
-    def _rating(key: str, subdivision: str = "") -> RegionDayRating:
-        return RegionDayRating(max_rating=key, max_subdivision=subdivision)
-
-    @pytest.mark.parametrize(
-        ("today", "yesterday", "expected"),
-        [
-            (R.HIGH, R.CONSIDERABLE, UP),
-            (R.MODERATE, R.CONSIDERABLE, DOWN),
-            (R.CONSIDERABLE, R.CONSIDERABLE, SAME),
-        ],
-    )
-    def test_up_down_and_same(self, today: str, yesterday: str, expected: str) -> None:
-        assert trend_between(self._rating(today), self._rating(yesterday)) == expected
-
-    def test_a_subdivision_is_not_a_step(self) -> None:
-        """3- to 3+ is the same level as written."""
-        assert (
-            trend_between(
-                self._rating(R.CONSIDERABLE, "+"), self._rating(R.CONSIDERABLE, "-")
-            )
-            == SAME
-        )
-
-    @pytest.mark.parametrize(
-        ("today", "yesterday"),
-        [(R.HIGH, None), (None, R.HIGH), (R.HIGH, R.NO_RATING), (R.NO_RATING, R.LOW)],
-    )
-    def test_no_trend_when_a_day_is_missing(
-        self, today: str | None, yesterday: str | None
-    ) -> None:
-        assert (
-            trend_between(
-                self._rating(today) if today else None,
-                self._rating(yesterday) if yesterday else None,
-            )
-            is None
-        )
 
 
 @pytest.mark.django_db
@@ -331,4 +271,4 @@ class TestQueries:
 
         assert len(rows) == n
         assert all(len(row.resorts) == 1 for row in rows)
-        assert len(queries) == 6
+        assert len(queries) == 5
