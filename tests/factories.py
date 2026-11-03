@@ -674,10 +674,10 @@ class CommandRunFactory(factory.django.DjangoModelFactory[CommandRun]):
 
         model = CommandRun
 
-    command = "relink_bulletin_regions"
+    command = "rebuild_render_models"
     app_label = "bulletins"
-    arguments = factory.LazyFunction(lambda: {"commit": True, "source": "ALBINA"})
-    argv = "relink_bulletin_regions --source albina --commit"
+    arguments = factory.LazyFunction(lambda: {"commit": True})
+    argv = "rebuild_render_models --commit"
     mode = CommandRun.MODE.COMMIT
     status = CommandRun.STATUS.SUCCEEDED
     exit_code = 0

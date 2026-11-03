@@ -65,7 +65,8 @@ season at most.
   delivered day as untold.
 - A multi-region alert states no level and no new snow. One region's
   figures would misstate the others, and the trip page lists each.
-- Existing rows are filled by `backfill_crossed_regions --commit`, run as
-  a Deploy-Step. Until it runs, those rows resolve live.
-- A boundary change in the EAWS fixtures leaves stored lists stale. Clear
-  the column (`crossed_regions = NULL`) and rerun the backfill.
+- Existing rows were filled once by a Deploy-Step backfill, retired by
+  SNOW-1396 once it had run. A row still null resolves live.
+- A boundary change in the EAWS fixtures leaves stored lists stale. Clearing
+  the column (`crossed_regions = NULL`) makes those rows resolve live, and a
+  per-row backfill task (the SNOW-1397 shape) would refill them.

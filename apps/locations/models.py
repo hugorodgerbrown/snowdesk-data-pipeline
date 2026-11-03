@@ -551,8 +551,8 @@ class Location(BaseModel):
         Document two of the two-document IA (SNOW-795): one location, one
         day. Keyed on the opaque short id, never the primary key.
 
-        Returns ``""`` when ``short_id`` is null — a row that
-        ``backfill_location_short_ids`` has not reached yet has no page, and
+        Returns ``""`` when ``short_id`` is null — a row from
+        before the SNOW-797 column has no page, and
         saying so is the only answer a caller can use. SNOW-810: reversing
         with ``short_id=None`` raises ``NoReverseMatch``, which is a 500 on
         every surface that renders a link to a location, so an environment

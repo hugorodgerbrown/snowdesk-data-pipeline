@@ -254,10 +254,8 @@ _DYNAMIC_CACHE_MAX_AGE = 300
 # Cache lifetime for settled (past the fetcher's earliest-mutable-date
 # threshold) bulletin-groupings responses (SNOW-526). Settled geometry is
 # immutable on the normal ingest path, but a manual
-# ``backfill_bulletin_groupings --commit`` / ``fetch_bulletins --force`` /
-# ``purge_degenerate_bulletin_groupings --commit`` can
-# still rewrite history, so this is bounded well below the year-long
-# max-age used for historic bulletin pages — see
+# ``fetch_bulletins --force`` can still rewrite history, so this is bounded
+# well below the year-long max-age used for historic bulletin pages — see
 # docs/decisions/date-aware-cache-policy.md. Offline availability comes
 # from the service worker's Cache Storage entry, which ignores max-age
 # entirely, so nothing is lost by keeping this short.

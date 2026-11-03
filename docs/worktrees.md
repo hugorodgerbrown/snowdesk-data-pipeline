@@ -317,7 +317,7 @@ contains so it can be relied on and extended safely.
 - **Bulletin groupings:** one `BulletinGrouping` per MULTI-REGION bulletin —
   the ten map-date groups — dissolved by the same service the ingest path
   uses, so `/api/bulletin-groupings.geojson` returns real geometry and the
-  boundary layer draws without a manual `backfill_bulletin_groupings` run.
+  boundary layer draws without a manual backfill.
   The single-region CH-4115 detail bulletins get none (SNOW-1001).
 - **CH-4115 (Martigny-Verbier):** 30 bulletins, one per day of April 2026
   (29 single-region detail bulletins plus the grouped map-date one).

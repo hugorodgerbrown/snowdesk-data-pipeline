@@ -93,7 +93,6 @@ from typing import Any
 from django.conf import settings
 from django.core.cache import cache
 from django.core.cache.utils import make_template_fragment_key
-from django.db.models import Prefetch
 from django.utils import timezone, translation
 
 from apps.bulletins.models import Bulletin
@@ -113,7 +112,7 @@ from apps.regions.models import MicroRegion
 logger = logging.getLogger(__name__)
 
 # The only MicroRegion fields recompute_region_day reads. day_rating_pairs
-# and slim_regions_prefetch load these and defer the rest (SNOW-1054).
+# loads these and defers the rest (SNOW-1054).
 _SLIM_REGION_FIELDS: tuple[str, ...] = ("pk", "region_id")
 
 
@@ -232,22 +231,15 @@ def day_rating_pairs(
     ``RegionBulletin``, so a bulletin covering several regions contributes one
     pair per region.
 
-    Shared by every management command that needs to refresh RegionDayRating
-    after a batch mutation (re-keying, reformatting, purging) — collect the
-    pairs before the mutation touches the bulletins' region links, then pass
-    them to :func:`refresh_day_ratings`.
+    Collect the pairs before a mutation touches the bulletins' region links,
+    so the regions a bulletin covered before it are recomputed too.
 
     Each region carries ``pk`` and ``region_id`` only — all that
-    :func:`recompute_region_day` reads. Callers that stream bulletins
-    prefetch the regions with :func:`slim_regions_prefetch`, and this
-    reads that cache; without a prefetch it loads the two fields itself.
-    The callers accumulate these pairs across a whole run, and every
-    bulletin loads its regions afresh, so the
-    set holds one instance per (region, day): a full-season rebuild touches
-    tens of thousands. A full ``MicroRegion`` carries its boundary polygon
-    (~5 KB parsed for a Swiss region, ~30 KB for an Austrian or Italian one),
-    which put a full rebuild on course for ~2 GB of held memory (SNOW-1054).
-    With two fields a pair costs ~0.5 KB.
+    :func:`recompute_region_day` reads. A caller that has prefetched the
+    regions is read from that cache; otherwise the two fields are loaded
+    here. A full ``MicroRegion`` carries its boundary polygon (~5 KB parsed
+    for a Swiss region, ~30 KB for an Austrian or Italian one), so holding
+    full instances is what SNOW-1054 removed.
 
     Args:
         bulletins: Bulletins whose (region, day) pairs should be collected.
@@ -260,9 +252,9 @@ def day_rating_pairs(
     pairs: set[tuple["MicroRegion", date]] = set()
     for bulletin in bulletins:
         day = bulletin.target_date or target_day_for_valid_from(bulletin.valid_from)
-        # A caller that streams bulletins prefetches their regions with
-        # slim_regions_prefetch(); read that cache. Chaining .only() onto a
-        # prefetched manager would bypass the cache and query per bulletin.
+        # A caller that prefetched the regions is read from that cache.
+        # Chaining .only() onto a prefetched manager would bypass the cache
+        # and query per bulletin.
         prefetched = getattr(bulletin, "_prefetched_objects_cache", {})
         regions = (
             bulletin.regions.all()
@@ -272,60 +264,6 @@ def day_rating_pairs(
         for region in regions:
             pairs.add((region, day))
     return pairs
-
-
-def slim_regions_prefetch() -> Prefetch:
-    """Return a ``regions`` prefetch loading only what the day ratings read.
-
-    For any command that streams bulletins and hands them to
-    :func:`day_rating_pairs`: pass it to ``prefetch_related`` in place of
-    the bare ``"regions"``, so each chunk's single regions query loads two
-    columns rather than every boundary polygon, and ``day_rating_pairs``
-    reads the cache instead of querying per bulletin (SNOW-1054).
-
-    Returns:
-        A ``Prefetch`` over ``MicroRegion`` restricted to ``pk`` and
-        ``region_id``.
-
-    """
-    return Prefetch("regions", queryset=MicroRegion.objects.only(*_SLIM_REGION_FIELDS))
-
-
-def refresh_day_ratings(pairs: Iterable[tuple["MicroRegion", date]]) -> int:
-    """
-    Recompute RegionDayRating for every (region, day) pair supplied.
-
-    Then deletes the cached season calendar of every distinct region in
-    ``pairs`` (SNOW-1172), so a batch command never leaves the calendar
-    serving markup built from the old ratings. A region whose recompute
-    failed is invalidated too: its rows may have changed before the
-    failure, and a spare re-render is cheap. Cache errors are logged by
-    :func:`invalidate_season_calendars` and never change the return value.
-
-    Args:
-        pairs: (region, day) tuples, typically produced by
-            :func:`day_rating_pairs`. Any iterable, including a one-shot
-            generator: it is read once.
-
-    Returns:
-        The number of pairs that failed to recompute.
-
-    """
-    pairs = list(pairs)
-    failures = 0
-    for region, day in pairs:
-        try:
-            recompute_region_day(region, day, commit=True)
-        except Exception:
-            failures += 1
-            logger.exception(
-                "Failed to refresh day rating for region=%s day=%s",
-                region.region_id,
-                day,
-            )
-    regions = {region.pk: region for region, _day in pairs}
-    invalidate_season_calendars(regions.values())
-    return failures
 
 
 # Bumped whenever the season calendar's markup changes shape, so a deploy

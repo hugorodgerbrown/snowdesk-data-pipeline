@@ -110,8 +110,7 @@ def apply_backfilled_row(row: SourceWeather) -> None:
         apply_source_weather(row)
     except ImmutableWeatherRowError:
         # This instance recorded the day before the service did — history
-        # from before SNOW-1275, or a row copy_weather_to_service has not
-        # reached. Its own account stands.
+        # from before SNOW-1275. Its own account stands.
         logger.debug(
             "apply_backfilled_row: %s %s already held; kept",
             row.location.uuid,

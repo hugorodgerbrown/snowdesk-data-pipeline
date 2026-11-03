@@ -62,9 +62,7 @@ from apps.bulletins.services.day_rating import (
     apply_day_rating_item,
     day_rating_pairs,
     recompute_region_day,
-    refresh_day_ratings,
     season_calendar_cache_key,
-    slim_regions_prefetch,
     target_day_for_valid_from,
 )
 from apps.bulletins.services.render_model import (
@@ -1081,7 +1079,7 @@ class TestApplyBulletinDayRatings:
 
 
 # ---------------------------------------------------------------------------
-# day_rating_pairs / refresh_day_ratings — the extracted batch-command helpers
+# day_rating_pairs
 # ---------------------------------------------------------------------------
 
 
@@ -1149,27 +1147,6 @@ class TestDayRatingPairs:
         assert held.get_deferred_fields() >= {"boundary", "basemap_download"}
         assert "region_id" not in held.get_deferred_fields()
 
-    def test_reads_a_slim_prefetch_without_querying(self) -> None:
-        """With slim_regions_prefetch, pairs come from the cache, slim (SNOW-1054).
-
-        Chaining .only() onto a prefetched manager bypasses the cache and
-        queries once per bulletin; a full-archive rebuild would pay that
-        for every bulletin it streams.
-        """
-        region = MicroRegionFactory.create(region_id="CH-3009")
-        vf = datetime.datetime(2026, 3, 7, 8, 0, tzinfo=UTC)
-        vt = datetime.datetime(2026, 3, 7, 17, 0, tzinfo=UTC)
-        _make_bulletin_for_region(region, vf, vt)
-        (bulletin,) = Bulletin.objects.filter(regions=region).prefetch_related(
-            slim_regions_prefetch()
-        )
-
-        with CaptureQueriesContext(connection) as queries:
-            ((held, _day),) = day_rating_pairs([bulletin])
-
-        assert len(queries) == 0
-        assert held.get_deferred_fields() >= {"boundary", "basemap_download"}
-
     def test_refresh_from_held_pairs_reads_no_deferred_field(self) -> None:
         """Recomputing from the slim instances never lazy-loads a deferred field.
 
@@ -1197,139 +1174,6 @@ class TestDayRatingPairs:
         # not exceed the baseline's recompute queries.
         assert len(slim) <= len(full) - 1
         assert not any('"boundary"' in q["sql"] for q in slim.captured_queries)
-
-
-@pytest.mark.django_db
-class TestRefreshDayRatings:
-    """Tests for refresh_day_ratings()."""
-
-    def test_recomputes_every_pair(self) -> None:
-        """Each (region, day) pair is written via recompute_region_day."""
-        region = MicroRegionFactory.create(region_id="CH-3005")
-        vf = datetime.datetime(2026, 3, 4, 8, 0, tzinfo=UTC)
-        vt = datetime.datetime(2026, 3, 4, 17, 0, tzinfo=UTC)
-        _make_bulletin_for_region(
-            region, vf, vt, traits=[_trait(3, "dry")], headline_key="considerable"
-        )
-
-        failures = refresh_day_ratings({(region, datetime.date(2026, 3, 4))})
-
-        assert failures == 0
-        rating = RegionDayRating.objects.get(
-            region=region, date=datetime.date(2026, 3, 4)
-        )
-        assert rating.max_rating == "considerable"
-
-    def test_counts_failures_without_aborting_remaining_pairs(self) -> None:
-        """A recompute failure for one pair does not stop the others."""
-        region_bad = MicroRegionFactory.create(region_id="CH-3006")
-        region_ok = MicroRegionFactory.create(region_id="CH-3007")
-        vf = datetime.datetime(2026, 3, 5, 8, 0, tzinfo=UTC)
-        vt = datetime.datetime(2026, 3, 5, 17, 0, tzinfo=UTC)
-        _make_bulletin_for_region(
-            region_ok, vf, vt, traits=[_trait(4, "dry")], headline_key="high"
-        )
-        day = datetime.date(2026, 3, 5)
-
-        original = recompute_region_day
-
-        def _fail_only_bad_region(
-            region: Any, target_day: Any, *, commit: bool
-        ) -> None:
-            """Raise for region_bad; delegate to the real function otherwise."""
-            if region.pk == region_bad.pk:
-                raise ValueError("boom")
-            original(region, target_day, commit=commit)
-
-        with patch(
-            "apps.bulletins.services.day_rating.recompute_region_day",
-            side_effect=_fail_only_bad_region,
-        ):
-            failures = refresh_day_ratings({(region_bad, day), (region_ok, day)})
-
-        assert failures == 1
-        ok_row = RegionDayRating.objects.get(region=region_ok, date=day)
-        assert ok_row.max_rating == "high"
-
-    @staticmethod
-    def _seed_calendar_keys(region: Any) -> list[str]:
-        """Cache a season-calendar body for every language and return the keys."""
-        from django.conf import settings
-
-        today_iso = timezone.localdate().isoformat()
-        keys = [
-            season_calendar_cache_key(region.canonical_region_id, today_iso, code)
-            for code, _name in settings.LANGUAGES
-        ]
-        for key in keys:
-            cache.set(key, "<stale calendar>", 3600)
-        return keys
-
-    def test_invalidates_season_calendar_of_refreshed_regions_only(self) -> None:
-        """SNOW-1172: every language's key goes for a refreshed region; others stay."""
-        cache.clear()
-        refreshed = MicroRegionFactory.create(region_id="CH-3011")
-        untouched = MicroRegionFactory.create(region_id="CH-3012")
-        refreshed_keys = self._seed_calendar_keys(refreshed)
-        untouched_keys = self._seed_calendar_keys(untouched)
-
-        refresh_day_ratings(
-            [
-                (refreshed, datetime.date(2026, 3, 4)),
-                (refreshed, datetime.date(2026, 3, 5)),
-            ]
-        )
-
-        assert all(cache.get(key) is None for key in refreshed_keys)
-        assert all(cache.get(key) is not None for key in untouched_keys)
-
-    def test_generator_is_recomputed_and_invalidated(self) -> None:
-        """A one-shot generator is read once: recomputed and then invalidated."""
-        cache.clear()
-        region = MicroRegionFactory.create(region_id="CH-3013")
-        vf = datetime.datetime(2026, 3, 4, 8, 0, tzinfo=UTC)
-        vt = datetime.datetime(2026, 3, 4, 17, 0, tzinfo=UTC)
-        _make_bulletin_for_region(
-            region, vf, vt, traits=[_trait(3, "dry")], headline_key="considerable"
-        )
-        keys = self._seed_calendar_keys(region)
-
-        failures = refresh_day_ratings(
-            pair for pair in [(region, datetime.date(2026, 3, 4))]
-        )
-
-        assert failures == 0
-        assert RegionDayRating.objects.filter(
-            region=region, date=datetime.date(2026, 3, 4)
-        ).exists()
-        assert all(cache.get(key) is None for key in keys)
-
-    def test_failed_recompute_still_invalidates_and_is_counted(self) -> None:
-        """A region whose recompute raises still loses its cached calendar."""
-        cache.clear()
-        region = MicroRegionFactory.create(region_id="CH-3014")
-        keys = self._seed_calendar_keys(region)
-
-        with patch(
-            "apps.bulletins.services.day_rating.recompute_region_day",
-            side_effect=ValueError("boom"),
-        ):
-            failures = refresh_day_ratings({(region, datetime.date(2026, 3, 6))})
-
-        assert failures == 1
-        assert all(cache.get(key) is None for key in keys)
-
-    def test_cache_error_never_raises(self) -> None:
-        """A cache backend failure is logged and the failure count is unchanged."""
-        region = MicroRegionFactory.create(region_id="CH-3015")
-
-        with patch(
-            "apps.bulletins.services.day_rating.cache.delete_many",
-            side_effect=RuntimeError("cache down"),
-        ):
-            failures = refresh_day_ratings({(region, datetime.date(2026, 3, 7))})
-
-        assert failures == 0
 
 
 # ---------------------------------------------------------------------------

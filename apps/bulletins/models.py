@@ -47,7 +47,7 @@ from datetime import date as _date
 from typing import Any
 
 from django.db import models
-from django.db.models import CASCADE, Count, Q
+from django.db.models import CASCADE
 from django.utils import timezone
 
 from apps.core.models import BaseModel
@@ -957,10 +957,8 @@ class BulletinShareClick(BaseModel):
 # A grouping only says something the micro-region layer does not when it
 # dissolves two or more boundaried regions (SNOW-1001; see
 # docs/decisions/a-grouping-outline-asserts-an-aggregation.md). This is the
-# single definition of "worth a row" — the ingest-time guard in
-# ``apps.bulletins.services.grouping``, ``BulletinGroupingQuerySet.degenerate``
-# below, and ``candidate_bulletins`` in ``backfill_bulletin_groupings`` all
-# read it, so writer, backfill and purge cannot drift apart.
+# single definition of "worth a row", read by the ingest-time guard in
+# ``apps.bulletins.services.grouping``.
 MIN_GROUPED_REGIONS = 2
 
 
@@ -979,35 +977,6 @@ class BulletinGroupingQuerySet(models.QuerySet["BulletinGrouping"]):
 
         """
         return self.filter(target_date=target_date)
-
-    def degenerate(self) -> "BulletinGroupingQuerySet":
-        """
-        Return groupings that draw nothing the micro-region layer does not.
-
-        Annotates each row with the number of BOUNDARIED micro-regions linked
-        to its bulletin — the same population
-        ``compute_bulletin_grouping_boundary`` dissolves — and keeps those
-        below ``MIN_GROUPED_REGIONS``. A bulletin carrying three regions of
-        which one has a boundary dissolves to that one polygon and is just as
-        degenerate as a single-region bulletin, which is why the count is
-        filtered rather than taken over every link.
-
-        Rows selected here were written before the ingest-time guard landed;
-        ``purge_degenerate_bulletin_groupings`` deletes them. The exact
-        complement of ``candidate_bulletins`` in
-        ``backfill_bulletin_groupings``, which
-        ``tests/bulletins/test_bulletin_grouping_model.py`` pins.
-
-        Returns:
-            A filtered queryset of degenerate BulletinGrouping rows.
-
-        """
-        return self.annotate(
-            boundaried_region_count=Count(
-                "bulletin__regions",
-                filter=Q(bulletin__regions__boundary__isnull=False),
-            )
-        ).filter(boundaried_region_count__lt=MIN_GROUPED_REGIONS)
 
 
 class BulletinGrouping(BaseModel):

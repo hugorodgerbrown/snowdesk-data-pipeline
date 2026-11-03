@@ -15,10 +15,10 @@ corner with no vertex inside it.
 
 The answer is stored as an ordered list of ``MicroRegion.region_id`` on
 ``Route.crossed_regions`` and ``Trip.crossed_regions``. ``None`` there means
-"not yet resolved" (a row from before ``backfill_crossed_regions``); ``[]``
+"not yet resolved" (a row from before SNOW-945); ``[]``
 means the track is outside coverage — an answer about coverage, not about
 the ground. ``track_regions`` reads the stored list back as rows, resolving
-live when it is ``None`` so every page is right before the backfill runs.
+live when it is ``None`` so such a row still reads right.
 
 See docs/decisions/a-route-carries-the-regions-it-crosses.md.
 """

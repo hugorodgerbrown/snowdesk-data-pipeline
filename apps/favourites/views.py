@@ -801,8 +801,8 @@ def favourite_detail_redirect(request: HttpRequest, uuid: UUID) -> HttpResponse:
     uuid — no existence oracle. A favourite with no ``location`` (a row
     the SNOW-704 backfill has not reached) has no page to reach, so it is
     a 404 rather than a redirect to a broken target. SNOW-810: so is one
-    whose location has no ``short_id`` yet (a row
-    ``backfill_location_short_ids`` has not reached) — ``get_absolute_url``
+    whose location has no ``short_id`` yet (a row from before the
+    SNOW-797 column) — ``get_absolute_url``
     answers "" for it, and redirecting to "" would send the browser back to
     this same URL in a loop.
 

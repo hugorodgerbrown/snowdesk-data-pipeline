@@ -51,9 +51,8 @@ server decided is exactly what gets persisted, by construction.
 
 **Why 7 days, not the year-long `max-age` historic bulletin pages use.**
 Settled bulletin-groupings geometry is immutable on the *normal* ingest
-path, but `backfill_bulletin_groupings --commit`, `fetch_bulletins
---force` and `purge_degenerate_bulletin_groupings --commit` can still
-rewrite history deliberately. A year-long `max-age`
+path, but `fetch_bulletins --force` can still rewrite history
+deliberately (as the since-retired grouping backfill and purge once did). A year-long `max-age`
 would leave a stale HTTP/CDN-cached copy for far too long after such a
 manual rewrite. Offline availability doesn't depend on `max-age` at all —
 Cache Storage entries persist until the SW's own version bump or LRU trim

@@ -530,8 +530,8 @@ class TestLocationWeatherSitemap:
     def test_location_without_a_short_id_is_excluded(self, client: Client) -> None:
         """A location with no short id has no address, so it is not listed.
 
-        SNOW-810: ``short_id`` is nullable between the SNOW-797 migration
-        and ``backfill_location_short_ids``, and this section reached
+        SNOW-810: ``short_id`` is nullable for a row from before the
+        SNOW-797 column, and this section reached
         ``get_absolute_url()`` for every row. Reversing on ``None`` raised
         ``NoReverseMatch``, which took the WHOLE sitemap down with a 500 —
         every bulletin, resort and static entry with it. The unaddressable

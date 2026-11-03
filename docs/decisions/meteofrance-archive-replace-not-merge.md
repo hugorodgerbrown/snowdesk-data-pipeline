@@ -58,10 +58,11 @@ run against production without first proving the load was complete.
 
 **Consequences.**
 
-- `purge_legacy_meteofrance_bulletins` is a permanent addition to the
-  management-command catalogue, not deleted once the production run
-  completes — a future re-ingest of any old-grammar backlog (e.g. a partial
-  archive rebuild) can reuse it unchanged.
+- `purge_legacy_meteofrance_bulletins` was first kept as a permanent
+  addition to the catalogue, for a future re-ingest of any old-grammar
+  backlog. SNOW-1396 retired it under the rule that a spent one-off command
+  is deleted: nothing writes the old grammar any more, so no backlog can
+  form. Its last version is in git history if one ever does.
 - `RegionBulletin` and `BulletinGrouping` rows for a purged bulletin cascade
   away automatically (`on_delete=CASCADE`); the command reports the counts but
   does not need to handle them.
