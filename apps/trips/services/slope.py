@@ -24,15 +24,33 @@ lives here.
 The walk itself is ``apps.routes.services.slope_segments`` unchanged —
 same stride, same record, same rule that an all-unavailable run stores
 NOTHING so the field stays null and a later run can retry.
+
+``backfill_trip_slopes_task`` (SNOW-1398) is ``backfill_trip_slope_samples``'
+one task per stale trip, through ``apps.core.command_tasks.enqueue_each``.
+It COPIES BEFORE IT WALKS: where the source route is still there, current,
+and its ``points`` equal the snapshot's, its record answers this trip
+exactly and costs nothing (``inherited_record``). Only a walk takes a turn
+on the shared ``TILE_ORIGIN`` slot.
 """
 
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from django_tasks import task
 
-from apps.routes.services.slope_segments import build_slope_samples
+from apps.core.command_tasks import (
+    BULK_TASK_PRIORITY,
+    backing_off,
+    calls_outside,
+    wait_for_slot,
+)
+from apps.routes.services.slope_segments import (
+    STALE_TERRAIN,
+    TILE_ORIGIN,
+    build_slope_samples,
+)
 from apps.routes.services.track_render import store_terrain
 from apps.trips.models import Trip
 
@@ -71,11 +89,24 @@ def _worker_sample_trip_slopes(trip_pk: int) -> None:
         )
         return
 
+    _walk_and_store(trip)
+
+
+def _walk_and_store(trip: Trip) -> str:
+    """Walk one trip's snapshot and store it; both workers' shared body.
+
+    Args:
+        trip: The trip, loaded.
+
+    Returns:
+        ``"sampled"``, or ``"unanswered"`` when the walk learned nothing.
+
+    """
     samples = build_slope_samples(trip.points, f"trip pk={trip.pk}")
     if samples is None:
         # Left null on purpose: null is "never sampled", which is what a
         # run that learned nothing leaves true.
-        return
+        return "unanswered"
 
     # SNOW-1309: the record and its render, written together.
     store_terrain(trip, samples)
@@ -86,6 +117,83 @@ def _worker_sample_trip_slopes(trip_pk: int) -> None:
         len(samples["segments"]),
         sum(1 for segment in samples["segments"] if "unknown" in segment),
     )
+    return "sampled"
+
+
+def inherited_record(trip: Trip) -> dict[str, Any] | None:
+    """Return the source route's record when it describes THIS track.
+
+    Three conditions, and each is load-bearing: the route must still exist
+    (``Trip.route`` is provenance and may be null), it must have been
+    sampled, and its geometry must be identical to the snapshot's — a trip
+    may outlive its route, and a record copied off a different track would
+    paint one track's steepness onto another.
+
+    Args:
+        trip: The trip being filled in.
+
+    Returns:
+        The record to copy, or None when the trip has to be walked.
+
+    """
+    route = trip.route
+    if route is None or route.slope_samples is None:
+        return None
+    if route.points != trip.points:
+        return None
+    # A record the route itself has not brought up to date is not worth
+    # inheriting: the trip would still be missing the key the backfill
+    # selects on, so it would be re-copied on every run and never
+    # converge. Walking answers it once.
+    if "heights" not in route.slope_samples:
+        return None
+    record: dict[str, Any] = route.slope_samples
+    return record
+
+
+@task(priority=BULK_TASK_PRIORITY)
+def backfill_trip_slopes_task(trip_pk: int, delay_s: float = 0.0) -> str | None:
+    """Background worker: fill in one stale trip for the backfill (SNOW-1398).
+
+    Re-reads the row through ``STALE_TERRAIN``, so a duplicate enqueue or a
+    trip filled in since is a no-op. Copies the source route's record when
+    it answers this track; otherwise waits its turn on the tile origin and
+    walks.
+
+    Args:
+        trip_pk: Primary key of the ``Trip`` to fill in.
+        delay_s: Seconds between one walk's start and the next.
+
+    Returns:
+        ``"copied"``, ``"sampled"`` or ``"unanswered"``, kept on the task
+        result, or None when the trip no longer needed filling in or it
+        needed a walk while the tile origin's breaker was open.
+
+    """
+    trip = (
+        Trip.objects.filter(STALE_TERRAIN, pk=trip_pk).select_related("route").first()
+    )
+    if trip is None:
+        logger.info("trip pk=%s needs no walk; skipping backfill task", trip_pk)
+        return None
+    inherited = inherited_record(trip)
+    if inherited is not None:
+        # SNOW-1309: the record and its render, written together.
+        store_terrain(trip, inherited)
+        return "copied"
+    if backing_off(TILE_ORIGIN):
+        # The copy above needs no origin; only a walk waits out the breaker.
+        logger.info(
+            "trip pk=%s: backing off the tile origin; left for the next run",
+            trip_pk,
+        )
+        return None
+    wait_for_slot(TILE_ORIGIN, delay_s)
+    return _walk_and_store(trip)
+
+
+# A walk asks the tile origin, so enqueue_each refuses it unpaced.
+calls_outside(backfill_trip_slopes_task)
 
 
 def enqueue_trip_slope_sampling(trip: Trip) -> None:

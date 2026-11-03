@@ -11,11 +11,14 @@ The claims worth testing are about WHICH PATH a row takes:
   - a trip whose source route is present, sampled and geometrically
     identical INHERITS, and the tile origin is not asked;
   - a trip whose route is gone, unsampled, or no longer matches WALKS;
-  - a read-only run does neither, and still reports the split;
+  - a read-only run does neither, and counts the candidates;
   - a walk that learns nothing leaves the field null, so a later run
     retries it, and that is not a failure;
   - one failure does not abort the batch, and the command still exits
-    non-zero.
+    non-zero;
+  - since SNOW-1398 each trip is one task (run inline here): the command is
+    offered to the ops MCP server, and a task whose trip was filled in
+    since it was enqueued does nothing.
 """
 
 from __future__ import annotations
@@ -25,14 +28,15 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-from django.core.management import call_command
+from django.core.management import call_command, load_command_class
 from django.core.management.base import CommandError
 
+from apps.core.command_tasks import back_off, clear_back_off
+from apps.routes.services.slope_segments import TILE_ORIGIN
+from apps.trips.services.slope import backfill_trip_slopes_task
 from tests.factories import RouteFactory, TripFactory, UserFactory
 
-_BUILDER = (
-    "apps.trips.management.commands.backfill_trip_slope_samples.build_slope_samples"
-)
+_BUILDER = "apps.trips.services.slope.build_slope_samples"
 
 MERIDIAN_TRACK = [[7.0, 46.0, 1000.0], [7.0, 46.01, 1200.0]]
 
@@ -57,9 +61,16 @@ def _route_record(angle_deg: float) -> dict[str, Any]:
 
 
 def _run(*args: str) -> str:
-    """Run the command and return its stdout."""
+    """Run the command unpaced and return its stdout."""
     out = StringIO()
-    call_command("backfill_trip_slope_samples", *args, stdout=out, stderr=StringIO())
+    call_command(
+        "backfill_trip_slope_samples",
+        "--delay",
+        "0",
+        *args,
+        stdout=out,
+        stderr=StringIO(),
+    )
     return out.getvalue()
 
 
@@ -157,7 +168,7 @@ class TestTheWalkPath:
 
         trip.refresh_from_db()
         assert trip.slope_samples is None
-        assert "1 left null" in output
+        assert "1 trip(s) enqueued" in output
 
     def test_one_failure_does_not_abort_the_others(self) -> None:
         first = TripFactory.create(
@@ -210,9 +221,7 @@ class TestReadOnlyByDefault:
         trip.refresh_from_db()
         assert trip.slope_samples is None
         assert "READ-ONLY" in output
-        # The split is the figure an operator is previewing for: how many
-        # of these need the origin at all.
-        assert "1 trip(s) would inherit" in output
+        assert "1 trip(s) would be enqueued" in output
 
     def test_a_record_without_cruxes_is_current(self) -> None:
         """SNOW-1066 removed cruxes, so their key no longer selects a row."""
@@ -273,3 +282,69 @@ class TestReadOnlyByDefault:
         output = _run()
 
         assert "0 trip(s)" in output
+
+
+@pytest.mark.django_db
+class TestTask:
+    """The row task is idempotent; a copy waits for no slot."""
+
+    def test_the_command_is_offered_to_the_ops_server(self) -> None:
+        """It only enqueues, so run_command may start it."""
+        command = load_command_class("apps.trips", "backfill_trip_slope_samples")
+        assert getattr(command, "mcp_runnable") is True
+
+    def test_a_trip_filled_in_since_is_left_alone(self) -> None:
+        """A duplicate or late task re-reads the row and does nothing."""
+        trip = TripFactory.create(
+            points=MERIDIAN_TRACK, point_count=2, slope_samples=RECORD, route=None
+        )
+
+        with patch(_BUILDER) as builder:
+            assert backfill_trip_slopes_task.call(trip.pk) is None
+
+        builder.assert_not_called()
+
+    def test_a_copy_waits_for_no_slot(self) -> None:
+        """Only a walk asks the origin, so only a walk takes a turn."""
+        organiser = UserFactory.create()
+        route = RouteFactory.create(
+            user=organiser, points=MERIDIAN_TRACK, slope_samples=RECORD
+        )
+        trip = TripFactory.create(
+            created_by=organiser,
+            route=route,
+            points=MERIDIAN_TRACK,
+            point_count=2,
+            slope_samples=None,
+        )
+
+        with patch("apps.trips.services.slope.wait_for_slot") as wait:
+            assert backfill_trip_slopes_task.call(trip.pk, 1.0) == "copied"
+
+        wait.assert_not_called()
+
+    def test_an_open_breaker_stops_a_walk_but_not_a_copy(self) -> None:
+        """The copy asks the origin nothing, so only the walk waits it out."""
+        organiser = UserFactory.create()
+        route = RouteFactory.create(
+            user=organiser, points=MERIDIAN_TRACK, slope_samples=RECORD
+        )
+        copyable = TripFactory.create(
+            created_by=organiser,
+            route=route,
+            points=MERIDIAN_TRACK,
+            point_count=2,
+            slope_samples=None,
+        )
+        walkable = TripFactory.create(
+            points=MERIDIAN_TRACK, point_count=2, slope_samples=None, route=None
+        )
+        back_off(TILE_ORIGIN, 60)
+        try:
+            with patch(_BUILDER) as builder:
+                assert backfill_trip_slopes_task.call(copyable.pk) == "copied"
+                assert backfill_trip_slopes_task.call(walkable.pk) is None
+        finally:
+            clear_back_off(TILE_ORIGIN)
+
+        builder.assert_not_called()

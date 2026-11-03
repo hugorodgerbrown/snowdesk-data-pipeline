@@ -59,3 +59,16 @@ the rules in one place, and a guard test holds rule 5.
 - A whole-layer reconcile that is all or nothing by design
   (`import_ski_tours`, `import_rest_zones`, `mirror_reference_data`) is not
   a bulk command. A half-applied layer would tombstone live rows.
+- One outside service is one slot name, whichever command calls it
+  (SNOW-1398). `terrain-tiles` (`TILE_ORIGIN`) is shared by the SAC tour
+  render and the route and trip slope backfills, so two runs together
+  never ask the tile origin faster than one would. `what3words` and
+  `open-meteo` are the others so far.
+- A task opens the breaker only when its failure means the service.
+  The slope backfills open none: their walk answers None for a track too
+  short to sample as well as for an outage, and a degenerate route that
+  stays a candidate would close the origin every night. They still honour
+  one the tour render opened: a walk returns and leaves its row for the
+  next run (a trip's copy, which asks nothing, goes ahead).
+- A command that walked its rows inline now reports what it enqueued, not
+  what each row did; the task result holds the outcome.

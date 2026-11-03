@@ -50,6 +50,7 @@ from apps.ingest.public import (
     tour_summit,
 )
 from apps.routes.services.ski_network import apply_source_tour
+from apps.routes.services.slope_segments import TILE_ORIGIN
 from track.terrain_grid import TerrainGrid
 
 logger = logging.getLogger(__name__)
@@ -57,9 +58,8 @@ logger = logging.getLogger(__name__)
 # Below the default (0), so user-facing work on the queue goes first.
 RENDER_TASK_PRIORITY = BULK_TASK_PRIORITY
 
-# The breaker's name for the terrain tile origin, and how long an
-# unanswered walk keeps every later task off it.
-TILE_ORIGIN = "terrain-tiles"
+# How long an unanswered walk keeps every later task off the tile origin
+# (TILE_ORIGIN, shared with the route and trip backfills since SNOW-1398).
 ORIGIN_BACK_OFF_S = 300.0
 
 # The terrain model's definition, read once per worker process. Only a

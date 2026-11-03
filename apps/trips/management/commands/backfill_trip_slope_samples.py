@@ -42,12 +42,19 @@ nulls, because those are answers.
 left null rather than written as a record of nothing, so a later run
 picks it up again. Idempotent: a current row is not a candidate.
 
+**It only enqueues (SNOW-1398).** One ``backfill_trip_slopes_task`` per
+candidate, through ``apps.core.command_tasks.enqueue_each``; the copy and
+the walk both happen in the task (``apps/trips/services/slope.py``), which
+re-reads its row and returns when it is no longer stale. ``--delay``
+paces the tasks, and a walking task also waits for it on the tile origin's
+shared slot; a copy waits for no slot.
+
 Usage:
-    # Preview — reports how many trips would be filled, and by which
-    # path, writing nothing and asking the origin nothing.
+    # Preview — reports how many trips would be filled, writing nothing
+    # and asking the origin nothing.
     uv run python manage.py backfill_trip_slope_samples
 
-    # Copy and sample, and persist.
+    # Enqueue one task per trip.
     uv run python manage.py backfill_trip_slope_samples --commit
 
     # A first batch, to watch it before committing to the whole table.
@@ -57,40 +64,41 @@ Usage:
 from __future__ import annotations
 
 import logging
-import time
 from argparse import ArgumentParser
 from typing import Any
 
 from django.core.management.base import CommandError
-from django.db.models import Q
 
-from apps.core.command_iteration import iterate_rows, non_negative_float
+from apps.core.command_iteration import non_negative_float
 from apps.core.command_register import RegisteredCommand
-from apps.routes.services.slope_segments import build_slope_samples
-from apps.routes.services.track_render import store_terrain
+from apps.core.command_tasks import enqueue_each
+from apps.routes.services.slope_segments import STALE_TERRAIN
 from apps.trips.models import Trip
+from apps.trips.services.slope import backfill_trip_slopes_task
 
 logger = logging.getLogger(__name__)
 
-# Seconds between trips that actually WALK. Matches the routes backfill's
-# own default and carries its reasoning: politeness towards the tile
-# origin rather than a limit it imposes. A copied row waits for nothing,
-# because it asked the origin nothing.
+# Seconds between tasks. Matches the routes backfill's own default and
+# carries its reasoning: politeness towards the tile origin rather than a
+# limit it imposes.
 _DEFAULT_DELAY_S = 1.0
 
 
 class Command(RegisteredCommand):
-    """Fill in ``Trip.slope_samples`` for every trip that has none.
+    """Enqueue a terrain fill-in for every Trip whose terrain is stale.
 
-    Read-only by default; pass --commit to persist. Exits non-zero if any
-    trip failed, so a partial run is detectable.
+    Read-only by default; pass --commit to enqueue. Exits non-zero if any
+    task run inline failed, so a partial run is detectable.
     """
 
     help = (
-        "Give every Trip created before SNOW-962 the terrain record its "
-        "page draws from — copied from the source route where that is "
-        "exactly right, sampled otherwise. Read-only unless --commit."
+        "Enqueue a terrain fill-in (copied from the source route where it "
+        "matches, walked otherwise) for every Trip with no current "
+        "slope_samples. Read-only unless --commit."
     )
+
+    # It only enqueues, so it finishes in seconds (SNOW-1398).
+    mcp_runnable = True
 
     def add_arguments(self, parser: ArgumentParser) -> None:
         """Register command-line arguments.
@@ -103,9 +111,8 @@ class Command(RegisteredCommand):
             "--commit",
             action="store_true",
             help=(
-                "Fill in the records and persist them. Without this flag "
-                "the command reports the candidates, makes no request and "
-                "writes nothing."
+                "Enqueue one task per trip. Without this flag the command "
+                "reports the candidates, makes no request and writes nothing."
             ),
         )
         parser.add_argument(
@@ -113,9 +120,8 @@ class Command(RegisteredCommand):
             type=non_negative_float,
             default=_DEFAULT_DELAY_S,
             help=(
-                f"Seconds to wait after a trip that had to be SAMPLED. "
-                f"Defaults to {_DEFAULT_DELAY_S}; 0 disables the pause. A "
-                f"copied trip never waits."
+                f"Seconds between one trip's task and the next. Defaults to "
+                f"{_DEFAULT_DELAY_S}; 0 disables the pause."
             ),
         )
         parser.add_argument(
@@ -123,20 +129,22 @@ class Command(RegisteredCommand):
             type=int,
             default=0,
             help=(
-                "Stop after this many trips. Defaults to 0, meaning every "
-                "candidate — a first small batch is the reason this exists."
+                "Enqueue at most this many trips. Defaults to 0, meaning "
+                "every candidate — a first small batch is the reason this "
+                "exists."
             ),
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        """Fill in every candidate trip.
+        """Enqueue every candidate trip.
 
         Args:
             args: Unused positional arguments.
             options: Parsed command-line options.
 
         Raises:
-            CommandError: When any trip failed, so cron/CI sees non-zero.
+            CommandError: When any task run inline failed, so cron/CI sees
+                non-zero.
 
         """
         commit: bool = options["commit"]
@@ -144,16 +152,8 @@ class Command(RegisteredCommand):
         limit: int = options["limit"]
         verbosity: int = options["verbosity"]
 
-        # Streamed, not materialised: Trip is a growable user table.
-        # ``select_related`` because the copy path reads the source route
-        # for all but a handful of rows.
-        # Two kinds of candidate, as the routes command has: a null is a
-        # trip nothing has sampled, and a record missing ``heights`` is one
-        # written before SNOW-1043. A record carrying it is current even
-        # when the list inside holds nulls — "no ground there".
-        candidates = Trip.objects.filter(
-            Q(slope_samples__isnull=True) | ~Q(slope_samples__has_key="heights")
-        ).select_related("route")
+        # Slim: the task re-reads its row and its route.
+        candidates = Trip.objects.filter(STALE_TERRAIN).only("pk", "uuid")
         total = candidates.count()
 
         flag_label = "" if commit else " [READ-ONLY]"
@@ -162,171 +162,35 @@ class Command(RegisteredCommand):
                 f"Filling in the terrain under {total} trip(s){flag_label}"
             )
         )
-        logger.info(
-            "backfill_trip_slope_samples started: candidates=%d commit=%s "
-            "delay=%s limit=%s",
-            total,
-            commit,
-            delay,
-            limit,
-        )
-
-        counts = {"copied": 0, "sampled": 0, "unanswered": 0, "failed": 0}
-        processed = 0
-        for trip in iterate_rows(
+        counts = enqueue_each(
             self,
             candidates,
-            verbosity=verbosity,
+            backfill_trip_slopes_task,
+            args=lambda row: (row.pk, delay),
             describe=lambda row: row.uuid,
-        ):
-            walked = self._backfill_one(trip, counts, commit=commit)
-            processed += 1
-            # Checked AFTER the work, for the reason the routes backfill
-            # states: ``iterate_rows`` prints its countdown as it yields,
-            # so breaking on the way in would count a row down and then
-            # discard it.
-            if limit and processed >= limit:
-                break
-            # Only a row that actually asked the origin something waits.
-            if commit and delay and walked:
-                time.sleep(delay)
-
-        self._report_outcome(counts, commit=commit, verbosity=verbosity)
-
-        if counts["failed"] > 0:
-            raise CommandError(
-                f"backfill_trip_slope_samples completed with "
-                f"{counts['failed']} failure(s). Check logs for details."
-            )
-
-    def _inherited_record(self, trip: Trip) -> dict[str, Any] | None:
-        """Return the source route's record when it describes THIS track.
-
-        Three conditions, and each is load-bearing: the route must still
-        exist (``Trip.route`` is provenance and may be null), it must have
-        been sampled, and its geometry must be identical to the snapshot's
-        — a trip may outlive its route, and a record copied off a
-        different track would paint one track's steepness onto another.
-
-        Args:
-            trip: The trip being filled in.
-
-        Returns:
-            The record to copy, or None when the trip has to be walked.
-
-        """
-        route = trip.route
-        if route is None or route.slope_samples is None:
-            return None
-        if route.points != trip.points:
-            return None
-        # A record the route itself has not brought up to date is not
-        # worth inheriting: the trip would still be missing the key this
-        # command selects on, so it would be re-copied on every run and
-        # never converge. Walking answers it once.
-        if "heights" not in route.slope_samples:
-            return None
-        record: dict[str, Any] = route.slope_samples
-        return record
-
-    def _backfill_one(
-        self, trip: Trip, counts: dict[str, int], *, commit: bool
-    ) -> bool:
-        """Fill in one trip, by copy where possible and by walk otherwise.
-
-        ``save(update_fields=…)`` writes the one column and nothing else:
-        the row is the organiser's, and this command has no business
-        touching their name for the day or its meeting point.
-
-        Args:
-            trip: The trip to fill in.
-            counts: The running tally, mutated in place.
-            commit: Whether to make the requests and persist.
-
-        Returns:
-            True when the tile origin was asked something, which is what
-            the caller's pacing answers to.
-
-        """
-        inherited = self._inherited_record(trip)
-
-        if not commit:
-            # No request either, not merely no write — a read-only run
-            # must not spend the origin's bandwidth. The split is still
-            # reported, because "how many of these need the origin at all"
-            # is the figure an operator is previewing for.
-            counts["copied" if inherited is not None else "sampled"] += 1
-            return False
-
-        if inherited is not None:
-            # SNOW-1309: the record and its render, written together.
-            store_terrain(trip, inherited)
-            counts["copied"] += 1
-            return False
-
-        try:
-            samples = build_slope_samples(trip.points, f"trip pk={trip.pk}")
-        except Exception:  # noqa: BLE001 — broad catch intentional: one trip must not abort the batch
-            logger.exception(
-                "backfill_trip_slope_samples: failed on trip id=%s uuid=%s",
-                trip.pk,
-                trip.uuid,
-            )
-            counts["failed"] += 1
-            return True
-
-        if samples is None:
-            # Left null on purpose — null is "never sampled", and a later
-            # run retries it. Not a failure.
-            counts["unanswered"] += 1
-            return True
-
-        # SNOW-1309: the record and its render, written together.
-        store_terrain(trip, samples)
-        counts["sampled"] += 1
-        return True
-
-    def _report_outcome(
-        self, counts: dict[str, int], *, commit: bool, verbosity: int
-    ) -> None:
-        """Emit the post-run summary to stdout and the structured log.
-
-        Args:
-            counts: The final tally.
-            commit: Whether --commit was passed.
-            verbosity: Django's --verbosity level.
-
-        """
-        if verbosity >= 1:
-            if commit:
-                self.stdout.write(
-                    self.style.SUCCESS(
-                        f"Done. {counts['copied']} trip(s) inherited their "
-                        f"route's record, {counts['sampled']} sampled, "
-                        f"{counts['unanswered']} left null (nothing "
-                        f"learnable), {counts['failed']} failed."
-                    )
-                )
-            else:
-                self.stdout.write(
-                    self.style.SUCCESS(
-                        f"Read-only run complete — {counts['copied']} "
-                        f"trip(s) would inherit their route's record and "
-                        f"{counts['sampled']} would be sampled. No requests "
-                        "made, no data written. Pass --commit to fill them in."
-                    )
-                )
-        # Counts for the command run register (SNOW-1190).
-        self.tally("copied", counts["copied"])
-        self.tally("sampled", counts["sampled"])
-        self.tally("unanswered", counts["unanswered"])
-        self.tally("failed", counts["failed"])
+            commit=commit,
+            verbosity=verbosity,
+            limit=limit,
+            pace=delay,
+        )
         logger.info(
-            "backfill_trip_slope_samples finished: copied=%d sampled=%d "
-            "unanswered=%d failed=%d commit=%s",
-            counts["copied"],
-            counts["sampled"],
-            counts["unanswered"],
-            counts["failed"],
+            "backfill_trip_slope_samples finished: enqueued=%d "
+            "already_queued=%d failed=%d commit=%s",
+            counts.enqueued,
+            counts.already_queued,
+            counts.failed,
             commit,
         )
+        if verbosity >= 1:
+            verb = "enqueued" if commit else "would be enqueued"
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Done. {counts.enqueued} trip(s) {verb}, "
+                    f"{counts.already_queued} already queued."
+                )
+            )
+        if counts.failed:
+            raise CommandError(
+                f"backfill_trip_slope_samples completed with "
+                f"{counts.failed} failure(s). Check logs for details."
+            )

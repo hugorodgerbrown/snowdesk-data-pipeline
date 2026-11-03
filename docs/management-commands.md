@@ -260,8 +260,8 @@ worker logs.
 | Request-log retention | `purge_request_logs --commit` | `30 3 * * *` (daily, 03:30 UTC) | Deletes `RequestLog` rows past the twelve-month retention window the Privacy Policy states (SNOW-775). Runs at :30 on an hour no fetch job uses, because it holds a delete transaction over a table the request path writes to. |
 | OAuth token purge | `purge_expired_oauth_tokens --commit` | `45 3 * * *` (daily, 03:45 UTC) | Deletes expired MCP OAuth tokens and authorization codes with django-oauth-toolkit's `clear_expired()` (SNOW-1193). A connected Claude refreshing hourly writes two token rows an hour, and nothing else deletes them. |
 | Run-register prune | `prune_command_runs --commit` | `50 3 * * *` (daily, 03:50 UTC) | Marks `CommandRun` rows a killed process left `RUNNING` for over six hours as `INTERRUPTED`, and deletes `SCHEDULER` runs older than 90 days (SNOW-1189). Every other run is kept for good. |
-| what3words fill | `fill_what3words --commit` | `0 4 * * *` (daily, 04:00 UTC) | Converts each `Location` still without a three word address (SNOW-881). Sweeps up rows no mint-time fill covers — a field observation's location, and any row where a conversion failed. A clean no-op when `WHAT3WORDS_API_KEY` is unset, which is what lets it be registered unconditionally. Daily because the estate grows with user activity rather than the clock. |
-| Slope-sample reconcile | `backfill_route_slope_samples --commit`, then `backfill_trip_slope_samples --commit` | `30 4 * * *` (daily, 04:30 UTC) | The safety net for a terrain-sampling task that was never queued (SNOW-1228). Upload, trip creation and trip edits enqueue sampling after their row has committed, and an enqueue failure there is logged rather than raised — the user's route or trip exists, so a 500 would be a lie — which leaves `slope_samples` null. Both commands select exactly those rows. Deliberately uncapped (SNOW-1243): the commands walk newest-first and leave an unsampleable row (a route outside terrain coverage) eligible, so a `--limit` would let those rows crowd out older ones whose enqueue really failed; the commands' own delay paces tile requests. The trip pass still runs when the route pass fails, and the first failure is re-raised afterwards. SAC tours are walked by the service instead, in `render_ski_tours` (SNOW-1316). |
+| what3words fill | `fill_what3words --commit` | `0 4 * * *` (daily, 04:00 UTC) | Converts each `Location` still without a three word address (SNOW-881). Sweeps up rows no mint-time fill covers — a field observation's location, and any row where a conversion failed. A clean no-op when `WHAT3WORDS_API_KEY` is unset, which is what lets it be registered unconditionally. Only enqueues since SNOW-1398, one task per location. Daily because the estate grows with user activity rather than the clock. |
+| Slope-sample reconcile | `backfill_route_slope_samples --commit`, then `backfill_trip_slope_samples --commit` | `30 4 * * *` (daily, 04:30 UTC) | The safety net for a terrain-sampling task that was never queued (SNOW-1228). Upload, trip creation and trip edits enqueue sampling after their row has committed, and an enqueue failure there is logged rather than raised — the user's route or trip exists, so a 500 would be a lie — which leaves `slope_samples` null. Both commands select exactly those rows. Deliberately uncapped (SNOW-1243): the commands walk newest-first and leave an unsampleable row (a route outside terrain coverage) eligible, so a `--limit` would let those rows crowd out older ones whose enqueue really failed. Since SNOW-1398 both only enqueue, one task per row, paced on the tile origin's shared slot; a row whose task is still waiting is not enqueued again. The trip pass still runs when the route pass fails, and the first failure is re-raised afterwards. SAC tours are walked by the service instead, in `render_ski_tours` (SNOW-1316). |
 | SAC tour render | `render_ski_tours --commit` | `30 5 * * *` (daily, 05:30 UTC) | Enqueues one task per SAC tour the reference-data service has not walked and drawn; each task renders its tour on `SourceSkiTour` and applies it to this host's `SkiTour` (SNOW-1316, SNOW-1345). Idempotent by fingerprint: a normal day finds only the tours a weekly import rewrote. An unanswered tour stores nothing and is tried the next day. |
 | Resort-link detector | `link_resort_locations --check` | `0 5 * * *` (daily, 05:00 UTC) | The only scheduled job that writes nothing (SNOW-885). Reports resorts with a coordinate but no pin `Location` (`Resort.location`, SNOW-1144) — each one a resort whose weather is not fetched, still on the map only through the transitional fallback to its mirrored coordinates (removed by SNOW-1147), with nothing else saying so — and exits NON-ZERO when there are any, so the worker log carries the alarm. Since SNOW-1144 every pin writer goes through `set_resort_pin`, so after the one-time backfill this should never fire; if it does, an operator runs `link_resort_locations --commit` by hand. |
 
@@ -1059,6 +1059,15 @@ Nothing is ever re-converted: a stored address encodes a fixed square and
 cannot go stale. A pin that *moves* has its column cleared at the point of
 the move, which returns it to the candidate set.
 
+**Since SNOW-1398 it only enqueues**: one `fill_what3words_task` per candidate through
+`enqueue_each` (see [`bulk-commands-enqueue-each-row`](decisions/bulk-commands-enqueue-each-row.md)),
+so it returns in seconds and is `mcp_runnable`. The task re-reads its row
+and returns when it no longer needs work; `--delay` staggers the tasks and
+is the gap each waits for on the `what3words` slot (`wait_for_slot`) before it
+calls out. A read-only run asks nothing.
+A failed conversion opens the `what3words` breaker for five minutes, so the
+tasks behind it leave their rows as candidates instead of each failing.
+
 ```bash
 uv run python manage.py fill_what3words                      # preview
 uv run python manage.py fill_what3words --commit             # apply
@@ -1095,6 +1104,14 @@ elevation is skipped, so an interrupted run costs only the rows it had not
 reached. `--force` re-resolves everything, which is what a re-pinned
 coordinate needs — moving a location leaves a stale elevation behind and
 nothing else would notice.
+
+**Since SNOW-1398 it only enqueues**: one `fill_elevation_task` (`apps/locations/services/elevation.py`) per candidate through
+`enqueue_each` (see [`bulk-commands-enqueue-each-row`](decisions/bulk-commands-enqueue-each-row.md)),
+so it returns in seconds and is `mcp_runnable`. The task re-reads its row
+and returns when it no longer needs work; `--delay` staggers the tasks and
+is the gap each waits for on the `open-meteo` slot (`wait_for_slot`) before it
+calls out. A read-only run asks nothing.
+A failed lookup opens the `open-meteo` breaker for five minutes.
 
 ```bash
 uv run python manage.py fill_location_elevations                  # preview
@@ -1215,6 +1232,17 @@ once a second such key; SNOW-1066 removed route cruxes, so a record
 without it is current. `backfill_trip_slope_samples` selects on the same
 key, and will not copy a source route's record that lacks it.
 
+**Since SNOW-1398 it only enqueues**: one `backfill_route_slopes_task` (`apps/routes/services/slope_segments.py`, at `BULK_TASK_PRIORITY`; uploads keep `_worker_sample_route_slopes` at the default priority) per candidate through
+`enqueue_each` (see [`bulk-commands-enqueue-each-row`](decisions/bulk-commands-enqueue-each-row.md)),
+so it returns in seconds and is `mcp_runnable`. The task re-reads its row
+and returns when it no longer needs work; `--delay` staggers the tasks and
+is the gap each waits for on the `terrain-tiles` slot (`wait_for_slot`) before it
+calls out. A read-only run asks nothing.
+That slot is `TILE_ORIGIN`, shared with `render_ski_tours`. An unanswered
+walk opens no breaker (the walk answers None for a track too short to
+sample as well as for an outage), but a task honours one the tour render
+opened and leaves its row for the next run.
+
 `--delay` defaults to a second between routes (politeness towards the tile
 origin, not a limit it imposes); `--limit` takes a first batch so an
 operator can watch one before committing to the whole table. Expect a long
@@ -1244,10 +1272,12 @@ All three conditions are load-bearing: `Trip.route` is provenance and may
 be null, and a record copied off a different track would paint one
 track's steepness onto another's.
 
-The preview reports the split — how many would inherit and how many need
-the origin — because that is the figure an operator is previewing for.
-`--delay` paces only the rows that actually walk; a copied trip waits for
-nothing. Everything else follows the routes command above: read-only
+Since SNOW-1398 the command only enqueues `backfill_trip_slopes_task`
+(`apps/trips/services/slope.py`), one per candidate, and the copy and the
+walk both happen in the task. The preview counts candidates only — the
+copy-or-walk split is decided by the task, which reads the source route's
+points. Only a walking task waits for its turn on the `terrain-tiles`
+slot; a copy waits for nothing. Everything else follows the routes command above: read-only
 means no request, a walk that learns nothing leaves the row null for a
 later run rather than counting as a failure, and a sampled row is not a
 candidate.

@@ -30,20 +30,25 @@ rather than written as a record of nothing, so a later run picks it up
 again; that rule is ``build_slope_samples``', not this command's, and is
 argued in its module docstring.
 
-Idempotent: a sampled row is not a candidate, so a second run selects only
-what the first could not answer for.
+**It only enqueues (SNOW-1398).** One ``backfill_route_slopes_task`` per
+candidate, through ``apps.core.command_tasks.enqueue_each``, so a run
+returns in seconds and is offered to the ops MCP server's ``run_command``.
+Each task re-reads its row and returns when it is no longer stale, so a
+duplicate enqueue is a no-op; a row whose task is still waiting is not
+enqueued again; and a run that stops early leaves the rest as candidates.
 
-**This command makes real outbound requests, so it paces itself.** The
-default ``--delay`` is a second between routes, which is politeness
-towards the tile origin rather than a rate limit it imposes. A long run is
-expected: a 15 km tour is several hundred samples.
+**The tasks ask the tile origin, so they are paced.** ``--delay`` (a second
+by default) staggers their start times in production, sleeps between them
+where tasks run inline, and is the gap each task waits for on the shared
+``TILE_ORIGIN`` slot before it walks — politeness towards the origin rather
+than a rate limit it imposes.
 
 Usage:
     # Preview — reports how many routes would be sampled, writes nothing
     # and asks the origin nothing.
     uv run python manage.py backfill_route_slope_samples
 
-    # Sample and persist.
+    # Enqueue one task per route.
     uv run python manage.py backfill_route_slope_samples --commit
 
     # A first batch, to watch it before committing to the whole table.
@@ -53,18 +58,19 @@ Usage:
 from __future__ import annotations
 
 import logging
-import time
 from argparse import ArgumentParser
 from typing import Any
 
 from django.core.management.base import CommandError
-from django.db.models import Q
 
-from apps.core.command_iteration import iterate_rows, non_negative_float
+from apps.core.command_iteration import non_negative_float
 from apps.core.command_register import RegisteredCommand
+from apps.core.command_tasks import enqueue_each
 from apps.routes.models import Route
-from apps.routes.services.slope_segments import build_slope_samples
-from apps.routes.services.track_render import store_terrain
+from apps.routes.services.slope_segments import (
+    STALE_TERRAIN,
+    backfill_route_slopes_task,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,16 +82,19 @@ _DEFAULT_DELAY_S = 1.0
 
 
 class Command(RegisteredCommand):
-    """Sample the terrain under every Route that has never been sampled.
+    """Enqueue a terrain walk for every Route whose terrain is stale.
 
-    Read-only by default; pass --commit to persist. Exits non-zero if any
-    route failed, so a partial run is detectable.
+    Read-only by default; pass --commit to enqueue. Exits non-zero if any
+    task run inline failed, so a partial run is detectable.
     """
 
     help = (
-        "Sample the terrain under every Route uploaded before SNOW-910 and "
-        "store the result on slope_samples. Read-only unless --commit."
+        "Enqueue a terrain walk for every Route with no current "
+        "slope_samples. Read-only unless --commit."
     )
+
+    # It only enqueues, so it finishes in seconds (SNOW-1398).
+    mcp_runnable = True
 
     def add_arguments(self, parser: ArgumentParser) -> None:
         """Register command-line arguments.
@@ -98,9 +107,8 @@ class Command(RegisteredCommand):
             "--commit",
             action="store_true",
             help=(
-                "Sample the terrain and persist the results. Without this "
-                "flag the command reports the candidates, makes no request "
-                "and writes nothing."
+                "Enqueue one task per route. Without this flag the command "
+                "reports the candidates, makes no request and writes nothing."
             ),
         )
         parser.add_argument(
@@ -108,7 +116,7 @@ class Command(RegisteredCommand):
             type=non_negative_float,
             default=_DEFAULT_DELAY_S,
             help=(
-                f"Seconds to wait between routes. Defaults to "
+                f"Seconds between one route's walk and the next. Defaults to "
                 f"{_DEFAULT_DELAY_S}; 0 disables the pause."
             ),
         )
@@ -117,20 +125,22 @@ class Command(RegisteredCommand):
             type=int,
             default=0,
             help=(
-                "Stop after this many routes. Defaults to 0, meaning every "
-                "candidate — a first small batch is the reason this exists."
+                "Enqueue at most this many routes. Defaults to 0, meaning "
+                "every candidate — a first small batch is the reason this "
+                "exists."
             ),
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        """Sample every candidate route.
+        """Enqueue every candidate route.
 
         Args:
             args: Unused positional arguments.
             options: Parsed command-line options.
 
         Raises:
-            CommandError: When any route failed, so cron/CI sees non-zero.
+            CommandError: When any task run inline failed, so cron/CI sees
+                non-zero.
 
         """
         commit: bool = options["commit"]
@@ -138,19 +148,9 @@ class Command(RegisteredCommand):
         limit: int = options["limit"]
         verbosity: int = options["verbosity"]
 
-        # Streamed, not materialised: Route is a growable user table.
-        #
-        # TWO KINDS OF CANDIDATE, and the second is why this command is
-        # not one-shot after all. A null is a route nothing has sampled.
-        # A record with no ``heights`` key is one sampled before
-        # SNOW-1043: it serves the device's heights, and nothing else
-        # would ever add the model's, because the sampler runs at upload.
-        # A record IS current when it carries the key, even if the list
-        # inside holds nulls: that is "no ground there", which is an
-        # answer.
-        candidates = Route.objects.filter(
-            Q(slope_samples__isnull=True) | ~Q(slope_samples__has_key="heights")
-        )
+        # Slim: the task re-reads its row, so the walk needs only the pk
+        # and the countdown the uuid.
+        candidates = Route.objects.filter(STALE_TERRAIN).only("pk", "uuid")
         total = candidates.count()
 
         flag_label = "" if commit else " [READ-ONLY]"
@@ -159,122 +159,35 @@ class Command(RegisteredCommand):
                 f"Sampling the terrain under {total} route(s){flag_label}"
             )
         )
-        logger.info(
-            "backfill_route_slope_samples started: candidates=%d commit=%s "
-            "delay=%s limit=%s",
-            total,
-            commit,
-            delay,
-            limit,
-        )
-
-        counts = {"sampled": 0, "unanswered": 0, "failed": 0}
-        processed = 0
-        for route in iterate_rows(
+        counts = enqueue_each(
             self,
             candidates,
-            verbosity=verbosity,
+            backfill_route_slopes_task,
+            args=lambda row: (row.pk, delay),
             describe=lambda row: row.uuid,
-        ):
-            self._backfill_one(route, counts, commit=commit)
-            processed += 1
-            # Checked AFTER the work, not before it. ``iterate_rows`` prints
-            # its countdown line as it yields, so breaking on the way in
-            # would count a row down and then discard it — ``--limit 20``
-            # reading as 21 rows processed. Breaking here also skips the
-            # trailing ``--delay``, which nothing is waiting for.
-            if limit and processed >= limit:
-                break
-            if commit and delay:
-                time.sleep(delay)
-
-        self._report_outcome(counts, commit=commit, verbosity=verbosity)
-
-        if counts["failed"] > 0:
-            raise CommandError(
-                f"backfill_route_slope_samples completed with "
-                f"{counts['failed']} failure(s). Check logs for details."
-            )
-
-    def _backfill_one(
-        self, route: Route, counts: dict[str, int], *, commit: bool
-    ) -> None:
-        """Sample one route and store the result.
-
-        ``save(update_fields=…)`` writes the one column and nothing else:
-        the row is the user's, and the sampler has no business touching
-        the geometry or the name.
-
-        Args:
-            route: The route to sample.
-            counts: The running tally, mutated in place.
-            commit: Whether to make the requests and persist.
-
-        """
-        if not commit:
-            # No request either, not merely no write: a read-only run must
-            # not spend the origin's bandwidth to report a count it already
-            # has from the queryset.
-            counts["sampled"] += 1
-            return
-        try:
-            samples = build_slope_samples(route.points, f"route pk={route.pk}")
-        except Exception:  # noqa: BLE001 — broad catch intentional: one route must not abort the batch
-            logger.exception(
-                "backfill_route_slope_samples: failed on route id=%s uuid=%s",
-                route.pk,
-                route.uuid,
-            )
-            counts["failed"] += 1
-            return
-
-        if samples is None:
-            # Left null on purpose — see the module docstring. Not a
-            # failure: the command completes, and a later run retries it.
-            counts["unanswered"] += 1
-            return
-
-        # SNOW-1309: the record and its render, written together.
-        store_terrain(route, samples)
-        counts["sampled"] += 1
-
-    def _report_outcome(
-        self, counts: dict[str, int], *, commit: bool, verbosity: int
-    ) -> None:
-        """Emit the post-run summary to stdout and the structured log.
-
-        Args:
-            counts: The final tally.
-            commit: Whether --commit was passed.
-            verbosity: Django's --verbosity level.
-
-        """
-        if verbosity >= 1:
-            if commit:
-                self.stdout.write(
-                    self.style.SUCCESS(
-                        f"Done. {counts['sampled']} route(s) sampled, "
-                        f"{counts['unanswered']} left null (nothing learnable), "
-                        f"{counts['failed']} failed."
-                    )
-                )
-            else:
-                self.stdout.write(
-                    self.style.SUCCESS(
-                        f"Read-only run complete — {counts['sampled']} "
-                        "route(s) would be sampled. No requests made, no "
-                        "data written. Pass --commit to sample."
-                    )
-                )
-        # Counts for the command run register (SNOW-1190).
-        self.tally("sampled", counts["sampled"])
-        self.tally("unanswered", counts["unanswered"])
-        self.tally("failed", counts["failed"])
+            commit=commit,
+            verbosity=verbosity,
+            limit=limit,
+            pace=delay,
+        )
         logger.info(
-            "backfill_route_slope_samples finished: sampled=%d unanswered=%d "
-            "failed=%d commit=%s",
-            counts["sampled"],
-            counts["unanswered"],
-            counts["failed"],
+            "backfill_route_slope_samples finished: enqueued=%d "
+            "already_queued=%d failed=%d commit=%s",
+            counts.enqueued,
+            counts.already_queued,
+            counts.failed,
             commit,
         )
+        if verbosity >= 1:
+            verb = "enqueued" if commit else "would be enqueued"
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Done. {counts.enqueued} route(s) {verb}, "
+                    f"{counts.already_queued} already queued."
+                )
+            )
+        if counts.failed:
+            raise CommandError(
+                f"backfill_route_slope_samples completed with "
+                f"{counts.failed} failure(s). Check logs for details."
+            )

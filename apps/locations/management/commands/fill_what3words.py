@@ -35,11 +35,18 @@ The ``what3words`` waffle flag is not read here at all: it gates what a
 page SHOWS, and a row filled while the flag is off is simply a row that is
 ready when it is turned on.
 
+**It only enqueues (SNOW-1398).** One ``fill_what3words_task`` per
+candidate, through ``apps.core.command_tasks.enqueue_each``, so a run
+returns in seconds and is offered to the ops MCP server's ``run_command``.
+A read-only run counts the candidates and converts nothing. ``--delay``
+paces the tasks, and each also waits for it on the ``what3words`` slot.
+
 **Failure is per-row and never aborts the batch.** A location that cannot
 be converted keeps its null and shows a coordinate pair, which every
-surface already handles. Failures are logged, counted and reported, and the
-command exits non-zero if there were any, so a partial run is never
-mistaken for a clean one.
+surface already handles. The failed task opens the what3words breaker, so
+the tasks behind it leave their rows for the next run instead of failing
+in turn; where tasks run inline the command exits non-zero, so a partial
+run is never mistaken for a clean one.
 
 Idempotent: the candidate set excludes rows that already carry an address,
 so a second run selects zero. Nothing is ever re-converted — a stored
@@ -48,10 +55,10 @@ its column cleared at the point of the move, which puts it back in the
 candidate set on the next run.
 
 Usage:
-    # Preview — reports what it would convert, writes nothing.
+    # Preview — reports what it would convert, converts nothing.
     uv run python manage.py fill_what3words
 
-    # Persist.
+    # Enqueue one task per location.
     uv run python manage.py fill_what3words --commit
 
     # Pace it harder against the upstream's rate limit.
@@ -61,40 +68,38 @@ Usage:
 from __future__ import annotations
 
 import logging
-import time
 from argparse import ArgumentParser
 from typing import Any
 
 from django.conf import settings
 from django.core.management.base import CommandError
-from django.utils import timezone
 
-from apps.core.command_iteration import (
-    announce_link_run,
-    iterate_rows,
-    non_negative_float,
-)
+from apps.core.command_iteration import announce_link_run, non_negative_float
 from apps.core.command_register import RegisteredCommand
-from apps.ingest.public import convert_to_3wa
+from apps.core.command_tasks import enqueue_each
 from apps.locations.models import Location
+from apps.locations.services.what3words import fill_what3words_task
 
 logger = logging.getLogger(__name__)
 
+# What Location.to_string reads, and the pk the task is handed.
+_LABEL_FIELDS = ("pk", "name", "kind", "latitude", "longitude", "elevation_m")
+
 
 class Command(RegisteredCommand):
-    """Fill Location.what3words for every location that lacks one.
+    """Enqueue a what3words fill for every location that lacks an address.
 
-    Read-only by default; pass --commit to persist. One ``convert-to-3wa``
-    call per unaddressed location, paced by --delay. Per-row failures are
-    caught, logged and counted — they never abort the batch — and the
-    command exits non-zero when any failed.
+    Read-only by default; pass --commit to enqueue. One ``convert-to-3wa``
+    call per unaddressed location, one task each, paced by --delay.
     """
 
     help = (
-        "Convert each Location's coordinate to its three word address and "
-        "store it. Skips locations that already have one. Read-only unless "
-        "--commit is passed."
+        "Enqueue a conversion of each unaddressed Location's coordinate to "
+        "its three word address. Read-only unless --commit is passed."
     )
+
+    # It only enqueues, so it finishes in seconds (SNOW-1398).
+    mcp_runnable = True
 
     def add_arguments(self, parser: ArgumentParser) -> None:
         """Register command-line arguments."""
@@ -102,8 +107,8 @@ class Command(RegisteredCommand):
             "--commit",
             action="store_true",
             help=(
-                "Persist the converted addresses. Without this flag the "
-                "command converts (and reports) but writes nothing."
+                "Enqueue one conversion per location. Without this flag the "
+                "command reports the candidates and converts nothing."
             ),
         )
         parser.add_argument(
@@ -112,20 +117,20 @@ class Command(RegisteredCommand):
             default=0.2,
             metavar="SECONDS",
             help=(
-                "Sleep this many seconds between successive conversions. "
-                "Default 0.2 — conversions are unmetered, but a burst of "
-                "several hundred is still a burst, and pacing them costs "
-                "nothing on an out-of-band run."
+                "Seconds between one conversion and the next. Default 0.2 — "
+                "conversions are unmetered, but a burst of several hundred "
+                "is still a burst, and pacing them costs nothing on an "
+                "out-of-band run."
             ),
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        """Convert and store an address for every candidate location."""
+        """Enqueue an address fill for every candidate location."""
         commit: bool = options["commit"]
         delay: float = options["delay"]
         verbosity: int = options["verbosity"]
 
-        candidates = Location.objects.unaddressed()
+        candidates = Location.objects.unaddressed().only(*_LABEL_FIELDS)
         total = candidates.count()
 
         # Before the walk, not during it — see the module docstring. An
@@ -160,110 +165,42 @@ class Command(RegisteredCommand):
             delay=delay,
         )
 
-        counts = {"filled": 0, "failed": 0}
-        for location in iterate_rows(
-            self, candidates, verbosity=verbosity, describe=Location.to_string
-        ):
-            self._resolve_one(location, counts, commit=commit, delay=delay)
-
-        self._report_outcome(counts, commit=commit, verbosity=verbosity)
-
-        # Non-zero on ANY failure, partial batches included — the command
-        # contract in CLAUDE.md. The batch has already finished by here: a
-        # failed row is logged, counted and stepped over.
-        if counts["failed"] > 0:
-            raise CommandError(
-                f"fill_what3words: {counts['failed']} of {total} "
-                f"candidate(s) failed to convert. Check logs."
-            )
-
-    def _resolve_one(
-        self,
-        location: Location,
-        counts: dict[str, int],
-        *,
-        commit: bool,
-        delay: float,
-    ) -> None:
-        """Convert one location's coordinate and store the result.
-
-        Writes with ``update_fields`` so the walk touches the two address
-        columns and nothing else — it cannot clobber a coordinate edit made
-        while the command is running.
-
-        NOT ``fill_what3words``, deliberately, even though that service
-        function does the same thing for one row. It re-reads the column to
-        decide whether to convert, which is a wasted check on a candidate
-        set already filtered to rows without one, and it always writes —
-        leaving this command no way to honour ``--commit``.
-
-        Args:
-            location: The location to resolve.
-            counts: The running tally, mutated in place.
-            commit: Whether to persist the result.
-            delay: Seconds to sleep after the conversion.
-
-        """
-        words = convert_to_3wa(location.latitude, location.longitude)
-
-        # Paced AFTER the call and before the next one, so a run of N rows
-        # sleeps N times rather than N-1 — the difference is one delay on
-        # a several-hundred-row walk, and the simpler shape is worth more
-        # than saving it.
-        if delay:
-            time.sleep(delay)
-
-        if words is None:
-            # By row id, never by coordinate (SNOW-718): a lat/lon pair is
-            # somebody's location and a log is the wrong place for one.
-            logger.warning(
-                "fill_what3words: no address for location id=%s", location.pk
-            )
-            counts["failed"] += 1
-            return
-
-        counts["filled"] += 1
-        if not commit:
-            return
-
-        location.what3words = words
-        location.what3words_fetched_at = timezone.now()
-        location.save(
-            update_fields=["what3words", "what3words_fetched_at", "updated_at"]
+        counts = enqueue_each(
+            self,
+            candidates,
+            fill_what3words_task,
+            args=lambda row: (row.pk, delay),
+            describe=Location.to_string,
+            commit=commit,
+            verbosity=verbosity,
+            pace=delay,
         )
-
-    def _report_outcome(
-        self,
-        counts: dict[str, int],
-        *,
-        commit: bool,
-        verbosity: int,
-    ) -> None:
-        """Write the end-of-run summary and log line.
-
-        Args:
-            counts: The final tally.
-            commit: Whether ``--commit`` was passed.
-            verbosity: Django's ``--verbosity`` level.
-
-        """
-        # Counts for the command run register (SNOW-1190).
-        self.tally("filled", counts["filled"])
-        self.tally("failed", counts["failed"])
         logger.info(
-            "fill_what3words finished: filled=%d failed=%d commit=%s",
-            counts["filled"],
-            counts["failed"],
+            "fill_what3words finished: enqueued=%d already_queued=%d "
+            "failed=%d commit=%s",
+            counts.enqueued,
+            counts.already_queued,
+            counts.failed,
             commit,
         )
-        if verbosity < 1:
-            return
-
-        verb = "Filled" if commit else "Would fill"
-        summary = f"{verb} {counts['filled']} location(s), {counts['failed']} failed"
-        style = self.style.WARNING if counts["failed"] else self.style.SUCCESS
-        self.stdout.write(style(summary))
-        if not commit:
+        if verbosity >= 1:
+            verb = "Enqueued" if commit else "Would enqueue"
             self.stdout.write(
-                self.style.NOTICE("Read-only run — pass --commit to persist.")
+                self.style.SUCCESS(
+                    f"{verb} {counts.enqueued} location(s), "
+                    f"{counts.already_queued} already queued."
+                )
+            )
+            if not commit:
+                self.stdout.write(
+                    self.style.NOTICE("Read-only run — pass --commit to enqueue.")
+                )
+
+        # Non-zero on ANY failure, partial batches included — the command
+        # contract in CLAUDE.md. Only an inline backend reports one here; a
+        # queued task reports its own on the task result.
+        if counts.failed:
+            raise CommandError(
+                f"fill_what3words: {counts.failed} of {total} "
+                f"candidate(s) failed to convert. Check logs."
             )
