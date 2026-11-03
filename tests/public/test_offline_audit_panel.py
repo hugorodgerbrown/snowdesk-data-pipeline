@@ -40,6 +40,8 @@ from django.template.loader import render_to_string
 from django.test import Client
 from django.urls import reverse
 
+from tests.factories import UserFactory
+
 PARTIAL = "includes/_offline_audit_panel.html"
 MODULE = Path(settings.BASE_DIR) / "static" / "js" / "offline_audit.js"
 OFFLINE_PAGE = Path(settings.BASE_DIR) / "static" / "offline.html"
@@ -329,3 +331,54 @@ class TestServiceWorkerPrecache:
         )
         assert "offline_audit" not in precache_line
         assert "Promise.allSettled(AUDIT_SCRIPTS" in source
+
+
+class TestMapPageFitsTheShellCeiling:
+    """The worker keeps every script and stylesheet the map page names.
+
+    ``_shellSubresources`` stops at ``SHELL_SUBRESOURCE_LIMIT``, and both the
+    activation re-warm and the deploy-time carry keep only what it returns.
+    The audit's ``pageDependencies`` has no ceiling, so a map page past it
+    loses its last modules on every deploy and the report reads "The app
+    opens: No" (reported on staging from an iPad, 2026-11-03, at 138 of 120).
+    """
+
+    def _limit(self) -> int:
+        """Read ``SHELL_SUBRESOURCE_LIMIT`` out of ``sw.js``."""
+        match = re.search(
+            r"^const SHELL_SUBRESOURCE_LIMIT = (\d+);$",
+            SERVICE_WORKER.read_text(),
+            re.MULTILINE,
+        )
+        assert match, "SHELL_SUBRESOURCE_LIMIT not found in sw.js"
+        return int(match.group(1))
+
+    def _pattern(self) -> re.Pattern[str]:
+        """Compile ``SHELL_SUBRESOURCE_PATTERN`` exactly as ``sw.js`` writes it."""
+        match = re.search(
+            r"^const SHELL_SUBRESOURCE_PATTERN = /(.+)/gi;$",
+            SERVICE_WORKER.read_text(),
+            re.MULTILINE,
+        )
+        assert match, "SHELL_SUBRESOURCE_PATTERN not found in sw.js"
+        return re.compile(match.group(1), re.IGNORECASE)
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize("signed_in", [False, True])
+    def test_map_page_names_under_half_the_ceiling(
+        self, client: Client, signed_in: bool
+    ) -> None:
+        """Half, so the page can grow for a while before the guard bites."""
+        if signed_in:
+            client.force_login(UserFactory.create())
+        html = client.get(reverse("public:map")).content.decode()
+        named = {
+            match.group(1)
+            for match in self._pattern().finditer(html)
+            if not match.group(1).startswith(("http://", "https://", "//"))
+        }
+        assert len(named) > 100, "pattern no longer matches the map's tags"
+        assert len(named) <= self._limit() // 2, (
+            f"/map/ names {len(named)} same-origin scripts and stylesheets; "
+            f"raise SHELL_SUBRESOURCE_LIMIT ({self._limit()}) in sw.js"
+        )

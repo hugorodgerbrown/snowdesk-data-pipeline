@@ -2,7 +2,7 @@
 name: the-shell-is-rewarmed-after-an-activation
 description: sw.js activate re-warms the map page and its scripts/styles — _rewarmShell, _shellSubresources, SHELL_PAGES; a deploy broke offline open
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-11-03
 ---
 
 # The shell is re-warmed after an activation
@@ -114,3 +114,17 @@ A list rather than a bespoke second path, so the next page that needs
 this is an entry rather than a third mechanism. `SHELL_PAGE` itself stays
 a single string because `_canOpenOffline` asks one question — will the
 app open — and the app is the map.
+
+## The ceiling must stay clear of the map page (2026-11-03)
+
+`SHELL_SUBRESOURCE_LIMIT` was 120, on the note that the map "loads a few
+dozen modules". By v63 it named 138. The re-warm fetched only the first 120,
+and the deploy-time carry (SNOW-1311) kept only old assets that
+`_shellSubresources` returned, so the map's last seventeen modules were
+dropped on every deploy. The audit's `pageDependencies` has no ceiling, so
+it reported "The app opens: No" on an iPad whose map still opened, minus
+help, the zoom control and the "today" control.
+
+The ceiling is now 400. `tests/public/test_offline_audit_panel.py` renders
+`/map/` signed in and signed out and fails once the page names more than
+half of it, so the next rise is a deliberate edit rather than a silent loss.

@@ -1128,10 +1128,15 @@ function _legacyRootMapUrl(url) {
 // to boot.
 const SHELL_SUBRESOURCE_PATTERN = /(?:src|href)=["']([^"'\s]+\.(?:js|css))(?:\?[^"']*)?["']/gi;
 
-// The ceiling on that list. The map page loads a few dozen modules; a
-// hundred and twenty is well clear of it and still bounds what a
-// malformed or hostile page could make the worker fetch.
-const SHELL_SUBRESOURCE_LIMIT = 120;
+// The ceiling on that list, which bounds what a malformed or hostile page
+// could make the worker fetch. It must stay well clear of what the map page
+// really names: the carry keeps only the assets this list returns, so
+// everything past the ceiling is dropped on every deploy. At 120 that was
+// the map's last seventeen modules (help, zoom control, today, stale-day),
+// and the offline report rightly read "The app opens: No" after each
+// release. tests/public/test_offline_audit_panel.py fails when the map page
+// passes half of this.
+const SHELL_SUBRESOURCE_LIMIT = 400;
 
 // How long ``activate`` waits for the re-warm before it stops waiting.
 //
