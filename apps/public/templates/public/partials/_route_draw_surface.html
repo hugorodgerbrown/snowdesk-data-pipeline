@@ -250,7 +250,5 @@ Context expected:
     >{% trans "This route is waiting to sync. It will be saved when you're back online." %}</span>
     <span data-string="default-name">{% trans "Drawn route" %}</span>
 </template>
-{# route_draw_core.js is loaded by _routes_surface.html, flag or no flag  #}
-{# (SNOW-1262): the routes panel's Discard needs it to clear a draft.     #}
-<script defer src="{% static 'js/ski_snap_core.js' %}"></script>
-<script defer src="{% static 'js/route_draw.js' %}"></script>
+{# SNOW-1412: this surface's scripts are listed, with their ordering notes, in #}
+{# static/js/bundles/map_surfaces.txt and loaded by map.html.               #}

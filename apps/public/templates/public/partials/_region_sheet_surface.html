@@ -39,7 +39,6 @@ Context expected:
 {% endcomment %}
 {% trans "Region" as region_sheet_aria_label %}
 {% include "includes/_overlay_sheet.html" with id="region-sheet" aria_label=region_sheet_aria_label detents="peek,half,full" initial="peek" side="left" reader=user.is_authenticated|yesno:"signed-in,signed-out" %}
-<script defer src="{% static 'js/map_region_sheet.js' %}"></script>
 {# The module's own user-facing strings — see docs/i18n.md. #}
 <template id="region-sheet-strings-template">
     <span data-string="loading">{% trans "Loading region details…" %}</span>
@@ -50,3 +49,5 @@ Context expected:
 <template id="region-sheet-peek-template">
     {% include "public/partials/_region_sheet_peek.html" with blank=True %}
 </template>
+{# SNOW-1412: this surface's scripts are listed, with their ordering notes, in #}
+{# static/js/bundles/map_surfaces.txt and loaded by map.html.               #}

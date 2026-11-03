@@ -375,11 +375,5 @@ the row's own label, so map.html loads that module once for both.
 {% trans "Download them again from Your downloads while you have a connection." as downloads_restore_notice_body %}
 {% trans "Show downloads" as downloads_restore_notice_cta %}
 {% include "includes/_overlay_banner.html" with variant="floating" id="map-downloads-restore-notice" title=" " title_id="map-downloads-restore-notice-title" body=downloads_restore_notice_body body_id="map-downloads-restore-notice-body" cta_id="map-downloads-restore-notice-open" cta_label=downloads_restore_notice_cta aria_live="polite" dismissible=True %}
-{# SNOW-588: pure budget/row arithmetic (window.pwaBasemapManageCore). Must #}
-{# load before the manager below; both are defer, so document order holds.  #}
-<script defer src="{% static 'js/basemap_manage_core.js' %}"></script>
-{# SNOW-1140: the "Download all" queue's order and stop rules             #}
-{# (window.pwaDownloadsRestoreQueueCore). Read by the manager at click     #}
-{# time, so it only has to precede it.                                     #}
-<script defer src="{% static 'js/downloads_restore_queue_core.js' %}"></script>
-<script defer src="{% static 'js/map_downloads_manager.js' %}"></script>
+{# SNOW-1412: this surface's scripts are listed, with their ordering notes, in #}
+{# static/js/bundles/map_surfaces.txt and loaded by map.html.               #}

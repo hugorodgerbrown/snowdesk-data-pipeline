@@ -1,0 +1,160 @@
+#!/usr/bin/env node
+/*
+ * bin/bundle-js — Join each script list into one bundle file (SNOW-1412).
+ *
+ * The map page loaded ~125 classic scripts as separate files, and each was a
+ * separate entry in the service worker's shell cache. A device could hold
+ * some of them and not others — after a deploy's carry dropped the tail
+ * (#1447), after a fetch failed part-way, after an eviction — and the map
+ * then booted without some of its features. One file per list is either
+ * cached or not.
+ *
+ * Input:  static/js/bundles/<name>.txt — one filename per line, relative to
+ *         static/js/, `#` lines are notes (the same parser as
+ *         apps/public/templatetags/js_bundles.py's `parse_bundle_list`).
+ * Output: static/bundles/<name>.bundle.js — outside static/js/, so the
+ *         lint guards that scan static/js never read generated code.
+ *
+ * Plain concatenation, not a module bundler
+ * -----------------------------------------
+ * The members are classic scripts that share ONE global lexical scope: a
+ * top-level `const` in map_state.js is read as a bare identifier by map.js
+ * (tests/public/test_map_script_order.py). A bundler wraps each module in a
+ * function and that sharing stops. Joining the files keeps it exactly, and
+ * the `\n;\n` separator stops one file's last expression running into the
+ * next file's first.
+ *
+ * Two things concatenation changes, both checked or accepted:
+ *
+ *   - A member opening with a `'use strict'` directive would make the WHOLE
+ *     bundle strict if it came first, and lose its strictness if it did not.
+ *     None does today; this script refuses one rather than ship either.
+ *   - A top-level throw in one member now stops every member after it,
+ *     where a separate file stopped only itself. Accepted: wrapping members
+ *     in `try {}` would block-scope their top-level `let`/`const` and break
+ *     the shared scope. error_reporting.js loads first, from base.html.
+ *
+ * No source map (decided 2026-11-03): nothing reads production maps. Each
+ * member's `//# sourceMappingURL=` line from bin/minify-js is stripped,
+ * because it would point at the wrong offsets inside the bundle.
+ *
+ * Runs from bin/build.sh after bin/minify-js, and from `npm run build:js`.
+ * Like minify-js it writes into the ephemeral build checkout; the outputs
+ * are gitignored.
+ *
+ * Usage:
+ *   node bin/bundle-js            # build every list in static/js/bundles/
+ *   node bin/bundle-js map        # build the named list(s) only
+ */
+
+const fs = require('node:fs');
+const path = require('node:path');
+
+const REPO_ROOT = path.resolve(__dirname, '..');
+const JS_DIR = path.join(REPO_ROOT, 'static', 'js');
+const LISTS_DIR = path.join(JS_DIR, 'bundles');
+const OUT_DIR = path.join(REPO_ROOT, 'static', 'bundles');
+
+const SEPARATOR = '\n;\n';
+const SOURCE_MAP_LINE = /^\/\/# sourceMappingURL=.*$/gm;
+// A directive prologue: optional comments and whitespace, then the string.
+const LEADING_USE_STRICT = /^(?:\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*(['"])use strict\1/;
+
+/**
+ * The filenames a list names, in order.
+ *
+ * @param {string} text The list file's contents.
+ * @returns {string[]}
+ */
+function parseList(text) {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'));
+}
+
+/**
+ * One member's source, ready to join: its source-map line removed.
+ *
+ * @param {string} name The member's filename, for the error message.
+ * @param {string} source
+ * @returns {string}
+ */
+function prepareMember(name, source) {
+  if (LEADING_USE_STRICT.test(source)) {
+    throw new Error(
+      `${name} opens with a 'use strict' directive, which would change the ` +
+        'strictness of every other member of the bundle. Move it inside the ' +
+        "file's IIFE.",
+    );
+  }
+  return source.replace(SOURCE_MAP_LINE, '').trimEnd();
+}
+
+/**
+ * Join the members of one list.
+ *
+ * @param {string[]} members Filenames relative to `jsDir`.
+ * @param {string} jsDir
+ * @returns {string}
+ */
+function buildBundle(members, jsDir) {
+  if (members.length === 0) throw new Error('the list names no scripts');
+  const seen = new Set();
+  const parts = members.map((name) => {
+    if (seen.has(name)) throw new Error(`${name} is listed twice`);
+    seen.add(name);
+    const file = path.join(jsDir, name);
+    if (!fs.existsSync(file)) throw new Error(`${name} does not exist in ${jsDir}`);
+    return prepareMember(name, fs.readFileSync(file, 'utf8'));
+  });
+  return `${parts.join(SEPARATOR)}\n`;
+}
+
+/**
+ * Build the named lists (all of them when none is named).
+ *
+ * @param {{names?: string[], listsDir?: string, jsDir?: string, outDir?: string}} [options]
+ * @returns {Array<{name: string, members: number, bytes: number}>}
+ */
+function run(options = {}) {
+  const listsDir = options.listsDir || LISTS_DIR;
+  const jsDir = options.jsDir || JS_DIR;
+  const outDir = options.outDir || OUT_DIR;
+  const names =
+    options.names && options.names.length > 0
+      ? options.names
+      : fs
+          .readdirSync(listsDir)
+          .filter((file) => file.endsWith('.txt'))
+          .map((file) => file.slice(0, -'.txt'.length))
+          .sort();
+  fs.mkdirSync(outDir, { recursive: true });
+  return names.map((name) => {
+    const members = parseList(fs.readFileSync(path.join(listsDir, `${name}.txt`), 'utf8'));
+    let code;
+    try {
+      code = buildBundle(members, jsDir);
+    } catch (err) {
+      throw new Error(`bundle ${name}: ${err.message}`);
+    }
+    fs.writeFileSync(path.join(outDir, `${name}.bundle.js`), code);
+    return { name, members: members.length, bytes: Buffer.byteLength(code) };
+  });
+}
+
+module.exports = { parseList, prepareMember, buildBundle, run, SEPARATOR };
+
+if (require.main === module) {
+  try {
+    for (const built of run({ names: process.argv.slice(2) })) {
+      console.log(
+        `bundle-js: ${built.name}.bundle.js | ${built.members} file(s) | ` +
+          `${(built.bytes / 1024).toFixed(0)} KiB`,
+      );
+    }
+  } catch (err) {
+    console.error('bundle-js failed:', err.message);
+    process.exit(1);
+  }
+}

@@ -37,6 +37,9 @@ STORAGES = {
     },
 }
 
+# SNOW-1412: one script per map bundle; the build runs bin/bundle-js first.
+JS_BUNDLES = True
+
 ALLOWED_HOSTS = config("ALLOWED_HOSTS").split(",")
 
 # ---------------------------------------------------------------------------

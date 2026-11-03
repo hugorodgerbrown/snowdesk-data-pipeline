@@ -59,20 +59,6 @@ Context expected:
     {% trans "Reports" as report_section_label %}
     {% include "includes/_ugc_panel.html" with title=report_list_title icon_template="includes/_icon_observation.html" context_line=report_context_line section_label=report_section_label rows_template="public/partials/_report_panel_rows.html" cta_label=report_add_label toggle_id="map-community-reports-overlay-toggle" %}
 </template>
-{# SNOW-475: place_picker.js is loaded by map.html (shared with        #}
-{# _favourites_surface.html) — not repeated here; see this partial's    #}
-{# header comment.                                                      #}
-{# SNOW-661: the panel's offline row store — written on every successful  #}
-{# list swap AND on report.js's idle warm, read back when the request      #}
-{# fails. Sits between the two scripts it talks to, and both edges are      #}
-{# document order between deferred scripts: map.html's panel_rows_cache.js #}
-{# is above (this registers its onWarmed hook at parse time), and report.js  #}
-{# is below (it reads window.pwaObservationsOffline). Map page only, unlike  #}
-{# favourites_offline.js, which base.html loads site-wide.                   #}
-<script defer src="{% static 'js/observations_offline.js' %}"></script>
-{# SNOW-333: field-report JS — geolocation + HTMX sheet opener.          #}
-{# Deferred so it executes in document order after the map assets.      #}
-<script defer src="{% static 'js/report.js' %}"></script>
 {# SNOW-620: report.js's toast and ineligible-state copy. The module builds  #}
 {# those states itself, so none of this text has ever passed through a       #}
 {# template and makemessages could not see it. Read back via                 #}
@@ -111,3 +97,5 @@ Context expected:
     </span>
     <span data-string="locating">{% trans "Finding your location…" %}</span>
 </template>
+{# SNOW-1412: this surface's scripts are listed, with their ordering notes, in #}
+{# static/js/bundles/map_surfaces.txt and loaded by map.html.               #}

@@ -18,7 +18,6 @@ Context expected:
 {% endcomment %}
 {% trans "Place" as place_sheet_aria_label %}
 {% include "includes/_overlay_sheet.html" with id="place-sheet" aria_label=place_sheet_aria_label detents="peek,half,full" initial="peek" side="left" %}
-<script defer src="{% static 'js/map_place_sheet.js' %}"></script>
 {# The module's own user-facing strings — see docs/i18n.md. #}
 <template id="place-sheet-strings-template">
     <span data-string="loading">{% trans "Loading place details…" %}</span>
@@ -35,3 +34,5 @@ Context expected:
         data-string="location-save-failed"
     >{% trans "Could not save this spot on this device — please try again." %}</span>
 </template>
+{# SNOW-1412: this surface's scripts are listed, with their ordering notes, in #}
+{# static/js/bundles/map_surfaces.txt and loaded by map.html.               #}

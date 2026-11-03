@@ -46,5 +46,6 @@ Context expected:
     <template id="today-strings-template">
         <span data-string="error">{% trans "Today could not be loaded. Check your connection and try again." %}</span>
     </template>
-    <script defer src="{% static 'js/today_panel.js' %}"></script>
 {% endif %}
+{# SNOW-1412: this surface's scripts are listed, with their ordering notes, in #}
+{# static/js/bundles/map_surfaces.txt and loaded by map.html.               #}

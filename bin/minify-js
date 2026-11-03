@@ -20,7 +20,8 @@
  * dev loop. It is deliberately not wired into `npm test` or any tox env.
  *
  * Source maps are emitted alongside so a production stack trace still
- * points at real lines.
+ * points at real lines. The map page's scripts are then joined by
+ * bin/bundle-js (SNOW-1412), which drops those maps: see its header.
  *
  * Exclusions
  * ----------

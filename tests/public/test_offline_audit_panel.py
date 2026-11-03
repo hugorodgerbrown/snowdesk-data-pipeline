@@ -39,6 +39,7 @@ from django.conf import settings
 from django.template.loader import render_to_string
 from django.test import Client
 from django.urls import reverse
+from pytest_django.fixtures import Settings
 
 from tests.factories import UserFactory
 
@@ -363,22 +364,47 @@ class TestMapPageFitsTheShellCeiling:
         assert match, "SHELL_SUBRESOURCE_PATTERN not found in sw.js"
         return re.compile(match.group(1), re.IGNORECASE)
 
+    def _named(self, client: Client, signed_in: bool) -> set[str]:
+        """The same-origin subresources ``/map/`` names, as ``sw.js`` sees them."""
+        if signed_in:
+            client.force_login(UserFactory.create())
+        html = client.get(reverse("public:map")).content.decode()
+        return {
+            match.group(1)
+            for match in self._pattern().finditer(html)
+            if not match.group(1).startswith(("http://", "https://", "//"))
+        }
+
     @pytest.mark.django_db
     @pytest.mark.parametrize("signed_in", [False, True])
     def test_map_page_names_under_half_the_ceiling(
         self, client: Client, signed_in: bool
     ) -> None:
-        """Half, so the page can grow for a while before the guard bites."""
-        if signed_in:
-            client.force_login(UserFactory.create())
-        html = client.get(reverse("public:map")).content.decode()
-        named = {
-            match.group(1)
-            for match in self._pattern().finditer(html)
-            if not match.group(1).startswith(("http://", "https://", "//"))
-        }
+        """Half, so the page can grow for a while before the guard bites.
+
+        Development renders every bundle member on its own (SNOW-1412), so
+        this is the worst case the ceiling has to hold.
+        """
+        named = self._named(client, signed_in)
         assert len(named) > 100, "pattern no longer matches the map's tags"
         assert len(named) <= self._limit() // 2, (
             f"/map/ names {len(named)} same-origin scripts and stylesheets; "
             f"raise SHELL_SUBRESOURCE_LIMIT ({self._limit()}) in sw.js"
         )
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize("signed_in", [False, True])
+    def test_bundled_map_page_names_its_two_bundles(
+        self, client: Client, settings: Settings, signed_in: bool
+    ) -> None:
+        """What staging and production cache: two bundles in place of ~125
+        members (SNOW-1412), so a device holds all of the map or none of it.
+        """
+        settings.JS_BUNDLES = True
+        named = self._named(client, signed_in)
+        bundles = {path for path in named if "/static/bundles/" in path}
+        assert bundles == {
+            "/static/bundles/map_surfaces.bundle.js",
+            "/static/bundles/map.bundle.js",
+        }, named
+        assert len(named) < 40, sorted(named)

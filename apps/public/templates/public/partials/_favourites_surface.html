@@ -153,11 +153,6 @@ Context expected:
         </button>
     </div>
 </template>
-{# SNOW-475: place_picker.js is loaded by map.html (shared with        #}
-{# _report_surface.html) — not repeated here; see this partial's header #}
-{# comment.                                                             #}
-{# SNOW-414: saved-pin add/rename/delete JS. #}
-<script defer src="{% static 'js/favourites.js' %}"></script>
 {# SNOW-620: favourites.js builds its whole sheet through DOM APIs — the     #}
 {# pin-detail row and the anonymous sign-in CTA have no server partial — so  #}
 {# this copy never passed through a template and makemessages could not see  #}
@@ -191,3 +186,5 @@ Context expected:
     <span data-string="share-copied">{% trans "Copied." %}</span>
     <span data-string="share-failed">{% trans "That couldn't be shared. Try again." %}</span>
 </template>
+{# SNOW-1412: this surface's scripts are listed, with their ordering notes, in #}
+{# static/js/bundles/map_surfaces.txt and loaded by map.html.               #}

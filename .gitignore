@@ -116,6 +116,8 @@ design-canvas.pen
 # which runs on deploy and before a Lighthouse run. Never committed — the
 # sources they map back to are the tracked files themselves.
 static/js/*.js.map
+# SNOW-1412: built by bin/bundle-js at deploy time.
+static/bundles/
 
 # Icon sets we may not redistribute (this repo is public). Populated
 # locally for the icon-set switch; see docs on WEATHER_ICON_SET.

@@ -1,0 +1,450 @@
+# static/js/bundles/map.txt — the map's own scripts (SNOW-1412).
+#
+# One filename per line, relative to static/js/, in the order the browser
+# runs them. `#` lines are notes. {% js_bundle "map" %} renders these as
+# separate <script defer> tags in development and tests, and bin/bundle-js
+# joins them into static/bundles/map.bundle.js for staging and production.
+# See docs/decisions/the-map-page-ships-one-script-bundle.md.
+
+maplibre-gl.min.js
+
+# SNOW-492: offline read cache for the favourites / community-reports
+# map overlays. Loads before map.js — ensureOverlayLoaded calls
+# window.pwaMapOverlayCache on both a successful fetch (write-through)
+# and a failed one (read-back). Needs db.js (base.html), which is
+# earlier in document order and also deferred.
+map_overlay_offline_cache.js
+
+# SNOW-496: pure scrubber/timelapse/ribbon math, extracted so it can be
+# unit-tested directly (tests/js/test_scrubber_core.js) — map.js's own
+# IIFEs delegate to window.pwaScrubberCore. Must load before map.js.
+scrubber_core.js
+
+# SNOW-792: pure month-grid math for the map's date picker
+# (window.pwaCalendarCore), unit-tested in tests/js/test_calendar_core.
+# Must load before map_calendar.js, which reads it at parse time and
+# stays shut without it — and, since SNOW-927, before map_scrubber.js,
+# which reads MAX_FORWARD_DAYS at parse time to bound its boot ceiling.
+# The scrubber degrades quietly rather than breaking if reordered (it
+# falls back to a today-only ceiling), so nothing would crash to tell
+# you — and tests/public/test_map_script_order.py does not cover this
+# pair, its regex matching only map*.js filenames.
+calendar_core.js
+
+# SNOW-1195: pure day-stepping maths for the date row
+# (window.pwaDayNavCore), unit-tested in tests/js/test_day_nav_core.js.
+# Must load before map_day_nav.js.
+day_nav_core.js
+
+# SNOW-505: layers-popover sync-status dots (window.pwaLayerSyncStatus).
+# Loads before map.js, whose basemapPickerInit calls refresh() from
+# setMenuOpen on every popover open.
+map_layer_sync_status.js
+
+# SNOW-521: pure tile-math + "up to N MB" estimate for the "Download
+# basemap" control (window.pwaBasemapDownloadCore). Must load before
+# map.js, whose cacheNowInit delegates to it.
+# SNOW-623: the one choropleth paint routine (window.pwaChoroplethCore),
+# replacing three copies in map.js whose clearMissing semantics
+# genuinely differ. Must load before map.js.
+choropleth_core.js
+
+# SNOW-618: pure region/resort search matching + ordering
+# (window.pwaSearchCore), extracted from map.js's main IIFE so it can
+# be unit-tested. Must load before map.js, whose search box uses it.
+search_core.js
+
+# SNOW-656: the Bulletins layer's preference-vs-suppression state
+# machine (window.pwaLayerVisibilityCore) — which of the two rows the
+# old l4 tier split into is effective right now, and how regions-fill
+# must be painted for it. Read by map.js at parse time (the boot seed
+# resolves the Bulletins preference through seedFromLegacy), so it must
+# load before the bundle.
+layer_visibility_core.js
+
+# SNOW-1394: the Dated / Terrain mode's pure rules (window.pwaMapModeCore).
+# Read by map.js at parse time — the boot mode decides each layer's first
+# visibility, so ?mode=terrain never flashes the dated layers — and by
+# map_shared.js's date write. Loaded for everyone, like every core map.js
+# reads (test_home_scripts.py); it does nothing until #map carries
+# data-map-modes-enabled, which only the map_modes flag renders.
+map_mode_core.js
+
+# SNOW-1212: how a saved route is drawn (window.pwaRouteDrawingCore) —
+# the legs, the slope classes from z14 and the end markers, shared
+# with the trip page and the meeting picker. Read by map.js at parse
+# time (ROUTE_SLOPE_MINZOOM), so it must load before the bundle.
+route_drawing_core.js
+
+# The diagonal-hatch pixels the downloaded-areas overlay is painted
+# with (window.pwaHatchCore) — the mark that lets the download squares
+# and the danger choropleth share the same polygons. Read by map.js at
+# parse time (installRegionsLayers registers the fallback image before
+# adding the layer that names it), so it must load before the bundle.
+hatch_core.js
+
+# SNOW-737: the stored map camera and its validation
+# (window.pwaViewportCore) — what the visitor was looking at when they
+# last closed the app. Read by map.js at parse time (the MapLibre
+# constructor takes the restored centre and zoom), so it must load
+# before the bundle.
+map_viewport_core.js
+
+# SNOW-1073: the slope-class ramp (window.pwaSlopeClassesCore) — the
+# 30/35/40/45/50+ colours the terrain filter's slope mode paints the
+# map with and a route's core is drawn in from z14. Both
+# terrain_filter_core.js and route_slope_core.js read it at parse time,
+# so it must load before either (tests/public/test_home_scripts.py).
+# It replaced slope_overlay_core.js, swisstopo's slope raster's core.
+# Here with the other *_core.js modules and NOT inside the map bundle's
+# contiguous run (test_bundle_scripts_are_contiguous).
+slope_classes_core.js
+
+# SNOW-978: the terrain filter's pure half (window.pwaTerrainFilterCore)
+# — the class-tile pixel contract, the classifier and painter, the
+# filter's storage shape and its summary in words. map.js reads it from
+# installTerrainFilterLayer and at the top of its terrain-filter block,
+# not inside the bundle's temporal-dead-zone run, so it sits here with
+# the other cores (tests/js/test_terrain_filter_core.js).
+terrain_filter_core.js
+
+# SNOW-979: the problem-terrain layer's pure half
+# (window.pwaBulletinTerrainCore) — the bulletin's rules as four states,
+# the region clipping and the palette. Reads the terrain filter's core
+# at parse time, so it comes straight after it.
+bulletin_terrain_core.js
+
+# SNOW-761: the weather overlay's pure transforms
+# (window.pwaWeatherCore) — the WMO code -> weather icon mapping, the
+# temperature-and-altitude label, the date projection and the
+# cluster-to-lowest collapse, extracted so all four are Vitest-covered
+# (tests/js/test_map_weather_core.js). Here with the other *_core.js
+# modules and NOT inside the map bundle's contiguous run
+# (test_bundle_scripts_are_contiguous): map.js reads it from
+# installWeatherLayer and refreshWeatherSourceData, never at parse
+# time, so it has no place in the temporal-dead-zone ordering the
+# bundle exists to protect.
+map_weather_core.js
+
+# SNOW-1290: the "On the ground" layer's pure half
+# (window.pwaCommunityReportsCore) — live / recent / day states, the
+# window, the pin's age and the family glyphs. Read by map.js at
+# install and fetch time only, never at parse time, so like the
+# weather core it sits outside the bundle's contiguous run.
+community_reports_core.js
+
+# The legend's first tier, "On the map now" (window.pwaMapLegendCore):
+# which keys and rows the current view needs. Read by map_legend.js
+# when the card opens, never at parse time, so like the cores above
+# it sits outside the bundle's contiguous run.
+map_legend_core.js
+
+# The saved-route elevation profile's maths and SVG
+# (window.pwaElevationProfileCore) — the picture the route popup's
+# distance/ascent/descent figures summarise, derived from the elevation
+# already carried as the third ordinate of each route coordinate.
+# Here with the other *_core.js modules and NOT inside the map bundle's
+# contiguous run (test_bundle_scripts_are_contiguous): map.js reads it
+# from activateRoute, on a tap, never at parse time — so like the
+# slope core it has no place in the temporal-dead-zone
+# ordering the bundle exists to protect.
+elevation_profile_core.js
+
+# The start dot and checkered finish flag on a saved route
+# (window.pwaRouteMarkersCore) — the endpoint geometry plus the raw
+# RGBA for both icons, which a checkered flag needs because SDF keeps
+# only an alpha mask and would collapse it to a silhouette. Read by
+# map.js from installRoutesLayer, on the overlay's first load, never at
+# parse time — so like the other call-site cores it sits here and not
+# inside the map bundle's contiguous run.
+route_markers_core.js
+
+# SNOW-910: a route's slope record, read (window.pwaRouteSlopeCore).
+# SNOW-1017 took the slope-coloured line off the map below z14; map.js
+# still reads this core for the line's colours from z14 (the fall-line
+# arrows left the map with SNOW-1019, the terrain lines with SNOW-1095),
+# and the elevation profile for its bands. Read from installRoutesLayer and refreshPanelOverlay,
+# never at parse time, so like the other call-site cores it sits here
+# and not inside the map bundle's contiguous run.
+route_slope_core.js
+
+# SNOW-1017: the route as its legs (window.pwaRouteLegsCore) — one
+# line per leg sliced from the route's own coordinates, a numbered
+# point at each transition, and the opacity a leg opened on the rail
+# dims the rest with. After the slope core, whose segments its
+# passages are built from. Read at install time, never at parse time.
+route_legs_core.js
+
+# SNOW-1019: the route cursor on the map (window.pwaRouteCursorMapCore)
+# — a selection as a stretch of line, the cursor index as a dot, and a
+# pointer on the line back to the nearest sample. Read by map.js when a
+# route opens and on a pointer, never at parse time.
+route_cursor_map_core.js
+
+# SNOW-1018: rail one. The route cursor (window.pwaRouteCursorCore,
+# SNOW-1016) had no caller until this rail, which is its first; the
+# rail's pure half (window.pwaRouteRailCore) — tick step, figures line,
+# one fill per leg — and its DOM half (window.pwaRouteRail), which
+# map.js's activateRoute calls on a tap. None of the three reads map
+# state at parse time, so they sit with the call-site cores and not
+# inside the map bundle's contiguous run.
+route_cursor_core.js
+
+route_rail_core.js
+
+# SNOW-1215: the profile's drawing, shared with the trip pages; the
+# rail mounts it on its lane, so it loads before route_rail.js.
+route_profile.js
+
+# SNOW-1064: the route panel's point header — the aspect wheel
+# (window.pwaAspectWheelCore, SNOW-1063), its words and gradient
+# (window.pwaRoutePointCardCore) and its DOM half
+# (window.pwaRoutePointCard), which route_rail.js attaches on open — so
+# all three come before it.
+aspect_wheel_core.js
+
+route_point_card_core.js
+
+route_point_card.js
+
+route_rail.js
+
+# SNOW-1019: the leader line — a dashed line from the route cursor's
+# dot on the map to a notch on the rail's top edge (SNOW-1065). Its pure
+# half (window.pwaRouteLeaderCore) and its DOM half
+# (window.pwaRouteLeader), which follows the rail's open/close events.
+route_leader_core.js
+
+route_leader.js
+
+# The line from the weather and place sheets to the place they
+# describe (Hugo, 24 Oct 2026), drawn with the route leader's path.
+sheet_leader.js
+
+# SNOW-828: the ?trip= / ?trip_share= arrival's pure half
+# (window.pwaTripDeepLinkCore) — which parameter is present, where its
+# geometry is fetched from, and what the address bar should say once
+# it has been read. map.js reads it inside its load handler, not at
+# parse time, so it sits with the other call-site cores.
+trip_deeplink_core.js
+
+# SNOW-898: the two pure decisions inside a country load
+# (window.pwaCountryLoadCore) — which of a country's four feeds must
+# be fetched, and what its layers-menu sync dot should do given which
+# of them landed. map.js reads it from inside ensureCountryLoaded,
+# never at parse time, so it sits with the other call-site cores.
+country_load_core.js
+
+basemap_download_core.js
+
+# SNOW-860: the one reader of what this device has downloaded
+# (window.pwaBasemapAreas). map_basemap_downloads.js delegates to it,
+# and /account/settings/ loads the same file for the "Reset local
+# data" breakdown — one reader, so the two surfaces cannot disagree.
+# Outside the map bundle's contiguous run (it publishes on window and
+# reads nothing from another file's lexical scope), and before it,
+# because map_basemap_downloads.js calls into it.
+basemap_downloaded_areas.js
+
+# SNOW-1308: the one removal of a downloaded area
+# (window.pwaBasemapAreaRemoval) — map_basemap_downloads.js's
+# evictBasemapAreas delegates to it, and /offline/'s panels load the
+# same file, so Remove has one implementation. Reached only at call
+# time, so outside the map bundle's contiguous run.
+basemap_area_removal.js
+
+# SNOW-611: the one ordered pinned-download run both map download
+# controls share (window.pwaBasemapDownloadRunner). Must load before
+# map.js, whose runPinnedDownload delegates to it.
+basemap_download_runner.js
+
+# Distraction-free pin positioning (window.PlacementFocus): hides every
+# app layer over the basemap while a favourite / observation / resort
+# pin is being positioned. Callers (place_picker.js, map.js,
+# map_edit_resorts.js) only reach it from user-triggered handlers, so
+# document order relative to them doesn't matter — it just has to be on
+# the page.
+map_placement_focus.js
+
+# SNOW-610: map.js, split along the eleven seams it already had. THIS
+# ORDER IS LOAD-BEARING. These are classic scripts sharing one global
+# lexical scope: a top-level let/const is readable from a later script
+# as a bare identifier, but sits in the temporal dead zone until its
+# own script has run — and every IIFE below runs at parse time. So
+# declarations come first, then map.js's boot IIFE, then the surfaces,
+# in the order they had inside the single file. map.js's header carries
+# the same list with a line on what each one owns.
+map_state.js
+
+map_basemap_downloads.js
+
+map_shared.js
+
+map.js
+
+map_scrubber.js
+
+map_legend.js
+
+map_timelapse.js
+
+map_basemap_picker.js
+
+map_region_download.js
+
+map_custom_download.js
+
+map_geolocate.js
+
+map_season_ribbon.js
+
+# SNOW-801: the region + date panel the #region-readout chip discloses.
+# After map_season_ribbon.js, which owns the chip this hangs off.
+map_region_panel.js
+
+# SNOW-792: the map's date picker. After map_scrubber.js, which owns
+# the snowdesk:scrub-to listener it dispatches into.
+map_calendar.js
+
+# SNOW-658: the four overlay roundels' shared "my overlay is on the
+# map" state (data-overlay-shown, and the aria-label composed from it;
+# no visual marker). Reads window.pwaDownloadedOverlay /
+# pwaFavouritesOverlay / pwaCommunityReportsOverlay / pwaRoutesOverlay,
+# which map.js
+# publishes at parse time — hence AFTER the bundle. Deliberately
+# outside the bundle's contiguous run (it is not a bundle member: no
+# bundle module reads it), which is what
+# tests/public/test_map_script_order.py asks of a tag placed here.
+map_roundel_overlay_state.js
+
+# SNOW-1195: the date row's day steps and the scrubber's keys.
+# Dispatches into map_scrubber.js's
+# scrub-to and reads getSeasonRatings / COUNTRY_STATE, so after the
+# bundle; outside its contiguous run because no bundle module reads it.
+map_day_nav.js
+
+# SNOW-1196: the weather layer's "forecast only" line in its layers
+# row. Reads window.pwaWeatherWindow (map.js).
+map_weather_window.js
+
+# SNOW-1394: the Dated / Terrain toggle. Calls the suppression
+# hooks map.js publishes, binds over map_calendar.js's date
+# control and map_day_nav.js's steps, so after all three; before
+# map_region_chip.js, which reads window.pwaMapMode. Outside the
+# bundle's contiguous run because no bundle module reads it. Loaded
+# for everyone since SNOW-1412: it returns early unless
+# #map-mode-terrain rendered, which only the map_modes flag does.
+map_mode.js
+
+# SNOW-1376: the region chip — its pure half, then the DOM half. Reads
+# MAP and the bridges map.js publishes, so after the bundle; outside
+# its contiguous run because no bundle module reads it.
+map_region_chip_core.js
+
+map_region_chip.js
+
+# SNOW-1196: the problem-terrain layer's legend key and menu-row line.
+# Reads window.pwaBulletinTerrain (map.js).
+map_problem_terrain_key.js
+
+# SNOW-1378: the once-per-device card that says the bulletin's slopes
+# have taken over from z12 — its pure half, then the DOM half. Reads
+# MAP and window.pwaBulletinTerrain / pwaTerrainFilter (map.js), so
+# after the bundle and outside its contiguous run, like the chip.
+map_slopes_notice_core.js
+
+map_slopes_notice.js
+
+# Each panel's "Show on the map" switch, bound to its layers-menu row.
+# Reads the bridges and the rows lazily, so it only has to run before
+# the first panel opens; outside the bundle for the same reason as the
+# tag above.
+map_panel_overlay_switch.js
+
+# SNOW-978: the terrain filter's sheet, map chip and menu-row summary.
+# Talks only to window.pwaTerrainFilter, which map.js publishes at
+# parse time. Loaded for everyone since SNOW-1412: it returns early
+# unless _map_terrain_filter_sheet.html rendered, which only an
+# eligible page does.
+terrain_filter_sheet.js
+
+# HACK MODE (feature discovery): the drop-zone control — one-tap
+# "download the ground around me". Outside the map bundle (nothing in
+# the bundle reads it), so its tag sits BELOW the bundle's contiguous
+# run — see tests/public/test_map_script_order.py. After
+# map_geolocate.js, whose listener answers the locate request it
+# dispatches.
+map_drop_zone.js
+
+# SNOW-1077: the zoom control at the top of the bottom-left stack.
+# Reads MAP and window.pwaZoomGates, both from map.js at parse time —
+# hence after the bundle, and outside its contiguous run (no bundle
+# module reads it); see tests/public/test_map_script_order.py. Its pure
+# half, zoom_control_core.js, loads just before it.
+zoom_control_core.js
+
+map_zoom_control.js
+
+# SNOW-1280: the layers menu's zoom-limited rows — dimmed, with
+# "· zoom in" on the name line, while the map is outside their zoom.
+# Reads MAP and window.pwaZoomGates (map.js) and
+# zoom_control_core.js, so after the bundle and the core; outside its
+# contiguous run because no bundle module reads it.
+map_layers_zoom_gates.js
+
+# SNOW-1117: reveals #map-tour-offer once per device after the map settles.
+map_tour_offer.js
+
+# SNOW-1230: the example route walkthrough, its pure half first. Both
+# after map.js and route_rail.js, whose window.pwaRouteOpener and
+# window.pwaRouteRail the guide calls; map.js reads the core only
+# when a route opens, never at parse time.
+example_guide_core.js
+
+map_example_guide.js
+
+# SNOW-1231: the "Find a resort" walkthrough, its pure half first.
+# After map.js and both object sheets, whose events it drives.
+resort_guide_core.js
+
+map_resort_guide.js
+
+# SNOW-1244: the between-seasons note; reads the guides' surfaces.
+map_between_seasons.js
+
+# Collapsible bottom-right control group. Independent of map.js — it
+# only reads #map-controls-br's DOM — but must load before map_help.js
+# so it is listening for snowdesk:map-help-open by the time an
+# auto-starting tour fires it.
+map_controls_collapse.js
+
+# SNOW-794: shows and hides the season scrubber as the shown day moves
+# in and out of the season. Loads AFTER map_scrubber.js, which is what
+# dispatches the snowdesk:date-changed it listens for — order is not
+# load-bearing for a document listener, but reading the pair in the
+# order they talk is.
+map_scrubber_reveal.js
+
+# SNOW-457: map help / coachmark tour
+map_help.js
+
+# SNOW-1119: help mode on the "?" roundel. Its "Tour" button asks
+# map_help.js for the tour, so it loads after it.
+map_help_mode.js
+
+# SNOW-1230: the "?" roundel's menu. Help mode hands it the roundel's
+# press while help mode is off, so it loads after it.
+map_help_menu.js
+
+# SNOW-920: "Showing 18 Oct · Reload" when a cache-served page's own
+# day is behind the server's. Needs pwa_version_check.js (base.html).
+stale_day_core.js
+
+stale_day.js
+
+# SNOW-1165: the date control's "Today" half and the sheets' "Back to
+# today" strip. The core first; the scrubber it asks to move loads
+# earlier, with the rest of the map bundle.
+today_core.js
+
+map_today.js

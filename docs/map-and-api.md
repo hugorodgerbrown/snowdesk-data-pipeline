@@ -38,8 +38,9 @@ IIFE seams it already contained. It is now the boot IIFE alone — style and
 overlay install, region select, popups, markers, search — and the surfaces
 are siblings (`MAP_BUNDLE` in `tests/js/_load_map_bundle.js` holds fourteen
 entries: the three declaration files, `map.js`, and ten surfaces). `map.js`'s own header carries the full list with a line on
-what each file owns; `apps/public/templates/public/map.html` carries the
-script tags.
+what each file owns; `static/js/bundles/map.txt` and `map_surfaces.txt`
+carry the order, and `map.html` renders them with `{% js_bundle %}`
+(SNOW-1412, [decision](decisions/the-map-page-ships-one-script-bundle.md)).
 
 **The order of those tags is load-bearing.** These are classic scripts, so
 they share one global lexical scope: a top-level `let`/`const` in one file
@@ -182,9 +183,10 @@ user-facing is a JavaScript literal — see [`i18n.md`](i18n.md).
 `tests/public/test_map_script_order.py` renders the map page (`public:map`)
 and asserts its script sequence matches `MAP_BUNDLE`, that the bundle loads as one
 uninterrupted run, and that declarations precede `map.js` while surfaces
-follow it. Adding a map module therefore means editing two places — the
-template and `MAP_BUNDLE` — and forgetting either is a failing test rather
-than a map that stops booting. `map.js`'s header list is prose and is
+follow it. Adding a map module therefore means editing two places — its list in
+`static/js/bundles/` and `MAP_BUNDLE` — and forgetting either is a failing
+test rather than a map that stops booting. A surface's scripts go in
+`map_surfaces.txt`, never in the surface partial. `map.js`'s header list is prose and is
 deliberately not asserted.
 
 ### One open overlay at a time (SNOW-658)

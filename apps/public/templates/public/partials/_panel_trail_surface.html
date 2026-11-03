@@ -14,7 +14,6 @@ Included from map.html after the three sheets it serves.
 
 Context expected: none.
 {% endcomment %}
-<script defer src="{% static 'js/map_panel_trail.js' %}"></script>
 <template id="panel-trail-back-template">
     <button
         type="button"
@@ -30,3 +29,5 @@ Context expected: none.
 <template id="panel-trail-strings-template">
     <span data-string="back">{% trans "Back to {name}" %}</span>
 </template>
+{# SNOW-1412: this surface's scripts are listed, with their ordering notes, in #}
+{# static/js/bundles/map_surfaces.txt and loaded by map.html.               #}

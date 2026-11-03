@@ -413,6 +413,12 @@ STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+# SNOW-1412: serve the map page's scripts as built bundles
+# (``{% js_bundle %}``, ``bin/bundle-js``). Off here, so development and tests
+# load each source file on its own; production (and so staging) and perf turn
+# it on, and their builds run ``bin/bundle-js`` before ``collectstatic``.
+JS_BUNDLES = False
+
 # ---------------------------------------------------------------------------
 # Default primary key
 # ---------------------------------------------------------------------------

@@ -224,14 +224,18 @@ def test_map_mode_scripts_load_in_their_places_behind_the_flag() -> None:
 
 
 @pytest.mark.django_db
-def test_map_mode_toggle_is_absent_without_the_flag() -> None:
-    """Off, the toggle is not loaded, so a stored or linked ?mode= has
-    nothing to apply it. The pure core still loads, before the bundle: every
-    core map.js reads is on the page (test_home_scripts.py), and map.js
-    ignores it until #map carries data-map-modes-enabled.
+def test_map_mode_toggle_loads_for_everyone_but_renders_only_behind_the_flag() -> None:
+    """Off, the toggle's markup is absent, so a stored or linked ?mode= has
+    nothing to apply it. Its script still loads, in its place before
+    ``map_region_chip.js`` (SNOW-1412): it is a member of the map bundle, and
+    it returns early without ``#map-mode-terrain``. The pure core loads
+    before the bundle's contiguous run, as every core map.js reads does.
     """
-    rendered = _rendered_script_filenames()
-    assert "map_mode.js" not in rendered
+    client = Client()
+    content = client.get(reverse("public:map")).content.decode()
+    rendered = _SCRIPT_SRC_RE.findall(content)
+    assert ' id="map-mode-terrain"' not in content
+    assert rendered.index("map_mode.js") < rendered.index("map_region_chip.js")
     assert rendered.index("map_mode_core.js") < rendered.index(_map_bundle()[0])
 
 

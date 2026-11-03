@@ -26,15 +26,6 @@ Context expected:
 {% endcomment %}
 {% trans "Weather detail" as weather_sheet_aria_label %}
 {% include "includes/_overlay_sheet.html" with id="weather-sheet" aria_label=weather_sheet_aria_label detents="peek,half,full" initial="peek" side="left" %}
-<script defer src="{% static 'js/map_weather_detail.js' %}"></script>
-{# SNOW-1101: the FULL detent carries the meteogram, whose info button  #}
-{# opens its legend; this is the one handler it needs (see the forecast #}
-{# page's own include of it).                                           #}
-<script defer src="{% static 'js/hourly_chart_legend.js' %}"></script>
-{# SNOW-1219: the sheet draws each day as linked strips; these move the  #}
-{# selected three-hour block when a time is pressed or a strip tapped.   #}
-<script defer src="{% static 'js/day_strips_core.js' %}"></script>
-<script defer src="{% static 'js/day_strips.js' %}"></script>
 {# SNOW-620: the module's own user-facing strings. makemessages never scans #}
 {# JavaScript, so a literal in the module ships as English to every locale; #}
 {# read back with window.pwaStrings.read(). See docs/i18n.md.               #}
@@ -42,3 +33,5 @@ Context expected:
     <span data-string="loading">{% trans "Loading weather…" %}</span>
     <span data-string="failed">{% trans "That weather couldn't be loaded — check your connection." %}</span>
 </template>
+{# SNOW-1412: this surface's scripts are listed, with their ordering notes, in #}
+{# static/js/bundles/map_surfaces.txt and loaded by map.html.               #}

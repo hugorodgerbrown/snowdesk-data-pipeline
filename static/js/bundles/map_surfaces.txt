@@ -1,0 +1,256 @@
+# static/js/bundles/map_surfaces.txt — the map's sheet and panel scripts (SNOW-1412).
+#
+# One filename per line, relative to static/js/, in the order the browser
+# runs them. `#` lines are notes. {% js_bundle "map_surfaces" %} renders these as
+# separate <script defer> tags in development and tests, and bin/bundle-js
+# joins them into static/bundles/map_surfaces.bundle.js for staging and production.
+# See docs/decisions/the-map-page-ships-one-script-bundle.md.
+
+# htmx.min.js is shared by both sheet surfaces below (field-report
+# and favourites) — loaded once here, ahead of both surface partials.
+htmx.min.js
+
+# SNOW-475: place_picker.js is likewise shared by both sheet surfaces
+# — loaded once here, ahead of both surface partials. Each partial
+# carried its own tag until the 2026-08-03 JS review (C5): browsers
+# do not deduplicate script elements by URL, so the IIFE ran twice and
+# the second window.PlacePicker overwrote the first, orphaning its
+# closure. Document order here puts it before report.js and
+# favourites.js, which is what both of them require.
+place_picker.js
+
+# SNOW-608: the sheet controller, failure toast and mutation-storage
+# guard both surfaces below share. Loaded here rather than from
+# either partial — all three scripts are defer, so document order is
+# execution order and window.MapSheet exists before either caller.
+# SNOW-1097: the pure peek/half/full rules map_sheet.js binds to a
+# drag. Before it, so window.pwaSheetDetentsCore exists when attach()
+# and bindDetents() first run.
+sheet_detents_core.js
+
+map_sheet.js
+
+# SNOW-879: the shared stale-while-revalidate cache for the three UGC
+# panels' rows. Loaded HERE, ahead of every surface partial below, for
+# the same reason as the three tags above: all four are defer, so
+# document order is execution order, and favourites.js / report.js /
+# routes.js each call window.pwaPanelRows.warm() at init. Each guards
+# the call with `?.`, so a page that omits this tag degrades to the
+# fetch-on-every-open behaviour rather than breaking.
+panel_rows_cache.js
+
+# SNOW-658: only one overlay is open over the map at a time
+# (window.pwaMapOverlays). Every map overlay — the layers menu, the
+# three UGC sheets, the anchored detail popup, the legend card and the
+# help coachmark — registers with it and announces its own open, and it
+# closes the rest. It replaces the
+# hand-wired pairs each surface used to carry, which covered three of
+# the fifteen relationships between them. Loaded HERE, ahead of every
+# registering module: map_sheet.js registers from attach(), and both
+# surface partials below (and the map bundle further down) register at
+# their own parse time, so this has to have run first.
+map_overlay_exclusivity.js
+
+# SNOW-658: where a map overlay may reach — the floor above the season
+# scrubber, the height cap below #map's top edge, and the inset past the
+# bottom-right roundel column (window.pwaOverlayBounds). Shared by the
+# layers menu (map_basemap_picker.js, in the bundle below) and the three
+# UGC sheets. Loaded here, outside the bundle's contiguous run: every
+# consumer calls it from a user-triggered handler, never at parse time,
+# so it only has to be on the page.
+map_overlay_bounds.js
+
+# SNOW-658: renaming a UGC panel row in place — the interaction the
+# two renameable panels (downloads, favourites) share, with each
+# passing its own commit. Loaded here rather than from either surface
+# for the same reason htmx/place_picker/map_sheet are: both callers
+# are below, all these scripts are defer, so document order is
+# execution order and window.pwaInlineRename exists before either.
+#
+# It replaced overflow_menu.js on this page for one day, when Hugo's
+# SNOW-658 design took the "…" off every panel and nothing here opened
+# one. That ruling is gone — see the next block, and
+# docs/design-system.md's interaction principles — so both modules now
+# load, and this comment is kept only so the swap does not look
+# unexplained in the history.
+# SNOW-867: the "…" row menus. Loaded HERE, once, because several
+# surfaces on this page carry one — the routes panel (SNOW-830), the
+# downloads panel, and the favourites panel (SNOW-887) — under the
+# rule that replaced SNOW-658's: two or more actions is a "…", one is a
+# bare icon. It used to load from _routes_surface.html as that panel's
+# own dependency; a second tag there would run the module twice, since
+# browsers do not deduplicate script elements by URL.
+overflow_menu.js
+
+# SNOW-887: window.pwaShare. Loaded HERE for the same reason as the
+# menu above — the routes panel had it as its own dependency until the
+# favourites panel became a second consumer, and two tags would run the
+# module twice. Deferred scripts run in document order, so pwaShare
+# exists before routes.js and favourites.js reach their own top level;
+# static/js/map.js reads it from a click handler, long after all of
+# them.
+share.js
+
+inline_rename.js
+
+# SNOW-711: the server half of that rename — read the row's uuid off
+# the pencil, POST the committed name, hand the response back. The
+# favourites and routes panels here and the account page's own list
+# all did that identically; each still decides what to do with the
+# response, which is the only part that differs.
+row_rename_commit.js
+
+# The other half of a UGC row's name: pressing it frames that item on
+# the map. Loaded here for the same reason as the two above — the
+# routes, favourites, field-observation and (SNOW-811) downloads
+# surfaces below all delegate to window.pwaRowFocus, and deferred
+# classic scripts run in document order. Not loaded on the account
+# pages: their rows name the same places, but there is no map on those
+# pages to fly, so those rows render no focus button at all.
+row_focus.js
+
+# SNOW-752: the third shared row module — recognise a row's own Remove
+# landing, so the surface that owns the list can re-read it and tell
+# the map. Loaded here, ahead of the three panel modules below, for
+# the same reason as the two above: each calls window.pwaRowRemoved
+# .watch() as its IIFE runs, and deferred classic scripts run in
+# document order. Unlike row_focus.js this one IS also loaded on the
+# account pages — their rows carry the same trash, and a list there
+# goes just as stale.
+row_removed.js
+
+# Keeps every `<time data-relative-time>` on this page true for as
+# long as the page is open — the field-observation rows' "reported 2
+# hours ago". This is the map: it is opened at the car park and read
+# again hours later, out of signal, with nothing re-rendering it.
+# Loaded here rather than from _report_surface.html so it binds once
+# and is available to any other surface that grows a relative age.
+relative_time.js
+
+# SNOW-672: the sign-in gate the three surfaces below all show. Loaded
+# here, ahead of them, for the same reason as relative_time.js — one
+# owner for the treatment rather than a copy in each module.
+signin_cta.js
+
+# SNOW-749: the account half of offline downloads — pushes each
+# completed download's DEFINITION to the account and reads back the
+# areas already there. Loaded ahead of the map bundle so
+# window.pwaDownloadsSync exists by the time map_basemap_downloads.js
+# and map_region_download.js reach for it; both read it lazily, from
+# inside async functions, so this is belt-and-braces rather than a
+# load-order contract. Entirely inert for a signed-out visitor — it
+# reads eligibility off #map-custom-download-control.
+downloads_sync.js
+
+# SNOW-475: place_picker.js is loaded by map.html (shared with
+# _favourites_surface.html) — not repeated here; see this partial's
+# header comment.
+# SNOW-661: the panel's offline row store — written on every successful
+# list swap AND on report.js's idle warm, read back when the request
+# fails. Sits between the two scripts it talks to, and both edges are
+# document order between deferred scripts: map.html's panel_rows_cache.js
+# is above (this registers its onWarmed hook at parse time), and report.js
+# is below (it reads window.pwaObservationsOffline). Map page only, unlike
+# favourites_offline.js, which base.html loads site-wide.
+observations_offline.js
+
+# SNOW-333: field-report JS — geolocation + HTMX sheet opener.
+# Deferred so it executes in document order after the map assets.
+report.js
+
+# SNOW-475: place_picker.js is loaded by map.html (shared with
+# _report_surface.html) — not repeated here; see this partial's header
+# comment.
+# SNOW-414: saved-pin add/rename/delete JS.
+favourites.js
+
+# SNOW-686: routes panel JS. Deliberately NOT part of the map bundle —
+# like favourites.js it is loaded from its own surface partial and reaches
+# shared map state through window.snowdeskMapState, so it is not listed in
+# MAP_BUNDLE (tests/js/_load_map_bundle.js) and does not sit inside the
+# bundle's contiguous run (tests/public/test_map_script_order.py).
+# SNOW-764: the native-share/clipboard helper, loaded BEFORE routes.js —
+# SNOW-887 moved share.js to map.html: the favourites panel became its
+# second consumer on this page, and a second tag here would run the module
+# twice — browsers do not deduplicate script elements by URL. Same move,
+# same reason, as SNOW-867 made for overflow_menu.js.
+# The row's "…" menu is NOT loaded here either. SNOW-830 loaded
+# overflow_menu.js from this partial as this surface's own dependency;
+# SNOW-867 moved the tag to map.html once the downloads panel wanted one
+# too, and SNOW-887 made it three panels. What was left behind here was
+# the old comment, mid-sentence, describing a script tag that is not on
+# this page — removed by SNOW-886.
+# SNOW-950: the panel's offline row store — written on every successful
+# list swap AND on routes.js's idle warm, read back when the request
+# fails. Sits between the two scripts it talks to, and both edges are
+# document order between deferred scripts: map.html's
+# panel_rows_cache.js is above (this registers its onWarmed hook at
+# parse time), and routes.js is below (it reads
+# window.pwaRoutesOffline). Map page only, like
+# observations_offline.js and unlike favourites_offline.js, which
+# base.html loads site-wide.
+routes_offline.js
+
+# SNOW-1262: the pure half of route drawing, loaded here rather than by
+# _route_draw_surface.html so it is on the page with the route_drawing
+# flag off too: a route queued while it was on can still be discarded
+# here, and its stored draft has to go with it (forgetDraftFor). This
+# partial is included before the draw surface, so route_draw.js still
+# finds it.
+route_draw_core.js
+
+routes.js
+
+# route_draw_core.js is loaded by _routes_surface.html, flag or no flag
+# (SNOW-1262): the routes panel's Discard needs it to clear a draft.
+
+# SNOW-1256 / 1278 / 1384: drawing a route, SAC's tours and FOEN's rest
+# zones. Their markup renders only under route_drawing_enabled; since
+# SNOW-1412 their scripts load for everyone, in the place they always
+# ran, and each DOM half returns early when its markup is absent.
+ski_snap_core.js
+route_draw.js
+ski_tours_core.js
+ski_tours.js
+rest_zones_core.js
+rest_zones.js
+
+# SNOW-1239: the weather, place and region sheets pause while the
+# timeline plays — no request per frame, one when it stops — and say
+# so in this band. Before the three surfaces, whose scripts read it.
+sheet_playback_core.js
+
+map_weather_detail.js
+
+# SNOW-1101: the FULL detent carries the meteogram, whose info button
+# opens its legend; this is the one handler it needs (see the forecast
+# page's own include of it).
+hourly_chart_legend.js
+
+# SNOW-1219: the sheet draws each day as linked strips; these move the
+# selected three-hour block when a time is pressed or a strip tapped.
+day_strips_core.js
+
+day_strips.js
+
+map_region_sheet.js
+
+map_place_sheet.js
+
+# SNOW-1366: the Today panel. Its markup renders only for a signed-in
+# reader; since SNOW-1412 the script loads for everyone and returns
+# early without #today-sheet.
+today_panel.js
+
+map_panel_trail.js
+
+# SNOW-588: pure budget/row arithmetic (window.pwaBasemapManageCore). Must
+# load before the manager below; both are defer, so document order holds.
+basemap_manage_core.js
+
+# SNOW-1140: the "Download all" queue's order and stop rules
+# (window.pwaDownloadsRestoreQueueCore). Read by the manager at click
+# time, so it only has to precede it.
+downloads_restore_queue_core.js
+
+map_downloads_manager.js

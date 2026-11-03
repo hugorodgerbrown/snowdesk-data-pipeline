@@ -42,6 +42,7 @@ from django.urls import reverse
 from freezegun import freeze_time
 
 from apps.locations.models import Location
+from apps.public.templatetags.js_bundles import bundle_members
 from apps.weather.models import Weather
 from tests.factories import (
     FavouriteFactory,
@@ -583,7 +584,8 @@ class TestCardDetents:
         html = render_to_string("public/partials/_weather_surface.html")
 
         assert 'data-detents="peek,half,full"' in html
-        assert "js/hourly_chart_legend.js" in html
+        # SNOW-1412: the surface's scripts are listed in its bundle.
+        assert "hourly_chart_legend.js" in bundle_members("map_surfaces")
 
 
 @pytest.mark.django_db
@@ -741,9 +743,9 @@ class TestCardDayStrips:
 
     def test_the_surface_loads_the_strips_scripts(self) -> None:
         """The selector needs its two modules, core first."""
-        html = render_to_string("public/partials/_weather_surface.html")
+        members = bundle_members("map_surfaces")
 
-        assert html.index("js/day_strips_core.js") < html.index("js/day_strips.js")
+        assert members.index("day_strips_core.js") < members.index("day_strips.js")
 
     def test_the_page_draws_the_same_strips(
         self, client: Client, resort_location: Location

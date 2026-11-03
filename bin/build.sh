@@ -30,6 +30,13 @@ npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
 # the script header.
 node bin/minify-js
 
+# SNOW-1412: join the map page's scripts into one file per list in
+# static/js/bundles/, AFTER minify-js so the bundle is built from minified
+# members, and BEFORE collectstatic so it is hashed and served. JS_BUNDLES
+# (production, and so staging) makes {% js_bundle %} reference the output;
+# a missing bundle fails the map page loudly under the manifest storage.
+node bin/bundle-js
+
 # Minify the hand-written CSS in place, for the same reason and with the same
 # ephemeral-checkout caveat. map.css is render-blocking on the map homepage
 # and shipped as ~3,000 commented lines; Tailwind's output.css is already
