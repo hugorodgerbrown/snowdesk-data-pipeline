@@ -61,7 +61,9 @@ that is always on screen replaced it.
 - **The mode is in the URL and on the device.** `?mode=terrain` is written
   with every other parameter kept, and the date write keeps it
   (`withDate`), so a link reproduces what its sender saw. A bare URL takes
-  the device's last mode (`snowdesk.map.mode`). Dated is spelt by leaving
+  the device's last mode (`snowdesk.map.mode`), and a stored Terrain is
+  written into it at boot, so a link copied from the address bar carries
+  it too. Dated is spelt by leaving
   the parameter out.
 - **Applied before the first paint.** `map.js` reads the boot mode itself
   at parse time (`modeSuppressedKeys`), before a single layer is

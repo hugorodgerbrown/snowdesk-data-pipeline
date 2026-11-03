@@ -198,12 +198,22 @@ describe('the URL and this device', () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBe('dated');
   });
 
-  it("opens in the device's last mode on a bare URL", async () => {
+  it("opens in the device's last mode on a bare URL, and writes it into the URL", async () => {
+    // So a link copied from the address bar reproduces the mode on a device
+    // that has no stored one.
     localStorage.setItem(STORAGE_KEY, 'terrain');
-    history.replaceState(null, '', '/map/');
+    history.replaceState(null, '', '/map/?d=2026-02-10');
     await load();
 
     expect(window.pwaMapMode.get()).toBe('terrain');
+    expect(location.search).toBe('?d=2026-02-10&mode=terrain');
+    expect(calls).toEqual([]);
+  });
+
+  it('leaves a Dated URL as it is at boot', async () => {
+    await load();
+
+    expect(location.search).toBe('?d=2026-02-10&panel=routes');
   });
 
   it('stores the mode a link opened in', async () => {

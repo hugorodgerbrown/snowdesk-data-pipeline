@@ -176,8 +176,14 @@
   }, true);
 
   // A boot ?mode= is written through to this device, so the next bare
-  // visit opens where the link left the reader.
+  // visit opens where the link left the reader. And the other way: a bare
+  // URL opened in a stored Terrain gets ?mode=terrain written into it, so a
+  // link copied from the address bar reproduces what the reader sees.
   writeStored(mode);
+  const bootSearch = core.withMode(location.search, mode);
+  if (bootSearch !== location.search) {
+    history.replaceState(history.state, '', location.pathname + bootSearch + location.hash);
+  }
   render();
 
   window.pwaMapMode = Object.freeze({
