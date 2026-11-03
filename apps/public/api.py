@@ -1668,9 +1668,10 @@ def ski_tours_geojson(request: HttpRequest) -> HttpResponse:
 
 
 # SNOW-1384: the widest rectangle /api/rest-zones.geojson answers, in degrees
-# each way. The layer is drawn from z11, where a phone's view is well inside
-# a degree; a wider ask is refused rather than truncated, as ski-network's.
-REST_ZONES_MAX_SPAN_DEG = 1.0
+# each way. The layer is drawn from z10, where a 2,000 px desktop view is
+# about 1.4 degrees across; a wider ask is refused rather than truncated, as
+# ski-network's. All of Switzerland's zones fit REST_ZONES_MAX_FEATURES.
+REST_ZONES_MAX_SPAN_DEG = 2.0
 # The most zones one answer carries. All of Switzerland holds about 1,040.
 REST_ZONES_MAX_FEATURES = 1500
 

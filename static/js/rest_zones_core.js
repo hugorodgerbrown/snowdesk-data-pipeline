@@ -32,11 +32,14 @@
 (function () {
   'use strict';
 
-  /** From here the zones are drawn, loaded and tapped. */
-  const MINZOOM = 11;
+  /** From here the zones are drawn, loaded and tapped (z10, Hugo, 3 Nov 2026). */
+  const MINZOOM = 10;
 
-  /** The widest rectangle the endpoint answers, in degrees each way. */
-  const MAX_SPAN_DEG = 1.0;
+  /**
+   * The widest rectangle the endpoint answers, in degrees each way. Two, so a
+   * wide desktop view at z10 (about 1.4° across at 2,000 px) still loads.
+   */
+  const MAX_SPAN_DEG = 2.0;
 
   /** A load reaches this far past each edge of the view, in degrees. */
   const LOAD_PAD_DEG = 0.05;

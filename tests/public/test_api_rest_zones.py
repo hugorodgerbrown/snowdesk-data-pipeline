@@ -162,12 +162,12 @@ def test_a_bad_day_is_400(signed_in: Client, bad: str) -> None:
     [
         ("", "invalid_bbox"),
         ("10,46,10.1", "invalid_bbox"),
-        ("9.0,46.0,10.5,46.2", "bbox_too_large"),
-        ("9.0,46.0,9.5,47.5", "bbox_too_large"),
+        ("8.0,46.0,10.5,46.2", "bbox_too_large"),
+        ("9.0,45.5,9.5,47.6", "bbox_too_large"),
     ],
 )
 def test_a_bad_box_is_400(signed_in: Client, bbox: str, error: str) -> None:
-    """Missing, malformed, or wider than a degree either way."""
+    """Missing, malformed, or wider than two degrees either way."""
     response = _get(signed_in, bbox=bbox)
     assert response.status_code == 400
     assert response.json() == {"error": error}
