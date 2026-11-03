@@ -280,10 +280,10 @@ describe('the layers menu row', () => {
 describe('window.pwaZoomGates (SNOW-1077)', () => {
   const list = () => window.pwaZoomGates.list();
 
-  it('names the region selector up to z10, the terrain overlay at z12, route slopes at z14', () => {
+  it('names the region selector up to z10, the terrain overlay at z11, route slopes at z14', () => {
     expect(list()).toEqual([
       { key: 'region_select', zoom: 10, upTo: true },
-      { key: 'terrain_filter', zoom: 12, upTo: false },
+      { key: 'terrain_filter', zoom: 11, upTo: false },
       { key: 'route_slopes', zoom: 14, upTo: false },
     ]);
   });

@@ -7,7 +7,7 @@ every visitor. Since SNOW-1073 the slope layer it documents is the terrain
 filter's "By slope" mode (SNOW-1109 renamed it from "Colour by slope"), painted from our terrain-class tiles
 (settings.TERRAIN_CLASS_TILE_URL) rather than swisstopo's pre-rendered
 raster, so this panel says where the colours come from, why the layer
-starts at zoom level 12 and why it stops at the Swiss border — see
+starts at zoom level 11 and why it stops at the Swiss border — see
 docs/decisions/slope-layer-is-painted-from-our-class-tiles.md.
 
 SNOW-1073 also removed the two paragraphs on no-fall passages: SNOW-1095
@@ -111,9 +111,9 @@ half that fits.
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-slope-zoom">
         {% blocktrans trimmed %}
-            It fades out when you zoom out. The layer is drawn from zoom level 12, roughly a valley across the screen;
-            further out nothing is drawn, and the sheet asks you to zoom in. An empty map at a wide view says nothing
-            about how steep the ground is.
+            It fades out when you zoom out. The layer is drawn from zoom level 11, roughly two valleys across the
+            screen; further out nothing is drawn, and the sheet asks you to zoom in. An empty map at a wide view says
+            nothing about how steep the ground is.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-slope-coverage">

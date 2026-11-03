@@ -443,7 +443,7 @@ class TestHelpPageFlagGating:
         Asserted individually rather than as "the panel is non-empty",
         because each is a distinct thing a reader could otherwise get wrong:
         the measuring window hides small features, nothing is drawn below
-        zoom 12, coverage stops at the Swiss border with unshaded ground on
+        zoom 11, coverage stops at the Swiss border with unshaded ground on
         both sides of the edge, and the layer is an input rather than
         permission to ski a slope. SNOW-1073 dropped the stitched-models
         accuracy note with swisstopo's combined raster: swissALTI3D is one
@@ -459,7 +459,7 @@ class TestHelpPageFlagGating:
             assert testid in content, testid
         assert b"help-slope-accuracy" not in content
         assert b"It stops at the Swiss border." in content
-        assert b"drawn from zoom level 12" in content
+        assert b"drawn from zoom level 11" in content
 
     def test_slope_panel_says_how_to_turn_it_on_and_where_it_comes_from(
         self, client: Client

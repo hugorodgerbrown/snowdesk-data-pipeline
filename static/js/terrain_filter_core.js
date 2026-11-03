@@ -66,7 +66,7 @@
  *
  * Exports (frozen `self.pwaTerrainFilterCore`):
  *
- *   OCTANTS / MIN_ZOOM / MAX_ZOOM / TILE_SIZE / COVERAGE_BOUNDS
+ *   OCTANTS / MIN_ZOOM / DRAW_MIN_ZOOM / MAX_ZOOM / TILE_SIZE / COVERAGE_BOUNDS
  *   SLOPE_LADDER / ELEVATION_STEP_M / ELEVATION_MAX_M / B_LEVEL / B_NODATA
  *   PALETTE_INDEX / PALETTE / HATCH_PERIOD / HATCH_WIDTH / PROTOCOL
  *   MODES / SLOPE_PALETTE_INDEX / SLOPE_PALETTE / SLOPE_RASTER_ALPHA
@@ -144,6 +144,16 @@
   const MIN_ZOOM = 12;
   const MAX_ZOOM = 14;
   const TILE_SIZE = 256;
+
+  /**
+   * The map zoom Steep terrain draws from — one below the tiles' MIN_ZOOM.
+   * The tiles are 256 px, so at map zoom 11 MapLibre is already reading
+   * z12 tiles at their own resolution; nothing is stretched. Hugo,
+   * 3 Nov 2026: it reads well from there. map.js gives it to the layer as
+   * its minzoom and to the zoom control's scale as the terrain_filter
+   * gate, so the two never disagree again.
+   */
+  const DRAW_MIN_ZOOM = 11;
 
   /**
    * The tileset's coverage, `[west, south, east, north]` — the bbox the
@@ -608,7 +618,7 @@
    */
   function availability(view) {
     if (!coversPoint(view.lng, view.lat)) return 'out-of-coverage';
-    if (!(view.zoom >= MIN_ZOOM)) return 'zoom-in';
+    if (!(view.zoom >= DRAW_MIN_ZOOM)) return 'zoom-in';
     return 'ok';
   }
 
@@ -856,6 +866,7 @@
   self.pwaTerrainFilterCore = Object.freeze({
     OCTANTS: OCTANTS,
     MIN_ZOOM: MIN_ZOOM,
+    DRAW_MIN_ZOOM: DRAW_MIN_ZOOM,
     MAX_ZOOM: MAX_ZOOM,
     TILE_SIZE: TILE_SIZE,
     COVERAGE_BOUNDS: COVERAGE_BOUNDS,

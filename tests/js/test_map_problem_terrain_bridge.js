@@ -64,6 +64,7 @@ function stubMapLibre() {
     addControl: () => {},
     removeControl: () => {},
     getLayer: (id) => (layers.has(id) ? { id } : null),
+    layerDef: (id) => layers.get(id) || null,
     getFilter: () => null,
     getLayoutProperty: (id, prop) => (layouts.get(id) || {})[prop],
     getPaintProperty: () => undefined,
@@ -335,6 +336,24 @@ describe('Steep terrain takes precedence', () => {
     window.pwaTerrainFilter.show();
     expect(window.pwaTerrainFilter.isEnabled()).toBe(true);
     expect(localStorage.getItem(SWITCH_KEY)).toBe('false');
+  });
+});
+
+describe('the zoom the slopes draw from', () => {
+  // A 256 px raster source with minzoom 12 still draws from about z10.5:
+  // MapLibre asks for z12 tiles one map zoom early. Only a LAYER minzoom
+  // sets where each layer starts.
+  it('draws Steep terrain from the zoom the scale names, z11', async () => {
+    const map = await boot({});
+    window.pwaTerrainFilter.show();
+    const gate = window.pwaZoomGates.list().find((g) => g.key === 'terrain_filter');
+    expect(gate.zoom).toBe(11);
+    expect(map.layerDef('terrain-filter-raster').minzoom).toBe(gate.zoom);
+  });
+
+  it('keeps the problem-terrain slopes at z12, where the region fills drop out', async () => {
+    const map = await boot({});
+    expect(map.layerDef(RASTER).minzoom).toBe(12);
   });
 });
 
