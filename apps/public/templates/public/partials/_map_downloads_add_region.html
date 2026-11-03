@@ -1,0 +1,18 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_downloads_add_region.html — the Downloads sheet's
+"Download a region" (SNOW-1414).
+
+Rendered by includes/_ugc_panel.html's ``foot_template``, above the panel's
+own "Download a custom area" button. A region download used to start only
+from the region sheet, which Terrain mode takes off the map with the
+regions; this is the way in that works in both modes. A tap hides the sheet
+and opens the pick task (static/js/map_region_pick.js), handled by
+map_downloads_manager.js's delegated click listener, which refuses it
+offline and signed out exactly as it refuses the custom area.
+
+First because it is the cheaper of the two to use: a region is a tap, a
+custom area is a frame to pan and zoom.
+{% endcomment %}
+{% trans "Download a region" as add_region_label %}
+{% include "includes/_panel_add_button.html" with label=add_region_label hook="panel-add-region" %}

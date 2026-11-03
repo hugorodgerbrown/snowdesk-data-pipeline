@@ -2620,6 +2620,9 @@ Optional context:
         <span data-string="roundel-locate">{% trans "Locate me" %}</span>
         <span data-string="roundel-drop">{% trans "Download the area around you" %}</span>
     </template>
+    {# SNOW-1414: the "Download a region" bar and its strings. Inside #map,   #}
+    {# beside the drop-zone bar whose surface it shares.                      #}
+    {% include "public/partials/_map_region_pick.html" %}
     {# SNOW-1018: the route panel — the open route's profile under a route, #}
     {# leg or point header (SNOW-1068), pinned top-left. Inside #map rather #}
     {# than after it; the partial's header says why. Hidden until           #}

@@ -82,6 +82,14 @@ that is always on screen replaced it.
   re-hides every held layer synchronously, so a panel switch (the reports
   panel's "Show on the map") records the reader's choice and is then held
   like any other.
+- **A region can still be downloaded in Terrain (SNOW-1414).** Holding
+  the regions took away the only way into a region download, the button
+  on the region sheet. The Downloads sheet's "Download a region" is the
+  way in that works in both modes: a short pick task
+  (`static/js/map_region_pick.js`) that draws plain outlines of its own
+  over `PlacementFocus` and removes them when it closes. It releases no
+  held tier and writes no stored choice, so it is not an exception to
+  suppression, never preference.
 - **A region row on another panel still opens its region.** A resort
   sheet's region row is an explicit ask, so `snowdesk:region-open` is not
   refused in Terrain.

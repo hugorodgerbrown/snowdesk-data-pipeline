@@ -376,6 +376,15 @@ terrain_filter_sheet.js
 # dispatches.
 map_drop_zone.js
 
+# SNOW-1414: "Download a region" — the Downloads sheet's pick task. Its
+# pure half first. Outside the map bundle's contiguous run (no bundle
+# module reads it), after map.js and map_region_download.js: it reads
+# snowdeskMapState.map when it opens and calls pwaRegionDownload. The
+# Downloads sheet's manager reads the core only at click time.
+map_region_pick_core.js
+
+map_region_pick.js
+
 # SNOW-1077: the zoom control at the top of the bottom-left stack.
 # Reads MAP and window.pwaZoomGates, both from map.js at parse time —
 # hence after the bundle, and outside its contiguous run (no bundle

@@ -1132,16 +1132,25 @@
     // offline branch this one is NOT disabled — the control stays live and
     // its tap goes to sign-in, because a gate the visitor can pass is an
     // affordance, not a dead end. Only the label changes.
+    //
+    // SNOW-1414: the "Download a region" trigger is disabled offline with
+    // it, and stays visible for the same reason. It keeps its own label:
+    // the custom area's relabel, directly under it, already says why, and
+    // one sentence is enough.
     const addButton = sheet.querySelector('[data-panel-add]');
+    const regionButton = sheet.querySelector('[data-panel-add-region]');
     if (addButton && NEEDS_SIGNIN) {
       addButton.textContent = STRINGS['add-signin-disabled'] || '';
-    } else if (addButton && !networkInUse()) {
-      addButton.setAttribute('disabled', '');
-      // Alongside the native property, not instead of it: `disabled` is
-      // what stops the click, `aria-disabled` is what a screen reader
-      // announces before the user reaches for it.
-      addButton.setAttribute('aria-disabled', 'true');
-      addButton.textContent = STRINGS['add-disabled'] || '';
+    } else if (!networkInUse()) {
+      for (const button of [addButton, regionButton]) {
+        if (!button) continue;
+        button.setAttribute('disabled', '');
+        // Alongside the native property, not instead of it: `disabled` is
+        // what stops the click, `aria-disabled` is what a screen reader
+        // announces before the user reaches for it.
+        button.setAttribute('aria-disabled', 'true');
+      }
+      if (addButton) addButton.textContent = STRINGS['add-disabled'] || '';
     }
   }
 
@@ -1931,6 +1940,23 @@
   sheet.addEventListener('click', function (event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return;
+    // SNOW-1414: "Download a region" — the same two gates as the custom
+    // area below, then the pick task (static/js/map_region_pick.js).
+    if (target.closest('[data-panel-add-region]')) {
+      if (NEEDS_SIGNIN) {
+        window.MapSheet.toast(STRINGS['add-signin']);
+        goToSignIn();
+        return;
+      }
+      if (!networkInUse()) {
+        window.MapSheet.toast(STRINGS['add-offline']);
+        return;
+      }
+      if (!window.pwaRegionPick) return;
+      sheet.hidden = true;
+      window.pwaRegionPick.open();
+      return;
+    }
     const addButton = target.closest('[data-panel-add]');
     if (addButton) {
       // SNOW-749: the account gate, before the connection one. Both are
@@ -2140,8 +2166,12 @@
    * @returns {string} A key of `STRINGS`.
    */
   function _downloadHereMessage(reason) {
-    if (reason === 'busy') return 'download-here-busy';
-    if (reason === 'done' || reason === 'incomplete') return 'download-here-already';
+    // SNOW-1414: the decision is shared with "Download a region"
+    // (pwaRegionPickCore.refusalKind); the strings stay this sheet's own.
+    const core = self.pwaRegionPickCore;
+    const kind = core ? core.refusalKind({ started: false, reason: reason }) : null;
+    if (kind === 'busy') return 'download-here-busy';
+    if (kind === 'already') return 'download-here-already';
     return 'download-here-failed';
   }
 
