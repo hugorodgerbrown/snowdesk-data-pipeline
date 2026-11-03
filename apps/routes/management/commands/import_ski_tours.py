@@ -71,6 +71,12 @@ class Command(RegisteredCommand):
         "unless --commit is passed."
     )
 
+    # Offered to the ops MCP server's run_command (SNOW-1400). One download
+    # and one whole-layer transaction, so it finishes in minutes; it stays
+    # a single transaction because a half-imported network is worse than
+    # last week's.
+    mcp_runnable = True
+
     def add_arguments(self, parser: ArgumentParser) -> None:
         """Register command-line arguments."""
         parser.add_argument(

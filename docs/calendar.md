@@ -2,7 +2,7 @@
 name: calendar
 description: RegionDayRating, day_rating policy, the shared season calendar (_season_calendar.html, build_season_months), season_calendar_partial
 status: current
-last-reviewed: 2026-10-21
+last-reviewed: 2026-11-03
 ---
 
 # Calendar and RegionDayRating
@@ -177,8 +177,8 @@ settle on the right rating in any order
 ([why](decisions/day-ratings-are-recomputed-inside-each-rebuild-task.md)).
 Pass `--skip-day-ratings` to suppress that step when you only want to
 refresh the render models (e.g. debugging a render-model bug without
-touching the calendar). `recompute_day_ratings` recomputes the table on
-its own.
+touching the calendar). `recompute_day_ratings` enqueues a recompute of
+the table's stale rows on its own (`--all` for every row).
 
 **Season partial**: `apps.public.views.season_calendar_partial` at
 `/partials/season/<region_id>/` (name: `public:season_partial`). The

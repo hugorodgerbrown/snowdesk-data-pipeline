@@ -336,7 +336,6 @@ class LocationWeatherSitemap(OriginSitemap):
         return (
             Location.objects.public()
             .named()
-            .exclude(short_id__isnull=True)
             .annotate(latest_weather_fetched_at=Max("weather__fetched_at"))
             .distinct()
             .order_by("id")

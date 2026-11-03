@@ -507,6 +507,7 @@ class TestLatestMeteofrancoDate:
             issued_at=datetime(2026, 5, 18, 12, 0, tzinfo=UTC),
             valid_from=datetime(2026, 5, 18, 0, 0, tzinfo=UTC),
             valid_to=datetime(2026, 5, 19, 0, 0, tzinfo=UTC),
+            target_date=date(2026, 5, 18),
             pipeline_run=run,
             render_model={},
             render_model_version=0,

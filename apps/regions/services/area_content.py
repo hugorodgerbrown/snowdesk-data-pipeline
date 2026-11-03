@@ -192,12 +192,11 @@ def weather_location_index() -> list[WeatherPoint]:
     """
     rows = (
         Location.objects.public()
-        .exclude(short_id__isnull=True)
         .order_by("short_id")
         .values_list("short_id", "longitude", "latitude")
     )
     return [
-        WeatherPoint(short_id=cast("str", short_id), lon=lon, lat=lat)
+        WeatherPoint(short_id=short_id, lon=lon, lat=lat)
         for short_id, lon, lat in rows.iterator()
     ]
 
@@ -219,7 +218,6 @@ def resort_index() -> list[ResortPoint]:
     rows = (
         Resort.objects.resorts()
         .geocoded()
-        .exclude(slug__isnull=True)
         .exclude(slug="")
         .select_related("location")
         .order_by("slug")

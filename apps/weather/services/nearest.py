@@ -43,7 +43,7 @@ import datetime
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import NamedTuple, TypeVar, cast
+from typing import NamedTuple, TypeVar
 
 from apps.locations.models import Location
 from apps.weather.models import Weather
@@ -165,7 +165,7 @@ def forecast_candidates(observed_on: datetime.date) -> list[ForecastCandidate]:
         )
     )
     return [
-        ForecastCandidate(pk=pk, short_id=cast("str", short_id), lat=lat, lon=lon)
+        ForecastCandidate(pk=pk, short_id=short_id, lat=lat, lon=lon)
         for pk, short_id, lat, lon in rows
     ]
 

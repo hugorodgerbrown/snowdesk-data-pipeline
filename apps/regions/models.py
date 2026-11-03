@@ -880,14 +880,12 @@ class Resort(BaseModel):
     slug = models.SlugField(
         max_length=255,
         unique=True,
-        null=True,
         blank=True,
         help_text=(
             "URL identifier — /resorts/<slug>/ — and the id resorts.geojson "
             "emits (SNOW-796). Minted from the name the first time the row is "
             "saved and NEVER regenerated on rename: the resort page is an "
-            "indexed landing page, so a changed slug is a broken URL. Null "
-            "only on a row backfill_resort_slugs has not reached yet."
+            "indexed landing page, so a changed slug is a broken URL."
         ),
     )
     source_uuid = models.UUIDField(

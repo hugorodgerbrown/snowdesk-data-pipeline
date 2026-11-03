@@ -38,7 +38,6 @@ from freezegun import freeze_time
 from apps.public.sitemaps import (
     SITEMAP_FILES,
     BulletinSitemap,
-    LocationWeatherSitemap,
     ResortSitemap,
     StaticViewSitemap,
 )
@@ -526,34 +525,6 @@ class TestLocationWeatherSitemap:
         region.save(update_fields=["centroid_location"])
 
         assert not any("/weather/" in loc for loc in _locs(client))
-
-    def test_location_without_a_short_id_is_excluded(self, client: Client) -> None:
-        """A location with no short id has no address, so it is not listed.
-
-        SNOW-810: ``short_id`` is nullable for a row from before the
-        SNOW-797 column, and this section reached
-        ``get_absolute_url()`` for every row. Reversing on ``None`` raised
-        ``NoReverseMatch``, which took the WHOLE sitemap down with a 500 —
-        every bulletin, resort and static entry with it. The unaddressable
-        row drops out; the rest of the sitemap is unaffected.
-        """
-        listed = LocationFactory.create(name="Mont Fort")
-        ResortLocationFactory.create(location=listed)
-        unaddressable = LocationFactory.create(name="Bec des Rosses", short_id=None)
-        ResortLocationFactory.create(location=unaddressable)
-
-        locs = _locs(client)
-        assert any(loc.endswith(listed.get_absolute_url()) for loc in locs)
-        # The excluded row has no id to search the rendered output for, so
-        # the exclusion is asserted on the section itself. Django's
-        # ``Sitemap`` interpolates ``location()`` into "protocol://domain"
-        # with no check, so an unfiltered row would not be dropped from the
-        # XML — it would appear as a bare site-root entry, which is
-        # indistinguishable from the homepage the static section lists.
-        assert unaddressable.get_absolute_url() == ""
-        items = list(LocationWeatherSitemap().items())
-        assert listed in items
-        assert unaddressable not in items
 
     def test_private_pin_is_excluded(self, client: Client) -> None:
         """A favourite's location is outside public() and never listed."""

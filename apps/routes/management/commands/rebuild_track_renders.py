@@ -13,19 +13,24 @@ Runs after every deploy that changes the builder, as a ``Deploy-Step``
 trailer on the commit that changed it. Pure computation: no request to
 any origin, so no pacing.
 
-Three kinds of row, in this order, each newest first:
+Since SNOW-1400 it only enqueues: one task per stale row, through
+``enqueue_each``, at ``BULK_TASK_PRIORITY``. Each task re-reads its row
+and rebuilds it in one transaction, so an interrupted run leaves the
+rest stale and the next run picks them up. Three kinds of row, in this
+order, each newest first:
 
 - **routes** and **trips**: every stale row is rebuilt from its own
-  points and terrain record, sampled or not.
-- **tours**: only a tour holding a terrain record for its line is
-  rebuilt. One never walked has no render by design — the tours layer
-  draws SAC's own line — and is counted ``tours_unwalked``.
+  points and terrain record, sampled or not
+  (``rebuild_route_render_task``, ``rebuild_trip_render_task``).
+- **tours**: only a tour holding a terrain record for its line is a
+  candidate (``rebuild_tour_render_task``). One never walked has no
+  render by design — the tours layer draws SAC's own line.
 
 Usage:
-    # Preview — how many of each would be rebuilt; writes nothing.
+    # Preview — how many of each would be enqueued; writes nothing.
     uv run python manage.py rebuild_track_renders
 
-    # Rebuild and store.
+    # Enqueue the rebuilds.
     uv run python manage.py rebuild_track_renders --commit
 """
 
@@ -37,27 +42,35 @@ from typing import Any
 
 from django.core.management.base import CommandError
 
-from apps.core.command_iteration import iterate_rows
 from apps.core.command_register import RegisteredCommand
+from apps.core.command_tasks import enqueue_each
 from apps.routes.models import Route, SkiTour
-from apps.routes.services.ski_tours import rebuild_tour_render
-from apps.routes.services.track_render import stale_q, store_terrain
+from apps.routes.services.render_tasks import (
+    rebuild_route_render_task,
+    rebuild_tour_render_task,
+)
+from apps.routes.services.track_render import stale_q
 from apps.trips.models import Trip
+from apps.trips.services.render_tasks import rebuild_trip_render_task
 
 logger = logging.getLogger(__name__)
 
 
 class Command(RegisteredCommand):
-    """Store a current ``track_render`` on every row missing one.
+    """Enqueue a render rebuild for every row whose ``track_render`` is stale.
 
-    Read-only by default; pass --commit to persist. Exits non-zero if any
-    row failed, so a partial run is detectable.
+    Read-only by default; pass --commit to enqueue. Exits non-zero if any
+    task run inline failed, so a partial run is detectable.
     """
 
     help = (
-        "Rebuild the stored track_render of every Route, Trip and walked "
-        "SkiTour whose record is missing or stale. Read-only unless --commit."
+        "Enqueue a rebuild of the stored track_render of every Route, Trip "
+        "and walked SkiTour whose record is missing or stale. Read-only "
+        "unless --commit."
     )
+
+    # It only enqueues, so it finishes in seconds (SNOW-1400).
+    mcp_runnable = True
 
     def add_arguments(self, parser: ArgumentParser) -> None:
         """Register command-line arguments.
@@ -69,119 +82,88 @@ class Command(RegisteredCommand):
         parser.add_argument(
             "--commit",
             action="store_true",
-            help="Rebuild and store. Without it, only count the candidates.",
+            help="Enqueue one task per stale row. Without it, only count them.",
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        """Rebuild every stale render.
+        """Enqueue every stale render's rebuild.
 
         Args:
             args: Unused positional arguments.
             options: Parsed command-line options.
 
         Raises:
-            CommandError: When any row failed, so cron/CI sees non-zero.
+            CommandError: When any task run inline failed, so cron/CI sees
+                non-zero.
 
         """
         commit: bool = options["commit"]
         verbosity: int = options["verbosity"]
-        counts = {
-            "routes": 0,
-            "trips": 0,
-            "tours": 0,
-            "tours_unwalked": 0,
-            "failed": 0,
-        }
         flag_label = "" if commit else " [READ-ONLY]"
-
-        routes = Route.objects.filter(stale_q())
-        self.stdout.write(
-            self.style.MIGRATE_HEADING(
-                f"Rebuilding {routes.count()} route render(s){flag_label}"
-            )
+        # Slim: each task re-reads its row under a lock.
+        kinds = (
+            (
+                "routes",
+                Route.objects.filter(stale_q()).only("pk", "uuid", "name"),
+                rebuild_route_render_task,
+                lambda row: f"route {row.name or row.uuid}",
+            ),
+            (
+                "trips",
+                Trip.objects.filter(stale_q()).only("pk", "uuid", "name"),
+                rebuild_trip_render_task,
+                lambda row: f"trip {row.name or row.uuid}",
+            ),
+            (
+                "tours",
+                SkiTour.objects.filter(slope_samples__isnull=False)
+                .filter(stale_q())
+                .only("pk", "sac_id", "name"),
+                rebuild_tour_render_task,
+                lambda row: f"tour {row.sac_id} {row.name}",
+            ),
         )
-        for route in iterate_rows(
-            self,
-            routes,
-            verbosity=verbosity,
-            describe=lambda row: f"route {row.name or row.uuid}",
-        ):
-            self._rebuild(route, "routes", counts, commit=commit)
-
-        trips = Trip.objects.filter(stale_q())
-        self.stdout.write(
-            self.style.MIGRATE_HEADING(
-                f"Rebuilding {trips.count()} trip render(s){flag_label}"
+        enqueued: dict[str, int] = {}
+        failed = 0
+        already_queued = 0
+        for kind, rows, task, describe in kinds:
+            self.stdout.write(
+                self.style.MIGRATE_HEADING(
+                    f"Rebuilding {rows.count()} {kind[:-1]} render(s){flag_label}"
+                )
             )
-        )
-        for trip in iterate_rows(
-            self,
-            trips,
-            verbosity=verbosity,
-            describe=lambda row: f"trip {row.name or row.route_name or row.uuid}",
-        ):
-            self._rebuild(trip, "trips", counts, commit=commit)
-
-        tours = SkiTour.objects.filter(slope_samples__isnull=False).filter(stale_q())
-        self.stdout.write(
-            self.style.MIGRATE_HEADING(
-                f"Rebuilding {tours.count()} walked tour render(s){flag_label}"
+            counts = enqueue_each(
+                self,
+                rows,
+                task,
+                args=lambda row: (row.pk,),
+                describe=describe,
+                commit=commit,
+                verbosity=verbosity,
+                tally_as=kind,
             )
-        )
-        for tour in iterate_rows(
-            self,
-            tours,
-            verbosity=verbosity,
-            describe=lambda row: f"tour {row.sac_id} {row.name}",
-        ):
-            self._rebuild(tour, "tours", counts, commit=commit)
+            enqueued[kind] = counts.enqueued
+            already_queued += counts.already_queued
+            failed += counts.failed
 
-        for name, n in counts.items():
-            self.tally(name, n)
+        verb = "Enqueued" if commit else "Would enqueue"
         self.stdout.write(
             self.style.SUCCESS(
-                ("Rebuilt" if commit else "Would rebuild")
-                + f": {counts['routes']} route(s), {counts['trips']} trip(s), "
-                f"{counts['tours']} tour(s); {counts['tours_unwalked']} tour(s) "
-                f"hold no record for their line; {counts['failed']} failed."
+                f"{verb}: {enqueued['routes']} route(s), {enqueued['trips']} "
+                f"trip(s), {enqueued['tours']} tour(s); {already_queued} "
+                f"already queued; {failed} failed."
             )
         )
-        logger.info("rebuild_track_renders finished: commit=%s %s", commit, counts)
-        if counts["failed"]:
+        logger.info(
+            "rebuild_track_renders finished: commit=%s enqueued=%s "
+            "already_queued=%d failed=%d",
+            commit,
+            enqueued,
+            already_queued,
+            failed,
+        )
+        if failed:
             raise CommandError(
-                f"rebuild_track_renders completed with {counts['failed']} "
-                "failure(s). Check logs for details."
+                f"rebuild_track_renders completed with {failed} failure(s). "
+                "Check logs for details."
             )
-
-    def _rebuild(
-        self,
-        row: Route | Trip | SkiTour,
-        kind: str,
-        counts: dict[str, int],
-        *,
-        commit: bool,
-    ) -> None:
-        """Rebuild one row's render and count it.
-
-        Args:
-            row: The row.
-            kind: Its count's name.
-            counts: The running tally, mutated in place.
-            commit: Whether to store.
-
-        """
-        if not commit:
-            counts[kind] += 1
-            return
-        try:
-            if isinstance(row, SkiTour):
-                if not rebuild_tour_render(row):
-                    counts["tours_unwalked"] += 1
-                    return
-            else:
-                store_terrain(row, row.slope_samples)
-        except Exception:  # noqa: BLE001 — broad catch intentional: one row must not abort the batch
-            logger.exception("rebuild_track_renders: failed on %s pk=%s", kind, row.pk)
-            counts["failed"] += 1
-            return
-        counts[kind] += 1

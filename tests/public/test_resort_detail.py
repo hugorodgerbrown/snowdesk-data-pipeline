@@ -877,19 +877,6 @@ class TestResortForecastStrip:
             assert "View hourly forecast →" in link
 
     @freeze_time(MIDDAY)
-    def test_a_point_without_a_short_id_still_credits_open_meteo(self) -> None:
-        """No weather page yet (backfill window): the eyebrow credits, no link."""
-        resort = ResortFactory.create()
-        location = _role_link(resort, "BASE")
-        _todays_weather(location)
-        type(location).objects.filter(pk=location.pk).update(short_id=None)
-
-        content = Client().get(resort.get_absolute_url()).content.decode()
-
-        assert re.search(r"Weather • Open-Meteo \d\d:\d\d", content)
-        assert 'data-testid="resort-forecast-provenance-base"' not in content
-
-    @freeze_time(MIDDAY)
     def test_a_point_with_no_row_today_says_so_and_keeps_its_link(self) -> None:
         """Beside a point with a row today, a stale one says No forecast yet."""
         resort = ResortFactory.create()

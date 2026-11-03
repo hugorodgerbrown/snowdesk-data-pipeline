@@ -1,18 +1,21 @@
 """
 tests/routes/management/commands/test_rebuild_track_renders.py — SNOW-1309.
 
-``rebuild_track_renders``: read-only by default, rebuilds only rows whose
-render is missing or stale, leaves a never-walked tour alone, and lands in
-the command register with its tallies.
+``rebuild_track_renders``: read-only by default, enqueues (SNOW-1400) a
+rebuild only for rows whose render is missing or stale, leaves a
+never-walked tour alone, and lands in the command register with its
+tallies. The tasks run inline here (``ImmediateBackend``).
 """
 
 from __future__ import annotations
 
 from io import StringIO
 from typing import Any
+from unittest import mock
 
 import pytest
 from django.core.management import call_command
+from django.core.management.base import CommandError
 
 from apps.core.models import CommandRun
 from apps.routes.models import Route, SkiTour
@@ -45,7 +48,7 @@ def _stale() -> tuple[Route, Route, Trip, SkiTour, SkiTour]:
 def test_a_dry_run_counts_and_writes_nothing() -> None:
     _, stale, trip, walked, _ = _stale()
     out = _run()
-    assert "Would rebuild: 1 route(s), 1 trip(s), 1 tour(s)" in out
+    assert "Would enqueue: 1 route(s), 1 trip(s), 1 tour(s)" in out
     assert "Stale" in out
     stale.refresh_from_db()
     trip.refresh_from_db()
@@ -74,8 +77,30 @@ def test_commit_rebuilds_only_the_stale_rows() -> None:
 
 def test_a_walked_tour_held_in_the_other_order_is_left_unwalked() -> None:
     """Its record no longer matches the line: nothing to build from, no walk."""
-    SkiTourFactory.create(slope_samples={**_KEPT, "walked_reversed": True})
-    out = _run("--commit")
-    assert "1 tour(s) hold no record for their line" in out
+    tour = SkiTourFactory.create(slope_samples={**_KEPT, "walked_reversed": True})
+    _run("--commit")
+    tour.refresh_from_db()
+    assert tour.track_render is None
     run = CommandRun.objects.get(command="rebuild_track_renders")
-    assert run.counts["tours_unwalked"] == 1
+    assert run.counts["failed"] == 0
+
+
+def test_a_second_commit_enqueues_nothing() -> None:
+    """Every stale row was rebuilt, so the next run has no candidate."""
+    _stale()
+    _run("--commit")
+    out = _run("--commit")
+    assert "Enqueued: 0 route(s), 0 trip(s), 0 tour(s)" in out
+
+
+def test_a_task_failure_exits_non_zero() -> None:
+    """A row whose rebuild raises fails its task, and the run says so."""
+    RouteFactory.create(track_render=None)
+    with (
+        mock.patch(
+            "apps.routes.services.render_tasks.store_terrain",
+            side_effect=RuntimeError("boom"),
+        ),
+        pytest.raises(CommandError, match="1 failure"),
+    ):
+        _run("--commit")

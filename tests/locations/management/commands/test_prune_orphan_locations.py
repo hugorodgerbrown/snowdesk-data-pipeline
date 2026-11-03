@@ -178,7 +178,7 @@ class TestPruneOrphanLocations:
 
         assert Location.objects.filter(pk=orphan.pk).exists()
         assert Weather.objects.exists()
-        assert "would be deleted" in out.getvalue()
+        assert "would be enqueued" in out.getvalue()
 
     def test_reports_both_counts(self) -> None:
         """The weather count is the one that shows the real cost."""

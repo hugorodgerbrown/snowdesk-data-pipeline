@@ -1,227 +1,173 @@
 r"""
 apps/bulletins/management/commands/recompute_day_ratings.py — Management command.
 
-Re-derives every ``RegionDayRating`` row under the current v7 policy:
-elevation-band split → afternoon-elevated split → headline fallback.
+Re-derives this instance's ``RegionDayRating`` rows under the current
+day-rating policy (``DAY_RATING_VERSION``): the instance counterpart of
+``rebuild_source_render_models``' stale-rating refresh on the service's
+``SourceDayRating``.
 
-Intended as a post-deployment step after a day-rating policy change.  Streams
-every distinct (region, date) pair present in the ``RegionDayRating`` table
-via ``.values_list(...).iterator()`` and calls ``recompute_region_day`` for
-each, optionally filtered to a date window.
+A bulletin rebuild recomputes the ratings it governs, but a day-rating rule
+change that bumps ``DAY_RATING_VERSION`` without a render-model bump reaches
+no bulletin, so the rows it left stale are this command's. By default it
+selects the rows computed under an older version; ``--all`` selects every
+row, for a rule change made without a bump. ``--start-date`` /
+``--end-date`` narrow either.
 
-A (region, date) pair has no id of its own, so it is driven by
-``apps.core.command_iteration.countdown`` rather than ``iterate_rows`` —
-the documented exemption from the ``-id``-ordering half of the SNOW-602
-streaming rule: prints "N pair(s) remaining" per pair instead of a
-descending id.
+Since SNOW-1400 ``--commit`` only enqueues: one ``recompute_day_rating_task``
+per row through ``enqueue_each``, at ``BULK_TASK_PRIORITY``. Each task
+re-checks its row (still stale, unless ``--all``), takes the same sorted
+rating lock as a bulletin rebuild, and recomputes in one transaction. An
+interrupted run leaves the rest stale for the next. Pure computation: no
+pace.
 
-Read-only by default — pass ``--commit`` to persist changes (per the
-project-wide management command convention).
+Read-only by default — pass ``--commit`` to enqueue.
 
 Typical use::
 
-    # Read-only walk (counts what would change).
+    # Read-only: count the stale rows.
     python manage.py recompute_day_ratings
 
-    # Persist.
+    # Enqueue the stale rows' recompute.
     python manage.py recompute_day_ratings --commit
 
-    # Narrow to a specific date window.
-    python manage.py recompute_day_ratings \\
+    # Every row in a date window, stale or not.
+    python manage.py recompute_day_ratings --all \\
         --start-date 2026-01-01 --end-date 2026-04-30 --commit
 """
 
+from __future__ import annotations
+
 import logging
 from argparse import ArgumentParser
-from collections.abc import Iterator
 from datetime import date
 from typing import Any
 
 from django.core.management.base import CommandError
 
 from apps.bulletins.models import RegionDayRating
-from apps.bulletins.services.day_rating import recompute_region_day
-from apps.core.command_iteration import countdown
+from apps.bulletins.services.render_rebuild import recompute_day_rating_task
 from apps.core.command_register import RegisteredCommand
-from apps.regions.models import MicroRegion
+from apps.core.command_tasks import enqueue_each
+from apps.ingest.public import DAY_RATING_VERSION
 
 logger = logging.getLogger(__name__)
 
 
 class Command(RegisteredCommand):
-    """Re-derive RegionDayRating rows under the current day-rating policy."""
+    """Enqueue a recompute of every stale ``RegionDayRating``."""
 
     help = (
-        "Re-derive every RegionDayRating row under the current v7 policy "
-        "(elevation-band split → afternoon-elevated split → headline fallback). "
-        "Read-only unless --commit is passed. "
+        "Enqueue a recompute of every RegionDayRating computed under an older "
+        "DAY_RATING_VERSION (--all: every row). Read-only unless --commit. "
         "Use --start-date / --end-date to restrict to a date window."
     )
 
+    # It only enqueues, so it finishes in seconds (SNOW-1400).
+    mcp_runnable = True
+
     def add_arguments(self, parser: ArgumentParser) -> None:
-        """Register command-line arguments."""
+        """Register command-line arguments.
+
+        Args:
+            parser: The argument parser to register on.
+
+        """
         parser.add_argument(
             "--commit",
             action="store_true",
             help=(
-                "Persist recomputed day ratings to the database. "
-                "Without this flag the command is read-only."
+                "Enqueue one task per row. Without this flag the command "
+                "counts the rows and writes nothing."
+            ),
+        )
+        parser.add_argument(
+            "--all",
+            action="store_true",
+            help=(
+                "Recompute every row, not only those computed under an older "
+                "DAY_RATING_VERSION."
             ),
         )
         parser.add_argument(
             "--start-date",
             metavar="YYYY-MM-DD",
             type=date.fromisoformat,
-            help="Only recompute pairs on or after this date (inclusive).",
+            help="Only rows on or after this date (inclusive).",
         )
         parser.add_argument(
             "--end-date",
             metavar="YYYY-MM-DD",
             type=date.fromisoformat,
-            help="Only recompute pairs on or before this date (inclusive).",
+            help="Only rows on or before this date (inclusive).",
         )
-
-    def _pairs_queryset(
-        self,
-        start_date: date | None,
-        end_date: date | None,
-    ) -> Any:
-        """Return distinct (region pk, region code, date) rows, optionally filtered.
-
-        The region code rides along so the countdown can name each pair to
-        the operator; it is one value per pk, so it does not change what
-        ``distinct()`` collapses.
-        """
-        qs = RegionDayRating.objects.values_list(
-            "region_id", "region__region_id", "date"
-        )
-        if start_date:
-            qs = qs.filter(date__gte=start_date)
-        if end_date:
-            qs = qs.filter(date__lte=end_date)
-        return qs.distinct()
-
-    def _process_pairs(
-        self,
-        pairs: Iterator[tuple[Any, str, date]],
-        *,
-        total: int,
-        commit: bool,
-        verbosity: int,
-    ) -> tuple[int, int]:
-        """Recompute each pair; return (processed, failed) counts.
-
-        Streams ``pairs`` (a ``values_list(...).iterator()``) via
-        ``countdown`` rather than materialising the whole distinct set — a
-        pair has no id, so the countdown counts down a known ``total``
-        instead of ``-id`` (the documented exemption from that half of the
-        SNOW-602 streaming rule).
-
-        """
-        region_cache: dict[Any, MicroRegion] = {}
-        processed = 0
-        failed = 0
-
-        for region_id, _region_code, day in countdown(
-            self,
-            pairs,
-            total=total,
-            verbosity=verbosity,
-            label="pair(s)",
-            describe=lambda pair: f"{pair[1]} {pair[2]}",
-        ):
-            if region_id not in region_cache:
-                try:
-                    region_cache[region_id] = MicroRegion.objects.get(pk=region_id)
-                except MicroRegion.DoesNotExist:
-                    logger.exception(
-                        "Region pk=%s not found — skipping pair(s) for this region",
-                        region_id,
-                    )
-                    failed += 1
-                    processed += 1
-                    continue
-
-            region = region_cache[region_id]
-            try:
-                recompute_region_day(region, day, commit=commit)
-            except Exception:
-                logger.exception(
-                    "Failed to recompute day rating for region=%s day=%s",
-                    region.region_id,
-                    day,
-                )
-                failed += 1
-
-            processed += 1
-
-        return processed, failed
 
     def handle(self, *args: Any, **options: Any) -> None:
-        """Execute the recompute command.
+        """Enqueue the selected rows' recompute.
 
-        Streams the distinct (region_id, date) pairs from ``RegionDayRating``,
-        applies any date filters, caches ``Region`` objects to avoid N+1 queries,
-        then calls ``recompute_region_day`` for each pair.  Prints a
-        countdown line per pair (verbosity >= 1) and raises ``CommandError``
-        if any pair fails.
+        Args:
+            args: Unused positional arguments.
+            options: Parsed command-line options.
 
-        Flags:
-            --commit: Persist recomputed ratings to the database.
-            --start-date: Filter pairs to dates on or after this value.
-            --end-date: Filter pairs to dates on or before this value.
+        Raises:
+            CommandError: When any task run inline failed, so cron/CI sees
+                non-zero.
 
         """
         commit: bool = options["commit"]
         verbosity: int = options["verbosity"]
-
+        force: bool = options["all"]
         start_date: date | None = options["start_date"]
         end_date: date | None = options["end_date"]
 
+        # Slim: the task re-reads its row and its region.
+        rows = RegionDayRating.objects.select_related("region").only(
+            "pk", "date", "region__region_id"
+        )
+        if not force:
+            rows = rows.exclude(version=DAY_RATING_VERSION)
+        if start_date:
+            rows = rows.filter(date__gte=start_date)
+        if end_date:
+            rows = rows.filter(date__lte=end_date)
+
         self.stdout.write(
             self.style.MIGRATE_HEADING(
-                "Recomputing day ratings"
+                f"Recomputing {rows.count()} "
+                + ("" if force else "stale ")
+                + "day rating(s)"
                 + (f" from {start_date}" if start_date else "")
                 + (f" to {end_date}" if end_date else "")
                 + ("" if commit else " [READ-ONLY]")
             )
         )
-
-        pairs_qs = self._pairs_queryset(start_date, end_date)
-        total = pairs_qs.count()
-        self.stdout.write(f"(region, date) pairs to process: {total}")
-
-        if total == 0:
-            self.stdout.write(self.style.SUCCESS("Nothing to do."))
-            return
-
-        processed, failed = self._process_pairs(
-            pairs_qs.iterator(), total=total, commit=commit, verbosity=verbosity
+        counts = enqueue_each(
+            self,
+            rows,
+            recompute_day_rating_task,
+            args=lambda row: (row.pk, force),
+            describe=lambda row: f"{row.region.region_id} {row.date}",
+            commit=commit,
+            verbosity=verbosity,
         )
-
-        succeeded = processed - failed
-        if commit:
-            self.stdout.write(
-                self.style.SUCCESS(
-                    f"Done — recomputed {succeeded}/{total} pair(s) ({failed} failed)."
-                )
+        verb = "enqueued" if commit else "would be enqueued"
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Done. {counts.enqueued} day rating(s) {verb}, "
+                f"{counts.already_queued} already queued."
+                + ("" if commit else " Pass --commit to enqueue.")
             )
-        else:
-            self.stdout.write(
-                self.style.SUCCESS(
-                    f"Read-only run complete — would recompute {succeeded}/{total} "
-                    f"pair(s) ({failed} would fail). Pass --commit to persist."
-                )
-            )
-
+        )
         logger.info(
-            "recompute_day_ratings finished: processed=%d failed=%d commit=%s",
-            processed,
-            failed,
+            "recompute_day_ratings finished: enqueued=%d already_queued=%d "
+            "failed=%d all=%s commit=%s",
+            counts.enqueued,
+            counts.already_queued,
+            counts.failed,
+            force,
             commit,
         )
-
-        if failed > 0:
+        if counts.failed:
             raise CommandError(
-                f"{failed} pair(s) failed during recompute. Check logs for details."
+                f"recompute_day_ratings completed with {counts.failed} "
+                "failure(s). Check logs for details."
             )

@@ -57,7 +57,9 @@ class TestBulletinRowLabel:
             valid_from=valid_from,
             valid_to=valid_from + datetime.timedelta(hours=24),
         )
-        bulletin.target_date = None
+        # An instance still unsaved, or loaded without the column, can hold
+        # none; the column itself is NOT NULL since SNOW-1400.
+        bulletin.target_date = None  # type: ignore[assignment]
 
         assert bulletin.row_label() == f"SLF {expected_day} row-label-002"
         assert expected_day == str(target_day_for_valid_from(valid_from))

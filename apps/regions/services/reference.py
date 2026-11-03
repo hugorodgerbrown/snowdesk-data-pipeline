@@ -153,7 +153,7 @@ def mirror_resorts() -> dict[str, int]:
     with transaction.atomic():
         linked = _link(Resort)
         resorts = (
-            Resort.objects.exclude(slug__isnull=True)
+            Resort.objects.exclude(slug="")
             # A region row carries its boundary polygon; the document needs
             # only the code, so the region is prefetched slim, not joined.
             .prefetch_related(

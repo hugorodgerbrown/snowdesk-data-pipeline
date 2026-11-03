@@ -325,14 +325,6 @@ class TestHasLaterBulletin:
 
         assert _has_later_bulletin(region, date(2026, 3, 15)) is True
 
-    def test_ignores_rows_without_a_target_date(self, region: MicroRegion) -> None:
-        """A bulletin with no target_date is not counted, whatever its valid_to."""
-        _make_am_bulletin(region, date(2026, 3, 15))
-        later = _make_am_bulletin(region, date(2026, 3, 17))
-        Bulletin.objects.filter(pk=later.pk).update(target_date=None)
-
-        assert _has_later_bulletin(region, date(2026, 3, 15)) is False
-
     def test_returns_false_when_no_later_bulletin(self, region: MicroRegion) -> None:
         """Returns False when no bulletin exists after page_date."""
         _make_am_bulletin(region, date(2026, 3, 15))  # valid_to: 15:00 on 3/15

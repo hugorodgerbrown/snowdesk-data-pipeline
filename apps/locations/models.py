@@ -369,15 +369,12 @@ class Location(BaseModel):
     short_id = models.CharField(
         max_length=16,
         unique=True,
-        null=True,
-        blank=True,
         editable=False,
         default=generate_short_id,
         help_text=(
             "Eleven-character opaque URL identifier — /weather/<short_id>/ and "
             "the id weather.geojson emits (SNOW-797). Opaque rather than a slug "
-            "because most public locations are unnamed region centroids. Null "
-            "only on a row backfill_location_short_ids has not reached yet."
+            "because most public locations are unnamed region centroids."
         ),
     )
     source_uuid = models.UUIDField(

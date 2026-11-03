@@ -22,11 +22,17 @@ curated place is a curation question, not garbage.
 Deleting a ``Location`` cascades to its ``Weather`` rows, which is the point:
 that data describes a place nothing can reach any more.
 
+Since SNOW-1400 ``--commit`` only enqueues: one
+``prune_orphan_location_task`` per orphan, through ``enqueue_each``. Each
+task re-asks ``orphaned()`` for its row, so a location something points at
+again by the time it runs is kept, and an interrupted run leaves the rest
+for the next.
+
 Usage:
     # Preview — reports what it would delete, writes nothing.
     uv run python manage.py prune_orphan_locations
 
-    # Delete.
+    # Enqueue the deletions.
     uv run python manage.py prune_orphan_locations --commit
 """
 
@@ -36,11 +42,12 @@ import logging
 from argparse import ArgumentParser
 from typing import Any
 
-from django.db import transaction
+from django.core.management.base import CommandError
 
-from apps.core.command_iteration import iterate_rows
 from apps.core.command_register import RegisteredCommand
+from apps.core.command_tasks import enqueue_each
 from apps.locations.models import Location
+from apps.locations.services.orphans import prune_orphan_location_task
 from apps.weather.models import Weather
 
 logger = logging.getLogger(__name__)
@@ -59,6 +66,9 @@ class Command(RegisteredCommand):
         "points at, along with their Weather. Read-only unless --commit "
         "is passed."
     )
+
+    # It only enqueues, so it finishes in seconds (SNOW-1400).
+    mcp_runnable = True
 
     def add_arguments(self, parser: ArgumentParser) -> None:
         """Register command-line arguments."""
@@ -101,38 +111,42 @@ class Command(RegisteredCommand):
                 )
             )
 
-        if commit and location_count:
-            with transaction.atomic():
-                # Streamed, not materialised. The queryset above spans a join
-                # per referrer, so a delete() over it would emit a DELETE carrying
-                # those joins on some backends — but collecting every pk
-                # first, to delete WHERE pk IN (...), holds the whole orphan
-                # estate in memory to build a clause the database then has
-                # to parse. A first production run clears three deploy
-                # generations at once, so that list is exactly the one worth
-                # not building. Walking newest id first and deleting each row
-                # by its own pk needs neither, and prints the countdown the
-                # command contract asks for.
-                for orphan in iterate_rows(
-                    self, orphans, verbosity=verbosity, describe=Location.to_string
-                ):
-                    Location.objects.filter(pk=orphan.pk).delete()
+        # Slim: the task re-asks orphaned() for its pk under a lock.
+        counts = enqueue_each(
+            self,
+            orphans.only("pk", "name", "latitude", "longitude", "elevation_m", "kind"),
+            prune_orphan_location_task,
+            args=lambda row: (row.pk,),
+            describe=Location.to_string,
+            commit=commit,
+            verbosity=verbosity,
+            tally_as="enqueued",
+        )
 
         if verbosity >= 1:
             self.stdout.write(
                 self.style.SUCCESS(
-                    f"Done. {location_count} location(s) and {weather_count} "
-                    f"weather row(s) "
-                    f"{'deleted' if commit else 'would be deleted'}."
-                    f"{'' if commit else ' Pass --commit to delete.'}"
+                    f"Done. {counts.enqueued} location(s) "
+                    f"{'enqueued for deletion' if commit else 'would be enqueued'}, "
+                    f"{counts.already_queued} already queued."
+                    f"{'' if commit else ' Pass --commit to enqueue.'}"
                 )
             )
-        # Counts for the command run register (SNOW-1190).
+        # Counts for the command run register (SNOW-1190); enqueue_each
+        # tallied what it enqueued.
         self.tally("locations", location_count)
         self.tally("weather", weather_count)
         logger.info(
-            "prune_orphan_locations finished: locations=%d weather=%d commit=%s",
+            "prune_orphan_locations finished: locations=%d weather=%d "
+            "enqueued=%d failed=%d commit=%s",
             location_count,
             weather_count,
+            counts.enqueued,
+            counts.failed,
             commit,
         )
+        if counts.failed:
+            raise CommandError(
+                f"prune_orphan_locations completed with {counts.failed} "
+                "failure(s). Check logs for details."
+            )
