@@ -154,11 +154,23 @@ paints a literal the class restates it.
             aria-hidden="true"
         ></span>{% trans "Advised" %}
     </div>
-    <div class="map-legend-row map-legend-row--wide" {% if now %}data-legend-item="rest-out-of-season"{% endif %}>
+    <div
+        class="map-legend-row map-legend-row--wide"
+        {% if now %}data-legend-item="rest-binding-out-of-season"{% endif %}
+    >
         <span
-            class="map-legend-swatch map-legend-swatch--rest-out-of-season"
+            class="map-legend-swatch map-legend-swatch--rest-binding-out-of-season"
             aria-hidden="true"
-        ></span>{% trans "Closed out of season" %}
+        ></span>{% trans "Closed by law, out of season" %}
+    </div>
+    <div
+        class="map-legend-row map-legend-row--wide"
+        {% if now %}data-legend-item="rest-recommended-out-of-season"{% endif %}
+    >
+        <span
+            class="map-legend-swatch map-legend-swatch--rest-recommended-out-of-season"
+            aria-hidden="true"
+        ></span>{% trans "Advised, out of season" %}
     </div>
 {% elif key == "routes" %}
     {# The dash is named because it carries the direction for a reader who #}

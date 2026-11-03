@@ -61,7 +61,10 @@ legend."
   view. The licences are honoured in full on the second page and in the
   colophon.
 - **Rest zones get a key at last.** "Closed by law" (red), "Advised"
-  (amber) and "Closed out of season" (faint, outside the zone's period),
+  (amber), and each again faint out of season — "Closed by law, out of
+  season" and "Advised, out of season" — since the map keeps a zone's
+  colour outside its period (Hugo, 3 Nov 2026: one faint row hid that two
+  kinds were drawn),
   behind the same `route_drawing` flag as the layer. The colours are
   `--color-rest-binding` / `--color-rest-recommended`, mirroring
   `rest_zones_core.js`.

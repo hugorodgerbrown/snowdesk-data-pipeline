@@ -110,17 +110,30 @@ describe('legendState', () => {
     }
   });
 
-  it('splits the rest zones into by law, advised and out of season', () => {
+  it('splits the rest zones by kind, in season and out', () => {
     const view = (zones) => core.legendState({ rendered: { rest_zones: zones } }).items;
-    expect(view([feature({ binding: true, in_force: true })])).toMatchObject({
-      'rest-binding': true, 'rest-recommended': false, 'rest-out-of-season': false,
-    });
-    expect(view([feature({ binding: false, in_force: true })])).toMatchObject({
-      'rest-binding': false, 'rest-recommended': true, 'rest-out-of-season': false,
-    });
-    expect(view([feature({ binding: true, in_force: false })])).toMatchObject({
-      'rest-binding': false, 'rest-recommended': false, 'rest-out-of-season': true,
-    });
+    const none = {
+      'rest-binding': false,
+      'rest-recommended': false,
+      'rest-binding-out-of-season': false,
+      'rest-recommended-out-of-season': false,
+    };
+    expect(view([feature({ binding: true, in_force: true })])).toEqual(expect.objectContaining({
+      ...none, 'rest-binding': true,
+    }));
+    expect(view([feature({ binding: false, in_force: true })])).toEqual(expect.objectContaining({
+      ...none, 'rest-recommended': true,
+    }));
+    expect(view([feature({ binding: true, in_force: false })])).toEqual(expect.objectContaining({
+      ...none, 'rest-binding-out-of-season': true,
+    }));
+    // Out of season, both kinds in view: both keyed (Hugo, 3 Nov 2026).
+    expect(view([
+      feature({ binding: true, in_force: false }),
+      feature({ binding: false, in_force: false }),
+    ])).toEqual(expect.objectContaining({
+      ...none, 'rest-binding-out-of-season': true, 'rest-recommended-out-of-season': true,
+    }));
   });
 
   it('keys a pinned resort only when one is in view, favourites on their own', () => {
