@@ -28,8 +28,11 @@ CSP origin, and the pinning of its tiles in offline downloads (SNOW-692).
 - The mode shares the sheet's aspect, slope-range and elevation settings.
   The slope range says which classes are painted; it defaults to 30° and
   up.
-- Nothing is drawn below z12, where the tiles start; the sheet says
-  "zoom in", as it does for the match mode.
+- Nothing is drawn below z11 (`DRAW_MIN_ZOOM`); the sheet says "zoom
+  in", as it does for the match mode. The tiles start at z12, but they
+  are 256 px, so map zoom 11 already reads them at their own resolution
+  (Hugo, 3 Nov 2026: it reads well there). The layer's own `minzoom`
+  sets the start: the source's alone let it draw from about z10.5.
 - An old `snowdesk.map.overlay.slope=true` is ignored, not migrated:
   carrying it over would silently switch on a filter that needs the
   class tiles.

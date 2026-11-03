@@ -220,9 +220,9 @@ describe('the committed fixture tile', () => {
 });
 
 describe('availability', () => {
-  it('asks for a zoom-in below z12 inside coverage', () => {
-    expect(core.availability({ zoom: 11.9, lng: 7.23, lat: 46.1 })).toBe('zoom-in');
-    expect(core.availability({ zoom: 12, lng: 7.23, lat: 46.1 })).toBe('ok');
+  it('asks for a zoom-in below z11 inside coverage', () => {
+    expect(core.availability({ zoom: 10.9, lng: 7.23, lat: 46.1 })).toBe('zoom-in');
+    expect(core.availability({ zoom: 11, lng: 7.23, lat: 46.1 })).toBe('ok');
     expect(core.availability({ zoom: 16, lng: 7.23, lat: 46.1 })).toBe('ok');
   });
 

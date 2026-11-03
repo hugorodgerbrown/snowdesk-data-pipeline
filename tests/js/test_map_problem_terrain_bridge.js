@@ -342,15 +342,18 @@ describe('Steep terrain takes precedence', () => {
 describe('the zoom the slopes draw from', () => {
   // A 256 px raster source with minzoom 12 still draws from about z10.5:
   // MapLibre asks for z12 tiles one map zoom early. Only a LAYER minzoom
-  // holds each layer to the z12 the zoom control's scale names (SNOW-1077's
-  // terrain_filter gate), so both carry one.
-  it('holds both terrain layers to the scale\'s z12', async () => {
+  // sets where each layer starts.
+  it('draws Steep terrain from the zoom the scale names, z11', async () => {
     const map = await boot({});
     window.pwaTerrainFilter.show();
     const gate = window.pwaZoomGates.list().find((g) => g.key === 'terrain_filter');
-    expect(gate.zoom).toBe(12);
-    expect(map.layerDef(RASTER).minzoom).toBe(gate.zoom);
+    expect(gate.zoom).toBe(11);
     expect(map.layerDef('terrain-filter-raster').minzoom).toBe(gate.zoom);
+  });
+
+  it('keeps the problem-terrain slopes at z12, where the region fills drop out', async () => {
+    const map = await boot({});
+    expect(map.layerDef(RASTER).minzoom).toBe(12);
   });
 });
 

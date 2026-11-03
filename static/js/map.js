@@ -5024,13 +5024,12 @@
         id: TERRAIN_LAYER_ID,
         type: 'raster',
         source: TERRAIN_SOURCE_ID,
-        // The source's minzoom alone does not hold the layer to z12: its
+        // The source's minzoom alone does not set where this draws: its
         // tiles are 256 px, so MapLibre asks for z12 tiles one map zoom
-        // early and the steep terrain drew from about z10.5 while the zoom
-        // control's scale (ZOOM_GATES, from this same MIN_ZOOM) said 12.
-        // The layer minzoom holds it to the scale, as the problem-terrain
-        // layer's does.
-        minzoom: TERRAIN_CORE.MIN_ZOOM,
+        // early, and with zoom rounding the layer drew from about z10.5
+        // while the zoom control's scale said 12. DRAW_MIN_ZOOM (z11) is
+        // the one number both the layer and the scale (ZOOM_GATES) read.
+        minzoom: TERRAIN_CORE.DRAW_MIN_ZOOM,
         layout: { visibility: terrainFilterRasterShown() ? 'visible' : 'none' },
         paint: {
           // The translucency is in the painted pixels (terrain_filter_core's
@@ -8244,8 +8243,8 @@
   //   region_select — a tap selects a region at REGION_SELECT_MAXZOOM
   //     (z10) and below; the one gate that holds UP TO its zoom (`upTo`)
   //     rather than from it.
-  //   terrain_filter — the terrain overlay's class tiles exist from
-  //     TERRAIN_CORE.MIN_ZOOM (z12), in either of its modes (the filter
+  //   terrain_filter — the terrain overlay draws from
+  //     TERRAIN_CORE.DRAW_MIN_ZOOM (z11; its 256 px tiles start at z12), in either of its modes (the filter
   //     and SNOW-1073's slope colouring share the tiles and the switch).
   //   route_slopes — a route's core switches from leg colours to slope
   //     classes at ROUTE_SLOPE_MINZOOM (z14).
@@ -8260,7 +8259,7 @@
     Object.freeze({ key: 'region_select', zoom: REGION_SELECT_MAXZOOM, upTo: true }),
     ...(SKI_ROUTES_ELIGIBLE ? [Object.freeze({ key: 'ski_routes', zoom: SKI_TOURING_MINZOOM })] : []),
     ...(SKI_ROUTES_ELIGIBLE ? [Object.freeze({ key: 'rest_zones', zoom: REST_ZONES_MINZOOM })] : []),
-    Object.freeze({ key: 'terrain_filter', zoom: TERRAIN_CORE ? TERRAIN_CORE.MIN_ZOOM : 12 }),
+    Object.freeze({ key: 'terrain_filter', zoom: TERRAIN_CORE ? TERRAIN_CORE.DRAW_MIN_ZOOM : 11 }),
     Object.freeze({ key: 'route_slopes', zoom: ROUTE_SLOPE_MINZOOM }),
   ]);
 
