@@ -37,6 +37,12 @@
  *   hide()       — the switch off
  *   isEnabled()  — whether the switch is on
  *   MINZOOM      — the zoom the zones are drawn from
+ *
+ * A PLACEMENT. Placing a pin or drawing a route clears the map of every
+ * other overlay (map_placement_focus.js), but never of these: the zones
+ * are legally binding, and still there while something is placed. While
+ * a route is drawn they show even with the switch off; once it is saved
+ * or drawing stops, the switch decides again.
  */
 
 // @ts-check
@@ -92,6 +98,8 @@
     inflight: null,
     /** @type {?number} */
     timer: null,
+    /** Whether draw mode has the map (`snowdesk:route-draw`). */
+    drawing: false,
     /** The uuid of the zone the sheet shows, or null when it is closed. */
     /** @type {?string} */
     openUuid: null,
@@ -136,14 +144,26 @@
     }
   }
 
-  /** @returns {boolean} Whether a placement mode (a pin being placed) has the map. */
-  function focused() {
+  /**
+   * Whether the zones are drawn: the switch is on, or a route is being
+   * drawn. Draw mode shows them whatever the switch says, and the switch
+   * decides again once the route is saved or drawing stops (Hugo,
+   * 3 Nov 2026).
+   *
+   * @returns {boolean}
+   */
+  function shown() {
+    return isEnabled() || state.drawing;
+  }
+
+  /** @returns {boolean} Whether a placement mode (a pin, a route) has the map. */
+  function placing() {
     return !!(window.PlacementFocus && window.PlacementFocus.isActive());
   }
 
   /** @returns {'visible'|'none'} The layers' visibility. */
   function visibility() {
-    return isEnabled() && !focused() ? 'visible' : 'none';
+    return shown() ? 'visible' : 'none';
   }
 
   /** Show or hide the layers, once they exist. */
@@ -230,7 +250,7 @@
   /** Load the view's zones when it needs them. */
   function load() {
     const map = getMap();
-    if (!map || !GEOJSON_URL || !isEnabled() || focused()) return;
+    if (!map || !GEOJSON_URL || !shown()) return;
     if (map.getZoom() < core.MINZOOM) return;
     const b = map.getBounds();
     /** @type {[number, number, number, number]} */
@@ -381,7 +401,9 @@
    */
   function tap(point) {
     const map = getMap();
-    if (!map || !isEnabled() || focused() || !map.getLayer(FILL)) return false;
+    // While a pin is placed the zones are drawn but take no tap: the tap
+    // belongs to the placement.
+    if (!map || !isEnabled() || placing() || !map.getLayer(FILL)) return false;
     if (map.getZoom() < core.MINZOOM) return false;
     const zone = core.pickZone(map.queryRenderedFeatures([point.x, point.y], {
       layers: [FILL, LINE],
@@ -397,6 +419,15 @@
 
   // The map's day moved: the zones are reloaded for it. A preview (a drag
   // still under way) is not a day anyone stopped on.
+  // Draw mode's start and end (route_draw.js): the zones show for the
+  // drawing, then fall back to the switch.
+  document.addEventListener('snowdesk:route-draw', function (event) {
+    const detail = /** @type {CustomEvent} */ (event).detail;
+    state.drawing = !!(detail && detail.active);
+    applyVisibility();
+    if (state.drawing) scheduleLoad();
+  });
+
   document.addEventListener('snowdesk:date-changed', function (event) {
     const detail = /** @type {CustomEvent} */ (event).detail;
     state.date = (detail && detail.date) || null;
@@ -417,9 +448,6 @@
     };
     map.on('styledata', ready);
     map.on('moveend', scheduleLoad);
-    // A placement mode's start and end (PlacementFocus announces both)
-    // hide and restore the layers.
-    document.addEventListener('snowdesk:overlay-visibility-changed', applyVisibility);
     ready();
   }
   bindMap();

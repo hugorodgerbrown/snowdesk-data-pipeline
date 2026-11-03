@@ -428,3 +428,46 @@ describe('the bridge', () => {
     expect(map.sources.get('rest-zones').def.data).toEqual(FC);
   });
 });
+
+describe('placement modes', () => {
+  // Hugo, 3 Nov 2026: the zones are legally binding and still there while
+  // a pin is placed or a route drawn, so no placement hides them.
+  afterEach(() => {
+    delete window.PlacementFocus;
+  });
+
+  it('stays drawn and loads while a placement has the map', async () => {
+    window.PlacementFocus = { isActive: () => true };
+    const map = await boot({ on: true });
+    await settle();
+    expect(fetches).toHaveLength(1);
+    expect(map.layers.get('rest-zones-fill').layout.visibility).toBe('visible');
+    expect(map.layers.get('rest-zones-line').layout.visibility).toBe('visible');
+  });
+
+  it('takes no tap while a placement has the map', async () => {
+    window.PlacementFocus = { isActive: () => true };
+    const map = await boot({ on: true });
+    await settle();
+    map.hits = [ZONE];
+    expect(window.pwaRestZones.tap({ x: 1, y: 2 })).toBe(false);
+    expect(sheet.open).not.toHaveBeenCalled();
+  });
+
+  it('shows while a route is drawn with the switch off, then hides again', async () => {
+    const map = await boot();
+    await settle();
+    expect(fetches).toEqual([]);
+
+    document.dispatchEvent(new CustomEvent('snowdesk:route-draw', { detail: { active: true } }));
+    await settle();
+    expect(fetches).toHaveLength(1);
+    expect(map.layers.get('rest-zones-fill').layout.visibility).toBe('visible');
+    // The switch itself is untouched.
+    expect(window.pwaRestZones.isEnabled()).toBe(false);
+
+    document.dispatchEvent(new CustomEvent('snowdesk:route-draw', { detail: { active: false } }));
+    expect(map.layers.get('rest-zones-fill').layout.visibility).toBe('none');
+    expect(map.layers.get('rest-zones-line').layout.visibility).toBe('none');
+  });
+});

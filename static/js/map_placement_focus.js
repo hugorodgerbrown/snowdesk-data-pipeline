@@ -18,6 +18,14 @@
  *               entered.
  *   isActive()  True between enter() and the matching exit().
  *
+ * The one exception: the wildlife rest zones
+ * ------------------------------------------
+ * FOEN's rest zones (rest_zones.js) are never hidden. They are legally
+ * binding ground, still there while a pin is placed or a route drawn, and
+ * where someone may not go is exactly what placing something needs (Hugo,
+ * 3 Nov 2026). Their layers are left out of the snapshot, so their own
+ * switch keeps deciding whether they are drawn.
+ *
  * Which layers count as "over the basemap"
  * ----------------------------------------
  * Every layer Snowdesk installs — the L4 choropleth (``regions-*``), the
@@ -66,6 +74,11 @@
    */
   let snapshot = null;
 
+  /** Overlay layers no placement hides — see "The one exception" above.
+   * @type {ReadonlySet<string>}
+   */
+  const ALWAYS_SHOWN = new Set(['rest-zones-fill', 'rest-zones-line']);
+
   /** Return the global MAP object if available, else null. Guards against
    * the case where map.js has not yet initialised.
    * @returns {maplibregl.Map|null}
@@ -74,8 +87,9 @@
     return typeof MAP !== 'undefined' ? MAP : null;
   }
 
-  /** Ids of every layer this app draws over the basemap — see the header
-   * comment for why a geojson-source test is the definition. Returns an
+  /** Ids of every layer this app draws over the basemap, less the rest
+   * zones — see the header comment for why a geojson-source test is the
+   * definition. Returns an
    * empty list when the style isn't readable yet (getStyle() throws before
    * the style loads), so a placement armed against a half-booted map
    * degrades to "hide nothing" rather than throwing.
@@ -94,7 +108,7 @@
     const ids = [];
     for (const layer of style.layers) {
       const source = sources[layer.source];
-      if (source && source.type === 'geojson') ids.push(layer.id);
+      if (source && source.type === 'geojson' && !ALWAYS_SHOWN.has(layer.id)) ids.push(layer.id);
     }
     return ids;
   }

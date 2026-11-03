@@ -31,6 +31,7 @@ const SOURCES = {
   regions: { type: 'geojson' },
   resorts: { type: 'geojson' },
   favourites: { type: 'geojson' },
+  'rest-zones': { type: 'geojson' },
 };
 
 const BASEMAP_LAYER_IDS = ['snowdesk-offline-fallback-bg', 'water', 'roads', 'hillshade-layer'];
@@ -71,6 +72,8 @@ function makeMap(initialVisibility = {}) {
     { id: 'resorts-label', source: 'resorts' },
     { id: 'favourites-pin', source: 'favourites' },
     { id: 'favourites-label', source: 'favourites' },
+    { id: 'rest-zones-fill', source: 'rest-zones' },
+    { id: 'rest-zones-line', source: 'rest-zones' },
   ];
   // Methods read through `map` rather than closing over the initial
   // objects, so a test can swap out `map.visibility` / `map.layers`
@@ -317,5 +320,37 @@ describe('basemap swap during placement', () => {
     document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'));
 
     expect(seen).toEqual(['changed']);
+  });
+});
+
+describe('the wildlife rest zones', () => {
+  // Hugo, 3 Nov 2026: legally binding, and still there while a pin is
+  // placed or a route drawn, so no placement hides them.
+  const REST = ['rest-zones-fill', 'rest-zones-line'];
+
+  it('are never hidden', () => {
+    focus.enter();
+
+    expect(visibilityOf(map, REST)).toEqual([undefined, undefined]);
+  });
+
+  it('are not written over on exit, so their switch still decides', () => {
+    focus.enter();
+    // Switched off from the layers menu mid-placement.
+    map.visibility['rest-zones-fill'] = 'none';
+
+    focus.exit();
+
+    expect(map.visibility['rest-zones-fill']).toBe('none');
+  });
+
+  it('stay drawn through a basemap swap', () => {
+    focus.enter();
+    map.visibility = {};
+
+    document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'));
+
+    expect(visibilityOf(map, REST)).toEqual([undefined, undefined]);
+    expect(map.visibility['regions-fill']).toBe('none');
   });
 });
