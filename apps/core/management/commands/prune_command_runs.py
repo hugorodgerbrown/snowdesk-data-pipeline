@@ -96,7 +96,7 @@ class Command(RegisteredCommand):
     def handle(self, *args: Any, **options: Any) -> None:
         """Close the stale rows and delete the expired ones.
 
-        Exempt from row-by-row streaming (CLAUDE.md management-command rule
+        Exempt from row-by-row streaming (AGENTS.md management-command rule
         5): both jobs are one UPDATE or DELETE over a filter, with no
         per-row work to show a countdown for.
 

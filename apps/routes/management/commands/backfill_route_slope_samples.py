@@ -9,7 +9,7 @@ Every ``Route`` uploaded before SNOW-910 has a null ``slope_samples``,
 which means NEVER SAMPLED and draws as a flat line; this walks each of
 them and asks the terrain grid how steep the ground under it is.
 
-**Not a data migration.** CLAUDE.md forbids bulk dataset updates in
+**Not a data migration.** AGENTS.md forbids bulk dataset updates in
 migrations, and this one could not be a migration even if it did not: the
 work is one HTTP request per terrain tile a track crosses, against an
 origin outside this process, and a deploy's ``migrate`` step must not sit

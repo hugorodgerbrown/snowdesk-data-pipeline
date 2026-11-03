@@ -16,7 +16,7 @@ creates nothing.
 
 This rewrites four rows. That is not a bulk data update, so it does not
 breach the project's "no large dataset updates in migrations" rule (see
-``docs/decisions/`` and CLAUDE.md) — a four-row ``UPDATE`` takes no
+``docs/decisions/`` and AGENTS.md) — a four-row ``UPDATE`` takes no
 meaningful lock and cannot stall a Render deploy.
 """
 

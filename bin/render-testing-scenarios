@@ -51,7 +51,7 @@ SOURCE = REPO_ROOT / "docs" / "testing-scenarios.md"
 
 # The dev-server URLs the script sends a tester to often enough to be worth
 # a permanent strip at the top. Each one is checked into the document or
-# into CLAUDE.md; none is invented here.
+# into AGENTS.md; none is invented here.
 ENVIRONMENT_LINKS: list[tuple[str, str, str]] = [
     ("Map (home)", "http://localhost:8000/", "the page most scenarios start on"),
     (

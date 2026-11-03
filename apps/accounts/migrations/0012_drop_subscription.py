@@ -10,7 +10,7 @@
 # run that empties it; that command was run on production on 2026-09-08.
 #
 # Schema only — no data operations. Bulk dataset work in a migration locks
-# the table and breaks the Render deploy (CLAUDE.md), which is precisely why
+# the table and breaks the Render deploy (AGENTS.md), which is precisely why
 # the backfill was a separate command.
 #
 # ``AlterUniqueTogether`` runs before ``DeleteModel``, following the

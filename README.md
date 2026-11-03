@@ -57,12 +57,9 @@ uv run python manage.py backfill_weather --commit
 
 ## Stack
 
-- **Python / Django** — data pipeline, models, views, split across fifteen
-  apps under `apps/` (`core`, `locations`, `regions`, `bulletins`,
-  `weather`, `accounts`, `favourites`, `observations`, `routes`, `trips`,
-  `downloads`, `analytics`, `mcp_server`, `oauth`, `public`) plus `config`
-  (split settings). The map in [CLAUDE.md](CLAUDE.md#architecture) says
-  what each one owns
+- **Python / Django** — data pipeline, models, views, split across seventeen
+  apps under `apps/` plus `config` (split settings).
+  [docs/architecture.md](docs/architecture.md) says what each one owns
 - **Tailwind CSS v4** — compiled via `@tailwindcss/cli` from `src/css/main.css`
   to `static/css/output.css`
 - **HTMX** — dynamic fragments on the public site (bulletin calendar, favourites, trips, field reports)
@@ -98,7 +95,7 @@ uv run tox                       # every default env: fmt, lint, mypy, django-ch
 ```
 
 See [docs/coding-standards.md](docs/coding-standards.md) for conventions and
-[CLAUDE.md](CLAUDE.md) for detailed development guidance.
+[AGENTS.md](AGENTS.md) for the project's rules.
 
 ---
 

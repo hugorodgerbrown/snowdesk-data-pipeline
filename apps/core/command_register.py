@@ -25,7 +25,7 @@ Four rules shape the wrapper:
    block and loses every dry run.) A run called inside an OUTER
    transaction does share that transaction's fate.
 2. **The exit code is untouched.** Whatever ``handle()`` raises is recorded
-   and re-raised, so cron and CI still see a non-zero exit (CLAUDE.md
+   and re-raised, so cron and CI still see a non-zero exit (AGENTS.md
    management-command rule 4).
 3. **The register never breaks a command.** A failure to write a row — no
    database, a broken transaction — is logged and the command carries on
@@ -296,7 +296,7 @@ class RegisteredCommand(BaseCommand):
     # enqueues it on the task worker (apps.core.remote_commands). Off by
     # default: the attribute IS the allow-list. Set it only on a command
     # that finishes in seconds to a few minutes — one that walks thousands
-    # of rows enqueues a task per row and returns (CLAUDE.md rule 7) —
+    # of rows enqueues a task per row and returns (AGENTS.md rule 7) —
     # because the worker running it is the one that sends email. A guard
     # test refuses it on a command that is unrecorded or prints a
     # credential.

@@ -46,7 +46,7 @@ What these tests pin:
 
 Mobile reflow is not asserted here: no server-side test can measure rendered
 width, and a browser test for a layout constant is the wrong layer under
-CLAUDE.md's rules.
+AGENTS.md's rules.
 """
 
 from __future__ import annotations

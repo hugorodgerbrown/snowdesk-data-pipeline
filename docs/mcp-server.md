@@ -651,16 +651,16 @@ can see is split by audience (`apps/mcp_server/docs_corpus.py`):
 | Server | Corpus | Holds |
 |--------|--------|-------|
 | `/api/mcp/` | `public_corpus()` | The `/help/` topics (`help/<slug>`, rendered from `public/help/_topic_*.html` in English; the flag-gated `what3words` and `sync-log` topics left out), `docs/bulletin-guide`, and `docs/explainers/*` reduced to text |
-| `/api/ops/mcp/` | `ops_corpus()` | All of the above, plus `CLAUDE.md`, `apps/*/CLAUDE.md` and every `docs/**/*.md` outside the dated folders (`code-reviews`, `page-audits`, `qa`, `research`) |
+| `/api/ops/mcp/` | `ops_corpus()` | All of the above, plus `AGENTS.md`, `apps/*/CLAUDE.md` and every `docs/**/*.md` outside the dated folders (`code-reviews`, `page-audits`, `qa`, `research`) |
 
 | Tool | Does |
 |------|------|
 | `search_docs` | `query` (required), `limit` (1–25, default 8), `kind`. BM25 over sections — a heading's words weigh three times the body's, at most two hits per doc — each hit with its doc id, section heading, kind, status and a snippet. The text content lists every hit too, for a client that reads only text |
-| `read_doc` | `doc` (an id, a path with `.md`, a `docs://` URI or a unique slug) and `section` (a heading, or words from exactly one). `offset` (the `next_offset` of a cut reply). The text is Markdown and is also the tool's text content; a reply holds at most 40,000 characters and, when cut, gives `next_offset` and says so in the text — a single section can run past the limit (CLAUDE.md's routing table does), so the offset, not the section, is what reaches the rest |
+| `read_doc` | `doc` (an id, a path with `.md`, a `docs://` URI or a unique slug) and `section` (a heading, or words from exactly one). `offset` (the `next_offset` of a cut reply). The text is Markdown and is also the tool's text content; a reply holds at most 40,000 characters and, when cut, gives `next_offset` and says so in the text — a single section can run past the limit (docs/README.md's routing table does), so the offset, not the section, is what reaches the rest |
 | `list_docs` | Every doc's id, title, description, kind and status; `kind` lists one kind |
 
 Kinds: `help`, `guide`, `explainer` (both servers); `doc`, `decision`,
-`runbook`, `claude-md` (ops). `status` comes from the frontmatter, so a
+`runbook`, `rulebook` (ops). `status` comes from the frontmatter, so a
 superseded decision reads `historical`.
 
 The corpora are read from the files the running build ships, once per
@@ -832,7 +832,7 @@ attribute is the allow-list, pinned by
 
 Opt a command in only if it finishes in minutes: the worker that runs it
 is the one that sends email. A job over thousands of rows enqueues a task
-per row and returns (CLAUDE.md management-command rule 7).
+per row and returns (AGENTS.md management-command rule 7).
 
 **Served at `POST /api/ops/mcp/`** (and `/api/ops/mcp`), by
 `apps.mcp_server.views.ops_mcp_endpoint`: the same `@mcp_endpoint`

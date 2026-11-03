@@ -75,7 +75,7 @@ Deliberately *not* wired into ``build.sh`` — see
 data, owned by each environment's database; a deploy that re-imported them
 would throw away every admin and map-editor edit.
 
-Safe-by-default (CLAUDE.md Option A): read-only unless ``--commit`` is
+Safe-by-default (AGENTS.md Option A): read-only unless ``--commit`` is
 passed. A bare invocation prints the diff and exits 0.
 
 Usage:

@@ -127,3 +127,8 @@ When the sidebar approval comes through:
 Open questions in the scope do not change this. They go to Codex with the
 rest, and Codex may answer some from the code. `resolve-scope-review` sends
 the rest to Hugo as `Requires input`.
+
+**An XS ticket skips steps 3 and 4.** With no open questions, move it to
+`Ready for dev`; with any, move it to `Requires input`, assigned to Hugo. Say
+on the ticket that XS skips Codex's review. An unsized ticket counts as S and
+takes the review.

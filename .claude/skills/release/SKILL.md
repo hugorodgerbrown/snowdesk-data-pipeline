@@ -73,6 +73,8 @@ the ref checks and refuses on its own, but surface them before the preview.
   list (e.g. `Dependency audit (dev + npm)`, detection-only) does not block
   the release — mention it, do not stop on it. `gh run list --branch main`
   can miss the head SHA; read the check runs on the commit itself.
+- Run the staging check in `docs/deployment.md` → "Cutting a release" and
+  report its result with the preview. Hugo decides whether to ship.
 
 ### 2. Dry run and release preview
 

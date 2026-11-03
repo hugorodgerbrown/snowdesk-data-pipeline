@@ -372,7 +372,7 @@ The change takes effect on the next request — there's no cache to bust.
 
 5. **Add a row** to the inventory table above.
 
-6. **Update `CLAUDE.md`** if the flag is the gate for a major feature
+6. **Update `AGENTS.md`** if the flag is the gate for a major feature
    surface — the feature-specific reference table should mention it.
 
 ---

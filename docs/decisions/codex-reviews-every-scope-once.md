@@ -52,6 +52,12 @@ when a question needs Hugo. There is one round.
   hand covers the urgent ones. If a Claude agent for Linear appears, it could
   replace the sweep and nothing else would change.
 
+## Amended 3 November 2026
+
+The review now covers scopes of size S and above. An XS scope with no open
+questions goes straight to `Ready for dev`, and an unsized ticket counts as S
+(Hugo). Elsewhere this record says "every scope"; read that with this limit.
+
 ## Consequences
 
 - `Todo` now means "scoped, with Codex"; unscoped tickets live in `Backlog`.
@@ -66,7 +72,7 @@ when a question needs Hugo. There is one round.
   `bin/build.sh` is Render's deploy build, which must never run in a review
   container.
 - `AGENTS.md` carries the review brief, so the Codex that reviews PRs reads
-  the same rules. It points at `CLAUDE.md` rather than copying it.
+  the same rules. `agents-md-is-the-rulebook.md` has since made it the rulebook, and `CLAUDE.md` imports it.
 - The PR carries the agreed scope verbatim (`## Agreed scope`) and a
   `## Deviations from scope` list, so Codex's PR review checks the diff
   against the scope it approved. It is copied rather than linked because the

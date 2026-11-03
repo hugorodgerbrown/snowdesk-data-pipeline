@@ -25,7 +25,7 @@ config/          Django project: split settings (base + development/staging/
                  production/perf overlays), urls, wsgi
 apps/            Parent package for the seventeen Django apps (SNOW-557 — moved
                  here without changing any app label). The per-app summary
-                 lives in CLAUDE.md's "Architecture" block; the apps below
+                 lives in docs/architecture.md; the apps below
                  are the ones this document's examples draw on
   core/          Shared abstractions (BaseModel; abstract, no concrete tables),
                  plus HTTP-layer middleware, the require_htmx decorator, and
@@ -60,7 +60,7 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
   mcp_server/    JSON-RPC MCP tools at POST /api/mcp/. No models — reads the
                  bulletins/regions tables
   locations/, weather/, routes/, trips/, downloads/, oauth/, data_feed/
-                 See CLAUDE.md for each
+                 See AGENTS.md for each
   public/        Public-facing bulletin site (HTMX-driven). Owns the JSON API
                  used by the map page (api.py / api_urls.py)
 tests/           Mirrors the layout of the modules under test
@@ -327,7 +327,7 @@ hold most of them) must:
 - Override `handle(self, *args: Any, **options: Any) -> None`.
 - Be runnable with no arguments and produce no destructive side effects
   by default. Use the explicit `--commit` opt-in for writes (see
-  CLAUDE.md → **Management command design**).
+  AGENTS.md → **Management command design**).
 - Log start, success, and failure via the module logger in addition to
   using `self.stdout.write(self.style.*)` for operator feedback.
 - Raise `CommandError` on fatal failure.
@@ -546,7 +546,7 @@ dependencies, or security-sensitive code.
 
 The guard envs (`ds-lint`, `js-globals-lint`, `i18n-lint`, `docs-lint`,
 `e2e-lint`, `fidelity-lint`, `migrations-lint`, `djangofmt`) each run one
-`bin/` script; CLAUDE.md's "Local CI" section lists every env with a
+`bin/` script; AGENTS.md's "Local CI" section lists every env with a
 one-line purpose.
 
 Run the default suite locally with `tox` before pushing.

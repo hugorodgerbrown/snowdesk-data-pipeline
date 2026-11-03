@@ -9,7 +9,7 @@
 #      opening the body. The `description` line is the retrieval key agents
 #      use to decide whether to load the doc at all.
 #
-#   2. Every doc is reachable from the CLAUDE.md router — either referenced
+#   2. Every doc is reachable from the docs/README.md router — either referenced
 #      by path, or covered by a directory reference (e.g. `docs/decisions/`).
 #      Orphan docs are invisible to agents and rot silently.
 #
@@ -36,7 +36,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCS_ROOT = REPO_ROOT / "docs"
-ROUTER = REPO_ROOT / "CLAUDE.md"
+ROUTER = DOCS_ROOT / "README.md"
 
 # Subdirectories of docs/ that hold dated artefacts (review records, page
 # audits, QA scripts, research spikes, images) rather than living
@@ -141,10 +141,10 @@ def _check_frontmatter(path: Path) -> list[Violation]:
 
 
 def _check_routing(path: Path, router_text: str) -> list[Violation]:
-    """Ensure `path` is reachable from the CLAUDE.md router.
+    """Ensure `path` is reachable from the docs/README.md router.
 
     A doc is routed if its repo-relative path appears verbatim in
-    CLAUDE.md, or if any ancestor directory under docs/ is referenced
+    docs/README.md, or if any ancestor directory under docs/ is referenced
     with a trailing slash (directory-level routing, e.g. `docs/decisions/`).
     """
     rel = _repo_relative(path).as_posix()
@@ -160,7 +160,7 @@ def _check_routing(path: Path, router_text: str) -> list[Violation]:
     return [
         Violation(
             path,
-            "not reachable from CLAUDE.md — add it to the routing table "
+            "not reachable from docs/README.md — add it to the table "
             "(or reference its directory) so agents can find it",
         )
     ]

@@ -52,7 +52,7 @@ then the resort's — so consecutive runs produce identical files and a
 also keeps the resorts sharing one location adjacent, which is the sheet's
 readable shape.
 
-Safe-by-default (CLAUDE.md Option A): read-only unless ``--commit`` is
+Safe-by-default (AGENTS.md Option A): read-only unless ``--commit`` is
 passed. A bare invocation prints a per-file ``+added/-removed`` summary and
 exits 0 without writing anything.
 

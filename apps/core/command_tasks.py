@@ -1,7 +1,7 @@
 """
 apps/core/command_tasks.py — the one shape every bulk command enqueues in (SNOW-1397).
 
-CLAUDE.md command rule 7: a command whose work is thousands of independent
+AGENTS.md command rule 7: a command whose work is thousands of independent
 row updates enqueues one ``django_tasks`` task per row and returns, rather
 than walking them in one process. SNOW-1345 (``render_ski_tours``) and
 SNOW-1346 (the two render-model rebuilds) each wrote that loop by hand;

@@ -1502,7 +1502,7 @@ OPS_TOOLS.update(RESORT_TOOLS)
 OPS_TOOLS.update(
     docs_tools(
         ops_corpus,
-        "every doc, decision record, runbook and CLAUDE.md in the repo, "
+        "every doc, decision record, runbook and AGENTS.md in the repo, "
         "plus the help pages and explainers",
     )
 )

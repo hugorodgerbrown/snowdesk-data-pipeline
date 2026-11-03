@@ -187,7 +187,7 @@ class Command(RegisteredCommand):
         self._report_outcome(counts, commit=commit, verbosity=verbosity)
 
         # Non-zero on ANY failure, partial batches included — the command
-        # contract in CLAUDE.md, so the operator or CI job that ran this
+        # contract in AGENTS.md, so the operator or CI job that ran this
         # sees a half-linked estate rather than a green exit. The batch has
         # already finished by here: a failed region is logged, counted and
         # stepped over, never allowed to abort the walk.

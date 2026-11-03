@@ -123,7 +123,7 @@ QUESTIONS: tuple[Question, ...] = (
         "ops",
         "how many playwright tests are we allowed",
         "docs/client-side-tests",
-        "CLAUDE",
+        "AGENTS",
     ),
     _q(
         "ops",
@@ -141,7 +141,7 @@ QUESTIONS: tuple[Question, ...] = (
         "what should a new management command do by default",
         "docs/decisions/dry-run-default-commands",
         "docs/management-commands",
-        "CLAUDE",
+        "AGENTS",
     ),
     _q(
         "ops",
@@ -165,7 +165,7 @@ QUESTIONS: tuple[Question, ...] = (
         "ops",
         "what does a trip page show about the other people who saved it",
         "docs/decisions/a-trip-is-one-object-with-a-roster",
-        "CLAUDE",
+        "docs/architecture",
     ),
     _q(
         "ops",

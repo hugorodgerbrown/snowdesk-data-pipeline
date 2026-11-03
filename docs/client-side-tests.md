@@ -228,7 +228,7 @@ vs simulated" below.
   (like `db.js`'s one-way `_resetRequired` latch) belongs in its own file —
   see `tests/js/test_db_reset_required.js`.
 - No coverage configuration — JS coverage isn't a target metric (the 90%
-  coverage bar in `CLAUDE.md` is Python-only).
+  coverage bar in `AGENTS.md` is Python-only).
 
 ### Running locally
 

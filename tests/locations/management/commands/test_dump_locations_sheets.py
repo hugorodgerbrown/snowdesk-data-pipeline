@@ -20,7 +20,7 @@ The rest are the ways a dump can look like it worked and not have:
     an edit the next resolve silently discards.
   - Anonymous locations (favourites, observations) are user data in the
     same table and are not the sheet's to own.
-  - Nothing is written without ``--commit`` (CLAUDE.md rule 2).
+  - Nothing is written without ``--commit`` (AGENTS.md rule 2).
 """
 
 from __future__ import annotations
@@ -426,7 +426,7 @@ class TestUnreadableSheet:
 
 @pytest.mark.django_db
 class TestDryRun:
-    """CLAUDE.md rule 2 — a bare run writes nothing and exits 0."""
+    """AGENTS.md rule 2 — a bare run writes nothing and exits 0."""
 
     def test_nothing_is_written_without_commit(self, tmp_path: Path) -> None:
         """The bare invocation reports the diff and leaves the files alone."""

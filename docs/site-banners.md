@@ -63,7 +63,7 @@ that today.
 
 `mark_content_safe` is the one switch that lets HTML into a banner, and
 it applies `mark_safe` to the row's content. That does not contravene the
-`mark_safe` invariant in [`CLAUDE.md`](../CLAUDE.md): the invariant is
+`mark_safe` invariant in [`AGENTS.md`](../AGENTS.md): the invariant is
 about content originating outside the codebase, and a banner is authored
 by a staff user with change permission on the model. Nothing a visitor
 submits reaches it.
@@ -86,7 +86,7 @@ are shown rather than executed —
 - `templates/includes/_persistent_banners.html` — one
   `includes/_overlay_banner.html` "strip" per row. The strip is the
   shared banner primitive, not a bespoke shape; the design-system rules
-  in [`CLAUDE.md`](../CLAUDE.md) apply to it as to anything else.
+  in [`AGENTS.md`](../AGENTS.md) apply to it as to anything else.
 
 ## The cost
 

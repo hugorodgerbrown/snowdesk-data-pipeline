@@ -256,8 +256,15 @@ bin/cut-release --commit   # pushes release-vNN and opens the release PR
 The script opens a PR against `main` carrying a single commit — the `VERSION`
 bump — with the release note in the description: every `SNOW-xx` ticket on
 `main` that production has not yet seen, each under its own commit subject.
-Nothing has shipped at that point; read the list, confirm staging is healthy,
-and merge when you want to ship.
+Nothing has shipped at that point; read the list and merge when you want to
+ship.
+
+**The staging check.** Before opening the release PR, the agent cutting it checks
+staging and reports the result; Hugo decides whether to ship:
+
+- `current` from `/api/version` on staging is `main`'s head commit.
+- `/`, `/map/` and a dated bulletin page answer 200.
+- The `main` workflows on that commit are green.
 
 **Merging the PR is the release.**
 [`release-sync.yml`](../.github/workflows/release-sync.yml) sees `VERSION`

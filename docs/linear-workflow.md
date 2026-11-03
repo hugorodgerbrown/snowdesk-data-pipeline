@@ -16,8 +16,8 @@ a chat window.** If it matters, it lives in the Linear issue.
 
 Every ticket ends up passing through these states. A ticket enters the
 lifecycle at `Backlog` (unscoped) or `Todo` (scoped in the same pass
-that created it — see **Entry points** below). Nothing enters at
-`Ready for dev`: every scope goes through Codex's review first (see
+that created it — see **Entry points** below). Nothing but an XS scope enters at
+`Ready for dev`: every other scope goes through Codex's review first (see
 **Scope review** below). Each transition is tied to a concrete event so
 status reflects reality without manual nudging:
 
@@ -144,8 +144,10 @@ Code reads it on pickup and inherits full context without re-scoping.
 
 ## Scope review
 
-Every scope gets one review from Codex before implementation: **Claude →
-Codex → Claude, once.** At the end the ticket is in `Ready for dev` or
+Every scope of size S and above gets one review from Codex before
+implementation: **Claude → Codex → Claude, once.** An XS scope with no open
+questions goes straight to `Ready for dev`; with an open question it goes to
+`Requires input`. An unsized ticket counts as S. At the end the ticket is in `Ready for dev` or
 `Requires input` — never back with Codex for a second round.
 
 ```
@@ -275,7 +277,7 @@ Code's expected sequence:
    handshake that signals "work has started"; the branch deliberately
    has not been pushed yet, so the status move has to happen in MCP.
 4. **Implement** the work on that branch, following the conventions in
-   CLAUDE.md (render-model shape, management-command design, i18n
+   AGENTS.md (render-model shape, management-command design, i18n
    rules, test structure, etc.).
 5. **Run `uv run tox`** and fix every failure before opening the PR.
    Run `npm run lh` for any change touching a public page.
@@ -324,7 +326,7 @@ there are none.
 ```
 
 The **Agreed scope** section is what Codex's PR review checks the diff
-against (`AGENTS.md` → "Review guidelines"). Copying it in rather than
+against (`AGENTS.md` → "Code Review Rules"). Copying it in rather than
 linking it means the review does not depend on Codex reaching Linear, and
 the text it checks against is exactly the text it approved. A departure
 from the scope that is not listed under **Deviations** is a finding.
@@ -335,6 +337,20 @@ triggered by opening the PR — that is also the point at which the
 branch is first pushed to GitHub, so the integration sees the
 `SNOW-xxx` reference in the branch name and PR body together and moves
 the ticket from `In Progress` → `In Review` automatically.
+
+## Merging
+
+A PR needs no human approval. It squash-merges once every required check is
+green and Codex's one PR review has arrived and is resolved. `implement` does
+this at the end of its run. Do not use `gh pr merge --auto`: it merges when the
+required checks pass, before Codex has reported.
+
+## Changes with no ticket
+
+A change that touches no model, migration, URL, command, dependency or stored
+data shape needs no ticket, scope or `SNOW-` prefix, whatever its line count.
+Its branch is `fix/short-description` or `chore/short-description`, and its PR
+body says there is no ticket.
 
 ## After merge
 

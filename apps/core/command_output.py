@@ -5,7 +5,7 @@ A "dump" command re-emits a committed data file from the current database
 rows so an operator can ``git diff`` it: ``dump_resorts_sheet`` writes
 ``apps/regions/data/resorts.tsv``, ``dump_locations_sheets`` writes the
 two TSVs under ``apps/locations/data/``. Both are read-only without
-``--commit`` (CLAUDE.md management-command rule 2), which means both have to
+``--commit`` (AGENTS.md management-command rule 2), which means both have to
 answer the same two questions before writing anything:
 
 1. **How much would change?** — ``diff_line_counts`` reduces the old and new
@@ -16,7 +16,7 @@ answer the same two questions before writing anything:
    repo-relative for the normal case of a run from the project root.
 
 Both lived privately in the resort dumper until SNOW-755 added a
-second dump command. Two callers is the bar CLAUDE.md sets for an
+second dump command. Two callers is the bar AGENTS.md sets for an
 abstraction, so they moved here rather than being copied.
 
 Lives in ``apps/core/`` alongside the other flat cross-app command helpers

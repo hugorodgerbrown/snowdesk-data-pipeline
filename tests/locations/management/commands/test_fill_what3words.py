@@ -11,7 +11,7 @@ without a subscription; and the fix for that very nearly disabled the local
 fake, which is the one environment where somebody without a subscription
 actually wants the command to do something.
 
-The rest are the command contract from CLAUDE.md: nothing is written
+The rest are the command contract from AGENTS.md: nothing is written
 without ``--commit``, the walk is idempotent, and a partial batch exits
 non-zero rather than reporting success. Since SNOW-1398 each location is
 one task (run inline here): a failed conversion opens the what3words

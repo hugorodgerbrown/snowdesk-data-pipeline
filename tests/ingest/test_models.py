@@ -4,7 +4,7 @@ tests/ingest/test_models.py — Tests for ingest's models and content_hash.
 SourceBulletin (SNOW-1250); SourceLocation and SourceWeather (SNOW-1253);
 SourcePass and SourceResort (SNOW-1271).
 
-The model kit CLAUDE.md asks of every model — declared rather than inherited
+The model kit AGENTS.md asks of every model — declared rather than inherited
 here, because ingest may not import ``apps.core`` — plus the canonical hash.
 """
 

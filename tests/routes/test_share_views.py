@@ -34,7 +34,7 @@ class above misses, each of which exercises one endpoint from one seat.
 The widened endpoints (route_list, routes_geojson) live in
 tests/routes/test_views.py beside their own unwidened cases.
 
-Everything here is Django-test-client work per CLAUDE.md's layer rules:
+Everything here is Django-test-client work per AGENTS.md's layer rules:
 statuses, headers, session contents and rendered HTML. Nothing needs a
 browser.
 """

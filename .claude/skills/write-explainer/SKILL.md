@@ -264,9 +264,9 @@ screenshot, then reload.
 
 ## 8. Register it
 
-Add the page to the "Public explainers" row of the feature table in
-`CLAUDE.md`: one sentence on what it explains. `tox -e docs-lint` checks the
-routing table. Commit with the ticket's `SNOW-xxx:` prefix if there is one.
+Add the page to the "Public explainers" row of the table in
+`docs/README.md`: one sentence on what it explains. `tox -e docs-lint` checks
+that table. Commit with the ticket's `SNOW-xxx:` prefix if there is one.
 
 ## Revising an existing explainer
 

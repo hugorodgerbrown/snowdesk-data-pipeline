@@ -17,7 +17,7 @@ and ``--commit`` was not passed.
 ``apps/regions/data/resorts.tsv``. Bucket-(c) resorts are left untouched
 even with ``--commit`` — manual cleanup via the map editor is the right path.
 
-Safe-by-default (CLAUDE.md Option A): read-only unless ``--commit`` is
+Safe-by-default (AGENTS.md Option A): read-only unless ``--commit`` is
 passed.
 
 Shapely is imported lazily (same pattern as
