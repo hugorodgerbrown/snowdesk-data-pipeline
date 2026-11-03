@@ -16,11 +16,11 @@ task on the background runner (``db_worker`` in production; inline under
       tasks themselves; the argument stays for tasks already queued).
 
 SNOW-1397: ``render_ski_tours`` enqueues through
-``apps.core.command_tasks.enqueue_each``, which paces the tasks
-(``calls_outside``: each asks the tile origin). A tour the origin did not
-answer opens the breaker (``back_off``) for ``ORIGIN_BACK_OFF_S``, and
-every task after it returns without asking, leaving its tour a candidate
-for the next run.
+``apps.core.command_tasks.enqueue_each``, which staggers the tasks'
+``run_after`` (``calls_outside``: each may ask the tile origin). A tour
+the origin did not answer opens the breaker (``back_off``) for
+``ORIGIN_BACK_OFF_S``, and every task after it returns without asking,
+leaving its tour a candidate for the next run.
 
 The tasks are enqueued at low priority so alert emails and pushes on the
 same ``default`` queue are never stuck behind two thousand tours.
@@ -29,7 +29,6 @@ same ``default`` queue are never stuck behind two thousand tours.
 from __future__ import annotations
 
 import logging
-import time
 
 from django.db import transaction
 from django_tasks import task
@@ -39,11 +38,13 @@ from apps.core.command_tasks import (
     back_off,
     backing_off,
     calls_outside,
+    wait_for_slot,
 )
 from apps.ingest.public import (
     RenderOutcome,
     SourceSkiTour,
     needs_render,
+    needs_walk,
     render_source_tour,
     terrain_grid,
     tour_summit,
@@ -96,7 +97,7 @@ def render_one_tour(source_pk: int, delay_s: float = 0.0) -> RenderOutcome | Non
 
     Args:
         source_pk: The ``SourceSkiTour``'s primary key.
-        delay_s: Seconds to pause after a walk that asked the tile origin.
+        delay_s: Seconds between one walk's start and the next.
 
     Returns:
         What was done, or None when the tour is gone, needed nothing, or
@@ -120,6 +121,8 @@ def render_one_tour(source_pk: int, delay_s: float = 0.0) -> RenderOutcome | Non
     grid = _grid()
     if not needs_render(row, grid):
         return None
+    if needs_walk(row, grid):
+        wait_for_slot(TILE_ORIGIN, delay_s)
     # The service's write and this host's copy commit together: a render
     # whose copy failed, or a worker stopped between the two, rolls back and
     # leaves the tour a candidate, rather than marking it done with the map
@@ -135,9 +138,6 @@ def render_one_tour(source_pk: int, delay_s: float = 0.0) -> RenderOutcome | Non
             back_off(TILE_ORIGIN, ORIGIN_BACK_OFF_S)
             return outcome
         apply_source_tour(source_pk)
-    walked = outcome == RenderOutcome.RENDERED
-    if walked and delay_s:
-        time.sleep(delay_s)
     return outcome
 
 
@@ -150,7 +150,7 @@ def render_tour_task(source_pk: int, delay_s: float = 0.0) -> str | None:
 
     Args:
         source_pk: The ``SourceSkiTour``'s primary key.
-        delay_s: Seconds to pause after a walk.
+        delay_s: Seconds between one walk's start and the next.
 
     Returns:
         The outcome's value, kept on the task result, or None.

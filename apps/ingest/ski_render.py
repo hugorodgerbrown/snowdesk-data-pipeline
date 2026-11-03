@@ -204,6 +204,20 @@ def tour_summit(row: SourceSkiTour) -> dict[str, sac.Summit]:
     }
 
 
+def needs_walk(row: SourceSkiTour, grid: TerrainGrid) -> bool:
+    """Return whether rendering ``row`` would ask the tile origin.
+
+    A tour walked from these inputs is only redrawn from the record it
+    holds, which asks nothing; any other tour is walked.
+
+    Args:
+        row: The tour, with ``render_input_fp`` and ``content_hash`` loaded.
+        grid: The terrain model's definition.
+
+    """
+    return row.render_input_fp != walk_fingerprint(row, grid)
+
+
 def needs_render(row: SourceSkiTour, grid: TerrainGrid) -> bool:
     """Return whether ``row`` has a walk or a drawing to make.
 
@@ -217,7 +231,7 @@ def needs_render(row: SourceSkiTour, grid: TerrainGrid) -> bool:
         terrain, drawn by the current builder.
 
     """
-    if row.render_input_fp != walk_fingerprint(row, grid):
+    if needs_walk(row, grid):
         return True
     return row.track_render is not None and not is_current(row.track_render)
 

@@ -11,6 +11,8 @@ Covers:
   - An inline task that fails is counted.
   - An outside task with no pace, or one above the bulk priority, is refused.
   - The breaker: ``back_off`` opens it, ``backing_off`` reads it, it closes.
+  - ``wait_for_slot`` spaces calls ``pace`` apart even when several tasks
+    are due at once, and banks no burst across an idle spell.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from django.core.cache import cache
 from django.test import override_settings
 from django.utils import timezone
 from django_tasks import task
@@ -29,12 +32,14 @@ from django_tasks_db.models import DBTaskResult
 from apps.core.command_register import RegisteredCommand
 from apps.core.command_tasks import (
     _OUTSIDE_TASKS,
+    _SLOT_KEY,
     BULK_TASK_PRIORITY,
     back_off,
     backing_off,
     calls_outside,
     clear_back_off,
     enqueue_each,
+    wait_for_slot,
 )
 from apps.regions.models import MicroRegion
 from tests.factories import MicroRegionFactory
@@ -72,8 +77,10 @@ def _reset() -> Any:
     """Each test starts with nothing seen and the breaker closed."""
     SEEN.clear()
     clear_back_off("test-service")
+    cache.delete(_SLOT_KEY.format("test-service"))
     yield
     clear_back_off("test-service")
+    cache.delete(_SLOT_KEY.format("test-service"))
 
 
 def _command() -> RegisteredCommand:
@@ -256,3 +263,64 @@ def test_the_breaker_closes_when_its_time_is_up() -> None:
     later = timezone.now() + timedelta(seconds=61)
     with patch("apps.core.command_tasks.timezone.now", return_value=later):
         assert not backing_off("test-service")
+
+
+class _Clock:
+    """A clock the slot tests move by hand; sleeping moves it on."""
+
+    def __init__(self) -> None:
+        """Start at an arbitrary second."""
+        self.now = 1_000_000.0
+        self.slept: list[float] = []
+
+    def time(self) -> float:
+        """Return the current second."""
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        """Record the pause and move the clock past it."""
+        self.slept.append(seconds)
+        self.now += seconds
+
+
+def _with_clock(clock: _Clock) -> Any:
+    """Patch command_tasks' time module with ``clock``."""
+    return patch("apps.core.command_tasks.time", clock)
+
+
+def test_the_first_call_does_not_wait() -> None:
+    """Nothing has called the service yet, so the slot is now."""
+    clock = _Clock()
+    with _with_clock(clock):
+        assert wait_for_slot("test-service", 2.0) == 0.0
+    assert clock.slept == []
+
+
+def test_overdue_tasks_due_together_are_spaced_out() -> None:
+    """Three tasks starting in the same instant start 2 s apart."""
+    clock = _Clock()
+    with _with_clock(clock):
+        waits = []
+        for _ in range(3):
+            start = clock.now
+            waits.append(wait_for_slot("test-service", 2.0))
+            clock.now = start  # the next task started at the same moment
+    assert waits == [0.0, 2.0, 4.0]
+
+
+def test_an_idle_spell_banks_no_burst() -> None:
+    """After a long quiet spell the next two calls are still a pace apart."""
+    clock = _Clock()
+    with _with_clock(clock):
+        wait_for_slot("test-service", 2.0)
+        clock.now += 3600
+        assert wait_for_slot("test-service", 2.0) == 0.0
+        assert wait_for_slot("test-service", 2.0) == 2.0
+
+
+def test_no_pace_never_waits() -> None:
+    """A pace of 0 returns at once and touches nothing."""
+    clock = _Clock()
+    with _with_clock(clock):
+        assert wait_for_slot("test-service", 0) == 0.0
+    assert cache.get(_SLOT_KEY.format("test-service")) is None

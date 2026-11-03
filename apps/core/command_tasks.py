@@ -22,9 +22,14 @@ five rules (3 Nov 2026) the same way:
 4. **Paced.** A task that calls an outside service is registered with
    ``calls_outside`` and must be given ``pace``. On a backend that defers
    (``DatabaseBackend`` in production), task *i* is enqueued with
-   ``run_after = start + i × pace``, so the rate holds however many
-   workers run and no worker sleeps; under ``ImmediateBackend`` (dev,
-   test, staging) the tasks run inline, so the helper sleeps between them.
+   ``run_after = start + i × pace``, which spreads the queue out without a
+   worker sleeping; under ``ImmediateBackend`` (dev, test, staging) the
+   tasks run inline, so the helper sleeps between them. The stagger alone
+   is not a rate limit: tasks whose start times passed while the worker
+   was busy or down become due together. So an outside task also calls
+   ``wait_for_slot(service, pace)`` before it calls out, which reserves the
+   next free start for that service in the shared cache and sleeps until
+   it: whatever the queue does, two calls are never closer than ``pace``.
    On a 429 or an outage a task calls ``back_off``; every later task sees
    ``backing_off`` and returns at once, leaving its row a candidate.
 5. **MCP runnable.** ``tests/core/test_command_tasks_guard.py`` fails a
@@ -64,6 +69,7 @@ BULK_TASK_PRIORITY = -50
 _OUTSIDE_TASKS: set[str] = set()
 
 _BACKOFF_KEY = "command-tasks:back-off:{}"
+_SLOT_KEY = "command-tasks:next-slot:{}"
 
 
 def calls_outside(task: Task[Any, Any]) -> Task[Any, Any]:
@@ -126,6 +132,50 @@ def clear_back_off(service: str) -> None:
 
     """
     cache.delete(_BACKOFF_KEY.format(service))
+
+
+def wait_for_slot(service: str, pace: float) -> float:
+    """Wait until ``pace`` seconds after the last call to ``service``.
+
+    The execution-time half of the pacing: a task calls this just before it
+    calls the outside service. The next free start is a millisecond count
+    in the shared cache, reserved with ``incr``, so each caller gets its
+    own slot ``pace`` after the one before. The reservation is exact on a
+    backend whose ``incr`` is atomic and for one worker on any backend
+    (production runs one ``db_worker``); two workers on the database cache
+    can, rarely, share a slot.
+
+    Args:
+        service: A short name for the outside service.
+        pace: Seconds between calls; 0 or less returns at once.
+
+    Returns:
+        How long it waited, in seconds.
+
+    """
+    if pace <= 0:
+        return 0.0
+    key = _SLOT_KEY.format(service)
+    step = int(pace * 1000)
+    now = int(time.time() * 1000)
+    # Seed the counter with "now" when it is absent; add is a no-op when
+    # another task got there first. An expired counter is just absent.
+    cache.add(key, now - step, timeout=None)
+    try:
+        slot = cache.incr(key, step)
+    except ValueError:
+        # It expired between add and incr: start from now.
+        cache.set(key, now, timeout=None)
+        slot = now
+    if slot < now:
+        # The last reservation is in the past: bring the counter up to now,
+        # so an idle spell does not bank a burst of instant slots.
+        cache.set(key, now, timeout=None)
+        slot = now
+    wait = (slot - now) / 1000
+    if wait > 0:
+        time.sleep(wait)
+    return wait
 
 
 @dataclass(frozen=True)

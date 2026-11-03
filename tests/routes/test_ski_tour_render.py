@@ -3,7 +3,8 @@ tests/routes/test_ski_tour_render.py
 
 Covers ``apps.routes.services.ski_tour_render`` (SNOW-1345), one SAC tour
 rendered as one task:
-  - The task walks, draws and applies its tour, and pauses after a walk.
+  - The task waits for its slot on the tile origin, then walks, draws and
+    applies its tour (SNOW-1397: the pace is held when the walk happens).
   - A tour that needs nothing, or is gone, is skipped without a request.
   - An unanswered tour stores and applies nothing, and opens the breaker:
     the tasks after it ask nothing (SNOW-1397).
@@ -39,7 +40,7 @@ pytestmark = pytest.mark.django_db
 
 _BUILDER = "apps.ingest.ski_render.build_slope_samples"
 _GRID = "apps.ingest.ski_render.load_grid"
-_SLEEP = "apps.routes.services.ski_tour_render.time.sleep"
+_WAIT = "apps.routes.services.ski_tour_render.wait_for_slot"
 RECORD: dict[str, Any] = {"segments": [], "heights": [2000.0, 2400.0]}
 _GRID_FIXTURE = (
     Path(__file__).parents[1] / "track" / "fixtures" / "terrain" / "grid.json"
@@ -59,17 +60,17 @@ def _fresh_grid() -> Any:
     reset_grid_cache()
 
 
-def test_the_task_walks_draws_applies_and_pauses() -> None:
-    """One tour: stored on the service, copied here, then the pause."""
+def test_the_task_waits_for_its_slot_then_walks_draws_and_applies() -> None:
+    """One tour: its slot on the tile origin, then stored and copied here."""
     source = SourceSkiTourFactory.create()
     with (
         patch(_GRID, return_value=_grid()),
         patch(_BUILDER, return_value=dict(RECORD)),
-        patch(_SLEEP) as sleep,
+        patch(_WAIT) as wait,
     ):
         result = render_tour_task.enqueue(source.pk, 1.5)
     assert result.return_value == RenderOutcome.RENDERED.value
-    sleep.assert_called_once_with(1.5)
+    wait.assert_called_once_with(TILE_ORIGIN, 1.5)
     source.refresh_from_db()
     assert source.track_render is not None
     assert SkiTour.objects.get(source_uuid=source.uuid).track_render == (
@@ -83,18 +84,18 @@ def test_the_task_is_low_priority() -> None:
 
 
 def test_a_tour_already_drawn_is_skipped() -> None:
-    """A duplicate enqueue walks nothing and does not pause."""
+    """A duplicate enqueue walks nothing and does not wait."""
     source = SourceSkiTourFactory.create()
     with patch(_GRID, return_value=_grid()), patch(_BUILDER, return_value=dict(RECORD)):
         render_one_tour(source.pk)
     with (
         patch(_GRID, return_value=_grid()),
         patch(_BUILDER) as build,
-        patch(_SLEEP) as sleep,
+        patch(_WAIT) as wait,
     ):
         assert render_one_tour(source.pk, 1.0) is None
     build.assert_not_called()
-    sleep.assert_not_called()
+    wait.assert_not_called()
 
 
 def test_a_gone_tour_is_skipped() -> None:
@@ -110,10 +111,10 @@ def test_an_unanswered_tour_stores_and_applies_nothing() -> None:
     with (
         patch(_GRID, return_value=_grid()),
         patch(_BUILDER, return_value=None),
-        patch(_SLEEP) as sleep,
+        patch(_WAIT) as wait,
     ):
         assert render_one_tour(source.pk, 1.0) == RenderOutcome.UNAVAILABLE
-    sleep.assert_not_called()
+    wait.assert_called_once_with(TILE_ORIGIN, 1.0)
     assert not SourceSkiTour.objects.filter(track_render__isnull=False).exists()
     assert not SkiTour.objects.exists()
 

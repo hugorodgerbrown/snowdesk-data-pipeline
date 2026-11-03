@@ -100,12 +100,12 @@ def test_commit_enqueues_a_task_that_walks_draws_and_applies() -> None:
 
 
 def test_commit_enqueues_one_task_per_tour() -> None:
-    """Each candidate is one task, handed only its pk: the helper paces it."""
+    """Each candidate is one task, handed its pk and the pace."""
     sources = SourceSkiTourFactory.create_batch(2)
     with patch(_TASK) as task:
         _run("--commit")
     calls = sorted(call.args for call in task.enqueue.call_args_list)
-    assert calls == sorted((source.pk,) for source in sources)
+    assert calls == sorted((source.pk, 0.0) for source in sources)
 
 
 def test_inline_tasks_are_paced_by_the_delay() -> None:

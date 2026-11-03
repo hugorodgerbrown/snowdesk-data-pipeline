@@ -467,7 +467,8 @@ These rules apply to **every** new or refactored management command
    SNOW-1345). Write it with `apps.core.command_tasks.enqueue_each`
    (SNOW-1397): it skips a row whose task is already waiting, paces a
    task registered with `calls_outside` (`run_after` staggered by
-   `--delay`), and the task opens a `back_off` breaker on a 429 or an
+   `--delay`, and `wait_for_slot` in the task before it calls out), and
+   the task opens a `back_off` breaker on a 429 or an
    outage. The task takes a pk, re-checks its row, writes in one
    transaction, and runs at `BULK_TASK_PRIORITY` (−50); the command is
    `mcp_runnable` (`tests/core/test_command_tasks_guard.py`)

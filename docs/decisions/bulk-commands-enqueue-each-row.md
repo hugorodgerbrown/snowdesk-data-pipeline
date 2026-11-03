@@ -24,12 +24,20 @@ MCP server. SNOW-1345 and SNOW-1346 had each written the enqueue loop by
 hand, so a third copy would have been the first of many. One helper holds
 the rules in one place, and a guard test holds rule 5.
 
-- **Pacing is `run_after`, not a sleep in the task.** A sleep holds a
-  worker thread, and it paces each worker rather than the run: two
-  workers halve the gap. Giving task *i* a start of `start + i × pace`
-  holds the rate however many workers run, and no worker idles.
-  `ImmediateBackend` refuses `run_after` and runs each task as it is
-  enqueued, so there the helper sleeps between enqueues instead.
+- **Pacing is a staggered `run_after` plus a gate at the call, not a
+  sleep after it.** A sleep after each call holds a worker thread, and it
+  paces each worker rather than the run, so two workers halve the gap.
+  Giving task *i* a start of `start + i × pace` spreads the queue out
+  without a worker idling. The stagger alone is not a rate limit, though:
+  tasks whose starts passed while the worker was busy or down become due
+  together (Codex, on #1435). So an outside task calls
+  `wait_for_slot(service, pace)` just before it calls out. That reserves
+  the next free start in the shared cache (`incr` on a millisecond
+  counter) and sleeps until it, so two calls never start closer than
+  `pace`. The reservation is exact for production's one worker. Two
+  workers on the database cache could, rarely, share a slot, because its
+  `incr` is not atomic. `ImmediateBackend` refuses `run_after`, so there
+  the helper sleeps between enqueues.
 - **Dedupe on waiting tasks.** `run_command` refuses a second run of a
   queued *command*. It cannot see the row tasks a finished command left
   on the queue, so a second `--commit` before they drained would double

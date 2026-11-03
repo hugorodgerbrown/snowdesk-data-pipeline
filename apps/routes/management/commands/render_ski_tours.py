@@ -25,10 +25,11 @@ builder change has made stale.
 task re-checks before it walks, so a second run, or a tour enqueued twice,
 writes nothing.
 
-**It paces the tile origin** (SNOW-1397, ``apps.core.command_tasks
-.enqueue_each``) — task *i* is enqueued to run ``i × --delay`` seconds
-after the first (a second by default), so the rate holds however many
-workers run; inline, the command sleeps between tasks. A tour the origin
+**It paces the tile origin** (SNOW-1397, ``apps.core.command_tasks``) —
+task *i* is enqueued to run ``i × --delay`` seconds after the first (a
+second by default), and each walk waits for its slot (``wait_for_slot``),
+so two walks never start closer than ``--delay`` even when overdue tasks
+become due together; inline, the command sleeps between tasks. A tour the origin
 did not answer opens a five-minute breaker, and the tasks after it leave
 their tours for the next run. A tour that already has a task waiting is
 not enqueued again.
@@ -161,7 +162,7 @@ class Command(RegisteredCommand):
             self,
             rows,
             render_tour_task,
-            args=lambda row: (row[0],),
+            args=lambda row: (row[0], delay),
             describe=_describe,
             commit=commit,
             verbosity=verbosity,

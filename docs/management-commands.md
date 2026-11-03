@@ -148,10 +148,13 @@ summarised in CLAUDE.md; this is the full contract. Rationale:
    - **Pacing.** A task that calls an outside service is registered with
      `calls_outside(task)`, and `enqueue_each` refuses it without `pace`.
      On the database backend (production) task *i* is enqueued with
-     `run_after = start + i × pace`, so the rate holds however many workers
-     run and no worker sleeps; under `ImmediateBackend` (dev, test,
-     staging) the tasks run inline and the helper sleeps `pace` between
-     them. Expose it as `--delay`.
+     `run_after = start + i × pace`, which spreads the queue out; under
+     `ImmediateBackend` (dev, test, staging) the tasks run inline and the
+     helper sleeps `pace` between them. The stagger is not a rate limit on
+     its own (overdue tasks become due together), so the task also calls
+     `wait_for_slot(service, pace)` just before it calls out: two calls
+     never start closer than `pace`. Pass the pace to the task as an
+     argument and expose it as `--delay`.
    - **The breaker.** On a 429 or an outage the task calls
      `back_off(service, seconds)`; every later task checks
      `backing_off(service)` first and returns without writing, leaving its
@@ -1274,8 +1277,11 @@ walks and draws it with only its own summit (`tour_summit`), copies it onto
 this host's `SkiTour` (`apply_source_tour`). Tasks are enqueued through
 `enqueue_each` (SNOW-1397) at priority −50, below alerts and pushes on
 the same `default` queue, each `--delay` seconds after the one before
-(`run_after`); under `ImmediateBackend` (dev, test, staging) they run
-inline with the same pause between them. A tour the origin does not answer
+(`run_after`), and a tour that will be walked waits for its slot on the
+tile origin (`wait_for_slot`), so walks never start closer than
+`--delay`; a redraw asks nothing and does not wait. Under
+`ImmediateBackend` (dev, test, staging) they run inline with the same
+pause between them. A tour the origin does not answer
 for opens a five-minute breaker (`back_off("terrain-tiles")`), and the
 tasks after it leave their tours for the next run. A tour whose task is
 already waiting is not enqueued again.
