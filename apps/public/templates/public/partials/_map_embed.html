@@ -651,6 +651,11 @@ Optional context:
                     <span data-zoom-note-text></span>
                 </li>
                 <li role="presentation" class="basemap-menu-group-label">{% trans "Reference data" %}</li>
+                {# The order (Hugo, 3 Nov 2026): the dated layers first and   #}
+                {# together, since Terrain mode switches them off together —  #}
+                {# Avalanche bulletins, Weather, Boundaries — then the static #}
+                {# ones: Resorts, Steep terrain and the ski-touring layers,    #}
+                {# and the Basemap last.                                        #}
                 {% trans "Avalanche bulletins" as layer_bulletins %}
                 <li role="none" class="basemap-menu-layer">
                     <button
@@ -685,6 +690,41 @@ Optional context:
                         {% include "includes/_switch_track.html" only %}
                     </button>
                 </li>
+                {% include "public/partials/_map_layers_switch_row.html" with key="weather" label=_("Weather") icon="cloud" sync=True weather=True only %}
+                {% trans "Boundaries" as layer_boundaries %}
+                <li role="none" class="basemap-menu-layer">
+                    <button
+                        type="button"
+                        role="menuitem"
+                        class="basemap-menu-layer-options hover-affordance"
+                        data-layers-open="boundaries"
+                        aria-haspopup="true"
+                        aria-controls="basemap-menu-page-boundaries"
+                    >
+                        <span
+                            class="basemap-menu-layer-icon"
+                        >{% include "includes/_icon_boundary.html" with size=18 only %}</span>
+                        <span class="basemap-menu-item-text">
+                            <span data-row-label>{{ layer_boundaries }}</span>
+                            <span class="basemap-menu-item-detail" data-page-summary="boundaries"></span>
+                        </span>
+                        {% include "includes/_icon_chevron_right.html" with size=16 svg_class="basemap-menu-layer-chevron" only %}
+                    </button>
+                    {# On while any EAWS tier is on. Off remembers which were, #}
+                    {# and on puts them back (Micro regions on a first visit).  #}
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-switch group hover-affordance"
+                        data-layer-master="boundaries"
+                        data-layer-switch
+                        aria-checked="{% if map_default_boundary %}true{% else %}false{% endif %}"
+                        aria-label="{{ layer_boundaries }}"
+                    >
+                        {% include "includes/_switch_track.html" only %}
+                    </button>
+                </li>
+                {% include "public/partials/_map_layers_switch_row.html" with key="resorts" label=_("Resorts") icon="resort" sync=True only %}
                 {% if terrain_filter_eligible %}
                     {% trans "Steep terrain" as layer_steep_terrain %}
                     {% trans "Steep terrain options" as steep_terrain_options %}
@@ -729,8 +769,6 @@ Optional context:
                         </button>
                     </li>
                 {% endif %}
-                {% include "public/partials/_map_layers_switch_row.html" with key="weather" label=_("Weather") icon="cloud" sync=True weather=True only %}
-                {% include "public/partials/_map_layers_switch_row.html" with key="resorts" label=_("Resorts") icon="resort" sync=True only %}
                 {# SNOW-1285: SAC's ski tours and the summits they go to,   #}
                 {# drawn from z9 inside Switzerland, two layers on a page of #}
                 {# their own. ON by default: map.js seeds the rows from     #}
@@ -772,39 +810,6 @@ Optional context:
                     {# rest_zones.js, which owns the switch. OFF by default.     #}
                     {% include "public/partials/_map_layers_switch_row.html" with key="rest_zones" label=_("Wildlife rest zones") icon="rest_zone" zoom_gate="rest_zones" only %}
                 {% endif %}
-                {% trans "Boundaries" as layer_boundaries %}
-                <li role="none" class="basemap-menu-layer">
-                    <button
-                        type="button"
-                        role="menuitem"
-                        class="basemap-menu-layer-options hover-affordance"
-                        data-layers-open="boundaries"
-                        aria-haspopup="true"
-                        aria-controls="basemap-menu-page-boundaries"
-                    >
-                        <span
-                            class="basemap-menu-layer-icon"
-                        >{% include "includes/_icon_boundary.html" with size=18 only %}</span>
-                        <span class="basemap-menu-item-text">
-                            <span data-row-label>{{ layer_boundaries }}</span>
-                            <span class="basemap-menu-item-detail" data-page-summary="boundaries"></span>
-                        </span>
-                        {% include "includes/_icon_chevron_right.html" with size=16 svg_class="basemap-menu-layer-chevron" only %}
-                    </button>
-                    {# On while any EAWS tier is on. Off remembers which were, #}
-                    {# and on puts them back (Micro regions on a first visit).  #}
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-switch group hover-affordance"
-                        data-layer-master="boundaries"
-                        data-layer-switch
-                        aria-checked="{% if map_default_boundary %}true{% else %}false{% endif %}"
-                        aria-label="{{ layer_boundaries }}"
-                    >
-                        {% include "includes/_switch_track.html" only %}
-                    </button>
-                </li>
                 {% trans "Basemap" as layer_basemap %}
                 <li role="none" class="basemap-menu-layer">
                     <button

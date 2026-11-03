@@ -6,8 +6,8 @@ parameter of includes/_collapsible_panel.html.
 
 Documents the layers menu (#basemap-menu in
 public/partials/_map_embed.html) row by row, in the order the menu
-renders them: "Reference data" (bulletins, steep terrain, weather, resorts,
-boundaries, basemap), then "Your data" (favourites, routes, field
+renders them: "Reference data" (bulletins, weather, boundaries, resorts,
+steep terrain, basemap), then "Your data" (favourites, routes, field
 observations, downloaded areas). Three of those rows have a panel of their
 own on this page — Weather, Slope angle and Downloads — so they get a
 sentence and a pointer rather than a second copy of the detail.
@@ -50,6 +50,29 @@ headings (help-layers-sections) now explains the two kinds of row.
             start with: it paints the slopes the day's bulletin describes, from zoom 12, in Switzerland.
         {% endblocktrans %}
     </p>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-weather">
+        {% blocktrans trimmed %}
+            Weather draws a condition symbol and the day's high temperature at every place Snowdesk holds, with the
+            height that reading is for beneath it. It follows the timeline like everything else on the map, and it has
+            rules of its own worth knowing about &mdash; read "Weather on the map" below.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-boundaries">
+        {% blocktrans trimmed %}
+            Boundaries outlines the European avalanche regions at three scales: Major (EAWS Level 1), Minor (EAWS L2)
+            and Micro (EAWS L4). Micro is the level bulletins are issued at and is drawn by default; the two coarser
+            outlines help you place a small region inside the wider area it belongs to. They follow the base map rather
+            than the bulletin providers: on a national base map you see that country's regions, and on OpenFreeMap you
+            see all of them.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-resorts">
+        {% blocktrans trimmed %}
+            Resorts draws a pin at every ski resort Snowdesk knows about. Tapping one opens a short popup &mdash; the
+            resort's name, the region it sits in, a link to that region's bulletin, and a star to save it to your
+            favourites.
+        {% endblocktrans %}
+    </p>
     <p class="mb-3 last:mb-0" data-testid="help-layers-terrain-filter">
         {% blocktrans trimmed %}
             Steep terrain highlights ground by aspect, slope range and, if you like, a band of elevation. Tap its name
@@ -62,29 +85,6 @@ headings (help-layers-sections) now explains the two kinds of row.
             The same panel holds the slope layer, which shades the ground by steepness: choose &ldquo;By slope&rdquo;.
             It is the layer with the most real limits on what it can tell you, so read "Slope angle" below before you
             rely on a shading.
-        {% endblocktrans %}
-    </p>
-    <p class="mb-3 last:mb-0" data-testid="help-layers-weather">
-        {% blocktrans trimmed %}
-            Weather draws a condition symbol and the day's high temperature at every place Snowdesk holds, with the
-            height that reading is for beneath it. It follows the timeline like everything else on the map, and it has
-            rules of its own worth knowing about &mdash; read "Weather on the map" below.
-        {% endblocktrans %}
-    </p>
-    <p class="mb-3 last:mb-0" data-testid="help-layers-resorts">
-        {% blocktrans trimmed %}
-            Resorts draws a pin at every ski resort Snowdesk knows about. Tapping one opens a short popup &mdash; the
-            resort's name, the region it sits in, a link to that region's bulletin, and a star to save it to your
-            favourites.
-        {% endblocktrans %}
-    </p>
-    <p class="mb-3 last:mb-0" data-testid="help-layers-boundaries">
-        {% blocktrans trimmed %}
-            Boundaries outlines the European avalanche regions at three scales: Major (EAWS Level 1), Minor (EAWS L2)
-            and Micro (EAWS L4). Micro is the level bulletins are issued at and is drawn by default; the two coarser
-            outlines help you place a small region inside the wider area it belongs to. They follow the base map rather
-            than the bulletin providers: on a national base map you see that country's regions, and on OpenFreeMap you
-            see all of them.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-layers-basemaps">
