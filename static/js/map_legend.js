@@ -163,9 +163,15 @@
     const map = typeof MAP !== 'undefined' ? MAP : null;
     /** @type {Object<string, any[]>} */
     const rendered = {};
+    /** @type {Object<string, boolean>} */
+    const switchedOn = {};
     if (map && typeof map.getLayer === 'function' && typeof map.queryRenderedFeatures === 'function') {
       for (const [key, ids] of Object.entries(core.LAYERS)) {
         rendered[key] = renderedIn(map, ids);
+        // Switched on, whatever the zoom draws: in the style and not hidden.
+        switchedOn[key] = ids.some(
+          (id) => map.getLayer(id) && map.getLayoutProperty(id, 'visibility') !== 'none',
+        );
       }
     }
     // Both terrain layers paint only from z12, inside the survey: a key
@@ -184,7 +190,10 @@
       },
       bulletins: !!(bulletins && bulletins.isVisible()),
       problemTerrain: sectionOn('problem_terrain') && paints,
+      problemTerrainOn: sectionOn('problem_terrain'),
       terrainFilter: sectionOn('terrain_filter') && paints,
+      terrainFilterOn: sectionOn('terrain_filter'),
+      switchedOn,
       routeLegsOn: sectionOn('routes'),
       downloads: sectionOn('downloads'),
       rendered,

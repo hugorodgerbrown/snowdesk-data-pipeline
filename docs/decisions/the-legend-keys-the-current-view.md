@@ -49,7 +49,13 @@ legend."
 - **The danger scale is shown once.** Problem slopes are painted in the
   danger colours, so their key says "Same colours, on the slopes" and keeps
   only the marks that are not on the scale (Hugo: "The scale is the danger
-  level - it doesn't need repeating").
+  level - it doesn't need repeating"). The scale therefore shows while
+  problem slopes are painted, even with the regions' own colour off or
+  faded to nothing.
+- **"On" means switched on, not in view.** The second page's marks read
+  each layer's own switch (its layers in the style and not hidden, or its
+  module's state), so a layer with nothing in view, or below the zoom it
+  draws from, still reads as on.
 - **A one-line credit in the first tier,** naming each tile provider once
   (`shortSources`) and the three avalanche providers while their key is in
   view. The licences are honoured in full on the second page and in the

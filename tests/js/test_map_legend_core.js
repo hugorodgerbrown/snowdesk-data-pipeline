@@ -60,6 +60,27 @@ describe('legendState', () => {
     expect(state.keys.routes).toBe(false);
   });
 
+  it('keeps the danger scale for problem slopes, which are painted in its colours', () => {
+    const state = core.legendState({ bulletins: false, problemTerrain: true });
+    expect(state.keys.danger).toBe(true);
+    expect(state.keys.problem_terrain).toBe(true);
+  });
+
+  it('marks a switched-on layer On with nothing of it in view or at this zoom', () => {
+    const { on, keys } = core.legendState({
+      switchedOn: { rest_zones: true, community_reports: true, resorts: true },
+      problemTerrainOn: true,
+      terrainFilterOn: true,
+      rendered: {},
+    });
+    expect(on).toMatchObject({
+      rest_zones: true, community_reports: true, pins: true,
+      problem_terrain: true, terrain_filter: true,
+    });
+    expect(keys.rest_zones).toBe(false);
+    expect(keys.problem_terrain).toBe(false);
+  });
+
   it('shows a field report family and state only when one is in view', () => {
     const { keys, items } = core.legendState({
       rendered: { community_reports: [feature({ family: 'SURFACE', _state: 'recent' })] },

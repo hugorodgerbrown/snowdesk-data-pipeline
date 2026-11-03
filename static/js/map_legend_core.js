@@ -75,6 +75,12 @@
    * @property {boolean} [routeLegsOn] The routes overlay is drawn with at
    *   least one route cut into legs (map.js's own condition).
    * @property {boolean} [downloads] The downloaded-maps overlay is drawn.
+   * @property {boolean} [problemTerrainOn] Problem terrain is switched
+   *   on, whether or not this view is one it paints.
+   * @property {boolean} [terrainFilterOn] Steep terrain likewise.
+   * @property {Object<string, boolean>} [switchedOn] Per LAYERS group,
+   *   whether its layers are switched on at all (in the style and not
+   *   hidden), whatever the zoom and the viewport.
    * @property {(slug: string) => boolean} [isPinnedResort] Whether the
    *   reader pinned a resort, by slug (map.js's pwaFavouritedResorts).
    * @property {Object<string, RenderedFeature[]>} [rendered] What
@@ -143,7 +149,10 @@
     items['pin-favourite'] = favourites;
 
     const keys = {
-      danger: !!v.bulletins && rendered(v, 'danger').length > 0,
+      // Problem slopes are painted in the danger colours and their key
+      // says so, so the scale shows while either one needs it — even with
+      // the regions' own colour faded to nothing by the opacity row.
+      danger: (!!v.bulletins && rendered(v, 'danger').length > 0) || !!v.problemTerrain,
       problem_terrain: !!v.problemTerrain,
       community_reports: reports.length > 0,
       terrain_filter: !!v.terrainFilter,
@@ -152,14 +161,17 @@
       pins: resorts || favourites,
       downloads: !!v.downloads,
     };
+    // The second page's marks say what is SWITCHED ON, wherever the view
+    // is and at any zoom: a layer with nothing in view is still on.
+    const switched = v.switchedOn || {};
     const on = {
       danger: !!v.bulletins,
-      problem_terrain: !!v.problemTerrain,
-      community_reports: reports.length > 0,
-      terrain_filter: !!v.terrainFilter,
-      rest_zones: zones.length > 0,
+      problem_terrain: !!(v.problemTerrainOn ?? v.problemTerrain),
+      community_reports: !!switched.community_reports || reports.length > 0,
+      terrain_filter: !!(v.terrainFilterOn ?? v.terrainFilter),
+      rest_zones: !!switched.rest_zones || zones.length > 0,
       routes: !!v.routeLegsOn,
-      pins: resorts || favourites,
+      pins: !!switched.resorts || !!switched.favourites || resorts || favourites,
       downloads: !!v.downloads,
     };
     return { keys, items, on };
