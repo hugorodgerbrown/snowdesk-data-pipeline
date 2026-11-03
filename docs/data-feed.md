@@ -2,7 +2,7 @@
 name: data-feed
 description: Data feed /api/data/v1/ + v2, from/to windows, service clients, pull_reference_data, pull_production_data, DATA_FEED_*, mint_feed_token
 status: current
-last-reviewed: 2026-11-02
+last-reviewed: 2026-11-03
 ---
 
 # The production data feed
@@ -39,7 +39,7 @@ All ten are `GET`, take the same parameters and answer the same shape.
 | `/api/data/v2/weather/` | `SourceLocation.uuid` + `observed_on` | Every `SourceWeather` row the weather service has stored (SNOW-1253), tombstoned places included |
 | `/api/data/v2/locations/` | `uuid` (`SourceLocation`) | Every reference place, with `deleted_at`: name, exact coordinate and height under `fields`, the host's `document` (kind, short id, what3words, `centroid_of`) |
 | `/api/data/v2/passes/` | `uuid` (`SourcePass`) | Every season pass, with `slug`, `deleted_at` and the `document` `{name, website}` (SNOW-1271) |
-| `/api/data/v2/resorts/` | `uuid` (`SourceResort`) | Every resort, with `slug`, `deleted_at` and the `document`: `fields`, `region` code, pin, `passes` and `locations` roles, each named by a source uuid (SNOW-1271) |
+| `/api/data/v2/resorts/` | `uuid` (`SourceResort`) | Every resort, retired ones included, with `slug`, `deleted_at` and the `document`: `fields` (with `retired_at`, `retired_reason` and `retired_note` since SNOW-1404), `region` code, pin, `passes` and `locations` roles, each named by a source uuid (SNOW-1271) |
 | `/api/data/v2/ski-network/` | `uuid` (`SourceSkiSegment`) | Every segment of swisstopo's ski-touring network, with `slug`, `deleted_at` and the `document`: `segment_id`, `discipline`, the undocumented `direction` / `access` / `route_info` codes as published, and the line as a WGS84 `MultiLineString` simplified to 5 m (SNOW-1276) |
 | `/api/data/v2/ski-tours/` | `uuid` (`SourceSkiTour`, swisstopo's `route_uuid`) | Every named SAC ski tour, in the same shape: SAC ids, `name` and `names` by language, `grade` and `difficulty`, `ascent_m` and time, `descent_m`, the summit, the SAC `urls` and the line (SNOW-1276); beside `document`, the service's walk and drawing of it, `slope_samples` and `track_render`, null until `render_ski_tours` reaches it (SNOW-1316) |
 | `/api/data/v2/rest-zones/` | `uuid` (`SourceRestZone`, a uuid5 of the geo.admin feature id) | Every FOEN wildlife rest zone, with `slug`, `deleted_at` and the `document`: `feature_id`, `name`, `binding`, `status` and `restriction` by language, `restriction_code`, `period`, `basis`, `decided`, `note`, `canton`, the canton's `url` (or null) and the polygon as WGS84 GeoJSON (SNOW-1263) |
@@ -305,6 +305,14 @@ uv run python manage.py pull_reference_data --golden-week --commit   # estate + 
   tombstones, once the old row has gone, and fails only if it still
   collides. A place's `centroid_of` claims those regions'
   centres and releases any it no longer names.
+- **A retirement travels as fields, never as a tombstone** (SNOW-1404).
+  `retired_at`, `retired_reason` and `retired_note` are in `RESORT_FIELDS`,
+  so the v1 and v2 resort feeds serve every resort — `Resort.all_objects` —
+  and a pull retires or restores the row to match. The change is additive,
+  so the URL's `/v2/` is unchanged. An item from a producer that predates
+  it carries none of the three and is applied as live
+  (`contract.RESORT_LIVE`). `deleted_at` stays reserved for a resort that
+  is genuinely gone.
 - **Tombstones are applied after every live item** — resorts, then passes,
   then places. A row is deleted, unless this instance's user data points
   at it: a place with a favourite, trip or field report, or a resort with a

@@ -75,6 +75,7 @@
     'rating-expired': "Rating expired — reconnect to see today's danger level",
     'rating-as-of': 'as of %(time)s',
     'cached-as-of': 'Showing cached data — as of %(time)s',
+    'no-longer-listed': 'No longer listed',
   });
 
   const interpolate = self.pwaStrings.interpolate;
@@ -245,6 +246,17 @@
       record.name ||
       `${Number(record.latitude).toFixed(5)}, ${Number(record.longitude).toFixed(5)}`;
     root.appendChild(title);
+
+    // SNOW-1404: a saved resort that was retired has no place card to show
+    // — the panel's online row says so, and the cached one must too.
+    if (record.retired) {
+      const retired = document.createElement('p');
+      retired.className = 'text-sm text-text-2 mt-0.5';
+      retired.setAttribute('data-testid', 'favourite-card-retired');
+      retired.textContent = STRINGS['no-longer-listed'];
+      root.appendChild(retired);
+      return root;
+    }
 
     const altitude = document.createElement('p');
     altitude.className = 'text-sm text-text-2 mt-0.5';

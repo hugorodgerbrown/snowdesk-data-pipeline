@@ -1,7 +1,7 @@
 """
 apps/mcp_server/resort_tools.py — the ops MCP server's resort tools (SNOW-1401).
 
-Four tools that let a staff account read and correct the resort estate from
+Six tools that let a staff account read and correct the resort estate from
 a chat — Hugo working through printed reference books, one resort at a
 time — on the environment the connector points at:
 
@@ -11,6 +11,12 @@ time — on the environment the connector points at:
   a field that is still empty, or ``needs_review``, prominent ones first.
 * ``update_resort`` — **writes.** Corrects editorial fields.
 * ``create_resort`` — **writes.** Adds a resort at a coordinate.
+* ``retire_resort`` / ``restore_resort`` — **write.** Retire a resort as a
+  soft delete, and bring it back (SNOW-1404). Nothing is deleted: the row,
+  its pin, its curated places and every favourite of it are kept.
+
+Every tool reads ``Resort.all_objects``, so a retired resort can be found,
+read, corrected and restored; ``find_resorts`` lists live ones unless asked.
 
 Production's database is the source of truth for ``Resort``
 (``docs/decisions/resorts-are-editable-data.md``), so these write there
@@ -31,7 +37,7 @@ directly, and both writes are made deliberate rather than convenient:
 
 ``slug``, ``region``, ``canton``, the pin, ``kind``, ``passes`` and the
 geocode provenance are not editable here: each has its own writer and its
-own rules. Retirement is SNOW-1404. Merged into the ops catalogue by
+own rules. Merged into the ops catalogue by
 ``apps.mcp_server.ops_tools``.
 """
 
@@ -40,6 +46,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 from django.contrib.admin.models import ADDITION, CHANGE, LogEntry
@@ -73,6 +80,12 @@ MISSABLE_FIELDS: tuple[str, ...] = tuple(
 # to count as ambiguous rather than as a match for the best one.
 FUZZY_TIE: float = 5.0
 
+# The three columns a retirement writes (SNOW-1404).
+RETIREMENT_FIELDS: tuple[str, ...] = ("retired_at", "retired_reason", "retired_note")
+
+# find_resorts' ``retired`` filter.
+RETIRED_FILTERS: tuple[str, ...] = ("live", "retired", "all")
+
 # How many of a resort's admin History entries get_resort returns.
 HISTORY_SHOWN: int = 5
 
@@ -104,9 +117,14 @@ def _iso(value: dt.datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
 
 
+def _wire(value: Any) -> Any:
+    """Return a field value as JSON can carry it: a datetime as ISO 8601."""
+    return _iso(value) if isinstance(value, dt.datetime) else value
+
+
 def _resorts() -> QuerySet[Resort]:
-    """Return every resort with what a serialiser reads, loaded."""
-    return Resort.objects.select_related(
+    """Return every resort, retired ones included, with what a serialiser reads."""
+    return Resort.all_objects.select_related(
         "region__subregion__major", "location"
     ).prefetch_related("passes")
 
@@ -119,7 +137,7 @@ def _brief(resort: Resort) -> dict[str, Any]:
 
     Returns:
         ``uuid``, ``slug``, ``name``, ``region_id``, ``region_name``,
-        ``kind`` and ``tier``.
+        ``kind``, ``tier`` and ``retired_reason`` (None for a live resort).
 
     """
     return {
@@ -130,6 +148,7 @@ def _brief(resort: Resort) -> dict[str, Any]:
         "region_name": resort.region.name,
         "kind": resort.kind,
         "tier": resort.tier,
+        "retired_reason": resort.retired_reason or None,
     }
 
 
@@ -184,6 +203,8 @@ def _serialise(resort: Resort) -> dict[str, Any]:
         "geocode_source": resort.geocode_source,
         "passes": sorted(ski_pass.name for ski_pass in resort.passes.all()),
         "url": resort.get_absolute_url(),
+        "retired_at": _iso(resort.retired_at),
+        "retired_note": resort.retired_note,
         "updated_at": _iso(resort.updated_at),
     }
 
@@ -449,9 +470,11 @@ def get_resort(ref: str) -> dict[str, Any]:
     result["history"] = _history(resort)
     empty = [field for field, value in result["fields"].items() if value in ("", None)]
     result["empty_fields"] = empty
+    retired = f"RETIRED ({resort.retired_reason}); " if resort.is_retired else ""
     result["summary"] = (
         f"{resort.name} ({resort.region.region_id}, {resort.kind}, {resort.tier}); "
-        f"{len(empty)} empty field(s)" + (f": {', '.join(empty)}." if empty else ".")
+        f"{retired}{len(empty)} empty field(s)"
+        + (f": {', '.join(empty)}." if empty else ".")
     )
     return result
 
@@ -470,14 +493,16 @@ def _empty(field_name: str) -> Q:
 
 
 def _check_filters(
-    region_id: str | None, kind: str | None, missing: str | None
+    region_id: str | None, kind: str | None, missing: str | None, retired: str
 ) -> None:
     """Refuse a filter value the estate does not have.
 
     Raises:
-        ToolError: An unknown region, kind or field name.
+        ToolError: An unknown region, kind, field name or retired filter.
 
     """
+    if retired not in RETIRED_FILTERS:
+        raise ToolError(f"'retired' must be one of: {', '.join(RETIRED_FILTERS)}.")
     if (
         region_id is not None
         and not MicroRegion.objects.filter(region_id=region_id).exists()
@@ -495,6 +520,7 @@ def _filtered(
     kind: str | None,
     missing: str | None,
     needs_review: bool | None,
+    retired: str,
 ) -> QuerySet[Resort]:
     """Return the resorts matching every filter given.
 
@@ -502,8 +528,12 @@ def _filtered(
         ToolError: A filter value is not one the estate has.
 
     """
-    _check_filters(region_id, kind, missing)
-    resorts = Resort.objects.select_related("region")
+    _check_filters(region_id, kind, missing, retired)
+    resorts = Resort.all_objects.select_related("region")
+    if retired == "live":
+        resorts = resorts.live()
+    elif retired == "retired":
+        resorts = resorts.retired()
     if region_id is not None:
         resorts = resorts.filter(region__region_id=region_id)
     if country is not None:
@@ -524,6 +554,7 @@ def find_resorts(
     kind: str | None = None,
     missing: str | None = None,
     needs_review: bool | None = None,
+    retired: str = "live",
     limit: int = DEFAULT_LIMIT,
 ) -> dict[str, Any]:
     """Return a worklist of resorts, the prominent ones first.
@@ -534,6 +565,7 @@ def find_resorts(
         kind: Only this ``Resort.Kind``.
         missing: Only resorts where this field is blank or null.
         needs_review: Only resorts with this ``needs_review`` value.
+        retired: ``live`` (the default), ``retired`` or ``all``.
         limit: Most rows to return.
 
     Returns:
@@ -542,7 +574,7 @@ def find_resorts(
 
     """
     resorts = (
-        _filtered(region_id, country, kind, missing, needs_review)
+        _filtered(region_id, country, kind, missing, needs_review, retired)
         .annotate(tier_order=_TIER_ORDER)
         .order_by("tier_order", "name")
     )
@@ -639,7 +671,7 @@ def update_resort(
         )
     with transaction.atomic():
         locked = (
-            Resort.objects.select_for_update()
+            Resort.all_objects.select_for_update()
             .select_related("region")
             .get(pk=resort.pk)
         )
@@ -678,7 +710,8 @@ def _duplicates(name: str, latitude: float, longitude: float) -> list[dict[str, 
     The resorts :func:`_named` finds for the name (exact, else the best
     fuzzy matches), and any resort pinned within
     ``DUPLICATE_RADIUS_KM`` — each listed once, with its distance when it
-    has a pin.
+    has a pin. Retired resorts are listed too, their ``retired_reason``
+    set, so a replacement can be restored rather than created again.
 
     """
     found: dict[int, dict[str, Any]] = {}
@@ -688,7 +721,7 @@ def _duplicates(name: str, latitude: float, longitude: float) -> list[dict[str, 
             "why": "nearby",
             "distance_km": round(near.distance_km, 2),
         }
-    for resort in _named(Resort.objects.select_related("region"), name):
+    for resort in _named(Resort.all_objects.select_related("region"), name):
         found.setdefault(resort.pk, {**_brief(resort), "why": "similar name"})
     return list(found.values())
 
@@ -771,9 +804,21 @@ def create_resort(
         "why_it_matters_check": _sentence_check(values),
     }
     if same_region:
+        existing = same_region[0]
+        instead = (
+            "restore_resort it instead"
+            if existing["retired_reason"]
+            else "update that one instead"
+        )
         raise ToolError(
             f"{region.region_id} already has a resort called {name} "
-            f"(slug {same_region[0]['slug']}); update that one instead."
+            f"(slug {existing['slug']}"
+            + (
+                f", retired {existing['retired_reason']}"
+                if existing["retired_reason"]
+                else ""
+            )
+            + f"); {instead}."
         )
     if not commit:
         warning = (
@@ -819,6 +864,204 @@ def create_resort(
             f"{resort.slug}; flagged needs_review until its pin is confirmed."
         ),
     }
+
+
+def _retirement(resort: Resort) -> dict[str, Any]:
+    """Return a resort's three retirement columns."""
+    return {field: getattr(resort, field) for field in RETIREMENT_FIELDS}
+
+
+def _retirement_diff(
+    before: dict[str, Any], after: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
+    """Return the retirement columns that change, JSON-ready."""
+    return {
+        field: {"from": _wire(before[field]), "to": _wire(after[field])}
+        for field in RETIREMENT_FIELDS
+        if before[field] != after[field]
+    }
+
+
+def _write_retirement(
+    ref: str,
+    wanted: Callable[[Resort], dict[str, Any]],
+    verb: str,
+    source: str,
+    commit: bool,
+    expected_updated_at: dt.datetime | None,
+    actor: Any,
+) -> dict[str, Any]:
+    """Preview or commit a change to one resort's retirement columns.
+
+    ``retire_resort`` and ``restore_resort`` differ only in the state they
+    want, so both come through here: the same preview, the same stale-row
+    check under ``select_for_update`` and the same audit as
+    ``update_resort``.
+
+    Args:
+        ref: A uuid, slug or name.
+        wanted: Given the (locked) row, the retirement columns it should hold.
+        verb: ``retire`` or ``restore``, for the summary and History line.
+        source: Why; recorded with the change.
+        commit: False to preview, True to write.
+        expected_updated_at: Required with ``commit``: the preview's
+            ``updated_at``.
+        actor: The staff user making the change.
+
+    Returns:
+        The resort's brief fields, ``diff``, ``favourites_holding`` (how
+        many favourites point at it — they are kept either way),
+        ``committed``, ``updated_at``, ``log_entry_id`` and ``summary``.
+
+    Raises:
+        ToolError: The resort is unknown or ambiguous, or the row changed
+            since the preview.
+
+    """
+    resort = resolve_resort(ref)
+    holding = resort.favourites.count()
+    if not commit:
+        diff = _retirement_diff(_retirement(resort), wanted(resort))
+        return {
+            **_brief(resort),
+            "diff": diff,
+            "favourites_holding": holding,
+            "committed": False,
+            "updated_at": _iso(resort.updated_at),
+            "log_entry_id": None,
+            "summary": (
+                f"Preview: {resort.name} would be {verb}d"
+                f" ({', '.join(diff)}); {holding} favourite(s) hold it and are kept."
+                " Commit with expected_updated_at to write."
+                if diff
+                else f"{resort.name}: already in that state; nothing would change."
+            ),
+        }
+
+    if expected_updated_at is None:
+        raise ToolError(
+            "A commit needs 'expected_updated_at': the updated_at the preview returned."
+        )
+    with transaction.atomic():
+        locked = (
+            Resort.all_objects.select_for_update()
+            .select_related("region")
+            .get(pk=resort.pk)
+        )
+        if locked.updated_at != expected_updated_at:
+            raise ToolError(
+                f"{locked.name} changed at {_iso(locked.updated_at)}, after the "
+                "preview this commit quotes. Preview again and confirm the new diff."
+            )
+        after = wanted(locked)
+        diff = _retirement_diff(_retirement(locked), after)
+        entry = None
+        if diff:
+            for field in diff:
+                setattr(locked, field, after[field])
+            locked.save(update_fields=[*diff, "updated_at"])
+            parts = "; ".join(
+                f"{field}: {change['from']!r} → {change['to']!r}"
+                for field, change in diff.items()
+            )
+            entry = _audit(
+                actor,
+                locked,
+                CHANGE,
+                f"{verb.capitalize()}d via the ops MCP server — {parts}. "
+                f"Source: {source}",
+            )
+    return {
+        **_brief(locked),
+        "diff": diff,
+        "favourites_holding": holding,
+        "committed": bool(diff),
+        "updated_at": _iso(locked.updated_at),
+        "log_entry_id": entry.pk if entry else None,
+        "summary": (
+            f"{locked.name}: {verb}d."
+            if diff
+            else f"{locked.name}: already in that state; nothing written."
+        ),
+    }
+
+
+def retire_resort(
+    ref: str,
+    reason: str,
+    note: str | None,
+    source: str,
+    commit: bool,
+    expected_updated_at: dt.datetime | None,
+    actor: Any,
+) -> dict[str, Any]:
+    """Preview or commit retiring one resort — a soft delete (SNOW-1404).
+
+    A retired resort leaves every public surface and its page answers 410
+    Gone; nothing is deleted. Re-retiring with the same reason keeps the
+    original ``retired_at`` (the sheet's rule); a new reason restamps it.
+
+    Args:
+        ref: A uuid, slug or name.
+        reason: A ``Resort.RetiredReason`` value.
+        note: Free-text detail; None keeps the current note.
+        source: Why; recorded with the change.
+        commit: False to preview, True to write.
+        expected_updated_at: Required with ``commit``.
+        actor: The staff user making the change.
+
+    Returns:
+        :func:`_write_retirement`'s result.
+
+    """
+    if reason not in Resort.RetiredReason.values:
+        raise ToolError(
+            f"'reason' must be one of: {', '.join(Resort.RetiredReason.values)}."
+        )
+    now = timezone.now()
+
+    def wanted(resort: Resort) -> dict[str, Any]:
+        """Return the retired state, keeping the date for an unchanged reason."""
+        same = resort.is_retired and resort.retired_reason == reason
+        return {
+            "retired_at": resort.retired_at if same else now,
+            "retired_reason": reason,
+            "retired_note": resort.retired_note if note is None else note,
+        }
+
+    return _write_retirement(
+        ref, wanted, "retire", source, commit, expected_updated_at, actor
+    )
+
+
+def restore_resort(
+    ref: str,
+    source: str,
+    commit: bool,
+    expected_updated_at: dt.datetime | None,
+    actor: Any,
+) -> dict[str, Any]:
+    """Preview or commit bringing a retired resort back (SNOW-1404).
+
+    Args:
+        ref: A uuid, slug or name.
+        source: Why; recorded with the change.
+        commit: False to preview, True to write.
+        expected_updated_at: Required with ``commit``.
+        actor: The staff user making the change.
+
+    Returns:
+        :func:`_write_retirement`'s result.
+
+    """
+
+    def wanted(_resort: Resort) -> dict[str, Any]:
+        """Return the live state: every retirement column empty."""
+        return {"retired_at": None, "retired_reason": "", "retired_note": ""}
+
+    return _write_retirement(
+        ref, wanted, "restore", source, commit, expected_updated_at, actor
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -885,6 +1128,7 @@ def _handle_find_resorts(arguments: dict[str, Any]) -> dict[str, Any]:
         kind=_optional_str(arguments, "kind"),
         missing=_optional_str(arguments, "missing"),
         needs_review=needs_review,
+        retired=_optional_str(arguments, "retired") or "live",
         limit=_limit(arguments),
     )
 
@@ -921,6 +1165,35 @@ def _handle_create_resort(arguments: dict[str, Any], actor: Any) -> dict[str, An
     )
 
 
+def _handle_retire_resort(arguments: dict[str, Any], actor: Any) -> dict[str, Any]:
+    """Validate ``retire_resort`` arguments and call it."""
+    commit = _commit(arguments)
+    note = arguments.get("note")
+    if note is not None and not isinstance(note, str):
+        raise ToolError("'note' must be a string.")
+    return retire_resort(
+        _require_str(arguments, "ref"),
+        _require_str(arguments, "reason").strip().upper(),
+        note.strip() if note is not None else None,
+        _source(arguments),
+        commit,
+        _expected_updated_at(arguments.get("expected_updated_at")) if commit else None,
+        actor,
+    )
+
+
+def _handle_restore_resort(arguments: dict[str, Any], actor: Any) -> dict[str, Any]:
+    """Validate ``restore_resort`` arguments and call it."""
+    commit = _commit(arguments)
+    return restore_resort(
+        _require_str(arguments, "ref"),
+        _source(arguments),
+        commit,
+        _expected_updated_at(arguments.get("expected_updated_at")) if commit else None,
+        actor,
+    )
+
+
 _REF_SCHEMA: dict[str, Any] = {
     "type": "string",
     "description": "The resort's uuid, slug or name (a name may be fuzzy).",
@@ -936,6 +1209,10 @@ _COMMIT_SCHEMA: dict[str, Any] = {
     "type": "boolean",
     "description": "False previews and writes nothing; true writes.",
 }
+_EXPECTED_SCHEMA: dict[str, Any] = {
+    "type": "string",
+    "description": "Required with commit: the preview's updated_at.",
+}
 _FIELDS_DESCRIPTION: str = (
     f"Editable fields: {', '.join(RESORT_EDIT_FIELDS)}. Elevations in metres, "
     "total_piste_km in km, season dates as MM-DD, tier CORE/STANDARD/MINOR. "
@@ -950,8 +1227,9 @@ RESORT_TOOLS: dict[str, ToolSpec] = {
         description=(
             "Return one resort in full — every editable field, its region, "
             "canton, pin, passes and page URL, which fields are still empty, "
-            "and its last few changes from the admin History. Find it by "
-            "uuid, slug or name; an ambiguous name lists the candidates."
+            "whether it is retired, and its last few changes from the admin "
+            "History. Find it by uuid, slug or name (retired resorts "
+            "included); an ambiguous name lists the candidates."
         ),
         input_schema={
             "type": "object",
@@ -965,8 +1243,9 @@ RESORT_TOOLS: dict[str, ToolSpec] = {
         description=(
             "List resorts as a worklist, CORE tier first then by name: "
             "filter by region_id, country, kind, a field still empty "
-            "('missing', e.g. why_it_matters or num_runs) or needs_review. "
-            "Returns uuid, slug, name, region, kind and tier for each."
+            "('missing', e.g. why_it_matters or num_runs), needs_review or "
+            "retired (live by default, or retired / all). Returns uuid, "
+            "slug, name, region, kind, tier and retired_reason for each."
         ),
         input_schema={
             "type": "object",
@@ -976,6 +1255,7 @@ RESORT_TOOLS: dict[str, ToolSpec] = {
                 "kind": {"type": "string", "enum": list(Resort.Kind.values)},
                 "missing": {"type": "string", "enum": list(MISSABLE_FIELDS)},
                 "needs_review": {"type": "boolean"},
+                "retired": {"type": "string", "enum": list(RETIRED_FILTERS)},
                 "limit": {
                     "type": "integer",
                     "description": (
@@ -1007,10 +1287,7 @@ RESORT_TOOLS: dict[str, ToolSpec] = {
                 },
                 "source": _SOURCE_SCHEMA,
                 "commit": _COMMIT_SCHEMA,
-                "expected_updated_at": {
-                    "type": "string",
-                    "description": "Required with commit: the preview's updated_at.",
-                },
+                "expected_updated_at": _EXPECTED_SCHEMA,
             },
             "required": ["ref", "changes", "source", "commit"],
         },
@@ -1024,7 +1301,8 @@ RESORT_TOOLS: dict[str, ToolSpec] = {
             "region comes from the point and the canton, if omitted, from "
             "the region's other resorts. Always preview first (commit false) "
             "and show the operator any possible duplicates — same or similar "
-            "name, or a resort within 2 km — before committing. A created "
+            "name, or a resort within 2 km, retired ones labelled — before "
+            "committing. A created "
             "resort is flagged needs_review until its pin is confirmed on "
             "the map, and recorded with its source in the admin History. "
             + _FIELDS_DESCRIPTION
@@ -1049,6 +1327,56 @@ RESORT_TOOLS: dict[str, ToolSpec] = {
             "required": ["name", "latitude", "longitude", "source", "commit"],
         },
         handler=_handle_create_resort,
+        writes=True,
+    ),
+    "retire_resort": ToolSpec(
+        name="retire_resort",
+        description=(
+            "Retire one resort on this environment — a soft delete. It "
+            "leaves the map, search and every list, and its page answers "
+            "410 Gone, but nothing is deleted: the row, its pin, its places "
+            "and the favourites that hold it are kept, and restore_resort "
+            "brings it back. Always preview first (commit false), show the "
+            "operator the diff and how many favourites hold it, and commit "
+            "only when they confirm, passing the preview's updated_at."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "ref": _REF_SCHEMA,
+                "reason": {"type": "string", "enum": list(Resort.RetiredReason.values)},
+                "note": {
+                    "type": "string",
+                    "description": "Optional detail; omit to keep the current note.",
+                },
+                "source": _SOURCE_SCHEMA,
+                "commit": _COMMIT_SCHEMA,
+                "expected_updated_at": _EXPECTED_SCHEMA,
+            },
+            "required": ["ref", "reason", "source", "commit"],
+        },
+        handler=_handle_retire_resort,
+        writes=True,
+    ),
+    "restore_resort": ToolSpec(
+        name="restore_resort",
+        description=(
+            "Bring a retired resort back on this environment: clears its "
+            "retirement, so it returns to the map, search and its page. "
+            "Preview first (commit false), then commit with the preview's "
+            "updated_at once the operator confirms."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "ref": _REF_SCHEMA,
+                "source": _SOURCE_SCHEMA,
+                "commit": _COMMIT_SCHEMA,
+                "expected_updated_at": _EXPECTED_SCHEMA,
+            },
+            "required": ["ref", "source", "commit"],
+        },
+        handler=_handle_restore_resort,
         writes=True,
     ),
 }

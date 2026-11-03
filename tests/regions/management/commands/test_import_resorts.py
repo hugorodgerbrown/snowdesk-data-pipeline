@@ -2,8 +2,9 @@
 tests/regions/management/commands/test_import_resorts.py.
 
 Covers ``import_resorts``: read-only by default, the three ``--mode``
-operations in isolation and combination, deletion of rows the sheet does
-not list (marked NOT_A_SKI_RESORT or absent altogether), the region/canton
+operations in isolation and combination, retirement by ``status`` and
+restore by a blank one (SNOW-1404 — nothing is deleted, and a resort the
+sheet does not list is reported and left alone), the region/canton
 values a row needs to be created at all, the creation-time-only
 ``latitude``/``longitude`` pair, and the all-or-nothing behaviour on a
 malformed sheet.
@@ -11,6 +12,7 @@ malformed sheet.
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid as uuid_module
 from io import StringIO
 from pathlib import Path
@@ -39,6 +41,8 @@ COLUMNS = [
     "typical_season_open",
     "typical_season_close",
     "status",
+    "retired_at",
+    "retired_note",
     "notes",
     "kind",
     "tier",
@@ -87,7 +91,10 @@ class TestImportResortsUpdate:
         out = StringIO()
         call_command("import_resorts", "--file", sheet, stdout=out, verbosity=2)
 
-        assert "0 resort(s) to add, 1 to update, 0 to delete." in out.getvalue()
+        assert (
+            "0 resort(s) to add, 1 to update, 0 to retire, 0 to restore; "
+            "0 not in the sheet (left alone)." in out.getvalue()
+        )
         assert "operator_name: '' -> 'Téléverbier'" in out.getvalue()
         assert "Dry-run" in out.getvalue()
         resort.refresh_from_db()
@@ -289,11 +296,12 @@ class TestImportResortsAdd:
 
 
 @pytest.mark.django_db
-class TestImportResortsDelete:
-    """``delete`` mode — remove resorts the sheet does not list."""
+class TestImportResortsRetire:
+    """``retire`` mode — retire and restore by ``status``; never delete."""
 
-    def test_deletes_marked_rows(self, tmp_path: Path) -> None:
-        """A row whose status column holds the delete marker is removed."""
+    @pytest.mark.parametrize("status", list(Resort.RetiredReason.values))
+    def test_status_retires_the_row(self, tmp_path: Path, status: str) -> None:
+        """Every reason retires the row, kept, with its note."""
         kept = ResortFactory.create(name="Verbier")
         retired = ResortFactory.create(name="Aigle")
         sheet = _sheet(
@@ -303,8 +311,8 @@ class TestImportResortsDelete:
                 {
                     "uuid": str(retired.uuid),
                     "name": "Aigle",
-                    "status": "NOT_A_SKI_RESORT",
-                    "notes": "valley town, no lifts",
+                    "status": status.lower(),
+                    "retired_note": "valley town, no lifts",
                 },
             ],
         )
@@ -312,33 +320,133 @@ class TestImportResortsDelete:
         out = StringIO()
         call_command("import_resorts", "--file", sheet, "--commit", stdout=out)
 
-        assert "deleted 1" in out.getvalue()
+        assert "retired 1" in out.getvalue()
         assert list(Resort.objects.values_list("name", flat=True)) == ["Verbier"]
+        retired.refresh_from_db()
+        assert retired.retired_reason == status
+        assert retired.retired_note == "valley town, no lifts"
+        assert retired.retired_at is not None
 
-    def test_deletes_rows_absent_from_the_sheet(self, tmp_path: Path) -> None:
-        """A resort the sheet does not mention at all is also removed."""
-        kept = ResortFactory.create(name="Verbier")
-        ResortFactory.create(name="Never exported")
-        sheet = _sheet(tmp_path, [{"uuid": str(kept.uuid), "name": "Verbier"}])
+    def test_sheet_date_is_used_for_a_fresh_retirement(self, tmp_path: Path) -> None:
+        """A live row retired by the sheet takes the sheet's ``retired_at``."""
+        resort = ResortFactory.create(name="Aigle")
+        sheet = _sheet(
+            tmp_path,
+            [
+                {
+                    "uuid": str(resort.uuid),
+                    "name": "Aigle",
+                    "status": "CLOSED",
+                    "retired_at": "2025-04-30T00:00:00+00:00",
+                }
+            ],
+        )
+        call_command("import_resorts", "--file", sheet, "--commit", verbosity=0)
 
-        call_command(
-            "import_resorts",
-            "--file",
-            sheet,
-            "--mode",
-            "delete",
-            "--commit",
-            verbosity=0,
+        resort.refresh_from_db()
+        assert resort.retired_at == dt.datetime(2025, 4, 30, tzinfo=dt.UTC)
+
+    def test_same_reason_keeps_the_date(self, tmp_path: Path) -> None:
+        """Re-reading the same reason leaves ``retired_at`` alone."""
+        when = dt.datetime(2024, 1, 1, tzinfo=dt.UTC)
+        resort = ResortFactory.create(
+            name="Aigle", retired_at=when, retired_reason="CLOSED"
+        )
+        sheet = _sheet(
+            tmp_path,
+            [{"uuid": str(resort.uuid), "name": "Aigle", "status": "CLOSED"}],
         )
 
-        assert list(Resort.objects.values_list("name", flat=True)) == ["Verbier"]
+        out = StringIO()
+        call_command("import_resorts", "--file", sheet, "--commit", stdout=out)
 
-    def test_omitting_delete_mode_keeps_everything(self, tmp_path: Path) -> None:
-        """Without ``delete``, an unlisted resort survives."""
+        assert "0 to retire" in out.getvalue()
+        resort.refresh_from_db()
+        assert resort.retired_at == when
+
+    def test_new_reason_restamps_the_date(self, tmp_path: Path) -> None:
+        """A changed reason is a new retirement, dated now."""
+        when = dt.datetime(2024, 1, 1, tzinfo=dt.UTC)
+        resort = ResortFactory.create(
+            name="Aigle", retired_at=when, retired_reason="CLOSED"
+        )
+        sheet = _sheet(
+            tmp_path,
+            [{"uuid": str(resort.uuid), "name": "Aigle", "status": "DUPLICATE"}],
+        )
+        call_command("import_resorts", "--file", sheet, "--commit", verbosity=0)
+
+        resort.refresh_from_db()
+        assert resort.retired_reason == "DUPLICATE"
+        assert resort.retired_at is not None and resort.retired_at > when
+
+    def test_blank_status_restores(self, tmp_path: Path) -> None:
+        """A retired row the sheet lists as live comes back."""
+        resort = ResortFactory.create(
+            name="Aigle",
+            retired_at=dt.datetime(2024, 1, 1, tzinfo=dt.UTC),
+            retired_reason="CLOSED",
+            retired_note="lifts shut",
+        )
+        sheet = _sheet(tmp_path, [{"uuid": str(resort.uuid), "name": "Aigle"}])
+
+        out = StringIO()
+        call_command(
+            "import_resorts", "--file", sheet, "--commit", stdout=out, verbosity=2
+        )
+
+        assert "^ Aigle (restore)" in out.getvalue()
+        resort.refresh_from_db()
+        assert (resort.retired_at, resort.retired_reason, resort.retired_note) == (
+            None,
+            "",
+            "",
+        )
+
+    def test_absent_row_is_reported_and_left_alone(self, tmp_path: Path) -> None:
+        """A resort the sheet does not list is neither retired nor deleted."""
         kept = ResortFactory.create(name="Verbier")
-        unlisted = ResortFactory.create(name="Never exported")
+        unlisted = ResortFactory.create(name="Made in chat")
         sheet = _sheet(tmp_path, [{"uuid": str(kept.uuid), "name": "Verbier"}])
 
+        out = StringIO()
+        call_command(
+            "import_resorts", "--file", sheet, "--commit", stdout=out, verbosity=2
+        )
+
+        assert "1 not in the sheet (left alone)" in out.getvalue()
+        assert "? Made in chat (not in sheet; left alone)" in out.getvalue()
+        unlisted.refresh_from_db()
+        assert not unlisted.is_retired
+
+    def test_retired_row_missing_from_the_db_is_not_created(
+        self, tmp_path: Path
+    ) -> None:
+        """A carried-forward marker row is a record, never a new resort."""
+        MicroRegionFactory.create(region_id="CH-4115")
+        sheet = _sheet(
+            tmp_path,
+            [
+                {
+                    "uuid": str(uuid_module.uuid4()),
+                    "name": "Aigle",
+                    "region": "CH-4115",
+                    "canton": "VD",
+                    "status": "NOT_A_SKI_RESORT",
+                }
+            ],
+        )
+        call_command("import_resorts", "--file", sheet, "--commit", verbosity=0)
+
+        assert not Resort.all_objects.exists()
+
+    def test_omitting_retire_mode_leaves_retirement_alone(self, tmp_path: Path) -> None:
+        """Without ``retire``, a status changes nothing."""
+        resort = ResortFactory.create(name="Aigle")
+        sheet = _sheet(
+            tmp_path,
+            [{"uuid": str(resort.uuid), "name": "Aigle", "status": "CLOSED"}],
+        )
         call_command(
             "import_resorts",
             "--file",
@@ -350,7 +458,35 @@ class TestImportResortsDelete:
             verbosity=0,
         )
 
-        assert Resort.objects.filter(pk=unlisted.pk).exists()
+        resort.refresh_from_db()
+        assert not resort.is_retired
+
+    def test_delete_mode_is_refused(self, tmp_path: Path) -> None:
+        """The old mode name is refused, naming its replacement."""
+        sheet = _sheet(tmp_path, [])
+
+        with pytest.raises(CommandError, match="'delete' is now 'retire'"):
+            call_command("import_resorts", "--file", sheet, "--mode", "delete")
+
+    def test_unparseable_retired_at_is_an_error(self, tmp_path: Path) -> None:
+        """A bad date, or one without a timezone, fails the whole sheet."""
+        resort = ResortFactory.create(name="Aigle")
+        for raw in ("last spring", "2025-04-30T00:00:00"):
+            sheet = _sheet(
+                tmp_path,
+                [
+                    {
+                        "uuid": str(resort.uuid),
+                        "name": "Aigle",
+                        "status": "CLOSED",
+                        "retired_at": raw,
+                    }
+                ],
+            )
+            with pytest.raises(CommandError, match="could not be applied"):
+                call_command("import_resorts", "--file", sheet, "--commit", verbosity=0)
+        resort.refresh_from_db()
+        assert not resort.is_retired
 
 
 @pytest.mark.django_db
@@ -358,7 +494,7 @@ class TestImportResortsBehaviour:
     """Cross-cutting behaviour: idempotency, mode parsing, failure handling."""
 
     def test_rerun_is_a_noop(self, tmp_path: Path) -> None:
-        """A second full run reports no changes — deletions stay deleted."""
+        """A second full run reports no changes — retirements stay retired."""
         kept = ResortFactory.create(name="Verbier", operator_name="")
         retired = ResortFactory.create(name="Aigle")
         sheet = _sheet(
@@ -384,6 +520,7 @@ class TestImportResortsBehaviour:
 
         assert "No changes" in out.getvalue()
         assert Resort.objects.count() == 1
+        assert Resort.all_objects.count() == 2
 
     def test_mode_is_case_insensitive(self, tmp_path: Path) -> None:
         """``--mode UPDATE`` resolves like ``update``."""
@@ -750,14 +887,8 @@ class TestImportResortsKind:
         resort.refresh_from_db()
         assert resort.kind == Resort.Kind.RESORT
 
-    def test_touring_terrain_survives_a_delete_run(self, tmp_path: Path) -> None:
-        """The core regression this ticket introduces.
-
-        A TOURING_TERRAIN row is a live row: it is listed in the sheet and
-        carries no NOT_A_SKI_RESORT marker, so ``--mode delete`` must
-        leave it alone. Before ``kind`` existed, the only way to express
-        "not a resort" was the marker, which deletes.
-        """
+    def test_touring_terrain_survives_a_retire_run(self, tmp_path: Path) -> None:
+        """A TOURING_TERRAIN row with a blank status is live, and stays so."""
         region = MicroRegionFactory.create(region_id="CH-4115")
         touring = ResortFactory.create(
             name="Grimsel", region=region, kind=Resort.Kind.TOURING_TERRAIN
@@ -767,14 +898,12 @@ class TestImportResortsKind:
             [{"uuid": str(touring.uuid), "name": "Grimsel", "kind": "TOURING_TERRAIN"}],
         )
 
-        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "delete")
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "retire")
 
         assert Resort.objects.filter(pk=touring.pk).exists()
 
-    def test_marked_row_is_still_deleted_whatever_its_kind(
-        self, tmp_path: Path
-    ) -> None:
-        """``kind`` does not weaken the marker — the two are independent."""
+    def test_marked_row_is_retired_whatever_its_kind(self, tmp_path: Path) -> None:
+        """``kind`` does not weaken the status — the same rule for both kinds."""
         region = MicroRegionFactory.create(region_id="CH-4115")
         marked = ResortFactory.create(name="Aigle", region=region)
         sheet = _sheet(
@@ -790,9 +919,10 @@ class TestImportResortsKind:
             ],
         )
 
-        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "delete")
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "retire")
 
         assert not Resort.objects.filter(pk=marked.pk).exists()
+        assert Resort.all_objects.get(pk=marked.pk).is_retired
 
 
 @pytest.mark.django_db

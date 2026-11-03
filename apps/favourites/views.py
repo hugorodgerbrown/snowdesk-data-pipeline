@@ -229,6 +229,8 @@ def _build_favourite_cache_record(
         "rating": rating_payload,
         "generated_at": generated_at.isoformat(timespec="seconds"),
         "unsafe_after_seconds": unsafe_after,
+        # SNOW-1404: the offline card says "No longer listed" too.
+        "retired": favourite.is_retired_resort,
     }
 
 
@@ -1010,10 +1012,14 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
     # these rows (and so listed each pin twice), moved out to the Today
     # panel (``today`` below). This list is the dropped pins and nothing
     # else.
+    #
+    # SNOW-1404: ``panel_rows()`` — plus a saved resort that was retired. It
+    # has left search and the map, so it is listed here as "No longer
+    # listed", with Remove as its one control.
     favourites = list(
         Favourite.objects.for_user(request.user)
-        .dropped_pins()
-        .select_related("region", "location")
+        .panel_rows()
+        .select_related("region", "location", "resort")
     )
 
     today = timezone.localdate()
@@ -1100,6 +1106,8 @@ def today(request: HttpRequest) -> HttpResponse:
     subjects = today_subjects(
         Favourite.objects.for_user(request.user)
         .exclude(latitude__isnull=False, resort__isnull=True)
+        # SNOW-1404: a retired resort has no today to show.
+        .listed()
         .select_related("region", "resort", "resort__region", "resort__location")
     )
     day = timezone.localdate()
@@ -1170,9 +1178,13 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
 
     # SNOW-802: ``placed()`` — a region pin has no coordinate, so it has no
     # feature and nothing for the map to draw. It lives in the pins sheet.
+    #
+    # SNOW-1404: ``listed()`` — a retired resort is neither drawn nor in
+    # search's "Pinned resorts"; the Favourites panel lists it instead.
     favourites = list(
         Favourite.objects.for_user(request.user)
         .placed()
+        .listed()
         .select_related("resort__region", "region")
     )
 

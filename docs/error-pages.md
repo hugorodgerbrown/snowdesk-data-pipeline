@@ -2,7 +2,7 @@
 name: error-pages
 description: handler400/403/404/500, CSRF_FAILURE_VIEW, apps/public/errors.py ERROR_PAGES, JSON/HTMX/HTML negotiation, /_errors/ preview
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-11-03
 ---
 
 # Error pages
@@ -16,6 +16,7 @@ through `apps/public/errors.py` (SNOW-1151).
 | 403 | a raised `PermissionDenied` | `permission_denied` (`handler403`) | full site |
 | 403 | a failed CSRF check | `csrf_failure` (`CSRF_FAILURE_VIEW`) | full site |
 | 404 | no URL matched, or a raised `Http404` / `get_object_or_404` | `page_not_found` (`handler404`) | full site |
+| 410 | a retired resort's page or map sheet (SNOW-1404) — returned, not raised | `error_response(request, "410")` in `resort_detail` / `resort_sheet_partial` | full site |
 | 500 | any unhandled exception | `server_error` (`handler500`) | standalone |
 
 A view that *returns* an error, such as `HttpResponse("Authentication required.", status=403)`

@@ -26,8 +26,9 @@ Keep business logic out of models.
 from __future__ import annotations
 
 import datetime
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
+from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
 from django.db import models
 from django.urls import reverse
@@ -794,6 +795,41 @@ class ResortQuerySet(models.QuerySet):
         """Return only lift-less touring terrain (SNOW-544)."""
         return self.filter(kind=Resort.Kind.TOURING_TERRAIN)
 
+    def live(self) -> "ResortQuerySet":
+        """Return the resorts that are not retired (SNOW-1404).
+
+        ``Resort.objects`` already applies this; it is here for a queryset
+        that starts from ``Resort.all_objects``.
+        """
+        return self.filter(retired_at__isnull=True)
+
+    def retired(self) -> "ResortQuerySet":
+        """Return the retired resorts (SNOW-1404).
+
+        Only meaningful on ``Resort.all_objects`` — ``Resort.objects``
+        holds no retired row, so this is always empty there.
+        """
+        return self.filter(retired_at__isnull=False)
+
+
+_ResortManagerBase = models.Manager.from_queryset(ResortQuerySet)
+
+
+class LiveResortManager(_ResortManagerBase):
+    """``Resort.objects`` — every resort that is not retired (SNOW-1404).
+
+    The default manager, so every surface that reads ``Resort.objects``
+    or a reverse relation (``region.resorts``) leaves a retired resort out
+    without being edited. ``Resort.all_objects`` is the unfiltered table,
+    for the write paths, the admin and the feed; it is also the model's
+    base manager, so following a foreign key (``favourite.resort``) always
+    finds the row.
+    """
+
+    def get_queryset(self) -> ResortQuerySet:
+        """Return the live resorts."""
+        return cast("ResortQuerySet", super().get_queryset()).live()
+
 
 class Resort(BaseModel):
     """
@@ -875,6 +911,20 @@ class Resort(BaseModel):
         CORE = "CORE", "Core"
         STANDARD = "STANDARD", "Standard"
         MINOR = "MINOR", "Minor"
+
+    class RetiredReason(models.TextChoices):
+        """Why a resort was retired (SNOW-1404).
+
+        Retirement is a state, never a deletion: the row, its pin, its
+        curated locations and every favourite pointing at it are kept, and
+        ``restore`` brings it back. These are the sheet's ``status``
+        values, so the sheet and the database speak one vocabulary.
+        """
+
+        NOT_A_SKI_RESORT = "NOT_A_SKI_RESORT", "Not a ski resort"
+        DUPLICATE = "DUPLICATE", "Duplicate"
+        CLOSED = "CLOSED", "Closed"
+        OTHER = "OTHER", "Other"
 
     name = models.CharField(max_length=255)
     slug = models.SlugField(
@@ -1040,12 +1090,47 @@ class Resort(BaseModel):
             "sheet splits into villages, every village row carries the pass."
         ),
     )
-    objects = ResortQuerySet.as_manager()
+    retired_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "When the resort was retired (SNOW-1404). A retired resort is "
+            "left out of every public surface and answers 410 Gone, but "
+            "the row and everything pointing at it are kept. Null when live."
+        ),
+    )
+    retired_reason = models.CharField(
+        max_length=20,
+        choices=RetiredReason.choices,
+        blank=True,
+        help_text="Why it was retired. Blank exactly when retired_at is null.",
+    )
+    retired_note = models.TextField(
+        blank=True,
+        help_text="Free-text detail on the retirement, e.g. the source.",
+    )
+    objects = LiveResortManager()
+    all_objects = ResortQuerySet.as_manager()
 
     class Meta(BaseModel.Meta):
         """Model metadata."""
 
         ordering = ["name"]
+        # Following a foreign key to a retired resort must still find it:
+        # a favourite keeps its resort, a ResortLocation its owner.
+        base_manager_name = "all_objects"
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(retired_at__isnull=True, retired_reason="")
+                    | (
+                        models.Q(retired_at__isnull=False)
+                        & ~models.Q(retired_reason="")
+                    )
+                ),
+                name="resort_retired_at_and_reason_together",
+            ),
+        ]
 
     def __str__(self) -> str:
         """Return a human-readable representation."""
@@ -1054,6 +1139,29 @@ class Resort(BaseModel):
     def to_string(self) -> str:
         """Return a concise canonical string (name + region_id)."""
         return f"{self.name} ({self.region.region_id})"
+
+    @property
+    def is_retired(self) -> bool:
+        """Return True when the resort is retired (SNOW-1404)."""
+        return self.retired_at is not None
+
+    def clean(self) -> None:
+        """Refuse a retirement date without a reason, or a reason without one.
+
+        Raises:
+            ValidationError: When only one of the pair is set.
+
+        """
+        super().clean()
+        if (self.retired_at is None) != (not self.retired_reason):
+            raise ValidationError(
+                {
+                    "retired_reason": (
+                        "A retired resort needs both a retirement date and a "
+                        "reason; a live one has neither."
+                    )
+                }
+            )
 
     @property
     def pin_coordinates(self) -> tuple[float, float] | None:
@@ -1131,7 +1239,7 @@ def unique_resort_slug(name: str) -> str:
     """
     base = slugify(name) or "resort"
     taken = set(
-        Resort.objects.filter(slug__startswith=base).values_list("slug", flat=True)
+        Resort.all_objects.filter(slug__startswith=base).values_list("slug", flat=True)
     )
     candidate = base
     suffix = 2

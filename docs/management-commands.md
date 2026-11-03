@@ -599,16 +599,16 @@ reconciles the database against it in three modes, all on by default:
 |------|--------|
 | `add` | Create a resort for a sheet row whose `uuid` the DB lacks. |
 | `update` | Overwrite the editorial fields of rows that do match. |
-| `delete` | Remove resorts the sheet does not list. |
+| `retire` | Retire, re-reason or restore each matching row to its `status` (SNOW-1404). |
 
-The sheet's *live* set is every row whose `status` column is blank.
-`NOT_A_SKI_RESORT` there retires an entry that was never a lift-served
-area, and is the only other value the column accepts — anything else is an
-error rather than a silent "live". `delete` removes both the retired rows
-and any resort absent from the export; `add`/`update` skip them. A resort
-created in the admin must be written back with `dump_resorts_sheet` or it
-is deleted by the next full run — use `--mode add update` to reconcile
-without that risk.
+**Nothing is deleted** (SNOW-1404). `status` is blank for a live resort or
+a `Resort.RetiredReason` — `NOT_A_SKI_RESORT`, `DUPLICATE`, `CLOSED`,
+`OTHER`; anything else is an error rather than a silent "live". The
+`retired_at` and `retired_note` columns sit beside it. A retired resort
+leaves every public surface and answers 410 Gone, and the row and its
+favourites are kept. A resort the sheet does not list is reported as "not
+in sheet" and left alone; a retired sheet row the DB lacks is not created.
+`--mode delete` is refused, naming `retire`.
 
 **Creation-time only:** `region`, `canton`, `latitude`/`longitude`, and the
 three provenance columns (`geocode_source`, `geocode_confidence`,
@@ -1905,9 +1905,10 @@ uv run python manage.py diagnose_region_coverage --verbose-table       # add per
 # SNOW-817). Use after a session of placing resort coordinates via the
 # in-map editor at /map/?edit=resorts — without this step, edits live only in
 # that environment's database. Read-only by default; --commit writes the
-# file. Keeps existing rows in place (so a re-pin is a one-line diff) and
-# carries retired NOT_A_SKI_RESORT rows through verbatim — they have no DB
-# row to dump from. This is the DB -> sheet half of the resort round trip;
+# file. Keeps existing rows in place (so a re-pin is a one-line diff), writes
+# retired resorts with their status, retired_at and retired_note (SNOW-1404),
+# and carries retired sheet rows the DB lacks through verbatim. This is the
+# DB -> sheet half of the resort round trip;
 # import_resorts is the other half.
 uv run python manage.py dump_resorts_sheet           # preview diff only
 uv run python manage.py dump_resorts_sheet --commit  # write the sheet

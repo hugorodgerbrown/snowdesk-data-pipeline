@@ -115,7 +115,22 @@ RESORT_FIELDS: tuple[str, ...] = (
     # SNOW-1271: the reference-data service's id for the resort, so a pulled
     # resort carries the key /api/data/v2/resorts/ is matched on.
     "source_uuid",
+    # SNOW-1404: retirement is a state the feed carries, so a retired resort
+    # is mirrored and pulled like any other, and restoring it travels too.
+    # Additive, so the URL's /v2/ is not bumped.
+    "retired_at",
+    "retired_reason",
+    "retired_note",
 )
+# What an item from a producer that predates SNOW-1404 means: it carries none
+# of the retirement fields, and every resort it sends is live. Merged under
+# the loaded fields, so an old-shape item restores a row retired here rather
+# than leaving it as it was.
+RESORT_LIVE: dict[str, Any] = {
+    "retired_at": None,
+    "retired_reason": "",
+    "retired_note": "",
+}
 # region, location and passes are relations: they travel as natural keys
 # in their own members of the item (see feeds.serialise_resort).
 RESORT_NOT_SENT = frozenset(

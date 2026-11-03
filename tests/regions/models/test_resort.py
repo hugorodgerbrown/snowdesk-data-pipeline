@@ -18,10 +18,18 @@ import pytest
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.db import IntegrityError
+from django.utils import timezone
 
-from apps.regions.management.commands.import_resorts import DELETE_MARKER
+from apps.favourites.models import Favourite
+from apps.locations.models import ResortLocation
 from apps.regions.models import MicroRegion, Resort
-from tests.factories import LocationFactory, MicroRegionFactory, ResortFactory
+from tests.factories import (
+    FavouriteFactory,
+    LocationFactory,
+    MicroRegionFactory,
+    ResortFactory,
+    ResortLocationFactory,
+)
 
 SHEET_PATH = Path("apps/regions/data/resorts.tsv")
 
@@ -35,11 +43,7 @@ def live_sheet_rows() -> list[dict[str, str]]:
     """
     with SHEET_PATH.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle, delimiter="\t"))
-    return [
-        row
-        for row in rows
-        if (row.get("status") or "").strip().upper() != DELETE_MARKER
-    ]
+    return [row for row in rows if not (row.get("status") or "").strip()]
 
 
 @pytest.mark.django_db
@@ -401,3 +405,60 @@ class TestResortGeocodeSource:
         } - {""}
         assert sources
         assert sources <= set(Resort.GeocodeSource.values)
+
+
+@pytest.mark.django_db
+class TestResortRetirement:
+    """SNOW-1404: retirement is a state; the managers and FKs agree on it."""
+
+    def test_objects_is_live_all_objects_is_everything(self) -> None:
+        """The default manager leaves retired rows out; all_objects keeps them."""
+        live = ResortFactory.create(name="Live")
+        gone = ResortFactory.create(name="Gone", retired=True)
+
+        assert list(Resort.objects.all()) == [live]
+        assert set(Resort.all_objects.all()) == {live, gone}
+        assert list(Resort.all_objects.live()) == [live]
+        assert list(Resort.all_objects.retired()) == [gone]
+        assert gone.is_retired and not live.is_retired
+
+    def test_reverse_relations_are_live(self) -> None:
+        """``region.resorts`` reads the default manager, so it is live too."""
+        region = MicroRegionFactory.create()
+        live = ResortFactory.create(region=region)
+        ResortFactory.create(region=region, retired=True)
+
+        assert list(region.resorts.all()) == [live]
+
+    def test_a_foreign_key_still_finds_a_retired_resort(self) -> None:
+        """The base manager is all_objects: a favourite keeps its resort."""
+        resort = ResortFactory.create(retired=True)
+        favourite = FavouriteFactory.create(resort=resort)
+        link = ResortLocationFactory.create(resort=resort)
+
+        favourite = Favourite.objects.get(pk=favourite.pk)
+        link = ResortLocation.objects.get(pk=link.pk)
+        assert favourite.resort == resort
+        assert link.resort == resort
+
+    def test_date_and_reason_must_come_together(self) -> None:
+        """The constraint refuses half a retirement, either way round."""
+        with pytest.raises(IntegrityError):
+            ResortFactory.create(retired_reason=Resort.RetiredReason.CLOSED)
+
+    def test_date_without_reason_is_refused_by_the_constraint(self) -> None:
+        """A date and no reason is half a retirement too."""
+        with pytest.raises(IntegrityError):
+            ResortFactory.create(retired_at=timezone.now())
+
+    def test_clean_names_the_pair(self) -> None:
+        """``clean()`` reports half a retirement on ``retired_reason``."""
+        resort = ResortFactory.build(retired_at=timezone.now())
+        with pytest.raises(ValidationError) as excinfo:
+            resort.clean()
+        assert "retired_reason" in excinfo.value.message_dict
+
+    def test_a_retired_slug_is_not_reused(self) -> None:
+        """A new resort of the same name gets a suffix, not the retired slug."""
+        ResortFactory.create(name="Aigle", retired=True)
+        assert ResortFactory.create(name="Aigle").slug == "aigle-2"

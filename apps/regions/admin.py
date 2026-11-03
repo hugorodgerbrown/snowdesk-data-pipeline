@@ -143,6 +143,25 @@ class ResortAdminForm(forms.ModelForm):
         return cleaned
 
 
+class RetiredListFilter(admin.SimpleListFilter):
+    """Filter resorts by retirement (SNOW-1404); unfiltered shows every row."""
+
+    title = "retired"
+    parameter_name = "retired"
+
+    def lookups(self, request: HttpRequest, model_admin: Any) -> list[tuple[str, str]]:
+        """Return the two states; no choice is "all"."""
+        return [("live", "Live"), ("retired", "Retired")]
+
+    def queryset(self, request: HttpRequest, queryset: Any) -> Any:
+        """Narrow to live or retired rows when one is chosen."""
+        if self.value() == "live":
+            return queryset.live()
+        if self.value() == "retired":
+            return queryset.retired()
+        return queryset
+
+
 @admin.register(Resort)
 class ResortAdmin(admin.ModelAdmin):
     """Admin view for Resort.
@@ -168,8 +187,10 @@ class ResortAdmin(admin.ModelAdmin):
         "longitude",
         "geocode_source",
         "needs_review",
+        "retired_reason",
     ]
     list_filter = [
+        RetiredListFilter,
         "kind",
         "tier",
         "passes",
@@ -239,6 +260,18 @@ class ResortAdmin(admin.ModelAdmin):
             },
         ),
         (
+            "Retirement",
+            {
+                "fields": ("retired_at", "retired_reason", "retired_note"),
+                "description": (
+                    "A retired resort is a soft delete (SNOW-1404): off every "
+                    "public surface, its page 410 Gone, the row and its "
+                    "favourites kept. Set a date and a reason together, or "
+                    "clear both to restore."
+                ),
+            },
+        ),
+        (
             "Audit",
             {
                 "classes": ("collapse",),
@@ -246,6 +279,12 @@ class ResortAdmin(admin.ModelAdmin):
             },
         ),
     )
+
+    def get_queryset(self, request: HttpRequest) -> Any:
+        """Return every resort, retired ones included (SNOW-1404)."""
+        queryset = Resort.all_objects.get_queryset()
+        ordering = self.get_ordering(request)
+        return queryset.order_by(*ordering) if ordering else queryset
 
     def save_model(
         self, request: HttpRequest, obj: Resort, form: Any, change: bool

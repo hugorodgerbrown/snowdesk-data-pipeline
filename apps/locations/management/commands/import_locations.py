@@ -638,7 +638,7 @@ def _plan_links(
 
     """
     index = _LinkIndex(
-        resorts={str(resort.uuid): resort for resort in Resort.objects.all()},
+        resorts={str(resort.uuid): resort for resort in Resort.all_objects.all()},
         locations=by_uuid,
         pending={str(location.uuid): location for location in plan.additions},
         # Only links whose location is curated are the sheet's to own, for

@@ -12,23 +12,27 @@ def _fill_slugs(apps, schema_editor) -> None:
     """Mint a slug for any resort without one: slugify(name), then -2, -3."""
     Resort = apps.get_model("regions", "Resort")
     for pk, name in (
-        Resort.objects.filter(slug__isnull=True).values_list("pk", "name").iterator()
+        Resort.all_objects.filter(slug__isnull=True)
+        .values_list("pk", "name")
+        .iterator()
     ):
         base = slugify(name) or "resort"
         taken = set(
-            Resort.objects.filter(slug__startswith=base).values_list("slug", flat=True)
+            Resort.all_objects.filter(slug__startswith=base).values_list(
+                "slug", flat=True
+            )
         )
         candidate, suffix = base, 2
         while candidate in taken:
             candidate, suffix = f"{base}-{suffix}", suffix + 1
-        Resort.objects.filter(pk=pk).update(slug=candidate)
+        Resort.all_objects.filter(pk=pk).update(slug=candidate)
 
 
 class Migration(migrations.Migration):
     """Fill any null slug, then make the column NOT NULL."""
 
     dependencies = [
-        ("regions", "0025_resort_pass_source_uuid"),
+        ("regions", "0026_resort_retirement"),
     ]
 
     operations = [

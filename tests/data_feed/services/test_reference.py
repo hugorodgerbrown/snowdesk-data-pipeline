@@ -343,3 +343,50 @@ def test_weather_lookups_resolve_the_service_uuid() -> None:
     )
     assert lookups.locations == {str(location.source_uuid): location}
     assert lookups.planned == {"x"}
+
+
+@pytest.mark.django_db
+class TestRetiredResorts:
+    """SNOW-1404: v2 carries retirement as fields, both ways."""
+
+    def _item(self, source: uuid.UUID, **fields: Any) -> dict[str, Any]:
+        """Return a v2 resort item for Aigle in CH-4115."""
+        return {
+            "uuid": str(source),
+            "slug": "aigle",
+            "document": {"fields": {"name": "Aigle", **fields}, "region": "CH-4115"},
+        }
+
+    def test_retire_then_restore(self) -> None:
+        """A retired document retires the row; a live one restores it."""
+        MicroRegionFactory.create(region_id="CH-4115")
+        source = uuid.uuid4()
+        apply_reference_resort(
+            self._item(source), commit=True, index=ReferenceIndex.load()
+        )
+
+        retired = self._item(
+            source, retired_at="2026-11-03T00:00:00+00:00", retired_reason="CLOSED"
+        )
+        apply_reference_resort(retired, commit=True, index=ReferenceIndex.load())
+        resort = Resort.all_objects.get(source_uuid=source)
+        assert resort.retired_reason == "CLOSED"
+        # The index reads all_objects, so the next pull finds it unchanged.
+        assert (
+            apply_reference_resort(retired, commit=True, index=ReferenceIndex.load())
+            == UNCHANGED
+        )
+
+        apply_reference_resort(
+            self._item(source), commit=True, index=ReferenceIndex.load()
+        )
+        assert Resort.objects.filter(source_uuid=source).exists()
+
+    def test_a_retired_resort_still_holds_its_slug(self) -> None:
+        """A recreated resort waits for the retired one's tombstone (SlugTaken)."""
+        MicroRegionFactory.create(region_id="CH-4115")
+        ResortFactory.create(slug="aigle", source_uuid=uuid.uuid4(), retired=True)
+        with pytest.raises(SlugTaken):
+            apply_reference_resort(
+                self._item(uuid.uuid4()), commit=True, index=ReferenceIndex.load()
+            )

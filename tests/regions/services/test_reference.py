@@ -9,6 +9,8 @@ has no key on the wire and is left out.
 
 from __future__ import annotations
 
+import datetime as dt
+
 import pytest
 
 from apps.ingest.public import SourceLocation, SourcePass, SourceResort
@@ -135,3 +137,24 @@ class TestMirrorResorts:
         resort = ResortFactory.create(latitude=46.1, longitude=7.4)
         with pytest.raises(ValueError, match="no source_uuid"):
             resort_document(resort)
+
+
+@pytest.mark.django_db
+def test_a_retired_resort_is_mirrored_with_its_state_not_tombstoned() -> None:
+    """SNOW-1404: retirement travels as fields; the tombstone is for removal."""
+    resort = _resort_with_everything()
+    mirror_reference_data()
+    resort.retired_at = dt.datetime(2026, 11, 3, tzinfo=dt.UTC)
+    resort.retired_reason = Resort.RetiredReason.DUPLICATE
+    resort.retired_note = "same as Verbier"
+    resort.save()
+
+    assert mirror_reference_data()["resorts"]["updated"] == 1
+    source = SourceResort.objects.get()
+    assert source.deleted_at is None
+    fields = source.document["fields"]
+    assert fields["retired_at"] == "2026-11-03T00:00:00+00:00"
+    assert (fields["retired_reason"], fields["retired_note"]) == (
+        "DUPLICATE",
+        "same as Verbier",
+    )

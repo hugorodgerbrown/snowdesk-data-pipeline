@@ -132,7 +132,9 @@ class Command(RegisteredCommand):
 
         """
         names = list(
-            Resort.objects.unlinked().order_by("name").values_list("name", flat=True)
+            Resort.all_objects.unlinked()
+            .order_by("name")
+            .values_list("name", flat=True)
         )
         if not names:
             self.stdout.write("No unlinked geocoded resorts.")
@@ -160,7 +162,7 @@ class Command(RegisteredCommand):
         commit: bool = options["commit"]
         verbosity: int = options["verbosity"]
 
-        candidates = Resort.objects.filter(
+        candidates = Resort.all_objects.filter(
             latitude__isnull=False, longitude__isnull=False
         ).select_related("location")
         total = candidates.count()

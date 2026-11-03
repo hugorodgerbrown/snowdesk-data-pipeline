@@ -7,9 +7,9 @@ Three properties matter, and each has a test here:
 1. **The round trip is a fixpoint.** Importing the committed sheet and
    dumping it again reproduces the file byte for byte. Without that, every
    dump churns the file and a real coordinate change is lost in the noise.
-2. **Retired rows survive.** A ``NOT_A_SKI_RESORT`` row is deliberately
-   absent from the database, so it can only come from the sheet already on
-   disk. Dropping it would silently un-retire the place on the next import.
+2. **Retired rows survive.** A resort retired in the database (SNOW-1404)
+   is dumped with its status, date and note; a retired sheet row the
+   database does not hold comes from the sheet already on disk, unchanged.
 3. **Row order is stable.** Existing rows keep their position, so a re-pinned
    coordinate is a one-line diff.
 """
@@ -17,6 +17,7 @@ Three properties matter, and each has a test here:
 from __future__ import annotations
 
 import csv
+import datetime as dt
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,7 @@ from apps.regions.management.commands.dump_resorts_sheet import (
     render_resorts_sheet,
     write_resorts_sheet,
 )
+from apps.regions.models import Resort
 from tests.factories import MicroRegionFactory, PassFactory, ResortFactory
 
 COMMITTED_SHEET = Path("apps/regions/data/resorts.tsv")
@@ -69,7 +71,48 @@ class TestRoundTrip:
 
 @pytest.mark.django_db
 class TestRetiredRows:
-    """Rows the sheet retires have no database row to dump from."""
+    """Retired rows: dumped from the database, or carried off the sheet."""
+
+    def test_retired_db_row_is_dumped_with_its_state(self, tmp_path: Path) -> None:
+        """A retired resort is written with its reason, date and note."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        resort = ResortFactory.create(
+            name="Aigle",
+            region=region,
+            retired_at=dt.datetime(2025, 4, 30, tzinfo=dt.UTC),
+            retired_reason="CLOSED",
+            retired_note="lifts shut",
+        )
+        sheet = tmp_path / "resorts.tsv"
+        _write_sheet(sheet, [{"uuid": str(resort.uuid), "name": "Aigle"}])
+
+        row = _rows(render_resorts_sheet(sheet))[0]
+
+        assert (row["status"], row["retired_at"], row["retired_note"]) == (
+            "CLOSED",
+            "2025-04-30T00:00:00+00:00",
+            "lifts shut",
+        )
+
+    def test_retired_round_trip_is_a_fixpoint(self, tmp_path: Path) -> None:
+        """Dump a retired resort, import the dump: nothing changes."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        resort = ResortFactory.create(
+            name="Aigle", region=region, retired=True, retired_note="shut"
+        )
+        sheet = tmp_path / "resorts.tsv"
+        write_resorts_sheet(sheet)
+        before = Resort.all_objects.get(pk=resort.pk)
+
+        call_command("import_resorts", "--file", str(sheet), "--commit", verbosity=0)
+
+        after = Resort.all_objects.get(pk=resort.pk)
+        assert (after.retired_at, after.retired_reason, after.retired_note) == (
+            before.retired_at,
+            before.retired_reason,
+            before.retired_note,
+        )
+        assert render_resorts_sheet(sheet) == sheet.read_text(encoding="utf-8")
 
     def test_retired_row_is_carried_forward(self, tmp_path: Path) -> None:
         """A NOT_A_SKI_RESORT row survives a dump that cannot see it."""
@@ -243,11 +286,12 @@ class TestRenderedValues:
         assert float(row["latitude"]) == 46.095584091367755
         assert float(row["longitude"]) == 7.220341699392549
 
-    def test_a_db_row_is_never_written_as_retired(self, tmp_path: Path) -> None:
-        """``status`` is a curator's verdict, not something the DB can hold."""
+    def test_a_live_db_row_has_a_blank_status(self, tmp_path: Path) -> None:
+        """A live resort is written with ``status`` and its pair blank."""
         region = MicroRegionFactory.create(region_id="CH-4115")
         resort = ResortFactory.create(name="Verbier", region=region)
         sheet = tmp_path / "resorts.tsv"
         _write_sheet(sheet, [{"uuid": str(resort.uuid), "name": "Verbier"}])
 
-        assert _rows(render_resorts_sheet(sheet))[0]["status"] == ""
+        row = _rows(render_resorts_sheet(sheet))[0]
+        assert (row["status"], row["retired_at"], row["retired_note"]) == ("", "", "")

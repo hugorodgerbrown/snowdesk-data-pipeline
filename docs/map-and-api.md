@@ -2,7 +2,7 @@
 name: map-and-api
 description: /map/ (public:map) MapLibre choropleth, scrubber, calendar, overlay registry, /api/ endpoints (ratings, geojson, groupings), routes.geojson
 status: current
-last-reviewed: 2026-11-02
+last-reviewed: 2026-11-03
 ---
 
 # Map page and JSON API
@@ -849,9 +849,9 @@ git diff apps/regions/data/resorts.tsv              # review
 
 The dump keeps each existing row in its current position (so a re-pinned
 coordinate is a one-line diff), appends rows the sheet has never seen in
-name order, and carries retired `NOT_A_SKI_RESORT` rows through verbatim —
-they have no database row to dump from, and losing them would un-retire
-those places on the next import. Round-tripping the committed sheet
+name order, writes retired resorts with their `status`, `retired_at` and
+`retired_note` (SNOW-1404), and carries a retired sheet row the database
+does not hold through verbatim, so the record of it is kept. Round-tripping the committed sheet
 through the database and back out is a fixpoint, asserted by
 `tests/regions/management/commands/test_dump_resorts_sheet.py`.
 
