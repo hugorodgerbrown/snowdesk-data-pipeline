@@ -224,11 +224,15 @@ def test_map_mode_scripts_load_in_their_places_behind_the_flag() -> None:
 
 
 @pytest.mark.django_db
-def test_map_mode_scripts_are_absent_without_the_flag() -> None:
-    """Off, a stored or linked ?mode= has nothing to read it."""
+def test_map_mode_toggle_is_absent_without_the_flag() -> None:
+    """Off, the toggle is not loaded, so a stored or linked ?mode= has
+    nothing to apply it. The pure core still loads, before the bundle: every
+    core map.js reads is on the page (test_home_scripts.py), and map.js
+    ignores it until #map carries data-map-modes-enabled.
+    """
     rendered = _rendered_script_filenames()
-    assert "map_mode_core.js" not in rendered
     assert "map_mode.js" not in rendered
+    assert rendered.index("map_mode_core.js") < rendered.index(_map_bundle()[0])
 
 
 # ---------------------------------------------------------------------------

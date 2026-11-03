@@ -3036,7 +3036,6 @@ MAP_MODE_MARKERS = (
     ' id="map-mode-terrain"',
     ' id="map-mode-strings-template"',
     "data-today-label='Today'",
-    "/static/js/map_mode_core.js",
     "/static/js/map_mode.js",
 )
 
@@ -3060,6 +3059,8 @@ def test_map_modes_toggle_renders_only_behind_the_flag() -> None:
     for marker in MAP_MODE_MARKERS:
         assert content.count(marker) == 1, marker
     assert 'data-map-modes-enabled="true"' in content
+    # The pure core loads for everyone; the flag decides whether it is read.
+    assert content.count("/static/js/map_mode_core.js") == 1
     assert 'id="map-today-control"' not in content
     # The Today panel's sun is a panel, not a map surface: it stays.
     assert 'id="map-today-panel-toggle"' in content

@@ -85,6 +85,13 @@ that is always on screen replaced it.
 - **A region row on another panel still opens its region.** A resort
   sheet's region row is an explicit ask, so `snowdesk:region-open` is not
   refused in Terrain.
+- **The pure core loads for everyone; the flag decides whether it is read.**
+  `map_mode_core.js` is on every `/map/`, because every core `map.js`
+  reads must be (`test_home_scripts.py`). `map.js` and the shared date
+  write (`map_shared.js`) act on it only where `#map` carries
+  `data-map-modes-enabled`, so off the flag a pasted `?mode=terrain` does
+  nothing and is dropped on the first day change. The toggle itself
+  (`map_mode.js`) loads only behind the flag.
 - **The help topic waits for the rollout.** `/help/#help-topic-map-modes`
   renders only behind the flag, and `docs_corpus.GATED_HELP_TOPICS` keeps
   it out of the public MCP docs corpus. The rollout ticket ungates both and

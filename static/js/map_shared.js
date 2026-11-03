@@ -104,10 +104,13 @@ const readDisplayDate = () => readUrlDateParam() || readTodayDateParam();
 //
 // SNOW-1394: the map's mode (``?mode=terrain``) is the one other parameter a
 // date write carries through — a reader in Terrain who moves the day is
-// still in Terrain. pwaMapModeCore.withDate keeps it; without the core (a
-// page that loads no mode) the write is ``?d=`` alone, as it always was.
+// still in Terrain. pwaMapModeCore.withDate keeps it, but only where the
+// map_modes flag put data-map-modes-enabled on #map; anywhere else the write
+// is ``?d=`` alone, as it always was, so a pasted ?mode= is not carried on.
 const writeUrlDateParam = (dateKey) => {
-  const query = self.pwaMapModeCore
+  const mapEl = document.getElementById('map');
+  const modesOn = !!mapEl && mapEl.dataset.mapModesEnabled === 'true';
+  const query = modesOn && self.pwaMapModeCore
     ? self.pwaMapModeCore.withDate(location.search, dateKey)
     : '?d=' + dateKey;
   history.replaceState(null, '', location.pathname + query + location.hash);
