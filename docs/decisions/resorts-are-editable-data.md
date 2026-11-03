@@ -2,7 +2,7 @@
 name: resorts-are-editable-data
 description: resorts.tsv is the only resort file — import_resorts applies it, dump_resorts_sheet writes it back, no deploy loads it; resorts.json retired
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-11-03
 ---
 
 # Resorts are editable data, and one file describes them
@@ -74,8 +74,12 @@ dump it, get the same bytes.
 ## Consequences
 
 - **A resort change reaches production** by an admin/map edit made directly
-  there, or a sheet edit plus a manual `import_resorts --commit` against that
-  environment. A deploy alone changes nothing.
+  there, an ops MCP edit (`update_resort` / `create_resort`, SNOW-1401 — see
+  [`mcp-server.md`](../mcp-server.md#resort-tools)), or a sheet edit plus a
+  manual `import_resorts --commit` against that environment. A deploy alone
+  changes nothing. A resort created through the ops MCP server is, like one
+  created in the map editor, absent from the sheet until the next
+  `dump_resorts_sheet --commit`.
 - **`status` is the retirement marker**, in its own column. It is blank or
   `NOT_A_SKI_RESORT`; any other value is an error rather than a silent
   "live". It used to be a `NOT_A_SKI_RESORT` prefix on the `note` column, so

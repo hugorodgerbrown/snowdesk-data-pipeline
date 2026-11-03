@@ -2,7 +2,7 @@
 name: mcp-server
 description: MCP JSON-RPC at POST /api/mcp/ and staff /api/ops/mcp/ — mcp-auth auth, tools, MCP Apps view, search_docs / read_doc
 status: current
-last-reviewed: 2026-11-02
+last-reviewed: 2026-11-03
 ---
 
 # MCP server
@@ -677,7 +677,8 @@ the same protocol code: `protocol.dispatch(payload, server)` takes a
 `ToolServer` (name, tools, views), and the ops one is `snowdesk-ops` with
 `OPS_TOOLS` and no views. The public endpoint cannot call an ops tool.
 Every tool answers about the environment it runs on, and every one is
-read-only except the two waffle setters and `run_command` below.
+read-only except the two waffle setters, `run_command` and the two resort
+writes below.
 
 | Tool | Answers |
 |------|---------|
@@ -699,6 +700,10 @@ read-only except the two waffle setters and `run_command` below.
 | `get_command_task` | A queued command's task state and, once it has started, its register row: status, counts, duration, output tail |
 | `search_docs` / `read_doc` / `list_docs` | The full docs corpus — see [Documentation tools](#documentation-tools) |
 | `set_flag` | **Writes.** Sets an existing flag's `everyone` override `on` or `off`, or `targeted` to clear it so percent, staff, groups and users decide again |
+| `get_resort` | One resort in full by uuid, slug or name: every editable field, region, canton, pin, passes, page URL, which fields are empty, and its last five admin History entries — see [Resort tools](#resort-tools) |
+| `find_resorts` | A resort worklist, CORE tier first then by name, filtered by `region_id`, `country`, `kind`, a field still empty (`missing`) or `needs_review` |
+| `update_resort` | **Writes.** Corrects one resort's editorial fields — preview, then a commit quoting the preview's `updated_at` |
+| `create_resort` | **Writes.** Adds a resort at a coordinate, region from the point, flagged `needs_review` — preview (with likely duplicates), then commit |
 
 ### The waffle setters
 
@@ -726,6 +731,52 @@ so each is made deliberate rather than convenient:
   client asks before it calls one.
 - **Immediate.** waffle flushes its cache when the save commits, so the
   next request — and the next scheduled-job firing — reads the new state.
+
+### Resort tools
+
+`get_resort`, `find_resorts`, `update_resort` and `create_resort` live in
+`apps/mcp_server/resort_tools.py` (SNOW-1401). They exist so a staff
+account can correct the resort estate from a chat — reading a reference
+book and dictating the figures — on the environment the connector points
+at. Production's database owns `Resort`
+([why](decisions/resorts-are-editable-data.md)), so a production connector
+edits the real thing; staging's resorts are overwritten from production
+by the 07:20 UTC `pull_reference_data`, so staging is for rehearsing the
+tools, not for staging data.
+
+- **Editable fields only.** `RESORT_EDIT_FIELDS` in `apps/regions/forms.py`:
+  the map editor's twelve metadata fields plus `name`, `notes` and
+  `needs_review`. `slug`, `region`, `canton`, the pin, `kind`, `passes` and
+  the geocode provenance are refused by name — each has its own writer.
+- **Validated by the model**, through `ResortEditForm` (column limits,
+  MM-DD season dates, URLs, non-negative counts, top at or above base).
+  `update_resort`'s description carries `why_it_matters`' help text, and a
+  preview reports the sentence's length against the field's `max_length`.
+- **Preview, then commit.** `commit` is required. A preview writes nothing
+  and returns the diff and `updated_at`. An update's commit must pass that
+  value as `expected_updated_at`; the row is re-read under
+  `select_for_update` and a row changed since is refused. A commit that
+  changes nothing writes nothing.
+- **Sourced and audited.** `source` (at most 500 characters — the book and
+  page) is required. Each commit is one admin `LogEntry` against the staff
+  account (CHANGE for an update, listing every field old → new; ADDITION
+  for a create) plus a `WARNING` line carrying ids only — the values and
+  the account's email stay in the access-controlled admin log. The
+  resort's admin History is its change log, and `get_resort` returns the
+  latest entries.
+- **Creating.** The region is `region_for_point`'s; a point outside every
+  region is refused. An omitted canton is the region's resorts' vote
+  (`apps.regions.services.resort_edit.canton_for_region`, shared with the
+  map editor). The preview lists likely duplicates — same or fuzzy-similar
+  name anywhere, or a pin within 2 km (`nearby_resorts`) — and a same-name
+  resort in the same region is refused. A created row is stamped
+  `geocode_source=IMPORT`, `needs_review=True` (a book's coordinate is data,
+  not a placement) and pinned through `set_resort_pin`. Like a map-editor
+  creation it exists only in that database until `dump_resorts_sheet`
+  carries it into `resorts.tsv`.
+- **Downstream.** Nothing else to run: the search pool's cache key moves
+  with `updated_at`, and `mirror_reference_data` copies the edit into the
+  reference-data service within the hour.
 
 ### Running commands
 

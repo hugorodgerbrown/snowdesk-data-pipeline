@@ -194,7 +194,10 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  over every doc, decision and CLAUDE.md.
                  ops_tools.py is the staff ops catalogue, served at the
                  sibling POST /api/ops/mcp/ (SNOW-1191) — never nest it
-                 under /api/mcp/: token audience is a URL prefix
+                 under /api/mcp/: token audience is a URL prefix.
+                 resort_tools.py (SNOW-1401) lets staff read and
+                 correct resorts from a chat — get / find / update /
+                 create, each write a preview then an audited commit
   oauth/         Snowdesk's side of the MCP OAuth server (docs/oauth.md).
                  The server is mcp-auth on django-oauth-toolkit (SNOW-1193),
                  mounted from config/urls.py; this app holds the connect

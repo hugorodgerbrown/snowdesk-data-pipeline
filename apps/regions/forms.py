@@ -9,6 +9,9 @@ Provides:
     rendered. Using a ModelForm keeps every constraint (max_length, the
     MM-DD ``MONTH_DAY_VALIDATOR``, URL syntax, PositiveSmallInteger range)
     in one place: the model.
+  - ResortEditForm: ResortDetailsForm plus ``name``, ``notes`` and
+    ``needs_review`` — the fields the ops MCP server's ``update_resort``
+    and ``create_resort`` may write (SNOW-1401). Also never rendered.
 """
 
 from typing import Any
@@ -78,3 +81,32 @@ class ResortDetailsForm(forms.ModelForm):
                 "Top elevation cannot be below the base elevation.",
             )
         return cleaned
+
+
+# The fields the ops MCP server's resort tools may write (SNOW-1401): the
+# panel's metadata plus the three a book correction also reaches. Still no
+# coordinates, region, canton, slug, kind, passes or provenance — each of
+# those has its own writer and its own rules.
+RESORT_EDIT_FIELDS: tuple[str, ...] = (
+    "name",
+    *RESORT_DETAIL_FIELDS,
+    "notes",
+    "needs_review",
+)
+
+
+class ResortEditForm(ResortDetailsForm):
+    """Validate a resort edit made through the ops MCP server.
+
+    Inherits every rule ``ResortDetailsForm`` holds (the model's column
+    constraints, the non-negative piste length, top at or above base) and
+    adds ``name``, ``notes`` and ``needs_review``. Bound the same way:
+    the caller merges the changes over the instance's current values, so
+    an absent key leaves a field alone.
+    """
+
+    class Meta:
+        """Form metadata."""
+
+        model = Resort
+        fields = list(RESORT_EDIT_FIELDS)
