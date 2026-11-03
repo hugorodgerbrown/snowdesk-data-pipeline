@@ -5,11 +5,12 @@ Grown from SNOW-1359's "Saved today".
 
 The map's Today panel, opened from the sun roundel in the date row: one row
 per avalanche region the user cares about, carrying that region's danger
-today and how it moved since yesterday, with the user's pinned resorts in it
-nested underneath, each carrying the resort's weather today. A region is in
-the list because the user pinned it, or because they pinned a resort in it
-(``pinned`` says which). Dropped pins are not listed: a pin is the user's
-own spot, not somewhere Snowdesk publishes a reading for (Hugo, 2 Nov 2026).
+today, with the user's pinned resorts in it nested underneath, each carrying
+the resort's weather today. A region is in the list because the user pinned
+it, or because they pinned a resort in it; the panel does not say which,
+because pinning is a setting, not a condition (Hugo, 3 Nov 2026). Dropped
+pins are not listed: a pin is the user's own spot, not somewhere Snowdesk
+publishes a reading for (Hugo, 2 Nov 2026).
 
 SNOW-1359 put these readings on top of the Favourites panel, one flat row
 per saved place, every kind; that duplicated the pins listed beneath it,
@@ -17,7 +18,7 @@ and Hugo asked for today to be a surface of its own instead.
 
 Built for a whole list at once and in a fixed number of queries, however
 many places there are: today's ratings are passed in (the view reads them
-once), this reads yesterday's ratings once and borrows every resort's
+once), and this borrows every resort's
 forecast through ``nearest_forecasts``, which costs the same handful of
 queries for one place or forty. ``nearest_forecast`` is deliberately NOT
 called: it queries per place. A resort's own pin is a curated point, so in
@@ -27,9 +28,9 @@ still the one applied, and the row names the point when it is elsewhere.
 A region borrows nothing: the danger is the region's reading, and the
 weather belongs to the places in it.
 
-The trend compares level RANKS only. A subdivision ("3+") is part of the
-day's level as written, not a step on the scale, so "3-" to "3+" is Same.
-``no_rating`` is no bulletin, for the level and the trend alike.
+``no_rating`` is no bulletin. The panel once said how each level moved since
+yesterday; that line went with the rest of the region's subtext when the
+panel became a bare snapshot of today (Hugo, 3 Nov 2026).
 """
 
 from __future__ import annotations
@@ -50,10 +51,6 @@ from apps.weather.services.weather_display import (
 )
 
 logger = logging.getLogger(__name__)
-
-UP = "up"
-SAME = "same"
-DOWN = "down"
 
 
 @dataclass(frozen=True)
@@ -92,18 +89,14 @@ class TodayResort:
 
 @dataclass(frozen=True)
 class TodayRegion:
-    """One region's row: its danger today, its trend, its pinned resorts.
+    """One region's row: its danger today and its pinned resorts.
 
     Attributes:
         region_id: The micro-region's EAWS id ("CH-4115").
         name: The region's name.
         url: The region's canonical bulletin page.
-        pinned: Whether the user pinned the region itself; False for a
-            region that is listed only as a pinned resort's parent.
         level: Today's ``max_rating`` key, or None when there is no bulletin.
         subdivision: Today's ``max_subdivision`` ("+", "-" or "").
-        trend: ``"up"``, ``"down"``, ``"same"``, or None when either day has
-            no bulletin.
         rating: Today's rating row, for the response's freshness headers.
         resorts: The user's pinned resorts in this region, by name.
 
@@ -112,16 +105,14 @@ class TodayRegion:
     region_id: str
     name: str
     url: str
-    pinned: bool
     level: str | None
     subdivision: str
-    trend: str | None
     rating: RegionDayRating | None
     resorts: list[TodayResort] = field(default_factory=list)
 
     def to_string(self) -> str:
         """Return the row in one line, for logs and test failures."""
-        return f"region {self.region_id}: {self.level} {self.trend}"
+        return f"region {self.region_id}: {self.level}"
 
     def __str__(self) -> str:
         """Delegate to ``to_string``."""
@@ -134,30 +125,6 @@ def _rank(rating: RegionDayRating | None) -> int:
         return 0
     digit = danger_level_digit(rating.max_rating)
     return int(digit) if digit else 0
-
-
-def trend_between(
-    today: RegionDayRating | None, yesterday: RegionDayRating | None
-) -> str | None:
-    """Return how a region's level moved since yesterday.
-
-    Args:
-        today: Today's rating, or None.
-        yesterday: Yesterday's rating, or None.
-
-    Returns:
-        ``"up"``, ``"down"`` or ``"same"``; None when either day has no
-        bulletin, because a move from or to nothing is not a move.
-
-    """
-    now, before = _rank(today), _rank(yesterday)
-    if not now or not before:
-        return None
-    if now > before:
-        return UP
-    if now < before:
-        return DOWN
-    return SAME
 
 
 def today_subjects(favourites: Iterable[Favourite]) -> list[Favourite]:
@@ -236,7 +203,6 @@ def build_today(
     """
     subjects = today_subjects(favourites)
     regions: dict[int, MicroRegion] = {}
-    pinned: set[int] = set()
     resorts_by_region: dict[int, list[Favourite]] = {}
     for favourite in subjects:
         region = _parent(favourite)
@@ -247,17 +213,9 @@ def build_today(
             logger.debug("today: %s has no region to list it under", favourite.uuid)
             continue
         regions[region.pk] = region
-        if favourite.resort is None:
-            pinned.add(region.pk)
-        else:
+        if favourite.resort is not None:
             resorts_by_region.setdefault(region.pk, []).append(favourite)
 
-    yesterday = {
-        rating.region_id: rating
-        for rating in RegionDayRating.objects.filter(
-            region_id__in=set(regions), date=day - datetime.timedelta(days=1)
-        ).only("id", "region_id", "date", "max_rating")
-    }
     points = {
         f.pk: point
         for group in resorts_by_region.values()
@@ -280,12 +238,10 @@ def build_today(
                 region_id=region.region_id,
                 name=region.name,
                 url=region.get_absolute_url(),
-                pinned=pk in pinned,
                 level=today_rating.max_rating if today_rating else None,
                 subdivision=(today_rating.max_subdivision or "")
                 if today_rating
                 else "",
-                trend=trend_between(today_rating, yesterday.get(pk)),
                 rating=today_rating,
                 resorts=resorts,
             )

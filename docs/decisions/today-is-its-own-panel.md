@@ -2,7 +2,7 @@
 name: today-is-its-own-panel
 description: Why Today is its own panel behind the sun (favourites:today, build_today, today_panel.js); the bell retired
 status: current
-last-reviewed: 2026-11-02
+last-reviewed: 2026-11-03
 ---
 
 # Today is its own panel
@@ -10,8 +10,8 @@ last-reviewed: 2026-11-02
 **SNOW-1366.** A sun roundel in the map's date row, after "Today"
 (`#map-today-panel-toggle`), opens the Today panel (`#today-sheet`,
 `static/js/today_panel.js`). It lists the regions the reader pinned, and
-the regions their pinned resorts are in, each with today's bulletin danger
-and how it moved since yesterday. The pinned resorts sit nested under
+the regions their pinned resorts are in, each with today's bulletin danger.
+The pinned resorts sit nested under
 their region, each with today's weather. It always shows today, whatever
 day the map is on, and it is drawn only for a signed-in reader.
 
@@ -24,10 +24,18 @@ day the map is on, and it is drawn only for a signed-in reader.
   ([a-resort-has-no-avalanche-danger](a-resort-has-no-avalanche-danger.md)).
   The region row carries the danger and the resort row under it carries
   the weather, so neither row repeats the other. A pinned resort brings in
-  its region, marked "not pinned".
+  its region, and the panel does not say the region itself is unpinned.
 - **Alphabetical.** Regions are listed by name, and so are the resorts in
   each. The list is never sorted by danger.
-- **A row opens its place.** Rows are `includes/_place_link_row.html`, so
+- **A snapshot, nothing more** (Hugo, 3 Nov 2026). Each region is one
+  compact group: its name is the heading, with today's level on the right,
+  and its resorts are bare rows under it, with their weather on the right.
+  Nothing else appears: no subtext under the region, no trend since
+  yesterday, no "not pinned", and no kind tile on either row. A region with
+  no bulletin shows the muted no-rating tile where the level would be. The
+  rows are the panel's own markup, not `_place_link_row.html`, and they
+  keep that partial's `data-panel-open` contract.
+- **A row opens its place.** Rows carry `data-panel-open`, so
   `map_panel_trail.js` opens the region or resort sheet with a back pill
   naming Today, which reopens through `window.pwaTodayPanel`. When the map
   is on another day, following a row first moves the map to today
@@ -48,6 +56,10 @@ regions. "Let's make today a first-class surface citizen."
 
 On the ordering, he said: "Deterministic is better for users." A list
 that reorders itself by danger moves each place every morning.
+
+On the compact layout (3 Nov 2026) he said: "Region level on the right.
+Remove the subtext on the region. Keep it clean - it's a snapshot of
+today." Pinning is a setting, not a condition, so the panel doesn't show it.
 
 On the bell, he asked: "Why have notifications if the information is
 right there?" An alert is a push about a place's day, and Today now

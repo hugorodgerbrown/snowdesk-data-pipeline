@@ -1268,6 +1268,16 @@ input[type="time"]::-webkit-date-and-time-value {
    same component rather than a second style of chip. */
 .danger-tile--outlined { border: 1px solid var(--color-border); }
 
+/* Compact variant (Today panel, Hugo 3 Nov 2026) — the level on the right of a
+   region's heading row, sized to the row's 15px name rather than to the
+   36px icon tiles the place rows lead with. */
+.danger-tile--compact {
+  min-width: 1.75rem;
+  height: 1.75rem;
+  padding: 0 0.3rem;
+  font-size: var(--text-sm);
+}
+
 /* Compact variant (SNOW-1215) — the level on a Plan page day tile, which is
    a seventh of a phone's width and has no room for the 2.25rem square. The
    same fills and the same digit, at chip size. */

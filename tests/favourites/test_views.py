@@ -2711,7 +2711,7 @@ class TestTodayView:
         client.force_login(user)
         content = client.get(TODAY_URL, **HTMX_HEADERS).content.decode()
         announce = re.search(
-            r'data-testid="place-link-level-announce"\s*>(.*?)</span>', content, re.S
+            r'data-testid="today-region-announce"\s*>(.*?)</span>', content, re.S
         )
         assert announce
         assert " ".join(announce.group(1).split()) == "Danger today: Considerable"
@@ -2738,7 +2738,7 @@ class TestTodayView:
         self._resort_with_forecast(user, km_east=4.0)
         client.force_login(user)
         content = client.get(TODAY_URL, **HTMX_HEADERS).content.decode()
-        assert 'data-testid="place-link-forecast"' in content
+        assert 'data-testid="today-resort-forecast"' in content
         source = re.search(
             r'data-testid="today-resort-source"\s*>(.*?)</p>', content, re.S
         )
@@ -2754,7 +2754,7 @@ class TestTodayView:
         self._resort_with_forecast(user, km_east=0.0)
         client.force_login(user)
         content = client.get(TODAY_URL, **HTMX_HEADERS).content.decode()
-        assert 'data-testid="place-link-forecast"' in content
+        assert 'data-testid="today-resort-forecast"' in content
         assert 'data-testid="today-resort-source"' not in content
 
     def test_a_resorts_region_is_listed_even_unpinned(self, client: Client) -> None:
@@ -2768,7 +2768,39 @@ class TestTodayView:
         content = client.get(TODAY_URL, **HTMX_HEADERS).content.decode()
 
         assert "Südliches Urseren" in content
-        assert re.search(r"No bulletin today\s+·\s+not\s+pinned", content)
+        # Pinning is a setting, not a condition: the panel never says it.
+        assert "pinned" not in content.lower()
+
+    def test_a_region_carries_no_subtext(self, client: Client) -> None:
+        """A snapshot of today (Hugo, 3 Nov 2026): the name and the level,
+        no trend since yesterday; no bulletin is the muted tile, said in words
+        only to a screen reader.
+        """
+        user = UserFactory.create()
+        today = django_timezone.localdate()
+        rated = MicroRegionFactory.create(name="Engelberg")
+        RegionDayRatingFactory.create(region=rated, date=today, max_rating="high")
+        RegionDayRatingFactory.create(
+            region=rated,
+            date=today - datetime.timedelta(days=1),
+            max_rating="moderate",
+        )
+        unrated = MicroRegionFactory.create(name="Obergoms")
+        for region in (rated, unrated):
+            FavouriteFactory.create(user=user, region=region, region_pin=True)
+        client.force_login(user)
+
+        content = client.get(TODAY_URL, **HTMX_HEADERS).content.decode()
+
+        assert "yesterday" not in content
+        assert 'data-level="no_rating"' in content
+        announced = [
+            " ".join(m.split())
+            for m in re.findall(
+                r'data-testid="today-region-announce"\s*>(.*?)</span>', content, re.S
+            )
+        ]
+        assert announced == ["Danger today: High", "No bulletin today"]
 
     def test_regions_are_alphabetical_not_by_danger(self, client: Client) -> None:
         user = UserFactory.create()

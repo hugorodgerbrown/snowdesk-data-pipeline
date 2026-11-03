@@ -1076,16 +1076,16 @@ def today(request: HttpRequest) -> HttpResponse:
 
     SNOW-1366. Opened from the sun roundel in the map's date row and always
     about today, whatever day the map is showing. One row per region the
-    user pinned or holds a pinned resort in, with that region's danger and
-    its move since yesterday, and the pinned resorts nested under it with
+    user pinned or holds a pinned resort in, with that region's danger
+    today, and the pinned resorts nested under it with
     their weather (``apps.favourites.today.build_today``). Dropped pins are
     not listed: they are the Favourites panel's.
 
     A fixed number of queries however many places there are: the user's
     region pins and resorts in one, today's ratings for their regions in
-    one, then ``build_today``'s own (yesterday's ratings and the borrowed
-    forecasts). The freshness headers (SNOW-418) are stamped from the
-    oldest rating shown, as the favourites list's are.
+    one, then ``build_today``'s own (the borrowed forecasts). The freshness
+    headers (SNOW-418) are stamped from the oldest rating shown, as the
+    favourites list's are.
 
     Args:
         request: The incoming HTMX GET request.
