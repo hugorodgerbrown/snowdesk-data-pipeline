@@ -12,6 +12,11 @@ run it again:
   What is everything on the map? help mode, as the "?" used to start it
                                 ('snowdesk:map-help-mode-requested',
                                 map_help_mode.js)
+  Show map demo                 the layer explainer, ?layers=exploded
+                                (moved here from the (i) card on 3 Nov
+                                2026 — it shows how the map works, not
+                                what is on it; map.js keeps its ?d= in
+                                step with the map's day, syncExplainerLink)
   Help pages                    /help/
 
 While help mode is on the "?" still ends it, as before. Built from the
@@ -68,6 +73,23 @@ first item to show, and the "?" keeps going straight to help mode.
                         >{% trans "Name every control, then tap one to see what it does." %}</span>
                     </span>
                 </button>
+            </li>
+            <li>
+                <a
+                    id="map-explainer-link"
+                    href="{% url 'public:map' %}?layers=exploded{% if request.GET.d %}&amp;d={{ request.GET.d|urlencode }}{% endif %}"
+                    class="map-tour-offer-option"
+                    data-help-menu="demo"
+                >
+                    <span
+                        class="map-tour-offer-option-icon"
+                        aria-hidden="true"
+                    >{% include "includes/_icon_layers.html" with size=20 %}</span>
+                    <span class="map-tour-offer-option-text">
+                        <span class="map-tour-offer-option-title">{% trans "Show map demo" %}</span>
+                        <span class="map-tour-offer-option-sub">{% trans "Pull the map apart into its layers." %}</span>
+                    </span>
+                </a>
             </li>
             <li>
                 <a href="{% url 'public:help' %}" class="map-tour-offer-option" data-help-menu="pages">

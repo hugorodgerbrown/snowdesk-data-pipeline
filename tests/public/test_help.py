@@ -55,6 +55,7 @@ ALWAYS_ON_TESTIDS = [
     "help-topic-map",
     "help-topic-timeline",
     "help-topic-layers",
+    "help-topic-map-key",
     "help-topic-favourites",
     "help-topic-observations",
     "help-topic-routes",
@@ -137,7 +138,7 @@ class TestHelpTopicAnchorsAndFilter:
         """Both gated states: the id equals the testid, and none repeats.
 
         SNOW-1377 took the problem-terrain topic's flag off, so it is in
-        both counts.
+        both counts. The map key topic (3 Nov 2026) is in both as well.
         """
         with (
             override_flag("sync_log", active=gated_on),
@@ -145,7 +146,7 @@ class TestHelpTopicAnchorsAndFilter:
         ):
             content = client.get(reverse("public:help")).content.decode()
         panels = _panel_attrs(content)
-        assert len(panels) == (20 if gated_on else 18)
+        assert len(panels) == (21 if gated_on else 19)
         for attrs in panels:
             assert attrs.get("id") == attrs["data-testid"], attrs
         ids = re.findall(r'\bid="(help-topic-[a-z0-9-]+)"', content)

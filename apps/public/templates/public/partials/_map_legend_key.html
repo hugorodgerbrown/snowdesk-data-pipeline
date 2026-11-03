@@ -1,0 +1,262 @@
+{% load i18n static weather_icons %}
+{% comment %}
+public/partials/_map_legend_key.html — one layer's key rows, drawn as the
+marks the map draws (3 Nov 2026).
+
+Both pages of the map legend include it, so a key is drawn once:
+
+  key  — which layer (map_legend_core.js KEYS, less the danger scale,
+         which each page draws its own way)
+  now  — True on the first page, "On the map now": each row carries the
+         data-legend-item map_legend.js shows and hides it by, and the
+         rows keep their test ids. False on the second page, which shows
+         every row.
+
+Hugo, 3 Nov 2026: "Everything that renders over the map need a entry. And
+the entries must be visual". Every row is a swatch, a line sample or a mark
+beside a word or two; the long form is the help page's Map key topic.
+
+The line samples (.map-legend-line--*) and marks (.map-legend-mark--*) are
+in static/css/map.css, each beside the comment naming the layer paint it
+mirrors. MapLibre paint cannot read a CSS custom property, so where a layer
+paints a literal the class restates it.
+{% endcomment %}
+{% if key == "problem_terrain" %}
+    {# Painted in the danger colours, so the scale is not repeated. #}
+    <div class="map-legend-row map-legend-row--note">{% trans "Same colours, on the slopes" %}</div>
+    {% if bulletin_terrain_key.undecided %}
+        <div class="map-legend-row map-legend-row--wide">
+            <span class="map-legend-swatch map-legend-swatch--terrain-undecided" aria-hidden="true"></span>
+            {% translate "Described, can't be placed" %}
+        </div>
+    {% endif %}
+    <div class="map-legend-row map-legend-row--wide">
+        <span class="map-legend-swatch map-legend-swatch--terrain-undescribed" aria-hidden="true"></span>
+        {% translate "Other steep ground" %}
+    </div>
+    <div class="map-legend-row map-legend-row--wide">
+        <span class="map-legend-swatch map-legend-swatch--terrain-nodata" aria-hidden="true"></span>
+        {% translate "No terrain data" %}
+    </div>
+{% elif key == "community_reports" %}
+    {% for family, label in observation_families %}
+        <div
+            class="map-legend-row"
+            {% if now %}
+                data-testid="map-legend-observations-{{ family|lower }}"
+                data-legend-item="report-{{ family }}"
+            {% endif %}
+        >
+            <span
+                class="map-legend-icon {% if family == "SURFACE" %}text-obs-surface{% elif family == "TRAIL" %}text-obs-trail{% else %}text-obs-warning{% endif %}"
+                aria-hidden="true"
+            >{% include "includes/_icon_observation_family.html" with family=family size=12 only %}</span>{{ label }}
+        </div>
+    {% endfor %}
+    <div
+        class="map-legend-row"
+        {% if now %}data-testid="map-legend-observations-live" data-legend-item="report-live"{% endif %}
+    >
+        <span class="map-legend-icon text-obs-warning" aria-hidden="true">
+            <svg width="12" height="12" viewBox="0 0 12 12">
+                <circle cx="6" cy="6" r="6" fill="currentColor" opacity="0.25" />
+                <circle cx="6" cy="6" r="3.5" fill="currentColor" />
+            </svg>
+        </span>{% trans "Today" %}
+    </div>
+    <div
+        class="map-legend-row"
+        {% if now %}data-testid="map-legend-observations-recent" data-legend-item="report-recent"{% endif %}
+    >
+        <span class="map-legend-icon text-obs-warning" aria-hidden="true">
+            <svg width="12" height="12" viewBox="0 0 12 12">
+                <circle cx="6" cy="6" r="4" fill="none" stroke="currentColor" stroke-width="1.5" />
+            </svg>
+        </span>{% trans "The 3 days before" %}
+    </div>
+{% elif key == "weather" %}
+    {# The weather-point symbol's two rows (map.js installWeatherLayer): the #}
+    {# day's conditions and temperature, then the point's own height.        #}
+    <div class="map-legend-row map-legend-row--wide">
+        <img
+            class="map-legend-weather-icon"
+            src="{% weather_icon_url 'partly_cloudy-day.svg' %}"
+            alt=""
+            width="14"
+            height="14"
+        >
+        <span class="map-legend-weather-figure">4°</span>{% trans "Day and temperature" %}
+    </div>
+    <div class="map-legend-row map-legend-row--wide">
+        {# Two peaks, as buildElevationMark draws them, in the ink. #}
+        <span class="map-legend-icon text-text-1" aria-hidden="true">
+            <svg width="12" height="12" viewBox="0 0 12 12">
+                <path d="M0.5 11 L4.5 3.5 L7 7.5 L8.5 5.5 L11.5 11 Z" fill="currentColor" />
+            </svg>
+        </span>
+        <span class="map-legend-weather-figure">1300 m</span>{% trans "Height of the point" %}
+    </div>
+{% elif key == "terrain_filter" %}
+    {% if now %}
+        {# The filter's mode decides which rows show (terrain_filter_sheet.js). #}
+        {% include "includes/_terrain_filter_key.html" %}
+    {% else %}
+        {# Every mode's rows, with no data-terrain-filter-key: the sheet hides #}
+        {# a mode's rows by that attribute across the whole document.          #}
+        <div class="map-legend-row">
+            <span class="map-legend-swatch map-legend-swatch--terrain-match" aria-hidden="true"></span>
+            {% trans "Matches the filter" %}
+        </div>
+        <div class="map-legend-row">
+            <span class="map-legend-swatch map-legend-swatch--terrain-nodata" aria-hidden="true"></span>
+            {% trans "No data" %}
+        </div>
+        <div class="map-legend-row map-legend-row--note">{% trans "Or by slope:" %}</div>
+        <div class="map-legend-row">
+            <span class="map-legend-swatch map-legend-swatch--slope-30" aria-hidden="true"></span>{% trans "30–35°" %}
+        </div>
+        <div class="map-legend-row">
+            <span class="map-legend-swatch map-legend-swatch--slope-35" aria-hidden="true"></span>{% trans "35–40°" %}
+        </div>
+        <div class="map-legend-row">
+            <span class="map-legend-swatch map-legend-swatch--slope-40" aria-hidden="true"></span>{% trans "40–45°" %}
+        </div>
+        <div class="map-legend-row">
+            <span class="map-legend-swatch map-legend-swatch--slope-45" aria-hidden="true"></span>{% trans "45–50°" %}
+        </div>
+        <div class="map-legend-row">
+            <span class="map-legend-swatch map-legend-swatch--slope-50" aria-hidden="true"></span>{% trans "Over 50°" %}
+        </div>
+    {% endif %}
+{% elif key == "ski_tours" %}
+    <div class="map-legend-row" {% if now %}data-legend-item="tour-up"{% endif %}>
+        <span class="map-legend-line map-legend-line--tour-up" aria-hidden="true"></span>{% trans "Way up" %}
+    </div>
+    <div class="map-legend-row" {% if now %}data-legend-item="tour-down"{% endif %}>
+        <span class="map-legend-line map-legend-line--tour-down" aria-hidden="true"></span>{% trans "Way down" %}
+    </div>
+    <div class="map-legend-row" {% if now %}data-legend-item="tour-summit"{% endif %}>
+        <span class="map-legend-mark map-legend-mark--summit" aria-hidden="true"></span>{% trans "Summit" %}
+    </div>
+    <div class="map-legend-row" {% if now %}data-legend-item="tour-hut"{% endif %}>
+        <span class="map-legend-mark map-legend-mark--hut" aria-hidden="true"></span>{% trans "Hut" %}
+    </div>
+{% elif key == "rest_zones" %}
+    <div class="map-legend-row" {% if now %}data-legend-item="rest-binding"{% endif %}>
+        <span
+            class="map-legend-swatch map-legend-swatch--rest-binding"
+            aria-hidden="true"
+        ></span>{% trans "Closed by law" %}
+    </div>
+    <div class="map-legend-row" {% if now %}data-legend-item="rest-recommended"{% endif %}>
+        <span
+            class="map-legend-swatch map-legend-swatch--rest-recommended"
+            aria-hidden="true"
+        ></span>{% trans "Advised" %}
+    </div>
+    <div class="map-legend-row map-legend-row--wide" {% if now %}data-legend-item="rest-out-of-season"{% endif %}>
+        <span
+            class="map-legend-swatch map-legend-swatch--rest-out-of-season"
+            aria-hidden="true"
+        ></span>{% trans "Closed out of season" %}
+    </div>
+{% elif key == "routes" %}
+    {# The dash is named because it carries the direction for a reader who #}
+    {# cannot tell the colours apart (SNOW-1017).                           #}
+    <div class="map-legend-row" {% if now %}data-legend-item="route-climb"{% endif %}>
+        <span class="map-legend-swatch map-legend-swatch--leg-climb" aria-hidden="true"></span>{% trans "Climbing" %}
+    </div>
+    <div class="map-legend-row" {% if now %}data-legend-item="route-descent"{% endif %}>
+        <span
+            class="map-legend-swatch map-legend-swatch--leg-descent"
+            aria-hidden="true"
+        ></span>{% trans "Descending" %}
+    </div>
+    <div class="map-legend-row" {% if now %}data-legend-item="route-slope"{% endif %}>
+        <span
+            class="map-legend-line map-legend-line--route-slope"
+            aria-hidden="true"
+        ></span>{% trans "By slope, close in" %}
+    </div>
+    <div class="map-legend-row" {% if now %}data-legend-item="route-flat"{% endif %}>
+        <span
+            class="map-legend-line map-legend-line--route-flat"
+            aria-hidden="true"
+        ></span>{% trans "Not yet in legs" %}
+    </div>
+    <div class="map-legend-row" {% if now %}data-legend-item="route-transition"{% endif %}>
+        <span class="map-legend-mark map-legend-mark--transition" aria-hidden="true">1</span>{% trans "Transition" %}
+    </div>
+    <div class="map-legend-row" {% if now %}data-legend-item="route-ends"{% endif %}>
+        <span class="map-legend-mark map-legend-mark--start" aria-hidden="true"></span>
+        <span class="map-legend-icon text-text-1" aria-hidden="true">
+            {# The finish flag's checker (route_markers_core.js), in the ink. #}
+            <svg width="12" height="12" viewBox="0 0 12 12">
+                <rect x="1" y="0.5" width="1.2" height="11" fill="currentColor" />
+                <rect x="2.2" y="0.5" width="9" height="6" fill="none" stroke="currentColor" stroke-width="0.6" />
+                <rect x="2.2" y="0.5" width="3" height="3" fill="currentColor" />
+                <rect x="8.2" y="0.5" width="3" height="3" fill="currentColor" />
+                <rect x="5.2" y="3.5" width="3" height="3" fill="currentColor" />
+            </svg>
+        </span>{% trans "Start, finish" %}
+    </div>
+{% elif key == "pins" %}
+    {# SNOW-78: the resorts overlay's dot. #}
+    <div class="map-legend-row" {% if now %}data-testid="map-legend-resorts" data-legend-item="pin-resort"{% endif %}>
+        <span class="map-legend-pin" aria-hidden="true"></span>{% trans "Resort" %}
+    </div>
+    {# SNOW-1229: a resort you have pinned, drawn blue by map.js. #}
+    <div
+        class="map-legend-row"
+        {% if now %}data-testid="map-legend-pinned-resorts" data-legend-item="pin-pinned"{% endif %}
+    >
+        <span class="map-legend-pin map-legend-pin--pinned" aria-hidden="true"></span>{% trans "Pinned" %}
+    </div>
+    {# The solid star reproduces the on-map marker (favourite-star in map.js). #}
+    {# Font Awesome Free v7 path, CC BY 4.0 — see map.js for the retained      #}
+    {# attribution. Fill from --color-marker-favourite (SNOW-672).             #}
+    <div
+        class="map-legend-row"
+        {% if now %}data-testid="map-legend-favourites" data-legend-item="pin-favourite"{% endif %}
+    >
+        <span class="map-legend-icon" aria-hidden="true">
+            <svg width="12" height="12" viewBox="0 0 576 512" class="fill-marker-favourite">
+                <path d="M316.9 18C311.6 7 300.4 0 288.1 0s-23.4 7-28.8 18L195 150.3 51.4 171.5c-12 1.8-22 10.2-25.7 21.7s-.7 24.2 7.9 32.7L137.8 329 113.2 474.7c-2 12 3 24.2 12.9 31.3s23 8 33.8 2.3l128.3-68.5 128.3 68.5c10.8 5.7 23.9 4.9 33.8-2.3s14.9-19.3 12.9-31.3L442.2 329 546.6 225.9c8.6-8.5 11.7-21.2 7.9-32.7s-13.7-19.9-25.7-21.7L385.1 150.3 316.9 18z" />
+            </svg>
+        </span>{% trans "Favourite" %}
+    </div>
+{% elif key == "boundaries" %}
+    {# The four boundary tiers and the bulletins' own grouping outline. #}
+    <div class="map-legend-row" {% if now %}data-legend-item="boundary-major"{% endif %}>
+        <span class="map-legend-line map-legend-line--major" aria-hidden="true"></span>{% trans "Major region" %}
+    </div>
+    <div class="map-legend-row" {% if now %}data-legend-item="boundary-minor"{% endif %}>
+        <span class="map-legend-line map-legend-line--minor" aria-hidden="true"></span>{% trans "Minor region" %}
+    </div>
+    <div class="map-legend-row" {% if now %}data-legend-item="boundary-micro"{% endif %}>
+        <span class="map-legend-line map-legend-line--micro" aria-hidden="true"></span>{% trans "Micro region" %}
+    </div>
+    <div class="map-legend-row" {% if now %}data-legend-item="boundary-unsupported"{% endif %}>
+        <span class="map-legend-line map-legend-line--unsupported" aria-hidden="true"></span>{% trans "Never rated" %}
+    </div>
+    <div class="map-legend-row" {% if now %}data-legend-item="boundary-grouping"{% endif %}>
+        <span class="map-legend-line map-legend-line--grouping" aria-hidden="true"></span>{% trans "One bulletin" %}
+    </div>
+{% elif key == "location" %}
+    <div class="map-legend-row">
+        <span class="map-legend-mark map-legend-mark--location" aria-hidden="true"></span>{% trans "You are here" %}
+    </div>
+{% elif key == "downloads" %}
+    <div class="map-legend-row">
+        <span
+            class="map-legend-swatch map-legend-swatch--downloaded-here"
+            aria-hidden="true"
+        ></span>{% trans "For this map" %}
+    </div>
+    <div class="map-legend-row">
+        <span
+            class="map-legend-swatch map-legend-swatch--downloaded-elsewhere"
+            aria-hidden="true"
+        ></span>{% trans "For another map" %}
+    </div>
+{% endif %}

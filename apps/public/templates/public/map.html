@@ -436,6 +436,11 @@ in addition to the shared map assets.
     {# install and fetch time only, never at parse time, so like the        #}
     {# weather core it sits outside the bundle's contiguous run.            #}
     <script defer src="{% static 'js/community_reports_core.js' %}"></script>
+    {# The legend's first tier, "On the map now" (window.pwaMapLegendCore):  #}
+    {# which keys and rows the current view needs. Read by map_legend.js    #}
+    {# when the card opens, never at parse time, so like the cores above    #}
+    {# it sits outside the bundle's contiguous run.                         #}
+    <script defer src="{% static 'js/map_legend_core.js' %}"></script>
     {# The saved-route elevation profile's maths and SVG                     #}
     {# (window.pwaElevationProfileCore) — the picture the route popup's      #}
     {# distance/ascent/descent figures summarise, derived from the elevation #}

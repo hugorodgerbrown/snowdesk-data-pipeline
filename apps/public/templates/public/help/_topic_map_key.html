@@ -1,0 +1,155 @@
+{% comment %}
+apps/public/templates/public/help/_topic_map_key.html — "Map key" panel body.
+
+Content partial for the help page; included via the body_template
+parameter of includes/_collapsible_panel.html. The third tier of the map's
+legend (3 Nov 2026): the (i) card opens on a key for what the current view
+draws, its second page lists every key short, and its "Every key,
+described in full" link lands here. So this is the long form of each
+key, in the card's order — the day's layers, then the ones every day
+shares.
+
+/help/ loads output.css alone, never static/css/map.css, so the swatches
+are token utilities (bg-eaws-*, bg-slope-*, bg-rest-*), not the card's
+.map-legend-swatch classes.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3" data-testid="help-map-key-tiers">
+        {% blocktrans trimmed %}
+            The (i) button at the bottom left of the map opens its key. It lists only what is drawn where you are
+            looking: pan to another valley or zoom out, and the key follows. Its "All keys & sources" page lists
+            everything the map can show, and who the data is from.
+        {% endblocktrans %}
+    </p>
+    <h3 class="mb-1 font-medium text-text-1">{% trans "Danger level" %}</h3>
+    <p class="mb-1" data-testid="help-map-key-danger">
+        {% blocktrans trimmed %}
+            Each avalanche region is coloured by the bulletin's danger level for the day the map shows, on the European
+            five-level scale. Grey is a region with no rating that day. Zoomed in, the colour gives way to a band just
+            inside each region's edge and its level, so the ground stays readable.
+        {% endblocktrans %}
+    </p>
+    <ul class="mb-3 flex flex-wrap gap-x-3 gap-y-1">
+        <li><span class="inline-block size-3 rounded-sm bg-eaws-low align-middle"></span> {% trans "Low (1)" %}</li>
+        <li>
+            <span class="inline-block size-3 rounded-sm bg-eaws-moderate align-middle"></span>
+            {% trans "Moderate (2)" %}
+        </li>
+        <li>
+            <span class="inline-block size-3 rounded-sm bg-eaws-considerable align-middle"></span>
+            {% trans "Considerable (3)" %}
+        </li>
+        <li><span class="inline-block size-3 rounded-sm bg-eaws-high align-middle"></span> {% trans "High (4)" %}</li>
+        <li>
+            <span class="inline-block size-3 rounded-sm bg-eaws-very-high align-middle"></span>
+            {% trans "Very high (5)" %}
+        </li>
+    </ul>
+    <h3 class="mb-1 font-medium text-text-1">{% trans "Problem slopes" %}</h3>
+    <p class="mb-3" data-testid="help-map-key-problem-terrain">
+        {% blocktrans trimmed %}
+            With "Sync with map terrain" on, the steep ground an avalanche problem in the bulletin describes is painted
+            in that problem's danger colour, from zoom 12 in Switzerland. The colours are the danger scale's, so the key
+            does not repeat them. Grey is other steep ground over 30° that no problem describes, which is not the same
+            as safe; hatching is ground the terrain data does not cover.
+        {% endblocktrans %}
+    </p>
+    <h3 class="mb-1 font-medium text-text-1">{% trans "Field reports" %}</h3>
+    <p class="mb-3" data-testid="help-map-key-field-reports">
+        {% blocktrans trimmed %}
+            Reports from people out on the snow, one pin each, by what they saw: warning signs, the snow surface, or the
+            trail. A filled pin was reported on the map's day; a ring, in the three days before.
+        {% endblocktrans %}
+    </p>
+    <h3 class="mb-1 font-medium text-text-1">{% trans "Weather" %}</h3>
+    <p class="mb-3" data-testid="help-map-key-weather">
+        {% blocktrans trimmed %}
+            From zoom 7, each weather point shows the map's day as a symbol and a temperature, and under them the
+            point's own height, which is where the forecast is for. Tap one for the day hour by hour.
+        {% endblocktrans %}
+    </p>
+    <h3 class="mb-1 font-medium text-text-1">{% trans "Steep terrain" %}</h3>
+    <p class="mb-1" data-testid="help-map-key-steep-terrain">
+        {% blocktrans trimmed %}
+            The ground's own slope, from zoom 12 in Switzerland. By slope, each class has its colour; with one tint,
+            only the ground your filter matches is painted. Hatching is ground with no terrain data.
+        {% endblocktrans %}
+    </p>
+    <ul class="mb-3 flex flex-wrap gap-x-3 gap-y-1">
+        <li><span class="inline-block size-3 rounded-sm bg-slope-30 align-middle"></span> {% trans "30–35°" %}</li>
+        <li><span class="inline-block size-3 rounded-sm bg-slope-35 align-middle"></span> {% trans "35–40°" %}</li>
+        <li><span class="inline-block size-3 rounded-sm bg-slope-40 align-middle"></span> {% trans "40–45°" %}</li>
+        <li><span class="inline-block size-3 rounded-sm bg-slope-45 align-middle"></span> {% trans "45–50°" %}</li>
+        <li><span class="inline-block size-3 rounded-sm bg-slope-50 align-middle"></span> {% trans "Over 50°" %}</li>
+    </ul>
+    <h3 class="mb-1 font-medium text-text-1">{% trans "Ski tours" %}</h3>
+    <p class="mb-3" data-testid="help-map-key-ski-tours">
+        {% blocktrans trimmed %}
+            The Swiss Alpine Club's ski tours, from zoom 9: deep blue on the way up, sky blue on the way down, never
+            dashed. A dark dot is a summit a tour goes to and a ring a hut. Tap a line to open the tour.
+        {% endblocktrans %}
+    </p>
+    <h3 class="mb-1 font-medium text-text-1">{% trans "Wildlife rest zones" %}</h3>
+    <p class="mb-1" data-testid="help-map-key-rest-zones">
+        {% blocktrans trimmed %}
+            Areas set aside for wildlife in winter, from the Federal Office for the Environment. Red is closed by law;
+            amber is a closure FOEN advises. A zone is drawn strongly when the map's day is inside its protected period,
+            and faintly when it is out of season, so you can still see it when planning another day.
+        {% endblocktrans %}
+    </p>
+    <ul class="mb-3 flex flex-wrap gap-x-3 gap-y-1">
+        <li>
+            <span class="inline-block size-3 rounded-sm bg-rest-binding align-middle"></span>
+            {% trans "Closed by law" %}
+        </li>
+        <li>
+            <span class="inline-block size-3 rounded-sm bg-rest-recommended align-middle"></span> {% trans "Advised" %}
+        </li>
+        <li>
+            <span class="inline-block size-3 rounded-sm bg-rest-binding/20 align-middle"></span>
+            {% trans "Closed out of season" %}
+        </li>
+    </ul>
+    <h3 class="mb-1 font-medium text-text-1">{% trans "Your routes" %}</h3>
+    <p class="mb-3" data-testid="help-map-key-routes">
+        {% blocktrans trimmed %}
+            A saved route is drawn as its legs, each running between two transitions and numbered along the track:
+            dashed where it climbs, solid where it descends. A route whose legs are not worked out yet is one plain
+            line. Close in, from zoom 14, the line is coloured by the slope of the ground under it instead. A dot marks
+            the start and a chequered flag the finish. Press a leg on the route's profile to highlight it, or tap the
+            line to read one point.
+        {% endblocktrans %}
+    </p>
+    <h3 class="mb-1 font-medium text-text-1">{% trans "Pins" %}</h3>
+    <p class="mb-3" data-testid="help-map-key-pins">
+        {% blocktrans trimmed %}
+            A dark dot is a ski resort and a blue dot a resort you have pinned. A blue star is a place you dropped a pin
+            on.
+        {% endblocktrans %}
+    </p>
+    <h3 class="mb-1 font-medium text-text-1">{% trans "Boundaries" %}</h3>
+    <p class="mb-3" data-testid="help-map-key-boundaries">
+        {% blocktrans trimmed %}
+            The avalanche regions at the levels the layers menu turns on: a heavy dark red line round a major region, a
+            blue one round a minor region, a thin grey one round each micro region, the smallest area a bulletin rates.
+            A dashed outline is a region no provider has ever rated. On a day's map, a green outline joins the regions
+            one bulletin covers together.
+        {% endblocktrans %}
+    </p>
+    <h3 class="mb-1 font-medium text-text-1">{% trans "Your position" %}</h3>
+    <p class="mb-3" data-testid="help-map-key-location">
+        {% blocktrans trimmed %}
+            Once you ask the map to find you, a blue dot with a white ring is where your device says you are. Tap it for
+            what is there.
+        {% endblocktrans %}
+    </p>
+    <h3 class="mb-1 font-medium text-text-1">{% trans "Downloaded maps" %}</h3>
+    <p class="mb-0" data-testid="help-map-key-downloads">
+        {% blocktrans trimmed %}
+            While you are offline, or with the overlay on, hatching marks the ground downloaded for the basemap you are
+            using, and an outline ground downloaded for another one. Zoomed out, everywhere shows the low-detail
+            overview map, so zoom in to check an area is really downloaded.
+        {% endblocktrans %}
+    </p>
+</div>

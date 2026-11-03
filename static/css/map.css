@@ -2039,6 +2039,12 @@ html[data-route-drawing] #map-slopes-notice {
     display: none;
 }
 
+/* The open legend card stands where the chip sits and would be drawn
+   under it, covering the card's foot (credit and "All keys & sources"). */
+.map-legend[data-state="expanded"] .map-region-chip {
+    visibility: hidden;
+}
+
 .map-region-chip-level {
     flex: none;
     width: 28px;
@@ -2675,6 +2681,356 @@ html[data-route-drawing] #map-slopes-notice {
 }
 
 .map-legend-attribution-link:hover {
+    color: var(--color-text-1);
+}
+
+/* —— The two tiers (3 Nov 2026) ————————————————————————————————————————
+   The card opens on "On the map now" — a key for what is drawn in the
+   current view, one line per layer — and keeps every key and the sources
+   one level down, behind "All keys & sources" (public/partials/
+   _map_embed.html, static/js/map_legend.js). One fixed width for both
+   pages, so going between them does not make the card jump. */
+/* Capped well short of the top edge: the second page is long, and on a
+   phone the date row and search sit across the top of the map, so the
+   card's own bound (to the shared top inset) let it slide under them. */
+.map-legend-card {
+    width: 264px;
+    max-height: min(60dvh, calc(100dvh - var(--map-edge-inset-top) - var(--map-legend-card-bottom-offset)));
+}
+
+/* The second page's head stays put while its keys scroll under it. */
+.map-legend-all-head {
+    position: sticky;
+    top: -10px;
+    z-index: 1;
+    margin: -10px -12px 4px;
+    padding: 10px 12px 6px;
+    background: var(--color-glass);
+}
+
+.map-legend-page[hidden],
+.map-legend-card [data-legend-out-of-view] {
+    display: none !important;
+}
+
+/* A section's own `hidden` (the layer's module) must win over the grid
+   the first tier gives every section. */
+.map-legend-section[hidden] {
+    display: none !important;
+}
+
+.map-legend-eyebrow {
+    margin: 2px 0 4px;
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-3);
+}
+
+/* Tier one: the name on the left, the key on the right, one line where
+   it fits. */
+.map-legend-now .map-legend-section {
+    display: grid;
+    grid-template-columns: 74px 1fr;
+    column-gap: 8px;
+    align-items: start;
+    border-top: 0.5px solid var(--color-border);
+    margin-top: 0;
+    padding: 5px 0;
+}
+
+.map-legend-now .map-legend-title {
+    margin-bottom: 0;
+    line-height: 1.3;
+    padding-top: 1px;
+}
+
+.map-legend-items {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1px 10px;
+    min-width: 0;
+}
+
+.map-legend-items .map-legend-row {
+    white-space: nowrap;
+    gap: 4px;
+}
+
+.map-legend-items > .map-legend-attribution,
+.map-legend-items > .map-legend-strip,
+.map-legend-items > .map-legend-strip-ends {
+    flex: 1 0 100%;
+}
+
+.map-legend-row--note {
+    color: var(--color-text-2);
+}
+
+/* The danger scale as one strip of numbered chips — the colours are the
+   scale's own swatch classes, so a chip and a swatch never drift. */
+.map-legend-strip {
+    display: flex;
+    gap: 2px;
+}
+
+.map-legend-chip {
+    flex: 1 1 0;
+    height: 16px;
+    border-radius: 3px;
+    border: 0.5px solid rgba(0, 0, 0, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font: 500 9.5px var(--font-mono);
+    color: var(--color-eaws-low-fg);
+}
+
+.map-legend-chip--light {
+    color: var(--color-eaws-high-fg);
+}
+
+.map-legend-chip--narrow {
+    flex-grow: 0.7;
+}
+
+/* The ends sit under their chips: "Low" from the first, "Very high"
+   ending under the fifth — the same flex weights as the strip, three
+   chips, two, and the narrow grey one, which carries no word: "–" on a
+   grey chip reads as no rating, and the second page spells it out. */
+.map-legend-strip-ends {
+    display: flex;
+    gap: 2px;
+    font-size: 9px;
+    line-height: 1.2;
+    color: var(--color-text-3);
+    margin-top: 1px;
+}
+
+.map-legend-strip-ends > :nth-child(1) { flex: 3 1 0; }
+.map-legend-strip-ends > :nth-child(2) { flex: 2 1 0; text-align: right; }
+.map-legend-strip-ends::after { content: ""; flex: 0.7 1 0; }
+
+.map-legend-empty {
+    margin: 4px 0;
+    color: var(--color-text-2);
+}
+
+.map-legend-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border-top: 0.5px solid var(--color-border);
+    padding-top: 7px;
+    margin-top: 1px;
+}
+
+.map-legend-foot .map-legend-attribution {
+    min-width: 0;
+}
+
+.map-legend-more {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 0;
+    border: 0;
+    background: none;
+    font: 600 11px var(--font-sans);
+    color: var(--color-text-1);
+    cursor: pointer;
+}
+
+/* Tier two. */
+.map-legend-all-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.map-legend-back {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 0;
+    background: var(--color-border);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    line-height: 1;
+    color: var(--color-text-1);
+    cursor: pointer;
+}
+
+.map-legend-all .map-legend-eyebrow {
+    margin-top: 10px;
+}
+
+.map-legend-all .map-legend-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* The dot that says a layer is switched on. */
+.map-legend-on {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 9.5px;
+    font-weight: 600;
+    color: var(--color-accent);
+}
+
+.map-legend-on::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.map-legend-on[hidden] {
+    display: none;
+}
+
+.map-legend-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 8px;
+}
+
+.map-legend-help-link {
+    margin: 8px 0 0;
+    font-size: 10px;
+}
+
+/* SNOW-1384's two colours, as rest_zones_core.js paints a zone: a fill
+   with a strong edge on the map's day, both faint out of season. */
+.map-legend-swatch--rest-binding {
+    background: color-mix(in srgb, var(--color-rest-binding) 30%, transparent);
+    border: 1.5px solid var(--color-rest-binding);
+}
+.map-legend-swatch--rest-recommended {
+    background: color-mix(in srgb, var(--color-rest-recommended) 25%, transparent);
+    border: 1.5px solid var(--color-rest-recommended);
+}
+.map-legend-swatch--rest-out-of-season {
+    background: color-mix(in srgb, var(--color-rest-binding) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-rest-binding) 40%, transparent);
+}
+
+/* The second page lays a key's rows out two to a line; a note takes the
+   whole line. */
+.map-legend-grid > .map-legend-row--note,
+.map-legend-grid > .map-legend-row--wide,
+.map-legend-grid > .contents {
+    grid-column: 1 / -1;
+}
+
+/* —— Line samples and point marks (3 Nov 2026) ————————————————————————
+   Every layer drawn over the map has a key row of its own, drawn as the
+   mark it is (public/partials/_map_legend_key.html). A line is a 14 px
+   sample on the same 10 px row as a swatch; its colour and weight mirror
+   the layer's paint, named beside each, which MapLibre takes as literals. */
+.map-legend-line {
+    width: 14px;
+    height: 10px;
+    flex: 0 0 auto;
+    display: inline-block;
+    background: linear-gradient(var(--legend-line), var(--legend-line)) center / 100% var(--legend-line-width, 2px) no-repeat;
+    border-radius: 1px;
+}
+
+/* ski_tours.js legColours: SAC's deep blue up, sky blue down, never dashed. */
+.map-legend-line--tour-up   { --legend-line: #1d4ed8; --legend-line-width: 3px; }
+.map-legend-line--tour-down { --legend-line: #38bdf8; --legend-line-width: 3px; }
+
+/* route_drawing_core.js: the flat line a route is drawn as before it has
+   legs, and the slope classes it is coloured in from ROUTE_SLOPE_MINZOOM. */
+.map-legend-line--route-flat { --legend-line: var(--color-route-line); --legend-line-width: 3px; }
+.map-legend-line--route-slope {
+    background: linear-gradient(
+        90deg,
+        var(--color-slope-30) 0 20%,
+        var(--color-slope-35) 20% 40%,
+        var(--color-slope-40) 40% 60%,
+        var(--color-slope-45) 60% 80%,
+        var(--color-slope-50) 80% 100%
+    ) center / 100% 3px no-repeat;
+}
+
+/* map.js: major-regions-line, sub-regions-line, regions-line, the dashed
+   regions-line-unsupported and bulletin-groupings-line. */
+.map-legend-line--major       { --legend-line: rgb(122 31 31 / 0.95); --legend-line-width: 2.4px; }
+.map-legend-line--minor       { --legend-line: rgb(12 68 124 / 0.9); --legend-line-width: 1.4px; }
+.map-legend-line--micro       { --legend-line: rgb(0 0 0 / 0.35); --legend-line-width: 1px; }
+.map-legend-line--grouping    { --legend-line: rgb(26 107 60 / 0.7); --legend-line-width: 1.6px; }
+.map-legend-line--unsupported {
+    background: repeating-linear-gradient(
+        90deg,
+        rgb(0 0 0 / 0.45) 0 3px,
+        transparent 3px 5px
+    ) center / 100% 1px no-repeat;
+}
+
+.map-legend-mark {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    box-sizing: border-box;
+}
+
+/* ski_tours.js: a summit a dot of ink, a hut a ring. */
+.map-legend-mark--summit { width: 9px; height: 9px; background: #1a1916; border: 1.5px solid #ffffff; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.25); }
+.map-legend-mark--hut    { width: 9px; height: 9px; background: #ffffff; border: 1.5px solid #1a1916; }
+
+/* route_drawing_core.js markLayers: a transition is a numbered circle in
+   the colour of the leg it opens, with a white ring; the start a dot in
+   the route colour. */
+.map-legend-mark--transition {
+    width: 13px;
+    height: 13px;
+    background: var(--color-route-rail-descent);
+    border: 1.5px solid #ffffff;
+    box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.3);
+    font: 700 7.5px var(--font-sans);
+    color: #ffffff;
+}
+.map-legend-mark--start {
+    width: 9px;
+    height: 9px;
+    background: var(--color-route-line);
+    border: 1.5px solid #ffffff;
+    box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.3);
+}
+
+/* MapLibre's own position dot (.maplibregl-user-location-dot). */
+.map-legend-mark--location {
+    width: 11px;
+    height: 11px;
+    background: #1da1f2;
+    border: 2px solid #ffffff;
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.15), 0 0 0 4px rgb(29 161 242 / 0.2);
+}
+
+/* The weather symbol's two parts, as the map sets them. */
+.map-legend-weather-icon {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 auto;
+}
+.map-legend-weather-figure {
+    font: 600 10px var(--font-sans);
     color: var(--color-text-1);
 }
 

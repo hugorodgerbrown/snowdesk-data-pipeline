@@ -41,7 +41,7 @@
  *   map.js                    <- you are here: boot, style/overlay install,
  *                             region select, popups, markers, search.
  *   map_scrubber.js           season scrubber and ?d= sync.
- *   map_legend.js             collapsible danger-scale legend.
+ *   map_legend.js             the two-tier legend card (+ map_legend_core.js).
  *   map_timelapse.js          playback transport.
  *   map_basemap_picker.js     basemap popover and setStyle.
  *   map_region_download.js    per-region download roundel.
@@ -2583,40 +2583,16 @@
   };
 
   /**
-   * Whether any route in the current payload carries legs (SNOW-1017).
-   *
-   * The legend's condition. Read off the payload rather than off the leg
-   * source's feature count, on the reasoning SNOW-910's steepness key
-   * used: the payload says what is on the map, the source only what the
-   * core managed to draw of it.
-   *
-   * A route whose legs the core cannot slice (an old cached payload) is
-   * drawn flat, so it does not count.
-   *
-   * @returns {boolean} True when at least one route has legs the leg
-   *   layers draw.
-   */
-  const anyRouteLegged = () => {
-    const core = self.pwaRouteLegsCore;
-    const features = (routesGeojsonCache && routesGeojsonCache.features) || [];
-    return features.some(
-      (f) => f && f.properties
-        && (core && core.hasDrawableLegs
-          ? core.hasDrawableLegs(f)
-          : Array.isArray(f.properties.legs) && f.properties.legs.length > 0),
-    );
-  };
-
-  /**
    * Show the legend card's route-legs key while it applies (SNOW-1017,
    * replacing SNOW-910's route-steepness key).
    *
    * TWO conditions, and both are needed. The overlay has to be drawn — a
    * key for something not on screen is clutter on every other visit, which
-   * is `syncCoverageLegend`'s reasoning above — AND something on screen has
-   * to be cut into legs. Most readers have no routes at all, and every one
-   * of them would otherwise get a key explaining a line they have never
-   * uploaded.
+   * is `syncCoverageLegend`'s reasoning above — AND the reader has a route
+   * on it. Most readers have no routes at all, and every one of them would
+   * otherwise get a key explaining a line they have never uploaded. Which
+   * of its rows show (legs, the flat line, slope colours, marks) follows
+   * the view, in map_legend.js.
    *
    * Reads live layer state rather than a flag of its own, which is what
    * makes it correct however the caller reached here: boot, a toggle, a
@@ -2633,7 +2609,11 @@
   const syncRouteLegLegend = () => {
     const section = document.getElementById('map-route-legs-section');
     if (!section) return;
-    section.hidden = !layerPainted('routes-leg-climb') || !anyRouteLegged();
+    // Any route, legged or not: the key has a row for the flat line a
+    // route is drawn as before its legs, and the legend keeps to the rows
+    // in view (map_legend.js, 3 Nov 2026).
+    const features = (routesGeojsonCache && routesGeojsonCache.features) || [];
+    section.hidden = !layerPainted('routes-line') || features.length === 0;
   };
 
   document.addEventListener(

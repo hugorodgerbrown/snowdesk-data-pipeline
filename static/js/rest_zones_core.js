@@ -43,7 +43,8 @@
 
   // MapLibre paint cannot read a CSS custom property, so the colours are
   // literals here. Red for a zone the law closes, amber for one FOEN only
-  // asks walkers to keep out of.
+  // asks walkers to keep out of. Mirrored as --color-rest-binding and
+  // --color-rest-recommended in src/css/main.css for the map legend's key.
   const BINDING_COLOUR = '#c62828';
   const RECOMMENDED_COLOUR = '#e08a00';
 

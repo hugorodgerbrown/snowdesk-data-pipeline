@@ -66,7 +66,7 @@
     if (!item) return;
     const choice = item.getAttribute('data-help-menu');
     window.pwaTelemetry?.emit('map.help_menu.chosen', { choice: choice });
-    // The help pages item is a link: it closes as the page goes.
+    // The demo and help pages items are links: they close as the page goes.
     close();
     if (choice === 'welcome') {
       document.dispatchEvent(new CustomEvent('snowdesk:map-welcome-requested'));

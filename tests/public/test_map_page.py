@@ -2290,6 +2290,10 @@ def test_the_route_key_names_the_two_kinds_of_leg() -> None:
     assert "Climbing" in key
     assert "map-legend-swatch--leg-descent" in key
     assert "Descending" in key
+    # From ROUTE_SLOPE_MINZOOM the line is coloured by slope, which has
+    # its own one row (the legend's every-overlay pass, 3 Nov 2026), not
+    # SNOW-910's six bands.
+    assert "map-legend-line--route-slope" in key
     assert "map-legend-swatch--slope-" not in key
     assert "Not surveyed" not in key
 
@@ -2311,10 +2315,8 @@ def test_the_route_key_has_no_row_for_marks_the_map_no_longer_draws() -> None:
     assert "Key passage" not in key
     assert "No-fall passage" not in key
     assert "point the way the ground falls" not in key
-    # What the key sends the reader to instead: the route's profile, whose
-    # legs highlight on a press (SNOW-1065) — pinned top-left since
-    # SNOW-1068, so the key no longer says where.
-    assert "profile to highlight it" in key
+    # The profile's leg highlight (SNOW-1065) is described in the help
+    # page's Map key topic since the legend's keys became marks only.
     assert "below the map" not in key
 
 
@@ -2576,7 +2578,7 @@ def test_sync_with_map_terrain_is_on_the_bulletins_page() -> None:
     unchecked (map.js seeds it, on by default) for an anonymous reader, with
     the second line "From zoom 12, Switzerland". It is not a level-one layer,
     so it carries no data-layer-switch for the menu's count. Its key is its
-    own legend section, at the whole scale, hidden until the layer is on.
+    own legend section, hidden until the layer is on.
     """
     content = _problem_terrain_map()
     bulletins = _layers_page(content, "bulletins")
@@ -2599,8 +2601,13 @@ def test_sync_with_map_terrain_is_on_the_bulletins_page() -> None:
     legend = legend[: legend.index("</section>")]
     assert re.search(r"data-problem-terrain-legend\s+hidden", legend)
     assert "#help-topic-bulletin-terrain" in legend
-    assert "map-legend-swatch--terrain-very_high" in legend
+    # The levels are the danger scale's colours, which the card's first
+    # tier already shows once (Hugo, 3 Nov 2026: "The scale is the danger
+    # level - it doesn't need repeating"); only the marks off it remain.
+    assert "map-legend-swatch--terrain-very_high" not in legend
+    assert "Same colours, on the slopes" in legend
     assert "map-legend-swatch--terrain-undescribed" in legend
+    assert "map-legend-swatch--terrain-nodata" in legend
 
     strings = content[content.index('id="map-problem-terrain-strings-template"') :]
     strings = strings[: strings.index("</template>")]
