@@ -4,7 +4,8 @@ apps/mcp_server/ops_tools.py — the staff ops MCP tool registry (SNOW-1191).
 The tools Claude calls at ``POST /api/mcp/ops/`` to answer an operator's
 questions about one environment: what ran, on which build, with what
 result, and whether the estate looks healthy. Every tool is read-only
-except the two waffle setters, ``set_switch`` and ``set_flag``.
+except the two waffle setters, ``set_switch`` and ``set_flag``, the
+command runner's ``run_command`` and the resort writes.
 The endpoint is staff-only; the public avalanche tools live in
 ``apps.mcp_server.tools`` and share only the envelope, ``ToolSpec`` and
 ``ToolError``.
@@ -24,6 +25,11 @@ Two families:
   queues an ``mcp_runnable`` command on the task worker) and
   ``get_command_task``, defined in ``apps.mcp_server.command_tools`` and
   merged in at the end of this module.
+* **Resorts** (SNOW-1401) — ``get_resort``, ``find_resorts``,
+  ``update_resort`` and ``create_resort`` (the last two write: preview,
+  then a commit quoting the preview's ``updated_at``, audited with a
+  source), defined in ``apps.mcp_server.resort_tools`` and merged in at
+  the end.
 * **Docs** (SNOW-1393) — ``search_docs``, ``read_doc`` and ``list_docs``
   over the full documentation corpus, from ``apps.mcp_server.docs_tools``
   and also merged in at the end.
@@ -70,6 +76,7 @@ from apps.mcp_server.command_tools import COMMAND_TOOLS
 from apps.mcp_server.docs_corpus import ops_corpus
 from apps.mcp_server.docs_tools import docs_tools
 from apps.mcp_server.resolvers import _PROVIDER_BY_COUNTRY
+from apps.mcp_server.resort_tools import RESORT_TOOLS
 from apps.mcp_server.tools import (
     ToolError,
     ToolSpec,
@@ -1490,6 +1497,8 @@ OPS_TOOLS: dict[str, ToolSpec] = {
 
 # The command runner (list_runnable_commands, run_command, get_command_task).
 OPS_TOOLS.update(COMMAND_TOOLS)
+# The resort tools (get_resort, find_resorts, update_resort, create_resort).
+OPS_TOOLS.update(RESORT_TOOLS)
 OPS_TOOLS.update(
     docs_tools(
         ops_corpus,

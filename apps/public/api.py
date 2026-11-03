@@ -82,7 +82,7 @@ import math
 import re
 import secrets
 import uuid
-from collections import Counter, defaultdict
+from collections import defaultdict
 from collections.abc import Callable, Iterable
 from datetime import date, datetime
 from typing import Any, cast
@@ -146,6 +146,7 @@ from apps.regions.services.area_content import (
 )
 from apps.regions.services.basemap_tiles import blob_summary
 from apps.regions.services.geometry import rfc7946_rewind
+from apps.regions.services.resort_edit import canton_for_region
 from apps.regions.services.resort_pin import set_resort_pin
 from apps.routes.models import RestZone, SkiSegment, SkiTour
 from apps.routes.services.rest_zones import zone_feature
@@ -2998,7 +2999,7 @@ def _parse_new_resort_identity(
 
     ``name`` is the one value the endpoint cannot get from anywhere else.
     ``canton`` is optional here and may come back empty — the caller
-    fills it from the derived region via :func:`_canton_for_region`, and
+    fills it from the derived region via ``canton_for_region``, and
     only fails if that comes up empty too.
 
     Returns either the 400 response to send or the cleaned
@@ -3025,52 +3026,14 @@ def _parse_new_resort_identity(
     return name, canton
 
 
-def _canton_for_region(region: MicroRegion) -> str:
-    """Return the canton the resorts already in ``region`` agree on.
-
-    Canton is very nearly a function of the parent region — across the
-    curated set, 65 of the 66 regions holding resorts have one canton
-    between them, and the exception is a border resort recorded as a
-    compound ("BE/VS") rather than a genuine disagreement. So a resort
-    being created into a populated region can inherit the answer instead
-    of asking the operator to re-type it.
-
-    Nothing derives this from geometry: the polygons are EAWS warning
-    regions, not cantonal boundaries. This is the sibling rows voting,
-    which is why the panel keeps an override — a border case, or a
-    region whose existing rows are mis-tagged, needs the operator's
-    answer to win.
-
-    Args:
-        region: The region the pin landed in.
-
-    Returns:
-        The most common non-blank canton among the region's resorts,
-        ties broken alphabetically so the result is stable. ``""`` when
-        the region has no resorts to read from — the caller turns that
-        into a 400 asking for the canton explicitly.
-
-    """
-    cantons = [
-        canton
-        for canton in region.resorts.values_list("canton", flat=True)
-        if canton.strip()
-    ]
-    if not cantons:
-        return ""
-    # ``most_common`` keeps insertion order on ties; sorting first makes
-    # the tie-break alphabetical and therefore reproducible.
-    return Counter(sorted(cantons)).most_common(1)[0][0]
-
-
 def _resolve_canton(region: MicroRegion, canton: str) -> JsonResponse | str:
     """Return the canton to store, or the 400 to send if there isn't one.
 
     An operator-supplied ``canton`` always wins; a blank one falls back to
-    :func:`_canton_for_region`. Only a region with nothing to inherit from
+    ``canton_for_region``. Only a region with nothing to inherit from
     has to ask the operator for it.
     """
-    resolved = canton or _canton_for_region(region)
+    resolved = canton or canton_for_region(region)
     if not resolved:
         return JsonResponse(
             {
@@ -3107,7 +3070,7 @@ def edit_resort_create(request: HttpRequest) -> JsonResponse:
 
     ``name`` is the only value the endpoint cannot source from anywhere
     else. ``canton`` is optional: omitted, it is inherited from the
-    resorts already in the derived region (:func:`_canton_for_region`),
+    resorts already in the derived region (``canton_for_region``),
     which is the right answer for all but border cases; sent, it wins,
     so the operator can correct one. A region with no resorts to inherit
     from is the one case that has to ask.
