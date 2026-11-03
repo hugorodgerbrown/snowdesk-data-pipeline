@@ -26,7 +26,8 @@ directly, and both writes are made deliberate rather than convenient:
 * **Sourced and audited.** Every write needs a ``source`` (the book and
   page, say) and records one admin ``LogEntry`` against the staff account
   — every field old → new, and the source — so it shows on the resort's
-  admin History, plus a WARNING log line.
+  admin History, plus a WARNING log line carrying ids only (no values, no
+  email address).
 
 ``slug``, ``region``, ``canton``, the pin, ``kind``, ``passes`` and the
 geocode provenance are not editable here: each has its own writer and its
@@ -201,12 +202,14 @@ def _audit(actor: Any, resort: Resort, action_flag: int, message: str) -> LogEnt
         change_message=message,
         single_object=True,
     )
+    # The values and the account's email stay in the admin log, which is
+    # access-controlled; the application log gets ids only.
     logger.warning(
-        "ops_mcp: %s %s resort %s: %s",
-        actor.get_username(),
+        "ops_mcp: user id=%s %s resort %s (admin log entry %s)",
+        actor.pk,
         "created" if action_flag == ADDITION else "changed",
         resort.slug,
-        message,
+        entry.pk,
     )
     return entry
 

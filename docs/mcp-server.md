@@ -760,8 +760,10 @@ tools, not for staging data.
 - **Sourced and audited.** `source` (at most 500 characters — the book and
   page) is required. Each commit is one admin `LogEntry` against the staff
   account (CHANGE for an update, listing every field old → new; ADDITION
-  for a create) plus a `WARNING` line, so the resort's admin History is its
-  change log and `get_resort` returns the latest entries.
+  for a create) plus a `WARNING` line carrying ids only — the values and
+  the account's email stay in the access-controlled admin log. The
+  resort's admin History is its change log, and `get_resort` returns the
+  latest entries.
 - **Creating.** The region is `region_for_point`'s; a point outside every
   region is refused. An omitted canton is the region's resorts' vote
   (`apps.regions.services.resort_edit.canton_for_region`, shared with the
