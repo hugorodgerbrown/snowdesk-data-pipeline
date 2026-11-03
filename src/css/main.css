@@ -255,6 +255,13 @@
   --color-obs-surface:        #0369a1;   /* sky-700 — snow surface           */
   --color-obs-trail:          #0f766e;   /* teal-700 — on the trail          */
 
+  /* Wildlife rest zones (SNOW-1384): red where the law closes a zone,
+     amber where FOEN only advises it. Here for the map legend's key;
+     static/js/rest_zones_core.js keeps the same literals for MapLibre
+     (BINDING_COLOUR, RECOMMENDED_COLOUR) — change one, change the other. */
+  --color-rest-binding:       #c62828;
+  --color-rest-recommended:   #e08a00;
+
   /* Saved-route line (SNOW-687) — the MapLibre line layer that draws a
      user's imported GPX track, plus the darker casing painted underneath
      it so the line stays readable over a pale satellite basemap and over

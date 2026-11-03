@@ -156,6 +156,11 @@ Routes and Offline downloads came to have neither.
         {% translate "Layers" as t_layers %}
         {% include "includes/_collapsible_panel.html" with title=t_layers data_testid="help-topic-layers" anchor_id="help-topic-layers" body_template="public/help/_topic_layers.html" %}
 
+        {# The long form of the map's legend: the (i) card's second page links #}
+        {# here from "Every key, described in full" (#help-topic-map-key).    #}
+        {% translate "Map key" as t_map_key %}
+        {% include "includes/_collapsible_panel.html" with title=t_map_key data_testid="help-topic-map-key" anchor_id="help-topic-map-key" body_template="public/help/_topic_map_key.html" %}
+
         {# SNOW-761: the map's Weather overlay. Deep enough to need a panel  #}
         {# of its own — clustering to the lowest station, the forecast-only #}
         {# window, and what is deliberately NOT on it — so the Layers panel #}

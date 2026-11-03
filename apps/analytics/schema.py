@@ -159,8 +159,9 @@ ALLOWED_EVENTS: frozenset[str] = frozenset(
         # "Explore Snowdesk" card answered (static/js/map_tour_offer.js),
         # with `choice` one of resort / example / map / close;
         # `help_menu.chosen` is the "?" menu's item (map_help_menu.js),
-        # `choice` one of welcome / help-mode / pages. The `example.*` four
-        # are the example route walkthrough (map_example_guide.js): opened,
+        # `choice` one of welcome / help-mode / demo / pages. The
+        # `example.*` four are the example route walkthrough
+        # (map_example_guide.js): opened,
         # each step done (`step`: intro / drag / zoom / colours), left by
         # Exit (`step` it was on), and finished. None carries a token: the
         # example's share token is in the session, never in an event.

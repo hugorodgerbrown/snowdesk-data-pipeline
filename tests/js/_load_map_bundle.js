@@ -113,6 +113,10 @@ const PARSE_TIME_CORES = [
   // ground" layer. Here because that layer is on by default, so the fetch
   // is on the `load` path of every suite that fires the load handler.
   'community_reports_core.js',
+  // The legend's first tier. Not a parse-time read — `map_legend.js`
+  // reaches `pwaMapLegendCore` only once the card is open — but a bundle
+  // booted without it would answer every open with an untouched card.
+  'map_legend_core.js',
 ];
 
 /** map.html's script order for the map bundle. */

@@ -41,7 +41,7 @@
  *   map.js                    <- you are here: boot, style/overlay install,
  *                             region select, popups, markers, search.
  *   map_scrubber.js           season scrubber and ?d= sync.
- *   map_legend.js             collapsible danger-scale legend.
+ *   map_legend.js             the two-tier legend card (+ map_legend_core.js).
  *   map_timelapse.js          playback transport.
  *   map_basemap_picker.js     basemap popover and setStyle.
  *   map_region_download.js    per-region download roundel.

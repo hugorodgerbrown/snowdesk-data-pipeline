@@ -186,6 +186,8 @@ interface Window {
   pwaSkiTours: any;
   /** SNOW-1384: static/js/rest_zones_core.js — the rest zones' load box, URL, paint and tap pick. */
   pwaRestZonesCore: any;
+  /** static/js/map_legend_core.js — the legend's first tier: legendState(view), shortSources(list). */
+  pwaMapLegendCore: any;
   /** SNOW-1384: static/js/rest_zones.js — tap(point), show(), hide(), isEnabled(). */
   pwaRestZones: any;
   /** SNOW-1278: map.js — open(feature, {claim, frame}), openUuid(): the SAC tour in the route panel. */
