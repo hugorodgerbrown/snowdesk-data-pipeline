@@ -134,12 +134,8 @@ def read_ground(
             slope_band=band,
             source=GROUND_TERRAIN,
         )
-    logger.debug(
-        "your location: no terrain height at %.4f,%.4f (%s)",
-        latitude,
-        longitude,
-        height.unknown,
-    )
+    # The fix is a reader's position: it is never logged, only the reason.
+    logger.debug("your location: no terrain height (%s)", height.unknown)
     if device_altitude is not None and math.isfinite(device_altitude):
         return Ground(
             height_m=round(device_altitude),
