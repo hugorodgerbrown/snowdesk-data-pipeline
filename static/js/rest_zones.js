@@ -37,6 +37,7 @@
  *   hide()       — the switch off
  *   isEnabled()  — whether the switch is on
  *   MINZOOM      — the zoom the zones are drawn from
+ *   LAYERS       — the two layer ids, which draw mode keeps on the map
  */
 
 // @ts-check
@@ -136,9 +137,16 @@
     }
   }
 
-  /** @returns {boolean} Whether a placement mode (a pin being placed) has the map. */
+  /**
+   * Whether a placement mode has cleared the map of the zones: placing a
+   * pin does; drawing a route keeps them (route_draw.js passes LAYERS as
+   * PlacementFocus's `keep`), since where a route may not go is what
+   * drawing one needs.
+   *
+   * @returns {boolean}
+   */
   function focused() {
-    return !!(window.PlacementFocus && window.PlacementFocus.isActive());
+    return !!(window.PlacementFocus && window.PlacementFocus.hides(FILL));
   }
 
   /** @returns {'visible'|'none'} The layers' visibility. */
@@ -418,8 +426,12 @@
     map.on('styledata', ready);
     map.on('moveend', scheduleLoad);
     // A placement mode's start and end (PlacementFocus announces both)
-    // hide and restore the layers.
-    document.addEventListener('snowdesk:overlay-visibility-changed', applyVisibility);
+    // hide and restore the layers — or, for draw mode, which keeps them,
+    // load the view the moment it starts.
+    document.addEventListener('snowdesk:overlay-visibility-changed', function () {
+      applyVisibility();
+      scheduleLoad();
+    });
     ready();
   }
   bindMap();
@@ -430,5 +442,6 @@
     hide: () => setEnabled(false),
     isEnabled: isEnabled,
     MINZOOM: core.MINZOOM,
+    LAYERS: Object.freeze([FILL, LINE]),
   });
 })();

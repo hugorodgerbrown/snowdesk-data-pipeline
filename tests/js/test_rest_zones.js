@@ -428,3 +428,49 @@ describe('the bridge', () => {
     expect(map.sources.get('rest-zones').def.data).toEqual(FC);
   });
 });
+
+describe('placement modes', () => {
+  /**
+   * A PlacementFocus stub: active, keeping the named layers.
+   *
+   * @param {string[]} keep
+   */
+  function focusKeeping(keep) {
+    window.PlacementFocus = {
+      isActive: () => true,
+      hides: (id) => !keep.includes(id),
+    };
+  }
+
+  afterEach(() => {
+    delete window.PlacementFocus;
+  });
+
+  it('stays drawn and loads while a route is drawn', async () => {
+    const map = await boot({ on: true });
+    // Draw mode passes the module's own LAYERS as PlacementFocus's keep.
+    focusKeeping([...window.pwaRestZones.LAYERS]);
+    document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
+    await settle();
+    expect(fetches).toHaveLength(1);
+    expect(map.layers.get('rest-zones-fill').layout.visibility).toBe('visible');
+    expect(map.layers.get('rest-zones-line').layout.visibility).toBe('visible');
+  });
+
+  it('steps aside while a pin is placed', async () => {
+    const map = await boot({ on: true });
+    await settle();
+    focusKeeping([]);
+    document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
+    expect(map.layers.get('rest-zones-fill').layout.visibility).toBe('none');
+  });
+
+  it('stays off in draw mode when switched off', async () => {
+    const map = await boot();
+    focusKeeping([...window.pwaRestZones.LAYERS]);
+    document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
+    await settle();
+    expect(fetches).toEqual([]);
+    expect(map.layers.get('rest-zones-fill').layout.visibility).toBe('none');
+  });
+});

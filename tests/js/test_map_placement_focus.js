@@ -319,3 +319,56 @@ describe('basemap swap during placement', () => {
     expect(seen).toEqual(['changed']);
   });
 });
+
+describe('keep', () => {
+  // Route drawing keeps the wildlife rest zones on the map (Hugo,
+  // 3 Nov 2026): a kept layer is neither hidden nor snapshotted, so the
+  // module that owns it keeps deciding its visibility.
+  const KEPT = ['favourites-pin', 'favourites-label'];
+
+  it('leaves the kept layers as they were and hides the rest', () => {
+    focus.enter({ keep: KEPT });
+
+    expect(visibilityOf(map, KEPT)).toEqual([undefined, undefined]);
+    expect(visibilityOf(map, ['regions-fill', 'resorts-pin'])).toEqual(['none', 'none']);
+  });
+
+  it('answers hides() for a kept layer as false, for the rest as true', () => {
+    expect(focus.hides('regions-fill')).toBe(false);
+
+    focus.enter({ keep: KEPT });
+
+    expect(focus.hides('favourites-pin')).toBe(false);
+    expect(focus.hides('regions-fill')).toBe(true);
+  });
+
+  it('does not write over a kept layer on exit', () => {
+    focus.enter({ keep: KEPT });
+    // Its own module turned it off mid-placement.
+    map.visibility['favourites-pin'] = 'none';
+
+    focus.exit();
+
+    expect(map.visibility['favourites-pin']).toBe('none');
+    expect(map.visibility['regions-fill']).toBe('visible');
+  });
+
+  it('forgets the kept layers once focus ends', () => {
+    focus.enter({ keep: KEPT });
+    focus.exit();
+    focus.enter();
+
+    expect(focus.hides('favourites-pin')).toBe(true);
+    expect(map.visibility['favourites-pin']).toBe('none');
+  });
+
+  it('keeps them through a basemap swap', () => {
+    focus.enter({ keep: KEPT });
+    map.visibility = {};
+
+    document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'));
+
+    expect(visibilityOf(map, KEPT)).toEqual([undefined, undefined]);
+    expect(map.visibility['regions-fill']).toBe('none');
+  });
+});
