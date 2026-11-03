@@ -636,13 +636,14 @@ def test_the_sheets_pause_band_loads_before_the_three_sheets() -> None:
 def test_the_problem_terrain_layer_has_no_date_row_chip() -> None:
     """SNOW-1206: the layer is named by the layers menu and the legend, not the date row.
 
-    The module that keeps those two in step loads after map.js, which
-    publishes the bridge it reads.
+    The module that keeps the legend in step loads after map.js, which
+    publishes the bridge it reads. It needs no strings since SNOW-1410
+    removed the menu row's second line.
     """
     content = Client().get(reverse("public:map")).content.decode()
     assert 'id="map-terrain-chip"' not in content
     assert "data-terrain-chip" not in content
-    assert '<template id="map-problem-terrain-strings-template">' in content
+    assert "map-problem-terrain-strings-template" not in content
     assert content.index("/static/js/map.js") < content.index(
         "/static/js/map_problem_terrain_key.js"
     )
@@ -2585,7 +2586,7 @@ def test_sync_with_map_terrain_is_on_the_bulletins_page() -> None:
     moved it onto the Avalanche bulletins options page; since 3 Nov 2026 it
     sits under the providers and the opacity steps come last. SNOW-1377 renamed it and drew it as a switch track; it renders
     unchecked (map.js seeds it, on by default) for an anonymous reader, with
-    the second line "From zoom 12, Switzerland". It is not a level-one layer,
+    no second line (SNOW-1410: redundant on this page). It is not a level-one layer,
     so it carries no data-layer-switch for the menu's count. Its key is its
     own legend section, hidden until the layer is on.
     """
@@ -2599,7 +2600,7 @@ def test_sync_with_map_terrain_is_on_the_bulletins_page() -> None:
     assert "group-aria-checked:bg-accent" in row
     assert "data-layer-switch" not in row
     assert ">Sync with map terrain<" in row
-    assert "From zoom 12, Switzerland" in row
+    assert "basemap-menu-item-detail" not in row
     assert "Highlight problem terrain" not in content
     assert (
         bulletins.index('data-overlay-key="country.albina"')
@@ -2619,10 +2620,7 @@ def test_sync_with_map_terrain_is_on_the_bulletins_page() -> None:
     assert "Same colours, on the slopes" in legend
     assert "map-legend-swatch--terrain-undescribed" in legend
     assert "map-legend-swatch--terrain-nodata" in legend
-
-    strings = content[content.index('id="map-problem-terrain-strings-template"') :]
-    strings = strings[: strings.index("</template>")]
-    assert "From zoom 12, Switzerland" in strings
+    assert 'id="map-problem-terrain-strings-template"' not in content
 
 
 @pytest.mark.django_db

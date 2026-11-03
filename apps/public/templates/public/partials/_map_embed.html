@@ -906,9 +906,9 @@ Optional context:
                 {# button's aria-checked; no data-layer-switch, because it is    #}
                 {# not a level-one layer the menu's count reads. Toggles through #}
                 {# window.pwaBulletinTerrain; the region sheet's switch writes   #}
-                {# the same state; map_problem_terrain_key.js swaps the second   #}
-                {# line for "No bulletin for this day". While Steep terrain is   #}
-                {# on, its colours replace the bulletin's slopes and this row    #}
+                {# the same state. No second line: on the bulletins page it only #}
+                {# repeated the context (Hugo, 3 Nov 2026). While Steep terrain  #}
+                {# is on, its colours replace the bulletin's slopes and this row #}
                 {# reads off; switching it on turns Steep terrain off.           #}
                 {% if terrain_filter_eligible %}
                     <li role="separator" class="basemap-menu-separator"></li>
@@ -922,10 +922,6 @@ Optional context:
                         >
                             <span class="basemap-menu-item-text">
                                 <span data-row-label>{% trans "Sync with map terrain" %}</span>
-                                <span
-                                    class="basemap-menu-item-detail"
-                                    data-problem-terrain-detail
-                                >{% trans "From zoom 12, Switzerland" %}</span>
                             </span>
                             <span
                                 class="basemap-menu-switch-slot"
@@ -1983,16 +1979,6 @@ Optional context:
                     {% include "includes/_icon_sun.html" with size=16 only %}
                     <span class="map-today-dot" data-today-dot hidden></span>
                 </button>
-            {% endif %}
-            {% if terrain_filter_eligible %}
-                {# map_problem_terrain_key.js's strings: the layers-menu row's #}
-                {# second line. SNOW-1206 removed the date-row chip they      #}
-                {# shared a template with.                                     #}
-                <template id="map-problem-terrain-strings-template">
-                    {# The menu row's second line, and (SNOW-1195) what it says on a day no bulletin covers. #}
-                    <span data-string="detail">{% trans "From zoom 12, Switzerland" %}</span>
-                    <span data-string="no-bulletin">{% trans "No bulletin for this day" %}</span>
-                </template>
             {% endif %}
             <template id="map-weather-window-strings-template">
                 <span
