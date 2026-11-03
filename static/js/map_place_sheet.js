@@ -64,6 +64,17 @@
  * sheet with, so offline it finds the saved one. The `href` is the no-JS
  * fallback.
  *
+ * YOUR LOCATION (SNOW-1395). map_geolocate.js opens a third kind,
+ * `{kind: 'location', lat, lon, altitude}`, when the reader taps the blue
+ * locate-me dot — on every width, as a resort's, and at HALF. The body is
+ * read for the fix on the map's day (place_sheet.location_sheet_partial,
+ * `no-store`: nothing keeps where the reader stood). Its star saves the
+ * spot as a dropped pin: this module turns it, favourites.js queues the
+ * same create the favourites panel's form posts. OFFLINE — or when the
+ * read outlasts LOCATION_BUDGET_MS — it still opens: the device's own
+ * altitude reading (when it gave one) and a line saying the rest needs a
+ * connection (Hugo, 3 Nov 2026: degrade gracefully).
+ *
  * PAUSED DURING PLAYBACK (SNOW-1239). While the timeline plays the sheet
  * stays open under a "Playback in progress" band
  * (window.pwaSheetPlayback, sheet_playback_core.js), fetches nothing for
@@ -81,6 +92,7 @@
 
   const RESORT_URL = mapEl.dataset.resortSheetUrl || '';
   const FAVOURITE_URL = mapEl.dataset.favouriteSheetUrl || '';
+  const LOCATION_URL = mapEl.dataset.locationSheetUrl || '';
   const NIL_UUID = '00000000-0000-0000-0000-000000000000';
   const DESKTOP_QUERY = '(min-width: 640px)';
 
@@ -92,11 +104,19 @@
     'rename-failed': 'Could not rename this pin — please try again.',
     'delete-failed': 'Could not delete this pin — please try again.',
     notDownloaded: "This day isn't downloaded for offline use.",
+    'location-title': 'Your location',
+    'location-offline': 'The bulletin and weather need a connection.',
+    'location-saved': 'Saved as a pin.',
+    'location-save-failed': 'Could not save this spot on this device — please try again.',
   });
 
   // SNOW-1313: the header the service worker's offline-miss 504 carries
   // (`OFFLINE_MISS_HEADER` in sw.js; map_region_sheet.js holds a third copy).
   const OFFLINE_MISS_HEADER = 'X-SW-Offline-Miss';
+
+  // SNOW-1395: how long the "Your location" read may take before the sheet
+  // paints what the device knows — the worker's own navigation budget.
+  const LOCATION_BUDGET_MS = 5000;
 
   // One request in flight: a newer open supersedes it, and a close by any
   // route (onTeardown) aborts it.
@@ -114,7 +134,8 @@
   });
   const toast = window.MapSheet.toast || function () {};
 
-  /** @type {?{kind: string, id: string, name?: string, createdAt?: string}} */
+  /** @type {?{kind: string, id: string, name?: string, createdAt?: string,
+   *   lat?: number, lon?: number, altitude?: ?number}} */
   let place = null;
   /** @type {?string} */
   let dateKey = null;
@@ -223,13 +244,36 @@
   const urlFor = () => {
     if (!place) return '';
     let url = '';
+    /** @type {Array<string>} */
+    const query = [];
     if (place.kind === 'resort' && RESORT_URL) {
       url = RESORT_URL.replace('__SLUG__', encodeURIComponent(place.id));
     } else if (place.kind === 'favourite' && FAVOURITE_URL) {
       url = FAVOURITE_URL.replace(NIL_UUID, encodeURIComponent(place.id));
+    } else if (place.kind === 'location' && LOCATION_URL && isFinite(place.lat) && isFinite(place.lon)) {
+      url = LOCATION_URL;
+      query.push('lat=' + encodeURIComponent(String(place.lat)));
+      query.push('lon=' + encodeURIComponent(String(place.lon)));
+      if (typeof place.altitude === 'number' && isFinite(place.altitude)) {
+        query.push('alt=' + encodeURIComponent(String(Math.round(place.altitude))));
+      }
     }
-    if (url && dateKey) url += '?d=' + encodeURIComponent(dateKey);
-    return url;
+    if (url && dateKey) query.push('d=' + encodeURIComponent(dateKey));
+    return url && query.length ? url + '?' + query.join('&') : url;
+  };
+
+  /**
+   * The offline "Your location" body: the device's altitude as the title
+   * when it gave one, and a line saying the rest needs a connection.
+   *
+   * @param {{altitude?: ?number}} which
+   * @returns {void}
+   */
+  const paintLocationOffline = (which) => {
+    const altitude = which && typeof which.altitude === 'number' && isFinite(which.altitude)
+      ? Math.round(which.altitude).toLocaleString('en-GB') + '\u00a0m'
+      : '';
+    paintLines(altitude || STRINGS['location-title'], STRINGS['location-offline']);
   };
 
   /**
@@ -248,12 +292,27 @@
     if (!sheet.querySelector('[data-testid="place-sheet-body"]')) {
       paintLines(current && current.name ? current.name : '', STRINGS.loading);
     }
+    // SNOW-1395: the reader's fix is fetched past the worker (`network`,
+    // never cached), so nothing else bounds it. A stalled radio paints the
+    // offline fallback once the budget runs out; a late answer still
+    // replaces it (docs/decisions/bounded-offline-read-paths.md).
+    let painted = false;
+    const budget = current && current.kind === 'location'
+      ? setTimeout(() => {
+          if (!painted && ask.isCurrent() && controller.isOpen()) paintLocationOffline(current);
+        }, LOCATION_BUDGET_MS)
+      : 0;
+    const settled = () => {
+      painted = true;
+      clearTimeout(budget);
+    };
     return fetch(url, {
       headers: { 'HX-Request': 'true' },
       credentials: 'same-origin',
       signal: ask.signal,
     })
       .then((resp) => {
+        settled();
         if (!resp.ok) {
           const err = new Error('place sheet ' + resp.status);
           // SNOW-1313: offline, and the device holds no sheet for this pin
@@ -267,8 +326,13 @@
         if (!ask.isCurrent() || !controller.isOpen()) return;
         sheet.innerHTML = html;
         paintStar();
+        // SNOW-1395: the sign-in star of a reader who cannot save names the
+        // live map url as `next`, as a resort's does (SNOW-903).
+        const signIn = /** @type {?HTMLAnchorElement} */ (sheet.querySelector('[data-location-star-signin]'));
+        if (signIn) window.snowdeskSigninCta?.bindNext?.(signIn, signIn.dataset.signinUrl);
       })
       .catch((err) => {
+        settled();
         if (!ask.isCurrent() || !controller.isOpen() || playback.isAbort(err)) return;
         // Offline, a saved pin still has what its popup showed: its name
         // and when it was saved, both on the feature the map holds.
@@ -276,6 +340,12 @@
           const saved = window.snowdeskMapFormat?.relativeTime?.(current.createdAt || '') || '';
           const note = err && err.notDownloaded ? STRINGS.notDownloaded : '';
           paintLines(current.name || '', saved || (note ? '' : STRINGS.failed), note);
+          return;
+        }
+        // SNOW-1395: the reader's own fix is never kept offline; say what
+        // the device knows without the network.
+        if (current && current.kind === 'location') {
+          paintLocationOffline(current);
           return;
         }
         // SNOW-1318: a resort's sheet is kept by a download for each day it
@@ -295,7 +365,8 @@
    * @param {?{kind: string}} which
    * @returns {boolean}
    */
-  const takes = (which) => !!which && (which.kind === 'resort' || isPhone());
+  const takes = (which) =>
+    !!which && (which.kind === 'resort' || which.kind === 'location' || isPhone());
 
   /**
    * Open the sheet for one place.
@@ -331,7 +402,9 @@
     if (!controller.isOpen()) {
       // A resort opens at HALF — its name, the day, the bulletin and
       // today's weather — and a saved pin at PEEK (Hugo, 27 Oct 2026).
-      sheet.setAttribute('data-detent-initial', next.kind === 'resort' ? 'half' : 'peek');
+      // SNOW-1395: the reader's own location opens at HALF too — the ground,
+      // the bulletin and the weather are what the tap asked for.
+      sheet.setAttribute('data-detent-initial', next.kind === 'favourite' ? 'peek' : 'half');
       controller.open({ awaiting: !playback.isPlaying() });
     }
     return true;
@@ -384,8 +457,39 @@
     document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
   };
 
+  /**
+   * SNOW-1395: save the reader's fix as a dropped pin — the favourites
+   * panel's own create (favourites.js), queued so it survives a dead
+   * radio, with the same optimistic pending pin on the map.
+   *
+   * @param {HTMLButtonElement} star The location sheet's star.
+   * @returns {void}
+   */
+  const saveLocation = (star) => {
+    // favourites.js owns the write (a document listener, which runs after
+    // this one) — the same queued create the favourites panel's form posts.
+    // Turn the star now, since the create is queued, but only when the
+    // queue can take it: on a device that cannot, nothing is saved.
+    if (!window.MapSheet.canQueueMutations?.() || !window.pwaMutationQueue) {
+      toast(STRINGS['location-save-failed']);
+      return;
+    }
+    star.setAttribute('aria-pressed', 'true');
+    star.querySelector('svg')?.setAttribute('fill', 'currentColor');
+    // After this click has reached favourites.js's document listener.
+    setTimeout(() => { star.disabled = true; }, 0);
+    toast(STRINGS['location-saved']);
+  };
+
   sheet.addEventListener('click', (ev) => {
     const target = /** @type {HTMLElement} */ (ev.target);
+
+    const locationStar = /** @type {?HTMLButtonElement} */ (target.closest?.('[data-location-star]'));
+    if (locationStar) {
+      ev.preventDefault();
+      if (!locationStar.disabled) saveLocation(locationStar);
+      return;
+    }
 
     // A resort's star: favourites.js owns the write (a document listener,
     // which runs after this one). Turn the star now, since the create is
@@ -481,6 +585,9 @@
       paintStar();
       return;
     }
+    // SNOW-1395: the body says nothing about the favourites; re-reading it
+    // would only turn a just-saved star back to an outline.
+    if (place.kind === 'location') return;
     if (playback.isPlaying()) {
       pendingRefresh = true;
       return;

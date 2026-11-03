@@ -315,6 +315,9 @@
      terrain filter sheet — paired with accent text or an accent stroke.
      Translucent, so it reads over card and card-subtle alike. */
   --color-accent-tint:   rgba(37, 99, 235, 0.14);
+  /* SNOW-1395: MapLibre's user-location dot (maplibre-gl.css), repeated as
+     the "Your location" sheet's tile so the sheet shows what was tapped. */
+  --color-location-dot:  #1da1f2;
 
   /* Hourly chart (SNOW-723) — the four marks the meteogram needs that no
      existing token carries. The other four series reuse what is already
@@ -898,6 +901,7 @@
   --color-accent-hover:  #60a5fa;
   --color-accent-text:   #ffffff;
   --color-accent-tint:   rgba(59, 130, 246, 0.22);
+  --color-location-dot:  #1da1f2;
 
   /* Floating overlays — inverted glass so pills read against dark
      basemaps / dark UI (SNOW-36). */
@@ -1015,6 +1019,7 @@
   --color-accent-hover: #1d4ed8;
   --color-accent-text: #ffffff;
   --color-accent-tint: rgba(37, 99, 235, 0.14);
+  --color-location-dot: #1da1f2;
   --color-glass: rgba(255, 255, 255, 0.85);
   --shadow-glass: 0 2px 14px rgba(0, 0, 0, 0.08);
   --color-scrim: rgba(0, 0, 0, 0.4);
@@ -2771,6 +2776,50 @@ a.season-day:focus-visible {
   background-color: var(--color-slope-50);
   border-color: var(--color-slope-50);
   color: var(--color-slope-50-fg);
+}
+
+/* SNOW-1395: the "Your location" sheet's title names the slope band under
+   the fix in the slope layer's own colour, from 30° (the band the layer
+   starts painting at); under 30° the chip is plain text. A data-attribute
+   selector, which Tailwind cannot express. */
+.slope-chip {
+  border-radius: var(--radius-sm);
+  padding: 0 0.375rem;
+}
+
+.slope-chip[data-slope-class="0"] {
+  background-color: var(--color-slope-30);
+  color: var(--color-slope-30-fg);
+}
+
+.slope-chip[data-slope-class="1"] {
+  background-color: var(--color-slope-35);
+  color: var(--color-slope-35-fg);
+}
+
+.slope-chip[data-slope-class="2"] {
+  background-color: var(--color-slope-40);
+  color: var(--color-slope-40-fg);
+}
+
+.slope-chip[data-slope-class="3"] {
+  background-color: var(--color-slope-45);
+  color: var(--color-slope-45-fg);
+}
+
+.slope-chip[data-slope-class="4"] {
+  background-color: var(--color-slope-50);
+  color: var(--color-slope-50-fg);
+}
+
+/* The sheet's tile is the dot the reader tapped, drawn as MapLibre draws
+   its user-location dot (maplibre-gl.css: #1da1f2 with a white ring). */
+.location-tile-dot {
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 9999px;
+  background-color: var(--color-location-dot);
+  box-shadow: 0 0 0 2px #fff;
 }
 
 /* The aspect rose: eight wedges, then the "All" centre. A label follows

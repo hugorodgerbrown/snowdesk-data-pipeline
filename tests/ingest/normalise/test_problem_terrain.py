@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.ingest.normalise.problem_terrain import OCTANTS, terrain_rules
+from apps.ingest.normalise.problem_terrain import OCTANTS, problems_at, terrain_rules
 from track.geo import OCTANTS as CORE_OCTANTS
 
 
@@ -157,3 +157,91 @@ class TestTerrainRules:
 def test_the_octants_match_the_cores() -> None:
     """Ingest's copy of the octant order is the same as track.geo's."""
     assert OCTANTS == CORE_OCTANTS
+
+
+class TestProblemsAt:
+    """problems_at tests one point of ground as the map's layer tests a pixel (SNOW-1395)."""
+
+    def _at(
+        self, model: dict[str, Any], height: float, octant: int, band: int = 6
+    ) -> list[str]:
+        """The problem types admitting the point."""
+        return [
+            p["problem_type"]
+            for p in problems_at(model, height_m=height, octant=octant, slope_band=band)
+        ]
+
+    def test_inside_a_decided_rule(self) -> None:
+        """NE at 2,410 m on 30° ground is inside N–NE above 2,400 m."""
+        found = problems_at(
+            _model(_trait(_problem())), height_m=2410, octant=1, slope_band=6
+        )
+        assert found == [
+            {"problem_type": "wind_slab", "rating": 3, "lower": 2400, "upper": None}
+        ]
+
+    def test_below_the_lower_bound(self) -> None:
+        assert self._at(_model(_trait(_problem())), 2399, 1) == []
+
+    def test_the_lower_bound_is_inclusive(self) -> None:
+        assert self._at(_model(_trait(_problem())), 2400, 1) == ["wind_slab"]
+
+    def test_the_upper_bound_is_exclusive(self) -> None:
+        model = _model(
+            _trait(
+                _problem(elevation={"lower": None, "upper": 1800, "treeline": False})
+            )
+        )
+        assert self._at(model, 1799, 1) == ["wind_slab"]
+        assert self._at(model, 1800, 1) == []
+
+    def test_an_aspect_the_problem_does_not_name(self) -> None:
+        assert self._at(_model(_trait(_problem())), 2500, 4) == []
+
+    def test_no_aspects_names_every_aspect(self) -> None:
+        assert self._at(_model(_trait(_problem(aspects=[]))), 2500, 4) == ["wind_slab"]
+
+    def test_gentle_ground_is_never_inside(self) -> None:
+        """Under 30° the map paints nothing, and the sheet says nothing."""
+        assert self._at(_model(_trait(_problem())), 2500, 1, band=5) == []
+
+    def test_an_undecided_rule_says_nothing(self) -> None:
+        """A treeline band is the map's hatch, not a match."""
+        model = _model(
+            _trait(_problem(elevation={"lower": "treeline", "treeline": True}))
+        )
+        assert self._at(model, 2500, 1) == []
+
+    def test_prose_only_geography_says_nothing(self) -> None:
+        model = _model(_trait(_problem(), geography={"source": "prose_only"}))
+        assert self._at(model, 2500, 1) == []
+
+    def test_highest_rating_first_one_per_type(self) -> None:
+        """Morning and afternoon issues of one type are one entry, at the worse."""
+        model = _model(
+            _trait(_problem(danger_rating_value="moderate", problem_type="wet_snow")),
+            _trait(_problem()),
+            _trait(_problem(danger_rating_value="high")),
+        )
+        found = problems_at(model, height_m=2500, octant=0, slope_band=7)
+        assert [(p["problem_type"], p["rating"]) for p in found] == [
+            ("wind_slab", 4),
+            ("wet_snow", 2),
+        ]
+
+    def test_no_render_model(self) -> None:
+        assert self._at({}, 2500, 1) == []
+
+    def test_agrees_with_the_maps_rules(self) -> None:
+        """Every point problems_at admits, some rule terrain_rules gives admits."""
+        model = _model(_trait(_problem()), _trait(_problem(aspects=["S"])))
+        rules = terrain_rules(model)
+        for octant in range(8):
+            for height in (2000, 2400, 3000):
+                inside = bool(self._at(model, height, octant))
+                ruled = any(
+                    (not r["aspects"] or octant in r["aspects"])
+                    and (r["lower"] is None or height >= r["lower"])
+                    for r in rules
+                )
+                assert inside == ruled

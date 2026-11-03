@@ -63,7 +63,8 @@ The names are grouped by what they are for:
       what follows from the model: the day a bulletin forecasts and the
       danger range it gives it (``target_day_for_valid_from``,
       ``rate_render_model``), and its problems as terrain rules
-      (``terrain_rules``), and what an alert compares about it
+      (``terrain_rules``) and the problems one point of ground is on
+      (``problems_at``, SNOW-1395), and what an alert compares about it
       (``bulletin_state``, ``BulletinState``, SNOW-1341). The labels and
       copy a page shows for them, and
       which bulletin governs a region's day, are the instance's.
@@ -221,7 +222,12 @@ from apps.ingest.normalise.meteofrance.translator import (
     format_comment_as_html,
     parse_dpbra_xml,
 )
-from apps.ingest.normalise.problem_terrain import TerrainRule, terrain_rules
+from apps.ingest.normalise.problem_terrain import (
+    ProblemAtPoint,
+    TerrainRule,
+    problems_at,
+    terrain_rules,
+)
 from apps.ingest.normalise.prose import ParsedScope, parse_for as parse_prose_for
 from apps.ingest.normalise.render_model import (
     DRY_PROBLEM_TYPES,
@@ -430,6 +436,7 @@ __all__ = [
     "NormalisedBulletin",
     "ParsedScope",
     "PeriodTransition",
+    "ProblemAtPoint",
     "RenderModelBuildError",
     "SourceBulletin",
     "SourceDayRating",
@@ -501,6 +508,7 @@ __all__ = [
     "period_transition_of",
     "pdf_session",
     "problem_types_for",
+    "problems_at",
     "rate_render_model",
     "read_slf_archive",
     "rebuild_render_model",

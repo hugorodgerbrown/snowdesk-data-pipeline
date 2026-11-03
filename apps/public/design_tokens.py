@@ -451,6 +451,9 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
                 "rgba(37, 99, 235, 0.14)",
                 "rgba(59, 130, 246, 0.22)",
             ),
+            # SNOW-1395: the "Your location" sheet's tile repeats MapLibre's
+            # user-location dot, so the sheet shows what was tapped.
+            Token("--color-location-dot", "Location dot", "#1da1f2", "#1da1f2"),
         ),
     ),
     FoundationCategory(

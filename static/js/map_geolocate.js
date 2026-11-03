@@ -25,6 +25,12 @@
 // on looking inert, and a user cannot tell "still trying" from "gave up".
 // So the roundel now says both things — a busy state while a fix is in
 // flight (below), and a banner with a retry when none arrives.
+//
+// SNOW-1395: the blue dot the fix draws is a way in. A tap on it — or on the
+// spoofed fix's beacon — opens the "Your location" sheet for the last fix
+// (map_place_sheet.js), and the tap goes no further: MapLibre draws the dot
+// as a DOM marker over the canvas, so without the stop it fell through to
+// the map's click dispatcher as a tap on empty map, and nothing opened.
 (function geolocateInit() {
   const btn = document.getElementById('locate-toggle');
   if (!btn || !MAP) return;
@@ -313,6 +319,10 @@
   // (and a second watchdog) behind the first.
   let locating = false;
 
+  // SNOW-1395: the last fix the pill took, for the dot's sheet.
+  /** @type {?{lat: number, lon: number, altitude: ?number}} */
+  let lastFix = null;
+
   /**
    * Enter or leave the roundel's "looking for you" state.
    *
@@ -353,6 +363,11 @@
     requestFix(
       (position) => {
         setLocating(false);
+        lastFix = {
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+          altitude: typeof position.coords.altitude === 'number' ? position.coords.altitude : null,
+        };
         const bounds = MAP.getMaxBounds();
         const onMap =
           !bounds ||
@@ -404,6 +419,57 @@
   }
 
   btn.addEventListener('click', locate);
+
+  /**
+   * SNOW-1395: open the "Your location" sheet for the last fix.
+   *
+   * MapLibre's own fix can be fresher than the pill's (it re-reads the
+   * device when it cannot reuse the pill's within maximumAge), so the dot's
+   * own position wins where the control has one.
+   *
+   * @returns {boolean} Whether a sheet opened.
+   */
+  function openLocationSheet() {
+    if (!lastFix || !window.pwaPlaceSheet) return false;
+    // MapLibre's last position, when it holds one (a private field, read
+    // defensively: an absent one leaves the pill's fix in charge).
+    const own = /** @type {*} */ (control)._lastKnownPosition;
+    const fix = own && own.coords && !FAKE_FIX
+      ? {
+          lat: own.coords.latitude,
+          lon: own.coords.longitude,
+          altitude: typeof own.coords.altitude === 'number' ? own.coords.altitude : lastFix.altitude,
+        }
+      : lastFix;
+    return window.pwaPlaceSheet.open({
+      kind: 'location',
+      id: 'here',
+      name: '',
+      lat: fix.lat,
+      lon: fix.lon,
+      altitude: fix.altitude,
+      lngLat: [fix.lon, fix.lat],
+    });
+  }
+
+  // Capture phase on the document, so the stop lands before MapLibre's own
+  // listeners on the map container see the click and fire the map's
+  // `click` — which the dispatcher in map.js would read as a tap on empty
+  // map and answer by closing whatever sheet is open. Works while the drop
+  // zone has the roundel armed, which stays armed (Hugo, 3 Nov 2026).
+  document.addEventListener(
+    'click',
+    (event) => {
+      const target = /** @type {?Element} */ (event.target);
+      if (!target || !target.closest) return;
+      if (!target.closest('.maplibregl-user-location-dot, .map-fake-beacon')) return;
+      if (openLocationSheet()) {
+        event.stopPropagation();
+        event.preventDefault();
+      }
+    },
+    true,
+  );
 
   // The failure banner's "Try again" CTA — the same call as the roundel, which
   // is the point: the banner sits over the map at the top and the roundel is at

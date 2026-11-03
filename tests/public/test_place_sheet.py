@@ -825,7 +825,7 @@ class TestResortBody:
 
 @pytest.mark.django_db
 class TestMapPage:
-    """The map page carries the sheet, its script and both URL templates."""
+    """The map page carries the sheet, its script and its three URL templates."""
 
     def test_map_renders_the_place_sheet(self, client: Client) -> None:
         content = client.get(reverse("public:map")).content.decode()
@@ -838,4 +838,5 @@ class TestMapPage:
             'data-favourite-sheet-url="/partials/place-sheet/favourite/'
             '00000000-0000-0000-0000-000000000000/"'
         ) in content
+        assert 'data-location-sheet-url="/partials/place-sheet/location/"' in content
         assert 'id="place-sheet-strings-template"' in content

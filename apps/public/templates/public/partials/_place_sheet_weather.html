@@ -1,0 +1,36 @@
+{% load i18n %}
+{% comment %}
+public/partials/_place_sheet_weather.html — the day's weather at a saved pin
+or a locate-me fix, borrowed from the curated point nearest it (Hugo,
+2026-10-28). Extracted from _place_sheet_body.html when the "Your location"
+sheet (SNOW-1395) became its second caller. HALF ends under it
+(``data-sheet-half``).
+
+Context (from ``place_sheet._place_context``):
+  weather_display — today's or a past day's row for the point, or None.
+  forward_day     — a forward day's forecast entry, or None.
+  target_date, forecast_source, forecast_url, forecast_short_id.
+{% endcomment %}
+{% if weather_display %}
+    <section class="space-y-2" data-testid="place-sheet-weather" data-sheet-half>
+        {# The height is the forecast point's, so it is stated on the #}
+        {# source line under the panel rather than beside the day.   #}
+        {% blocktrans with d=target_date|date:"D j M" trimmed asvar weather_label %}Weather ·
+            {{ d }}{% endblocktrans %}
+        {% include "includes/_weather_panel.html" with weather_display=weather_display testid_prefix="place-sheet-weather" location_label=weather_label only %}
+        {% include "public/partials/_place_sheet_forecast_source.html" %}
+        {% include "public/partials/_place_sheet_forecast_link.html" %}
+    </section>
+{% elif forward_day %}
+    {# A forward day: today's row forecast it, so its line says so. #}
+    <section class="space-y-2" data-testid="place-sheet-weather" data-sheet-half>
+        {% blocktrans with d=target_date|date:"D j M" trimmed asvar forward_label %}Forecast ·
+            {{ d }}{% endblocktrans %}
+        {% include "includes/_eyebrow.html" with text=forward_label tag="h3" %}
+        {% include "includes/_weather_day_line.html" with day=forward_day testid_prefix="place-sheet-forward-day" only %}
+        {% include "public/partials/_place_sheet_forecast_source.html" %}
+        {% include "public/partials/_place_sheet_forecast_link.html" %}
+    </section>
+{% elif forecast_url %}
+    <div data-sheet-half>{% include "public/partials/_place_sheet_forecast_link.html" %}</div>
+{% endif %}
