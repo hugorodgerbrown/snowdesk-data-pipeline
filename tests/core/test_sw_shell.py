@@ -30,6 +30,9 @@ def _write_shell_tree(root: Path) -> None:
     js_dir.mkdir(parents=True, exist_ok=True)
     (js_dir / "sw.js").write_text(_SW_JS_TEMPLATE, encoding="utf-8")
     (js_dir / "other.js").write_text("console.log('shell');\n", encoding="utf-8")
+    # SNOW-1412: a bundle membership list, whose order is what ships.
+    (js_dir / "bundles").mkdir(exist_ok=True)
+    (js_dir / "bundles" / "map.txt").write_text("other.js\n", encoding="utf-8")
 
     css_dir = root / "src" / "css"
     css_dir.mkdir(parents=True, exist_ok=True)
@@ -73,6 +76,7 @@ class TestComputeShellHash:
         "relative_path",
         [
             "static/js/other.js",
+            "static/js/bundles/map.txt",
             "src/css/main.css",
             "apps/public/templates/public/base.html",
             "apps/public/templates/public/map.html",
