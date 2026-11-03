@@ -2466,8 +2466,39 @@
     }
   }
 
+  /**
+   * SNOW-1414: what one region's download would cost on this device, priced
+   * exactly as this control prices its own idle label and its ceiling check
+   * — the basemap's tile sources scale the server's figure (SNOW-843), and
+   * terrain data adds its share when the device includes it (SNOW-1072).
+   *
+   * The "Download a region" picker (map_region_pick.js) names a region the
+   * roundel is not focused on, and a second copy of this arithmetic there
+   * would be free to drift from the figure the roundel then shows.
+   * Read-only: it moves no focus and paints nothing.
+   *
+   * @param {string} regionId
+   * @returns {?{mb: number, terrainMb: number, tooBig: boolean}} Null when
+   *   the page has no download summary for the region.
+   */
+  function estimateRegionDownload(regionId) {
+    const feature = regionId ? FEATURE_BY_REGION_ID[regionId] : null;
+    const summary = (feature && feature.properties && feature.properties.download) || null;
+    if (!summary || !Number.isFinite(summary.mb)) return null;
+    const core = self.pwaBasemapDownloadCore;
+    const mb = core
+      ? core.sourceScaledMb(summary.mb, activeBasemapTileSources(MAP), summary.count)
+      : summary.mb;
+    const terrainMb = terrainDataPreferred()
+      ? _regionTerrainMb({ regionId: regionId, summary: summary })
+      : 0;
+    const tooBig = !!core && mb + terrainMb > basemapDeviceCeilingMb();
+    return { mb: mb, terrainMb: terrainMb, tooBig: tooBig };
+  }
+
   window.pwaRegionDownload = Object.freeze({
     start: startRegionDownload,
+    estimate: estimateRegionDownload,
 
     /**
      * SNOW-932 review: re-probe the focused region and repaint its roundel.

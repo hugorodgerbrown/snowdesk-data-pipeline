@@ -1,0 +1,68 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_region_pick.html — the "Download a region" bar
+(SNOW-1414).
+
+The whole surface of the pick task static/js/map_region_pick.js runs: the
+Downloads sheet's "Download a region" opens it, the map behind it shows
+plain region outlines, and a tap on one names it here with what it costs.
+Hidden until the task opens.
+
+It is the drop-zone bar's surface (``.map-drop-zone-cta`` and the
+framing overlay's buttons, static/css/map.css), not a sheet: the three
+download tasks answer the same question ("this area, for this many MB?")
+and read as one family, docked at the foot with the map live above. The
+first line is the instruction until a region is chosen, then its name; the
+second is the hint, then the size.
+
+``data-pick-state`` mirrors ``pwaRegionPickCore.STATES``.
+{% endcomment %}
+<div
+    id="map-region-pick-overlay"
+    class="map-drop-zone-cta"
+    hidden
+    role="dialog"
+    aria-modal="false"
+    aria-label='{% trans "Download a region" %}'
+    data-pick-state="choosing"
+>
+    <div class="map-drop-zone-lines">
+        <span
+            id="map-region-pick-name"
+            class="map-frame-readout"
+            aria-live="polite"
+        >{% trans "Tap a region to download it" %}</span>
+        <span
+            id="map-region-pick-readout"
+            class="map-drop-zone-hint"
+            aria-live="polite"
+        >{% trans "Region outlines only, no danger ratings" %}</span>
+    </div>
+    <div class="map-frame-cta-actions">
+        <button type="button" id="map-region-pick-cancel" class="map-frame-btn map-frame-btn--text">
+            {% trans "Cancel" %}
+        </button>
+        <button
+            type="button"
+            id="map-region-pick-confirm"
+            class="map-frame-btn map-frame-btn--primary"
+            disabled
+            aria-disabled="true"
+        >
+            {% trans "Download" %}
+        </button>
+    </div>
+</div>
+{# The task's own strings. Its own template id, because                       #}
+{# tests/test_js_strings_are_translatable.py maps each template id to the ONE #}
+{# module that reads it.                                                      #}
+<template id="map-region-pick-strings-template">
+    <span data-string="choosing">{% trans "Tap a region to download it" %}</span>
+    <span data-string="hint">{% trans "Region outlines only, no danger ratings" %}</span>
+    <span data-string="readout">{% blocktrans %}Up to %(mb)s MB{% endblocktrans %}</span>
+    <span data-string="unavailable">{% trans "This region can't be downloaded" %}</span>
+    <span data-string="too-big">{% blocktrans %}Up to %(mb)s MB, too large for this device{% endblocktrans %}</span>
+    <span data-string="busy">{% trans "Another region is still downloading. Try again when it finishes." %}</span>
+    <span data-string="already">{% trans "That region is already downloaded on this device." %}</span>
+    <span data-string="failed">{% trans "That download couldn't be started. Try again." %}</span>
+</template>

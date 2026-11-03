@@ -67,6 +67,7 @@ from apps.public._component_fixtures import (
     OVERLAY_MODAL_VARIANTS,
     OVERLAY_SHEET_VARIANTS,
     PAGE_TITLE_VARIANTS,
+    PANEL_ADD_BUTTON_VARIANTS,
     PLACE_LINK_ROW_VARIANTS,
     PLACE_PIN_VARIANTS,
     POINT_CARD_VARIANTS,
@@ -1905,6 +1906,25 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_ugc_panel_group.html",
         variants=UGC_PANEL_GROUP_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="panel-add-button",
+        label="Panel add button",
+        description=(
+            "A UGC panel's full-width outlined add button (SNOW-658), its "
+            "own partial since SNOW-1414. includes/_ugc_panel.html renders "
+            "one at every panel's foot, hooked by data-panel-add; the "
+            "Downloads sheet renders a second above it through the panel's "
+            "foot_template, 'Download a region', hooked by "
+            "data-panel-add-region, so the two ways to add are one control "
+            "with two hooks rather than two copies of its classes and "
+            "glyph. Disabled styling is built in: the Downloads sheet "
+            "disables both offline."
+        ),
+        kind="components",
+        partial="includes/_panel_add_button.html",
+        variants=PANEL_ADD_BUTTON_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

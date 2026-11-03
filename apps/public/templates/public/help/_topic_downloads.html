@@ -26,6 +26,9 @@ make it three ways to store an area; a row's actions live in its "…"
 menu; and "a download stores the map, not the bulletins" stopped being
 true with SNOW-924.
 
+SNOW-1414: "Download a region" — the second way to take a whole region,
+and the one that works in Terrain mode, which holds the region tap.
+
 SNOW-1140: the restore paragraph — the one-time new-device notice and
 "Download all" on the "Not on this device" group.
 
@@ -54,12 +57,14 @@ paragraph is true, and it is gone rather than kept in an else branch.
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-downloads-kinds">
         {% blocktrans trimmed %}
-            There are three ways to store an area. Select a region on the map and use the download button beside its
-            name in the header to take the whole region. Use "Download a custom area" inside the sheet to frame any part
-            of the map yourself &mdash; the right choice for a tour that straddles a boundary. Or tap the locate button
-            and, once it has found you, tap it again to drop a zone: a circle of map around where you are standing,
-            sized by zooming in or out. Each row in the sheet says which kind it is, and custom areas and drop zones can
-            be renamed.
+            There are three ways to store an area. To take a whole region, select it on the map and use the download
+            button on its sheet, or use "Download a region" inside "Your downloads": the map shows plain region
+            outlines, you tap the one you want, check its size and download it. That second way works in Terrain mode
+            too, where the map draws no regions of its own. Use "Download a custom area" inside the sheet to frame any
+            part of the map yourself &mdash; the right choice for a tour that straddles a boundary. Or tap the locate
+            button and, once it has found you, tap it again to drop a zone: a circle of map around where you are
+            standing, sized by zooming in or out. Each row in the sheet says which kind it is, and custom areas and drop
+            zones can be renamed.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-downloads-budget">

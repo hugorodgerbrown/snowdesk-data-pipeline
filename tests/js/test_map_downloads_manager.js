@@ -131,6 +131,7 @@ function buildFixture() {
           <p data-downloads-empty hidden>No areas downloaded yet.</p>
         </div>
         <div>
+          <button type="button" data-panel-add-region>Download a region</button>
           <button type="button" data-panel-add>Download a custom area</button>
         </div>
       </div>
@@ -588,6 +589,8 @@ async function loadModule() {
   // SNOW-1140: the "Download all" queue's rules, loaded ahead of the
   // manager as the sheet partial loads it.
   await import('../../static/js/downloads_restore_queue_core.js');
+  // SNOW-1414: the refusal wording's rule, shared with "Download a region".
+  await import('../../static/js/map_region_pick_core.js');
   await import('../../static/js/map_downloads_manager.js');
 }
 
@@ -3168,6 +3171,61 @@ describe('the sign-in gate (SNOW-749)', () => {
     await settle();
     expect(window.pwaCustomAreaDownload.openFraming).toHaveBeenCalled();
     expect(assign).not.toHaveBeenCalled();
+  });
+});
+
+describe('the "Download a region" trigger (SNOW-1414)', () => {
+  beforeEach(() => {
+    window.pwaRegionPick = { open: vi.fn(() => true) };
+  });
+  afterEach(() => {
+    delete window.pwaRegionPick;
+  });
+
+  it('hides the sheet and opens the pick task when online', async () => {
+    seed({});
+    await loadModule();
+    openSheet();
+    await settle();
+
+    document.querySelector('[data-panel-add-region]').click();
+    await settle();
+
+    expect(window.pwaRegionPick.open).toHaveBeenCalled();
+    expect(window.pwaCustomAreaDownload.openFraming).not.toHaveBeenCalled();
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(true);
+    expect(window.MapSheet.toast).not.toHaveBeenCalled();
+  });
+
+  it('renders disabled, still visible and still named, when offline', async () => {
+    seed({});
+    setOnline(false);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const region = document.querySelector('[data-panel-add-region]');
+    expect(region.hasAttribute('disabled')).toBe(true);
+    expect(region.getAttribute('aria-disabled')).toBe('true');
+    expect(region.hidden).toBe(false);
+    expect(region.textContent).toBe('Download a region');
+  });
+
+  it('toasts and leaves the sheet open when the connection drops before the tap', async () => {
+    seed({});
+    await loadModule();
+    openSheet();
+    await settle();
+    setOnline(false);
+
+    document.querySelector('[data-panel-add-region]').click();
+    await settle();
+
+    expect(window.pwaRegionPick.open).not.toHaveBeenCalled();
+    expect(window.MapSheet.toast).toHaveBeenCalledWith(
+      "You're offline — connect to download a new area.",
+    );
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(false);
   });
 });
 

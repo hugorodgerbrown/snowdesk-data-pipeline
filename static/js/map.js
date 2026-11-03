@@ -10922,6 +10922,9 @@
       // waypoint and nothing else — route_draw.js owns it. Without this a
       // click would also open the region under it.
       if (window.pwaRouteDraw && window.pwaRouteDraw.isActive()) return;
+      // SNOW-1414: while "Download a region" is open, a tap chooses a
+      // region for it and nothing else — map_region_pick.js owns it.
+      if (window.pwaRegionPick && window.pwaRegionPick.isActive()) return;
       // SNOW-314: clicks that originate on an overlaid UI control (the
       // scrubber/timeline, legend, search/basemap cluster, intro card, help
       // coachmark) are not map-area taps — they must never select or deselect

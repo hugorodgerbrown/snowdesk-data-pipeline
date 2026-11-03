@@ -2073,6 +2073,8 @@ UGC_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
             # headings of its own, rendered from its rows template.
             "header_template": "public/partials/_map_downloads_header.html",
             "rows_template": "public/partials/_ugc_panel_demo_rows.html",
+            # SNOW-1414: the second way to add, above the panel's own button.
+            "foot_template": "public/partials/_map_downloads_add_region.html",
             "cta_label": "Download a custom area",
             "toggle_id": "component-library-ugc-panel-toggle-downloads",
         },
@@ -2204,6 +2206,21 @@ UGC_PANEL_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
 # `aria-expanded` is flipped by the owning surface's module, and the
 # chevron's rotation is a `group-aria-expanded:` variant of that one
 # attribute, so a broken rotation is a broken state read.
+
+# SNOW-1414: a UGC panel's outlined "add" button, extracted from
+# includes/_ugc_panel.html so the Downloads sheet's "Download a region" is
+# the same control rather than a second copy. `hook` names the data
+# attribute the owning module binds; the library binds neither.
+PANEL_ADD_BUTTON_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "The panel's own add (data-panel-add)",
+        "context": {"label": "Download a custom area", "hook": "panel-add"},
+    },
+    {
+        "caption": "A second way to add, in a panel's foot (data-panel-add-region)",
+        "context": {"label": "Download a region", "hook": "panel-add-region"},
+    },
+)
 
 ROW_DISCLOSURE_VARIANTS: tuple[dict[str, Any], ...] = (
     {

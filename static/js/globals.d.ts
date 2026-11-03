@@ -274,6 +274,12 @@ interface Window {
   pwaWeatherLayer: any;
   /** static/js/map.js — the Bulletins layer: setSuppressed(reason, active) / isVisible(). */
   pwaBulletinsLayer: any;
+  /** static/js/map_region_download.js — the region download bridge: start(regionId, options), estimate(regionId), refreshState(). */
+  pwaRegionDownload: any;
+  /** static/js/map_region_pick_core.js — "Download a region"'s pure rules: STATES, barState, formatMb, refusalKind (SNOW-1414). */
+  pwaRegionPickCore: any;
+  /** static/js/map_region_pick.js — the "Download a region" task: open() / close() / isActive() (SNOW-1414). */
+  pwaRegionPick: any;
 }
 
 /**

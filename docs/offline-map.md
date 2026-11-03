@@ -854,6 +854,21 @@ it contains) — read as a bug rather than a feature. The icon carries its
 own outcome (a green "available offline" circle on success) — there is no
 completion toast.
 
+**"Download a region" (SNOW-1414)** is the second way into the same
+single-region download, from the Downloads sheet's foot
+(`public/partials/_map_downloads_add_region.html`, hooked by
+`data-panel-add-region`). The sheet hides and a pick task opens
+(`static/js/map_region_pick.js`, its pure half
+`static/js/map_region_pick_core.js`): `PlacementFocus.enter()` clears the
+app's overlays, three layers of the task's own on the `regions` source draw
+plain outlines and names, and a tap names a region in a bar at the foot
+(`public/partials/_map_region_pick.html`, the drop-zone bar's surface) with
+its size as `pwaRegionDownload.estimate()` prices it. Download closes the
+task and calls `pwaRegionDownload.start()`, so the run, its progress and its
+record are the roundel's own. It exists because Terrain mode holds the
+region sheet (docs/decisions/the-map-has-a-dated-mode-and-a-terrain-mode.md),
+and it works the same in Dated.
+
 The control has moved twice. SNOW-521 rendered it into the bottom-right
 control stack (`#map-controls-br`), beside the layers pill — that menu is
 the cache-state dashboard, and this was the other control that writes to

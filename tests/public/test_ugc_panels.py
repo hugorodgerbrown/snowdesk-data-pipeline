@@ -427,9 +427,13 @@ class TestUgcPanelSkeleton:
         ``data-favourites-add`` / ``data-report-add``: three names for one
         control is the same divergence in attribute form. Each owning
         module delegates on its OWN sheet, so one name is unambiguous.
+
+        SNOW-1414: the Downloads sheet's second way to add, "Download a
+        region", is a different action with its own hook
+        (``data-panel-add-region``), so it is not counted as this one.
         """
         body = _panel_body(home_html, template_id)
-        assert body.count("data-panel-add") == 1
+        assert len(re.findall(r"data-panel-add(?![-\w])", body)) == 1
 
     @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
     def test_scroll_region_allows_the_row_labels_bleed(

@@ -1,0 +1,48 @@
+{% load components %}
+{% comment %}
+templates/includes/_panel_add_button.html — a UGC panel's full-width
+outlined "add" button (SNOW-658), extracted by SNOW-1414.
+
+includes/_ugc_panel.html renders one at the foot of every panel, hooked by
+``data-panel-add``. The Downloads sheet has a second way to add, "Download a
+region", which it renders above that one through the panel's
+``foot_template``; it is the same control with a different hook, so it is
+this partial rather than a second copy of the class string and the glyph.
+
+Parameters (passed via {% include … with … %}):
+  label  (string) — the button's visible, translated label. Required.
+  hook   (string, optional) — the data attribute the owning module binds
+         its click to. ``panel-add`` (the default) renders
+         ``data-panel-add``; ``panel-add-region`` renders
+         ``data-panel-add-region``.
+
+`h-11.5` is the design's own 46px, stated as a height rather than more
+padding, so the CTA is the same size on every panel whatever its label
+wraps to. `hover-affordance` (src/css/main.css) is the one hover treatment
+every clickable control on the map and in these panels carries: pointer
+plus a translucent infill. The shared button chrome brings only an opacity
+shift, which on an outlined CTA is close to invisible, and no cursor at
+all. The `disabled:` utilities are unconditional: a disabled control's
+styling is chrome, so a panel that grows a disabled state does not have to
+bring its own.
+{% endcomment %}
+<button
+    type="button"
+    data-{{ hook|default:"panel-add" }}
+    class='{% button_classes variant="secondary" size="compact" full_width=True %} hover-affordance inline-flex h-11.5 items-center justify-center gap-1.5 disabled:opacity-50'
+>
+    {# A stroked SVG plus, not a literal "+" glyph: the same stroke-based idiom every other icon in this design uses. #}
+    <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        aria-hidden="true"
+    >
+        <path d="M12 5v14M5 12h14" />
+    </svg>
+    {{ label }}
+</button>
