@@ -25,8 +25,13 @@ builder change has made stale.
 task re-checks before it walks, so a second run, or a tour enqueued twice,
 writes nothing.
 
-**It paces the tile origin** — each task pauses ``--delay`` seconds after a
-walk that asked it (a second by default).
+**It paces the tile origin** (SNOW-1397, ``apps.core.command_tasks
+.enqueue_each``) — task *i* is enqueued to run ``i × --delay`` seconds
+after the first (a second by default), so the rate holds however many
+workers run; inline, the command sleeps between tasks. A tour the origin
+did not answer opens a five-minute breaker, and the tasks after it leave
+their tours for the next run. A tour that already has a task waiting is
+not enqueued again.
 
 Usage:
     # Preview — how many tours would be enqueued; no request, no write.
@@ -47,16 +52,17 @@ from typing import Any
 
 from django.core.management.base import CommandError
 from django.db.models.fields.json import KeyTextTransform
-from django_tasks import TaskResultStatus
 
-from apps.core.command_iteration import iterate_rows, non_negative_float
+from apps.core.command_iteration import non_negative_float
 from apps.core.command_register import RegisteredCommand
+from apps.core.command_tasks import enqueue_each
 from apps.ingest.public import terrain_grid, tours_to_render
 from apps.routes.services.ski_tour_render import render_tour_task
 
 logger = logging.getLogger(__name__)
 
-# Seconds each task pauses after a walk: politeness towards the tile origin.
+# Seconds between one task's start and the next: politeness towards the
+# tile origin.
 _DEFAULT_DELAY_S = 1.0
 
 
@@ -96,8 +102,8 @@ class Command(RegisteredCommand):
             type=non_negative_float,
             default=_DEFAULT_DELAY_S,
             help=(
-                f"Seconds each task waits after a walk. Defaults to "
-                f"{_DEFAULT_DELAY_S}; 0 disables the pause."
+                f"Seconds between one task's start and the next. Defaults "
+                f"to {_DEFAULT_DELAY_S}; 0 disables the pacing."
             ),
         )
         parser.add_argument(
@@ -129,6 +135,7 @@ class Command(RegisteredCommand):
         grid = terrain_grid()
         if grid is None:
             self.tally("enqueued", 0)
+            self.tally("already_queued", 0)
             self.tally("failed", 0)
             raise CommandError(
                 "render_ski_tours: the terrain grid could not be loaded; "
@@ -150,27 +157,26 @@ class Command(RegisteredCommand):
             sac_id=KeyTextTransform("sac_id", "document"),
             tour_name=KeyTextTransform("name", "document"),
         ).values_list("id", "sac_id", "tour_name")
-        enqueued = 0
-        failed = 0
-        for pk, _sac_id, _name in iterate_rows(
-            self, rows, verbosity=verbosity, describe=_describe
-        ):
-            if limit and enqueued >= limit:
-                break
-            enqueued += 1
-            if not commit:
-                continue
-            result = render_tour_task.enqueue(pk, delay)
-            # Only an inline backend has run the task by now; a queued one
-            # reports its own failure on the task result.
-            if result.status == TaskResultStatus.FAILED:
-                failed += 1
-                logger.error("render_ski_tours: task for tour id=%s failed", pk)
+        counts = enqueue_each(
+            self,
+            rows,
+            render_tour_task,
+            args=lambda row: (row[0],),
+            describe=_describe,
+            commit=commit,
+            verbosity=verbosity,
+            limit=limit,
+            pace=delay,
+        )
+        enqueued, failed = counts.enqueued, counts.failed
 
         verb = "Enqueued" if commit else "Would enqueue"
-        self.stdout.write(self.style.SUCCESS(f"{verb} {enqueued}; {failed} failed."))
-        self.tally("enqueued", enqueued)
-        self.tally("failed", failed)
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"{verb} {enqueued}; {counts.already_queued} already queued; "
+                f"{failed} failed."
+            )
+        )
         logger.info(
             "render_ski_tours finished: commit=%s enqueued=%s failed=%s",
             commit,

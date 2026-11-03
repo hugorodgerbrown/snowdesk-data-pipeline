@@ -5,7 +5,8 @@ Covers ``apps.routes.services.ski_tour_render`` (SNOW-1345), one SAC tour
 rendered as one task:
   - The task walks, draws and applies its tour, and pauses after a walk.
   - A tour that needs nothing, or is gone, is skipped without a request.
-  - An unanswered tour stores and applies nothing.
+  - An unanswered tour stores and applies nothing, and opens the breaker:
+    the tasks after it ask nothing (SNOW-1397).
   - No terrain grid fails the task; the grid is loaded once per process.
   - ``apply_source_tour`` copies one service tour here.
 """
@@ -19,11 +20,13 @@ from unittest.mock import patch
 
 import pytest
 
+from apps.core.command_tasks import backing_off, is_outside
 from apps.ingest.public import RenderOutcome, SourceSkiTour
 from apps.routes.models import SkiTour
 from apps.routes.services.ski_network import CREATED, apply_source_tour
 from apps.routes.services.ski_tour_render import (
     RENDER_TASK_PRIORITY,
+    TILE_ORIGIN,
     TerrainGridUnavailable,
     render_one_tour,
     render_tour_task,
@@ -113,6 +116,26 @@ def test_an_unanswered_tour_stores_and_applies_nothing() -> None:
     sleep.assert_not_called()
     assert not SourceSkiTour.objects.filter(track_render__isnull=False).exists()
     assert not SkiTour.objects.exists()
+
+
+def test_an_unanswered_tour_opens_the_breaker() -> None:
+    """After one silence the next tour is left alone, untouched."""
+    first, second = SourceSkiTourFactory.create_batch(2)
+    with (
+        patch(_GRID, return_value=_grid()),
+        patch(_BUILDER, return_value=None) as build,
+    ):
+        assert render_one_tour(first.pk) == RenderOutcome.UNAVAILABLE
+        assert backing_off(TILE_ORIGIN)
+        assert render_one_tour(second.pk) is None
+    assert build.call_count == 1
+    second.refresh_from_db()
+    assert second.track_render is None
+
+
+def test_the_task_is_registered_as_calling_outside() -> None:
+    """enqueue_each refuses it without a pace."""
+    assert is_outside(render_tour_task)
 
 
 def test_a_failed_copy_rolls_the_render_back() -> None:

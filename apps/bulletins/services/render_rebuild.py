@@ -75,6 +75,7 @@ from apps.bulletins.services.render_model import (
     build_render_model,
     danger_levels_column,
 )
+from apps.core.command_tasks import BULK_TASK_PRIORITY
 from apps.ingest.public import (
     DAY_RATING_VERSION,
     REBUILD_FAILED,
@@ -91,7 +92,7 @@ from apps.regions.models import MicroRegion
 logger = logging.getLogger(__name__)
 
 # Below the default (0), so user-facing work on the queue goes first.
-RENDER_TASK_PRIORITY = -50
+RENDER_TASK_PRIORITY = BULK_TASK_PRIORITY
 
 # What an instance task reads off its Bulletin: the id its CAAML is found
 # by, the version it checks, and what day_rating_pairs and the log line need.
