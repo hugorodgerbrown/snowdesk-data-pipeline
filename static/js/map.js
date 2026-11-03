@@ -5243,8 +5243,6 @@
     document.dispatchEvent(new CustomEvent('snowdesk:problem-terrain-changed', {
       detail: {
         enabled: bulletinTerrainShown(),
-        // Only once the day has loaded: an unfetched day is not empty.
-        dayEmpty: bulletinTerrainShown() && !!bulletinTerrainDay && bulletinTerrainDay.issued === 0,
       },
     }));
   };
@@ -5563,10 +5561,6 @@
         setProblemTerrainEnabled(on);
         if (on && regionId) zoomToBulletinTerrain(regionId);
       },
-      // SNOW-1195: on a day no bulletin covers the layer paints nothing,
-      // and the menu row says so.
-      dayEmpty: () =>
-        bulletinTerrainShown() && !!bulletinTerrainDay && bulletinTerrainDay.issued === 0,
       /**
        * SNOW-1394: hold or release the layer for Terrain mode, without
        * writing the reader's choice — the bulletins' suppression shape.

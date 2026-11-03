@@ -2,7 +2,7 @@
 name: an-observation-is-live-today-and-recent-for-three-days
 description: Field reports live today, recent 3 days, one day when scrubbed (report_window, ground_for_region, observed_on, reportState)
 status: current
-last-reviewed: 2026-10-29
+last-reviewed: 2026-11-03
 ---
 
 # An observation is live today and recent for three days
@@ -50,7 +50,10 @@ type it ticked and its most serious family, and stamped with `observed_on`.
 
 - The layer is **on by default**. With a day-based window it is a handful of
   pins, not a pile, and a crowd-sourced layer only works if people see it.
-  Its layers-menu row moved to the Bulletins page as "On the ground".
+  Its layers-menu row moved to the Bulletins page as "On the ground". On
+  3 Nov 2026 Hugo moved it back out ("field observations are not part of
+  bulletins"). It is now a level-one row, "Field observations", after
+  Boundaries among the dated layers.
 - A date change re-stamps the held payload at once, then refetches with
   `?d=` after the scrub settles. Only today's answer is written to the
   offline cache. An offline read-back is re-stamped against the day it is

@@ -1040,66 +1040,43 @@
     color: var(--color-text-2);
 }
 
-/* SNOW-1280: a zoom-limited row's name and its "· ≥z10" suffix share the
-   first line; the suffix is quieter than the name and never wraps apart. */
+/* SNOW-1280 (reworked 3 Nov 2026): a zoom-limited row's name and, outside
+   its zoom, "· zoom in" share ONE line that never wraps, so the row is the
+   same height at every zoom. A long name gives way with an ellipsis; the
+   hint never does. */
 .basemap-menu-item-label-line {
     display: flex;
-    flex-wrap: wrap;
     align-items: baseline;
     column-gap: 6px;
-}
-
-.basemap-menu-zoom-suffix {
-    color: var(--color-text-3, var(--color-text-2));
-    font-family: var(--font-mono);
-    font-size: 11px;
+    min-width: 0;
+    max-width: 100%;
     white-space: nowrap;
 }
 
-.basemap-menu-zoom-suffix:empty {
-    display: none;
+.basemap-menu-item-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-/* The layer is on but cannot draw at this zoom: its name and icon fade.
-   The switch is left alone — the layer IS on, and a dimmed switch reads
-   as disabled. The terrain filter's summary gives way to "Zoom in to
-   view" while it lasts. */
-[data-zoom-hidden] [data-row-label],
-[data-zoom-hidden] .basemap-menu-layer-icon {
-    color: var(--color-text-3, var(--color-text-2));
-}
-
-[data-zoom-hidden] [data-terrain-filter-summary] {
-    display: none;
-}
-
-/* The menu's note while a row is faded. */
-.basemap-menu-zoom-note {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    margin: 2px 0 4px;
-    padding: 8px 12px;
-    border-radius: 8px;
-    background: var(--color-card-subtle);
-    color: var(--color-text-2);
-    font-size: 12px;
-    line-height: 1.4;
-}
-
-.basemap-menu-zoom-note[hidden] {
-    display: none;
-}
-
-/* A hidden note is still the list's first child, so the group label after
-   it keeps the first label's tighter top. */
-.basemap-menu-zoom-note[hidden] + .basemap-menu-group-label {
-    padding-top: 6px;
-}
-
-.basemap-menu-zoom-note svg {
+.basemap-menu-zoom-hint {
     flex: 0 0 auto;
-    margin-top: 1px;
+    color: var(--color-text-2);
+    font-size: 13px;
+}
+
+.basemap-menu-zoom-hint[hidden] {
+    display: none;
+}
+
+/* The map is outside the layer's zoom: the row dims as Terrain mode's
+   disabled rows do (40%), all but its switch, which keeps its state and
+   stays live, and its hint, which is the reason. */
+[data-zoom-hidden] .basemap-menu-layer-icon,
+[data-zoom-hidden] .basemap-menu-item-name,
+[data-zoom-hidden] .basemap-menu-item-detail,
+[data-zoom-hidden] .basemap-menu-layer-chevron {
+    opacity: 0.4;
 }
 
 /* Points at where the row goes: a page of its own. */
