@@ -222,7 +222,8 @@
     const sources = card.querySelector('[data-legend-sources]');
     if (sources) {
       const tiles = document.getElementById('map-attribution-text');
-      const parts = [core.shortSources([tiles ? tiles.innerHTML : ''])];
+      // textContent: the browser has stripped the providers' links.
+      const parts = [core.shortSources([tiles ? tiles.textContent || '' : ''])];
       if (state.keys.danger || state.keys.problem_terrain) parts.push(AVALANCHE_SOURCES);
       const text = parts.filter(Boolean).join(' · ');
       if (sources.textContent !== text) sources.textContent = text;

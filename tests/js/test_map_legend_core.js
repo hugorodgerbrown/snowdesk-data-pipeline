@@ -133,14 +133,13 @@ describe('legendState', () => {
 });
 
 describe('shortSources', () => {
-  it('names each provider once, without the product or its link', () => {
-    const html = '<a href="https://www.swisstopo.admin.ch" target="_blank">© swisstopo</a>'
-      + ' · swisstopo — swissALTI3D · © BAFU';
-    expect(core.shortSources([html])).toBe('© swisstopo · BAFU');
+  it('names each provider once, without the product', () => {
+    expect(core.shortSources(['© swisstopo · swisstopo — swissALTI3D · © BAFU']))
+      .toBe('© swisstopo · BAFU');
   });
 
-  it('reads entities and separate strings alike', () => {
-    expect(core.shortSources(['&copy; OpenStreetMap', 'OpenFreeMap &middot; © OpenMapTiles']))
+  it('reads separate strings alike', () => {
+    expect(core.shortSources(['© OpenStreetMap', 'OpenFreeMap · © OpenMapTiles']))
       .toBe('© OpenStreetMap · OpenFreeMap · OpenMapTiles');
   });
 

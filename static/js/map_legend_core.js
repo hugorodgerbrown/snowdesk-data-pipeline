@@ -166,13 +166,15 @@
   }
 
   /**
-   * The first tier's one-line credit, from the style's attribution strings.
+   * The first tier's one-line credit, from the style's attribution text.
    *
-   * Each string is the HTML a source carries ("<a …>© swisstopo</a>",
-   * "swisstopo — swissALTI3D", "© BAFU"). The line names each provider
-   * once: tags stripped, the product after " — " dropped, the © folded so
-   * "swisstopo" and "© swisstopo" are one name. The full strings stay in
-   * the second tier, which is where the licences are honoured in full.
+   * Each string is PLAIN TEXT — the caller reads the attribution element's
+   * textContent, so the browser has already dropped the tags and decoded
+   * the entities, and nothing here parses HTML ("© swisstopo · swisstopo —
+   * swissALTI3D · © BAFU"). The line names each provider once: the
+   * product after " — " dropped, the © folded so "swisstopo" and
+   * "© swisstopo" are one name. The full credits stay in the second tier,
+   * which is where the licences are honoured in full.
    *
    * @param {string[]} attributions
    * @returns {string} "© swisstopo · BAFU", or "" when nothing is credited.
@@ -182,12 +184,7 @@
     const names = [];
     const seen = new Set();
     for (const raw of attributions || []) {
-      const text = String(raw || '')
-        .replace(/<[^>]*>/g, '')
-        .replace(/&copy;/g, '©')
-        .replace(/&amp;/g, '&')
-        .replace(/&nbsp;/g, ' ');
-      for (const part of text.split(/\s*(?:·|&middot;|\|)\s*/)) {
+      for (const part of String(raw || '').split(/\s*[·|]\s*/)) {
         const name = part.split(/\s+[—–-]\s+/)[0].replace(/^©\s*/, '').trim();
         if (!name) continue;
         const folded = name.toLowerCase();
