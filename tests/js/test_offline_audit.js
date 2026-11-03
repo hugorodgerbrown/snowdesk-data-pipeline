@@ -1415,6 +1415,31 @@ describe('a run writes its reasons to the debug log', () => {
     expect(opens[2]).toMatchObject({ status: 'blocked', reason: 'absent' });
   });
 
+  it('records both principals beside the page account on a mismatch', async () => {
+    installCachesStub({});
+    const record = vi.fn();
+    window.pwaDebugLog = { on: true, record };
+    const meta = document.createElement('meta');
+    meta.name = 'pwa-user-id';
+    meta.content = 'feedbeef-1111-2222-3333-444444444444';
+    document.head.appendChild(meta);
+    document.body.innerHTML = `
+      <div data-offline-audit>
+        <button data-offline-audit-run></button>
+        <div data-offline-audit-output hidden></div>
+        <button data-offline-audit-copy hidden></button>
+        <p data-offline-audit-status></p>
+      </div>
+    `;
+    audit.init();
+    document.querySelector('[data-offline-audit-run]').click();
+    await vi.waitUntil(() => record.mock.calls.length > 0, { timeout: 5000 });
+    const opens = record.mock.calls.find(([, , detail]) => detail.id === 'app-opens');
+    // No cached page here, so no stamp: the principal fields stay null.
+    meta.remove();
+    expect(opens[2]).toMatchObject({ stamped: null, current: null, page: null });
+  });
+
   it('records nothing while recording is off', async () => {
     installCachesStub({});
     const record = vi.fn();

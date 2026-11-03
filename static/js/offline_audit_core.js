@@ -90,6 +90,10 @@
    *   verdict has to tell two failures of the same row apart.
    * @property {string[]} [missing] The same-origin urls a No is missing,
    *   for the copied report and the debug log (app-opens: its scripts).
+   * @property {string} [stamped] For a ``principal`` No: whom the saved
+   *   copy was rendered for, shortened.
+   * @property {string} [current] For a ``principal`` No: who this device
+   *   records as signed in, shortened.
    * @property {string} [group] Which remedy this row's No shares with
    *   others, for ``composeSummary``.
    * @property {string} [effect] What the user will notice, as a verb
@@ -878,6 +882,19 @@
   }
 
   /**
+   * A principal short enough to paste: an account uuid's first segment,
+   * or the sentinel itself.
+   *
+   * @param {string|null|undefined} principal
+   * @returns {string}
+   */
+  function shortPrincipal(principal) {
+    if (!principal) return 'none';
+    if (principal === 'anonymous' || principal === 'unknown') return principal;
+    return String(principal).slice(0, 8);
+  }
+
+  /**
    * A stamp in words. The account uuid is never shown whole — it names an
    * account to anyone reading over a shoulder and means nothing to the
    * person holding the phone; the first segment tells two apart.
@@ -1334,7 +1351,8 @@
    * @param {AuditReadings} r
    * @param {Record<string, string>} t
    * @returns {{status: AuditStatus, reason?: string, group?: string,
-   *   effect?: string, note?: string, missing?: string[]}}
+   *   effect?: string, note?: string, missing?: string[], stamped?: string,
+   *   current?: string}}
    */
   function answer(id, r, t) {
     var sw = r.serviceWorker || {};
@@ -1422,6 +1440,10 @@
         return {
           status: 'no',
           reason: 'principal',
+          // Both sides, shortened, for the copied report and the debug log:
+          // the note alone could not say which of the two was wrong.
+          stamped: shortPrincipal(page.mapEntry.principal),
+          current: shortPrincipal(r.currentPrincipal || 'anonymous'),
           note: fill(s(t, 'note-other-account'), {
             stamped: describePrincipal(page.mapEntry.principal, t),
           }),
@@ -2222,6 +2244,9 @@
         lines.push(line);
         var missing = missingLine(check.missing);
         if (missing) lines.push('      missing: ' + missing);
+        if (check.stamped) {
+          lines.push('      saved for: ' + check.stamped + ', signed in: ' + check.current);
+        }
       });
     });
     return lines.join('\n');
@@ -2263,6 +2288,7 @@
     pendingReport: pendingReport,
     reportText: reportText,
     missingLine: missingLine,
+    shortPrincipal: shortPrincipal,
     composeSummary: composeSummary,
     countChecks: countChecks,
     missingFrom: missingFrom,

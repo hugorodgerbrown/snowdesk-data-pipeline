@@ -738,6 +738,29 @@ describe('the verdict', () => {
     expect(report.verdict.text).toBe('verdict-other-account');
   });
 
+  it('names both sides of a principal mismatch in the copied text', () => {
+    // The verdict hides the row's note, so the text has to say whose copy
+    // it is and who the device thinks is signed in (staging, 2026-11-03).
+    const report = core.buildReport(
+      healthy({
+        shellEntries: [
+          {
+            url: 'https://snowdesk.info/map/',
+            isPage: true,
+            principal: '1234abcd-0000-0000-0000-000000000000',
+          },
+        ],
+        currentPrincipal: null,
+      }),
+      {},
+    );
+    expect(row(report, 'app-opens').stamped).toBe('1234abcd');
+    expect(row(report, 'app-opens').current).toBe('anonymous');
+    expect(core.reportText(report, {})).toContain(
+      '      saved for: 1234abcd, signed in: anonymous',
+    );
+  });
+
   it('fails when there is no worker, ahead of everything below it', () => {
     const report = core.buildReport(
       healthy({

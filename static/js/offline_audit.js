@@ -3175,6 +3175,16 @@
 
 
   /**
+   * The account this page was rendered for, from its ``pwa-user-id`` meta.
+   *
+   * @returns {string} The uuid, or ``''`` when signed out or absent.
+   */
+  function pageUser() {
+    var meta = document.querySelector('meta[name="pwa-user-id"]');
+    return (meta && meta.getAttribute('content')) || '';
+  }
+
+  /**
    * Write each row that is not Yes to the debug log, with its reason.
    *
    * The check used to leave no trace there, so a recorded session showed
@@ -3196,6 +3206,11 @@
           status: check.status,
           reason: check.reason || null,
           missing: core.missingLine(check.missing) || null,
+          stamped: check.stamped || null,
+          current: check.current || null,
+          // What this page was rendered for, beside what the device has
+          // recorded: a gap between them is a stale record, not a stale page.
+          page: check.stamped ? core.shortPrincipal(pageUser() || 'anonymous') : null,
         });
       });
     });
