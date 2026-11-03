@@ -26,7 +26,16 @@ keeps its own: HALF the day's weather at the place and the link to its
 forecast page, FULL the region's problems annotated against
 the pin's altitude, then the day's bulletin and a saved resort's page.
 
-Both views read the day the map is showing (``?d=``, today by default), as
+SNOW-1395 adds a third kind: YOUR LOCATION, the sheet a tap on the map's
+locate-me dot opens (``location_sheet_partial``). Its title is the ground
+under the fix — height, aspect and slope band, read by
+``apps.public.your_location`` — and under it the region's bulletin row for
+the day, one warning row when the fix stands in that day's problem terrain
+(``apps.ingest.public.problems_at``, the map layer's own test), and the
+day's weather borrowed from the nearest curated point, as a saved pin's is.
+The star saves the spot as a dropped pin.
+
+Every view reads the day the map is showing (``?d=``, today by default), as
 the region sheet does, so a reader looking at a past day reads that day's
 weather and rating. A saved pin with no rating for the day and no resort
 page has nothing for FULL to reveal, and the fragment narrows its detents
@@ -50,18 +59,23 @@ from django.utils.cache import patch_cache_control
 from apps.accounts.identity import attest_principal
 from apps.bulletins.models import RegionDayRating
 from apps.bulletins.services.selection import select_bulletin_for_date
+from apps.core.coordinates import parse_coordinates
 from apps.core.decorators import require_htmx
 from apps.favourites.models import Favourite
 from apps.favourites.relevance import annotate_problem_relevance
+from apps.ingest.public import problems_at
 from apps.locations.models import Location
 from apps.locations.services.what3words import what3words_map_url
 from apps.public.region_sheet import CURRENT_DAY_MAX_AGE_S, PAST_DAY_MAX_AGE_S
 from apps.public.views import (
     _DANGER_PANEL_META,
+    _PROBLEM_LABELS,
     build_resort_body,
     problem_cards_for_bulletin,
 )
+from apps.public.your_location import Ground, read_ground
 from apps.regions.models import MicroRegion, Resort
+from apps.regions.services.point_match import region_for_point
 from apps.weather.services.nearest import nearest_forecast
 from apps.weather.services.weather_display import (
     build_point_forecast_panel,
@@ -122,8 +136,9 @@ def _place_context(
     location: Location | None,
     target_date: date,
     elevation: float | None,
+    point: tuple[float, float] | None = None,
 ) -> dict[str, Any]:
-    """Build what both kinds of place say about their region and weather.
+    """Build what a saved pin or a fix says about its region and weather.
 
     Args:
         region: The region the place sits in, or None outside coverage.
@@ -133,12 +148,18 @@ def _place_context(
         elevation: The place's altitude, to judge each problem against; None
             leaves the problems unannotated, as the favourite card does for
             a place with no stated height.
+        point: ``(latitude, longitude)`` for a place with no Location (a
+            locate-me fix, SNOW-1395); a Location's own wins.
 
     Returns:
-        The shared half of the template context.
+        The shared half of the template context, with the day's
+        ``bulletin`` (or None) for a caller that reads more of it.
 
     """
+    if location is not None:
+        point = (location.latitude, location.longitude)
     problem_cards: list[dict[str, Any]] = []
+    bulletin = None
     if region is not None:
         bulletin = select_bulletin_for_date(region, target_date)
         if bulletin is not None:
@@ -159,9 +180,7 @@ def _place_context(
     today = timezone.localdate()
     row_date = min(target_date, today)
     source = (
-        nearest_forecast(location.latitude, location.longitude, row_date)
-        if location is not None
-        else None
+        nearest_forecast(point[0], point[1], row_date) if point is not None else None
     )
     weather = source.row if source is not None else None
     now = timezone.now()
@@ -178,6 +197,7 @@ def _place_context(
         )
     return {
         **_peek_context(region, target_date),
+        "bulletin": bulletin,
         "target_date": target_date,
         "bulletin_url": region.get_absolute_url(target_date)
         if region is not None
@@ -333,3 +353,139 @@ def favourite_sheet_partial(request: HttpRequest, uuid: UUID) -> HttpResponse:
     # network can say so (its 404 drops the kept copy).
     response["Cache-Control"] = "private, no-cache"
     return attest_principal(response, request)
+
+
+def _band_label(lower: int | None, upper: int | None) -> str:
+    """Name a problem's elevation band in the fewest words.
+
+    Args:
+        lower: The band's lower bound in metres, or None.
+        upper: The band's upper bound in metres, or None.
+
+    Returns:
+        "2,200 m+", "< 1,800 m", "2,000–2,600 m", or "" for no band.
+
+    """
+    if lower is not None and upper is not None:
+        return f"{lower:,}–{upper:,} m"
+    if lower is not None:
+        return f"{lower:,} m+"
+    if upper is not None:
+        return f"< {upper:,} m"
+    return ""
+
+
+def _in_problem_terrain(bulletin: Any, ground: Ground) -> list[str]:
+    """Return the day's problems the fix stands in, labelled for the sheet.
+
+    Args:
+        bulletin: The day's Bulletin, or None.
+        ground: The ground under the fix.
+
+    Returns:
+        One line per problem whose decided rule admits the ground — its
+        name, the fix's aspect and the problem's band, "Wind slab · NE ·
+        2,200 m+" — highest rating first; empty when the ground is not known
+        well enough to test (no terrain reading, level ground) or nothing
+        admits it.
+
+    """
+    if (
+        bulletin is None
+        or ground.height_m is None
+        or ground.octant_index is None
+        or ground.slope_band is None
+    ):
+        return []
+    found = problems_at(
+        bulletin.render_model,
+        height_m=ground.height_m,
+        octant=ground.octant_index,
+        slope_band=ground.slope_band,
+    )
+    lines = []
+    for problem in found:
+        label = str(
+            _PROBLEM_LABELS.get(
+                problem["problem_type"],
+                problem["problem_type"].replace("_", " ").capitalize(),
+            )
+        )
+        parts = [label, ground.octant, _band_label(problem["lower"], problem["upper"])]
+        lines.append(" · ".join(part for part in parts if part))
+    return lines
+
+
+def _device_altitude(raw: str | None) -> float | None:
+    """Parse the device's altitude reading, or None.
+
+    Args:
+        raw: The ``alt`` query parameter.
+
+    Returns:
+        The altitude in metres, or None when absent, unparseable or not a
+        height anyone stands at (outside −500 to 9,000 m).
+
+    """
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        return None
+    return value if -500.0 <= value <= 9000.0 else None
+
+
+@require_htmx
+def location_sheet_partial(request: HttpRequest) -> HttpResponse:
+    """Render the place sheet's body for the reader's own fix (SNOW-1395).
+
+    The coordinate is the device's, sent on a GET and read for this
+    response alone: nothing stores it, and the response is ``no-store`` so
+    no cache — the browser's or the service worker's — keeps where the
+    reader stood. It names nobody, so it is public; the star the header
+    carries is the sign-in link for a reader who cannot save.
+
+    Args:
+        request: The incoming HTMX GET request, with ``lat`` and ``lon``,
+            and optionally ``alt`` (the device's altitude) and ``d``.
+
+    Returns:
+        The rendered ``public/partials/_place_sheet_body.html`` fragment;
+        400 for a missing or malformed coordinate or date.
+
+    """
+    target_date = _target_date(request)
+    if target_date is None:
+        return JsonResponse({"error": "bad_date"}, status=400)
+    coords = parse_coordinates(request.GET.get("lat"), request.GET.get("lon"))
+    if coords is None:
+        return JsonResponse({"error": "bad_coordinates"}, status=400)
+    latitude, longitude = coords
+
+    ground = read_ground(latitude, longitude, _device_altitude(request.GET.get("alt")))
+    region = region_for_point(latitude, longitude)
+    context = _place_context(
+        region=region,
+        location=None,
+        target_date=target_date,
+        elevation=ground.height_m,
+        point=coords,
+    )
+    context.update(
+        {
+            "kind": "location",
+            "name": "",
+            "ground": ground,
+            "in_terrain": _in_problem_terrain(context["bulletin"], ground),
+            "fix_lat": latitude,
+            "fix_lon": longitude,
+            "favourites_eligible": request.user.is_authenticated,
+            "signin_url": reverse("accounts:sign_in"),
+            "section_day": target_date,
+            "another_day": target_date != timezone.localdate(),
+        }
+    )
+    response = render(request, "public/partials/_place_sheet_body.html", context)
+    response["Cache-Control"] = "private, no-store"
+    return response

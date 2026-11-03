@@ -273,3 +273,90 @@ describe('field-report locate requests', () => {
     expect(isBusy()).toBe(false);
   });
 });
+
+// SNOW-1395: a tap on the blue dot opens the "Your location" sheet for the
+// last fix, and goes no further — MapLibre's listeners on the map container
+// must not see it, or the map's dispatcher reads it as a tap on empty map.
+describe('tapping the location dot', () => {
+  /** A MapLibre-shaped dot inside a map container that records its clicks. */
+  function mountDot() {
+    const container = document.createElement('div');
+    const dot = document.createElement('div');
+    dot.className = 'maplibregl-user-location-dot';
+    container.appendChild(dot);
+    document.body.appendChild(container);
+    const mapClick = vi.fn();
+    container.addEventListener('click', mapClick);
+    return { container, dot, mapClick };
+  }
+
+  let open;
+  beforeEach(() => {
+    open = vi.fn(() => true);
+    window.pwaPlaceSheet = { open };
+  });
+
+  afterEach(() => {
+    delete window.pwaPlaceSheet;
+    delete control._lastKnownPosition;
+  });
+
+  it('opens the sheet for the fix the pill took, with its altitude', () => {
+    const { dot, mapClick, container } = mountDot();
+    btn.click();
+    pending().success({ coords: { latitude: 46.09, longitude: 7.27, accuracy: 12, altitude: 2385 } });
+    dot.click();
+    expect(open).toHaveBeenCalledWith({
+      kind: 'location',
+      id: 'here',
+      name: '',
+      lat: 46.09,
+      lon: 7.27,
+      altitude: 2385,
+      lngLat: [7.27, 46.09],
+    });
+    expect(mapClick).not.toHaveBeenCalled();
+    container.remove();
+  });
+
+  it("prefers MapLibre's own fresher position", () => {
+    const { dot, container } = mountDot();
+    btn.click();
+    answerWithFix(46.0, 7.0);
+    control._lastKnownPosition = { coords: { latitude: 46.1, longitude: 7.1, altitude: null } };
+    dot.click();
+    expect(open.mock.calls[0][0]).toMatchObject({ lat: 46.1, lon: 7.1, altitude: null });
+    container.remove();
+  });
+
+  it('lets a tap through when there is no fix yet or no sheet', () => {
+    const { dot, mapClick, container } = mountDot();
+    delete window.pwaPlaceSheet;
+    btn.click();
+    answerWithFix();
+    dot.click();
+    expect(mapClick).toHaveBeenCalledTimes(1);
+    container.remove();
+  });
+
+  it('opens the sheet while the drop zone has the roundel armed', () => {
+    const { dot, container } = mountDot();
+    btn.click();
+    answerWithFix(46.09, 7.27);
+    btn.dataset.mode = 'drop';
+    dot.click();
+    expect(open).toHaveBeenCalledTimes(1);
+    delete btn.dataset.mode;
+    container.remove();
+  });
+
+  it('leaves a tap anywhere else alone', () => {
+    const { container, mapClick } = mountDot();
+    btn.click();
+    answerWithFix();
+    container.click();
+    expect(open).not.toHaveBeenCalled();
+    expect(mapClick).toHaveBeenCalledTimes(1);
+    container.remove();
+  });
+});

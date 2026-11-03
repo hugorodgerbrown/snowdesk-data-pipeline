@@ -447,6 +447,12 @@ const MAP_DATA_URLS = {
     swClass: 'network',
     reason: 'plans a download; private and never cached (an-area-download-carries-your-trips)',
   },
+  'data-location-sheet-url': {
+    kind: 'network-by-design',
+    sample: '/partials/place-sheet/location/?lat=46.0905&lon=7.2737',
+    swClass: 'network',
+    reason: "the reader's own fix, no-store; offline the sheet shows the device's altitude (SNOW-1395)",
+  },
   'data-trip-share-route-url-template': {
     kind: 'network-by-design',
     sample: '/trips/s/some-token/route.geojson',

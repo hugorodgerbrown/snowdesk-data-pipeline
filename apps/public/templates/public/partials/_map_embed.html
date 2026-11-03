@@ -84,6 +84,7 @@ Optional context:
     {# SNOW-1100: the phone place sheet's bodies, read by map_place_sheet.js. #}
     data-resort-sheet-url="{% url 'public:resort_sheet_partial' slug='__SLUG__' %}"
     data-favourite-sheet-url="{% url 'public:favourite_sheet_partial' uuid='00000000-0000-0000-0000-000000000000' %}"
+    data-location-sheet-url="{% url 'public:location_sheet_partial' %}"
     data-bulletin-groupings-url="{% url 'api:bulletin_groupings_geojson' %}"
     data-default-basemap-key="{{ default_basemap_key }}"
     {# SNOW-872: the map's opening view — which providers' bulletins are      #}

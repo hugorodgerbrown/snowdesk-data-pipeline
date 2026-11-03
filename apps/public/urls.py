@@ -272,6 +272,12 @@ urlpatterns += [
         place_sheet.favourite_sheet_partial,
         name="favourite_sheet_partial",
     ),
+    # SNOW-1395: the sheet a tap on the locate-me dot opens.
+    path(
+        "partials/place-sheet/location/",
+        place_sheet.location_sheet_partial,
+        name="location_sheet_partial",
+    ),
     # Season calendar partial — HTMX-deferred heatmap grid (SNOW-170).
     # Registered before the generic <region_id:region_id>/ pattern for the same reason.
     path(

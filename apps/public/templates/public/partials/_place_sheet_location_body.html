@@ -1,0 +1,62 @@
+{% load i18n %}
+{% comment %}
+public/partials/_place_sheet_location_body.html — under the peek row of the
+"Your location" sheet (SNOW-1395): the region's bulletin for the day, the
+day's borrowed weather, and at FULL the problems against the fix's height.
+
+The bulletin card is the resort body's (``_place_link_row.html`` with the
+region's level, opening the region), with ONE addition: a warning row inside
+it when the fix stands in that day's problem terrain — the same test the
+map's problem-terrain layer paints with (``apps.ingest.public.problems_at``).
+When it does not, the card says nothing more: no "below", no "outside", no
+"cannot tell" (Hugo, 3 Nov 2026: alert when inside, ignore the rest).
+
+Context (from ``place_sheet.location_sheet_partial``):
+  region, day_rating, level_label, bulletin_url — the region and its day.
+  in_terrain      — one line per problem the fix stands in ("Wind slab ·
+                    NE · 2,200 m+"), highest rating first, or [].
+  section_day, another_day — the day the dated eyebrows name.
+  plus _place_sheet_weather.html's and _place_sheet_problems.html's.
+{% endcomment %}
+<div class="space-y-4">
+    <section aria-labelledby="location-region-heading" data-testid="location-region">
+        {% translate "Avalanche bulletin" as region_eyebrow %}
+        {% include "includes/_dated_eyebrow.html" with tag="h3" heading_id="location-region-heading" text=region_eyebrow class_extra="mb-3" day=section_day another_day=another_day only %}
+        <div class="overflow-hidden rounded-card border border-border bg-card">
+            {% if day_rating %}
+                {% blocktranslate trimmed with region=region.name asvar region_subtitle %}
+                    {{ region }} · View bulletin
+                {% endblocktranslate %}
+                {% include "includes/_place_link_row.html" with kind="region" title=level_label subtitle=region_subtitle href=bulletin_url open_id=region.region_id day_rating=day_rating testid="location-region-link" only %}
+            {% else %}
+                <div class="flex min-w-0 items-center gap-3 px-4 py-3" data-testid="location-region-none">
+                    {% include "includes/_danger_tile_empty.html" only %}
+                    <p class="min-w-0 flex-1 text-label text-text-1">
+                        {% if region %}
+                            {% translate "No bulletin available on this date." %}
+                        {% else %}
+                            {% translate "No avalanche bulletin covers this spot" %}
+                        {% endif %}
+                    </p>
+                </div>
+            {% endif %}
+            {% if in_terrain %}
+                <div
+                    class="flex items-start gap-3 border-t border-border bg-status-warning-bg px-4 py-3 text-status-warning-text"
+                    role="note"
+                    data-testid="location-in-terrain"
+                >
+                    {% include "includes/_icon_danger.html" with size=18 svg_class="mt-0.5 flex-none" only %}
+                    <div class="min-w-0">
+                        <p class="font-semibold">{% translate "In problem terrain" %}</p>
+                        {% for line in in_terrain %}
+                            <p class="text-sm" data-testid="location-in-terrain-problem">{{ line }}</p>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </section>
+    {% include "public/partials/_place_sheet_weather.html" %}
+    {% include "public/partials/_place_sheet_problems.html" %}
+</div>

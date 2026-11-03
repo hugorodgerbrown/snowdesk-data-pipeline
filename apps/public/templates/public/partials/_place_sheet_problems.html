@@ -1,0 +1,19 @@
+{% load i18n %}
+{% comment %}
+public/partials/_place_sheet_problems.html — the day's avalanche problems
+for a saved pin or a locate-me fix, each annotated against its height
+(``annotate_problem_relevance``). Extracted from _place_sheet_body.html when
+the "Your location" sheet (SNOW-1395) became its second caller.
+
+Context:
+  problem_cards — the bulletin's problem cards, possibly annotated.
+{% endcomment %}
+{% if problem_cards %}
+    <section class="space-y-2" data-testid="place-sheet-problems">
+        {% translate "Avalanche problems" as problems_eyebrow %}
+        {% include "includes/_eyebrow.html" with text=problems_eyebrow tag="h3" %}
+        {% for card in problem_cards %}
+            {% include "favourites/partials/_favourite_problem.html" with card=card %}
+        {% endfor %}
+    </section>
+{% endif %}

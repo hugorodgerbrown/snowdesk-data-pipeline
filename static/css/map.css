@@ -702,6 +702,13 @@
    the MapLibre control's own dot — a filled disc with a white collar —
    because it stands in for exactly that; the roundel's amber pip is where
    "this position is made up" is said. */
+/* SNOW-1395: the locate-me dot (and its spoofed stand-in) opens the "Your
+   location" sheet, so it says it can be tapped. */
+.maplibregl-user-location-dot,
+.map-fake-beacon {
+    cursor: pointer;
+}
+
 .map-fake-beacon {
     width: 16px;
     height: 16px;

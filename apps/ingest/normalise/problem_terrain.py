@@ -48,6 +48,7 @@ region, ``apps/public/problem_terrain.py``, stays the instance's.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from typing import Any, TypedDict
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,12 @@ _RATING_NUMBER: dict[str, int] = {
 _NO_GROUND_PROBLEMS = frozenset(
     {"no_distinct_avalanche_problem", "favourable_situation"}
 )
+
+# The first 5° slope band the map paints problem terrain on: 30° and up.
+# The same threshold as ``STEEP_BAND`` in static/js/bulletin_terrain_core.js,
+# so a point the "Your location" sheet calls problem terrain (SNOW-1395) is a
+# point the map's layer paints as one.
+STEEP_BAND = 6
 
 _TREELINE_TOKEN = "treeline"  # noqa: S105 — not a password; a CAAML bound token
 
@@ -158,6 +165,59 @@ def _rating_of(problem: dict[str, Any], trait: dict[str, Any]) -> int | None:
     return level if isinstance(level, int) and 1 <= level <= 5 else None
 
 
+class ProblemAtPoint(TypedDict):
+    """One avalanche problem whose decided rule admits a point of ground."""
+
+    problem_type: str
+    rating: int
+    lower: int | None
+    upper: int | None
+
+
+def _problem_rules(
+    render_model: dict[str, Any] | None,
+) -> Iterator[tuple[str, TerrainRule]]:
+    """Yield each problem of a render model as its type and its rule.
+
+    The one reading of a bulletin's problems as ground, shared by the map's
+    rules (``terrain_rules``) and the point test (``problems_at``), so the
+    two cannot disagree about which ground a problem describes.
+
+    Args:
+        render_model: A bulletin's render model, or ``None``.
+
+    Yields:
+        ``(problem_type, rule)`` for every problem that describes ground and
+        carries a rating, in the order the model holds them.
+
+    """
+    if not render_model:
+        return
+    for trait in render_model.get("traits") or []:
+        prose_only = (trait.get("geography") or {}).get("source") == "prose_only"
+        for problem in trait.get("problems") or []:
+            problem_type = str(problem.get("problem_type") or "")
+            if problem_type in _NO_GROUND_PROBLEMS:
+                continue
+            rating = _rating_of(problem, trait)
+            if rating is None:
+                logger.debug("problem %r has no rating; skipped", problem_type)
+                continue
+            # ALBINA carries its band on the trait; a problem's own wins.
+            elevation = problem.get("elevation") or trait.get("elevation") or {}
+            treeline = _is_treeline(elevation)
+            yield (
+                problem_type,
+                {
+                    "rating": rating,
+                    "aspects": _octants(problem.get("aspects") or []),
+                    "lower": None if treeline else _bound(elevation.get("lower")),
+                    "upper": None if treeline else _bound(elevation.get("upper")),
+                    "decided": not (prose_only or treeline),
+                },
+            )
+
+
 def terrain_rules(render_model: dict[str, Any] | None) -> list[TerrainRule]:
     """Turn a bulletin's render model into the map's problem-terrain rules.
 
@@ -170,41 +230,85 @@ def terrain_rules(render_model: dict[str, Any] | None) -> list[TerrainRule]:
         bulletin describes no ground.
 
     """
-    if not render_model:
-        return []
     rules: list[TerrainRule] = []
     seen: set[tuple[Any, ...]] = set()
-    for trait in render_model.get("traits") or []:
-        prose_only = (trait.get("geography") or {}).get("source") == "prose_only"
-        for problem in trait.get("problems") or []:
-            if problem.get("problem_type") in _NO_GROUND_PROBLEMS:
-                continue
-            rating = _rating_of(problem, trait)
-            if rating is None:
-                logger.debug(
-                    "problem %r has no rating; skipped", problem.get("problem_type")
-                )
-                continue
-            # ALBINA carries its band on the trait; a problem's own wins.
-            elevation = problem.get("elevation") or trait.get("elevation") or {}
-            treeline = _is_treeline(elevation)
-            rule: TerrainRule = {
-                "rating": rating,
-                "aspects": _octants(problem.get("aspects") or []),
-                "lower": None if treeline else _bound(elevation.get("lower")),
-                "upper": None if treeline else _bound(elevation.get("upper")),
-                "decided": not (prose_only or treeline),
-            }
-            key = (
-                rule["rating"],
-                tuple(rule["aspects"]),
-                rule["lower"],
-                rule["upper"],
-                rule["decided"],
-            )
-            if key in seen:
-                continue
-            seen.add(key)
-            rules.append(rule)
+    for _problem_type, rule in _problem_rules(render_model):
+        key = (
+            rule["rating"],
+            tuple(rule["aspects"]),
+            rule["lower"],
+            rule["upper"],
+            rule["decided"],
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        rules.append(rule)
     rules.sort(key=lambda r: -r["rating"])
     return rules
+
+
+def _admits(rule: TerrainRule, height_m: float, octant: int) -> bool:
+    """Whether a rule admits one point of ground, as the map's layer tests a pixel.
+
+    Args:
+        rule: One problem's rule.
+        height_m: The ground's height in metres.
+        octant: The ground's aspect octant, N=0 … NW=7.
+
+    Returns:
+        True when the aspect is one the rule names (an empty list names
+        every aspect) and the height is at or over ``lower`` and under
+        ``upper``, each where it is set.
+
+    """
+    if rule["aspects"] and octant not in rule["aspects"]:
+        return False
+    if rule["lower"] is not None and height_m < rule["lower"]:
+        return False
+    return not (rule["upper"] is not None and height_m >= rule["upper"])
+
+
+def problems_at(
+    render_model: dict[str, Any] | None,
+    *,
+    height_m: float,
+    octant: int,
+    slope_band: int,
+) -> list[ProblemAtPoint]:
+    """Return the problems whose ground one point is on (SNOW-1395).
+
+    The "Your location" sheet's test: the same rules, the same aspect and
+    height test and the same steepness threshold as the map's
+    problem-terrain layer (``static/js/bulletin_terrain_core.js``), so the
+    sheet calls a point problem terrain exactly where the map paints it as
+    one. Only DECIDED rules count: an undecided one is the map's hatched
+    "cannot tell", and the sheet says nothing it cannot back (Hugo, 3 Nov
+    2026: alert when inside, otherwise say nothing).
+
+    Args:
+        render_model: The day's bulletin's render model, or ``None``.
+        height_m: The ground's height in metres.
+        octant: The ground's aspect octant, N=0 … NW=7.
+        slope_band: ``floor(slope / 5)`` — the tiles' band.
+
+    Returns:
+        One entry per distinct problem type that admits the point, highest
+        rating first; empty on ground under 30°, or when nothing admits it.
+
+    """
+    if slope_band < STEEP_BAND:
+        return []
+    found: dict[str, ProblemAtPoint] = {}
+    for problem_type, rule in _problem_rules(render_model):
+        if not rule["decided"] or not _admits(rule, height_m, octant):
+            continue
+        held = found.get(problem_type)
+        if held is None or rule["rating"] > held["rating"]:
+            found[problem_type] = {
+                "problem_type": problem_type,
+                "rating": rule["rating"],
+                "lower": rule["lower"],
+                "upper": rule["upper"],
+            }
+    return sorted(found.values(), key=lambda p: -p["rating"])

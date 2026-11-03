@@ -1,4 +1,4 @@
-{% load i18n components resort_tags snowdesk_time %}
+{% load i18n humanize components resort_tags snowdesk_time %}
 {% comment %}
 public/partials/_place_sheet_body.html — what a tapped resort pin or saved
 pin's phone sheet says (SNOW-1100).
@@ -38,6 +38,16 @@ detents, ordered so that each detent shows the next part of it:
      show, so ``data-sheet-detents`` drops it. A tap on the handle at FULL
      steps down to PEEK.
 
+YOUR LOCATION (SNOW-1395). A tap on the map's locate-me dot opens a third
+kind, ``location``: the kind line "Your location", and for a title the
+ground under the fix itself — "2,410 m · NE · 30–35°", the band in the
+slope layer's colour from 30° — because the data is the heading (Hugo, 3
+Nov 2026: fewest words, no line that restates another). Then the region's
+bulletin row for the day, one warning row inside it only when the fix
+stands in that day's problem terrain (nothing at all otherwise — Hugo, 3
+Nov), the day's borrowed weather, and at FULL the problems annotated
+against the fix's height. The star saves the spot as a dropped pin.
+
 WHAT THE SHEET DOES NOT SAY (SNOW-1161, docs/decisions/the-map-opens-a-
 resort-in-the-sheet.md). The sheet is "this place, on the map's day"; the
 resort page is "this resort, today". So the full facts list, the week, the
@@ -48,7 +58,7 @@ read as a second date control), no sign-up prompt or curation hint where
 "why it matters" is unwritten, and no dashed placeholder anywhere.
 
 Context:
-  kind            — "resort" or "favourite".
+  kind            — "resort", "favourite" or "location".
   name            — the place's name; "" for an unnamed pin.
   region          — MicroRegion or None.
   day_rating      — RegionDayRating for target_date, or None.
@@ -75,7 +85,12 @@ Context:
                     fragment, so {% sign_in_href %} would name the
                     fragment's url as `next`. map_place_sheet.js gives it
                     the live map url through snowdeskSigninCta.bindNext
-                    (SNOW-903).
+                    (SNOW-903). Kind "location" passes it too.
+  ground          — kind "location": apps.public.your_location.Ground.
+  in_terrain      — kind "location": one line per problem whose ground
+                    the fix stands on, or [].
+  fix_lat, fix_lon — kind "location": the fix, for the star's new pin.
+  favourites_eligible — kind "location": whether the reader can save.
 {% endcomment %}
 {% trans "Unnamed pin" as unnamed_pin %}
 {% firstof name unnamed_pin as label %}
@@ -96,22 +111,61 @@ Context:
         <div class="flex items-center gap-4">
             {# A place leads with the round pin tile, as its search row does; #}
             {# the square danger tile is a region's (Hugo, 21 Oct).           #}
-            {% include "includes/_resort_tile.html" with kind=kind only %}
+            {% if kind == "location" %}
+                {# The blue dot the reader tapped, as the map draws it. #}
+                <span
+                    class="inline-flex h-9 w-9 flex-none items-center justify-center rounded-full bg-accent-tint"
+                    aria-hidden="true"
+                    data-testid="location-tile"
+                ><span class="location-tile-dot"></span></span>
+            {% else %}
+                {% include "includes/_resort_tile.html" with kind=kind only %}
+            {% endif %}
             <div class="min-w-0 flex-1">
                 {# The kind of place, above its name, on every map panel (Hugo, 25 Oct 2026). #}
                 {% if kind == "resort" %}
                     {% translate "Ski resort" as place_kind %}
+                {% elif kind == "location" %}
+                    {% translate "Your location" as place_kind %}
                 {% else %}
                     {% translate "Saved place" as place_kind %}
                 {% endif %}
                 {% include "includes/_eyebrow.html" with tag="p" text=place_kind data_testid="sheet-kind" only %}
-                <h2
-                    data-row-label
-                    class="truncate text-lg font-semibold leading-tight text-text-1"
-                    title="{{ label }}"
-                >
-                    {{ label }}
-                </h2>
+                {% if kind == "location" %}
+                    {# The ground is the title: height · aspect · slope band. #}
+                    <h2
+                        class="flex min-w-0 items-center gap-1.5 whitespace-nowrap text-lg font-semibold leading-tight text-text-1"
+                        data-testid="location-title"
+                    >
+                        {% if ground.height_m is not None %}
+                            <span>{{ ground.height_m|intcomma }}&nbsp;m</span>
+                            {% if ground.octant %}<span class="text-text-3" aria-hidden="true">·</span><span
+                                >{{ ground.octant }}</span>{% endif %}
+                            {% if ground.slope_band is not None %}
+                                <span class="text-text-3" aria-hidden="true">·</span>
+                                <span
+                                    class="slope-chip"
+                                    {% if ground.slope_class is not None %}
+                                        data-slope-class="{{ ground.slope_class }}"
+                                    {% endif %}
+                                    data-testid="location-slope"
+                                >{{ ground.slope_label }}</span>
+                            {% endif %}
+                        {% elif region %}
+                            <span class="truncate">{{ region.name }}</span>
+                        {% else %}
+                            <span class="truncate">{{ fix_lat|floatformat:4 }}, {{ fix_lon|floatformat:4 }}</span>
+                        {% endif %}
+                    </h2>
+                {% else %}
+                    <h2
+                        data-row-label
+                        class="truncate text-lg font-semibold leading-tight text-text-1"
+                        title="{{ label }}"
+                    >
+                        {{ label }}
+                    </h2>
+                {% endif %}
                 {% if kind == "favourite" %}
                     {% trans "Favourite name" as rename_label %}
                     <input
@@ -169,6 +223,35 @@ Context:
                 >
                     {% include "includes/_icon_favourite.html" with size=18 only %}
                 </a>
+            {% elif kind == "location" %}
+                {# The star saves the spot as a dropped pin (map_place_sheet.js). #}
+                {% if favourites_eligible %}
+                    {% trans "Save as a pin" as save_pin_label %}
+                    <button
+                        type="button"
+                        data-location-star
+                        data-lat="{{ fix_lat|stringformat:'.6f' }}"
+                        data-lon="{{ fix_lon|stringformat:'.6f' }}"
+                        aria-pressed="false"
+                        aria-label="{{ save_pin_label }}"
+                        title="{{ save_pin_label }}"
+                        class="{% icon_button_classes %}"
+                    >
+                        {% include "includes/_icon_favourite.html" with size=18 only %}
+                    </button>
+                {% else %}
+                    {% trans "Sign in to save this spot" as signin_pin_label %}
+                    <a
+                        href="{{ signin_url }}"
+                        data-signin-url="{{ signin_url }}"
+                        data-location-star-signin
+                        aria-label="{{ signin_pin_label }}"
+                        title="{{ signin_pin_label }}"
+                        class="{% icon_button_classes %}"
+                    >
+                        {% include "includes/_icon_favourite.html" with size=18 only %}
+                    </a>
+                {% endif %}
             {% else %}
                 {% blocktrans trimmed with name=label asvar row_actions_aria_label %}Actions for
                     {{ name }}{% endblocktrans %}
@@ -185,7 +268,9 @@ Context:
         </div>
     </div>
 
-    {% if kind == "resort" %}
+    {% if kind == "location" %}
+        {% include "public/partials/_place_sheet_location_body.html" %}
+    {% elif kind == "resort" %}
         {# SNOW-1164: under the peek row, the resort page's own body for   #}
         {# the map's day. The curated line is in its folded "About this    #}
         {# resort" (Hugo, 27 Oct 2026), so the bulletin leads HALF.         #}
@@ -218,38 +303,8 @@ Context:
                     {% trans "No avalanche bulletin covers this spot" %}
                 {% endif %}
             </p>
-            {% if weather_display %}
-                <section class="space-y-2" data-testid="place-sheet-weather" data-sheet-half>
-                    {# The height is the forecast point's, so it is stated on the #}
-                    {# source line under the panel rather than beside the day.   #}
-                    {% blocktrans with d=target_date|date:"D j M" trimmed asvar weather_label %}Weather ·
-                        {{ d }}{% endblocktrans %}
-                    {% include "includes/_weather_panel.html" with weather_display=weather_display testid_prefix="place-sheet-weather" location_label=weather_label only %}
-                    {% include "public/partials/_place_sheet_forecast_source.html" %}
-                    {% include "public/partials/_place_sheet_forecast_link.html" %}
-                </section>
-            {% elif forward_day %}
-                {# A forward day: today's row forecast it, so its line says so. #}
-                <section class="space-y-2" data-testid="place-sheet-weather" data-sheet-half>
-                    {% blocktrans with d=target_date|date:"D j M" trimmed asvar forward_label %}Forecast ·
-                        {{ d }}{% endblocktrans %}
-                    {% include "includes/_eyebrow.html" with text=forward_label tag="h3" %}
-                    {% include "includes/_weather_day_line.html" with day=forward_day testid_prefix="place-sheet-forward-day" only %}
-                    {% include "public/partials/_place_sheet_forecast_source.html" %}
-                    {% include "public/partials/_place_sheet_forecast_link.html" %}
-                </section>
-            {% elif forecast_url %}
-                <div data-sheet-half>{% include "public/partials/_place_sheet_forecast_link.html" %}</div>
-            {% endif %}
-            {% if problem_cards %}
-                <section class="space-y-2" data-testid="place-sheet-problems">
-                    {% translate "Avalanche problems" as problems_eyebrow %}
-                    {% include "includes/_eyebrow.html" with text=problems_eyebrow tag="h3" %}
-                    {% for card in problem_cards %}
-                        {% include "favourites/partials/_favourite_problem.html" with card=card %}
-                    {% endfor %}
-                </section>
-            {% endif %}
+            {% include "public/partials/_place_sheet_weather.html" %}
+            {% include "public/partials/_place_sheet_problems.html" %}
         </div>
 
         {# FULL: the links on — the day's bulletin first, then a saved     #}

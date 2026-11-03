@@ -64,6 +64,16 @@
  * sheet with, so offline it finds the saved one. The `href` is the no-JS
  * fallback.
  *
+ * YOUR LOCATION (SNOW-1395). map_geolocate.js opens a third kind,
+ * `{kind: 'location', lat, lon, altitude}`, when the reader taps the blue
+ * locate-me dot — on every width, as a resort's, and at HALF. The body is
+ * read for the fix on the map's day (place_sheet.location_sheet_partial,
+ * `no-store`: nothing keeps where the reader stood). Its star saves the
+ * spot as a dropped pin through the same queued create the favourites
+ * panel's form posts. OFFLINE it still opens: the device's own altitude
+ * reading (when it gave one) and a line saying the rest needs a
+ * connection (Hugo, 3 Nov 2026: degrade gracefully).
+ *
  * PAUSED DURING PLAYBACK (SNOW-1239). While the timeline plays the sheet
  * stays open under a "Playback in progress" band
  * (window.pwaSheetPlayback, sheet_playback_core.js), fetches nothing for
@@ -81,6 +91,7 @@
 
   const RESORT_URL = mapEl.dataset.resortSheetUrl || '';
   const FAVOURITE_URL = mapEl.dataset.favouriteSheetUrl || '';
+  const LOCATION_URL = mapEl.dataset.locationSheetUrl || '';
   const NIL_UUID = '00000000-0000-0000-0000-000000000000';
   const DESKTOP_QUERY = '(min-width: 640px)';
 
@@ -92,6 +103,10 @@
     'rename-failed': 'Could not rename this pin — please try again.',
     'delete-failed': 'Could not delete this pin — please try again.',
     notDownloaded: "This day isn't downloaded for offline use.",
+    'location-title': 'Your location',
+    'location-offline': 'The bulletin and weather need a connection.',
+    'location-saved': 'Saved as a pin.',
+    'location-save-failed': 'Could not save this spot on this device — please try again.',
   });
 
   // SNOW-1313: the header the service worker's offline-miss 504 carries
@@ -114,7 +129,8 @@
   });
   const toast = window.MapSheet.toast || function () {};
 
-  /** @type {?{kind: string, id: string, name?: string, createdAt?: string}} */
+  /** @type {?{kind: string, id: string, name?: string, createdAt?: string,
+   *   lat?: number, lon?: number, altitude?: ?number}} */
   let place = null;
   /** @type {?string} */
   let dateKey = null;
@@ -223,13 +239,36 @@
   const urlFor = () => {
     if (!place) return '';
     let url = '';
+    /** @type {Array<string>} */
+    const query = [];
     if (place.kind === 'resort' && RESORT_URL) {
       url = RESORT_URL.replace('__SLUG__', encodeURIComponent(place.id));
     } else if (place.kind === 'favourite' && FAVOURITE_URL) {
       url = FAVOURITE_URL.replace(NIL_UUID, encodeURIComponent(place.id));
+    } else if (place.kind === 'location' && LOCATION_URL && isFinite(place.lat) && isFinite(place.lon)) {
+      url = LOCATION_URL;
+      query.push('lat=' + encodeURIComponent(String(place.lat)));
+      query.push('lon=' + encodeURIComponent(String(place.lon)));
+      if (typeof place.altitude === 'number' && isFinite(place.altitude)) {
+        query.push('alt=' + encodeURIComponent(String(Math.round(place.altitude))));
+      }
     }
-    if (url && dateKey) url += '?d=' + encodeURIComponent(dateKey);
-    return url;
+    if (url && dateKey) query.push('d=' + encodeURIComponent(dateKey));
+    return url && query.length ? url + '?' + query.join('&') : url;
+  };
+
+  /**
+   * The offline "Your location" body: the device's altitude as the title
+   * when it gave one, and a line saying the rest needs a connection.
+   *
+   * @param {{altitude?: ?number}} which
+   * @returns {void}
+   */
+  const paintLocationOffline = (which) => {
+    const altitude = which && typeof which.altitude === 'number' && isFinite(which.altitude)
+      ? Math.round(which.altitude).toLocaleString('en-GB') + '\u00a0m'
+      : '';
+    paintLines(altitude || STRINGS['location-title'], STRINGS['location-offline']);
   };
 
   /**
@@ -267,6 +306,10 @@
         if (!ask.isCurrent() || !controller.isOpen()) return;
         sheet.innerHTML = html;
         paintStar();
+        // SNOW-1395: the sign-in star of a reader who cannot save names the
+        // live map url as `next`, as a resort's does (SNOW-903).
+        const signIn = /** @type {?HTMLAnchorElement} */ (sheet.querySelector('[data-location-star-signin]'));
+        if (signIn) window.snowdeskSigninCta?.bindNext?.(signIn, signIn.dataset.signinUrl);
       })
       .catch((err) => {
         if (!ask.isCurrent() || !controller.isOpen() || playback.isAbort(err)) return;
@@ -276,6 +319,12 @@
           const saved = window.snowdeskMapFormat?.relativeTime?.(current.createdAt || '') || '';
           const note = err && err.notDownloaded ? STRINGS.notDownloaded : '';
           paintLines(current.name || '', saved || (note ? '' : STRINGS.failed), note);
+          return;
+        }
+        // SNOW-1395: the reader's own fix is never kept offline; say what
+        // the device knows without the network.
+        if (current && current.kind === 'location') {
+          paintLocationOffline(current);
           return;
         }
         // SNOW-1318: a resort's sheet is kept by a download for each day it
@@ -295,7 +344,8 @@
    * @param {?{kind: string}} which
    * @returns {boolean}
    */
-  const takes = (which) => !!which && (which.kind === 'resort' || isPhone());
+  const takes = (which) =>
+    !!which && (which.kind === 'resort' || which.kind === 'location' || isPhone());
 
   /**
    * Open the sheet for one place.
@@ -331,7 +381,9 @@
     if (!controller.isOpen()) {
       // A resort opens at HALF — its name, the day, the bulletin and
       // today's weather — and a saved pin at PEEK (Hugo, 27 Oct 2026).
-      sheet.setAttribute('data-detent-initial', next.kind === 'resort' ? 'half' : 'peek');
+      // SNOW-1395: the reader's own location opens at HALF too — the ground,
+      // the bulletin and the weather are what the tap asked for.
+      sheet.setAttribute('data-detent-initial', next.kind === 'favourite' ? 'peek' : 'half');
       controller.open({ awaiting: !playback.isPlaying() });
     }
     return true;
@@ -384,8 +436,60 @@
     document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
   };
 
+  /**
+   * SNOW-1395: save the reader's fix as a dropped pin — the favourites
+   * panel's own create (favourites.js), queued so it survives a dead
+   * radio, with the same optimistic pending pin on the map.
+   *
+   * @param {HTMLButtonElement} star The location sheet's star.
+   * @returns {void}
+   */
+  const saveLocation = (star) => {
+    const addBtn = document.getElementById('favourite-add-btn');
+    const url = addBtn ? addBtn.dataset.favouriteCreateUrl || '' : '';
+    const lat = parseFloat(star.getAttribute('data-lat') || '');
+    const lon = parseFloat(star.getAttribute('data-lon') || '');
+    if (!url || !isFinite(lat) || !isFinite(lon)) return;
+    if (!window.MapSheet.canQueueMutations?.() || !window.pwaMutationQueue) {
+      toast(STRINGS['location-save-failed']);
+      return;
+    }
+    const body = new URLSearchParams({
+      csrfmiddlewaretoken: csrfToken(),
+      lat: String(lat),
+      lon: String(lon),
+      name: '',
+    }).toString();
+    window.pwaMutationQueue
+      .enqueue({
+        method: 'POST',
+        url: url,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          // favourite_create is @require_htmx; the replay is a plain fetch.
+          'HX-Request': 'true',
+        },
+        body: body,
+      })
+      .catch(() => {});
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:favourite-pending', { detail: { lat: lat, lon: lon, name: '' } }),
+    );
+    star.setAttribute('aria-pressed', 'true');
+    star.querySelector('svg')?.setAttribute('fill', 'currentColor');
+    star.disabled = true;
+    toast(STRINGS['location-saved']);
+  };
+
   sheet.addEventListener('click', (ev) => {
     const target = /** @type {HTMLElement} */ (ev.target);
+
+    const locationStar = /** @type {?HTMLButtonElement} */ (target.closest?.('[data-location-star]'));
+    if (locationStar) {
+      ev.preventDefault();
+      if (!locationStar.disabled) saveLocation(locationStar);
+      return;
+    }
 
     // A resort's star: favourites.js owns the write (a document listener,
     // which runs after this one). Turn the star now, since the create is
@@ -481,6 +585,9 @@
       paintStar();
       return;
     }
+    // SNOW-1395: the body says nothing about the favourites; re-reading it
+    // would only turn a just-saved star back to an outline.
+    if (place.kind === 'location') return;
     if (playback.isPlaying()) {
       pendingRefresh = true;
       return;

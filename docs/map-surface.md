@@ -2,7 +2,7 @@
 name: map-surface
 description: Map zoom bands (REGION_SELECT_MAXZOOM), tap priority, overlay kinds, pwaMapOverlays, one bottom sheet, camera padding owner
 status: current
-last-reviewed: 2026-11-02
+last-reviewed: 2026-11-03
 ---
 
 # The map surface: zoom, taps and overlays
@@ -56,6 +56,11 @@ a tap on empty map.
 One generic `map.on('click')` handler decides every tap (map.js, "single
 map click dispatcher"). It stops at the first rule that claims the tap:
 
+0. **On the locate-me dot** (SNOW-1395): the "Your location" sheet opens
+   for the last fix. MapLibre draws the dot as a DOM marker, so the tap
+   never reaches this dispatcher at all: `map_geolocate.js` takes it in a
+   capture-phase document listener and stops it, or it would read as a tap
+   on empty map (rule 9) and close whatever was open.
 1. **On a control over the map** (scrubber, utility cluster, bottom-right
    roundels, legend, tour offer, help coachmark): ignored. In help mode
    (SNOW-1119) a control never gets that far — a capture-phase listener in
