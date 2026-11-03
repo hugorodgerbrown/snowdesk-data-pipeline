@@ -996,6 +996,7 @@ def test_map_layer_menu_level_one_order() -> None:
         'data-layers-open="bulletins"',
         'data-overlay-key="weather"',
         'data-layers-open="boundaries"',
+        'data-overlay-key="community_reports"',
         'data-overlay-key="resorts"',
         'data-layers-open="basemap"',
         ">Your data<",
@@ -1005,10 +1006,16 @@ def test_map_layer_menu_level_one_order() -> None:
     ]
     positions = [main.index(marker) for marker in markers]
     assert positions == sorted(positions), markers
-    # SNOW-1290: field reports are read beside the bulletin, as "On the
-    # ground" on the Bulletins page, not among the reader's own data.
-    assert 'data-overlay-key="community_reports"' not in main
-    assert 'data-overlay-key="community_reports"' in _layers_page(content, "bulletins")
+    # Field reports are dated reference data with a level-one row of their
+    # own, after Boundaries (Hugo, 3 Nov 2026: "field observations are not
+    # part of bulletins"), so they left SNOW-1290's place on that page.
+    assert 'data-overlay-key="community_reports"' not in _layers_page(
+        content, "bulletins"
+    )
+    reports = main[main.index('data-overlay-key="community_reports"') :]
+    reports = reports[: reports.index("</button>")]
+    assert ">Field observations<" in reports
+    assert "data-layer-switch" in reports
     assert ">Map layers<" in content
     assert "data-section-toggle" not in content
     assert "Map display options" not in content
@@ -1106,14 +1113,15 @@ def test_rest_zones_layer_renders_once_behind_the_flag() -> None:
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
 def test_layers_menu_marks_its_zoom_limited_rows() -> None:
-    """SNOW-1280: Steep terrain and Ski touring carry their gate key,
-    an empty zoom suffix and a hidden "Zoom in to view" line; the menu opens
-    with its zoom note hidden, and the script that fills them loads after
+    """SNOW-1280: each zoom-limited row carries its gate key and an empty,
+    hidden hint on its name line, and the script that fills it loads after
     the zoom control's core.
 
-    The numbers are not server-rendered — they live in window.pwaZoomGates
-    (map.js) — so the suffix starts empty. The row's ``data-row-label``
-    stays the bare name, which map_basemap_picker.js reads.
+    3 Nov 2026: no level is named — no "· ≥z10" suffix and no note heading
+    the menu — since the zoom control's scale shows the levels, and no
+    second "Zoom in to view" line, which changed the row's height. The
+    row's ``data-row-label`` stays the bare name, which
+    map_basemap_picker.js reads.
     """
     client = Client()
     client.force_login(UserFactory.create())
@@ -1130,12 +1138,13 @@ def test_layers_menu_marks_its_zoom_limited_rows() -> None:
     ):
         start = main.index(f'data-zoom-gate="{key}"')
         row = main[start : main.index("</li>", start)]
-        assert f"<span data-row-label>{label}</span>" in row
-        assert "data-zoom-suffix></span>" in row
-        assert re.search(r"data-zoom-hint\s+hidden>Zoom in to view<", row)
-    assert re.search(r"data-zoom-note\s+hidden", main)
-    assert main.index("data-zoom-note") < main.index(">Reference data<")
+        assert re.search(rf"data-row-label>{label}</span>", row)
+        assert re.search(r"data-zoom-hint\s+hidden></span>", row)
+        assert "Zoom in to view" not in row
+    assert "data-zoom-suffix" not in main
+    assert "data-zoom-note" not in main
     assert 'id="map-layers-zoom-strings-template"' in content
+    assert 'data-string="zoom-in">· zoom in<' in content
     assert content.index("/static/js/zoom_control_core.js") < content.index(
         "/static/js/map_layers_zoom_gates.js"
     )
@@ -1181,7 +1190,7 @@ def test_map_layer_menu_options_pages() -> None:
         "SLF bulletins (CH)",
         "MétéoFrance (FR)",
         "ALBINA (AT, IT)",
-        "On the ground",
+        "Field observations",
         "Major regions (EAWS L1)",
         "Downloaded areas",
     ):
@@ -2573,8 +2582,8 @@ def test_sync_with_map_terrain_is_on_the_bulletins_page() -> None:
     """SNOW-1377: "Sync with map terrain", a switch row under the bulletins.
 
     Hugo, 23 Oct: its own row, next to the bulletins it comes from; SNOW-1266
-    moved it onto the Avalanche bulletins options page, after the opacity
-    steps. SNOW-1377 renamed it and drew it as a switch track; it renders
+    moved it onto the Avalanche bulletins options page; since 3 Nov 2026 it
+    sits under the providers and the opacity steps come last. SNOW-1377 renamed it and drew it as a switch track; it renders
     unchecked (map.js seeds it, on by default) for an anonymous reader, with
     the second line "From zoom 12, Switzerland". It is not a level-one layer,
     so it carries no data-layer-switch for the menu's count. Its key is its
@@ -2592,8 +2601,10 @@ def test_sync_with_map_terrain_is_on_the_bulletins_page() -> None:
     assert ">Sync with map terrain<" in row
     assert "From zoom 12, Switzerland" in row
     assert "Highlight problem terrain" not in content
-    assert bulletins.index('id="map-bulletin-opacity"') < bulletins.index(
-        'data-overlay-key="problem_terrain"'
+    assert (
+        bulletins.index('data-overlay-key="country.albina"')
+        < bulletins.index('data-overlay-key="problem_terrain"')
+        < bulletins.index('id="map-bulletin-opacity"')
     )
     assert 'data-overlay-key="problem_terrain"' not in _layers_page(content, "main")
 

@@ -61,7 +61,8 @@ Field observations are user-generated content, so they belong in Your data.
 - A master switch only clicks the rows it governs. Nothing downstream knows
   that masters exist, and a master never writes a layer's own storage key.
 - "Sync with map terrain" (SNOW-1377; it was "Highlight problem terrain")
-  is on the bulletins page, a switch row drawn with
+  is on the bulletins page, under the providers, with the opacity steps
+  last as the least-used setting (Hugo, 3 Nov 2026). It is a switch row drawn with
   `includes/_switch_track.html`, on by default. It left the Steep terrain
   sheet, whose colours take precedence over it while that layer is on.
 - The per-section storage keys (`snowdesk.map.layers.section.*`) are
@@ -72,13 +73,19 @@ Field observations are user-generated content, so they belong in Your data.
 - Amends [map-controls-are-two-groups-without-an-on-map-marker](map-controls-are-two-groups-without-an-on-map-marker.md):
   the opacity control is now on the bulletins page, and it has four steps.
 - A layer drawn only past a zoom says so on its row (SNOW-1280, Hugo
-  28 Oct 2026). Its name is followed by "· ≥z10", always. While it is
-  switched on and the map is below that zoom, its name and icon fade and
-  a second line reads "Zoom in to view"; the switch is never dimmed,
-  because the layer is on. A note heads the menu for as long as any row
-  is faded. Hugo turned down a tap-to-zoom pill as too distracting, and
-  then the whole row as a zoom action, because a reader can zoom
-  themselves. The row still only toggles. The numbers come from
+  28 Oct 2026; reworked 3 Nov 2026). While the map is outside its zoom,
+  whether the layer is on or off, the row dims to 40% (Terrain mode's
+  disabled look) and "· zoom in" follows its name on the same line. The
+  switch is neither dimmed nor disabled: it keeps its state and still
+  toggles, so a layer can be armed before zooming in. The row names no
+  zoom level, because the zoom control's scale already does, so the old
+  "· ≥z10" suffix and the note heading the menu were removed. The name
+  line never wraps, because the row must not change height as you zoom
+  (Hugo); a long name gets an ellipsis instead. That rules out the old
+  "Zoom in to view" second line, and also "· zoom in to view" on the name
+  line, which wraps at the phone menu's 340 px. Hugo turned down a
+  tap-to-zoom pill as too distracting, and then the whole row as a zoom
+  action, because a reader can zoom themselves. The gates come from
   `window.pwaZoomGates`, through `static/js/map_layers_zoom_gates.js` and
   `public/partials/_map_layers_zoom_label.html`. Two gates stay off the
   menu: a route's slope colours (z14), because the routes themselves draw

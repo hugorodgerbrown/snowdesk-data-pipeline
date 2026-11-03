@@ -1,36 +1,30 @@
 /*
- * static/js/map_layers_zoom_gates.js — the layers menu says which layers
- * draw only at certain zoom levels, and when one you switched on cannot
- * draw yet (SNOW-1280).
+ * static/js/map_layers_zoom_gates.js — the layers menu marks a layer the
+ * current zoom makes unusable (SNOW-1280, reworked 3 Nov 2026).
  *
- * Two layers appear only past a zoom: ski-touring routes from z10 and the
- * steep-terrain filter from z12. Switched on below it, each drew nothing
- * and its switch still read "on", so the layer looked broken. The zoom
- * control's flyout named the gates, but nobody looks there for a layer.
+ * Three layers draw only past a zoom: SAC ski touring, wildlife rest zones
+ * and the steep-terrain filter. Outside its range a layer draws nothing,
+ * whatever its switch says, so its row says so:
  *
- * What the menu does now, all from `window.pwaZoomGates` (map.js), so
- * each number has one source:
- *
- *   - EVERY ZOOM-LIMITED ROW carries a suffix after its name, "· ≥z10",
- *     whether the layer is on or off: the limit is learnable before it
- *     matters.
- *   - A ROW WHOSE LAYER IS ON BUT OUTSIDE ITS RANGE fades (its name and
- *     icon, never its switch — the layer IS on) and shows "Zoom in to
- *     view" under its name. The row still toggles the layer; there is no
- *     zoom action (Hugo, 28 Oct 2026: "they can work it out").
- *   - WHILE ANY ROW IS FADED, a note heads the menu: "Features marked
- *     z10–12 are visible at specific zoom levels only.", the range being
- *     the span of the gates the menu shows.
+ *   - THE ROW DIMS — icon, name, second line and chevron, never the switch
+ *     — and "· zoom in" (or "· zoom out" for an up-to gate) follows the
+ *     name on the same line. This holds whether the layer is on or off:
+ *     the row is telling you what the map can draw, not what you picked.
+ *   - THE SWITCH KEEPS ITS STATE AND STAYS LIVE, so a layer can be armed
+ *     before zooming in.
+ *   - NOTHING NAMES THE LEVEL. The zoom control's scale does that (Hugo,
+ *     3 Nov 2026), so the "· ≥z10" suffix and the menu's note are gone.
+ *   - NOTHING CHANGES HEIGHT. The hint sits on the name's line, which CSS
+ *     keeps to one line, so the menu never shifts as you pinch (the old
+ *     "Zoom in to view" second line did).
  *
  * The rows are the `[data-zoom-gate]` elements in #basemap-menu
  * (public/partials/_map_layers_zoom_label.html); a gate key the registry
- * does not list — the ski-touring row outside Switzerland, say — leaves
- * its row plain. Whether a row's layer is on is read off its own
- * `[data-layer-switch]`'s aria-checked, watched with a MutationObserver,
- * so this needs no event from each layer's bridge.
+ * (`window.pwaZoomGates`, map.js) does not list — the ski-touring row
+ * outside Switzerland, say — leaves its row plain.
  *
  * LOAD ORDER: reads `MAP` at parse time, so after map.js, and after
- * zoom_control_core.js, whose `isReached` and `zoomRange` it uses.
+ * zoom_control_core.js, whose `isReached` it uses.
  * Strings from `map-layers-zoom-strings-template`.
  */
 
@@ -47,31 +41,16 @@
   if (!rows.length) return;
 
   const STRINGS = self.pwaStrings.read('map-layers-zoom-strings-template', {
-    'suffix-from': '· ≥z%(zoom)s',
-    'suffix-up-to': '· ≤z%(zoom)s',
-    note: 'Features marked z%(range)s are visible at specific zoom levels only.',
+    'zoom-in': '· zoom in',
+    'zoom-out': '· zoom out',
   });
-
-  const note = menu.querySelector('[data-zoom-note]');
-  const noteText = note && note.querySelector('[data-zoom-note-text]');
-
-  /**
-   * Whether a row's layer is switched on.
-   *
-   * @param {Element} row A `[data-zoom-gate]` row.
-   * @returns {boolean}
-   */
-  function isOn(row) {
-    const sw = row.querySelector('[data-layer-switch]');
-    return !!sw && sw.getAttribute('aria-checked') === 'true';
-  }
 
   // What was last written, so a pinch — a `zoom` event every frame —
   // touches the DOM only when a row crosses its gate.
   let drawn = null;
 
   /**
-   * Bring every zoom-limited row, and the note, into line with the zoom.
+   * Bring every zoom-limited row into line with the zoom.
    *
    * @returns {void}
    */
@@ -81,43 +60,22 @@
     const zoom = map.getZoom();
     const states = rows.map((row) => {
       const gate = byKey.get(/** @type {HTMLElement} */ (row).dataset.zoomGate || '') || null;
-      return { row, gate, hidden: !!gate && isOn(row) && !core.isReached(gate, zoom) };
+      return { row, gate, hidden: !!gate && !core.isReached(gate, zoom) };
     });
-    const signature = states
-      .map((s) => (s.gate ? s.gate.key + ':' + s.gate.zoom + ':' + s.hidden : '-'))
-      .join('|');
+    const signature = states.map((s) => (s.hidden ? '1' : '0')).join('');
     if (signature === drawn) return;
     drawn = signature;
 
     for (const { row, gate, hidden } of states) {
-      const suffix = row.querySelector('[data-zoom-suffix]');
       const hint = /** @type {HTMLElement|null} */ (row.querySelector('[data-zoom-hint]'));
-      if (suffix) {
-        suffix.textContent = gate
-          ? self.pwaStrings.interpolate(
-            STRINGS[gate.upTo ? 'suffix-up-to' : 'suffix-from'], { zoom: gate.zoom },
-          )
-          : '';
+      if (hint) {
+        hint.textContent = hidden && gate ? STRINGS[gate.upTo ? 'zoom-out' : 'zoom-in'] : '';
+        hint.hidden = !hidden;
       }
-      if (hint) hint.hidden = !hidden;
       row.toggleAttribute('data-zoom-hidden', hidden);
     }
-
-    const anyHidden = states.some((s) => s.hidden);
-    if (note) note.hidden = !anyHidden;
-    if (noteText) {
-      const gates = states.map((s) => s.gate).filter(Boolean);
-      noteText.textContent = anyHidden
-        ? self.pwaStrings.interpolate(STRINGS.note, { range: core.zoomRange(gates) })
-        : '';
-    }
   }
 
-  const observer = new MutationObserver(apply);
-  for (const row of rows) {
-    const sw = row.querySelector('[data-layer-switch]');
-    if (sw) observer.observe(sw, { attributes: true, attributeFilter: ['aria-checked'] });
-  }
   map.on('zoom', apply);
   document.addEventListener('snowdesk:zoom-gates-changed', apply);
 
