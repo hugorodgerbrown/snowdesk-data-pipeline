@@ -602,9 +602,7 @@ class TestFindPlacesNearReadsCentroidLocations:
 def test_search_places_leaves_out_a_retired_resort() -> None:
     """SNOW-1404: a retired resort drops out of search, cache and all."""
     resort = ResortFactory.create(name="Ovronnaz")
-    assert [hit["name"] for hit in resolvers.search_places("Ovronnaz")] == [
-        "Ovronnaz"
-    ]
+    assert [hit["name"] for hit in resolvers.search_places("Ovronnaz")] == ["Ovronnaz"]
 
     resort.retired_at = timezone.now()
     resort.retired_reason = "CLOSED"
