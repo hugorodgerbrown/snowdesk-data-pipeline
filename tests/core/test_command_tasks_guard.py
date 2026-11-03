@@ -27,6 +27,10 @@ from apps.locations.services.what3words import fill_what3words_task
 from apps.routes.services.ski_tour_render import render_tour_task
 from apps.routes.services.slope_segments import backfill_route_slopes_task
 from apps.trips.services.slope import backfill_trip_slopes_task
+from apps.weather.services.station_tasks import (
+    backfill_unit_task,
+    fetch_station_task,
+)
 
 
 def _bulk_commands() -> list[str]:
@@ -42,10 +46,12 @@ def _bulk_commands() -> list[str]:
 
 
 def test_the_walk_finds_the_bulk_commands() -> None:
-    """The guard is not vacuous: the SNOW-1397 and SNOW-1398 commands are found."""
+    """The guard is not vacuous: the SNOW-1397 to SNOW-1399 commands are found."""
     assert {
         "backfill_route_slope_samples",
         "backfill_trip_slope_samples",
+        "backfill_weather",
+        "fetch_weather",
         "fill_location_elevations",
         "fill_what3words",
         "rebuild_render_models",
@@ -75,6 +81,8 @@ def test_every_bulk_command_is_mcp_runnable() -> None:
         backfill_trip_slopes_task,
         fill_what3words_task,
         fill_elevation_task,
+        fetch_station_task,
+        backfill_unit_task,
     ],
     ids=lambda t: t.name,
 )

@@ -70,7 +70,8 @@ The names are grouped by what they are for:
       which bulletin governs a region's day, are the instance's.
   The weather backfill
       Filling a station's missing past days from the historical forecast
-      API (SNOW-1275): ``sweep``, the hourly budgeted walk, and
+      API (SNOW-1275): ``plan_sweep`` and ``sweep_block``, the hourly
+      budgeted walk planned and then filled a unit per task (SNOW-1399), and
       ``backfill_locations``, the admin's whole-window walk, each with an
       ``on_row`` hook for the host's apply; the window helpers and the
       weighted-call arithmetic.
@@ -156,13 +157,16 @@ from apps.ingest.backfill import (
     LIVE_FETCHES_PER_DAY,
     BackfillResult,
     SweepResult,
+    SweepUnit,
     backfill_floor,
     backfill_locations,
     backfill_until,
     expected_days,
+    plan_sweep,
     request_weight,
-    sweep,
+    sweep_block,
     sweep_budget,
+    upstream_unavailable,
 )
 from apps.ingest.models import (
     WEATHER_COLUMNS,
@@ -455,6 +459,7 @@ __all__ = [
     "SlfConflictingBulletinIdError",
     "SwisstopoError",
     "SweepResult",
+    "SweepUnit",
     "TerrainRule",
     "albina_pdf_url",
     "backfill_floor",
@@ -508,6 +513,7 @@ __all__ = [
     "parse_feed_limit",
     "parse_feed_since",
     "parse_prose_for",
+    "plan_sweep",
     "period_transition_of",
     "pdf_session",
     "problem_types_for",
@@ -533,11 +539,12 @@ __all__ = [
     "state_of",
     "store_bulletin",
     "store_source_weather",
-    "sweep",
+    "sweep_block",
     "sweep_budget",
     "sync_source_documents",
     "sync_source_locations",
     "target_day_for_valid_from",
+    "upstream_unavailable",
     "terrain_rules",
     "unrated_day",
     "write_ndjson_archive",

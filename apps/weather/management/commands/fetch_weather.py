@@ -8,12 +8,18 @@ that picks an upstream URL from a date.
 **The fetch is the weather service's since SNOW-1253.** Every active
 location is a curated one (SNOW-1265), and the curated estate is the
 service's station list. With ``--commit`` the estate is mirrored into
-ingest's ``SourceLocation`` list, each station is fetched into
-``SourceWeather``, and each row is applied into ``Weather`` through
+ingest's ``SourceLocation`` list, then one ``fetch_station_task`` per
+station is enqueued (SNOW-1399): each fetches its station into
+``SourceWeather`` and applies the rows into ``Weather`` through
 ``Location.source_uuid`` — the same apply a pull from the data feed runs, so
 production and staging write ``Weather`` from the same rows. A read-only run
-mirrors nothing: it probes the same coordinates with the same request and
-writes nothing anywhere.
+mirrors nothing, asks Open-Meteo nothing and writes nothing: it counts.
+
+**Paced, with a breaker.** ``--delay`` staggers the tasks and is the gap
+each waits for on the shared ``open-meteo`` slot before it calls out, so a
+run never bursts past Open-Meteo's per-minute limit. A 429 opens the
+``open-meteo`` breaker for five minutes; the tasks behind it return
+without asking, and the next scheduled run fetches their stations.
 
 One pass over one anchor. The two passes this replaces — a region pass over
 ``MicroRegion.centre`` and a point pass over a quantised ``ForecastCell``
@@ -35,10 +41,10 @@ no equivalent, so the scheduled batch is their only freshness mechanism and
 the cadence is what keeps today's row current.
 
 Usage:
-    # Preview — calls the API, writes nothing.
+    # Preview — counts the stations, asks and writes nothing.
     uv run python manage.py fetch_weather
 
-    # Persist today's row for every active location.
+    # Mirror the estate and enqueue one fetch per station.
     uv run python manage.py fetch_weather --commit
 """
 
@@ -52,34 +58,37 @@ from django.core.management.base import CommandError
 from django.db.models import QuerySet
 from django.utils import timezone
 
-from apps.core.command_iteration import iterate_rows
+from apps.core.command_iteration import non_negative_float
 from apps.core.command_register import RegisteredCommand
-from apps.ingest.public import SourceLocation, fetch_source_weather
+from apps.core.command_tasks import enqueue_each
+from apps.ingest.public import SourceLocation
 from apps.locations.models import Location
-from apps.weather.services.fetch import fetch_all_locations
-from apps.weather.services.reference import (
-    apply_source_weather,
-    mirror_reference_locations,
-)
+from apps.weather.services.reference import mirror_reference_locations
+from apps.weather.services.station_tasks import fetch_station_task
 
 logger = logging.getLogger(__name__)
 
+# Seconds between one station's request and the next. A station costs 2.4
+# weighted calls (24 variables over a week), so half a second keeps a run
+# near 290 a minute, under the free tier's 600, with the backfill's units
+# sharing the same slot.
+DEFAULT_DELAY_S = 0.5
+
 
 class Command(RegisteredCommand):
-    """Fetch today's Open-Meteo forecast for every active location.
+    """Enqueue today's Open-Meteo forecast for every active station.
 
-    Read-only by default; pass --commit to persist. Forecast endpoint only.
-    Per-location failures are caught, logged and counted — they never abort
-    the batch — and the command exits non-zero when any failed.
+    Read-only by default; pass --commit to mirror the estate and enqueue.
+    Exits non-zero when a task run inline failed.
     """
 
     # Offered to the ops MCP server's run_command (apps.core.remote_commands).
     mcp_runnable = True
 
     help = (
-        "Fetch today's Open-Meteo forecast — one Weather row per active "
-        "location (one reachable from a resort or a region centroid — the "
-        "curated estate). Read-only unless --commit is passed."
+        "Enqueue today's Open-Meteo forecast — one task per station of the "
+        "curated estate, each writing a Weather row per day of its week. "
+        "Read-only unless --commit is passed."
     )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
@@ -88,14 +97,24 @@ class Command(RegisteredCommand):
             "--commit",
             action="store_true",
             help=(
-                "Persist the Weather rows. Without this flag the command "
-                "calls the API (a real probe) but writes nothing."
+                "Mirror the estate and enqueue one fetch per station. Without "
+                "this flag the command counts the stations and asks nothing."
+            ),
+        )
+        parser.add_argument(
+            "--delay",
+            type=non_negative_float,
+            default=DEFAULT_DELAY_S,
+            help=(
+                f"Seconds between one station's request and the next "
+                f"(default {DEFAULT_DELAY_S}). 0 disables the pacing."
             ),
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        """Fetch and optionally persist today's weather for every active location."""
+        """Mirror the estate and enqueue a fetch for every station."""
         commit: bool = options["commit"]
+        delay: float = options["delay"]
         verbosity: int = options["verbosity"]
 
         today = timezone.localdate()
@@ -115,6 +134,8 @@ class Command(RegisteredCommand):
                 )
             candidates: QuerySet[Any] = SourceLocation.objects.live()
         else:
+            # Read-only mirrors nothing, so the stations it would fetch are
+            # the curated estate the mirror would make them from.
             candidates = Location.objects.active()
         total = candidates.count()
 
@@ -124,79 +145,36 @@ class Command(RegisteredCommand):
                 f"Fetching {today} weather for {total} station(s){flag_label}"
             )
         )
-        logger.info(
-            "fetch_weather started: date=%s stations=%d commit=%s",
-            today,
-            total,
-            commit,
-        )
-
-        # Streamed, not materialised: the estate grows with every curated
-        # point and every region EAWS adds. iterate_rows orders -id and prints a
-        # countdown line per row, so an unattended run reads as a countdown
-        # to 1 (SNOW-602).
-        rows = iterate_rows(
+        counts = enqueue_each(
             self,
             candidates,
-            verbosity=verbosity,
+            fetch_station_task,
+            args=lambda row: (row.pk, delay),
             describe=lambda row: row.to_string(),
+            commit=commit,
+            verbosity=verbosity,
+            pace=delay,
         )
-        if commit:
-            # Each station's row is applied into Weather as it is written.
-            counts = fetch_source_weather(
-                today, commit=True, locations=rows, on_row=apply_source_weather
-            )
-        else:
-            counts = fetch_all_locations(today, commit=False, locations=rows)
-
-        self._report_outcome(counts, commit=commit, verbosity=verbosity)
-
-        if counts["failed"] > 0:
-            raise CommandError(
-                f"fetch_weather completed with {counts['failed']} location "
-                f"failure(s). Check logs for details."
-            )
-
-    def _report_outcome(
-        self,
-        counts: dict[str, int],
-        *,
-        commit: bool,
-        verbosity: int,
-    ) -> None:
-        """Emit the post-run summary to stdout and the structured log.
-
-        Args:
-            counts: The counters returned by ``fetch_all_locations``.
-            commit: Whether --commit was passed.
-            verbosity: Django's ``--verbosity`` level.
-
-        """
-        if verbosity >= 1:
-            if commit:
-                self.stdout.write(
-                    self.style.SUCCESS(
-                        f"Done. {counts['created']} row(s) created, "
-                        f"{counts['updated']} updated, "
-                        f"{counts['failed']} failed."
-                    )
-                )
-            else:
-                self.stdout.write(
-                    self.style.SUCCESS(
-                        f"Read-only run complete — {counts['failed']} "
-                        "location(s) failed. No data written. Pass --commit "
-                        "to persist."
-                    )
-                )
-        # Counts for the command run register (SNOW-1190).
-        self.tally("created", counts["created"])
-        self.tally("updated", counts["updated"])
-        self.tally("failed", counts["failed"])
         logger.info(
-            "fetch_weather finished: created=%d updated=%d failed=%d commit=%s",
-            counts["created"],
-            counts["updated"],
-            counts["failed"],
+            "fetch_weather finished: date=%s enqueued=%d already_queued=%d "
+            "failed=%d commit=%s",
+            today,
+            counts.enqueued,
+            counts.already_queued,
+            counts.failed,
             commit,
         )
+        if verbosity >= 1:
+            verb = "enqueued" if commit else "would be enqueued"
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Done. {counts.enqueued} station(s) {verb}, "
+                    f"{counts.already_queued} already queued, "
+                    f"{counts.failed} failed."
+                )
+            )
+        if counts.failed:
+            raise CommandError(
+                f"fetch_weather completed with {counts.failed} station "
+                f"failure(s). Check logs for details."
+            )

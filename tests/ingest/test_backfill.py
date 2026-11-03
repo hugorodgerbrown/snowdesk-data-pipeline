@@ -476,7 +476,7 @@ def _throttled(*args: Any, **kwargs: Any) -> mock.Mock:
 
 
 def _selection(*locations: Any) -> Any:
-    """Return the locations as the queryset ``sweep`` takes."""
+    """Return the locations as the queryset ``plan_sweep`` takes."""
     return SourceLocation.objects.filter(pk__in=[location.pk for location in locations])
 
 
@@ -534,53 +534,89 @@ class TestFortnightBlocks:
 
 
 @pytest.mark.django_db
-class TestSweep:
-    """The budgeted, newest-first walk the hourly job runs."""
+class TestPlanSweep:
+    """The budgeted, newest-first plan the hourly job enqueues (SNOW-1399)."""
 
     def _window(self) -> tuple[datetime.date, datetime.date]:
         """Return a two-block window ending yesterday."""
         until = backfill.backfill_until()
         return until - datetime.timedelta(days=27), until
 
-    def test_the_newest_block_is_finished_everywhere_before_the_next(self) -> None:
+    def _plan(self, *locations: Any, **kwargs: Any) -> list[backfill.SweepUnit]:
+        """Plan over ``locations``, two blocks ending yesterday by default."""
+        floor, until = self._window()
+        options: dict[str, Any] = {"floor": floor, "until": until, "budget": None}
+        options.update(kwargs)
+        return list(backfill.plan_sweep(_selection(*locations), **options))
+
+    def test_the_newest_block_is_planned_everywhere_before_the_next(self) -> None:
         """A budget for two requests buys the newest block for both locations."""
         first, second = SourceLocationFactory.create(), SourceLocationFactory.create()
-        floor, until = self._window()
-
-        with mock.patch("requests.get", side_effect=_echo) as get:
-            result = backfill.sweep(
-                _selection(first, second),
-                floor=floor,
-                until=until,
-                commit=True,
-                budget=4.8,
-                delay=0,
-            )
-
+        _, until = self._window()
         newest_start = until - datetime.timedelta(days=13)
-        assert get.call_count == 2
-        assert result.stopped == "budget"
-        assert result.blocks_finished == 1
-        assert result.filled == 28
-        assert not SourceWeather.objects.filter(observed_on__lt=newest_start).exists()
 
-    def test_the_next_run_resumes_where_the_budget_stopped(self) -> None:
-        """Finished locations no longer select, so a block is never redone."""
+        units = self._plan(first, second, budget=4.8)
+
+        assert [(u.location_id, u.start) for u in units] == [
+            (second.pk, newest_start),
+            (first.pk, newest_start),
+        ]
+        assert sum(u.weight for u in units) == pytest.approx(4.8)
+
+    def test_with_no_budget_every_block_is_planned(self) -> None:
+        """Two locations over two blocks are four units, newest block first."""
         first, second = SourceLocationFactory.create(), SourceLocationFactory.create()
-        floor, until = self._window()
 
-        with mock.patch("requests.get", side_effect=_echo):
-            for _ in range(4):
-                backfill.sweep(
-                    _selection(first, second),
-                    floor=floor,
-                    until=until,
-                    commit=True,
-                    budget=2.4,
-                    delay=0,
-                )
+        units = self._plan(first, second)
 
-        assert SourceWeather.objects.count() == 56
+        assert len(units) == 4
+        assert units[0].start > units[2].start
+
+    def test_planning_asks_the_api_nothing(self) -> None:
+        """The plan is a read: the tasks call out, not the command."""
+        location = SourceLocationFactory.create()
+
+        with mock.patch("requests.get") as get:
+            self._plan(location)
+
+        get.assert_not_called()
+
+    def test_a_complete_location_is_not_planned(self) -> None:
+        """Nothing missing in a block means no unit for it."""
+        location = SourceLocationFactory.create()
+        day = backfill.backfill_until()
+        SourceWeatherFactory.create(location=location, observed_on=day)
+
+        assert self._plan(location, floor=day, until=day) == []
+
+    def test_a_unit_spans_its_first_missing_day_to_its_last(self) -> None:
+        """A held day at the block's edge shortens the span, not the weight."""
+        location = SourceLocationFactory.create()
+        day = backfill.backfill_until()
+        SourceWeatherFactory.create(location=location, observed_on=day)
+
+        (unit,) = self._plan(
+            location, floor=day - datetime.timedelta(days=13), until=day
+        )
+
+        assert unit.weight == pytest.approx(2.4)
+        assert unit.label == location.to_string()
+
+    def test_today_is_never_planned(self) -> None:
+        """An until of today is clamped to yesterday."""
+        location = SourceLocationFactory.create()
+        today = timezone.localdate()
+
+        (unit,) = self._plan(
+            location, floor=today - datetime.timedelta(days=1), until=today
+        )
+
+        assert unit.end == backfill.backfill_until()
+
+
+@pytest.mark.django_db
+class TestSweepBlock:
+    """One planned unit, filled end to end."""
 
     def test_one_request_spans_a_block_and_skips_the_days_held(self) -> None:
         """A held day mid-block is not rewritten and costs no extra request."""
@@ -591,72 +627,100 @@ class TestSweep:
         SourceWeatherFactory.create(location=location, observed_on=held)
 
         with mock.patch("requests.get", side_effect=_echo) as get:
-            result = backfill.sweep(
-                _selection(location),
-                floor=floor,
-                until=until,
-                commit=True,
-                budget=None,
-                delay=0,
-            )
+            result = backfill.sweep_block(location, floor, until)
 
         assert get.call_count == 1
         assert _requested_days(get.call_args) == _days(floor, 14)
         assert result.failed == 0
         assert result.filled == 13
+        assert result.blocks_finished == 1
 
-    def test_a_complete_location_is_not_selected(self) -> None:
-        """Nothing missing in a block means no request for it."""
+    def test_a_unit_filled_since_it_was_planned_costs_nothing(self) -> None:
+        """The task re-reads the gap, so a duplicate asks for nothing."""
         location = SourceLocationFactory.create()
         day = backfill.backfill_until()
         SourceWeatherFactory.create(location=location, observed_on=day)
 
         with mock.patch("requests.get") as get:
-            result = backfill.sweep(
-                _selection(location), floor=day, until=day, commit=True, budget=None
-            )
+            result = backfill.sweep_block(location, day, day)
 
         get.assert_not_called()
-        assert result.blocks == []
+        assert result.requests == 0
 
-    def test_a_throttle_stops_the_run_at_once(self) -> None:
-        """After a 429 every further request would be refused too."""
-        first, second = SourceLocationFactory.create(), SourceLocationFactory.create()
+    def test_the_pacing_hook_runs_just_before_the_request(self) -> None:
+        """before_request is the host's wait_for_slot."""
+        location = SourceLocationFactory.create()
         day = backfill.backfill_until()
+        calls: list[str] = []
 
-        with mock.patch("requests.get", side_effect=_throttled) as get:
-            result = backfill.sweep(
-                _selection(first, second),
-                floor=day,
-                until=day,
-                commit=True,
-                budget=None,
-                delay=0,
+        def _get(*args: Any, **kwargs: Any) -> mock.Mock:
+            calls.append("request")
+            return _echo(*args, **kwargs)
+
+        with mock.patch("requests.get", side_effect=_get):
+            backfill.sweep_block(
+                location, day, day, before_request=lambda: calls.append("wait")
             )
 
-        assert get.call_count == 1
+        assert calls == ["wait", "request"]
+
+    def test_a_throttle_is_reported_not_raised(self) -> None:
+        """The host opens its breaker; nothing is written."""
+        location = SourceLocationFactory.create()
+        day = backfill.backfill_until()
+
+        with mock.patch("requests.get", side_effect=_throttled):
+            result = backfill.sweep_block(location, day, day)
+
         assert result.stopped == "throttled"
         assert result.blocks_finished == 0
+        assert not SourceWeather.objects.exists()
 
-    def test_a_failing_location_is_counted_and_the_walk_continues(self) -> None:
-        """Any other error costs that location its block, nobody else."""
-        bad, good = SourceLocationFactory.create(), SourceLocationFactory.create()
+    @pytest.mark.parametrize(
+        "outage",
+        [
+            requests.Timeout("slow"),
+            requests.ConnectionError("refused"),
+            requests.HTTPError("503", response=mock.Mock(status_code=503)),
+        ],
+        ids=["timeout", "connection", "5xx"],
+    )
+    def test_an_outage_stops_the_unit_and_is_not_its_fault(
+        self, outage: Exception
+    ) -> None:
+        """The host opens its breaker; the station is not counted as failed."""
+        location = SourceLocationFactory.create()
         day = backfill.backfill_until()
 
-        responses = [requests.HTTPError("boom"), _response(_payload([day]))]
-        with mock.patch("requests.get", side_effect=responses):
-            result = backfill.sweep(
-                _selection(bad, good),
-                floor=day,
-                until=day,
-                commit=True,
-                budget=None,
-                delay=0,
-            )
+        with mock.patch("requests.get", side_effect=outage):
+            result = backfill.sweep_block(location, day, day)
+
+        assert result.stopped == "unavailable"
+        assert result.failed == 0
+        assert result.blocks_finished == 0
+
+    def test_a_4xx_is_the_stations_own_failure(self) -> None:
+        """A refused input is counted, and the sweep is not stopped."""
+        location = SourceLocationFactory.create()
+        day = backfill.backfill_until()
+        refused = requests.HTTPError("400", response=mock.Mock(status_code=400))
+
+        with mock.patch("requests.get", side_effect=refused):
+            result = backfill.sweep_block(location, day, day)
 
         assert result.failed == 1
-        assert result.filled == 1
-        assert result.blocks_finished == 1
+        assert not result.stopped
+
+    def test_a_failed_request_is_counted(self) -> None:
+        """Any other error is a failure the host raises on."""
+        location = SourceLocationFactory.create()
+        day = backfill.backfill_until()
+
+        with mock.patch("requests.get", side_effect=requests.HTTPError("boom")):
+            result = backfill.sweep_block(location, day, day)
+
+        assert result.failed == 1
+        assert not result.stopped
 
     def test_a_malformed_response_is_counted_as_a_failure(self) -> None:
         """A write that raises rolls back its block and is counted."""
@@ -664,9 +728,7 @@ class TestSweep:
         day = backfill.backfill_until()
 
         with mock.patch("requests.get", return_value=_response({"hourly": {}})):
-            result = backfill.sweep(
-                _selection(location), floor=day, until=day, commit=True, budget=None
-            )
+            result = backfill.sweep_block(location, day, day)
 
         assert result.failed == 1
         assert not SourceWeather.objects.exists()
@@ -677,49 +739,33 @@ class TestSweep:
         day = backfill.backfill_until()
 
         with mock.patch("requests.get", side_effect=_echo) as get:
-            result = backfill.sweep(
-                _selection(location), floor=day, until=day, commit=False, budget=None
-            )
+            result = backfill.sweep_block(location, day, day, commit=False)
 
         assert get.called
         assert result.requests == 1
         assert not SourceWeather.objects.exists()
 
-    def test_the_throttle_sleeps_between_requests_only(self) -> None:
-        """Three requests mean two waits."""
-        locations = [SourceLocationFactory.create() for _ in range(3)]
-        day = backfill.backfill_until()
-        slept: list[float] = []
-
-        with mock.patch("requests.get", side_effect=_echo):
-            backfill.sweep(
-                _selection(*locations),
-                floor=day,
-                until=day,
-                commit=True,
-                budget=None,
-                delay=1.5,
-                sleep=slept.append,
-            )
-
-        assert slept == [1.5, 1.5]
-
     def test_today_is_never_reached(self) -> None:
-        """An until of today is clamped to yesterday, as in backfill_location."""
+        """An end of today is clamped to yesterday, as in backfill_location."""
         location = SourceLocationFactory.create()
         today = timezone.localdate()
 
         with mock.patch("requests.get", side_effect=_echo) as get:
-            backfill.sweep(
-                _selection(location),
-                floor=today - datetime.timedelta(days=1),
-                until=today,
-                commit=True,
-                budget=None,
-            )
+            backfill.sweep_block(location, today - datetime.timedelta(days=1), today)
 
         assert _requested_days(get.call_args) == [backfill.backfill_until()]
         assert not SourceWeather.objects.filter(observed_on=today).exists()
+
+    def test_a_block_entirely_in_the_future_asks_nothing(self) -> None:
+        """A unit planned yesterday for today is empty once clamped."""
+        location = SourceLocationFactory.create()
+        today = timezone.localdate()
+
+        with mock.patch("requests.get") as get:
+            result = backfill.sweep_block(location, today, today)
+
+        get.assert_not_called()
+        assert result.blocks == []
 
 
 @pytest.mark.django_db
@@ -748,13 +794,26 @@ class TestOnRow:
         day = backfill.backfill_until()
         seen: list[SourceWeather] = []
         with mock.patch("requests.get", return_value=_response(_payload([day]))):
-            backfill.sweep(
-                _selection(location),
-                floor=day,
-                until=day,
-                commit=True,
-                budget=None,
-                delay=0,
-                on_row=seen.append,
-            )
+            backfill.sweep_block(location, day, day, on_row=seen.append)
         assert [row.observed_on for row in seen] == [day]
+
+
+class TestUpstreamUnavailable:
+    """Which request errors are an outage rather than the request's fault."""
+
+    @pytest.mark.parametrize(
+        ("exc", "expected"),
+        [
+            (requests.Timeout("slow"), True),
+            (requests.ConnectionError("refused"), True),
+            (requests.HTTPError("500", response=mock.Mock(status_code=500)), True),
+            (requests.HTTPError("502", response=mock.Mock(status_code=502)), True),
+            (requests.HTTPError("404", response=mock.Mock(status_code=404)), False),
+            (requests.HTTPError("429", response=mock.Mock(status_code=429)), False),
+            (requests.HTTPError("no response"), False),
+            (ValueError("bad payload"), False),
+        ],
+    )
+    def test_classifies(self, exc: Exception, expected: bool) -> None:
+        """Timeouts, connection errors and 5xx are outages; nothing else is."""
+        assert backfill.upstream_unavailable(exc) is expected

@@ -62,8 +62,12 @@ the rules in one place, and a guard test holds rule 5.
 - One outside service is one slot name, whichever command calls it
   (SNOW-1398). `terrain-tiles` (`TILE_ORIGIN`) is shared by the SAC tour
   render and the route and trip slope backfills, so two runs together
-  never ask the tile origin faster than one would. `what3words` and
-  `open-meteo` are the others so far.
+  never ask the tile origin faster than one would. `open-meteo` is shared
+  by the elevation lookups, the live weather fetch and the weather
+  backfill (SNOW-1399), and so is its breaker; `what3words` is the other.
+- A unit with no row of its own (the weather backfill's station and
+  fortnight) is handed to `enqueue_each` as a list, bounded by what the
+  command planned, and counted down with `countdown` (SNOW-1399).
 - A task opens the breaker only when its failure means the service.
   The slope backfills open none: their walk answers None for a track too
   short to sample as well as for an outage, and a degenerate route that

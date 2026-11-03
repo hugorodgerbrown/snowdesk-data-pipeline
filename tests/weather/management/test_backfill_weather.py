@@ -2,9 +2,10 @@
 tests/weather/management/test_backfill_weather.py — Tests for backfill_weather.
 
 Covers the command contract from CLAUDE.md's management-command rules: it
-runs with no arguments, it writes nothing without ``--commit``, it streams
-a countdown rather than materialising, and it exits non-zero when any
-location failed. Plus the two flags that exist so the estate can be staged
+runs with no arguments, it writes (and asks) nothing without ``--commit``,
+it prints a countdown, and it exits non-zero when any unit failed. Since
+SNOW-1399 it plans and enqueues one task per station-block; the tasks run
+inline here. Plus the two flags that exist so the estate can be staged
 in batches — ``--limit`` and ``--delay`` — and the SNOW-1245 additions:
 the location and date filters, the weighted-call budget, and the throttle
 exit.
@@ -23,11 +24,13 @@ from unittest import mock
 
 import pytest
 import requests
-from django.core.management import call_command
+from django.core.management import call_command, load_command_class
 from django.core.management.base import CommandError
 
+from apps.core.command_tasks import backing_off
 from apps.ingest.public import SourceLocation
 from apps.locations.models import Location
+from apps.locations.services.elevation import OPEN_METEO
 from apps.weather.models import Weather
 from apps.weather.services import backfill
 from apps.weather.services.reference import mirror_reference_locations
@@ -89,7 +92,7 @@ class TestBackfillWeatherCommand:
     def test_runs_with_no_arguments_and_writes_nothing(
         self, yesterday: datetime.date
     ) -> None:
-        """The bare invocation probes the API and leaves the database alone."""
+        """The bare invocation plans; it asks nothing and writes nothing."""
         _active_location(name="Verbier village", elevation_m=1494)
         out = StringIO()
 
@@ -100,9 +103,15 @@ class TestBackfillWeatherCommand:
                 "backfill_weather", "--floor", yesterday.isoformat(), stdout=out
             )
 
-        assert get.called
+        get.assert_not_called()
         assert not Weather.objects.exists()
         assert "READ-ONLY" in out.getvalue()
+        assert "1 would be enqueued" in out.getvalue()
+
+    def test_it_is_offered_to_the_ops_server(self) -> None:
+        """It only enqueues, so run_command may start it."""
+        command = load_command_class("apps.weather", "backfill_weather")
+        assert getattr(command, "mcp_runnable") is True
 
     def test_commit_writes_one_row_per_missing_day(
         self, yesterday: datetime.date
@@ -128,8 +137,8 @@ class TestBackfillWeatherCommand:
         ) == set(days)
 
     def test_the_countdown_names_each_location(self, yesterday: datetime.date) -> None:
-        """Streaming output prints a line per location, so a long run reads as progress."""
-        location = _active_location(name="Mont Fort")
+        """The countdown names each station-block, so a run reads as progress."""
+        _active_location(name="Mont Fort")
         out = StringIO()
 
         with mock.patch("requests.get", return_value=_response(_payload([yesterday]))):
@@ -137,7 +146,9 @@ class TestBackfillWeatherCommand:
                 "backfill_weather", "--floor", yesterday.isoformat(), stdout=out
             )
 
-        assert f"{location.pk} " in out.getvalue()
+        assert "1 unit(s) remaining" in out.getvalue()
+        assert "Mont Fort" in out.getvalue()
+        assert f"{yesterday} → {yesterday}" in out.getvalue()
 
     def test_limit_bounds_the_walk(self, yesterday: datetime.date) -> None:
         """--limit stops after N locations, so the estate can be staged."""
@@ -175,7 +186,7 @@ class TestBackfillWeatherCommand:
 
         with (
             mock.patch("requests.get", side_effect=requests.HTTPError("boom")),
-            pytest.raises(CommandError, match="1 location failure"),
+            pytest.raises(CommandError, match="1 failed station-block"),
         ):
             call_command(
                 "backfill_weather",
@@ -302,7 +313,7 @@ class TestBackfillWeatherBudget:
     """The weighted-call budget and the throttle (SNOW-1245)."""
 
     def test_the_budget_stops_the_run(self, yesterday: datetime.date) -> None:
-        """2.4 weighted calls buys one request, and the summary says so."""
+        """2.4 weighted calls buys one unit, and the summary says so."""
         for _ in range(3):
             _active_location()
         out = StringIO()
@@ -321,7 +332,7 @@ class TestBackfillWeatherBudget:
             )
 
         assert get.call_count == 1
-        assert "Stopped at the budget" in out.getvalue()
+        assert "1 station-block(s) planned, 2.4 weighted call(s)" in out.getvalue()
 
     def test_the_default_budget_is_derived_from_the_estate(
         self, yesterday: datetime.date
@@ -338,14 +349,15 @@ class TestBackfillWeatherBudget:
         expected = backfill.sweep_budget(Location.objects.active().count())
         assert f"budget {expected:.0f} weighted call(s)" in out.getvalue()
 
-    def test_a_throttle_exits_non_zero(self, yesterday: datetime.date) -> None:
-        """A 429 is an alarm in the worker log, not a quiet partial run."""
+    def test_a_throttle_opens_the_breaker(self, yesterday: datetime.date) -> None:
+        """A 429 fails its task and stops the rest asking; the run exits 1."""
+        _active_location()
         _active_location()
         throttled = requests.HTTPError("429", response=mock.Mock(status_code=429))
 
         with (
-            mock.patch("requests.get", side_effect=throttled),
-            pytest.raises(CommandError, match="throttled"),
+            mock.patch("requests.get", side_effect=throttled) as get,
+            pytest.raises(CommandError, match="1 failed station-block"),
         ):
             call_command(
                 "backfill_weather",
@@ -354,3 +366,47 @@ class TestBackfillWeatherBudget:
                 yesterday.isoformat(),
                 stdout=StringIO(),
             )
+
+        assert get.call_count == 1
+        assert backing_off(OPEN_METEO)
+
+    def test_an_outage_opens_the_breaker(self, yesterday: datetime.date) -> None:
+        """A 5xx is treated as a 429: one unit asks, the rest wait."""
+        _active_location()
+        _active_location()
+        down = requests.HTTPError("503", response=mock.Mock(status_code=503))
+
+        with (
+            mock.patch("requests.get", side_effect=down) as get,
+            pytest.raises(CommandError, match="1 failed station-block"),
+        ):
+            call_command(
+                "backfill_weather",
+                "--commit",
+                "--floor",
+                yesterday.isoformat(),
+                stdout=StringIO(),
+            )
+
+        assert get.call_count == 1
+        assert backing_off(OPEN_METEO)
+
+    def test_a_unit_waits_for_its_slot(self, yesterday: datetime.date) -> None:
+        """The pace is the gap on the slot it shares with the live fetch."""
+        _active_location()
+
+        with (
+            mock.patch("requests.get", side_effect=_echo),
+            mock.patch("apps.weather.services.station_tasks.wait_for_slot") as wait,
+        ):
+            call_command(
+                "backfill_weather",
+                "--commit",
+                "--floor",
+                yesterday.isoformat(),
+                "--delay",
+                "0.75",
+                stdout=StringIO(),
+            )
+
+        wait.assert_called_once_with(OPEN_METEO, 0.75)

@@ -25,9 +25,12 @@ apply:
       once (or that landed before the app's mirror) is never re-fetched;
       this copies it across without spending an upstream call.
 
-  backfill_locations(locations, ...) / sweep(locations, ...)
-      The service's walks over ``stations_for(locations)``, each written
-      row applied as it is written. Both replay the held rows first.
+  backfill_locations(locations, ...)
+      The service's whole-window walk over ``stations_for(locations)``,
+      each written row applied as it is written, the held rows replayed
+      first. The hourly sweep is planned by the command
+      (``plan_sweep``) and filled one unit per task
+      (``station_tasks.backfill_unit_task``, SNOW-1399).
 
 The window helpers the admin reads (``backfill_floor``, ``backfill_until``,
 ``expected_days``) and the constants are re-exported, so callers keep one
@@ -39,7 +42,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Iterable
 from datetime import date
-from typing import Any
 
 from django.db.models import Exists, OuterRef, QuerySet
 
@@ -50,12 +52,13 @@ from apps.ingest.public import (
     SourceLocation,
     SourceWeather,
     SweepResult,
+    SweepUnit,
     backfill_floor,
     backfill_locations as service_backfill_locations,
     backfill_until,
     expected_days,
+    plan_sweep,
     request_weight,
-    sweep as service_sweep,
     sweep_budget,
 )
 from apps.locations.models import Location
@@ -70,15 +73,16 @@ __all__ = [
     "INTER_LOCATION_DELAY",
     "BackfillResult",
     "SweepResult",
+    "SweepUnit",
     "apply_backfilled_row",
     "backfill_floor",
     "backfill_locations",
     "backfill_until",
     "expected_days",
+    "plan_sweep",
     "replay_held",
     "request_weight",
     "stations_for",
-    "sweep",
     "sweep_budget",
 ]
 
@@ -228,51 +232,3 @@ def backfill_locations(
     counts["unheld"] = len(wanted) - len(stations)
     counts["replayed"] = replayed
     return counts
-
-
-def sweep(
-    locations: QuerySet[Location],
-    *,
-    floor: date | None = None,
-    until: date | None = None,
-    commit: bool,
-    budget: float | None,
-    base_url: str | None = None,
-    delay: float | None = None,
-    stream: Callable[[QuerySet[SourceLocation]], Iterable[SourceLocation]]
-    | None = None,
-    on_block: Callable[[date, date, int], None] | None = None,
-    **kwargs: Any,
-) -> SweepResult:
-    """Run one budgeted sweep over the stations of ``locations``.
-
-    Args:
-        locations: The locations to fill.
-        floor: Window start; defaults to ``backfill_floor()``.
-        until: Window end; defaults to yesterday.
-        commit: When False the requests still execute but nothing is written.
-        budget: Weighted calls the run may spend; None for no limit.
-        base_url: Overrides the configured historical host.
-        delay: Seconds between requests.
-        stream: Turns a block's stations into an iterable — the command's
-            countdown.
-        on_block: Called as each block with a gap begins.
-        **kwargs: Passed through to the service's ``sweep`` (``sleep``).
-
-    Returns:
-        The run's counters.
-
-    """
-    return service_sweep(
-        stations_for(locations),
-        floor=floor,
-        until=until,
-        commit=commit,
-        budget=budget,
-        base_url=base_url,
-        delay=delay,
-        stream=stream,
-        on_block=on_block,
-        on_row=apply_backfilled_row,
-        **kwargs,
-    )

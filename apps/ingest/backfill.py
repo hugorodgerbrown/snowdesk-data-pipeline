@@ -25,12 +25,15 @@ Four functions, one operation:
       stations. The LocationAdmin action's path: whole window, a handful of
       rows.
 
-  sweep(locations, *, budget, ...)
+  plan_sweep(locations, *, budget, ...) / sweep_block(location, start, end)
       ``backfill_weather``'s path, and the hourly job's (SNOW-1245): the
       window in fortnight blocks, newest first, each block across every
       selected station before the next, inside a weighted-call budget that
       ``sweep_budget`` derives from what the live fetch leaves of
-      Open-Meteo's daily quota.
+      Open-Meteo's daily quota. Since SNOW-1399 the plan and the fill are
+      two halves: ``plan_sweep`` yields the station-blocks the budget buys,
+      and the host enqueues one task per unit, each calling
+      ``sweep_block`` for its station and fortnight.
 
 **The caller diffs; ``store_source_weather`` is unchanged.** The write rule
 is that a past row is never rewritten — ``store_source_weather`` *raises* on
@@ -68,7 +71,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
@@ -657,7 +660,9 @@ class SweepResult:
         blocks: The ``(start, end)`` blocks the run worked in, newest first.
         blocks_finished: How many of ``blocks`` the run walked to the end.
         stopped: ``"budget"`` when the next request would have overspent,
-            ``"throttled"`` when the upstream answered 429, otherwise empty.
+            ``"throttled"`` when the upstream answered 429,
+            ``"unavailable"`` when it timed out, refused the connection or
+            answered 5xx, otherwise empty.
 
     """
 
@@ -728,117 +733,143 @@ def _is_throttled(exc: requests.HTTPError) -> bool:
     return exc.response is not None and exc.response.status_code == 429
 
 
-def _newest_first(queryset: QuerySet[SourceLocation]) -> Iterable[SourceLocation]:
-    """Stream ``queryset`` newest id first — the sweep's default order."""
-    return queryset.order_by("-id").iterator()
+def upstream_unavailable(exc: BaseException) -> bool:
+    """Return True when ``exc`` says the upstream is down, not that the input was bad.
+
+    A timeout, a refused or dropped connection, or a 5xx: the next request
+    would most likely fail the same way, so a host stops asking (SNOW-1399).
+    A 4xx other than 429 is the request's own fault.
+
+    Args:
+        exc: What a request raised.
+
+    """
+    if isinstance(exc, requests.ConnectionError | requests.Timeout):
+        return True
+    if isinstance(exc, requests.HTTPError) and exc.response is not None:
+        return int(exc.response.status_code) >= 500
+    return False
 
 
-def sweep(
+@dataclass(frozen=True)
+class SweepUnit:
+    """One station's gap in one fortnight block: one request's worth.
+
+    Attributes:
+        location_id: The ``SourceLocation``'s primary key.
+        start: Block start.
+        end: Block end, inclusive.
+        weight: Weighted calls its request will cost.
+        label: How an operator reads the station, for a countdown.
+
+    """
+
+    location_id: int
+    start: date
+    end: date
+    weight: float
+    label: str
+
+
+def plan_sweep(
     locations: QuerySet[SourceLocation],
     *,
     floor: date | None = None,
     until: date | None = None,
-    commit: bool,
     budget: float | None,
-    base_url: str | None = None,
-    delay: float | None = None,
-    sleep: Callable[[float], None] = time.sleep,
-    stream: Callable[[QuerySet[SourceLocation]], Iterable[SourceLocation]]
-    | None = None,
-    on_block: Callable[[date, date, int], None] | None = None,
-    on_row: OnRow | None = None,
-) -> SweepResult:
+) -> Iterator[SweepUnit]:
     """
-    Fill the newest gaps first, a fortnight block at a time, within a budget.
+    Yield the station-blocks one budgeted sweep buys, newest fortnight first.
 
     Walks ``fortnight_blocks`` newest first. In each block it selects the
-    locations missing any day of it and issues **one** request per location,
-    spanning its first missing day to its last — a fortnight is the unit
-    Open-Meteo charges for, so splitting a block at the days already held
-    would cost more and save nothing. A block is finished across every
-    selected location before the next one starts, so a run's work is one
-    contiguous stretch of the calendar, and the estate's most recent
-    history fills in evenly rather than one location at a time.
+    locations missing any day of it, newest id first, and yields one unit
+    per location: **one** request spanning its first missing day to its
+    last — a fortnight is the unit Open-Meteo charges for, so splitting a
+    block at the days already held would cost more and save nothing. A
+    block is planned across every selected location before the next one
+    starts, so a run's work is one contiguous stretch of the calendar.
 
-    The walk stops **before** a request that would take the run past
-    ``budget``, and stops at once on a 429 — the throttle is the upstream
-    saying the quota is spent, and every further request would only be
-    refused too. The next run picks up the same block where this one left
-    off, because the block's completed locations no longer select.
-
-    A location whose request or write raises is counted and skipped; it
-    never aborts the walk. One that keeps failing costs its request on every
-    run and blocks nothing else.
+    The plan stops **before** a unit that would take it past ``budget``.
+    Nothing here calls out: the host enqueues each unit, and a unit whose
+    task has not run yet is planned again by the next run (and found
+    already queued), so it counts against that run's budget too.
 
     Args:
         locations: The locations to fill. Filter before passing.
         floor: Window start. Defaults to None, meaning ``backfill_floor()``.
         until: Window end, inclusive. Defaults to None, meaning yesterday;
             a later date is clamped to yesterday.
-        commit: When False the requests still execute but nothing is written.
-        budget: Weighted calls the run may spend; None for no limit.
-        base_url: Overrides the configured historical host.
-        delay: Seconds between requests. Defaults to None, meaning
-            ``INTER_LOCATION_DELAY``. 0 disables the throttle.
-        sleep: The sleep callable, injected so tests do not wait.
-        stream: Turns a block's selected locations into an iterable — the
-            command passes ``iterate_rows`` for its countdown. Defaults to
-            None, meaning newest id first, streamed.
-        on_block: Called with ``(start, end, locations)`` as each block with
-            a gap begins. Defaults to None.
-        on_row: Called with each row written. Defaults to None.
+        budget: Weighted calls the run may plan; None for no limit.
 
-    Returns:
-        The counters for the run.
+    Yields:
+        Each unit, in the order its task should run.
 
     """
     floor = backfill_floor() if floor is None else floor
     until = min(backfill_until() if until is None else until, backfill_until())
-    delay = INTER_LOCATION_DELAY if delay is None else delay
-    stream = _newest_first if stream is None else stream
-
-    result = SweepResult()
+    spent = 0.0
     for start, end in fortnight_blocks(floor, until):
         pending = locations.exclude(pk__in=_complete_in(start, end))
-        count = pending.count()
-        if not count:
-            continue
-        if on_block is not None:
-            on_block(start, end, count)
-        result.blocks.append((start, end))
-        for location in stream(pending):
-            _sweep_location(
-                location,
-                start,
-                end,
-                result,
-                commit=commit,
-                budget=budget,
-                base_url=base_url,
-                delay=delay,
-                sleep=sleep,
-                on_row=on_row,
-            )
-            if result.stopped:
-                break
-        if result.stopped:
-            break
-        result.blocks_finished += 1
+        for location in pending.order_by("-id").iterator():
+            missing = missing_dates(location, start, end)
+            if not missing:
+                continue
+            weight = request_weight((missing[-1] - missing[0]).days + 1)
+            if budget is not None and spent + weight > budget:
+                return
+            spent += weight
+            yield SweepUnit(location.pk, start, end, weight, location.to_string())
 
-    logger.info(
-        "backfill sweep done: blocks=%d finished=%d locations=%d filled=%d "
-        "unresolved=%d requests=%d weight=%.1f failed=%d stopped=%s commit=%s",
-        len(result.blocks),
-        result.blocks_finished,
-        result.locations,
-        result.filled,
-        result.unresolved,
-        result.requests,
-        result.weight,
-        result.failed,
-        result.stopped or "-",
-        commit,
+
+def sweep_block(
+    location: SourceLocation,
+    start: date,
+    end: date,
+    *,
+    commit: bool = True,
+    base_url: str | None = None,
+    before_request: Callable[[], object] | None = None,
+    on_row: OnRow | None = None,
+) -> SweepResult:
+    """
+    Fill one station's gap in one block: one planned unit, end to end.
+
+    Re-reads what is missing, so a unit whose days were filled since it was
+    planned costs no request. A 429 sets ``stopped = "throttled"``, an
+    outage (timeout, refused connection, 5xx) ``stopped = "unavailable"``;
+    any other failure counts in ``failed``. None raises: the host decides.
+
+    Args:
+        location: The station.
+        start: Block start.
+        end: Block end, inclusive; clamped to yesterday.
+        commit: When False the request executes but nothing is written.
+        base_url: Overrides the configured historical host.
+        before_request: Called just before the request — the host's pacing.
+        on_row: Called with each row written. Defaults to None.
+
+    Returns:
+        The unit's counters.
+
+    """
+    result = SweepResult()
+    end = min(end, backfill_until())
+    if start > end:
+        return result
+    result.blocks.append((start, end))
+    _sweep_location(
+        location,
+        start,
+        end,
+        result,
+        commit=commit,
+        budget=None,
+        base_url=base_url,
+        before_request=before_request,
+        on_row=on_row,
     )
+    if not result.stopped:
+        result.blocks_finished = 1
     return result
 
 
@@ -851,8 +882,7 @@ def _sweep_location(
     commit: bool,
     budget: float | None,
     base_url: str | None,
-    delay: float,
-    sleep: Callable[[float], None],
+    before_request: Callable[[], object] | None = None,
     on_row: OnRow | None = None,
 ) -> None:
     """
@@ -866,8 +896,7 @@ def _sweep_location(
         commit: When False the request executes but nothing is written.
         budget: Weighted calls the run may spend; None for no limit.
         base_url: Overrides the configured historical host.
-        delay: Seconds to wait before this request when one has gone before.
-        sleep: The sleep callable.
+        before_request: Called just before the request. Defaults to None.
         on_row: Called with each row written. Defaults to None.
 
     """
@@ -880,8 +909,8 @@ def _sweep_location(
         result.stopped = "budget"
         return
 
-    if result.requests and delay:
-        sleep(delay)
+    if before_request is not None:
+        before_request()
     result.locations += 1
     data = _sweep_request(location, span_start, span_end, weight, result, base_url)
     if data is None or not commit:
@@ -907,6 +936,25 @@ def _sweep_location(
     result.unresolved += written.unresolved
 
 
+def _stop_unavailable(
+    location: SourceLocation, exc: BaseException, result: SweepResult
+) -> None:
+    """Record an upstream outage: the sweep stops, the station is not at fault.
+
+    Args:
+        location: The station whose request met the outage.
+        exc: What the request raised.
+        result: The run's counters, mutated in place.
+
+    """
+    logger.warning(
+        "Backfill sweep: Open-Meteo unavailable at location=%s: %s; stopping",
+        location.pk,
+        exc,
+    )
+    result.stopped = "unavailable"
+
+
 def _sweep_request(
     location: SourceLocation,
     start: date,
@@ -927,8 +975,8 @@ def _sweep_request(
         base_url: Overrides the configured historical host.
 
     Returns:
-        The parsed body, or None when the request failed or was throttled —
-        a throttle also sets ``result.stopped``.
+        The parsed body, or None when the request failed, was throttled or
+        met an outage — the last two also set ``result.stopped``.
 
     """
     try:
@@ -943,13 +991,19 @@ def _sweep_request(
             )
             result.stopped = "throttled"
             return None
+        if upstream_unavailable(exc):
+            _stop_unavailable(location, exc, result)
+            return None
         # Refused for its input, so the upstream counted it.
         logger.exception("Failed to backfill weather for location=%s", location.pk)
         result.failed += 1
         result.requests += 1
         result.weight += weight
         return None
-    except Exception:  # noqa: BLE001 — broad catch intentional: one location must not abort the sweep
+    except Exception as exc:  # noqa: BLE001 — broad catch intentional: one location must not abort the sweep
+        if upstream_unavailable(exc):
+            _stop_unavailable(location, exc, result)
+            return None
         logger.exception("Failed to backfill weather for location=%s", location.pk)
         result.failed += 1
         return None
