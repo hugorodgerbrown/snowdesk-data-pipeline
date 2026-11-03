@@ -174,7 +174,14 @@
     const paints = !terrain || typeof terrain.availability !== 'function'
       || terrain.availability() === 'ok';
     const bulletins = window.pwaBulletinsLayer;
+    const favourited = window.pwaFavouritedResorts;
     return {
+      isPinnedResort: (slug) => {
+        const state = favourited && typeof favourited.stateFor === 'function'
+          ? favourited.stateFor(slug)
+          : null;
+        return !!(state && state.favourited);
+      },
       bulletins: !!(bulletins && bulletins.isVisible()),
       problemTerrain: sectionOn('problem_terrain') && paints,
       terrainFilter: sectionOn('terrain_filter') && paints,
@@ -263,6 +270,7 @@
     'snowdesk:map-mode-changed',
     'snowdesk:problem-terrain-changed',
     'snowdesk:terrain-filter-changed',
+    'snowdesk:favourited-resorts-changed',
   ]) {
     document.addEventListener(name, scheduleRefresh);
   }

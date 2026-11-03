@@ -9,7 +9,8 @@
  *     tier is drawn;
  *   - a row inside a key follows the marks in view, and a cluster stands
  *     for every row, since it hides which pins it holds;
- *   - the rest zones' three rows split on `binding` and `in_force`;
+ *   - the rest zones' three rows split on `binding` and `in_force`, and a
+ *     pinned resort's row on the reader's pins;
  *   - `on` (the second tier's mark) ignores the view, `keys` does not;
  *   - the credit line names each provider once.
  */
@@ -100,12 +101,17 @@ describe('legendState', () => {
     });
   });
 
-  it('shows resorts and pinned resorts together, favourites on their own', () => {
-    const resorts = core.legendState({ rendered: { resorts: [feature({})] } });
+  it('keys a pinned resort only when one is in view, favourites on their own', () => {
+    const resorts = core.legendState({ rendered: { resorts: [feature({ id: 'verbier' })] } });
     expect(resorts.keys.pins).toBe(true);
     expect(resorts.items).toMatchObject({
-      'pin-resort': true, 'pin-pinned': true, 'pin-favourite': false,
+      'pin-resort': true, 'pin-pinned': false, 'pin-favourite': false,
     });
+    const pinnedOnly = core.legendState({
+      isPinnedResort: (slug) => slug === 'verbier',
+      rendered: { resorts: [feature({ id: 'verbier' })] },
+    });
+    expect(pinnedOnly.items).toMatchObject({ 'pin-resort': false, 'pin-pinned': true });
     const pins = core.legendState({ rendered: { favourites: [feature({})] } });
     expect(pins.items).toMatchObject({
       'pin-resort': false, 'pin-pinned': false, 'pin-favourite': true,

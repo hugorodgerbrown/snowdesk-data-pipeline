@@ -75,6 +75,8 @@
    * @property {boolean} [routeLegsOn] The routes overlay is drawn with at
    *   least one route cut into legs (map.js's own condition).
    * @property {boolean} [downloads] The downloaded-maps overlay is drawn.
+   * @property {(slug: string) => boolean} [isPinnedResort] Whether the
+   *   reader pinned a resort, by slug (map.js's pwaFavouritedResorts).
    * @property {Object<string, RenderedFeature[]>} [rendered] What
    *   queryRenderedFeatures returned for each LAYERS group, keyed as LAYERS.
    */
@@ -130,11 +132,14 @@
     items['rest-recommended'] = zones.some((f) => inForce(f) && props(f).binding !== true);
     items['rest-out-of-season'] = zones.some((f) => !inForce(f));
 
-    const resorts = rendered(v, 'resorts').length > 0;
+    // A pinned resort is a resort dot in the favourites blue, drawn with
+    // the resorts; a resort feature's `id` is its slug.
+    const pinned = typeof v.isPinnedResort === 'function' ? v.isPinnedResort : () => false;
+    const resortList = rendered(v, 'resorts');
+    const resorts = resortList.length > 0;
     const favourites = rendered(v, 'favourites').length > 0;
-    items['pin-resort'] = resorts;
-    // A pinned resort is a resort dot in another colour, drawn with them.
-    items['pin-pinned'] = resorts;
+    items['pin-resort'] = resortList.some((f) => !pinned(String(props(f).id)));
+    items['pin-pinned'] = resortList.some((f) => pinned(String(props(f).id)));
     items['pin-favourite'] = favourites;
 
     const keys = {

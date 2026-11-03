@@ -110,7 +110,7 @@ class TestTwoPages:
         assert "On the map now" in _panel(_map(), "now")
 
     def test_each_page_leads_to_the_other(self) -> None:
-        """ "All keys & sources" goes on; the back button comes back, named."""
+        """The "All keys & sources" button goes on; the back button comes back."""
         content = _map()
         now = _panel(content, "now")
         assert 'data-legend-go="all"' in now

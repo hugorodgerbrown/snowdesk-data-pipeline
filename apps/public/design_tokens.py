@@ -662,6 +662,10 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             ),
             Token("--color-obs-surface", "Observation — snow surface", "#0369a1", None),
             Token("--color-obs-trail", "Observation — on the trail", "#0f766e", None),
+            # The map legend's wildlife rest-zone key (rest_zones_core.js
+            # paints the zones with the same two literals).
+            Token("--color-rest-binding", "Rest zone — closed by law", "#c62828", None),
+            Token("--color-rest-recommended", "Rest zone — advised", "#e08a00", None),
             # SNOW-1018: not drawn on the map but under the route's profile
             # on rail one, and listed here beside the route line because
             # the descent fill IS the route's colour (SNOW-1019 swapped

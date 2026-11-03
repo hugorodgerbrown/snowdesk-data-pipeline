@@ -2684,8 +2684,22 @@ html[data-route-drawing] #map-slopes-notice {
    one level down, behind "All keys & sources" (public/partials/
    _map_embed.html, static/js/map_legend.js). One fixed width for both
    pages, so going between them does not make the card jump. */
+/* Capped well short of the top edge: the second page is long, and on a
+   phone the date row and search sit across the top of the map, so the
+   card's own bound (to the shared top inset) let it slide under them. */
 .map-legend-card {
     width: 264px;
+    max-height: min(60dvh, calc(100dvh - var(--map-edge-inset-top) - var(--map-legend-card-bottom-offset)));
+}
+
+/* The second page's head stays put while its keys scroll under it. */
+.map-legend-all-head {
+    position: sticky;
+    top: -10px;
+    z-index: 1;
+    margin: -10px -12px 4px;
+    padding: 10px 12px 6px;
+    background: var(--color-glass);
 }
 
 .map-legend-page[hidden],
@@ -2776,14 +2790,22 @@ html[data-route-drawing] #map-slopes-notice {
     flex-grow: 0.7;
 }
 
+/* The ends sit under their chips: "Low" from the first, "Very high"
+   ending under the fifth — the same flex weights as the strip, three
+   chips, two, and the narrow grey one, which carries no word: "–" on a
+   grey chip reads as no rating, and the second page spells it out. */
 .map-legend-strip-ends {
     display: flex;
-    justify-content: space-between;
+    gap: 2px;
     font-size: 9px;
     line-height: 1.2;
     color: var(--color-text-3);
     margin-top: 1px;
 }
+
+.map-legend-strip-ends > :nth-child(1) { flex: 3 1 0; }
+.map-legend-strip-ends > :nth-child(2) { flex: 2 1 0; text-align: right; }
+.map-legend-strip-ends::after { content: ""; flex: 0.7 1 0; }
 
 .map-legend-empty {
     margin: 4px 0;
@@ -2822,7 +2844,6 @@ html[data-route-drawing] #map-slopes-notice {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 4px;
     font-size: 12px;
     font-weight: 600;
 }
