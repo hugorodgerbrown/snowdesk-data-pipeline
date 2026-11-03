@@ -181,6 +181,15 @@ class TestGetResort:
         assert str(first.slug) in text
         assert str(second.slug) in text
 
+    def test_fuzzy_name_ambiguous_within_one_region(self) -> None:
+        """Two similar names in one region are listed, never collapsed into one."""
+        region = MicroRegionFactory.create()
+        north = ResortFactory.create(name="Alpha North", region=region)
+        south = ResortFactory.create(name="Alpha South", region=region)
+        text = _error(_call("get_resort", {"ref": "Alpha"}))
+        assert str(north.slug) in text
+        assert str(south.slug) in text
+
     def test_no_match(self) -> None:
         """A name matching nothing says so."""
         assert "No resort matches" in _error(_call("get_resort", {"ref": "Qqqqq"}))

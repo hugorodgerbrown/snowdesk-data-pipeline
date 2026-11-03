@@ -47,8 +47,10 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 from django.db.models import Case, IntegerField, Q, QuerySet, Value, When
 from django.utils import timezone
+from rapidfuzz import fuzz
 
 from apps.mcp_server import resolvers
+from apps.mcp_server.normalise import normalise
 from apps.mcp_server.tools import ToolError, ToolSpec, _require_str
 from apps.regions.forms import RESORT_EDIT_FIELDS, ResortEditForm
 from apps.regions.models import MicroRegion, Resort
@@ -66,6 +68,10 @@ MAX_SOURCE_LENGTH: int = 500
 MISSABLE_FIELDS: tuple[str, ...] = tuple(
     field for field in RESORT_EDIT_FIELDS if field not in ("name", "needs_review")
 )
+
+# How close to the best fuzzy score a second resort must come for a name
+# to count as ambiguous rather than as a match for the best one.
+FUZZY_TIE: float = 5.0
 
 # How many of a resort's admin History entries get_resort returns.
 HISTORY_SHOWN: int = 5
@@ -352,26 +358,46 @@ def _by_uuid(resorts: QuerySet[Resort], ref: str) -> Resort | None:
     return found
 
 
+def _fuzzy(resorts: QuerySet[Resort], name: str) -> list[Resort]:
+    """Return the resorts whose name or ``name_alt`` best matches ``name``.
+
+    Scored per resort, with the place search's normaliser, scorer and
+    cut-off, rather than through ``resolvers.search_places``: that search
+    keeps one resort per region, so two similarly named resorts in one
+    region would collapse into one and a guess would pass for a match.
+    Every resort within ``FUZZY_TIE`` points of the best score is
+    returned, so a near-tie reaches the caller as an ambiguity.
+
+    """
+    query = normalise(name)
+    if not query:
+        return []
+    scores: dict[int, tuple[float, Resort]] = {}
+    for resort in resorts:
+        for candidate in (resort.name, resort.name_alt):
+            if not candidate:
+                continue
+            score = fuzz.WRatio(query, normalise(candidate))
+            if (
+                score >= resolvers._SCORE_CUTOFF
+                and score > scores.get(resort.pk, (0.0, resort))[0]
+            ):
+                scores[resort.pk] = (score, resort)
+    if not scores:
+        return []
+    best = max(score for score, _resort in scores.values())
+    return [resort for score, resort in scores.values() if score >= best - FUZZY_TIE]
+
+
 def _named(resorts: QuerySet[Resort], name: str) -> list[Resort]:
     """Return the resorts a name points at: exact first, then fuzzy.
 
     An exact ``name`` or ``name_alt`` match (ignoring case) wins outright;
-    failing one, the resort hits of ``resolvers.search_places`` are mapped
-    back to their rows by region and name.
+    failing one, :func:`_fuzzy`'s best matches.
 
     """
     exact = list(resorts.filter(Q(name__iexact=name) | Q(name_alt__iexact=name)))
-    if exact:
-        return exact
-    hits = [hit for hit in resolvers.search_places(name) if hit["kind"] == "resort"]
-    if not hits:
-        return []
-    query = Q()
-    for hit in hits:
-        query |= Q(region__region_id=hit["region_id"]) & (
-            Q(name__iexact=hit["name"]) | Q(name_alt__iexact=hit["name"])
-        )
-    return list(resorts.filter(query))
+    return exact or _fuzzy(resorts, name)
 
 
 def resolve_resort(ref: str) -> Resort:
@@ -649,8 +675,8 @@ def update_resort(
 def _duplicates(name: str, latitude: float, longitude: float) -> list[dict[str, Any]]:
     """Return the existing resorts a new one at this name and point may repeat.
 
-    A resort with the same name or ``name_alt`` (ignoring case), a fuzzy
-    resort hit for the name, and any resort pinned within
+    The resorts :func:`_named` finds for the name (exact, else the best
+    fuzzy matches), and any resort pinned within
     ``DUPLICATE_RADIUS_KM`` — each listed once, with its distance when it
     has a pin.
 
@@ -662,13 +688,7 @@ def _duplicates(name: str, latitude: float, longitude: float) -> list[dict[str, 
             "why": "nearby",
             "distance_km": round(near.distance_km, 2),
         }
-    places = [p for p in resolvers.search_places(name) if p["kind"] == "resort"]
-    query = Q(name__iexact=name) | Q(name_alt__iexact=name)
-    for place in places:
-        query |= Q(region__region_id=place["region_id"]) & (
-            Q(name__iexact=place["name"]) | Q(name_alt__iexact=place["name"])
-        )
-    for resort in Resort.objects.select_related("region").filter(query):
+    for resort in _named(Resort.objects.select_related("region"), name):
         found.setdefault(resort.pk, {**_brief(resort), "why": "similar name"})
     return list(found.values())
 
