@@ -283,6 +283,12 @@ class TestMicroRegionCentrePoint:
     proximity pre-sort in ``point_match``, the bulletin page's JSON-LD geo,
     and the MCP nearby-region search. They now all come through here, so the
     preference order and the null behaviour are asserted once.
+
+    Every region here takes an explicit ``CH-00NN`` id. The class runs in the
+    same module as ``TestMicroRegionsFixture``, whose module-scoped load of
+    eaws_CH.json (CH-1111 to CH-9311) is still in the database, and the
+    factory's ``CH-{1000 + n}`` sequence lands on one of those ids, and so
+    on its slug, whenever enough regions were made earlier on the worker.
     """
 
     def test_prefers_the_centroid_location(self) -> None:
@@ -293,7 +299,9 @@ class TestMicroRegionCentrePoint:
         """
         location = LocationFactory.create(anonymous=True, latitude=46.1, longitude=7.2)
         region = MicroRegionFactory.create(
-            centroid_location=location, centre={"lon": 9.9, "lat": 49.9}
+            region_id="CH-0001",
+            centroid_location=location,
+            centre={"lon": 9.9, "lat": 49.9},
         )
 
         assert region.centre_point() == (46.1, 7.2)
@@ -307,27 +315,35 @@ class TestMicroRegionCentrePoint:
         every region would drop out of MCP nearby-search for that gap.
         """
         region = MicroRegionFactory.create(
-            centroid_location=None, centre={"lon": 7.5, "lat": 46.8}
+            region_id="CH-0002",
+            centroid_location=None,
+            centre={"lon": 7.5, "lat": 46.8},
         )
 
         assert region.centre_point() == (46.8, 7.5)
 
     def test_returns_none_when_the_region_has_neither(self) -> None:
         """A region with no centre degrades rather than raising."""
-        region = MicroRegionFactory.create(centroid_location=None, centre=None)
+        region = MicroRegionFactory.create(
+            region_id="CH-0003", centroid_location=None, centre=None
+        )
 
         assert region.centre_point() is None
 
     def test_returns_none_for_an_unreadable_centre(self) -> None:
         """``centre`` is a JSONField, so its shape is not guaranteed."""
-        region = MicroRegionFactory.create(centroid_location=None, centre={})
+        region = MicroRegionFactory.create(
+            region_id="CH-0004", centroid_location=None, centre={}
+        )
 
         assert region.centre_point() is None
 
     def test_returns_none_for_a_non_numeric_centre(self) -> None:
         """A fixture carrying strings must not reach the haversine as strings."""
         region = MicroRegionFactory.create(
-            centroid_location=None, centre={"lon": "east", "lat": "north"}
+            region_id="CH-0005",
+            centroid_location=None,
+            centre={"lon": "east", "lat": "north"},
         )
 
         assert region.centre_point() is None
@@ -340,7 +356,9 @@ class TestMicroRegionCentrePoint:
         point in the wrong hemisphere.
         """
         region = MicroRegionFactory.create(
-            centroid_location=None, centre={"lon": 7.5, "lat": 46.8}
+            region_id="CH-0006",
+            centroid_location=None,
+            centre={"lon": 7.5, "lat": 46.8},
         )
 
         latitude, longitude = region.centre_point()  # type: ignore[misc]

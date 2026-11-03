@@ -25,8 +25,8 @@ Parameters (passed via {% include … with … only %}):
   weather (bool, optional) — carry the weather row's second line, which
           map_weather_window.js fills on a day outside the forecast window.
   zoom_gate (string, optional) — the layer's key in window.pwaZoomGates,
-          for a layer drawn only past a zoom (SNOW-1280): the row gets
-          the zoom suffix and the "Zoom in to view" line
+          for a layer drawn only past a zoom (SNOW-1280): the row dims and
+          says "· zoom in" on its name line outside that zoom
           (_map_layers_zoom_label.html), driven by map_layers_zoom_gates.js.
 {% endcomment %}
 <li role="none" {% if zoom_gate %}data-zoom-gate="{{ zoom_gate }}"{% endif %}>

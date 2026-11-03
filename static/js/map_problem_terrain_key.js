@@ -1,44 +1,32 @@
 /*
- * static/js/map_problem_terrain_key.js — the problem-terrain layer's key and
- * its layers-menu row keep in step with the layer (SNOW-1196).
+ * static/js/map_problem_terrain_key.js — the problem-terrain layer's key
+ * keeps in step with the layer (SNOW-1196).
  *
  * The layer is switched by the layers menu's "Sync with map terrain" row
  * (SNOW-1377; it was "Highlight problem terrain") and by the region sheet's
- * switch. While it paints, this module:
+ switch. While it paints, this module shows the legend's problem-terrain
+ * section ([data-problem-terrain-legend]), the layer's key.
  *
- *   - shows the legend's problem-terrain section
- *     ([data-problem-terrain-legend]), the layer's key;
- *   - writes the menu row's second line ([data-problem-terrain-detail]):
- *     what the row does, or (SNOW-1195) that the day has no bulletin to
- *     paint.
+ * It also wrote the menu row's second line ("From zoom 12, Switzerland", or
+ * "No bulletin for this day", SNOW-1195). SNOW-1410 removed that line: on
+ * the bulletins options page it only repeated the context (Hugo, 3 Nov 2026).
  *
  * SNOW-1196 also gave the layer a chip in the date row, "Problem terrain ·
  * {day}" with a Key and a ×. SNOW-1206 removed it: it repeated what the
  * layers menu and the legend already say, and on a tablet it ran under the
  * bottom-right roundel.
  *
- * Reads ``window.pwaBulletinTerrain`` (map.js). Strings from
- * ``map-problem-terrain-strings-template``.
+ * Reads ``window.pwaBulletinTerrain`` (map.js).
  */
 (function mapProblemTerrainKeyInit() {
   'use strict';
 
-  const STRINGS = self.pwaStrings.read('map-problem-terrain-strings-template', {
-    detail: 'From zoom 12, Switzerland',
-    'no-bulletin': 'No bulletin for this day',
-  });
-
-  /** Show the key while the layer paints; say when the day has nothing. */
+  /** Show the key while the layer paints. */
   function apply() {
     const bridge = window.pwaBulletinTerrain;
     const on = !!(bridge && bridge.isEnabled());
     const legend = document.querySelector('[data-problem-terrain-legend]');
     if (legend) legend.hidden = !on;
-    const detail = document.querySelector('[data-problem-terrain-detail]');
-    if (detail) {
-      const empty = !!(bridge && typeof bridge.dayEmpty === 'function' && bridge.dayEmpty());
-      detail.textContent = empty ? STRINGS['no-bulletin'] : STRINGS.detail;
-    }
   }
 
   document.addEventListener('snowdesk:date-changed', apply);

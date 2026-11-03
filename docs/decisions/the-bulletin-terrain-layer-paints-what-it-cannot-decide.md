@@ -2,13 +2,14 @@
 name: the-bulletin-terrain-layer-paints-what-it-cannot-decide
 description: Problem terrain, four states, never blank; Sync with map terrain, on by default, Steep terrain first; /api/problem-terrain/
 status: current
-last-reviewed: 2026-11-02
+last-reviewed: 2026-11-03
 ---
 
 # The problem-terrain layer paints what it cannot decide
 
 **Decision.** The layers menu has a "Sync with map terrain" row under
-Avalanche bulletins, second line "From zoom 12, Switzerland", and the
+Avalanche bulletins (one line since SNOW-1410: its "From zoom 12,
+Switzerland" second line repeated the page's context), and the
 region sheet a switch of the same name below the bulletin that writes the
 same state (SNOW-1377, 2 Nov 2026; "Highlight problem terrain" from Hugo's
 23 Oct 2026 split, and until then the terrain filter's third colour, "By

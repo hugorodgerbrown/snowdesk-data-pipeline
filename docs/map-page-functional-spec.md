@@ -696,7 +696,7 @@ full width with its own ×; on a desktop it sits beside the roundels.
 
 | Group | Row | Switch | Options |
 |-------|-----|--------|---------|
-| **Reference data** | Avalanche bulletins | Master: on while an opacity step above 0 is checked; remembers the step it was switched off at | SLF bulletins (CH), MétéoFrance (FR), ALBINA (AT, IT); Bulletin opacity (four steps); Sync with map terrain (a switch, on by default; "From zoom 12, Switzerland"; absent without `TERRAIN_CLASS_TILE_URL`) |
+| **Reference data** | Avalanche bulletins | Master: on while an opacity step above 0 is checked; remembers the step it was switched off at | SLF bulletins (CH), MétéoFrance (FR), ALBINA (AT, IT); Bulletin opacity (four steps); Sync with map terrain (a switch, on by default, one line; absent without `TERRAIN_CLASS_TILE_URL`) |
 | | Steep terrain (absent without `TERRAIN_CLASS_TILE_URL`) | The terrain filter | The terrain filter's own sheet (§3.5a–b) |
 | | Weather | Yes | None |
 | | Resorts | Yes | None |
