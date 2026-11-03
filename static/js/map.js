@@ -5024,6 +5024,13 @@
         id: TERRAIN_LAYER_ID,
         type: 'raster',
         source: TERRAIN_SOURCE_ID,
+        // The source's minzoom alone does not hold the layer to z12: its
+        // tiles are 256 px, so MapLibre asks for z12 tiles one map zoom
+        // early and the steep terrain drew from about z10.5 while the zoom
+        // control's scale (ZOOM_GATES, from this same MIN_ZOOM) said 12.
+        // The layer minzoom holds it to the scale, as the problem-terrain
+        // layer's does.
+        minzoom: TERRAIN_CORE.MIN_ZOOM,
         layout: { visibility: terrainFilterRasterShown() ? 'visible' : 'none' },
         paint: {
           // The translucency is in the painted pixels (terrain_filter_core's
