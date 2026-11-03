@@ -19,13 +19,13 @@ JSON, while the sheet was maintained by hand and never received them.
 
 Two things about the emitted shape are load-bearing, and each is a test:
 
-**Retired rows are carried forward, not derived.** A row whose ``status`` is
-``NOT_A_SKI_RESORT`` is deliberately absent from the database — that is what
-retiring it means — so it cannot be dumped from one. Those rows are read
-back off the sheet already on disk, keyed by uuid, and written out
-unchanged. Losing them would silently un-retire every rejected place on the
-next ``import_resorts`` run, because ``--mode delete`` decides what to remove
-by what the sheet does *not* list.
+**Retired rows are dumped, and old markers carried forward.** Since
+SNOW-1404 retiring a resort is a state, not a deletion, so every row comes
+from ``Resort.all_objects``: a retired one is written with its ``status``
+(the reason), ``retired_at`` and ``retired_note``. A sheet row whose status
+is set but which the database does not hold — a place rejected before the
+database kept retired rows — is read back off the sheet on disk, keyed by
+uuid, and written out unchanged, so the record of it is never lost.
 
 **Existing rows keep their position.** Output follows the on-disk sheet's
 row order, with rows the sheet has never seen appended in name order. A
@@ -55,10 +55,7 @@ from django.core.management.base import CommandError
 
 from apps.core.command_output import diff_line_counts, display_path
 from apps.core.command_register import RegisteredCommand
-from apps.regions.management.commands.import_resorts import (
-    DEFAULT_SHEET_PATH,
-    DELETE_MARKER,
-)
+from apps.regions.management.commands.import_resorts import DEFAULT_SHEET_PATH
 from apps.regions.models import Resort
 
 logger = logging.getLogger(__name__)
@@ -88,6 +85,9 @@ SHEET_COLUMNS: tuple[str, ...] = (
     "typical_season_open",
     "typical_season_close",
     "status",
+    # SNOW-1404: when and why the resort was retired; blank when live.
+    "retired_at",
+    "retired_note",
     "notes",
     "geocode_source",
     "geocode_confidence",
@@ -99,9 +99,9 @@ class Command(RegisteredCommand):
     """Re-emit apps/regions/data/resorts.tsv from the current DB rows."""
 
     help = (
-        "Dump the Resort table to apps/regions/data/resorts.tsv, carrying "
-        "forward the retired (NOT_A_SKI_RESORT) rows the database does not "
-        "hold. Read-only unless --commit is passed."
+        "Dump the Resort table to apps/regions/data/resorts.tsv, retired rows "
+        "included with their status, carrying forward the retired rows the "
+        "database does not hold. Read-only unless --commit is passed."
     )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
@@ -136,7 +136,7 @@ class Command(RegisteredCommand):
             # rows, not a growable table — and stdout carries a file diff
             # summary, not a per-row countdown.
             self.stdout.write(
-                f"resorts.tsv would change ({Resort.objects.count()} DB rows; "
+                f"resorts.tsv would change ({Resort.all_objects.count()} DB rows; "
                 f"+{added}/-{removed} lines)."
             )
 
@@ -177,7 +177,7 @@ def write_resorts_sheet(sheet_path: Path = DEFAULT_SHEET_PATH) -> None:
         raise CommandError(f"Failed to write {sheet_path}: {exc}") from exc
     logger.info(
         "write_resorts_sheet: wrote %d DB row(s) to %s",
-        Resort.objects.count(),
+        Resort.all_objects.count(),
         sheet_path,
     )
 
@@ -196,7 +196,7 @@ def render_resorts_sheet(sheet_path: Path = DEFAULT_SHEET_PATH) -> str:
     existing = _read_existing(sheet_path)
     db_rows = {
         str(resort.uuid): _row_from_resort(resort)
-        for resort in Resort.objects.select_related("region")
+        for resort in Resort.all_objects.select_related("region")
         .prefetch_related("passes")
         .order_by("name")
     }
@@ -204,13 +204,13 @@ def render_resorts_sheet(sheet_path: Path = DEFAULT_SHEET_PATH) -> str:
     rows: list[dict[str, str]] = []
     seen: set[str] = set()
     for uuid, old_row in existing.items():
-        if old_row.get("status", "").strip().upper() == DELETE_MARKER:
-            # Retired: absent from the DB by definition, so carry it through
-            # verbatim rather than dropping it.
-            rows.append(old_row)
-            seen.add(uuid)
-        elif uuid in db_rows:
+        if uuid in db_rows:
             rows.append(db_rows[uuid])
+            seen.add(uuid)
+        elif old_row.get("status", "").strip():
+            # A retired row the database does not hold: carried through
+            # verbatim, so the record of a rejected place is kept.
+            rows.append(old_row)
             seen.add(uuid)
         # A live sheet row with no DB row is a resort somebody deleted. It is
         # dropped here, which is the honest record — re-add it by restoring
@@ -255,9 +255,8 @@ def _read_existing(sheet_path: Path) -> dict[str, dict[str, str]]:
 def _row_from_resort(resort: Resort) -> dict[str, str]:
     """Render one Resort as a sheet row.
 
-    ``status`` is always blank: a row the database holds is by definition
-    not retired, and retiring one is a curator's edit to the sheet, not
-    something the database can express.
+    ``status`` is the retirement reason, blank for a live resort, beside
+    its ``retired_at`` and ``retired_note`` (SNOW-1404).
 
     Args:
         resort: The row to render, with ``region`` already selected and
@@ -289,7 +288,9 @@ def _row_from_resort(resort: Resort) -> dict[str, str]:
         "total_piste_km": _number(resort.total_piste_km),
         "typical_season_open": resort.typical_season_open,
         "typical_season_close": resort.typical_season_close,
-        "status": "",
+        "status": resort.retired_reason,
+        "retired_at": resort.retired_at.isoformat() if resort.retired_at else "",
+        "retired_note": resort.retired_note,
         "notes": resort.notes,
         "geocode_source": resort.geocode_source,
         "geocode_confidence": _number(resort.geocode_confidence),

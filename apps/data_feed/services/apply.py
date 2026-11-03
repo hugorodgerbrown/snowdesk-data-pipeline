@@ -184,7 +184,8 @@ def lookups_for(
         lookups.regions = _regions(Q(region_id__in={item["region"] for item in items}))
         lookups.resorts = {
             str(resort.slug): resort
-            for resort in Resort.objects.filter(
+            # all_objects: a retired resort is still this slug's row.
+            for resort in Resort.all_objects.filter(
                 slug__in={item["slug"] for item in items}
             )
             .select_related("region", "location")
@@ -504,7 +505,10 @@ def apply_resort(
 
     """
     lookups = lookups or lookups_for("resorts", [item])
-    fields = contract.load_fields(Resort, contract.RESORT_FIELDS, item["fields"])
+    fields = {
+        **contract.RESORT_LIVE,
+        **contract.load_fields(Resort, contract.RESORT_FIELDS, item["fields"]),
+    }
     region, by_uuid = _resolve_resort(item, lookups)
     resort = lookups.resorts.get(item["slug"])
     if resort is None:

@@ -208,3 +208,30 @@ class TestDroppedPins:
         FavouriteFactory.create(region_pin=True, region=MicroRegionFactory.create())
 
         assert not Favourite.objects.dropped_pins().exists()
+
+
+@pytest.mark.django_db
+class TestRetiredResortQuerysets:
+    """SNOW-1404: the querysets that read a favourite's resort's retirement."""
+
+    def test_listed_panel_rows_and_alertable(self) -> None:
+        """A retired resort's favourite is panel-only, never listed or alerted."""
+        user = UserFactory.create()
+        live = FavouriteFactory.create(
+            user=user, resort=ResortFactory.create(), alerts=True
+        )
+        gone = FavouriteFactory.create(
+            user=user, resort=ResortFactory.create(retired=True), alerts=True
+        )
+        pin = FavouriteFactory.create(user=user)
+        for favourite in (live, gone):
+            assert favourite.resort is not None
+            favourite.region = favourite.resort.region
+            favourite.save()
+        mine = Favourite.objects.for_user(user)
+
+        assert set(mine.listed()) == {live, pin}
+        assert set(mine.panel_rows()) == {gone, pin}
+        assert set(mine.alertable()) == {live}
+        assert gone.is_retired_resort and not live.is_retired_resort
+        assert not pin.is_retired_resort

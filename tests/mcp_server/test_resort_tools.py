@@ -2,7 +2,8 @@
 tests/mcp_server/test_resort_tools.py — Tests for apps.mcp_server.resort_tools.
 
 The ops MCP server's resort tools (SNOW-1401): ``get_resort`` and
-``find_resorts`` read; ``update_resort`` and ``create_resort`` write — a
+``find_resorts`` read; ``update_resort``, ``create_resort`` and, since
+SNOW-1404, ``retire_resort`` and ``restore_resort`` write — a
 preview that writes nothing, then a commit that is validated by the model,
 refused on a stale preview, and audited with its source. Every tool is
 called through the JSON-RPC dispatcher, the way the endpoint reaches it.
@@ -28,7 +29,7 @@ from tests.factories import (
 
 OPS = protocol.ToolServer(name="snowdesk-ops", tools=ops_tools.OPS_TOOLS, resources={})
 
-WRITE_TOOLS = ("update_resort", "create_resort")
+WRITE_TOOLS = ("update_resort", "create_resort", "retire_resort", "restore_resort")
 
 
 def _call(name: str, arguments: dict[str, Any], actor: Any = None) -> dict[str, Any]:
@@ -91,13 +92,15 @@ def staff() -> Any:
 
 
 def test_registered_in_the_ops_catalogue() -> None:
-    """The four resort tools are ops tools, and only ops tools."""
+    """The six resort tools are ops tools, and only ops tools."""
     assert set(resort_tools.RESORT_TOOLS) <= set(ops_tools.OPS_TOOLS)
     assert set(resort_tools.RESORT_TOOLS) == {
         "get_resort",
         "find_resorts",
         "update_resort",
         "create_resort",
+        "retire_resort",
+        "restore_resort",
     }
 
 
@@ -623,3 +626,205 @@ def test_update_compares_updated_at_exactly(staff: Any) -> None:
         str(resort.slug), {"num_lifts": 5}, "x", True, resort.updated_at, staff
     )
     assert result["committed"] is True
+
+
+@pytest.mark.django_db
+class TestRetireAndRestore:
+    """retire_resort / restore_resort: a soft delete and its undo (SNOW-1404)."""
+
+    def _retire(self, staff: Any, **overrides: Any) -> dict[str, Any]:
+        """Call retire_resort on Aigle with a source."""
+        return _call(
+            "retire_resort",
+            {
+                "ref": "aigle",
+                "reason": "closed",
+                "note": "lifts shut",
+                "source": "Atlas p.4",
+                "commit": False,
+                **overrides,
+            },
+            staff,
+        )
+
+    def test_preview_writes_nothing(self, staff: Any) -> None:
+        """A preview shows the diff and the favourites that hold it."""
+        resort = ResortFactory.create(name="Aigle")
+        result = _ok(self._retire(staff))
+
+        assert result["committed"] is False
+        assert set(result["diff"]) == {"retired_at", "retired_reason", "retired_note"}
+        assert result["favourites_holding"] == 0
+        resort.refresh_from_db()
+        assert not resort.is_retired
+        assert not LogEntry.objects.exists()
+
+    def test_commit_retires_keeps_the_row_and_audits(self, staff: Any) -> None:
+        """A commit retires the resort; it stays readable and logged."""
+        resort = ResortFactory.create(name="Aigle")
+        preview = _ok(self._retire(staff))
+        result = _ok(
+            self._retire(staff, commit=True, expected_updated_at=preview["updated_at"])
+        )
+
+        assert result["committed"] is True
+        assert not Resort.objects.filter(pk=resort.pk).exists()
+        retired = Resort.all_objects.get(pk=resort.pk)
+        assert (retired.retired_reason, retired.retired_note) == (
+            "CLOSED",
+            "lifts shut",
+        )
+        entry = LogEntry.objects.get()
+        assert entry.action_flag == CHANGE
+        assert "Retired via the ops MCP server" in entry.change_message
+        assert "Atlas p.4" in entry.change_message
+        # Still found, read and reported by the read tools.
+        got = _ok(_call("get_resort", {"ref": "aigle"}))
+        assert got["retired_reason"] == "CLOSED"
+        assert got["summary"].startswith("Aigle") and "RETIRED" in got["summary"]
+
+    def test_same_reason_keeps_the_date_and_note(self, staff: Any) -> None:
+        """Re-retiring for the same reason, note omitted, changes nothing."""
+        ResortFactory.create(
+            name="Aigle", retired=True, retired_note="shut", retired_reason="CLOSED"
+        )
+        result = _ok(self._retire(staff, note=None))
+        assert result["diff"] == {}
+        assert "nothing would change" in result["summary"]
+
+    def test_a_change_since_the_preview_is_refused(self, staff: Any) -> None:
+        """A stale preview's commit writes nothing."""
+        resort = ResortFactory.create(name="Aigle")
+        preview = _ok(self._retire(staff))
+        Resort.all_objects.filter(pk=resort.pk).update(
+            updated_at=dt.datetime(2030, 1, 1, tzinfo=dt.UTC)
+        )
+        text = _error(
+            self._retire(staff, commit=True, expected_updated_at=preview["updated_at"])
+        )
+        assert "after the preview" in text
+        assert not Resort.all_objects.get(pk=resort.pk).is_retired
+
+    def test_unknown_reason_is_refused(self, staff: Any) -> None:
+        """Only a RetiredReason value retires."""
+        ResortFactory.create(name="Aigle")
+        assert "'reason' must be one of" in _error(self._retire(staff, reason="gone"))
+
+    def test_restore_brings_it_back(self, staff: Any) -> None:
+        """restore_resort clears the retirement and logs it."""
+        resort = ResortFactory.create(name="Aigle", retired=True, retired_note="x")
+        arguments = {"ref": "aigle", "source": "Reopened 2026", "commit": False}
+        preview = _ok(_call("restore_resort", arguments, staff))
+        assert preview["diff"]["retired_reason"] == {"from": "CLOSED", "to": ""}
+
+        result = _ok(
+            _call(
+                "restore_resort",
+                {
+                    **arguments,
+                    "commit": True,
+                    "expected_updated_at": preview["updated_at"],
+                },
+                staff,
+            )
+        )
+
+        assert result["committed"] is True
+        resort.refresh_from_db()
+        assert not resort.is_retired
+        assert (
+            "Restored via the ops MCP server" in LogEntry.objects.get().change_message
+        )
+
+    def test_restore_of_a_live_resort_writes_nothing(self, staff: Any) -> None:
+        """A live resort has nothing to restore."""
+        resort = ResortFactory.create(name="Aigle")
+        result = _ok(
+            _call(
+                "restore_resort",
+                {
+                    "ref": "aigle",
+                    "source": "s",
+                    "commit": True,
+                    "expected_updated_at": resort.updated_at.isoformat(),
+                },
+                staff,
+            )
+        )
+        assert result["committed"] is False
+        assert not LogEntry.objects.exists()
+
+    def test_note_must_be_a_string(self, staff: Any) -> None:
+        """A non-string note is refused."""
+        ResortFactory.create(name="Aigle")
+        assert "'note' must be a string" in _error(self._retire(staff, note=3))
+
+
+@pytest.mark.django_db
+class TestRetiredResortsInTheReadTools:
+    """find_resorts lists live resorts by default; create sees retired ones."""
+
+    def test_find_filters_by_retirement(self) -> None:
+        """live by default; retired and all on request."""
+        ResortFactory.create(name="Live")
+        ResortFactory.create(name="Gone", retired=True)
+
+        def names(**arguments: Any) -> list[str]:
+            result = _ok(_call("find_resorts", arguments))
+            return [row["name"] for row in result["resorts"]]
+
+        assert names() == ["Live"]
+        assert names(retired="retired") == ["Gone"]
+        assert sorted(names(retired="all")) == ["Gone", "Live"]
+        assert "'retired' must be one of" in _error(
+            _call("find_resorts", {"retired": "dead"})
+        )
+
+    def test_create_points_a_retired_namesake_at_restore(self, staff: Any) -> None:
+        """A retired same-name resort in the region is restored, not duplicated."""
+        region = _region_with_square_boundary()
+        ResortFactory.create(name="Ovronnaz", region=region, retired=True)
+
+        text = _error(
+            _call(
+                "create_resort",
+                {
+                    "name": "Ovronnaz",
+                    "latitude": 46.2,
+                    "longitude": 7.2,
+                    "canton": "VS",
+                    "source": "s",
+                    "commit": False,
+                },
+                staff,
+            )
+        )
+
+        assert "retired CLOSED" in text
+        assert "restore_resort it instead" in text
+
+    def test_create_lists_a_retired_neighbour(self, staff: Any) -> None:
+        """A retired resort nearby is a labelled duplicate candidate."""
+        region = _region_with_square_boundary()
+        ResortFactory.create(
+            name="Old Hill", region=region, retired=True, latitude=46.2, longitude=7.2
+        )
+
+        result = _ok(
+            _call(
+                "create_resort",
+                {
+                    "name": "New Hill",
+                    "latitude": 46.2,
+                    "longitude": 7.2,
+                    "canton": "VS",
+                    "source": "s",
+                    "commit": False,
+                },
+                staff,
+            )
+        )
+
+        [duplicate] = result["duplicates"]
+        assert duplicate["name"] == "Old Hill"
+        assert duplicate["retired_reason"] == "CLOSED"

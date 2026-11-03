@@ -61,7 +61,9 @@ def _link(model: type[Pass] | type[Resort]) -> int:
         How many rows were linked.
 
     """
-    return model.objects.filter(source_uuid__isnull=True).update(source_uuid=F("uuid"))
+    # A retired resort is mirrored too (SNOW-1404), so it is linked too.
+    manager = Resort.all_objects if model is Resort else Pass.objects
+    return manager.filter(source_uuid__isnull=True).update(source_uuid=F("uuid"))
 
 
 def _place(location: Location | None) -> str | None:
@@ -143,6 +145,10 @@ def mirror_passes() -> dict[str, int]:
 def mirror_resorts() -> dict[str, int]:
     """Make the service's resort list equal this instance's slugged ``Resort`` rows.
 
+    Retired rows included (SNOW-1404): the document carries the
+    ``retired_*`` fields, so the service holds the retirement as a state
+    and never tombstones the resort for it.
+
     Run after ``mirror_passes`` and ``mirror_reference_locations``: the
     documents name passes and places by the ``source_uuid`` those set.
 
@@ -153,7 +159,7 @@ def mirror_resorts() -> dict[str, int]:
     with transaction.atomic():
         linked = _link(Resort)
         resorts = (
-            Resort.objects.exclude(slug__isnull=True)
+            Resort.all_objects.exclude(slug__isnull=True)
             # A region row carries its boundary polygon; the document needs
             # only the code, so the region is prefetched slim, not joined.
             .prefetch_related(

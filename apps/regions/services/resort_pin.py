@@ -75,7 +75,7 @@ def locked_resort(pk: int) -> QuerySet[Resort]:
         A ``select_for_update(of=("self",))`` queryset filtered to that resort.
 
     """
-    return Resort.objects.select_for_update(of=("self",)).filter(pk=pk)
+    return Resort.all_objects.select_for_update(of=("self",)).filter(pk=pk)
 
 
 def _current_location(resort: Resort) -> Location | None:

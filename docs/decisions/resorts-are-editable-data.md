@@ -80,17 +80,24 @@ dump it, get the same bytes.
   changes nothing. A resort created through the ops MCP server is, like one
   created in the map editor, absent from the sheet until the next
   `dump_resorts_sheet --commit`.
-- **`status` is the retirement marker**, in its own column. It is blank or
-  `NOT_A_SKI_RESORT`; any other value is an error rather than a silent
-  "live". It used to be a `NOT_A_SKI_RESORT` prefix on the `note` column, so
-  one cell carried both a curator's prose and a machine-read verdict — and no
-  note could begin with those characters without deleting the resort. The
-  prose half is now `notes`, which maps to `Resort.notes`.
-- **`import_resorts --mode delete` (on by default) removes any resort the
-  sheet does not list**, not only the ones it retires. A resort created in the
-  admin must be re-exported with `dump_resorts_sheet`, or reconciled with
-  `--mode add update`, or the next full run deletes it. The dry-run names
-  every deletion — read it before `--commit`.
+- **Retirement is a state, never a deletion** (SNOW-1404). `Resort` carries
+  `retired_at`, `retired_reason` and `retired_note`; `Resort.objects` is the
+  live set, so every public surface leaves a retired resort out unedited,
+  and its page answers 410 Gone. `Resort.all_objects` is the whole table —
+  the admin, the write paths, the reference-data feed and the base manager,
+  so a favourite still reaches its resort. The ops MCP server's
+  `retire_resort` / `restore_resort` and the admin write it; the feed
+  carries the three fields, so a retirement on production reaches staging.
+- **`status` is the retirement reason**, in its own column, beside
+  `retired_at` and `retired_note`. It is blank or a `Resort.RetiredReason`;
+  any other value is an error rather than a silent "live". It used to be a
+  `NOT_A_SKI_RESORT` prefix on the `note` column, so one cell carried both a
+  curator's prose and a machine-read verdict. The prose half is now `notes`.
+- **The sheet never deletes.** `import_resorts --mode retire` (on by
+  default; it replaced `--mode delete` in SNOW-1404) retires or restores a
+  row to match its `status`. A resort the sheet does not list is reported
+  as "not in sheet" and left alone, because production owns the resorts
+  created there in chat or in the map editor until the next dump.
 - **Coordinates and provenance are creation-time only.** `import_resorts`
   reads `latitude`/`longitude`, `geocode_source`, `geocode_confidence` and
   `needs_review` when it creates a row and never writes them again, so a
@@ -103,7 +110,8 @@ dump it, get the same bytes.
   placed the pin on a map, which is not true of sheet data.
 - **`add` needs `region` and `canton`.** A row missing either is reported as
   an error rather than guessed at, and the fix is to fill the sheet.
-- **Deleting a resort is safe for user data**: `Favourite.resort` is
+- **Deleting a resort** — now only by hand in the admin, since nothing
+  automated deletes one — **is safe for user data**: `Favourite.resort` is
   `SET_NULL`, so a favourite made from a deleted resort degrades to a plain
   pin with its snapshotted name, coordinates and region intact. Its
   `ResortLocation` links cascade with it; the `Location` rows they pointed

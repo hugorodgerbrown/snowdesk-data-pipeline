@@ -149,11 +149,15 @@ def _locations() -> QuerySet[Location]:
 
 
 def _resorts() -> QuerySet[Resort]:
-    """Return every resort with a slug — a slug is the resort's key on the wire."""
+    """Return every resort with a slug — a slug is the resort's key on the wire.
+
+    Retired ones included (SNOW-1404): they carry their ``retired_*``
+    fields, so a retirement, and a restore, reach the pulling instance.
+    """
     # The region and pin are prefetched slim rather than joined: a
     # MicroRegion row carries its boundary polygon, and the item needs only
     # the region's code.
-    return Resort.objects.exclude(slug__isnull=True).prefetch_related(
+    return Resort.all_objects.exclude(slug__isnull=True).prefetch_related(
         Prefetch("region", queryset=MicroRegion.objects.only("pk", "region_id")),
         Prefetch("location", queryset=Location.objects.only("pk", "uuid")),
         Prefetch("passes", queryset=Pass.objects.only("pk", "slug", "name", "website")),

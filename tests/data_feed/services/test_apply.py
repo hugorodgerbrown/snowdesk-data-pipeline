@@ -545,3 +545,39 @@ def test_an_invalid_location_uuid_is_refused_before_it_is_planned() -> None:
             lookups=lookups_for("locations", [item], planned=planned),
         )
     assert planned == set()
+
+
+@pytest.mark.django_db
+class TestApplyRetiredResort:
+    """SNOW-1404: retirement arrives through v1 too, and an old item is live."""
+
+    def test_a_retirement_and_a_restore_are_applied(self) -> None:
+        """The feed carries the retirement; applying it onto a live row retires it."""
+        resort = ResortFactory.create(name="Aigle")
+        item = _resort_item(resort)
+        item["fields"]["retired_at"] = "2026-11-03T00:00:00+00:00"
+        item["fields"]["retired_reason"] = "CLOSED"
+
+        assert apply_resort(item, commit=True) is Outcome.UPDATED
+        assert Resort.all_objects.get(pk=resort.pk).retired_reason == "CLOSED"
+        assert apply_resort(item, commit=True) is Outcome.UNCHANGED
+
+        restore = _resort_item(Resort.all_objects.get(pk=resort.pk))
+        restore["fields"].update(retired_at=None, retired_reason="")
+        assert apply_resort(restore, commit=True) is Outcome.UPDATED
+        assert Resort.objects.filter(pk=resort.pk).exists()
+
+    def test_an_item_without_the_fields_is_live(self) -> None:
+        """An older producer's item restores a row retired here."""
+        resort = ResortFactory.create(name="Aigle", retired=True)
+        item = _resort_item(resort)
+        for name in ("retired_at", "retired_reason", "retired_note"):
+            del item["fields"][name]
+
+        assert apply_resort(item, commit=True) is Outcome.UPDATED
+        assert not Resort.all_objects.get(pk=resort.pk).is_retired
+
+    def test_the_feed_serves_retired_resorts(self) -> None:
+        """v1's resorts feed carries a retired row, so it can reach the client."""
+        resort = ResortFactory.create(retired=True)
+        assert _resort_item(resort)["fields"]["retired_reason"] == "CLOSED"

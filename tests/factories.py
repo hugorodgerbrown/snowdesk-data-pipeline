@@ -215,6 +215,8 @@ class ResortFactory(factory.django.DjangoModelFactory[Resort]):
     keeps it in production: a resort created with both ``latitude`` and
     ``longitude`` gets an anonymous ``Location`` at that point, and one
     without a full pair gets none. Pass ``location=`` explicitly to override.
+
+    The ``retired`` trait (SNOW-1404) retires the resort as ``CLOSED``, now.
     """
 
     class Meta:
@@ -229,6 +231,11 @@ class ResortFactory(factory.django.DjangoModelFactory[Resort]):
             latitude=46.1,
             longitude=7.4,
             geocode_source=Resort.GeocodeSource.MANUAL,
+        )
+        # SNOW-1404: a soft-deleted resort — kept, off every public surface.
+        retired = factory.Trait(
+            retired_at=factory.LazyFunction(django_timezone.now),
+            retired_reason=Resort.RetiredReason.CLOSED,
         )
 
     name = factory.Sequence(lambda n: f"Resort {n}")

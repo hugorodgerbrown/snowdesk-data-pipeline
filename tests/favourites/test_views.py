@@ -2865,3 +2865,58 @@ class TestTodayView:
         assert response.status_code == 200
         assert response.content.decode().count('data-testid="today-resort"') == 4
         assert len(large.captured_queries) == len(small.captured_queries)
+
+
+@pytest.mark.django_db
+class TestRetiredResortFavourites:
+    """SNOW-1404: a favourite of a retired resort is kept, and listed once."""
+
+    def _setup(self, client: Client) -> tuple[Any, Favourite, Favourite]:
+        """Sign a user in holding a live and a retired resort favourite."""
+        user = UserFactory.create()
+        client.force_login(user)
+        live = ResortFactory.create(name="Live Hill", latitude=46.2, longitude=7.2)
+        gone = ResortFactory.create(
+            name="Gone Hill", latitude=46.3, longitude=7.3, retired=True
+        )
+        live_fav = FavouriteFactory.create(
+            user=user, resort=live, name="Live Hill", region=live.region
+        )
+        gone_fav = FavouriteFactory.create(
+            user=user, resort=gone, name="Gone Hill", region=gone.region
+        )
+        return user, live_fav, gone_fav
+
+    def test_panel_lists_it_as_no_longer_listed(self, client: Client) -> None:
+        """The Favourites panel shows the retired one, with Remove alone."""
+        _user, _live, gone = self._setup(client)
+
+        html = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "Gone Hill" in html
+        assert "No longer listed" in html
+        # A live saved resort stays in search, not this panel (SNOW-1229).
+        assert "Live Hill" not in html
+        # One control: the bare Remove form, no overflow menu.
+        assert f"favourite-actions-{gone.uuid}" not in html
+        assert _delete_url(gone.uuid) in html
+
+    def test_left_out_of_the_map_feed(self, client: Client) -> None:
+        """favourites.geojson draws and searches live resorts only."""
+        self._setup(client)
+        body = client.get(GEOJSON_URL).json()
+        assert [f["properties"]["resort_name"] for f in body["features"]] == [
+            "Live Hill"
+        ]
+
+    def test_left_out_of_today(self, client: Client) -> None:
+        """The Today panel has no today for a retired resort."""
+        self._setup(client)
+        html = client.get(TODAY_URL, **HTMX_HEADERS).content.decode()
+        assert "Live Hill" in html
+        assert "Gone Hill" not in html
+
+    def test_the_favourite_keeps_its_resort(self, client: Client) -> None:
+        """The FK holds: nothing is lost by retiring."""
+        _user, _live, gone = self._setup(client)
+        assert Favourite.objects.get(pk=gone.pk).resort is not None

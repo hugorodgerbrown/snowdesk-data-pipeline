@@ -704,6 +704,8 @@ writes below.
 | `find_resorts` | A resort worklist, CORE tier first then by name, filtered by `region_id`, `country`, `kind`, a field still empty (`missing`) or `needs_review` |
 | `update_resort` | **Writes.** Corrects one resort's editorial fields — preview, then a commit quoting the preview's `updated_at` |
 | `create_resort` | **Writes.** Adds a resort at a coordinate, region from the point, flagged `needs_review` — preview (with likely duplicates), then commit |
+| `retire_resort` | **Writes.** Retires one resort — a soft delete: off every public surface, page 410 Gone, row and favourites kept (SNOW-1404) — preview, then commit |
+| `restore_resort` | **Writes.** Brings a retired resort back — preview, then commit |
 
 ### The waffle setters
 
@@ -734,7 +736,8 @@ so each is made deliberate rather than convenient:
 
 ### Resort tools
 
-`get_resort`, `find_resorts`, `update_resort` and `create_resort` live in
+`get_resort`, `find_resorts`, `update_resort`, `create_resort` and, since
+SNOW-1404, `retire_resort` and `restore_resort` live in
 `apps/mcp_server/resort_tools.py` (SNOW-1401). They exist so a staff
 account can correct the resort estate from a chat — reading a reference
 book and dictating the figures — on the environment the connector points
@@ -774,8 +777,21 @@ tools, not for staging data.
   not a placement) and pinned through `set_resort_pin`. Like a map-editor
   creation it exists only in that database until `dump_resorts_sheet`
   carries it into `resorts.tsv`.
+- **Retiring and restoring** (SNOW-1404). `retire_resort` takes a `reason`
+  (`NOT_A_SKI_RESORT`, `DUPLICATE`, `CLOSED`, `OTHER`) and an optional
+  `note`; `restore_resort` clears all three columns. The same preview /
+  `expected_updated_at` / `source` / `LogEntry` shape as an update, and a
+  preview says how many favourites hold the resort (they are kept either
+  way). Re-retiring for the same reason keeps the original `retired_at`.
+  Every tool reads `Resort.all_objects`, so a retired resort is found by
+  `get_resort` (which reports `retired_at`, `retired_reason` and
+  `retired_note`) and can still be corrected; `find_resorts` lists live
+  ones unless passed `retired: retired | all`; `create_resort` lists a
+  retired duplicate with its reason and points a same-region namesake at
+  `restore_resort`.
 - **Downstream.** Nothing else to run: the search pool's cache key moves
-  with `updated_at`, and `mirror_reference_data` copies the edit into the
+  with `updated_at` and the live row count, and `mirror_reference_data`
+  copies the edit — a retirement included, as fields — into the
   reference-data service within the hour.
 
 ### Running commands

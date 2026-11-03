@@ -41,8 +41,10 @@ Context:
                  supplied by _favourite.html as `#<the row's id>`.
 {% endcomment %}
 {% blocktrans trimmed with name=label asvar remove_aria_label %}Remove {{ name }}{% endblocktrans %}
-{% if favourite.is_region_pin %}
-    {# One control, so no menu — see the header.                            #}
+{% if favourite.is_region_pin or favourite.is_retired_resort %}
+    {# One control, so no menu — see the header. A saved resort that was    #}
+    {# retired (SNOW-1404) takes this branch too: nothing to share, nothing #}
+    {# to rename, and the resort itself is untouched by removing the pin.   #}
     {#                                                                      #}
     {# AND IT STILL SAYS "REMOVE", where the placed pin's menu item became  #}
     {# "Delete" in SNOW-886. That rule is Delete where the underlying       #}

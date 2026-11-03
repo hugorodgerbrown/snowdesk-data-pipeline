@@ -15,21 +15,35 @@ the coordinate pair, and the provenance of that coordinate. This command
 reconciles the database against it in up to three modes, selected with
 ``--mode`` (all three by default):
 
-  ``add``     Create a resort for a sheet row with no matching ``uuid``.
+  ``add``     Create a resort for a live sheet row with no matching ``uuid``.
   ``update``  Overwrite the editorial fields of rows that do match.
-  ``delete``  Remove resorts the sheet does not list.
+  ``retire``  Bring each matching row's retirement in line with the sheet's
+              ``status`` (SNOW-1404): retire, re-reason or restore.
 
-The sheet's *live* set is every row whose ``status`` column is blank.
-``NOT_A_SKI_RESORT`` there retires an entry that was never a lift-served
-resort (a pass, a reservoir, a valley town, a touring label), and is the
-only other value the column accepts — anything else is an error, not a
-silent "live". ``delete`` removes both the retired rows and any resort
-missing from the sheet altogether; ``add`` and ``update`` ignore them.
+**Nothing is ever deleted** (SNOW-1404). Retirement is a state: a retired
+resort leaves every public surface and its page answers 410 Gone, but the
+row, its pin and every favourite of it are kept.
 
-Because ``delete`` deletes anything the sheet does not list, a resort
-created in the admin reaches the sheet on its next export or is removed by
-the next full run. Use ``--mode update`` (or ``add update``) to reconcile
-without that risk, and read the dry-run diff either way.
+The ``status`` column is blank for a live resort, or one of
+``Resort.RetiredReason``: ``NOT_A_SKI_RESORT`` (a pass, a reservoir, a
+valley town, a touring label), ``DUPLICATE``, ``CLOSED`` or ``OTHER``.
+Anything else is an error, not a silent "live". Beside it, ``retired_at``
+(ISO 8601) and ``retired_note`` record when and why. ``retire``:
+
+* retires a live row whose status is set, at the sheet's ``retired_at``
+  when it has one and now otherwise;
+* keeps a retired row's ``retired_at`` when the reason is unchanged, and
+  restamps it now when the reason changes;
+* restores a retired row whose status is blank.
+
+A resort the sheet does not list at all is **reported as "not in sheet" and
+left alone** — never retired, never deleted. Production owns the resorts
+created there in chat (the ops MCP server's ``create_resort``) or in the map
+editor, and they reach the sheet on its next export. A retired sheet row the
+database lacks is a record carried forward, and is not created.
+
+``--mode delete`` was the old name of the third mode, which deleted rows;
+it is refused with a message naming ``retire``.
 
 Adding requires ``region`` (a MicroRegion ``region_id`` such as
 ``CH-4115``) and ``canton`` columns, which the editorial export carries —
@@ -71,7 +85,7 @@ Usage:
     # Apply it.
     uv run python manage.py import_resorts --commit
 
-    # Refresh editorial fields only — create and delete nothing.
+    # Refresh editorial fields only — create and retire nothing.
     uv run python manage.py import_resorts --mode update --commit
 
     # Import a different export of the sheet.
@@ -81,6 +95,7 @@ Usage:
 from __future__ import annotations
 
 import csv
+import datetime
 import enum
 import logging
 from argparse import ArgumentParser
@@ -101,14 +116,14 @@ logger = logging.getLogger(__name__)
 DEFAULT_SHEET_PATH = Path(__file__).resolve().parents[2] / "data" / "resorts.tsv"
 DEFAULT_PASSES_PATH = DEFAULT_SHEET_PATH.with_name("passes.tsv")
 
-# The one non-blank ``status`` the sheet recognises. It retires the resort —
-# the sheet's way of saying "this row was never a lift-served ski area".
+# The non-blank ``status`` values the sheet recognises: each retires the
+# resort, for that reason (SNOW-1404 — before it, NOT_A_SKI_RESORT was the
+# only one, and it deleted the row).
 #
 # SNOW-817 gave the marker its own column. It used to be a prefix on the
 # ``note`` column, so one cell carried both the curator's prose and a
-# machine-read verdict, and the prose could not begin with those characters
-# without deleting the resort.
-DELETE_MARKER = "NOT_A_SKI_RESORT"
+# machine-read verdict.
+STATUSES: tuple[str, ...] = tuple(Resort.RetiredReason.values)
 
 
 class Mode(enum.StrEnum):
@@ -116,7 +131,11 @@ class Mode(enum.StrEnum):
 
     ADD = "add"
     UPDATE = "update"
-    DELETE = "delete"
+    RETIRE = "retire"
+
+
+# The mode SNOW-1404 renamed; refused by name so an old habit gets an answer.
+_RENAMED_MODES = {"delete": Mode.RETIRE}
 
 
 _MODE_CHOICES = [mode.value for mode in Mode]
@@ -146,6 +165,10 @@ COORDINATE_COLUMNS = ("latitude", "longitude")
 # every import would demote 77 reviewed pins to IMPORT/needs_review.
 PROVENANCE_COLUMNS = ("geocode_source", "geocode_confidence", "needs_review")
 
+# Read by ``retire`` beside ``status`` (SNOW-1404); optional, so a sheet
+# exported before them still loads.
+RETIREMENT_COLUMNS = ("retired_at", "retired_note")
+
 # Without these the sheet cannot be keyed or read at all.
 REQUIRED_COLUMNS = ("uuid", "name", "status")
 
@@ -156,7 +179,8 @@ class Command(RegisteredCommand):
     help = (
         "Reconcile the Resort table against the curated sheet "
         "(apps/regions/data/resorts.tsv): add rows the DB lacks, update rows it "
-        "has, delete resorts the sheet does not list. Select operations "
+        "has, retire or restore rows by their status. Nothing is deleted, and "
+        "a resort the sheet does not list is left alone. Select operations "
         f"with --mode ({' | '.join(_MODE_CHOICES)}); all three by default. "
         "Read-only unless --commit is passed."
     )
@@ -181,7 +205,8 @@ class Command(RegisteredCommand):
                 "Operation(s) to perform, case-insensitive and combinable: "
                 "add (create resorts the sheet lists but the DB lacks), "
                 "update (overwrite editorial fields on rows that exist), "
-                "delete (remove resorts the sheet does not list). "
+                "retire (retire or restore rows to match their status; "
+                "nothing is deleted). "
                 "Default: all three."
             ),
         )
@@ -215,7 +240,9 @@ class Command(RegisteredCommand):
         # would change and what a commit run did.
         self.tally("added", len(plan.additions))
         self.tally("updated", len(plan.updates))
-        self.tally("deleted", len(plan.deletions))
+        self.tally("retired", len(plan.retirements))
+        self.tally("restored", len(plan.restorations))
+        self.tally("not_in_sheet", len(plan.not_in_sheet))
         self.tally("passes_added", len(plan.pass_additions))
         self.tally("invalid_rows", len(plan.errors))
 
@@ -258,18 +285,29 @@ class Command(RegisteredCommand):
         self.stdout.write(
             f"{len(plan.additions)} resort(s) to add, "
             f"{len(plan.updates)} to update, "
-            f"{len(plan.deletions)} to delete."
+            f"{len(plan.retirements)} to retire, "
+            f"{len(plan.restorations)} to restore; "
+            f"{len(plan.not_in_sheet)} not in the sheet (left alone)."
         )
-        if verbosity < 2:
-            return
+        if verbosity >= 2:
+            self._report_details(plan)
+
+    def _report_details(self, plan: _Plan) -> None:
+        """Print one line per resort the plan touches, and per changed field."""
         for resort in plan.additions:
             self.stdout.write(f"  + {resort.name}")
         for resort, changes in plan.updates:
             self.stdout.write(f"  ~ {resort.name}")
             for field, (old, new) in sorted(changes.items()):
                 self.stdout.write(f"      {field}: {old!r} -> {new!r}")
-        for resort in plan.deletions:
-            self.stdout.write(f"  - {resort.name}")
+        for resort, changes in plan.retirements:
+            self.stdout.write(f"  x {resort.name} (retire: {resort.retired_reason})")
+            for field, (old, new) in sorted(changes.items()):
+                self.stdout.write(f"      {field}: {old!r} -> {new!r}")
+        for resort in plan.restorations:
+            self.stdout.write(f"  ^ {resort.name} (restore)")
+        for resort in plan.not_in_sheet:
+            self.stdout.write(f"  ? {resort.name} (not in sheet; left alone)")
 
     def _report_pass_additions(self, plan: _Plan, verbosity: int) -> None:
         """Print the passes ``passes.tsv`` would create, if there are any."""
@@ -301,22 +339,28 @@ class Command(RegisteredCommand):
                 resort.save()
             for resort, passes in plan.pass_links:
                 resort.passes.set(passes)
-            for resort in plan.deletions:
-                resort.delete()
+            # The retirement columns only: a row may also be in ``updates``,
+            # whose save above already wrote them (they ride on the same
+            # instance), so this is a no-op for it and a write for the rest.
+            for resort in plan.retiring_rows:
+                resort.save(update_fields=[*_RETIREMENT_FIELDS, "updated_at"])
 
         logger.info(
-            "import_resorts: added %d, updated %d, deleted %d resort(s): %s",
+            "import_resorts: added %d, updated %d, retired %d, restored %d "
+            "resort(s); %d not in the sheet",
             len(plan.additions),
             len(plan.updates),
-            len(plan.deletions),
-            [resort.name for resort in plan.deletions],
+            len(plan.retirements),
+            len(plan.restorations),
+            len(plan.not_in_sheet),
         )
         if verbosity >= 1:
             self.stdout.write(
                 self.style.SUCCESS(
                     f"Added {len(plan.additions)} resort(s), "
                     f"updated {len(plan.updates)}, "
-                    f"deleted {len(plan.deletions)}."
+                    f"retired {len(plan.retirements)}, "
+                    f"restored {len(plan.restorations)}."
                 )
             )
 
@@ -327,7 +371,11 @@ class _Plan:
     ``additions`` holds unsaved new resorts; ``updates`` holds existing
     resorts with the sheet's values already assigned in memory (but
     unsaved) alongside a field -> ``(old, new)`` map for reporting;
-    ``deletions`` holds the resorts the sheet does not list; ``errors``
+    ``retirements`` holds resorts whose retirement the sheet sets or
+    changes, with the same map over the three retirement columns;
+    ``restorations`` holds retired resorts the sheet lists as live;
+    ``not_in_sheet`` holds the resorts the sheet does not list, which are
+    reported and never touched; ``errors``
     holds human-readable reasons the sheet could not be applied in full.
     ``pass_additions`` holds unsaved passes from ``passes.tsv`` the
     database lacks. ``pass_links`` pairs each resort whose links change
@@ -340,7 +388,9 @@ class _Plan:
         """Start with an empty plan."""
         self.additions: list[Resort] = []
         self.updates: list[tuple[Resort, dict[str, tuple[Any, Any]]]] = []
-        self.deletions: list[Resort] = []
+        self.retirements: list[tuple[Resort, dict[str, tuple[Any, Any]]]] = []
+        self.restorations: list[Resort] = []
+        self.not_in_sheet: list[Resort] = []
         self.errors: list[str] = []
         self.pass_links: list[tuple[Resort, list[Pass]]] = []
         self.pass_additions: list[Pass] = []
@@ -349,8 +399,17 @@ class _Plan:
     def has_changes(self) -> bool:
         """Return True when the plan would write anything."""
         return bool(
-            self.pass_additions or self.additions or self.updates or self.deletions
+            self.pass_additions
+            or self.additions
+            or self.updates
+            or self.retirements
+            or self.restorations
         )
+
+    @property
+    def retiring_rows(self) -> list[Resort]:
+        """Return every resort whose retirement columns this plan changes."""
+        return [resort for resort, _changes in self.retirements] + self.restorations
 
 
 def _resolve_modes(names: list[str]) -> set[Mode]:
@@ -367,6 +426,16 @@ def _resolve_modes(names: list[str]) -> set[Mode]:
 
     """
     valid = {mode.value: mode for mode in Mode}
+    renamed = sorted(
+        f"{name!r} is now {_RENAMED_MODES[name.strip().lower()].value!r}"
+        for name in names
+        if name.strip().lower() in _RENAMED_MODES
+    )
+    if renamed:
+        raise CommandError(
+            f"--mode: {'; '.join(renamed)} (SNOW-1404: resorts are retired, "
+            "never deleted)."
+        )
     selected: set[Mode] = set()
     unknown: list[str] = []
     for name in names:
@@ -426,6 +495,7 @@ def _read_sheet(path: Path, modes: set[Mode]) -> list[dict[str, str]]:
         "canton",
         *COORDINATE_COLUMNS,
         *PROVENANCE_COLUMNS,
+        *RETIREMENT_COLUMNS,
     )
     rows = []
     for row in reader:
@@ -527,48 +597,93 @@ def _build_plan(
             are staged for creation.
 
     Returns:
-        A ``_Plan`` holding the pending additions, updates, deletions and
-        errors.
+        A ``_Plan`` holding the pending additions, updates, retirements,
+        restorations, the resorts not in the sheet, and errors.
 
     """
     plan = _Plan()
     # SNOW-602 exempt: bounded curated data — a few hundred Resort rows,
-    # not a growable table.
+    # not a growable table. ``all_objects``: a retired row is still the
+    # sheet's to update and restore (SNOW-1404).
     by_uuid = {
-        str(resort.uuid): resort for resort in Resort.objects.prefetch_related("passes")
+        str(resort.uuid): resort
+        for resort in Resort.all_objects.prefetch_related("passes")
     }
     passes_by_slug = _plan_passes(plan, pass_rows or [])
-    live_uuids: set[str] = set()
+    listed: set[str] = set()
+    now = timezone.now()
 
     for row in rows:
         uuid = row["uuid"].strip()
         resort = by_uuid.get(uuid)
+        listed.add(uuid)
 
         try:
-            retired = _is_retired(row)
+            status = _status_from_row(row)
+            sheet_retired_at = _retired_at_from_row(row)
         except ValueError as exc:
             plan.errors.append(f"{row['name'].strip() or uuid}: {exc}")
             continue
-        if retired:
-            # Retired by the sheet: excluded from the live set, so ``delete``
-            # picks it up below. Never added or updated.
-            continue
-        live_uuids.add(uuid)
 
         if resort is None:
-            if Mode.ADD in modes:
+            # A retired row the database lacks is a record carried forward,
+            # never created; a live one is added.
+            if not status and Mode.ADD in modes:
                 _plan_addition(plan, row, uuid, passes_by_slug)
             continue
         if Mode.UPDATE in modes:
             _plan_update(plan, resort, row, uuid, passes_by_slug)
+        if Mode.RETIRE in modes:
+            _plan_retirement(plan, resort, row, status, sheet_retired_at, now)
 
-    if Mode.DELETE in modes:
-        plan.deletions = [
-            resort
-            for uuid, resort in sorted(by_uuid.items(), key=lambda kv: kv[1].name)
-            if uuid not in live_uuids
-        ]
+    plan.not_in_sheet = sorted(
+        (resort for uuid, resort in by_uuid.items() if uuid not in listed),
+        key=lambda resort: resort.name,
+    )
     return plan
+
+
+_RETIREMENT_FIELDS = ("retired_at", "retired_reason", "retired_note")
+
+
+def _plan_retirement(
+    plan: _Plan,
+    resort: Resort,
+    row: dict[str, str],
+    status: str,
+    sheet_retired_at: datetime.datetime | None,
+    now: datetime.datetime,
+) -> None:
+    """Stage the sheet's retirement state onto an existing resort.
+
+    Args:
+        plan: The plan to record the change on.
+        resort: The database row the sheet row keys on.
+        row: The sheet row.
+        status: Its ``status``: blank, or a ``Resort.RetiredReason``.
+        sheet_retired_at: Its ``retired_at``, parsed, or None.
+        now: The run's one timestamp, for a retirement the sheet leaves undated.
+
+    """
+    if not status:
+        if resort.is_retired:
+            for field in _RETIREMENT_FIELDS:
+                setattr(resort, field, None if field == "retired_at" else "")
+            plan.restorations.append(resort)
+        return
+    wanted = {
+        "retired_at": _retired_at(resort, status, sheet_retired_at, now),
+        "retired_reason": status,
+        "retired_note": row["retired_note"].strip(),
+    }
+    changes: dict[str, tuple[Any, Any]] = {}
+    for field, new in wanted.items():
+        old = getattr(resort, field)
+        if old != new:
+            changes[field] = (old, new)
+            setattr(resort, field, new)
+    if changes:
+        plan.retirements.append((resort, changes))
 
 
 def _plan_addition(
@@ -611,37 +726,74 @@ def _plan_addition(
         plan.pass_links.append((resort, passes))
 
 
-def _is_retired(row: dict[str, str]) -> bool:
-    """
-    Read the sheet's ``status`` cell (SNOW-817).
+def _retired_at(
+    resort: Resort,
+    status: str,
+    sheet_retired_at: datetime.datetime | None,
+    now: datetime.datetime,
+) -> datetime.datetime | None:
+    """Return when a resort the sheet retires counts as retired.
 
-    Blank means a live resort — the overwhelming majority of rows.
-    ``NOT_A_SKI_RESORT`` retires it: the row stays in the sheet as a record
-    of a place that was considered and rejected, and ``--mode delete``
-    removes it from the database.
+    Its own date when it is already retired for the same reason; for a
+    live one, the sheet's date when it gives one; otherwise now — a new
+    reason is a new retirement.
+    """
+    if resort.is_retired and resort.retired_reason == status:
+        return resort.retired_at
+    if not resort.is_retired and sheet_retired_at is not None:
+        return sheet_retired_at
+    return now
+
+
+def _status_from_row(row: dict[str, str]) -> str:
+    """
+    Read the sheet's ``status`` cell (SNOW-817, widened by SNOW-1404).
+
+    Blank means a live resort — the overwhelming majority of rows. A
+    ``Resort.RetiredReason`` value retires it, for that reason; the row
+    stays in the sheet as the record of it.
 
     An unrecognised value is an error rather than a silent fallback, for
     the reason ``_kind_from_row`` rejects one: a typo resolving quietly to
-    "live" would put a retired row back on the map as a resort pin, and a
-    typo resolving quietly to "retired" would delete a real resort.
+    "live" would put a retired row back on the map, and one resolving
+    quietly to "retired" would take a real resort off it.
 
     Args:
         row: One sheet row.
 
     Returns:
-        True when the sheet retires this row.
+        ``""`` for a live row, otherwise the retirement reason.
 
     Raises:
         ValueError: If the cell holds something that is neither blank nor
-            the marker.
+            a reason.
 
     """
     raw = (row.get("status") or "").strip().upper()
+    if raw and raw not in STATUSES:
+        raise ValueError(
+            f"unknown status {raw!r} (expected blank or one of {', '.join(STATUSES)})"
+        )
+    return raw
+
+
+def _retired_at_from_row(row: dict[str, str]) -> datetime.datetime | None:
+    """Read the sheet's ``retired_at`` cell: ISO 8601 with a timezone, or blank.
+
+    Raises:
+        ValueError: The cell is not an ISO 8601 datetime with a timezone.
+
+    """
+    raw = (row.get("retired_at") or "").strip()
     if not raw:
-        return False
-    if raw != DELETE_MARKER:
-        raise ValueError(f"unknown status {raw!r} (expected blank or {DELETE_MARKER})")
-    return True
+        return None
+    try:
+        parsed = datetime.datetime.fromisoformat(raw)
+    except ValueError as exc:
+        raise ValueError(f"retired_at {raw!r} is not ISO 8601") from exc
+    if parsed.tzinfo is None:
+        raise ValueError(f"retired_at {raw!r} has no timezone")
+    return parsed
 
 
 def _stamp_provenance(resort: Resort, row: dict[str, str]) -> None:

@@ -37,7 +37,10 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
   regions/       Geographic reference data — MicroRegion / MajorRegion /
                  SubRegion / Resort, plus the fixture-maintenance commands
                  (dump_resorts_sheet, refresh_eaws_fixtures) and the
-                 curated resort sheet + its import_resorts command
+                 curated resort sheet + its import_resorts command. A
+                 resort is retired, never deleted (SNOW-1404):
+                 Resort.objects is the live set, Resort.all_objects
+                 the whole table and the base manager
   ingest/        The providers' fetch and normalisation code, built to be
                  rehostable (SNOW-1247): it imports NO other apps.* package,
                  and everything else imports it only through
@@ -197,7 +200,8 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  under /api/mcp/: token audience is a URL prefix.
                  resort_tools.py (SNOW-1401) lets staff read and
                  correct resorts from a chat — get / find / update /
-                 create, each write a preview then an audited commit
+                 create / retire / restore, each write a preview then
+                 an audited commit
   oauth/         Snowdesk's side of the MCP OAuth server (docs/oauth.md).
                  The server is mcp-auth on django-oauth-toolkit (SNOW-1193),
                  mounted from config/urls.py; this app holds the connect

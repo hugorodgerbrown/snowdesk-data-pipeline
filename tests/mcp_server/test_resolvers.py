@@ -596,3 +596,18 @@ class TestFindPlacesNearReadsCentroidLocations:
         hits = resolvers.find_places_near(46.1, 7.2, radius_km=10, limit=5)
 
         assert [hit["region_id"] for hit in hits] == [region.region_id]
+
+
+@pytest.mark.django_db
+def test_search_places_leaves_out_a_retired_resort() -> None:
+    """SNOW-1404: a retired resort drops out of search, cache and all."""
+    resort = ResortFactory.create(name="Ovronnaz")
+    assert [hit["name"] for hit in resolvers.search_places("Ovronnaz")] == [
+        "Ovronnaz"
+    ]
+
+    resort.retired_at = timezone.now()
+    resort.retired_reason = "CLOSED"
+    resort.save()
+
+    assert resolvers.search_places("Ovronnaz") == []
