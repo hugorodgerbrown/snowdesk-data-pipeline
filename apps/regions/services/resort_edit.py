@@ -85,7 +85,8 @@ def nearby_resorts(
     A full scan of the pinned resorts — a few hundred rows, one query —
     with a great-circle distance per row. Touring terrain is included: a
     book's "resort" may well be a row the sheet already holds under that
-    kind.
+    kind. Retired resorts are included too (SNOW-1404): a book's resort
+    may be one retired here, better restored than created again.
 
     Args:
         latitude: The point's latitude (WGS-84).
@@ -97,7 +98,7 @@ def nearby_resorts(
 
     """
     hits: list[NearbyResort] = []
-    for resort in Resort.objects.geocoded().select_related("region", "location"):
+    for resort in Resort.all_objects.geocoded().select_related("region", "location"):
         pin = resort.pin_coordinates
         if pin is None:
             continue

@@ -139,6 +139,7 @@ from apps.ingest.public import (
 from apps.locations.models import Location, ResortLocation
 from apps.observations.models import FieldObservation
 from apps.observations.services.ground import ground_for_region
+from apps.public.errors import error_response
 from apps.regions.cantons import canton_label
 from apps.regions.models import MicroRegion, Resort
 from apps.routes.models import Route, RouteShare
@@ -4914,7 +4915,9 @@ def resort_legacy_redirect(
         A 301 to the resort's canonical page, or 404 for an unknown pk.
 
     """
-    resort = get_object_or_404(Resort, pk=resort_id)
+    # all_objects: a retired resort still redirects, and its page answers
+    # 410 (SNOW-1404) — the old address learns the same as the new one.
+    resort = get_object_or_404(Resort.all_objects, pk=resort_id)
     return redirect(resort.get_absolute_url(), permanent=True)
 
 
@@ -5219,7 +5222,8 @@ def resort_detail(
 
     Returns:
         The rendered resort page; a redirect for the dated URL of today;
-        404 for an unknown resort or a malformed date.
+        404 for an unknown resort or a malformed date; 410 for a retired
+        one (SNOW-1404).
 
     """
     today = timezone.localdate()
@@ -5230,9 +5234,12 @@ def resort_detail(
         except ValueError as exc:
             raise Http404("Not a date") from exc
     resort = get_object_or_404(
-        Resort.objects.select_related("region__subregion__major", "location"),
+        Resort.all_objects.select_related("region__subregion__major", "location"),
         slug=slug,
     )
+    if resort.is_retired:
+        # SNOW-1404: the page existed, so Gone rather than Not Found.
+        return error_response(request, "410")
     if date_str is not None and target_date == today:
         return redirect(resort.get_absolute_url())
 

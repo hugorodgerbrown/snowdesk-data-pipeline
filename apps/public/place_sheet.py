@@ -66,6 +66,7 @@ from apps.favourites.relevance import annotate_problem_relevance
 from apps.ingest.public import problems_at
 from apps.locations.models import Location
 from apps.locations.services.what3words import what3words_map_url
+from apps.public.errors import error_response
 from apps.public.region_sheet import CURRENT_DAY_MAX_AGE_S, PAST_DAY_MAX_AGE_S
 from apps.public.views import (
     _DANGER_PANEL_META,
@@ -243,16 +244,19 @@ def resort_sheet_partial(request: HttpRequest, slug: str) -> HttpResponse:
     Returns:
         The rendered ``public/partials/_place_sheet_body.html`` fragment,
         privately cacheable for a day when ``d`` is a past day and for ten
-        minutes otherwise; 404 for an unknown resort, 400 for a malformed
-        date.
+        minutes otherwise; 404 for an unknown resort, 410 for a retired one
+        (SNOW-1404), 400 for a malformed date.
 
     """
     target_date = _target_date(request)
     if target_date is None:
         return JsonResponse({"error": "bad_date"}, status=400)
     resort = get_object_or_404(
-        Resort.objects.select_related("region", "location"), slug=slug
+        Resort.all_objects.select_related("region", "location"), slug=slug
     )
+    if resort.is_retired:
+        # SNOW-1404: the same answer the resort page gives.
+        return error_response(request, "410")
 
     # SNOW-1164: under the peek row, the resort page's own body for the
     # map's day — built by the page's own builder, so the two cannot drift.

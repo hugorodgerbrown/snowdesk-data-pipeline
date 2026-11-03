@@ -3084,7 +3084,8 @@ def edit_resort_create(request: HttpRequest) -> JsonResponse:
     ``docs/decisions/resorts-are-editable-data.md``); run
     ``manage.py dump_resorts_sheet --commit`` to carry it to other
     worktrees and CI, and add it to ``apps/regions/data/resorts.tsv`` so the
-    next ``import_resorts`` reconciliation does not delete it.
+    next ``import_resorts`` run lists it in the sheet (it is never deleted
+    for being absent — SNOW-1404).
 
     Errors:
         404 — request user is not a superuser.
@@ -3132,11 +3133,15 @@ def edit_resort_create(request: HttpRequest) -> JsonResponse:
             status=400,
         )
 
-    if Resort.objects.filter(region=region, name__iexact=name).exists():
+    # all_objects: a retired resort of the same name is restored, not
+    # created again (SNOW-1404).
+    existing = Resort.all_objects.filter(region=region, name__iexact=name).first()
+    if existing is not None:
+        retired = " (retired: restore it instead)" if existing.is_retired else ""
         return JsonResponse(
             {
                 "error": "duplicate_name",
-                "detail": f"{name} already exists in {region.region_id}.",
+                "detail": f"{name} already exists in {region.region_id}{retired}.",
             },
             status=409,
         )

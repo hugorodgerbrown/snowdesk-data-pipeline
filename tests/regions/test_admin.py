@@ -106,3 +106,38 @@ def test_change_page_shows_the_pin_location() -> None:
 
     assert response.status_code == 200
     assert "field-location" in response.content.decode()
+
+
+@pytest.mark.django_db
+class TestRetiredResortsInTheAdmin:
+    """SNOW-1404: the admin sees every resort and can filter by retirement."""
+
+    def _client(self) -> Client:
+        """Return a client signed in as a superuser."""
+        client = Client()
+        client.force_login(UserFactory.create(is_superuser=True, is_staff=True))
+        return client
+
+    def test_changelist_shows_retired_rows_and_filters(self) -> None:
+        """Unfiltered shows both; the filter narrows to one state."""
+        ResortFactory.create(name="Live Hill")
+        ResortFactory.create(name="Gone Hill", retired=True)
+        client = self._client()
+        url = reverse("admin:regions_resort_changelist")
+
+        everything = client.get(url).content.decode()
+        assert "Live Hill" in everything and "Gone Hill" in everything
+        retired = client.get(url, {"retired": "retired"}).content.decode()
+        assert "Gone Hill" in retired and "Live Hill" not in retired
+        live = client.get(url, {"retired": "live"}).content.decode()
+        assert "Live Hill" in live and "Gone Hill" not in live
+
+    def test_change_page_opens_a_retired_resort(self) -> None:
+        """A retired resort opens, with its Retirement fieldset."""
+        resort = ResortFactory.create(retired=True, retired_note="lifts shut")
+        response = self._client().get(
+            reverse("admin:regions_resort_change", args=[resort.pk])
+        )
+        assert response.status_code == 200
+        assert "Retirement" in response.content.decode()
+        assert "lifts shut" in response.content.decode()

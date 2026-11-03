@@ -96,6 +96,13 @@ Context:
         {% blocktrans trimmed with region=favourite.region.name when=when asvar row_meta %}{{ region }} · saved
             {{ when }}{% endblocktrans %}
     {% endif %}
+    {# SNOW-1404: a saved resort that was retired. It is off the map and #}
+    {# out of search, so the row says so, frames nothing, renames nothing #}
+    {# and offers Remove alone (_favourite_row_actions.html).             #}
+    {# ``yesno`` below turns the flag into "" (no rename) for a retired row. #}
+    {% if favourite.is_retired_resort %}
+        {% trans "No longer listed" as row_meta %}
+    {% endif %}
     {% trans "Unnamed pin" as unnamed_pin %}
     {% firstof favourite.name unnamed_pin as row_label %}
     {% trans "Favourite name" as rename_label %}
@@ -106,7 +113,7 @@ Context:
         {% firstof "includes/_row_disclosure.html" as row_disclosure %}
         {% firstof "favourite-panel-"|add:uuid as row_panel_id %}
     {% endif %}
-    {% if map_focus %}
+    {% if map_focus and not favourite.is_retired_resort %}
         {% focus_target favourite.longitude favourite.latitude as row_focus_target %}
         {% blocktrans trimmed with name=row_label asvar row_focus_label %}Zoom to {{ name }}{% endblocktrans %}
     {% endif %}
@@ -116,5 +123,5 @@ Context:
     {# SNOW-704 backfill has not reached has no location and gets no href. #}
     {% firstof favourite.location.get_absolute_url "" as detail_url %}
     {% url 'favourites:card' favourite.uuid as card_url %}
-    {% include "includes/_ugc_panel_row.html" with row_id=row_dom_id row_target="#"|add:row_dom_id label=row_label label_testid="favourite-list-row-label" meta=row_meta renameable=True rename_label=rename_label focus_target=row_focus_target focus_label=row_focus_label actions_template="favourites/partials/_favourite_row_actions.html" disclosure_template=row_disclosure disclosure_href=detail_url disclosure_hx_get=card_url disclosure_panel_id=row_panel_id disclosure_panel_testid="favourite-card-panel" disclosure_label=disclosure_label disclosure_testid="favourite-list-detail-link" %}
+    {% include "includes/_ugc_panel_row.html" with row_id=row_dom_id row_target="#"|add:row_dom_id label=row_label label_testid="favourite-list-row-label" meta=row_meta renameable=favourite.is_retired_resort|yesno:",True" rename_label=rename_label focus_target=row_focus_target focus_label=row_focus_label actions_template="favourites/partials/_favourite_row_actions.html" disclosure_template=row_disclosure disclosure_href=detail_url disclosure_hx_get=card_url disclosure_panel_id=row_panel_id disclosure_panel_testid="favourite-card-panel" disclosure_label=disclosure_label disclosure_testid="favourite-list-detail-link" %}
 {% endwith %}

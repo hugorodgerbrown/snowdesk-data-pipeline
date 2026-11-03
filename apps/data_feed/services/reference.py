@@ -140,7 +140,7 @@ class ReferenceIndex:
             },
             resorts={
                 r.source_uuid: r
-                for r in Resort.objects.reference_data()
+                for r in Resort.all_objects.reference_data()
                 .select_related("location", "region")
                 .prefetch_related("passes", "resort_locations__location")
                 if r.source_uuid is not None
@@ -327,7 +327,10 @@ def _claim_slug(model: type[Pass] | type[Resort], slug: str, row: Any) -> None:
         SlugTaken: Another row holds the slug.
 
     """
-    if model.objects.filter(slug=slug).exclude(pk=row.pk).exists():
+    # A retired resort still holds its slug (SNOW-1404), so look in the
+    # whole table: missing it would turn SlugTaken into an IntegrityError.
+    manager = Resort.all_objects if model is Resort else Pass.objects
+    if manager.filter(slug=slug).exclude(pk=row.pk).exists():
         raise SlugTaken(f"slug {slug!r} is held by another {model.__name__}")
 
 
@@ -415,7 +418,10 @@ def apply_reference_resort(
     """
     source = _uuid(item["uuid"])
     document = item.get("document") or {}
-    fields = contract.load_fields(Resort, _RESORT_FIELDS, document.get("fields") or {})
+    fields = {
+        **contract.RESORT_LIVE,
+        **contract.load_fields(Resort, _RESORT_FIELDS, document.get("fields") or {}),
+    }
     region, places, passes = _resolve(document, index, commit=commit)
     resort = index.resorts.get(source)
     if resort is not None:
@@ -434,7 +440,7 @@ def apply_reference_resort(
             # A resort a v1 pull created has the slug but no source_uuid.
             # Only an unlinked row is adopted, as for a pass.
             resort = (
-                Resort.objects.filter(
+                Resort.all_objects.filter(
                     slug=item["slug"], source_uuid__isnull=True
                 ).first()
                 or Resort()
@@ -462,7 +468,7 @@ def apply_reference_resort(
         )
     # Re-read with its relations, so a later comparison sees the write.
     index.resorts[source] = (
-        Resort.objects.select_related("location", "region")
+        Resort.all_objects.select_related("location", "region")
         .prefetch_related("passes", "resort_locations__location")
         .get(pk=resort.pk)
     )
@@ -496,7 +502,7 @@ def _bury_resort(source: uuid.UUID, *, commit: bool, index: ReferenceIndex) -> s
     if commit:
         with transaction.atomic():
             resort.resort_locations.all().delete()
-            Resort.objects.filter(pk=resort.pk).update(source_uuid=None)
+            Resort.all_objects.filter(pk=resort.pk).update(source_uuid=None)
     return DETACHED
 
 
@@ -517,7 +523,7 @@ def _bury_location(source: uuid.UUID, *, commit: bool, index: ReferenceIndex) ->
     if commit:
         with transaction.atomic():
             ResortLocation.objects.filter(location=location).delete()
-            Resort.objects.filter(location=location).update(location=None)
+            Resort.all_objects.filter(location=location).update(location=None)
             MicroRegion.objects.filter(centroid_location=location).update(
                 centroid_location=None
             )

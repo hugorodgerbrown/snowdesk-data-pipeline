@@ -140,6 +140,18 @@ ERROR_PAGES: dict[str, ErrorPage] = {
         ),
         full_site=True,
     ),
+    # SNOW-1404: a retired resort. The page existed and was indexed, so
+    # Gone rather than Not Found tells a crawler to drop it for good.
+    "410": ErrorPage(
+        status=410,
+        slug="gone",
+        heading=_("This page is no longer listed"),
+        body=_(
+            "Snowdesk used to show this place but no longer does. The map "
+            "and today's bulletins are where you left them."
+        ),
+        full_site=True,
+    ),
     "500": ErrorPage(
         status=500,
         slug="server_error",

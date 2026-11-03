@@ -73,6 +73,36 @@ class FavouriteQuerySet(models.QuerySet["Favourite"]):
         """
         return self.placed().filter(resort__isnull=True)
 
+    def listed(self) -> "FavouriteQuerySet":
+        """Return the favourites whose resort, if any, is not retired (SNOW-1404).
+
+        A retired resort's favourite is kept — the FK holds, nothing is
+        lost — but it is not a place the map, search or the Today panel
+        offers any more. The Favourites panel lists it as "No longer
+        listed" (``panel_rows``), so the user can remove it.
+
+        Returns:
+            Filtered queryset.
+
+        """
+        return self.exclude(resort__retired_at__isnull=False)
+
+    def panel_rows(self) -> "FavouriteQuerySet":
+        """Return what the Favourites panel lists: dropped pins, and the retired.
+
+        The dropped pins (``dropped_pins``), plus a placed favourite whose
+        resort is retired (SNOW-1404): it has left search's "Pinned
+        resorts" and the map, so this panel is the one place left to see
+        and remove it.
+
+        Returns:
+            Filtered queryset.
+
+        """
+        return self.placed().filter(
+            models.Q(resort__isnull=True) | models.Q(resort__retired_at__isnull=False)
+        )
+
     def region_pins(self) -> "FavouriteQuerySet":
         """Return the region pins — rows whose subject is the region itself.
 
@@ -100,7 +130,12 @@ class FavouriteQuerySet(models.QuerySet["Favourite"]):
         """
         return self.filter(
             models.Q(location__isnull=True, latitude__isnull=True, region__isnull=False)
-            | models.Q(resort__isnull=False, resort__region__isnull=False)
+            | models.Q(
+                resort__isnull=False,
+                resort__region__isnull=False,
+                # SNOW-1404: a retired resort is no place to be alerted about.
+                resort__retired_at__isnull=True,
+            )
         )
 
     def alert_places(self) -> "FavouriteQuerySet":
@@ -293,6 +328,19 @@ class Favourite(BaseModel):
             self.location_id is None
             and self.latitude is None
             and self.region_id is not None
+        )
+
+    @property
+    def is_retired_resort(self) -> bool:
+        """Whether this row saves a resort that has been retired (SNOW-1404).
+
+        Callers listing many rows ``select_related("resort")`` so this
+        reads no query per row.
+        """
+        return (
+            self.resort_id is not None
+            and self.resort is not None
+            and (self.resort.is_retired)
         )
 
     @property

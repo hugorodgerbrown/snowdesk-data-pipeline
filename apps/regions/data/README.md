@@ -37,27 +37,37 @@ pins lived only in the retired `resorts.json` fixture and the sheet
 disagreed with the database about most of them.
 
 `import_resorts` reconciles in three modes, all selected by default:
-`add` creates resorts the sheet lists but the database lacks, `update`
-overwrites the editorial fields of ones it has, and `delete` removes any
-resort the sheet does not list. Pick a subset with `--mode`, e.g.
-`--mode update` to refresh fields without creating or deleting anything.
+`add` creates resorts the sheet lists as live but the database lacks,
+`update` overwrites the editorial fields of ones it has, and `retire`
+brings each row's retirement in line with its `status`. Pick a subset with
+`--mode`, e.g. `--mode update` to refresh fields without creating or
+retiring anything.
 
-The sheet's *live* set is every row whose `status` column is blank, so
-`delete` removes both the `NOT_A_SKI_RESORT` rows and any resort missing
-from the export altogether. That second half has teeth: a resort created
-in the admin and not yet dumped here is deleted by the next full run. Run
-`dump_resorts_sheet --commit` after adding one, or reconcile with
-`--mode add update`.
+**Nothing is deleted** (SNOW-1404). Retiring a resort is a soft delete: it
+leaves the map, search and every list, and its page answers 410 Gone, but
+the row, its pin, its places and every favourite of it are kept. `status`
+is blank for a live resort, or the reason it was retired:
+`NOT_A_SKI_RESORT`, `DUPLICATE`, `CLOSED` or `OTHER`. Anything else is an
+error, not a silent "live". Beside it, `retired_at` (ISO 8601) and
+`retired_note` record when and why. `retire` retires a live row whose
+status is set (at the sheet's `retired_at`, or now), keeps a retired row's
+date while its reason is unchanged, restamps it when the reason changes,
+and restores a retired row whose status is blank.
 
-`status` accepts only a blank cell or `NOT_A_SKI_RESORT`; anything else is
-an error, not a silent "live". It had been a prefix on the old `note`
-column, which meant one cell carried both a curator's prose and a
-machine-read verdict — and no note could begin with those characters
-without deleting the resort. The prose half is now `notes`.
+A resort the sheet does not list is **reported as "not in sheet" and left
+alone** — never retired, never deleted. Production owns the resorts
+created there in the map editor or through the ops MCP server; they reach
+this file on the next `dump_resorts_sheet --commit`. A retired row the
+database does not hold is a record carried forward, and is not created.
+`--mode delete`, the old name, is refused with a message naming `retire`.
 
-`kind` is a separate axis from that marker, and the two do not interact
-(SNOW-544). `NOT_A_SKI_RESORT` means *delete this row*; `kind` says what a
-**live** row is — `RESORT` (the default, and what a blank cell means) or
+`status` had been a prefix on the old `note` column, which meant one cell
+carried both a curator's prose and a machine-read verdict. The prose half
+is now `notes`.
+
+`kind` is a separate axis from `status`, and the two do not interact
+(SNOW-544). `status` says whether a row is *retired*; `kind` says what a
+row is — `RESORT` (the default, and what a blank cell means) or
 `TOURING_TERRAIN` for real avalanche terrain with no lifts: passes, side
 valleys and glacier basins the sheet accumulated back when it was one row
 per micro-region. Touring rows stay in the database and out of every
