@@ -130,9 +130,6 @@ def create_favourite(
             user=user,
             name=name,
             location=location,
-            latitude=latitude,
-            longitude=longitude,
-            elevation=elevation,
             region=region,
         )
 
@@ -222,9 +219,6 @@ def create_resort_favourite(user: "User", resort: "Resort") -> Favourite:
                 user=user,
                 name=resort.name,
                 location=location,
-                latitude=latitude,
-                longitude=longitude,
-                elevation=elevation,
                 region=resort.region,
                 resort=resort,
             )

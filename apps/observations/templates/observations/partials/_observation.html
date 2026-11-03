@@ -49,7 +49,7 @@ Context:
     {# `meta` parameter is text. See _observation_meta.html for why the age   #}
     {# has to be an element and not a sentence fragment.                     #}
     {% if map_focus %}
-        {% focus_target observation.longitude observation.latitude as row_focus_target %}
+        {% focus_target observation.location.longitude observation.location.latitude as row_focus_target %}
         {% blocktrans trimmed with name=observation.get_observation_type_display asvar row_focus_label %}Zoom to
             {{ name }}{% endblocktrans %}
     {% endif %}

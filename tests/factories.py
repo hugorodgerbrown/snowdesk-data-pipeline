@@ -903,14 +903,20 @@ class FieldObservationFactory(factory.django.DjangoModelFactory[FieldObservation
 
         model = FieldObservation
 
+    class Params:
+        """Where the report's Location is, not fields of the model.
+
+        ``latitude`` / ``longitude`` left the model in SNOW-714; they stay
+        here as shorthand for ``location__latitude`` / ``location__longitude``.
+        WGS-84 coordinates inside Martigny / CH-4115 territory.
+        """
+
+        latitude = 46.10
+        longitude = 7.10
+
     user = factory.SubFactory(UserFactory)
     region = factory.SubFactory(MicroRegionFactory)
-    # WGS-84 coordinates inside Martigny / CH-4115 territory.
-    latitude = 46.10
-    longitude = 7.10
-    # The anonymous Location this report happened at (SNOW-709), threaded
-    # from the same coordinates. Pass ``location=None`` for a pre-SNOW-709
-    # row.
+    # The anonymous Location this report happened at (SNOW-709).
     location = factory.SubFactory(
         LocationFactory,
         anonymous=True,
@@ -929,9 +935,9 @@ class FieldObservationFactory(factory.django.DjangoModelFactory[FieldObservation
 class FavouriteFactory(factory.django.DjangoModelFactory[Favourite]):
     """Factory for Favourite instances.
 
-    ``latitude``/``longitude`` vary per instance (``factory.Sequence``) and
-    are threaded into the ``location`` SubFactory, so each Favourite and its
-    anonymous Location agree on where the pin is.
+    ``latitude`` / ``longitude`` / ``elevation`` are parameters, not model
+    fields (SNOW-714): shorthand for the ``location`` SubFactory's own,
+    varying per instance so each pin gets its own anonymous Location.
     """
 
     class Meta:
@@ -943,19 +949,16 @@ class FavouriteFactory(factory.django.DjangoModelFactory[Favourite]):
         """Traits for common variations."""
 
         # SNOW-802: a region pin — the region is the subject, and there is
-        # no coordinate, no elevation and no Location. Pass ``region=`` too.
-        region_pin = factory.Trait(
-            location=None, latitude=None, longitude=None, elevation=None
-        )
+        # no Location. Pass ``region=`` too.
+        region_pin = factory.Trait(location=None)
+        latitude = factory.Sequence(lambda n: 46.1 + n * 0.05)
+        longitude = factory.Sequence(lambda n: 7.4 + n * 0.05)
+        elevation = 1500.0
 
     user = factory.SubFactory(UserFactory)
     name = ""
-    latitude = factory.Sequence(lambda n: 46.1 + n * 0.05)
-    longitude = factory.Sequence(lambda n: 7.4 + n * 0.05)
-    elevation = 1500.0
-    # The anonymous Location this pin is (SNOW-704), threaded from the same
-    # coordinates — which is what ``create_favourite`` builds. Pass
-    # ``location=None`` to get a pre-SNOW-704 row.
+    # The anonymous Location this pin is (SNOW-704) — what
+    # ``create_favourite`` builds.
     location = factory.SubFactory(
         LocationFactory,
         anonymous=True,

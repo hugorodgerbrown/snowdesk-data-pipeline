@@ -418,7 +418,8 @@ class TestProblemRelevance:
             ) as annotate,
         ):
             _get(client, _favourite_url(favourite.uuid))
-        return annotate.call_args.args[1]
+        # None when the sheet judged nothing: a pin with no height.
+        return annotate.call_args.args[1] if annotate.called else None
 
     def test_the_locations_height_wins(self, client: Client) -> None:
         favourite = FavouriteFactory.create(
@@ -429,14 +430,14 @@ class TestProblemRelevance:
         favourite.location.save()
         assert self._annotated_with(client, favourite) == 2410.0
 
-    def test_the_pins_own_height_is_the_fallback(self, client: Client) -> None:
+    def test_a_location_with_no_height_annotates_nothing(self, client: Client) -> None:
         favourite = FavouriteFactory.create(
             region=MicroRegionFactory.create(), elevation=1800.0
         )
         assert favourite.location is not None
         favourite.location.elevation_m = None
         favourite.location.save()
-        assert self._annotated_with(client, favourite) == 1800.0
+        assert self._annotated_with(client, favourite) is None
 
 
 @pytest.mark.django_db

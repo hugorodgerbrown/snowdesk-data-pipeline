@@ -37,7 +37,7 @@ def delete_observation_instance(observation: FieldObservation) -> None:
 
     The row and the sweep share one atomic block, so a failed sweep leaves
     the report in place rather than deleting it and stranding its
-    coordinate. A pre-SNOW-709 row with no location deletes cleanly.
+    coordinate.
 
     Args:
         observation: The observation to delete.
@@ -46,8 +46,7 @@ def delete_observation_instance(observation: FieldObservation) -> None:
     with transaction.atomic():
         location = observation.location
         observation.delete()
-        if location is not None:
-            delete_location_if_orphaned(location)
+        delete_location_if_orphaned(location)
 
 
 def delete_observation(user: "User", uuid: UUID) -> None:

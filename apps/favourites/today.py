@@ -138,7 +138,7 @@ def today_subjects(favourites: Iterable[Favourite]) -> list[Favourite]:
         left out.
 
     """
-    return [f for f in favourites if f.resort_id is not None or f.latitude is None]
+    return [f for f in favourites if f.resort_id is not None or f.location_id is None]
 
 
 def today_region_pks(favourites: Iterable[Favourite]) -> set[int]:
@@ -173,8 +173,8 @@ def _parent(favourite: Favourite) -> MicroRegion | None:
 
 def _resort_point(favourite: Favourite) -> tuple[float, float] | None:
     """Return where a saved resort reads its forecast from: its own pin."""
-    if favourite.latitude is not None and favourite.longitude is not None:
-        return (favourite.latitude, favourite.longitude)
+    if favourite.location is not None:
+        return (favourite.location.latitude, favourite.location.longitude)
     if favourite.resort is not None:
         return favourite.resort.pin_coordinates
     return None

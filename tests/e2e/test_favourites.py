@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 from playwright.sync_api import Page
 
-from apps.favourites.models import Favourite
+from apps.locations.models import Location
 from tests.e2e.conftest import FavouritesPage
 
 
@@ -85,8 +85,8 @@ def test_signed_in_add_flow_creates_favourite(
     page.wait_for_function(_AUTHORITATIVE_PIN_JS)
 
     with django_db_blocker.unblock():
-        favourite = Favourite.objects.get(
-            user=favourites_page.account.user, name="Test Peak"
+        pin = Location.objects.get(
+            favourites__user=favourites_page.account.user, favourites__name="Test Peak"
         )
-        assert favourite.latitude == pytest.approx(46.2, abs=0.01)
-        assert favourite.longitude == pytest.approx(7.6, abs=0.01)
+        assert pin.latitude == pytest.approx(46.2, abs=0.01)
+        assert pin.longitude == pytest.approx(7.6, abs=0.01)

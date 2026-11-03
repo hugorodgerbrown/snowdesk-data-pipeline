@@ -452,6 +452,20 @@ class Location(BaseModel):
         """Model metadata."""
 
         ordering = ["-created_at"]
+        # WGS-84 range guards. A range check also rejects NaN/±Inf, so a bad
+        # value cannot land through a path that skips the view-layer
+        # validators (admin, shell). SNOW-714 moved them here from Favourite
+        # and FieldObservation, whose own coordinate columns it dropped.
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(latitude__gte=-90, latitude__lte=90),
+                name="location_latitude_within_wgs84",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(longitude__gte=-180, longitude__lte=180),
+                name="location_longitude_within_wgs84",
+            ),
+        ]
 
     @property
     def three_word_address(self) -> str | None:

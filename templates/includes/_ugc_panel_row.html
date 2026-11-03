@@ -88,7 +88,7 @@ Parameters (passed via {% include … with … %}):
                 A STRING, not a JSON attribute or a pair of numeric
                 parameters, for one reason: a template renders floats
                 through the active locale, so interpolating
-                `favourite.longitude` directly gives "7,53" in a German UI
+                `location.longitude` directly gives "7,53" in a German UI
                 — unparseable to `Number()`, and not even splittable back
                 apart on the comma. Callers build the value with
                 {% focus_target … %} (apps/public/templatetags/map_focus.py),

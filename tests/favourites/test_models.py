@@ -9,8 +9,9 @@ Covers:
     different users may each favourite the same resort; two NULL-resort
     favourites never collide; deleting a Resort sets favourite.resort to
     NULL (SET_NULL) leaving the row intact.
-  pin_elevation — the Location's height wins over the legacy column; the
-    legacy column is the fallback without a Location or a Location height.
+  pin_elevation — read from the Location; None without one or its height.
+  placed / region_pins — partition placed pins and region pins on
+    ``location`` alone (SNOW-714).
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from apps.favourites.models import Favourite
 from apps.locations.models import Location
 from tests.factories import (
     FavouriteFactory,
+    LocationFactory,
     MicroRegionFactory,
     ResortFactory,
     UserFactory,
@@ -36,9 +38,7 @@ class TestFavouriteToString:
 
     def test_to_string_with_name(self) -> None:
         """to_string includes the user-supplied name when set."""
-        favourite = FavouriteFactory.build(
-            name="Home run", latitude=46.1, longitude=7.4
-        )
+        favourite = FavouriteFactory.build(name="Home run")
         result = favourite.to_string()
         assert "Home run" in result
 
@@ -47,6 +47,17 @@ class TestFavouriteToString:
         favourite = FavouriteFactory.build(name="", latitude=46.1, longitude=7.4)
         result = favourite.to_string()
         assert "46.10000,7.40000" in result
+
+    def test_to_string_reads_the_location(self) -> None:
+        """The coordinate shown is the Location's, the pin's one coordinate."""
+        location = LocationFactory.build(latitude=45.9, longitude=6.8)
+        favourite = FavouriteFactory.build(name="", location=location)
+        assert "45.90000,6.80000" in favourite.to_string()
+
+    def test_to_string_without_a_location_or_region(self) -> None:
+        """A row with neither still renders rather than raising."""
+        favourite = FavouriteFactory.build(name="", location=None, region=None)
+        assert favourite.to_string().endswith("@ unplaced pin")
 
     def test_str_delegates_to_to_string(self) -> None:
         """__str__ returns the same value as to_string()."""
@@ -91,46 +102,22 @@ class TestFavouriteOrdering:
 
 
 @pytest.mark.django_db
-class TestFavouriteCoordinateConstraints:
-    """SNOW-464: DB check constraints reject out-of-range coordinates.
-
-    Belt-and-braces for a write path that bypasses the view-layer validator.
-    """
-
-    def test_latitude_out_of_range_raises_integrity_error(self) -> None:
-        """A latitude beyond WGS-84 bounds is rejected at the DB layer."""
-        with pytest.raises(IntegrityError), transaction.atomic():
-            FavouriteFactory.create(latitude=999.0)
-
-    def test_longitude_out_of_range_raises_integrity_error(self) -> None:
-        """A longitude beyond WGS-84 bounds is rejected at the DB layer."""
-        with pytest.raises(IntegrityError), transaction.atomic():
-            FavouriteFactory.create(longitude=999.0)
-
-
-@pytest.mark.django_db
 class TestFavouritePinElevation:
     """Favourite.pin_elevation — the height the card shows."""
 
-    def test_location_height_wins_over_the_legacy_column(self) -> None:
+    def test_the_location_height(self) -> None:
         """A pin whose Location was re-measured reports the new height."""
         favourite = FavouriteFactory.create(elevation=1500.0)
         Location.objects.filter(favourites=favourite).update(elevation_m=2213.0)
 
         assert Favourite.objects.get(pk=favourite.pk).pin_elevation == 2213.0
 
-    def test_legacy_column_without_a_location(self) -> None:
-        """A pre-SNOW-704 pin with no Location keeps its stored height."""
-        favourite = FavouriteFactory.create(location=None, elevation=1500.0)
-
-        assert favourite.pin_elevation == 1500.0
-
-    def test_legacy_column_when_the_location_has_no_height(self) -> None:
-        """A Location with no height falls back to the stored one."""
+    def test_none_when_the_location_has_no_height(self) -> None:
+        """A Location with no height yet gives the pin none."""
         favourite = FavouriteFactory.create(elevation=1500.0)
         Location.objects.filter(favourites=favourite).update(elevation_m=None)
 
-        assert Favourite.objects.get(pk=favourite.pk).pin_elevation == 1500.0
+        assert Favourite.objects.get(pk=favourite.pk).pin_elevation is None
 
     def test_region_pin_has_none(self) -> None:
         """A region pin (SNOW-802) has no height at all."""
@@ -235,3 +222,29 @@ class TestRetiredResortQuerysets:
         assert set(mine.alertable()) == {live}
         assert gone.is_retired_resort and not live.is_retired_resort
         assert not pin.is_retired_resort
+
+
+@pytest.mark.django_db
+class TestPlacedAndRegionPins:
+    """SNOW-714: ``location`` alone tells a placed pin from a region pin."""
+
+    def test_the_two_kinds_partition(self) -> None:
+        """Every placed pin is in ``placed()``, every region pin in ``region_pins()``."""
+        region = MicroRegionFactory.create()
+        pin = FavouriteFactory.create(region=region)
+        resort = FavouriteFactory.create(resort=ResortFactory.create())
+        region_pin = FavouriteFactory.create(region_pin=True, region=region)
+
+        assert set(Favourite.objects.placed()) == {pin, resort}
+        assert list(Favourite.objects.dropped_pins()) == [pin]
+        assert list(Favourite.objects.region_pins()) == [region_pin]
+        assert region_pin.is_region_pin
+        assert not pin.is_region_pin
+
+    def test_no_location_and_no_region_is_neither(self) -> None:
+        """A row with neither is not placed and not a region pin."""
+        stray = FavouriteFactory.create(location=None, region=None)
+
+        assert not Favourite.objects.placed().filter(pk=stray.pk).exists()
+        assert not Favourite.objects.region_pins().filter(pk=stray.pk).exists()
+        assert not stray.is_region_pin

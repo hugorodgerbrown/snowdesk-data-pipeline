@@ -67,7 +67,8 @@ class TestCreateFavouriteHappyPath:
             favourite = create_favourite(user, 46.1, 7.4, name="My pin")
 
         assert favourite.pk is not None
-        assert favourite.elevation == 1834.0
+        assert favourite.location is not None
+        assert favourite.location.elevation_m == 1834.0
         assert favourite.name == "My pin"
         assert favourite.user == user
 
@@ -160,9 +161,10 @@ class TestCreateResortFavourite:
         assert favourite.resort == resort
         assert favourite.region == region
         assert favourite.name == "Verbier"
-        assert favourite.latitude == 46.1
-        assert favourite.longitude == 7.4
-        assert favourite.elevation == 1500.0
+        assert favourite.location is not None
+        assert favourite.location.latitude == 46.1
+        assert favourite.location.longitude == 7.4
+        assert favourite.location.elevation_m == 1500.0
         assert favourite.user == user
 
     def test_ungeocoded_resort_raises(self) -> None:
@@ -191,7 +193,11 @@ class TestCreateResortFavourite:
         ):
             favourite = create_resort_favourite(user, resort)
 
-        assert (favourite.latitude, favourite.longitude) == (46.5, 7.5)
+        assert favourite.location is not None
+        assert (favourite.location.latitude, favourite.location.longitude) == (
+            46.5,
+            7.5,
+        )
         assert favourite.location is not None
         assert favourite.location.pk != pin.pk
 
@@ -206,7 +212,11 @@ class TestCreateResortFavourite:
         ):
             favourite = create_resort_favourite(user, resort)
 
-        assert (favourite.latitude, favourite.longitude) == (46.0, 7.0)
+        assert favourite.location is not None
+        assert (favourite.location.latitude, favourite.location.longitude) == (
+            46.0,
+            7.0,
+        )
 
     def test_second_call_is_idempotent(self) -> None:
         """A second create_resort_favourite call for the same pair returns the same row."""
@@ -280,9 +290,9 @@ class TestCreateResortFavourite:
         winning_favourite = Favourite.objects.create(
             user=user,
             name=resort.name,
-            latitude=46.1,
-            longitude=7.4,
-            elevation=elevation,
+            location=LocationFactory.create(
+                anonymous=True, latitude=46.1, longitude=7.4, elevation_m=elevation
+            ),
             region=resort.region,
             resort=resort,
         )
@@ -658,10 +668,12 @@ class TestDeleteFavouritesForUser:
         """Nothing to delete is not an error — most accounts are this."""
         assert delete_favourites_for_user(UserFactory.create()) == 0
 
-    def test_survives_a_pre_backfill_row_with_no_location(self) -> None:
-        """``Favourite.location`` is nullable; a null must not raise."""
+    def test_survives_a_region_pin_with_no_location(self) -> None:
+        """``Favourite.location`` is null on a region pin; that must not raise."""
         user = UserFactory.create()
-        favourite = FavouriteFactory.create(user=user, location=None)
+        favourite = FavouriteFactory.create(
+            user=user, region_pin=True, region=MicroRegionFactory.create()
+        )
 
         assert delete_favourites_for_user(user) == 1
 

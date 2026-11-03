@@ -51,7 +51,7 @@ def _favourites(user: User) -> list[Favourite]:
     """Return a user's favourites joined the way the ``today`` view joins them."""
     return list(
         Favourite.objects.filter(user=user).select_related(
-            "region", "resort", "resort__region", "resort__location"
+            "region", "location", "resort", "resort__region", "resort__location"
         )
     )
 

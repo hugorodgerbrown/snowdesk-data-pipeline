@@ -1313,10 +1313,12 @@ class TestFavouriteDetailRedirect:
         assert "no-store" not in response.get("Cache-Control", "")
 
     def test_favourite_without_a_location_is_404(self, client: Client) -> None:
-        """A pre-backfill row has no page to reach — 404, never a broken redirect."""
+        """A region pin has no page to reach — 404, never a broken redirect."""
         user = UserFactory.create()
         client.force_login(user)
-        favourite = FavouriteFactory.create(user=user, location=None)
+        favourite = FavouriteFactory.create(
+            user=user, region_pin=True, region=MicroRegionFactory.create()
+        )
 
         response = client.get(_detail_url(favourite.uuid))
 
@@ -1679,14 +1681,9 @@ class TestFavouriteList:
         content = client.get(f"{LIST_URL}", **HTMX_HEADERS).content.decode()
         feature = client.get(GEOJSON_URL).json()["features"][0]
 
-        assert (
-            f'data-row-focus="{favourite.longitude:f},{favourite.latitude:f}"'
-            in content
-        )
-        assert feature["geometry"]["coordinates"] == [
-            favourite.longitude,
-            favourite.latitude,
-        ]
+        assert favourite.location is not None
+        assert f'data-row-focus="{6.87:f},{45.9:f}"' in content
+        assert feature["geometry"]["coordinates"] == [6.87, 45.9]
 
     def test_renders_when_a_location_has_no_short_id(self, client: Client) -> None:
         """The panel survives an environment the short-id backfill has not reached.
@@ -1774,7 +1771,9 @@ class TestFavouriteList:
         # against the row's own meta line rather than the whole body: the
         # roster sidecar this list still carries for offline reads
         # (SNOW-418) is JSON, and legitimately holds the coordinates.
-        assert f"{favourite.latitude:.4f}" not in _row_meta(response.content.decode())
+        assert favourite.location is not None
+        latitude = f"{favourite.location.latitude:.4f}"
+        assert latitude not in _row_meta(response.content.decode())
 
     def test_map_variant_meta_line_prefixes_the_region(self, client: Client) -> None:
         """A pin that matched a region reads "<region> · saved <date>".
@@ -2226,10 +2225,8 @@ class TestFavouritesGeojson:
 
         data = response.json()
         feature = data["features"][0]
-        assert feature["geometry"]["coordinates"] == [
-            favourite.longitude,
-            favourite.latitude,
-        ]
+        assert favourite.location is not None
+        assert feature["geometry"]["coordinates"] == [7.4, 46.1]
 
     def test_cache_control_is_private_no_store(self, client: Client) -> None:
         """The response carries Cache-Control: private, no-store."""

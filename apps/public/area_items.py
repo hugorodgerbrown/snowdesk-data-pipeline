@@ -98,13 +98,15 @@ def area_items(
     rows = (
         Favourite.objects.for_user(owner)
         .placed()
-        .values_list("uuid", "latitude", "longitude", "name", "resort__name")
+        .values_list(
+            "uuid", "location__latitude", "location__longitude", "name", "resort__name"
+        )
     )
     placed = [
         (pin_uuid, latitude, longitude, name or resort_name or "")
         for pin_uuid, latitude, longitude, name, resort_name in rows
-        # ``placed()`` excludes a null latitude; the longitude test is
-        # the type checker's, the database's own constraint pairs them.
+        # ``placed()`` excludes a pin with no Location, and a Location's
+        # coordinate is never null; these tests are the type checker's.
         if latitude is not None
         and longitude is not None
         and point_in_bbox(longitude, latitude, bbox)

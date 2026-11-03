@@ -38,23 +38,21 @@ class TestFavouriteAdminRegistration:
         assert "user" in registered.list_display
         assert "name" in registered.list_display
 
-    def test_list_display_includes_coordinates(self) -> None:
-        """list_display includes latitude, longitude, and elevation."""
+    def test_list_display_shows_the_location(self) -> None:
+        """The pin's place is its Location (SNOW-714)."""
         registered = admin.site._registry[Favourite]
-        assert "latitude" in registered.list_display
-        assert "longitude" in registered.list_display
-        assert "elevation" in registered.list_display
+        assert "location" in registered.list_display
+        assert "latitude" not in registered.list_display
 
     def test_readonly_fields_includes_user(self) -> None:
         """user is read-only (no editing user-generated content)."""
         registered = admin.site._registry[Favourite]
         assert "user" in registered.readonly_fields
 
-    def test_readonly_fields_includes_coordinates(self) -> None:
-        """latitude and longitude are read-only."""
+    def test_readonly_fields_includes_the_location(self) -> None:
+        """The Location is read-only."""
         registered = admin.site._registry[Favourite]
-        assert "latitude" in registered.readonly_fields
-        assert "longitude" in registered.readonly_fields
+        assert "location" in registered.readonly_fields
 
     def test_search_fields_includes_user_email(self) -> None:
         """search_fields includes user__email for lookup by email."""

@@ -2466,6 +2466,21 @@ class TestCommunityReportsGeojson:
         coords = response.json()["features"][0]["geometry"]["coordinates"]
         assert coords == [7.988, 46.123]
 
+    def test_queries_do_not_grow_with_the_reports(self) -> None:
+        """Each report's coordinate is read from its joined Location (SNOW-714)."""
+
+        def queries() -> int:
+            with CaptureQueriesContext(connection) as ctx:
+                Client().get(reverse("api:community_reports_geojson"))
+            return len(ctx)
+
+        FieldObservationFactory.create(observed_at=timezone.now())
+        one = queries()
+        for _ in range(4):
+            FieldObservationFactory.create(observed_at=timezone.now())
+
+        assert queries() == one
+
     def test_observed_at_is_sent_at_full_precision(self) -> None:
         """observed_at crosses the wire as recorded, to the second.
 

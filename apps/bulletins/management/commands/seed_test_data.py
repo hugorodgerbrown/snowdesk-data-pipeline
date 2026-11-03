@@ -1469,9 +1469,6 @@ class Command(RegisteredCommand):
             FavouriteFactory.create(
                 user=owner,
                 location=location,
-                latitude=location.latitude,
-                longitude=location.longitude,
-                elevation=location.elevation_m,
                 region=None,
             )
             created += 1

@@ -2350,7 +2350,9 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
     window = report_window(day, today)
     rows = (
         FieldObservation.objects.in_window(*window)
-        .select_related("region")
+        # ``location`` joined: each report's coordinate is its Location's,
+        # and a per-row fetch would grow with the number of reports.
+        .select_related("region", "location")
         .order_by("-observed_at", "pk")
         if window is not None
         else FieldObservation.objects.none()
@@ -2373,7 +2375,10 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
                     "type": "Point",
                     # GeoJSON ordering: [longitude, latitude] per RFC 7946.
                     # Rounded to 3 dp (~80-110 m) — never the raw field.
-                    "coordinates": [round(obs.longitude, 3), round(obs.latitude, 3)],
+                    "coordinates": [
+                        round(obs.location.longitude, 3),
+                        round(obs.location.latitude, 3),
+                    ],
                 },
                 "properties": {
                     "submission": str(obs.submission),

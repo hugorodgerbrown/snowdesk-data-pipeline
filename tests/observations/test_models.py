@@ -48,8 +48,7 @@ class TestFieldObservationFields:
         """observation_type is stored and retrieved correctly."""
         obs = FieldObservation.objects.create(
             user=UserFactory.create(),
-            latitude=46.10,
-            longitude=7.10,
+            location=LocationFactory.create(latitude=46.10, longitude=7.10),
             observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
         )
         obs.refresh_from_db()
@@ -67,8 +66,7 @@ class TestFieldObservationFields:
         """region FK may be null (best-effort)."""
         obs = FieldObservation.objects.create(
             user=UserFactory.create(),
-            latitude=46.10,
-            longitude=7.10,
+            location=LocationFactory.create(latitude=46.10, longitude=7.10),
             observation_type=FieldObservation.OBSERVATION_TYPE.PINWHEELS,
             region=None,
         )
@@ -534,8 +532,7 @@ class TestLocationSourceChoices:
         """location_source is stored and retrieved correctly."""
         obs = FieldObservation.objects.create(
             user=UserFactory.create(),
-            latitude=46.10,
-            longitude=7.10,
+            location=LocationFactory.create(latitude=46.10, longitude=7.10),
             location_source=FieldObservation.LOCATION_SOURCE.MANUAL,
             observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
         )
@@ -546,8 +543,7 @@ class TestLocationSourceChoices:
         """gps_latitude and gps_longitude are stored and retrieved correctly."""
         obs = FieldObservation.objects.create(
             user=UserFactory.create(),
-            latitude=46.20,
-            longitude=7.20,
+            location=LocationFactory.create(latitude=46.20, longitude=7.20),
             gps_latitude=46.10,
             gps_longitude=7.10,
             location_source=FieldObservation.LOCATION_SOURCE.GPS_REFINED,
@@ -561,8 +557,7 @@ class TestLocationSourceChoices:
         """gps_latitude and gps_longitude may be null (MANUAL path)."""
         obs = FieldObservation.objects.create(
             user=UserFactory.create(),
-            latitude=46.10,
-            longitude=7.10,
+            location=LocationFactory.create(latitude=46.10, longitude=7.10),
             gps_latitude=None,
             gps_longitude=None,
             location_source=FieldObservation.LOCATION_SOURCE.MANUAL,
@@ -665,18 +660,9 @@ class TestFieldObservationCoordinateConstraints:
     """SNOW-464: DB check constraints reject out-of-range / negative values.
 
     Belt-and-braces for a write path that bypasses the view-layer validators
-    (admin, shell, a future API).
+    (admin, shell, a future API). The report location's own guard is on
+    ``Location`` since SNOW-714 (``tests/locations/test_models.py``).
     """
-
-    def test_latitude_out_of_range_raises_integrity_error(self) -> None:
-        """A latitude beyond WGS-84 bounds is rejected at the DB layer."""
-        with pytest.raises(IntegrityError), transaction.atomic():
-            FieldObservationFactory.create(latitude=999.0)
-
-    def test_longitude_out_of_range_raises_integrity_error(self) -> None:
-        """A longitude beyond WGS-84 bounds is rejected at the DB layer."""
-        with pytest.raises(IntegrityError), transaction.atomic():
-            FieldObservationFactory.create(longitude=999.0)
 
     def test_gps_latitude_out_of_range_raises_integrity_error(self) -> None:
         """An out-of-range raw GPS latitude is rejected at the DB layer."""
@@ -713,10 +699,7 @@ class TestNearPointSharesDistanceWorkPerLocation:
         )
         for _ in range(5):
             FieldObservationFactory.create(
-                location=location,
-                latitude=location.latitude,
-                longitude=location.longitude,
-                observed_at=timezone.now(),
+                location=location, observed_at=timezone.now()
             )
 
         with patch("apps.observations.models.haversine_km", wraps=haversine_km) as spy:
@@ -743,44 +726,17 @@ class TestNearPointSharesDistanceWorkPerLocation:
 
         assert spy.call_count == 2
 
-    def test_a_report_with_no_location_still_matches(self) -> None:
-        """A pre-backfill row falls back to its own coordinates.
-
-        The migration window must not make reports invisible on the map.
-        """
-        near = FieldObservationFactory.create(
-            location=None,
-            latitude=46.11,
-            longitude=7.11,
-            observed_at=timezone.now(),
-        )
-        far = FieldObservationFactory.create(
-            location=None,
-            latitude=47.90,
-            longitude=8.90,
-            observed_at=timezone.now(),
-        )
-
-        result = FieldObservation.objects.get_queryset().near_point_for_day(
-            self.CENTRE_LAT, self.CENTRE_LON, self.RADIUS_KM, self._day()
-        )
-
-        assert near in result
-        assert far not in result
+    def test_a_report_must_have_a_location(self) -> None:
+        """A report with no Location is refused at the DB layer (SNOW-714)."""
+        with pytest.raises(IntegrityError), transaction.atomic():
+            FieldObservationFactory.create(location=None)
 
     def test_the_location_is_what_decides_membership(self) -> None:
-        """When a report has a location, the location's coordinate wins.
-
-        Belt and braces for the migration window: the two are equal today,
-        so a test that did not force them apart would pass either way and
-        stop meaning anything once the row columns drop (SNOW-714).
-        """
+        """A report's Location's coordinate is the one measured."""
         FieldObservationFactory.create(
             location=LocationFactory.create(
                 anonymous=True, latitude=47.90, longitude=8.90
             ),
-            latitude=46.11,
-            longitude=7.11,
             observed_at=timezone.now(),
         )
 

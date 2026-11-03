@@ -370,8 +370,6 @@ def report_submit(request: HttpRequest) -> HttpResponse:
     create_kwargs: dict[str, object] = {
         "user": cast(User, request.user),
         "region": region,
-        "latitude": lat,
-        "longitude": lon,
         "accuracy_radius_km": accuracy_radius_km,
         "gps_latitude": gps_lat,
         "gps_longitude": gps_lon,
@@ -448,7 +446,7 @@ def _attach_three_word_addresses(
     for observation in observations:
         location = observation.location
         observation.three_word_address = (  # type: ignore[attr-defined]
-            location.three_word_address if active and location is not None else None
+            location.three_word_address if active else None
         )
 
 
