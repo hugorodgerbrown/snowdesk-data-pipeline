@@ -288,7 +288,7 @@ class TestRebuildRenderModelsEnqueue:
         call_command("rebuild_render_models", commit=True, verbosity=0)
 
         run = CommandRun.objects.get(command="rebuild_render_models")
-        assert run.counts == {"enqueued": 1, "failed": 0}
+        assert run.counts == {"enqueued": 1, "already_queued": 0, "failed": 0}
 
     def test_the_walk_loads_neither_caaml_nor_regions(self) -> None:
         """The command reads only the label's columns; the task reads the rest."""
@@ -331,7 +331,7 @@ class TestRebuildRenderModelsErrorHandling:
         assert failing.render_model["error"] == "simulated failure"
         assert passing.render_model_version == RENDER_MODEL_VERSION
         run = CommandRun.objects.get(command="rebuild_render_models")
-        assert run.counts == {"enqueued": 2, "failed": 1}
+        assert run.counts == {"enqueued": 2, "already_queued": 0, "failed": 1}
 
     def test_error_summary_printed_and_exits_nonzero(
         self, capsys: pytest.CaptureFixture
@@ -344,7 +344,10 @@ class TestRebuildRenderModelsErrorHandling:
             with pytest.raises(CommandError):
                 call_command("rebuild_render_models", commit=True, verbosity=1)
 
-        assert "Enqueued 2 bulletin(s); 2 failed." in capsys.readouterr().out
+        assert (
+            "Enqueued 2 bulletin(s); 0 already queued; 2 failed."
+            in capsys.readouterr().out
+        )
 
 
 @pytest.mark.django_db

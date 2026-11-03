@@ -23,10 +23,12 @@ the preview to read how many rows are still stale.
 
 **Idempotent.** A task re-reads its bulletin and skips it when it is gone
 or already current, so a second run, or a bulletin enqueued twice, writes
-nothing. ``--all`` and ``--bulletin-id`` force the rebuild of a current row.
+nothing; and a bulletin that already has the same task waiting is not
+enqueued again (SNOW-1397, ``apps.core.command_tasks.enqueue_each``).
+``--all`` and ``--bulletin-id`` force the rebuild of a current row.
 
-Streams slim rows newest-id-first via ``apps.core.command_iteration
-.iterate_rows`` (SNOW-602): the walk loads only what the countdown label
+Streams slim rows newest-id-first via ``enqueue_each`` (SNOW-602's
+``iterate_rows``): the walk loads only what the countdown label
 reads, never CAAML.
 
 Read-only by default — pass ``--commit`` to enqueue (per the project-wide
@@ -58,13 +60,12 @@ from argparse import ArgumentParser
 from typing import Any
 
 from django.core.management.base import CommandError
-from django_tasks import TaskResultStatus
 
 from apps.bulletins.models import Bulletin
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.bulletins.services.render_rebuild import rebuild_bulletin_task
-from apps.core.command_iteration import iterate_rows
 from apps.core.command_register import RegisteredCommand
+from apps.core.command_tasks import enqueue_each
 
 logger = logging.getLogger(__name__)
 
@@ -193,35 +194,24 @@ class Command(RegisteredCommand):
             qs = self._build_queryset(bulletin_id_arg, rebuild_all)
         except CommandError:
             self.tally("enqueued", 0)
+            self.tally("already_queued", 0)
             self.tally("failed", 0)
             raise
 
         total = qs.count()
         self.stdout.write(f"Bulletins to process: {total}")
 
-        enqueued = 0
-        failed = 0
-        for bulletin in iterate_rows(
+        counts = enqueue_each(
             self,
             qs,
+            rebuild_bulletin_task,
+            args=lambda bulletin: (bulletin.pk, force, not skip_day_ratings),
+            describe=Bulletin.row_label,
+            commit=commit,
             verbosity=verbosity,
             chunk_size=chunk_size,
-            describe=Bulletin.row_label,
-        ):
-            enqueued += 1
-            if not commit:
-                continue
-            result = rebuild_bulletin_task.enqueue(
-                bulletin.pk, force, not skip_day_ratings
-            )
-            # Only an inline backend has run the task by now; a queued one
-            # reports its own failure on the task result.
-            if result.status == TaskResultStatus.FAILED:
-                failed += 1
-                logger.error(
-                    "rebuild_render_models: task for bulletin %s failed",
-                    bulletin.bulletin_id,
-                )
+        )
+        enqueued, failed = counts.enqueued, counts.failed
 
         if not commit:
             self.stdout.write(
@@ -232,10 +222,11 @@ class Command(RegisteredCommand):
             )
         else:
             self.stdout.write(
-                self.style.SUCCESS(f"Enqueued {enqueued} bulletin(s); {failed} failed.")
+                self.style.SUCCESS(
+                    f"Enqueued {enqueued} bulletin(s); {counts.already_queued} "
+                    f"already queued; {failed} failed."
+                )
             )
-        self.tally("enqueued", enqueued)
-        self.tally("failed", failed)
         logger.info(
             "rebuild_render_models finished: enqueued=%d failed=%d commit=%s",
             enqueued,

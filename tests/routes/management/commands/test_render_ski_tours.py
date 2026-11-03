@@ -78,7 +78,7 @@ def test_a_read_only_run_asks_nothing_and_writes_nothing() -> None:
     build.assert_not_called()
     task.enqueue.assert_not_called()
     assert "Enqueuing 1 of 1 SAC tour(s) [READ-ONLY]" in out
-    assert "Would enqueue 1; 0 failed." in out
+    assert "Would enqueue 1; 0 already queued; 0 failed." in out
     source.refresh_from_db()
     assert source.track_render is None
     assert not SkiTour.objects.exists()
@@ -90,7 +90,7 @@ def test_commit_enqueues_a_task_that_walks_draws_and_applies() -> None:
     with patch(_BUILDER, return_value=dict(RECORD)):
         out = _run("--commit")
     assert f"SAC {source.document['sac_id']} {source.document['name']}" in out
-    assert "Enqueued 1; 0 failed." in out
+    assert "Enqueued 1; 0 already queued; 0 failed." in out
     source.refresh_from_db()
     assert source.slope_samples is not None
     assert source.track_render is not None
@@ -99,13 +99,26 @@ def test_commit_enqueues_a_task_that_walks_draws_and_applies() -> None:
     assert tour.slope_samples == source.slope_samples
 
 
-def test_commit_enqueues_with_the_delay() -> None:
-    """Each candidate is one task, handed its pk and the pause."""
+def test_commit_enqueues_one_task_per_tour() -> None:
+    """Each candidate is one task, handed its pk and the pace."""
     sources = SourceSkiTourFactory.create_batch(2)
     with patch(_TASK) as task:
         _run("--commit")
     calls = sorted(call.args for call in task.enqueue.call_args_list)
     assert calls == sorted((source.pk, 0.0) for source in sources)
+
+
+def test_inline_tasks_are_paced_by_the_delay() -> None:
+    """Under ImmediateBackend the command sleeps --delay between tasks."""
+    SourceSkiTourFactory.create_batch(3)
+    out = StringIO()
+    with (
+        patch(_GRID, return_value=_grid()),
+        patch(_TASK),
+        patch("apps.core.command_tasks.time.sleep") as sleep,
+    ):
+        call_command(COMMAND, "--commit", "--delay", "2", stdout=out)
+    assert [call.args for call in sleep.call_args_list] == [(2.0,), (2.0,)]
 
 
 def test_a_second_commit_enqueues_nothing() -> None:

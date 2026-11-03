@@ -88,7 +88,8 @@ The names are grouped by what they are for:
       drawing to make, ``render_source_tour`` makes it — idempotent by
       fingerprint — with ``tour_summits`` and ``terrain_grid`` loaded once
       per run, or ``tour_summit`` for one tour rendered as a task
-      (SNOW-1345), which ``needs_render`` re-checks; ``RenderOutcome``
+      (SNOW-1345), which ``needs_render`` re-checks and ``needs_walk``
+      says will ask the tile origin (SNOW-1397); ``RenderOutcome``
       names what it did.
   Wildlife rest zones
       ``SourceRestZone``, FOEN's Wildruhezonen as polygons, and
@@ -318,6 +319,7 @@ from apps.ingest.ski import (
 from apps.ingest.ski_render import (
     RenderOutcome,
     needs_render,
+    needs_walk,
     render_source_tour,
     terrain_grid,
     tour_summit,
@@ -358,6 +360,7 @@ __all__ = [
     "bulletin_state",
     "RenderOutcome",
     "needs_render",
+    "needs_walk",
     "render_source_tour",
     "terrain_grid",
     "tour_summit",

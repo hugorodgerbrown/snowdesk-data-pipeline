@@ -26,7 +26,9 @@ command rule 7). Two walks, each enqueuing one task per row at priority
 
 A changed row's ``updated_at`` moves, so the feeds serve it again; a
 rebuild that comes out the same writes nothing, and a task re-checks its
-row, so a second run or a duplicate enqueue is a no-op. On a queued
+row, so a second run or a duplicate enqueue is a no-op; a row that already
+has the same task waiting is not enqueued again (SNOW-1397,
+``apps.core.command_tasks.enqueue_each``). On a queued
 backend (production) ``--commit`` returns in seconds; under
 ``ImmediateBackend`` (dev, test, staging) each task runs inline and a
 failed one counts towards the exit code. Re-run the preview to read how
@@ -47,14 +49,13 @@ from argparse import ArgumentParser
 from typing import Any
 
 from django.core.management.base import CommandError
-from django_tasks import TaskResult, TaskResultStatus
 
 from apps.bulletins.services.render_rebuild import (
     rebuild_source_bulletin_task,
     refresh_source_day_rating_task,
 )
-from apps.core.command_iteration import iterate_rows
 from apps.core.command_register import RegisteredCommand
+from apps.core.command_tasks import enqueue_each
 from apps.ingest.public import (
     DAY_RATING_VERSION,
     RENDER_MODEL_VERSION,
@@ -115,41 +116,34 @@ class Command(RegisteredCommand):
             )
         )
 
-        enqueued = failed = 0
-        for row in iterate_rows(
-            self, rows, verbosity=verbosity, describe=SourceBulletin.to_string
-        ):
-            enqueued += 1
-            if commit and _failed(
-                rebuild_source_bulletin_task.enqueue(row.pk, rebuild_all, True)
-            ):
-                failed += 1
-                self.stderr.write(f"  render model task failed: {row}")
+        bulletins = enqueue_each(
+            self,
+            rows,
+            rebuild_source_bulletin_task,
+            args=lambda row: (row.pk, rebuild_all, True),
+            describe=SourceBulletin.to_string,
+            commit=commit,
+            verbosity=verbosity,
+        )
 
         # Evaluated after the bulletin walk: under an inline backend those
         # tasks have already brought their pairs current.
         ratings = SourceDayRating.objects.stale(DAY_RATING_VERSION).only(
             "pk", "region_code", "date"
         )
-        ratings_enqueued = 0
-        for rating in iterate_rows(
+        day_ratings = enqueue_each(
             self,
             ratings,
-            verbosity=verbosity,
+            refresh_source_day_rating_task,
+            args=lambda r: (r.region_code, r.date.isoformat()),
             describe=lambda r: f"{r.region_code} {r.date}",
-        ):
-            ratings_enqueued += 1
-            if commit and _failed(
-                refresh_source_day_rating_task.enqueue(
-                    rating.region_code, rating.date.isoformat()
-                )
-            ):
-                failed += 1
-                self.stderr.write(f"  day rating task failed: {rating.region_code}")
-
-        self.tally("enqueued", enqueued)
-        self.tally("day_ratings_enqueued", ratings_enqueued)
-        self.tally("failed", failed)
+            commit=commit,
+            verbosity=verbosity,
+            tally_as="day_ratings_enqueued",
+        )
+        enqueued = bulletins.enqueued
+        ratings_enqueued = day_ratings.enqueued
+        failed = bulletins.failed + day_ratings.failed
         if verbosity >= 1:
             verb = "Enqueued" if commit else "Would enqueue"
             self.stdout.write(
@@ -168,19 +162,3 @@ class Command(RegisteredCommand):
         )
         if failed:
             raise CommandError(f"{failed} rebuild task(s) failed")
-
-
-def _failed(result: TaskResult[Any]) -> bool:
-    """Return whether a task run inline failed.
-
-    Only an inline backend has run the task by the time ``enqueue``
-    returns; a queued one reports its own failure on the task result.
-
-    Args:
-        result: What ``enqueue`` returned.
-
-    Returns:
-        True when the task's result reads FAILED.
-
-    """
-    return result.status == TaskResultStatus.FAILED

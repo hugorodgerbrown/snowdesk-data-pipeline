@@ -122,6 +122,51 @@ summarised in CLAUDE.md; this is the full contract. Rationale:
    exempt outright — mark the exemption inline, don't just leave the loop
    as `for x in qs:` unexplained.
 
+7. **A bulk update is one task per row, enqueued by `enqueue_each`
+   (SNOW-1345, SNOW-1346, SNOW-1397).** A command whose work is thousands
+   of independent row updates — a backfill, a rebuild, a clean-up —
+   enqueues one `django_tasks` task per row and returns in seconds, rather
+   than holding a shell for an hour. Write it with
+   [`apps/core/command_tasks.py`](../apps/core/command_tasks.py), not a
+   hand-rolled loop; it holds Hugo's five rules (3 Nov 2026) in one place:
+
+   - **`enqueue_each(command, rows, task, *, args, describe, commit,
+     verbosity, tally_as="enqueued", limit=0, pace=None, chunk_size=None)`**
+     streams `rows` through `iterate_rows`, enqueues `task(*args(row))` per
+     row (a read-only run counts only) and tallies `tally_as`,
+     `already_queued` and `failed`, zeros included. `rows` is the
+     candidates: the rows still needing work, so a run that stops early
+     leaves the rest for the next.
+   - **The task** takes a primary key, never the row; re-reads it; returns
+     early when it no longer needs work; and writes in one transaction. It
+     runs at `BULK_TASK_PRIORITY` (−50) or lower, behind alert emails and
+     pushes on the same queue — `enqueue_each` refuses one above it.
+   - **No duplicates.** A row whose task is already waiting (`READY`, same
+     task and arguments) is skipped and counted `already_queued`. The ops
+     server's one-at-a-time guard sees a queued *command*, never the row
+     tasks a finished one left behind.
+   - **Pacing.** A task that calls an outside service is registered with
+     `calls_outside(task)`, and `enqueue_each` refuses it without `pace`.
+     On the database backend (production) task *i* is enqueued with
+     `run_after = start + i × pace`, which spreads the queue out; under
+     `ImmediateBackend` (dev, test, staging) the tasks run inline and the
+     helper sleeps `pace` between them. The stagger is not a rate limit on
+     its own (overdue tasks become due together), so the task also calls
+     `wait_for_slot(service, pace)` just before it calls out: two calls
+     never start closer than `pace`. Pass the pace to the task as an
+     argument and expose it as `--delay`.
+   - **The breaker.** On a 429 or an outage the task calls
+     `back_off(service, seconds)`; every later task checks
+     `backing_off(service)` first and returns without writing, leaving its
+     row a candidate.
+   - **MCP runnable.** A command that calls `enqueue_each` sets
+     `mcp_runnable = True`; `tests/core/test_command_tasks_guard.py` fails
+     one that does not.
+
+   Reference: `render_ski_tours` (an outside task, paced, with a breaker)
+   and the two render-model rebuilds. Why:
+   [decisions/bulk-commands-enqueue-each-row.md](decisions/bulk-commands-enqueue-each-row.md).
+
 ## The command run register
 
 Every project command inherits `apps.core.command_register.RegisteredCommand`
@@ -1229,10 +1274,17 @@ it ended, so a dropped shell lost the lot. `--commit` now enqueues one
 `render_tour_task` per candidate (`apps/routes/services/ski_tour_render.py`)
 and returns in seconds. Each task re-checks its tour (`needs_render`),
 walks and draws it with only its own summit (`tour_summit`), copies it onto
-this host's `SkiTour` (`apply_source_tour`) and pauses `--delay` seconds
-after a walk. Tasks are enqueued at priority −50, below alerts and pushes
-on the same `default` queue. Under `ImmediateBackend` (dev, test, staging)
-they run inline, one after another.
+this host's `SkiTour` (`apply_source_tour`). Tasks are enqueued through
+`enqueue_each` (SNOW-1397) at priority −50, below alerts and pushes on
+the same `default` queue, each `--delay` seconds after the one before
+(`run_after`), and a tour that will be walked waits for its slot on the
+tile origin (`wait_for_slot`), so walks never start closer than
+`--delay`; a redraw asks nothing and does not wait. Under
+`ImmediateBackend` (dev, test, staging) they run inline with the same
+pause between them. A tour the origin does not answer
+for opens a five-minute breaker (`back_off("terrain-tiles")`), and the
+tasks after it leave their tours for the next run. A tour whose task is
+already waiting is not enqueued again.
 
 Candidates are `tours_to_render(grid)`: a tour whose `render_input_fp`
 (the document's `content_hash` plus the terrain grid's identity) is not

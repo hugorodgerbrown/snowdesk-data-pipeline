@@ -143,7 +143,12 @@ def test_the_run_is_registered_with_its_tallies() -> None:
     with patch(_BUILD, return_value=_MODEL):
         _run("--commit")
     run = CommandRun.objects.get(command="rebuild_source_render_models")
-    assert run.counts == {"enqueued": 1, "day_ratings_enqueued": 0, "failed": 0}
+    assert run.counts == {
+        "enqueued": 1,
+        "day_ratings_enqueued": 0,
+        "already_queued": 0,
+        "failed": 0,
+    }
 
 
 def test_a_failed_build_exits_non_zero_without_aborting() -> None:
