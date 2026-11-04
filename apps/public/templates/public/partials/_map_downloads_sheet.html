@@ -162,9 +162,24 @@ the row's own label, so map.html loads that module once for both.
 {# (SNOW-635) is removed outright by map_downloads_manager.js's ``buildRow`` #}
 {# for a row that isn't renameable (a region, or an orphaned bucket), along  #}
 {# with that row's own inline-edit affordance.                               #}
+{#                                                                          #}
+{# SNOW-1418: and the row's one disclosure, the shared trailing chevron      #}
+{# (includes/_row_disclosure.html), which opens what the area holds into     #}
+{# the row's own panel. No `hx-get`: the inventory is read from this         #}
+{# device, so buildRow gives each clone its own ids and the manager fills    #}
+{# the panel from the inventory template below.                              #}
 <template id="map-downloads-row-template">
     {% trans "Area name" as downloads_rename_label %}
-    {% include "includes/_ugc_panel_row.html" with js_filled=True status_dot=True rename_label=downloads_rename_label actions_template="includes/_map_downloads_row_actions.html" %}
+    {% trans "What's in this area" as downloads_inventory_label %}
+    {% include "includes/_ugc_panel_row.html" with js_filled=True status_dot=True rename_label=downloads_rename_label actions_template="includes/_map_downloads_row_actions.html" disclosure_template="includes/_row_disclosure.html" disclosure_panel_id="downloads-row-inventory" disclosure_label=downloads_inventory_label disclosure_testid="downloads-row-inventory-toggle" disclosure_panel_testid="downloads-row-inventory" %}
+</template>
+{# SNOW-1418: what one area holds — the list the row's chevron reveals      #}
+{# (Hugo's mockup, "Downloads · what's in Zermatt"). One item per thing the  #}
+{# area carries: a dot in the offline-availability family and a mono value. #}
+{# map_downloads_manager.js clones one item per row `inventoryFor` returns   #}
+{# (includes/_downloads_inventory.html).                                     #}
+<template id="map-downloads-inventory-template">
+    {% include "includes/_downloads_inventory.html" only %}
 </template>
 {# Strings the JS needs but cannot hold itself — makemessages only scans    #}
 {# templates and Python, so anything JS renders has to be handed to it      #}
@@ -216,6 +231,26 @@ the row's own label, so map.html loads that module once for both.
     <span data-string="area-status-open-map">{% trans "Map data missing" %}</span>
     <span data-string="area-status-unknown">{% trans "Not checked yet" %}</span>
     <span data-string="area-status-running">{% trans "Syncing…" %}</span>
+    {# SNOW-1418: the inventory under a row — the chevron's name, one     #}
+    {# label per thing an area holds, the values that are words, and what #}
+    {# each dot means to a screen reader. Placeholder copy; Hugo edits it. #}
+    <span data-string="inventory-toggle-label">{% blocktrans %}What's in %(name)s{% endblocktrans %}</span>
+    <span data-string="inventory-map">{% trans "Map and terrain" %}</span>
+    <span data-string="inventory-bulletin">{% trans "Avalanche bulletin" %}</span>
+    <span data-string="inventory-weather">{% trans "Weather" %}</span>
+    <span data-string="inventory-routes">{% trans "Your routes" %}</span>
+    <span data-string="inventory-trips">{% trans "Trips" %}</span>
+    <span data-string="inventory-places">{% trans "Saved places" %}</span>
+    <span data-string="inventory-tours">{% trans "SAC tours" %}</span>
+    <span data-string="inventory-resorts">{% trans "Ski resorts" %}</span>
+    <span data-string="inventory-reports">{% trans "Community reports" %}</span>
+    <span data-string="inventory-today">{% trans "Today" %}</span>
+    <span data-string="inventory-never">{% trans "Not saved" %}</span>
+    <span data-string="inventory-at">{% blocktrans %}%(day)s %(time)s{% endblocktrans %}</span>
+    <span data-string="inventory-status-yes">{% trans "Works offline" %}</span>
+    <span data-string="inventory-status-partial">{% trans "Needs a sync" %}</span>
+    <span data-string="inventory-status-missing">{% trans "Missing" %}</span>
+    <span data-string="inventory-status-unknown">{% trans "Not checked yet" %}</span>
     {# SNOW-932: the CLAUSE appended to the meta line of a row whose       #}
     {# CONTENT half fell short. Its own words rather than a second         #}
     {# "Incomplete", and a clause rather than a replacement, for one       #}

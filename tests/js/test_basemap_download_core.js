@@ -2721,3 +2721,129 @@ describe('SAC tours and community reports in an area (SNOW-1417)', () => {
     });
   });
 });
+
+describe('routes and resorts in an area (SNOW-1418)', () => {
+  const BOX = [7, 46, 7.2, 46.2];
+  const line = (uuid, coords, type = 'LineString') => ({
+    type: 'Feature',
+    geometry: { type, coordinates: coords },
+    properties: { uuid },
+  });
+
+  describe('routesInBox', () => {
+    it('keeps a route any of whose vertices is inside, edge-inclusive, once', () => {
+      const feed = {
+        features: [
+          line('in', [[6.9, 45.9], [7.1, 46.1]]),
+          line('edge', [[7.2, 46.2], [7.5, 46.5]]),
+          line('out', [[8, 47], [8.1, 47.1]]),
+          line('multi', [[[8, 47], [8.1, 47.1]], [[7.05, 46.05], [7.06, 46.06]]], 'MultiLineString'),
+          line('in', [[7.1, 46.1], [7.11, 46.11]]),
+          { type: 'Feature', geometry: { type: 'Point', coordinates: [7.1, 46.1] }, properties: { uuid: 'pt' } },
+          line('', [[7.1, 46.1], [7.11, 46.11]]),
+        ],
+      };
+      expect(core.routesInBox(feed, BOX)).toEqual([
+        { uuid: 'in' },
+        { uuid: 'edge' },
+        { uuid: 'multi' },
+      ]);
+    });
+
+    it('keeps a route that crosses the box with no vertex inside it', () => {
+      const small = [7.5, 46.0, 7.51, 46.01];
+      const feed = {
+        features: [
+          line('across', [[7.49, 46.005], [7.52, 46.005]]),
+          line('diagonal', [[7.49, 45.99], [7.52, 46.02]]),
+          line('beside', [[7.49, 46.02], [7.52, 46.02]]),
+          line('corner-miss', [[7.49, 46.0], [7.5, 45.99]]),
+          line('dot', [[7.505, 46.005]]),
+        ],
+      };
+      expect(core.routesInBox(feed, small)).toEqual([
+        { uuid: 'across' },
+        { uuid: 'diagonal' },
+        { uuid: 'dot' },
+      ]);
+    });
+
+    it('is null for an unreadable feed or box, and empty for none inside', () => {
+      expect(core.routesInBox(null, BOX)).toBeNull();
+      expect(core.routesInBox({ features: 'x' }, BOX)).toBeNull();
+      expect(core.routesInBox({ features: [] }, [1, 2])).toBeNull();
+      expect(core.routesInBox({ features: [] }, BOX)).toEqual([]);
+    });
+  });
+
+  describe('resortItems', () => {
+    const template = '/partials/place-sheet/resort/__SLUG__/';
+
+    it('gives each resort once, with a sheet per day', () => {
+      const out = core.resortItems(
+        [{ slug: 'verbier' }, { slug: 'verbier' }, {}, { slug: 'nendaz' }],
+        template,
+        ['2026-01-06', '2026-01-07'],
+      );
+      expect(out.map((resort) => resort.slug)).toEqual(['verbier', 'nendaz']);
+      expect(out[0].urls).toEqual([
+        core.resortSheetURL(template, 'verbier', '2026-01-06'),
+        core.resortSheetURL(template, 'verbier', '2026-01-07'),
+      ]);
+    });
+
+    it('gives no urls without a template, and null without a list', () => {
+      expect(core.resortItems([{ slug: 'verbier' }], '', ['2026-01-06'])).toEqual([
+        { slug: 'verbier', urls: [] },
+      ]);
+      expect(core.resortItems(undefined, template, [])).toBeNull();
+    });
+  });
+
+  describe('the stamp', () => {
+    const resorts = [{ slug: 'verbier', urls: ['/r/verbier/'] }];
+
+    it('carries the resorts as a public field', () => {
+      const expectation = core.withPublicItems(null, { resorts });
+      expect(expectation).toEqual({ resorts });
+      const next = core.stampContentRecord({ id: 'a' }, true, expectation, 'x');
+      expect(next.items).toEqual({ resorts });
+    });
+
+    it("writes the reader's routes beside their trips and pins", () => {
+      const next = core.stampContentRecord(
+        { id: 'a' },
+        true,
+        { trips: [], pins: [], routes: [{ uuid: 'r' }], principal: 'acct-A', resorts },
+        'x',
+      );
+      expect(next.items).toEqual({
+        trips: [],
+        pins: [],
+        routes: [{ uuid: 'r' }],
+        principal: 'acct-A',
+        resorts,
+      });
+    });
+
+    it('keeps the routes through a signed-out sync, and drops them when a signed-in one read none', () => {
+      const old = { trips: [], pins: [], routes: [{ uuid: 'r' }], principal: 'acct-A' };
+      const signedOut = core.stampContentRecord(
+        { id: 'a', items: old },
+        true,
+        core.withPublicItems(null, { resorts }),
+        'x',
+      );
+      expect(signedOut.items.routes).toEqual([{ uuid: 'r' }]);
+      expect(signedOut.items.resorts).toEqual(resorts);
+
+      const unread = core.stampContentRecord(
+        { id: 'a', items: old },
+        true,
+        { trips: [], pins: [], principal: 'acct-B' },
+        'x',
+      );
+      expect(unread.items.routes).toBeUndefined();
+    });
+  });
+});

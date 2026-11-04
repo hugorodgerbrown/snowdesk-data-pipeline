@@ -694,13 +694,18 @@ function assembleBasemapDownloadFeedURLs() {
  * Every feed's outcome is deliberately invisible: a failed favourites
  * fetch must not fail a download.
  *
- * @returns {Promise<void>}
+ * SNOW-1417/1418: it returns the reports and routes feeds it fetched,
+ * each null when not read, for the area's stamp.
+ *
+ * @returns {Promise<{reports: Object|null, reportsAt: string|null,
+ *   routes: Object|null}>}
  */
 async function cacheOverlayFeedsForDownload() {
   const mapEl = document.getElementById('map');
   const cache = window.pwaMapOverlayCache;
   // SNOW-1417: the reports feed this run fetched, for the area's stamp.
-  const fetched = { reports: null, reportsAt: null };
+  // SNOW-1418: and the reader's routes feed, for the routes it counts.
+  const fetched = { reports: null, reportsAt: null, routes: null };
   if (!mapEl || !cache) return fetched;
 
   const feeds = [
@@ -733,6 +738,7 @@ async function cacheOverlayFeedsForDownload() {
           fetched.reports = data;
           fetched.reportsAt = new Date().toISOString();
         }
+        if (resource === 'routes') fetched.routes = data;
       } catch (_e) {
         // Best-effort, one feed at a time. The tiles are what the user
         // asked for and they are still worth having.
@@ -883,13 +889,14 @@ async function assembleAreaContentURLs(blob, terrain) {
   // worker answers offline.
   const weatherDay = readTodayDateParam() || '';
   const weatherDetail = mapEl.dataset.weatherDetailUrl || '';
+  const contentDays = content ? await downloadContentDays() : [];
   const plan = content
     ? core.areaContentURLs({
       regions: content.regions,
       weather: content.weather,
       // SNOW-1318: each resort's place sheet for every forward day.
       resorts: content.resorts,
-      days: await downloadContentDays(),
+      days: contentDays,
       weatherDetailTemplate: weatherDetail,
       weatherDay: weatherDay,
       // SNOW-1312: the map's region sheet for every region and day, and
@@ -950,10 +957,18 @@ async function assembleAreaContentURLs(blob, terrain) {
       : null;
   // SNOW-1379: and the problem-terrain days, which are every reader's, so
   // a signed-out plan carries them too.
+  // SNOW-1418: the reader's routes in the area ride with their trips and
+  // pins, so they are attributed exactly as those are. Left off when the
+  // routes feed was not read.
+  const routes =
+    attested && overlays && overlays.routes && typeof core.routesInBox === 'function'
+      ? core.routesInBox(overlays.routes, bbox)
+      : null;
+  const withRoutes = attested && routes ? Object.assign({}, attested, { routes: routes }) : attested;
   const expectation =
     typeof core.withProblemTerrain === 'function'
-      ? core.withProblemTerrain(attested, plan.problemTerrainUrls)
-      : attested;
+      ? core.withProblemTerrain(withRoutes, plan.problemTerrainUrls)
+      : withRoutes;
   // SNOW-1417: the tours, and the reports this run fetched, ride the
   // stamp as public things. Reports are left off when the feed was not
   // read, so the stamp keeps the last answer.
@@ -963,6 +978,12 @@ async function assembleAreaContentURLs(blob, terrain) {
       ? core.withPublicItems(expectation, {
         tours: tours ? tours.tours : undefined,
         tourBoxes: tours ? tours.boxUrls : undefined,
+        // SNOW-1418: the resorts the answer named, with their sheets.
+        resorts:
+          content && typeof core.resortItems === 'function'
+            ? core.resortItems(content.resorts, mapEl.dataset.resortSheetUrl || '', contentDays) ||
+              undefined
+            : undefined,
         reports:
           overlays && overlays.reports && typeof core.reportsInBox === 'function'
             ? core.reportsInBox(overlays.reports, bbox)
@@ -2589,6 +2610,16 @@ window.pwaBasemapDownloads = Object.freeze({
     current: () => contentRunOwner,
     area: () => contentRunArea,
   }),
+
+  /**
+   * SNOW-1418: which of these urls the worker would serve offline — the
+   * Downloads inventory's per-row reading. Resolves to null, never
+   * rejects, when the worker cannot say.
+   *
+   * @param {string[]} hrefs Absolute urls.
+   * @returns {Promise<Set<string>|null>}
+   */
+  heldContent: (hrefs) => _heldContentUrls(hrefs).catch(() => null),
 
   /** SNOW-1416: run the background sync now; resolves to what it tried. */
   backgroundSync: () => runBackgroundSync(),

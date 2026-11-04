@@ -301,6 +301,10 @@
  *     the tours endpoint answers, each tour with its Feature and height
  *     profile urls; the community reports inside the rectangle; and both
  *     onto the expectation a sync stamps, as public fields.
+ *   routesInBox(feed, bbox) / resortItems(resorts, template, days)
+ *     SNOW-1418: the reader's routes whose line enters the rectangle, and
+ *     the resorts the content answer named with their sheet urls — the
+ *     Downloads inventory's routes and resorts rows.
  *   areaItemExpectation(items, templates)
  *     SNOW-1308: the same composition as ``areaItemURLs``, kept per item
  *     with its name — what a sync stamps onto the area record so the
@@ -3213,6 +3217,105 @@
   }
 
   /**
+   * The reader's routes whose line enters an area's rectangle (SNOW-1418).
+   *
+   * From the routes overlay feed a sync already fetches. A route counts
+   * when any vertex of its line is inside the rectangle, edge-inclusive,
+   * as the reports and the rest of an area's content are chosen.
+   *
+   * @param {any} feed The routes feed (`/routes/geojson`).
+   * @param {number[]|null|undefined} bbox
+   * @returns {Array<{uuid: string}>|null} Null for an unreadable feed or
+   *   rectangle.
+   */
+  function routesInBox(feed, bbox) {
+    if (!feed || !Array.isArray(feed.features)) return null;
+    if (!Array.isArray(bbox) || bbox.length !== 4 || !bbox.every(Number.isFinite)) return null;
+    const isPoint = (point) =>
+      Array.isArray(point) && Number.isFinite(point[0]) && Number.isFinite(point[1]);
+    // Liang–Barsky: whether the segment a→b has any part inside the
+    // rectangle, so a route that only passes through a small area (no
+    // vertex inside it) still counts. A one-point line is a = b.
+    const crosses = (a, b) => {
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      let lo = 0;
+      let hi = 1;
+      const edges = [
+        [-dx, a[0] - bbox[0]],
+        [dx, bbox[2] - a[0]],
+        [-dy, a[1] - bbox[1]],
+        [dy, bbox[3] - a[1]],
+      ];
+      for (const [p, q] of edges) {
+        if (p === 0) {
+          if (q < 0) return false;
+          continue;
+        }
+        const t = q / p;
+        if (p < 0) lo = Math.max(lo, t);
+        else hi = Math.min(hi, t);
+        if (lo > hi) return false;
+      }
+      return true;
+    };
+    const enters = (line) => {
+      if (!Array.isArray(line)) return false;
+      const points = line.filter(isPoint);
+      if (points.length === 1) return crosses(points[0], points[0]);
+      for (let i = 1; i < points.length; i += 1) {
+        if (crosses(points[i - 1], points[i])) return true;
+      }
+      return false;
+    };
+    const routes = [];
+    const seen = new Set();
+    for (const feature of feed.features) {
+      const geometry = feature && feature.geometry;
+      const uuid = feature && feature.properties && feature.properties.uuid;
+      if (!geometry || !uuid || seen.has(String(uuid))) continue;
+      const lines =
+        geometry.type === 'MultiLineString'
+          ? geometry.coordinates
+          : geometry.type === 'LineString'
+            ? [geometry.coordinates]
+            : [];
+      if (!Array.isArray(lines)) continue;
+      if (lines.some(enters)) {
+        seen.add(String(uuid));
+        routes.push({ uuid: String(uuid) });
+      }
+    }
+    return routes;
+  }
+
+  /**
+   * The resorts an area's content answer names, each with the place-sheet
+   * urls its plan saves (SNOW-1418), for the stamp's `items.resorts`.
+   *
+   * @param {Array<{slug?: string}>|null|undefined} resorts The endpoint's
+   *   `resorts` list.
+   * @param {string} template A url carrying ``__SLUG__``, as `#map`'s
+   *   `data-resort-sheet-url` does; empty gives each resort no urls.
+   * @param {string[]} days The plan's days.
+   * @returns {Array<{slug: string, urls: string[]}>|null} Null when the
+   *   answer named no list.
+   */
+  function resortItems(resorts, template, days) {
+    if (!Array.isArray(resorts)) return null;
+    const out = [];
+    const seen = new Set();
+    for (const resort of resorts) {
+      const slug = resort && resort.slug;
+      if (!slug || seen.has(slug)) continue;
+      seen.add(slug);
+      const urls = template ? (days || []).map((day) => resortSheetURL(template, slug, day)) : [];
+      out.push({ slug: String(slug), urls: urls });
+    }
+    return out;
+  }
+
+  /**
    * An expectation with an area's public things on it (SNOW-1417): its SAC
    * tours and the community reports inside it.
    *
@@ -3223,6 +3326,7 @@
    *
    * @param {Object|null} expectation
    * @param {{tours?: Array<Object>, tourBoxes?: string[],
+   *   resorts?: Array<Object>,
    *   reports?: {ids: string[], newestAt: string|null}|null,
    *   reportsAt?: string}} extras
    * @returns {Object} A new expectation.
@@ -3232,6 +3336,8 @@
     const e = extras || {};
     if (Array.isArray(e.tours)) out.tours = e.tours.slice();
     if (Array.isArray(e.tourBoxes)) out.tourBoxes = e.tourBoxes.slice();
+    // SNOW-1418: the resorts inside it, with their sheets.
+    if (Array.isArray(e.resorts)) out.resorts = e.resorts.slice();
     if (e.reports) {
       out.reports = e.reports.ids.map((id) => ({ id: id }));
       out.reportsNewestAt = e.reports.newestAt || null;
@@ -3247,6 +3353,7 @@
     'problemTerrain',
     'tours',
     'tourBoxes',
+    'resorts',
     'reports',
     'reportsAt',
     'reportsNewestAt',
@@ -3284,7 +3391,8 @@
    * @param {Object} entry The stored record.
    * @param {boolean} complete Whether the content half landed in full.
    * @param {{trips?: Array<Object>, pins?: Array<Object>,
-   *   principal?: string, problemTerrain?: string[]}|null} [expectation]
+   *   routes?: Array<Object>, principal?: string,
+   *   problemTerrain?: string[]}|null} [expectation]
    *   With the syncing session's principal.
    * @param {string} [nowIso] The stamp; the clock when absent.
    * @returns {Object} A new record.
@@ -3316,6 +3424,10 @@
           pins: expectation.pins,
           principal: typeof expectation.principal === 'string' ? expectation.principal : null,
         },
+        // SNOW-1418: the reader's routes in the area, beside their trips
+        // and pins and under the same principal. A sync that did not read
+        // the routes feed writes none, rather than another account's.
+        Array.isArray(expectation.routes) ? { routes: expectation.routes } : {},
         publicFields,
       );
     } else if (Object.keys(publicFields).length > 0) {
@@ -3794,6 +3906,8 @@
     tourBoxURL: tourBoxURL,
     tourPlan: tourPlan,
     reportsInBox: reportsInBox,
+    routesInBox: routesInBox,
+    resortItems: resortItems,
     withPublicItems: withPublicItems,
     problemTerrainURL: problemTerrainURL,
     stampContentRecord: stampContentRecord,

@@ -187,7 +187,22 @@ function buildFixture() {
             </ul>
           </div>
         </span>
+        <!-- SNOW-1418: includes/_row_disclosure.html and the row's panel. -->
+        <a role="button" tabindex="0" data-row-disclosure aria-controls="downloads-row-inventory"
+           aria-expanded="false" aria-label="What's in this area"
+           data-testid="downloads-row-inventory-toggle">⌄</a>
+        <div id="downloads-row-inventory" data-row-panel data-testid="downloads-row-inventory"></div>
       </li>
+    </template>
+    <template id="map-downloads-inventory-template">
+      <ul data-inventory-list data-testid="downloads-inventory">
+        <li data-inventory-item>
+          <span data-inventory-dot aria-hidden="true" class="bg-sync-off"></span>
+          <span data-inventory-label></span>
+          <span data-inventory-value></span>
+          <span data-inventory-status class="sr-only"></span>
+        </li>
+      </ul>
     </template>
     <ul id="basemap-menu" hidden>
       <li role="none">
@@ -199,6 +214,23 @@ function buildFixture() {
     </ul>
     <template id="map-downloads-strings-template">
       <span data-string="kind-incomplete">Incomplete</span>
+      <span data-string="inventory-toggle-label">What's in %(name)s</span>
+      <span data-string="inventory-map">Map and terrain</span>
+      <span data-string="inventory-bulletin">Avalanche bulletin</span>
+      <span data-string="inventory-weather">Weather</span>
+      <span data-string="inventory-routes">Your routes</span>
+      <span data-string="inventory-trips">Trips</span>
+      <span data-string="inventory-places">Saved places</span>
+      <span data-string="inventory-tours">SAC tours</span>
+      <span data-string="inventory-resorts">Ski resorts</span>
+      <span data-string="inventory-reports">Community reports</span>
+      <span data-string="inventory-today">Today</span>
+      <span data-string="inventory-never">Not saved</span>
+      <span data-string="inventory-at">%(day)s %(time)s</span>
+      <span data-string="inventory-status-yes">Works offline</span>
+      <span data-string="inventory-status-partial">Needs a sync</span>
+      <span data-string="inventory-status-missing">Missing</span>
+      <span data-string="inventory-status-unknown">Not checked yet</span>
       <span data-string="sync-row-label">Sync %(name)s now</span>
       <span data-string="sync-failed">That area couldn't be brought up to date. Try again.</span>
       <span data-string="kind-content-incomplete">Bulletins not saved</span>
@@ -4624,5 +4656,227 @@ describe('the offline answer on each row, and Sync all (SNOW-1420)', () => {
     await settle();
 
     expect(window.MapSheet.toast).not.toHaveBeenCalled();
+  });
+});
+
+// SNOW-1418: what an area holds, revealed under its row by the row's
+// chevron. The rows themselves are `inventoryFor`'s (covered in
+// test_offline_journey_core.js); these cover the disclosure and the
+// painting, over the real core and a stubbed record map.
+describe('the inventory under a row (SNOW-1418)', () => {
+  const REGION_ID = 'region-CH-2101';
+  const TODAY = new Date().toISOString();
+  const TOUR_URL = '/routes/ski-tours/t1/feature.json';
+
+  const record = (fields) => ({
+    contentAt: TODAY,
+    verified: { at: TODAY, map: 'yes', content: 'yes', principal: '42' },
+    items: {
+      trips: [{ uuid: 'trip', name: 'Saturday', urls: ['/trips/trip/'] }],
+      pins: [],
+      routes: [{ uuid: 'route' }],
+      principal: '42',
+      tours: [{ uuid: 't1', name: 'Tour', urls: [TOUR_URL] }],
+      reports: [{ id: 'r1' }],
+    },
+    ...(fields || {}),
+  });
+
+  /** The verdict stub, over records the test names, and the real core. */
+  async function boot(records, options) {
+    const opts = options || {};
+    window.pwaDownloadsSyncAll = {
+      records: vi.fn(async () => new Map(Object.entries(records))),
+      verdict: vi.fn(() => ({ verdict: 'ready', reason: '' })),
+      state: vi.fn(() => ({ running: false, current: '', label: '' })),
+      press: vi.fn(),
+      shortfall: vi.fn(() => ''),
+    };
+    window.pwaMapOverlayCache = {
+      readOverlay: vi.fn(async (resource) =>
+        opts.overlay !== undefined
+          ? opts.overlay
+          : resource === 'routes'
+            ? { geojson: { features: [{ properties: { uuid: 'route' } }] } }
+            : { geojson: { features: [{ properties: { submission: 'r1' } }] } },
+      ),
+    };
+    const meta = document.createElement('meta');
+    meta.name = 'pwa-user-id';
+    meta.content = '42';
+    document.head.appendChild(meta);
+    await import('../../static/js/cached_stamp_core.js');
+    await import('../../static/js/offline_journey_core.js');
+    await loadModule();
+    if (opts.held !== undefined) {
+      window.pwaBasemapDownloads.heldContent = vi.fn(async () => opts.held);
+    }
+    openSheet();
+    await settle();
+  }
+
+  afterEach(() => {
+    delete window.pwaDownloadsSyncAll;
+    delete window.pwaMapOverlayCache;
+    delete window.pwaOfflineJourneyCore;
+    document.head.querySelectorAll('meta[name="pwa-user-id"]').forEach((el) => el.remove());
+  });
+
+  const toggleOf = (li) => li.querySelector('[data-row-disclosure]');
+  const rowsByLabel = () =>
+    Object.fromEntries(
+      Array.from(document.querySelectorAll('#map-downloads-sheet [data-group-rows] > li')).map(
+        (li) => [li.querySelector('[data-row-label]').textContent, li],
+      ),
+    );
+  const items = (li) =>
+    Object.fromEntries(
+      Array.from(li.querySelectorAll('[data-inventory-item]')).map((item) => [
+        item.querySelector('[data-inventory-label]').textContent,
+        {
+          value: item.querySelector('[data-inventory-value]').textContent,
+          state: item.getAttribute('data-inventory-state'),
+        },
+      ]),
+    );
+
+  it('opens the inventory under the row and says so to a screen reader', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    await boot({ [REGION_ID]: record() });
+    const li = firstRowElement();
+    const toggle = toggleOf(li);
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.getAttribute('aria-label')).toBe("What's in Aletsch");
+    expect(toggle.getAttribute('aria-controls')).toBe('downloads-row-inventory-' + REGION_ID);
+    expect(li.querySelector('[data-row-panel]').id).toBe('downloads-row-inventory-' + REGION_ID);
+
+    toggle.click();
+    await settle();
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const listed = items(li);
+    expect(Object.keys(listed)).toEqual([
+      'Map and terrain',
+      'Avalanche bulletin',
+      'Weather',
+      'Your routes',
+      'Trips',
+      'SAC tours',
+      'Community reports',
+    ]);
+    expect(listed['Map and terrain'].value).toBe('40.0 MB');
+    expect(listed['Avalanche bulletin'].value).toBe('Today');
+    expect(listed['Weather'].value).toMatch(/^Today \d\d:\d\d$/);
+    expect(listed['Your routes']).toEqual({ value: '1', state: 'yes' });
+    expect(listed['Community reports']).toEqual({ value: '1', state: 'yes' });
+    expect(li.querySelector('[data-inventory-status]').textContent).toBe('Works offline');
+  });
+
+  it('closes again on a second press', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    await boot({ [REGION_ID]: record() });
+    const toggle = toggleOf(firstRowElement());
+
+    toggle.click();
+    toggle.click();
+    await settle();
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(firstRowElement().querySelector('[data-inventory-item]')).toBeNull();
+  });
+
+  it('opens one row at a time', async () => {
+    seed({ 'basemap.regions': REGIONS, 'basemap.customAreas': CUSTOM_AREAS });
+    await boot({ [REGION_ID]: record(), 'custom-a1': record() });
+    const rows = rowsByLabel();
+
+    toggleOf(rows['Aletsch']).click();
+    toggleOf(rows['Custom area 1']).click();
+    await settle();
+
+    expect(toggleOf(rows['Aletsch']).getAttribute('aria-expanded')).toBe('false');
+    expect(rows['Aletsch'].querySelector('[data-inventory-item]')).toBeNull();
+    expect(rows['Custom area 1'].querySelector('[data-inventory-item]')).not.toBeNull();
+  });
+
+  it('keeps the open row open across a render', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    await boot({ [REGION_ID]: record() });
+    toggleOf(firstRowElement()).click();
+    await settle();
+
+    window.pwaDownloadsManager.open();
+    await settle();
+
+    expect(toggleOf(firstRowElement()).getAttribute('aria-expanded')).toBe('true');
+    expect(firstRowElement().querySelector('[data-inventory-item]')).not.toBeNull();
+  });
+
+  it('repaints a row the worker says is not held', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    // The trip's page is held; the tour's Feature is not.
+    await boot({ [REGION_ID]: record() }, { held: new Set([window.location.origin + '/trips/trip/']) });
+    toggleOf(firstRowElement()).click();
+    await settle();
+    await settle();
+
+    const listed = items(firstRowElement());
+    expect(window.pwaBasemapDownloads.heldContent).toHaveBeenCalledWith(
+      expect.arrayContaining([window.location.origin + TOUR_URL]),
+    );
+    expect(listed['SAC tours'].state).toBe('partial');
+    expect(listed['Trips'].state).toBe('yes');
+    const tours = firstRowElement().querySelector('[data-inventory-item="tours"] [data-inventory-dot]');
+    expect(tours.classList.contains('bg-sync-partial')).toBe(true);
+  });
+
+  it('keeps the stage reading when the overlay store cannot be read', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    // readOverlay's null: no pwaDb, Reset Required, or a throw.
+    await boot({ [REGION_ID]: record() }, { overlay: null });
+    toggleOf(firstRowElement()).click();
+    await settle();
+    await settle();
+
+    const listed = items(firstRowElement());
+    expect(listed['Your routes'].state).toBe('yes');
+    expect(listed['Community reports'].state).toBe('yes');
+  });
+
+  it('marks stamped routes and reports missing when nothing is cached', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    await boot({ [REGION_ID]: record() }, { overlay: { geojson: null } });
+    toggleOf(firstRowElement()).click();
+    await settle();
+    await settle();
+
+    const listed = items(firstRowElement());
+    expect(listed['Your routes'].state).not.toBe('yes');
+    expect(listed['Community reports'].state).not.toBe('yes');
+  });
+
+  it('opens from the keyboard', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    await boot({ [REGION_ID]: record() });
+    const toggle = toggleOf(firstRowElement());
+
+    toggle.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await settle();
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('gives no chevron to a row this device does not hold', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    await boot({});
+    // The base layer and an account-only row have nothing here to list;
+    // an area on this device does.
+    const toggles = document.querySelectorAll('#map-downloads-sheet [data-row-disclosure]');
+    const panels = document.querySelectorAll('#map-downloads-sheet [data-row-panel]');
+    expect(toggles.length).toBe(panels.length);
+    for (const toggle of toggles) {
+      expect(toggle.getAttribute('data-row-disclosure')).not.toBe('');
+    }
   });
 });

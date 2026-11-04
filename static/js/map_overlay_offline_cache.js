@@ -117,21 +117,18 @@
   }
 
   /**
-   * Read back the cached GeoJSON payload for ``resource``, or ``null`` if
-   * nothing is cached or the DB isn't ready. For account-specific
-   * resources (``PRINCIPAL_SCOPED``, i.e. favourites and routes) also
-   * returns ``null`` when the cached row belongs to a different principal
-   * than the one currently signed in (SNOW-493) — a row with no
-   * ``principal`` at all (written before that fix) never matches, so it
-   * can't leak across an account switch either. Public resources
-   * (community_reports) skip the principal check entirely and read back for
-   * any session.
+   * SNOW-1418: the same read as ``getOverlay``, keeping apart the two
+   * answers it folds into ``null``. ``{ geojson }`` means the store
+   * answered — ``geojson`` is ``null`` when nothing is cached for this
+   * reader (absent, or another principal's row). ``null`` means the store
+   * could not be read (no ``pwaDb``, Reset Required, or a throw), so the
+   * Downloads inventory keeps its stage reading rather than calling every
+   * stamped route or report missing.
    *
-   * @param {string} resource - ``'favourites'``, ``'community_reports'``,
-   *   ``'weather'``, ``'routes'`` or ``'ski_summits'``
-   * @returns {Promise<object | null>}
+   * @param {string} resource
+   * @returns {Promise<{ geojson: object | null } | null>}
    */
-  async function getOverlay(resource) {
+  async function readOverlay(resource) {
     if (!dbReady() || !resource) return null;
     try {
       const record = await window.pwaDb.get(STORE, resource);
@@ -151,9 +148,8 @@
         principalMatch,
         cachedAt: (record && record.cached_at) || null,
       });
-      if (!record || !record.geojson) return null;
-      if (!principalMatch) return null;
-      return record.geojson;
+      if (!record || !record.geojson || !principalMatch) return { geojson: null };
+      return { geojson: record.geojson };
     } catch (_e) {
       window.pwaDebugLog?.record('idb', 'overlay.read', {
         store: STORE,
@@ -164,8 +160,28 @@
     }
   }
 
+  /**
+   * Read back the cached GeoJSON payload for ``resource``, or ``null`` if
+   * nothing is cached or the DB isn't ready. For account-specific
+   * resources (``PRINCIPAL_SCOPED``, i.e. favourites and routes) also
+   * returns ``null`` when the cached row belongs to a different principal
+   * than the one currently signed in (SNOW-493) — a row with no
+   * ``principal`` at all (written before that fix) never matches, so it
+   * can't leak across an account switch either. Public resources
+   * (community_reports) skip the principal check entirely and read back for
+   * any session.
+   *
+   * @param {string} resource - ``'favourites'``, ``'community_reports'``,
+   *   ``'weather'``, ``'routes'`` or ``'ski_summits'``
+   * @returns {Promise<object | null>}
+   */
+  async function getOverlay(resource) {
+    const read = await readOverlay(resource);
+    return read ? read.geojson : null;
+  }
+
   Object.defineProperty(window, 'pwaMapOverlayCache', {
-    value: Object.freeze({ putOverlay, getOverlay }),
+    value: Object.freeze({ putOverlay, getOverlay, readOverlay }),
     writable: false,
     configurable: false,
   });

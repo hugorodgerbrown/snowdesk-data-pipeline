@@ -1599,6 +1599,11 @@ describe("the map's syncs stamp what they expected of your things (SNOW-1308)", 
       reports: [],
       reportsAt: expect.any(String),
       reportsNewestAt: null,
+      // SNOW-1418: the resorts the content answer named, each with its
+      // forward-day sheets, and the reader's routes inside the area —
+      // none of this harness's routes cross it.
+      resorts: [{ slug: 'verbier', urls: expect.any(Array) }],
+      routes: [],
     };
   }
 

@@ -1108,6 +1108,92 @@ describe('SAC tours in an area (SNOW-1417)', () => {
   });
 });
 
+describe('resorts and routes in an area (SNOW-1418)', () => {
+  const RESORT_SHEET = '/partials/place-sheet/resort/__SLUG__/';
+  const ROUTE = (uuid, coords) => ({
+    type: 'Feature',
+    geometry: { type: 'LineString', coordinates: coords },
+    properties: { uuid },
+  });
+
+  /** One content sync, signed in as `principal`, with the routes feed `routes`. */
+  async function syncSignedIn(principal, routes) {
+    const mapEl = document.getElementById('map');
+    mapEl.dataset.resortSheetUrl = RESORT_SHEET;
+    mapEl.dataset.areaItemsUrl = '/api/area-items/';
+    const meta = document.createElement('meta');
+    meta.name = 'pwa-user-id';
+    meta.content = principal;
+    document.head.appendChild(meta);
+    const previousAnswer = areaContentAnswer;
+    areaContentAnswer = () => ({ ...previousAnswer(), resorts: [{ slug: 'verbier' }] });
+    const fetchStub = globalThis.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) => {
+        const href = String(url);
+        if (href.includes('area-items')) {
+          return Promise.resolve({
+            ok: true,
+            headers: { get: (name) => (name === 'X-Snowdesk-Principal' ? principal : null) },
+            json: () => Promise.resolve({ trips: [], pins: [] }),
+          });
+        }
+        if (href.includes('routes.geojson')) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve(routes) });
+        }
+        return fetchStub(url);
+      }),
+    );
+    try {
+      await seedArea({ contentAt: undefined });
+      return await window.pwaBasemapDownloads.refreshAreaContent(AREA_ID);
+    } finally {
+      areaContentAnswer = previousAnswer;
+      delete mapEl.dataset.resortSheetUrl;
+      delete mapEl.dataset.areaItemsUrl;
+      meta.remove();
+      vi.stubGlobal('fetch', fetchStub);
+    }
+  }
+
+  it("stamps the area's resorts with their sheets, and the reader's routes inside it", async () => {
+    const ok = await syncSignedIn('42', {
+      type: 'FeatureCollection',
+      features: [
+        ROUTE('inside', [[7.1, 46.1], [7.3, 46.3]]),
+        ROUTE('elsewhere', [[8.0, 47.0], [8.1, 47.1]]),
+      ],
+    });
+
+    expect(ok).toBe(true);
+    const stored = await storedArea();
+    expect(stored.items.principal).toBe('42');
+    expect(stored.items.routes).toEqual([{ uuid: 'inside' }]);
+    expect(stored.items.resorts.map((resort) => resort.slug)).toEqual(['verbier']);
+    expect(stored.items.resorts[0].urls.length).toBeGreaterThan(0);
+    expect(stored.items.resorts[0].urls[0]).toContain('/partials/place-sheet/resort/verbier/');
+  });
+
+  it('stamps resorts but no routes for a signed-out sync', async () => {
+    const mapEl = document.getElementById('map');
+    mapEl.dataset.resortSheetUrl = RESORT_SHEET;
+    const previousAnswer = areaContentAnswer;
+    areaContentAnswer = () => ({ ...previousAnswer(), resorts: [{ slug: 'verbier' }] });
+    try {
+      await seedArea({ contentAt: undefined });
+      await window.pwaBasemapDownloads.refreshAreaContent(AREA_ID);
+    } finally {
+      areaContentAnswer = previousAnswer;
+      delete mapEl.dataset.resortSheetUrl;
+    }
+
+    const stored = await storedArea();
+    expect(stored.items.resorts.map((resort) => resort.slug)).toEqual(['verbier']);
+    expect(stored.items.routes).toBeUndefined();
+  });
+});
+
 describe('the background sync (SNOW-1416)', () => {
   const STALE = () => new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
 

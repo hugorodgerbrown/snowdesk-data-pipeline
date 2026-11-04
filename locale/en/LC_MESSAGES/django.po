@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-04 22:09+0000\n"
+"POT-Creation-Date: 2026-11-04 22:32+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -5553,6 +5553,9 @@ msgstr ""
 msgid "Area name"
 msgstr ""
 
+msgid "What's in this area"
+msgstr ""
+
 msgid "Incomplete"
 msgstr ""
 
@@ -5576,6 +5579,38 @@ msgid "Map data missing"
 msgstr ""
 
 msgid "Not checked yet"
+msgstr ""
+
+#, python-format
+msgid "What's in %%(name)s"
+msgstr ""
+
+msgid "Map and terrain"
+msgstr ""
+
+msgid "Avalanche bulletin"
+msgstr ""
+
+msgid "SAC tours"
+msgstr ""
+
+msgid "Ski resorts"
+msgstr ""
+
+msgid "Community reports"
+msgstr ""
+
+msgid "Not saved"
+msgstr ""
+
+#, python-format
+msgid "%%(day)s %%(time)s"
+msgstr ""
+
+msgid "Needs a sync"
+msgstr ""
+
+msgid "Missing"
 msgstr ""
 
 msgid "Bulletins not saved"
@@ -7225,9 +7260,6 @@ msgid "View resort →"
 msgstr ""
 
 msgid "Full forecast →"
-msgstr ""
-
-msgid "Avalanche bulletin"
 msgstr ""
 
 #, python-format
@@ -9752,9 +9784,6 @@ msgstr ""
 msgid "Your saved places"
 msgstr ""
 
-msgid "Community reports"
-msgstr ""
-
 msgid "Swisstopo light (CH)"
 msgstr ""
 
@@ -10028,9 +10057,6 @@ msgstr ""
 
 #, python-format
 msgid "%%(held)s of %%(total)s days saved"
-msgstr ""
-
-msgid "SAC tours"
 msgstr ""
 
 #, python-format

@@ -330,6 +330,24 @@
     'area-status-open-map': 'Map data missing',
     'area-status-unknown': 'Not checked yet',
     'area-status-running': 'Syncing…',
+    // SNOW-1418: the inventory under a row — see `fillInventory`.
+    'inventory-toggle-label': "What's in %(name)s",
+    'inventory-map': 'Map and terrain',
+    'inventory-bulletin': 'Avalanche bulletin',
+    'inventory-weather': 'Weather',
+    'inventory-routes': 'Your routes',
+    'inventory-trips': 'Trips',
+    'inventory-places': 'Saved places',
+    'inventory-tours': 'SAC tours',
+    'inventory-resorts': 'Ski resorts',
+    'inventory-reports': 'Community reports',
+    'inventory-today': 'Today',
+    'inventory-never': 'Not saved',
+    'inventory-at': '%(day)s %(time)s',
+    'inventory-status-yes': 'Works offline',
+    'inventory-status-partial': 'Needs a sync',
+    'inventory-status-missing': 'Missing',
+    'inventory-status-unknown': 'Not checked yet',
     // SNOW-932: the subtitle clause for a row whose CONTENT half fell
     // short. A separate word from 'kind-incomplete' on purpose — this
     // row's map DRAWS and the area IS available offline; it is the
@@ -1982,7 +2000,299 @@
       if (renameBtn) renameBtn.remove();
       if (editor) editor.remove();
     }
+    wireInventory(fragment, row, syncable);
     return fragment;
+  }
+
+  // SNOW-1418: the inventory under a row — what the area holds, row by
+  // row (`pwaOfflineJourneyCore.inventoryFor`). One row is open at a time,
+  // by id, in module state for the same reason `syncing` is: the sheet
+  // re-clones every row on each render, and an open row must stay open.
+  var INVENTORY_TEMPLATE_ID = 'map-downloads-inventory-template';
+  var openInventory = '';
+  // What the worker and the overlay cache were last read to hold, by
+  // area id: `{held: Set<string>|null, overlayIds: {routes, reports}}`.
+  /** @type {Map<string, Object>} */
+  var inventoryReadings = new Map();
+  var INVENTORY_DOT = Object.freeze({
+    yes: 'bg-sync-ok',
+    partial: 'bg-sync-partial',
+    missing: 'bg-sync-blocked',
+    unknown: 'bg-sync-off',
+  });
+
+  /**
+   * SNOW-1418: give a row its inventory disclosure, or take it away.
+   *
+   * Only an area this device holds has anything to list: an account-only
+   * row, an orphaned bucket and the shared base layer shed the chevron and
+   * its panel. Each clone gets its own ids, or every row's `aria-controls`
+   * would point at the first row's panel.
+   *
+   * @param {DocumentFragment} fragment
+   * @param {{id: string, label: string, size: string}} row
+   * @param {boolean} listable Whether the row is an area on this device.
+   * @returns {void}
+   */
+  function wireInventory(fragment, row, listable) {
+    const toggle = fragment.querySelector('[data-row-disclosure]');
+    const panel = fragment.querySelector('[data-row-panel]');
+    const journey = window.pwaOfflineJourneyCore;
+    const canList =
+      listable && !!document.getElementById(INVENTORY_TEMPLATE_ID) && !!journey &&
+      typeof journey.inventoryFor === 'function';
+    if (!canList) {
+      if (toggle) toggle.remove();
+      if (panel) panel.remove();
+      return;
+    }
+    if (!toggle || !panel) return;
+    const panelId = 'downloads-row-inventory-' + row.id;
+    panel.id = panelId;
+    toggle.setAttribute('aria-controls', panelId);
+    toggle.setAttribute('data-row-disclosure', row.id);
+    toggle.setAttribute('data-inventory-size', row.size || '');
+    toggle.setAttribute(
+      'aria-label',
+      interpolate(STRINGS['inventory-toggle-label'], { name: row.label }),
+    );
+    const open = openInventory === row.id;
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) {
+      fillInventory(panel, row.id, row.size);
+      // A render follows a sync or a removal, either of which can change
+      // what is held, so the open row is read again.
+      readInventory(row.id);
+    }
+  }
+
+  /**
+   * The reader's account, as the queue is set for it — the same reading
+   * the row's verdict takes (`pwa-user-id`).
+   *
+   * @returns {string}
+   */
+  function readerPrincipal() {
+    const meta = document.querySelector('meta[name="pwa-user-id"]');
+    return (meta && meta.getAttribute('content')) || '';
+  }
+
+  /**
+   * One inventory value, in words: a size, a day, a time or a count.
+   *
+   * @param {{key: string, count?: number, at?: string}} item
+   * @param {string} size The row's own size, for the map.
+   * @returns {string}
+   */
+  function inventoryValue(item, size) {
+    if (item.key === 'map') return size || '';
+    if (item.key === 'bulletin' || item.key === 'weather') {
+      const stamp = window.pwaCachedStampCore;
+      if (!item.at || !stamp) return STRINGS['inventory-never'] || '';
+      const today = !stamp.isBeforeToday(item.at) && !!stamp.formatDay(item.at);
+      if (item.key === 'bulletin') {
+        return today ? STRINGS['inventory-today'] || '' : stamp.formatDay(item.at);
+      }
+      if (!today) return stamp.formatStamp(item.at);
+      return interpolate(STRINGS['inventory-at'], {
+        day: STRINGS['inventory-today'] || '',
+        time: stamp.formatStamp(item.at),
+      });
+    }
+    return typeof item.count === 'number' ? String(item.count) : '';
+  }
+
+  /**
+   * Fill one row's panel with its inventory, from the stored record and
+   * whatever the device was last read to hold.
+   *
+   * @param {Element} panel
+   * @param {string} id
+   * @param {string} size
+   * @returns {void}
+   */
+  function fillInventory(panel, id, size) {
+    const template = /** @type {HTMLTemplateElement|null} */ (
+      document.getElementById(INVENTORY_TEMPLATE_ID)
+    );
+    const journey = window.pwaOfflineJourneyCore;
+    if (!template || !journey) return;
+    const principal = readerPrincipal();
+    const readings = inventoryReadings.get(id) || {};
+    const rows = journey.inventoryFor(areaRecords.get(id), new Date(), {
+      signedIn: !!principal,
+      principal: principal,
+      origin: window.location.origin,
+      held: readings.held || null,
+      overlayIds: readings.overlayIds || null,
+    });
+    const list = /** @type {DocumentFragment} */ (template.content.cloneNode(true));
+    const ul = list.querySelector('[data-inventory-list]');
+    const proto = list.querySelector('[data-inventory-item]');
+    if (!ul || !proto) return;
+    proto.remove();
+    ul.setAttribute(
+      'aria-label',
+      interpolate(STRINGS['inventory-toggle-label'], { name: rowLabelFor(id) }),
+    );
+    for (const item of rows) {
+      const li = /** @type {Element} */ (proto.cloneNode(true));
+      li.setAttribute('data-inventory-item', item.key);
+      li.setAttribute('data-inventory-state', item.status);
+      const dot = li.querySelector('[data-inventory-dot]');
+      if (dot) {
+        dot.classList.remove('bg-sync-off');
+        dot.classList.add(INVENTORY_DOT[item.status] || 'bg-sync-off');
+      }
+      const label = li.querySelector('[data-inventory-label]');
+      if (label) label.textContent = STRINGS['inventory-' + item.key] || '';
+      const value = li.querySelector('[data-inventory-value]');
+      if (value) value.textContent = inventoryValue(item, size);
+      const status = li.querySelector('[data-inventory-status]');
+      if (status) status.textContent = STRINGS['inventory-status-' + item.status] || '';
+      ul.appendChild(li);
+    }
+    panel.replaceChildren(list);
+  }
+
+  /**
+   * One row's chevron, by area id. Matched by value rather than through a
+   * selector, so no id needs escaping.
+   *
+   * @param {string} id
+   * @returns {Element|null}
+   */
+  function toggleFor(id) {
+    for (const toggle of sheet.querySelectorAll('[data-row-disclosure]')) {
+      if (toggle.getAttribute('data-row-disclosure') === id) return toggle;
+    }
+    return null;
+  }
+
+  /**
+   * The label a row is shown under, read back off the rendered row.
+   *
+   * @param {string} id
+   * @returns {string}
+   */
+  function rowLabelFor(id) {
+    const toggle = toggleFor(id);
+    const item = toggle && toggle.closest('li');
+    const label = item && item.querySelector('[data-row-label]');
+    return (label && label.textContent) || '';
+  }
+
+  /**
+   * SNOW-1418: read what the device holds for one area's inventory — the
+   * worker's answer for its stamped urls, and the route and report ids in
+   * the map's overlay cache — then repaint its panel if it is still open.
+   *
+   * Each reading that fails is null, which `inventoryFor` reads as "not
+   * read": the row follows its stage rather than saying No.
+   *
+   * @param {string} id
+   * @returns {Promise<void>}
+   */
+  async function readInventory(id) {
+    // One reading at a time per area: renders can come in a burst.
+    if (inventoryInFlight.has(id)) return;
+    inventoryInFlight.add(id);
+    try {
+      await takeInventoryReading(id);
+    } finally {
+      inventoryInFlight.delete(id);
+    }
+  }
+
+  /** @type {Set<string>} */
+  var inventoryInFlight = new Set();
+
+  /**
+   * The reading `readInventory` takes, once.
+   *
+   * @param {string} id
+   * @returns {Promise<void>}
+   */
+  async function takeInventoryReading(id) {
+    const journey = window.pwaOfflineJourneyCore;
+    const downloads = window.pwaBasemapDownloads;
+    const cache = window.pwaMapOverlayCache;
+    const record = areaRecords.get(id);
+    if (!journey || !record) return;
+    const urls =
+      typeof journey.inventoryUrls === 'function'
+        ? journey.inventoryUrls(record, window.location.origin)
+        : [];
+    /** @param {string} resource @param {string} field */
+    const idsIn = async (resource, field) => {
+      // `readOverlay` tells "nothing cached" (an empty set: every stamped
+      // item is missing) from "the store could not be read" (null: keep
+      // the stage reading). `getOverlay` folds both into null, so without
+      // `readOverlay` there is no reading to take.
+      if (!cache || typeof cache.readOverlay !== 'function') return null;
+      try {
+        const read = await cache.readOverlay(resource);
+        if (!read) return null;
+        const feed = read.geojson;
+        if (!feed) return new Set();
+        if (!Array.isArray(feed.features)) return null;
+        const ids = new Set();
+        for (const feature of feed.features) {
+          const value = feature && feature.properties && feature.properties[field];
+          if (value) ids.add(String(value));
+        }
+        return ids;
+      } catch (_err) {
+        return null;
+      }
+    };
+    const [held, routes, reports] = await Promise.all([
+      urls.length && downloads && typeof downloads.heldContent === 'function'
+        ? downloads.heldContent(urls)
+        : Promise.resolve(null),
+      idsIn('routes', 'uuid'),
+      idsIn('community_reports', 'submission'),
+    ]);
+    inventoryReadings.set(id, { held: held, overlayIds: { routes: routes, reports: reports } });
+    repaintInventory(id);
+  }
+
+  /**
+   * Refill one row's panel in place, when it is the open one.
+   *
+   * @param {string} id
+   * @returns {void}
+   */
+  function repaintInventory(id) {
+    if (openInventory !== id) return;
+    const toggle = toggleFor(id);
+    const item = toggle && toggle.closest('li');
+    const panel = item && item.querySelector('[data-row-panel]');
+    const size = toggle && toggle.getAttribute('data-inventory-size');
+    if (panel) fillInventory(panel, id, size || '');
+  }
+
+  /**
+   * Open or close one row's inventory. Opening it closes any other, and
+   * starts the reading of what the device holds for it.
+   *
+   * @param {Element} toggle The row's chevron.
+   * @returns {void}
+   */
+  function toggleInventory(toggle) {
+    const id = toggle.getAttribute('data-row-disclosure') || '';
+    if (!id) return;
+    const opening = openInventory !== id;
+    for (const other of sheet.querySelectorAll('[data-row-disclosure][aria-expanded="true"]')) {
+      other.setAttribute('aria-expanded', 'false');
+      const panel = other.closest('li') && other.closest('li').querySelector('[data-row-panel]');
+      if (panel) panel.replaceChildren();
+    }
+    openInventory = opening ? id : '';
+    if (!opening) return;
+    toggle.setAttribute('aria-expanded', 'true');
+    repaintInventory(id);
+    readInventory(id);
   }
 
   /**
@@ -2085,9 +2395,27 @@
   // `sheet.hidden = false` above; the sheet does not reopen when framing
   // closes — SNOW-632 already ends a run on an in-overlay "23.4 MB
   // downloaded" + Close, so there is nothing here for a re-open to add.
+  // SNOW-1418: a row's chevron opens what the area holds. The shared
+  // disclosure is an `<a role="button">` with no href, so Enter and Space
+  // are answered here as a button's would be.
+  sheet.addEventListener('keydown', function (event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const toggle = target && target.closest && target.closest('[data-row-disclosure]');
+    if (!toggle) return;
+    event.preventDefault();
+    toggleInventory(toggle);
+  });
+
   sheet.addEventListener('click', function (event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return;
+    const inventoryToggle = target.closest('[data-row-disclosure]');
+    if (inventoryToggle) {
+      event.preventDefault();
+      toggleInventory(inventoryToggle);
+      return;
+    }
     // SNOW-1414: "Download a region" — the same two gates as the custom
     // area below, then the pick task (static/js/map_region_pick.js).
     if (target.closest('[data-panel-add-region]')) {

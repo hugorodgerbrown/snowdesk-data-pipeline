@@ -1927,6 +1927,15 @@ already saved. Offline, `ski_tours.js` reads the saved boxes under the view
 (`items.tourBoxes`, carried by `downloadedAreas`). Why, and the tour read
 budget: [`decisions/a-download-saves-the-sac-tours-and-reports-inside-it.md`](decisions/a-download-saves-the-sac-tours-and-reports-inside-it.md).
 
+**What a download holds, listed (SNOW-1418).** The stamp also carries the
+resorts the content answer named, with their sheet urls (`items.resorts`,
+`resortItems`), and the reader's routes whose line enters the rectangle
+(`items.routes`, `routesInBox`, beside trips and pins). The Downloads sheet
+lists all of it under a row when its chevron is opened
+(`inventoryFor`); opening it asks the worker which stamped urls it would
+serve offline (`pwaBasemapDownloads.heldContent`). Why:
+[`decisions/downloads-is-the-home-for-offline.md`](decisions/downloads-is-the-home-for-offline.md#the-inventory-under-a-row).
+
 ### Terrain data — the terrain-class tiles (SNOW-1072)
 
 The terrain filter (SNOW-978) paints from terrain-class tiles: 256 px PNGs

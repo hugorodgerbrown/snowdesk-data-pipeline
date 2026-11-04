@@ -1,6 +1,6 @@
 ---
 name: downloads-is-the-home-for-offline
-description: Downloads sheet is the home for offline — row verdict dot, Sync all, pwaDownloadsSyncAll, network menu switch only, /offline/ unlinked
+description: Downloads sheet is the home for offline — row verdict dot, inventory reveal (inventoryFor), Sync all, /offline/ unlinked
 status: current
 last-reviewed: 2026-11-04
 ---
@@ -70,7 +70,34 @@ re-clones its body on every render, and a run in flight must survive that.
 - A new surface that verifies an area should still stamp `verified`, or the
   sheet keeps the last answer another surface gave.
 - The inventory of what a download holds is a reveal on its row (SNOW-1418),
-  not a page.
+  not a page. See "The inventory under a row" below.
 - A link to /offline/ anywhere a user can see it is a regression;
   `tests/public/test_offline_page.py` checks Help, settings, the map and the
   offline shell.
+
+## The inventory under a row
+
+SNOW-1418. A row's chevron, the shared trailing disclosure
+(`includes/_row_disclosure.html`), opens what the area holds into the row's
+own panel (`includes/_downloads_inventory.html`): the map, the bulletin, the
+weather, the reader's routes, trips and saved places, the SAC tours, the
+resorts and the community reports. Each has a `sync-*` dot and one value.
+
+- **One reading.** `pwaOfflineJourneyCore.inventoryFor` is built on
+  `stagesFromRecord`, so the row's dot and the list under it read the same
+  stamp and cannot disagree.
+- **It asks what is held.** Opening a row asks the worker which stamped urls
+  it would serve offline (SNOW-1416's `held-content`, published as
+  `pwaBasemapDownloads.heldContent`). It also reads the route and report ids
+  in the overlay cache. A reading it could not take leaves the row on its
+  stage's stamp, never a No.
+- **It lists only what the last sync stamped.** A record synced before a
+  field existed lists less, rather than a zero it never counted. The stamp
+  gained `items.resorts` (public) and `items.routes` (the reader's, beside
+  trips and pins under `items.principal`) for it.
+- **Saved places goes beyond the mockup**, and shows only when the area has
+  pins. Without it, a missing pin makes the row amber while every item reads
+  green.
+- **The chevron trails the row** rather than sitting by the name, as in the
+  mockup. The name keeps its job of framing the area on the map (SNOW-811),
+  and the trailing chevron is the system's one row disclosure.

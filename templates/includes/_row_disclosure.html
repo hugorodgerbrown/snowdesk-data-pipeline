@@ -5,8 +5,13 @@ control (SNOW-711).
 
 includes/_ugc_panel_row.html's `disclosure_template` slot: the chevron at
 the row's trailing edge that expands the row's own detail underneath it,
-into the element `disclosure_panel_id` names. Its one caller today is the
-account page's favourite row (favourites/partials/_favourite.html).
+into the element `disclosure_panel_id` names. Its callers are the
+account page's favourite row (favourites/partials/_favourite.html) and,
+since SNOW-1418, the map Downloads sheet's area row, which passes no
+`disclosure_href` or `disclosure_hx_get`: what it reveals is read from the
+device (includes/_downloads_inventory.html), so the control is a
+`role="button"` that map_downloads_manager.js answers, Enter and Space
+included.
 
 A CHEVRON, NOT AN ARROW, because this expands in place rather than
 navigating: the same meaning includes/_collapsible_panel.html and
