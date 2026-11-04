@@ -462,10 +462,20 @@ afterAll(() => {
   delete globalThis.maplibregl;
 });
 
+// SNOW-1415 review: the tile-grid reading `syncArea` takes before it may
+// stamp a map Yes. The reading itself is `offline_journey_core.js`'s
+// `tileReading`, tested there; here it is a seam, so each test says what
+// the bucket's grid holds. A full grid unless a test says otherwise.
+let realJourneyCore;
+let tilesHeld;
+
 beforeEach(async () => {
   window.pwaWarmCache.mockClear();
   await seedArea();
   holdDependencies(DEPS);
+  realJourneyCore = realJourneyCore || window.pwaOfflineJourneyCore;
+  tilesHeld = vi.fn(() => true);
+  window.pwaOfflineJourneyCore = Object.assign({}, realJourneyCore, { tileReading: tilesHeld });
 });
 
 describe('the tile half', () => {
@@ -771,10 +781,58 @@ describe('what a sync tells the connection panel (SNOW-1415)', () => {
   });
 
   it('stamps the map and content answers it learned on the record', async () => {
+    const meta = document.createElement('meta');
+    meta.name = 'pwa-user-id';
+    meta.content = '42';
+    document.head.appendChild(meta);
+    try {
+      await window.pwaBasemapDownloads.syncArea(AREA_ID);
+    } finally {
+      meta.remove();
+    }
+    const record = await storedArea();
+    expect(record.verified).toMatchObject({ map: 'yes', content: 'yes', principal: '42' });
+    expect(typeof record.verified.at).toBe('string');
+  });
+
+  it('stamps no content answer for a signed-out sync', async () => {
+    // A content answer is shown back only to the account it was read for,
+    // and a signed-out sync has none.
     await window.pwaBasemapDownloads.syncArea(AREA_ID);
     const record = await storedArea();
-    expect(record.verified).toMatchObject({ map: 'yes', content: 'yes' });
-    expect(typeof record.verified.at).toBe('string');
+    expect(record.verified).toMatchObject({ map: 'yes' });
+    expect(record.verified.content).toBeUndefined();
+  });
+
+  it('reads the tile grid over this bucket before it says the map is here', async () => {
+    const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect(result).toMatchObject({ tiles: 'none', tilesHeld: true });
+    const [area, core] = tilesHeld.mock.calls[0];
+    expect(area).toMatchObject({ template: TEMPLATE, bbox: [7.0, 46.0, 7.2, 46.2], band: [10, 14] });
+    expect(area.entries).toEqual(expect.arrayContaining(DEPS));
+    expect(core).toBe(window.pwaBasemapDownloadCore);
+  });
+
+  it('stamps a map No when the dependencies are here but the tile grid is short', async () => {
+    // The Codex review case: a bucket holding its style, sprites and
+    // glyphs but missing tiles passes the render check and still draws
+    // nothing. The panel must not say "Works offline" for it.
+    tilesHeld.mockReturnValue(false);
+    const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect(result.tiles).toBe('incomplete');
+    const record = await storedArea();
+    expect(record.verified).toMatchObject({ map: 'no', reason: 'tiles' });
+  });
+
+  it('leaves the map answer alone when the grid cannot be read', async () => {
+    await seedArea({ verified: { map: 'no', reason: 'tiles', at: '2026-01-01T00:00:00.000Z' } });
+    tilesHeld.mockReturnValue(null);
+    await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    const record = await storedArea();
+    expect(record.verified).toMatchObject({ map: 'no', reason: 'tiles' });
   });
 
   it('stamps a map No for an area whose bucket is gone', async () => {

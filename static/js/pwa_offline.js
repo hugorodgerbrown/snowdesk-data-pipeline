@@ -263,6 +263,9 @@
   // cloned into, the row <template>, the offline note, the one press and
   // its two outcome lines.
   const NETWORK_SYNC_SELECTOR = '[data-network-sync]';
+  // SNOW-1415: the shape of the map url the Sync block carries — a path
+  // from the root, letters, digits, '-', '_' and '/' only, never '//'.
+  const SAME_SITE_PATH = /^\/(?!\/)[A-Za-z0-9_\-\/]*$/;
   const NETWORK_SYNC_LIST_SELECTOR = '[data-network-sync-list]';
   const NETWORK_SYNC_ROW_SELECTOR = '[data-network-sync-row]';
   const NETWORK_SYNC_OFFLINE_SELECTOR = '[data-network-sync-offline]';
@@ -458,8 +461,19 @@
    * @returns {boolean}
    */
   function signedIn() {
+    return !!currentPrincipal();
+  }
+
+  /**
+   * The account this page was rendered for — base.html's `pwa-user-id`,
+   * '' when signed out. A stamped things answer is only read back to the
+   * account it was stamped for.
+   *
+   * @returns {string}
+   */
+  function currentPrincipal() {
     const meta = document.querySelector('meta[name="pwa-user-id"]');
-    return !!(meta && meta.getAttribute('content'));
+    return (meta && meta.getAttribute('content')) || '';
   }
 
   /**
@@ -471,13 +485,22 @@
    * A "mostly" (`refresh`) names its first No: the bulletins and weather,
    * then the reader's things.
    *
+   * One rule is the panel's own: an area no tile-capable page has checked
+   * (an unknown map) reads "Not checked yet" whatever its content age.
+   * `verdictFor` would let a stale bulletin outrank the unknown map and
+   * say "Mostly", which claims the map is there when nothing has looked.
+   *
    * @param {{record: Object}} area
    * @returns {{verdict: 'ready'|'refresh'|'open-map'|'unknown', reason: string}}
    */
   function areaVerdict(area) {
     const journey = window.pwaOfflineJourneyCore;
     if (!journey) return { verdict: 'unknown', reason: '' };
-    const stages = journey.stagesFromRecord(area.record, new Date(), { signedIn: signedIn() });
+    const stages = journey.stagesFromRecord(area.record, new Date(), {
+      signedIn: signedIn(),
+      principal: currentPrincipal(),
+    });
+    if (stages.map.status === 'unknown') return { verdict: 'unknown', reason: '' };
     const verdict = journey.verdictFor(stages);
     let reason = '';
     if (verdict === 'refresh') {
@@ -659,14 +682,11 @@
   function navigateToMapSync() {
     const block = document.querySelector(NETWORK_SYNC_SELECTOR);
     const href = block ? block.getAttribute('data-map-url') : '';
-    if (!href) return;
-    try {
-      const url = new URL(href, self.location.href);
-      url.searchParams.set('sync', 'all');
-      self.location.assign(url.pathname + url.search + url.hash);
-    } catch (_err) {
-      // A URL this runtime will not build is not a navigation to make.
-    }
+    // Only a plain same-site path, as `{% url %}` renders it: the attribute
+    // is page text, and nothing but a path of ours is a place to send the
+    // reader (no scheme, no host, no `//`).
+    if (!href || !SAME_SITE_PATH.test(href)) return;
+    self.location.assign(href + '?sync=all');
   }
 
   /**

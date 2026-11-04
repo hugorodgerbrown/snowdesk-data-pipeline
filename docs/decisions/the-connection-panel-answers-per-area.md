@@ -21,12 +21,18 @@ The panel runs on every page, where neither the audit's readings nor the tile
 arithmetic exist. So the pages that can read tiles write what they verified on
 the area record, and every other page reads it back:
 
-- the map writes `verified` after each `syncArea` (`verifiedFromSync`);
+- the map writes `verified` after each `syncArea` (`verifiedFromSync`). A map
+  Yes needs the whole tile grid in the bucket (`_areaTilesHeld`, the same
+  `tileReading` /offline/ takes), not only the render dependencies;
 - /offline/ writes it from each panel's map and things stages
   (`verifiedFromStages`);
-- `stagesFromRecord(record, now, {signedIn})` turns the record back into
-  stages, and `verdictFor` is unchanged. A record no tile-capable page has
-  stamped reads map unknown, so its verdict is never a false yes.
+- a things answer is stamped with the account it was read for
+  (`verified.principal`) and read back only to that account;
+- `stagesFromRecord(record, now, {signedIn, principal})` turns the record back
+  into stages, and `verdictFor` is unchanged. A record no tile-capable page
+  has stamped reads map unknown, and the panel shows "Not checked yet" for it
+  whatever its bulletins' age, so its verdict is never a false yes or
+  "mostly".
 
 `offline_journey_core.js` loads globally from `base.html` for this. It stays
 pure and never reads the audit core on the record-only path.

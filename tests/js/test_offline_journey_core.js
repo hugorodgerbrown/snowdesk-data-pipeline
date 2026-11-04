@@ -465,12 +465,32 @@ describe('the stages from a record alone (SNOW-1415)', () => {
   });
 
   it('reads Ready when the map verified, today’s content is here and it all landed', () => {
-    const record = { contentAt: TODAY, verified: verified({ map: 'yes', content: 'yes' }) };
-    const stages = journey.stagesFromRecord(record, NOW, { signedIn: true });
+    const record = {
+      contentAt: TODAY,
+      verified: verified({ map: 'yes', content: 'yes', principal: '42' }),
+    };
+    const stages = journey.stagesFromRecord(record, NOW, { signedIn: true, principal: '42' });
     expect(stages.map.status).toBe('yes');
     expect(stages.conditions.status).toBe('yes');
     expect(stages.things.status).toBe('yes');
     expect(journey.verdictFor(stages)).toBe('ready');
+  });
+
+  it('never shows one account’s things answer to another', () => {
+    // Account A synced on this device; B is signed in now. A's Yes says
+    // nothing about B's things, which /offline/ reports as another
+    // account's.
+    const record = {
+      contentAt: TODAY,
+      verified: verified({ map: 'yes', content: 'yes', principal: 'A' }),
+    };
+    const stages = journey.stagesFromRecord(record, NOW, { signedIn: true, principal: 'B' });
+    expect(stages.things.status).toBe('unknown');
+    expect(journey.verdictFor(stages)).not.toBe('ready');
+    const unstamped = { contentAt: TODAY, verified: verified({ map: 'yes', content: 'yes' }) };
+    expect(
+      journey.stagesFromRecord(unstamped, NOW, { signedIn: true, principal: 'B' }).things.status,
+    ).toBe('unknown');
   });
 
   it('sends a map No to the map, with its reason', () => {
@@ -510,8 +530,11 @@ describe('the stages from a record alone (SNOW-1415)', () => {
   });
 
   it('reads a content No as a things No for a signed-in reader', () => {
-    const record = { contentAt: TODAY, verified: verified({ map: 'yes', content: 'no' }) };
-    const stages = journey.stagesFromRecord(record, NOW, { signedIn: true });
+    const record = {
+      contentAt: TODAY,
+      verified: verified({ map: 'yes', content: 'no', principal: '42' }),
+    };
+    const stages = journey.stagesFromRecord(record, NOW, { signedIn: true, principal: '42' });
     expect(stages.things.status).toBe('no');
     expect(journey.verdictFor(stages)).toBe('refresh');
   });
@@ -527,36 +550,54 @@ describe('the stages from a record alone (SNOW-1415)', () => {
 describe('the verified stamp (SNOW-1415)', () => {
   const AT = '2026-09-11T07:00:00.000Z';
 
-  it('reads a map-page sync: established tiles are Yes, gone or failed are No', () => {
-    expect(journey.verifiedFromSync({ tiles: 'ok', content: true }, AT)).toEqual({
-      at: AT,
-      map: 'yes',
-      content: 'yes',
-    });
-    expect(journey.verifiedFromSync({ tiles: 'none', content: false }, AT)).toEqual({
-      at: AT,
-      map: 'yes',
-      content: 'no',
-    });
-    expect(journey.verifiedFromSync({ tiles: 'failed', content: true }, AT)).toEqual({
+  it('reads a map-page sync: a full tile grid is Yes, gone, failed or short is No', () => {
+    expect(
+      journey.verifiedFromSync({ tiles: 'ok', tilesHeld: true, content: true }, AT, '42'),
+    ).toEqual({ at: AT, map: 'yes', content: 'yes', principal: '42' });
+    expect(
+      journey.verifiedFromSync({ tiles: 'none', tilesHeld: true, content: false }, AT, '42'),
+    ).toEqual({ at: AT, map: 'yes', content: 'no', principal: '42' });
+    expect(journey.verifiedFromSync({ tiles: 'failed', content: true }, AT, '42')).toEqual({
       at: AT,
       map: 'no',
       reason: 'failed',
       content: 'yes',
+      principal: '42',
     });
-    expect(journey.verifiedFromSync({ tiles: 'absent', content: false }, AT)).toEqual({
+    expect(journey.verifiedFromSync({ tiles: 'absent', content: false }, AT, '42')).toEqual({
       at: AT,
       map: 'no',
       reason: 'absent',
     });
+    for (const result of [
+      { tiles: 'incomplete', tilesHeld: false },
+      { tiles: 'none', tilesHeld: false },
+    ]) {
+      expect(journey.verifiedFromSync(result, AT)).toEqual({ at: AT, map: 'no', reason: 'tiles' });
+    }
+  });
+
+  it('never says Yes for the map from the render dependencies alone', () => {
+    // Codex review: `'none'` means the style, sprites and glyphs are here.
+    // Without a tile-grid reading that is not a claim about the tiles.
+    expect(journey.verifiedFromSync({ tiles: 'none', content: true }, AT)).toBeNull();
+    expect(journey.verifiedFromSync({ tiles: 'ok', tilesHeld: null }, AT)).toBeNull();
   });
 
   it('claims nothing about tiles it could not judge', () => {
-    expect(journey.verifiedFromSync({ tiles: 'unknown', content: true }, AT)).toEqual({
+    expect(journey.verifiedFromSync({ tiles: 'unknown', content: true }, AT, '42')).toEqual({
       at: AT,
       content: 'yes',
+      principal: '42',
     });
     expect(journey.verifiedFromSync(null, AT)).toBeNull();
+  });
+
+  it('stamps a content answer only for a signed-in account', () => {
+    expect(journey.verifiedFromSync({ tiles: 'unknown', content: true }, AT, '')).toBeNull();
+    expect(
+      journey.verifiedFromStages({ map: { status: 'yes' }, things: { status: 'yes' } }, AT),
+    ).toEqual({ at: AT, map: 'yes' });
   });
 
   it('reads an /offline/ panel’s map and things stages, and nothing unknown', () => {
@@ -564,25 +605,27 @@ describe('the verified stamp (SNOW-1415)', () => {
       journey.verifiedFromStages(
         { map: { status: 'no', reason: 'tiles' }, things: { status: 'yes' } },
         AT,
+        '42',
       ),
-    ).toEqual({ at: AT, map: 'no', reason: 'tiles', content: 'yes' });
+    ).toEqual({ at: AT, map: 'no', reason: 'tiles', content: 'yes', principal: '42' });
     expect(
-      journey.verifiedFromStages({ map: { status: 'unknown' }, things: null }, AT),
+      journey.verifiedFromStages({ map: { status: 'unknown' }, things: null }, AT, '42'),
     ).toBeNull();
   });
 
   it('merges a stamp field by field, keeping what the new reading did not claim', () => {
-    const entry = { id: 'a', verified: { at: 'old', map: 'no', reason: 'tiles', content: 'yes' } };
-    expect(journey.stampVerifiedRecord(entry, { at: AT, content: 'no' }).verified).toEqual({
-      at: AT,
-      map: 'no',
-      reason: 'tiles',
-      content: 'no',
-    });
+    const entry = {
+      id: 'a',
+      verified: { at: 'old', map: 'no', reason: 'tiles', content: 'yes', principal: 'A' },
+    };
+    expect(
+      journey.stampVerifiedRecord(entry, { at: AT, content: 'no', principal: 'B' }).verified,
+    ).toEqual({ at: AT, map: 'no', reason: 'tiles', content: 'no', principal: 'B' });
     expect(journey.stampVerifiedRecord(entry, { at: AT, map: 'yes' }).verified).toEqual({
       at: AT,
       map: 'yes',
       content: 'yes',
+      principal: 'A',
     });
     expect(journey.stampVerifiedRecord(entry, null)).toBe(entry);
     expect(entry.verified.at).toBe('old');

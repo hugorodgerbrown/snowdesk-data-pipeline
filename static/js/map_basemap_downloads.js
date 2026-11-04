@@ -3708,7 +3708,8 @@ async function _stampAreaContent(areaId, regionId, complete, expectation) {
 async function _stampAreaVerified(areaId, result) {
   const journey = self.pwaOfflineJourneyCore;
   if (!journey || typeof journey.verifiedFromSync !== 'function') return;
-  const verified = journey.verifiedFromSync(result, new Date().toISOString());
+  const principal = document.querySelector('meta[name="pwa-user-id"]')?.getAttribute('content') || '';
+  const verified = journey.verifiedFromSync(result, new Date().toISOString(), principal);
   if (!verified) return;
   const found = await _areaRecordById(areaId);
   if (!found) return;
@@ -3982,6 +3983,44 @@ async function _areaBucketOnDevice(areaId) {
 }
 
 /**
+ * SNOW-1415 review: whether every basemap tile an area's ground implies is
+ * in its pinned bucket — the reading /offline/'s map stage takes, through
+ * the same `offline_journey_core.js` `tileReading`, over this bucket's
+ * urls.
+ *
+ * Null where no reading can be taken: no core, no Cache Storage, a record
+ * naming no template or ground, or a read that throws. A null never
+ * becomes a No.
+ *
+ * @param {string} areaId The pinned bucket id.
+ * @param {Object} record The area's stored record.
+ * @returns {Promise<boolean|null>}
+ */
+async function _areaTilesHeld(areaId, record) {
+  const journey = self.pwaOfflineJourneyCore;
+  const core = self.pwaBasemapDownloadCore;
+  if (!journey || typeof journey.tileReading !== 'function' || !core) return null;
+  if (!('caches' in window) || !record) return null;
+  try {
+    const cache = await caches.open(BASEMAP_PINNED_CACHE_PREFIX + areaId);
+    const keys = await cache.keys();
+    return journey.tileReading(
+      {
+        template: record.template,
+        z: record.z,
+        bbox: record.bbox,
+        band: record.band,
+        type: record.type,
+        entries: keys.map((request) => request.url),
+      },
+      core,
+    );
+  } catch (_e) {
+    return null;
+  }
+}
+
+/**
  * SNOW-951: make ONE downloaded area wholly current, in a single press.
  *
  * Three controls could already mend a download and none of them made it
@@ -4018,8 +4057,12 @@ async function _areaBucketOnDevice(areaId) {
  * `_areaBucketOnDevice` for where such a record comes from.
  *
  * @param {string} areaId The pinned bucket id.
- * @returns {Promise<{tiles: 'ok'|'failed'|'none'|'unknown'|'absent',
- *   content: boolean}>} `tiles` is `'none'` when there was nothing missing
+ * @returns {Promise<{tiles: 'ok'|'failed'|'none'|'unknown'|'absent'|'incomplete',
+ *   tilesHeld?: boolean|null, content: boolean}>} `tiles` is `'incomplete'`
+ *   when the dependencies are here but the tile grid is short
+ *   (`_areaTilesHeld`, SNOW-1415 review), which only a re-download mends;
+ *   `tilesHeld` is that reading, null where none could be taken.
+ *   `tiles` is `'none'` when there was nothing missing
  *   to fetch — the healthy case; `'unknown'` when the dependency list
  *   could not be resolved at all, which is NOT the same claim and must not
  *   be reported as one (see `_missingAreaRenderDependencies`); `'absent'`
@@ -4059,9 +4102,17 @@ async function syncArea(areaId, onStage) {
     });
     tiles = repaired ? 'ok' : 'failed';
   }
+  // SNOW-1415 review: the dependencies being here is not the map being
+  // here. Only a full tile grid lets the stamp say Yes; a short grid is a
+  // No this press cannot mend (the remedy is a re-download).
+  let tilesHeld = null;
+  if (tiles === 'ok' || tiles === 'none') {
+    tilesHeld = await _areaTilesHeld(areaId, found.record);
+    if (tilesHeld === false) tiles = 'incomplete';
+  }
 
   const content = await refreshAreaContent(areaId, tell);
-  const result = { tiles: tiles, content: content };
+  const result = { tiles: tiles, tilesHeld: tilesHeld, content: content };
   await _stampAreaVerified(areaId, result);
   return result;
 }

@@ -1782,13 +1782,48 @@ describe('Sync: one answer per area (SNOW-1415)', () => {
     buildFixture();
     stubDb({
       'basemap.regions': [
-        verifiedRegion('CH-1', 'Things', { verified: { at: TODAY(), map: 'yes', content: 'no' } }),
+        verifiedRegion('CH-1', 'Things', {
+          verified: { at: TODAY(), map: 'yes', content: 'no', principal: 'acct-1' },
+        }),
       ],
     });
     await loadModule();
     await openMenu();
 
     expect(rows()[0].text).toBe('Mostly · some trips or pins missing');
+  });
+
+  it("never reads another account's things answer as this reader's", async () => {
+    signIn('acct-2');
+    buildFixture();
+    stubDb({
+      'basemap.regions': [
+        verifiedRegion('CH-1', 'Theirs', {
+          verified: { at: TODAY(), map: 'yes', content: 'yes', principal: 'acct-1' },
+        }),
+      ],
+    });
+    await loadModule();
+    await openMenu();
+
+    expect(rows()[0].status).not.toBe('ready');
+  });
+
+  it('reads an unchecked area as not checked yet, whatever its bulletins say', async () => {
+    // Codex review: a stale or missing bulletin must not turn an area no
+    // tile-capable page has looked at into a "Mostly", which would claim
+    // the map is there.
+    buildFixture();
+    stubDb({
+      'basemap.regions': [
+        { region_id: 'CH-1', name: 'Stale', contentAt: YESTERDAY() },
+        { region_id: 'CH-2', name: 'Never' },
+      ],
+    });
+    await loadModule();
+    await openMenu();
+
+    expect(rows().map((row) => row.status)).toEqual(['unknown', 'unknown']);
   });
 
   it('marks the symbol ready only when every area is ready', async () => {
@@ -1913,8 +1948,8 @@ describe('Sync: one answer per area (SNOW-1415)', () => {
     };
     await loadModule();
     await openMenu();
-    // Never checked, and yesterday's bulletins: the No outranks the unknown.
-    expect(rows()[0].status).toBe('refresh');
+    // Never checked: unknown, whatever the bulletins' age.
+    expect(rows()[0].status).toBe('unknown');
 
     readyButton().click();
     await settle();
@@ -2036,6 +2071,31 @@ describe('Sync: one answer per area (SNOW-1415)', () => {
       expect(window.pwaMutationQueue.drain).not.toHaveBeenCalled();
     } finally {
       Object.defineProperty(window, 'location', { configurable: true, value: realLocation });
+    }
+  });
+
+  it('navigates nowhere when the map url is not a plain path of ours', async () => {
+    // The url is page text: anything but a root path (a scheme, a host, a
+    // protocol-relative `//`) is not a place to send the reader.
+    for (const href of ['javascript:alert(1)', '//evil.test/map/', 'https://evil.test/map/']) {
+      buildFixture();
+      document.querySelector('[data-network-sync]').setAttribute('data-map-url', href);
+      stubDb({ 'basemap.customAreas': [{ id: 'custom-a1', name: 'Verbier bowl' }] });
+      await loadModule();
+      await openMenu();
+      const assign = vi.fn();
+      const realLocation = window.location;
+      Object.defineProperty(window, 'location', {
+        configurable: true,
+        value: { href: 'https://snowdesk.test/ch-4115/', assign },
+      });
+      try {
+        readyButton().click();
+        await tick();
+        expect(assign).not.toHaveBeenCalled();
+      } finally {
+        Object.defineProperty(window, 'location', { configurable: true, value: realLocation });
+      }
     }
   });
 

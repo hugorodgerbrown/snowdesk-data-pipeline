@@ -484,6 +484,9 @@
    * @property {'yes'|'no'|null} [content] Whether everything the area's
    *   content plan named, the reader's own things included, landed.
    * @property {string} [reason] Why the map is No, where it is.
+   * @property {string} [principal] The account the content answer was
+   *   read for (the `pwa-user-id` meta). A content answer is only ever
+   *   shown back to that account.
    * @property {string} at When the reading was taken (ISO).
    */
 
@@ -500,28 +503,45 @@
   /**
    * SNOW-1415: what one map-page sync learned, as a `verified` stamp.
    *
-   * `syncArea`'s `tiles` is the map half: `'ok'` and `'none'` are the two
-   * claims that the tiles are established
-   * (docs/decisions/a-pre-departure-sync-is-unconditional.md), `'absent'`
-   * and `'failed'` are No, and `'unknown'` is no claim at all, so the map
-   * field is left as it was. `content` is the content half's own answer.
+   * `syncArea`'s `tiles` is the map half. `'ok'` and `'none'` say only
+   * that the render dependencies are established
+   * (docs/decisions/a-pre-departure-sync-is-unconditional.md), so a Yes
+   * also needs `tilesHeld === true`: every tile of the area's grid is in
+   * its bucket (`tileReading`). `tilesHeld === false` is a No for the
+   * tiles; null is no reading, and leaves the map answer as it was.
+   * `'absent'`, `'failed'` and `'incomplete'` are No, and `'unknown'` is
+   * no claim at all. `content` is the content half's own answer, stamped
+   * for `principal` and only when there is one (a signed-out sync has no
+   * things of its own to answer for).
    *
-   * @param {{tiles?: string, content?: boolean}|null|undefined} result
+   * @param {{tiles?: string, tilesHeld?: boolean|null, content?: boolean}|null|undefined} result
    * @param {string} at
+   * @param {string} [principal] The `pwa-user-id` the sync ran as.
    * @returns {Verified|null} Null when the sync claimed nothing.
    */
-  function verifiedFromSync(result, at) {
+  function verifiedFromSync(result, at, principal) {
     if (!result) return null;
     /** @type {Verified} */
     var out = { at: at };
-    if (result.tiles === 'ok' || result.tiles === 'none') out.map = 'yes';
-    else if (result.tiles === 'absent' || result.tiles === 'failed') {
+    var depsOk = result.tiles === 'ok' || result.tiles === 'none';
+    if (depsOk && result.tilesHeld === true) out.map = 'yes';
+    else if (depsOk && result.tilesHeld === false) {
       out.map = 'no';
-      out.reason = result.tiles;
+      out.reason = 'tiles';
+    } else if (
+      result.tiles === 'absent' ||
+      result.tiles === 'failed' ||
+      result.tiles === 'incomplete'
+    ) {
+      out.map = 'no';
+      out.reason = result.tiles === 'incomplete' ? 'tiles' : result.tiles;
     }
     // An absent bucket is never fetched into, so its content answer is
     // no reading of the content at all.
-    if (result.tiles !== 'absent') out.content = result.content ? 'yes' : 'no';
+    if (result.tiles !== 'absent' && principal) {
+      out.content = result.content ? 'yes' : 'no';
+      out.principal = principal;
+    }
     return out.map || out.content ? out : null;
   }
 
@@ -535,9 +555,11 @@
    *
    * @param {{map: Stage, things: Stage|null}} stages
    * @param {string} at
+   * @param {string} [principal] The `pwa-user-id` the page was rendered
+   *   for. With none, the things answer is not stamped.
    * @returns {Verified|null}
    */
-  function verifiedFromStages(stages, at) {
+  function verifiedFromStages(stages, at, principal) {
     if (!stages) return null;
     /** @type {Verified} */
     var out = { at: at };
@@ -545,7 +567,10 @@
     if (map) out.map = map;
     if (map === 'no' && stages.map.reason) out.reason = stages.map.reason;
     var things = stages.things ? answer(stages.things.status) : null;
-    if (things) out.content = things;
+    if (things && principal) {
+      out.content = things;
+      out.principal = principal;
+    }
     return out.map || out.content ? out : null;
   }
 
@@ -574,7 +599,10 @@
       if (verified.map === 'no' && verified.reason) next.reason = verified.reason;
       else delete next.reason;
     }
-    if (verified.content) next.content = verified.content;
+    if (verified.content) {
+      next.content = verified.content;
+      next.principal = verified.principal || '';
+    }
     return Object.assign({}, entry, { verified: next });
   }
 
@@ -593,11 +621,14 @@
    *   - **conditions** — the record's own `contentAt`, by calendar day,
    *     as `areaContentState` reads it; a fetch that fell short
    *     (`contentIncomplete`) makes a fresh stamp No.
-   *   - **things** — the stamp's content answer, signed-in readers only.
+   *   - **things** — the stamp's content answer, signed-in readers only,
+   *     and only when it was read for this reader's account
+   *     (`verified.principal`). Another account's answer is unknown here,
+   *     as `thingsStage` treats another account's items on /offline/.
    *
    * @param {any} record A `basemap.regions` or `basemap.customAreas` row.
    * @param {string|Date} [now]
-   * @param {{signedIn?: boolean}} [options]
+   * @param {{signedIn?: boolean, principal?: string}} [options]
    * @returns {{map: Stage, conditions: Stage, things: Stage|null}}
    */
   function stagesFromRecord(record, now, options) {
@@ -632,7 +663,8 @@
     /** @type {Stage|null} */
     var things = null;
     if (opts.signedIn) {
-      var contentAnswer = v ? answer(v.content) : null;
+      var ours = !!(v && opts.principal && v.principal === opts.principal);
+      var contentAnswer = ours ? answer(v.content) : null;
       if (contentAnswer === 'yes') things = { status: 'yes', rows: [] };
       else if (contentAnswer === 'no') things = { status: 'no', reason: 'incomplete', rows: [] };
       else things = { status: 'unknown', rows: [] };

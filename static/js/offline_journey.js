@@ -415,9 +415,11 @@
     var audit = self.pwaOfflineAudit;
     if (detail.running || !core || !audit || typeof audit.stampVerified !== 'function') return;
     var at = new Date().toISOString();
+    var meta = document.querySelector('meta[name="pwa-user-id"]');
+    var principal = (meta && meta.getAttribute('content')) || '';
     panels.forEach(function (panel) {
       if (panel.orphaned) return;
-      var verified = core.verifiedFromStages(panel.stages, at);
+      var verified = core.verifiedFromStages(panel.stages, at, principal);
       if (verified) audit.stampVerified(panel.id, verified);
     });
   }
