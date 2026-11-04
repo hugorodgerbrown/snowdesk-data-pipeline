@@ -947,7 +947,29 @@ async function assembleAreaContentURLs(blob, terrain) {
     urls: [...planned, ...itemUrls],
     short: !content || itemsShort,
     items: expectation,
+    // SNOW-1415: where each stage's urls start in `urls` — bulletins and
+    // the sheets beside them first, then the weather sheets, then the
+    // reader's own things.
+    stageFrom: {
+      weather: planned.length - plan.weatherDetailUrls.length,
+      things: planned.length,
+    },
   };
+}
+
+/**
+ * SNOW-1415: the stage the url at one index of a content plan belongs to.
+ *
+ * @param {{weather: number, things: number}|undefined} stageFrom From
+ *   `assembleAreaContentURLs`.
+ * @param {number} index How many of the plan's urls have settled.
+ * @returns {'bulletins'|'weather'|'things'}
+ */
+function contentStageAt(stageFrom, index) {
+  if (!stageFrom) return 'bulletins';
+  if (index >= stageFrom.things) return 'things';
+  if (index >= stageFrom.weather) return 'weather';
+  return 'bulletins';
 }
 
 /**
@@ -2523,7 +2545,7 @@ window.pwaBasemapDownloads = Object.freeze({
    * @param {string} areaId
    * @returns {Promise<boolean>} Whether the content half landed in full.
    */
-  refreshAreaContent: (areaId) => refreshAreaContent(areaId),
+  refreshAreaContent: (areaId, onStage) => refreshAreaContent(areaId, onStage),
 
   /**
    * SNOW-951: make one area wholly current — both halves, in one call.
@@ -2537,7 +2559,7 @@ window.pwaBasemapDownloads = Object.freeze({
    * @param {string} areaId
    * @returns {Promise<{tiles: 'ok'|'failed'|'none', content: boolean}>}
    */
-  syncArea: (areaId) => syncArea(areaId),
+  syncArea: (areaId, onStage) => syncArea(areaId, onStage),
 
   /**
    * SNOW-844: every URL held across every pinned bucket — see
@@ -3625,7 +3647,47 @@ async function _stampAreaContent(areaId, regionId, complete, expectation) {
   // (`expectation`, from `assembleAreaContentURLs`), so the `/offline/`
   // panels can name them whichever surface synced the area.
   const core = self.pwaBasemapDownloadCore;
-  const stamp = (entry) => core.stampContentRecord(entry, complete, expectation || null);
+  await _rewriteAreaRecord(areaId, regionId, (entry) =>
+    core.stampContentRecord(entry, complete, expectation || null),
+  );
+}
+
+/**
+ * SNOW-1415: write what a sync learned about one area's map and content
+ * onto its record (`verified`), so the connection panel can answer for
+ * the area on a page that cannot read tiles.
+ *
+ * The stamp's shape and merge rule are `offline_journey_core.js`'s
+ * (`verifiedFromSync`, `stampVerifiedRecord`), the same reader that turns
+ * it back into stages. Best-effort, like the content stamp beside it.
+ *
+ * @param {string} areaId
+ * @param {{tiles?: string, content?: boolean}} result `syncArea`'s answer.
+ * @returns {Promise<void>}
+ */
+async function _stampAreaVerified(areaId, result) {
+  const journey = self.pwaOfflineJourneyCore;
+  if (!journey || typeof journey.verifiedFromSync !== 'function') return;
+  const verified = journey.verifiedFromSync(result, new Date().toISOString());
+  if (!verified) return;
+  const found = await _areaRecordById(areaId);
+  if (!found) return;
+  await _rewriteAreaRecord(areaId, found.regionId, (entry) =>
+    journey.stampVerifiedRecord(entry, verified),
+  );
+}
+
+/**
+ * Rewrite one area's record in its array, on one transaction.
+ *
+ * @param {string} areaId
+ * @param {string} regionId `''` for a custom area — see `_areaRecordById`.
+ * @param {function(Object): Object} stamp Synchronous: it runs inside a
+ *   `readModifyWrite` mutator.
+ * @returns {Promise<void>} Best-effort: a failed stamp costs a stale
+ *   reading, not a download.
+ */
+async function _rewriteAreaRecord(areaId, regionId, stamp) {
   try {
     if (!window.pwaDb) return;
     // SNOW-959: one transaction per stamp, not a `get` and a later `put`.
@@ -3703,9 +3765,11 @@ async function _stampAreaContent(areaId, regionId, complete, expectation) {
  *   no urls at all — see the empty-plan branch below for why that is a
  *   completion rather than a failure.
  */
-async function refreshAreaContent(areaId) {
+async function refreshAreaContent(areaId, onStage) {
+  const tell = typeof onStage === 'function' ? onStage : () => {};
   const found = await _areaRecordById(areaId);
   if (!found) return false;
+  tell('bulletins');
 
   // The pair, not a bare list: a plan assembled while a country was
   // unreachable is short however many of its urls land, and a refresh that
@@ -3747,7 +3811,12 @@ async function refreshAreaContent(areaId) {
       // Nothing to paint: the sheet re-renders on the result, and this is
       // a handful of documents rather than a several-minute download —
       // the same reasoning the `repair` bridge member above gives.
-      paint: () => {},
+      // SNOW-1415: the percentage names the stage, because the plan lists
+      // its urls in stage order (`stageFrom`) and the runner counts them.
+      paint: (_state, pct) => {
+        const done = Number.isFinite(pct) ? Math.floor((pct / 100) * content.urls.length) : 0;
+        tell(contentStageAt(content.stageFrom, done));
+      },
       finish: async (result, extras) => {
         const runCore = extras && extras.core;
         const ok = !!(runCore && runCore.downloadSucceeded(result)) && !content.short;
@@ -3920,11 +3989,17 @@ async function _areaBucketOnDevice(areaId) {
  *   short-plan and empty-plan semantics. `'none'`/`false` for an
  *   id nothing on this device carries.
  */
-async function syncArea(areaId) {
+async function syncArea(areaId, onStage) {
+  const tell = typeof onStage === 'function' ? onStage : () => {};
   const found = await _areaRecordById(areaId);
   if (!found) return { tiles: 'none', content: false };
-  if (!(await _areaBucketOnDevice(areaId))) return { tiles: 'absent', content: false };
+  if (!(await _areaBucketOnDevice(areaId))) {
+    const gone = { tiles: 'absent', content: false };
+    await _stampAreaVerified(areaId, gone);
+    return gone;
+  }
 
+  tell('map');
   const missing = await _missingAreaRenderDependencies(found.record);
   let tiles = missing === null ? 'unknown' : 'none';
   if (missing && missing.length > 0) {
@@ -3945,8 +4020,10 @@ async function syncArea(areaId) {
     tiles = repaired ? 'ok' : 'failed';
   }
 
-  const content = await refreshAreaContent(areaId);
-  return { tiles: tiles, content: content };
+  const content = await refreshAreaContent(areaId, tell);
+  const result = { tiles: tiles, content: content };
+  await _stampAreaVerified(areaId, result);
+  return result;
 }
 
 /**

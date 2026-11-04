@@ -362,5 +362,16 @@ taking a second walk of its own.
             data-string="queue-waiting"
         >{% blocktranslate %}%(n)s changes still waiting to send{% endblocktranslate %}</span>
         <span data-string="queue-waiting-one">{% translate "1 change still waiting to send" %}</span>
+        {# SNOW-1415: what one area's sync is fetching now. Same msgids as #}
+        {# includes/_network_mode_strings.html.                           #}
+        <span
+            data-string="sync-stage-bulletins"
+        >{% blocktranslate %}Saving bulletins… (%(n)s of %(total)s){% endblocktranslate %}</span>
+        <span
+            data-string="sync-stage-weather"
+        >{% blocktranslate %}Saving weather… (%(n)s of %(total)s){% endblocktranslate %}</span>
+        <span
+            data-string="sync-stage-things"
+        >{% blocktranslate %}Saving your trips and pins… (%(n)s of %(total)s){% endblocktranslate %}</span>
     </template>
 </div>

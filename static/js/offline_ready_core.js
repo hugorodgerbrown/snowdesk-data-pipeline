@@ -52,6 +52,7 @@
  *   waitingCount(rows)           → number
  *   describe(result, strings)    → {summary: string, queue: string}
  *   progressText(step, strings)  → string
+ *   STAGES
  *   DEFAULT_DRAIN_TIMEOUT_MS
  */
 (function () {
@@ -62,11 +63,22 @@
   // they were waiting for.
   const DEFAULT_DRAIN_TIMEOUT_MS = 20000;
 
+  // The stage names a sync may report, in the order it fetches them. A
+  // name outside the list is dropped rather than painted as a blank.
+  const STAGES = ['map', 'bulletins', 'weather', 'things'];
+
   /** @typedef {'ready'|'partial'|'absent'} Outcome */
   /** @typedef {{tiles?: string, content?: boolean}} SyncResult */
   /**
    * @typedef {{phase: 'queue'} | {phase: 'area', n: number, total: number, id: string}
+   *   | {phase: 'stage', n: number, total: number, id: string, name: StageName}
    *   | {phase: 'done', id: string, outcome: Outcome}} Step
+   */
+  /**
+   * What an area's sync is fetching now (SNOW-1415): the tiles, the
+   * bulletins, the weather or the reader's own things.
+   *
+   * @typedef {'map'|'bulletins'|'weather'|'things'} StageName
    */
   /**
    * @typedef {Object} RunDeps
@@ -74,7 +86,10 @@
    * @property {function(): Promise<number>|number} waiting How many edits
    *   are still waiting once the drain has had its turn.
    * @property {string[]} areas Area ids, in the order to run them.
-   * @property {function(string): Promise<Outcome>|Outcome} syncOne Runs one area.
+   * @property {function(string, function(StageName): void): Promise<Outcome>|Outcome} syncOne
+   *   Runs one area. The second argument is told each stage as the area's
+   *   sync starts it (SNOW-1415); a host that cannot name its stages
+   *   ignores it.
    * @property {function(Step): void} [onStep] Told of every step as it starts
    *   and every area as it settles.
    * @property {number} [drainTimeoutMs]
@@ -164,11 +179,21 @@
     let ready = 0;
     for (let index = 0; index < areas.length; index += 1) {
       const id = areas[index];
-      onStep({ phase: 'area', n: index + 1, total: areas.length, id: id });
+      const n = index + 1;
+      onStep({ phase: 'area', n: n, total: areas.length, id: id });
+      // A host that reports progress repeats the stage it is on, so only
+      // a change of stage is a step.
+      let lastStage = '';
+      /** @param {StageName} name */
+      const onStage = (name) => {
+        if (STAGES.indexOf(name) < 0 || name === lastStage) return;
+        lastStage = name;
+        onStep({ phase: 'stage', n: n, total: areas.length, id: id, name: name });
+      };
       /** @type {Outcome} */
       let outcome = 'partial';
       try {
-        const answer = await deps.syncOne(id);
+        const answer = await deps.syncOne(id, onStage);
         if (answer === 'ready' || answer === 'absent') outcome = answer;
       } catch (_err) {
         outcome = 'partial';
@@ -198,13 +223,21 @@
   /**
    * The button's words while a run is going.
    *
+   * A ``stage`` step names what is being fetched ("Weather (2 of 3)")
+   * from ``sync-stage-<name>``, falling back to the plain count where the
+   * caller has no word for that stage.
+   *
    * @param {Step|null} step
-   * @param {Record<string, string>} strings Carries ``ready-running`` and
-   *   ``ready-progress``.
+   * @param {Record<string, string>} strings Carries ``ready-running``,
+   *   ``ready-progress`` and, optionally, ``sync-stage-map``,
+   *   ``sync-stage-bulletins``, ``sync-stage-weather`` and ``sync-stage-things``.
    * @returns {string}
    */
   function progressText(step, strings) {
-    if (step && step.phase === 'area') {
+    if (step && step.phase === 'stage' && strings['sync-stage-' + step.name]) {
+      return fill(strings['sync-stage-' + step.name], { n: step.n, total: step.total });
+    }
+    if (step && (step.phase === 'area' || step.phase === 'stage')) {
       return fill(strings['ready-progress'], { n: step.n, total: step.total });
     }
     return fill(strings['ready-running'], {});
@@ -247,5 +280,6 @@
     waitingCount: waitingCount,
     describe: describe,
     progressText: progressText,
+    STAGES: STAGES,
   });
 })();

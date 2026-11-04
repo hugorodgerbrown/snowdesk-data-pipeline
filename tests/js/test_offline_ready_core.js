@@ -82,6 +82,30 @@ describe('run', () => {
     ]);
   });
 
+  it('passes the stages an area names through as stage steps (SNOW-1415)', async () => {
+    const steps = [];
+    await core.run({
+      drain: () => undefined,
+      waiting: () => 0,
+      areas: ['a'],
+      syncOne: async (_id, onStage) => {
+        onStage('map');
+        onStage('weather');
+        onStage('weather');
+        onStage('nonsense');
+        return 'ready';
+      },
+      onStep: (step) => steps.push(step),
+    });
+    expect(steps).toEqual([
+      { phase: 'queue' },
+      { phase: 'area', n: 1, total: 1, id: 'a' },
+      { phase: 'stage', n: 1, total: 1, id: 'a', name: 'map' },
+      { phase: 'stage', n: 1, total: 1, id: 'a', name: 'weather' },
+      { phase: 'done', id: 'a', outcome: 'ready' },
+    ]);
+  });
+
   it('keeps going past an area that throws, and counts it as not ready', async () => {
     const result = await core.run({
       drain: () => undefined,
@@ -110,7 +134,7 @@ describe('run', () => {
       syncOne,
       wait: () => Promise.resolve(),
     });
-    expect(syncOne).toHaveBeenCalledWith('a');
+    expect(syncOne).toHaveBeenCalledWith('a', expect.any(Function));
     expect(result.waiting).toBe(2);
   });
 
@@ -188,6 +212,19 @@ describe('progressText', () => {
     expect(core.progressText({ phase: 'area', n: 2, total: 5, id: 'a' }, STRINGS)).toBe(
       'Getting ready… (2 of 5)',
     );
+  });
+
+  it('names the stage an area is on (SNOW-1415)', () => {
+    const strings = { ...STRINGS, 'sync-stage-weather': 'Weather… (%(n)s of %(total)s)' };
+    expect(
+      core.progressText({ phase: 'stage', n: 1, total: 3, id: 'a', name: 'weather' }, strings),
+    ).toBe('Weather… (1 of 3)');
+  });
+
+  it('falls back to the count for a stage it has no word for', () => {
+    expect(
+      core.progressText({ phase: 'stage', n: 1, total: 3, id: 'a', name: 'things' }, STRINGS),
+    ).toBe('Getting ready… (1 of 3)');
   });
 
   it('has no count while the queue drains', () => {

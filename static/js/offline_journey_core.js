@@ -47,11 +47,22 @@
  * A reading that could not be taken is unknown, never a Yes and never a
  * No — the report's rule, kept here.
  *
- * Pure: no DOM and no storage. Every reading arrives as an argument;
- * `offline_journey.js` is the only caller. Reads `pwaOfflineAuditCore`
- * at call time for `areaState`, `areaContentState`, `completableArea` and
- * `chosenAreas`, so the panels and the report cannot disagree about one
- * area.
+ * Pure: no DOM and no storage. Every reading arrives as an argument.
+ * Reads `pwaOfflineAuditCore` at call time for `areaState`,
+ * `areaContentState`, `completableArea` and `chosenAreas`, so the panels
+ * and the report cannot disagree about one area.
+ *
+ * ## The connection panel (SNOW-1415)
+ *
+ * The header's connection panel asks the same question of every area on
+ * every page, where the audit core is not loaded. `base.html` loads this
+ * file globally for it. `stagesFromRecord` builds the stages from the
+ * stored record alone: the map stage from a `verified` stamp that the
+ * tile-capable pages write (`verifiedFromSync` on the map,
+ * `verifiedFromStages` on /offline/), the conditions from `contentAt`,
+ * and the reader's things from the same stamp. `verdictFor` is unchanged
+ * and stays the one verdict. The record-only path never reads the audit
+ * core, so it works where that core is absent.
  */
 
 (function () {
@@ -468,6 +479,168 @@
   }
 
   /**
+   * @typedef {Object} Verified
+   * @property {'yes'|'no'|null} [map] Whether the area's tiles verified.
+   * @property {'yes'|'no'|null} [content] Whether everything the area's
+   *   content plan named, the reader's own things included, landed.
+   * @property {string} [reason] Why the map is No, where it is.
+   * @property {string} at When the reading was taken (ISO).
+   */
+
+  /**
+   * One stamp answer, narrowed: only Yes and No are claims.
+   *
+   * @param {unknown} value
+   * @returns {'yes'|'no'|null}
+   */
+  function answer(value) {
+    return value === 'yes' || value === 'no' ? value : null;
+  }
+
+  /**
+   * SNOW-1415: what one map-page sync learned, as a `verified` stamp.
+   *
+   * `syncArea`'s `tiles` is the map half: `'ok'` and `'none'` are the two
+   * claims that the tiles are established
+   * (docs/decisions/a-pre-departure-sync-is-unconditional.md), `'absent'`
+   * and `'failed'` are No, and `'unknown'` is no claim at all, so the map
+   * field is left as it was. `content` is the content half's own answer.
+   *
+   * @param {{tiles?: string, content?: boolean}|null|undefined} result
+   * @param {string} at
+   * @returns {Verified|null} Null when the sync claimed nothing.
+   */
+  function verifiedFromSync(result, at) {
+    if (!result) return null;
+    /** @type {Verified} */
+    var out = { at: at };
+    if (result.tiles === 'ok' || result.tiles === 'none') out.map = 'yes';
+    else if (result.tiles === 'absent' || result.tiles === 'failed') {
+      out.map = 'no';
+      out.reason = result.tiles;
+    }
+    // An absent bucket is never fetched into, so its content answer is
+    // no reading of the content at all.
+    if (result.tiles !== 'absent') out.content = result.content ? 'yes' : 'no';
+    return out.map || out.content ? out : null;
+  }
+
+  /**
+   * SNOW-1415: what one /offline/ panel read, as a `verified` stamp.
+   *
+   * The panel's map stage is the full reading (bucket and tiles); its
+   * things stage is the cache walk over the urls the last sync stamped.
+   * Unknown stages claim nothing, so a host that cannot read tiles
+   * (static/offline.html) never overwrites what the map page learned.
+   *
+   * @param {{map: Stage, things: Stage|null}} stages
+   * @param {string} at
+   * @returns {Verified|null}
+   */
+  function verifiedFromStages(stages, at) {
+    if (!stages) return null;
+    /** @type {Verified} */
+    var out = { at: at };
+    var map = stages.map ? answer(stages.map.status) : null;
+    if (map) out.map = map;
+    if (map === 'no' && stages.map.reason) out.reason = stages.map.reason;
+    var things = stages.things ? answer(stages.things.status) : null;
+    if (things) out.content = things;
+    return out.map || out.content ? out : null;
+  }
+
+  /**
+   * SNOW-1415: one record with a `verified` stamp merged in.
+   *
+   * Merged field by field, so a reading that claims only the content (a
+   * map-page sync that could not judge the tiles) keeps the map answer an
+   * earlier reading gave. A map Yes drops a stale map-No reason.
+   *
+   * Synchronous, because every caller runs it inside a `readModifyWrite`
+   * mutator, which must not await. Device-only: `downloads_sync.js` sends
+   * a whitelist of fields, and this is not one of them.
+   *
+   * @param {any} entry The stored record.
+   * @param {Verified|null} verified
+   * @returns {any} A new record, or the entry itself when there is nothing
+   *   to stamp.
+   */
+  function stampVerifiedRecord(entry, verified) {
+    if (!entry || !verified) return entry;
+    var prior = entry.verified && typeof entry.verified === 'object' ? entry.verified : {};
+    var next = Object.assign({}, prior, { at: verified.at });
+    if (verified.map) {
+      next.map = verified.map;
+      if (verified.map === 'no' && verified.reason) next.reason = verified.reason;
+      else delete next.reason;
+    }
+    if (verified.content) next.content = verified.content;
+    return Object.assign({}, entry, { verified: next });
+  }
+
+  /**
+   * SNOW-1415: the stages of one area from its stored record alone.
+   *
+   * The connection panel runs on every page, where neither the audit's
+   * readings nor the tile arithmetic exist. So the pages that CAN read
+   * them stamp what they learned on the record (`verified`, from
+   * `verifiedFromSync` and `verifiedFromStages`), and every other page
+   * reads the stamp back through here. `verdictFor` then gives the same
+   * one-line answer the /offline/ panels give.
+   *
+   *   - **map** — the stamp's map answer. No stamp is unknown, which is
+   *     the honest answer for a record no tile-capable page has read.
+   *   - **conditions** — the record's own `contentAt`, by calendar day,
+   *     as `areaContentState` reads it; a fetch that fell short
+   *     (`contentIncomplete`) makes a fresh stamp No.
+   *   - **things** — the stamp's content answer, signed-in readers only.
+   *
+   * @param {any} record A `basemap.regions` or `basemap.customAreas` row.
+   * @param {string|Date} [now]
+   * @param {{signedIn?: boolean}} [options]
+   * @returns {{map: Stage, conditions: Stage, things: Stage|null}}
+   */
+  function stagesFromRecord(record, now, options) {
+    var opts = options || {};
+    var r = record || {};
+    var v = r.verified && typeof r.verified === 'object' ? r.verified : null;
+
+    /** @type {Stage} */
+    var map = { status: 'unknown', reason: 'unverified' };
+    var mapAnswer = v ? answer(v.map) : null;
+    if (mapAnswer === 'yes') map = { status: 'yes' };
+    else if (mapAnswer === 'no') map = { status: 'no', reason: String(v.reason || 'tiles') };
+
+    /** @type {Stage} */
+    var conditions;
+    if (!r.contentAt) {
+      conditions = { status: 'no', reason: 'never' };
+    } else {
+      var fetched = new Date(r.contentAt);
+      var today = now ? new Date(now) : new Date();
+      if (Number.isNaN(fetched.getTime()) || Number.isNaN(today.getTime())) {
+        conditions = { status: 'unknown' };
+      } else if (fetched.toDateString() !== today.toDateString()) {
+        conditions = { status: 'no', reason: 'stale' };
+      } else if (r.contentIncomplete) {
+        conditions = { status: 'no', reason: 'incomplete' };
+      } else {
+        conditions = { status: 'yes' };
+      }
+    }
+
+    /** @type {Stage|null} */
+    var things = null;
+    if (opts.signedIn) {
+      var contentAnswer = v ? answer(v.content) : null;
+      if (contentAnswer === 'yes') things = { status: 'yes', rows: [] };
+      else if (contentAnswer === 'no') things = { status: 'no', reason: 'incomplete', rows: [] };
+      else things = { status: 'unknown', rows: [] };
+    }
+    return { map: map, conditions: conditions, things: things };
+  }
+
+  /**
    * Every panel, in paint order.
    *
    * @param {any} readings What `offline_audit.js` collected.
@@ -532,6 +705,10 @@
   self.pwaOfflineJourneyCore = Object.freeze({
     buildPanels: buildPanels,
     verdictFor: verdictFor,
+    stagesFromRecord: stagesFromRecord,
+    verifiedFromSync: verifiedFromSync,
+    verifiedFromStages: verifiedFromStages,
+    stampVerifiedRecord: stampVerifiedRecord,
     mapStage: mapStage,
     conditionsStage: conditionsStage,
     thingsStage: thingsStage,

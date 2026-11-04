@@ -452,3 +452,139 @@ describe('the panel list', () => {
     expect(fallback.canSync).toBe(false);
   });
 });
+
+describe('the stages from a record alone (SNOW-1415)', () => {
+  const TODAY = '2026-09-11T07:00:00.000Z';
+  const YESTERDAY = '2026-09-10T07:00:00.000Z';
+  const verified = (fields) => ({ at: TODAY, ...fields });
+
+  it('reads a record no tile-capable page has stamped as unknown, never Yes', () => {
+    const stages = journey.stagesFromRecord({ contentAt: TODAY }, NOW);
+    expect(stages.map.status).toBe('unknown');
+    expect(journey.verdictFor(stages)).toBe('unknown');
+  });
+
+  it('reads Ready when the map verified, today’s content is here and it all landed', () => {
+    const record = { contentAt: TODAY, verified: verified({ map: 'yes', content: 'yes' }) };
+    const stages = journey.stagesFromRecord(record, NOW, { signedIn: true });
+    expect(stages.map.status).toBe('yes');
+    expect(stages.conditions.status).toBe('yes');
+    expect(stages.things.status).toBe('yes');
+    expect(journey.verdictFor(stages)).toBe('ready');
+  });
+
+  it('sends a map No to the map, with its reason', () => {
+    const record = {
+      contentAt: TODAY,
+      verified: verified({ map: 'no', reason: 'absent', content: 'yes' }),
+    };
+    const stages = journey.stagesFromRecord(record, NOW);
+    expect(stages.map).toEqual({ status: 'no', reason: 'absent' });
+    expect(journey.verdictFor(stages)).toBe('open-map');
+  });
+
+  it('reads yesterday’s bulletins, none at all, or a short fetch as a refresh', () => {
+    const map = verified({ map: 'yes' });
+    const cases = [
+      [{ contentAt: YESTERDAY, verified: map }, 'stale'],
+      [{ verified: map }, 'never'],
+      [{ contentAt: TODAY, contentIncomplete: true, verified: map }, 'incomplete'],
+    ];
+    for (const [record, reason] of cases) {
+      const stages = journey.stagesFromRecord(record, NOW);
+      expect(stages.conditions).toEqual({ status: 'no', reason });
+      expect(journey.verdictFor(stages)).toBe('refresh');
+    }
+  });
+
+  it('reads an unparseable content stamp as unknown', () => {
+    const stages = journey.stagesFromRecord({ contentAt: 'nonsense' }, NOW);
+    expect(stages.conditions.status).toBe('unknown');
+  });
+
+  it('gives a signed-out reader no things stage at all', () => {
+    const record = { contentAt: TODAY, verified: verified({ map: 'yes', content: 'no' }) };
+    const stages = journey.stagesFromRecord(record, NOW);
+    expect(stages.things).toBeNull();
+    expect(journey.verdictFor(stages)).toBe('ready');
+  });
+
+  it('reads a content No as a things No for a signed-in reader', () => {
+    const record = { contentAt: TODAY, verified: verified({ map: 'yes', content: 'no' }) };
+    const stages = journey.stagesFromRecord(record, NOW, { signedIn: true });
+    expect(stages.things.status).toBe('no');
+    expect(journey.verdictFor(stages)).toBe('refresh');
+  });
+
+  it('ignores a stamp answer that is not a Yes or a No', () => {
+    const record = { contentAt: TODAY, verified: verified({ map: 'maybe', content: 7 }) };
+    const stages = journey.stagesFromRecord(record, NOW, { signedIn: true });
+    expect(stages.map.status).toBe('unknown');
+    expect(stages.things.status).toBe('unknown');
+  });
+});
+
+describe('the verified stamp (SNOW-1415)', () => {
+  const AT = '2026-09-11T07:00:00.000Z';
+
+  it('reads a map-page sync: established tiles are Yes, gone or failed are No', () => {
+    expect(journey.verifiedFromSync({ tiles: 'ok', content: true }, AT)).toEqual({
+      at: AT,
+      map: 'yes',
+      content: 'yes',
+    });
+    expect(journey.verifiedFromSync({ tiles: 'none', content: false }, AT)).toEqual({
+      at: AT,
+      map: 'yes',
+      content: 'no',
+    });
+    expect(journey.verifiedFromSync({ tiles: 'failed', content: true }, AT)).toEqual({
+      at: AT,
+      map: 'no',
+      reason: 'failed',
+      content: 'yes',
+    });
+    expect(journey.verifiedFromSync({ tiles: 'absent', content: false }, AT)).toEqual({
+      at: AT,
+      map: 'no',
+      reason: 'absent',
+    });
+  });
+
+  it('claims nothing about tiles it could not judge', () => {
+    expect(journey.verifiedFromSync({ tiles: 'unknown', content: true }, AT)).toEqual({
+      at: AT,
+      content: 'yes',
+    });
+    expect(journey.verifiedFromSync(null, AT)).toBeNull();
+  });
+
+  it('reads an /offline/ panel’s map and things stages, and nothing unknown', () => {
+    expect(
+      journey.verifiedFromStages(
+        { map: { status: 'no', reason: 'tiles' }, things: { status: 'yes' } },
+        AT,
+      ),
+    ).toEqual({ at: AT, map: 'no', reason: 'tiles', content: 'yes' });
+    expect(
+      journey.verifiedFromStages({ map: { status: 'unknown' }, things: null }, AT),
+    ).toBeNull();
+  });
+
+  it('merges a stamp field by field, keeping what the new reading did not claim', () => {
+    const entry = { id: 'a', verified: { at: 'old', map: 'no', reason: 'tiles', content: 'yes' } };
+    expect(journey.stampVerifiedRecord(entry, { at: AT, content: 'no' }).verified).toEqual({
+      at: AT,
+      map: 'no',
+      reason: 'tiles',
+      content: 'no',
+    });
+    expect(journey.stampVerifiedRecord(entry, { at: AT, map: 'yes' }).verified).toEqual({
+      at: AT,
+      map: 'yes',
+      content: 'yes',
+    });
+    expect(journey.stampVerifiedRecord(entry, null)).toBe(entry);
+    expect(entry.verified.at).toBe('old');
+  });
+});

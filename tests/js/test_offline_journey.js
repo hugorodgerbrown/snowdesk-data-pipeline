@@ -387,3 +387,24 @@ describe('the controls', () => {
     expect(sync.disabled).toBe(true);
   });
 });
+
+describe('what the panels tell the connection panel (SNOW-1415)', () => {
+  it('stamps what each panel read on its record', () => {
+    api.stampVerified = vi.fn(async () => {});
+    mount();
+    announce(readings());
+
+    expect(api.stampVerified).toHaveBeenCalledWith(
+      'region-CH-4115',
+      expect.objectContaining({ map: 'yes', at: expect.any(String) }),
+    );
+  });
+
+  it('stamps nothing while a sync is still running', () => {
+    api.stampVerified = vi.fn(async () => {});
+    mount();
+    announce(readings(), { running: true });
+
+    expect(api.stampVerified).not.toHaveBeenCalled();
+  });
+});

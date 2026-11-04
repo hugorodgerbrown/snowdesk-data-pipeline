@@ -439,6 +439,8 @@ beforeAll(async () => {
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
   await import('../../static/js/calendar_core.js');
+  // SNOW-1415: the `verified` stamp's shape, loaded globally by base.html.
+  await import('../../static/js/offline_journey_core.js');
   loadMapBundle();
   for (const handler of mapStub.handlers.load || []) await handler();
   // The load handler starts the country load and does not await it, so the
@@ -755,5 +757,31 @@ describe('the terrain-data preference (SNOW-1072)', () => {
     ).toEqual([]);
 
     mapEl.dataset.terrainClassTileUrl = TERRAIN_TEMPLATE;
+  });
+});
+
+describe('what a sync tells the connection panel (SNOW-1415)', () => {
+  it('names each stage as it reaches it, in order', async () => {
+    const stages = [];
+    await window.pwaBasemapDownloads.syncArea(AREA_ID, (name) => stages.push(name));
+    const order = [...new Set(stages)];
+    expect(order[0]).toBe('map');
+    expect(order).toContain('bulletins');
+    expect(order.indexOf('map')).toBeLessThan(order.indexOf('bulletins'));
+  });
+
+  it('stamps the map and content answers it learned on the record', async () => {
+    await window.pwaBasemapDownloads.syncArea(AREA_ID);
+    const record = await storedArea();
+    expect(record.verified).toMatchObject({ map: 'yes', content: 'yes' });
+    expect(typeof record.verified.at).toBe('string');
+  });
+
+  it('stamps a map No for an area whose bucket is gone', async () => {
+    await window.caches.delete(PINNED_PREFIX + AREA_ID);
+    await window.pwaBasemapDownloads.syncArea(AREA_ID);
+    const record = await storedArea();
+    expect(record.verified).toMatchObject({ map: 'no', reason: 'absent' });
+    expect(record.verified.content).toBeUndefined();
   });
 });
