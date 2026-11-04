@@ -73,11 +73,11 @@ const CTA_SELECTOR = `#${PANEL_ID} [data-network-reconnect]`;
  * button this row shipped as, so the state the module writes is ``checked``
  * on an input rather than an attribute on a button.
  *
- * SNOW-921 moved it out of the subscriber menu and INTO the panel below, and
- * with it went the signed-in-only rule: the mode is a ``meta:app`` row and a
- * service-worker flag, so every viewer gets the row now. It stays its own
- * constant because the module must still cope with its absence — see
- * ``buildStaleShellFixture``.
+ * SNOW-921 moved it out of the subscriber menu and into the panel, and
+ * SNOW-1415 moved it again, onto the /offline/ debug page — so it sits
+ * outside the panel here, as a page renders it. The module binds it by id
+ * wherever it is. It stays its own constant because the module must still
+ * cope with its absence — see ``buildStaleShellFixture``.
  */
 const SWITCH_ROW = `
   <div data-network-toggle class="hidden items-center gap-3">
@@ -89,7 +89,7 @@ const SWITCH_ROW = `
 `;
 
 /**
- * SNOW-951: the per-area sync block, mirroring
+ * SNOW-1415: the per-area block, mirroring
  * ``includes/_connection_panel.html``.
  *
  * The row is a <template> in the real markup and it is one here too, which
@@ -99,35 +99,37 @@ const SWITCH_ROW = `
  * exist and would let a module that wrote its own English pass.
  */
 const SYNC_BLOCK = `
-  <div data-network-sync class="hidden">
-    <p>Heading out? Get everything on this device up to date before you lose signal.</p>
+  <div data-network-sync data-map-url="/map/" class="hidden">
+    <p>Your offline areas</p>
+    <ul data-network-sync-list></ul>
+    <template data-network-sync-row>
+      <li>
+        <span data-area-label></span>
+        <span>
+          <span data-area-status="ready" class="hidden">Works offline</span>
+          <span data-area-status="refresh" class="hidden">
+            Mostly ·
+            <span data-area-reason="conditions" class="hidden">bulletins out of date</span>
+            <span data-area-reason="things" class="hidden">some trips or pins missing</span>
+          </span>
+          <span data-area-status="open-map" class="hidden">
+            Map missing ·
+            <a href="/map/?panel=downloads" data-area-redownload data-disclosure-close>Download again</a>
+          </span>
+          <span data-area-status="unknown" class="hidden">Not checked yet</span>
+          <span data-area-status="running" class="hidden">Syncing…</span>
+        </span>
+      </li>
+    </template>
     <p data-network-sync-offline class="hidden">Syncing needs a connection.</p>
     <button type="button" data-network-ready>
-      <span data-ready-state="idle">Get ready for offline</span>
-      <span data-ready-state="running" data-ready-progress class="hidden">Getting ready…</span>
+      <span data-ready-state="idle">Sync</span>
+      <span data-ready-state="running" data-ready-progress class="hidden">Syncing…</span>
     </button>
     <div role="status">
       <p data-network-ready-summary class="hidden"></p>
       <p data-network-ready-queue class="hidden"></p>
     </div>
-    <ul data-network-sync-list></ul>
-    <template data-network-sync-row>
-      <li>
-        <span data-sync-label></span>
-        <span>
-          <span data-area-status="today" class="hidden">Bulletins from today</span>
-          <span data-area-status="earlier" class="hidden"></span>
-          <span data-area-status="none" class="hidden">No bulletins saved yet</span>
-          <span data-area-status="running" class="hidden">Getting ready…</span>
-          <span data-area-status="ready" class="hidden">Up to date</span>
-          <span data-area-status="partial" class="hidden">Parts missing</span>
-          <span data-area-status="absent" class="hidden">
-            Tiles gone ·
-            <a href="/map/?panel=downloads" data-area-redownload data-disclosure-close>Download again</a>
-          </span>
-        </span>
-      </li>
-    </template>
   </div>
 `;
 
@@ -172,36 +174,32 @@ function symbolAndPanel({ withSwitch = true } = {}) {
       </span>
       <span data-role="network-name-online" class="sr-only">Network menu: using the network</span>
       <span data-role="network-name-offline" class="sr-only hidden">Network menu: offline</span>
+      <span data-role="readiness-ready" class="hidden">ready</span>
+      <span data-role="readiness-syncing" class="hidden">syncing</span>
+      <span data-role="readiness-attention" class="hidden">attention</span>
     </summary>
     <div id="${PANEL_ID}">
       <div>
         <span>
-          <span data-role="online-message">Online — last synced</span>
-          <span data-role="offline-message" class="hidden">Offline — last synced</span>
-          <span data-role="latched-message" class="hidden">Offline mode — last synced</span>
-          <span data-role="synced-at">—</span>
+          <span data-role="online-message">Online</span>
+          <span data-role="offline-message" class="hidden">Offline</span>
+          <span data-role="latched-message" class="hidden">Offline mode</span>
         </span>
         <button type="button" data-disclosure-close aria-label="Dismiss">×</button>
       </div>
-      <span data-role="downloads-age" class="hidden">
-        <span data-role="downloads-updated">Downloads updated <span data-role="downloads-at">—</span></span>
-        <span data-role="downloads-empty" class="hidden">Your downloads have no bulletins saved yet.</span>
-      </span>
       <span>
-        <span data-role="online-explainer">Using the network.</span>
         <span data-role="offline-explainer" class="hidden">Lost contact.</span>
         <span data-role="latched-explainer" class="hidden">Stopped trying.</span>
         <span data-role="forced-explainer" class="hidden">You asked it to stay offline.</span>
       </span>
-      ${withSwitch ? SWITCH_ROW : ''}
       ${SYNC_BLOCK}
-      <a href="/offline/" data-network-downloads data-disclosure-close>Download for offline</a>
-      <button type="button" data-network-reconnect>
+      <button type="button" data-network-reconnect class="hidden">
         <span data-role="reconnect-label">Try reconnecting</span>
         <span data-role="resume-label" class="hidden">Use the network again</span>
       </button>
     </div>
   </details>
+  ${withSwitch ? SWITCH_ROW : ''}
   <button type="button" data-network-required>Sync now</button>
 `;
 }
@@ -699,25 +697,13 @@ describe('the connection-status panel (SNOW-748)', () => {
       indicator().click();
       await tick();
 
-      document.querySelector('[data-role="synced-at"]').click();
+      document.querySelector('[data-role="online-message"]').click();
       await tick();
 
       expect(panelShown()).toBe(true);
     } finally {
       teardown();
     }
-  });
-
-  it('fills the freshness cell when it opens', async () => {
-    window.fetch = vi.fn().mockResolvedValue(okResponse());
-    await loadModule();
-    await window.fetch('/api/ratings/');
-
-    // Em dash until a sync is known; a relative phrase once one is.
-    indicator().click();
-    await tick();
-
-    expect(document.querySelector('[data-role="synced-at"]').textContent).not.toBe('—');
   });
 
   it('explains a healthy connection, which the banner never had to', async () => {
@@ -727,7 +713,9 @@ describe('the connection-status panel (SNOW-748)', () => {
     // The banner only existed in the failure case, so it had no copy for this
     // one. The symbol is pressable at any moment, so the panel needs it.
     expect(roleShown('online-message')).toBe(true);
-    expect(roleShown('online-explainer')).toBe(true);
+    // SNOW-1415: no explanation while things are as usual — the area rows
+    // are the content.
+    expect(roleShown('offline-explainer')).toBe(false);
     expect(roleShown('offline-message')).toBe(false);
     expect(roleShown('latched-message')).toBe(false);
   });
@@ -1605,260 +1593,41 @@ describe('the traffic arrows (SNOW-921)', () => {
   });
 });
 
-// SNOW-928: the SECOND age. The summary line answers "is this app reaching
-// the server", which is about right now; SNOW-923's permanent/perishable
-// split poses the same question one time-scale out. A user who topped up on
-// Tuesday and reads a Friday page offline has a working app showing
-// Tuesday's danger ratings, and until this nothing anywhere said so.
+describe('Sync: one answer per area (SNOW-1415)', () => {
+  const TODAY = () => new Date().toISOString();
+  const YESTERDAY = () => new Date(Date.now() - 86400000).toISOString();
 
-describe('the downloads-age line', () => {
-  /**
-   * Stub ``window.pwaDb`` over a fixed ``meta:app``.
-   *
-   * @param {Record<string, unknown>} rows
-   * @returns {void}
-   */
-  function stubDb(rows) {
-    window.pwaDb = {
-      get: async (_store, key) =>
-        Object.prototype.hasOwnProperty.call(rows, key)
-          ? { key, value: rows[key] }
-          : undefined,
-      put: async () => {},
-      appendSyncLog: async () => {},
-    };
-  }
-
-  /** The line, and which of its two sentences is showing. */
-  function line() {
-    const root = document.querySelector('[data-role="downloads-age"]');
-    return {
-      hidden: root.classList.contains('hidden'),
-      updated: !document
-        .querySelector('[data-role="downloads-updated"]')
-        .classList.contains('hidden'),
-      empty: !document
-        .querySelector('[data-role="downloads-empty"]')
-        .classList.contains('hidden'),
-      at: document.querySelector('[data-role="downloads-at"]').textContent,
-    };
-  }
-
-  /** Open the menu and let the toggle handler's async work settle. */
-  async function openMenu() {
-    disclosure().open = true;
-    await tick();
-    await tick();
-    await tick();
-  }
-
-  afterEach(() => {
-    delete window.pwaDb;
-  });
-
-  it('says nothing at all on a device with no downloads', async () => {
-    // The same posture the reconnect button takes for a state it does not
-    // apply to. A line reading "—" invites the reader to wonder what is
-    // missing.
-    buildFixture();
-    stubDb({});
-    await loadModule();
-
-    await openMenu();
-
-    expect(line().hidden).toBe(true);
-  });
-
-  it('names the OLDEST refresh across every area', async () => {
-    // The worst one is what decides whether the reader is holding current
-    // data. Naming the newest would be the reassurance this whole family
-    // of tickets exists to stop giving.
-    buildFixture();
-    const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString();
-    stubDb({
-      'basemap.regions': [
-        { region_id: 'CH-1', contentAt: new Date().toISOString() },
-        { region_id: 'CH-2', contentAt: twoDaysAgo },
-      ],
-    });
-    await loadModule();
-
-    await openMenu();
-
-    const shown = line();
-    expect(shown.hidden).toBe(false);
-    expect(shown.updated).toBe(true);
-    expect(shown.at).toContain('2 days ago');
-  });
-
-  it('counts custom areas alongside regions', async () => {
-    buildFixture();
-    const threeDaysAgo = new Date(Date.now() - 3 * 86400000).toISOString();
-    stubDb({
-      'basemap.regions': [{ region_id: 'CH-1', contentAt: new Date().toISOString() }],
-      'basemap.customAreas': [{ id: 'custom-a1', contentAt: threeDaysAgo }],
-    });
-    await loadModule();
-
-    await openMenu();
-
-    expect(line().at).toContain('3 days ago');
-  });
-
-  it('says an area with no content at all is empty, not very old', async () => {
-    // An area holding tiles and no bulletins draws a map with nothing on
-    // it. That is a different sentence and a different urgency, not an
-    // arbitrarily distant date — and it is every area on every device on
-    // the day SNOW-924 shipped.
-    buildFixture();
-    stubDb({
-      'basemap.regions': [
-        { region_id: 'CH-1', contentAt: new Date().toISOString() },
-        { region_id: 'CH-2' },
-      ],
-    });
-    await loadModule();
-
-    await openMenu();
-
-    const shown = line();
-    expect(shown.hidden).toBe(false);
-    expect(shown.empty).toBe(true);
-    expect(shown.updated).toBe(false);
-  });
-
-  it('sees a download still stored under the pre-SNOW-635 legacy key', async () => {
-    // SNOW-928 review: a device that has not yet loaded a page which
-    // triggers `basemap_downloaded_areas.js`'s lazy migration holds its one
-    // custom download under `basemap.customArea`. A direct read of the new
-    // key called that device area-less and hid the line — on exactly the
-    // oldest installs, which are the ones most likely to be holding content
-    // from weeks ago. Such a record predates `contentAt`, so it takes the
-    // "no bulletins saved yet" sentence, which is true of it.
-    buildFixture();
-    stubDb({
-      'basemap.customArea': { bbox: [7.0, 46.0, 7.2, 46.2], band: [10, 14] },
-    });
-    await loadModule();
-
-    await openMenu();
-
-    const shown = line();
-    expect(shown.hidden).toBe(false);
-    expect(shown.empty).toBe(true);
-  });
-
-  it('prefers an empty new key over the legacy row, as the migration does', async () => {
-    // An empty array at the new key is "already migrated, nothing left" —
-    // the same precedence `readCustomAreas` applies, and reading the legacy
-    // row through it would resurrect an area the user deleted.
-    buildFixture();
-    stubDb({
-      'basemap.customAreas': [],
-      'basemap.customArea': { bbox: [7.0, 46.0, 7.2, 46.2] },
-    });
-    await loadModule();
-
-    await openMenu();
-
-    expect(line().hidden).toBe(true);
-  });
-
-  it('does not migrate the legacy row — it only reads it', async () => {
-    // This module loads on every page in the site, the Django admin
-    // included. Routing the read through `pwaBasemapAreas.readCustomAreas()`
-    // would fire that function's migration WRITE from pages with nothing to
-    // do with downloads.
-    buildFixture();
-    const writes = [];
-    window.pwaDb = {
-      get: async (_store, key) =>
-        key === 'basemap.customArea'
-          ? { key, value: { bbox: [7.0, 46.0, 7.2, 46.2] } }
-          : undefined,
-      put: async (_store, row) => {
-        writes.push(row.key);
-      },
-      delete: async (_store, key) => {
-        writes.push('delete:' + key);
-      },
-      appendSyncLog: async () => {},
-    };
-    await loadModule();
-
-    await openMenu();
-
-    expect(writes).toEqual([]);
-  });
-
-  it('leaves the line alone when storage will not answer', async () => {
-    // A device whose IndexedDB is wedged keeps saying nothing rather than
-    // saying a wrong thing — the same rule the report holds itself to.
-    buildFixture();
-    window.pwaDb = {
-      get: async () => {
-        throw new Error('wedged');
-      },
-      put: async () => {},
-      appendSyncLog: async () => {},
-    };
-    await loadModule();
-
-    await openMenu();
-
-    expect(line().hidden).toBe(true);
-  });
-
-  it('re-reads on every open, because another tab may have downloaded', async () => {
-    buildFixture();
-    const rows = { 'basemap.regions': [] };
-    let reads = 0;
-    window.pwaDb = {
-      get: async (_store, key) => {
-        reads += 1;
-        return Object.prototype.hasOwnProperty.call(rows, key)
-          ? { key, value: rows[key] }
-          : undefined;
-      },
-      put: async () => {},
-      appendSyncLog: async () => {},
-    };
-    await loadModule();
-    await openMenu();
-    const afterFirst = reads;
-
-    disclosure().open = false;
-    await tick();
-    rows['basemap.regions'] = [
-      { region_id: 'CH-1', contentAt: new Date(Date.now() - 86400000).toISOString() },
-    ];
-    await openMenu();
-
-    expect(reads).toBeGreaterThan(afterFirst);
-    expect(line().hidden).toBe(false);
-  });
-});
-
-describe('Get ready for offline (SNOW-1141)', () => {
   /**
    * Stub ``window.pwaDb`` over a fixed ``meta:app`` and a fixed mutation
-   * queue — as the downloads-age suite above does, and for the same read.
+   * queue. ``rows`` is live: a test can change a record mid-run, as a
+   * sync's own stamp does.
    *
    * @param {Record<string, unknown>} rows
    * @param {{queue?: object[]}} [options]
    */
   function stubDb(rows, { queue = [] } = {}) {
-    const store = { rows: queue };
+    const store = { rows: queue, meta: rows };
     window.pwaDb = {
       get: async (_store, key) =>
-        Object.prototype.hasOwnProperty.call(rows, key)
-          ? { key, value: rows[key] }
+        Object.prototype.hasOwnProperty.call(store.meta, key)
+          ? { key, value: store.meta[key] }
           : undefined,
       getAll: async (name) => (name === 'queue:mutations' ? store.rows : []),
       put: async () => {},
       appendSyncLog: async () => {},
     };
     return store;
+  }
+
+  /** A region record a tile-capable page has verified. */
+  function verifiedRegion(id, name, extra) {
+    return {
+      region_id: id,
+      name,
+      contentAt: TODAY(),
+      verified: { at: TODAY(), map: 'yes', content: 'yes' },
+      ...(extra || {}),
+    };
   }
 
   /** Open the menu and let the toggle handler's async work settle. */
@@ -1869,7 +1638,7 @@ describe('Get ready for offline (SNOW-1141)', () => {
 
   /** Let a chain of awaited promises run out. */
   async function settle() {
-    for (let i = 0; i < 4; i += 1) await tick();
+    for (let i = 0; i < 6; i += 1) await tick();
   }
 
   /** The one press. */
@@ -1891,18 +1660,26 @@ describe('Get ready for offline (SNOW-1141)', () => {
     return el.classList.contains('hidden') ? '' : el.textContent;
   }
 
-  /** Every rendered row's id, label and the status it is showing. */
+  /** Every rendered row's id, label, verdict and visible words. */
   function rows() {
     return Array.from(document.querySelectorAll('[data-network-sync-list] [data-area-id]')).map(
       (row) => {
         const shown = Array.from(row.querySelectorAll('[data-area-status]')).find(
           (span) => !span.classList.contains('hidden'),
         );
+        const text = shown
+          ? Array.from(shown.childNodes)
+              .filter((node) => !(node.classList && node.classList.contains('hidden')))
+              .map((node) => node.textContent)
+              .join('')
+              .replace(/\s+/g, ' ')
+              .trim()
+          : '';
         return {
           id: row.getAttribute('data-area-id'),
-          label: row.querySelector('[data-sync-label]').textContent,
+          label: row.querySelector('[data-area-label]').textContent,
           status: shown ? shown.getAttribute('data-area-status') : null,
-          text: shown ? shown.textContent.replace(/\s+/g, ' ').trim() : '',
+          text,
         };
       },
     );
@@ -1913,8 +1690,24 @@ describe('Get ready for offline (SNOW-1141)', () => {
     return document.querySelector('[data-network-sync]').classList.contains('hidden');
   }
 
+  /** What the header symbol's readiness mark says. */
+  function readiness() {
+    return indicator().getAttribute('data-offline-readiness');
+  }
+
+  /** Sign the page in or out, as base.html's meta tag does. */
+  function signIn(id) {
+    document.head.querySelectorAll('meta[name="pwa-user-id"]').forEach((m) => m.remove());
+    const meta = document.createElement('meta');
+    meta.setAttribute('name', 'pwa-user-id');
+    meta.setAttribute('content', id);
+    document.head.appendChild(meta);
+  }
+
   beforeEach(async () => {
     await import('../../static/js/offline_ready_core.js');
+    await import('../../static/js/offline_journey_core.js');
+    signIn('');
   });
 
   afterEach(() => {
@@ -1922,9 +1715,10 @@ describe('Get ready for offline (SNOW-1141)', () => {
     delete window.pwaBasemapDownloads;
     delete window.pwaMutationQueue;
     delete window.pwaDownloadsManager;
+    delete self.pwaBasemapDownloadCore;
   });
 
-  it('says nothing at all on a device with no downloads', async () => {
+  it('says nothing at all, and marks nothing, on a device with no downloads', async () => {
     buildFixture();
     stubDb({});
     await loadModule();
@@ -1932,6 +1726,9 @@ describe('Get ready for offline (SNOW-1141)', () => {
     await openMenu();
 
     expect(blockHidden()).toBe(true);
+    expect(readiness()).toBe('none');
+    expect(roleShown('readiness-ready')).toBe(false);
+    expect(roleShown('readiness-attention')).toBe(false);
   });
 
   it('lists an area from each store, named as that store names it', async () => {
@@ -1949,34 +1746,83 @@ describe('Get ready for offline (SNOW-1141)', () => {
     expect(rows().map((row) => row.id)).toEqual(['CH-4115', 'custom-a1']);
   });
 
-  it('offers one press and no per-area buttons', async () => {
+  it('offers one Sync and no per-area buttons', async () => {
     buildFixture();
-    stubDb({ 'basemap.regions': [{ region_id: 'CH-4115', name: 'Martigny' }] });
+    stubDb({ 'basemap.regions': [verifiedRegion('CH-4115', 'Martigny')] });
     await loadModule();
     await openMenu();
 
-    expect(buttonText()).toBe('Get ready for offline');
+    expect(buttonText()).toBe('Sync');
     expect(document.querySelectorAll('[data-network-sync-list] button')).toHaveLength(0);
   });
 
-  it('dates each row from its record before any press', async () => {
+  it('answers each row with the verdict its record gives', async () => {
     buildFixture();
-    const earlier = new Date(Date.now() - 3 * 86400000).toISOString();
     stubDb({
       'basemap.regions': [
-        { region_id: 'CH-1', name: 'Today', contentAt: new Date().toISOString() },
-        { region_id: 'CH-2', name: 'Earlier', contentAt: earlier },
-        { region_id: 'CH-3', name: 'Never' },
+        verifiedRegion('CH-1', 'Ready'),
+        verifiedRegion('CH-2', 'Stale', { contentAt: YESTERDAY() }),
+        verifiedRegion('CH-3', 'Gone', { verified: { at: TODAY(), map: 'no', reason: 'absent' } }),
+        { region_id: 'CH-4', name: 'Unchecked', contentAt: TODAY() },
       ],
     });
     await loadModule();
     await openMenu();
 
-    const [today, before, never] = rows();
-    expect(today.status).toBe('today');
-    expect(before.status).toBe('earlier');
-    expect(before.text).toBe(`Bulletins from ${window.pwaCachedStampCore.formatDay(earlier)}`);
-    expect(never.status).toBe('none');
+    expect(rows().map((row) => [row.status, row.text])).toEqual([
+      ['ready', 'Works offline'],
+      ['refresh', 'Mostly · bulletins out of date'],
+      ['open-map', 'Map missing · Download again'],
+      ['unknown', 'Not checked yet'],
+    ]);
+  });
+
+  it("names a signed-in reader's missing things as the reason", async () => {
+    signIn('acct-1');
+    buildFixture();
+    stubDb({
+      'basemap.regions': [
+        verifiedRegion('CH-1', 'Things', { verified: { at: TODAY(), map: 'yes', content: 'no' } }),
+      ],
+    });
+    await loadModule();
+    await openMenu();
+
+    expect(rows()[0].text).toBe('Mostly · some trips or pins missing');
+  });
+
+  it('marks the symbol ready only when every area is ready', async () => {
+    buildFixture();
+    const store = stubDb({ 'basemap.regions': [verifiedRegion('CH-1', 'One')] });
+    await loadModule();
+    await settle();
+
+    expect(readiness()).toBe('ready');
+    expect(roleShown('readiness-ready')).toBe(true);
+
+    store.meta['basemap.regions'] = [
+      verifiedRegion('CH-1', 'One'),
+      verifiedRegion('CH-2', 'Two', { contentAt: YESTERDAY() }),
+    ];
+    await openMenu();
+
+    expect(readiness()).toBe('attention');
+    expect(roleShown('readiness-attention')).toBe(true);
+    expect(roleShown('readiness-ready')).toBe(false);
+  });
+
+  it('marks nothing on the symbol while there is no signal', async () => {
+    buildFixture();
+    stubDb({ 'basemap.regions': [verifiedRegion('CH-1', 'One')] });
+    const sw = stubServiceWorker();
+    await loadModule();
+    await settle();
+    sw.emit({ type: 'network-mode', mode: 'offline-forced' });
+    await tick();
+
+    expect(indicatorState()).toBe('offline');
+    expect(readiness()).toBe('none');
+    expect(roleShown('readiness-ready')).toBe(false);
   });
 
   it('drains the queue first, then syncs every area in order, in place', async () => {
@@ -2009,23 +1855,20 @@ describe('Get ready for offline (SNOW-1141)', () => {
     expect(panelShown()).toBe(true);
     expect(line('[data-network-ready-summary]')).toBe('Ready — 2 areas up to date');
     expect(line('[data-network-ready-queue]')).toBe('');
-    expect(rows().map((row) => row.status)).toEqual(['ready', 'ready']);
-    delete self.pwaBasemapDownloadCore;
   });
 
-  it('counts the areas on the button while it runs', async () => {
+  it('counts and names the stages on the button, and marks the symbol syncing', async () => {
     buildFixture();
     stubDb({
-      'basemap.regions': [
-        { region_id: 'CH-1', name: 'One' },
-        { region_id: 'CH-2', name: 'Two' },
-      ],
+      'basemap.regions': [verifiedRegion('CH-1', 'One'), verifiedRegion('CH-2', 'Two')],
     });
     const pending = [];
+    let stage;
     window.pwaBasemapDownloads = {
       syncArea: vi.fn(
-        () =>
+        (_id, onStage) =>
           new Promise((resolve) => {
+            stage = onStage;
             pending.push(resolve);
           }),
       ),
@@ -2036,76 +1879,60 @@ describe('Get ready for offline (SNOW-1141)', () => {
     readyButton().click();
     await settle();
 
-    expect(buttonText()).toBe('Getting ready… (1 of 2)');
+    expect(buttonText()).toBe('Syncing… (1 of 2)');
     expect(readyButton().disabled).toBe(true);
     expect(rows()[0].status).toBe('running');
+    expect(readiness()).toBe('syncing');
+
+    stage('weather');
+    await settle();
+    expect(buttonText()).toBe('Saving weather… (1 of 2)');
 
     pending[0]({ tiles: 'none', content: true });
     await settle();
-    expect(buttonText()).toBe('Getting ready… (2 of 2)');
+    expect(buttonText()).toBe('Syncing… (2 of 2)');
+    expect(rows()[0].status).toBe('ready');
 
-    pending[1]({ tiles: 'failed', content: true });
+    pending[1]({ tiles: 'none', content: true });
     await settle();
-    expect(buttonText()).toBe('Get ready for offline');
+    expect(buttonText()).toBe('Sync');
     expect(readyButton().disabled).toBe(false);
+    expect(readiness()).toBe('ready');
   });
 
-  it('says how many are ready when some fell short, and what each one is', async () => {
+  it('repaints each row from the record its sync just stamped', async () => {
     buildFixture();
-    stubDb({
-      'basemap.regions': [
-        { region_id: 'CH-1', name: 'One' },
-        { region_id: 'CH-2', name: 'Two' },
-        { region_id: 'CH-3', name: 'Three' },
-      ],
+    const store = stubDb({
+      'basemap.regions': [{ region_id: 'CH-1', name: 'One', contentAt: YESTERDAY() }],
     });
-    const answers = {
-      'CH-1': { tiles: 'none', content: true },
-      'CH-2': { tiles: 'failed', content: true },
-      'CH-3': { tiles: 'absent', content: false },
-    };
-    window.pwaBasemapDownloads = { syncArea: vi.fn(async (id) => answers[id]) };
-    await loadModule();
-    await openMenu();
-
-    readyButton().click();
-    await settle();
-
-    expect(line('[data-network-ready-summary]')).toBe('1 of 3 ready');
-    expect(rows().map((row) => row.status)).toEqual(['ready', 'partial', 'absent']);
-  });
-
-  it('gives a tiles-gone area the way to re-download, and no retry', async () => {
-    buildFixture();
-    stubDb({ 'basemap.regions': [{ region_id: 'CH-4115', name: 'Martigny' }] });
     window.pwaBasemapDownloads = {
-      syncArea: vi.fn(async () => ({ tiles: 'absent', content: false })),
+      syncArea: vi.fn(async () => {
+        store.meta['basemap.regions'] = [verifiedRegion('CH-1', 'One')];
+        return { tiles: 'none', content: true };
+      }),
     };
     await loadModule();
     await openMenu();
+    // Never checked, and yesterday's bulletins: the No outranks the unknown.
+    expect(rows()[0].status).toBe('refresh');
 
     readyButton().click();
     await settle();
 
-    const row = document.querySelector('[data-area-id="CH-4115"]');
-    const link = row.querySelector('[data-area-redownload]');
-    expect(rows()[0].text).toBe('Tiles gone · Download again');
-    expect(link.getAttribute('href')).toBe('/map/?panel=downloads');
-    expect(row.querySelector('button')).toBeNull();
-    expect(line('[data-network-ready-summary]')).toBe('0 of 1 ready');
+    expect(rows()[0].status).toBe('ready');
   });
 
   it('opens the Manage downloads sheet in place on the map page', async () => {
     buildFixture();
-    stubDb({ 'basemap.regions': [{ region_id: 'CH-4115', name: 'Martigny' }] });
-    window.pwaBasemapDownloads = {
-      syncArea: vi.fn(async () => ({ tiles: 'absent', content: false })),
-    };
+    stubDb({
+      'basemap.regions': [
+        verifiedRegion('CH-4115', 'Martigny', { verified: { at: TODAY(), map: 'no' } }),
+      ],
+    });
+    window.pwaBasemapDownloads = { syncArea: vi.fn() };
     window.pwaDownloadsManager = { open: vi.fn() };
     await loadModule();
     await openMenu();
-    readyButton().click();
-    await settle();
 
     const event = new MouseEvent('click', { bubbles: true, cancelable: true });
     document.querySelector('[data-area-redownload]').dispatchEvent(event);
@@ -2139,8 +1966,7 @@ describe('Get ready for offline (SNOW-1141)', () => {
     expect(line('[data-network-ready-queue]')).toBe('2 changes still waiting to send');
   });
 
-  it('clears the result when the menu next opens', async () => {
-    // No session-long "Synced": the answer belongs to the press.
+  it('clears the summary when the menu next opens', async () => {
     buildFixture();
     stubDb({ 'basemap.regions': [{ region_id: 'CH-4115', name: 'Martigny' }] });
     window.pwaBasemapDownloads = {
@@ -2157,7 +1983,6 @@ describe('Get ready for offline (SNOW-1141)', () => {
     await openMenu();
 
     expect(line('[data-network-ready-summary]')).toBe('');
-    expect(rows()[0].status).toBe('none');
   });
 
   it('keeps a press still running across a close and re-open', async () => {
@@ -2181,33 +2006,52 @@ describe('Get ready for offline (SNOW-1141)', () => {
     await tick();
     await openMenu();
 
-    expect(buttonText()).toBe('Getting ready… (1 of 1)');
+    expect(buttonText()).toBe('Syncing… (1 of 1)');
     expect(rows()[0].status).toBe('running');
     finish({ tiles: 'none', content: true });
     await settle();
   });
 
-  it('navigates to /offline/?sync=all on a page that cannot sync', async () => {
-    // Off the map there is no `syncArea` — `basemap_download_core.js` is
-    // 140KB of map-and-/offline/-only code — so the press hands the whole
-    // run to the page that can, through the href the panel already carries.
+  it('navigates to /map/?sync=all on a page that cannot sync', async () => {
+    // Off the map there is no `syncArea`, and only the map can mend tiles,
+    // so the press hands the whole run to the map.
     buildFixture();
     stubDb({ 'basemap.customAreas': [{ id: 'custom-a1', name: 'Verbier bowl' }] });
     window.pwaMutationQueue = { drain: vi.fn() };
     await loadModule();
     await openMenu();
     const assign = vi.fn();
+    const realLocation = window.location;
     Object.defineProperty(window, 'location', {
       configurable: true,
       value: { href: 'https://snowdesk.test/ch-4115/', assign },
     });
 
-    readyButton().click();
-    await tick();
+    try {
+      readyButton().click();
+      await tick();
 
-    expect(assign).toHaveBeenCalledWith('/offline/?sync=all');
-    // That page drains the queue itself, as the first step of the same run.
-    expect(window.pwaMutationQueue.drain).not.toHaveBeenCalled();
+      expect(assign).toHaveBeenCalledWith('/map/?sync=all');
+      // The map drains the queue itself, as the first step of the same run.
+      expect(window.pwaMutationQueue.drain).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: realLocation });
+    }
+  });
+
+  it('runs on the map arrival with the panel open (pwaConnectionPanel.syncAll)', async () => {
+    buildFixture();
+    stubDb({ 'basemap.regions': [{ region_id: 'CH-4115', name: 'Martigny' }] });
+    const syncArea = vi.fn(async () => ({ tiles: 'none', content: true }));
+    window.pwaBasemapDownloads = { syncArea };
+    await loadModule();
+
+    await window.pwaConnectionPanel.syncAll();
+    await settle();
+
+    expect(panelShown()).toBe(true);
+    expect(syncArea).toHaveBeenCalledTimes(1);
+    expect(line('[data-network-ready-summary]')).toBe('Ready — 1 area up to date');
   });
 
   it('refuses while the app is not using the network', async () => {
@@ -2257,47 +2101,5 @@ describe('Get ready for offline (SNOW-1141)', () => {
     expect(
       document.querySelector('[data-network-sync-offline]').classList.contains('hidden'),
     ).toBe(true);
-  });
-});
-
-describe('the way to the offline-content page (SNOW-928)', () => {
-  it('is a link to /offline/ that closes the menu on the way', async () => {
-    // SNOW-951 overturned the "it starts nothing" half of SNOW-928's
-    // reasoning — the "Get ready for offline" press above starts something — but not
-    // this: the row is still the way to the full report, and it still
-    // shuts the menu rather than hanging over the page the user just
-    // asked to read. nav.html's shared mechanism, not a fourth dismissal
-    // of its own.
-    buildFixture();
-    await loadModule();
-
-    const row = document.querySelector('[data-network-downloads]');
-
-    expect(row.tagName).toBe('A');
-    expect(row.getAttribute('href')).toBe('/offline/');
-    expect(row.hasAttribute('data-disclosure-close')).toBe(true);
-  });
-
-  it('is there for a reader with nothing downloaded, and signed out', async () => {
-    // /offline/ is public (SNOW-930) and its "Save the map page" control
-    // warms the shell for anybody. A control that is present and honest
-    // about its limit beats one that vanishes, which reads as a bug.
-    buildFixture();
-    window.pwaDb = {
-      get: async () => undefined,
-      put: async () => {},
-      appendSyncLog: async () => {},
-    };
-    await loadModule();
-    disclosure().open = true;
-    await tick();
-    await tick();
-
-    expect(document.querySelector('[data-network-downloads]')).not.toBeNull();
-    // The staleness line above IS the half with nothing to say here.
-    expect(
-      document.querySelector('[data-role="downloads-age"]').classList.contains('hidden'),
-    ).toBe(true);
-    delete window.pwaDb;
   });
 });

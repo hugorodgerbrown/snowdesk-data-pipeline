@@ -699,12 +699,14 @@ class TestNavConnectionPanel:
     def test_panel_carries_every_state_and_both_ways_back(
         self, rf: RequestFactory
     ) -> None:
-        """All four explanations and both CTA labels are server-rendered.
+        """Every message, explanation and CTA label is server-rendered.
 
         ``makemessages`` never scans ``static/js``, so a string set from a JS
         literal ships as English to every locale — ``bin/i18n-lint`` fails on
         exactly that. Every variant is rendered here and toggled by
-        ``hidden`` in ``static/js/pwa_offline.js``.
+        ``hidden`` in ``static/js/pwa_offline.js``. SNOW-1415 dropped the
+        "last synced" clock and the online explanation: in the normal state
+        the area rows are the content.
         """
         html = _render_nav_for(rf, AnonymousUser())
         panel = html.split('id="pwa-connection-panel"', 1)[1]
@@ -712,8 +714,6 @@ class TestNavConnectionPanel:
             "online-message",
             "offline-message",
             "latched-message",
-            "synced-at",
-            "online-explainer",
             "offline-explainer",
             "latched-explainer",
             "forced-explainer",
@@ -721,6 +721,18 @@ class TestNavConnectionPanel:
             "resume-label",
         ):
             assert f'data-role="{role}"' in panel
+        for gone in ("synced-at", "online-explainer", "downloads-age"):
+            assert f'data-role="{gone}"' not in panel
+
+    def test_the_way_back_ships_hidden(self, rf: RequestFactory) -> None:
+        """The reconnect CTA is for the two offline modes only.
+
+        Hidden at rest, because the page renders the online state before
+        any script runs; ``pwa_offline.js`` reveals it in ``offline`` and
+        ``offline-forced``.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        assert "hidden" in _class_tokens(_opening_tag_around(html, "data-network-reconnect"))
 
     def test_anonymous_gets_the_panel_and_its_way_back(
         self, rf: RequestFactory
@@ -758,72 +770,93 @@ class TestNavConnectionPanel:
 
 
 @pytest.mark.django_db
-class TestNavOfflineModeSwitch:
-    """The "Offline mode" switch — in the NETWORK MENU since SNOW-921.
+class TestNavAreaRows:
+    """SNOW-1415: the panel answers "will this area work offline?" per area.
 
-    The settings half of the aeroplane-mode model. SNOW-742 built it inside
-    the offline banner, which ``static/js/pwa_offline.js`` revealed only
-    once the connection had already failed — so the user it was built for
-    ("I have signal now and am about to lose it") could never reach it.
-    SNOW-748 moved it to the account dropdown, on the reasoning that the
-    mode is a device preference and belongs with the other device
-    preferences.
-
-    SNOW-921 moved it again, into the menu the connectivity symbol opens,
-    and that move changes WHO HAS IT. The account dropdown was the only
-    menu available to put it in, so "device preference" quietly became
-    "account feature": an anonymous reader who got latched on a lift could
-    only escape a mode chosen for them, never choose one. Nothing about the
-    mode ever needed an account — it is a row in this device's IndexedDB
-    and a flag in this device's service worker.
-
-    The assertions below pin that reversal explicitly, because it is the
-    kind of thing a later refactor "tidies" back: the switch renders for an
-    anonymous viewer, it is inside the panel rather than the account menu,
-    and the account menu no longer carries it.
+    One row per downloaded area, cloned by ``pwa_offline.js`` from a
+    ``<template>`` whose every word is rendered here, and one Sync button.
     """
 
-    def test_anonymous_sees_the_switch(self, rf: RequestFactory) -> None:
-        """The reversal, asserted head-on.
+    def _panel(self, rf: RequestFactory) -> str:
+        """The rendered panel, up to the end of its disclosure."""
+        html = _render_nav_for(rf, AnonymousUser())
+        return html.split('id="pwa-connection-panel"', 1)[1].split("</details>", 1)[0]
 
-        This assertion was ``not in`` until SNOW-921. It is the whole point
-        of the move: the reader most likely to want offline mode — on a
-        lift, one bar of signal, no account — is the one who could not
-        reach it.
+    def test_the_row_template_carries_every_verdict(self, rf: RequestFactory) -> None:
+        """Ready, mostly (with both reasons), map missing, unchecked, syncing."""
+        template = self._panel(rf).split("<template data-network-sync-row>", 1)[1]
+        template = template.split("</template>", 1)[0]
+        for status in ("ready", "refresh", "open-map", "unknown", "running"):
+            assert f'data-area-status="{status}"' in template
+        for reason in ("conditions", "things"):
+            assert f'data-area-reason="{reason}"' in template
+        assert "data-area-label" in template
+
+    def test_a_missing_map_links_to_the_manage_downloads_sheet(
+        self, rf: RequestFactory
+    ) -> None:
+        """The remedy for a map that is gone is a re-download, on the map."""
+        panel = self._panel(rf)
+        tag = _opening_tag_around(panel, "data-area-redownload")
+        assert f'href="{reverse("public:map")}?panel=downloads"' in tag
+
+    def test_one_sync_that_knows_where_the_map_is(self, rf: RequestFactory) -> None:
+        """One button, and the map url a press off the map navigates to."""
+        panel = self._panel(rf)
+        assert len(re.findall(r"data-network-ready(?![-\w])", panel)) == 1
+        assert "Sync" in panel
+        block = _opening_tag_around(panel, "data-network-sync ")
+        assert f'data-map-url="{reverse("public:map")}"' in block
+        assert "hidden" in _class_tokens(block)
+
+    def test_the_debug_controls_left_the_panel(self, rf: RequestFactory) -> None:
+        """No Offline mode switch, no Debug log, no /offline/ link."""
+        panel = self._panel(rf)
+        assert "data-network-toggle" not in panel
+        assert "data-network-debug-log" not in panel
+        assert "data-network-downloads" not in panel
+        assert reverse("public:offline_page") not in panel
+
+    def test_the_symbol_carries_three_readiness_marks_all_hidden(
+        self, rf: RequestFactory
+    ) -> None:
+        """Ready, syncing and needs attention, painted by ``pwa_offline.js``.
+
+        All hidden at rest: with no areas the symbol is the plain signal
+        glyph, as it was before.
         """
         html = _render_nav_for(rf, AnonymousUser())
-        assert "data-network-toggle" in html
+        summary = html.split("data-network-indicator", 1)[1].split("</summary>", 1)[0]
+        for name in ("ready", "syncing", "attention"):
+            tag = _opening_tag_around(summary, f'data-role="readiness-{name}"')
+            assert "hidden" in _class_tokens(tag)
+        assert 'data-offline-readiness="none"' in _opening_tag_around(
+            html, "data-network-indicator"
+        )
 
-    def test_authenticated_sees_the_switch(
+
+@pytest.mark.django_db
+class TestNavOfflineModeSwitch:
+    """The "Offline mode" switch is not in the nav at all since SNOW-1415.
+
+    SNOW-921 put it in the network menu; SNOW-1415 moved it to the /offline/
+    debug page (``tests/public/test_offline_page.py``), with the Debug log.
+    The account-menu assertions stay: the switch must not drift back there.
+    """
+
+    def test_no_viewer_sees_the_switch_in_the_nav(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """And a signed-in user still does, in the same place."""
-        html = _render_nav_for(rf, regular_user)
-        assert "data-network-toggle" in html
-
-    def test_switch_lives_in_the_network_menu(self, rf: RequestFactory) -> None:
-        """Inside ``#pwa-connection-panel``, not merely somewhere in the nav.
-
-        Asserted by containment rather than by eye: the row would still be
-        "present" if a refactor left it floating in the header, and the
-        whole argument for the move is that it sits with the surface that
-        reports the state it sets.
-        """
-        html = _render_nav_for(rf, AnonymousUser())
-        panel = html.split('id="pwa-connection-panel"', 1)[1].split("</details>", 1)[0]
-        assert "data-network-toggle" in panel
+        """Neither a signed-out reader nor a signed-in one."""
+        for user in (AnonymousUser(), regular_user):
+            html = _render_nav_for(rf, user)
+            assert "data-network-toggle" not in html
+            assert "nav-offline-mode" not in html
 
     def test_account_menu_no_longer_carries_it(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """One switch, in one place.
-
-        The failure this guards against is the obvious one for a move: the
-        new copy lands and the old one is never deleted, leaving two
-        controls driving the same mode, both painted by the same
-        ``pwa_offline.js`` selector — which selects the first only, so the
-        second would be a dead switch that never repaints.
-        """
+        """One switch, in one place."""
         html = _render_nav_for(rf, regular_user)
         menu = html.split('id="subscriber-menu"', 1)[1]
         assert "data-network-toggle" not in menu
@@ -838,11 +871,7 @@ class TestNavOfflineModeSwitch:
         account dropdown and the ``<div class="border-t">`` that had
         separated its section from the destinations below was left behind,
         so the open menu drew a line across its own top with nothing on one
-        side of it. A divider separates two groups; one group is not two.
-
-        Asserted as "the first thing in the menu is a link", which is the
-        claim that actually holds — a later section added back above Trips
-        would bring its own rule and should update this, not delete it.
+        side of it. Asserted as "the first thing in the menu is a link".
         """
         html = _render_nav_for(rf, regular_user)
         menu = html.split('id="subscriber-menu"', 1)[1]
@@ -850,213 +879,20 @@ class TestNavOfflineModeSwitch:
         assert first_element is not None
         assert first_element.group(1) == "a"
 
-    def test_switch_sits_first_among_the_menu_controls(
-        self, rf: RequestFactory
-    ) -> None:
-        """Before the debug-log row and before the reconnect CTA.
-
-        The menu's order is meaning, not decoration — the design system's
-        consistency rule asks a new menu to adopt the order an existing one
-        established, and the account menu's is: the row you open the menu
-        to OPERATE first, then the destination, then the terminal action
-        last. Asserted by position, because an entry inserted in the wrong
-        group reads fine in a diff.
-        """
-        html = _render_nav_for(rf, AnonymousUser())
-        panel = html.split('id="pwa-connection-panel"', 1)[1].split("</details>", 1)[0]
-        assert panel.index("data-network-toggle") < panel.index(
-            "data-network-reconnect"
-        )
-
-    def test_switch_sits_below_the_explanations(self, rf: RequestFactory) -> None:
-        """What is true, a rule, then what you can do.
-
-        The panel is two halves and the rule between them is load-bearing:
-        a control mixed in among four mutually-exclusive explanatory
-        paragraphs reads as belonging to whichever one happens to be
-        visible.
-        """
-        html = _render_nav_for(rf, AnonymousUser())
-        panel = html.split('id="pwa-connection-panel"', 1)[1].split("</details>", 1)[0]
-        assert panel.index('data-role="forced-explainer"') < panel.index(
-            "data-network-toggle"
-        )
-
-    def test_switch_row_renders_hidden(self, rf: RequestFactory) -> None:
-        """It ships hidden, and the script reveals it.
-
-        Hidden because ``pwa_offline.js`` reveals it: it drives a service
-        worker, so a row that appeared without the script would be a dead
-        control. Unlike the symbol above, which is hidden from nobody —
-        the two have opposite contracts and this is where that is pinned.
-        """
-        html = _render_nav_for(rf, AnonymousUser())
-        opening_tag = _opening_tag_around(html, "data-network-toggle")
-        assert "hidden" in opening_tag
-
-    def test_switch_is_a_real_checkbox_starting_unchecked(
-        self, rf: RequestFactory
-    ) -> None:
-        """``includes/_switch.html``, not a ``role="menuitemcheckbox"`` button.
-
-        A real ``<input type="checkbox" role="switch">`` gives keyboard
-        activation, focus and checked-state bookkeeping for free, which the
-        button shape had to reimplement. Unchecked because the mode a page
-        boots in is ``'auto'`` — the script repaints it after reading the
-        persisted mode back.
-        """
-        html = _render_nav_for(rf, AnonymousUser())
-        input_tag = _opening_tag_around(html, 'id="nav-offline-mode"')
-        assert 'type="checkbox"' in input_tag
-        assert 'role="switch"' in input_tag
-        # The bare HTML attribute, not the `peer-checked:` utilities the
-        # track and thumb carry — hence the opening tag rather than the row.
-        assert "checked" not in input_tag.replace('id="nav-offline-mode"', "")
-
-    def test_switch_row_needs_no_menu_role_juggling(self, rf: RequestFactory) -> None:
-        """No ``role="none"``, and no ``menuitemcheckbox`` either.
-
-        The row carried ``role="none"`` for its whole life in the account
-        dropdown, and for exactly one reason: a ``role="switch"`` checkbox
-        is not a valid child of ``role="menu"``, which admits only
-        menuitem / menuitemcheckbox / menuitemradio (plus group and none),
-        so the wrapper had to be taken out of the accessibility tree to
-        stop a bare <div> being announced as an unexpected menu child.
-
-        The network menu claims no ARIA role at all — it is a disclosure
-        holding a small form, which is what it has always actually been —
-        so there is no invalid parent/child relationship to neutralise and
-        the attribute would now be noise asserting a fix for a problem that
-        is not here. SNOW-921 dropped it, and this is where that is
-        recorded rather than looking like an omission.
-        """
-        opening_tag = _opening_tag_around(
-            _render_nav_for(rf, AnonymousUser()), "data-network-toggle"
-        )
-        assert 'role="none"' not in opening_tag
-        assert "menuitemcheckbox" not in opening_tag
-
-    def test_switch_label_is_a_sibling_pointing_at_the_input(
-        self, rf: RequestFactory
-    ) -> None:
-        """A ``<label for>`` beside the include, never wrapping it.
-
-        ``_switch.html``'s own outer element is itself a ``<label>``, and
-        labels must not nest; its track and thumb are both
-        ``pointer-events-none``, so a wrapper that is not a label leaves
-        only the text clickable — silently, with every server-side test
-        still green. The label is server-rendered so it is translated:
-        ``makemessages`` never scans ``static/js``.
-        """
-        html = _render_nav_for(rf, AnonymousUser())
-        row = html.split("data-network-toggle", 1)[1].split("</div>", 1)[0]
-        assert 'for="nav-offline-mode"' in row
-        assert "Offline mode" in row
-
-    def test_switch_row_is_words_and_switch_with_no_glyph(
-        self, rf: RequestFactory
-    ) -> None:
-        """The row carries a label and a switch, and nothing else.
-
-        It shipped with a struck-through wifi mark beside the label for one
-        pass, which restated in a glyph what the words already say and put
-        a second copy of the header symbol's offline mark two inches below
-        it — in a menu whose every other row is text.
-        """
-        html = _render_nav_for(rf, AnonymousUser())
-        row = html.split("data-network-toggle", 1)[1].split("</div>", 1)[0]
-        assert "<svg" not in row
-
 
 @pytest.mark.django_db
 class TestNavDebugLogEntry:
-    """The SNOW-921 "Debug log" row in the network menu.
+    """The Debug log entry left the network menu in SNOW-1415.
 
-    The on-device trace (SNOW-812) has been reachable only from a
-    low-contrast pill in the bottom-left corner of every page — a mark you
-    find by already knowing it is there. It answers "the app is not getting
-    what I expect off the network", which is the question this menu exists
-    to answer at every other level of detail, so the menu now carries the
-    way in.
-
-    Gated on the same ``debug_log`` waffle flag that decides whether the
-    panel and the recorder reach the page at all, so the row can never
-    point at a panel that is not there. Both halves of that gate are
-    asserted below, because a row rendered unconditionally would be a
-    control that silently does nothing for everyone outside GRP_DEBUG.
+    It is the /offline/ debug page's "Open debug log" button now
+    (``tests/public/test_debug_log_panel.py``).
     """
 
-    def test_absent_without_the_flag(
+    @override_flag("debug_log", active=True)
+    def test_absent_even_with_the_flag(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """No flag, no row — not even for a signed-in user."""
+        """A GRP_DEBUG member gets no menu row; the page has the button."""
         html = _render_nav_for(rf, regular_user)
         assert "data-network-debug-log" not in html
-
-    def test_absent_for_anonymous_viewers(self, rf: RequestFactory) -> None:
-        """The gate short-circuits on authentication before it reads waffle.
-
-        ``apps.public.context_processors.debug_log_visible`` evaluates
-        ``request.user.is_authenticated`` first, which is what keeps the
-        homepage's anonymous path at its query baseline
-        (``tests/public/test_debug_log_panel.py``). The row inherits that,
-        and this pins it.
-        """
-        html = _render_nav_for(rf, AnonymousUser())
-        assert "data-network-debug-log" not in html
-
-    @override_flag("debug_log", active=True)
-    def test_present_with_the_flag(
-        self, rf: RequestFactory, regular_user: User
-    ) -> None:
-        """A GRP_DEBUG member gets the row, inside the network menu."""
-        html = _render_nav_for(rf, regular_user)
-        panel = html.split('id="pwa-connection-panel"', 1)[1].split("</details>", 1)[0]
-        assert "data-network-debug-log" in panel
-        assert "Debug log" in panel
-
-    @override_flag("debug_log", active=True)
-    def test_row_is_a_button_that_closes_the_menu(
-        self, rf: RequestFactory, regular_user: User
-    ) -> None:
-        """A ``<button>`` carrying ``data-disclosure-close``.
-
-        A button and not an ``<a>`` because the trace has no URL — it is a
-        panel already on the page, opened by
-        ``static/js/debug_log_panel.js``, which binds this control
-        alongside its own handle.
-
-        ``data-disclosure-close`` because the trace opens over the page and
-        a menu left hanging above it would cover the first lines of the
-        thing the user just asked to read. That is nav.html's shared
-        mechanism (see
-        ``TestNavConnectionPanel.test_close_control_uses_the_shared_disclosure_mechanism``),
-        not a fourth dismissal of its own — and it is the reason that
-        script's selector had to become ``querySelectorAll``: the "×" is
-        first in document order, so the singular form bound it and nothing
-        else.
-        """
-        html = _render_nav_for(rf, regular_user)
-        tag = _opening_tag_around(html, "data-network-debug-log")
-        assert tag.startswith("<button")
-        assert 'type="button"' in tag
-        assert "data-disclosure-close" in tag
-
-    @override_flag("debug_log", active=True)
-    def test_row_sits_between_the_switch_and_the_cta(
-        self, rf: RequestFactory, regular_user: User
-    ) -> None:
-        """Operate, then go, then the terminal action — the account menu's order.
-
-        The design system's consistency rule asks a new menu to adopt the
-        order an existing one established and drop what does not apply.
-        "Offline mode" is the row you open the menu to operate, the debug
-        log is the destination, and the way back to the network is last.
-        """
-        html = _render_nav_for(rf, regular_user)
-        panel = html.split('id="pwa-connection-panel"', 1)[1].split("</details>", 1)[0]
-        assert (
-            panel.index("data-network-toggle")
-            < panel.index("data-network-debug-log")
-            < panel.index("data-network-reconnect")
-        )
+        assert "data-open-debug-log" not in html

@@ -71,7 +71,10 @@ interface Window {
       drain(): unknown;
       waiting(): Promise<number> | number;
       areas: string[];
-      syncOne(id: string): Promise<'ready' | 'partial' | 'absent'> | 'ready' | 'partial' | 'absent';
+      syncOne(
+        id: string,
+        onStage: (name: 'map' | 'bulletins' | 'weather' | 'things') => void,
+      ): Promise<'ready' | 'partial' | 'absent'> | 'ready' | 'partial' | 'absent';
       onStep?(step: any): void;
       drainTimeoutMs?: number;
       wait?(ms: number): Promise<void>;
@@ -88,6 +91,11 @@ interface Window {
       strings: Record<string, string>,
     ): { summary: string; queue: string };
     progressText(step: any, strings: Record<string, string>): string;
+    STAGES: string[];
+  };
+  /** static/js/pwa_offline.js — the connection panel's Sync, run on the map's ?sync=all arrival (SNOW-1415). */
+  pwaConnectionPanel: {
+    syncAll(): Promise<void>;
   };
   /** static/js/downloads_restore_queue_core.js — the "Download all" queue's order and stop rules (SNOW-1140). */
   pwaDownloadsRestoreQueueCore: {

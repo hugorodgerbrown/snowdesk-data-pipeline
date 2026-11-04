@@ -1,7 +1,13 @@
 {% extends "public/base.html" %}
 {% comment %}
 apps/public/templates/public/offline.html — the offline-content page
-(SNOW-930).
+(SNOW-930), and since SNOW-1415 the page for debugging an offline issue.
+
+SNOW-1415: the header's connection panel now answers "will this area work
+offline?" per area, and everything that only made sense to someone who
+knows the internals left it for here: the Offline mode switch and the way
+into the on-device debug log. The page is reached from Help and settings,
+not from the panel. Copy is placeholder; Hugo edits it in the PR.
 
 One question, one page: **what is saved on this device, and how do I fix
 it.** The offline-content audit, the reset-local-data control with its
@@ -59,14 +65,14 @@ it gains is somewhere to send a reader who does have a connection.
         be given. Not a privacy exemption — there is nothing secret here —
         simply a page with no shareable subject.
     {% endcomment %}
-    {% trans "Offline content" as page_name %}
-    {% trans "What Snowdesk has saved on this device, and how to fix it." as page_description %}
+    {% trans "Debug offline issues" as page_name %}
+    {% trans "What Snowdesk has saved on this device, and the tools to debug it." as page_description %}
     {% include "includes/_page_meta.html" with title=page_name|add:" · Snowdesk" description=page_description sharing=False %}
 {% endblock page_meta %}
 
 {% block content %}
     <main class="{% page_shell_classes %}">
-        {% trans "Offline content" as page_heading %}
+        {% trans "Debug offline issues" as page_heading %}
         {% include "includes/_page_title.html" with text=page_heading class_extra="mb-6" data_testid="offline-page-heading" %}
         <p class="mb-6 text-sm leading-prose text-text-2">
             {% blocktrans trimmed %}
@@ -82,6 +88,42 @@ it gains is somewhere to send a reader who does have a connection.
             {% include "includes/_eyebrow.html" with text=t_group_device heading_id="offline-group-device" data_testid="offline-group-device" class_extra="mb-3" %}
 
             {% card padding="p-0" extra="overflow-hidden divide-y divide-border" %}
+            {% comment %}
+                SNOW-1415: the debug controls, moved here from the header's
+                connection panel. The Offline mode switch is bound by
+                static/js/pwa_offline.js (loaded on every page) by its id,
+                and revealed by it — it drives a service worker, so a row
+                that appeared without the script would be a dead control.
+                The label is a <label for="…"> and a SIBLING of the include,
+                never a wrapper: _switch.html's own outer element is itself
+                a <label>, and labels must not nest.
+
+                "Open debug log" opens the trace panel base.html renders
+                behind the same ``debug_log`` flag; static/js/debug_log_panel.js
+                binds every ``[data-open-debug-log]``.
+            {% endcomment %}
+            <div class="p-4" data-testid="offline-debug-controls">
+                <div
+                    data-network-toggle
+                    data-testid="network-toggle"
+                    class="hidden items-center gap-3 py-1"
+                >
+                    <label for="nav-offline-mode" class="grow cursor-pointer text-sm text-text-1">
+                        {% trans "Offline mode" %}
+                    </label>
+                    {% include "includes/_switch.html" with id="nav-offline-mode" %}
+                </div>
+                {% if debug_log_visible %}
+                    <button
+                        type="button"
+                        data-open-debug-log
+                        data-testid="open-debug-log"
+                        class="{% button_classes variant='ghost' size='compact' %} mt-2"
+                    >
+                        {% trans "Open debug log" %}
+                    </button>
+                {% endif %}
+            </div>
             {% comment %}
                 The audit, above Reset rather than below it — the placement
                 SNOW-907 argued for on settings and the reason it holds
@@ -207,9 +249,9 @@ it gains is somewhere to send a reader who does have a connection.
     {# map's Manage downloads sheet uses (it reaches basemap_download_core   #}
     {# and basemap_downloaded_areas above, and db.js from base.html); the    #}
     {# journey paints from offline_audit.js's collection, so it loads after  #}
-    {# it.                                                                   #}
+    {# it. Its core, offline_journey_core.js, loads from base.html since     #}
+    {# SNOW-1415.                                                            #}
     <script src="{% static 'js/basemap_area_removal.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
-    <script src="{% static 'js/offline_journey_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
     <script src="{% static 'js/offline_journey.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
     {% if sync_log_visible %}
         {# SNOW-482: paints #sync-log-list from window.pwaDb.getSyncLog(). #}

@@ -433,3 +433,46 @@ class TestShellWarming:
         names = [path.name for path in _shell_template_paths()]
 
         assert names.count("offline.html") == 2  # public/ and static/
+
+
+@pytest.mark.django_db
+class TestTheDebugPage:
+    """SNOW-1415: /offline/ is the page for debugging an offline issue."""
+
+    def test_it_is_titled_as_the_debug_page(self) -> None:
+        """Heading and page metadata name what the page is now for."""
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
+        heading = html.split('data-testid="offline-page-heading"', 1)[1]
+        assert "Debug offline issues" in heading.split("</h1>", 1)[0]
+        assert "<title>Debug offline issues · Snowdesk</title>" in html
+
+    def test_it_carries_the_offline_mode_switch_the_panel_gave_up(self) -> None:
+        """The switch, hidden until pwa_offline.js reveals it, with its label."""
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
+        controls = html.split('data-testid="offline-debug-controls"', 1)[1]
+        row = controls.split("data-network-toggle", 1)[1].split("</div>", 1)[0]
+        assert 'for="nav-offline-mode"' in row
+        assert "Offline mode" in row
+        before, _, after = controls.partition("data-network-toggle")
+        tag = "<" + before.rsplit("<", 1)[1] + after.split(">", 1)[0]
+        assert "hidden" in tag.split('class="', 1)[1].split('"', 1)[0].split()
+        assert html.count('id="nav-offline-mode"') == 1
+
+    def test_it_keeps_the_audit_and_the_reset(self) -> None:
+        """What the page was for before SNOW-1415 is all still here."""
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
+        assert 'data-testid="offline-audit-panel"' in html
+        assert 'data-testid="offline-journey"' in html
+        assert "data-pwa-reset-trigger" in html
+
+    def test_help_and_settings_link_to_it(self) -> None:
+        """Reached from Help and settings, not the network menu."""
+        offline = reverse("public:offline_page")
+        help_html = Client().get(reverse("public:help")).content.decode()
+        settings_html = _signed_in_client().get(reverse("accounts:settings")).content.decode()
+
+        assert f'href="{offline}"' in help_html
+        assert f'href="{offline}"' in settings_html

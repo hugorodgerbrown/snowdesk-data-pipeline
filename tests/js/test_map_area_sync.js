@@ -784,4 +784,19 @@ describe('what a sync tells the connection panel (SNOW-1415)', () => {
     expect(record.verified).toMatchObject({ map: 'no', reason: 'absent' });
     expect(record.verified.content).toBeUndefined();
   });
+
+  it('runs a ?sync=all arrival once, through the panel, and strips it', () => {
+    window.pwaConnectionPanel = { syncAll: vi.fn(async () => {}) };
+    window.history.replaceState(null, '', '/map/?sync=all&panel=x#here');
+
+    expect(window.pwaBasemapDownloads.runRequestedSync()).toBe(true);
+    expect(window.pwaConnectionPanel.syncAll).toHaveBeenCalledTimes(1);
+    expect(window.location.search).toBe('?panel=x');
+    expect(window.location.hash).toBe('#here');
+
+    expect(window.pwaBasemapDownloads.runRequestedSync()).toBe(false);
+    expect(window.pwaConnectionPanel.syncAll).toHaveBeenCalledTimes(1);
+    delete window.pwaConnectionPanel;
+    window.history.replaceState(null, '', '/');
+  });
 });

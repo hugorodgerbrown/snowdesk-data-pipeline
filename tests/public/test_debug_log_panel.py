@@ -233,3 +233,22 @@ def _install_group_scoped_flag() -> Group:
     )
     flag.groups.set([group])
     return group
+
+
+@pytest.mark.django_db
+def test_the_debug_page_has_no_open_button_without_the_flag(signed_in: Client) -> None:
+    """SNOW-1415: the /offline/ button never points at a panel that is not there."""
+    body = signed_in.get(reverse("public:offline_page")).content.decode()
+
+    assert "data-open-debug-log" not in body
+
+
+@pytest.mark.django_db
+@override_flag("debug_log", active=True)
+def test_the_debug_page_opens_the_log_with_the_flag(signed_in: Client) -> None:
+    """SNOW-1415: "Open debug log" on /offline/, beside the panel it opens."""
+    body = signed_in.get(reverse("public:offline_page")).content.decode()
+
+    assert "data-open-debug-log" in body
+    assert "Open debug log" in body
+    assert 'data-testid="debug-log-panel"' in body
