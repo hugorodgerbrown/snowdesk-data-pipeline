@@ -252,6 +252,9 @@ async function boot({ eligible = true, records = {}, signinUrl = '' } = {}) {
   await import('../../static/js/basemap_manage_core.js');
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
+  // SNOW-1416: so the background sync gets past its first guard and only
+  // the download lock can turn it away.
+  await import('../../static/js/offline_autosync_core.js');
   loadMapBundle();
   return { rows, cachesStub };
 }
@@ -473,6 +476,35 @@ describe('restoring a custom area (SNOW-1136)', () => {
     release();
     await pending;
     expect(window.pwaBasemapDownloads.isBusy()).toBe(false);
+  });
+
+  it('keeps the background sync off the page while the restore holds the lock', async () => {
+    // SNOW-1416: a background sync never starts under a pinned download. It
+    // reads its attempt ledger first thing once past its guards, so an
+    // untouched ledger shows the lock is what turned it away.
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const warm = window.pwaWarmCache.getMockImplementation();
+    window.pwaWarmCache.mockImplementationOnce(async (urls, options) => {
+      await gate;
+      return warm(urls, options);
+    });
+    window.pwaConnectivity = { isOnline: () => true };
+    try {
+      const pending = window.pwaCustomAreaDownload.restoreArea({ areaId: AREA_ID, bbox: BBOX });
+      await vi.waitFor(() => expect(window.pwaBasemapDownloads.isBusy()).toBe(true));
+
+      expect(await window.pwaBasemapDownloads.backgroundSync()).toEqual([]);
+      const ledgerReads = window.pwaDb.get.mock.calls.filter(([, key]) => key === 'autosync.attempts');
+      expect(ledgerReads).toEqual([]);
+
+      release();
+      await pending;
+    } finally {
+      delete window.pwaConnectivity;
+    }
   });
 
   it('refuses while the app is not using the network', async () => {
