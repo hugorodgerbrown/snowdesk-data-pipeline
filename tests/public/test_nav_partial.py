@@ -815,6 +815,20 @@ class TestNavAreaRows:
         assert f'data-map-url="{reverse("public:map")}"' in block
         assert "hidden" in _class_tokens(block)
 
+    def test_an_empty_device_is_told_how_to_start(self, rf: RequestFactory) -> None:
+        """The design system's info callout, hidden until the areas are read.
+
+        Hugo, in the PR: with nothing downloaded the panel said only
+        "Online". Now it points at the map's downloads sheet.
+        """
+        panel = self._panel(rf)
+        block = _opening_tag_around(panel, 'data-testid="network-empty"')
+        assert "hidden" in _class_tokens(block)
+        empty = panel.split('data-testid="network-empty"', 1)[1]
+        assert 'data-kind="info"' in empty
+        assert "No offline areas yet" in empty
+        assert f'href="{reverse("public:map")}?panel=downloads"' in empty
+
     def test_the_debug_controls_left_the_panel(self, rf: RequestFactory) -> None:
         """No Offline mode switch, no Debug log, no /offline/ link."""
         panel = self._panel(rf)

@@ -267,6 +267,8 @@
   // from the root, letters, digits, '-', '_' and '/' only, never '//'.
   const SAME_SITE_PATH = /^\/(?!\/)[A-Za-z0-9_\-\/]*$/;
   const NETWORK_SYNC_LIST_SELECTOR = '[data-network-sync-list]';
+  // SNOW-1415: the "No offline areas yet" callout, shown with no areas.
+  const NETWORK_EMPTY_SELECTOR = '[data-network-empty]';
   const NETWORK_SYNC_ROW_SELECTOR = '[data-network-sync-row]';
   const NETWORK_SYNC_OFFLINE_SELECTOR = '[data-network-sync-offline]';
   const NETWORK_READY_SELECTOR = '[data-network-ready]';
@@ -567,6 +569,9 @@
     if (block && list && template) {
       list.textContent = '';
       block.classList.toggle('hidden', downloadsAreas.length === 0);
+      document
+        .querySelector(NETWORK_EMPTY_SELECTOR)
+        ?.classList.toggle('hidden', downloadsAreas.length > 0);
       for (const area of downloadsAreas) {
         const row = /** @type {DocumentFragment} */ (template.content.cloneNode(true));
         const item = row.querySelector('li');
@@ -1174,6 +1179,11 @@
         return;
       }
       if (target.closest('[data-area-redownload]')) pressRedownload(event);
+    });
+    // SNOW-1415: the empty state's "Download an area" opens the same sheet.
+    document.querySelector(NETWORK_EMPTY_SELECTOR)?.addEventListener('click', (event) => {
+      const target = /** @type {HTMLElement} */ (event.target);
+      if (target && target.closest && target.closest('a')) pressRedownload(event);
     });
     // SNOW-748: the menu's "Offline mode" switch. Its two directions are not
     // symmetrical — going offline asks for ``'offline-forced'`` (a choice,

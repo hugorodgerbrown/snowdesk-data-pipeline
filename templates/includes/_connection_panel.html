@@ -32,6 +32,7 @@ a Debug log. Now it holds:
     (``offline_ready_core.js``). On the map it runs here; everywhere else
     it navigates to ``/map/?sync=all`` (the block's ``data-map-url``), and
     the map runs it on arrival with this panel open;
+  * with no areas, an info callout saying how to download one;
   * the way back to the network, in the two offline modes only.
 
 The Offline mode switch and the Debug log moved to /offline/, which is now
@@ -180,6 +181,22 @@ in the PR.
             <p data-network-ready-summary class="mt-1 hidden text-xs text-text-1"></p>
             <p data-network-ready-queue class="mt-1 hidden text-xs text-text-2"></p>
         </div>
+    </div>
+    {% comment %}
+        With nothing downloaded there is nothing to answer for, so the panel
+        says how to start instead (Hugo, in the PR): the design system's info
+        callout, pointing at the map's downloads sheet. Hidden until
+        pwa_offline.js has read the areas and found none. On the map page
+        the link opens the sheet in place.
+    {% endcomment %}
+    <div data-network-empty data-testid="network-empty" class="mt-2 hidden">
+        {% trans "No offline areas yet" as empty_heading %}
+        {% trans "Download an area on the map to use it without a signal." as empty_body %}
+        {% trans "Download an area" as empty_cta %}
+        {% url 'public:map' as map_url %}
+        {% with cta_href=map_url|add:"?panel=downloads" %}
+            {% include "includes/_callout.html" with kind="info" heading=empty_heading body=empty_body cta_label=empty_cta cta_href=cta_href only %}
+        {% endwith %}
     </div>
     {# The way back to the network, in either offline mode only. Drawn with #}
     {# the shared button chrome; it carries two labels rather than a plain  #}

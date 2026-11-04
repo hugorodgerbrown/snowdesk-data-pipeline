@@ -195,9 +195,11 @@ function symbolAndPanel({ withSwitch = true } = {}) {
         </span>
         <button type="button" data-disclosure-close aria-label="Dismiss">×</button>
       </div>
-      <span>
-      </span>
       ${SYNC_BLOCK}
+      <div data-network-empty class="hidden">
+        <p>No offline areas yet</p>
+        <a href="/map/?panel=downloads">Download an area</a>
+      </div>
       <button type="button" data-network-reconnect class="hidden">
         <span data-role="reconnect-label">Try reconnecting</span>
         <span data-role="resume-label" class="hidden">Use the network again</span>
@@ -1689,6 +1691,11 @@ describe('Sync: one answer per area (SNOW-1415)', () => {
     );
   }
 
+  /** Whether the "No offline areas yet" callout is on screen. */
+  function emptyShown() {
+    return !document.querySelector('[data-network-empty]').classList.contains('hidden');
+  }
+
   /** Whether the block is on screen at all. */
   function blockHidden() {
     return document.querySelector('[data-network-sync]').classList.contains('hidden');
@@ -1722,7 +1729,7 @@ describe('Sync: one answer per area (SNOW-1415)', () => {
     delete self.pwaBasemapDownloadCore;
   });
 
-  it('says nothing at all, and marks nothing, on a device with no downloads', async () => {
+  it('says how to start, and marks nothing, on a device with no downloads', async () => {
     buildFixture();
     stubDb({});
     await loadModule();
@@ -1730,6 +1737,7 @@ describe('Sync: one answer per area (SNOW-1415)', () => {
     await openMenu();
 
     expect(blockHidden()).toBe(true);
+    expect(emptyShown()).toBe(true);
     expect(readiness()).toBe('none');
     expect(roleShown('readiness-ready')).toBe(false);
     expect(roleShown('readiness-attention')).toBe(false);
@@ -1982,6 +1990,31 @@ describe('Sync: one answer per area (SNOW-1415)', () => {
     expect(event.defaultPrevented).toBe(true);
     expect(window.pwaDownloadsManager.open).toHaveBeenCalledTimes(1);
     expect(panelShown()).toBe(false);
+  });
+
+  it('hides the how-to-start callout once an area is downloaded', async () => {
+    buildFixture();
+    stubDb({ 'basemap.regions': [verifiedRegion('CH-1', 'One')] });
+    await loadModule();
+    await openMenu();
+
+    expect(emptyShown()).toBe(false);
+    expect(blockHidden()).toBe(false);
+  });
+
+  it("opens the downloads sheet in place from the empty state's link on the map", async () => {
+    buildFixture();
+    stubDb({});
+    window.pwaDownloadsManager = { open: vi.fn() };
+    await loadModule();
+    await openMenu();
+
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    document.querySelector('[data-network-empty] a').dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(window.pwaDownloadsManager.open).toHaveBeenCalledTimes(1);
+    delete window.pwaDownloadsManager;
   });
 
   it('says how many edits are still waiting when the drain leaves rows', async () => {
