@@ -31,8 +31,12 @@
  *     parameter kept, and the mode is stored, so a link and a reload both
  *     reproduce it. A date write keeps it (map_shared.js writeUrlDateParam).
  *   - THE PAGE. <html data-map-mode> is what map.css reads — the collapsed
- *     segments, the hidden season scrubber — and snowdesk:map-mode-changed
- *     is what the region chip and map.js's region selection hear.
+ *     segments, the hidden season scrubber, the region sheet's dated parts —
+ *     and snowdesk:map-mode-changed is what the region chip hears.
+ *   - THE REGION SHEET'S PANEL. In Terrain the sheet shows the region
+ *     without its day, and a "Select a date…" panel
+ *     ([data-map-mode-to-dated]) in its place. A press on it switches to
+ *     Dated on today, with the region still open.
  *
  * The Today panel's sun is a panel, not a map surface, and stays in both.
  *
@@ -137,6 +141,23 @@
   };
 
   /**
+   * Move the map to today, through the request the "Today" control makes,
+   * so the scrubber commits it where every day change is committed. Today
+   * is the page's (`#season-scrubber[data-today]`), never the browser's.
+   *
+   * @returns {void}
+   */
+  const goToToday = () => {
+    const scrubber = document.getElementById('season-scrubber');
+    const today = scrubber ? scrubber.dataset.today || '' : '';
+    if (!today) return;
+    if (new URLSearchParams(location.search).get('d') === today) return;
+    document.dispatchEvent(new CustomEvent('snowdesk:scrub-to', {
+      detail: { date: today, source: 'today' },
+    }));
+  };
+
+  /**
    * Change mode: the layers, the control, the URL and this device.
    *
    * @param {string} next
@@ -167,6 +188,17 @@
       e.preventDefault();
       e.stopImmediatePropagation();
       setMode(core.MODES.DATED);
+      return;
+    }
+    // The region sheet's "Select a date…" panel: back to Dated on TODAY,
+    // not the day the reader left, because the panel offers current
+    // conditions (Hugo, 4 Nov 2026). The region stays selected, so its
+    // sheet repaints in place with the day.
+    if (target.closest('[data-map-mode-to-dated]')) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      setMode(core.MODES.DATED);
+      goToToday();
       return;
     }
     if (target.closest('#basemap-menu [data-map-mode-disabled]')) {

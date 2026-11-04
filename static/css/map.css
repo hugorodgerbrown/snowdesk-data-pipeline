@@ -2433,6 +2433,23 @@ html[data-route-drawing] #map-slopes-notice {
     display: none;
 }
 
+/* The region sheet in Terrain (SNOW-1394): the region without its day. What
+   the sheet marks data-dated (the level tile, the bulletin, the field
+   reports, the problem-terrain switch) goes, and the data-terrain-only panel
+   that switches back to the day shows in its place. Off the map_modes flag
+   <html> carries no data-map-mode, so the panel never shows. */
+#region-sheet [data-terrain-only] {
+    display: none;
+}
+
+:root[data-map-mode="terrain"] #region-sheet [data-terrain-only] {
+    display: flex;
+}
+
+:root[data-map-mode="terrain"] #region-sheet [data-dated] {
+    display: none;
+}
+
 /* A dated layers-menu row in Terrain: shown, dimmed, and a tap does
    nothing (map_mode.js stops it in the capture phase). */
 #basemap-menu [data-map-mode-disabled] > * {

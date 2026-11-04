@@ -2,15 +2,15 @@
 name: the-map-has-a-dated-mode-and-a-terrain-mode
 description: Why the map has a Dated / Terrain toggle (map_mode_core.js, SUPPRESSION.MAP_MODE, ?mode=terrain) that suppresses, never rewrites
 status: current
-last-reviewed: 2026-11-03
+last-reviewed: 2026-11-04
 ---
 
 # The map has a Dated mode and a Terrain mode
 
 **SNOW-1394**, behind the `map_modes` flag. Some of what the map draws
 changes by the day: the avalanche bulletin, the weather and the field
-reports. The rest is the same tomorrow as today: Steep terrain, routes,
-resorts, ski tours, rest zones and pins. Hugo, 2 Nov 2026: "You're in
+reports. The rest is the same tomorrow as today: the region boundaries,
+Steep terrain, routes, resorts, ski tours, rest zones and pins. Hugo, 2 Nov 2026: "You're in
 'what is happening now / on a date' mode, or planning + browsing mode."
 
 The map status bar that tried to say all this in one strip (SNOW-1392,
@@ -31,12 +31,27 @@ that is always on screen replaced it.
 - **Terrain is the map with the dated overlays off, and nothing more.**
   Hugo: "Terrain mode is really just turning off the date data overlays."
   - The dated overlays (`pwaMapModeCore.DATED_OVERLAYS`) are the
-    bulletins, the region boundaries and labels (`l1`, `l2`, `l4`) with
-    the region tap and the region chip, the bulletin grouping outline
-    (`l3`), problem-terrain sync, weather, field reports and the season
-    scrubber.
-  - Regions go with the bulletins because a region exists only to hold
-    one. A region left selected is deselected on the way in.
+    bulletins, the bulletin grouping outline (`l3`), problem-terrain sync,
+    weather, field reports and the season scrubber. The region chip, which
+    names a region by its level, goes with them.
+  - **The regions stay (4 Nov 2026).** They first went with the bulletins,
+    on the reading that a region exists only to hold one. Hugo: "regions
+    exist beyond the daily bulletin, and we should reflect that." So the
+    boundary tiers (`l1`, `l2`, `l4`) are drawn as the reader chose them in
+    both modes, and their layers-menu rows stay live. From z10, where Dated
+    labels a region "3 · Martigny-Verbier", Terrain labels it with the bare
+    name (`regions-level-label` reads `name`, not `text`).
+  - **A tap opens a lean region sheet.** The fill stays installed at
+    opacity 0 as the tap target, so a tap opens the same sheet as in Dated.
+    What it marks `data-dated` (the level tile, the bulletin, the field
+    reports, the problem-terrain switch) is hidden in Terrain by map.css,
+    which leaves the name, the breadcrumb, the pin and download buttons and
+    the resorts. In their place a panel says "Select a date to view current
+    weather and avalanche conditions" (`[data-map-mode-to-dated]`). A press
+    switches to Dated on **today**, not the day the reader left, because
+    the panel offers current conditions, and the region stays selected, so
+    its sheet repaints in place with the day. A region selected in either
+    mode stays selected across a switch.
   - Terrain switches nothing on. Steep terrain stays the reader's own
     switch in both modes, and SNOW-1377's precedence of Steep terrain over
     the sync still applies in Dated.
@@ -82,10 +97,11 @@ that is always on screen replaced it.
   re-hides every held layer synchronously, so a panel switch (the reports
   panel's "Show on the map") records the reader's choice and is then held
   like any other.
-- **A region can still be downloaded in Terrain (SNOW-1414).** Holding
-  the regions took away the only way into a region download, the button
-  on the region sheet. The Downloads sheet's "Download a region" is the
-  way in that works in both modes: a short pick task
+- **A region can be downloaded in Terrain two ways.** The region sheet's
+  button is back now that Terrain draws the regions. Before that, holding
+  them took away the only way in, so SNOW-1414 added the Downloads sheet's
+  "Download a region", which stays as the way in from that sheet in both
+  modes: a short pick task
   (`static/js/map_region_pick.js`) that draws plain outlines of its own
   over `PlacementFocus` and removes them when it closes. It releases no
   held tier and writes no stored choice, so it is not an exception to

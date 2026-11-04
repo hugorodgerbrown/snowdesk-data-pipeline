@@ -332,7 +332,7 @@ describe('the fill gives way to the edge by zoom (SNOW-1375)', () => {
     expect(out.features).toHaveLength(2);
     const [first, second] = out.features;
     expect(first.geometry).toEqual({ type: 'Point', coordinates: [7.2, 46.1] });
-    expect(first.properties).toMatchObject({ text: '3 · Martigny-Verbier', country: 'CH', painted: false });
+    expect(first.properties).toMatchObject({ text: '3 · Martigny-Verbier', name: 'Martigny-Verbier', country: 'CH', painted: false });
     // No rating painted: the name alone. Slopes painted: flagged for the filter.
     expect(second.properties).toMatchObject({ text: 'Val de Bagnes', painted: true });
   });

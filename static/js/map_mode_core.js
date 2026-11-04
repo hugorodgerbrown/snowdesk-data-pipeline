@@ -2,10 +2,10 @@
  * static/js/map_mode_core.js — the map's two modes, Dated and Terrain
  * (SNOW-1394).
  *
- * Some of what the map draws changes by the day: the bulletins (and the
- * regions that exist only to hold them), the problem-terrain sync, the
- * weather and the field reports. Everything else — Steep terrain, routes,
- * resorts, ski tours, rest zones, pins — is the same tomorrow as today.
+ * Some of what the map draws changes by the day: the bulletins, the
+ * problem-terrain sync, the weather and the field reports. Everything else —
+ * the region boundaries, Steep terrain, routes, resorts, ski tours, rest
+ * zones, pins — is the same tomorrow as today.
  * Terrain mode is the map with the dated overlays switched off, and nothing
  * more (Hugo, 2 Nov 2026): it switches nothing on, Steep terrain included.
  *
@@ -53,20 +53,17 @@
    * `overlayState` keys, plus `l3`, the bulletin grouping outline, which
    * has no row of its own.
    *
-   * The region tiers (`l1`, `l2`, `l4`) are here because a region exists
-   * only to hold a bulletin (Hugo, 2 Nov 2026): with no bulletin drawn, a
-   * boundary is a line about nothing, and a tap on one would open a sheet
-   * whose whole content is the day's danger.
+   * The region tiers (`l1`, `l2`, `l4`) are deliberately absent: a region
+   * is fixed, and exists beyond the day's bulletin (Hugo, 4 Nov 2026), so
+   * Terrain draws the boundaries the reader chose and a tap opens a lean
+   * region sheet. `l3`, the bulletin grouping, IS dated: it changes daily.
    *
-   * `terrain_filter` (Steep terrain) is deliberately absent: it is the
-   * reader's own switch in both modes.
+   * `terrain_filter` (Steep terrain) is absent too: it is the reader's own
+   * switch in both modes.
    */
   const DATED_OVERLAYS = Object.freeze([
     'bulletins',
-    'l1',
-    'l2',
     'l3',
-    'l4',
     'problem_terrain',
     'weather',
     'community_reports',
@@ -78,14 +75,13 @@
    * boundaries rows open pages of their own, so disabling the row on the
    * menu's first page covers everything under it; field reports and the
    * problem-terrain sync live on the bulletins page and are listed too, for
-   * a reader who had that page open when the mode changed.
+   * a reader who had that page open when the mode changed. The boundaries
+   * rows are not here: Terrain draws the boundaries.
    */
   const DATED_ROW_SELECTORS = Object.freeze([
     '[data-layers-open="bulletins"]',
     '[data-layer-master="bulletins"]',
     '[data-overlay-key="weather"]',
-    '[data-layers-open="boundaries"]',
-    '[data-layer-master="boundaries"]',
     '[data-overlay-key="community_reports"]',
     '[data-overlay-key="problem_terrain"]',
   ]);

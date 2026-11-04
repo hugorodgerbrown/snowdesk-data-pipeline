@@ -19,6 +19,9 @@ Covers:
     test_problem_terrain.py), not the body.
   - SNOW-1291: "On the ground" — signed out, a sign-in link; signed in,
     the button static/js/report.js opens; each row keyed by submission.
+  - TERRAIN MODE (SNOW-1394): what the day brings carries ``data-dated``
+    for map.css to hide, and a "Select a date…" panel, shown only there,
+    switches back to the day (map_mode.js).
   - HALF and FULL: the breadcrumb, then the bulletin page's own body for
     the day (SNOW-1164) — the same sections the page renders, without the
     page's chrome or its superuser debug block — and the region's resorts
@@ -450,6 +453,70 @@ class TestCaching:
     def test_a_forecast_day_keeps_for_ten_minutes(self, client: Client) -> None:
         tomorrow = (timezone.localdate() + datetime.timedelta(days=1)).isoformat()
         assert "max-age=600" in self._cache_control(client, tomorrow)
+
+
+def _tag(content: str, testid: str) -> str:
+    """Return the opening tag of the element carrying ``data-testid``."""
+    start = content.rindex("<", 0, content.index(f'data-testid="{testid}"'))
+    return content[start : content.index(">", start) + 1]
+
+
+@pytest.mark.django_db
+class TestTerrainMode:
+    """SNOW-1394: the region without its day, and the panel back to the day."""
+
+    def test_the_panel_switches_back_to_the_day(self, client: Client) -> None:
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        panel = _tag(content, "region-sheet-to-dated")
+        assert panel.startswith("<button")
+        assert "data-terrain-only" in panel
+        assert "data-map-mode-to-dated" in panel
+        assert (
+            "Select a date to view current weather and avalanche conditions" in content
+        )
+
+    def test_the_panel_sits_under_the_peek(self, client: Client) -> None:
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        panel = content.index('data-testid="region-sheet-to-dated"')
+        assert content.index('data-testid="region-sheet-breadcrumb"') < panel
+        assert panel < content.index('data-testid="region-sheet-bulletin"')
+
+    def test_the_day_is_marked_dated(self, client: Client, settings: Any) -> None:
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        ResortFactory.create(region=region, name="Verbier", kind=Resort.Kind.RESORT)
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        for testid in ("region-sheet-rating", "region-sheet-bulletin"):
+            assert "data-dated" in _tag(content, testid)
+        terrain = content.index('data-testid="region-sheet-terrain"')
+        assert content.rindex("<div data-dated>", 0, terrain) > content.index(
+            'data-testid="region-sheet-bulletin"'
+        )
+        # The region itself stays: its name, where it is, its resorts.
+        for testid in ("region-sheet-breadcrumb", "region-sheet-resorts"):
+            assert "data-dated" not in _tag(content, testid)
+
+    def test_an_unrated_day_marks_its_reports_dated(self, client: Client) -> None:
+        cache.clear()  # covered_region_ids() is cached across tests.
+        region = MicroRegionFactory.create()
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        uncovered = content.index('data-testid="region-sheet-uncovered"')
+        assert content.rindex("<div data-dated>", 0, uncovered) > content.index(
+            'data-testid="region-sheet-to-dated"'
+        )
+
+    def test_the_blank_peek_marks_its_tile_dated(self, client: Client) -> None:
+        content = client.get(reverse("public:map")).content.decode()
+        row = re.search(
+            r'<template id="region-sheet-peek-template">(.*?)</template>', content, re.S
+        )
+        assert row
+        assert re.search(r'data-region-sheet-slot="rating" data-dated', row.group(1))
 
 
 _TILES = "https://tiles.example/terrain-class/v1/{z}/{x}/{y}.png"
