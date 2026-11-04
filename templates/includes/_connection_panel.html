@@ -14,12 +14,13 @@ updated" age, an Offline mode switch, "Get ready for offline", a job
 counter, a "Download for offline" link that opened a diagnostics page, and
 a Debug log. Now it holds:
 
-  * the state line — "Online", "Offline" or "Offline mode" — with an
-    explanation only for the two offline states, where something is not
-    as usual;
+  * the state line — "Online", "Offline" or "Offline mode" — and no
+    explanation under it (Hugo, in the PR: the line says it);
   * ONE ROW PER DOWNLOADED AREA, each answering "will this work offline?"
     with the verdict /offline/'s panels give (``offline_journey_core.js``:
-    ``stagesFromRecord`` + ``verdictFor``), over the stored record alone:
+    ``stagesFromRecord`` + ``verdictFor``), over the stored record alone.
+    The answer is a traffic-light dot beside the name, so a long name has
+    the row's width; anything but a yes adds one line under the name:
       - ``ready`` — yes;
       - ``refresh`` — mostly, with its first reason (the bulletins and
         weather, or the reader's things);
@@ -50,15 +51,14 @@ Height-bounded and scrollable, because it floats over the map:
 ``max-h-[60dvh] overflow-y-auto``, ``dvh`` because ``vh`` ignores mobile
 browser chrome. The width is capped at ``calc(100dvw-2rem)``.
 
-Four network states, carried over from SNOW-748:
+Four network states, carried over from SNOW-748, each named by its state
+line alone:
 
-  * online — the app is using the network. No explanation: the rows are
-    the content.
-  * struggling (``offline-message`` / ``offline-explainer``) — requests
-    are still being attempted.
-  * latched (``latched-message`` / ``latched-explainer``) — the service
-    worker has stopped calling the network after three read timeouts.
-  * forced (``latched-message`` / ``forced-explainer``) — the same, asked
+  * online (``online-message``) — the app is using the network.
+  * struggling (``offline-message``) — requests are still being attempted.
+  * latched (``latched-message``, "Try reconnecting") — the service worker
+    has stopped calling the network after three read timeouts.
+  * forced (``latched-message``, "Use the network again") — the same, asked
     for by the user from the Offline mode switch on /offline/.
 
 The online state is what renders before any script runs, which is the
@@ -103,26 +103,6 @@ in the PR.
             </svg>
         </button>
     </div>
-    <span class="block text-xs text-text-2">
-        <span data-role="offline-explainer" class="hidden">
-            {% blocktrans %}
-                The app has lost contact with the server, and is displaying the latest cached data. It will update as
-                soon as the connection is restored.
-            {% endblocktrans %}
-        </span>
-        <span data-role="latched-explainer" class="hidden">
-            {% blocktrans %}
-                There is no usable connection, so the app has stopped trying and is running from downloaded data only.
-                It will check again periodically, and reconnect on its own once there is signal.
-            {% endblocktrans %}
-        </span>
-        <span data-role="forced-explainer" class="hidden">
-            {% blocktrans %}
-                You asked the app to stay offline, so it is running from downloaded data only and is not contacting the
-                server. It will stay that way until you turn the network back on.
-            {% endblocktrans %}
-        </span>
-    </span>
     {% comment %}
         The areas and the one Sync. HIDDEN with no downloads: a reader with
         nothing downloaded has nothing to answer for, and a heading over an
@@ -138,26 +118,47 @@ in the PR.
         <p class="text-xs text-text-3">{% trans "Your offline areas" %}</p>
         <ul data-network-sync-list class="mt-1"></ul>
         <template data-network-sync-row>
-            <li class="flex min-h-11 items-center justify-between gap-3 py-1">
-                <span data-area-label class="min-w-0 truncate text-sm text-text-1"></span>
-                <span class="shrink-0 text-right text-xs">
-                    <span data-area-status="ready" class="hidden text-sync-ok">{% trans "Works offline" %}</span>
-                    <span data-area-status="refresh" class="hidden text-text-2">
-                        {% trans "Mostly" %} ·
-                        <span data-area-reason="conditions" class="hidden">{% trans "bulletins out of date" %}</span>
-                        <span data-area-reason="things" class="hidden">{% trans "some trips or pins missing" %}</span>
+            {# The dot is the answer; the line under the name says why, for #}
+            {# anything but a yes. Both halves carry the verdict they belong #}
+            {# to, and pwa_offline.js shows the pair that matches.          #}
+            <li class="flex items-start gap-3 py-2">
+                <span class="relative mt-1.5 size-2.5 shrink-0" aria-hidden="true">
+                    <span data-area-dot="ready" class="absolute inset-0 hidden rounded-full bg-sync-ok"></span>
+                    <span data-area-dot="refresh" class="absolute inset-0 hidden rounded-full bg-sync-partial"></span>
+                    <span data-area-dot="open-map" class="absolute inset-0 hidden rounded-full bg-sync-blocked"></span>
+                    <span data-area-dot="unknown" class="absolute inset-0 hidden rounded-full bg-sync-off"></span>
+                    <span
+                        data-area-dot="running"
+                        class="absolute inset-0 hidden animate-pulse rounded-full bg-accent"
+                    ></span>
+                </span>
+                <span class="min-w-0 flex-1">
+                    <span data-area-label class="block break-words text-sm text-text-1"></span>
+                    <span class="block text-xs">
+                        {# A yes has no line; screen readers still hear it. #}
+                        <span data-area-status="ready" class="sr-only hidden">{% trans "Works offline" %}</span>
+                        <span data-area-status="refresh" class="hidden text-text-2">
+                            <span
+                                data-area-reason="conditions"
+                                class="hidden"
+                            >{% trans "Bulletins out of date" %}</span>
+                            <span
+                                data-area-reason="things"
+                                class="hidden"
+                            >{% trans "Some trips or pins missing" %}</span>
+                        </span>
+                        <span data-area-status="open-map" class="hidden text-text-2">
+                            {% trans "Map data missing" %} ·
+                            <a
+                                href="{% url 'public:map' %}?panel=downloads"
+                                data-area-redownload
+                                data-disclosure-close
+                                class="text-text-1 underline underline-offset-2"
+                            >{% trans "Download again" %}</a>
+                        </span>
+                        <span data-area-status="unknown" class="hidden text-text-3">{% trans "Not checked yet" %}</span>
+                        <span data-area-status="running" class="hidden text-text-3">{% trans "Syncing…" %}</span>
                     </span>
-                    <span data-area-status="open-map" class="hidden text-text-2">
-                        {% trans "Map missing" %} ·
-                        <a
-                            href="{% url 'public:map' %}?panel=downloads"
-                            data-area-redownload
-                            data-disclosure-close
-                            class="text-text-1 underline underline-offset-2"
-                        >{% trans "Download again" %}</a>
-                    </span>
-                    <span data-area-status="unknown" class="hidden text-text-3">{% trans "Not checked yet" %}</span>
-                    <span data-area-status="running" class="hidden text-text-3">{% trans "Syncing…" %}</span>
                 </span>
             </li>
         </template>

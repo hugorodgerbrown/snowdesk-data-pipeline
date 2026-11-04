@@ -705,8 +705,8 @@ class TestNavConnectionPanel:
         literal ships as English to every locale — ``bin/i18n-lint`` fails on
         exactly that. Every variant is rendered here and toggled by
         ``hidden`` in ``static/js/pwa_offline.js``. SNOW-1415 dropped the
-        "last synced" clock and the online explanation: in the normal state
-        the area rows are the content.
+        "last synced" clock and every explanation under the state line: the
+        line says it (Hugo, in the PR).
         """
         html = _render_nav_for(rf, AnonymousUser())
         panel = html.split('id="pwa-connection-panel"', 1)[1]
@@ -714,14 +714,18 @@ class TestNavConnectionPanel:
             "online-message",
             "offline-message",
             "latched-message",
-            "offline-explainer",
-            "latched-explainer",
-            "forced-explainer",
             "reconnect-label",
             "resume-label",
         ):
             assert f'data-role="{role}"' in panel
-        for gone in ("synced-at", "online-explainer", "downloads-age"):
+        for gone in (
+            "synced-at",
+            "online-explainer",
+            "offline-explainer",
+            "latched-explainer",
+            "forced-explainer",
+            "downloads-age",
+        ):
             assert f'data-role="{gone}"' not in panel
 
     def test_the_way_back_ships_hidden(self, rf: RequestFactory) -> None:

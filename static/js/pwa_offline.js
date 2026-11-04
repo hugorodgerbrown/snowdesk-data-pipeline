@@ -13,8 +13,8 @@
  *   (2) Readiness on demand — pressing that symbol opens the network menu
  *       (``includes/_connection_panel.html``), anchored beneath it in the
  *       header, which answers per downloaded area whether it will work
- *       offline (SNOW-1415), carries one Sync button, explains a state that
- *       is not the normal one, and offers the way back to the network.
+ *       offline (SNOW-1415), carries one Sync button, names the network
+ *       state in one line, and offers the way back to the network.
  *   (3) Network-required buttons — any element carrying
  *       ``data-network-required`` is set ``disabled`` when offline and
  *       re-enabled when back online. Non-button elements get an
@@ -638,8 +638,10 @@
       const inFlight = !!(running && readyRun.current === area.id);
       const answer = inFlight ? { verdict: 'running', reason: '' } : areaVerdict(area);
       row.setAttribute('data-area-verdict', answer.verdict);
-      row.querySelectorAll('[data-area-status]').forEach((span) => {
-        span.classList.toggle('hidden', span.getAttribute('data-area-status') !== answer.verdict);
+      // The dot and the line under the name, each shown for its verdict.
+      row.querySelectorAll('[data-area-status], [data-area-dot]').forEach((span) => {
+        const verdict = span.getAttribute('data-area-status') || span.getAttribute('data-area-dot');
+        span.classList.toggle('hidden', verdict !== answer.verdict);
       });
       row.querySelectorAll('[data-area-reason]').forEach((span) => {
         span.classList.toggle('hidden', span.getAttribute('data-area-reason') !== answer.reason);
@@ -907,8 +909,8 @@
   }
 
   /**
-   * SNOW-742/748: show the message, explanation and CTA label that match the
-   * current state. Every variant of each is rendered server-side by
+   * SNOW-742/748: show the state line and CTA label that match the current
+   * state. SNOW-1415: no explanation under the line (Hugo, in the PR). Every variant of each is rendered server-side by
    * ``includes/_connection_panel.html`` and
    * toggled here, so no user-facing string is ever built in JavaScript
    * (docs/i18n.md).
@@ -918,9 +920,8 @@
    * last two, which agree on more than they differ on. Both offline modes
    * share the summary line: it answers "is this app contacting the server",
    * and the answer is no either way. They share the CTA, because the way out
-   * is the same. They do NOT share the explanation: the latched copy asserts
-   * there is no usable connection, which is exactly what is false when the
-   * user chose the mode while online.
+   * is the same, under different labels: "Try reconnecting" asserts a
+   * repair, which is false when the user chose the mode while online.
    *
    * @param {boolean} reaching — the app is using the network.
    * @returns {void}
@@ -932,9 +933,6 @@
     toggleRole('online-message', auto && reaching);
     toggleRole('offline-message', auto && !reaching);
     toggleRole('latched-message', !auto);
-    toggleRole('offline-explainer', auto && !reaching);
-    toggleRole('latched-explainer', latched);
-    toggleRole('forced-explainer', forced);
     // Same button, two labels: "try reconnecting" reads as a repair, which is
     // the wrong promise when nothing is broken and the user simply chose this.
     toggleRole('reconnect-label', latched);

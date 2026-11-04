@@ -104,20 +104,28 @@ const SYNC_BLOCK = `
     <ul data-network-sync-list></ul>
     <template data-network-sync-row>
       <li>
-        <span data-area-label></span>
+        <span aria-hidden="true">
+          <span data-area-dot="ready" class="hidden"></span>
+          <span data-area-dot="refresh" class="hidden"></span>
+          <span data-area-dot="open-map" class="hidden"></span>
+          <span data-area-dot="unknown" class="hidden"></span>
+          <span data-area-dot="running" class="hidden"></span>
+        </span>
         <span>
-          <span data-area-status="ready" class="hidden">Works offline</span>
-          <span data-area-status="refresh" class="hidden">
-            Mostly ·
-            <span data-area-reason="conditions" class="hidden">bulletins out of date</span>
-            <span data-area-reason="things" class="hidden">some trips or pins missing</span>
+          <span data-area-label></span>
+          <span>
+            <span data-area-status="ready" class="sr-only hidden">Works offline</span>
+            <span data-area-status="refresh" class="hidden">
+              <span data-area-reason="conditions" class="hidden">Bulletins out of date</span>
+              <span data-area-reason="things" class="hidden">Some trips or pins missing</span>
+            </span>
+            <span data-area-status="open-map" class="hidden">
+              Map data missing ·
+              <a href="/map/?panel=downloads" data-area-redownload data-disclosure-close>Download again</a>
+            </span>
+            <span data-area-status="unknown" class="hidden">Not checked yet</span>
+            <span data-area-status="running" class="hidden">Syncing…</span>
           </span>
-          <span data-area-status="open-map" class="hidden">
-            Map missing ·
-            <a href="/map/?panel=downloads" data-area-redownload data-disclosure-close>Download again</a>
-          </span>
-          <span data-area-status="unknown" class="hidden">Not checked yet</span>
-          <span data-area-status="running" class="hidden">Syncing…</span>
         </span>
       </li>
     </template>
@@ -188,9 +196,6 @@ function symbolAndPanel({ withSwitch = true } = {}) {
         <button type="button" data-disclosure-close aria-label="Dismiss">×</button>
       </div>
       <span>
-        <span data-role="offline-explainer" class="hidden">Lost contact.</span>
-        <span data-role="latched-explainer" class="hidden">Stopped trying.</span>
-        <span data-role="forced-explainer" class="hidden">You asked it to stay offline.</span>
       </span>
       ${SYNC_BLOCK}
       <button type="button" data-network-reconnect class="hidden">
@@ -713,9 +718,6 @@ describe('the connection-status panel (SNOW-748)', () => {
     // The banner only existed in the failure case, so it had no copy for this
     // one. The symbol is pressable at any moment, so the panel needs it.
     expect(roleShown('online-message')).toBe(true);
-    // SNOW-1415: no explanation while things are as usual — the area rows
-    // are the content.
-    expect(roleShown('offline-explainer')).toBe(false);
     expect(roleShown('offline-message')).toBe(false);
     expect(roleShown('latched-message')).toBe(false);
   });
@@ -772,7 +774,6 @@ describe('offline latch (SNOW-742)', () => {
     expect(indicatorState()).toBe('offline');
     expect(roleShown('latched-message')).toBe(true);
     expect(roleShown('online-message')).toBe(false);
-    expect(roleShown('latched-explainer')).toBe(true);
   });
 
   it('offers the way back only once the app has actually stopped trying', async () => {
@@ -974,20 +975,20 @@ describe('the forced offline mode, as the page renders it (SNOW-748)', () => {
     expect(indicatorState()).toBe('offline');
   });
 
-  it('explains a forced mode differently from a latch, and shares the summary line', async () => {
+  it('labels the way back differently for a forced mode, and shares the state line', async () => {
     const sw = stubServiceWorker();
     window.fetch = vi.fn().mockResolvedValue(okResponse());
     await loadModule();
 
     sw.emit({ type: 'network-mode', mode: 'offline' });
-    expect(roleShown('latched-explainer')).toBe(true);
-    expect(roleShown('forced-explainer')).toBe(false);
+    expect(roleShown('reconnect-label')).toBe(true);
+    expect(roleShown('resume-label')).toBe(false);
 
     sw.emit({ type: 'network-mode', mode: 'offline-forced' });
 
-    // "There is no usable connection" is false here, so that copy must go.
-    expect(roleShown('forced-explainer')).toBe(true);
-    expect(roleShown('latched-explainer')).toBe(false);
+    // "Try reconnecting" promises a repair, which is false here.
+    expect(roleShown('resume-label')).toBe(true);
+    expect(roleShown('reconnect-label')).toBe(false);
     // The summary line is shared: both modes mean "not contacting the server".
     expect(roleShown('latched-message')).toBe(true);
     expect(roleShown('offline-message')).toBe(false);
@@ -1070,7 +1071,7 @@ describe('the forced offline mode, as the page renders it (SNOW-748)', () => {
     expect(sw.posted).toContainEqual({ type: 'network-mode', mode: 'offline-forced' });
     expect(indicatorState()).toBe('offline');
     expect(switchChecked()).toBe(true);
-    expect(roleShown('forced-explainer')).toBe(true);
+    expect(roleShown('resume-label')).toBe(true);
     delete window.pwaDb;
   });
 });
@@ -1679,6 +1680,9 @@ describe('Sync: one answer per area (SNOW-1415)', () => {
           id: row.getAttribute('data-area-id'),
           label: row.querySelector('[data-area-label]').textContent,
           status: shown ? shown.getAttribute('data-area-status') : null,
+          dots: Array.from(row.querySelectorAll('[data-area-dot]'))
+            .filter((dot) => !dot.classList.contains('hidden'))
+            .map((dot) => dot.getAttribute('data-area-dot')),
           text,
         };
       },
@@ -1771,10 +1775,13 @@ describe('Sync: one answer per area (SNOW-1415)', () => {
 
     expect(rows().map((row) => [row.status, row.text])).toEqual([
       ['ready', 'Works offline'],
-      ['refresh', 'Mostly · bulletins out of date'],
-      ['open-map', 'Map missing · Download again'],
+      ['refresh', 'Bulletins out of date'],
+      ['open-map', 'Map data missing · Download again'],
       ['unknown', 'Not checked yet'],
     ]);
+    // One traffic-light dot per row, the one for its verdict (Hugo, in the
+    // PR: long names wrap, so the answer is a dot and the reason a line).
+    expect(rows().map((row) => row.dots)).toEqual([['ready'], ['refresh'], ['open-map'], ['unknown']]);
   });
 
   it("names a signed-in reader's missing things as the reason", async () => {
@@ -1790,7 +1797,7 @@ describe('Sync: one answer per area (SNOW-1415)', () => {
     await loadModule();
     await openMenu();
 
-    expect(rows()[0].text).toBe('Mostly · some trips or pins missing');
+    expect(rows()[0].text).toBe('Some trips or pins missing');
   });
 
   it("never reads another account's things answer as this reader's", async () => {

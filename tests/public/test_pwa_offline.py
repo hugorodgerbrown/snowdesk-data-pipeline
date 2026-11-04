@@ -245,9 +245,6 @@ def test_connection_panel_carries_every_state_and_the_way_back() -> None:
         "online-message",
         "offline-message",
         "latched-message",
-        "offline-explainer",
-        "latched-explainer",
-        "forced-explainer",
         "reconnect-label",
         "resume-label",
     ):
@@ -338,15 +335,17 @@ def test_network_menu_rows_carry_every_verdict() -> None:
     row = _sync_block(body).split("<template data-network-sync-row>", 1)[1]
     for status, words in (
         ("ready", "Works offline"),
-        ("refresh", "Mostly"),
-        ("open-map", "Map missing"),
+        ("open-map", "Map data missing"),
         ("unknown", "Not checked yet"),
         ("running", "Syncing…"),
     ):
         assert f'data-area-status="{status}"' in row
+        assert f'data-area-dot="{status}"' in row
         assert words in row
-    assert "bulletins out of date" in row
-    assert "some trips or pins missing" in row
+    assert 'data-area-status="refresh"' in row
+    assert 'data-area-dot="refresh"' in row
+    assert "Bulletins out of date" in row
+    assert "Some trips or pins missing" in row
 
 
 @pytest.mark.django_db
