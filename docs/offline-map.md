@@ -1946,13 +1946,11 @@ service worker answers out of the pinned buckets like any basemap tile —
 including a 204 (no data), which is stored and served back as a 204 and
 painted as the no-data hatch.
 
-A download pins them **only when the user opts in**: the "Terrain data"
-switch on the downloads sheet, off by default, a device preference in
-`localStorage` (`snowdesk.downloads.terrainData`). The region roundel
-starts a download in one tap and has no flow of its own to ask in, so the
-switch sits on the sheet and governs every new download on the device.
-"Download here" on an account-only row repeats that row's own choice
-instead of the preference.
+Every download pins them wherever the terrain filter is configured
+(`terrainDataPreferred`, which answers `terrainDataAvailable`). Until 4 Nov
+2026 they were an opt-in, the "Terrain data" switch on the downloads sheet;
+Hugo removed it, so terrain comes with every download. An area saved before
+then without terrain keeps reading so until it is downloaded again.
 
 - **What is pinned.** `terrainClassTileURLs` (`basemap_download_core.js`)
   walks the blob's own rows, as SNOW-692's `slopeTileURLs` did for the
@@ -2400,8 +2398,9 @@ has nothing downloaded: the row reads ON over an empty source.
    numbers with a bar between them already say what they are and the
    `<select>` IS the cap — then the segmented bar full-width beneath (see
    "Budget bar segments" below), the over-budget warning when it applies,
-   the SNOW-1072 "Terrain data" switch where the terrain filter is
-   configured, and the "See what this device holds" link to `/offline/`.
+   and, until SNOW-1420, the "See what this device holds" link to
+   `/offline/`. The SNOW-1072 "Terrain data" switch is gone: every
+   download includes terrain data.
 3. **Rows, in two groups by PRESENCE** (`groupRowsByPresence` in
    `basemap_manage_core.js`): "On this device", then "Not on this
    device". An empty group is omitted. The split is the one that changes
@@ -2480,7 +2479,8 @@ its left edge. SNOW-832 turned that inside out, heading the list by
 BASEMAP with a per-group total, and in doing so deleted three things that
 stay deleted: the row's left rule (taking `includes/_ugc_panel_row.html`'s
 `rule` slot with it), the row's separate size column (`[data-row-value]`
-is not rendered for a `js_filled` row; the size lives in the meta line),
+is not rendered for a `js_filled` row; the size lived in the meta line
+until Hugo moved it into the row's inventory on 4 Nov 2026),
 and render()'s orphan pre-pass (`orphanBasemapKey`), which inferred an
 orphan's basemap from its cached tile URLs. The presence grouping kept all
 three deletions; an orphan still has an empty `basemapKey` and so no dot.

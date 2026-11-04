@@ -734,6 +734,8 @@
             ...(terrain ? { terrain: true } : {}),
             savedAt: new Date().toISOString(),
           };
+          const verified = await downloadVerified(areaId, area, content);
+          if (verified) area.verified = verified;
           await _appendCustomArea(area);
           await progressFill.finish(true);
           paintRun('done', undefined, area.bytes);
@@ -840,12 +842,6 @@
     // It also re-sizes the drop: a basemap with two vector sources costs
     // twice the ground, so the ceiling may now cap a radius it did not.
     if (!overlayEl.hidden) refresh();
-  });
-
-  // SNOW-1072: the terrain-data preference changes what a drop costs, so an
-  // open drop is re-sized and re-priced, as for a basemap swap.
-  document.addEventListener('snowdesk:terrain-data-changed', () => {
-    if (!overlayEl.hidden && runState !== 'busy' && runState !== 'done') refresh();
   });
 
   // Going offline mid-decision disables the button rather than failing the

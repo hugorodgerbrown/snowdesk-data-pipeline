@@ -122,10 +122,6 @@ function buildFixture() {
           </div>
         </div>
         <p data-downloads-over hidden>You're over your budget.</p>
-        <div data-downloads-terrain>
-          <label for="map-downloads-terrain">Terrain data</label>
-          <input id="map-downloads-terrain" type="checkbox" role="switch">
-        </div>
         <div>
           <div data-downloads-groups></div>
           <p data-downloads-empty hidden>No areas downloaded yet.</p>
@@ -215,7 +211,8 @@ function buildFixture() {
     <template id="map-downloads-strings-template">
       <span data-string="kind-incomplete">Incomplete</span>
       <span data-string="inventory-toggle-label">What's in %(name)s</span>
-      <span data-string="inventory-map">Map and terrain</span>
+      <span data-string="inventory-map">Map</span>
+      <span data-string="inventory-terrain">Terrain</span>
       <span data-string="inventory-bulletin">Avalanche bulletin</span>
       <span data-string="inventory-weather">Weather</span>
       <span data-string="inventory-routes">Your routes</span>
@@ -237,7 +234,7 @@ function buildFixture() {
       <span data-string="kind-content-saved">Bulletins saved %(date)s</span>
       <span data-string="kind-region">Region</span>
       <span data-string="kind-custom">Custom area</span>
-      <span data-string="row-meta">%(kind)s · %(basemap)s · %(size)s</span>
+      <span data-string="row-meta">%(kind)s · %(basemap)s</span>
       <span data-string="group-unknown">Unknown basemap</span>
       <span data-string="group-device">On this device</span>
       <span data-string="group-account">Not on this device</span>
@@ -718,7 +715,7 @@ function rowLabels() {
   ).map((el) => el.textContent);
 }
 
-/** Every row's meta line, in render order (SNOW-832: "Region · 5.1 MB"). */
+/** Every row's meta line, in render order (SNOW-832: "Region"). */
 function rowMetas() {
   return Array.from(
     document.querySelectorAll('#map-downloads-sheet [data-row-meta]'),
@@ -784,7 +781,7 @@ afterEach(() => {
 });
 
 describe('opening the sheet', () => {
-  it('renders one row per stored area, grouped, with names and sizes', async () => {
+  it('renders one row per stored area, grouped, with names and kinds', async () => {
     seed({ 'basemap.regions': REGIONS, 'basemap.customAreas': CUSTOM_AREAS, 'basemap.budgetMb': 500 });
     await loadModule();
     openSheet();
@@ -796,9 +793,10 @@ describe('opening the sheet', () => {
     // not largest-first (custom-a1 is 120 MB against Aletsch's 40 MB).
     // SNOW-635: an unrenamed custom area's default label is numbered.
     expect(rowLabels()).toEqual(['Aletsch', 'Custom area 1']);
-    // The size is on the meta line now, beside the kind, rather than in a
-    // trailing mono column — which this panel no longer renders at all.
-    expect(rowMetas()).toEqual(['Region · Unknown basemap · 40.0 MB', 'Custom area · Unknown basemap · 120 MB']);
+    // The meta line names the kind and the basemap. The size lives in the
+    // inventory under the row (Hugo, 4 Nov 2026), and the trailing mono
+    // column is gone.
+    expect(rowMetas()).toEqual(['Region · Unknown basemap', 'Custom area · Unknown basemap']);
     expect(sheet.querySelector('[data-row-value]')).toBeNull();
   });
 
@@ -1153,7 +1151,7 @@ describe('the two lists (SNOW-XXX — grouped by what is here)', () => {
 
     expect(document.querySelector('#map-downloads-sheet .basemap-identity-fill')).toBeNull();
     expect(document.querySelector('#map-downloads-sheet [data-row-meta]').textContent).toBe(
-      'Region · OpenFreeMap · 40.0 MB',
+      'Region · OpenFreeMap',
     );
   });
 
@@ -1186,7 +1184,7 @@ describe('the two lists (SNOW-XXX — grouped by what is here)', () => {
     await settle();
 
     expect(document.querySelector('#map-downloads-sheet [data-row-meta]').textContent).toBe(
-      'Drop zone · Swisstopo (CH) · 120 MB',
+      'Drop zone · Swisstopo (CH)',
     );
   });
 
@@ -1455,7 +1453,7 @@ describe('an area that cannot render (SNOW-844)', () => {
     // The tiles are pinned and the TileJSON is not, which is the exact
     // shape of an area downloaded before SNOW-843: MapLibre cannot learn a
     // single tile URL from it, so the map comes up blank over a full
-    // bucket. Before this ticket the row read "Region · 40.0 MB".
+    // bucket. Before this ticket the row read "Region".
     window.caches.urls = [STYLE_URL, SPRITE_URL];
     seed({ 'basemap.regions': regionWithDeps([STYLE_URL, TILEJSON_URL, SPRITE_URL]) });
     await loadModule();
@@ -1474,7 +1472,7 @@ describe('an area that cannot render (SNOW-844)', () => {
     await settle();
 
     const row = firstRowElement();
-    expect(row.querySelector('[data-row-meta]').textContent).toBe('Region · OpenFreeMap · 40.0 MB');
+    expect(row.querySelector('[data-row-meta]').textContent).toBe('Region · OpenFreeMap');
   });
 
   it('mends it from the same one control every other row carries', async () => {
@@ -1499,7 +1497,7 @@ describe('an area that cannot render (SNOW-844)', () => {
     // row is a normal download again.
     await settle();
     expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe(
-      'Region · OpenFreeMap · 40.0 MB',
+      'Region · OpenFreeMap',
     );
   });
 
@@ -1527,7 +1525,7 @@ describe('an area that cannot render (SNOW-844)', () => {
     await settle();
 
     const row = firstRowElement();
-    expect(row.querySelector('[data-row-meta]').textContent).toBe('Region · Swisstopo (CH) · 40.0 MB');
+    expect(row.querySelector('[data-row-meta]').textContent).toBe('Region · Swisstopo (CH)');
   });
 
   it('checks a legacy record against the live style when its basemap IS loaded', async () => {
@@ -1595,7 +1593,7 @@ describe('an area whose bulletins are behind (SNOW-932)', () => {
     ];
   }
 
-  it('adds its shortfall as a clause, keeping the kind, basemap and size', async () => {
+  it('adds its shortfall as a clause, keeping the kind and basemap', async () => {
     // Two different conditions, and the sheet must not conflate them. An
     // "Incomplete" row REPLACES its meta line because it has nothing
     // useful to say about itself — it cannot be used offline at all. This
@@ -1609,7 +1607,7 @@ describe('an area whose bulletins are behind (SNOW-932)', () => {
 
     const meta = firstRowElement().querySelector('[data-row-meta]').textContent;
     expect(meta).toContain('Custom area');
-    expect(meta).toContain('12.0 MB');
+    expect(meta).not.toContain('MB');
     expect(meta.endsWith('· Bulletins not saved')).toBe(true);
     expect(meta).not.toBe('Bulletins not saved');
   });
@@ -1642,7 +1640,7 @@ describe('an area whose bulletins are behind (SNOW-932)', () => {
 
     const row = firstRowElement();
     expect(row.querySelector('[data-row-meta]').textContent).toBe(
-      'Custom area · OpenFreeMap · 12.0 MB',
+      'Custom area · OpenFreeMap',
     );
   });
 });
@@ -1683,7 +1681,7 @@ describe('how fresh an area\'s bulletins are (SNOW-1139)', () => {
 
     const day = window.pwaCachedStampCore.formatDay(contentAt);
     expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe(
-      `Custom area · OpenFreeMap · 12.0 MB · Bulletins saved ${day}`,
+      `Custom area · OpenFreeMap · Bulletins saved ${day}`,
     );
   });
 
@@ -1694,7 +1692,7 @@ describe('how fresh an area\'s bulletins are (SNOW-1139)', () => {
     await settle();
 
     expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe(
-      'Custom area · OpenFreeMap · 12.0 MB',
+      'Custom area · OpenFreeMap',
     );
   });
 
@@ -3904,7 +3902,6 @@ describe('terrain data (SNOW-1072)', () => {
     bridge.areaTerrainClassTileUrls = vi.fn((row) => (row && row.terrain ? CLASS_URLS : []));
     bridge.terrainDataAvailable = vi.fn(() => options.available);
     bridge.terrainDataPreferred = vi.fn(() => options.preferred);
-    bridge.setTerrainDataPreferred = vi.fn();
     return bridge;
   }
 
@@ -3928,7 +3925,7 @@ describe('terrain data (SNOW-1072)', () => {
     await settle();
 
     expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe(
-      'Region · OpenFreeMap · 40.0 MB',
+      'Region · OpenFreeMap',
     );
   });
 
@@ -3941,57 +3938,18 @@ describe('terrain data (SNOW-1072)', () => {
     await settle();
 
     expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe(
-      'Region · OpenFreeMap · 40.0 MB',
+      'Region · OpenFreeMap',
     );
   });
 
-  it('shows the checkbox off by default, and on to match the preference', async () => {
+  it('offers no terrain switch: every download includes terrain', async () => {
     seed({ 'basemap.regions': region() });
-    terrainBridge({ available: true, preferred: false });
+    terrainBridge({ available: true, preferred: true });
     await loadModule();
     openSheet();
     await settle();
 
-    const block = document.querySelector('#map-downloads-sheet [data-downloads-terrain]');
-    const input = block.querySelector('input');
-    expect(block.hidden).toBe(false);
-    expect(input.checked).toBe(false);
-
-    window.pwaBasemapDownloads.terrainDataPreferred.mockReturnValue(true);
-    // A re-open re-clones the body and repaints it from the preference.
-    window.pwaDownloadsManager.toggle();
-    await settle();
-    openSheet();
-    await settle();
-    expect(document.querySelector('#map-downloads-sheet [data-downloads-terrain] input').checked).toBe(
-      true,
-    );
-  });
-
-  it('hides the checkbox where this page cannot include terrain data', async () => {
-    seed({ 'basemap.regions': region() });
-    terrainBridge({ available: false, preferred: true });
-    await loadModule();
-    openSheet();
-    await settle();
-
-    const block = document.querySelector('#map-downloads-sheet [data-downloads-terrain]');
-    expect(block.hidden).toBe(true);
-    expect(block.querySelector('input').checked).toBe(false);
-  });
-
-  it('saves the choice through the bridge when the checkbox changes', async () => {
-    seed({ 'basemap.regions': region() });
-    const bridge = terrainBridge({ available: true, preferred: false });
-    await loadModule();
-    openSheet();
-    await settle();
-
-    const input = document.querySelector('#map-downloads-sheet [data-downloads-terrain] input');
-    input.checked = true;
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-
-    expect(bridge.setTerrainDataPreferred).toHaveBeenCalledWith(true);
+    expect(document.querySelector('#map-downloads-sheet [data-downloads-terrain]')).toBeNull();
   });
 });
 
@@ -4757,7 +4715,7 @@ describe('the inventory under a row (SNOW-1418)', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     const listed = items(li);
     expect(Object.keys(listed)).toEqual([
-      'Map and terrain',
+      'Map',
       'Avalanche bulletin',
       'Weather',
       'Your routes',
@@ -4765,12 +4723,42 @@ describe('the inventory under a row (SNOW-1418)', () => {
       'SAC tours',
       'Community reports',
     ]);
-    expect(listed['Map and terrain'].value).toBe('40.0 MB');
+    expect(listed['Map'].value).toBe('40.0 MB');
     expect(listed['Avalanche bulletin'].value).toBe('Today');
     expect(listed['Weather'].value).toMatch(/^Today \d\d:\d\d$/);
     expect(listed['Your routes']).toEqual({ value: '1', state: 'yes' });
     expect(listed['Community reports']).toEqual({ value: '1', state: 'yes' });
     expect(li.querySelector('[data-inventory-status]').textContent).toBe('Works offline');
+  });
+
+  it('splits the map and terrain sizes for an area saved with terrain', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    await boot({ [REGION_ID]: record({ terrain: true, bytes: 40 * MB }) });
+    const bridge = window.pwaBasemapDownloads;
+    bridge.terrainDataAvailable = () => true;
+    // 200 class tiles: the same estimate the download was priced at.
+    bridge.areaTerrainClassTileUrls = () => Array.from({ length: 200 }, (_v, i) => 'c/' + i);
+    toggleOf(firstRowElement()).click();
+    await settle();
+
+    const terrainMb = window.pwaBasemapDownloadCore.terrainClassMb(200);
+    expect(terrainMb).toBeGreaterThan(0);
+    const listed = items(firstRowElement());
+    expect(Object.keys(listed).slice(0, 2)).toEqual(['Map', 'Terrain']);
+    expect(listed['Terrain']).toEqual({ value: terrainMb.toFixed(1) + ' MB', state: 'yes' });
+    expect(listed['Map'].value).toBe((40 - terrainMb).toFixed(1) + ' MB');
+  });
+
+  it('says terrain is not saved for an area downloaded without it', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    await boot({ [REGION_ID]: record() });
+    window.pwaBasemapDownloads.terrainDataAvailable = () => true;
+    toggleOf(firstRowElement()).click();
+    await settle();
+
+    const listed = items(firstRowElement());
+    expect(listed['Terrain']).toEqual({ value: 'Not saved', state: 'missing' });
+    expect(listed['Map'].value).toBe('40.0 MB');
   });
 
   it('closes again on a second press', async () => {

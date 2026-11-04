@@ -79,8 +79,8 @@ re-clones its body on every render, and a run in flight must survive that.
 
 SNOW-1418. A row's chevron, the shared trailing disclosure
 (`includes/_row_disclosure.html`), opens what the area holds into the row's
-own panel (`includes/_downloads_inventory.html`): the map, the bulletin, the
-weather, the reader's routes, trips and saved places, the SAC tours, the
+own panel (`includes/_downloads_inventory.html`): the map, the terrain, the
+bulletin, the weather, the reader's routes, trips and saved places, the SAC tours, the
 resorts and the community reports. Each has a `sync-*` dot and one value.
 
 - **One reading.** `pwaOfflineJourneyCore.inventoryFor` is built on
@@ -101,3 +101,22 @@ resorts and the community reports. Each has a `sync-*` dot and one value.
 - **The chevron trails the row** rather than sitting by the name, as in the
   mockup. The name keeps its job of framing the area on the map (SNOW-811),
   and the trailing chevron is the system's one row disclosure.
+- **The size lives in the inventory** (Hugo, 4 Nov 2026), split into Map and
+  Terrain. The row's meta line is the kind and the basemap. A run records
+  one total, so the terrain figure is the estimate the download was priced
+  at (`terrainClassMb` over the area's class tiles) and the map is the rest.
+
+## Every download includes terrain data
+
+Hugo, 4 Nov 2026: terrain data comes with every download wherever the
+terrain filter is configured, and the sheet's "Terrain data" switch is gone.
+`terrainDataPreferred` now answers `terrainDataAvailable`. An area saved
+without terrain keeps its record's `terrain` flag absent, so its inventory
+reads Terrain "Not saved" until it is downloaded again.
+
+## A finished download is a reading
+
+A download that completes stamps `verified` on its new record
+(`downloadVerified` in `map_basemap_downloads.js`), with the same tile-grid
+reading and content answer `syncArea` stamps. Before this, a new row read
+"Not checked yet" until a Sync that fetched nothing turned it green.

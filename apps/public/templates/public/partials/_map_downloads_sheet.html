@@ -202,8 +202,8 @@ the row's own label, so map.html loads that module once for both.
     <span data-string="kind-incomplete">{% trans "Incomplete" %}</span>
     {# SNOW-832: what KIND of download a row is. The two fixed REGIONS /   #}
     {# CUSTOM AREAS headings are gone — the headings name BASEMAPS now —   #}
-    {# so the kind comes down into the row's own meta line, beside the     #}
-    {# size that used to sit in its own trailing column. The separator     #}
+    {# so the kind comes down into the row's own meta line. The size moved #}
+    {# into the inventory under the row (Hugo, 4 Nov 2026). The separator #}
     {# lives inside `row-meta` rather than being joined in JS, matching    #}
     {# every server-rendered meta line on the other panels                 #}
     {# (favourites' "{{ region }} · saved {{ when }}") — a translator who  #}
@@ -235,7 +235,8 @@ the row's own label, so map.html loads that module once for both.
     {# label per thing an area holds, the values that are words, and what #}
     {# each dot means to a screen reader. Placeholder copy; Hugo edits it. #}
     <span data-string="inventory-toggle-label">{% blocktrans %}What's in %(name)s{% endblocktrans %}</span>
-    <span data-string="inventory-map">{% trans "Map and terrain" %}</span>
+    <span data-string="inventory-map">{% trans "Map" %}</span>
+    <span data-string="inventory-terrain">{% trans "Terrain" %}</span>
     <span data-string="inventory-bulletin">{% trans "Avalanche bulletin" %}</span>
     <span data-string="inventory-weather">{% trans "Weather" %}</span>
     <span data-string="inventory-routes">{% trans "Your routes" %}</span>
@@ -277,7 +278,7 @@ the row's own label, so map.html loads that module once for both.
     {# read as "Overview map / Overview map · 8.5 MB": the fact worth #}
     {# stating on this line is WHY it has no Remove button. #}
     <span data-string="kind-base">{% trans "Shared" %}</span>
-    <span data-string="row-meta">{% blocktrans %}%(kind)s · %(basemap)s · %(size)s{% endblocktrans %}</span>
+    <span data-string="row-meta">{% blocktrans %}%(kind)s · %(basemap)s{% endblocktrans %}</span>
     {# SNOW-832: the heading for the group whose basemap cannot be named — #}
     {# a record written before SNOW-645, an orphaned bucket, an account    #}
     {# row with no basemap, or a key the picker no longer offers. Named    #}

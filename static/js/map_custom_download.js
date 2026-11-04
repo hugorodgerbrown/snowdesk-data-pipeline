@@ -178,7 +178,9 @@
    * @returns {boolean}
    */
   function _includesTerrain() {
-    return terrainOverride !== null ? terrainOverride : terrainDataPreferred();
+    // Terrain comes with every download where it is available; an
+    // override can only add it.
+    return terrainOverride === true || terrainDataPreferred();
   }
 
   /**
@@ -1401,6 +1403,9 @@
             ...(outcome.complete && content && content.items ? { items: content.items } : {}),
             savedAt: new Date().toISOString(),
           };
+          // A finished download is a reading: the row starts checked.
+          const verified = await downloadVerified(areaId, area, content);
+          if (verified) area.verified = verified;
           await _appendCustomArea(area);
           // SNOW-569's pulse still plays on success; SNOW-632 removed the
           // overlay-close that used to precede it (SNOW-568 already left
@@ -1507,17 +1512,6 @@
   // re-render (SNOW-658).
   document.addEventListener('snowdesk:connectivity-changed', () => {
     if (pendingBbox && runState !== 'busy') _updateReadout();
-  });
-
-  // SNOW-1072: the terrain-data preference changes the frame's ceiling and
-  // the readout's second line. Rare while framing (the checkbox is on the
-  // downloads sheet), but a second tab can change it.
-  document.addEventListener('snowdesk:terrain-data-changed', () => {
-    if (pendingBbox && runState !== 'busy') {
-      lockedSize = null;
-      lockedBbox = null;
-      _updateReadout();
-    }
   });
 
   // SNOW-658: no boot probe. This was `renderControl()`, reading every
@@ -1662,7 +1656,8 @@
 
       const bbox = opts.bbox.slice();
       const isDropZone = opts.type === 'dropzone';
-      const terrain = !!opts.terrain;
+      // Every download includes terrain where it is available.
+      const terrain = !!opts.terrain || terrainDataPreferred();
       const name = typeof opts.name === 'string' ? opts.name : '';
 
       MAP.fitBounds(_boundsFromBBox(bbox), { animate: false });
@@ -1741,6 +1736,8 @@
               ...(outcome.complete && content && content.items ? { items: content.items } : {}),
               savedAt: new Date().toISOString(),
             };
+            const verified = await downloadVerified(areaId, area, content);
+            if (verified) area.verified = verified;
             await _appendCustomArea(area);
             await progressFill.finish(true);
             ok = true;

@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-04 22:32+0000\n"
+"POT-Creation-Date: 2026-11-04 23:42+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -5524,14 +5524,6 @@ msgid ""
 "make room — or remove some yourself below."
 msgstr ""
 
-msgid "Terrain data"
-msgstr ""
-
-msgid ""
-"Include it in new downloads so the terrain filter works offline. Adds about "
-"11 MB to a typical region."
-msgstr ""
-
 msgid "Download here"
 msgstr ""
 
@@ -5585,7 +5577,10 @@ msgstr ""
 msgid "What's in %%(name)s"
 msgstr ""
 
-msgid "Map and terrain"
+msgid "Map"
+msgstr ""
+
+msgid "Terrain"
 msgstr ""
 
 msgid "Avalanche bulletin"
@@ -5637,7 +5632,7 @@ msgid "Shared"
 msgstr ""
 
 #, python-format
-msgid "%%(kind)s · %%(basemap)s · %%(size)s"
+msgid "%%(kind)s · %%(basemap)s"
 msgstr ""
 
 msgid "Unknown basemap"
@@ -6008,9 +6003,6 @@ msgid "Next day"
 msgstr ""
 
 msgid "Terrain: hide what changes by the day"
-msgstr ""
-
-msgid "Terrain"
 msgstr ""
 
 msgid "Back to the dated map"
@@ -10212,6 +10204,9 @@ msgstr ""
 
 msgctxt "point card line label"
 msgid "Terrain slope"
+msgstr ""
+
+msgid "Terrain data"
 msgstr ""
 
 #, python-format

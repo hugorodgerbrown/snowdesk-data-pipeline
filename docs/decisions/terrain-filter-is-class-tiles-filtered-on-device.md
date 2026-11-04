@@ -99,8 +99,8 @@ the colour is made in the browser:
   `tiles.snowdesk-data.info`, so without the seed the worker treats the
   tiles as network-only. With it, viewed tiles are cached like basemap tiles
   and repaint after an offline reload. This is passive caching; an
-  offline download pins them only with the "Terrain data" opt-in
-  (SNOW-1072).
+  offline download pins them: with the "Terrain data" opt-in from SNOW-1072,
+  and in every download since 4 Nov 2026.
 - Local development uses the DEBUG-only synthetic tiles in
   `apps/public/dev_terrain_class.py`
   (`TERRAIN_CLASS_TILE_URL=http://localhost:3000/dev/terrain-class/v1/{z}/{x}/{y}.png`),

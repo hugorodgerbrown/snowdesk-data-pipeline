@@ -786,32 +786,13 @@ describe('terrain data (SNOW-1072)', () => {
   });
 });
 
-describe('the terrain-data preference (SNOW-1072)', () => {
-  beforeEach(() => {
-    window.localStorage.clear();
-  });
-
-  it('is available here, and off by default', () => {
+describe('terrain data in every download (SNOW-1072)', () => {
+  it('is available here, and on', () => {
     expect(window.pwaBasemapDownloads.terrainDataAvailable()).toBe(true);
-    expect(window.pwaBasemapDownloads.terrainDataPreferred()).toBe(false);
-  });
-
-  it('persists a choice and announces it', () => {
-    const heard = vi.fn();
-    document.addEventListener('snowdesk:terrain-data-changed', heard);
-
-    window.pwaBasemapDownloads.setTerrainDataPreferred(true);
     expect(window.pwaBasemapDownloads.terrainDataPreferred()).toBe(true);
-    window.pwaBasemapDownloads.setTerrainDataPreferred(false);
-    expect(window.pwaBasemapDownloads.terrainDataPreferred()).toBe(false);
-
-    expect(heard).toHaveBeenCalledTimes(2);
-    expect(heard.mock.calls[0][0].detail).toEqual({ on: true });
-    document.removeEventListener('snowdesk:terrain-data-changed', heard);
   });
 
   it('reads as off on a page whose terrain filter is not configured', () => {
-    window.pwaBasemapDownloads.setTerrainDataPreferred(true);
     const mapEl = document.getElementById('map');
     delete mapEl.dataset.terrainClassTileUrl;
 

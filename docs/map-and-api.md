@@ -486,8 +486,8 @@ basemaps are also swisstopo and contribute a bare `© swisstopo`, and
 
 Offline caching: the class tiles' origin is seeded into the service
 worker's `register-basemap-origins` payload, so ground viewed online still
-paints offline; an area downloaded with "Terrain data" (SNOW-1072) pins
-them.
+paints offline; every offline download pins them (SNOW-1072, an opt-in
+until Hugo made it the default on 4 Nov 2026).
 
 **Marker exclusion zone (SNOW-445)**: favourite, community-observation,
 and report-cluster markers sit on top of the region choropleth. MapLibre

@@ -318,6 +318,8 @@
    * @param {Object|null} [items] SNOW-1308: the reader's own things the
    *   run's content plan expected (`finish`'s `content.items`), recorded
    *   with a complete content run.
+   * @param {Object|null} [verified] What the run learned about the area
+   *   (`downloadVerified`), stamped so a new row reads as checked.
    * @returns {Promise<void>}
    */
   async function _recordRegionDownload(
@@ -333,6 +335,7 @@
     contentIncomplete,
     terrain,
     items,
+    verified,
   ) {
     if (!z || !window.pwaDb) return;
     try {
@@ -390,6 +393,9 @@
         ...(contentAt && items ? { items: items } : {}),
         bytes: Number(bytes) || 0,
         savedAt: new Date().toISOString(),
+        // What this finished download learned, as a sync would stamp it
+        // (`downloadVerified`), so the row starts checked.
+        ...(verified ? { verified: verified } : {}),
       };
       // SNOW-1142: stamped with the account it was downloaded under ('' for
       // an anonymous download) — or, for a re-download, with whatever its
@@ -858,7 +864,9 @@
    * @returns {boolean}
    */
   function _runIncludesTerrain() {
-    return terrainOverride !== null ? terrainOverride : terrainDataPreferred();
+    // Terrain comes with every download where it is available; an
+    // account row's choice can only add it.
+    return terrainOverride === true || terrainDataPreferred();
   }
 
   /**
@@ -2195,6 +2203,11 @@
         // record back directly, with no recomputation, so it is exactly
         // right for whatever shape the blob was.
         if (ok) {
+          const verified = await downloadVerified(
+            areaId,
+            { template: tileSources, z: blob.z, band: blob.band || runCore.MICRO_BAND },
+            content,
+          );
           await _recordRegionDownload(
             data.regionId,
             tileSources,
@@ -2208,6 +2221,7 @@
             outcome.incomplete,
             terrain,
             content && content.items,
+            verified,
           );
           // SNOW-871: and only NOW is the copy this run replaced safe to
           // take. A failed or cancelled run reaches neither line, so the
@@ -2341,10 +2355,6 @@
   refreshBasemapDeviceCeiling().then(() => renderControl());
 
   document.addEventListener('snowdesk:basemap-changed', () => renderControl());
-
-  // SNOW-1072: the idle label states what terrain data adds, and the
-  // ceiling check counts it, so a change to the preference repaints.
-  document.addEventListener('snowdesk:terrain-data-changed', () => renderControl());
 
   // Offline-integrity: re-render on every connectivity transition so the
   // icon greys out (offline, not yet downloaded) or becomes actionable
