@@ -2,17 +2,20 @@
 name: the-way-out-of-offline-mode-is-on-the-page-it-strands-you-on
 description: Offline mode switch on static/offline.html too — pwa_network_mode.js, canOpenOffline, network-use audit row, why the worker never self-heals
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-11-04
 ---
 
 # The way out of Offline mode is on the page Offline mode strands you on
 
 SNOW-922.
 
-**Decision.** The "Offline mode" switch appears in two places: the network
-menu (`includes/_connection_panel.html` — where SNOW-921 moved it from the
-account dropdown, landing alongside this ticket) and the offline fallback
-page (`static/offline.html`, new). Both work the same mechanism —
+**Decision.** The "Offline mode" switch appears in two places: the /offline/
+debug page (`public/offline.html` — SNOW-1415 moved it there from the network
+menu, where SNOW-921 had put it, landing alongside this ticket) and the
+offline fallback page (`static/offline.html`, new). The network menu keeps
+the way OUT: its reconnect CTA ("Try reconnecting" / "Use the network
+again") shows in both offline modes on every page, so a reader stranded by
+the mode still leaves it on the page they are on. Both work the same mechanism —
 `static/js/pwa_network_mode.js`, precached in `PRECACHE_URLS` — and both
 guard the ON direction by asking the service worker, over a
 `can-open-offline` message, whether the app would in fact open with no

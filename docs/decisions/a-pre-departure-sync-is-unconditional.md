@@ -1,16 +1,17 @@
 ---
 name: a-pre-departure-sync-is-unconditional
-description: syncArea, Sync now, Get ready for offline, ?sync=all, offline_ready_core.js — refetch regardless of freshness, every area per press
+description: syncArea, the network menu's Sync, /map/?sync=all, offline_ready_core.js — refetch regardless of freshness, every area per press
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-11-04
 ---
 
 # A pre-departure sync is unconditional, and the network menu runs it for every area
 
 **Decision.** Every downloaded area carries one "sync now" action — an item
 in the map page's Manage downloads sheet — and the network menu carries one
-**Get ready for offline** press that runs it for every area in turn
-(SNOW-1141; until then the menu had a button per area). It goes through
+**Sync** press (named "Get ready for offline" until SNOW-1415) that runs it
+for every area in turn (SNOW-1141; until then the menu had a button per
+area). It goes through
 `window.pwaBasemapDownloads.syncArea(areaId)`
 (`static/js/map_basemap_downloads.js`), which repairs the area's missing
 render dependencies if it has any and then refetches its content — the
@@ -21,10 +22,13 @@ succeeded.
 The menu's press drains the mutation queue first, so queued edits go
 before any area, and then syncs each downloaded area one at a time
 (`static/js/offline_ready_core.js`). Off the map page it does not run the
-sync: it navigates to `/offline/` with `?sync=all` appended to the href the
-panel's downloads link already carries, and that page runs the same
-sequence through the same core and re-runs its report over the result.
-`?sync=<area id>` still names one area, for any caller that wants that.
+sync: since SNOW-1415 it navigates to `/map/?sync=all`, and the map runs the
+same sequence with the panel open
+([the-connection-panel-answers-per-area.md](the-connection-panel-answers-per-area.md)).
+Until then it went to `/offline/?sync=all`, which still runs the same
+sequence through the same core for the debug page's own use.
+`/offline/?sync=<area id>` still names one area, for any caller that wants
+that.
 
 ## Why
 

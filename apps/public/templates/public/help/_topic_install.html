@@ -69,9 +69,8 @@ docs/offline-first.md for why that exchange was made.
     <p class="mb-3 last:mb-0" data-testid="help-install-offline-page-pointer">
         {% url 'public:offline_page' as offline_page_url %}
         {% blocktrans trimmed with url=offline_page_url %}
-            To see exactly what this device has saved &mdash; and to clear it if something is stuck &mdash; open
-            <a href="{{ url }}" class="underline">Offline content</a>. You do not need an account, and it is worth
-            checking before a trip rather than after.
+            If something is not working offline, <a href="{{ url }}" class="underline">Debug offline issues</a> shows
+            exactly what this device has saved, and lets you clear it if something is stuck. You do not need an account.
         {% endblocktrans %}
     </p>
 </div>

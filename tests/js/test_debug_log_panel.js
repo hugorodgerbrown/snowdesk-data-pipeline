@@ -1,6 +1,6 @@
 /*
  * tests/js/test_debug_log_panel.js — Vitest unit tests for
- * static/js/debug_log_panel.js's two ways IN (SNOW-812, SNOW-921).
+ * static/js/debug_log_panel.js's two ways IN (SNOW-812, SNOW-921, SNOW-1415).
  *
  * The panel's painting is covered indirectly by the recorder's own tests;
  * what is asserted here is the part SNOW-921 added and the part it changed,
@@ -8,14 +8,12 @@
  *
  * The trace has been reachable only from a low-contrast pill in the
  * bottom-left corner of every page — a mark you find by already knowing it
- * is there. SNOW-921 added the network menu's "Debug log" row
- * (templates/includes/_connection_panel.html), so the trace is reachable
- * from the header symbol a user presses when the network is what they are
- * wondering about.
+ * is there. SNOW-921 added the network menu's "Debug log" row; SNOW-1415
+ * moved it to the /offline/ debug page as an "Open debug log" button
+ * (public/offline.html), when the menu became the per-area answer.
  *
- * That row is bound HERE rather than in pwa_offline.js, which owns the
- * menu's other controls, on the rule that the surface owning a panel owns
- * every way into it. The failure mode it guards is the one a template-only
+ * That button is bound HERE rather than on that page, on the rule that the
+ * surface owning a panel owns every way into it. The failure mode it guards is the one a template-only
  * change produces: a row that renders, takes a press and does nothing at
  * all, with every server-side test still green.
  */
@@ -26,8 +24,7 @@ const MODULE = '../../static/js/debug_log_panel.js';
 
 /**
  * The markup the reader binds against: includes/_debug_log_panel.html's
- * handle and body, plus the network menu's "Debug log" row from
- * includes/_connection_panel.html.
+ * handle and body, plus the /offline/ page's "Open debug log" button.
  *
  * Trimmed to the elements this module actually looks up — the filter,
  * Copy and Clear are covered by the recorder's own contract — but the
@@ -36,12 +33,9 @@ const MODULE = '../../static/js/debug_log_panel.js';
  */
 function buildFixture() {
   document.body.innerHTML = `
-    <details data-network-panel>
-      <summary id="network-indicator-toggle">net</summary>
-      <div id="pwa-connection-panel">
-        <button type="button" data-network-debug-log data-disclosure-close>Debug log</button>
-      </div>
-    </details>
+    <div data-testid="offline-debug-controls">
+      <button type="button" data-open-debug-log>Open debug log</button>
+    </div>
     <div id="debug-log">
       <button id="debug-log-handle" type="button" aria-expanded="false">
         <span id="debug-log-count">0</span>
@@ -92,9 +86,9 @@ function panelOpen() {
   return !document.getElementById('debug-log-body').hidden;
 }
 
-/** The network menu's "Debug log" row. */
+/** The /offline/ page's "Open debug log" button. */
 function menuRow() {
-  return document.querySelector('[data-network-debug-log]');
+  return document.querySelector('[data-open-debug-log]');
 }
 
 beforeEach(async () => {
@@ -111,7 +105,7 @@ beforeEach(async () => {
 // frame that lands after the test that owned it. The stub is reinstalled by
 // ``beforeEach`` instead, which is what those stale frames repaint against.
 
-describe('the network menu entry point (SNOW-921)', () => {
+describe('the /offline/ entry point (SNOW-921, moved by SNOW-1415)', () => {
   it('opens the trace panel', async () => {
     await loadPanel();
     expect(panelOpen()).toBe(false);
@@ -122,8 +116,7 @@ describe('the network menu entry point (SNOW-921)', () => {
   });
 
   it('opens rather than toggles, however the panel was left', async () => {
-    // The row sits behind a menu the user had to open, so pressing it is a
-    // request to READ the trace — not to flip whatever state it happens to
+    // The button is a request to READ the trace — not to flip whatever state it happens to
     // be in. A toggle here would close the panel of anyone who left it open
     // and then went looking for it in the menu, which is exactly the user
     // this entry point was added for.
@@ -167,10 +160,9 @@ describe('the network menu entry point (SNOW-921)', () => {
     expect(panelOpen()).toBe(false);
   });
 
-  it('is a no-op on a page with no network menu', async () => {
-    // Every page renders the trace panel when the flag is on; the menu row
-    // is a second surface, and a page whose shell predates SNOW-921 has the
-    // panel and no row. The optional-chained binding is what covers it.
+  it('is a no-op on a page with no button', async () => {
+    // Every page renders the trace panel when the flag is on; the button is
+    // on /offline/ only, so every other page has the panel and no button.
     menuRow().remove();
     await loadPanel();
 

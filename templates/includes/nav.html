@@ -230,7 +230,8 @@ Usage
                     data-testid="network-indicator"
                     aria-expanded="false"
                     aria-controls="pwa-connection-panel"
-                    class="inline-flex items-center justify-center gap-0.5 h-7 px-1 rounded-full hover:bg-tag focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-2 cursor-pointer list-none [&::-webkit-details-marker]:hidden"
+                    data-offline-readiness="none"
+                    class="relative inline-flex items-center justify-center gap-0.5 h-7 px-1 rounded-full hover:bg-tag focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-2 cursor-pointer list-none [&::-webkit-details-marker]:hidden"
                 >
                     <span data-role="network-online-icon" class="text-sync-ok">
                         {% include "includes/_icon_wifi.html" with size=15 only %}
@@ -299,6 +300,38 @@ Usage
                         data-role="network-name-offline"
                         class="sr-only hidden"
                     >{% trans "Network menu: offline" %}</span>
+                    {% comment %}
+                        SNOW-1415: the device's offline answer, as a small mark on
+                        the symbol — every area ready, a sync running, or an area
+                        needing attention. static/js/pwa_offline.js shows at most
+                        one, from the same per-area verdicts the panel's rows
+                        give, and writes the state to ``data-offline-readiness``.
+                        None shows with no areas saved (the symbol is the plain
+                        signal glyph, as before) or with no signal, where the
+                        struck-through glyph is already the answer. Each carries
+                        its own accessible name beside the symbol's.
+                    {% endcomment %}
+                    <span data-role="readiness-ready" class="hidden">
+                        <span
+                            class="absolute right-0 top-0.5 h-2 w-2 rounded-full bg-sync-ok ring-2 ring-card"
+                            aria-hidden="true"
+                        ></span>
+                        <span class="sr-only">{% trans "Your offline areas are ready" %}</span>
+                    </span>
+                    <span data-role="readiness-syncing" class="hidden">
+                        <span
+                            class="absolute right-0 top-0.5 h-2 w-2 animate-pulse rounded-full bg-accent ring-2 ring-card"
+                            aria-hidden="true"
+                        ></span>
+                        <span class="sr-only">{% trans "Syncing your offline areas" %}</span>
+                    </span>
+                    <span data-role="readiness-attention" class="hidden">
+                        <span
+                            class="absolute right-0 top-0.5 h-2 w-2 rounded-full bg-sync-partial ring-2 ring-card"
+                            aria-hidden="true"
+                        ></span>
+                        <span class="sr-only">{% trans "An offline area needs attention" %}</span>
+                    </span>
                 </summary>
                 {% include "includes/_connection_panel.html" %}
             </details>

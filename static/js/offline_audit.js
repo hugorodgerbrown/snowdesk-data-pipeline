@@ -412,6 +412,10 @@
     'ready-some': '%(ready)s of %(total)s ready',
     'queue-waiting': '%(n)s changes still waiting to send',
     'queue-waiting-one': '1 change still waiting to send',
+    // SNOW-1415: what one area's sync is fetching now (`progressText`).
+    'sync-stage-bulletins': 'Saving bulletins… (%(n)s of %(total)s)',
+    'sync-stage-weather': 'Saving weather… (%(n)s of %(total)s)',
+    'sync-stage-things': 'Saving your trips and pins… (%(n)s of %(total)s)',
   };
 
   /**
@@ -1651,7 +1655,8 @@
   // so without this every later area refetched `/map/` over the very
   // connection the reader is about to lose. The first attempt's outcome is
   // reused, failed or not.
-  async function fetchAreaContent(root, areaId, report, shell) {
+  async function fetchAreaContent(root, areaId, report, shell, onStage) {
+    var tell = typeof onStage === 'function' ? onStage : function () {};
     var core = self.pwaBasemapDownloadCore;
     var warm = self.pwaWarmCache;
     var data = (root && root.dataset) || {};
@@ -1812,15 +1817,35 @@
       expectation = core.withProblemTerrain(expectation, plan.problemTerrainUrls);
     }
 
-    var urls = regionUrls
-      .concat(seasonRatingsUrls)
-      .concat(feedUrls)
-      .concat(planned)
-      .concat(itemUrls);
-    if (urls.length === 0) return false;
+    // SNOW-1415: warmed one stage at a time — bulletins and the sheets
+    // beside them, then the weather sheets, then the reader's own things —
+    // so the connection panel can say which it is on. The three lists
+    // together are exactly the one list this used to warm in a single call.
+    var weatherUrls = plan.weatherDetailUrls || [];
+    var batches = [
+      {
+        stage: 'bulletins',
+        urls: regionUrls
+          .concat(seasonRatingsUrls)
+          .concat(feedUrls)
+          .concat(planned.slice(0, planned.length - weatherUrls.length)),
+      },
+      { stage: 'weather', urls: weatherUrls },
+      { stage: 'things', urls: itemUrls },
+    ].filter(function (batch) {
+      return batch.urls.length > 0;
+    });
+    if (batches.length === 0) return false;
 
-    var result = await warm(urls);
-    var landed = !!(result && result.ok > 0 && result.failed === 0);
+    var ok = 0;
+    var failed = 0;
+    for (var b = 0; b < batches.length; b += 1) {
+      tell(batches[b].stage);
+      var answer = await warm(batches[b].urls);
+      ok += (answer && answer.ok) || 0;
+      failed += answer ? answer.failed || 0 : batches[b].urls.length;
+    }
+    var landed = ok > 0 && failed === 0;
     var complete = shellOk && landed && !short;
     await stampAreaContent(areaId, complete, expectation);
     return complete;
@@ -1918,9 +1943,37 @@
     // roundel and Manage downloads sheet — `contentAt` /
     // `contentIncomplete`, and the reader's own things this sync expected.
     var downloadCore = self.pwaBasemapDownloadCore;
-    var apply = function (entry) {
+    await rewriteAreaRecord(areaId, function (entry) {
       return downloadCore.stampContentRecord(entry, complete, expectation || null);
-    };
+    });
+  }
+
+  /**
+   * SNOW-1415: write what this page's panels read about one area onto its
+   * record (`verified`), so the connection panel on every other page can
+   * answer for it. The shape and merge rule are `offline_journey_core.js`'s.
+   *
+   * @param {string} areaId
+   * @param {Object|null} verified From `verifiedFromStages`.
+   * @returns {Promise<void>}
+   */
+  async function stampAreaVerified(areaId, verified) {
+    var journey = self.pwaOfflineJourneyCore;
+    if (!verified || !journey || typeof journey.stampVerifiedRecord !== 'function') return;
+    await rewriteAreaRecord(areaId, function (entry) {
+      return journey.stampVerifiedRecord(entry, verified);
+    });
+  }
+
+  /**
+   * Rewrite one area's record in its array, on one transaction.
+   *
+   * @param {string} areaId The bucket id.
+   * @param {function(Object): Object} apply Synchronous: it runs inside a
+   *   `readModifyWrite` mutator.
+   * @returns {Promise<void>} Best-effort.
+   */
+  async function rewriteAreaRecord(areaId, apply) {
     try {
       var db = self.pwaDb;
       if (!db) return;
@@ -3093,9 +3146,11 @@
             return ready.waitingCount(await db.getAll('queue:mutations'));
           },
           areas: areas,
-          syncOne: async function (areaId) {
+          syncOne: async function (areaId, onStage) {
             if (!Object.prototype.hasOwnProperty.call(fetchable, areaId)) return 'partial';
-            return (await fetchAreaContent(root, areaId, report, shell)) ? 'ready' : 'partial';
+            return (await fetchAreaContent(root, areaId, report, shell, onStage))
+              ? 'ready'
+              : 'partial';
           },
           onStep: function (step) {
             say(ready.progressText(step, t));
@@ -3268,6 +3323,9 @@
     // syncAllRequested, running}` (readings null until the first read);
     // every change is also announced as `snowdesk:offline-readings` on the
     // document, carrying the same object.
+    // SNOW-1415: the panels stamp what they read on each record, so the
+    // connection panel can answer on pages that cannot read tiles.
+    stampVerified: stampAreaVerified,
     latest: function (root) {
       var c = controllerFor(root);
       return c ? c.latest() : null;

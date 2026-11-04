@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-26 13:04+0000\n"
+"POT-Creation-Date: 2026-11-04 12:19+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,6 +17,48 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Ski resort"
+msgstr ""
+
+msgid "Avalanche region"
+msgstr ""
+
+msgid "New bulletin"
+msgstr ""
+
+msgid "Changes"
+msgstr ""
+
+msgid "Off"
+msgstr ""
+
+msgid "If no push"
+msgstr ""
+
+msgid "Always"
+msgstr ""
+
+msgid "Never"
+msgstr ""
+
+msgid "Snowdesk alerts are on"
+msgstr ""
+
+msgid "This is how a bulletin alert will look on this device."
+msgstr ""
+
+msgid "Every new bulletin"
+msgstr ""
+
+msgid "Only when something changes"
+msgstr ""
+
+msgid "Only when this account has no push device"
+msgstr ""
+
+msgid "Always, as well as push"
+msgstr ""
 
 msgid "Your Snowdesk account link"
 msgstr ""
@@ -63,6 +105,30 @@ msgid ""
 msgstr ""
 
 msgid "Back to Snowdesk"
+msgstr ""
+
+msgid "Stop alert emails — Snowdesk"
+msgstr ""
+
+msgid "Stop bulletin alert emails from Snowdesk."
+msgstr ""
+
+msgid "Alert emails"
+msgstr ""
+
+msgid ""
+"Done. Snowdesk will not email you bulletin alerts. Notifications on your "
+"devices are unchanged."
+msgstr ""
+
+msgid ""
+"Stop bulletin alert emails? Notifications on your devices are unchanged."
+msgstr ""
+
+msgid "Stop alert emails"
+msgstr ""
+
+msgid "Change what you get in Settings"
 msgstr ""
 
 msgid "Change your email — Snowdesk"
@@ -149,9 +215,9 @@ msgstr ""
 
 msgid ""
 "Avalanche data: WSL Institute for Snow and Avalanche Research SLF (<a "
-"href=\"https://www.slf.ch\" style=\"color: #9ca3af\" >slf.ch</a>) &middot; "
+"href=\"https://www.slf.ch\" style=\"color: #9ca3af\">slf.ch</a>) &middot; "
 "Licensed under <a href=\"https://creativecommons.org/licenses/by/4.0/\" "
-"style=\"color: #9ca3af\" >CC BY 4.0</a>"
+"style=\"color: #9ca3af\">CC BY 4.0</a>"
 msgstr ""
 
 msgid "Click the link below to sign in to your Snowdesk account."
@@ -160,6 +226,24 @@ msgstr ""
 msgid ""
 "Avalanche data: WSL Institute for Snow and Avalanche Research SLF (slf.ch) · "
 "Licensed under CC BY 4.0"
+msgstr ""
+
+msgid "Open the bulletin"
+msgstr ""
+
+msgid "You get this because bulletin alerts are on for your Snowdesk places."
+msgstr ""
+
+msgid "Change what you get"
+msgstr ""
+
+msgid "Open the bulletin:"
+msgstr ""
+
+msgid "Change what you get:"
+msgstr ""
+
+msgid "Stop alert emails:"
 msgstr ""
 
 msgid ""
@@ -255,8 +339,88 @@ msgid ""
 msgstr ""
 
 msgid ""
-"If that address is registered, we've sent you a link to sign in. It expires "
-"in 24 hours."
+"We've sent you a link. Open it and you're in, whether you're new or coming "
+"back. It expires in 24 hours."
+msgstr ""
+
+msgid "Alerts"
+msgstr ""
+
+msgid "Bulletin alerts"
+msgstr ""
+
+msgid ""
+"One message when the next day’s bulletin for your places is out, usually "
+"around 17:00, and again if it is updated."
+msgstr ""
+
+msgid ""
+"A message only when the bulletin for one of your places moves: the level, or "
+"a problem added, removed or shifted."
+msgstr ""
+
+msgid ""
+"Get the bulletin for your pinned regions and saved resorts when it comes out."
+msgstr ""
+
+msgid "Email"
+msgstr ""
+
+#, python-format
+msgid ""
+"Alerts go to %(email)s when no device of yours can show a notification, "
+"unless you choose otherwise."
+msgstr ""
+
+msgid "This device"
+msgstr ""
+
+msgid "Checking whether this device can show notifications…"
+msgstr ""
+
+msgid "Turn on notifications"
+msgstr ""
+
+msgid "Send a test"
+msgstr ""
+
+msgid "Notifications are off on this device."
+msgstr ""
+
+msgid "This device gets alerts."
+msgstr ""
+
+msgid ""
+"On iPhone and iPad, add Snowdesk to your Home Screen (Share, then Add to "
+"Home Screen), open it from there and turn notifications on."
+msgstr ""
+
+msgid ""
+"Notifications are blocked for Snowdesk. Allow them in this browser’s site "
+"settings, then reload."
+msgstr ""
+
+msgid "This browser cannot show notifications. Alerts will come by email."
+msgstr ""
+
+msgid "That did not work. Try again."
+msgstr ""
+
+msgid "A test alert is on its way."
+msgstr ""
+
+msgid ""
+"This device is not registered for alerts. Turn notifications off and on "
+"again."
+msgstr ""
+
+msgid "The test alert could not be sent."
+msgstr ""
+
+msgid "Your places"
+msgstr ""
+
+msgid "Pin a region or save a resort on the map to get alerts for it."
 msgstr ""
 
 msgid "Something went wrong."
@@ -412,16 +576,13 @@ msgstr ""
 msgid "Ends this session on this device."
 msgstr ""
 
-msgid "This device"
-msgstr ""
-
 msgid "Theme"
 msgstr ""
 
 msgid "Applies to this browser only."
 msgstr ""
 
-msgid "Offline content"
+msgid "Debug offline issues"
 msgstr ""
 
 msgid "Check what is saved on this device, and reset it if it is stuck."
@@ -504,13 +665,15 @@ msgid ""
 "offline maps."
 msgstr ""
 
-msgid "Sign in"
+msgid "Sign in or create an account"
 msgstr ""
 
 msgid "Enter your email address and password."
 msgstr ""
 
-msgid "Enter your email address and we'll send you a sign-in link."
+msgid ""
+"New here or coming back, enter your email and we'll send you a link. Open it "
+"and you're in."
 msgstr ""
 
 msgid "Invalid email or password."
@@ -525,19 +688,16 @@ msgstr ""
 msgid "Forgot your password?"
 msgstr ""
 
-msgid "Send sign-in link"
+msgid "Sign in"
+msgstr ""
+
+msgid "Email me a link"
 msgstr ""
 
 msgid "Sign in with a password instead"
 msgstr ""
 
 msgid "Sign in with a passkey"
-msgstr ""
-
-#, python-format
-msgid ""
-"New to Snowdesk? <a href=\"%(register_url)s\" class=\"underline\">Create an "
-"account</a>."
 msgstr ""
 
 msgid ""
@@ -592,28 +752,153 @@ msgstr ""
 msgid "Later"
 msgstr ""
 
-msgid "New snow"
+msgid "all aspects"
 msgstr ""
 
-msgid "Wind slab"
+#. Translators: joins the last two items of a problem list.
+#, python-format
+msgid "%(head)s and %(tail)s"
 msgstr ""
 
-msgid "Persistent weak layers"
+#, python-format
+msgid "%(height)s m"
 msgstr ""
 
-msgid "Wet snow"
+#, python-format
+msgid "between %(lower)s and %(upper)s"
 msgstr ""
 
-msgid "Gliding snow"
+#, python-format
+msgid "above %(height)s"
 msgstr ""
 
-msgid "Cornices"
+#, python-format
+msgid "below %(height)s"
 msgstr ""
 
-msgid "No distinct avalanche problem"
+msgid "below the treeline"
 msgstr ""
 
-msgid "Favourable situation"
+msgid "above the treeline"
+msgstr ""
+
+#, python-format
+msgid "on %(aspects)s"
+msgstr ""
+
+msgid "without a stated area"
+msgstr ""
+
+msgid "without a level"
+msgstr ""
+
+#, python-format
+msgid "%(problems)s now%(where)s."
+msgstr ""
+
+#, python-format
+msgid "%(problems)s now rated %(level)s."
+msgstr ""
+
+#, python-format
+msgid "Up from %(level)s."
+msgstr ""
+
+#, python-format
+msgid "Down from %(level)s."
+msgstr ""
+
+#, python-format
+msgid "%(problems)s added%(where)s."
+msgstr ""
+
+#, python-format
+msgid "%(problems)s no longer named."
+msgstr ""
+
+msgid "today"
+msgstr ""
+
+msgid "tomorrow"
+msgstr ""
+
+#, python-format
+msgid "%(day)s at %(time)s"
+msgstr ""
+
+#, python-format
+msgid "Valid from %(start)s to %(end)s."
+msgstr ""
+
+#, python-format
+msgid "%(place)s – %(day)s bulletins update"
+msgstr ""
+
+#, python-format
+msgid "%(place)s – %(day)s bulletins"
+msgstr ""
+
+#, python-format
+msgid "%(place)s – %(day)s bulletin update"
+msgstr ""
+
+#, python-format
+msgid "%(place)s – %(day)s bulletin"
+msgstr ""
+
+#, python-format
+msgid "%(level)s."
+msgstr ""
+
+#, python-format
+msgid "%(level)s, up from %(previous)s."
+msgstr ""
+
+#, python-format
+msgid "%(level)s, down from %(previous)s."
+msgstr ""
+
+#, python-format
+msgid "%(level)s, avalanche problems changed."
+msgstr ""
+
+#, python-format
+msgid "%(level)s, no change."
+msgstr ""
+
+#, python-format
+msgid "%(cm)d cm new snow forecast."
+msgstr ""
+
+msgid "For your trip."
+msgstr ""
+
+#, python-format
+msgid "%(count)d bulletin."
+msgid_plural "%(count)d bulletins."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "First of the season."
+msgstr ""
+
+msgid "Bulletins are back."
+msgstr ""
+
+#, python-format
+msgid "Bulletins updated for your %(count)d places"
+msgstr ""
+
+#, python-format
+msgid "Bulletins for your %(count)d places"
+msgstr ""
+
+#, python-format
+msgid "%(head)s and %(count)d more"
+msgstr ""
+
+#, python-format
+msgid "%(places)s, for %(day)s."
 msgstr ""
 
 msgid "new snow"
@@ -647,11 +932,6 @@ msgid "high"
 msgstr ""
 
 msgid "very high"
-msgstr ""
-
-#. Translators: joins the last two items of a problem list.
-#, python-format
-msgid "%(head)s and %(tail)s"
 msgstr ""
 
 #, python-format
@@ -1140,6 +1420,9 @@ msgstr ""
 msgid "%(region)s · saved %(when)s"
 msgstr ""
 
+msgid "No longer listed"
+msgstr ""
+
 msgid "Unnamed pin"
 msgstr ""
 
@@ -1175,7 +1458,7 @@ msgstr ""
 msgid "No bulletin coverage for this location."
 msgstr ""
 
-msgid "Weather — this spot"
+msgid "Weather — near this spot"
 msgstr ""
 
 msgid "Full forecast"
@@ -1239,6 +1522,21 @@ msgid "Saved"
 msgstr ""
 
 msgid "Save resort"
+msgstr ""
+
+msgid "Today"
+msgstr ""
+
+#, python-format
+msgid "Danger today: %(level)s"
+msgstr ""
+
+msgid "No bulletin today"
+msgstr ""
+
+msgid ""
+"Pin a region from its bulletin, or a resort with the star on its sheet, to "
+"see its danger and weather here every day."
 msgstr ""
 
 msgid "Connect an app — Snowdesk"
@@ -1345,6 +1643,31 @@ msgstr ""
 msgid "Delete this %(kind)s report? It can't be recovered."
 msgstr ""
 
+msgid "On the ground"
+msgstr ""
+
+msgid "No reports in 3 days"
+msgstr ""
+
+msgid "Recent"
+msgstr ""
+
+#, python-format
+msgid "Observed on %(day)s · %(n)s"
+msgstr ""
+
+msgid "Report"
+msgstr ""
+
+msgid "Report what you see"
+msgstr ""
+
+msgid "Sign in to report"
+msgstr ""
+
+msgid "Report on the map"
+msgstr ""
+
 msgid "Thank you for your report!"
 msgstr ""
 
@@ -1366,7 +1689,7 @@ msgstr ""
 msgid "Field observation report"
 msgstr ""
 
-msgid "Report"
+msgid "Placed where you put the pin."
 msgstr ""
 
 msgid "Using current GPS location"
@@ -1384,10 +1707,35 @@ msgstr ""
 msgid "GPS not available — move the map to set your location"
 msgstr ""
 
-msgid "Refine location"
+msgid "Move pin"
 msgstr ""
 
-msgid "What did you observe?"
+msgid "Move the map so the pin sits where you saw it."
+msgstr ""
+
+msgid "Done"
+msgstr ""
+
+msgid "What's it like?"
+msgstr ""
+
+msgid "Share with everyone here"
+msgstr ""
+
+#, python-format
+msgid "Your places on %(day)s"
+msgstr ""
+
+#, python-format
+msgid "Since %(day)s"
+msgstr ""
+
+#, python-format
+msgid "%(region)s: %(text)s"
+msgstr ""
+
+#, python-format
+msgid "%(count)d bulletins"
 msgstr ""
 
 msgid "Yes"
@@ -1619,7 +1967,7 @@ msgstr ""
 msgid "The whole product"
 msgstr ""
 
-msgid "Where your line meets each problem"
+msgid "Shows SAC's grade, not today's risk"
 msgstr ""
 
 msgid "Your own route"
@@ -1774,8 +2122,100 @@ msgid ""
 "triggered by one person."
 msgstr ""
 
+msgid "Wind slab"
+msgstr ""
+
 msgid "North to south-east aspects, above 2200m"
 msgstr ""
+
+msgid "Switzerland"
+msgstr ""
+
+msgid "France"
+msgstr ""
+
+msgid "Austria"
+msgstr ""
+
+msgid "Italy"
+msgstr ""
+
+msgid "Germany"
+msgstr ""
+
+msgid "Slovenia"
+msgstr ""
+
+msgid "Danger held in every region since yesterday."
+msgstr ""
+
+#, python-format
+msgid "Danger held in the one region rated both days."
+msgid_plural "Danger held in all %(n)d regions rated both days."
+msgstr[0] ""
+msgstr[1] ""
+
+#, python-format
+msgid "Danger rose in the one region since yesterday."
+msgid_plural "Danger rose in all %(n)d regions since yesterday."
+msgstr[0] ""
+msgstr[1] ""
+
+#, python-format
+msgid "Danger fell in the one region since yesterday."
+msgid_plural "Danger fell in all %(n)d regions since yesterday."
+msgstr[0] ""
+msgstr[1] ""
+
+#, python-format
+msgid "Danger rose in the one region rated both days."
+msgid_plural "Danger rose in all %(n)d regions rated both days."
+msgstr[0] ""
+msgstr[1] ""
+
+#, python-format
+msgid "Danger fell in the one region rated both days."
+msgid_plural "Danger fell in all %(n)d regions rated both days."
+msgstr[0] ""
+msgstr[1] ""
+
+#, python-format
+msgid "Danger rose in %(n)d region"
+msgid_plural "Danger rose in %(n)d regions"
+msgstr[0] ""
+msgstr[1] ""
+
+#, python-format
+msgid "%(rose)s and fell in %(fell)d since yesterday."
+msgstr ""
+
+#, python-format
+msgid "Danger rose in %(n)d region since yesterday"
+msgid_plural "Danger rose in %(n)d regions since yesterday"
+msgstr[0] ""
+msgstr[1] ""
+
+#, python-format
+msgid "Danger fell in %(n)d region since yesterday"
+msgid_plural "Danger fell in %(n)d regions since yesterday"
+msgstr[0] ""
+msgstr[1] ""
+
+#, python-format
+msgid "%(moved)s and held in %(held)d."
+msgstr ""
+
+#, python-format
+msgid "Highest today: %(level)s, in %(count)d of %(total)d region."
+msgid_plural "Highest today: %(level)s, in %(count)d of %(total)d regions."
+msgstr[0] ""
+msgstr[1] ""
+
+#, python-format
+msgid "Named most: %(problem)s, in %(count)d of %(total)d region."
+msgid_plural "Named most: %(problem)s, in %(count)d of %(total)d regions."
+msgstr[0] ""
+msgstr[1] ""
 
 msgid "This request couldn't be read"
 msgstr ""
@@ -1807,6 +2247,14 @@ msgstr ""
 msgid ""
 "The link may be mistyped or out of date. The map and today's bulletins are "
 "where you left them."
+msgstr ""
+
+msgid "This page is no longer listed"
+msgstr ""
+
+msgid ""
+"Snowdesk used to show this place but no longer does. The map and today's "
+"bulletins are where you left them."
 msgstr ""
 
 msgid "Something went wrong on our side"
@@ -2088,14 +2536,38 @@ msgstr ""
 msgid ""
 "<a class=\"underline hover:text-text-2\" href=\"%(help_url)s\">Help</a> "
 "&middot; <a class=\"underline hover:text-text-2\" "
-"href=\"%(resorts_url)s\">Resorts</a> &middot; <a class=\"underline hover:"
-"text-text-2\" href=\"%(terms_url)s\">Terms of Service</a> &middot; <a "
-"class=\"underline hover:text-text-2\" href=\"%(privacy_url)s\">Privacy "
-"Policy</a> &middot; <a class=\"underline hover:text-text-2\" "
-"href=\"%(colophon_url)s\">Colophon</a>"
+"href=\"%(terms_url)s\">Terms of Service</a> &middot; <a class=\"underline "
+"hover:text-text-2\" href=\"%(privacy_url)s\">Privacy Policy</a> &middot; <a "
+"class=\"underline hover:text-text-2\" href=\"%(colophon_url)s\">Colophon</a>"
 msgstr ""
 
 msgid "Version"
+msgstr ""
+
+msgid "Your alerts — Snowdesk"
+msgstr ""
+
+msgid "The bulletin for each place you follow on Snowdesk."
+msgstr ""
+
+msgid "No bulletin for this day."
+msgstr ""
+
+msgid "No change to the level or the problems."
+msgstr ""
+
+msgid "Open the trip"
+msgstr ""
+
+msgid "Open on the map"
+msgstr ""
+
+msgid ""
+"You do not follow any places yet. Pin a region or save a resort on the map "
+"to get alerts for it."
+msgstr ""
+
+msgid "Alert settings"
 msgstr ""
 
 msgid "Snowdesk — Alpine Avalanche Bulletins"
@@ -2175,30 +2647,49 @@ msgstr ""
 
 msgid ""
 "<a class=\"underline\" href=\"https://www.slf.ch\" target=\"_blank\" "
-"rel=\"noopener\" >WSL Institute for Snow and Avalanche Research SLF</a> — "
+"rel=\"noopener\">WSL Institute for Snow and Avalanche Research SLF</a> — "
 "avalanche bulletins for Switzerland, licensed under <a class=\"underline\" "
 "href=\"https://creativecommons.org/licenses/by/4.0/\" target=\"_blank\" "
-"rel=\"noopener\" >CC BY 4.0</a>"
+"rel=\"noopener\">CC BY 4.0</a>"
 msgstr ""
 
 msgid ""
 "<a class=\"underline\" href=\"https://avalanche.report\" target=\"_blank\" "
-"rel=\"noopener\" >Avalanche.report (ALBINA / EUREGIO)</a> — avalanche "
+"rel=\"noopener\">Avalanche.report (ALBINA / EUREGIO)</a> — avalanche "
 "bulletins for Tyrol, South Tyrol, and Trentino, licensed under <a "
 "class=\"underline\" href=\"https://creativecommons.org/licenses/by/4.0/\" "
-"target=\"_blank\" rel=\"noopener\" >CC BY 4.0</a>"
+"target=\"_blank\" rel=\"noopener\">CC BY 4.0</a>"
 msgstr ""
 
 msgid ""
 "<a class=\"underline\" href=\"https://meteofrance.com/meteo-montagne\" "
-"target=\"_blank\" rel=\"noopener\" >Météo-France</a> — avalanche bulletins "
+"target=\"_blank\" rel=\"noopener\">Météo-France</a> — avalanche bulletins "
 "(BRA) for the French mountain ranges, used under the <a class=\"underline\" "
 "href=\"https://portail-api.meteofrance.fr/web/en/DonneesPubliquesBRA/"
-"license\" target=\"_blank\" rel=\"noopener\" >Météo-France open-data "
-"licence</a>"
+"license\" target=\"_blank\" rel=\"noopener\">Météo-France open-data licence</"
+"a>"
 msgstr ""
 
-msgid "— elevation data"
+msgid ""
+"<a class=\"underline\" href=\"https://open-meteo.com/\" target=\"_blank\" "
+"rel=\"noopener\">Weather data by Open-Meteo.com</a> — the mountain weather "
+"forecasts for every weather point, and the elevation of a place, licensed "
+"under <a class=\"underline\" href=\"https://creativecommons.org/licenses/"
+"by/4.0/\" target=\"_blank\" rel=\"noopener\">CC BY 4.0</a>"
+msgstr ""
+
+msgid ""
+"<a class=\"underline\" href=\"https://www.sac-cas.ch/\" target=\"_blank\" "
+"rel=\"noopener\">Swiss Alpine Club SAC</a> and <a class=\"underline\" "
+"href=\"https://www.swisstopo.admin.ch/\" target=\"_blank\" "
+"rel=\"noopener\">swisstopo</a> — the ski touring routes, summits and tours, "
+"from swisstopo's <a class=\"underline\" href=\"https://opendata.swiss/en/"
+"dataset/skirouten1\" target=\"_blank\" rel=\"noopener\">Ski routes</a> "
+"dataset, compiled with the SAC. © swisstopo / SAC, used under swisstopo's <a "
+"class=\"underline\" href=\"https://www.swisstopo.admin.ch/en/terms-of-use-"
+"free-geodata-and-geoservices\" target=\"_blank\" rel=\"noopener\">terms for "
+"free geodata</a>. A route on the map is a guide to where a tour usually "
+"goes, not a judgement of whether it is safe today"
 msgstr ""
 
 msgid "— region boundaries and danger/problem iconography"
@@ -2206,12 +2697,19 @@ msgstr ""
 
 msgid ""
 "<a class=\"underline\" href=\"https://dev.maxmind.com/geoip/geolite2-free-"
-"geolocation-data/\" target=\"_blank\" rel=\"noopener\" >GeoLite2</a> by <a "
+"geolocation-data/\" target=\"_blank\" rel=\"noopener\">GeoLite2</a> by <a "
 "class=\"underline\" href=\"https://www.maxmind.com\" target=\"_blank\" "
-"rel=\"noopener\" >MaxMind</a> — offline database used to derive an "
+"rel=\"noopener\">MaxMind</a> — offline database used to derive an "
 "approximate location from a request's IP address, licensed under <a "
 "class=\"underline\" href=\"https://creativecommons.org/licenses/by-sa/4.0/\" "
-"target=\"_blank\" rel=\"noopener\" >CC BY-SA 4.0</a>"
+"target=\"_blank\" rel=\"noopener\">CC BY-SA 4.0</a>"
+msgstr ""
+
+msgid ""
+"<a class=\"underline\" href=\"https://what3words.com/\" target=\"_blank\" "
+"rel=\"noopener\">what3words</a> — the three-word address of a pin, a saved "
+"place and a trip's meeting point. what3words is a registered trademark of "
+"what3words Ltd"
 msgstr ""
 
 msgid "Basemap"
@@ -2221,19 +2719,28 @@ msgid "— open-source map renderer"
 msgstr ""
 
 msgid ""
-"— Liberty vector tiles (the default basemap in the picker, and the "
-"production default)"
+"<a class=\"underline\" href=\"https://openfreemap.org/\" target=\"_blank\" "
+"rel=\"noopener\">OpenFreeMap</a> — the Liberty map style, the default "
+"basemap. Snowdesk serves it, and the tiles under it, from its own tile host"
+msgstr ""
+
+msgid ""
+"<a class=\"underline\" href=\"https://openmaptiles.org/\" target=\"_blank\" "
+"rel=\"noopener\">© OpenMapTiles</a> — the vector tile schema the Liberty "
+"tiles are built in, licensed under <a class=\"underline\" href=\"https://"
+"creativecommons.org/licenses/by/4.0/\" target=\"_blank\" rel=\"noopener\">CC "
+"BY 4.0</a>"
 msgstr ""
 
 msgid ""
 "<a class=\"underline\" href=\"https://www.openstreetmap.org/copyright\" "
-"target=\"_blank\" rel=\"noopener\" >© OpenStreetMap contributors</a> — the "
+"target=\"_blank\" rel=\"noopener\">© OpenStreetMap contributors</a> — the "
 "map data behind the Liberty tiles, licensed under the <a class=\"underline\" "
 "href=\"https://opendatacommons.org/licenses/odbl/\" target=\"_blank\" "
-"rel=\"noopener\" >Open Database Licence (ODbL)</a>"
+"rel=\"noopener\">Open Database Licence (ODbL)</a>"
 msgstr ""
 
-msgid "— Winter vector tile style, covering Switzerland"
+msgid "— Winter and Light base map vector tile styles, covering Switzerland"
 msgstr ""
 
 msgid "— Plan IGN vector tile style, covering France"
@@ -2244,40 +2751,43 @@ msgstr ""
 
 msgid ""
 "— the elevation model behind the map's slope layer, terrain filter and route "
-"slope figures, covering Switzerland. Resampled by Snowdesk to a 5 m grid, "
-"from which the slope angle, aspect and height are derived; the slope layer "
-"is classified as the SLF recommends (30–35°, 35–40°, 40–45°, 45–50°, over "
-"50°)"
+"slope figures, covering Switzerland. Resampled by Snowdesk to a 5 m grid and "
+"served from Snowdesk's own tile host, from which the slope angle, aspect and "
+"height are derived; the slope layer is classified as the SLF recommends (30–"
+"35°, 35–40°, 40–45°, 45–50°, over 50°)"
 msgstr ""
 
 msgid "Icons"
 msgstr ""
 
 msgid ""
-"<a class=\"underline\" href=\"https://github.com/metno/weathericons\" "
-"target=\"_blank\" rel=\"noopener\" >Yr weather icons</a> by the <a "
-"class=\"underline\" href=\"https://www.met.no/\" target=\"_blank\" "
-"rel=\"noopener\" >Norwegian Meteorological Institute</a> and NRK — weather "
-"condition icons, licensed under the <a class=\"underline\" href=\"https://"
-"opensource.org/licenses/MIT\" target=\"_blank\" rel=\"noopener\" >MIT "
-"licence</a>"
+"Snowdesk — the weather condition icons and the interface icons, drawn in "
+"house"
 msgstr ""
 
 msgid ""
 "<a class=\"underline\" href=\"https://bas.dev/work/meteocons\" "
-"target=\"_blank\" rel=\"noopener\" >Meteocons</a> by <a class=\"underline\" "
-"href=\"https://github.com/basmilius\" target=\"_blank\" rel=\"noopener\" "
-">Bas Milius</a> — the sunrise and sunset icons, licensed under the <a "
+"target=\"_blank\" rel=\"noopener\">Meteocons</a> by <a class=\"underline\" "
+"href=\"https://github.com/basmilius\" target=\"_blank\" rel=\"noopener\">Bas "
+"Milius</a> — the sunrise and sunset icons, licensed under the <a "
 "class=\"underline\" href=\"https://opensource.org/licenses/MIT\" "
-"target=\"_blank\" rel=\"noopener\" >MIT licence</a>"
+"target=\"_blank\" rel=\"noopener\">MIT licence</a>"
+msgstr ""
+
+msgid ""
+"<a class=\"underline\" href=\"https://fontawesome.com/\" target=\"_blank\" "
+"rel=\"noopener\">Font Awesome Free</a> by Fonticons, Inc. — the map's "
+"favourite star and report flag, and the observations binoculars, licensed "
+"under <a class=\"underline\" href=\"https://fontawesome.com/license/free\" "
+"target=\"_blank\" rel=\"noopener\">CC BY 4.0</a>"
 msgstr ""
 
 msgid ""
 "<a class=\"underline\" href=\"https://www.avalanches.org/\" "
 "target=\"_blank\" rel=\"noopener\">EAWS</a> — avalanche problem and danger-"
 "level SVGs, licensed under <a class=\"underline\" href=\"https://"
-"creativecommons.org/licenses/by/4.0/\" target=\"_blank\" rel=\"noopener\" "
-">CC BY 4.0</a>"
+"creativecommons.org/licenses/by/4.0/\" target=\"_blank\" rel=\"noopener\">CC "
+"BY 4.0</a>"
 msgstr ""
 
 msgid "Fonts"
@@ -2285,14 +2795,11 @@ msgstr ""
 
 msgid ""
 "<a class=\"underline\" href=\"https://fonts.google.com/specimen/DM+Sans\" "
-"target=\"_blank\" rel=\"noopener\" >DM Sans</a> and <a class=\"underline\" "
+"target=\"_blank\" rel=\"noopener\">DM Sans</a> and <a class=\"underline\" "
 "href=\"https://fonts.google.com/specimen/DM+Mono\" target=\"_blank\" "
-"rel=\"noopener\" >DM Mono</a> — licensed under the <a class=\"underline\" "
-"href=\"https://scripts.sil.org/OFL\" target=\"_blank\" rel=\"noopener\" >SIL "
+"rel=\"noopener\">DM Mono</a> — licensed under the <a class=\"underline\" "
+"href=\"https://scripts.sil.org/OFL\" target=\"_blank\" rel=\"noopener\">SIL "
 "Open Font Licence 1.1</a>"
-msgstr ""
-
-msgid "Email"
 msgstr ""
 
 msgid "— transactional email delivery"
@@ -2376,9 +2883,6 @@ msgid ""
 "Czechia, Poland, Iceland and Norway. No Switzerland and no France."
 msgstr ""
 
-msgid "France"
-msgstr ""
-
 msgid ""
 "<strong class=\"text-text-1\">Yéti</strong> for a tour rated against today's "
 "bulletin, or <strong class=\"text-text-1\">AvalancheClarity</strong> if you "
@@ -2427,7 +2931,7 @@ msgstr ""
 msgid ""
 "Prices are as found on the dates given at the foot of this page. Anything "
 "marked <span class=\"font-mono text-caption uppercase tracking-wide bg-tag "
-"rounded-sm px-1 py-0.5\" >unconfirmed</span> comes from secondary sources "
+"rounded-sm px-1 py-0.5\">unconfirmed</span> comes from secondary sources "
 "rather than the product's own site, because the site could not be reached "
 "when the check ran."
 msgstr ""
@@ -2781,11 +3285,11 @@ msgid ""
 "planning a day with other people. <strong class=\"text-text-1\">Weakest at</"
 "strong> alerting, which it does not do at all; observed weather-station "
 "readings, where it has forecasts but no live station network; per-tour risk "
-"scoring, which it deliberately does not do — a trip page states where your "
-"line enters the ground each problem names, and stops short of rating the "
-"day; languages other than English; and teaching material, where WhiteRisk is "
-"far ahead. If you ski only in Switzerland, WhiteRisk is the better product "
-"and it is not close."
+"scoring, which it deliberately does not do — the day's problem terrain is a "
+"map layer you read your line against, and SAC's tours carry SAC's own grade, "
+"but nothing rates a tour for the day; languages other than English; and "
+"teaching material, where WhiteRisk is far ahead. If you ski only in "
+"Switzerland, WhiteRisk is the better product and it is not close."
 msgstr ""
 
 msgid "Tools that rate a specific tour"
@@ -3012,6 +3516,22 @@ msgid ""
 "A plain-language guide to what Snowdesk does and how to use each part of it."
 msgstr ""
 
+msgid "Find a topic"
+msgstr ""
+
+msgid "Try “offline”, “gpx” or “slope”"
+msgstr ""
+
+msgid "No topic matches that. Try a different word."
+msgstr ""
+
+msgid "1 topic matches."
+msgstr ""
+
+#, python-format
+msgid "%%(count)s topics match."
+msgstr ""
+
 msgid "Getting started"
 msgstr ""
 
@@ -3042,7 +3562,13 @@ msgstr ""
 msgid "The season timeline"
 msgstr ""
 
+msgid "Dated and Terrain"
+msgstr ""
+
 msgid "Layers"
+msgstr ""
+
+msgid "Map key"
 msgstr ""
 
 msgid "Weather on the map"
@@ -3136,6 +3662,12 @@ msgid ""
 "grey."
 msgstr ""
 
+msgid ""
+"The change happens by itself as you zoom in past level 12, and the first "
+"time it does on a device, a card on the map says what has changed and names "
+"the colours."
+msgstr ""
+
 msgid "What it cannot tell you"
 msgstr ""
 
@@ -3218,9 +3750,12 @@ msgid ""
 msgstr ""
 
 msgid ""
-"There are three ways to store an area. Select a region on the map and use "
-"the download button beside its name in the header to take the whole region. "
-"Use \"Download a custom area\" inside the sheet to frame any part of the map "
+"There are three ways to store an area. To take a whole region, select it on "
+"the map and use the download button on its sheet, or use \"Download a "
+"region\" inside \"Your downloads\": the map shows plain region outlines, you "
+"tap the one you want, check its size and download it. That second way works "
+"in Terrain mode too, where the map draws no regions of its own. Use "
+"\"Download a custom area\" inside the sheet to frame any part of the map "
 "yourself &mdash; the right choice for a tour that straddles a boundary. Or "
 "tap the locate button and, once it has found you, tap it again to drop a "
 "zone: a circle of map around where you are standing, sized by zooming in or "
@@ -3272,12 +3807,12 @@ msgid ""
 msgstr ""
 
 msgid ""
-"\"Display downloaded areas\", under Basemap in the layers menu &mdash; or "
-"the \"Show on the map\" switch at the foot of the downloads panel, which is "
-"the same setting &mdash; shades the areas you hold, so you can see the edges "
-"of your own coverage before you set off. Left alone it switches itself on "
-"whenever you are offline, which is when the answer matters; set it either "
-"way and your choice stands."
+"\"Downloaded areas\", under Yours in the layers menu &mdash; or the \"Show "
+"on the map\" switch at the foot of the downloads panel, which is the same "
+"setting &mdash; shades the areas you hold, so you can see the edges of your "
+"own coverage before you set off. Left alone it switches itself on whenever "
+"you are offline, which is when the answer matters; set it either way and "
+"your choice stands."
 msgstr ""
 
 msgid ""
@@ -3301,9 +3836,9 @@ msgid ""
 "A download stores the avalanche bulletins and the weather for the ground "
 "inside it as well as the map, and \"Sync now\" in a row's \"&hellip;\" menu "
 "brings them up to date before you set off. To do all of it in one press, "
-"open the connection symbol at the top of the page and choose \"Get ready for "
-"offline\": it sends any changes still waiting on this device, then brings "
-"every download up to date in turn, and each area says how it came out. Pages "
+"open the connection symbol at the top of the page and choose \"Sync\": it "
+"sends any changes still waiting on this device, then brings every download "
+"up to date in turn, and each area says whether it will work offline. Pages "
 "outside your downloads are kept for offline use as you visit them &mdash; "
 "see \"Install &amp; offline\" below."
 msgstr ""
@@ -3326,6 +3861,14 @@ msgid ""
 "To pin a resort, open it and press the star in its header. A pinned resort "
 "turns blue on the map, and search lists it under \"Pinned resorts\" before "
 "you type anything, beside the regions you have pinned."
+msgstr ""
+
+msgid ""
+"The sun next to \"Today\" above the map opens Today: each region you have "
+"pinned, and each region a pinned resort is in, with today's avalanche danger "
+"and how it moved since yesterday, and your resorts listed under their region "
+"with today's weather. Tap a row to open that place. A red dot on the sun "
+"means a new alert."
 msgstr ""
 
 msgid ""
@@ -3381,10 +3924,34 @@ msgstr ""
 
 #, python-format
 msgid ""
-"To see exactly what this device has saved &mdash; and to clear it if "
-"something is stuck &mdash; open <a href=\"%(url)s\" "
-"class=\"underline\">Offline content</a>. You do not need an account, and it "
-"is worth checking before a trip rather than after."
+"If something is not working offline, <a href=\"%(url)s\" "
+"class=\"underline\">Debug offline issues</a> shows exactly what this device "
+"has saved, and lets you clear it if something is stuck. You do not need an "
+"account."
+msgstr ""
+
+msgid ""
+"The stacked-squares button on the right of the map opens the layers menu "
+"&mdash; one list of everything the map can draw, with a switch for each. A "
+"layer you switch on stays on the next time you open Snowdesk on this device."
+msgstr ""
+
+msgid ""
+"The switch on the right of a row says whether that layer is drawn. A row "
+"with an arrow also has options: tap its name to see them, and the back arrow "
+"to return. The line under a row's name says what its options are set to, and "
+"the count at the top of the menu says how many layers are on altogether."
+msgstr ""
+
+msgid "Reference data"
+msgstr ""
+
+msgid ""
+"Avalanche bulletins paints each region in its danger colour. Its options "
+"have one row per bulletin provider &mdash; SLF (CH), Météo-France (FR) and "
+"ALBINA (AT, IT) &mdash; each covering the countries that provider publishes "
+"for. Switching one off takes its bulletins off the map, which is the way to "
+"look at one country's picture on its own. Switzerland is on to start with."
 msgstr ""
 
 msgid ""
@@ -3397,17 +3964,19 @@ msgid ""
 msgstr ""
 
 msgid ""
-"Steep terrain highlights ground by aspect, slope range and, if you like, a "
-"band of elevation. Tap its name to open the panel where you choose them. "
-"While it is on, its colours replace the bulletin's slopes; switch it off and "
-"they come back. Read \"Terrain filter\" below for what it does not tell you."
+"Weather draws a condition symbol and the day's high temperature at every "
+"place Snowdesk holds, with the height that reading is for beneath it. It "
+"follows the timeline like everything else on the map, and it has rules of "
+"its own worth knowing about &mdash; read \"Weather on the map\" below."
 msgstr ""
 
 msgid ""
-"The stacked-squares button on the right of the map opens the layers menu "
-"&mdash; one list controlling everything the map draws, grouped by what each "
-"row is. A row you switch on stays on the next time you open Snowdesk on this "
-"device."
+"Boundaries outlines the European avalanche regions at three scales: Major "
+"(EAWS Level 1), Minor (EAWS L2) and Micro (EAWS L4). Micro is the level "
+"bulletins are issued at and is drawn by default; the two coarser outlines "
+"help you place a small region inside the wider area it belongs to. They "
+"follow the base map rather than the bulletin providers: on a national base "
+"map you see that country's regions, and on OpenFreeMap you see all of them."
 msgstr ""
 
 msgid ""
@@ -3417,75 +3986,50 @@ msgid ""
 msgstr ""
 
 msgid ""
-"Favourites draws your own saved places, and Routes draws every track you "
-"have uploaded. Both need an account: tapping one while you are signed out "
-"offers you the way in rather than switching on a layer with nothing in it."
-msgstr ""
-
-msgid "Conditions"
-msgstr ""
-
-msgid ""
-"One row per bulletin provider &mdash; SLF (CH), Météo-France (FR) and ALBINA "
-"(AT, IT) &mdash; each covering the countries that provider publishes for. "
-"Switching one off takes its bulletins off the map, which is the way to look "
-"at one country's picture on its own. Switzerland is on to start with."
+"Steep terrain highlights ground by aspect, slope range and, if you like, a "
+"band of elevation. Tap its name to open the panel where you choose them. "
+"While it is on, its colours replace the bulletin's slopes; switch it off and "
+"they come back. Read \"Terrain filter\" below for what it does not tell you."
 msgstr ""
 
 msgid ""
-"Weather draws a condition symbol and the day's high temperature at every "
-"place Snowdesk holds, with the height that reading is for beneath it. It "
-"follows the timeline like everything else on the map, and it has rules of "
-"its own worth knowing about &mdash; read \"Weather on the map\" below."
-msgstr ""
-
-msgid ""
-"Field observations draws what other people have reported from the ground, "
-"fading as each report ages. It is public, so it works whether or not you are "
-"signed in."
-msgstr ""
-
-msgid "Boundaries"
-msgstr ""
-
-msgid ""
-"Outlines of the European avalanche regions at three scales: Major (EAWS "
-"Level 1), Minor (EAWS L2) and Micro (EAWS L4). Micro is the level bulletins "
-"are issued at and is drawn by default; the two coarser outlines help you "
-"place a small region inside the wider area it belongs to. They follow the "
-"base map rather than the Bulletins rows: on a national base map you see that "
-"country's regions, and on OpenFreeMap you see all of them."
-msgstr ""
-
-msgid ""
-"The map underneath everything else, and the only section where you pick one "
-"rather than switching several on. OpenFreeMap covers the whole area; the "
-"national mapping-agency maps &mdash; Swisstopo (CH), IGN (FR) and basemap.at "
-"(AT) &mdash; carry far more detail for their own country and are blank "
-"outside it, so switching to one is a choice to look closely at one place."
-msgstr ""
-
-msgid ""
-"Two things are drawn on top of whichever one you chose, which is why they "
-"sit under this heading. The slope layer, which shades the ground by "
-"steepness, lives inside \"Terrain filter\": choose &ldquo;By slope&rdquo; in "
-"the panel its adjust button opens. It is the layer with the most real limits "
-"on what it can tell you, so read \"Slope angle\" below before you rely on a "
+"The same panel holds the slope layer, which shades the ground by steepness: "
+"choose &ldquo;By slope&rdquo;. It is the layer with the most real limits on "
+"what it can tell you, so read \"Slope angle\" below before you rely on a "
 "shading."
 msgstr ""
 
 msgid ""
-"\"Display downloaded areas\" shades the ground you already hold on this "
-"device, so you can see the edges of your own coverage before you set off. "
-"Left alone it switches itself on whenever you are offline, which is when the "
-"answer matters."
+"Basemap is the map underneath everything else, and the one row with no "
+"switch: there is always one, and you pick which. OpenFreeMap covers the "
+"whole area; the national mapping-agency maps &mdash; Swisstopo (CH), IGN "
+"(FR) and basemap.at (AT) &mdash; carry far more detail for their own country "
+"and are blank outside it, so switching to one is a choice to look closely at "
+"one place."
+msgstr ""
+
+msgid "Your data"
 msgstr ""
 
 msgid ""
-"\"Terrain filter\" turns on a layer that highlights ground by aspect, slope "
-"range and, if you like, a band of elevation; the adjust button beside it "
-"opens the panel where you choose them. Read \"Terrain filter\" below for "
-"what it does not tell you."
+"Favourites draws your own saved places, and Routes draws every track you "
+"have uploaded. Both need an account: tapping one while you are signed out "
+"offers you the way in rather than switching on a layer with nothing in it. "
+"Each panel has its own \"Show on the map\" switch, which is the same setting "
+"as the switch here."
+msgstr ""
+
+msgid ""
+"Field observations draws what people have reported from the ground, fading "
+"as each report ages. It is public, so it works whether or not you are signed "
+"in."
+msgstr ""
+
+msgid ""
+"Downloaded areas shades the ground you already hold on this device, so you "
+"can see the edges of your own coverage before you set off. Left alone it "
+"switches itself on whenever you are offline, which is when the answer "
+"matters."
 msgstr ""
 
 msgid "The dot on each row"
@@ -3497,21 +4041,15 @@ msgid ""
 "while it is being fetched. Green means the data is on the device right now, "
 "checked rather than assumed, so you can see what will still work before you "
 "lose signal. Two rows have no dot, because neither could answer honestly: "
-"the terrain filter draws from tiles kept as you look at the map, so what is "
-"held depends on where you have been, and your downloaded areas are on this "
-"device by definition."
+"steep terrain draws from tiles kept as you look at the map, so what is held "
+"depends on where you have been, and your downloaded areas are on this device "
+"by definition."
 msgstr ""
 
 msgid ""
 "A row is sometimes switched off with a reason attached &mdash; a layer that "
 "has never been loaded while you were online, for instance. The note on the "
 "row says why."
-msgstr ""
-
-msgid ""
-"Each heading opens and closes, and remembers which way you left it. The line "
-"under a heading says what is on inside it without you having to open it, and "
-"the count at the top of the menu says how many layers are on altogether."
 msgstr ""
 
 msgid ""
@@ -3567,10 +4105,193 @@ msgid ""
 msgstr ""
 
 msgid ""
-"Field observations are quick, one-tap reports of what you have actually seen "
-"out on the snow. You pick one signal &mdash; whumpfing, shooting cracks, "
-"fractures, wind striations or pinwheels &mdash; and that, with where and "
-"when you saw it, is the whole report."
+"The (i) button at the bottom left of the map opens its key. It lists only "
+"what is drawn where you are looking: pan to another valley or zoom out, and "
+"the key follows. Its \"All keys & sources\" page lists everything the map "
+"can show, and who the data is from."
+msgstr ""
+
+msgid "Danger level"
+msgstr ""
+
+msgid ""
+"Each avalanche region is coloured by the bulletin's danger level for the day "
+"the map shows, on the European five-level scale. Grey is a region with no "
+"rating that day. Zoomed in, the colour gives way to a band just inside each "
+"region's edge and its level, so the ground stays readable."
+msgstr ""
+
+msgid "Problem slopes"
+msgstr ""
+
+msgid ""
+"With \"Sync with map terrain\" on, the steep ground an avalanche problem in "
+"the bulletin describes is painted in that problem's danger colour, from zoom "
+"12 in Switzerland. The colours are the danger scale's, so the key does not "
+"repeat them. Grey is other steep ground over 30° that no problem describes, "
+"which is not the same as safe; hatching is ground the terrain data does not "
+"cover."
+msgstr ""
+
+msgid "Field reports"
+msgstr ""
+
+msgid ""
+"Reports from people out on the snow, one pin each, by what they saw: warning "
+"signs, the snow surface, or the trail. A filled pin was reported on the "
+"map's day; a ring, in the three days before."
+msgstr ""
+
+msgid "Weather"
+msgstr ""
+
+msgid ""
+"From zoom 7, each weather point shows the map's day as a symbol and a "
+"temperature, and under them the point's own height, which is where the "
+"forecast is for. Tap one for the day hour by hour."
+msgstr ""
+
+msgid "Steep terrain"
+msgstr ""
+
+msgid ""
+"The ground's own slope, from zoom 11 in Switzerland. By slope, each class "
+"has its colour; with one tint, only the ground your filter matches is "
+"painted. Hatching is ground with no terrain data."
+msgstr ""
+
+msgid "30–35°"
+msgstr ""
+
+msgid "35–40°"
+msgstr ""
+
+msgid "40–45°"
+msgstr ""
+
+msgid "45–50°"
+msgstr ""
+
+msgid "Over 50°"
+msgstr ""
+
+msgid "Ski tours"
+msgstr ""
+
+msgid ""
+"The Swiss Alpine Club's ski tours, from zoom 9: deep blue on the way up, sky "
+"blue on the way down, never dashed. A dark dot is a summit a tour goes to "
+"and a ring a hut. Tap a line to open the tour."
+msgstr ""
+
+msgid "Wildlife rest zones"
+msgstr ""
+
+msgid ""
+"Areas set aside for wildlife in winter, from the Federal Office for the "
+"Environment. Red is closed by law; amber is a closure FOEN advises. A zone "
+"is drawn strongly when the map's day is inside its protected period, and "
+"faintly when it is out of season, so you can still see it when planning "
+"another day."
+msgstr ""
+
+msgid "Closed by law"
+msgstr ""
+
+msgid "Advised"
+msgstr ""
+
+msgid "Closed by law, out of season"
+msgstr ""
+
+msgid "Advised, out of season"
+msgstr ""
+
+msgid "Your routes"
+msgstr ""
+
+msgid ""
+"A saved route is drawn as its legs, each running between two transitions and "
+"numbered along the track: dashed where it climbs, solid where it descends. A "
+"route whose legs are not worked out yet is one plain line. Close in, from "
+"zoom 14, the line is coloured by the slope of the ground under it instead. A "
+"dot marks the start and a chequered flag the finish. Press a leg on the "
+"route's profile to highlight it, or tap the line to read one point."
+msgstr ""
+
+msgid "Pins"
+msgstr ""
+
+msgid ""
+"A dark dot is a ski resort and a blue dot a resort you have pinned. A blue "
+"star is a place you dropped a pin on."
+msgstr ""
+
+msgid "Boundaries"
+msgstr ""
+
+msgid ""
+"The avalanche regions at the levels the layers menu turns on: a heavy dark "
+"red line round a major region, a blue one round a minor region, a thin grey "
+"one round each micro region, the smallest area a bulletin rates. A dashed "
+"outline is a region no provider has ever rated. On a day's map, a green "
+"outline joins the regions one bulletin covers together."
+msgstr ""
+
+msgid "Your position"
+msgstr ""
+
+msgid ""
+"Once you ask the map to find you, a blue dot with a white ring is where your "
+"device says you are. Tap it for what is there."
+msgstr ""
+
+msgid "Downloaded maps"
+msgstr ""
+
+msgid ""
+"While you are offline, or with the overlay on, hatching marks the ground "
+"downloaded for the basemap you are using, and an outline ground downloaded "
+"for another one. Zoomed out, everywhere shows the low-detail overview map, "
+"so zoom in to check an area is really downloaded."
+msgstr ""
+
+msgid ""
+"The switch at the start of the date row puts the map in one of two modes. "
+"The date half is the map for a day: the avalanche bulletin, the weather and "
+"the field reports, all for the date it shows. The mountain half is Terrain: "
+"the map for planning and browsing, with nothing on it that changes from one "
+"day to the next."
+msgstr ""
+
+msgid ""
+"Terrain takes the day's layers off the map: the danger colours and the "
+"avalanche regions they are drawn in, the bulletin's problem slopes, the "
+"weather symbols, the field reports and the season timeline. Their rows in "
+"the layers menu are greyed out while you are in Terrain. It switches nothing "
+"on."
+msgstr ""
+
+msgid ""
+"Everything else stays as you set it, in both modes: Steep terrain, your "
+"routes, resorts, ski tours, wildlife rest zones and your pins. Turning one "
+"on or off in Terrain changes that layer alone."
+msgstr ""
+
+msgid ""
+"In Terrain the date shrinks to a calendar icon. Tap it to come back to the "
+"dated map, on the day you left, with each of the day's layers just as you "
+"had it. The map remembers which mode you were in, and a link you share opens "
+"in the same mode."
+msgstr ""
+
+msgid ""
+"Field observations are quick reports of what the ground is like, from anyone "
+"who has been out on it. Tick whatever is true &mdash; warning signs such as "
+"whumpfing or shooting cracks, the snow surface (powder, crust, icy) or the "
+"trail (busy, quiet, a skin track in) &mdash; and share it. That, with where "
+"and when you saw it, is the whole report. You see everyone else's; they see "
+"yours."
 msgstr ""
 
 msgid ""
@@ -3659,7 +4380,7 @@ msgstr ""
 msgid ""
 "The file you exported is not always the file you want on the map. <a "
 "href=\"%(editor_url)s\" target=\"_blank\" rel=\"noopener\" class=\"text-"
-"status-info-text underline\" >gpx.studio ↗</a> opens a .gpx in the browser "
+"status-info-text underline\">gpx.studio ↗</a> opens a .gpx in the browser "
 "and lets you crop its ends, slice it into pieces, join two together or "
 "redraw a stretch, then export the result &mdash; enough to take the drive "
 "home off a recorded track, or to cut a multi-day tour into a day each. It is "
@@ -3727,12 +4448,12 @@ msgid ""
 msgstr ""
 
 msgid ""
-"Turn it on from the layers menu: tick &ldquo;Terrain filter&rdquo;, open its "
-"settings with the adjust button beside it and choose &ldquo;By slope&rdquo;. "
-"The rest of that panel still applies. The slope range says which bands are "
-"painted, from 30&deg; up unless you change it, and the aspects and the "
-"elevation band narrow it further &mdash; so you can colour only the north-"
-"facing slopes above 2,400 metres, say, by how steep they are."
+"Turn it on from the layers menu: switch on &ldquo;Steep terrain&rdquo;, tap "
+"its name to open its settings and choose &ldquo;By slope&rdquo;. The rest of "
+"that panel still applies. The slope range says which bands are painted, from "
+"30&deg; up unless you change it, and the aspects and the elevation band "
+"narrow it further &mdash; so you can colour only the north-facing slopes "
+"above 2,400 metres, say, by how steep they are."
 msgstr ""
 
 msgid ""
@@ -3803,8 +4524,8 @@ msgid ""
 msgstr ""
 
 msgid ""
-"It fades out when you zoom out. The layer is drawn from zoom level 12, "
-"roughly a valley across the screen; further out nothing is drawn, and the "
+"It fades out when you zoom out. The layer is drawn from zoom level 11, "
+"roughly two valleys across the screen; further out nothing is drawn, and the "
 "sheet asks you to zoom in. An empty map at a wide view says nothing about "
 "how steep the ground is."
 msgstr ""
@@ -3840,10 +4561,10 @@ msgstr ""
 
 #, python-format
 msgid ""
-"The <a href=\"%(url)s\" class=\"underline\">Offline content</a> page has a "
-"\"Sync log\" panel listing your device's most recent real syncs with the "
-"server (cached, offline-served pages don't count). It keeps the newest 100 "
-"entries."
+"The <a href=\"%(url)s\" class=\"underline\">Debug offline issues</a> page "
+"has a \"Sync log\" panel listing your device's most recent real syncs with "
+"the server (cached, offline-served pages don't count). It keeps the newest "
+"100 entries."
 msgstr ""
 
 msgid ""
@@ -3857,10 +4578,10 @@ msgid ""
 "high it is. Choose any of the eight aspects, a slope range from 30 degrees "
 "upward, and if you like a band of elevation, and the map tints the ground "
 "that matches in blue. Ground that does not match is left as it is. The "
-"layers menu&rsquo;s &ldquo;Terrain filter&rdquo; row is a checkbox that "
-"turns it on and off; the adjust button beside it opens the settings as a "
-"panel, and turns the filter on if it is off. While it is on, that row and "
-"the map&rsquo;s legend say what it is set to."
+"layers menu&rsquo;s &ldquo;Steep terrain&rdquo; row has a switch that turns "
+"it on and off; tapping its name opens the settings as a panel, and turns the "
+"filter on if it is off. While it is on, that row and the map&rsquo;s legend "
+"say what it is set to."
 msgstr ""
 
 msgid ""
@@ -3872,7 +4593,7 @@ msgid ""
 msgstr ""
 
 msgid ""
-"The filter shows from zoom level 12, roughly a valley across the screen; "
+"The filter shows from zoom level 11, roughly two valleys across the screen; "
 "zoom out further and its row in the layers menu asks you to zoom in."
 msgstr ""
 
@@ -4038,73 +4759,82 @@ msgid "Know your line before you leave."
 msgstr ""
 
 msgid ""
-"Today’s avalanche bulletin and weather forecast for where you’re going. "
-"Upload your route for an analysis against the bulletin, and share it as a "
-"trip."
+"The Snowdesk map: Swiss warning regions coloured by danger level, with the "
+"Martigny–Verbier bulletin open on its wind slab problem."
 msgstr ""
 
-msgid "Open the map"
+msgid "Current conditions"
 msgstr ""
 
-msgid "How it works"
-msgstr ""
-
-msgid ""
-"The Snowdesk map on 11 January 2026: Swiss avalanche warning regions "
-"coloured by danger level, with Martigny–Verbier selected and the season "
-"timeline along the bottom."
-msgstr ""
-
-msgid "The bulletin, and the season behind it"
+msgid "The official bulletin, on one map"
 msgstr ""
 
 msgid ""
-"Today’s danger level, avalanche problems, aspects and elevations — the whole "
-"bulletin, as the warning service issued it. Scroll back through the season "
-"to see how the snowpack got here."
-msgstr ""
-
-msgid "Weather forecast for the valley, the lift and the summit"
-msgstr ""
-
-msgid ""
-"Seven days of snowfall, wind and freezing level at the heights you’ll pass "
-"through, with today and tomorrow hour by hour."
-msgstr ""
-
-msgid "Route analysis"
+"Every warning region, coloured by the day’s danger level. Open one to read "
+"the bulletin as the warning service issued it. Zoom in and the day’s "
+"avalanche problems are painted on the ground, on the aspects and elevations "
+"they affect."
 msgstr ""
 
 msgid ""
-"Upload a route (GPX) to see the slope angle under your line, where steep "
-"ground above could release onto you, and where a fall would not stop. Full "
-"terrain analysis covers Switzerland today."
+"The Verbier Backside route off Mont Fort in Snowdesk: the line coloured by "
+"slope angle over the day’s problem terrain, its elevation profile, and a "
+"point card reading a 35°+ fall-line descent on very steep 35–40° ground."
 msgstr ""
 
-msgid "Your route against the day’s bulletin"
+msgid "Route planning"
 msgstr ""
 
-msgid ""
-"Pick a day and see which stretches of your line sit on the aspects and "
-"elevations each avalanche problem names. No score — the judgement stays with "
-"you."
-msgstr ""
-
-msgid "Trips: one link for the group"
+msgid "See the ground your line crosses"
 msgstr ""
 
 msgid ""
-"Give your route a date and meeting point and share with friends as a trip, "
-"with the weather forecast and bulletin information included."
+"Draw a route or upload a GPX and see the slope angle under every metre of "
+"it, the climbs and descents on its profile, and the day’s problem terrain "
+"beneath the line. Try the example route, no account needed."
+msgstr ""
+
+msgid ""
+"No score and no verdict: the judgement stays with you. Full terrain analysis "
+"covers Switzerland today."
+msgstr ""
+
+msgid ""
+"The Snowdesk forecast for Les Haudères at 1,441 m: the week ahead, and today "
+"hour by hour with temperature and freezing level."
+msgstr ""
+
+msgid "Forecasts at the heights you’ll pass through"
+msgstr ""
+
+msgid ""
+"Snowfall, wind and freezing level at base, mid and summit, seven days ahead, "
+"hour by hour for the next two days."
+msgstr ""
+
+msgid ""
+"A Snowdesk trip: the route, the day, the meeting point, and the forecast and "
+"danger level for each day you might go."
+msgstr ""
+
+msgid "Trips"
+msgstr ""
+
+msgid "One link for the group"
+msgstr ""
+
+msgid ""
+"Pick the route, the day and a meeting point. The trip carries the forecast "
+"and the danger level for each day you might go, and anyone you send the link "
+"to can save it."
 msgstr ""
 
 msgid "It still opens without signal"
 msgstr ""
 
 msgid ""
-"Download an area before you leave: the map, the bulletins and the weather "
-"forecast for it stay on your phone. Field reports you file up there are sent "
-"when you’re back in range."
+"Download the maps, bulletins and forecasts for an area before you leave "
+"mobile coverage."
 msgstr ""
 
 msgid "The bulletin is the authority"
@@ -4113,9 +4843,10 @@ msgstr ""
 msgid ""
 "Snowdesk does not write avalanche forecasts. Every danger level comes from "
 "the warning service that issued it, shown as they wrote it. The route "
-"analysis reads slope angle only — a route with nothing marked is not a safe "
-"route. None of it replaces avalanche training, a transceiver you can use, "
-"and partners who can use theirs."
+"analysis reads slope angle, and the problem terrain is the bulletin drawn on "
+"the ground — neither is a verdict, and a route with nothing marked is not a "
+"safe route. None of it replaces avalanche training, a transceiver you can "
+"use, and partners who can use theirs."
 msgstr ""
 
 msgid ""
@@ -4123,37 +4854,28 @@ msgid ""
 "ALBINA (Tyrol, South Tyrol, Trentino). Weather forecasts from Open-Meteo."
 msgstr ""
 
-msgid "How to use the map, and what every control does."
-msgstr ""
-
-msgid "Compare apps"
+msgid "Open the map"
 msgstr ""
 
 msgid ""
-"Which avalanche app to use for where you ski — including when it is not this "
-"one."
-msgstr ""
-
-msgid "The build blog"
-msgstr ""
-
-msgid "Notes on how Snowdesk is made, and why it works the way it does."
-msgstr ""
-
-msgid ""
-"A guide to reading the SLF Swiss avalanche bulletin — danger levels, problem "
-"types, elevation and aspect, and how the day evolves."
+"A guide to reading an avalanche bulletin from SLF, ALBINA or Météo-France — "
+"danger levels, problem types, elevation and aspect, how the day evolves, and "
+"what differs between providers."
 msgstr ""
 
 msgid "How to read the avalanche bulletin"
 msgstr ""
 
 msgid ""
-"Published daily by the WSL Institute for Snow and Avalanche Research (SLF), "
-"the bulletin covers the Swiss Alps and Jura. It is an informed forecast — "
-"not a guarantee — and cannot replace an on-site assessment. This guide "
-"follows the same structure as the bulletin page itself: Day Risk Profile, "
-"Avalanche Problems, and Snowpack &amp; Weather."
+"Snowdesk shows bulletins from three services: the WSL Institute for Snow and "
+"Avalanche Research (SLF) for Switzerland, ALBINA (avalanche.report) for "
+"Tyrol, South Tyrol and Trentino, and Météo-France for the French massifs. A "
+"bulletin is an informed forecast — not a guarantee — and cannot replace an "
+"on-site assessment. This guide follows the same structure as the bulletin "
+"page itself: Day Risk Profile, Avalanche Problems, and Snowpack &amp; "
+"Weather. The examples are drawn from SLF bulletins; all three providers use "
+"the same European danger scale and problem types, and the section on what "
+"differs by provider covers the rest."
 msgstr ""
 
 msgid "Day Risk Profile"
@@ -4365,6 +5087,9 @@ msgstr ""
 msgid "Problem type"
 msgstr ""
 
+msgid "New snow"
+msgstr ""
+
 msgid ""
 "Recent snowfall loading the existing snowpack. Typically widespread across "
 "all aspects."
@@ -4375,10 +5100,16 @@ msgid ""
 "often hard to spot when buried."
 msgstr ""
 
+msgid "Persistent weak layers"
+msgstr ""
+
 msgid ""
 "Buried weak layers — faceted crystals, depth hoar, surface hoar — that can "
 "remain reactive for weeks. Dangerous because avalanche-prone locations are "
 "barely recognisable even to trained eyes. The dominant winter hazard."
+msgstr ""
+
+msgid "No distinct avalanche problem"
 msgstr ""
 
 msgid ""
@@ -4406,10 +5137,16 @@ msgid ""
 "but not a reliable predictor."
 msgstr ""
 
+msgid "Wet snow"
+msgstr ""
+
 msgid ""
 "Snowpack weakened by melt or rain. Mainly natural avalanches. Solar "
 "radiation and aspect determine which slopes are affected first. Timing is "
 "critical — east-facing slopes warm earlier than west-facing ones."
+msgstr ""
+
+msgid "Gliding snow"
 msgstr ""
 
 msgid ""
@@ -4494,8 +5231,10 @@ msgid "Snowpack &amp; Weather"
 msgstr ""
 
 msgid ""
-"Each bulletin includes four prose sections, updated once daily in the "
-"evening. They expand on demand on the bulletin page."
+"An SLF bulletin includes four prose sections, updated once daily in the "
+"evening. They expand on demand on the bulletin page. ALBINA and Météo-France "
+"bulletins carry a snowpack section and an outlook too, but not SLF's weather "
+"review and forecast — see what differs by provider below."
 msgstr ""
 
 msgid "Snowpack"
@@ -4530,6 +5269,81 @@ msgstr ""
 msgid ""
 "Indicative assessment for the two days after the bulletin's validity period. "
 "Less detailed but useful for multi-day planning."
+msgstr ""
+
+msgid "What differs by provider"
+msgstr ""
+
+msgid ""
+"The danger scale, the five avalanche problems, aspects and elevation bands "
+"are shared European (EAWS) standards, so everything above reads the same on "
+"a bulletin from SLF, ALBINA or Météo-France. What differs is which sections "
+"a provider publishes, and a few conventions in how it describes the terrain."
+msgstr ""
+
+msgid "Avalanche Activity — ALBINA and Météo-France"
+msgstr ""
+
+msgid ""
+"ALBINA and Météo-France bulletins include a section on the avalanches to "
+"expect: whether they are likely to release naturally or to be triggered by "
+"people, and how large they may be. It opens with a one-line summary. SLF "
+"bulletins do not have this section; the same information sits in their "
+"snowpack text."
+msgstr ""
+
+msgid "Outlook — ALBINA and Météo-France"
+msgstr ""
+
+msgid ""
+"ALBINA and Météo-France bulletins end with an outlook, the tendency: an "
+"arrow showing whether the danger is expected to rise, stay the same or fall, "
+"and the day it refers to. Where it comes from differs."
+msgstr ""
+
+msgid ""
+"<strong class=\"text-text-1\">ALBINA</strong> — written by the forecaster, "
+"with a short headline in their own words."
+msgstr ""
+
+msgid ""
+"<strong class=\"text-text-1\">Météo-France</strong> — worked out from the "
+"numbers. The bulletin forecasts a danger level for two days ahead (J+2); the "
+"arrow compares that level with today's, and the date is that day."
+msgstr ""
+
+msgid "Weather review and forecast — SLF"
+msgstr ""
+
+msgid ""
+"Only SLF bulletins carry the weather review and weather forecast sections "
+"described above. SLF also groups each day's problems into dry and wet "
+"avalanche hazards, which is what drives the danger band at the top of a "
+"Swiss bulletin and shows when wet snow takes over later in the day."
+msgstr ""
+
+msgid "Météo-France conventions"
+msgstr ""
+
+msgid ""
+"Météo-France publishes its bulletin in its own format, which Snowdesk "
+"translates into the same shape as the other two. A few of its conventions "
+"survive the translation:"
+msgstr ""
+
+msgid ""
+"The aspects are given once for the whole bulletin, not for each avalanche "
+"problem."
+msgstr ""
+
+msgid ""
+"The danger can be split at one altitude, with one level above it and another "
+"below. Météo-France gives no separate elevations for each avalanche problem: "
+"the elevation on a problem card is read from the forecaster's text, or, "
+"where the text names none, taken from that split altitude."
+msgstr ""
+
+msgid "The text is in French only."
 msgstr ""
 
 msgid "Limitations"
@@ -4604,7 +5418,7 @@ msgstr ""
 msgid "Playback in progress"
 msgstr ""
 
-msgid "What Snowdesk has saved on this device, and how to fix it."
+msgid "What Snowdesk has saved on this device, and the tools to debug it."
 msgstr ""
 
 msgid ""
@@ -4615,10 +5429,28 @@ msgid ""
 "something is not behaving once you have lost signal."
 msgstr ""
 
+msgid "Offline mode"
+msgstr ""
+
+msgid "Open debug log"
+msgstr ""
+
 msgid "Reset local data"
 msgstr ""
 
 msgid "Delete locally cached app data. Does not log you out."
+msgstr ""
+
+msgid "Across the Alps today"
+msgstr ""
+
+msgid "Biggest change:"
+msgstr ""
+
+msgid "Every level is the provider's own. Read the bulletin before you go."
+msgstr ""
+
+msgid "Open today's map"
 msgstr ""
 
 msgid "Editors"
@@ -4666,6 +5498,25 @@ msgstr ""
 msgid "That couldn't be shared. Try again."
 msgstr ""
 
+msgid "Dismiss"
+msgstr ""
+
+msgid "Between seasons"
+msgstr ""
+
+#, python-format
+msgid "No avalanche bulletins until %(month)s"
+msgstr ""
+
+msgid ""
+"The map colours in when the providers start publishing. Until then, see what "
+"a full day looks like."
+msgstr ""
+
+#, python-format
+msgid "Explore a sample bulletin · %(day)s"
+msgstr ""
+
 msgid "Previous month"
 msgstr ""
 
@@ -4676,6 +5527,9 @@ msgid "Manage downloads"
 msgstr ""
 
 msgid "Select a region to download its basemap"
+msgstr ""
+
+msgid "Download a region"
 msgstr ""
 
 msgid ""
@@ -4896,6 +5750,9 @@ msgstr ""
 msgid "What Snowdesk shows"
 msgstr ""
 
+msgid "Find a region, resort or summit"
+msgstr ""
+
 msgid "Find a region or resort"
 msgstr ""
 
@@ -4911,10 +5768,22 @@ msgstr ""
 msgid "Your field observations"
 msgstr ""
 
-msgid "Your routes"
+msgid "Close map layers"
 msgstr ""
 
-msgid "Map display options"
+msgid "Avalanche bulletins"
+msgstr ""
+
+msgid "Steep terrain options"
+msgstr ""
+
+msgid "SAC ski touring"
+msgstr ""
+
+msgid "Downloaded areas"
+msgstr ""
+
+msgid "Providers"
 msgstr ""
 
 msgid "SLF bulletins (CH)"
@@ -4926,10 +5795,10 @@ msgstr ""
 msgid "ALBINA (AT, IT)"
 msgstr ""
 
-msgid "Bulletin opacity"
+msgid "Sync with map terrain"
 msgstr ""
 
-msgid "Bulletins off"
+msgid "Bulletin opacity"
 msgstr ""
 
 #, python-format
@@ -4947,15 +5816,6 @@ msgstr ""
 msgid "Bulletins at full strength"
 msgstr ""
 
-msgid "Sync with map terrain"
-msgstr ""
-
-msgid "From zoom 12, Switzerland"
-msgstr ""
-
-msgid "Weather"
-msgstr ""
-
 msgid "Major regions (EAWS L1)"
 msgstr ""
 
@@ -4968,10 +5828,17 @@ msgstr ""
 msgid "Show unsupported regions"
 msgstr ""
 
-msgid "Adjust terrain filter"
+msgid "Tours"
 msgstr ""
 
-msgid "Display downloaded areas"
+msgid "Summits"
+msgstr ""
+
+#, python-format
+msgid ""
+"Tours and summits from the <a href=\"%(sac_url)s\" target=\"_blank\" "
+"rel=\"noopener\" class=\"underline\">SAC route portal</a>, published by "
+"swisstopo."
 msgstr ""
 
 msgid "Hide map controls"
@@ -4980,47 +5847,41 @@ msgstr ""
 msgid "Map information"
 msgstr ""
 
-msgid "Show map demo"
-msgstr ""
-
-msgid "EAWS Danger Scale"
-msgstr ""
-
-msgid "Map pins"
-msgstr ""
-
-msgid "Pinned resorts"
-msgstr ""
-
-msgid "Observations"
-msgstr ""
-
-msgid "Route legs"
-msgstr ""
-
-msgid "Climbing"
-msgstr ""
-
-msgid "Descending"
+msgid "On the map now"
 msgstr ""
 
 msgid ""
-"Each leg runs between two transitions, numbered along the track. Press a leg "
-"on the route's profile to highlight it, or tap the line to read one point."
+"1 Low, 2 Moderate, 3 Considerable, 4 High, 5 Very high; grey: no rating."
 msgstr ""
 
-msgid "Downloaded maps"
+msgid "Wildlife zones"
 msgstr ""
 
-msgid "Downloaded for this map"
+msgid "Nothing in this view needs a key."
 msgstr ""
 
-msgid "Downloaded for another map"
+msgid "All keys & sources"
 msgstr ""
 
-msgid ""
-"Elsewhere, and when zoomed out, you are seeing the low-detail overview map. "
-"Zoom in to check whether an area is really downloaded."
+msgid "Back to on the map now"
+msgstr ""
+
+msgid "For a day"
+msgstr ""
+
+msgid "On"
+msgstr ""
+
+msgid "Any day"
+msgstr ""
+
+msgid "Resorts and pins"
+msgstr ""
+
+msgid "Every key, described in full"
+msgstr ""
+
+msgid "Sources"
 msgstr ""
 
 msgid "Map data"
@@ -5032,15 +5893,31 @@ msgstr ""
 #, python-format
 msgid ""
 "<a class=\"map-legend-attribution-link\" href=\"https://www.slf.ch\" "
-"target=\"_blank\" rel=\"noopener\" >SLF</a> &middot; <a class=\"map-legend-"
+"target=\"_blank\" rel=\"noopener\">SLF</a> &middot; <a class=\"map-legend-"
 "attribution-link\" href=\"https://avalanche.report\" target=\"_blank\" "
-"rel=\"noopener\" >ALBINA</a> &middot; <a class=\"map-legend-attribution-"
+"rel=\"noopener\">ALBINA</a> &middot; <a class=\"map-legend-attribution-"
 "link\" href=\"https://meteofrance.com/meteo-montagne\" target=\"_blank\" "
-"rel=\"noopener\" >Météo-France</a> &middot; Full attribution in the <a "
+"rel=\"noopener\">Météo-France</a> &middot; Full attribution in the <a "
 "class=\"map-legend-attribution-link\" href=\"%(colophon_url)s\">colophon</a>"
 msgstr ""
 
 msgid "How to use the map"
+msgstr ""
+
+msgid "slopes"
+msgstr ""
+
+msgid "Slopes are drawn in Switzerland only"
+msgstr ""
+
+msgid "Your filter"
+msgstr ""
+
+msgid "Open the region"
+msgstr ""
+
+#, python-brace-format
+msgid "danger level {level}"
 msgstr ""
 
 msgid "Previous day"
@@ -5058,54 +5935,23 @@ msgstr ""
 msgid "Next day"
 msgstr ""
 
+msgid "Terrain: hide what changes by the day"
+msgstr ""
+
+msgid "Terrain"
+msgstr ""
+
+msgid "Back to the dated map"
+msgstr ""
+
 msgid "Back to today"
 msgstr ""
 
-msgid "Today"
-msgstr ""
-
-msgid "Notes about this day"
-msgstr ""
-
-#, python-format
-msgid "About %%(day)s"
-msgstr ""
-
-msgid "No bulletin for this day"
+msgid "Your places today"
 msgstr ""
 
 #, python-format
 msgid "Forecast only: %%(first)s–%%(last)s"
-msgstr ""
-
-msgid "Weather is a forecast"
-msgstr ""
-
-#, python-format
-msgid "It covers %%(first)s–%%(last)s, so this day has none."
-msgstr ""
-
-#, python-format
-msgid "No bulletin for %%(day)s"
-msgstr ""
-
-#, python-format
-msgid "The last one was for %%(day)s."
-msgstr ""
-
-#, python-format
-msgid "The first one is for %%(day)s."
-msgstr ""
-
-msgid "Tomorrow’s bulletin is out"
-msgstr ""
-
-#, python-format
-msgid "It is already published, for %%(day)s."
-msgstr ""
-
-#, python-format
-msgid "Show %%(day)s"
 msgstr ""
 
 msgid "Reload"
@@ -5210,12 +6056,6 @@ msgstr ""
 msgid "Next"
 msgstr ""
 
-msgid "Done"
-msgstr ""
-
-msgid "Dismiss"
-msgstr ""
-
 msgid "Explore Snowdesk"
 msgstr ""
 
@@ -5248,6 +6088,20 @@ msgid "Explore the map"
 msgstr ""
 
 msgid "Browse without guidance."
+msgstr ""
+
+msgid "Now showing the bulletin's slopes"
+msgstr ""
+
+msgid ""
+"Close in, the region colour gives way to the slopes the bulletin's problems "
+"describe. Zoom out to see regions again."
+msgstr ""
+
+msgid "Got it"
+msgstr ""
+
+msgid "What's shown?"
 msgstr ""
 
 msgid "Download selected area for offline use."
@@ -5381,6 +6235,12 @@ msgstr ""
 msgid "Caching for offline use…"
 msgstr ""
 
+msgid "· zoom in"
+msgstr ""
+
+msgid "· zoom out"
+msgstr ""
+
 msgid "No layers on"
 msgstr ""
 
@@ -5392,9 +6252,6 @@ msgid "%%(count)s layers on"
 msgstr ""
 
 msgid "None selected"
-msgstr ""
-
-msgid "Display"
 msgstr ""
 
 #, python-format
@@ -5447,10 +6304,39 @@ msgstr ""
 msgid "Resort"
 msgstr ""
 
+msgid "Pin"
+msgstr ""
+
+msgid "Pinned places"
+msgstr ""
+
 msgid "Regions"
 msgstr ""
 
 msgid "Pinned regions"
+msgstr ""
+
+msgid "Pinned resorts"
+msgstr ""
+
+msgid "Summit"
+msgstr ""
+
+msgid "Hut"
+msgstr ""
+
+msgid "Summits and huts"
+msgstr ""
+
+#, python-format
+msgid "%%(value)s m"
+msgstr ""
+
+msgid "1 SAC tour"
+msgstr ""
+
+#, python-format
+msgid "%%(count)s SAC tours"
 msgstr ""
 
 #, python-format
@@ -5578,27 +6464,28 @@ msgid ""
 "full bulletin. <strong>Nothing here is today’s conditions.</strong>"
 msgstr ""
 
-msgid "Got it"
+msgid ""
+"<strong>Drag across the elevation profile</strong> below. The dot follows "
+"you along <strong data-example-name></strong> on the map."
 msgstr ""
 
 msgid ""
-"<strong data-example-name></strong>: <strong>drag along the profile</strong> "
-"and the dot follows you on the map."
+"<strong>Move along the elevation profile</strong> below. The dot follows you "
+"along <strong data-example-name></strong> on the map."
 msgstr ""
 
 msgid ""
-"<strong data-example-name></strong>: <strong>move along the profile</strong> "
-"and the dot follows you on the map."
+"Close up, the route <strong>changes colour to show the ground under it</"
+"strong>."
 msgstr ""
 
-msgid ""
-"<strong>Pinch to zoom in</strong> on the route. Close up, it changes colour "
-"to show the ground under it."
+msgid "Show me"
 msgstr ""
 
-msgid ""
-"<strong>Scroll or press +</strong> to zoom in on the route. Close up, it "
-"changes colour to show the ground under it."
+msgid "or pinch to zoom in"
+msgstr ""
+
+msgid "or scroll to zoom in"
 msgstr ""
 
 msgid ""
@@ -5612,7 +6499,7 @@ msgstr ""
 msgid "45°+"
 msgstr ""
 
-msgid "Finish"
+msgid "Keep exploring this example"
 msgstr ""
 
 msgid "Example route"
@@ -5622,6 +6509,9 @@ msgid "Example route · paused"
 msgstr ""
 
 msgid "You’ve left the example day"
+msgstr ""
+
+msgid "Example route · <span data-example-short-day></span>"
 msgstr ""
 
 msgid "Resume"
@@ -5638,7 +6528,7 @@ msgstr ""
 msgid "Upload your own GPX"
 msgstr ""
 
-msgid "Sign in to upload your own GPX"
+msgid "Continue with email to upload"
 msgstr ""
 
 #, python-format
@@ -5665,6 +6555,12 @@ msgstr ""
 msgid "Name every control, then tap one to see what it does."
 msgstr ""
 
+msgid "Show map demo"
+msgstr ""
+
+msgid "Pull the map apart into its layers."
+msgstr ""
+
 msgid "Help pages"
 msgstr ""
 
@@ -5684,9 +6580,6 @@ msgid "More in Help"
 msgstr ""
 
 msgid "What this shows"
-msgstr ""
-
-msgid "Open the region"
 msgstr ""
 
 msgid ""
@@ -5751,15 +6644,15 @@ msgid ""
 "weather, slope) and set how strongly the danger colours show."
 msgstr ""
 
-msgid "Pins"
-msgstr ""
-
 msgid "Open pins"
 msgstr ""
 
 msgid ""
 "The places and regions you follow. Add a pin, and show or hide them on the "
 "map."
+msgstr ""
+
+msgid "Observations"
 msgstr ""
 
 msgid "Open observations"
@@ -5808,9 +6701,6 @@ msgstr ""
 msgid ""
 "Your zoom level. Tap it to see what the map shows as you go closer, and to "
 "zoom in or out."
-msgstr ""
-
-msgid "Map key"
 msgstr ""
 
 msgid "Open the key"
@@ -5904,6 +6794,112 @@ msgstr ""
 msgid "<b>Plan a trip, share, rename</b> or delete"
 msgstr ""
 
+msgid "Back to map layers"
+msgstr ""
+
+msgid "Same colours, on the slopes"
+msgstr ""
+
+msgid "Described, can't be placed"
+msgstr ""
+
+msgid "Other steep ground"
+msgstr ""
+
+msgid "No terrain data"
+msgstr ""
+
+msgid "The 3 days before"
+msgstr ""
+
+msgid "Day and temperature"
+msgstr ""
+
+msgid "Height of the point"
+msgstr ""
+
+msgid "Matches the filter"
+msgstr ""
+
+msgid "No data"
+msgstr ""
+
+msgid "Or by slope:"
+msgstr ""
+
+msgid "Way up"
+msgstr ""
+
+msgid "Way down"
+msgstr ""
+
+msgid "Climbing"
+msgstr ""
+
+msgid "Descending"
+msgstr ""
+
+msgid "By slope, close in"
+msgstr ""
+
+msgid "Not yet in legs"
+msgstr ""
+
+msgid "Transition"
+msgstr ""
+
+msgid "Start, finish"
+msgstr ""
+
+msgid "Pinned"
+msgstr ""
+
+msgid "Major region"
+msgstr ""
+
+msgid "Minor region"
+msgstr ""
+
+msgid "Micro region"
+msgstr ""
+
+msgid "Never rated"
+msgstr ""
+
+msgid "One bulletin"
+msgstr ""
+
+msgid "You are here"
+msgstr ""
+
+msgid "For this map"
+msgstr ""
+
+msgid "For another map"
+msgstr ""
+
+msgid "Tap a region to download it"
+msgstr ""
+
+msgid "Region outlines only, no danger ratings"
+msgstr ""
+
+msgid "This region can't be downloaded"
+msgstr ""
+
+#, python-format
+msgid "Up to %%(mb)s MB, too large for this device"
+msgstr ""
+
+msgid "Another region is still downloading. Try again when it finishes."
+msgstr ""
+
+msgid "That region is already downloaded on this device."
+msgstr ""
+
+msgid "That download couldn't be started. Try again."
+msgstr ""
+
 msgid "Select a region to pin it"
 msgstr ""
 
@@ -5919,9 +6915,13 @@ msgid ""
 msgstr ""
 
 msgid ""
-"<strong data-resort-guide-name></strong> has no danger level of its own. It "
-"sits in the <strong data-resort-guide-region></strong> avalanche region, and "
-"the bulletin is written for the region. <strong>Tap it</strong> to read it."
+"Avalanche bulletins are regional. <strong>Tap the highlighted row</strong> "
+"to view the local conditions."
+msgstr ""
+
+msgid ""
+"Avalanche bulletins are regional. <strong>Click the highlighted row</strong> "
+"to view the local conditions."
 msgstr ""
 
 msgid ""
@@ -5930,7 +6930,14 @@ msgid ""
 "strong>, with where it is and how likely."
 msgstr ""
 
+msgid "Finish"
+msgstr ""
+
 msgid "Find a resort · paused"
+msgstr ""
+
+#, python-format
+msgid "Example day · %(day)s"
 msgstr ""
 
 msgid ""
@@ -5961,7 +6968,7 @@ msgid "%%(name)s is pinned"
 msgstr ""
 
 #, python-format
-msgid "Sign in to pin %%(name)s"
+msgid "Continue with email to pin %%(name)s"
 msgstr ""
 
 msgid "The map changes as you change these."
@@ -5994,9 +7001,6 @@ msgstr ""
 
 msgctxt "slope class"
 msgid "50+"
-msgstr ""
-
-msgid "No data"
 msgstr ""
 
 msgid "Aspect"
@@ -6107,10 +7111,6 @@ msgid "Below %%(max)s m"
 msgstr ""
 
 #, python-format
-msgid "%%(value)s m"
-msgstr ""
-
-#, python-format
 msgid "Zoom level %(zoom)s"
 msgstr ""
 
@@ -6133,9 +7133,6 @@ msgstr ""
 msgid "Region selector"
 msgstr ""
 
-msgid "Terrain overlay"
-msgstr ""
-
 msgid "Route slope angle"
 msgstr ""
 
@@ -6155,7 +7152,7 @@ msgstr ""
 msgid "Back to {name}"
 msgstr ""
 
-msgid "Ski resort"
+msgid "Your location"
 msgstr ""
 
 msgid "Saved place"
@@ -6165,6 +7162,12 @@ msgid "Remove from saved places"
 msgstr ""
 
 msgid "Sign in to save this resort"
+msgstr ""
+
+msgid "Save as a pin"
+msgstr ""
+
+msgid "Sign in to save this spot"
 msgstr ""
 
 msgid "No bulletin"
@@ -6178,18 +7181,6 @@ msgid "No avalanche bulletin covers this spot"
 msgstr ""
 
 #, python-format
-msgid "Weather · %(d)s · %(m)s m"
-msgstr ""
-
-#, python-format
-msgid "Weather · %(d)s"
-msgstr ""
-
-#, python-format
-msgid "Forecast · %(d)s"
-msgstr ""
-
-#, python-format
 msgid "Read the %(region)s bulletin for %(d)s →"
 msgstr ""
 
@@ -6197,6 +7188,19 @@ msgid "View resort →"
 msgstr ""
 
 msgid "Full forecast →"
+msgstr ""
+
+msgid "Avalanche bulletin"
+msgstr ""
+
+#, python-format
+msgid "%(region)s · View bulletin"
+msgstr ""
+
+msgid "No bulletin available on this date."
+msgstr ""
+
+msgid "In problem terrain"
 msgstr ""
 
 msgid "Place"
@@ -6215,6 +7219,26 @@ msgid "Could not rename this pin — please try again."
 msgstr ""
 
 msgid "Could not delete this pin — please try again."
+msgstr ""
+
+msgid "This day isn't downloaded for offline use."
+msgstr ""
+
+msgid "The bulletin and weather need a connection."
+msgstr ""
+
+msgid "Saved as a pin."
+msgstr ""
+
+msgid "Could not save this spot on this device — please try again."
+msgstr ""
+
+#, python-format
+msgid "Weather · %(d)s"
+msgstr ""
+
+#, python-format
+msgid "Forecast · %(d)s"
 msgstr ""
 
 msgid "No bulletin available"
@@ -6241,6 +7265,14 @@ msgid ""
 "an updated bulletin."
 msgstr ""
 
+#, python-format
+msgid "The %(skipped)s UTC update couldn’t be processed."
+msgstr ""
+
+#, python-format
+msgid "Showing the bulletin issued %(shown)s UTC."
+msgstr ""
+
 msgid "Updated off-schedule"
 msgstr ""
 
@@ -6252,6 +7284,15 @@ msgstr ""
 
 msgid ""
 "The provider reissued this bulletin outside the normal publication cycle."
+msgstr ""
+
+#, python-format
+msgid ""
+"Get this region’s bulletin when it comes out. <a href=\"%(url)s#settings-"
+"alerts\" class=\"underline\">Turn on alerts</a>"
+msgstr ""
+
+msgid "You get alerts for this region."
 msgstr ""
 
 msgid "Problem type changes as the day progresses"
@@ -6284,16 +7325,7 @@ msgstr ""
 msgid "Off-schedule"
 msgstr ""
 
-msgid "Reported today"
-msgstr ""
-
-msgid "Some reports were placed manually"
-msgstr ""
-
 msgid "Resorts in this region"
-msgstr ""
-
-msgid "Avalanche region"
 msgstr ""
 
 msgid "Not forecast"
@@ -6311,6 +7343,9 @@ msgstr ""
 msgid "Region details are unavailable offline."
 msgstr ""
 
+msgid "From zoom 12, Switzerland"
+msgstr ""
+
 msgid "What is problem terrain?"
 msgstr ""
 
@@ -6325,7 +7360,7 @@ msgstr ""
 msgid "Loading your reports…"
 msgstr ""
 
-msgid "Could not submit your report — please tap a signal type."
+msgid "Pick at least one thing you saw, then share."
 msgstr ""
 
 msgid "Could not save your report on this device — please try again."
@@ -6352,10 +7387,11 @@ msgstr ""
 msgid "Finding your location…"
 msgstr ""
 
-msgid "Avalanche bulletin"
+#, python-format
+msgid "Avalanche bulletin • %(source)s"
 msgstr ""
 
-msgid "The avalanche region this resort is in"
+msgid "View bulletin history →"
 msgstr ""
 
 msgid "About this resort"
@@ -6365,18 +7401,8 @@ msgstr ""
 msgid "No forecast available for %(day)s"
 msgstr ""
 
-msgid "Forecast"
-msgstr ""
-
 #, python-format
-msgid "Forecast • %(day)s"
-msgstr ""
-
-msgid "Forecast location"
-msgstr ""
-
-#, python-format
-msgid "%(label)s · %(elevation)s m"
+msgid "Weather • Open-Meteo %(updated)s"
 msgstr ""
 
 #, python-format
@@ -6401,6 +7427,10 @@ msgstr ""
 msgid "%(day_name)s, %(condition)s"
 msgstr ""
 
+#, python-format
+msgid "%(label)s %(elevation)s m"
+msgstr ""
+
 msgid "Max"
 msgstr ""
 
@@ -6414,7 +7444,14 @@ msgstr ""
 msgid "No forecast yet."
 msgstr ""
 
-msgid "Read the full 7-day forecast →"
+msgid "Forecast location"
+msgstr ""
+
+#, python-format
+msgid "%(label)s %(elevation)s"
+msgstr ""
+
+msgid "View hourly forecast →"
 msgstr ""
 
 msgid "Add a why-it-matters line"
@@ -6427,7 +7464,182 @@ msgid ""
 "build the guide."
 msgstr ""
 
+msgid "Wildlife rest zone"
+msgstr ""
+
+msgid "Protected period"
+msgstr ""
+
+msgid "Restriction"
+msgstr ""
+
+msgid "Rules for this zone"
+msgstr ""
+
+msgid "Wildlife rest zones © BAFU"
+msgstr ""
+
+msgid "Legally binding"
+msgstr ""
+
+msgid "Recommended"
+msgstr ""
+
+msgid "Protected on this day"
+msgstr ""
+
+msgid "Not protected on this day"
+msgstr ""
+
+msgid "Period not stated"
+msgstr ""
+
+msgid "Find a route"
+msgstr ""
+
+msgid "Start from a swisstopo / SAC ski tour"
+msgstr ""
+
+msgid "Create a route"
+msgstr ""
+
+msgid "Draw your own tour, snap to existing routes where available"
+msgstr ""
+
+msgid "Upload a GPX"
+msgstr ""
+
+msgid "A track from a watch or another app"
+msgstr ""
+
+msgid "Draw a route"
+msgstr ""
+
+msgid "Building profile…"
+msgstr ""
+
+msgid "Snap to known ski routes"
+msgstr ""
+
+msgid "Undo"
+msgstr ""
+
+msgid "Set start location"
+msgstr ""
+
+msgid "Route name"
+msgstr ""
+
+msgid "Name this route"
+msgstr ""
+
+msgid "Sign in to save"
+msgstr ""
+
+msgid "Ski-touring routes © swisstopo"
+msgstr ""
+
+msgid "Start over"
+msgstr ""
+
+msgid ""
+"Move the map to put the cross where you want to start, then tap Set start "
+"location."
+msgstr ""
+
+msgid ""
+"Click the map to set the start location. Near a ski route it snaps to the "
+"route."
+msgstr ""
+
+msgid "Zoom in to enable snap-to-route"
+msgstr ""
+
+msgid "Add point"
+msgstr ""
+
+msgid "No points yet."
+msgstr ""
+
+msgid "One point — add another to start the line."
+msgstr ""
+
+#, python-format
+msgid "%%(value)s km"
+msgstr ""
+
+#, python-format
+msgid "↑ %%(value)s m"
+msgstr ""
+
+#, python-format
+msgid "↓ %%(value)s m"
+msgstr ""
+
+#, python-format
+msgid "≈ %%(hours)s h %%(minutes)s"
+msgstr ""
+
+#, python-format
+msgid "≈ %%(hours)s h"
+msgstr ""
+
+#, python-format
+msgid "≈ %%(minutes)s min"
+msgstr ""
+
+msgid ""
+"No terrain data here, so no profile, climb or time. Snowdesk models the "
+"ground in Switzerland only."
+msgstr ""
+
+msgid "The profile couldn't be worked out. Check your connection."
+msgstr ""
+
+msgid "That line can't be drawn — it may be too long."
+msgstr ""
+
+msgid "Route saved."
+msgstr ""
+
+msgid "That route couldn't be saved. Try again."
+msgstr ""
+
+msgid "You've reached your saved-route limit. Delete one to save another."
+msgstr ""
+
+msgid "You need to be online to save a route."
+msgstr ""
+
+msgid "Saved on this device. It will sync when you're back online."
+msgstr ""
+
+msgid ""
+"This route is waiting to sync. It will be saved when you're back online."
+msgstr ""
+
+msgid "Drawn route"
+msgstr ""
+
+msgid "Couldn't sync"
+msgstr ""
+
+msgid "Actions for this route"
+msgstr ""
+
+msgid "Edit"
+msgstr ""
+
+msgid "Discard"
+msgstr ""
+
+msgid "Waiting to sync"
+msgstr ""
+
 msgid "Loading your routes…"
+msgstr ""
+
+msgid "This route couldn't be saved."
 msgstr ""
 
 msgid "Route saved!"
@@ -6467,6 +7679,29 @@ msgid "Link copied."
 msgstr ""
 
 msgid "That link couldn't be created. Try again."
+msgstr ""
+
+msgid "The line couldn't be saved as a route. Edit it and try again."
+msgstr ""
+
+msgid ""
+"You've reached your saved-route limit. Delete one, then edit this to save it."
+msgstr ""
+
+msgid "This clashed with an earlier save. Edit it and save it again."
+msgstr ""
+
+msgid "You were signed out when it synced. Edit it to save it again."
+msgstr ""
+
+msgid "Your session had expired when it synced. Edit it to save it again."
+msgstr ""
+
+msgid "Saving a drawn route isn't available right now."
+msgstr ""
+
+#, python-format
+msgid "Discard %%(name)s? The line you drew will be lost."
 msgstr ""
 
 #, python-format
@@ -6522,6 +7757,33 @@ msgid "Avalanche danger • %(region)s region • %(season)s"
 msgstr ""
 
 msgid "Close season heatmap"
+msgstr ""
+
+msgid "Save to my routes"
+msgstr ""
+
+msgid "SAC guide"
+msgstr ""
+
+msgid "SAC ski tours © swisstopo"
+msgstr ""
+
+msgid "Tap a route"
+msgstr ""
+
+msgid "Zoom in, then tap a route"
+msgstr ""
+
+msgid "The routes couldn't be loaded. Check your connection."
+msgstr ""
+
+msgid "Tours need signal"
+msgstr ""
+
+msgid "Loading today…"
+msgstr ""
+
+msgid "Today could not be loaded. Check your connection and try again."
 msgstr ""
 
 #, python-format
@@ -6817,8 +8079,10 @@ msgid ""
 msgstr ""
 
 msgid ""
-"<strong>Push notifications</strong> — consent. Your browser asks you before "
-"a subscription is created, and turning notifications off removes it."
+"<strong>Push notifications and bulletin alerts</strong> — consent. Alerts "
+"are off until you turn them on in Settings, your browser asks you before a "
+"subscription is created, and turning either off stops them. Alert emails "
+"carry a one-click unsubscribe link."
 msgstr ""
 
 msgid ""
@@ -6959,8 +8223,10 @@ msgid ""
 "<strong>Your browser's push service</strong> (Google, Mozilla or Apple, "
 "depending on your browser) — if you turn on push notifications, your browser "
 "creates a subscription on its vendor's service and we send notifications "
-"through it. We never include bulletin content or your email address in a "
-"notification payload."
+"through it. A bulletin alert carries the names of your places and what their "
+"bulletin says, encrypted so that only your browser can read it; the push "
+"service sees that a message was sent, not what it says. We never include "
+"your email address in a notification payload."
 msgstr ""
 
 msgid ""
@@ -7223,8 +8489,8 @@ msgstr ""
 msgid ""
 "Check the official bulletin for the region you are heading to — the European "
 "avalanche warning services are indexed at <a class=\"underline\" "
-"href=\"https://www.avalanches.org\" target=\"_blank\" rel=\"noopener\" "
-">avalanches.org</a>"
+"href=\"https://www.avalanches.org\" target=\"_blank\" "
+"rel=\"noopener\">avalanches.org</a>"
 msgstr ""
 
 msgid "Seek current local knowledge from guides, hut keepers, or ski patrol"
@@ -7249,18 +8515,18 @@ msgstr ""
 msgid ""
 "The avalanche bulletin data displayed on Snowdesk is published by three "
 "avalanche warning services — the <a class=\"underline\" href=\"https://www."
-"slf.ch\" target=\"_blank\" rel=\"noopener\" >WSL Institute for Snow and "
+"slf.ch\" target=\"_blank\" rel=\"noopener\">WSL Institute for Snow and "
 "Avalanche Research SLF</a>, <a class=\"underline\" href=\"https://avalanche."
-"report\" target=\"_blank\" rel=\"noopener\" >ALBINA / EUREGIO</a> and <a "
+"report\" target=\"_blank\" rel=\"noopener\">ALBINA / EUREGIO</a> and <a "
 "class=\"underline\" href=\"https://meteofrance.com/meteo-montagne\" "
-"target=\"_blank\" rel=\"noopener\" >Météo-France</a>. The SLF and ALBINA "
+"target=\"_blank\" rel=\"noopener\">Météo-France</a>. The SLF and ALBINA "
 "bulletins are licensed under <a class=\"underline\" href=\"https://"
-"creativecommons.org/licenses/by/4.0/\" target=\"_blank\" rel=\"noopener\" "
-">CC BY 4.0</a>; the Météo-France BRA is used under the <a "
-"class=\"underline\" href=\"https://portail-api.meteofrance.fr/web/en/"
-"DonneesPubliquesBRA/license\" target=\"_blank\" rel=\"noopener\" >Météo-"
-"France open-data licence</a>. Each service retains the intellectual property "
-"in its own data. Full attribution details are in the <a class=\"underline\" "
+"creativecommons.org/licenses/by/4.0/\" target=\"_blank\" rel=\"noopener\">CC "
+"BY 4.0</a>; the Météo-France BRA is used under the <a class=\"underline\" "
+"href=\"https://portail-api.meteofrance.fr/web/en/DonneesPubliquesBRA/"
+"license\" target=\"_blank\" rel=\"noopener\">Météo-France open-data licence</"
+"a>. Each service retains the intellectual property in its own data. Full "
+"attribution details are in the <a class=\"underline\" "
 "href=\"%(colophon_url)s\">colophon</a>."
 msgstr ""
 
@@ -7276,23 +8542,23 @@ msgstr ""
 
 msgid ""
 "Per the SLF <a class=\"underline\" href=\"https://www.slf.ch/en/services-and-"
-"products/slf-data-service/\" target=\"_blank\" rel=\"noopener\" >data-"
-"service terms of use</a>, SLF makes bulletin data available for information "
-"purposes only and accepts no liability for the delivery of that data or for "
-"decisions made on the basis of it."
+"products/slf-data-service/\" target=\"_blank\" rel=\"noopener\">data-service "
+"terms of use</a>, SLF makes bulletin data available for information purposes "
+"only and accepts no liability for the delivery of that data or for decisions "
+"made on the basis of it."
 msgstr ""
 
 msgid ""
 "ALBINA / EUREGIO publishes the Tyrol, South Tyrol and Trentino bulletin "
 "under CC BY 4.0. See <a class=\"underline\" href=\"https://avalanche.report/"
-"more/open-data\" target=\"_blank\" rel=\"noopener\" >avalanche.report's open-"
+"more/open-data\" target=\"_blank\" rel=\"noopener\">avalanche.report's open-"
 "data page</a> for the terms that apply to its data."
 msgstr ""
 
 msgid ""
 "Météo-France publishes the BRA under its <a class=\"underline\" "
 "href=\"https://portail-api.meteofrance.fr/web/en/DonneesPubliquesBRA/"
-"license\" target=\"_blank\" rel=\"noopener\" >open-data licence</a>, which "
+"license\" target=\"_blank\" rel=\"noopener\">open-data licence</a>, which "
 "sets out the conditions of reuse and the limits of Météo-France's "
 "responsibility for the data."
 msgstr ""
@@ -7441,6 +8707,10 @@ msgstr ""
 msgid "Avalanche bulletin — %(region)s"
 msgstr ""
 
+#, python-format
+msgid "Since %(day)s’s bulletin"
+msgstr ""
+
 msgid "Weather station"
 msgstr ""
 
@@ -7470,9 +8740,6 @@ msgstr ""
 msgid "Mid"
 msgstr ""
 
-msgid "Summit"
-msgstr ""
-
 msgid "Stable snowpack"
 msgstr ""
 
@@ -7491,7 +8758,13 @@ msgstr ""
 msgid "No rating available"
 msgstr ""
 
+msgid "Cornices"
+msgstr ""
+
 msgid "No distinct problem"
+msgstr ""
+
+msgid "Favourable situation"
 msgstr ""
 
 msgid "earlier"
@@ -7667,8 +8940,17 @@ msgstr ""
 msgid "%(figures)s · %(duration)s"
 msgstr ""
 
-msgid "Route name"
-msgstr ""
+#, python-format
+msgid "Imported the first of %(count)s track"
+msgid_plural "Imported the first of %(count)s tracks"
+msgstr[0] ""
+msgstr[1] ""
+
+#, python-format
+msgid "Imported track %(position)s of %(count)s"
+msgid_plural "Imported track %(position)s of %(count)s"
+msgstr[0] ""
+msgstr[1] ""
 
 #, python-format
 msgid "Example route · %(meta)s"
@@ -7676,6 +8958,11 @@ msgstr ""
 
 #, python-format
 msgid "Shared with you · %(meta)s"
+msgstr ""
+
+msgid ""
+"Start from a known tour, draw one, or upload a track recorded previously (e."
+"g. smart watch, GPS device)."
 msgstr ""
 
 msgid "Upload routes as GPX files."
@@ -7693,6 +8980,13 @@ msgid "Plan a trip using %(name)s"
 msgstr ""
 
 msgid "Plan a trip"
+msgstr ""
+
+#, python-format
+msgid "Download %(name)s as a GPX file"
+msgstr ""
+
+msgid "Download GPX"
 msgstr ""
 
 msgid "e.g. Bring skins and a transceiver. We'll take the 08:15 lift."
@@ -7745,6 +9039,10 @@ msgstr ""
 
 #, python-format
 msgid "%(level)s (%(digit)s)"
+msgstr ""
+
+#, python-format
+msgid "%(level)s in %(region)s"
 msgstr ""
 
 msgid "Untitled trip"
@@ -7955,9 +9253,6 @@ msgstr ""
 msgid "Time"
 msgstr ""
 
-msgid "at the meeting point"
-msgstr ""
-
 #, python-format
 msgid "· %(high)s° / %(low)s°"
 msgstr ""
@@ -7976,15 +9271,6 @@ msgstr ""
 msgid ""
 "· <strong class=\"font-semibold text-text-1\">%(level)s</strong> in "
 "%(region)s"
-msgstr ""
-
-#, python-format
-msgid ""
-"Forecast for %(place)s (%(height)s m), %(km)s km from the route's start."
-msgstr ""
-
-#, python-format
-msgid "Forecast for %(place)s, %(km)s km from the route's start."
 msgstr ""
 
 msgid "Meeting time"
@@ -8134,104 +9420,52 @@ msgstr ""
 msgid "%(level)s problem"
 msgstr ""
 
-msgid "Described, can't be placed"
-msgstr ""
-
 msgid "Additional steep terrain (>30°)"
 msgstr ""
 
-msgid "No terrain data"
+msgid "Online"
 msgstr ""
 
-msgid "Online — last synced"
+msgid "Offline"
 msgstr ""
 
-msgid "Offline — last synced"
+msgid "Your offline areas"
 msgstr ""
 
-msgid "Offline mode — last synced"
+msgid "Works offline"
 msgstr ""
 
-msgid ""
-"\n"
-"                The app is using the network, and will pick up new bulletins "
-"as they are published.\n"
-"            "
+msgid "Bulletins out of date"
 msgstr ""
 
-msgid ""
-"\n"
-"                The app has lost contact with the server, and is displaying "
-"the latest cached data. It will update as\n"
-"                soon as the connection is restored.\n"
-"            "
+msgid "Some trips or pins missing"
 msgstr ""
 
-msgid ""
-"\n"
-"                There is no usable connection, so the app has stopped trying "
-"and is running from downloaded data only.\n"
-"                It will check again periodically, and reconnect on its own "
-"once there is signal.\n"
-"            "
-msgstr ""
-
-msgid ""
-"\n"
-"                You asked the app to stay offline, so it is running from "
-"downloaded data only and is not contacting the\n"
-"                server. It will stay that way until you turn the network "
-"back on.\n"
-"            "
-msgstr ""
-
-msgid "Downloads updated"
-msgstr ""
-
-msgid "Your downloads have no bulletins saved yet."
-msgstr ""
-
-msgid "Offline mode"
-msgstr ""
-
-msgid ""
-"\n"
-"                Heading out? Get everything on this device up to date before "
-"you lose signal.\n"
-"            "
-msgstr ""
-
-msgid "Syncing needs a connection."
-msgstr ""
-
-msgid "Get ready for offline"
-msgstr ""
-
-msgid "Getting ready…"
-msgstr ""
-
-msgid "Bulletins from today"
-msgstr ""
-
-msgid "No bulletins saved yet"
-msgstr ""
-
-msgid "Up to date"
-msgstr ""
-
-msgid "Parts missing"
-msgstr ""
-
-msgid "Tiles gone"
+msgid "Map data missing"
 msgstr ""
 
 msgid "Download again"
 msgstr ""
 
-msgid "Download for offline"
+msgid "Not checked yet"
 msgstr ""
 
-msgid "Debug log"
+msgid "Syncing…"
+msgstr ""
+
+msgid "Syncing needs a connection."
+msgstr ""
+
+msgid "Sync"
+msgstr ""
+
+msgid "No offline areas yet"
+msgstr ""
+
+msgid "Download an area on the map to use it without a signal."
+msgstr ""
+
+msgid "Download an area"
 msgstr ""
 
 msgid "Try reconnecting"
@@ -8264,8 +9498,7 @@ msgstr ""
 msgid "Wind"
 msgstr ""
 
-#, python-format
-msgid "Hour by hour from %(weekday)s."
+msgid "No hour-by-hour forecast was recorded for this day."
 msgstr ""
 
 msgid "Rain"
@@ -8324,6 +9557,48 @@ msgstr ""
 
 #, python-format
 msgid "Showing cached data — as of %%(time)s"
+msgstr ""
+
+#, python-format
+msgid "Forecast for %(place)s (%(height)s m)."
+msgstr ""
+
+#, python-format
+msgid "Forecast for %(place)s."
+msgstr ""
+
+#, python-format
+msgid ""
+"Forecast for %(place)s (%(height)s m), %(km)s km from the meeting point."
+msgstr ""
+
+#, python-format
+msgid "Forecast for %(place)s, %(km)s km from the meeting point."
+msgstr ""
+
+#, python-format
+msgid "Forecast for %(place)s (%(height)s m), %(km)s km from the resort."
+msgstr ""
+
+#, python-format
+msgid "Forecast for %(place)s, %(km)s km from the resort."
+msgstr ""
+
+#, python-format
+msgid "Forecast for %(place)s (%(height)s m), %(km)s km from this pin."
+msgstr ""
+
+#, python-format
+msgid "Forecast for %(place)s, %(km)s km from this pin."
+msgstr ""
+
+#, python-format
+msgid ""
+"Forecast for %(place)s (%(height)s m), %(km)s km from the route's start."
+msgstr ""
+
+#, python-format
+msgid "Forecast for %(place)s, %(km)s km from the route's start."
 msgstr ""
 
 msgid "(optional)"
@@ -8418,7 +9693,7 @@ msgid "Switch it on anyway?"
 msgstr ""
 
 #, python-format
-msgid "Getting ready… (%%(n)s of %%(total)s)"
+msgid "Syncing… (%%(n)s of %%(total)s)"
 msgstr ""
 
 #, python-format
@@ -8440,10 +9715,25 @@ msgid "1 change still waiting to send"
 msgstr ""
 
 #, python-format
-msgid "Bulletins from %%(day)s"
+msgid "Checking the map… (%%(n)s of %%(total)s)"
+msgstr ""
+
+#, python-format
+msgid "Saving bulletins… (%%(n)s of %%(total)s)"
+msgstr ""
+
+#, python-format
+msgid "Saving weather… (%%(n)s of %%(total)s)"
+msgstr ""
+
+#, python-format
+msgid "Saving your trips and pins… (%%(n)s of %%(total)s)"
 msgstr ""
 
 msgid "No data supplied"
+msgstr ""
+
+msgid "Offline content"
 msgstr ""
 
 msgid "Check what this device can show without a signal."
@@ -8459,9 +9749,6 @@ msgid "Save the map page"
 msgstr ""
 
 msgid "Getting in"
-msgstr ""
-
-msgid "Map downloads"
 msgstr ""
 
 msgid "Your content"
@@ -8493,18 +9780,10 @@ msgstr ""
 msgid "%%(name)s map (on screen)"
 msgstr ""
 
-msgid "Anything downloaded at all"
-msgstr ""
-
-#, python-format
-msgid "%%(name)s (drop zone)"
-msgstr ""
-
-#, python-format
-msgid "%%(name)s (area you drew)"
-msgstr ""
-
 msgid "Bulletins you have opened"
+msgstr ""
+
+msgid "Region details for downloaded days"
 msgstr ""
 
 msgid "Your saved places"
@@ -8545,9 +9824,6 @@ msgstr ""
 msgid "the saved copy belongs to %%(stamped)s"
 msgstr ""
 
-msgid "no map area is downloaded, so there is no ground to draw"
-msgstr ""
-
 #, python-format
 msgid ""
 "the %%(name)s map style is not saved, so nothing drawn on it will appear"
@@ -8571,36 +9847,13 @@ msgid ""
 "to see it offline"
 msgstr ""
 
-#, python-format
-msgid ""
-"%%(name)s will not draw until you sync it from the map’s Manage downloads "
-"sheet"
-msgstr ""
-
-#, python-format
-msgid ""
-"%%(name)s is an unfinished download taking up space, so remove it from the "
-"map’s Manage downloads sheet"
-msgstr ""
-
-#, python-format
-msgid ""
-"%%(name)s is recorded as downloaded but nothing is stored, so download it "
-"again"
-msgstr ""
-
-#, python-format
-msgid ""
-"%%(name)s was downloaded before the app recorded what an area needs, so it "
-"cannot be checked"
-msgstr ""
-
-#, python-format
-msgid ""
-"%%(name)s could not be checked because this device’s storage did not answer"
-msgstr ""
-
 msgid "no bulletin has been opened on this device yet"
+msgstr ""
+
+msgid "no downloaded area has saved its region details yet"
+msgstr ""
+
+msgid "no area is downloaded, so there are no region details to save"
 msgstr ""
 
 msgid "none of your saved places has been loaded here yet"
@@ -8642,29 +9895,6 @@ msgstr ""
 
 #, python-format
 msgid "Opening the map once while connected fixes %%(count)s."
-msgstr ""
-
-#, python-format
-msgid ""
-"The bulletins and weather saved inside %%(effects)s are from an earlier day."
-msgstr ""
-
-#, python-format
-msgid ""
-"Syncing the download from the map’s Manage downloads sheet brings %%(count)s "
-"up to date."
-msgstr ""
-
-#, python-format
-msgid ""
-"No bulletins or weather are saved inside %%(effects)s — the map will draw, "
-"with nothing on it."
-msgstr ""
-
-#, python-format
-msgid ""
-"Syncing the download from the map’s Manage downloads sheet fills %%(count)s "
-"in."
 msgstr ""
 
 msgid "a signed-out visitor"
@@ -8765,14 +9995,113 @@ msgstr ""
 msgid "The check could not run. Copy the report and send it in."
 msgstr ""
 
-#, python-format
-msgid "Sync the bulletins and weather saved inside %%(name)s"
-msgstr ""
-
 msgid "Saving this area’s bulletins and weather…"
 msgstr ""
 
 msgid "Not everything could be saved. Re-checking what landed."
+msgstr ""
+
+msgid "Getting ready…"
+msgstr ""
+
+#, python-format
+msgid "Getting ready… (%%(n)s of %%(total)s)"
+msgstr ""
+
+msgid "Your downloaded areas"
+msgstr ""
+
+msgid "Whether each area will work without a signal."
+msgstr ""
+
+msgid "Nothing is downloaded on this device."
+msgstr ""
+
+msgid "Ready for offline"
+msgstr ""
+
+msgid "Needs a refresh — tap to fix"
+msgstr ""
+
+msgid "Needs a refresh — open the map"
+msgstr ""
+
+msgid "Can’t tell"
+msgstr ""
+
+msgid "Bulletins and weather"
+msgstr ""
+
+msgid "some of its map tiles are missing"
+msgstr ""
+
+msgid "what the map needs to draw it is incomplete"
+msgstr ""
+
+msgid "recorded as downloaded, but nothing is stored"
+msgstr ""
+
+msgid "an unfinished download taking up space — remove it"
+msgstr ""
+
+msgid "this device’s storage did not answer"
+msgstr ""
+
+msgid "downloaded before the app recorded what an area needs"
+msgstr ""
+
+msgid "its map tiles could not be checked here"
+msgstr ""
+
+#, python-format
+msgid "from %%(day)s, an earlier day"
+msgstr ""
+
+msgid "never saved"
+msgstr ""
+
+#, python-format
+msgid "%%(held)s of %%(total)s days saved"
+msgstr ""
+
+msgid "not recorded yet — sync this area to list them"
+msgstr ""
+
+msgid "none of your trips or pins are in this area"
+msgstr ""
+
+msgid "saved by another account"
+msgstr ""
+
+msgid "Unnamed trip"
+msgstr ""
+
+#, python-format
+msgid "%%(name)s (drop zone)"
+msgstr ""
+
+#, python-format
+msgid "%%(name)s (area you drew)"
+msgstr ""
+
+#, python-format
+msgid "Sync the bulletins and weather saved inside %%(name)s"
+msgstr ""
+
+#, python-format
+msgid "Remove %%(name)s from this device"
+msgstr ""
+
+#, python-format
+msgid ""
+"Remove the offline map for %%(name)s? This frees %%(size)s on this device. "
+"You can download it again whenever you like."
+msgstr ""
+
+#, python-format
+msgid ""
+"Remove the offline map for %%(name)s? You can download it again whenever you "
+"like."
 msgstr ""
 
 msgid "Resize panel"
@@ -8998,10 +10327,6 @@ msgid "%%(ground)s, falling skier's right, then left"
 msgstr ""
 
 #, python-format
-msgid "%%(value)s km"
-msgstr ""
-
-#, python-format
 msgid "Elevation profile of %%(name)s"
 msgstr ""
 
@@ -9012,6 +10337,9 @@ msgid "Route actions"
 msgstr ""
 
 msgid "Close the route profile"
+msgstr ""
+
+msgid "Centre on route"
 msgstr ""
 
 msgid "Tap or drag the profile to view terrain data"
@@ -9053,6 +10381,14 @@ msgid "Off fall line"
 msgstr ""
 
 #, python-format
+msgid "%(figures)s · %(time)s SAC"
+msgstr ""
+
+#, python-format
+msgid "%(figures)s · %(grade)s"
+msgstr ""
+
+#, python-format
 msgid ""
 "Delete %%(name)s? You'll need the .gpx file again to put it\n"
 "                back."
@@ -9077,9 +10413,6 @@ msgstr ""
 msgid "%%(compass)s · %%(value)s°"
 msgstr ""
 
-msgid "Data from"
-msgstr ""
-
 msgid ""
 "Recent real syncs with the server on this device (cached, offline-served "
 "pages don't count). Cleared by \"Reset local data\", above."
@@ -9092,24 +10425,6 @@ msgid "No syncs yet."
 msgstr ""
 
 msgid "Could not load the sync log."
-msgstr ""
-
-msgid "Matches the filter"
-msgstr ""
-
-msgid "30–35°"
-msgstr ""
-
-msgid "35–40°"
-msgstr ""
-
-msgid "40–45°"
-msgstr ""
-
-msgid "45–50°"
-msgstr ""
-
-msgid "Over 50°"
 msgstr ""
 
 msgid "System"
@@ -9125,6 +10440,9 @@ msgid "Open in maps"
 msgstr ""
 
 msgid "Some changes couldn't be saved and won't be retried."
+msgstr ""
+
+msgid "A route drawn offline under another account was discarded."
 msgstr ""
 
 msgid "Show on the map"
@@ -9143,6 +10461,9 @@ msgstr ""
 
 #, python-format
 msgid "%(day_name)s, %(condition)s, high %(high)s degrees, low %(low)s degrees"
+msgstr ""
+
+msgid "Forecast"
 msgstr ""
 
 #, python-format
@@ -9207,10 +10528,16 @@ msgstr ""
 msgid "Network menu: offline"
 msgstr ""
 
-msgid "Account menu"
+msgid "Your offline areas are ready"
 msgstr ""
 
-msgid "Trips"
+msgid "Syncing your offline areas"
+msgstr ""
+
+msgid "An offline area needs attention"
+msgstr ""
+
+msgid "Account menu"
 msgstr ""
 
 msgid "Admin menu"

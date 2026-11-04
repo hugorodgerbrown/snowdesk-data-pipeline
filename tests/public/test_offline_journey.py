@@ -80,7 +80,11 @@ class TestOfflinePage:
         assert 'data-offline-url="/offline/"' in html
 
     def test_the_scripts_load_after_the_audit(self, client: Client) -> None:
-        """The panels paint from offline_audit.js's collection."""
+        """The panels paint from offline_audit.js's collection.
+
+        The core is pure and loads from base.html since SNOW-1415, ahead of
+        everything; only the painter has to follow the audit.
+        """
         html = client.get(reverse("public:offline_page")).content.decode()
 
         audit = html.find("js/offline_audit.js")
@@ -88,7 +92,9 @@ class TestOfflinePage:
         for name in SCRIPTS:
             at = html.find(f"js/{name}")
             assert at != -1, name
-            assert audit < at, name
+            if name != "offline_journey_core.js":
+                assert audit < at, name
+        assert html.count("js/offline_journey_core.js") == 1
 
     def test_the_report_no_longer_renders_map_downloads(self, client: Client) -> None:
         """The section moved to the panels whole (SNOW-1308)."""

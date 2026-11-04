@@ -2570,6 +2570,32 @@ describe('Sync now, on the area panels (SNOW-925/951, SNOW-1308)', () => {
         expect(said).toBe('Ready — 2 areas up to date');
       });
 
+      it('names the stage each area is on, warming one stage at a time (SNOW-1415)', async () => {
+        const seen = [];
+        const observer = new MutationObserver(() => {
+          const status = document.querySelector('[data-offline-audit-status]');
+          if (status) seen.push(status.textContent);
+        });
+        observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+        const batches = [];
+        window.pwaWarmCache.mockImplementation(async (urls) => {
+          batches.push(urls);
+          warmed.push(urls);
+          return { ok: urls.length, failed: 0, bytes: 1024 };
+        });
+        window.pwaMutationQueue = { drain: vi.fn(async () => {}) };
+        await arriveWithSync('all', { contentAt: '2026-09-01T10:00:00.000Z' });
+
+        await statusOnceSettled(/^Ready —/);
+        observer.disconnect();
+
+        expect(seen).toContain('Saving bulletins… (1 of 1)');
+        const bulletin = '/ch-4115/martigny-verbier/' + clientDay() + '/';
+        const withBulletin = batches.find((urls) => urls.includes(bulletin));
+        expect(withBulletin).toBeTruthy();
+        expect(withBulletin.some((url) => url.includes('/detail/'))).toBe(false);
+      });
+
       it('names the edits the drain left behind, after re-checking every area', async () => {
         await arriveWithSync('all', { contentAt: '2026-09-01T10:00:00.000Z' });
         // Queued before the drain, and still there after it: the stub
@@ -2599,5 +2625,33 @@ describe('Sync now, on the area panels (SNOW-925/951, SNOW-1308)', () => {
       expect(document.querySelector('[data-audit-summary]')).toBeNull();
       expect(warmed).toHaveLength(0);
     });
+  });
+});
+
+describe('the verified stamp (SNOW-1415)', () => {
+  const record = (extra) => ({
+    region_id: 'CH-4115',
+    name: 'Martigny',
+    savedAt: '2026-09-01T10:00:00.000Z',
+    ...(extra || {}),
+  });
+
+  it('merges what the panels read onto the area\'s record', async () => {
+    await seedMeta({ 'basemap.regions': [record({ contentAt: '2026-09-01T10:00:00.000Z' })] });
+
+    await audit.stampVerified('region-CH-4115', { at: '2026-09-01T11:00:00.000Z', map: 'yes' });
+
+    const row = await window.pwaDb.get('meta:app', 'basemap.regions');
+    expect(row.value[0].verified).toEqual({ at: '2026-09-01T11:00:00.000Z', map: 'yes' });
+    expect(row.value[0].contentAt).toBe('2026-09-01T10:00:00.000Z');
+  });
+
+  it('writes nothing for a reading that claims nothing', async () => {
+    await seedMeta({ 'basemap.regions': [record()] });
+
+    await audit.stampVerified('region-CH-4115', null);
+
+    const row = await window.pwaDb.get('meta:app', 'basemap.regions');
+    expect(row.value[0].verified).toBeUndefined();
   });
 });

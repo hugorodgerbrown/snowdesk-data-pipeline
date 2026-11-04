@@ -399,6 +399,32 @@
   }
 
   /**
+   * SNOW-1415: write what each panel read back onto its area's record
+   * (`verified`), so the header's connection panel can answer for the
+   * area on pages that cannot read tiles. Not while a sync is running:
+   * the readings are mid-change, and the settled re-read stamps them.
+   * Only Yes and No are written (`verifiedFromStages`), so a host that
+   * cannot read tiles leaves the map answer as it was.
+   *
+   * @param {Array<Object>} panels From `buildPanels`.
+   * @param {Object} detail The audit's announcement.
+   * @returns {void}
+   */
+  function stampVerified(panels, detail) {
+    var core = self.pwaOfflineJourneyCore;
+    var audit = self.pwaOfflineAudit;
+    if (detail.running || !core || !audit || typeof audit.stampVerified !== 'function') return;
+    var at = new Date().toISOString();
+    var meta = document.querySelector('meta[name="pwa-user-id"]');
+    var principal = (meta && meta.getAttribute('content')) || '';
+    panels.forEach(function (panel) {
+      if (panel.orphaned) return;
+      var verified = core.verifiedFromStages(panel.stages, at, principal);
+      if (verified) audit.stampVerified(panel.id, verified);
+    });
+  }
+
+  /**
    * Bind one host.
    *
    * @param {HTMLElement} root
@@ -438,6 +464,7 @@
       if (waiting) waiting.hidden = true;
       if (empty) empty.hidden = panels.length > 0;
       setBusy(busy || !!detail.running);
+      stampVerified(panels, detail);
     };
 
     var setBusy = function (on) {

@@ -439,6 +439,8 @@ beforeAll(async () => {
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
   await import('../../static/js/calendar_core.js');
+  // SNOW-1415: the `verified` stamp's shape, loaded globally by base.html.
+  await import('../../static/js/offline_journey_core.js');
   loadMapBundle();
   for (const handler of mapStub.handlers.load || []) await handler();
   // The load handler starts the country load and does not await it, so the
@@ -460,10 +462,20 @@ afterAll(() => {
   delete globalThis.maplibregl;
 });
 
+// SNOW-1415 review: the tile-grid reading `syncArea` takes before it may
+// stamp a map Yes. The reading itself is `offline_journey_core.js`'s
+// `tileReading`, tested there; here it is a seam, so each test says what
+// the bucket's grid holds. A full grid unless a test says otherwise.
+let realJourneyCore;
+let tilesHeld;
+
 beforeEach(async () => {
   window.pwaWarmCache.mockClear();
   await seedArea();
   holdDependencies(DEPS);
+  realJourneyCore = realJourneyCore || window.pwaOfflineJourneyCore;
+  tilesHeld = vi.fn(() => true);
+  window.pwaOfflineJourneyCore = Object.assign({}, realJourneyCore, { tileReading: tilesHeld });
 });
 
 describe('the tile half', () => {
@@ -755,5 +767,94 @@ describe('the terrain-data preference (SNOW-1072)', () => {
     ).toEqual([]);
 
     mapEl.dataset.terrainClassTileUrl = TERRAIN_TEMPLATE;
+  });
+});
+
+describe('what a sync tells the connection panel (SNOW-1415)', () => {
+  it('names each stage as it reaches it, in order', async () => {
+    const stages = [];
+    await window.pwaBasemapDownloads.syncArea(AREA_ID, (name) => stages.push(name));
+    const order = [...new Set(stages)];
+    expect(order[0]).toBe('map');
+    expect(order).toContain('bulletins');
+    expect(order.indexOf('map')).toBeLessThan(order.indexOf('bulletins'));
+  });
+
+  it('stamps the map and content answers it learned on the record', async () => {
+    const meta = document.createElement('meta');
+    meta.name = 'pwa-user-id';
+    meta.content = '42';
+    document.head.appendChild(meta);
+    try {
+      await window.pwaBasemapDownloads.syncArea(AREA_ID);
+    } finally {
+      meta.remove();
+    }
+    const record = await storedArea();
+    expect(record.verified).toMatchObject({ map: 'yes', content: 'yes', principal: '42' });
+    expect(typeof record.verified.at).toBe('string');
+  });
+
+  it('stamps no content answer for a signed-out sync', async () => {
+    // A content answer is shown back only to the account it was read for,
+    // and a signed-out sync has none.
+    await window.pwaBasemapDownloads.syncArea(AREA_ID);
+    const record = await storedArea();
+    expect(record.verified).toMatchObject({ map: 'yes' });
+    expect(record.verified.content).toBeUndefined();
+  });
+
+  it('reads the tile grid over this bucket before it says the map is here', async () => {
+    const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect(result).toMatchObject({ tiles: 'none', tilesHeld: true });
+    const [area, core] = tilesHeld.mock.calls[0];
+    expect(area).toMatchObject({ template: TEMPLATE, bbox: [7.0, 46.0, 7.2, 46.2], band: [10, 14] });
+    expect(area.entries).toEqual(expect.arrayContaining(DEPS));
+    expect(core).toBe(window.pwaBasemapDownloadCore);
+  });
+
+  it('stamps a map No when the dependencies are here but the tile grid is short', async () => {
+    // The Codex review case: a bucket holding its style, sprites and
+    // glyphs but missing tiles passes the render check and still draws
+    // nothing. The panel must not say "Works offline" for it.
+    tilesHeld.mockReturnValue(false);
+    const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect(result.tiles).toBe('incomplete');
+    const record = await storedArea();
+    expect(record.verified).toMatchObject({ map: 'no', reason: 'tiles' });
+  });
+
+  it('leaves the map answer alone when the grid cannot be read', async () => {
+    await seedArea({ verified: { map: 'no', reason: 'tiles', at: '2026-01-01T00:00:00.000Z' } });
+    tilesHeld.mockReturnValue(null);
+    await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    const record = await storedArea();
+    expect(record.verified).toMatchObject({ map: 'no', reason: 'tiles' });
+  });
+
+  it('stamps a map No for an area whose bucket is gone', async () => {
+    await window.caches.delete(PINNED_PREFIX + AREA_ID);
+    await window.pwaBasemapDownloads.syncArea(AREA_ID);
+    const record = await storedArea();
+    expect(record.verified).toMatchObject({ map: 'no', reason: 'absent' });
+    expect(record.verified.content).toBeUndefined();
+  });
+
+  it('runs a ?sync=all arrival once, through the panel, and strips it', () => {
+    window.pwaConnectionPanel = { syncAll: vi.fn(async () => {}) };
+    window.history.replaceState(null, '', '/map/?sync=all&panel=x#here');
+
+    expect(window.pwaBasemapDownloads.runRequestedSync()).toBe(true);
+    expect(window.pwaConnectionPanel.syncAll).toHaveBeenCalledTimes(1);
+    expect(window.location.search).toBe('?panel=x');
+    expect(window.location.hash).toBe('#here');
+
+    expect(window.pwaBasemapDownloads.runRequestedSync()).toBe(false);
+    expect(window.pwaConnectionPanel.syncAll).toHaveBeenCalledTimes(1);
+    delete window.pwaConnectionPanel;
+    window.history.replaceState(null, '', '/');
   });
 });

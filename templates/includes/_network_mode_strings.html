@@ -1,8 +1,8 @@
 {% load i18n %}
 {% comment %}
 templates/includes/_network_mode_strings.html — copy for the Offline mode
-switch's lock-out warning (SNOW-922) and for the network menu's "Get ready
-for offline" block (SNOW-951, made one press by SNOW-1141).
+switch's lock-out warning (SNOW-922) and for the network menu's Sync
+(SNOW-951, made one press by SNOW-1141, renamed by SNOW-1415).
 
 ``static/js/pwa_offline.js`` puts this in a ``window.confirm`` before it
 lets the network menu's "Offline mode" switch enter ``'offline-forced'`` on a
@@ -44,12 +44,22 @@ as every other string on it is. Keep the two wordings in step by hand.
     {# SNOW-1141: "Get ready for offline". Every sentence here carries a  #}
     {# number or a day inside it, so it is worded whole and interpolated   #}
     {# by name rather than assembled from pieces in JavaScript.            #}
-    <span data-string="ready-running">{% trans "Getting ready…" %}</span>
-    <span data-string="ready-progress">{% blocktrans %}Getting ready… (%(n)s of %(total)s){% endblocktrans %}</span>
+    <span data-string="ready-running">{% trans "Syncing…" %}</span>
+    <span data-string="ready-progress">{% blocktrans %}Syncing… (%(n)s of %(total)s){% endblocktrans %}</span>
     <span data-string="ready-all">{% blocktrans %}Ready — %(total)s areas up to date{% endblocktrans %}</span>
     <span data-string="ready-all-one">{% trans "Ready — 1 area up to date" %}</span>
     <span data-string="ready-some">{% blocktrans %}%(ready)s of %(total)s ready{% endblocktrans %}</span>
     <span data-string="queue-waiting">{% blocktrans %}%(n)s changes still waiting to send{% endblocktrans %}</span>
     <span data-string="queue-waiting-one">{% trans "1 change still waiting to send" %}</span>
-    <span data-string="area-bulletins-from">{% blocktrans %}Bulletins from %(day)s{% endblocktrans %}</span>
+    {# SNOW-1415: what one area's sync is fetching now. #}
+    <span data-string="sync-stage-map">{% blocktrans %}Checking the map… (%(n)s of %(total)s){% endblocktrans %}</span>
+    <span
+        data-string="sync-stage-bulletins"
+    >{% blocktrans %}Saving bulletins… (%(n)s of %(total)s){% endblocktrans %}</span>
+    <span
+        data-string="sync-stage-weather"
+    >{% blocktrans %}Saving weather… (%(n)s of %(total)s){% endblocktrans %}</span>
+    <span
+        data-string="sync-stage-things"
+    >{% blocktrans %}Saving your trips and pins… (%(n)s of %(total)s){% endblocktrans %}</span>
 </template>

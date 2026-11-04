@@ -947,7 +947,29 @@ async function assembleAreaContentURLs(blob, terrain) {
     urls: [...planned, ...itemUrls],
     short: !content || itemsShort,
     items: expectation,
+    // SNOW-1415: where each stage's urls start in `urls` — bulletins and
+    // the sheets beside them first, then the weather sheets, then the
+    // reader's own things.
+    stageFrom: {
+      weather: planned.length - plan.weatherDetailUrls.length,
+      things: planned.length,
+    },
   };
+}
+
+/**
+ * SNOW-1415: the stage the url at one index of a content plan belongs to.
+ *
+ * @param {{weather: number, things: number}|undefined} stageFrom From
+ *   `assembleAreaContentURLs`.
+ * @param {number} index How many of the plan's urls have settled.
+ * @returns {'bulletins'|'weather'|'things'}
+ */
+function contentStageAt(stageFrom, index) {
+  if (!stageFrom) return 'bulletins';
+  if (index >= stageFrom.things) return 'things';
+  if (index >= stageFrom.weather) return 'weather';
+  return 'bulletins';
 }
 
 /**
@@ -2523,7 +2545,7 @@ window.pwaBasemapDownloads = Object.freeze({
    * @param {string} areaId
    * @returns {Promise<boolean>} Whether the content half landed in full.
    */
-  refreshAreaContent: (areaId) => refreshAreaContent(areaId),
+  refreshAreaContent: (areaId, onStage) => refreshAreaContent(areaId, onStage),
 
   /**
    * SNOW-951: make one area wholly current — both halves, in one call.
@@ -2537,7 +2559,15 @@ window.pwaBasemapDownloads = Object.freeze({
    * @param {string} areaId
    * @returns {Promise<{tiles: 'ok'|'failed'|'none', content: boolean}>}
    */
-  syncArea: (areaId) => syncArea(areaId),
+  syncArea: (areaId, onStage) => syncArea(areaId, onStage),
+
+  /**
+   * SNOW-1415: honour a `?sync=all` arrival — see `runRequestedSync`.
+   * Exposed so the arrival is testable without reloading the bundle.
+   *
+   * @returns {boolean} Whether a sync was handed to the panel.
+   */
+  runRequestedSync: () => runRequestedSync(),
 
   /**
    * SNOW-844: every URL held across every pinned bucket — see
@@ -2578,6 +2608,38 @@ window.pwaBasemapDownloads = Object.freeze({
    */
   makeStyleSettleRetry: (render) => makeStyleSettleRetry(render),
 });
+
+/**
+ * SNOW-1415: run the connection panel's Sync on a `/map/?sync=all` arrival.
+ *
+ * Off the map, the panel's Sync cannot mend tiles, so it navigates here
+ * (`pwa_offline.js`'s `navigateToMapSync`). This reads the parameter once
+ * the downloads module above is ready, strips it from the address bar —
+ * a reload or a shared url must not run it again — and hands the press
+ * back to the panel, which opens itself so the rows show the run
+ * (`window.pwaConnectionPanel.syncAll`).
+ *
+ * @returns {boolean} Whether a sync was handed to the panel.
+ */
+function runRequestedSync() {
+  const params = new URLSearchParams(location.search);
+  if (params.get('sync') !== 'all') return false;
+  params.delete('sync');
+  const query = params.toString();
+  history.replaceState(null, '', location.pathname + (query ? `?${query}` : '') + location.hash);
+  const panel = window.pwaConnectionPanel;
+  if (!panel || typeof panel.syncAll !== 'function') return false;
+  panel.syncAll();
+  return true;
+}
+
+// Deferred scripts have all run by DOMContentLoaded, so the panel's
+// module (base.html) is there whichever order the two were tagged in.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', runRequestedSync, { once: true });
+} else {
+  runRequestedSync();
+}
 
 /**
  * Reveal one `_overlay_banner.html` confirm carrying `bodyText`, and
@@ -3625,7 +3687,48 @@ async function _stampAreaContent(areaId, regionId, complete, expectation) {
   // (`expectation`, from `assembleAreaContentURLs`), so the `/offline/`
   // panels can name them whichever surface synced the area.
   const core = self.pwaBasemapDownloadCore;
-  const stamp = (entry) => core.stampContentRecord(entry, complete, expectation || null);
+  await _rewriteAreaRecord(areaId, regionId, (entry) =>
+    core.stampContentRecord(entry, complete, expectation || null),
+  );
+}
+
+/**
+ * SNOW-1415: write what a sync learned about one area's map and content
+ * onto its record (`verified`), so the connection panel can answer for
+ * the area on a page that cannot read tiles.
+ *
+ * The stamp's shape and merge rule are `offline_journey_core.js`'s
+ * (`verifiedFromSync`, `stampVerifiedRecord`), the same reader that turns
+ * it back into stages. Best-effort, like the content stamp beside it.
+ *
+ * @param {string} areaId
+ * @param {{tiles?: string, content?: boolean}} result `syncArea`'s answer.
+ * @returns {Promise<void>}
+ */
+async function _stampAreaVerified(areaId, result) {
+  const journey = self.pwaOfflineJourneyCore;
+  if (!journey || typeof journey.verifiedFromSync !== 'function') return;
+  const principal = document.querySelector('meta[name="pwa-user-id"]')?.getAttribute('content') || '';
+  const verified = journey.verifiedFromSync(result, new Date().toISOString(), principal);
+  if (!verified) return;
+  const found = await _areaRecordById(areaId);
+  if (!found) return;
+  await _rewriteAreaRecord(areaId, found.regionId, (entry) =>
+    journey.stampVerifiedRecord(entry, verified),
+  );
+}
+
+/**
+ * Rewrite one area's record in its array, on one transaction.
+ *
+ * @param {string} areaId
+ * @param {string} regionId `''` for a custom area — see `_areaRecordById`.
+ * @param {function(Object): Object} stamp Synchronous: it runs inside a
+ *   `readModifyWrite` mutator.
+ * @returns {Promise<void>} Best-effort: a failed stamp costs a stale
+ *   reading, not a download.
+ */
+async function _rewriteAreaRecord(areaId, regionId, stamp) {
   try {
     if (!window.pwaDb) return;
     // SNOW-959: one transaction per stamp, not a `get` and a later `put`.
@@ -3703,9 +3806,11 @@ async function _stampAreaContent(areaId, regionId, complete, expectation) {
  *   no urls at all — see the empty-plan branch below for why that is a
  *   completion rather than a failure.
  */
-async function refreshAreaContent(areaId) {
+async function refreshAreaContent(areaId, onStage) {
+  const tell = typeof onStage === 'function' ? onStage : () => {};
   const found = await _areaRecordById(areaId);
   if (!found) return false;
+  tell('bulletins');
 
   // The pair, not a bare list: a plan assembled while a country was
   // unreachable is short however many of its urls land, and a refresh that
@@ -3747,7 +3852,12 @@ async function refreshAreaContent(areaId) {
       // Nothing to paint: the sheet re-renders on the result, and this is
       // a handful of documents rather than a several-minute download —
       // the same reasoning the `repair` bridge member above gives.
-      paint: () => {},
+      // SNOW-1415: the percentage names the stage, because the plan lists
+      // its urls in stage order (`stageFrom`) and the runner counts them.
+      paint: (_state, pct) => {
+        const done = Number.isFinite(pct) ? Math.floor((pct / 100) * content.urls.length) : 0;
+        tell(contentStageAt(content.stageFrom, done));
+      },
       finish: async (result, extras) => {
         const runCore = extras && extras.core;
         const ok = !!(runCore && runCore.downloadSucceeded(result)) && !content.short;
@@ -3873,6 +3983,44 @@ async function _areaBucketOnDevice(areaId) {
 }
 
 /**
+ * SNOW-1415 review: whether every basemap tile an area's ground implies is
+ * in its pinned bucket — the reading /offline/'s map stage takes, through
+ * the same `offline_journey_core.js` `tileReading`, over this bucket's
+ * urls.
+ *
+ * Null where no reading can be taken: no core, no Cache Storage, a record
+ * naming no template or ground, or a read that throws. A null never
+ * becomes a No.
+ *
+ * @param {string} areaId The pinned bucket id.
+ * @param {Object} record The area's stored record.
+ * @returns {Promise<boolean|null>}
+ */
+async function _areaTilesHeld(areaId, record) {
+  const journey = self.pwaOfflineJourneyCore;
+  const core = self.pwaBasemapDownloadCore;
+  if (!journey || typeof journey.tileReading !== 'function' || !core) return null;
+  if (!('caches' in window) || !record) return null;
+  try {
+    const cache = await caches.open(BASEMAP_PINNED_CACHE_PREFIX + areaId);
+    const keys = await cache.keys();
+    return journey.tileReading(
+      {
+        template: record.template,
+        z: record.z,
+        bbox: record.bbox,
+        band: record.band,
+        type: record.type,
+        entries: keys.map((request) => request.url),
+      },
+      core,
+    );
+  } catch (_e) {
+    return null;
+  }
+}
+
+/**
  * SNOW-951: make ONE downloaded area wholly current, in a single press.
  *
  * Three controls could already mend a download and none of them made it
@@ -3909,8 +4057,12 @@ async function _areaBucketOnDevice(areaId) {
  * `_areaBucketOnDevice` for where such a record comes from.
  *
  * @param {string} areaId The pinned bucket id.
- * @returns {Promise<{tiles: 'ok'|'failed'|'none'|'unknown'|'absent',
- *   content: boolean}>} `tiles` is `'none'` when there was nothing missing
+ * @returns {Promise<{tiles: 'ok'|'failed'|'none'|'unknown'|'absent'|'incomplete',
+ *   tilesHeld?: boolean|null, content: boolean}>} `tiles` is `'incomplete'`
+ *   when the dependencies are here but the tile grid is short
+ *   (`_areaTilesHeld`, SNOW-1415 review), which only a re-download mends;
+ *   `tilesHeld` is that reading, null where none could be taken.
+ *   `tiles` is `'none'` when there was nothing missing
  *   to fetch — the healthy case; `'unknown'` when the dependency list
  *   could not be resolved at all, which is NOT the same claim and must not
  *   be reported as one (see `_missingAreaRenderDependencies`); `'absent'`
@@ -3920,11 +4072,17 @@ async function _areaBucketOnDevice(areaId) {
  *   short-plan and empty-plan semantics. `'none'`/`false` for an
  *   id nothing on this device carries.
  */
-async function syncArea(areaId) {
+async function syncArea(areaId, onStage) {
+  const tell = typeof onStage === 'function' ? onStage : () => {};
   const found = await _areaRecordById(areaId);
   if (!found) return { tiles: 'none', content: false };
-  if (!(await _areaBucketOnDevice(areaId))) return { tiles: 'absent', content: false };
+  if (!(await _areaBucketOnDevice(areaId))) {
+    const gone = { tiles: 'absent', content: false };
+    await _stampAreaVerified(areaId, gone);
+    return gone;
+  }
 
+  tell('map');
   const missing = await _missingAreaRenderDependencies(found.record);
   let tiles = missing === null ? 'unknown' : 'none';
   if (missing && missing.length > 0) {
@@ -3944,9 +4102,19 @@ async function syncArea(areaId) {
     });
     tiles = repaired ? 'ok' : 'failed';
   }
+  // SNOW-1415 review: the dependencies being here is not the map being
+  // here. Only a full tile grid lets the stamp say Yes; a short grid is a
+  // No this press cannot mend (the remedy is a re-download).
+  let tilesHeld = null;
+  if (tiles === 'ok' || tiles === 'none') {
+    tilesHeld = await _areaTilesHeld(areaId, found.record);
+    if (tilesHeld === false) tiles = 'incomplete';
+  }
 
-  const content = await refreshAreaContent(areaId);
-  return { tiles: tiles, content: content };
+  const content = await refreshAreaContent(areaId, tell);
+  const result = { tiles: tiles, tilesHeld: tilesHeld, content: content };
+  await _stampAreaVerified(areaId, result);
+  return result;
 }
 
 /**

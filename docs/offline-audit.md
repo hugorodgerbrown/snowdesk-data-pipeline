@@ -1,8 +1,8 @@
 ---
 name: offline-audit
-description: Offline report and area panels — offline_audit.js, offline_journey.js, bounded reads, X-SW-Principal, AUDIT_SCRIPTS, browsedState
+description: /offline/ debug page panels — offline_audit.js, offline_journey.js, verified stamp, bounded reads, X-SW-Principal, browsedState
 status: current
-last-reviewed: 2026-10-30
+last-reviewed: 2026-11-04
 ---
 
 # The offline-content report (SNOW-907)
@@ -505,13 +505,24 @@ area per press under SNOW-951, every area under SNOW-1141's `?sync=all`),
 and to a user about to lose signal `fresh` is an inference from a stamp while the thing they are going to rely on is the data. See
 [a-pre-departure-sync-is-unconditional.md](decisions/a-pre-departure-sync-is-unconditional.md).
 
-**`?sync=all` runs every area** (SNOW-1141) — the network menu's "Get
-ready for offline" handed to this page. The report runs, then
+**`?sync=all` runs every area** (SNOW-1141) — the network menu's Sync
+handed to this page until SNOW-1415, which sends it to the map instead
+(`/map/?sync=all`); the runner stays for the debug page's own use. The report runs, then
 `offline_ready_core.js` (the same runner the menu uses on the map) drains
 the mutation queue and fetches each area's content in turn; an area with no
 control (its tiles do not verify) counts as not ready and is not fetched.
 The report runs again over the result, and the status line under it states
-the outcome ("1 of 2 ready · 2 changes still waiting to send").
+the outcome ("1 of 2 ready · 2 changes still waiting to send"). SNOW-1415:
+each area's content is warmed one stage at a time (bulletins, weather, the
+reader's things), and the status line names the stage it is on.
+
+**The panels stamp what they read** (SNOW-1415). Every settled paint writes
+each panel's map and things answers onto its area record as `verified`
+(`pwaOfflineAudit.stampVerified`, `verifiedFromStages`), so the header's
+connection panel can answer for the area on pages that cannot read tiles.
+Only Yes and No are written, so static/offline.html, which cannot read
+tiles, never overwrites what the map learned. See
+[the-connection-panel-answers-per-area.md](decisions/the-connection-panel-answers-per-area.md).
 
 **`?sync=<area id>` runs it on arrival** (SNOW-951). The page takes its
 report first — if the area cannot be updated, no control is painted for
