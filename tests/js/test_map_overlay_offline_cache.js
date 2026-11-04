@@ -69,3 +69,35 @@ describe('the stored summit list', () => {
     expect(await window.pwaMapOverlayCache.getOverlay('favourites')).toBeNull();
   });
 });
+
+describe('readOverlay (SNOW-1418)', () => {
+  it('answers an empty reading for nothing cached and for another account', async () => {
+    expect(await window.pwaMapOverlayCache.readOverlay('routes')).toEqual({ geojson: null });
+
+    userId = 'u-1';
+    await window.pwaMapOverlayCache.putOverlay('routes', FAVOURITES);
+    userId = 'u-2';
+    expect(await window.pwaMapOverlayCache.readOverlay('routes')).toEqual({ geojson: null });
+  });
+
+  it('answers the payload when this reader holds it', async () => {
+    await window.pwaMapOverlayCache.putOverlay('community_reports', FAVOURITES);
+
+    expect(await window.pwaMapOverlayCache.readOverlay('community_reports')).toEqual({
+      geojson: FAVOURITES,
+    });
+  });
+
+  it('answers null when the store cannot be read', async () => {
+    const get = window.pwaDb.get;
+    window.pwaDb.get = async () => {
+      throw new Error('closed');
+    };
+    try {
+      expect(await window.pwaMapOverlayCache.readOverlay('routes')).toBeNull();
+      expect(await window.pwaMapOverlayCache.getOverlay('routes')).toBeNull();
+    } finally {
+      window.pwaDb.get = get;
+    }
+  });
+});

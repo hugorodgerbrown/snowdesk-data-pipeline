@@ -4693,10 +4693,12 @@ describe('the inventory under a row (SNOW-1418)', () => {
       shortfall: vi.fn(() => ''),
     };
     window.pwaMapOverlayCache = {
-      getOverlay: vi.fn(async (resource) =>
-        resource === 'routes'
-          ? { features: [{ properties: { uuid: 'route' } }] }
-          : { features: [{ properties: { submission: 'r1' } }] },
+      readOverlay: vi.fn(async (resource) =>
+        opts.overlay !== undefined
+          ? opts.overlay
+          : resource === 'routes'
+            ? { geojson: { features: [{ properties: { uuid: 'route' } }] } }
+            : { geojson: { features: [{ properties: { submission: 'r1' } }] } },
       ),
     };
     const meta = document.createElement('meta');
@@ -4827,6 +4829,31 @@ describe('the inventory under a row (SNOW-1418)', () => {
     expect(listed['Trips'].state).toBe('yes');
     const tours = firstRowElement().querySelector('[data-inventory-item="tours"] [data-inventory-dot]');
     expect(tours.classList.contains('bg-sync-partial')).toBe(true);
+  });
+
+  it('keeps the stage reading when the overlay store cannot be read', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    // readOverlay's null: no pwaDb, Reset Required, or a throw.
+    await boot({ [REGION_ID]: record() }, { overlay: null });
+    toggleOf(firstRowElement()).click();
+    await settle();
+    await settle();
+
+    const listed = items(firstRowElement());
+    expect(listed['Your routes'].state).toBe('yes');
+    expect(listed['Community reports'].state).toBe('yes');
+  });
+
+  it('marks stamped routes and reports missing when nothing is cached', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    await boot({ [REGION_ID]: record() }, { overlay: { geojson: null } });
+    toggleOf(firstRowElement()).click();
+    await settle();
+    await settle();
+
+    const listed = items(firstRowElement());
+    expect(listed['Your routes'].state).not.toBe('yes');
+    expect(listed['Community reports'].state).not.toBe('yes');
   });
 
   it('opens from the keyboard', async () => {

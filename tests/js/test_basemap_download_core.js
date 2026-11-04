@@ -2750,6 +2750,24 @@ describe('routes and resorts in an area (SNOW-1418)', () => {
       ]);
     });
 
+    it('keeps a route that crosses the box with no vertex inside it', () => {
+      const small = [7.5, 46.0, 7.51, 46.01];
+      const feed = {
+        features: [
+          line('across', [[7.49, 46.005], [7.52, 46.005]]),
+          line('diagonal', [[7.49, 45.99], [7.52, 46.02]]),
+          line('beside', [[7.49, 46.02], [7.52, 46.02]]),
+          line('corner-miss', [[7.49, 46.0], [7.5, 45.99]]),
+          line('dot', [[7.505, 46.005]]),
+        ],
+      };
+      expect(core.routesInBox(feed, small)).toEqual([
+        { uuid: 'across' },
+        { uuid: 'diagonal' },
+        { uuid: 'dot' },
+      ]);
+    });
+
     it('is null for an unreadable feed or box, and empty for none inside', () => {
       expect(core.routesInBox(null, BOX)).toBeNull();
       expect(core.routesInBox({ features: 'x' }, BOX)).toBeNull();

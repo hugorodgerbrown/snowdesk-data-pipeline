@@ -3231,12 +3231,43 @@
   function routesInBox(feed, bbox) {
     if (!feed || !Array.isArray(feed.features)) return null;
     if (!Array.isArray(bbox) || bbox.length !== 4 || !bbox.every(Number.isFinite)) return null;
-    const inside = (point) =>
-      Array.isArray(point) &&
-      point[0] >= bbox[0] &&
-      point[0] <= bbox[2] &&
-      point[1] >= bbox[1] &&
-      point[1] <= bbox[3];
+    const isPoint = (point) =>
+      Array.isArray(point) && Number.isFinite(point[0]) && Number.isFinite(point[1]);
+    // Liang–Barsky: whether the segment a→b has any part inside the
+    // rectangle, so a route that only passes through a small area (no
+    // vertex inside it) still counts. A one-point line is a = b.
+    const crosses = (a, b) => {
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      let lo = 0;
+      let hi = 1;
+      const edges = [
+        [-dx, a[0] - bbox[0]],
+        [dx, bbox[2] - a[0]],
+        [-dy, a[1] - bbox[1]],
+        [dy, bbox[3] - a[1]],
+      ];
+      for (const [p, q] of edges) {
+        if (p === 0) {
+          if (q < 0) return false;
+          continue;
+        }
+        const t = q / p;
+        if (p < 0) lo = Math.max(lo, t);
+        else hi = Math.min(hi, t);
+        if (lo > hi) return false;
+      }
+      return true;
+    };
+    const enters = (line) => {
+      if (!Array.isArray(line)) return false;
+      const points = line.filter(isPoint);
+      if (points.length === 1) return crosses(points[0], points[0]);
+      for (let i = 1; i < points.length; i += 1) {
+        if (crosses(points[i - 1], points[i])) return true;
+      }
+      return false;
+    };
     const routes = [];
     const seen = new Set();
     for (const feature of feed.features) {
@@ -3250,7 +3281,7 @@
             ? [geometry.coordinates]
             : [];
       if (!Array.isArray(lines)) continue;
-      if (lines.some((line) => Array.isArray(line) && line.some(inside))) {
+      if (lines.some(enters)) {
         seen.add(String(uuid));
         routes.push({ uuid: String(uuid) });
       }

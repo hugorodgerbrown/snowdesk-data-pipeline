@@ -2225,9 +2225,15 @@
         : [];
     /** @param {string} resource @param {string} field */
     const idsIn = async (resource, field) => {
-      if (!cache || typeof cache.getOverlay !== 'function') return null;
+      // `readOverlay` tells "nothing cached" (an empty set: every stamped
+      // item is missing) from "the store could not be read" (null: keep
+      // the stage reading). `getOverlay` folds both into null, so without
+      // `readOverlay` there is no reading to take.
+      if (!cache || typeof cache.readOverlay !== 'function') return null;
       try {
-        const feed = await cache.getOverlay(resource);
+        const read = await cache.readOverlay(resource);
+        if (!read) return null;
+        const feed = read.geojson;
         if (!feed) return new Set();
         if (!Array.isArray(feed.features)) return null;
         const ids = new Set();
