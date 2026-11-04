@@ -100,8 +100,8 @@
     // Compared as attribute VALUES rather than built into a selector: a
     // region id in a selector string needs CSS.escape, which jsdom does not
     // implement.
-    return [...pinnedRows.querySelectorAll('[data-row-focus-region]')].some(
-      (button) => button.getAttribute('data-row-focus-region') === regionId,
+    return [...pinnedRows.querySelectorAll('[data-pinned-region]')].some(
+      (item) => item.getAttribute('data-pinned-region') === regionId,
     );
   };
 
@@ -139,9 +139,9 @@
    * (Re)load the pinned-regions rows from favourites:region_list.
    *
    * Over HTMX rather than `fetch` + innerHTML because the endpoint is
-   * behind `@require_htmx` (invariant 4), and its rows are the server's own
-   * (includes/_ugc_panel_row.html), so the ids read off them are the list
-   * the user would see anywhere else.
+   * behind `@require_htmx` (invariant 4). The response is a bare list of
+   * `data-pinned-region` ids (favourites/partials/_region_pin_list.html):
+   * nothing draws it, so it carries nothing but what is read from it.
    *
    * @returns {Promise<void>} Settles once the rows are in the document.
    */
@@ -277,8 +277,8 @@
   };
   window.pwaPinnedRegions = Object.freeze({
     ids: () =>
-      [...pinnedRows.querySelectorAll('[data-row-focus-region]')]
-        .map((button) => button.getAttribute('data-row-focus-region'))
+      [...pinnedRows.querySelectorAll('[data-pinned-region]')]
+        .map((item) => item.getAttribute('data-pinned-region'))
         .filter(Boolean),
     ready: ensurePins,
   });
