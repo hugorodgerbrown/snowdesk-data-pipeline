@@ -219,17 +219,51 @@ function installCachesStub() {
       };
     }),
     delete: vi.fn(async (name) => buckets.delete(name)),
-    // Every cache at once, as the page's held-content lookup asks.
-    match: vi.fn(async (request) => {
-      const href = absolute(typeof request === 'string' ? request : request.url);
-      for (const store of buckets.values()) {
-        for (const url of store) if (absolute(url) === href) return { headers: { get: () => null } };
-      }
-      return undefined;
-    }),
   };
   Object.defineProperty(window, 'caches', { value: stub, configurable: true, writable: true });
   return stub;
+}
+
+/**
+ * The worker in control, answering the page's `held-content` question as
+ * `sw.js`'s `_heldForOffline` does for public content: held means in the
+ * live shell cache, and no other. `silent` makes it never answer.
+ */
+function installWorkerStub(cachesStub) {
+  const worker = {
+    silent: false,
+    asked: [],
+    postMessage: vi.fn((data, ports) => {
+      if (!data || data.type !== 'held-content') return;
+      worker.asked.push(data.urls);
+      if (worker.silent) return;
+      const live = cachesStub.openBucket(SHELL_CACHE);
+      const hrefs = new Set([...live].map(absolute));
+      const held = data.urls.filter((url) => hrefs.has(absolute(url)));
+      queueMicrotask(() => ports[0].onmessage({ data: { type: 'held-content', held } }));
+    }),
+  };
+  Object.defineProperty(navigator, 'serviceWorker', {
+    value: {
+      controller: worker,
+      // Never settles: the boot's own worker waits are not this suite's.
+      ready: new Promise(() => {}),
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    },
+    configurable: true,
+  });
+  // jsdom has no MessageChannel the stub can answer through synchronously.
+  vi.stubGlobal(
+    'MessageChannel',
+    class {
+      constructor() {
+        this.port1 = { onmessage: null, close: () => {} };
+        this.port2 = this.port1;
+      }
+    },
+  );
+  return worker;
 }
 
 /** In-memory `meta:app`. */
@@ -332,6 +366,7 @@ function buildFixture() {
 }
 
 let cachesStub;
+let workerStub;
 
 /**
  * Seed one custom area over the fixture's ground.
@@ -412,6 +447,7 @@ beforeAll(async () => {
   buildFixture();
   const mapStub = stubMapLibre();
   cachesStub = installCachesStub();
+  workerStub = installWorkerStub(cachesStub);
   installDbStub();
   installOverlayCacheStub();
   window.pwaConnectivity = { isOnline: () => true };
@@ -950,6 +986,40 @@ describe('only what changed (SNOW-1416)', () => {
 
     expect(warmedUrls(0).map(absolute)).toEqual([absolute(BULLETIN_URL)]);
     expect((await storedArea()).contentAt).toBe(justNow);
+  });
+
+  it('refetches what only a retired shell cache holds', async () => {
+    // Codex review: after an update that could not carry every entry, the
+    // old cache is kept, but the worker serves only from its own.
+    await syncOnce();
+    const live = cachesStub.openBucket(SHELL_CACHE);
+    const retired = cachesStub.openBucket('snowdesk-shell-retired');
+    for (const url of live) retired.add(url);
+    live.clear();
+    await seedArea({ contentAt: new Date(Date.now() - 5 * 60 * 1000).toISOString() });
+
+    await window.pwaBasemapDownloads.refreshAreaContent(AREA_ID);
+
+    expect(warmedUrls(0).map(absolute)).toContain(absolute(BULLETIN_URL));
+  });
+
+  it('asks the worker in control, and fetches the whole plan when it does not answer', async () => {
+    await syncOnce();
+    await seedArea({ contentAt: new Date(Date.now() - 5 * 60 * 1000).toISOString() });
+    workerStub.silent = true;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const run = window.pwaBasemapDownloads.refreshAreaContent(AREA_ID);
+      await vi.waitFor(() => expect(workerStub.asked.length).toBeGreaterThan(0));
+      await vi.advanceTimersByTimeAsync(5000);
+      await run;
+    } finally {
+      vi.useRealTimers();
+      workerStub.silent = false;
+    }
+
+    expect(workerStub.asked.at(-1).map(absolute)).toContain(absolute(BULLETIN_URL));
+    expect(warmedUrls(0).map(absolute)).toContain(absolute(BULLETIN_URL));
   });
 
   it('leaves the tile half as it was: a whole map fetches no tiles', async () => {

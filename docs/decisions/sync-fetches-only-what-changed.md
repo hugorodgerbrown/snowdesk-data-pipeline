@@ -61,15 +61,21 @@ window bounds the inference that remains: a held bulletin for today is at
 most an hour older than the server's, and a background sync keeps topping
 that up while the page is open.
 
-**Why the filter is page-side.** The service worker's warm refetches every
-url it is given; it has no notion of "held". `_contentDeltaFor` in
-`static/js/map_basemap_downloads.js` asks every cache which of the plan's
-urls it holds (`_heldContentUrls`, `caches.match` with `ignoreVary`) and
-hands the warm only the delta. Every cache, not the area's pinned bucket:
-the warm writes same-origin content into the worker's shell cache and only
-the cross-origin tiles into the bucket, so a bucket-only lookup found no
-content held and every sync fetched the whole plan. Without the Cache API or the
-core it falls back to the whole plan, which is the old behaviour.
+**Why the worker says what is held.** The service worker's warm refetches
+every url it is given; it has no notion of "held". `_contentDeltaFor` in
+`static/js/map_basemap_downloads.js` asks the worker in control which of the
+plan's urls it would serve offline now (`_heldContentUrls`, a `held-content`
+message answered by `_heldForOffline` in `sw.js`) and hands the warm only
+the delta. The worker answers, not a page-side Cache Storage read, because
+"held" means "would open offline", and only the worker's own rules say that:
+it reads only its live shell cache (`CACHE_VERSION`), not one an update kept
+behind, and it refuses a page, trip or pin sheet stamped for another
+account. A page-side read counted both as held, so a sync skipped them and
+they still did not open. Not the area's pinned bucket either: the warm
+writes same-origin content into the shell cache and only the cross-origin
+tiles into the bucket. With no worker in control, or no answer within
+`HELD_CONTENT_BUDGET_MS`, the sync fetches the whole plan, which is the old
+behaviour.
 
 **Why `contentAt` does not always move.** A run on a fresh area that only
 filled gaps keeps the area's earlier stamp (`keepsContentAt`). Stamping it

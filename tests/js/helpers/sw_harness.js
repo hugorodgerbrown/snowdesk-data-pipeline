@@ -137,6 +137,8 @@ export const SW_EXPORTS = [
   // Answered here rather than on the page because this worker is the thing
   // that will or will not serve that navigation.
   '_canOpenOffline',
+  // SNOW-1416: which of a sync's urls the worker would serve offline now.
+  '_heldForOffline',
   // SNOW-852: the synchronous fast-path predicate the fetch handler's
   // network-only branch consults. A `function`, not a `let`, so handing it
   // back is safe where `_networkMode` is not — it reads the live value on

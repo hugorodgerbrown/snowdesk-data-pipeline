@@ -1276,6 +1276,13 @@ const OFFLINE_MISS_HEADER = 'X-SW-Offline-Miss';
 // SNOW-965: what `_warmCache` hands `_classifySync` to ask a url's class.
 // A plain same-origin GET — not a navigation, whatever the url is.
 const WARM_CLASSIFY_REQUEST = Object.freeze({ method: 'GET', mode: 'cors', destination: '' });
+// SNOW-1416: what `_heldForOffline` classifies a page url as, the way the
+// reader will open it.
+const HELD_NAVIGATE_REQUEST = Object.freeze({
+  method: 'GET',
+  mode: 'navigate',
+  destination: 'document',
+});
 
 // SNOW-526: STATIC_PATHS entries that must only be persisted to the shell
 // cache when the response declares itself ``immutable`` via Cache-Control
@@ -3200,6 +3207,65 @@ async function _canOpenOffline() {
     // principal: all of them mean the same thing to the caller.
     return false;
   }
+}
+
+/**
+ * SNOW-1416: which of ``hrefs`` this worker would serve offline right now.
+ *
+ * Asked by ``map_basemap_downloads.js``'s ``_heldContentUrls`` before a
+ * sync, so the sync fetches only what the device lacks. Answered HERE, for
+ * the reason ``_canOpenOffline`` gives: the offline read is this file's, and
+ * a page-side copy of it would drift. Each url is read the way its class's
+ * offline branch reads it: from the live shell cache (``CACHE_VERSION``)
+ * alone, never a cache an update kept behind, under the same key, and with
+ * the same principal check. An entry for another account, or one a retired
+ * cache still holds, is not held, so the sync fetches it again.
+ *
+ * A class this function does not know (a cross-origin tile, a static feed)
+ * is never held: the sync then fetches it, the safe direction.
+ *
+ * @param {string[]} hrefs Absolute same-origin urls.
+ * @returns {Promise<string[]>} The held ones, in the order given.
+ */
+async function _heldForOffline(hrefs) {
+  const cache = await caches.open(CACHE_VERSION);
+  const current = await _currentPrincipal();
+  const signedIn = await _signedInPrincipal();
+  const held = await Promise.all(
+    hrefs.map(async (href) => {
+      let url;
+      try {
+        url = new URL(href);
+      } catch (_err) {
+        return false;
+      }
+      if (url.origin !== self.location.origin) return false;
+      // A page (a bulletin, a trip) is a fetch to the warm and a navigation
+      // to the reader, so it is read as the navigation it will be.
+      let cls = _classifySync(WARM_CLASSIFY_REQUEST, url);
+      if (cls === 'network') cls = _classifySync(HELD_NAVIGATE_REQUEST, url);
+      if (cls === 'public-partial' || cls === 'private-partial') {
+        const key = _publicPartialKey(url);
+        const cached = key ? await cache.match(key, { ignoreVary: true }) : null;
+        if (!cached) return false;
+        return cls === 'public-partial' || (!!signedIn && _principalMatches(cached, signedIn));
+      }
+      if (cls === 'public-json') return !!(await cache.match(url.toString()));
+      if (cls === 'private-json') {
+        const cached = signedIn ? await cache.match(url.toString()) : null;
+        return !!cached && _principalMatches(cached, signedIn);
+      }
+      if (cls === 'navigate') {
+        // The exact url only: the fallback's searchless match is more
+        // generous, so this can only under-count, and an under-count is one
+        // extra fetch.
+        const cached = await cache.match(url.toString());
+        return !!cached && _principalMatches(cached, current);
+      }
+      return false;
+    }),
+  );
+  return hrefs.filter((_href, index) => held[index]);
 }
 
 /**
@@ -5152,6 +5218,21 @@ self.addEventListener('message', (event) => {
       .catch(() => {
         // Could not look: say so, and the page treats that as "not safe".
         port?.postMessage({ type: 'activation-check', othersVisible: true, warming: false });
+      });
+    if (typeof event.waitUntil === 'function') event.waitUntil(replied);
+  }
+  // SNOW-1416: "which of these would you serve offline?", asked before a
+  // sync so it fetches only the delta. Replies down the transferred port;
+  // a caller that hears nothing fetches the whole plan.
+  if (event.data && event.data.type === 'held-content') {
+    const port = event.ports && event.ports[0];
+    const urls = Array.isArray(event.data.urls) ? event.data.urls.map(String) : [];
+    const replied = _heldForOffline(urls)
+      .then((held) => {
+        port?.postMessage({ type: 'held-content', held: held });
+      })
+      .catch(() => {
+        port?.postMessage({ type: 'held-content', held: null });
       });
     if (typeof event.waitUntil === 'function') event.waitUntil(replied);
   }
