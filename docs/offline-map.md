@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal partitioning, Download basemap, custom-area download, overlay offline caches
 status: current
-last-reviewed: 2026-11-03
+last-reviewed: 2026-11-04
 ---
 
 # PWA shell
@@ -2670,7 +2670,7 @@ the one that must not move.
 |---|---|---|
 | yes | yes | Normal row. Remove (in its "…" menu) takes it off this device only (SNOW-1135); the confirmation (`confirm-remove-kept`) says it stays listed under "Not on this device". |
 | yes | no | Normal row, unchanged from before this ticket. Reachable for an area downloaded before the feature shipped (and not yet adopted), or one whose queued push has not drained, which is why Remove's confirmation copy is keyed off the row's own `synced` flag and not off a global: the global would promise a "Not on this device" row the area will not get. |
-| no | yes | Dimmed title, no basemap dot, and a meta line of the kind alone — no size (SNOW-832 — a size would be "0.0 MB", a download that somehow takes no space rather than one that is not here) and no basemap (nothing is stored, so none has been chosen). It sits in the "Not on this device" group, under a heading that already says so, and contributes 0 to the total. "Download here" and Forget (SNOW-1135), collapsed into the row's "…" menu in that order — or the bare Forget alone when the row records too little to download; no rename — the rename writes to a local record this device does not have. |
+| no | yes | Dimmed title, and a meta line of the kind alone — no size (SNOW-832 — a size would be "0.0 MB", a download that somehow takes no space rather than one that is not here) and no basemap (nothing is stored, so none has been chosen). It sits in the "Not on this device" group, under a heading that already says so, and contributes 0 to the total. "Download here" and Forget (SNOW-1135), collapsed into the row's "…" menu in that order — or the bare Forget alone when the row records too little to download; no rename — the rename writes to a local record this device does not have. |
 | no | no | Not produced by `reconcileAreas`; tolerated by `manageRows`, which paints it as the row above without the account claim. |
 
 **"Download here"** hands off to whichever start control owns the kind of
@@ -2824,10 +2824,18 @@ sized by `flex-grow: <bytes>` (a ratio, not a computed percentage) and
 coloured via `dataset.basemapKey` — JS sets the key and the grow weight,
 nothing else.
 
+**Superseded: one neutral fill again.** The rows' basemap dot was the
+bar's colour key, and it went because a dot in the offline surfaces means
+"will it work offline?" (the connection panel's per-area answer,
+SNOW-1415) and the downloads row's blue dot read as one. With no key the
+colours meant nothing, so `[data-downloads-bar]` is a single `bg-text-1`
+fill and `render()` appends no segments. `budgetSegments` still feeds the
+track's `aria-label`, and each row names its basemap in its meta line.
+
 SNOW-646/832: the track is no longer `aria-hidden`. It was, while it was
 one flat fill saying nothing the sentence beside it did not already say.
-Segmented, it encodes a COMPOSITION stated nowhere else on the panel — and
-the per-row basemap dots beneath it are its legend — so it is a `role="img"` with an `aria-label` `render()` builds from the same
+Segmented, it encoded a COMPOSITION stated nowhere else on the panel, so it
+is a `role="img"` with an `aria-label` `render()` builds from the same
 segments it paints ("Space used, by basemap: Swisstopo (CH) 120 MB,
 OpenFreeMap 40.0 MB"; "Nothing downloaded on this device" when there are
 none). A `role="img"`, not a `progressbar`: the reading is "what is in

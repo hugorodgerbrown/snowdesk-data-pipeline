@@ -110,7 +110,7 @@ function buildFixture() {
             <div>
               <div data-downloads-track role="img"
                    class="h-2 flex-1 overflow-hidden rounded-pill bg-chip">
-                <div data-downloads-bar class="flex h-full rounded-pill" style="width: 0%"></div>
+                <div data-downloads-bar class="h-full rounded-pill bg-text-1" style="width: 0%"></div>
               </div>
               <p data-downloads-summary>
                 <span data-downloads-summary-value></span>
@@ -150,7 +150,6 @@ function buildFixture() {
     </template>
     <template id="map-downloads-row-template">
       <li>
-        <span data-row-swatch class="bg-sync-off"></span>
         <span>
           <button type="button" data-row-label data-row-focus=""
                   class="hover-affordance text-text-1"></button>
@@ -1097,9 +1096,10 @@ describe('the two lists (SNOW-XXX — grouped by what is here)', () => {
     expect(groupLabels()).toEqual(['On this device', 'Not on this device']);
   });
 
-  it('carries the basemap on the ROW — a dot and a word', async () => {
+  it('names the basemap on the ROW in words, with no dot', async () => {
     // SNOW-832 said it once per group in a coloured heading. The groups
-    // sort by presence now, so the colour lives on the row it describes.
+    // sort by presence now, so the basemap lives on the row it describes —
+    // as a word only, because a dot in the offline surfaces means status.
     seed({
       'basemap.regions': [{ ...REGIONS[0], basemapKey: 'openfreemap_liberty' }],
     });
@@ -1107,17 +1107,15 @@ describe('the two lists (SNOW-XXX — grouped by what is here)', () => {
     openSheet();
     await settle();
 
-    const swatch = document.querySelector('#map-downloads-sheet [data-row-swatch]');
-    expect(swatch.dataset.basemapKey).toBe('openfreemap_liberty');
-    expect(swatch.classList.contains('basemap-identity-fill')).toBe(true);
+    expect(document.querySelector('#map-downloads-sheet .basemap-identity-fill')).toBeNull();
     expect(document.querySelector('#map-downloads-sheet [data-row-meta]').textContent).toBe(
       'Region · OpenFreeMap · 40.0 MB',
     );
   });
 
-  it('gives an account-only row no dot and no size', async () => {
+  it('gives an account-only row no size', async () => {
     // Nothing of it is stored here, so no basemap has been chosen for it
-    // — a colour would imply one, and a size would imply bytes.
+    // and a size would imply bytes.
     seed({});
     await loadModule();
     window.pwaBasemapDownloads.areas.mockResolvedValueOnce([
@@ -1126,7 +1124,6 @@ describe('the two lists (SNOW-XXX — grouped by what is here)', () => {
     openSheet();
     await settle();
 
-    expect(document.querySelector('#map-downloads-sheet [data-row-swatch]')).toBeNull();
     expect(document.querySelector('#map-downloads-sheet [data-row-meta]').textContent).toBe(
       'Region',
     );
@@ -2078,6 +2075,24 @@ describe('the budget readout', () => {
     );
   });
 
+  it('paints the bar as one neutral fill, not a segment per basemap', async () => {
+    // The rows carry no basemap dot (a dot in the offline surfaces means
+    // status), so per-basemap colours in the bar would have no key.
+    seed({
+      'basemap.regions': [{ ...REGIONS[0], basemapKey: 'openfreemap_liberty' }],
+      'basemap.customAreas': [{ ...CUSTOM_AREAS[0], basemapKey: 'swisstopo_winter' }],
+      'basemap.budgetMb': 500,
+    });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const bar = document.querySelector('[data-downloads-bar]');
+    expect(bar.children.length).toBe(0);
+    expect(bar.classList.contains('bg-text-1')).toBe(true);
+    expect(bar.style.width).not.toBe('0%');
+  });
+
   it('names the keyless segment rather than leaving a gap in the description', async () => {
     seed({ 'basemap.regions': [REGIONS[0]], 'basemap.budgetMb': 500 });
     await loadModule();
@@ -2212,10 +2227,6 @@ describe('account-only rows (SNOW-749)', () => {
     await settle();
 
     expect(row().querySelector('[data-row-rule]')).toBeNull();
-    // SNOW-XXX: no dot either — nothing of this row is stored here, so no
-    // basemap has been chosen for it and a colour would imply one. What
-    // says it is not here is the heading it sits under.
-    expect(row().querySelector('[data-row-swatch]')).toBeNull();
     expect(groupLabels()).toEqual(['Not on this device']);
   });
 

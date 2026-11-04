@@ -1035,24 +1035,12 @@
     const bar = sheet.querySelector('[data-downloads-bar]');
     if (bar) {
       bar.style.width = summary.pct + '%';
-      bar.textContent = '';
-      // SNOW-645 review: one segment per basemap actually stored (grouped
-      // and summed by basemap_manage_core.js's budgetSegments — never one
-      // per area), each sized by flex-grow in proportion to its own share
-      // of the used bytes and coloured via .basemap-identity-fill's
-      // data-basemap-key rules (src/css/main.css §2) — the same rules the
-      // row swatches use, so the two readings of "what basemap is this"
-      // agree. JS sets the key and the grow weight; nothing here touches
-      // a colour or builds a class string.
-      for (const segment of segments) {
-        const el = document.createElement('div');
-        el.className = 'basemap-identity-fill h-full';
-        el.dataset.basemapKey = segment.basemapKey;
-        el.style.flexGrow = String(segment.bytes);
-        el.style.flexShrink = '0';
-        el.style.flexBasis = '0';
-        bar.appendChild(el);
-      }
+      // One neutral fill. It was one coloured segment per basemap
+      // (SNOW-645 review), keyed by a dot on each row; the dot went
+      // because dots in the offline surfaces mean "will it work offline?"
+      // (SNOW-1415's connection panel), and with no row dot the colours
+      // had no key. The row's meta line names the basemap in words, and
+      // the track's aria-label below still lists the composition.
     }
 
     const track = sheet.querySelector('[data-downloads-track]');
@@ -1487,25 +1475,6 @@
     //     here". It costs this device nothing, so a size would be "0.0 MB"
     //     — a download that somehow takes no space rather than one that is
     //     not here.
-    // The basemap identity dot. It is the whole of what the
-    // per-basemap group headings used to carry, moved onto the row so the
-    // colour survives the list being grouped by presence instead — the
-    // same `.basemap-identity-fill` rules the bar segments use, so the two
-    // readings of "which basemap is this" cannot drift.
-    //
-    // An account-only row has NO dot: nothing of it is stored here, so no
-    // basemap has been chosen for it, and a colour would imply one.
-    const swatch = fragment.querySelector('[data-row-swatch]');
-    if (swatch) {
-      if (row.onDevice === false || !row.basemapKey) {
-        swatch.remove();
-      } else {
-        swatch.classList.remove('bg-sync-off');
-        swatch.classList.add('basemap-identity-fill');
-        swatch.dataset.basemapKey = row.basemapKey;
-      }
-    }
-
     const subtitle = fragment.querySelector('[data-row-meta]');
     // SNOW-1139: read at paint time, not at IIFE time — base.html loads it
     // in <head>, but a row is only ever built long after both have run.
@@ -1530,8 +1499,9 @@
       } else {
         // Kind, basemap, size — "Region · Swisstopo (CH) ·
         // 13.6 MB". The basemap moved here from the group heading it used
-        // to sort under, so the fact survives the grouping change: the dot
-        // gives it at a glance, the word gives it exactly.
+        // to sort under, so the fact survives the grouping change. The
+        // word is the whole of it: the row carries no basemap dot, because
+        // a dot in these surfaces means offline status.
         subtitle.textContent = interpolate(STRINGS['row-meta'], {
           kind: kindLabel(row.kind),
           basemap: basemapName(row.basemapKey),

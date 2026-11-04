@@ -164,7 +164,7 @@ the row's own label, so map.html loads that module once for both.
 {# with that row's own inline-edit affordance.                               #}
 <template id="map-downloads-row-template">
     {% trans "Area name" as downloads_rename_label %}
-    {% include "includes/_ugc_panel_row.html" with js_filled=True swatch=True rename_label=downloads_rename_label actions_template="includes/_map_downloads_row_actions.html" %}
+    {% include "includes/_ugc_panel_row.html" with js_filled=True rename_label=downloads_rename_label actions_template="includes/_map_downloads_row_actions.html" %}
 </template>
 {# Strings the JS needs but cannot hold itself — makemessages only scans    #}
 {# templates and Python, so anything JS renders has to be handed to it      #}
