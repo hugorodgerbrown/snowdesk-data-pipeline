@@ -746,3 +746,167 @@ describe('the verified stamp (SNOW-1415)', () => {
     expect(entry.verified.at).toBe('old');
   });
 });
+
+describe('the Downloads inventory (SNOW-1418)', () => {
+  const TODAY = '2026-09-11T07:00:00.000Z';
+  const YESTERDAY = '2026-09-10T07:00:00.000Z';
+  const TOUR = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const ROUTE = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const TOUR_URLS = [
+    '/routes/ski-tours/' + TOUR + '/feature.json',
+    '/routes/ski-tours/' + TOUR + '/terrain.json',
+  ];
+  const RESORT_URLS = ['/partials/place-sheet/resort/verbier/?d=2026-09-11'];
+
+  /** A record synced today by acct-1, with every inventory field stamped. */
+  function record(overrides, items) {
+    const base = area();
+    return {
+      contentAt: TODAY,
+      verified: { at: TODAY, map: 'yes', content: 'yes', principal: 'acct-1' },
+      ...(overrides || {}),
+      items: {
+        ...base.items,
+        routes: [{ uuid: ROUTE }],
+        tours: [{ uuid: TOUR, name: 'Rosablanche', urls: TOUR_URLS }],
+        tourBoxes: [],
+        resorts: [{ slug: 'verbier', urls: RESORT_URLS }],
+        reports: [{ id: 'r1' }, { id: 'r2' }],
+        reportsAt: TODAY,
+        reportsNewestAt: TODAY,
+        ...(items || {}),
+      },
+    };
+  }
+
+  /** Every stamped url, as the worker would answer for a whole area. */
+  function allHeld(r) {
+    return new Set(journey.inventoryUrls(r, ORIGIN));
+  }
+
+  const OVERLAYS = {
+    routes: new Set([ROUTE]),
+    reports: new Set(['r1', 'r2']),
+  };
+
+  function inventory(r, options) {
+    return journey.inventoryFor(r, NOW, {
+      signedIn: true,
+      principal: 'acct-1',
+      origin: ORIGIN,
+      ...(options || {}),
+    });
+  }
+
+  const byKey = (rows) => Object.fromEntries(rows.map((row) => [row.key, row]));
+
+  it('lists every row, with its count and its stamp, when it all landed', () => {
+    const r = record();
+    const rows = inventory(r, { held: allHeld(r), overlayIds: OVERLAYS });
+    expect(rows.map((row) => row.key)).toEqual([
+      'map',
+      'bulletin',
+      'weather',
+      'routes',
+      'trips',
+      'places',
+      'tours',
+      'resorts',
+      'reports',
+    ]);
+    expect(rows.every((row) => row.status === 'yes')).toBe(true);
+    const k = byKey(rows);
+    expect(k.bulletin.at).toBe(TODAY);
+    expect(k.weather.at).toBe(TODAY);
+    expect([k.routes.count, k.trips.count, k.places.count]).toEqual([1, 1, 1]);
+    expect([k.tours.count, k.resorts.count, k.reports.count]).toEqual([1, 1, 2]);
+  });
+
+  it('marks a stale bulletin and its weather partial, and the content they ride with', () => {
+    const r = record({ contentAt: YESTERDAY });
+    const k = byKey(inventory(r));
+    expect(k.bulletin.status).toBe('partial');
+    expect(k.weather.status).toBe('partial');
+    expect(k.bulletin.at).toBe(YESTERDAY);
+    // Nothing read about the tours: they follow the conditions stage.
+    expect(k.tours.status).toBe('partial');
+  });
+
+  it('marks a missing map as missing, not partial', () => {
+    const r = record({ verified: { at: TODAY, map: 'no', reason: 'tiles' } });
+    expect(byKey(inventory(r)).map.status).toBe('missing');
+  });
+
+  it('reads an unchecked map as unknown', () => {
+    const r = record({ verified: undefined });
+    expect(byKey(inventory(r)).map.status).toBe('unknown');
+  });
+
+  it('lists no routes, trips or places for a reader who is signed out', () => {
+    const keys = inventory(record(), { signedIn: false, principal: '' }).map((row) => row.key);
+    expect(keys).toEqual(['map', 'bulletin', 'weather', 'tours', 'resorts', 'reports']);
+  });
+
+  it('lists none of another account’s things', () => {
+    const keys = inventory(record(), { principal: 'acct-2' }).map((row) => row.key);
+    expect(keys).not.toContain('routes');
+    expect(keys).not.toContain('trips');
+    expect(keys).not.toContain('places');
+  });
+
+  it('lists only the map, bulletin and weather for a record synced before the stamp', () => {
+    const keys = inventory({ contentAt: TODAY }).map((row) => row.key);
+    expect(keys).toEqual(['map', 'bulletin', 'weather']);
+  });
+
+  it('lists no saved places row when the area has none', () => {
+    const keys = inventory(record({}, { pins: [] })).map((row) => row.key);
+    expect(keys).toContain('trips');
+    expect(keys).not.toContain('places');
+  });
+
+  it('marks a row partial when one of its things is not held', () => {
+    const r = record();
+    const held = allHeld(r);
+    held.delete(ORIGIN + TOUR_URLS[1]);
+    const k = byKey(
+      inventory(r, {
+        held: held,
+        overlayIds: { routes: new Set(), reports: new Set(['r1']) },
+      }),
+    );
+    expect(k.tours.status).toBe('partial');
+    expect(k.routes.status).toBe('partial');
+    expect(k.reports.status).toBe('partial');
+    expect(k.trips.status).toBe('yes');
+    expect(k.resorts.status).toBe('yes');
+  });
+
+  it('follows the stage where nothing was read, and never says No on its own', () => {
+    const r = record({
+      verified: { at: TODAY, map: 'yes', content: 'no', principal: 'acct-1' },
+    });
+    const k = byKey(inventory(r));
+    // The things stage says No, so the reader's rows read partial…
+    expect(k.trips.status).toBe('partial');
+    expect(k.routes.status).toBe('partial');
+    // …and the public ones follow today's conditions, which are a yes.
+    expect(k.tours.status).toBe('yes');
+    expect(k.reports.status).toBe('yes');
+  });
+
+  it('counts a resort with no sheet urls by its stage', () => {
+    const r = record({}, { resorts: [{ slug: 'verbier', urls: [] }] });
+    expect(byKey(inventory(r, { held: new Set() })).resorts.status).toBe('yes');
+  });
+
+  it('names each stamped url once, absolute', () => {
+    const r = record();
+    const urls = journey.inventoryUrls(r, ORIGIN);
+    expect(urls).toContain(ORIGIN + TOUR_URLS[0]);
+    expect(urls).toContain(ORIGIN + RESORT_URLS[0]);
+    expect(urls).toContain(ORIGIN + '/trips/' + TRIP + '/');
+    expect(new Set(urls).size).toBe(urls.length);
+    expect(journey.inventoryUrls({}, ORIGIN)).toEqual([]);
+  });
+});

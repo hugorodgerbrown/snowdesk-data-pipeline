@@ -71,6 +71,16 @@
  * and the reader's things from the same stamp. `verdictFor` is unchanged
  * and stays the one verdict. The record-only path never reads the audit
  * core, so it works where that core is absent.
+ *
+ * ## The Downloads inventory (SNOW-1418)
+ *
+ * `inventoryFor` lists what one area holds, row by row, for the reveal
+ * under its row in the map's Downloads sheet: the map, the bulletin, the
+ * weather, the reader's routes, trips and saved places, the SAC tours, the
+ * resorts and the community reports. It reads the same stamp as
+ * `stagesFromRecord`, and takes what the worker and the overlay cache
+ * were read to hold as injected readings (`inventoryUrls` names the urls
+ * to ask about).
  */
 
 (function () {
@@ -775,6 +785,193 @@
   }
 
   /**
+   * @typedef {'yes'|'partial'|'missing'|'unknown'} InventoryStatus
+   */
+
+  /**
+   * @typedef {Object} InventoryRow
+   * @property {'map'|'bulletin'|'weather'|'routes'|'trips'|'places'|'tours'|'resorts'|'reports'} key
+   * @property {InventoryStatus} status `partial` is what a sync fixes;
+   *   `missing` is the map, which only a fresh download fixes.
+   * @property {number} [count] A count row's stamped total.
+   * @property {string} [at] The bulletin and weather rows: `contentAt`.
+   */
+
+  /**
+   * One stage status as an inventory status. A content No is something a
+   * sync fixes, so it is partial; the map's No is missing.
+   *
+   * @param {Stage|null} stage
+   * @param {boolean} [isMap]
+   * @returns {InventoryStatus}
+   */
+  function fromStage(stage, isMap) {
+    if (!stage) return 'unknown';
+    if (stage.status === 'yes') return 'yes';
+    if (stage.status === 'no') return isMap ? 'missing' : 'partial';
+    return 'unknown';
+  }
+
+  /**
+   * A count row's status from what the device was read to hold.
+   *
+   * Yes when every stamped thing is held, partial when one is not. Where
+   * nothing was read (`check` answers null), the row follows its stage,
+   * so it never says No on a reading it did not take.
+   *
+   * @param {any[]} stamped
+   * @param {function(any): (boolean|null)} check Held, not held, or unread.
+   * @param {InventoryStatus} fallback
+   * @returns {InventoryStatus}
+   */
+  function countStatus(stamped, check, fallback) {
+    var unread = false;
+    for (var i = 0; i < stamped.length; i++) {
+      var held = check(stamped[i]);
+      if (held === false) return 'partial';
+      if (held === null) unread = true;
+    }
+    return unread ? fallback : 'yes';
+  }
+
+  /**
+   * SNOW-1418: what one downloaded area holds, row by row — the inventory
+   * the Downloads sheet reveals under an area's row.
+   *
+   * Built on `stagesFromRecord`, so a row's verdict dot and the inventory
+   * under it read the same stamp. The map, bulletin and weather rows are
+   * always there. A count row is there only when the last sync stamped its
+   * field, so a record synced before its field existed lists less rather
+   * than a zero it never counted. Routes, trips and saved places are the
+   * reader's own: shown only signed in, and only when the account that
+   * stamped them (`items.principal`) is this reader's. Saved places only
+   * when the area has some.
+   *
+   * The readings are optional and injected by the caller: `held`, the
+   * absolute urls the worker said it would serve offline (SNOW-1416's
+   * `held-content`), and `overlayIds`, the route and report ids the
+   * map's overlay cache holds. Absent or null, a row follows its stage.
+   *
+   * @param {any} record A `basemap.regions` or `basemap.customAreas` row.
+   * @param {string|Date} [now]
+   * @param {{signedIn?: boolean, principal?: string, origin?: string,
+   *   held?: Set<string>|null,
+   *   overlayIds?: {routes?: Set<string>|null, reports?: Set<string>|null}|null}} [options]
+   * @returns {InventoryRow[]}
+   */
+  function inventoryFor(record, now, options) {
+    var opts = options || {};
+    var r = record || {};
+    var stages = stagesFromRecord(r, now, opts);
+    var items = r.items && typeof r.items === 'object' ? r.items : {};
+    var held = opts.held instanceof Set ? opts.held : null;
+    var overlays = opts.overlayIds || {};
+    var origin = opts.origin || '';
+    var conditions = fromStage(stages.conditions);
+    var things = fromStage(stages.things);
+    var at = typeof r.contentAt === 'string' ? r.contentAt : undefined;
+
+    /** @param {any} thing */
+    var urlsHeld = function (thing) {
+      var urls = thing && Array.isArray(thing.urls) ? thing.urls : [];
+      if (!held || urls.length === 0) return null;
+      var set = /** @type {Set<string>} */ (held);
+      return urls.every(function (/** @type {string} */ url) {
+        return set.has(absolute(url, origin));
+      });
+    };
+    /**
+     * @param {Set<string>|null|undefined} ids
+     * @param {string} field
+     */
+    var idHeld = function (ids, field) {
+      return function (/** @type {any} */ thing) {
+        if (!(ids instanceof Set) || !thing || !thing[field]) return null;
+        return ids.has(String(thing[field]));
+      };
+    };
+
+    /** @type {InventoryRow[]} */
+    var rows = [
+      { key: 'map', status: fromStage(stages.map, true) },
+      { key: 'bulletin', status: conditions, at: at },
+      { key: 'weather', status: conditions, at: at },
+    ];
+    var ours =
+      !!opts.signedIn &&
+      typeof items.principal === 'string' &&
+      items.principal !== '' &&
+      items.principal === opts.principal;
+    if (ours && Array.isArray(items.routes)) {
+      rows.push({
+        key: 'routes',
+        status: countStatus(items.routes, idHeld(overlays.routes, 'uuid'), things),
+        count: items.routes.length,
+      });
+    }
+    if (ours && Array.isArray(items.trips)) {
+      rows.push({
+        key: 'trips',
+        status: countStatus(items.trips, urlsHeld, things),
+        count: items.trips.length,
+      });
+    }
+    if (ours && Array.isArray(items.pins) && items.pins.length > 0) {
+      rows.push({
+        key: 'places',
+        status: countStatus(items.pins, urlsHeld, things),
+        count: items.pins.length,
+      });
+    }
+    if (Array.isArray(items.tours)) {
+      rows.push({
+        key: 'tours',
+        status: countStatus(items.tours, urlsHeld, conditions),
+        count: items.tours.length,
+      });
+    }
+    if (Array.isArray(items.resorts)) {
+      rows.push({
+        key: 'resorts',
+        status: countStatus(items.resorts, urlsHeld, conditions),
+        count: items.resorts.length,
+      });
+    }
+    if (Array.isArray(items.reports)) {
+      rows.push({
+        key: 'reports',
+        status: countStatus(items.reports, idHeld(overlays.reports, 'id'), conditions),
+        count: items.reports.length,
+      });
+    }
+    return rows;
+  }
+
+  /**
+   * SNOW-1418: every url an area's inventory asks the worker about — the
+   * stamped urls of its trips, pins, tours and resorts, absolute.
+   *
+   * @param {any} record
+   * @param {string} origin
+   * @returns {string[]}
+   */
+  function inventoryUrls(record, origin) {
+    var items = record && record.items && typeof record.items === 'object' ? record.items : {};
+    /** @type {string[]} */
+    var out = [];
+    ['trips', 'pins', 'tours', 'resorts'].forEach(function (field) {
+      var list = Array.isArray(items[field]) ? items[field] : [];
+      list.forEach(function (/** @type {any} */ thing) {
+        (thing && Array.isArray(thing.urls) ? thing.urls : []).forEach(function (/** @type {string} */ url) {
+          var href = absolute(url, origin);
+          if (out.indexOf(href) < 0) out.push(href);
+        });
+      });
+    });
+    return out;
+  }
+
+  /**
    * Every panel, in paint order.
    *
    * @param {any} readings What `offline_audit.js` collected.
@@ -854,6 +1051,8 @@
     buildPanels: buildPanels,
     verdictFor: verdictFor,
     stagesFromRecord: stagesFromRecord,
+    inventoryFor: inventoryFor,
+    inventoryUrls: inventoryUrls,
     verifiedFromSync: verifiedFromSync,
     verifiedFromStages: verifiedFromStages,
     stampVerifiedRecord: stampVerifiedRecord,

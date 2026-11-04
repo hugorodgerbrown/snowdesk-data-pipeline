@@ -1,0 +1,59 @@
+{% comment %}
+templates/includes/_downloads_inventory.html — what one downloaded area
+holds, listed under its Downloads row (SNOW-1418).
+
+Hugo's mockup "Downloads · what's in Zermatt": the row's chevron
+(includes/_row_disclosure.html) opens this list into the row's own panel.
+One item per thing the area carries — the map, the bulletin, the weather,
+the reader's routes, trips and saved places, the SAC tours, the resorts
+and the community reports — each with a small dot in the
+offline-availability family (`sync-*`, never the status colours) and a
+mono value: a size, a day, a time or a count.
+
+Two render paths, one markup. The map's Downloads sheet renders it inside
+a `<template>` with no `items`: one empty item that
+map_downloads_manager.js clones per row `inventoryFor` returns, filling
+the `[data-inventory-*]` hooks. The component library passes `items` and
+gets the list as it looks once painted.
+
+The dot is `aria-hidden`; `[data-inventory-status]` says what it means to
+a screen reader.
+
+Parameters (passed via {% include … with … %}):
+  items  (list, optional) — `{label, value, dot, status}` per item, where
+         `dot` is a background token class ("bg-sync-ok") and `status` the
+         screen-reader words. Omitted, one empty item for the script.
+  label  (string, optional) — the list's accessible name.
+{% endcomment %}
+<ul
+    data-inventory-list
+    data-testid="downloads-inventory"
+    {% if label %}aria-label="{{ label }}"{% endif %}
+    class="ml-4.5 flex flex-col rounded-sm bg-tag px-3.5 py-1.5"
+>
+    {% if items %}
+        {% for item in items %}
+            <li data-inventory-item class="flex min-h-8.5 items-center gap-2.5">
+                <span
+                    data-inventory-dot
+                    aria-hidden="true"
+                    class="size-1.75 shrink-0 rounded-full {{ item.dot }}"
+                ></span>
+                <span
+                    data-inventory-label
+                    class="min-w-0 flex-1 truncate text-label text-text-1"
+                >{{ item.label }}</span>
+                <span data-inventory-value class="shrink-0 font-mono text-row-meta text-text-3">{{ item.value }}</span>
+                <span data-inventory-status class="sr-only">{{ item.status }}</span>
+            </li>
+        {% endfor %}
+    {% else %}
+        <li data-inventory-item class="flex min-h-8.5 items-center gap-2.5">
+            <span data-inventory-dot aria-hidden="true" class="size-1.75 shrink-0 rounded-full bg-sync-off"></span>
+            <span data-inventory-label class="min-w-0 flex-1 truncate text-label text-text-1"></span>
+            <span data-inventory-value class="shrink-0 font-mono text-row-meta text-text-3"></span>
+            {# The dot's meaning, for a screen reader. #}
+            <span data-inventory-status class="sr-only"></span>
+        </li>
+    {% endif %}
+</ul>

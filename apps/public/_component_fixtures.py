@@ -2212,6 +2212,112 @@ UGC_PANEL_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# Downloads inventory (SNOW-1418) ---------------------------------------------
+# What one area holds, as map_downloads_manager.js paints it under the row:
+# Hugo's mockup frame "Downloads · what's in Zermatt", with yesterday's
+# bulletin, and the same list signed out.
+_INVENTORY_HELD = "bg-sync-ok"
+_INVENTORY_SYNC = "bg-sync-partial"
+
+DOWNLOADS_INVENTORY_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Signed in, bulletin from yesterday",
+        "context": {
+            "label": "What's in Zermatt",
+            "items": [
+                {
+                    "label": "Map and terrain",
+                    "value": "72 MB",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+                {
+                    "label": "Avalanche bulletin",
+                    "value": "2 Nov",
+                    "dot": _INVENTORY_SYNC,
+                    "status": "Needs a sync",
+                },
+                {
+                    "label": "Weather",
+                    "value": "2 Nov 10:40",
+                    "dot": _INVENTORY_SYNC,
+                    "status": "Needs a sync",
+                },
+                {
+                    "label": "Your routes",
+                    "value": "3",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+                {
+                    "label": "Trips",
+                    "value": "1",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+                {
+                    "label": "SAC tours",
+                    "value": "41",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+                {
+                    "label": "Ski resorts",
+                    "value": "6",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+                {
+                    "label": "Community reports",
+                    "value": "12",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+            ],
+        },
+    },
+    {
+        # Signed out, the reader's own rows are absent, not zero.
+        "caption": "Signed out — no routes, trips or places",
+        "context": {
+            "label": "What's in Verbier",
+            "items": [
+                {
+                    "label": "Map and terrain",
+                    "value": "96 MB",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+                {
+                    "label": "Avalanche bulletin",
+                    "value": "Today",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+                {
+                    "label": "Weather",
+                    "value": "Today 07:15",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+                {
+                    "label": "SAC tours",
+                    "value": "28",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+                {
+                    "label": "Community reports",
+                    "value": "4",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+            ],
+        },
+    },
+)
+
+
 # Row disclosure (SNOW-711) ----------------------------------------------------
 # The UGC row's trailing expand control, rendered on its own so the glyph
 # and its 44×44 target are visible outside a row. Both states are shown:

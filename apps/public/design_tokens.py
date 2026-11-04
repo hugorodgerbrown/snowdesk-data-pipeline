@@ -51,6 +51,7 @@ from apps.public._component_fixtures import (
     DAY_FIGURES_VARIANTS,
     DAY_STRIPS_VARIANTS,
     DAY_WINDOWS_VARIANTS,
+    DOWNLOADS_INVENTORY_VARIANTS,
     EYEBROW_VARIANTS,
     FAVOURITE_PROBLEM_VARIANTS,
     FORECAST_SOURCE_VARIANTS,
@@ -1937,13 +1938,33 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "than an arrow because it expands in place — the meaning "
             "_collapsible_panel.html already gives the mark — and a real "
             "<a href> rather than a button, so it navigates to the same "
-            "detail with no JavaScript. Its one caller is the account "
+            "detail with no JavaScript. Its first caller is the account "
             "page's favourite row, where it replaced a 'Details →' text "
-            "link sitting beside two icon controls."
+            "link sitting beside two icon controls. SNOW-1418: the map "
+            "Downloads sheet's area row is the second, with no href: it "
+            "opens the area's inventory, read from the device."
         ),
         kind="components",
         partial="includes/_row_disclosure.html",
         variants=ROW_DISCLOSURE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="downloads-inventory",
+        label="Downloads inventory",
+        description=(
+            "What one downloaded area holds (SNOW-1418), opened under its "
+            "Downloads row by the row disclosure: the map, the bulletin, "
+            "the weather, the reader's routes, trips and saved places, the "
+            "SAC tours, the resorts and the community reports. Each item "
+            "has a dot in the offline-availability family (green held, "
+            "amber needs a sync, red missing, grey not checked) and a mono "
+            "value. map_downloads_manager.js fills it from "
+            "pwaOfflineJourneyCore.inventoryFor; the library passes items."
+        ),
+        kind="components",
+        partial="includes/_downloads_inventory.html",
+        variants=DOWNLOADS_INVENTORY_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

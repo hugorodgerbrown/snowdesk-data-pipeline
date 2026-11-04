@@ -244,6 +244,50 @@ class TestDownloadsSheetAnswersOffline:
             assert f'<span data-string="{key}">{words}</span>' in strings
         assert "Download again" not in strings
 
+    def test_the_row_carries_the_inventory_disclosure(self, client: Client) -> None:
+        """SNOW-1418: the shared chevron, and the row's own empty panel."""
+        html = client.get(reverse("public:map")).content.decode()
+        row = self._template(html, "map-downloads-row-template")
+
+        toggle = row.split("data-row-disclosure", 1)[1].split(">", 1)[0]
+        assert 'aria-controls="downloads-row-inventory"' in toggle
+        assert 'aria-expanded="false"' in toggle
+        assert "hx-get" not in toggle
+        assert 'id="downloads-row-inventory"' in row
+        assert "data-row-panel" in row
+
+    def test_the_inventory_template_and_its_words_render(self, client: Client) -> None:
+        """SNOW-1418: one item with its three hooks, and every label."""
+        html = client.get(reverse("public:map")).content.decode()
+        inventory = self._template(html, "map-downloads-inventory-template")
+        strings = self._template(html, "map-downloads-strings-template")
+
+        for hook in (
+            "data-inventory-list",
+            "data-inventory-item",
+            "data-inventory-dot",
+            "data-inventory-label",
+            "data-inventory-value",
+            "data-inventory-status",
+        ):
+            assert hook in inventory
+        assert "bg-tag" in inventory
+        for key, words in (
+            ("inventory-toggle-label", "What's in %(name)s"),
+            ("inventory-map", "Map and terrain"),
+            ("inventory-bulletin", "Avalanche bulletin"),
+            ("inventory-weather", "Weather"),
+            ("inventory-routes", "Your routes"),
+            ("inventory-trips", "Trips"),
+            ("inventory-places", "Saved places"),
+            ("inventory-tours", "SAC tours"),
+            ("inventory-resorts", "Ski resorts"),
+            ("inventory-reports", "Community reports"),
+            ("inventory-today", "Today"),
+            ("inventory-status-partial", "Needs a sync"),
+        ):
+            assert f'<span data-string="{key}">{words}</span>' in strings
+
     def test_the_foot_carries_sync_all_first(self, client: Client) -> None:
         """Hidden until the script finds an area on this device to sync."""
         html = client.get(reverse("public:map")).content.decode()
