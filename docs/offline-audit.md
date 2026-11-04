@@ -811,7 +811,7 @@ what follows is how they meet this module.
   expectation through `stampContentRecord`. Remove calls
   `pwaBasemapAreaRemoval.evict` — the map's own removal, after the
   sheet's own confirmation — and then `refresh`.
-- **Located.** "Your things" are the trips and pins `/api/area-items/`
+- **Located.** "User data" is the trips and pins `/api/area-items/`
   places inside the area's rectangle (see the glossary), as the last sync
   recorded them.
 

@@ -27,7 +27,7 @@
  *     No (reason `terrain`), so the area reads "Needs a refresh" and Sync
  *     now fetches it again; a line that could not be read makes a Yes
  *     unknown. The stage's own No (stale, never) keeps its reason.
- *   - **Your things.** Each trip and pin in the area, by name, Yes only
+ *   - **User data.** Each trip and pin in the area, by name, Yes only
  *     when every url it needs is in Cache Storage. What "needs" means is
  *     stamped on the record by the sync that fetched them
  *     (`stampContentRecord`, `areaItemExpectation`) — `/api/area-items/`
@@ -90,7 +90,7 @@
    * @typedef {Object} Stage
    * @property {StageStatus} status
    * @property {string} [reason]
-   * @property {ThingRow[]} [rows] Your things only.
+   * @property {ThingRow[]} [rows] User data only.
    * @property {TerrainLine} [terrain] The conditions stage only (SNOW-1379).
    */
 
@@ -353,7 +353,7 @@
   }
 
   /**
-   * The "your things" stage: each trip and pin, Yes only when every url
+   * The "User data" stage: each trip and pin, Yes only when every url
    * it needs is cached.
    *
    * @param {any} area

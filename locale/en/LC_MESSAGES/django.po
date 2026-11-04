@@ -10032,6 +10032,9 @@ msgstr ""
 msgid "Bulletins and weather"
 msgstr ""
 
+msgid "User data"
+msgstr ""
+
 msgid "some of its map tiles are missing"
 msgstr ""
 
@@ -10067,7 +10070,7 @@ msgstr ""
 msgid "not recorded yet — sync this area to list them"
 msgstr ""
 
-msgid "none of your trips or pins are in this area"
+msgid "None in this area"
 msgstr ""
 
 msgid "saved by another account"
