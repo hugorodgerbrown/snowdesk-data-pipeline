@@ -4072,8 +4072,17 @@ async function refreshAreaContent(areaId, onStage) {
     const autosync = self.pwaOfflineAutosyncCore;
     // A fresh, whole area: nothing to fetch, and its `contentAt` must not
     // move, or it would never come due again.
-    if (autosync && !autosync.isStale(found.record, new Date())) return !content.short;
-    await _stampAreaContent(areaId, found.regionId, !content.short, content.items);
+    const fresh = !!autosync && !autosync.isStale(found.record, new Date());
+    if (fresh && !content.short) return true;
+    // A short plan is still recorded as one (SNOW-953), even when what it
+    // did resolve was all held — keeping a fresh area's `contentAt`.
+    await _stampAreaContent(
+      areaId,
+      found.regionId,
+      !content.short,
+      content.items,
+      fresh ? delta.keepsContentAt : undefined,
+    );
     return !content.short;
   }
 

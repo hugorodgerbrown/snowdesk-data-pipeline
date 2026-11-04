@@ -868,6 +868,37 @@ describe('only what changed (SNOW-1416)', () => {
     expect((await storedArea()).contentAt).toBe(justNow);
   });
 
+  it('records a short plan on a fresh area that holds all it resolved, and keeps its stamp', async () => {
+    // Codex review: the trips-and-pins endpoint fails, the bulletins are all
+    // held, so the delta is empty; the shortfall must still reach the record.
+    await syncOnce();
+    const justNow = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    await seedArea({ contentAt: justNow });
+    const mapEl = document.getElementById('map');
+    mapEl.dataset.areaItemsUrl = '/api/area-items/';
+    const fetchStub = globalThis.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) =>
+        String(url).includes('area-items')
+          ? Promise.resolve({ ok: false, json: () => Promise.resolve({}) })
+          : fetchStub(url),
+      ),
+    );
+    try {
+      const ok = await window.pwaBasemapDownloads.refreshAreaContent(AREA_ID);
+
+      expect(ok).toBe(false);
+      expect(window.pwaWarmCache).not.toHaveBeenCalled();
+      const stored = await storedArea();
+      expect(stored.contentIncomplete).toBe(true);
+      expect(stored.contentAt).toBe(justNow);
+    } finally {
+      delete mapEl.dataset.areaItemsUrl;
+      vi.stubGlobal('fetch', fetchStub);
+    }
+  });
+
   it('refetches the held bulletins of an area more than an hour stale', async () => {
     await syncOnce();
     await seedArea({ contentAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() });
