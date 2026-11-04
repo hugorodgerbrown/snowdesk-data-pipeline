@@ -184,10 +184,18 @@
     const bridge = /** @type {any} */ (window).pwaBasemapDownloads;
     if (!core || !bridge || typeof bridge.syncArea !== 'function') return null;
     const notify = typeof onChange === 'function' ? onChange : () => {};
+    // SNOW-1416: the one content run, taken as 'user' — a background sync
+    // finishes the area it is on, then gives way.
+    const contentRun = bridge.contentRun;
     /** @type {{running: boolean, current: string, step: Object|null, result: Object|null}} */
     const current = { running: true, current: '', step: null, result: null };
     run = current;
     notify();
+    if (contentRun && !(await contentRun.take())) {
+      run = null;
+      notify();
+      return null;
+    }
     const queue = /** @type {any} */ (window).pwaMutationQueue;
     try {
       current.result = await core.run({
@@ -206,6 +214,7 @@
     } catch (_err) {
       current.result = { total: areaIds.length, ready: 0, waiting: 0, outcomes: [] };
     }
+    if (contentRun) contentRun.release('user');
     current.running = false;
     current.current = '';
     notify();
@@ -221,7 +230,13 @@
     const core = /** @type {any} */ (window).pwaOfflineReadyCore;
     const running = !!(run && run.running);
     const label = running && core ? core.progressText(run && run.step, strings()) : '';
-    return { running: running, current: running && run ? run.current : '', label: label };
+    if (!running) {
+      // SNOW-1416: the background sync's area shows on its row too.
+      const contentRun = /** @type {any} */ (window).pwaBasemapDownloads?.contentRun;
+      const auto = contentRun && contentRun.current() === 'auto' ? contentRun.area() : '';
+      return { running: false, current: auto || '', label: '' };
+    }
+    return { running: running, current: run ? run.current : '', label: label };
   }
 
   /**

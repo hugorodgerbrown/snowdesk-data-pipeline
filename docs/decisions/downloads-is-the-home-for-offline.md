@@ -63,9 +63,10 @@ re-clones its body on every render, and a run in flight must survive that.
 
 - `/map/?sync=all` and `window.pwaConnectionPanel` are gone; nothing off the
   map starts a sync any more.
-- A sync is still unconditional
-  ([a-pre-departure-sync-is-unconditional.md](a-pre-departure-sync-is-unconditional.md))
-  until SNOW-1416 makes it fetch only what changed.
+- A sync fetches only what changed, and stale areas sync in the background
+  ([sync-fetches-only-what-changed.md](sync-fetches-only-what-changed.md),
+  SNOW-1416, superseding
+  [a-pre-departure-sync-is-unconditional.md](a-pre-departure-sync-is-unconditional.md)).
 - A new surface that verifies an area should still stamp `verified`, or the
   sheet keeps the last answer another surface gave.
 - The inventory of what a download holds is a reveal on its row (SNOW-1418),

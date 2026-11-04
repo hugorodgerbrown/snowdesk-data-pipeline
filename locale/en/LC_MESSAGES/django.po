@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-04 17:47+0000\n"
+"POT-Creation-Date: 2026-11-04 21:02+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -3828,6 +3828,12 @@ msgid ""
 msgstr ""
 
 msgid ""
+"A sync only fetches what has changed since the last one, so it is quick when "
+"little has. While the map is open and you have a connection, your downloads "
+"also bring themselves up to date in the background."
+msgstr ""
+
+msgid ""
 "Favourites let you pin specific spots &mdash; a trailhead, a car park, a "
 "favourite line &mdash; directly on the map. Sign in, open the star button on "
 "the right of the map, and use \"Add a favourite\": the map moves under a "
@@ -5723,6 +5729,44 @@ msgstr ""
 
 #, python-format
 msgid "%%(count)s of your downloads isn't on this device"
+msgstr ""
+
+#, python-format
+msgid "Syncing… (%%(n)s of %%(total)s)"
+msgstr ""
+
+#, python-format
+msgid "Ready — %%(total)s areas up to date"
+msgstr ""
+
+msgid "Ready — 1 area up to date"
+msgstr ""
+
+#, python-format
+msgid "%%(ready)s of %%(total)s ready"
+msgstr ""
+
+#, python-format
+msgid "%%(n)s changes still waiting to send"
+msgstr ""
+
+msgid "1 change still waiting to send"
+msgstr ""
+
+#, python-format
+msgid "Checking the map… (%%(n)s of %%(total)s)"
+msgstr ""
+
+#, python-format
+msgid "Saving bulletins… (%%(n)s of %%(total)s)"
+msgstr ""
+
+#, python-format
+msgid "Saving weather… (%%(n)s of %%(total)s)"
+msgstr ""
+
+#, python-format
+msgid "Saving your trips and pins… (%%(n)s of %%(total)s)"
 msgstr ""
 
 msgid "Download them again from Your downloads while you have a connection."
@@ -9647,44 +9691,6 @@ msgid ""
 msgstr ""
 
 msgid "Switch it on anyway?"
-msgstr ""
-
-#, python-format
-msgid "Syncing… (%%(n)s of %%(total)s)"
-msgstr ""
-
-#, python-format
-msgid "Ready — %%(total)s areas up to date"
-msgstr ""
-
-msgid "Ready — 1 area up to date"
-msgstr ""
-
-#, python-format
-msgid "%%(ready)s of %%(total)s ready"
-msgstr ""
-
-#, python-format
-msgid "%%(n)s changes still waiting to send"
-msgstr ""
-
-msgid "1 change still waiting to send"
-msgstr ""
-
-#, python-format
-msgid "Checking the map… (%%(n)s of %%(total)s)"
-msgstr ""
-
-#, python-format
-msgid "Saving bulletins… (%%(n)s of %%(total)s)"
-msgstr ""
-
-#, python-format
-msgid "Saving weather… (%%(n)s of %%(total)s)"
-msgstr ""
-
-#, python-format
-msgid "Saving your trips and pins… (%%(n)s of %%(total)s)"
 msgstr ""
 
 msgid "No data supplied"

@@ -205,7 +205,9 @@ firing.
   of orphans is unaffected. (SNOW-951 folded the Repair control into one
   unconditional "Sync now" on every row the device holds; the repair itself
   is unchanged, and still fetches only the missing documents — see
-  [a-pre-departure-sync-is-unconditional.md](a-pre-departure-sync-is-unconditional.md).)
+  [a-pre-departure-sync-is-unconditional.md](a-pre-departure-sync-is-unconditional.md);
+  since SNOW-1416 its content half fetches only what changed too, see
+  [sync-fetches-only-what-changed.md](sync-fetches-only-what-changed.md).)
 - A new sync-status token, `--color-sync-partial`, joins `--color-sync-ok`
   and `--color-sync-blocked`. It is the offline-availability family, not the
   flash-message severity scale.

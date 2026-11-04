@@ -3256,6 +3256,9 @@ button per area under the staleness line, and SNOW-1141 replaced those with
 one press and nothing sent the edits waiting in the queue at all. It
 overturns SNOW-951's "per area, with no sync all"; the reasoning is in
 [`decisions/a-pre-departure-sync-is-unconditional.md`](decisions/a-pre-departure-sync-is-unconditional.md).
+Since SNOW-1416 each area's sync fetches only what changed, and the map page
+also syncs stale areas in the background
+([`decisions/sync-fetches-only-what-changed.md`](decisions/sync-fetches-only-what-changed.md)).
 
 The sequence is `static/js/offline_ready_core.js`
 (`window.pwaOfflineReadyCore`, loaded in `public/base.html`), with every

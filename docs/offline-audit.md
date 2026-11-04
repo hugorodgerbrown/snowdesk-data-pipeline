@@ -509,6 +509,9 @@ is asking: the control is now also what the network menu lands on (one
 area per press under SNOW-951, every area under SNOW-1141's `?sync=all`),
 and to a user about to lose signal `fresh` is an inference from a stamp while the thing they are going to rely on is the data. See
 [a-pre-departure-sync-is-unconditional.md](decisions/a-pre-departure-sync-is-unconditional.md).
+On the map page a sync fetches only what changed since SNOW-1416
+([sync-fetches-only-what-changed.md](decisions/sync-fetches-only-what-changed.md));
+`/offline/` keeps its own sequence.
 
 **`?sync=all` runs every area** (SNOW-1141) — the network menu's Sync
 handed to this page until SNOW-1415, which sent it to the map instead

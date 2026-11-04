@@ -64,6 +64,25 @@ interface Window {
     formatDay(value: unknown, options?: { locale?: string }): string;
     formatStamp(value: unknown, options?: { now?: Date; locale?: string }): string;
   };
+  /** static/js/offline_autosync_core.js — what a sync fetches, and which areas a background sync refreshes (SNOW-1416). */
+  pwaOfflineAutosyncCore: {
+    CONTENT_FRESH_MS: number;
+    isStale(record: { contentAt?: string; contentIncomplete?: boolean } | null | undefined, now: Date, freshMs?: number): boolean;
+    contentDelta(
+      urls: string[],
+      held: Set<string>,
+      permanent: Set<string>,
+      record: { contentAt?: string; contentIncomplete?: boolean } | null | undefined,
+      now: Date,
+      freshMs?: number,
+    ): string[];
+    dueAreas(
+      areas: Array<{ id: string; record: object | null | undefined }> | null | undefined,
+      attempts: Record<string, string> | null | undefined,
+      now: Date,
+      freshMs?: number,
+    ): string[];
+  };
   /** static/js/offline_ready_core.js — "Get ready for offline": drain, then every area in turn (SNOW-1141). */
   pwaOfflineReadyCore: {
     DEFAULT_DRAIN_TIMEOUT_MS: number;
