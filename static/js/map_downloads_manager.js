@@ -1503,10 +1503,12 @@
   function rowAnswer(row) {
     if (row.onDevice === false || row.orphaned) return null;
     const syncAll = window.pwaDownloadsSyncAll;
-    if (syncing.has(row.id) || (syncAll && syncAll.state().current === row.id)) {
+    // A shell cached before SNOW-1420 has no verdict module: no answer,
+    // rather than a "Not checked yet" nothing on that page can change.
+    if (!syncAll) return null;
+    if (syncing.has(row.id) || syncAll.state().current === row.id) {
       return { verdict: 'running', reason: '' };
     }
-    if (!syncAll) return { verdict: 'unknown', reason: '' };
     return syncAll.verdict(areaRecords.get(row.id));
   }
 
@@ -1643,7 +1645,11 @@
     // traffic-light dot and, for anything but a yes, one line saying why
     // (docs/decisions/downloads-is-the-home-for-offline.md). A row with
     // nothing to answer for (account-only, orphaned) has neither.
-    paintRowAnswer(fragment, rowAnswer(row));
+    const answer = rowAnswer(row);
+    paintRowAnswer(fragment, answer);
+    // Hugo, 2026-11-04: a row whose reason line shows says nothing more
+    // about its bulletins in the meta — the reason is the one caveat.
+    const reasonShown = !!answer && answer.verdict !== 'ready';
 
     const subtitle = fragment.querySelector('[data-row-meta]');
     // SNOW-1139: read at paint time, not at IIFE time — base.html loads it
@@ -1689,7 +1695,9 @@
         // takes a caveat: "Custom area · OpenFreeMap · 12.0 MB ·
         // Bulletins not saved". The same caveat-on-a-Yes shape the row is
         // not dimmed for, and for the same reason.
-        if (row.contentIncomplete) {
+        if (reasonShown) {
+          // SNOW-1420: the reason line under the meta already says it.
+        } else if (row.contentIncomplete) {
           subtitle.textContent += ' · ' + (STRINGS['kind-content-incomplete'] || '');
         } else if (stamp && row.contentAt && stamp.isBeforeToday(row.contentAt)) {
           // SNOW-1139: the bulletins this area holds were fetched on an

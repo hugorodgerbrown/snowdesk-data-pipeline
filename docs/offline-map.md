@@ -2306,7 +2306,10 @@ Every row this device holds carries a verdict dot (`status_dot=True` on
 `includes/_ugc_panel_row.html`) and, when the answer is not a yes, one
 reason line under its meta: "Bulletins out of date", "Some trips or pins
 missing", "Map data missing" or "Not checked yet". A yes has no visible
-line and "Works offline" for a screen reader. The verdict is
+line and "Works offline" for a screen reader. While a reason line shows,
+the meta drops the SNOW-932/1139 bulletins clause, so the row says one
+caveat; a shell cached before SNOW-1420, with no verdict module, paints no
+dot and keeps the clause. The verdict is
 `window.pwaDownloadsSyncAll.verdict` (`static/js/map_downloads_sync_all.js`),
 read from the stored record and its `verified` stamp through
 `offline_journey_core.js`, so it matches /offline/'s panels. The foot's

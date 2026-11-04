@@ -4442,6 +4442,43 @@ describe('the offline answer on each row, and Sync all (SNOW-1420)', () => {
     expect(rowNotice().textContent).toBe('Syncing…');
   });
 
+  it('drops the bulletins clause from the meta when the reason line shows', async () => {
+    // Hugo, 2026-11-04: "Bulletins out of date" under the meta is the one
+    // caveat; "· Bulletins saved 3 Nov" beside it would say it twice.
+    const earlier = new Date();
+    earlier.setDate(earlier.getDate() - 3);
+    seed({
+      'basemap.customAreas': [{ ...CUSTOM_AREAS[0], contentAt: earlier.toISOString() }],
+    });
+    installSyncAll({ 'custom-a1': { verdict: 'refresh', reason: 'conditions' } });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(firstRowElement().querySelector('[data-row-meta]').textContent).not.toContain(
+      'Bulletins saved',
+    );
+    expect(rowNotice().textContent).toBe('Bulletins out of date');
+  });
+
+  it('paints nothing on a page with no verdict module, and keeps the meta clause', async () => {
+    // A shell cached before SNOW-1420 has no map_downloads_sync_all.js.
+    const earlier = new Date();
+    earlier.setDate(earlier.getDate() - 3);
+    seed({
+      'basemap.customAreas': [{ ...CUSTOM_AREAS[0], contentAt: earlier.toISOString() }],
+    });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(rowDot()).toBeNull();
+    expect(rowNotice()).toBeNull();
+    expect(firstRowElement().querySelector('[data-row-meta]').textContent).toContain(
+      'Bulletins saved',
+    );
+  });
+
   it('gives a row this device does not hold, or an orphan, no dot and no reason', async () => {
     seed({});
     installSyncAll({});

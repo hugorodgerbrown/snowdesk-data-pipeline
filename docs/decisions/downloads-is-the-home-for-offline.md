@@ -18,7 +18,10 @@ asks "will this work offline?" and does something about it:
   (`includes/_ugc_panel_row.html` with `status_dot=True`): green with nothing
   on screen for a yes, amber or red with one reason line ("Bulletins out of
   date", "Some trips or pins missing", "Map data missing"), grey for "Not
-  checked yet". An account-only row and an orphaned bucket have no dot;
+  checked yet". An account-only row and an orphaned bucket have no dot.
+  While a reason line shows, the meta drops its bulletins clause ("Bulletins
+  saved 3 Nov", "Bulletins not saved"), so the row states one caveat, not
+  two (Hugo, 4 Nov 2026);
 - each row's "…" menu keeps its own Sync now, first, with Remove last;
 - the sheet's foot carries one **Sync all**, which drains the mutation queue
   and syncs every area on the device in the sheet's order
