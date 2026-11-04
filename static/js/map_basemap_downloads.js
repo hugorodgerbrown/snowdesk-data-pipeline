@@ -699,7 +699,9 @@ function assembleBasemapDownloadFeedURLs() {
 async function cacheOverlayFeedsForDownload() {
   const mapEl = document.getElementById('map');
   const cache = window.pwaMapOverlayCache;
-  if (!mapEl || !cache) return;
+  // SNOW-1417: the reports feed this run fetched, for the area's stamp.
+  const fetched = { reports: null, reportsAt: null };
+  if (!mapEl || !cache) return fetched;
 
   const feeds = [
     ['weather', mapEl.dataset.weatherUrl],
@@ -727,12 +729,17 @@ async function cacheOverlayFeedsForDownload() {
         if (!data) return;
         if (resource === 'ski_summits' && !Array.isArray(data.summits)) return;
         await cache.putOverlay(resource, data);
+        if (resource === 'community_reports') {
+          fetched.reports = data;
+          fetched.reportsAt = new Date().toISOString();
+        }
       } catch (_e) {
         // Best-effort, one feed at a time. The tiles are what the user
         // asked for and they are still worth having.
       }
     }),
   );
+  return fetched;
 }
 
 /**
@@ -836,10 +843,14 @@ async function assembleAreaContentURLs(blob, terrain) {
   const mapEl = document.getElementById('map');
   if (!core || !core.areaContentURLs || !mapEl) return { urls: [], short: false };
 
-  await cacheOverlayFeedsForDownload();
+  const overlays = await cacheOverlayFeedsForDownload();
 
   const bbox = core.areaBBox(blob);
   if (!bbox) return { urls: [], short: false };
+
+  // SNOW-1417: the SAC tours inside the area, asked box by box beside the
+  // other two endpoints.
+  const toursPromise = fetchAreaTours(mapEl, bbox);
 
   // SNOW-965: the reader's own trips and pins ride alongside, asked in
   // parallel. A page with no `data-area-items-url` was not asked for
@@ -943,17 +954,38 @@ async function assembleAreaContentURLs(blob, terrain) {
     typeof core.withProblemTerrain === 'function'
       ? core.withProblemTerrain(attested, plan.problemTerrainUrls)
       : attested;
+  // SNOW-1417: the tours, and the reports this run fetched, ride the
+  // stamp as public things. Reports are left off when the feed was not
+  // read, so the stamp keeps the last answer.
+  const tours = await toursPromise;
+  const publicExpectation =
+    typeof core.withPublicItems === 'function'
+      ? core.withPublicItems(expectation, {
+        tours: tours ? tours.tours : undefined,
+        tourBoxes: tours ? tours.boxUrls : undefined,
+        reports:
+          overlays && overlays.reports && typeof core.reportsInBox === 'function'
+            ? core.reportsInBox(overlays.reports, bbox)
+            : null,
+        reportsAt: overlays ? overlays.reportsAt : null,
+      })
+      : expectation;
+  const tourUrls = tours ? [...tours.boxUrls, ...tours.tours.flatMap((tour) => tour.urls)] : [];
   // SNOW-1416: a trip's page and route never change once held, so a sync
   // fetches them only when missing. Every other url is dated by day.
-  const permanentUrls =
-    items && typeof core.areaItemExpectation === 'function'
+  // SNOW-1417: and a tour's Feature and profile, which change only when
+  // SAC edits the tour.
+  const permanentUrls = [
+    ...(items && typeof core.areaItemExpectation === 'function'
       ? core.areaItemExpectation(items, itemTemplates).trips.flatMap((trip) => trip.urls)
-      : [];
+      : []),
+    ...(tours ? tours.tours.flatMap((tour) => tour.urls) : []),
+  ];
   return {
-    urls: [...planned, ...itemUrls],
+    urls: [...planned, ...itemUrls, ...tourUrls],
     permanentUrls: permanentUrls,
-    short: !content || itemsShort,
-    items: expectation,
+    short: !content || itemsShort || !!(tours && tours.short),
+    items: publicExpectation,
     // SNOW-1415: where each stage's urls start in `urls` — bulletins and
     // the sheets beside them first, then the weather sheets, then the
     // reader's own things.
@@ -1156,6 +1188,67 @@ const HELD_CONTENT_BUDGET_MS = 5000;
  *   answer that is not the documented shape — all four are "cannot say",
  *   which the caller reports as a shortfall rather than as an empty area.
  */
+/**
+ * SNOW-1417: the SAC tours inside an area, with the urls that open them
+ * offline.
+ *
+ * The area's rectangle is cut into boxes the endpoint answers
+ * (`tourBoxes`), each asked for in turn with the same budget as the area
+ * endpoints, plus the whole set thinned (`?overview=1`), which the map
+ * draws below z12. The box and overview urls are warmed too, in the exact
+ * form ski_tours.js asks for them, so the layer draws offline.
+ *
+ * Null on a page without the ski-touring layer (the `route_drawing` flag
+ * off), which is not a shortfall.
+ *
+ * @param {HTMLElement} mapEl
+ * @param {number[]} bbox
+ * @returns {Promise<{tours: Array<{uuid: string, name: string, urls: string[]}>,
+ *   boxUrls: string[], short: boolean}|null>}
+ */
+async function fetchAreaTours(mapEl, bbox) {
+  const core = self.pwaBasemapDownloadCore;
+  const base = mapEl.dataset.skiToursUrl || '';
+  if (!base || !core || typeof core.tourBoxes !== 'function') return null;
+  const boxes = core.tourBoxes(bbox);
+  const boxUrls = boxes.map((box) => core.tourBoxURL(base, box));
+  const answers = [];
+  for (const url of boxUrls) answers.push(await fetchJsonBounded(url));
+  // The templates carry the nil uuid, as ski_tours.js's own config does.
+  const nil = '00000000-0000-0000-0000-000000000000';
+  const plan = core.tourPlan(answers, {
+    feature: (mapEl.dataset.skiTourFeatureUrl || '').replace(nil, '__UUID__'),
+    terrain: (mapEl.dataset.skiTourTerrainUrl || '').replace(nil, '__UUID__'),
+  });
+  if (plan.short) {
+    window.pwaDebugLog?.record('net', 'download.skiTours.short', { bbox: bbox });
+  }
+  return {
+    tours: plan.tours,
+    boxUrls: [base + '?overview=1', ...boxUrls],
+    short: plan.short || boxes.length === 0,
+  };
+}
+
+/**
+ * SNOW-1417: one JSON answer under the area endpoints' budget, or null.
+ *
+ * @param {string} url
+ * @returns {Promise<any>}
+ */
+async function fetchJsonBounded(url) {
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), AREA_CONTENT_FETCH_BUDGET_MS) : null;
+  try {
+    const response = await fetch(url, controller ? { signal: controller.signal } : {});
+    return response && response.ok ? await response.json() : null;
+  } catch (_e) {
+    return null;
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+  }
+}
+
 async function fetchAreaJson(endpoint, bbox, isValid, meta) {
   if (!endpoint) return null;
   // Absent AbortController is not a reason to skip the request — it is a

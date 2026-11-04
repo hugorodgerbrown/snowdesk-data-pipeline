@@ -1594,6 +1594,11 @@ describe("the map's syncs stamp what they expected of your things (SNOW-1308)", 
       // SNOW-1379: and the problem-terrain days — none for an area
       // downloaded without terrain tiles.
       problemTerrain: [],
+      // SNOW-1417: and the community reports inside it — none in this
+      // harness's feed — with when the feed was read.
+      reports: [],
+      reportsAt: expect.any(String),
+      reportsNewestAt: null,
     };
   }
 

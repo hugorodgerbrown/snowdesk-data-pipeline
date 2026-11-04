@@ -69,6 +69,11 @@
     // SNOW-1379: the conditions stage's problem-terrain line.
     'line-problem-terrain': 'Problem terrain',
     'problem-terrain-count': '%(held)s of %(total)s days saved',
+    // SNOW-1417: the conditions stage's tours and reports lines.
+    'line-tours': 'SAC tours',
+    'tours-count': '%(held)s of %(total)s saved',
+    'line-reports': 'Community reports',
+    'reports-count': '%(held)s of %(total)s saved',
     'note-things-unrecorded': 'not recorded yet — sync this area to list them',
     'note-things-none': 'None in this area',
     'note-things-other-account': 'saved by another account',
@@ -246,18 +251,34 @@
    * @returns {void}
    */
   function renderTerrainLine(doc, row, line, t) {
+    renderCountLine(doc, row, line, t, 'problem-terrain');
+  }
+
+  /**
+   * One counted line under the conditions stage: the problem-terrain days
+   * (SNOW-1379), the SAC tours or the community reports (SNOW-1417). Its
+   * name is the `line-<kind>` string and its count `<kind>-count`.
+   *
+   * @param {Document} doc
+   * @param {HTMLElement} row The conditions stage row.
+   * @param {{status: string, held: number, total: number}} line
+   * @param {Record<string, string>} t
+   * @param {'problem-terrain'|'tours'|'reports'} kind
+   * @returns {void}
+   */
+  function renderCountLine(doc, row, line, t, kind) {
     var list = /** @type {HTMLElement|null} */ (row.querySelector('[data-journey-things]'));
     var item = clone(doc, 'offline-journey-thing-template');
     if (!list || !item) return;
-    item.setAttribute('data-journey-thing', 'problem-terrain');
+    item.setAttribute('data-journey-thing', kind);
     item.setAttribute('data-journey-status', line.status);
-    fillSlot(item, 'data-journey-thing-name', say(t, 'line-problem-terrain'));
+    fillSlot(item, 'data-journey-thing-name', say(t, 'line-' + kind));
     fillSlot(
       item,
       'data-journey-thing-value',
       line.status === 'unknown'
         ? say(t, 'answer-unknown')
-        : say(t, 'problem-terrain-count', { held: String(line.held), total: String(line.total) }),
+        : say(t, kind + '-count', { held: String(line.held), total: String(line.total) }),
     );
     list.appendChild(item);
     list.hidden = false;
@@ -324,6 +345,8 @@
       var conditionsRow = renderStage(doc, 'conditions', conditions, conditionsNote, t);
       if (conditionsRow) {
         if (conditions.terrain) renderTerrainLine(doc, conditionsRow, conditions.terrain, t);
+        if (conditions.tours) renderCountLine(doc, conditionsRow, conditions.tours, t, 'tours');
+        if (conditions.reports) renderCountLine(doc, conditionsRow, conditions.reports, t, 'reports');
         stages.appendChild(conditionsRow);
       }
 
@@ -368,6 +391,35 @@
     return size
       ? say(t, 'confirm-remove', { name: label, size: size })
       : say(t, 'confirm-remove-unsized', { name: label });
+  }
+
+  /**
+   * SNOW-1417: the community report ids the map's overlay cache holds —
+   * the feed a download saved, read straight from IndexedDB (`pwaDb`,
+   * `data:map_overlays`), because this page loads no map code.
+   *
+   * @returns {Promise<Set<string>|null>} Null when it could not be read.
+   */
+  function readReportIds() {
+    var db = window.pwaDb;
+    if (!db || typeof db.get !== 'function') return Promise.resolve(null);
+    return Promise.resolve()
+      .then(function () {
+        return db.get('data:map_overlays', 'community_reports');
+      })
+      .then(function (row) {
+        var features = row && row.geojson && row.geojson.features;
+        if (!Array.isArray(features)) return row ? null : new Set();
+        var ids = new Set();
+        features.forEach(function (feature) {
+          var id = feature && feature.properties && feature.properties.submission;
+          if (id) ids.add(String(id));
+        });
+        return ids;
+      })
+      .catch(function () {
+        return null;
+      });
   }
 
   /**
@@ -440,11 +492,36 @@
     var busy = false;
     var lastDetail = null;
 
+    // SNOW-1417: the community report ids the map's overlay cache holds —
+    // IndexedDB, not Cache Storage, so read beside the audit's readings.
+    // Painted at once with the last ids read (none at first, which the core
+    // reads as unread), then again when a fresh read differs. The latest
+    // paint wins.
+    var reportIds = null;
+    var paintToken = 0;
+    var sameIds = function (a, b) {
+      if (!a || !b) return a === b;
+      if (a.size !== b.size) return false;
+      var same = true;
+      a.forEach(function (id) {
+        if (!b.has(id)) same = false;
+      });
+      return same;
+    };
     var paint = function (detail) {
       var core = self.pwaOfflineJourneyCore;
       if (!core || !detail || !detail.readings) return;
       lastDetail = detail;
-      var readings = detail.readings;
+      paintWith(core, detail, Object.assign({}, detail.readings, { reportIds: reportIds }));
+      var token = ++paintToken;
+      readReportIds().then(function (ids) {
+        if (token !== paintToken || sameIds(ids, reportIds)) return;
+        reportIds = ids;
+        paintWith(core, detail, Object.assign({}, detail.readings, { reportIds: reportIds }));
+      });
+    };
+
+    var paintWith = function (core, detail, readings) {
       var panels = core.buildPanels(readings, t, {
         tiles: tileReadings(readings),
         origin: self.location ? self.location.origin : '',

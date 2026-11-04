@@ -227,6 +227,12 @@ ROUTE_DRAWING_FLAG = "route_drawing"
 # for a script spending terrain-tile reads on the server's behalf.
 _DRAW_PREVIEW_RATE = "60/m"
 
+# SNOW-1417: an SAC tour's Feature read as it is stored, without the terrain
+# walk. A download saves every tour in an area, which can be well over a
+# hundred, so the walk's budget would leave most of them refused and the
+# area never complete. The walk itself (``?sample=1``) keeps the preview's.
+_SKI_TOUR_READ_RATE = "600/m"
+
 # The save's budget: the same as an upload's, because each one writes a row
 # against the same per-user cap.
 _DRAW_CREATE_RATE = "10/m"
@@ -1360,6 +1366,22 @@ def route_create_drawn(request: HttpRequest) -> JsonResponse:
     return JsonResponse({"uuid": str(route.uuid), "bounds": route.bounds})
 
 
+def _ski_tour_feature_rate(group: str, request: HttpRequest) -> str:
+    """Return the tour Feature's budget: the walk's when it samples (SNOW-1417).
+
+    Args:
+        group: The django-ratelimit group name (unused — one group here).
+        request: The current HTTP request.
+
+    Returns:
+        A django-ratelimit rate string.
+
+    """
+    if request.GET.get("sample") == "1":
+        return _DRAW_PREVIEW_RATE
+    return _SKI_TOUR_READ_RATE
+
+
 def _ski_tour_or_404(uuid: UUID) -> SkiTour:
     """Return the tour swisstopo keys ``uuid``, or raise 404."""
     try:
@@ -1369,7 +1391,7 @@ def _ski_tour_or_404(uuid: UUID) -> SkiTour:
 
 
 @require_GET
-@ratelimit(key=_draw_preview_rate_limit_key, rate=_DRAW_PREVIEW_RATE, block=False)
+@ratelimit(key=_draw_preview_rate_limit_key, rate=_ski_tour_feature_rate, block=False)
 def ski_tour_feature(request: HttpRequest, uuid: UUID) -> JsonResponse:
     """Describe one SAC tour as the route panel draws a route (SNOW-1278).
 

@@ -107,3 +107,44 @@ describe('URLs', () => {
     expect(core.featureUrl(template, 'a', true)).toBe('/routes/ski-tours/a/feature.json?sample=1');
   });
 });
+
+describe('reading saved tours offline (SNOW-1417)', () => {
+  const URL_A = '/api/ski-tours.geojson?bbox=7,46,7.25,46.2';
+  const URL_B = '/api/ski-tours.geojson?bbox=7.25,46,7.5,46.2';
+
+  it('reads the rectangle a saved url asked for, and nothing else', () => {
+    expect(core.boxFromUrl(URL_A)).toEqual([7, 46, 7.25, 46.2]);
+    expect(core.boxFromUrl('/api/ski-tours.geojson?overview=1')).toBeNull();
+    expect(core.boxFromUrl('/api/ski-tours.geojson?bbox=7,46,x,47')).toBeNull();
+    expect(core.boxFromUrl(null)).toBeNull();
+  });
+
+  it('picks the saved boxes a view overlaps, once each, with their union', () => {
+    const picked = core.savedBoxesFor([7.2, 46.05, 7.3, 46.1], [URL_A, URL_B, URL_A]);
+
+    expect(picked).toEqual({ urls: [URL_A, URL_B], box: [7, 46, 7.5, 46.2] });
+  });
+
+  it('picks nothing for a view outside every saved box', () => {
+    expect(core.savedBoxesFor([8, 47, 8.1, 47.1], [URL_A, URL_B])).toEqual({ urls: [], box: null });
+  });
+
+  it('merges answers, keeping each tour\'s legs and each summit from the first answer', () => {
+    const leg = (uuid, n) => ({ properties: { kind: 'tour', uuid, leg: n } });
+    const summit = (key) => ({ id: key, properties: { kind: 'summit', key } });
+    const merged = core.mergeAnswers([
+      { features: [leg('u1', 1), leg('u1', 2), summit('s1')] },
+      null,
+      { features: [leg('u1', 1), leg('u2', 1), summit('s1'), summit('s2')] },
+    ]);
+
+    expect(merged.type).toBe('FeatureCollection');
+    expect(merged.features).toEqual([
+      leg('u1', 1),
+      leg('u1', 2),
+      summit('s1'),
+      leg('u2', 1),
+      summit('s2'),
+    ]);
+  });
+});

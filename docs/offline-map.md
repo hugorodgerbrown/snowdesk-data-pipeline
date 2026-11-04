@@ -1917,6 +1917,16 @@ feature exists for, a run may not reach the end of the list.
 the tiles; content rides along behind it. A bulk of small documents must not
 be able to destroy another area to make room for itself.
 
+**SAC tours and community reports (SNOW-1417).** `assembleAreaContentURLs`
+also fetches the area's SAC tours, box by box (`tourBoxes`, each under the
+endpoint's 0.5° cap), and appends the box answers, `?overview=1` and each
+tour's `feature.json` and `terrain.json` after the reader's own things. A
+failed or truncated box makes the plan short. The community reports inside
+the rectangle are stamped by id from the feed `cacheOverlayFeedsForDownload`
+already saved. Offline, `ski_tours.js` reads the saved boxes under the view
+(`items.tourBoxes`, carried by `downloadedAreas`). Why, and the tour read
+budget: [`decisions/a-download-saves-the-sac-tours-and-reports-inside-it.md`](decisions/a-download-saves-the-sac-tours-and-reports-inside-it.md).
+
 ### Terrain data — the terrain-class tiles (SNOW-1072)
 
 The terrain filter (SNOW-978) paints from terrain-class tiles: 256 px PNGs

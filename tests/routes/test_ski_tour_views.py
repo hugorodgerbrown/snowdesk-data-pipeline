@@ -17,10 +17,11 @@ from unittest.mock import patch
 
 import pytest
 from django.core.cache import cache
-from django.test import Client, override_settings
+from django.test import Client, RequestFactory, override_settings
 from django.urls import reverse
 from waffle.testutils import override_flag
 
+from apps.routes import views
 from apps.routes.models import Route, SkiTour
 from tests.factories import RouteFactory, SkiTourFactory, UserFactory
 from track.render import TRACK_RENDER_VERSION
@@ -181,6 +182,34 @@ class TestFeature:
         tour = SkiTourFactory.create()
         with patch("django_ratelimit.decorators.is_ratelimited", return_value=True):
             assert client.get(_feature_url(tour)).status_code == 429
+
+
+class TestSkiTourFeatureRate:
+    """SNOW-1417: a download saves every tour, so only the walk is tight."""
+
+    def test_a_plain_read_has_the_download_budget(self) -> None:
+        """Well over an area's tours a minute."""
+        request = RequestFactory().get("/")
+        assert views._ski_tour_feature_rate("g", request) == "600/m"
+
+    def test_the_terrain_walk_keeps_the_preview_budget(self) -> None:
+        """``?sample=1`` walks the grid, the cost the limit is for."""
+        request = RequestFactory().get("/", {"sample": "1"})
+        assert views._ski_tour_feature_rate("g", request) == "60/m"
+
+    @override_settings(
+        CACHES={
+            "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}
+        },
+        RATELIMIT_ENABLE=True,
+    )
+    def test_more_reads_than_the_walk_budget_are_served(self, client: Client) -> None:
+        """Sixty-one plain reads in a minute: none refused."""
+        cache.clear()
+        tour = SkiTourFactory.create()
+        with override_flag("route_drawing", active=True):
+            codes = {client.get(_feature_url(tour)).status_code for _ in range(61)}
+        assert codes == {200}
 
 
 def _terrain_url(tour: Any) -> str:

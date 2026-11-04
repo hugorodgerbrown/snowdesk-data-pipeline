@@ -155,6 +155,19 @@ describe('classifySync — the SNOW-965 JSON classes', () => {
     expect(classify('/api/problem-terrain/extra/')).toBe('network');
   });
 
+  it('classifies the SAC tours feed and each tour\'s files as public-json (SNOW-1417)', () => {
+    // A download warms them, and the tours layer reads them back offline.
+    const tour = '/routes/ski-tours/0b6f3c1e-8a2d-4c5e-9f10-1a2b3c4d5e6f';
+    expect(classify('/api/ski-tours.geojson?bbox=7,46,7.25,46.2')).toBe('public-json');
+    expect(classify('/api/ski-tours.geojson?overview=1')).toBe('public-json');
+    expect(classify(`${tour}/feature.json`)).toBe('public-json');
+    expect(classify(`${tour}/terrain.json`)).toBe('public-json');
+    expect(classify(`${tour}/feature.json`, 'POST')).toBe('network');
+    expect(classify('/routes/ski-tours/not-a-uuid/feature.json')).toBe('network');
+    expect(classify(`${tour}/claim/`)).toBe('network');
+    expect(classify('/api/ski-tours.geojson/extra')).toBe('network');
+  });
+
   it("classifies the map's region sheet as public-partial (SNOW-1312)", () => {
     expect(classify('/partials/region-sheet/ch-4115/?d=2026-01-06&r=1')).toBe('public-partial');
     expect(classify('/partials/region-sheet/AT-07-14-01/')).toBe('public-partial');

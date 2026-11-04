@@ -1046,6 +1046,68 @@ describe('only what changed (SNOW-1416)', () => {
   });
 });
 
+describe('SAC tours in an area (SNOW-1417)', () => {
+  const TOURS_URL = '/api/ski-tours.geojson';
+  const NIL = '00000000-0000-0000-0000-000000000000';
+  const BOX_URL = `${TOURS_URL}?bbox=7,46,7.2,46.2`;
+  const tour = (uuid) => ({ type: 'Feature', properties: { kind: 'tour', uuid, name: uuid } });
+
+  /** Run one content sync with the tours endpoint answering `answer`. */
+  async function syncWithTours(answer) {
+    const mapEl = document.getElementById('map');
+    mapEl.dataset.skiToursUrl = TOURS_URL;
+    mapEl.dataset.skiTourFeatureUrl = `/routes/ski-tours/${NIL}/feature.json`;
+    mapEl.dataset.skiTourTerrainUrl = `/routes/ski-tours/${NIL}/terrain.json`;
+    const fetchStub = globalThis.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) =>
+        String(url).startsWith(TOURS_URL)
+          ? Promise.resolve({ ok: true, json: () => Promise.resolve(answer) })
+          : fetchStub(url),
+      ),
+    );
+    try {
+      await seedArea({ contentAt: undefined });
+      window.pwaWarmCache.mockClear();
+      return await window.pwaBasemapDownloads.refreshAreaContent(AREA_ID);
+    } finally {
+      delete mapEl.dataset.skiToursUrl;
+      delete mapEl.dataset.skiTourFeatureUrl;
+      delete mapEl.dataset.skiTourTerrainUrl;
+      vi.stubGlobal('fetch', fetchStub);
+    }
+  }
+
+  it("warms the area's tours box, the overview and each tour's two files, and stamps them", async () => {
+    const ok = await syncWithTours({ features: [tour('u1'), tour('u1'), tour('u2')] });
+
+    expect(ok).toBe(true);
+    const warmed = warmedUrls(0);
+    expect(warmed).toEqual(
+      expect.arrayContaining([
+        `${TOURS_URL}?overview=1`,
+        BOX_URL,
+        '/routes/ski-tours/u1/feature.json',
+        '/routes/ski-tours/u1/terrain.json',
+        '/routes/ski-tours/u2/feature.json',
+        '/routes/ski-tours/u2/terrain.json',
+      ]),
+    );
+    const stored = await storedArea();
+    expect(stored.items.tours.map((t) => t.uuid)).toEqual(['u1', 'u2']);
+    expect(stored.items.tourBoxes).toEqual([`${TOURS_URL}?overview=1`, BOX_URL]);
+    expect(stored.contentIncomplete).toBeUndefined();
+  });
+
+  it('records the run as short when the box came back truncated', async () => {
+    const ok = await syncWithTours({ features: [tour('u1')], truncated: true });
+
+    expect(ok).toBe(false);
+    expect((await storedArea()).contentIncomplete).toBe(true);
+  });
+});
+
 describe('the background sync (SNOW-1416)', () => {
   const STALE = () => new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
 

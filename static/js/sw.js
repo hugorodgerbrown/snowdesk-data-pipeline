@@ -1255,9 +1255,10 @@ const STATIC_PATHS = new Set([
 // basemap_cache_core.js holds the same two literals and the reasoning;
 // changing one copy means changing the other (tests/js/test_sw.js runs
 // both paths over the same urls). SNOW-1379 added the problem-terrain
-// feed to the public class.
+// feed to the public class; SNOW-1417 SAC's ski tours.
 const PRIVATE_JSON_PATH = /^\/trips\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/route\.geojson$/i;
-const PUBLIC_JSON_PATH = /^\/api\/(?:weather\/(?!\d+\/)[A-Za-z0-9_-]+\/detail|problem-terrain)\/$/;
+const PUBLIC_JSON_PATH =
+  /^(?:\/api\/(?:weather\/(?!\d+\/)[A-Za-z0-9_-]+\/detail|problem-terrain)\/|\/api\/ski-tours\.geojson|\/routes\/ski-tours\/[0-9a-f-]{36}\/(?:feature|terrain)\.json)$/;
 // The weather sheet alone, out of that class: the one JSON body that carries
 // rendered HTML, and so draws icons (``_drawnHtml``).
 const WEATHER_DETAIL_PATH = /^\/api\/weather\/(?!\d+\/)[A-Za-z0-9_-]+\/detail\/$/;

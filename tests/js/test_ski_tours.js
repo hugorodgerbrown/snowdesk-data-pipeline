@@ -254,3 +254,75 @@ describe('a saved copy\'s guide (SNOW-1354)', () => {
     expect(window.pwaSkiTours.guidePill(null)).toBeNull();
   });
 });
+
+describe('offline, from what a download saved (SNOW-1417)', () => {
+  const SAVED = `${GEOJSON_URL}?bbox=7.2,46,7.5,46.2`;
+  const TOUR = { type: 'Feature', properties: { kind: 'tour', uuid: 'u1' }, geometry: null };
+
+  /** Boot offline, with one downloaded area that saved `boxes`. */
+  async function bootOffline(boxes) {
+    const map = await boot(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ type: 'FeatureCollection', features: [TOUR] }),
+      }),
+    );
+    window.pwaConnectivity = { isOnline: () => false };
+    window.pwaBasemapAreas = { downloadedAreas: async () => [{ id: 'a', tourBoxes: boxes }] };
+    return map;
+  }
+
+  afterEach(() => {
+    delete window.pwaConnectivity;
+    delete window.pwaBasemapAreas;
+  });
+
+  it('reads the saved box under the view, not a box of its own', async () => {
+    const map = await bootOffline([SAVED, `${GEOJSON_URL}?bbox=9,47,9.2,47.2`]);
+    window.pwaSkiRoutes.show();
+    map.flyTo({ center: [7.33, 46.06], zoom: 13 });
+    await settle();
+
+    // Every tours url asked is the saved one. (Earlier boots in this file
+    // leave their listeners behind, so it may be asked more than once.)
+    const asked = fetch.mock.calls.map((call) => String(call[0]));
+    const tours = asked.filter((url) => url.startsWith(GEOJSON_URL));
+    expect(tours.length).toBeGreaterThan(0);
+    expect(new Set(tours)).toEqual(new Set([SAVED]));
+  });
+
+  it('falls back to the saved box when the view\'s own fetch gets no answer', async () => {
+    const map = await bootOffline([SAVED]);
+    // Online as far as the page knows; the worker answers its offline miss.
+    window.pwaConnectivity = { isOnline: () => true };
+    answerNow = () => Promise.resolve({ ok: false, status: 504, json: () => Promise.resolve({}) });
+    const realFetch = fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url, opts) =>
+        String(url) === SAVED
+          ? Promise.resolve({
+              ok: true,
+              json: () => Promise.resolve({ type: 'FeatureCollection', features: [TOUR] }),
+            })
+          : realFetch(url, opts),
+      ),
+    );
+    window.pwaSkiRoutes.show();
+    map.flyTo({ center: [7.33, 46.06], zoom: 13 });
+    await waitFor(() => fetch.mock.calls.some((call) => String(call[0]) === SAVED));
+
+    expect(fetch.mock.calls.some((call) => String(call[0]) === SAVED)).toBe(true);
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it('says tours need signal for a summit no download covers', async () => {
+    const map = await bootOffline([`${GEOJSON_URL}?bbox=9,47,9.2,47.2`]);
+    window.pwaSkiTours.openSummit(SUMMIT);
+    map.flyTo({ center: [SUMMIT.lon, SUMMIT.lat], zoom: 13 });
+    await waitFor(() => toast.mock.calls.length > 0);
+
+    expect(toast).toHaveBeenCalledWith(TOAST);
+    expect(tourFetches).toBe(0);
+  });
+});

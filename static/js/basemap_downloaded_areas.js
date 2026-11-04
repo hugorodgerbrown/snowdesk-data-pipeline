@@ -202,6 +202,17 @@
   }
 
   /**
+   * SNOW-1417: the SAC tours box urls a record's last sync saved.
+   *
+   * @param {any} record
+   * @returns {string[]}
+   */
+  function tourBoxesOf(record) {
+    var boxes = record && record.items && record.items.tourBoxes;
+    return Array.isArray(boxes) ? boxes.map(String) : [];
+  }
+
+  /**
    * SNOW-635: read `basemap.customAreas`, migrating the legacy single-row
    * `basemap.customArea` into it on first read if the new key is absent.
    *
@@ -354,6 +365,9 @@
           // existed. `downloads_sync.js`'s `ownership()` decides from this
           // whether the signed-in account may record the area.
           principal: principalOf(entry),
+          // SNOW-1417: the SAC tours boxes its last sync saved, which the
+          // tours layer reads offline. [] on a record that saved none.
+          tourBoxes: tourBoxesOf(entry),
         });
       }
     } catch (_e) {
@@ -418,6 +432,8 @@
           terrain: !!custom.terrain,
           // SNOW-1142: see the region branch above.
           principal: principalOf(custom),
+          // SNOW-1417: see the region branch above.
+          tourBoxes: tourBoxesOf(custom),
         });
       }
     } catch (_e) {

@@ -86,6 +86,12 @@ def test_a_bad_box_is_400(client: Client, bbox: str | None, error: str) -> None:
     assert response.json() == {"error": error}
 
 
+def test_a_box_at_the_span_cap_is_answered(client: Client) -> None:
+    """A download cuts an area into boxes under the cap (SNOW-1417)."""
+    response = _get(client, "10.0,46.5,10.5,47.0")
+    assert response.status_code == 200
+
+
 def test_past_the_cap_the_answer_says_truncated(
     client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
