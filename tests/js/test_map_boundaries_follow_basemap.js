@@ -655,6 +655,24 @@ describe('the edge band and level label (SNOW-1375)', () => {
     expect(filterCodes(mapStub, 'regions-level-label')).toEqual(['CH', 'AT']);
   });
 
+  it('follows the boundaries, not the providers, while Terrain holds the day', async () => {
+    // SNOW-1394: in Terrain the label carries the bare name and the fill is
+    // only the tap target, so a region whose outline is drawn is named and
+    // tappable whichever providers are on.
+    const mapStub = await boot({ providers: 'country.ch', countries: 'ch fr at it' });
+
+    window.pwaBulletinsLayer.setSuppressed('map-mode', true);
+    for (const layerId of ['regions-fill', 'regions-level-label']) {
+      expect(filterCodes(mapStub, layerId)).toEqual(ALL_CODES);
+    }
+    expect(filterCodes(mapStub, 'regions-edge')).toEqual(['CH']);
+
+    window.pwaBulletinsLayer.setSuppressed('map-mode', false);
+    for (const layerId of ['regions-fill', 'regions-level-label', 'regions-edge']) {
+      expect(filterCodes(mapStub, layerId)).toEqual(['CH']);
+    }
+  });
+
   it('turns off with the bulletin layer and back on with it', async () => {
     const mapStub = await boot({ providers: 'country.ch', countries: 'ch fr at it' });
     expect(mapStub.layouts.get('regions-edge').visibility).toBe('visible');

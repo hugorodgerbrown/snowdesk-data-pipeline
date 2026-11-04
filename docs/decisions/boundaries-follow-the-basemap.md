@@ -2,7 +2,7 @@
 name: boundaries-follow-the-basemap
 description: EAWS boundary outlines follow the active basemap, not the Bulletins rows (BASEMAP_COUNTRIES, data-basemap-countries, boundaryCountryCodes)
 status: current
-last-reviewed: 2026-11-01
+last-reviewed: 2026-11-04
 ---
 
 # The boundary outlines follow the basemap, not the Bulletins rows
@@ -105,3 +105,12 @@ sizes the offline base layer the same way
   for the countries it is drawn for. `map_layer_sync_status.js` listens for
   `snowdesk:basemap-changed` for the same reason: without it a swap leaves
   a green dot over geometry that was never fetched.
+
+## In Terrain mode
+
+Terrain (SNOW-1394) draws the boundaries but not the day. There the region
+fill is only the tap target and `regions-level-label` carries the bare name,
+so both follow the basemap's filter rather than the providers'. A region whose
+outline is drawn is then named and tappable, whichever bulletin providers are
+on. The edge band stays bulletin data. Leaving Terrain puts the provider
+filter back (`applyCountryFilters` in `static/js/map.js`).

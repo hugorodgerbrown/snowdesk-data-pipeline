@@ -5871,7 +5871,16 @@
       const composed = terms.length ? ['all', ...terms, countryFilter] : countryFilter;
       map.setFilter(layerId, composed);
     };
-    for (const layerId of BULLETIN_DATA_LAYER_IDS) setComposed(layerId, providerFilter);
+    // SNOW-1394: in Terrain the fill is only the region tap's target and the
+    // level label carries the bare name — neither shows the day — so both
+    // follow the boundaries' basemap filter, not the providers'. A region
+    // whose boundary is drawn is then named and tappable whichever bulletin
+    // providers are switched on (docs/decisions/boundaries-follow-the-basemap.md).
+    const terrain = modeSuppressed('bulletins');
+    for (const layerId of BULLETIN_DATA_LAYER_IDS) {
+      const followsBoundaries = terrain && layerId !== 'regions-edge';
+      setComposed(layerId, followsBoundaries ? boundaryFilter : providerFilter);
+    }
     for (const layerId of BOUNDARY_LAYER_IDS) setComposed(layerId, boundaryFilter);
     // regions-line-selected is intentionally absent from both lists above.
     // It has no filter — selection visibility is paint-driven via line-opacity
@@ -7031,6 +7040,8 @@
       for (const key of ['bulletins', 'l3']) {
         setModeSuppressedKey(key, active);
       }
+      // The fill and the names change which filter they follow.
+      applyCountryFilters();
     }
     applyBulletinsVisibility();
     // The boundary is per-date and lazily fetched, so coming back may need
