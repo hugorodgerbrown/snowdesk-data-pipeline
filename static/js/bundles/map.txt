@@ -237,6 +237,11 @@ country_load_core.js
 
 basemap_download_core.js
 
+# SNOW-1416: what a sync fetches (only what changed) and which areas a
+# background sync refreshes (window.pwaOfflineAutosyncCore). Read by
+# map_basemap_downloads.js at call time.
+offline_autosync_core.js
+
 # SNOW-860: the one reader of what this device has downloaded
 # (window.pwaBasemapAreas). map_basemap_downloads.js delegates to it,
 # and /account/settings/ loads the same file for the "Reset local

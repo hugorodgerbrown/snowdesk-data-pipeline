@@ -1779,6 +1779,34 @@ describe('"Sync now" (SNOW-951)', () => {
     expect(window.pwaBasemapDownloads.evict).not.toHaveBeenCalled();
   });
 
+  it('takes the one content run as the user, and gives it back (SNOW-1416)', async () => {
+    seed({ 'basemap.customAreas': healthyCustomArea() });
+    await loadModule();
+    const order = [];
+    window.pwaBasemapDownloads.contentRun = {
+      take: vi.fn(async () => {
+        order.push('take');
+        return true;
+      }),
+      release: vi.fn((owner) => order.push(`release:${owner}`)),
+      current: () => '',
+      area: () => '',
+    };
+    const sync = window.pwaBasemapDownloads.syncArea;
+    window.pwaBasemapDownloads.syncArea = vi.fn(async (id) => {
+      order.push('sync');
+      return sync(id);
+    });
+    openSheet();
+    await settle();
+
+    firstRowElement().querySelector('[data-downloads-sync]').click();
+    await settle();
+    await settle();
+
+    expect(order).toEqual(['take', 'sync', 'release:user']);
+  });
+
   it('refuses while offline', async () => {
     // Listing and deleting what is stored needs no connection; this is not
     // that. SNOW-748: the MODE, not `navigator.onLine`.

@@ -5,9 +5,10 @@
  * `window.pwaBasemapDownloads.syncArea` is the entry point every "sync
  * now" control reaches — the Manage downloads sheet's menu item and the
  * network menu's per-area button — and it owns a SEQUENCE rather than a
- * fetch of its own: mend the tiles if any are missing, then refetch the
- * content whatever happened to the tiles and whatever the record claims
- * about freshness.
+ * fetch of its own: mend the tiles if any are missing, then fetch the
+ * content whatever happened to the tiles. SNOW-1416: only the content that
+ * changed — what the bucket lacks, plus its held bulletins once the area
+ * is more than an hour stale.
  *
  * That sequence is invisible to every unit test underneath it. `repair`
  * and `refreshAreaContent` both end in a warm-cache call, so only the
@@ -441,6 +442,8 @@ beforeAll(async () => {
   await import('../../static/js/calendar_core.js');
   // SNOW-1415: the `verified` stamp's shape, loaded globally by base.html.
   await import('../../static/js/offline_journey_core.js');
+  // SNOW-1416: what a sync fetches — only what changed.
+  await import('../../static/js/offline_autosync_core.js');
   loadMapBundle();
   for (const handler of mapStub.handlers.load || []) await handler();
   // The load handler starts the country load and does not await it, so the
@@ -560,10 +563,9 @@ describe('a record whose bucket this device no longer holds', () => {
 });
 
 describe('the content half', () => {
-  it('refetches even when the record says it is fresh', async () => {
-    // The decision this ticket rests on. Every freshness reading is an
-    // inference from a stamp, and the thing the user is about to rely on
-    // is the data — so a press is a guarantee, not a saving.
+  it('fetches what the bucket lacks, however fresh the record says it is', async () => {
+    // SNOW-1416: freshness spares only what is HELD. A bulletin the
+    // bucket does not have is fetched whatever the stamp says.
     const record = await storedArea();
     expect(record.contentAt.startsWith(TODAY)).toBe(true);
 
@@ -841,5 +843,242 @@ describe('what a sync tells the connection panel (SNOW-1415)', () => {
     const record = await storedArea();
     expect(record.verified).toMatchObject({ map: 'no', reason: 'absent' });
     expect(record.verified.content).toBeUndefined();
+  });
+});
+
+describe('only what changed (SNOW-1416)', () => {
+  const absolute = (url) => new URL(url, window.location.origin).href;
+
+  /** Fill the bucket with a first sync's documents, then forget the call. */
+  async function syncOnce() {
+    await seedArea({ contentAt: undefined });
+    await window.pwaBasemapDownloads.refreshAreaContent(AREA_ID);
+    window.pwaWarmCache.mockClear();
+  }
+
+  it('fetches nothing for a fresh area that holds its whole plan, and keeps its stamp', async () => {
+    await syncOnce();
+    const justNow = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    await seedArea({ contentAt: justNow });
+
+    const ok = await window.pwaBasemapDownloads.refreshAreaContent(AREA_ID);
+
+    expect(ok).toBe(true);
+    expect(window.pwaWarmCache).not.toHaveBeenCalled();
+    expect((await storedArea()).contentAt).toBe(justNow);
+  });
+
+  it('records a short plan on a fresh area that holds all it resolved, and keeps its stamp', async () => {
+    // Codex review: the trips-and-pins endpoint fails, the bulletins are all
+    // held, so the delta is empty; the shortfall must still reach the record.
+    await syncOnce();
+    const justNow = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    await seedArea({ contentAt: justNow });
+    const mapEl = document.getElementById('map');
+    mapEl.dataset.areaItemsUrl = '/api/area-items/';
+    const fetchStub = globalThis.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) =>
+        String(url).includes('area-items')
+          ? Promise.resolve({ ok: false, json: () => Promise.resolve({}) })
+          : fetchStub(url),
+      ),
+    );
+    try {
+      const ok = await window.pwaBasemapDownloads.refreshAreaContent(AREA_ID);
+
+      expect(ok).toBe(false);
+      expect(window.pwaWarmCache).not.toHaveBeenCalled();
+      const stored = await storedArea();
+      expect(stored.contentIncomplete).toBe(true);
+      expect(stored.contentAt).toBe(justNow);
+    } finally {
+      delete mapEl.dataset.areaItemsUrl;
+      vi.stubGlobal('fetch', fetchStub);
+    }
+  });
+
+  it('refetches the held bulletins of an area more than an hour stale', async () => {
+    await syncOnce();
+    await seedArea({ contentAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() });
+
+    await window.pwaBasemapDownloads.refreshAreaContent(AREA_ID);
+
+    expect(warmedUrls(0).map(absolute)).toContain(absolute(BULLETIN_URL));
+  });
+
+  it('refetches the held bulletins of an area whose last content run fell short', async () => {
+    await syncOnce();
+    await seedArea({ contentAt: new Date().toISOString(), contentIncomplete: true });
+
+    await window.pwaBasemapDownloads.refreshAreaContent(AREA_ID);
+
+    expect(warmedUrls(0).map(absolute)).toContain(absolute(BULLETIN_URL));
+  });
+
+  it('sends only the missing url to a fresh area, and keeps its stamp', async () => {
+    await syncOnce();
+    const bucket = cachesStub.openBucket(PINNED_PREFIX + AREA_ID);
+    const held = [...bucket].find((url) => absolute(url) === absolute(BULLETIN_URL));
+    bucket.delete(held);
+    const justNow = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    await seedArea({ contentAt: justNow });
+
+    await window.pwaBasemapDownloads.refreshAreaContent(AREA_ID);
+
+    expect(warmedUrls(0).map(absolute)).toEqual([absolute(BULLETIN_URL)]);
+    expect((await storedArea()).contentAt).toBe(justNow);
+  });
+
+  it('leaves the tile half as it was: a whole map fetches no tiles', async () => {
+    await syncOnce();
+    await seedArea({ contentAt: new Date().toISOString() });
+
+    const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect(result.tiles).toBe('none');
+    expect(window.pwaWarmCache).not.toHaveBeenCalled();
+  });
+
+  it('still mends a missing map, then fetches no held content', async () => {
+    await syncOnce();
+    const bucket = cachesStub.openBucket(PINNED_PREFIX + AREA_ID);
+    bucket.delete(TILEJSON_URL);
+    await seedArea({ contentAt: new Date().toISOString() });
+
+    const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect(result.tiles).toBe('ok');
+    expect(window.pwaWarmCache).toHaveBeenCalledTimes(1);
+    expect(warmedUrls(0)).toEqual([TILEJSON_URL]);
+  });
+});
+
+describe('the background sync (SNOW-1416)', () => {
+  const STALE = () => new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+
+  beforeEach(async () => {
+    window.pwaDb.rows.delete('autosync.attempts');
+    window.pwaConnectivity = { isOnline: () => true };
+    await seedArea({ contentAt: STALE() });
+  });
+
+  it('refreshes a stale area through the content half alone, never its tiles', async () => {
+    holdDependencies([STYLE_URL, SPRITE_URL]);
+
+    const attempted = await window.pwaBasemapDownloads.backgroundSync();
+
+    expect(attempted).toEqual([AREA_ID]);
+    expect(window.pwaWarmCache).toHaveBeenCalledTimes(1);
+    expect(warmedUrls(0)).toContain(BULLETIN_URL);
+    expect(warmedUrls(0)).not.toContain(TILEJSON_URL);
+  });
+
+  it('writes the attempt before it runs, and does not retry within the hour', async () => {
+    let ledgerAtWarm = null;
+    window.pwaWarmCache.mockImplementationOnce(async () => {
+      ledgerAtWarm = window.pwaDb.rows.get('autosync.attempts');
+      return { ok: 0, failed: 1, bytes: 0, cancelled: false };
+    });
+
+    await window.pwaBasemapDownloads.backgroundSync();
+    expect(ledgerAtWarm).toHaveProperty(AREA_ID);
+
+    window.pwaWarmCache.mockClear();
+    expect(await window.pwaBasemapDownloads.backgroundSync()).toEqual([]);
+    expect(window.pwaWarmCache).not.toHaveBeenCalled();
+  });
+
+  it('leaves a fresh area alone', async () => {
+    await seedArea({ contentAt: new Date().toISOString() });
+
+    expect(await window.pwaBasemapDownloads.backgroundSync()).toEqual([]);
+  });
+
+  it('does not run offline, latched or forced', async () => {
+    window.pwaConnectivity = { isOnline: () => false };
+
+    expect(await window.pwaBasemapDownloads.backgroundSync()).toEqual([]);
+    expect(window.pwaWarmCache).not.toHaveBeenCalled();
+  });
+
+  it('does not run when the device asks to save data', async () => {
+    Object.defineProperty(navigator, 'connection', { value: { saveData: true }, configurable: true });
+    try {
+      expect(await window.pwaBasemapDownloads.backgroundSync()).toEqual([]);
+    } finally {
+      delete navigator.connection;
+    }
+  });
+
+  it('does not start under a user run', async () => {
+    const run = window.pwaBasemapDownloads.contentRun;
+    expect(run.claim('user')).toBe(true);
+    try {
+      expect(await window.pwaBasemapDownloads.backgroundSync()).toEqual([]);
+    } finally {
+      run.release('user');
+    }
+  });
+
+  it('runs once for a burst of triggers', async () => {
+    const [first, second] = await Promise.all([
+      window.pwaBasemapDownloads.backgroundSync(),
+      window.pwaBasemapDownloads.backgroundSync(),
+    ]);
+
+    expect([first, second]).toContainEqual([AREA_ID]);
+    expect([first, second]).toContainEqual([]);
+    expect(window.pwaWarmCache).toHaveBeenCalledTimes(1);
+  });
+
+  it('names its area while it runs, and makes a user press wait for it', async () => {
+    let release;
+    window.pwaWarmCache.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ ok: 1, failed: 0, bytes: 1, cancelled: false });
+        }),
+    );
+    const run = window.pwaBasemapDownloads.contentRun;
+
+    const auto = window.pwaBasemapDownloads.backgroundSync();
+    await waitFor(() => !!release);
+    expect(run.current()).toBe('auto');
+    expect(run.area()).toBe(AREA_ID);
+
+    let took = false;
+    const press = run.take().then((value) => {
+      took = value;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(took).toBe(false);
+
+    release();
+    await auto;
+    await press;
+    expect(took).toBe(true);
+    expect(run.current()).toBe('user');
+    run.release('user');
+  });
+
+  it('runs on the online event and when the page becomes visible', async () => {
+    window.pwaBasemapDownloads.bindBackgroundSync();
+    // Binding runs once at once; let it settle and clear the ledger.
+    await waitFor(() => window.pwaWarmCache.mock.calls.length === 1);
+    window.pwaWarmCache.mockClear();
+    window.pwaDb.rows.delete('autosync.attempts');
+    await seedArea({ contentAt: STALE() });
+
+    window.dispatchEvent(new Event('online'));
+    expect(await waitFor(() => window.pwaWarmCache.mock.calls.length === 1)).toBe(true);
+
+    window.pwaWarmCache.mockClear();
+    window.pwaDb.rows.delete('autosync.attempts');
+    await seedArea({ contentAt: STALE() });
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(await waitFor(() => window.pwaWarmCache.mock.calls.length === 1)).toBe(true);
   });
 });

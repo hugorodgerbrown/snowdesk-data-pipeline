@@ -254,3 +254,80 @@ describe('press — Sync all', () => {
     expect(syncAll.state().running).toBe(false);
   });
 });
+
+describe('one content run at a time (SNOW-1416)', () => {
+  /** A stand-in for pwaBasemapDownloads.contentRun. */
+  function contentRun(initial) {
+    const run = {
+      owner: initial || '',
+      areaId: '',
+      take: vi.fn(async () => {
+        run.owner = 'user';
+        return true;
+      }),
+      release: vi.fn((owner) => {
+        if (run.owner === owner) run.owner = '';
+      }),
+      current: () => run.owner,
+      area: () => run.areaId || '',
+    };
+    return run;
+  }
+
+  it('takes the run as the user, and gives it back once it settles', async () => {
+    installDb({});
+    const run = contentRun();
+    const seen = [];
+    window.pwaBasemapDownloads = {
+      contentRun: run,
+      syncArea: vi.fn(async () => {
+        seen.push(run.current());
+        return { tiles: 'ok', content: true };
+      }),
+    };
+    const syncAll = await loadModule();
+
+    await syncAll.press(['a'], () => {});
+
+    expect(run.take).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual(['user']);
+    expect(run.release).toHaveBeenCalledWith('user');
+    expect(run.current()).toBe('');
+  });
+
+  it('gives the run back when the sync throws', async () => {
+    installDb({});
+    const run = contentRun();
+    window.pwaBasemapDownloads = {
+      contentRun: run,
+      syncArea: vi.fn(async () => Promise.reject(new Error('x'))),
+    };
+    const syncAll = await loadModule();
+
+    await syncAll.press(['a'], () => {});
+
+    expect(run.release).toHaveBeenCalledWith('user');
+  });
+
+  it('runs nothing when another user run holds it', async () => {
+    installDb({});
+    const run = contentRun();
+    run.take = vi.fn(async () => false);
+    window.pwaBasemapDownloads = { contentRun: run, syncArea: vi.fn() };
+    const syncAll = await loadModule();
+
+    expect(await syncAll.press(['a'], () => {})).toBeNull();
+    expect(window.pwaBasemapDownloads.syncArea).not.toHaveBeenCalled();
+    expect(syncAll.state().running).toBe(false);
+  });
+
+  it("reports the background sync's area, so its row shows it syncing", async () => {
+    installDb({});
+    const run = contentRun('auto');
+    run.areaId = 'custom-a1';
+    window.pwaBasemapDownloads = { contentRun: run, syncArea: vi.fn() };
+    const syncAll = await loadModule();
+
+    expect(syncAll.state()).toEqual({ running: false, current: 'custom-a1', label: '' });
+  });
+});

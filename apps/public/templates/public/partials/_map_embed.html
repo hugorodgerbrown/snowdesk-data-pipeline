@@ -70,6 +70,9 @@ Optional context:
     {# SNOW-953: which regions and weather locations a download's boundary #}
     {# contains, answered server-side. Read by map_basemap_downloads.js.   #}
     data-area-content-url="{% url 'api:area_content' %}"
+    {# SNOW-1416: this page keeps downloaded areas' content current in the #}
+    {# background (map_basemap_downloads.js's bindBackgroundSync).          #}
+    data-background-sync="on"
     {# SNOW-965: the reader's own trips and pins inside a download's      #}
     {# boundary, each pin with the forecast it borrows. Private, never     #}
     {# cached; read by map_basemap_downloads.js.                           #}

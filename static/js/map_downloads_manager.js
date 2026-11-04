@@ -2268,7 +2268,18 @@
     // `?.syncArea(areaId)` yields `undefined` there — on which `.then`
     // throws synchronously, out of a click handler, leaving the row in
     // `syncing` for the life of the page.
-    Promise.resolve(window.pwaBasemapDownloads?.syncArea(areaId))
+    // SNOW-1416: the press takes the one content run, waiting for a
+    // background sync to finish the area it is on, and gives it back
+    // however the sync ends.
+    const contentRun = window.pwaBasemapDownloads?.contentRun;
+    render();
+    Promise.resolve(contentRun ? contentRun.take() : true)
+      .then((took) => {
+        if (!took) return null;
+        return Promise.resolve(window.pwaBasemapDownloads?.syncArea(areaId)).finally(() =>
+          contentRun?.release('user'),
+        );
+      })
       .then(settleSync)
       .catch(() => settleSync(null));
     return true;

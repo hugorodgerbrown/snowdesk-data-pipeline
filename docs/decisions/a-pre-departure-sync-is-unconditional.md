@@ -1,11 +1,16 @@
 ---
 name: a-pre-departure-sync-is-unconditional
 description: syncArea, the Downloads sheet's Sync all, offline_ready_core.js — refetch regardless of freshness, every area per press
-status: current
+status: historical
 last-reviewed: 2026-11-04
 ---
 
 # A pre-departure sync is unconditional, and the network menu runs it for every area
+
+> **Historical.** SNOW-1416 superseded the unconditional content refetch: a
+> sync now fetches only what changed, and runs in the background too. See
+> [sync-fetches-only-what-changed.md](sync-fetches-only-what-changed.md).
+> The rest of this record still holds: tiles first, the queue first, one press.
 
 **Decision.** Every downloaded area carries one "sync now" action — an item
 in the map page's Manage downloads sheet — and the network menu carries one

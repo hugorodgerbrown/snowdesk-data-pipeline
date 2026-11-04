@@ -943,8 +943,15 @@ async function assembleAreaContentURLs(blob, terrain) {
     typeof core.withProblemTerrain === 'function'
       ? core.withProblemTerrain(attested, plan.problemTerrainUrls)
       : attested;
+  // SNOW-1416: a trip's page and route never change once held, so a sync
+  // fetches them only when missing. Every other url is dated by day.
+  const permanentUrls =
+    items && typeof core.areaItemExpectation === 'function'
+      ? core.areaItemExpectation(items, itemTemplates).trips.flatMap((trip) => trip.urls)
+      : [];
   return {
     urls: [...planned, ...itemUrls],
+    permanentUrls: permanentUrls,
     short: !content || itemsShort,
     items: expectation,
     // SNOW-1415: where each stage's urls start in `urls` — bulletins and
@@ -965,6 +972,53 @@ async function assembleAreaContentURLs(blob, terrain) {
  * @param {number} index How many of the plan's urls have settled.
  * @returns {'bulletins'|'weather'|'things'}
  */
+/**
+ * SNOW-1416: the part of a content plan a sync fetches — what the area's
+ * bucket lacks, plus its held perishable urls when the area is stale
+ * (`offline_autosync_core.js`'s `contentDelta`).
+ *
+ * Falls back to the whole plan when the core is not loaded or the bucket
+ * cannot be read: a sync that cannot see what it holds fetches everything,
+ * as every sync did before this ticket.
+ *
+ * @param {string} areaId
+ * @param {Object} record The area's stored record.
+ * @param {{urls: string[], permanentUrls?: string[], stageFrom?: Object}} content
+ * @returns {Promise<{urls: string[], stageFrom: Object|undefined, keepsContentAt?: string}>}
+ *   `keepsContentAt` is the record's own `contentAt` when the area was
+ *   fresh, so the stamp after the run leaves it where it was.
+ */
+async function _contentDeltaFor(areaId, record, content) {
+  const autosync = self.pwaOfflineAutosyncCore;
+  const core = self.pwaBasemapDownloadCore;
+  const whole = { urls: content.urls, stageFrom: content.stageFrom };
+  if (!autosync || !core || !('caches' in window)) return whole;
+  const absolute = (url) => new URL(url, window.location.origin).href;
+  let held;
+  try {
+    const cache = await caches.open(core.pinnedCacheName(areaId));
+    held = new Set((await cache.keys()).map((request) => absolute(request.url)));
+  } catch (_e) {
+    return whole;
+  }
+  const byHref = new Map(content.urls.map((url) => [absolute(url), url]));
+  const permanent = new Set((content.permanentUrls || []).map(absolute));
+  const keep = new Set(
+    autosync.contentDelta([...byHref.keys()], held, permanent, record, new Date()),
+  );
+  const urls = [];
+  const stageFrom = content.stageFrom ? { weather: 0, things: 0 } : undefined;
+  content.urls.forEach((url, index) => {
+    if (stageFrom && content.stageFrom) {
+      if (index < content.stageFrom.weather) stageFrom.weather += keep.has(absolute(url)) ? 1 : 0;
+      if (index < content.stageFrom.things) stageFrom.things += keep.has(absolute(url)) ? 1 : 0;
+    }
+    if (keep.has(absolute(url))) urls.push(url);
+  });
+  const keepsContentAt = autosync.isStale(record, new Date()) ? undefined : record.contentAt;
+  return { urls: urls, stageFrom: stageFrom, keepsContentAt: keepsContentAt };
+}
+
 function contentStageAt(stageFrom, index) {
   if (!stageFrom) return 'bulletins';
   if (index >= stageFrom.things) return 'things';
@@ -2388,6 +2442,25 @@ window.pwaBasemapDownloads = Object.freeze({
   isBusy: () => pinnedDownloadBusy(),
 
   /**
+   * SNOW-1416: the one content sync at a time — see `claimContentRun`.
+   * `take` is a user press's way in; `area` is the background run's
+   * current area, '' when it holds none.
+   */
+  contentRun: Object.freeze({
+    claim: (owner) => claimContentRun(owner),
+    release: (owner) => releaseContentRun(owner),
+    take: () => takeContentRun(),
+    current: () => contentRunOwner,
+    area: () => contentRunArea,
+  }),
+
+  /** SNOW-1416: run the background sync now; resolves to what it tried. */
+  backgroundSync: () => runBackgroundSync(),
+
+  /** SNOW-1416: bind the background sync's triggers (the page does, on load). */
+  bindBackgroundSync: () => bindBackgroundSync(),
+
+  /**
    * Every recorded area, normalised to
    * `{id, name, bytes, savedAt, basemapKey}` and keyed by the id that also
    * names its pinned Cache Storage bucket.
@@ -3578,6 +3651,192 @@ function pinnedDownloadBusy() {
   return pinnedRunActive;
 }
 
+/*
+ * SNOW-1416: one content sync at a time.
+ *
+ * A user's Sync all or Sync now claims the run as 'user'; the background
+ * sync claims it as 'auto'. The background run never starts under a user
+ * claim or a pinned download, and gives way between areas when a user
+ * asks (`take`), so a press waits at most for the one area in flight.
+ */
+let contentRunOwner = '';
+// The area the background run is on, for the Downloads sheet's row.
+let contentRunArea = '';
+let contentRunWanted = false;
+/** @type {Array<function(): void>} */
+let contentRunWaiters = [];
+
+/**
+ * Claim the content run, or answer false when it is held.
+ *
+ * @param {'user'|'auto'} owner
+ * @returns {boolean}
+ */
+function claimContentRun(owner) {
+  if (contentRunOwner) return false;
+  contentRunOwner = owner;
+  return true;
+}
+
+/**
+ * Release the content run, if `owner` holds it, and wake anyone waiting.
+ *
+ * @param {'user'|'auto'} owner
+ * @returns {void}
+ */
+function releaseContentRun(owner) {
+  if (contentRunOwner !== owner) return;
+  contentRunOwner = '';
+  contentRunArea = '';
+  const waiters = contentRunWaiters;
+  contentRunWaiters = [];
+  waiters.forEach((wake) => wake());
+}
+
+/**
+ * Claim the content run for a user press, waiting for the background run
+ * to finish its current area if it holds the run.
+ *
+ * @returns {Promise<boolean>} False only when another user run holds it.
+ */
+async function takeContentRun() {
+  while (contentRunOwner === 'auto') {
+    contentRunWanted = true;
+    await new Promise((resolve) => contentRunWaiters.push(() => resolve(undefined)));
+  }
+  contentRunWanted = false;
+  return claimContentRun('user');
+}
+
+/**
+ * Whether this page may sync in the background now: online in the
+ * effective sense (not latched, not Offline mode), and not asked to save
+ * data.
+ *
+ * @returns {boolean}
+ */
+function backgroundSyncAllowed() {
+  const connectivity = window.pwaConnectivity;
+  const online = connectivity ? connectivity.isOnline() : navigator.onLine !== false;
+  if (!online) return false;
+  const connection = /** @type {any} */ (navigator).connection;
+  return !(connection && connection.saveData);
+}
+
+const AUTOSYNC_ATTEMPTS_KEY = 'autosync.attempts';
+
+/**
+ * The background sync's attempt ledger: area id → the ISO instant of its
+ * last attempt.
+ *
+ * @returns {Promise<Object<string, string>>}
+ */
+async function _readAutosyncAttempts() {
+  try {
+    const row = window.pwaDb ? await window.pwaDb.get('meta:app', AUTOSYNC_ATTEMPTS_KEY) : null;
+    return row && row.value && typeof row.value === 'object' ? row.value : {};
+  } catch (_e) {
+    return {};
+  }
+}
+
+/**
+ * Record one attempt, before it runs, so a failing area waits out the
+ * interval rather than retrying on every trigger.
+ *
+ * @param {string} areaId
+ * @param {string} at
+ * @returns {Promise<void>}
+ */
+async function _recordAutosyncAttempt(areaId, at) {
+  try {
+    if (!window.pwaDb) return;
+    await window.pwaDb.readModifyWrite('meta:app', AUTOSYNC_ATTEMPTS_KEY, (row) => ({
+      key: AUTOSYNC_ATTEMPTS_KEY,
+      value: Object.assign({}, (row && row.value) || {}, { [areaId]: at }),
+    }));
+  } catch (_e) {
+    // Best-effort: a lost ledger write costs one early retry.
+  }
+}
+
+let backgroundSyncRunning = false;
+
+/**
+ * SNOW-1416: refresh, quietly, the content of every downloaded area that
+ * is due (`offline_autosync_core.js`'s `dueAreas`), one at a time.
+ *
+ * Content only, through `refreshAreaContent`: never `syncArea`, so no
+ * tiles are fetched in the background. The queue is not drained. Nothing
+ * is toasted; the Downloads sheet shows the row in flight.
+ *
+ * @returns {Promise<string[]>} The areas it attempted.
+ */
+async function runBackgroundSync() {
+  const autosync = self.pwaOfflineAutosyncCore;
+  if (!autosync || backgroundSyncRunning) return [];
+  if (!backgroundSyncAllowed() || pinnedRunActive || contentRunOwner) return [];
+  backgroundSyncRunning = true;
+  const attempted = [];
+  try {
+    const now = new Date();
+    const areas = (await basemapDownloadedAreas())
+      .filter((area) => area && !area.orphaned)
+      .map((area) => ({ id: area.id, record: area }));
+    const due = autosync.dueAreas(areas, await _readAutosyncAttempts(), now);
+    if (due.length === 0 || !claimContentRun('auto')) return [];
+    try {
+      for (const areaId of due) {
+        if (contentRunWanted || pinnedRunActive || !backgroundSyncAllowed()) break;
+        contentRunArea = areaId;
+        window.pwaDownloadsManager?.refresh?.();
+        await _recordAutosyncAttempt(areaId, new Date().toISOString());
+        attempted.push(areaId);
+        await refreshAreaContent(areaId);
+      }
+    } finally {
+      releaseContentRun('auto');
+      window.pwaDownloadsManager?.refresh?.();
+    }
+  } catch (_e) {
+    // Best-effort: the next trigger tries again.
+  } finally {
+    backgroundSyncRunning = false;
+  }
+  return attempted;
+}
+
+/**
+ * Bind the background sync's triggers: now (the page has loaded), the
+ * window coming back online, and the page becoming visible again.
+ *
+ * @returns {void}
+ */
+function bindBackgroundSync() {
+  window.addEventListener('online', () => {
+    runBackgroundSync();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') runBackgroundSync();
+  });
+  runBackgroundSync();
+}
+
+// After the page's own load, and a beat later still, so the map's boot
+// fetches go first on a thin connection. Only where the page opts in
+// (`_map_embed.html`'s `data-background-sync`), so a page or a test that
+// boots this module for something else never syncs behind its back.
+const BACKGROUND_SYNC_DELAY_MS = 3000;
+if (document.getElementById('map')?.dataset.backgroundSync === 'on') {
+  if (document.readyState === 'complete') {
+    setTimeout(bindBackgroundSync, BACKGROUND_SYNC_DELAY_MS);
+  } else {
+    window.addEventListener('load', () => setTimeout(bindBackgroundSync, BACKGROUND_SYNC_DELAY_MS), {
+      once: true,
+    });
+  }
+}
+
 /**
  * SNOW-932: the record one area id names, whichever half it lives in.
  *
@@ -3638,17 +3897,19 @@ async function _areaRecordById(areaId) {
  * @param {boolean} complete Whether the content half landed in full.
  * @param {Object|null} [expectation] SNOW-1308: the reader's own things
  *   the sync expected, stamped on success.
+ * @param {string} [contentAt] SNOW-1416: the `contentAt` to keep, for a
+ *   run that refetched none of the area's held content; now by default.
  * @returns {Promise<void>} Best-effort: a failed stamp costs a stale
  *   reading on the sheet, not a download.
  */
-async function _stampAreaContent(areaId, regionId, complete, expectation) {
+async function _stampAreaContent(areaId, regionId, complete, expectation, contentAt) {
   // SNOW-1308: the one stamping rule, shared with the region roundel and
   // `/offline/` — and with it the reader's own things this sync expected
   // (`expectation`, from `assembleAreaContentURLs`), so the `/offline/`
   // panels can name them whichever surface synced the area.
   const core = self.pwaBasemapDownloadCore;
   await _rewriteAreaRecord(areaId, regionId, (entry) =>
-    core.stampContentRecord(entry, complete, expectation || null),
+    core.stampContentRecord(entry, complete, expectation || null, contentAt),
   );
 }
 
@@ -3805,23 +4066,46 @@ async function refreshAreaContent(areaId, onStage) {
     return true;
   }
 
+  // SNOW-1416: only what changed — see `_contentDeltaFor`.
+  const delta = await _contentDeltaFor(areaId, found.record, content);
+  if (delta.urls.length === 0) {
+    const autosync = self.pwaOfflineAutosyncCore;
+    // A fresh, whole area: nothing to fetch, and its `contentAt` must not
+    // move, or it would never come due again.
+    const fresh = !!autosync && !autosync.isStale(found.record, new Date());
+    if (fresh && !content.short) return true;
+    // A short plan is still recorded as one (SNOW-953), even when what it
+    // did resolve was all held — keeping a fresh area's `contentAt`.
+    await _stampAreaContent(
+      areaId,
+      found.regionId,
+      !content.short,
+      content.items,
+      fresh ? delta.keepsContentAt : undefined,
+    );
+    return !content.short;
+  }
+
   return new Promise((resolve) => {
     repairPinnedDownload({
       areaId: areaId,
-      urls: content.urls,
+      urls: delta.urls,
       // Nothing to paint: the sheet re-renders on the result, and this is
       // a handful of documents rather than a several-minute download —
       // the same reasoning the `repair` bridge member above gives.
       // SNOW-1415: the percentage names the stage, because the plan lists
       // its urls in stage order (`stageFrom`) and the runner counts them.
       paint: (_state, pct) => {
-        const done = Number.isFinite(pct) ? Math.floor((pct / 100) * content.urls.length) : 0;
-        tell(contentStageAt(content.stageFrom, done));
+        const done = Number.isFinite(pct) ? Math.floor((pct / 100) * delta.urls.length) : 0;
+        tell(contentStageAt(delta.stageFrom, done));
       },
       finish: async (result, extras) => {
         const runCore = extras && extras.core;
         const ok = !!(runCore && runCore.downloadSucceeded(result)) && !content.short;
-        await _stampAreaContent(areaId, found.regionId, ok, content.items);
+        // SNOW-1416: a fresh area that only gained what it lacked keeps its
+        // `contentAt` — its held bulletins were not refetched, so the stamp
+        // must not claim they were.
+        await _stampAreaContent(areaId, found.regionId, ok, content.items, delta.keepsContentAt);
         resolve(ok);
       },
     });
