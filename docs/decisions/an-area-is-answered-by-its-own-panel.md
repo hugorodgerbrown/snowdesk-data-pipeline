@@ -24,7 +24,7 @@ and leads with one verdict:
 |---|---|
 | The map | `areaState` is `ready` **and** every basemap tile the record's ground implies is in its bucket (`blobFullyCached`, over the stored tile template) |
 | Bulletins and weather | `areaContentState` is `fresh` |
-| Your things | each trip and pin the last sync expected is in Cache Storage, by name — omitted for a signed-out reader |
+| User data | each trip and pin the last sync expected is in Cache Storage, by name — omitted for a signed-out reader |
 
 | Verdict | When |
 |---|---|
