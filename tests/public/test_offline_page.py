@@ -472,7 +472,9 @@ class TestTheDebugPage:
         """Reached from Help and settings, not the network menu."""
         offline = reverse("public:offline_page")
         help_html = Client().get(reverse("public:help")).content.decode()
-        settings_html = _signed_in_client().get(reverse("accounts:settings")).content.decode()
+        settings_html = (
+            _signed_in_client().get(reverse("accounts:settings")).content.decode()
+        )
 
         assert f'href="{offline}"' in help_html
         assert f'href="{offline}"' in settings_html
