@@ -359,12 +359,12 @@ class TestTerrainClassTiles:
 class TestSettingsNoLongerCarriesThem:
     """One copy, in one place — a second would drift."""
 
-    def test_settings_links_to_the_page_instead(self) -> None:
-        """A pointer where the block was, so a reader who knew finds it."""
+    def test_settings_no_longer_points_at_the_page(self) -> None:
+        """SNOW-1420: /offline/ is unlisted, so settings' pointer went too."""
         html = _signed_in_client().get(reverse("accounts:settings")).content.decode()
 
-        assert 'data-testid="settings-offline-link"' in html
-        assert reverse("public:offline_page") in html
+        assert 'data-testid="settings-offline-link"' not in html
+        assert f'href="{reverse("public:offline_page")}"' not in html
 
     def test_settings_renders_none_of_the_three_panels(self) -> None:
         """
@@ -447,18 +447,13 @@ class TestTheDebugPage:
         assert "Debug offline issues" in heading.split("</h1>", 1)[0]
         assert "<title>Debug offline issues · Snowdesk</title>" in html
 
-    def test_it_carries_the_offline_mode_switch_the_panel_gave_up(self) -> None:
-        """The switch, hidden until pwa_offline.js reveals it, with its label."""
+    def test_the_offline_mode_switch_is_back_in_the_network_menu(self) -> None:
+        """SNOW-1420: one switch on the page, and it is the nav's, not the page's."""
         html = Client().get(reverse("public:offline_page")).content.decode()
 
-        controls = html.split('data-testid="offline-debug-controls"', 1)[1]
-        row = controls.split("data-network-toggle", 1)[1].split("</div>", 1)[0]
-        assert 'for="nav-offline-mode"' in row
-        assert "Offline mode" in row
-        before, _, after = controls.partition("data-network-toggle")
-        tag = "<" + before.rsplit("<", 1)[1] + after.split(">", 1)[0]
-        assert "hidden" in tag.split('class="', 1)[1].split('"', 1)[0].split()
         assert html.count('id="nav-offline-mode"') == 1
+        page = html.split('data-testid="offline-page-heading"', 1)[1]
+        assert "data-network-toggle" not in page
 
     def test_it_keeps_the_audit_and_the_reset(self) -> None:
         """What the page was for before SNOW-1415 is all still here."""
@@ -468,13 +463,19 @@ class TestTheDebugPage:
         assert 'data-testid="offline-journey"' in html
         assert "data-pwa-reset-trigger" in html
 
-    def test_help_and_settings_link_to_it(self) -> None:
-        """Reached from Help and settings, not the network menu."""
-        offline = reverse("public:offline_page")
-        help_html = Client().get(reverse("public:help")).content.decode()
-        settings_html = (
-            _signed_in_client().get(reverse("accounts:settings")).content.decode()
-        )
+    def test_nothing_links_to_it(self) -> None:
+        """SNOW-1420: unlisted. Still served, reached only by its url.
 
-        assert f'href="{offline}"' in help_html
-        assert f'href="{offline}"' in settings_html
+        Help, settings, the map's Downloads sheet and the service worker's
+        offline fallback all pointed here; none does now.
+        """
+        offline = reverse("public:offline_page")
+        pages = [
+            Client().get(reverse("public:help")).content.decode(),
+            _signed_in_client().get(reverse("accounts:settings")).content.decode(),
+            Client().get(reverse("public:map")).content.decode(),
+            (settings.BASE_DIR / "static" / "offline.html").read_text(),
+        ]
+        for html in pages:
+            assert f'href="{offline}"' not in html
+        assert Client().get(offline).status_code == 200

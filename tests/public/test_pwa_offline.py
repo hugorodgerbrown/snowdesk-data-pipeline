@@ -19,7 +19,6 @@ The JS half is exercised by Playwright in a later ticket.
 
 from __future__ import annotations
 
-import re
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
@@ -235,9 +234,10 @@ def test_connection_panel_carries_every_state_and_the_way_back() -> None:
     exactly that. Every variant is rendered here and toggled by ``hidden``
     in ``static/js/pwa_offline.js``.
 
-    The CTA is the way back to the network, and for a reader latched
-    offline by the service worker it is the only one on the page they are
-    on: the "Offline mode" switch lives on /offline/ since SNOW-1415.
+    The CTA is the way back to the network for a reader latched offline by
+    the service worker. A forced mode's way back is the "Offline mode"
+    switch beside it, back in this panel since SNOW-1420, so the CTA's
+    second label ("Use the network again") is gone.
     """
     body = Client().get("/").content.decode("utf-8")
     panel = body.split('id="pwa-connection-panel"', 1)[1].split("</details>", 1)[0]
@@ -246,9 +246,10 @@ def test_connection_panel_carries_every_state_and_the_way_back() -> None:
         "offline-message",
         "latched-message",
         "reconnect-label",
-        "resume-label",
     ):
         assert f'data-role="{role}"' in panel
+    assert 'data-role="resume-label"' not in panel
+    assert 'id="nav-offline-mode"' in panel
 
 
 @pytest.mark.django_db
@@ -293,80 +294,27 @@ def test_pwa_offline_script_loaded_on_home_page() -> None:
 
 
 # ---------------------------------------------------------------------------
-# SNOW-1415 — one answer per area, and one Sync
+# SNOW-1420 — the per-area answer and Sync live in the Downloads sheet now
 # ---------------------------------------------------------------------------
 
 
-def _sync_block(body: str) -> str:
-    """Return the network menu's area block markup."""
-    return re.split(r"data-network-sync\s", body, maxsplit=1)[1].split(
-        "data-network-reconnect", 1
-    )[0]
-
-
 @pytest.mark.django_db
-def test_network_menu_offers_one_sync() -> None:
-    """One press for every area, rendered with the shared button chrome.
-
-    The rows are answers, and nothing in them is a button.
-    """
+def test_network_menu_holds_no_areas_and_no_sync() -> None:
+    """SNOW-1415's area block left the menu for the map's Downloads sheet."""
     body = Client().get("/").content.decode("utf-8")
-    block = _sync_block(body)
-    assert "data-network-ready" in block
-    assert ">Sync<" in block.replace("\n", "").replace(" ", "")
-    assert "data-network-ready-summary" in block
-    assert "data-network-ready-queue" in block
-    assert "Syncing needs a connection." in block
-    row = block.split("<template data-network-sync-row>", 1)[1].split("</template>", 1)[
-        0
-    ]
-    assert "<button" not in row
-    assert "Get ready for offline" not in body
-
-
-@pytest.mark.django_db
-def test_network_menu_rows_carry_every_verdict() -> None:
-    """Every answer a row can give is server-rendered and toggled by JS.
-
-    ``bin/i18n-lint`` refuses a user-facing literal written from
-    ``static/js``, so each word lives here.
-    """
-    body = Client().get("/").content.decode("utf-8")
-    row = _sync_block(body).split("<template data-network-sync-row>", 1)[1]
-    for status, words in (
-        ("ready", "Works offline"),
-        ("open-map", "Map data missing"),
-        ("unknown", "Not checked yet"),
-        ("running", "Syncing…"),
-    ):
-        assert f'data-area-status="{status}"' in row
-        assert f'data-area-dot="{status}"' in row
-        assert words in row
-    assert 'data-area-status="refresh"' in row
-    assert 'data-area-dot="refresh"' in row
-    assert "Bulletins out of date" in row
-    assert "Some trips or pins missing" in row
-
-
-@pytest.mark.django_db
-def test_a_missing_map_row_links_to_the_manage_downloads_sheet() -> None:
-    """Download again opens the map with the Manage downloads sheet up.
-
-    A sync never fetches a tile grid, so a row whose map is gone is not
-    offered a retry it cannot win.
-    """
-    body = Client().get("/").content.decode("utf-8")
-    row = _sync_block(body).split("<template data-network-sync-row>", 1)[1]
-    link = row.split("data-area-redownload", 1)[0].rsplit("<a", 1)[1]
-    assert 'href="/map/?panel=downloads"' in link
-    assert "Download again" in row
+    panel = body.split('id="pwa-connection-panel"', 1)[1].split("</details>", 1)[0]
+    for gone in ("data-network-sync", "data-network-ready", "data-network-empty"):
+        assert gone not in panel
 
 
 @pytest.mark.django_db
 def test_sync_sentences_are_in_the_strings_template() -> None:
-    """The sentences that carry a number are worded whole, server-side."""
-    body = Client().get("/").content.decode("utf-8")
-    strings = body.split('id="network-mode-strings-template"', 1)[1].split(
+    """The sentences that carry a number are worded whole, server-side.
+
+    SNOW-1420 moved them, with Sync all, to the map's Downloads sheet.
+    """
+    body = Client().get("/map/").content.decode("utf-8")
+    strings = body.split('id="downloads-sync-all-strings-template"', 1)[1].split(
         "</template>", 1
     )[0]
     for key in (
@@ -389,14 +337,14 @@ def test_sync_sentences_are_in_the_strings_template() -> None:
 
 @pytest.mark.django_db
 def test_the_journey_core_loads_before_the_network_menu_script() -> None:
-    """``pwa_offline.js`` reads ``window.pwaOfflineJourneyCore`` for every row.
+    """The per-area verdict's core is loaded on every page.
 
-    SNOW-1415: the per-area verdict is the one /offline/ gives, so its core
-    is loaded on every page, ahead of the module that paints the rows.
+    SNOW-1415 loaded it globally for the network menu's rows; since SNOW-1420
+    the map's Downloads sheet reads it (``map_downloads_sync_all.js``) and
+    /offline/'s journey still does, so it stays in base.html.
     """
     body = Client().get("/").content.decode("utf-8")
     assert "offline_journey_core.js" in body
-    assert body.index("offline_journey_core.js") < body.index("pwa_offline.js")
 
 
 @pytest.mark.django_db

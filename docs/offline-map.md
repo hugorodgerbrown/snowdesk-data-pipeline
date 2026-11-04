@@ -2295,12 +2295,26 @@ the same size on both rather than 0 MB on the breakdown; and its
 "Using X of Y" (`budgetSummary`) does, so for the same device the two
 state the same downloads total. The shared tiles are a "Shared basemap
 tiles" line of their own on the breakdown, whose note says it is not part
-of either figure; the reset dialog's total still counts them. And the sheet
-now carries a line linking to it ("See what this device holds", pointing
-at `/offline/` since SNOW-1137 — it pointed at Settings before the
-breakdown moved), because the shared overview maps, the cached pages, the
-unsent mutations and the preferences are none of them listed or budgeted
-here.
+of either figure; the reset dialog's total still counts them. The sheet
+carried a line linking to it ("See what this device holds") from SNOW-1137
+until SNOW-1420 removed it: `/offline/` is now an unlinked debug page.
+
+**The sheet answers "will this work offline?" (SNOW-1420).** It is the one
+home for offline
+([`decisions/downloads-is-the-home-for-offline.md`](decisions/downloads-is-the-home-for-offline.md)).
+Every row this device holds carries a verdict dot (`status_dot=True` on
+`includes/_ugc_panel_row.html`) and, when the answer is not a yes, one
+reason line under its meta: "Bulletins out of date", "Some trips or pins
+missing", "Map data missing" or "Not checked yet". A yes has no visible
+line and "Works offline" for a screen reader. The verdict is
+`window.pwaDownloadsSyncAll.verdict` (`static/js/map_downloads_sync_all.js`),
+read from the stored record and its `verified` stamp through
+`offline_journey_core.js`, so it matches /offline/'s panels. The foot's
+**Sync all** runs `offline_ready_core.run` over every row on the device, in
+the sheet's order; the row it is on shows "Syncing…", the button carries the
+progress and is disabled while it runs or offline, and a run that left any
+area short ends in one toast. The run's state lives in the module, not the
+DOM, because `render()` re-clones every row.
 
 **A row can be listed and still not render (SNOW-844).** The sheet asks
 the same render-dependency question the roundel does (see `incomplete`
@@ -2826,8 +2840,8 @@ nothing else.
 
 **Superseded: one neutral fill again.** The rows' basemap dot was the
 bar's colour key, and it went because a dot in the offline surfaces means
-"will it work offline?" (the connection panel's per-area answer,
-SNOW-1415) and the downloads row's blue dot read as one. With no key the
+"will it work offline?" (the per-area answer, SNOW-1415, on the
+Downloads rows since SNOW-1420) and the downloads row's blue dot read as one. With no key the
 colours meant nothing, so `[data-downloads-bar]` is a single `bg-text-1`
 fill and `render()` appends no segments. `budgetSegments` still feeds the
 track's `aria-label`, and each row names its basemap in its meta line.
@@ -3226,6 +3240,12 @@ control that is present and honest about its limit beats one that vanishes,
 which reads as a bug.
 
 ### Get ready for offline (SNOW-1141)
+
+> **Historical.** SNOW-1415 renamed this press Sync and moved its rows to a
+> per-area answer; SNOW-1420 moved both to the Downloads sheet's Sync all
+> and row dots (see the "Manage downloads" sheet section). The network menu
+> now holds only the Offline mode switch, and `/map/?sync=all` is gone. The
+> sequence below is unchanged.
 
 The "starts nothing" reasoning above did not last: SNOW-951 put a Sync
 button per area under the staleness line, and SNOW-1141 replaced those with

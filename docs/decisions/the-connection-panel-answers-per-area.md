@@ -1,13 +1,19 @@
 ---
 name: the-connection-panel-answers-per-area
 description: Connection panel, one row per area, verdictFor, stagesFromRecord, verified stamp, Sync, /map/?sync=all, header readiness mark
-status: current
+status: historical
 last-reviewed: 2026-11-04
 ---
 
 # The connection panel answers "will this area work offline?" per area
 
 SNOW-1415.
+
+> **Superseded by SNOW-1420**
+> ([the Downloads sheet is the one home for offline](downloads-is-the-home-for-offline.md)).
+> The per-area answer and Sync moved to the map's Downloads sheet, the
+> readiness mark and `/map/?sync=all` are gone, and the Offline mode switch
+> is back in the network menu. The `verified` stamp below still holds.
 
 **Decision.** The header's connection panel (`includes/_connection_panel.html`)
 gives one answer per downloaded area and one Sync button, and nothing that

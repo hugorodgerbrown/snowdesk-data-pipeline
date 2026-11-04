@@ -1,6 +1,6 @@
 ---
 name: offline-audit
-description: /offline/ debug page panels — offline_audit.js, offline_journey.js, verified stamp, bounded reads, X-SW-Principal, browsedState
+description: /offline/ unlinked debug page panels — offline_audit.js, offline_journey.js, verified stamp, bounded reads, X-SW-Principal, browsedState
 status: current
 last-reviewed: 2026-11-04
 ---
@@ -60,7 +60,12 @@ report into both:
   is precached at all: `/offline/` is a Django view, so even warmed it
   can be missing on a device whose worker has not activated since. The
   page a stuck user *can always* open is the one that has to carry this.
-  It links to `/offline/` for a reader who does have a connection.
+  It no longer links to `/offline/` (SNOW-1420).
+
+**`/offline/` is a debug page (SNOW-1420).** Not staff-only, but nothing a
+user sees links to it — not Help, settings, the map's Downloads sheet or
+`static/offline.html`. A user's offline answer is the Downloads sheet's
+([downloads-is-the-home-for-offline.md](decisions/downloads-is-the-home-for-offline.md)).
 
 **Above the report, one panel per downloaded area (SNOW-1308).**
 `static/js/offline_journey.js` paints them on both hosts from the
@@ -506,8 +511,9 @@ and to a user about to lose signal `fresh` is an inference from a stamp while th
 [a-pre-departure-sync-is-unconditional.md](decisions/a-pre-departure-sync-is-unconditional.md).
 
 **`?sync=all` runs every area** (SNOW-1141) — the network menu's Sync
-handed to this page until SNOW-1415, which sends it to the map instead
-(`/map/?sync=all`); the runner stays for the debug page's own use. The report runs, then
+handed to this page until SNOW-1415, which sent it to the map instead
+(`/map/?sync=all`, removed by SNOW-1420, when the press became the Downloads
+sheet's Sync all); the runner stays for the debug page's own use. The report runs, then
 `offline_ready_core.js` (the same runner the menu uses on the map) drains
 the mutation queue and fetches each area's content in turn; an area with no
 control (its tiles do not verify) counts as not ready and is not fetched.
@@ -518,11 +524,12 @@ reader's things), and the status line names the stage it is on.
 
 **The panels stamp what they read** (SNOW-1415). Every settled paint writes
 each panel's map and things answers onto its area record as `verified`
-(`pwaOfflineAudit.stampVerified`, `verifiedFromStages`), so the header's
-connection panel can answer for the area on pages that cannot read tiles.
+(`pwaOfflineAudit.stampVerified`, `verifiedFromStages`), so the Downloads
+sheet's row dots (SNOW-1420; the header's connection panel under SNOW-1415)
+can answer for the area from the record alone.
 Only Yes and No are written, so static/offline.html, which cannot read
 tiles, never overwrites what the map learned. See
-[the-connection-panel-answers-per-area.md](decisions/the-connection-panel-answers-per-area.md).
+[downloads-is-the-home-for-offline.md](decisions/downloads-is-the-home-for-offline.md).
 
 **`?sync=<area id>` runs it on arrival** (SNOW-951). The page takes its
 report first — if the area cannot be updated, no control is painted for

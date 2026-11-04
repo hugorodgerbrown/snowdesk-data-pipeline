@@ -253,4 +253,9 @@ basemap_manage_core.js
 # time, so it only has to precede it.
 downloads_restore_queue_core.js
 
+# SNOW-1420: each Downloads row's offline answer and the sheet's Sync all
+# (window.pwaDownloadsSyncAll). Read by the manager at render and click
+# time, so it only has to precede it.
+map_downloads_sync_all.js
+
 map_downloads_manager.js

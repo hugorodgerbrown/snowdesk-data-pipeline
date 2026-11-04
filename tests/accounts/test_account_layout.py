@@ -291,11 +291,10 @@ class TestSettingsCardLayout:
 
         assert 'data-testid="manage-sign-out"' in account
         assert 'data-testid="manage-sign-out"' not in device
-        # SNOW-930: what "This device" holds now. Theme, because it is a
-        # browser-local display preference, and a pointer to /offline/,
-        # where the reset and the audit went. The reset itself is on
-        # neither group of this page any more.
-        assert 'data-testid="settings-offline-link"' in device
+        # SNOW-930: what "This device" holds now — Theme, a browser-local
+        # display preference. SNOW-1420 took away the pointer to /offline/,
+        # which is unlisted. The reset is on neither group of this page.
+        assert 'data-testid="settings-offline-link"' not in device
         assert "data-pwa-reset-trigger" not in html
 
     def test_each_group_opens_a_card(self) -> None:

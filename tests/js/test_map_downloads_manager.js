@@ -131,6 +131,9 @@ function buildFixture() {
           <p data-downloads-empty hidden>No areas downloaded yet.</p>
         </div>
         <div>
+          <button type="button" data-downloads-sync-all hidden
+            ><span data-sync-all-state="idle">Sync all</span
+            ><span data-sync-all-state="running" class="hidden">Syncing…</span></button>
           <button type="button" data-panel-add-region>Download a region</button>
           <button type="button" data-panel-add>Download a custom area</button>
         </div>
@@ -150,11 +153,13 @@ function buildFixture() {
     </template>
     <template id="map-downloads-row-template">
       <li>
+        <span data-row-status aria-hidden="true" class="size-2.5 rounded-full bg-sync-off"></span>
         <span>
           <button type="button" data-row-label data-row-focus=""
                   class="hover-affordance text-text-1"></button>
           <input type="text" data-row-rename-input hidden aria-label="Area name">
           <span data-row-meta class="text-text-3"></span>
+          <span data-row-notice class="hidden text-caption text-text-2"></span>
         </span>
         <span>
           <button type="button" data-downloads-here aria-label="Download here">⤓</button>
@@ -220,6 +225,7 @@ function buildFixture() {
       <span data-string="forget-row-label">Forget %(name)s</span>
       <span data-string="forget-failed">That area couldn't be forgotten. Try again.</span>
       <span data-string="add-offline">You're offline — connect to download a new area.</span>
+      <span data-string="sync-offline">Syncing needs a connection.</span>
       <span data-string="add-disabled">Downloading needs a connection</span>
       <span data-string="add-signin">Sign in to download a new area.</span>
       <span data-string="add-signin-disabled">Downloading needs an account</span>
@@ -232,6 +238,12 @@ function buildFixture() {
       <span data-string="confirm-download-all">Download %(count)s areas to this device? They download one at a time.</span>
       <span data-string="confirm-download-all-other">Download %(count)s areas to this device? They download one at a time. %(other)s of them were saved for another basemap and will download with %(active)s.</span>
       <span data-string="restore-notice">%(count)s of your downloads aren't on this device</span>
+      <span data-string="area-status-ready">Works offline</span>
+      <span data-string="area-reason-conditions">Bulletins out of date</span>
+      <span data-string="area-reason-things">Some trips or pins missing</span>
+      <span data-string="area-status-open-map">Map data missing</span>
+      <span data-string="area-status-unknown">Not checked yet</span>
+      <span data-string="area-status-running">Syncing…</span>
       <span data-string="restore-notice-one">%(count)s of your downloads isn't on this device</span>
     </template>
     <div id="map-downloads-restore-notice" class="hidden" data-overlay data-overlay-hide="class">
@@ -2536,9 +2548,7 @@ describe('account-only rows (SNOW-749)', () => {
     await settle();
 
     expect(window.pwaRegionDownload.start).not.toHaveBeenCalled();
-    expect(window.MapSheet.toast).toHaveBeenCalledWith(
-      "You're offline — connect to download a new area.",
-    );
+    expect(window.MapSheet.toast).toHaveBeenCalledWith("You're offline — connect to download a new area.");
     delete window.pwaRegionDownload;
   });
 
@@ -3233,9 +3243,7 @@ describe('the "Download a region" trigger (SNOW-1414)', () => {
     await settle();
 
     expect(window.pwaRegionPick.open).not.toHaveBeenCalled();
-    expect(window.MapSheet.toast).toHaveBeenCalledWith(
-      "You're offline — connect to download a new area.",
-    );
+    expect(window.MapSheet.toast).toHaveBeenCalledWith("You're offline — connect to download a new area.");
     expect(document.getElementById('map-downloads-sheet').hidden).toBe(false);
   });
 });
@@ -3271,9 +3279,7 @@ describe('the add-trigger', () => {
     await settle();
 
     expect(window.pwaCustomAreaDownload.openFraming).not.toHaveBeenCalled();
-    expect(window.MapSheet.toast).toHaveBeenCalledWith(
-      "You're offline — connect to download a new area.",
-    );
+    expect(window.MapSheet.toast).toHaveBeenCalledWith("You're offline — connect to download a new area.");
     expect(document.getElementById('map-downloads-sheet').hidden).toBe(false);
   });
 
@@ -4325,5 +4331,233 @@ describe('the restore notice (SNOW-1140)', () => {
 
     expect(document.getElementById('map-downloads-sheet').hidden).toBe(false);
     expect(notice().classList.contains('hidden')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SNOW-1420 — the sheet answers "will this work offline?"
+// ---------------------------------------------------------------------------
+//
+// Each row this device holds carries its verdict as a traffic-light dot and,
+// when it is not a yes, one reason line; the foot carries one Sync all. The
+// verdict and the run are map_downloads_sync_all.js's (covered in its own
+// file), so a stub stands in for it here and these tests cover the painting.
+
+describe('the offline answer on each row, and Sync all (SNOW-1420)', () => {
+  const REGION_ID = 'region-CH-2101';
+
+  /**
+   * A stand-in for window.pwaDownloadsSyncAll: a fixed verdict per bucket
+   * id, a run state the test sets, and a press it can settle.
+   */
+  function installSyncAll(verdicts, options) {
+    const opts = options || {};
+    const stub = {
+      runState: { running: false, current: '', label: '' },
+      records: vi.fn(async () => new Map(Object.keys(verdicts).map((id) => [id, { id }]))),
+      verdict: vi.fn((record) => (record && verdicts[record.id]) || { verdict: 'unknown', reason: '' }),
+      state: vi.fn(() => stub.runState),
+      press: vi.fn(async (ids, onChange) => {
+        stub.pressedWith = ids;
+        onChange();
+        return opts.result || { total: ids.length, ready: ids.length, waiting: 0, outcomes: [] };
+      }),
+      shortfall: vi.fn(() => opts.shortfall || ''),
+    };
+    window.pwaDownloadsSyncAll = stub;
+    return stub;
+  }
+
+  function rowDot() {
+    return firstRowElement().querySelector('[data-row-status]');
+  }
+
+  function rowNotice() {
+    return firstRowElement().querySelector('[data-row-notice]');
+  }
+
+  function syncAllButton() {
+    return document.querySelector('#map-downloads-sheet [data-downloads-sync-all]');
+  }
+
+  afterEach(() => {
+    delete window.pwaDownloadsSyncAll;
+  });
+
+  it('paints a yes green and says it only to a screen reader', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    installSyncAll({ [REGION_ID]: { verdict: 'ready', reason: '' } });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(rowDot().classList.contains('bg-sync-ok')).toBe(true);
+    expect(rowDot().getAttribute('data-area-verdict')).toBe('ready');
+    expect(rowNotice().textContent).toBe('Works offline');
+    expect(rowNotice().classList.contains('sr-only')).toBe(true);
+  });
+
+  it('paints stale bulletins amber, with the reason on its own line', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    installSyncAll({ [REGION_ID]: { verdict: 'refresh', reason: 'conditions' } });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(rowDot().classList.contains('bg-sync-partial')).toBe(true);
+    expect(rowNotice().textContent).toBe('Bulletins out of date');
+    expect(rowNotice().classList.contains('hidden')).toBe(false);
+    expect(rowNotice().classList.contains('sr-only')).toBe(false);
+  });
+
+  it('paints missing map data red, and an unchecked area grey', async () => {
+    seed({ 'basemap.regions': REGIONS, 'basemap.customAreas': CUSTOM_AREAS });
+    installSyncAll({
+      [REGION_ID]: { verdict: 'open-map', reason: '' },
+      'custom-a1': { verdict: 'unknown', reason: '' },
+    });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const byVerdict = Object.fromEntries(
+      Array.from(document.querySelectorAll('#map-downloads-sheet [data-row-status]')).map((dot) => [
+        dot.getAttribute('data-area-verdict'),
+        dot.closest('li').querySelector('[data-row-notice]').textContent,
+      ]),
+    );
+    expect(byVerdict).toEqual({ 'open-map': 'Map data missing', unknown: 'Not checked yet' });
+  });
+
+  it('shows the row a Sync all is on as syncing', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    const stub = installSyncAll({ [REGION_ID]: { verdict: 'ready', reason: '' } });
+    stub.runState = { running: true, current: REGION_ID, label: 'Syncing… (1 of 1)' };
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(rowDot().getAttribute('data-area-verdict')).toBe('running');
+    expect(rowDot().classList.contains('animate-pulse')).toBe(true);
+    expect(rowNotice().textContent).toBe('Syncing…');
+  });
+
+  it('gives a row this device does not hold, or an orphan, no dot and no reason', async () => {
+    seed({});
+    installSyncAll({});
+    await loadModule();
+    window.pwaBasemapDownloads.areas.mockResolvedValueOnce([
+      { id: 'region-CH-2000', name: "Pays d'Enhaut", bytes: 0, onDevice: false, synced: true },
+      { id: 'orphan-1', orphaned: true, bytes: 5 * MB, savedAt: undefined },
+    ]);
+    openSheet();
+    await settle();
+
+    const rows = document.querySelectorAll('#map-downloads-sheet [data-group-rows] > li');
+    expect(rows.length).toBe(2);
+    for (const row of rows) {
+      expect(row.querySelector('[data-row-status]')).toBeNull();
+      expect(row.querySelector('[data-row-notice]')).toBeNull();
+    }
+    // And Sync all has nothing to run over.
+    expect(syncAllButton().hidden).toBe(true);
+  });
+
+  it('shows Sync all once there is something on this device to sync', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    installSyncAll({});
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(syncAllButton().hidden).toBe(false);
+    expect(syncAllButton().disabled).toBe(false);
+  });
+
+  it('hides Sync all on a device with no downloads', async () => {
+    seed({});
+    installSyncAll({});
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(syncAllButton().hidden).toBe(true);
+  });
+
+  it('disables Sync all, with the progress as its label, while it runs', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    const stub = installSyncAll({});
+    stub.runState = { running: true, current: REGION_ID, label: 'Syncing… (1 of 1)' };
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(syncAllButton().disabled).toBe(true);
+    const running = syncAllButton().querySelector('[data-sync-all-state="running"]');
+    expect(running.classList.contains('hidden')).toBe(false);
+    expect(running.textContent).toBe('Syncing… (1 of 1)');
+    expect(
+      syncAllButton().querySelector('[data-sync-all-state="idle"]').classList.contains('hidden'),
+    ).toBe(true);
+  });
+
+  it('runs over every area on this device, in the sheet order', async () => {
+    seed({ 'basemap.regions': REGIONS, 'basemap.customAreas': CUSTOM_AREAS });
+    const stub = installSyncAll({});
+    await loadModule();
+    openSheet();
+    await settle();
+
+    syncAllButton().click();
+    await settle();
+
+    const listed = Array.from(
+      document.querySelectorAll('#map-downloads-sheet [data-group-rows] > li [data-row-label]'),
+    ).length;
+    expect(stub.press).toHaveBeenCalledTimes(1);
+    expect(stub.pressedWith).toHaveLength(listed);
+    expect(stub.pressedWith).toEqual(expect.arrayContaining([REGION_ID, 'custom-a1']));
+    expect(window.pwaLayerSyncStatus.refresh).toHaveBeenCalled();
+  });
+
+  it('refuses while offline, with the toast Sync now gives', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    const stub = installSyncAll({});
+    await loadModule();
+    openSheet();
+    await settle();
+    setOnline(false);
+
+    syncAllButton().click();
+    await settle();
+
+    expect(stub.press).not.toHaveBeenCalled();
+    expect(window.MapSheet.toast).toHaveBeenCalledWith('Syncing needs a connection.');
+  });
+
+  it('toasts the shortfall once a run that left an area short settles', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    installSyncAll({}, { shortfall: '0 of 1 ready' });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    syncAllButton().click();
+    await settle();
+
+    expect(window.MapSheet.toast).toHaveBeenCalledWith('0 of 1 ready');
+  });
+
+  it('says nothing when every area came up to date', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    installSyncAll({});
+    await loadModule();
+    openSheet();
+    await settle();
+
+    syncAllButton().click();
+    await settle();
+
+    expect(window.MapSheet.toast).not.toHaveBeenCalled();
   });
 });

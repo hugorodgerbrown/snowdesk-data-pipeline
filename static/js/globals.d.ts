@@ -93,9 +93,16 @@ interface Window {
     progressText(step: any, strings: Record<string, string>): string;
     STAGES: string[];
   };
-  /** static/js/pwa_offline.js — the connection panel's Sync, run on the map's ?sync=all arrival (SNOW-1415). */
-  pwaConnectionPanel: {
-    syncAll(): Promise<void>;
+  /** static/js/map_downloads_sync_all.js — each Downloads row's offline answer and the sheet's Sync all (SNOW-1420). */
+  pwaDownloadsSyncAll: {
+    records(): Promise<Map<string, Object>>;
+    verdict(
+      record: Object | undefined,
+      now?: Date,
+    ): { verdict: 'ready' | 'refresh' | 'open-map' | 'unknown'; reason: '' | 'conditions' | 'things' };
+    press(areaIds: string[], onChange: () => void): Promise<Object | null>;
+    state(): { running: boolean; current: string; label: string };
+    shortfall(result: Object | null): string;
   };
   /** static/js/downloads_restore_queue_core.js — the "Download all" queue's order and stop rules (SNOW-1140). */
   pwaDownloadsRestoreQueueCore: {

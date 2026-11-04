@@ -4,42 +4,19 @@ templates/includes/_connection_panel.html — the NETWORK MENU (SNOW-748,
 rebuilt by SNOW-921, and again by SNOW-1415), anchored to the header's
 connectivity symbol in ``includes/nav.html``.
 
-SNOW-1415: one answer per area
-------------------------------
-The panel exists to give a reader confidence that the map will work
-offline inside the areas they chose (docs/decisions/the-connection-panel-
-answers-per-area.md). Before this ticket it only made sense to someone who
-knew how the app works inside: a "last synced" clock, a "Downloads
-updated" age, an Offline mode switch, "Get ready for offline", a job
-counter, a "Download for offline" link that opened a diagnostics page, and
-a Debug log. Now it holds:
+SNOW-1420: the state and the switch
+-----------------------------------
+SNOW-1415 put one row per downloaded area here, with a Sync and an empty
+state. SNOW-1420 moved all three to the map's Downloads sheet, the one home
+for offline (docs/decisions/downloads-is-the-home-for-offline.md). This menu
+now holds:
 
   * the state line — "Online", "Offline" or "Offline mode" — and no
-    explanation under it (Hugo, in the PR: the line says it);
-  * ONE ROW PER DOWNLOADED AREA, each answering "will this work offline?"
-    with the verdict /offline/'s panels give (``offline_journey_core.js``:
-    ``stagesFromRecord`` + ``verdictFor``), over the stored record alone.
-    The answer is a traffic-light dot beside the name, so a long name has
-    the row's width; anything but a yes adds one line under the name:
-      - ``ready`` — yes;
-      - ``refresh`` — mostly, with its first reason (the bulletins and
-        weather, or the reader's things);
-      - ``open-map`` — the map is missing, with the way to download it
-        again;
-      - ``unknown`` — no page that can read tiles has checked it yet;
-      - ``running`` — the Sync below is on this area now;
-  * ONE Sync button, which drains the queue and then syncs every area
-    (``offline_ready_core.js``). On the map it runs here; everywhere else
-    it navigates to ``/map/?sync=all`` (the block's ``data-map-url``), and
-    the map runs it on arrival with this panel open;
-  * with no areas, an info callout saying how to download one;
-  * the way back to the network, in the two offline modes only.
+    explanation under it (Hugo, in the SNOW-1415 PR: the line says it);
+  * the Offline mode switch, moved back from /offline/;
+  * "Try reconnecting", while the service worker has latched.
 
-The Offline mode switch and the Debug log moved to /offline/, which is now
-the debug page, linked from Help and settings rather than from here.
-
-A row is not interactive yet: a tap is reserved for the inventory
-(SNOW-1418).
+/offline/ is unlisted: it is still served, but nothing links to it.
 
 Still an ANCHORED POPOVER, not a toast, and still NOT ``role="menu"``: a
 disclosure holding a small form. Structure and dismissal come from the
@@ -59,8 +36,8 @@ line alone:
   * struggling (``offline-message``) — requests are still being attempted.
   * latched (``latched-message``, "Try reconnecting") — the service worker
     has stopped calling the network after three read timeouts.
-  * forced (``latched-message``, "Use the network again") — the same, asked
-    for by the user from the Offline mode switch on /offline/.
+  * forced (``latched-message``) — the same, asked for by the user from the
+    Offline mode switch; switching it off is the way back.
 
 The online state is what renders before any script runs, which is the
 right default: both offline modes are service-worker decisions.
@@ -105,110 +82,32 @@ in the PR.
         </button>
     </div>
     {% comment %}
-        The areas and the one Sync. HIDDEN with no downloads: a reader with
-        nothing downloaded has nothing to answer for, and a heading over an
-        empty list reads as a fault. Revealed by static/js/pwa_offline.js,
-        which also paints every row from its <template>.
+        SNOW-1420: the Offline mode switch, back from /offline/. It tells the
+        service worker not to try the network at all, so a phone whose radio
+        says it is connected but moves no data does not hang. Bound and
+        revealed by static/js/pwa_offline.js by its id: it drives a service
+        worker, so a row that appeared without the script would be a dead
+        control. The label is a <label for="…"> and a SIBLING of the
+        include, never a wrapper: _switch.html's own outer element is itself
+        a <label>, and labels must not nest.
     {% endcomment %}
     <div
-        data-network-sync
-        data-testid="network-sync"
-        data-map-url="{% url 'public:map' %}"
-        class="mt-2 hidden"
+        data-network-toggle
+        data-testid="network-toggle"
+        class="mt-2 hidden items-center gap-3 border-t border-border pt-2"
     >
-        <p class="text-xs text-text-3">{% trans "Your offline areas" %}</p>
-        <ul data-network-sync-list class="mt-1"></ul>
-        <template data-network-sync-row>
-            {# The dot is the answer; the line under the name says why, for #}
-            {# anything but a yes. Both halves carry the verdict they belong #}
-            {# to, and pwa_offline.js shows the pair that matches.          #}
-            <li class="flex items-start gap-3 py-2">
-                <span class="relative mt-1.5 size-2.5 shrink-0" aria-hidden="true">
-                    <span data-area-dot="ready" class="absolute inset-0 hidden rounded-full bg-sync-ok"></span>
-                    <span data-area-dot="refresh" class="absolute inset-0 hidden rounded-full bg-sync-partial"></span>
-                    <span data-area-dot="open-map" class="absolute inset-0 hidden rounded-full bg-sync-blocked"></span>
-                    <span data-area-dot="unknown" class="absolute inset-0 hidden rounded-full bg-sync-off"></span>
-                    <span
-                        data-area-dot="running"
-                        class="absolute inset-0 hidden animate-pulse rounded-full bg-accent"
-                    ></span>
-                </span>
-                <span class="min-w-0 flex-1">
-                    <span data-area-label class="block break-words text-sm text-text-1"></span>
-                    <span class="block text-xs">
-                        {# A yes has no line; screen readers still hear it. #}
-                        <span data-area-status="ready" class="sr-only hidden">{% trans "Works offline" %}</span>
-                        <span data-area-status="refresh" class="hidden text-text-2">
-                            <span
-                                data-area-reason="conditions"
-                                class="hidden"
-                            >{% trans "Bulletins out of date" %}</span>
-                            <span
-                                data-area-reason="things"
-                                class="hidden"
-                            >{% trans "Some trips or pins missing" %}</span>
-                        </span>
-                        <span data-area-status="open-map" class="hidden text-text-2">
-                            {% trans "Map data missing" %} ·
-                            <a
-                                href="{% url 'public:map' %}?panel=downloads"
-                                data-area-redownload
-                                data-disclosure-close
-                                class="text-text-1 underline underline-offset-2"
-                            >{% trans "Download again" %}</a>
-                        </span>
-                        <span data-area-status="unknown" class="hidden text-text-3">{% trans "Not checked yet" %}</span>
-                        <span data-area-status="running" class="hidden text-text-3">{% trans "Syncing…" %}</span>
-                    </span>
-                </span>
-            </li>
-        </template>
-        {# The refusal, in its own words: it sits on a control nobody has #}
-        {# pressed yet.                                                    #}
-        <p data-network-sync-offline class="mt-1 hidden text-xs text-text-3">
-            {% trans "Syncing needs a connection." %}
-        </p>
-        <button
-            type="button"
-            data-network-ready
-            data-testid="network-ready"
-            class="{% button_classes variant='primary' size='compact' full_width=True %} mt-2"
-        >
-            <span data-ready-state="idle">{% trans "Sync" %}</span>
-            <span data-ready-state="running" data-ready-progress class="hidden">{% trans "Syncing…" %}</span>
-        </button>
-        <div role="status" aria-live="polite">
-            <p data-network-ready-summary class="mt-1 hidden text-xs text-text-1"></p>
-            <p data-network-ready-queue class="mt-1 hidden text-xs text-text-2"></p>
-        </div>
+        <label for="nav-offline-mode" class="grow cursor-pointer text-sm text-text-1">{% trans "Offline mode" %}</label>
+        {% include "includes/_switch.html" with id="nav-offline-mode" %}
     </div>
-    {% comment %}
-        With nothing downloaded there is nothing to answer for, so the panel
-        says how to start instead (Hugo, in the PR): the design system's info
-        callout, pointing at the map's downloads sheet. Hidden until
-        pwa_offline.js has read the areas and found none. On the map page
-        the link opens the sheet in place.
-    {% endcomment %}
-    <div data-network-empty data-testid="network-empty" class="mt-2 hidden">
-        {% trans "No offline areas yet" as empty_heading %}
-        {% trans "Download an area on the map to use it without a signal." as empty_body %}
-        {% trans "Download an area" as empty_cta %}
-        {% url 'public:map' as map_url %}
-        {% with cta_href=map_url|add:"?panel=downloads" %}
-            {% include "includes/_callout.html" with kind="info" heading=empty_heading body=empty_body cta_label=empty_cta cta_href=cta_href only %}
-        {% endwith %}
-    </div>
-    {# The way back to the network, in either offline mode only. Drawn with #}
-    {# the shared button chrome; it carries two labels rather than a plain  #}
-    {# one, which is why it is not includes/_button.html. The way out of    #}
-    {# offline mode stays on the page it strands you on (docs/decisions/    #}
-    {# the-way-out-of-offline-mode-is-on-the-page-it-strands-you-on.md).    #}
+    {# The way back to the network once the worker has latched. A forced  #}
+    {# mode's way back is the switch above (SNOW-1420). The way out of     #}
+    {# offline mode stays on the page it strands you on (docs/decisions/   #}
+    {# the-way-out-of-offline-mode-is-on-the-page-it-strands-you-on.md).   #}
     <button
         type="button"
         data-network-reconnect
         class="mt-3 hidden {% button_classes variant='secondary' size='compact' %}"
     >
         <span data-role="reconnect-label">{% trans "Try reconnecting" %}</span>
-        <span data-role="resume-label" class="hidden">{% trans "Use the network again" %}</span>
     </button>
 </div>

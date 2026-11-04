@@ -696,7 +696,7 @@ class TestNavConnectionPanel:
         assert "enhanceDisclosure('data-network-panel'" in html
         assert "[data-disclosure-close]" in html
 
-    def test_panel_carries_every_state_and_both_ways_back(
+    def test_panel_carries_every_state_and_the_way_back(
         self, rf: RequestFactory
     ) -> None:
         """Every message, explanation and CTA label is server-rendered.
@@ -715,10 +715,11 @@ class TestNavConnectionPanel:
             "offline-message",
             "latched-message",
             "reconnect-label",
-            "resume-label",
         ):
             assert f'data-role="{role}"' in panel
         for gone in (
+            # SNOW-1420: a forced mode's way back is the switch itself.
+            "resume-label",
             "synced-at",
             "online-explainer",
             "offline-explainer",
@@ -732,8 +733,8 @@ class TestNavConnectionPanel:
         """The reconnect CTA is for the two offline modes only.
 
         Hidden at rest, because the page renders the online state before
-        any script runs; ``pwa_offline.js`` reveals it in ``offline`` and
-        ``offline-forced``.
+        any script runs; ``pwa_offline.js`` reveals it in ``offline`` only
+        (SNOW-1420: a forced mode's way back is the switch).
         """
         html = _render_nav_for(rf, AnonymousUser())
         assert "hidden" in _class_tokens(
@@ -761,7 +762,7 @@ class TestNavConnectionPanel:
         assert 'id="pwa-connection-panel"' in html
         assert "data-network-reconnect" in html
         assert "Try reconnecting" in html
-        assert "Use the network again" in html
+        assert "Use the network again" not in html
 
     def test_panel_ships_closed(self, rf: RequestFactory) -> None:
         """Closed at rest: the <details> has no ``open`` attribute.
@@ -776,11 +777,13 @@ class TestNavConnectionPanel:
 
 
 @pytest.mark.django_db
-class TestNavAreaRows:
-    """SNOW-1415: the panel answers "will this area work offline?" per area.
+class TestNavPanelHoldsNoAreas:
+    """SNOW-1420: the per-area answer moved to the map's Downloads sheet.
 
-    One row per downloaded area, cloned by ``pwa_offline.js`` from a
-    ``<template>`` whose every word is rendered here, and one Sync button.
+    SNOW-1415 put one row per downloaded area in this panel, a Sync, an
+    empty-state callout and a readiness mark on the header symbol. All of it
+    moved (``tests/public/test_downloads_surface.py``), and the panel keeps
+    the state line, the Offline mode switch and "Try reconnecting".
     """
 
     def _panel(self, rf: RequestFactory) -> str:
@@ -788,90 +791,59 @@ class TestNavAreaRows:
         html = _render_nav_for(rf, AnonymousUser())
         return html.split('id="pwa-connection-panel"', 1)[1].split("</details>", 1)[0]
 
-    def test_the_row_template_carries_every_verdict(self, rf: RequestFactory) -> None:
-        """Ready, mostly (with both reasons), map missing, unchecked, syncing."""
-        template = self._panel(rf).split("<template data-network-sync-row>", 1)[1]
-        template = template.split("</template>", 1)[0]
-        for status in ("ready", "refresh", "open-map", "unknown", "running"):
-            assert f'data-area-status="{status}"' in template
-        for reason in ("conditions", "things"):
-            assert f'data-area-reason="{reason}"' in template
-        assert "data-area-label" in template
-
-    def test_a_missing_map_links_to_the_manage_downloads_sheet(
-        self, rf: RequestFactory
-    ) -> None:
-        """The remedy for a map that is gone is a re-download, on the map."""
+    def test_no_area_rows_sync_or_empty_state(self, rf: RequestFactory) -> None:
+        """Nothing of SNOW-1415's area block is left in the panel."""
         panel = self._panel(rf)
-        tag = _opening_tag_around(panel, "data-area-redownload")
-        assert f'href="{reverse("public:map")}?panel=downloads"' in tag
+        for gone in (
+            "data-network-sync",
+            "data-network-ready",
+            "data-network-empty",
+            "data-area-status",
+            "data-area-redownload",
+        ):
+            assert gone not in panel
 
-    def test_one_sync_that_knows_where_the_map_is(self, rf: RequestFactory) -> None:
-        """One button, and the map url a press off the map navigates to."""
-        panel = self._panel(rf)
-        assert len(re.findall(r"data-network-ready(?![-\w])", panel)) == 1
-        assert "Sync" in panel
-        block = _opening_tag_around(panel, 'data-testid="network-sync"')
-        assert f'data-map-url="{reverse("public:map")}"' in block
-        assert "hidden" in _class_tokens(block)
-
-    def test_an_empty_device_is_told_how_to_start(self, rf: RequestFactory) -> None:
-        """The design system's info callout, hidden until the areas are read.
-
-        Hugo, in the PR: with nothing downloaded the panel said only
-        "Online". Now it points at the map's downloads sheet.
-        """
-        panel = self._panel(rf)
-        block = _opening_tag_around(panel, 'data-testid="network-empty"')
-        assert "hidden" in _class_tokens(block)
-        empty = panel.split('data-testid="network-empty"', 1)[1]
-        assert 'data-kind="info"' in empty
-        assert "No offline areas yet" in empty
-        assert f'href="{reverse("public:map")}?panel=downloads"' in empty
-
-    def test_the_debug_controls_left_the_panel(self, rf: RequestFactory) -> None:
-        """No Offline mode switch, no Debug log, no /offline/ link."""
-        panel = self._panel(rf)
-        assert "data-network-toggle" not in panel
-        assert "data-network-debug-log" not in panel
-        assert "data-network-downloads" not in panel
-        assert reverse("public:offline_page") not in panel
-
-    def test_the_symbol_carries_three_readiness_marks_all_hidden(
-        self, rf: RequestFactory
-    ) -> None:
-        """Ready, syncing and needs attention, painted by ``pwa_offline.js``.
-
-        All hidden at rest: with no areas the symbol is the plain signal
-        glyph, as it was before.
-        """
+    def test_the_symbol_carries_no_readiness_mark(self, rf: RequestFactory) -> None:
+        """The header symbol shows signal and traffic only."""
         html = _render_nav_for(rf, AnonymousUser())
         summary = html.split("data-network-indicator", 1)[1].split("</summary>", 1)[0]
-        for name in ("ready", "syncing", "attention"):
-            tag = _opening_tag_around(summary, f'data-role="readiness-{name}"')
-            assert "hidden" in _class_tokens(tag)
-        assert 'data-offline-readiness="none"' in _opening_tag_around(
+        assert "readiness-" not in summary
+        assert "data-offline-readiness" not in _opening_tag_around(
             html, "data-network-indicator"
         )
+
+    def test_no_link_to_the_debug_page(self, rf: RequestFactory) -> None:
+        """/offline/ is unlisted (SNOW-1420), and no Debug log here."""
+        panel = self._panel(rf)
+        assert "data-network-debug-log" not in panel
+        assert reverse("public:offline_page") not in panel
 
 
 @pytest.mark.django_db
 class TestNavOfflineModeSwitch:
-    """The "Offline mode" switch is not in the nav at all since SNOW-1415.
+    """The "Offline mode" switch is back in the network menu (SNOW-1420).
 
-    SNOW-921 put it in the network menu; SNOW-1415 moved it to the /offline/
-    debug page (``tests/public/test_offline_page.py``), with the Debug log.
-    The account-menu assertions stay: the switch must not drift back there.
+    SNOW-921 put it here, SNOW-1415 moved it to the /offline/ debug page,
+    and SNOW-1420 brought it back: it tells the service worker not to try
+    the network on a radio that says it is connected but moves no data, a
+    control for users rather than for debugging. The account-menu assertions
+    stay: the switch must not drift there.
     """
 
-    def test_no_viewer_sees_the_switch_in_the_nav(
+    def test_every_viewer_gets_the_switch_in_the_panel(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """Neither a signed-out reader nor a signed-in one."""
+        """Signed out and signed in alike, hidden until the script reveals it."""
         for user in (AnonymousUser(), regular_user):
             html = _render_nav_for(rf, user)
-            assert "data-network-toggle" not in html
-            assert "nav-offline-mode" not in html
+            panel = html.split('id="pwa-connection-panel"', 1)[1].split(
+                "</details>", 1
+            )[0]
+            row = _opening_tag_around(panel, "data-network-toggle")
+            assert "hidden" in _class_tokens(row)
+            assert 'id="nav-offline-mode"' in panel
+            assert 'for="nav-offline-mode"' in panel
+            assert "Offline mode" in panel
 
     def test_account_menu_no_longer_carries_it(
         self, rf: RequestFactory, regular_user: User

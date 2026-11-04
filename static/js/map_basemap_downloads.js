@@ -2562,14 +2562,6 @@ window.pwaBasemapDownloads = Object.freeze({
   syncArea: (areaId, onStage) => syncArea(areaId, onStage),
 
   /**
-   * SNOW-1415: honour a `?sync=all` arrival — see `runRequestedSync`.
-   * Exposed so the arrival is testable without reloading the bundle.
-   *
-   * @returns {boolean} Whether a sync was handed to the panel.
-   */
-  runRequestedSync: () => runRequestedSync(),
-
-  /**
    * SNOW-844: every URL held across every pinned bucket — see
    * `pinnedBasemapCacheURLs`. The sheet asks the same question the
    * roundels do ("is this area's whole render set on disk?"), and the
@@ -2608,38 +2600,6 @@ window.pwaBasemapDownloads = Object.freeze({
    */
   makeStyleSettleRetry: (render) => makeStyleSettleRetry(render),
 });
-
-/**
- * SNOW-1415: run the connection panel's Sync on a `/map/?sync=all` arrival.
- *
- * Off the map, the panel's Sync cannot mend tiles, so it navigates here
- * (`pwa_offline.js`'s `navigateToMapSync`). This reads the parameter once
- * the downloads module above is ready, strips it from the address bar —
- * a reload or a shared url must not run it again — and hands the press
- * back to the panel, which opens itself so the rows show the run
- * (`window.pwaConnectionPanel.syncAll`).
- *
- * @returns {boolean} Whether a sync was handed to the panel.
- */
-function runRequestedSync() {
-  const params = new URLSearchParams(location.search);
-  if (params.get('sync') !== 'all') return false;
-  params.delete('sync');
-  const query = params.toString();
-  history.replaceState(null, '', location.pathname + (query ? `?${query}` : '') + location.hash);
-  const panel = window.pwaConnectionPanel;
-  if (!panel || typeof panel.syncAll !== 'function') return false;
-  panel.syncAll();
-  return true;
-}
-
-// Deferred scripts have all run by DOMContentLoaded, so the panel's
-// module (base.html) is there whichever order the two were tagged in.
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', runRequestedSync, { once: true });
-} else {
-  runRequestedSync();
-}
 
 /**
  * Reveal one `_overlay_banner.html` confirm carrying `bodyText`, and
