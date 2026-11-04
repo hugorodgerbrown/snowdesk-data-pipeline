@@ -19,9 +19,8 @@ The JS half is exercised by Playwright in a later ticket.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta, timezone
-
 import re
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from django.template import Context, Template

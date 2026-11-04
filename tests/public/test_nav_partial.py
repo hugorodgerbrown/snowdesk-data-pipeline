@@ -732,7 +732,9 @@ class TestNavConnectionPanel:
         ``offline-forced``.
         """
         html = _render_nav_for(rf, AnonymousUser())
-        assert "hidden" in _class_tokens(_opening_tag_around(html, "data-network-reconnect"))
+        assert "hidden" in _class_tokens(
+            _opening_tag_around(html, "data-network-reconnect")
+        )
 
     def test_anonymous_gets_the_panel_and_its_way_back(
         self, rf: RequestFactory
@@ -805,7 +807,7 @@ class TestNavAreaRows:
         panel = self._panel(rf)
         assert len(re.findall(r"data-network-ready(?![-\w])", panel)) == 1
         assert "Sync" in panel
-        block = _opening_tag_around(panel, "data-network-sync ")
+        block = _opening_tag_around(panel, 'data-testid="network-sync"')
         assert f'data-map-url="{reverse("public:map")}"' in block
         assert "hidden" in _class_tokens(block)
 
