@@ -14,6 +14,7 @@ remote and the regions' geometry is fixture data the tests do not load.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from unittest import mock
 
@@ -221,6 +222,22 @@ class TestStar:
         assert 'data-lat="46.090500"' in content
         assert 'data-lon="7.273700"' in content
         assert "data-location-star-signin" not in content
+
+    def test_the_star_is_a_glass_roundel(self, client: Client) -> None:
+        """The resort sheet's star shape, and the region sheet's pin's."""
+        client.force_login(UserFactory.create())
+        content = _get(client).content.decode()
+        star = re.search(r"<button\b[^>]*data-location-star\b[^>]*>", content)
+        assert star is not None
+        assert "map-glass-roundel" in star.group(0)
+        assert "map-sheet-roundel" in star.group(0)
+
+    def test_the_sign_in_link_is_a_glass_roundel(self, client: Client) -> None:
+        """A visitor's way in takes the same shape as the star it stands for."""
+        content = _get(client).content.decode()
+        link = re.search(r"<a\b[^>]*data-location-star-signin[^>]*>", content)
+        assert link is not None
+        assert "map-glass-roundel" in link.group(0)
 
     def test_anonymous_reader_gets_sign_in(self, client: Client) -> None:
         content = _get(client).content.decode()

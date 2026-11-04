@@ -284,6 +284,36 @@ def button_classes(
     return _button_chrome_classes(variant, size, bool(full_width), bool(is_anchor))
 
 
+# The glass roundel (SNOW-814's ``.map-glass-roundel``, static/css/map.css):
+# a frosted circle floating over the map, and in a map sheet's header the
+# shape of every action beside the title. The region sheet's pin and
+# download proxies take it from the ribbon roundels they press; the resort
+# and location sheets' save stars drew a bare icon beside them until Hugo
+# asked for one shape for one act ("the favourite icon on the resort panel
+# should appear in a roundel, as per the region panel", 4 Nov 2026). One
+# string, so a new roundel cannot drift from the others.
+_ROUNDEL_BASE = "map-glass-roundel hover-affordance"
+
+
+@register.simple_tag
+def roundel_classes(extra: str = "") -> str:
+    """Return the class string for a glass roundel control.
+
+    The shape a map control or a map sheet's header action takes: the
+    ribbon's region pin and download, the custom-area download, and the
+    resort and location sheets' save stars all render through this tag.
+
+    Args:
+        extra: Classes to append verbatim — a control's own state hook, such
+            as ``map-region-pin-control``.
+
+    Returns:
+        Space-joined class string.
+
+    """
+    return f"{_ROUNDEL_BASE} {extra}" if extra else _ROUNDEL_BASE
+
+
 @register.simple_tag
 def icon_button_classes(variant: str = "default", extra: str = "") -> str:
     """Return the Tailwind class string for a 44×44 icon-only control.

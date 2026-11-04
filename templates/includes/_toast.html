@@ -106,9 +106,9 @@
             type="button"
             data-action="dismiss"
             aria-label="{% trans 'Dismiss' %}"
-            class="text-status-{{ kind }}-text opacity-70 hover:opacity-100 px-1 leading-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-{{ kind }}-text rounded"
+            class="text-status-{{ kind }}-text flex h-5 items-center opacity-70 hover:opacity-100 px-1 leading-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-{{ kind }}-text rounded"
         >
-            ×
+            {% include "includes/_icon_close.html" with size=14 only %}
         </button>
     {% endif %}
 </div>

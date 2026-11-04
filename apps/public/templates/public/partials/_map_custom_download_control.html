@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n components %}
 {% comment %}
 public/partials/_map_custom_download_control.html — offline-downloads
 roundel (SNOW-522; behaviour rewritten by SNOW-634 and SNOW-635).
@@ -83,7 +83,7 @@ apps.public.views._downloads_context.
 <button
     type="button"
     id="map-custom-download-control"
-    class="map-glass-roundel map-custom-download-control map-download-control hover-affordance"
+    class="{% roundel_classes extra='map-custom-download-control map-download-control' %}"
     data-overlay-shown="false"
     data-downloads-eligible="{{ downloads_eligible|yesno:'true,false' }}"
     data-signin-url="{{ downloads_signin_url }}"

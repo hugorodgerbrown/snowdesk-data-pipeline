@@ -59,9 +59,7 @@ let pinnedIds = [
 /** Render the rows the server would send for `pinnedIds`. */
 function rowsHtml() {
   return '<ul>' + pinnedIds.map(([id, name], i) => (
-    `<li id="region-pin-${i}">`
-    + `<button data-row-label data-row-focus-region="${id}">${name}</button>`
-    + '</li>'
+    `<li id="region-pin-${i}" data-pinned-region="${id}">${name}</li>`
   )).join('') + '</ul>';
 }
 
@@ -260,6 +258,6 @@ describe('the list search reads', () => {
   it('is loaded into the hidden host in the ribbon, never drawn', () => {
     const host = document.getElementById('region-pin-rows');
     expect(host.hidden).toBe(true);
-    expect(host.querySelectorAll('[data-row-focus-region]').length).toBeGreaterThan(0);
+    expect(host.querySelectorAll('[data-pinned-region]').length).toBeGreaterThan(0);
   });
 });

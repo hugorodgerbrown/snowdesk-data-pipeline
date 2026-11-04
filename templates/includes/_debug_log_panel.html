@@ -64,8 +64,13 @@ produced it.
             <button id="debug-log-clear" type="button" class="text-text-2 underline">
                 {% translate "Clear" %}
             </button>
-            <button id="debug-log-close" type="button" aria-label="{% translate 'Close' %}" class="text-text-2">
-                ×
+            <button
+                id="debug-log-close"
+                type="button"
+                aria-label="{% translate 'Close' %}"
+                class="inline-flex items-center text-text-2"
+            >
+                {% include "includes/_icon_close.html" with size=16 only %}
             </button>
         </div>
         {# max-h rather than a fixed height: a short trace should not leave a #}

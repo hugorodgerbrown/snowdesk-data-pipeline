@@ -180,6 +180,9 @@ Context:
                 {% endif %}
             </div>
             {% if kind == "resort" %}
+                {# The star and its sign-in link are glass roundels, the shape  #}
+                {# the region sheet's pin takes (Hugo, 4 Nov 2026: one shape    #}
+                {# for one act). components.roundel_classes is the one source.  #}
                 {# SNOW-1318: the star is rendered the same for every reader — #}
                 {# a disabled outline, and a hidden sign-in link beside it —  #}
                 {# so one copy of this body serves everyone, offline too.      #}
@@ -204,7 +207,7 @@ Context:
                     aria-label="{{ save_label }}"
                     title="{{ save_label }}"
                     disabled
-                    class="{% icon_button_classes %}"
+                    class="{% roundel_classes extra='map-sheet-roundel' %}"
                 >
                     {% include "includes/_icon_favourite.html" with size=18 only %}
                 </button>
@@ -219,7 +222,7 @@ Context:
                     hidden
                     aria-label="{{ signin_label }}"
                     title="{{ signin_label }}"
-                    class="{% icon_button_classes %}"
+                    class="{% roundel_classes extra='map-sheet-roundel' %}"
                 >
                     {% include "includes/_icon_favourite.html" with size=18 only %}
                 </a>
@@ -235,7 +238,7 @@ Context:
                         aria-pressed="false"
                         aria-label="{{ save_pin_label }}"
                         title="{{ save_pin_label }}"
-                        class="{% icon_button_classes %}"
+                        class="{% roundel_classes extra='map-sheet-roundel' %}"
                     >
                         {% include "includes/_icon_favourite.html" with size=18 only %}
                     </button>
@@ -247,7 +250,7 @@ Context:
                         data-location-star-signin
                         aria-label="{{ signin_pin_label }}"
                         title="{{ signin_pin_label }}"
-                        class="{% icon_button_classes %}"
+                        class="{% roundel_classes extra='map-sheet-roundel' %}"
                     >
                         {% include "includes/_icon_favourite.html" with size=18 only %}
                     </a>

@@ -183,21 +183,6 @@ class TestRegionPinSurfaces:
 
         assert [f["properties"]["uuid"] for f in data["features"]] == [str(placed.uuid)]
 
-    def test_region_list_renders_a_region_row(self, client: Client) -> None:
-        """The region's name and an unpin star. SNOW-814: nothing else."""
-        user = UserFactory.create()
-        client.force_login(user)
-        region = MicroRegionFactory.create(
-            region_id="CH-4115", name="Valais", slug="ch-4115"
-        )
-        pin = FavouriteFactory.create(user=user, region=region, region_pin=True)
-
-        content = client.get(reverse("favourites:region_list"), **HTMX).content.decode()
-
-        assert "Valais" in content
-        assert f'data-favourite-rename="{pin.uuid}"' not in content
-        assert reverse("favourites:delete", kwargs={"uuid": pin.uuid}) in content
-
     def test_region_list_row_carries_no_dated_metadata(self, client: Client) -> None:
         """SNOW-814: a date fetched once cannot follow the scrubber, so there is none.
 
@@ -225,8 +210,13 @@ class TestRegionPinSurfaces:
         assert region.get_absolute_url() not in content
         assert "No bulletin available" not in content
 
-    def test_region_list_row_frames_the_region(self, client: Client) -> None:
-        """SNOW-814: the name is a control carrying the region's id, not a coordinate."""
+    def test_region_list_is_the_pinned_ids(self, client: Client) -> None:
+        """The hidden host's list carries each pinned region's id, and nothing else.
+
+        map_region_panel.js reads ``data-pinned-region`` for search and the
+        pin roundel; nothing draws the list (SNOW-1173), so it holds no
+        controls (Hugo, 4 Nov 2026: "Strip it").
+        """
         user = UserFactory.create()
         client.force_login(user)
         region = MicroRegionFactory.create(region_id="CH-4115", name="Valais")
@@ -234,47 +224,24 @@ class TestRegionPinSurfaces:
 
         content = client.get(reverse("favourites:region_list"), **HTMX).content.decode()
 
-        assert 'data-row-focus-region="CH-4115"' in content
-        assert "data-row-focus=" not in content
-        assert "Show Valais on the map" in content
+        assert 'data-pinned-region="CH-4115"' in content
+        assert "Valais" in content
+        assert "<button" not in content
+        assert "<form" not in content
+        assert "data-row-focus-region" not in content
 
-    def test_region_list_unpins_with_a_star_not_a_trash(self, client: Client) -> None:
-        """SNOW-814: unpinning removes the pin, not the region — so it is not a trash.
-
-        SNOW-886 put the places row's two actions behind a "…" trigger and
-        left this row alone, which is the other half of the same panel
-        rule: more than one action is a menu, exactly one is a bare icon.
-        This row has exactly one, so it stays a star the user aims at —
-        and the word is neither Remove nor Delete, because the region
-        survives either way.
-        """
-        user = UserFactory.create()
-        client.force_login(user)
-        region = MicroRegionFactory.create(name="Valais")
-        FavouriteFactory.create(user=user, region=region, region_pin=True)
-
-        content = client.get(reverse("favourites:region_list"), **HTMX).content.decode()
-
-        assert 'data-testid="region-pin-unpin"' in content
-        assert "Unpin Valais" in content
-        assert 'aria-pressed="true"' in content
-        assert "Remove Valais" not in content
-        assert "Delete Valais" not in content
-        assert "data-overflow-trigger" not in content
-        assert 'role="menu"' not in content
-
-    def test_region_list_empty_state_is_not_a_place_message(
+    def test_region_list_with_nothing_pinned_is_an_empty_list(
         self, client: Client
     ) -> None:
-        """Nothing pinned reads as nothing pinned, not as an empty favourites list."""
+        """No pins, no items: there is no reader to tell, so no empty-state copy."""
         user = UserFactory.create()
         client.force_login(user)
         FavouriteFactory.create(user=user)
 
         content = client.get(reverse("favourites:region_list"), **HTMX).content.decode()
 
-        assert 'data-testid="region-pin-list-empty"' in content
-        assert "Pin a region and it will be listed here." in content
+        assert 'data-testid="region-pin-list"' in content
+        assert "data-pinned-region" not in content
 
     def test_region_list_rejects_an_anonymous_request(self, client: Client) -> None:
         """It is a list of one user's own data."""
