@@ -4918,3 +4918,172 @@ describe('activate carries the old shell caches into the new one (SNOW-1311)', (
     expect(events(client, 'pwa.sw.activation_failed')).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// A warmed sheet's weather icons are warmed and carried with it
+// ---------------------------------------------------------------------------
+
+describe("a sheet's weather icons travel with the sheet", () => {
+  /*
+   * A resort's place sheet, a region sheet and a weather sheet draw their
+   * forecast with `<img src>` icons. The warm fetched the sheet and nothing
+   * it drew, and the carry left every icon behind on a deploy as an asset no
+   * carried page named — so a downloaded resort opened offline with a
+   * broken image in every forecast cell.
+   */
+  const SHELL = 'snowdesk-shell-UNSUBSTITUTED';
+  const OLD = 'snowdesk-shell-old1';
+  const DAY = '2026-11-04';
+  const RESORT = `/partials/place-sheet/resort/verbier/?d=${DAY}`;
+  const RESORT_KEY = `${ORIGIN}${RESORT}`;
+  const WEATHER = `/api/weather/Ab3dE_fGh1J/detail/?date=${DAY}`;
+  const CLOUDY = `${ORIGIN}/static/icons/weather/snowdesk/cloudy.5116082a471d.svg`;
+  const SNOW = `${ORIGIN}/static/icons/weather/snowdesk/light_snow.5090dacbc1f8.svg`;
+  const OLD_ICON = `${ORIGIN}/static/icons/weather/snowdesk/cloudy.0ld000000000.svg`;
+  const SHEET_HTML = [
+    '<section>',
+    `<img src="${CLOUDY.replace(ORIGIN, '')}" alt="">`,
+    `<img\n    src="${CLOUDY.replace(ORIGIN, '')}"\n    alt="">`,
+    `<img src="${SNOW}" alt="">`,
+    '<img src="https://cdn.example/elsewhere.svg" alt="">',
+    '<link rel="icon" href="/static/favicon.svg">',
+    '</section>',
+  ].join('\n');
+
+  /** The server: each sheet draws two icons; every icon is an SVG. */
+  function server(seen, opts = {}) {
+    return vi.fn(async (input) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (seen) seen.push(url);
+      if (url.includes('/partials/')) {
+        return basicResponse(SHEET_HTML, {
+          headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, max-age=600' },
+        });
+      }
+      if (url.includes('/api/weather/')) {
+        return basicResponse(JSON.stringify({ html: SHEET_HTML }), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (opts.iconStatus) return basicResponse('nope', { status: opts.iconStatus });
+      return basicResponse('<svg/>', { headers: { 'Content-Type': 'image/svg+xml' } });
+    });
+  }
+
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  afterEach(async () => {
+    await resetDb();
+  });
+
+  it('names the same-origin images a sheet draws, once each', () => {
+    const sw = loadSw();
+
+    expect(sw._pageImages(SHEET_HTML)).toEqual([CLOUDY, SNOW]);
+  });
+
+  it('leaves the boot contract alone: icons are not shell subresources', () => {
+    const sw = loadSw();
+
+    expect(sw._shellSubresources(SHEET_HTML)).toEqual([]);
+  });
+
+  it('caps what one sheet can send the worker after', () => {
+    const sw = loadSw();
+    const many = Array.from(
+      { length: sw.PAGE_IMAGE_LIMIT + 10 },
+      (_unused, i) => `<img src="/static/icons/i-${i}.svg">`,
+    ).join('');
+
+    expect(sw._pageImages(many)).toHaveLength(sw.PAGE_IMAGE_LIMIT);
+  });
+
+  it.each([false, true])('warms a resort sheet with its icons (core: %s)', async (withCore) => {
+    const caches = makeCaches();
+    const seen = [];
+    const sw = loadSw({ caches, fetch: server(seen), core: withCore ? core : null });
+
+    const result = await sw._warmCache([RESORT]);
+
+    expect(result).toMatchObject({ ok: 1, failed: 0 });
+    const shell = await caches.open(SHELL);
+    expect(await shell.match(RESORT_KEY)).toBeTruthy();
+    expect(await shell.match(CLOUDY)).toBeTruthy();
+    expect(await shell.match(SNOW)).toBeTruthy();
+    expect(seen).not.toContain('https://cdn.example/elsewhere.svg');
+  });
+
+  it("warms a weather sheet's icons out of its JSON", async () => {
+    const caches = makeCaches();
+    const sw = loadSw({ caches, fetch: server() });
+
+    expect(await sw._warmCache([WEATHER])).toMatchObject({ ok: 1, failed: 0 });
+
+    const shell = await caches.open(SHELL);
+    expect(await shell.match(CLOUDY)).toBeTruthy();
+    expect(await shell.match(SNOW)).toBeTruthy();
+  });
+
+  it('fetches each icon once across the sheets of an area', async () => {
+    const seen = [];
+    const sw = loadSw({ fetch: server(seen) });
+
+    await sw._warmCache([RESORT]);
+    await sw._warmCache([WEATHER, `/partials/region-sheet/ch-4115/?d=${DAY}`]);
+
+    expect(seen.filter((url) => url === CLOUDY)).toHaveLength(1);
+    expect(seen.filter((url) => url === SNOW)).toHaveLength(1);
+  });
+
+  it('never fails the sheet over an icon that will not land', async () => {
+    const caches = makeCaches();
+    const sw = loadSw({ caches, fetch: server(null, { iconStatus: 404 }) });
+
+    expect(await sw._warmCache([RESORT])).toMatchObject({ ok: 1, failed: 0 });
+    expect(await (await caches.open(SHELL)).match(CLOUDY)).toBeUndefined();
+  });
+
+  it('reads no feed body looking for images', async () => {
+    const sw = loadSw();
+    const feed = basicResponse('{"html":"<img src=\\"/static/x.svg\\">"}', {
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    expect(await sw._drawnHtml(new URL(`${ORIGIN}/api/ratings/?d=${DAY}`), feed)).toBe('');
+  });
+
+  it.each([false, true])(
+    'carries the icons a carried sheet draws, and leaves an unreferenced one (core: %s)',
+    async (withCore) => {
+      const caches = makeCaches();
+      caches.seed(
+        OLD,
+        RESORT_KEY,
+        new Response(`<section><img src="${CLOUDY}"></section>`, {
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        }),
+      );
+      caches.seed(
+        OLD,
+        `${ORIGIN}${WEATHER}`,
+        new Response(JSON.stringify({ html: `<img src="${SNOW}">` }), {
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+      for (const icon of [CLOUDY, SNOW, OLD_ICON]) {
+        caches.seed(OLD, icon, new Response('<svg/>', { headers: { 'Content-Type': 'image/svg+xml' } }));
+      }
+      const sw = loadSw({ caches, core: withCore ? core : null });
+
+      const result = await sw._carryShellContent();
+
+      const shell = await caches.open(SHELL);
+      expect(await shell.match(CLOUDY)).toBeTruthy();
+      expect(await shell.match(SNOW)).toBeTruthy();
+      expect(await shell.match(OLD_ICON)).toBeUndefined();
+      expect(result).toMatchObject({ result: 'complete', copied: 4, skipped: 1, failed: 0 });
+    },
+  );
+});

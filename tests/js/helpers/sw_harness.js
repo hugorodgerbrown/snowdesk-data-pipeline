@@ -60,6 +60,11 @@ export const SW_EXPORTS = [
   // activation-time call that puts it back after the old cache is reaped.
   '_shellSubresources',
   '_warmShellSubresources',
+  // The images a warmed sheet draws — its weather icons.
+  '_pageImages',
+  '_drawnHtml',
+  '_warmPageImages',
+  'PAGE_IMAGE_LIMIT',
   '_rewarmShell',
   'SHELL_PAGE',
   // SNOW-1047: the legacy `/?<map state>` redirect the worker answers itself.

@@ -27,7 +27,8 @@
  * The producers are the real ones: ``areaContentURLs`` and ``areaItemURLs``
  * (basemap_download_core.js), with inputs chosen to take each output
  * branch; the shell pages (``SHELL_PAGES``) and what the worker itself
- * derives from their HTML (``_shellSubresources``, ``_shellBootFeeds``);
+ * derives from their HTML (``_shellSubresources``, ``_shellBootFeeds``)
+ * and from a warmed sheet's (``_pageImages``, its weather icons);
  * and the two install-time lists, ``PRECACHE_URLS`` (one atomic
  * ``addAll`` — one failure fails install) and ``AUDIT_SCRIPTS`` (one
  * tolerant ``add`` each — a failure fails nothing). The weather sheet's
@@ -177,6 +178,13 @@ const MAP_PAGE_HEAD =
   '<link rel="stylesheet" href="/static/css/output.7c1d2e.css">' +
   `<div id="season-scrubber" data-today="${TODAY}"></div>`;
 
+// A sheet as the server renders it: the weather icons it draws.
+// `_pageImages` derives the sheet-image family from this — what a warmed
+// resort, region or weather sheet pulls in behind itself.
+const SHEET_BODY =
+  '<img src="/static/icons/weather/snowdesk/cloudy.5116082a471d.svg" alt="">' +
+  '<img src="/static/icons/weather/snowdesk/light_snow.5090dacbc1f8.svg" alt="">';
+
 // The classes the fetch listener answers from the cache. `'network'` is
 // the one it never does.
 const OFFLINE_READS = new Set([
@@ -284,6 +292,13 @@ const FAMILIES = [
     name: 'shell subresource',
     producer: '_shellSubresources',
     match: /^\/static\/.+\.(?:js|css)$/,
+    swClass: 'static',
+    principal: 'independent',
+  },
+  {
+    name: 'sheet image',
+    producer: '_pageImages',
+    match: /^\/static\/icons\/.+\.svg$/,
     swClass: 'static',
     principal: 'independent',
   },
@@ -517,6 +532,7 @@ function producedUrls(sw) {
   out.SHELL_PAGES = [...sw.SHELL_PAGES];
   out._shellSubresources = sw._shellSubresources(mapPageHtml(READER)).map(relative);
   out._shellBootFeeds = sw._shellBootFeeds(mapPageHtml(READER)).map(relative);
+  out._pageImages = sw._pageImages(SHEET_BODY).map(relative);
   out.PRECACHE_URLS = [...sw.PRECACHE_URLS];
   out.AUDIT_SCRIPTS = [...sw.AUDIT_SCRIPTS];
   return out;
@@ -594,6 +610,8 @@ function answerFor(path, who, opts = {}) {
     headers['Content-Type'] = 'text/javascript';
   } else if (path.endsWith('.css')) {
     headers['Content-Type'] = 'text/css';
+  } else if (path.endsWith('.svg')) {
+    headers['Content-Type'] = 'image/svg+xml';
   } else {
     headers['Content-Type'] = 'application/json';
   }
