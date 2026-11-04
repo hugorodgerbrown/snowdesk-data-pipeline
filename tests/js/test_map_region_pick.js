@@ -33,8 +33,17 @@ const LAYERS = ['region-pick-fill', 'region-pick-line', 'region-pick-label'];
 function makeMap(hit) {
   const layers = new Map();
   const handlers = new Map();
+  const onceHandlers = new Map();
   const map = {
     log: [],
+    styleLoaded: true,
+    isStyleLoaded: vi.fn(() => map.styleLoaded),
+    once: vi.fn((name, fn) => onceHandlers.set(name, fn)),
+    fire: (name) => {
+      const fn = onceHandlers.get(name);
+      onceHandlers.delete(name);
+      fn?.();
+    },
     featureState: new Map(),
     getSource: vi.fn((id) => (id === 'regions' ? {} : undefined)),
     getLayer: vi.fn((id) => layers.get(id)),
@@ -191,19 +200,51 @@ describe('a tap', () => {
 });
 
 describe('Download', () => {
-  it('closes the task before the download it starts has settled', () => {
+  it('closes the task before the download it starts has settled', async () => {
     let settle;
     start.mockReturnValue(new Promise((resolve) => (settle = resolve)));
     window.pwaRegionPick.open();
     map.click();
     focusLog.length = 0;
     confirmBtn().click();
-    expect(start).toHaveBeenCalledWith('CH-2101');
+    await vi.waitFor(() => expect(start).toHaveBeenCalledWith('CH-2101'));
     // Closed while the run is still going: layers off, THEN focus left.
     expect(window.pwaRegionPick.isActive()).toBe(false);
     expect(focusLog).toEqual([...LAYERS.map((id) => `remove:${id}`), 'exit']);
     expect(sheet().hidden).toBe(true);
     settle({ started: true, reason: '' });
+  });
+
+  // Hugo, 4 Nov 2026: the close puts PlacementFocus's layers back, MapLibre
+  // reloads their sources, and a run started in that moment found no tile
+  // sources and failed without a request.
+  it('waits for the map to settle from the close before starting', async () => {
+    window.pwaRegionPick.open();
+    map.click();
+    map.styleLoaded = false;
+    confirmBtn().click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(start).not.toHaveBeenCalled();
+    map.styleLoaded = true;
+    map.fire('idle');
+    await vi.waitFor(() => expect(start).toHaveBeenCalledWith('CH-2101'));
+  });
+
+  it('starts anyway if the map never reports idle', async () => {
+    vi.useFakeTimers();
+    try {
+      window.pwaRegionPick.open();
+      map.click();
+      map.styleLoaded = false;
+      confirmBtn().click();
+      await vi.advanceTimersByTimeAsync(2999);
+      expect(start).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(start).toHaveBeenCalledWith('CH-2101');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('tells the reader when another region is already downloading', async () => {

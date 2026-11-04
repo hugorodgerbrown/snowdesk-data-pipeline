@@ -26,7 +26,8 @@
  *      names it and says what it costs on this device
  *      (`pwaRegionDownload.estimate`, the same priced figure the region
  *      roundel shows).
- *   3. Download closes the task FIRST and then calls
+ *   3. Download closes the task FIRST, waits for the map to settle from the
+ *      close (`styleSettled`), and then calls
  *      `pwaRegionDownload.start(regionId)` without waiting on it: `start()`
  *      settles only once the whole run has finished, and the picker has no
  *      business staying open for that. Progress shows where every region
@@ -101,6 +102,9 @@
   // `selected` is neither read nor written.
   const STATE_KEY = 'picked';
   const FALLBACK_FONT = ['Noto Sans Regular'];
+  // How long Download waits for the map to settle after the close before it
+  // starts the run anyway (see `styleSettled`).
+  const STYLE_SETTLE_MS = 3000;
 
   /** @type {any} */
   let activeMap = null;
@@ -345,7 +349,42 @@
   }
 
   /**
-   * Download: close, then start the run without waiting for it to finish.
+   * Resolve once `map` has settled after the close, or after
+   * STYLE_SETTLE_MS whatever happens.
+   *
+   * WHY. Closing puts back everything `PlacementFocus.enter()` hid, and a
+   * layer turned visible again makes MapLibre reload its source, so for a
+   * moment `isStyleLoaded()` is false. The region download reads its tile
+   * sources through `activeBasemapTileSources`, which answers null while
+   * the style is not loaded, and the runner refuses a run with no sources
+   * as a generic failure before it makes a single request — the "Download
+   * failed. Check your connection" toast with nothing in the network panel
+   * (Hugo, 4 Nov 2026). The same wait map_custom_download.js's restore
+   * makes (`_styleSettled`).
+   *
+   * @param {any} map
+   * @returns {Promise<void>}
+   */
+  function styleSettled(map) {
+    return new Promise((resolve) => {
+      if (!map || typeof map.isStyleLoaded !== 'function' || map.isStyleLoaded()) {
+        resolve();
+        return;
+      }
+      let done = false;
+      const settle = () => {
+        if (done) return;
+        done = true;
+        resolve();
+      };
+      map.once('idle', settle);
+      setTimeout(settle, STYLE_SETTLE_MS);
+    });
+  }
+
+  /**
+   * Download: close, let the map settle, then start the run without
+   * waiting for it to finish.
    *
    * @returns {void}
    */
@@ -353,14 +392,17 @@
     const regionId = pickedRegionId;
     const download = window.pwaRegionDownload;
     if (!regionId || !download || !ui || ui.confirm.disabled) return;
+    const map = activeMap;
     close();
-    Promise.resolve(download.start(regionId)).then(
-      (outcome) => {
-        const kind = core.refusalKind(outcome);
-        if (kind) window.MapSheet?.toast(STRINGS[kind] || STRINGS.failed);
-      },
-      () => window.MapSheet?.toast(STRINGS.failed),
-    );
+    styleSettled(map)
+      .then(() => download.start(regionId))
+      .then(
+        (outcome) => {
+          const kind = core.refusalKind(outcome);
+          if (kind) window.MapSheet?.toast(STRINGS[kind] || STRINGS.failed);
+        },
+        () => window.MapSheet?.toast(STRINGS.failed),
+      );
   }
 
   // The trigger (the Downloads sheet's "Download a region") opens the task
