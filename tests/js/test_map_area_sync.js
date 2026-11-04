@@ -42,6 +42,13 @@ const REGION_ID = 'CH-4115';
 const REGION_SLUG = 'martigny-verbier';
 const TEMPLATE = 'https://tiles.example.invalid/{z}/{x}/{y}.pbf';
 const PINNED_PREFIX = 'snowdesk-basemap-pinned-';
+// The worker's shell cache, where a warm puts same-origin content.
+const SHELL_CACHE = 'snowdesk-shell-test';
+
+/** A url made absolute against the page, as the cache keys compare. */
+function absolute(url) {
+  return new URL(url, window.location.origin).href;
+}
 const TODAY = '2026-01-06';
 const AREA_ID = 'custom-a1';
 
@@ -217,6 +224,48 @@ function installCachesStub() {
   return stub;
 }
 
+/**
+ * The worker in control, answering the page's `held-content` question as
+ * `sw.js`'s `_heldForOffline` does for public content: held means in the
+ * live shell cache, and no other. `silent` makes it never answer.
+ */
+function installWorkerStub(cachesStub) {
+  const worker = {
+    silent: false,
+    asked: [],
+    postMessage: vi.fn((data, ports) => {
+      if (!data || data.type !== 'held-content') return;
+      worker.asked.push(data.urls);
+      if (worker.silent) return;
+      const live = cachesStub.openBucket(SHELL_CACHE);
+      const hrefs = new Set([...live].map(absolute));
+      const held = data.urls.filter((url) => hrefs.has(absolute(url)));
+      queueMicrotask(() => ports[0].onmessage({ data: { type: 'held-content', held } }));
+    }),
+  };
+  Object.defineProperty(navigator, 'serviceWorker', {
+    value: {
+      controller: worker,
+      // Never settles: the boot's own worker waits are not this suite's.
+      ready: new Promise(() => {}),
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    },
+    configurable: true,
+  });
+  // jsdom has no MessageChannel the stub can answer through synchronously.
+  vi.stubGlobal(
+    'MessageChannel',
+    class {
+      constructor() {
+        this.port1 = { onmessage: null, close: () => {} };
+        this.port2 = this.port1;
+      }
+    },
+  );
+  return worker;
+}
+
 /** In-memory `meta:app`. */
 function installDbStub() {
   const rows = new Map();
@@ -317,6 +366,7 @@ function buildFixture() {
 }
 
 let cachesStub;
+let workerStub;
 
 /**
  * Seed one custom area over the fixture's ground.
@@ -397,6 +447,7 @@ beforeAll(async () => {
   buildFixture();
   const mapStub = stubMapLibre();
   cachesStub = installCachesStub();
+  workerStub = installWorkerStub(cachesStub);
   installDbStub();
   installOverlayCacheStub();
   window.pwaConnectivity = { isOnline: () => true };
@@ -422,9 +473,15 @@ beforeAll(async () => {
       return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
     }),
   );
+  // As the worker does: same-origin content into the shell cache, and
+  // only the cross-origin tiles into the area's pinned bucket.
   window.pwaWarmCache = vi.fn(async (urls, options) => {
-    const cache = await window.caches.open(PINNED_PREFIX + options.areaId);
-    for (const url of urls) await cache.put(url, {});
+    const pinned = await window.caches.open(PINNED_PREFIX + options.areaId);
+    const shell = await window.caches.open(SHELL_CACHE);
+    for (const url of urls) {
+      const sameOrigin = new URL(url, window.location.origin).origin === window.location.origin;
+      await (sameOrigin ? shell : pinned).put(url, {});
+    }
     if (options.onProgress) {
       options.onProgress(urls.length, urls.length, urls.map((_u, i) => i), 4096);
     }
@@ -847,7 +904,6 @@ describe('what a sync tells the connection panel (SNOW-1415)', () => {
 });
 
 describe('only what changed (SNOW-1416)', () => {
-  const absolute = (url) => new URL(url, window.location.origin).href;
 
   /** Fill the bucket with a first sync's documents, then forget the call. */
   async function syncOnce() {
@@ -919,7 +975,8 @@ describe('only what changed (SNOW-1416)', () => {
 
   it('sends only the missing url to a fresh area, and keeps its stamp', async () => {
     await syncOnce();
-    const bucket = cachesStub.openBucket(PINNED_PREFIX + AREA_ID);
+    // The worker keeps same-origin content in its shell cache.
+    const bucket = cachesStub.openBucket(SHELL_CACHE);
     const held = [...bucket].find((url) => absolute(url) === absolute(BULLETIN_URL));
     bucket.delete(held);
     const justNow = new Date(Date.now() - 5 * 60 * 1000).toISOString();
@@ -929,6 +986,40 @@ describe('only what changed (SNOW-1416)', () => {
 
     expect(warmedUrls(0).map(absolute)).toEqual([absolute(BULLETIN_URL)]);
     expect((await storedArea()).contentAt).toBe(justNow);
+  });
+
+  it('refetches what only a retired shell cache holds', async () => {
+    // Codex review: after an update that could not carry every entry, the
+    // old cache is kept, but the worker serves only from its own.
+    await syncOnce();
+    const live = cachesStub.openBucket(SHELL_CACHE);
+    const retired = cachesStub.openBucket('snowdesk-shell-retired');
+    for (const url of live) retired.add(url);
+    live.clear();
+    await seedArea({ contentAt: new Date(Date.now() - 5 * 60 * 1000).toISOString() });
+
+    await window.pwaBasemapDownloads.refreshAreaContent(AREA_ID);
+
+    expect(warmedUrls(0).map(absolute)).toContain(absolute(BULLETIN_URL));
+  });
+
+  it('asks the worker in control, and fetches the whole plan when it does not answer', async () => {
+    await syncOnce();
+    await seedArea({ contentAt: new Date(Date.now() - 5 * 60 * 1000).toISOString() });
+    workerStub.silent = true;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const run = window.pwaBasemapDownloads.refreshAreaContent(AREA_ID);
+      await vi.waitFor(() => expect(workerStub.asked.length).toBeGreaterThan(0));
+      await vi.advanceTimersByTimeAsync(5000);
+      await run;
+    } finally {
+      vi.useRealTimers();
+      workerStub.silent = false;
+    }
+
+    expect(workerStub.asked.at(-1).map(absolute)).toContain(absolute(BULLETIN_URL));
+    expect(warmedUrls(0).map(absolute)).toContain(absolute(BULLETIN_URL));
   });
 
   it('leaves the tile half as it was: a whole map fetches no tiles', async () => {

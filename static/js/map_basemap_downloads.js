@@ -965,43 +965,74 @@ async function assembleAreaContentURLs(blob, terrain) {
 }
 
 /**
- * SNOW-1415: the stage the url at one index of a content plan belongs to.
+ * SNOW-1416: which of a content plan's urls this device already holds, in
+ * the sense that matters: the worker would serve them offline now.
  *
- * @param {{weather: number, things: number}|undefined} stageFrom From
- *   `assembleAreaContentURLs`.
- * @param {number} index How many of the plan's urls have settled.
- * @returns {'bulletins'|'weather'|'things'}
+ * Asked of the worker in control (a `held-content` message), not read from
+ * Cache Storage here. A page-side read could not see the worker's rules: it
+ * would count an entry stamped for another account, which the worker refuses
+ * to serve, and an entry a retired shell cache still holds after an update,
+ * which the worker no longer reads. Both would be skipped by the sync and
+ * then fail to open offline. `_heldForOffline` in `sw.js` reads each url
+ * the way its own offline branch does.
+ *
+ * Rejects when there is no worker in control, or it does not answer within
+ * `HELD_CONTENT_BUDGET_MS`: the caller then fetches the whole plan.
+ *
+ * @param {string[]} hrefs Absolute urls.
+ * @returns {Promise<Set<string>>}
  */
+function _heldContentUrls(hrefs) {
+  const controller = navigator.serviceWorker && navigator.serviceWorker.controller;
+  if (!controller) return Promise.reject(new Error('no worker in control'));
+  const channel = new MessageChannel();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      channel.port1.close();
+      reject(new Error('the worker did not answer'));
+    }, HELD_CONTENT_BUDGET_MS);
+    channel.port1.onmessage = (event) => {
+      clearTimeout(timer);
+      channel.port1.close();
+      const held = event.data && event.data.held;
+      if (!Array.isArray(held)) {
+        reject(new Error('the worker could not read its cache'));
+        return;
+      }
+      resolve(new Set(held));
+    };
+    controller.postMessage({ type: 'held-content', urls: hrefs }, [channel.port2]);
+  });
+}
+
 /**
- * SNOW-1416: the part of a content plan a sync fetches — what the area's
- * bucket lacks, plus its held perishable urls when the area is stale
- * (`offline_autosync_core.js`'s `contentDelta`).
+ * SNOW-1416: the part of a content plan a sync fetches — what the device
+ * lacks (`_heldContentUrls`), plus its held perishable urls when the area
+ * is stale (`offline_autosync_core.js`'s `contentDelta`).
  *
- * Falls back to the whole plan when the core is not loaded or the bucket
- * cannot be read: a sync that cannot see what it holds fetches everything,
+ * Falls back to the whole plan when the core is not loaded or the worker
+ * cannot say what it holds: a sync that cannot see what it holds fetches everything,
  * as every sync did before this ticket.
  *
- * @param {string} areaId
  * @param {Object} record The area's stored record.
  * @param {{urls: string[], permanentUrls?: string[], stageFrom?: Object}} content
  * @returns {Promise<{urls: string[], stageFrom: Object|undefined, keepsContentAt?: string}>}
  *   `keepsContentAt` is the record's own `contentAt` when the area was
  *   fresh, so the stamp after the run leaves it where it was.
  */
-async function _contentDeltaFor(areaId, record, content) {
+async function _contentDeltaFor(record, content) {
   const autosync = self.pwaOfflineAutosyncCore;
   const core = self.pwaBasemapDownloadCore;
   const whole = { urls: content.urls, stageFrom: content.stageFrom };
-  if (!autosync || !core || !('caches' in window)) return whole;
+  if (!autosync || !core) return whole;
   const absolute = (url) => new URL(url, window.location.origin).href;
+  const byHref = new Map(content.urls.map((url) => [absolute(url), url]));
   let held;
   try {
-    const cache = await caches.open(core.pinnedCacheName(areaId));
-    held = new Set((await cache.keys()).map((request) => absolute(request.url)));
+    held = await _heldContentUrls([...byHref.keys()]);
   } catch (_e) {
     return whole;
   }
-  const byHref = new Map(content.urls.map((url) => [absolute(url), url]));
   const permanent = new Set((content.permanentUrls || []).map(absolute));
   const keep = new Set(
     autosync.contentDelta([...byHref.keys()], held, permanent, record, new Date()),
@@ -1019,6 +1050,14 @@ async function _contentDeltaFor(areaId, record, content) {
   return { urls: urls, stageFrom: stageFrom, keepsContentAt: keepsContentAt };
 }
 
+/**
+ * SNOW-1415: the stage the url at one index of a content plan belongs to.
+ *
+ * @param {{weather: number, things: number}|undefined} stageFrom From
+ *   `assembleAreaContentURLs`.
+ * @param {number} index How many of the plan's urls have settled.
+ * @returns {'bulletins'|'weather'|'things'}
+ */
 function contentStageAt(stageFrom, index) {
   if (!stageFrom) return 'bulletins';
   if (index >= stageFrom.things) return 'things';
@@ -1079,6 +1118,10 @@ function isAreaItems(data) {
 // rather than a target — see `offline_audit.js`'s own comment on the
 // twin constant for the full reasoning.
 const AREA_CONTENT_FETCH_BUDGET_MS = 15000;
+
+// SNOW-1416: how long `_heldContentUrls` waits for the worker's answer. One
+// cache read per url, so generous; past it the sync fetches the whole plan.
+const HELD_CONTENT_BUDGET_MS = 5000;
 
 /**
  * Ask the server what one rectangle contains — `/api/area-content/`, or
@@ -4067,7 +4110,7 @@ async function refreshAreaContent(areaId, onStage) {
   }
 
   // SNOW-1416: only what changed — see `_contentDeltaFor`.
-  const delta = await _contentDeltaFor(areaId, found.record, content);
+  const delta = await _contentDeltaFor(found.record, content);
   if (delta.urls.length === 0) {
     const autosync = self.pwaOfflineAutosyncCore;
     // A fresh, whole area: nothing to fetch, and its `contentAt` must not

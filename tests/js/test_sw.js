@@ -3701,6 +3701,114 @@ describe('answering whether the app would open offline (SNOW-922)', () => {
   });
 });
 
+describe('_heldForOffline (SNOW-1416)', () => {
+  // A sync skips what this answers held, so a wrong "held" is content that
+  // never comes back and does not open offline. Each case is a read the
+  // worker's own offline branch would refuse.
+  const SHELL = 'snowdesk-shell-UNSUBSTITUTED';
+  const DAY = '2026-11-04';
+  const SHEET = `/partials/region-sheet/ch-4115/?d=${DAY}`;
+  const WEATHER = `/api/weather/Ab3dE_fGh1J/detail/?date=${DAY}`;
+  const BULLETIN = `/ch/zermatt/${DAY}/`;
+  const TRIP = '/trips/0b6f3c1e-8a2d-4c5e-9f10-1a2b3c4d5e6f/';
+  const ROUTE = `${TRIP}route.geojson`;
+  const stamped = (principal) =>
+    new Response('x', { headers: { 'X-SW-Principal': principal } });
+  const abs = (path) => ORIGIN + path;
+
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  /** Every url held for `acct-a`, in the live shell cache. */
+  function seeded(cacheName = SHELL) {
+    const caches = makeCaches();
+    caches.seed(cacheName, abs(SHEET), new Response('sheet'));
+    caches.seed(cacheName, abs(WEATHER), new Response('{}'));
+    caches.seed(cacheName, abs(BULLETIN), stamped('acct-a'));
+    caches.seed(cacheName, abs(TRIP), stamped('acct-a'));
+    caches.seed(cacheName, abs(ROUTE), stamped('acct-a'));
+    return caches;
+  }
+
+  it('counts each class held the way its offline branch reads it', async () => {
+    const sw = loadSw({ caches: seeded() });
+    await setStoredPrincipal('acct-a');
+    const urls = [SHEET, WEATHER, BULLETIN, TRIP, ROUTE].map(abs);
+
+    expect(await sw._heldForOffline(urls)).toEqual(urls);
+  });
+
+  it('finds a sheet asked for with the reports cache-buster under its day key', async () => {
+    const sw = loadSw({ caches: seeded() });
+
+    expect(await sw._heldForOffline([abs(`${SHEET}&r=7`)])).toEqual([abs(`${SHEET}&r=7`)]);
+  });
+
+  it("does not count another account's pages, trip or route", async () => {
+    const sw = loadSw({ caches: seeded() });
+    await setStoredPrincipal('acct-b');
+    const urls = [SHEET, WEATHER, BULLETIN, TRIP, ROUTE].map(abs);
+
+    expect(await sw._heldForOffline(urls)).toEqual([abs(SHEET), abs(WEATHER)]);
+  });
+
+  it('does not count a private route for a signed-out reader', async () => {
+    const caches = seeded();
+    caches.seed(SHELL, abs(ROUTE), stamped('anonymous'));
+    const sw = loadSw({ caches });
+
+    expect(await sw._heldForOffline([abs(ROUTE)])).toEqual([]);
+  });
+
+  it('does not count what only a retired shell cache holds', async () => {
+    // An update that could not carry every entry keeps the old cache, but
+    // the worker reads only CACHE_VERSION.
+    const sw = loadSw({ caches: seeded('snowdesk-shell-retired') });
+    await setStoredPrincipal('acct-a');
+
+    expect(await sw._heldForOffline([SHEET, WEATHER, BULLETIN].map(abs))).toEqual([]);
+  });
+
+  it('never counts a cross-origin or unparseable url', async () => {
+    const sw = loadSw({ caches: seeded() });
+
+    expect(await sw._heldForOffline(['https://tiles.example/1/2/3.pbf', 'not a url'])).toEqual([]);
+  });
+
+  it('replies down the transferred port', async () => {
+    const sw = loadSw({ caches: seeded() });
+    const replies = [];
+
+    sw.__listeners.message({
+      data: { type: 'held-content', urls: [abs(WEATHER), abs('/api/nothing/')] },
+      ports: [{ postMessage: (data) => replies.push(data) }],
+      waitUntil: () => {},
+    });
+    await flush();
+    await flush();
+
+    expect(replies).toEqual([{ type: 'held-content', held: [abs(WEATHER)] }]);
+  });
+
+  it('answers null when Cache Storage is unusable, so the page fetches everything', async () => {
+    const sw = loadSw({
+      caches: { open: () => Promise.reject(new Error('no storage')), keys: () => Promise.resolve([]) },
+    });
+    const replies = [];
+
+    sw.__listeners.message({
+      data: { type: 'held-content', urls: [abs(WEATHER)] },
+      ports: [{ postMessage: (data) => replies.push(data) }],
+      waitUntil: () => {},
+    });
+    await flush();
+    await flush();
+
+    expect(replies).toEqual([{ type: 'held-content', held: null }]);
+  });
+});
+
 describe('legacy root map links (SNOW-1047)', () => {
   // The map moved from `/` to `/map/`. Online, the server 301s `/?d=…`;
   // offline that request never reaches it, so the worker must answer the
