@@ -4239,6 +4239,21 @@ html[data-route-drawing] #map-slopes-notice {
     height: var(--map-control-sm);
 }
 
+/* A map sheet's save star (_place_sheet_body.html) is a glass roundel the
+   size of the region sheet's pin proxy beside the same title (Hugo, 4 Nov
+   2026: "the favourite icon on the resort panel should appear in a roundel,
+   as per the region panel"). The star ships disabled until the favourites
+   feed is read (map_place_sheet.js), and dims as the pin's 'no-region'
+   state does, rather than looking pressable. A queued save is disabled
+   too, but aria-busy: its star stays solid, since it is saved. */
+.map-sheet-roundel:disabled {
+    cursor: default;
+}
+
+.map-sheet-roundel:disabled:not([aria-busy="true"]) svg {
+    opacity: 0.45;
+}
+
 /* Matches .map-download-control's muted-glyph treatment for the states that
    cannot act — the shell stays legible, only the mark dims, so the control
    reads as unavailable rather than missing. */
@@ -7085,12 +7100,14 @@ body.map-framing #map-legend {
         margin-bottom: 4px;
     }
 
-    [data-detents] [data-region-sheet-proxy] {
+    /* The resort and location sheets' save stars (.map-sheet-roundel) take
+       the same 32px, so every sheet's header actions are one size. */
+    [data-detents] :is([data-region-sheet-proxy], .map-sheet-roundel) {
         width: 32px;
         height: 32px;
     }
 
-    [data-detents] [data-region-sheet-proxy] svg {
+    [data-detents] :is([data-region-sheet-proxy], .map-sheet-roundel) svg {
         width: 16px;
         height: 16px;
     }

@@ -720,10 +720,23 @@
     dismiss.type = 'button';
     dismiss.dataset.action = 'dismiss';
     dismiss.setAttribute('aria-label', STRINGS.dismiss);
-    dismiss.textContent = '×';
+    // The house close glyph (templates/includes/_icon_close.html), drawn
+    // here because this banner is built in script: the same two strokes,
+    // not a typed "×", so every dismiss on the site is one mark.
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    const glyph = document.createElementNS(SVG_NS, 'svg');
+    [['width', '16'], ['height', '16'], ['viewBox', '0 0 24 24'], ['fill', 'none'],
+      ['stroke', 'currentColor'], ['stroke-width', '2'], ['stroke-linecap', 'round'],
+      ['stroke-linejoin', 'round'], ['aria-hidden', 'true']].forEach(([k, v]) => glyph.setAttribute(k, v));
+    ['M18 6 6 18', 'm6 6 12 12'].forEach((d) => {
+      const path = document.createElementNS(SVG_NS, 'path');
+      path.setAttribute('d', d);
+      glyph.appendChild(path);
+    });
+    dismiss.appendChild(glyph);
     dismiss.style.cssText =
       'cursor:pointer;border:0;background:transparent;color:#64748b;' +
-      'font-size:20px;line-height:1;padding:0 .25rem;';
+      'display:inline-flex;align-items:center;padding:0 .25rem;';
     el.append(copy, reload, dismiss);
     document.body.appendChild(el);
     return el;

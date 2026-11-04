@@ -327,6 +327,19 @@ class TestResortPeek:
         assert 'data-label-save="Save resort"' in star
         assert 'data-label-remove="Remove from saved places"' in star
 
+    def test_the_star_and_its_sign_in_link_are_glass_roundels(
+        self, client: Client
+    ) -> None:
+        """Hugo, 4 Nov 2026: the region sheet's pin shape, not a bare icon."""
+        resort = _resort()
+        content = _get(client, _resort_url(resort.slug)).content.decode()
+        link = re.search(r"<a\b[^>]*data-resort-star-signin[^>]*>", content)
+        assert link is not None
+        for tag in (_star(content), link.group(0)):
+            assert "map-glass-roundel" in tag
+            assert "map-sheet-roundel" in tag
+            assert "rounded-tag" not in tag
+
     def test_the_sign_in_star_is_rendered_hidden(self, client: Client) -> None:
         """The script shows it to a reader the map says is signed out."""
         resort = _resort()

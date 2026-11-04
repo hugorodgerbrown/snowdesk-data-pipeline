@@ -47,9 +47,9 @@ rounded-card) and _button.html for the primary CTA.
                 type="button"
                 data-action="dismiss"
                 aria-label="{% trans 'Dismiss' %}"
-                class="text-text-3 hover:text-text-1 text-lg leading-none px-2"
+                class="inline-flex items-center text-text-3 hover:text-text-1 px-2"
             >
-                &times;
+                {% include "includes/_icon_close.html" with size=16 only %}
             </button>
         </div>
         <p class="text-xs text-text-2 mt-1">

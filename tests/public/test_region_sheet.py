@@ -233,6 +233,19 @@ class TestPeek:
         assert 'data-region-sheet-proxy="map-download-control"' in content
         assert 'data-action="dismiss"' in content
 
+    def test_the_proxies_paint_as_glass_roundels_before_the_script(
+        self, client: Client
+    ) -> None:
+        """The server copy takes the roundels' shape, so first paint matches."""
+        region = MicroRegionFactory.create()
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        for target in ("map-region-pin-control", "map-download-control"):
+            proxy = re.search(
+                rf'<button\b[^>]*data-region-sheet-proxy="{target}"[^>]*>', content
+            )
+            assert proxy is not None
+            assert "map-glass-roundel" in proxy.group(0)
+
     def test_an_unrated_day_has_no_tile(self, client: Client) -> None:
         region = MicroRegionFactory.create()
         content = _get(client, _url(region.region_id.lower())).content.decode()

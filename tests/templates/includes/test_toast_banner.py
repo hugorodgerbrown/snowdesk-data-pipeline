@@ -21,6 +21,8 @@ no database. Covers:
 
 from __future__ import annotations
 
+import re
+
 from django.template.loader import render_to_string
 
 TEMPLATE = "includes/_toast_banner.html"
@@ -159,9 +161,14 @@ class TestStaticFlag:
     """static=True renders inline (component library); static=False (default) is hidden+fixed."""
 
     def test_static_true_omits_hidden(self) -> None:
-        """static=True → hidden utility absent."""
+        """static=True → hidden utility absent.
+
+        Read from the class lists, not the whole markup: the dismiss
+        button's close glyph is ``aria-hidden``, which is not the utility.
+        """
         html = render({"static": True})
-        assert "hidden" not in html
+        classes = " ".join(re.findall(r'class="([^"]*)"', html)).split()
+        assert "hidden" not in classes
 
     def test_static_true_omits_fixed_positioning(self) -> None:
         """static=True → fixed/top-0/inset-x-0 positioning utilities absent."""

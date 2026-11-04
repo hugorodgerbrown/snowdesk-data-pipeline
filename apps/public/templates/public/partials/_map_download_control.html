@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n components %}
 {% comment %}
 public/partials/_map_download_control.html — the "Download basemap" control
 for the currently-focused region (SNOW-521; relocated to the bottom-right
@@ -45,7 +45,7 @@ no basemap to fetch, which is what the label says.
 <button
     type="button"
     id="map-download-control"
-    class="map-glass-roundel map-download-control hover-affordance"
+    class="{% roundel_classes extra='map-download-control' %}"
     data-download-state="no-region"
     aria-disabled="true"
     aria-label="{% trans 'Select a region to download its basemap' %}"

@@ -122,9 +122,9 @@ Optional context:
                 type="button"
                 data-action="dismiss"
                 aria-label="{% trans 'Dismiss' %}"
-                class="ml-auto shrink-0 cursor-pointer px-2 text-lg leading-none opacity-70 transition-opacity hover:opacity-100"
+                class="ml-auto inline-flex shrink-0 cursor-pointer items-center px-2 opacity-70 transition-opacity hover:opacity-100"
             >
-                &times;
+                {% include "includes/_icon_close.html" with size=16 only %}
             </button>
         {% endif %}
     </div>
@@ -176,9 +176,9 @@ Optional context:
                         type="button"
                         data-action="dismiss"
                         aria-label="{% trans 'Dismiss' %}"
-                        class="cursor-pointer text-text-3 hover:text-text-1 text-lg leading-none px-2"
+                        class="inline-flex cursor-pointer items-center text-text-3 hover:text-text-1 px-2"
                     >
-                        &times;
+                        {% include "includes/_icon_close.html" with size=16 only %}
                     </button>
                 {% endif %}
             </div>

@@ -20,6 +20,8 @@ no database. Covers:
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from django.template.loader import render_to_string
 
@@ -224,9 +226,14 @@ class TestStaticFlag:
         assert "fixed" not in html
 
     def test_static_true_omits_hidden(self) -> None:
-        """static=True → hidden utility absent."""
+        """static=True → hidden utility absent.
+
+        Read from the class lists, not the whole markup: the dismiss
+        button's close glyph is ``aria-hidden``, which is not the utility.
+        """
         html = render({"kind": "info", "body": "Note.", "static": True})
-        assert "hidden" not in html
+        classes = " ".join(re.findall(r'class="([^"]*)"', html)).split()
+        assert "hidden" not in classes
 
     def test_static_false_uses_hidden(self) -> None:
         """static=False (default) → hidden in class attribute."""
