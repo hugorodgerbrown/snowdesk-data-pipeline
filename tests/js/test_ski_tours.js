@@ -316,6 +316,64 @@ describe('offline, from what a download saved (SNOW-1417)', () => {
     expect(toast).not.toHaveBeenCalled();
   });
 
+  it('drops a saved read a later view replaced, rather than painting it', async () => {
+    // Codex review: two areas, the first read landing after the second.
+    const FIRST = `${GEOJSON_URL}?bbox=7.2,46,7.5,46.2`;
+    const SECOND = `${GEOJSON_URL}?bbox=9,47,9.2,47.2`;
+    const map = await bootOffline([FIRST, SECOND]);
+    const painted = [];
+    const source = { setData: (data) => painted.push(data) };
+    map.getSource = () => source;
+    const answer = (uuid) => ({
+      ok: true,
+      json: () => Promise.resolve({
+        type: 'FeatureCollection',
+        features: [{ type: 'Feature', properties: { kind: 'tour', uuid }, geometry: null }],
+      }),
+    });
+    let releaseFirst;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) => {
+        if (String(url) === FIRST) return new Promise((resolve) => { releaseFirst = () => resolve(answer('first')); });
+        if (String(url) === SECOND) return Promise.resolve(answer('second'));
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(EMPTY_FC) });
+      }),
+    );
+    window.pwaSkiRoutes.show();
+    map.flyTo({ center: [7.33, 46.06], zoom: 13 });
+    await waitFor(() => !!releaseFirst);
+    map.flyTo({ center: [9.1, 47.1], zoom: 13 });
+    await waitFor(() => fetch.mock.calls.some((call) => String(call[0]) === SECOND));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    releaseFirst();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const tours = painted.filter((data) => data && data.features && data.features.length);
+    const last = tours[tours.length - 1];
+    expect(last.features.map((f) => f.properties.uuid)).toEqual(['second']);
+  });
+
+  it('marks only the view as loaded, not the rectangle round the boxes it read', async () => {
+    // Codex review: the view overlaps a south-western and a north-eastern
+    // box; a third box inside their bounding rectangle, off the view, must
+    // still be read when the view moves onto it.
+    const SW = `${GEOJSON_URL}?bbox=7,46,7.21,46.21`;
+    const NE = `${GEOJSON_URL}?bbox=7.29,46.29,7.5,46.5`;
+    const NW = `${GEOJSON_URL}?bbox=7,46.4,7.1,46.5`;
+    const map = await bootOffline([SW, NE, NW]);
+    window.pwaSkiRoutes.show();
+    map.flyTo({ center: [7.25, 46.25], zoom: 13 });
+    await waitFor(() => fetch.mock.calls.some((call) => String(call[0]) === NE));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(fetch.mock.calls.some((call) => String(call[0]) === NW)).toBe(false);
+
+    map.flyTo({ center: [7.06, 46.44], zoom: 13 });
+    await waitFor(() => fetch.mock.calls.some((call) => String(call[0]) === NW));
+
+    expect(fetch.mock.calls.some((call) => String(call[0]) === NW)).toBe(true);
+  });
+
   it('says tours need signal for a summit no download covers', async () => {
     const map = await bootOffline([`${GEOJSON_URL}?bbox=9,47,9.2,47.2`]);
     window.pwaSkiTours.openSummit(SUMMIT);

@@ -115,6 +115,11 @@
      */
     /** @type {?[number, number, number, number]} */
     savedFor: null,
+    /**
+     * SNOW-1417 review: bumped by every load, so a saved read a later load
+     * replaced is dropped when it lands rather than painting over it.
+     */
+    savedToken: 0,
     /** The tour the panel was asked for last, so a late answer is dropped. */
     /** @type {?string} */
     opening: null,
@@ -338,6 +343,8 @@
    */
   function fetchData(url, done, missed) {
     if (state.inflight) state.inflight.abort();
+    // A saved read still in flight is for an older view.
+    state.savedToken += 1;
     const inflight = new AbortController();
     state.inflight = inflight;
     fetch(url, { credentials: 'same-origin', signal: inflight.signal })
@@ -448,7 +455,10 @@
   function loadSaved(map, view) {
     if (state.savedFor && core.covers(state.savedFor, view)) return;
     state.savedFor = view;
+    state.savedToken += 1;
+    const token = state.savedToken;
     savedBoxUrls().then(function (all) {
+      if (token !== state.savedToken) return;
       const saved = core.savedBoxesFor(view, all);
       if (!saved.urls.length) {
         state.savedFor = null;
@@ -462,13 +472,18 @@
             .catch(function () { return null; });
         }),
       ).then(function (answers) {
+        if (token !== state.savedToken) return;
         state.savedFor = null;
         const body = core.mergeAnswers(answers);
         const ok = body.features.length > 0;
         settleSummit(ok);
         if (!ok) return;
         state.mode = 'detail';
-        state.loaded = saved.box;
+        // SNOW-1417 review: the VIEW is what is loaded, not the rectangle
+        // round the boxes read. Every saved box overlapping the view was
+        // read, so nothing more is saved for it; the boxes' bounding
+        // rectangle can take in ground whose own box was not read.
+        state.loaded = view;
         paintData(map, body);
       });
     });
