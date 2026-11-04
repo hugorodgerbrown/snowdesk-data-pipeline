@@ -73,8 +73,12 @@ now, not the header, at that strip's own 16px.
     {# an aria-label render() builds from budgetSegments(): one image with  #}
     {# one description, rather than a progressbar, because the reading is   #}
     {# "what is in it", not "how far along".                                #}
+    {# The fill is one neutral colour now: the per-basemap colours lost     #}
+    {# their key when the rows dropped their basemap dot (a dot in the      #}
+    {# offline surfaces means offline status). The aria-label still lists  #}
+    {# the composition; the rows name each basemap in words.               #}
     <div data-downloads-track class="h-2 w-full overflow-hidden rounded-pill bg-chip" role="img">
-        <div data-downloads-bar class="flex h-full rounded-pill" style="width: 0%"></div>
+        <div data-downloads-bar class="h-full rounded-pill bg-text-1" style="width: 0%"></div>
     </div>
     {# Shown only when stored downloads exceed the budget — reachable by    #}
     {# lowering the budget below what is already held, which is allowed     #}
