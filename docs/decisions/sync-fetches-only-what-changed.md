@@ -63,8 +63,12 @@ that up while the page is open.
 
 **Why the filter is page-side.** The service worker's warm refetches every
 url it is given; it has no notion of "held". `_contentDeltaFor` in
-`static/js/map_basemap_downloads.js` opens the pinned bucket, reads the
-held urls, and hands the warm only the delta. Without the Cache API or the
+`static/js/map_basemap_downloads.js` asks every cache which of the plan's
+urls it holds (`_heldContentUrls`, `caches.match` with `ignoreVary`) and
+hands the warm only the delta. Every cache, not the area's pinned bucket:
+the warm writes same-origin content into the worker's shell cache and only
+the cross-origin tiles into the bucket, so a bucket-only lookup found no
+content held and every sync fetched the whole plan. Without the Cache API or the
 core it falls back to the whole plan, which is the old behaviour.
 
 **Why `contentAt` does not always move.** A run on a fresh area that only

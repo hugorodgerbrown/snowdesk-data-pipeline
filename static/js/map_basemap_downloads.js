@@ -965,43 +965,54 @@ async function assembleAreaContentURLs(blob, terrain) {
 }
 
 /**
- * SNOW-1415: the stage the url at one index of a content plan belongs to.
+ * SNOW-1416: which of a content plan's urls this device already holds.
  *
- * @param {{weather: number, things: number}|undefined} stageFrom From
- *   `assembleAreaContentURLs`.
- * @param {number} index How many of the plan's urls have settled.
- * @returns {'bulletins'|'weather'|'things'}
+ * Asked of every cache at once (`caches.match`), not of the area's pinned
+ * bucket: the worker's warm writes same-origin content — bulletins, sheets,
+ * weather, trips — into its shell cache, and only the cross-origin tiles
+ * into the pinned bucket. `ignoreVary`, because the stored answers vary on
+ * language and cookie and the lookup carries neither. A region or resort
+ * sheet is stored under its path and `d` alone, which is the url the plan
+ * names for it.
+ *
+ * @param {string[]} hrefs Absolute urls.
+ * @returns {Promise<Set<string>>}
  */
+async function _heldContentUrls(hrefs) {
+  const found = await Promise.all(
+    hrefs.map((href) => caches.match(href, { ignoreVary: true }).then((hit) => (hit ? href : ''))),
+  );
+  return new Set(found.filter(Boolean));
+}
+
 /**
- * SNOW-1416: the part of a content plan a sync fetches — what the area's
- * bucket lacks, plus its held perishable urls when the area is stale
- * (`offline_autosync_core.js`'s `contentDelta`).
+ * SNOW-1416: the part of a content plan a sync fetches — what the device
+ * lacks (`_heldContentUrls`), plus its held perishable urls when the area
+ * is stale (`offline_autosync_core.js`'s `contentDelta`).
  *
- * Falls back to the whole plan when the core is not loaded or the bucket
+ * Falls back to the whole plan when the core is not loaded or the caches
  * cannot be read: a sync that cannot see what it holds fetches everything,
  * as every sync did before this ticket.
  *
- * @param {string} areaId
  * @param {Object} record The area's stored record.
  * @param {{urls: string[], permanentUrls?: string[], stageFrom?: Object}} content
  * @returns {Promise<{urls: string[], stageFrom: Object|undefined, keepsContentAt?: string}>}
  *   `keepsContentAt` is the record's own `contentAt` when the area was
  *   fresh, so the stamp after the run leaves it where it was.
  */
-async function _contentDeltaFor(areaId, record, content) {
+async function _contentDeltaFor(record, content) {
   const autosync = self.pwaOfflineAutosyncCore;
   const core = self.pwaBasemapDownloadCore;
   const whole = { urls: content.urls, stageFrom: content.stageFrom };
   if (!autosync || !core || !('caches' in window)) return whole;
   const absolute = (url) => new URL(url, window.location.origin).href;
+  const byHref = new Map(content.urls.map((url) => [absolute(url), url]));
   let held;
   try {
-    const cache = await caches.open(core.pinnedCacheName(areaId));
-    held = new Set((await cache.keys()).map((request) => absolute(request.url)));
+    held = await _heldContentUrls([...byHref.keys()]);
   } catch (_e) {
     return whole;
   }
-  const byHref = new Map(content.urls.map((url) => [absolute(url), url]));
   const permanent = new Set((content.permanentUrls || []).map(absolute));
   const keep = new Set(
     autosync.contentDelta([...byHref.keys()], held, permanent, record, new Date()),
@@ -1019,6 +1030,14 @@ async function _contentDeltaFor(areaId, record, content) {
   return { urls: urls, stageFrom: stageFrom, keepsContentAt: keepsContentAt };
 }
 
+/**
+ * SNOW-1415: the stage the url at one index of a content plan belongs to.
+ *
+ * @param {{weather: number, things: number}|undefined} stageFrom From
+ *   `assembleAreaContentURLs`.
+ * @param {number} index How many of the plan's urls have settled.
+ * @returns {'bulletins'|'weather'|'things'}
+ */
 function contentStageAt(stageFrom, index) {
   if (!stageFrom) return 'bulletins';
   if (index >= stageFrom.things) return 'things';
@@ -4067,7 +4086,7 @@ async function refreshAreaContent(areaId, onStage) {
   }
 
   // SNOW-1416: only what changed — see `_contentDeltaFor`.
-  const delta = await _contentDeltaFor(areaId, found.record, content);
+  const delta = await _contentDeltaFor(found.record, content);
   if (delta.urls.length === 0) {
     const autosync = self.pwaOfflineAutosyncCore;
     // A fresh, whole area: nothing to fetch, and its `contentAt` must not

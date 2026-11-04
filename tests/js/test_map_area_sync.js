@@ -42,6 +42,13 @@ const REGION_ID = 'CH-4115';
 const REGION_SLUG = 'martigny-verbier';
 const TEMPLATE = 'https://tiles.example.invalid/{z}/{x}/{y}.pbf';
 const PINNED_PREFIX = 'snowdesk-basemap-pinned-';
+// The worker's shell cache, where a warm puts same-origin content.
+const SHELL_CACHE = 'snowdesk-shell-test';
+
+/** A url made absolute against the page, as the cache keys compare. */
+function absolute(url) {
+  return new URL(url, window.location.origin).href;
+}
 const TODAY = '2026-01-06';
 const AREA_ID = 'custom-a1';
 
@@ -212,6 +219,14 @@ function installCachesStub() {
       };
     }),
     delete: vi.fn(async (name) => buckets.delete(name)),
+    // Every cache at once, as the page's held-content lookup asks.
+    match: vi.fn(async (request) => {
+      const href = absolute(typeof request === 'string' ? request : request.url);
+      for (const store of buckets.values()) {
+        for (const url of store) if (absolute(url) === href) return { headers: { get: () => null } };
+      }
+      return undefined;
+    }),
   };
   Object.defineProperty(window, 'caches', { value: stub, configurable: true, writable: true });
   return stub;
@@ -422,9 +437,15 @@ beforeAll(async () => {
       return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
     }),
   );
+  // As the worker does: same-origin content into the shell cache, and
+  // only the cross-origin tiles into the area's pinned bucket.
   window.pwaWarmCache = vi.fn(async (urls, options) => {
-    const cache = await window.caches.open(PINNED_PREFIX + options.areaId);
-    for (const url of urls) await cache.put(url, {});
+    const pinned = await window.caches.open(PINNED_PREFIX + options.areaId);
+    const shell = await window.caches.open(SHELL_CACHE);
+    for (const url of urls) {
+      const sameOrigin = new URL(url, window.location.origin).origin === window.location.origin;
+      await (sameOrigin ? shell : pinned).put(url, {});
+    }
     if (options.onProgress) {
       options.onProgress(urls.length, urls.length, urls.map((_u, i) => i), 4096);
     }
@@ -847,7 +868,6 @@ describe('what a sync tells the connection panel (SNOW-1415)', () => {
 });
 
 describe('only what changed (SNOW-1416)', () => {
-  const absolute = (url) => new URL(url, window.location.origin).href;
 
   /** Fill the bucket with a first sync's documents, then forget the call. */
   async function syncOnce() {
@@ -919,7 +939,8 @@ describe('only what changed (SNOW-1416)', () => {
 
   it('sends only the missing url to a fresh area, and keeps its stamp', async () => {
     await syncOnce();
-    const bucket = cachesStub.openBucket(PINNED_PREFIX + AREA_ID);
+    // The worker keeps same-origin content in its shell cache.
+    const bucket = cachesStub.openBucket(SHELL_CACHE);
     const held = [...bucket].find((url) => absolute(url) === absolute(BULLETIN_URL));
     bucket.delete(held);
     const justNow = new Date(Date.now() - 5 * 60 * 1000).toISOString();
