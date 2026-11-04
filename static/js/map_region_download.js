@@ -864,7 +864,9 @@
    * @returns {boolean}
    */
   function _runIncludesTerrain() {
-    return terrainOverride !== null ? terrainOverride : terrainDataPreferred();
+    // Terrain comes with every download where it is available; an
+    // account row's choice can only add it.
+    return terrainOverride === true || terrainDataPreferred();
   }
 
   /**
@@ -2353,10 +2355,6 @@
   refreshBasemapDeviceCeiling().then(() => renderControl());
 
   document.addEventListener('snowdesk:basemap-changed', () => renderControl());
-
-  // SNOW-1072: the idle label states what terrain data adds, and the
-  // ceiling check counts it, so a change to the preference repaints.
-  document.addEventListener('snowdesk:terrain-data-changed', () => renderControl());
 
   // Offline-integrity: re-render on every connectivity transition so the
   // icon greys out (offline, not yet downloaded) or becomes actionable

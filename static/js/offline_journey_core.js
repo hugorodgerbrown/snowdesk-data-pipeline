@@ -790,9 +790,9 @@
 
   /**
    * @typedef {Object} InventoryRow
-   * @property {'map'|'bulletin'|'weather'|'routes'|'trips'|'places'|'tours'|'resorts'|'reports'} key
+   * @property {'map'|'terrain'|'bulletin'|'weather'|'routes'|'trips'|'places'|'tours'|'resorts'|'reports'} key
    * @property {InventoryStatus} status `partial` is what a sync fixes;
-   *   `missing` is the map, which only a fresh download fixes.
+   *   `missing` is the map or terrain, which only a fresh download fixes.
    * @property {number} [count] A count row's stamped total.
    * @property {string} [at] The bulletin and weather rows: `contentAt`.
    */
@@ -851,11 +851,13 @@
    * absolute urls the worker said it would serve offline (SNOW-1416's
    * `held-content`), and `overlayIds`, the route and report ids the
    * map's overlay cache holds. Absent or null, a row follows its stage.
+   * `terrainAvailable` adds the terrain row: the map's status when the
+   * area was saved with terrain data, missing when it was not.
    *
    * @param {any} record A `basemap.regions` or `basemap.customAreas` row.
    * @param {string|Date} [now]
    * @param {{signedIn?: boolean, principal?: string, origin?: string,
-   *   held?: Set<string>|null,
+   *   terrainAvailable?: boolean, held?: Set<string>|null,
    *   overlayIds?: {routes?: Set<string>|null, reports?: Set<string>|null}|null}} [options]
    * @returns {InventoryRow[]}
    */
@@ -894,9 +896,17 @@
     /** @type {InventoryRow[]} */
     var rows = [
       { key: 'map', status: fromStage(stages.map, true) },
+    ];
+    // The terrain-class tiles, on their own row where this page can fetch
+    // them. They ride in the map's bucket and its reading; an area saved
+    // without them lacks them until it is downloaded again.
+    if (opts.terrainAvailable) {
+      rows.push({ key: 'terrain', status: r.terrain ? rows[0].status : 'missing' });
+    }
+    rows.push(
       { key: 'bulletin', status: conditions, at: at },
       { key: 'weather', status: conditions, at: at },
-    ];
+    );
     var ours =
       !!opts.signedIn &&
       typeof items.principal === 'string' &&

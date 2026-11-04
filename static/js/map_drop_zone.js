@@ -844,12 +844,6 @@
     if (!overlayEl.hidden) refresh();
   });
 
-  // SNOW-1072: the terrain-data preference changes what a drop costs, so an
-  // open drop is re-sized and re-priced, as for a basemap swap.
-  document.addEventListener('snowdesk:terrain-data-changed', () => {
-    if (!overlayEl.hidden && runState !== 'busy' && runState !== 'done') refresh();
-  });
-
   // Going offline mid-decision disables the button rather than failing the
   // tap; coming back enables it.
   document.addEventListener('snowdesk:connectivity-changed', () => {

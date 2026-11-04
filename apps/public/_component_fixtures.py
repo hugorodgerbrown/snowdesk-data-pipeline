@@ -2226,8 +2226,14 @@ DOWNLOADS_INVENTORY_VARIANTS: tuple[dict[str, Any], ...] = (
             "label": "What's in Zermatt",
             "items": [
                 {
-                    "label": "Map and terrain",
-                    "value": "72 MB",
+                    "label": "Map",
+                    "value": "61.0 MB",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+                {
+                    "label": "Terrain",
+                    "value": "11.0 MB",
                     "dot": _INVENTORY_HELD,
                     "status": "Works offline",
                 },
@@ -2278,15 +2284,21 @@ DOWNLOADS_INVENTORY_VARIANTS: tuple[dict[str, Any], ...] = (
     },
     {
         # Signed out, the reader's own rows are absent, not zero.
-        "caption": "Signed out — no routes, trips or places",
+        "caption": "Signed out, saved without terrain — no routes, trips or places",
         "context": {
             "label": "What's in Verbier",
             "items": [
                 {
-                    "label": "Map and terrain",
-                    "value": "96 MB",
+                    "label": "Map",
+                    "value": "96.0 MB",
                     "dot": _INVENTORY_HELD,
                     "status": "Works offline",
+                },
+                {
+                    "label": "Terrain",
+                    "value": "Not saved",
+                    "dot": "bg-sync-blocked",
+                    "status": "Missing",
                 },
                 {
                     "label": "Avalanche bulletin",

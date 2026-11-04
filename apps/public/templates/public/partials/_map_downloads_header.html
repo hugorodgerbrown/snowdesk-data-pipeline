@@ -30,13 +30,8 @@ DOWNLOAD_CEILING_MB) instead of being duplicated into markup that could
 drift from it. Their labels are pure numerals plus "MB", so nothing
 translatable is lost by generating them.
 
-SNOW-1072: the "Terrain data" switch — whether NEW downloads on this
-device include the terrain-class tiles the terrain filter paints from, so
-the filter works offline. Off by default; a device preference, saved at
-once by map_downloads_manager.js. Named for the data rather than the
-filter, because the same tiles serve more than one surface. Rendered only
-while the terrain filter is configured (``terrain_filter_eligible``), and
-hidden again by the JS when this page cannot fetch the tiles.
+SNOW-1072's "Terrain data" switch is gone: every download includes the
+terrain-class tiles wherever the terrain filter is configured.
 
 SNOW-645 review sizing, reconciled against the design: the bar is 8px
 tall on a `bg-chip` track and the <select> is mono on `bg-tag` at
@@ -103,15 +98,4 @@ now, not the header, at that strip's own 16px.
     </p>
     {# SNOW-860 put a line here pointing at /offline/ for everything this   #}
     {# panel is not about. SNOW-1420 removed it: /offline/ is unlisted.      #}
-    {% if terrain_filter_eligible %}
-        <div data-downloads-terrain class="flex items-center justify-between gap-3">
-            <div class="min-w-0">
-                <label for="map-downloads-terrain" class="text-sm text-text-1">{% trans "Terrain data" %}</label>
-                <p class="text-xs text-text-3">
-                    {% trans "Include it in new downloads so the terrain filter works offline. Adds about 11 MB to a typical region." %}
-                </p>
-            </div>
-            {% include "includes/_switch.html" with id="map-downloads-terrain" %}
-        </div>
-    {% endif %}
 </div>

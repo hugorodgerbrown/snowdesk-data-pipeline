@@ -87,7 +87,9 @@ metadata does not state one.
   measured 156, 133 and 100 kB against swisstopo's 20, 13 and 4.5 kB,
   where most of the raster is transparent. The download estimate charges
   88 KiB a tile (`TERRAIN_CLASS_BYTES_PER_TILE`); SNOW-1072 made them an
-  opt-in ("Terrain data"), so a reader chooses the cost.
+  opt-in ("Terrain data"), so a reader chose the cost. Since 4 Nov 2026
+  every download includes them
+  ([downloads-is-the-home-for-offline.md](downloads-is-the-home-for-offline.md)).
 - **Requires `TERRAIN_CLASS_TILE_URL`.** The setting defaults to empty. An
   environment without it has no terrain filter and, now, no slope layer.
 

@@ -2762,19 +2762,17 @@ class TestZoomControl:
 
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
-def test_downloads_sheet_offers_terrain_data_when_the_filter_is_configured() -> None:
-    """SNOW-1072: the downloads sheet carries the "Terrain data" switch.
+def test_downloads_sheet_has_no_terrain_switch_when_the_filter_is_configured() -> None:
+    """Every download includes terrain data, so the sheet offers no switch.
 
-    It is inside the sheet's body template, which the JS clones on open,
-    and the framing readout carries the line that states what it adds.
+    The framing readout still carries the line that states what it adds.
     """
     content = Client().get(reverse("public:map")).content.decode()
     body = content[content.index('id="map-downloads-body-template"') :]
     body = body[: body.index("</template>")]
 
-    assert "data-downloads-terrain" in body
-    assert 'id="map-downloads-terrain"' in body
-    assert "Terrain data" in body
+    assert "data-downloads-terrain" not in body
+    assert 'id="map-downloads-terrain"' not in body
     assert 'id="map-frame-terrain-readout"' in content
 
 

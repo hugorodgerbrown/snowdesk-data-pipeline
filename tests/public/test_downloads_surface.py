@@ -274,7 +274,8 @@ class TestDownloadsSheetAnswersOffline:
         assert "bg-tag" in inventory
         for key, words in (
             ("inventory-toggle-label", "What's in %(name)s"),
-            ("inventory-map", "Map and terrain"),
+            ("inventory-map", "Map"),
+            ("inventory-terrain", "Terrain"),
             ("inventory-bulletin", "Avalanche bulletin"),
             ("inventory-weather", "Weather"),
             ("inventory-routes", "Your routes"),

@@ -481,8 +481,7 @@ function terrainClassTileTemplate() {
 /**
  * SNOW-1072: whether this page can include terrain data in a download at
  * all — the class tileset is configured and the filter's core has loaded.
- * The "Terrain data" checkbox is hidden, and every download runs without
- * terrain, when it cannot.
+ * Every download runs without terrain when it cannot.
  *
  * @returns {boolean}
  */
@@ -490,50 +489,20 @@ function terrainDataAvailable() {
   return !!terrainClassTileTemplate() && !!self.pwaTerrainFilterCore;
 }
 
-// SNOW-1072: the "Terrain data" checkbox's state — whether NEW downloads
-// on this device include the terrain-class tiles. A device preference, in
-// localStorage beside the map's other preferences, because the region
-// roundel starts a download in one tap and has no flow of its own to ask
-// in. What a download actually included is recorded per area (`terrain`
-// on its record and its account row), so changing this never changes an
-// area already downloaded.
-const TERRAIN_DATA_STORAGE_KEY = 'snowdesk.downloads.terrainData';
-
 /**
- * SNOW-1072: whether the reader has opted in to terrain data for new
- * downloads. Off by default, and off wherever terrain data is unavailable.
+ * SNOW-1072: whether a NEW download includes the terrain-class tiles.
+ * Every download includes them wherever terrain data is available, so the
+ * terrain filter works offline in any area on this device. There was a
+ * "Terrain data" switch for this on the Downloads sheet, off by default;
+ * Hugo removed it (4 Nov 2026), so terrain comes with every download.
+ * What a download actually included is still recorded per area
+ * (`terrain` on its record and its account row): an area downloaded
+ * without terrain keeps reading so until it is downloaded again.
  *
  * @returns {boolean}
  */
 function terrainDataPreferred() {
-  if (!terrainDataAvailable()) return false;
-  try {
-    return window.localStorage.getItem(TERRAIN_DATA_STORAGE_KEY) === 'true';
-  } catch (_e) {
-    // Storage blocked (private mode, a sandboxed frame): the default.
-    return false;
-  }
-}
-
-/**
- * SNOW-1072: record the reader's terrain-data choice.
- *
- * @param {boolean} on
- * @returns {void}
- */
-function setTerrainDataPreferred(on) {
-  try {
-    if (on) {
-      window.localStorage.setItem(TERRAIN_DATA_STORAGE_KEY, 'true');
-    } else {
-      window.localStorage.removeItem(TERRAIN_DATA_STORAGE_KEY);
-    }
-  } catch (_e) {
-    // Best-effort: the checkbox still reflects the click for this page.
-  }
-  document.dispatchEvent(
-    new CustomEvent('snowdesk:terrain-data-changed', { detail: { on: !!on } }),
-  );
+  return terrainDataAvailable();
 }
 
 /**
@@ -2756,13 +2725,11 @@ window.pwaBasemapDownloads = Object.freeze({
   areaTerrainClassTileUrls: (record) => areaTerrainClassTileUrls(record),
 
   /**
-   * SNOW-1072: the "Terrain data" checkbox's model — whether this page can
-   * include terrain data at all, and whether the reader has opted in for
-   * new downloads. Writing it dispatches `snowdesk:terrain-data-changed`.
+   * SNOW-1072: whether this page can include terrain data at all, and so
+   * whether a new download does (`terrainDataPreferred`).
    */
   terrainDataAvailable: () => terrainDataAvailable(),
   terrainDataPreferred: () => terrainDataPreferred(),
-  setTerrainDataPreferred: (on) => setTerrainDataPreferred(on),
 
   // SNOW-844's `repair(areaId, urls)` stood here until SNOW-951. It was
   // the Manage downloads sheet's Repair control and nothing else, and

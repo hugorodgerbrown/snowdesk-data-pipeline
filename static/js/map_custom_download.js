@@ -178,7 +178,9 @@
    * @returns {boolean}
    */
   function _includesTerrain() {
-    return terrainOverride !== null ? terrainOverride : terrainDataPreferred();
+    // Terrain comes with every download where it is available; an
+    // override can only add it.
+    return terrainOverride === true || terrainDataPreferred();
   }
 
   /**
@@ -1512,17 +1514,6 @@
     if (pendingBbox && runState !== 'busy') _updateReadout();
   });
 
-  // SNOW-1072: the terrain-data preference changes the frame's ceiling and
-  // the readout's second line. Rare while framing (the checkbox is on the
-  // downloads sheet), but a second tab can change it.
-  document.addEventListener('snowdesk:terrain-data-changed', () => {
-    if (pendingBbox && runState !== 'busy') {
-      lockedSize = null;
-      lockedBbox = null;
-      _updateReadout();
-    }
-  });
-
   // SNOW-658: no boot probe. This was `renderControl()`, reading every
   // downloaded area out of IndexedDB to decide the roundel's idle/done
   // state; the roundel derives nothing from storage any more, so the read
@@ -1665,7 +1656,8 @@
 
       const bbox = opts.bbox.slice();
       const isDropZone = opts.type === 'dropzone';
-      const terrain = !!opts.terrain;
+      // Every download includes terrain where it is available.
+      const terrain = !!opts.terrain || terrainDataPreferred();
       const name = typeof opts.name === 'string' ? opts.name : '';
 
       MAP.fitBounds(_boundsFromBBox(bbox), { animate: false });

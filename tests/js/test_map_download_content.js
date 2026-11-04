@@ -1334,23 +1334,36 @@ describe('terrain data on a region download (SNOW-1072)', () => {
     window.caches.buckets.clear();
   }
 
-  afterEach(() => {
-    window.localStorage.clear();
-  });
+  /**
+   * Run `body` on a page whose terrain filter is not configured — the
+   * only way a new download goes without terrain data now that every
+   * download includes it.
+   *
+   * @param {() => Promise<void>} body
+   */
+  async function withoutTerrainData(body) {
+    const mapEl = document.getElementById('map');
+    const template = mapEl.dataset.terrainClassTileUrl;
+    delete mapEl.dataset.terrainClassTileUrl;
+    try {
+      await body();
+    } finally {
+      mapEl.dataset.terrainClassTileUrl = template;
+    }
+  }
 
-  it('pins no class tiles without the opt-in, and records none', async () => {
+  it('pins no class tiles on a page without terrain data, and records none', async () => {
     await forgetRegion();
     window.pwaWarmCache.mockClear();
 
-    await clickControl();
+    await withoutTerrainData(() => clickControl());
 
     expect(warmedUrls(0).some(isClassTile)).toBe(false);
     expect('terrain' in (await recordedRegion())).toBe(false);
   });
 
-  it('pins the class tiles over the area when opted in, and records the flag', async () => {
+  it('pins the class tiles over the area by default, and records the flag', async () => {
     await forgetRegion();
-    window.pwaBasemapDownloads.setTerrainDataPreferred(true);
     window.pwaWarmCache.mockClear();
 
     await clickControl();
@@ -1367,19 +1380,18 @@ describe('terrain data on a region download (SNOW-1072)', () => {
     expect(JSON.stringify(record).includes('terrain.example.invalid')).toBe(false);
   });
 
-  it('posts no problem-terrain feed without the opt-in (SNOW-1379)', async () => {
+  it('posts no problem-terrain feed without terrain data (SNOW-1379)', async () => {
     await forgetRegion();
     window.pwaWarmCache.mockClear();
 
-    await clickControl();
+    await withoutTerrainData(() => clickControl());
 
     expect(warmedUrls(0).some((url) => url.startsWith('/api/problem-terrain/'))).toBe(false);
     expect((await recordedRegion()).items.problemTerrain).toEqual([]);
   });
 
-  it('posts the problem-terrain feed per forward day when opted in, and stamps it (SNOW-1379)', async () => {
+  it('posts the problem-terrain feed per forward day with terrain data, and stamps it (SNOW-1379)', async () => {
     await forgetRegion();
-    window.pwaBasemapDownloads.setTerrainDataPreferred(true);
     window.pwaWarmCache.mockClear();
 
     await clickControl();
@@ -1391,8 +1403,8 @@ describe('terrain data on a region download (SNOW-1072)', () => {
   });
 
   it("refreshes the problem-terrain feed of an opted-in area from its record's flag (SNOW-1379)", async () => {
-    // Downloaded with terrain by the test above; the preference is off now
-    // (afterEach), so only the record can say the area carries terrain.
+    // Downloaded with terrain by the test above; only the record can say
+    // the area carries terrain.
     expect((await recordedRegion()).terrain).toBe(true);
     window.pwaWarmCache.mockClear();
 
@@ -1418,34 +1430,8 @@ describe('terrain data on a region download (SNOW-1072)', () => {
     expect(warmedUrls(0)).toEqual([missing]);
   });
 
-  it('prunes the class tiles a re-download without the opt-in no longer holds', async () => {
-    // Downloaded with terrain by the tests above; the preference is now off
-    // (afterEach cleared it). Losing a basemap tile reads the region as not
-    // downloaded, so the tap is a fresh run over the same bucket.
-    const btn = document.getElementById('map-download-control');
-    const bucket = window.caches.buckets.get(`${PINNED_PREFIX}region-${REGION_ID}`);
-    expect((await recordedRegion()).terrain).toBe(true);
-    for (const url of expectedClassTiles()) bucket.add(url);
-    const basemapTile = [...bucket].find((url) => !isClassTile(url) && url.endsWith('.pbf'));
-    bucket.delete(basemapTile);
-    document.dispatchEvent(new CustomEvent('snowdesk:connectivity-changed'));
-    await waitFor(() => btn.dataset.downloadState === 'idle');
-    window.pwaWarmCache.mockClear();
-
-    btn.click();
-    await waitFor(() => btn.dataset.downloadState === 'done');
-
-    expect(warmedUrls(0).some(isClassTile)).toBe(false);
-    // Recorded without the flag, nothing would ever count or evict the
-    // class tiles, so the run removes them.
-    expect('terrain' in (await recordedRegion())).toBe(false);
-    const held = [...window.caches.buckets.get(`${PINNED_PREFIX}region-${REGION_ID}`)];
-    expect(held.some(isClassTile)).toBe(false);
-  });
-
   it('states what terrain data adds on the idle label', async () => {
     await forgetRegion();
-    window.pwaBasemapDownloads.setTerrainDataPreferred(true);
     const btn = document.getElementById('map-download-control');
     document.dispatchEvent(
       new CustomEvent('snowdesk:region-selected', {
@@ -1455,10 +1441,6 @@ describe('terrain data on a region download (SNOW-1072)', () => {
     await waitFor(() => btn.dataset.downloadState === 'idle');
 
     expect(btn.getAttribute('aria-label')).toMatch(/terrain data/);
-
-    window.pwaBasemapDownloads.setTerrainDataPreferred(false);
-    await waitFor(() => !/terrain data/.test(btn.getAttribute('aria-label')));
-    expect(btn.getAttribute('aria-label')).not.toMatch(/terrain data/);
   });
 });
 
@@ -1578,7 +1560,8 @@ describe('a region record carries its principal (SNOW-1142)', () => {
 // fetches from.
 describe("the map's syncs stamp what they expected of your things (SNOW-1308)", () => {
   /** What the map's templates compose `AREA_ITEMS` into. */
-  function expected() {
+  function expected(options) {
+    const terrain = !options || options.terrain !== false;
     // With the principal of the session that synced (SNOW-1308 review) —
     // the page's `pwa-user-id`.
     const principal = document.querySelector('meta[name="pwa-user-id"]').getAttribute('content');
@@ -1591,9 +1574,10 @@ describe("the map's syncs stamp what they expected of your things (SNOW-1308)", 
       weatherDay: TODAY,
       favouriteSheet: '/partials/place-sheet/favourite/00000000-0000-0000-0000-000000000000/',
       }),
-      // SNOW-1379: and the problem-terrain days — none for an area
-      // downloaded without terrain tiles.
-      problemTerrain: [],
+      // SNOW-1379: and the problem-terrain days. Every download includes
+      // terrain data, so each forward day's feed is named; an area saved
+      // before that names none.
+      problemTerrain: terrain ? expect.arrayContaining([`/api/problem-terrain/?d=${TODAY}`]) : [],
       // SNOW-1417: and the community reports inside it — none in this
       // harness's feed — with when the feed was read.
       reports: [],
@@ -1663,7 +1647,7 @@ describe("the map's syncs stamp what they expected of your things (SNOW-1308)", 
     expect(await window.pwaBasemapDownloads.refreshAreaContent('custom-a9')).toBe(true);
 
     const row = await window.pwaDb.get('meta:app', 'basemap.customAreas');
-    expect(row.value[0].items).toEqual(expected());
+    expect(row.value[0].items).toEqual(expected({ terrain: false }));
   });
 
   it("never attributes another account's answer to this page's (SNOW-1308 review)", async () => {

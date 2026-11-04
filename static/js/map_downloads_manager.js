@@ -332,7 +332,8 @@
     'area-status-running': 'Syncing…',
     // SNOW-1418: the inventory under a row — see `fillInventory`.
     'inventory-toggle-label': "What's in %(name)s",
-    'inventory-map': 'Map and terrain',
+    'inventory-map': 'Map',
+    'inventory-terrain': 'Terrain',
     'inventory-bulletin': 'Avalanche bulletin',
     'inventory-weather': 'Weather',
     'inventory-routes': 'Your routes',
@@ -365,7 +366,7 @@
     // second copy of the row's own title, because the fact worth stating
     // on this line is why it has no Remove control.
     'kind-base': 'Shared',
-    'row-meta': '%(kind)s · %(basemap)s · %(size)s',
+    'row-meta': '%(kind)s · %(basemap)s',
     // A drop zone is a circle around where you were standing; a
     // custom area is a box you framed. Both are yours, both renameable —
     // and which one a row is is worth a word.
@@ -552,25 +553,6 @@
   /** @returns {Object|null} basemap_download_core.js's exports. */
   function downloadCore() {
     return window.pwaBasemapDownloadCore || null;
-  }
-
-  /**
-   * SNOW-1072: paint the "Terrain data" checkbox from the bridge — hidden
-   * where this page cannot include terrain data, checked to match the
-   * device preference otherwise.
-   *
-   * @returns {void}
-   */
-  function renderTerrainDataToggle() {
-    const block = sheet.querySelector('[data-downloads-terrain]');
-    if (!block) return;
-    const bridge = window.pwaBasemapDownloads;
-    const available = !!(bridge && bridge.terrainDataAvailable && bridge.terrainDataAvailable());
-    block.hidden = !available;
-    const input = /** @type {HTMLInputElement|null} */ (
-      block.querySelector('input[type="checkbox"]')
-    );
-    if (input) input.checked = available && !!bridge.terrainDataPreferred();
   }
 
   /**
@@ -1123,12 +1105,6 @@
       sheet.querySelector('[data-downloads-budget]')
     );
     if (select) renderBudgetOptions(select, chosenMb);
-
-    // SNOW-1072: the "Terrain data" checkbox — whether NEW downloads on
-    // this device include the terrain-class tiles. Rendered only on a page
-    // whose terrain filter is configured; set from the stored preference
-    // on every render, because the body is a fresh clone each time.
-    renderTerrainDataToggle();
 
     // SNOW-637: offline-integrity for the add-trigger. Listing and deleting
     // what is already stored needs no connection, but STARTING a download
@@ -1691,15 +1667,15 @@
         // this row deliberately does not carry).
         subtitle.textContent = kindLabel(row.kind);
       } else {
-        // Kind, basemap, size — "Region · Swisstopo (CH) ·
-        // 13.6 MB". The basemap moved here from the group heading it used
+        // Kind and basemap — "Region · Swisstopo (CH)". Hugo (4 Nov
+        // 2026) moved the size into the inventory under the row, where it
+        // is split into map and terrain. The basemap moved here from the group heading it used
         // to sort under, so the fact survives the grouping change. The
         // word is the whole of it: the row carries no basemap dot, because
         // a dot in these surfaces means offline status.
         subtitle.textContent = interpolate(STRINGS['row-meta'], {
           kind: kindLabel(row.kind),
           basemap: basemapName(row.basemapKey),
-          size: row.size,
         });
         // SNOW-932: and a CLAUSE when this area's content half fell short
         // — appended to the ordinary line rather than replacing it, which
@@ -2080,12 +2056,15 @@
   /**
    * One inventory value, in words: a size, a day, a time or a count.
    *
-   * @param {{key: string, count?: number, at?: string}} item
-   * @param {string} size The row's own size, for the map.
+   * @param {{key: string, status?: string, count?: number, at?: string}} item
+   * @param {{map: string, terrain: string}} size `inventorySizes`.
    * @returns {string}
    */
   function inventoryValue(item, size) {
-    if (item.key === 'map') return size || '';
+    if (item.key === 'map') return size.map || '';
+    if (item.key === 'terrain') {
+      return item.status === 'missing' ? STRINGS['inventory-never'] || '' : size.terrain;
+    }
     if (item.key === 'bulletin' || item.key === 'weather') {
       const stamp = window.pwaCachedStampCore;
       if (!item.at || !stamp) return STRINGS['inventory-never'] || '';
@@ -2100,6 +2079,37 @@
       });
     }
     return typeof item.count === 'number' ? String(item.count) : '';
+  }
+
+  /**
+   * The map and terrain sizes the inventory shows. The run records one
+   * total, so the terrain figure is the estimate the download was priced
+   * at (`terrainClassMb` over the area's class tiles) and the map is what
+   * is left of the total.
+   *
+   * @param {any} record The area's stored record.
+   * @param {string} size The row's formatted total, the fallback.
+   * @param {boolean} terrainAvailable Whether this page fetches terrain.
+   * @returns {{map: string, terrain: string}} `terrain` is '' when no
+   *   figure can be given.
+   */
+  function inventorySizes(record, size, terrainAvailable) {
+    const core = manageCore();
+    const downloadCore = self.pwaBasemapDownloadCore;
+    const bridge = window.pwaBasemapDownloads;
+    const bytes = Number(record && record.bytes) || 0;
+    if (!terrainAvailable || !record || !record.terrain || !core || !downloadCore || !bridge) {
+      return { map: size, terrain: '' };
+    }
+    const urls = typeof bridge.areaTerrainClassTileUrls === 'function'
+      ? bridge.areaTerrainClassTileUrls(record)
+      : [];
+    const terrainBytes = Math.min(bytes, downloadCore.terrainClassMb(urls.length) * 1024 * 1024);
+    if (!bytes || !terrainBytes) return { map: size, terrain: '' };
+    return {
+      map: core.formatMegabytes(bytes - terrainBytes),
+      terrain: core.formatMegabytes(terrainBytes),
+    };
   }
 
   /**
@@ -2119,7 +2129,12 @@
     if (!template || !journey) return;
     const principal = readerPrincipal();
     const readings = inventoryReadings.get(id) || {};
-    const rows = journey.inventoryFor(areaRecords.get(id), new Date(), {
+    const record = areaRecords.get(id);
+    const bridge = window.pwaBasemapDownloads;
+    const terrainAvailable = !!(bridge && bridge.terrainDataAvailable && bridge.terrainDataAvailable());
+    const sizes = inventorySizes(record, size, terrainAvailable);
+    const rows = journey.inventoryFor(record, new Date(), {
+      terrainAvailable: terrainAvailable,
       signedIn: !!principal,
       principal: principal,
       origin: window.location.origin,
@@ -2147,7 +2162,7 @@
       const label = li.querySelector('[data-inventory-label]');
       if (label) label.textContent = STRINGS['inventory-' + item.key] || '';
       const value = li.querySelector('[data-inventory-value]');
-      if (value) value.textContent = inventoryValue(item, size);
+      if (value) value.textContent = inventoryValue(item, sizes);
       const status = li.querySelector('[data-inventory-status]');
       if (status) status.textContent = STRINGS['inventory-status-' + item.status] || '';
       ul.appendChild(li);
@@ -2692,8 +2707,8 @@
       bbox = null;
     }
 
-    // SNOW-1072: the row's own terrain-data choice overrides this
-    // device's preference for the one download it starts.
+    // SNOW-1072: the row's own terrain-data choice. Every download now
+    // includes terrain where it is available, so this can only add it.
     const terrain = button.getAttribute('data-downloads-terrain') === 'true';
 
     // SNOW-1136: asked BEFORE the sheet hides, so a "no" leaves the user
@@ -3102,14 +3117,6 @@
   // user on a full device unable to say how much room they want to give up.
   sheet.addEventListener('change', function (event) {
     const target = /** @type {HTMLSelectElement} */ (event.target);
-    // SNOW-1072: the "Terrain data" checkbox. Saved at once, like the
-    // budget: it changes what the NEXT download fetches and nothing that
-    // is already on the device, so there is nothing to confirm.
-    if (target && target.matches && target.matches('[data-downloads-terrain] input')) {
-      const input = /** @type {HTMLInputElement} */ (/** @type {unknown} */ (target));
-      window.pwaBasemapDownloads?.setTerrainDataPreferred(!!input.checked);
-      return;
-    }
     if (!target || !target.matches || !target.matches('[data-downloads-budget]')) {
       return;
     }
