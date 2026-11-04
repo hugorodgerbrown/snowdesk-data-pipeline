@@ -1138,6 +1138,25 @@ const SHELL_SUBRESOURCE_PATTERN = /(?:src|href)=["']([^"'\s]+\.(?:js|css))(?:\?[
 // passes half of this.
 const SHELL_SUBRESOURCE_LIMIT = 400;
 
+// The images a warmed sheet draws: same-origin ``<img src>`` artwork, which
+// today means the weather icons in a resort's place sheet, a region sheet
+// and a weather sheet. ``SHELL_SUBRESOURCE_PATTERN`` names only scripts and
+// stylesheets, because it answers "will the page boot" and the offline
+// report holds it to exactly that — so the icons were never warmed with the
+// sheet that draws them, and the carry left each one behind on every deploy
+// as an "asset no carried page names". A sheet then opened offline with a
+// broken image in every forecast cell.
+//
+// ``src`` only, never ``href``: a ``<link rel="icon">`` is browser chrome,
+// not something a sheet draws. A separate list rather than a wider
+// ``SHELL_SUBRESOURCE_PATTERN``, so the boot contract the report verifies is
+// unchanged and a missing icon is never mistaken for an app that won't open.
+const PAGE_IMAGE_PATTERN = /src=["']([^"'\s]+\.(?:svg|png|webp|jpe?g|gif))(?:\?[^"']*)?["']/gi;
+
+// A sheet draws at most a week of days at three elevations from fourteen
+// icons, so this is a bound on a malformed page, not a working limit.
+const PAGE_IMAGE_LIMIT = 100;
+
 // How long ``activate`` waits for the re-warm before it stops waiting.
 //
 // ``_warmCache``'s own fetches are deliberately unbounded — a basemap
@@ -1239,6 +1258,9 @@ const STATIC_PATHS = new Set([
 // feed to the public class.
 const PRIVATE_JSON_PATH = /^\/trips\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/route\.geojson$/i;
 const PUBLIC_JSON_PATH = /^\/api\/(?:weather\/(?!\d+\/)[A-Za-z0-9_-]+\/detail|problem-terrain)\/$/;
+// The weather sheet alone, out of that class: the one JSON body that carries
+// rendered HTML, and so draws icons (``_drawnHtml``).
+const WEATHER_DETAIL_PATH = /^\/api\/weather\/(?!\d+\/)[A-Za-z0-9_-]+\/detail\/$/;
 // SNOW-1312: the map's region sheet — the third copy-pair, held to the
 // core's by the same tests. SNOW-1318: and a resort's place sheet.
 const PUBLIC_PARTIAL_PATH = /^\/partials\/(?:region-sheet\/[a-z]{2}-(?=[a-z0-9-]*\d)[a-z0-9]+(?:-[a-z0-9]+)*|place-sheet\/resort\/[a-z0-9_-]+)\/$/i;
@@ -2604,6 +2626,9 @@ async function _warmCache(urls, options) {
         if (_isNoStore(response)) return fail('other', 'no-store', status);
         await cache.put(key, response.clone());
         bytes += await _warmCacheResponseBytes(response);
+        // And the weather icons the sheet draws, or it opens offline with a
+        // broken image in every forecast cell.
+        bytes += await _warmPageImages(await _drawnHtml(url, response), cache);
         return null;
       }
       // SNOW-1313: a saved pin's place sheet is the owner's HTML, kept
@@ -2621,6 +2646,7 @@ async function _warmCache(urls, options) {
         if (!principal) return fail('other', 'principal', status);
         await cache.put(key, _stampPrincipal(response.clone(), principal));
         bytes += await _warmCacheResponseBytes(response);
+        bytes += await _warmPageImages(await _drawnHtml(url, response), cache);
         return null;
       }
       // SNOW-965: a trip's route is the reader's own JSON, and its offline
@@ -2669,12 +2695,16 @@ async function _warmCache(urls, options) {
         // blank frame. Only the HTML branch does this, so the feed and
         // tile callers are untouched — see _warmShellSubresources.
         bytes += await _warmShellSubresources(html, cache);
+        bytes += await _warmPageImages(html, cache);
         // SNOW-912: and the feeds its own boot will ask the cache for. The
         // page names the day and the day names the feed, so the two are
         // warmed as one unit or the map opens grey.
         bytes += await _warmShellFeeds(html, cache);
       } else {
         await cache.put(url.toString(), response.clone());
+        // A weather sheet's JSON carries its HTML, icons and all; any other
+        // body here draws nothing and ``_drawnHtml`` does not read it.
+        if (sameOrigin) bytes += await _warmPageImages(await _drawnHtml(url, response), cache);
       }
       // SNOW-586: measured off the same (unconsumed) response the clone
       // above was taken from — responseBytes clones again internally for
@@ -4039,15 +4069,64 @@ function _isHtmlResponse(response) {
  * @returns {string[]}
  */
 function _shellSubresources(html) {
+  return _sameOriginMatches(html, SHELL_SUBRESOURCE_PATTERN, SHELL_SUBRESOURCE_LIMIT);
+}
+
+/**
+ * The same-origin images ``html`` draws with ``<img src>`` — a sheet's
+ * weather icons. See ``PAGE_IMAGE_PATTERN``.
+ *
+ * Deduplicated, absolute and capped at ``PAGE_IMAGE_LIMIT``, on the same
+ * terms as ``_shellSubresources``.
+ *
+ * @param {string} html
+ * @returns {string[]}
+ */
+function _pageImages(html) {
+  return _sameOriginMatches(html, PAGE_IMAGE_PATTERN, PAGE_IMAGE_LIMIT);
+}
+
+/**
+ * The HTML a cached response renders, if it is one that can draw images:
+ * an HTML page or fragment, or a weather sheet's ``{"html": …}`` JSON.
+ *
+ * Any other JSON is a feed (ratings, outlines, routes) and names no
+ * artwork, so it is not read — some of those bodies run to megabytes, and
+ * the carry walks every entry. Never throws; an unreadable body is ``''``.
+ *
+ * @param {URL} url
+ * @param {Response} response
+ * @returns {Promise<string>}
+ */
+async function _drawnHtml(url, response) {
+  try {
+    if (_isHtmlResponse(response)) return await response.clone().text();
+    if (!WEATHER_DETAIL_PATH.test(url.pathname)) return '';
+    const body = JSON.parse(await response.clone().text());
+    return body && typeof body.html === 'string' ? body.html : '';
+  } catch (_err) {
+    return '';
+  }
+}
+
+/**
+ * Every same-origin url ``pattern``'s first group captures in ``html``.
+ *
+ * @param {string} html
+ * @param {RegExp} pattern
+ * @param {number} limit
+ * @returns {string[]}
+ */
+function _sameOriginMatches(html, pattern, limit) {
   const urls = [];
   const seen = new Set();
   // A fresh RegExp rather than the shared literal: a /g regex carries
   // ``lastIndex`` between calls, so reusing the constant would make the
   // second page warmed in a worker's life start matching halfway down its
   // own HTML.
-  const pattern = new RegExp(SHELL_SUBRESOURCE_PATTERN.source, 'gi');
-  let match = pattern.exec(html);
-  while (match && urls.length < SHELL_SUBRESOURCE_LIMIT) {
+  const regex = new RegExp(pattern.source, 'gi');
+  let match = regex.exec(html);
+  while (match && urls.length < limit) {
     let url = null;
     try {
       url = new URL(match[1], self.location.origin);
@@ -4061,7 +4140,7 @@ function _shellSubresources(html) {
         urls.push(absolute);
       }
     }
-    match = pattern.exec(html);
+    match = regex.exec(html);
   }
   return urls;
 }
@@ -4207,7 +4286,37 @@ async function _warmShellFeeds(html, cache) {
  * @returns {Promise<number>} Bytes written.
  */
 async function _warmShellSubresources(html, cache) {
-  const urls = _shellSubresources(html);
+  return _warmSameOrigin(_shellSubresources(html), cache, 'shell.subresources');
+}
+
+/**
+ * Fetch the images a warmed sheet draws and this cache does not already
+ * hold (``_pageImages``), returning the bytes written.
+ *
+ * Best-effort on the same terms as ``_warmShellSubresources``: the sheet is
+ * the unit of work, and an icon that fails to land is a blank cell, not a
+ * sheet that cannot open. Every sheet in an area names the same handful of
+ * icons, so after the first sheet this is a ``match`` per icon and no
+ * network.
+ *
+ * @param {string} html
+ * @param {Cache} cache The open shell cache.
+ * @returns {Promise<number>} Bytes written.
+ */
+async function _warmPageImages(html, cache) {
+  return _warmSameOrigin(_pageImages(html), cache, 'page.images');
+}
+
+/**
+ * Fetch each of ``urls`` this cache does not already hold, swallowing every
+ * failure, and log one ``logKey`` line for the run.
+ *
+ * @param {string[]} urls Absolute same-origin urls.
+ * @param {Cache} cache The open shell cache.
+ * @param {string} logKey The debug-log event name.
+ * @returns {Promise<number>} Bytes written.
+ */
+async function _warmSameOrigin(urls, cache, logKey) {
   if (urls.length === 0) return 0;
   let bytes = 0;
   let written = 0;
@@ -4223,7 +4332,7 @@ async function _warmShellSubresources(html, cache) {
       // Best-effort, per the docstring.
     }
   });
-  _debugLog('shell.subresources', { asked: urls.length, written, bytes });
+  _debugLog(logKey, { asked: urls.length, written, bytes });
   return bytes;
 }
 
@@ -4355,7 +4464,8 @@ function _carryIsShellAsset(url) {
  * newest ``Date`` (a tie keeps the first seen). **Plan**: drop every url
  * the new cache already holds — what the new install wrote always wins —
  * and collect the scripts and stylesheets each remaining HTML page names
- * (``_shellSubresources``). **Copy**: ``put`` each entry into
+ * (``_shellSubresources``), and the images each page, sheet fragment or
+ * weather sheet draws (``_pageImages``). **Copy**: ``put`` each entry into
  * ``CACHE_VERSION`` exactly as stored, so an ``X-SW-Principal`` stamp
  * survives and the read paths need no change; an old static asset no
  * carried page names is skipped.
@@ -4429,13 +4539,15 @@ async function _carryShellContentRun(tally, state) {
       continue;
     }
     pending.push(entry);
-    if (_isHtmlResponse(entry.response)) {
-      try {
-        const html = await entry.response.clone().text();
+    // A page vouches for the scripts and stylesheets it boots from; a page,
+    // a sheet fragment or a weather sheet's JSON for the images it draws.
+    // An unreadable body still carries; it just vouches for nothing.
+    const html = await _drawnHtml(entry.url, entry.response);
+    if (html) {
+      if (_isHtmlResponse(entry.response)) {
         for (const asset of _shellSubresources(html)) referenced.add(asset);
-      } catch (_err) {
-        // An unreadable page still carries; it just vouches for no assets.
       }
+      for (const image of _pageImages(html)) referenced.add(image);
     }
   }
 
@@ -4474,8 +4586,8 @@ async function _carryShellContentRun(tally, state) {
  * ``CACHE_VERSION`` before ``activate`` reaps them (SNOW-1311).
  *
  * Carries every same-origin entry — pages, weather sheets, trip routes,
- * ``STATIC_PATHS`` feeds — except an old static asset no carried page
- * references; never overwrites an entry the new cache already holds; and
+ * ``STATIC_PATHS`` feeds, and the weather icons those sheets draw — except
+ * an old static asset no carried page or sheet references; never overwrites an entry the new cache already holds; and
  * for a url held by several old caches carries the newest ``Date``. See
  * ``_carryShellContentRun`` for the passes.
  *
