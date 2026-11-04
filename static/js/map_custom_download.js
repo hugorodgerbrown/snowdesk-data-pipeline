@@ -1401,6 +1401,9 @@
             ...(outcome.complete && content && content.items ? { items: content.items } : {}),
             savedAt: new Date().toISOString(),
           };
+          // A finished download is a reading: the row starts checked.
+          const verified = await downloadVerified(areaId, area, content);
+          if (verified) area.verified = verified;
           await _appendCustomArea(area);
           // SNOW-569's pulse still plays on success; SNOW-632 removed the
           // overlay-close that used to precede it (SNOW-568 already left
@@ -1741,6 +1744,8 @@
               ...(outcome.complete && content && content.items ? { items: content.items } : {}),
               savedAt: new Date().toISOString(),
             };
+            const verified = await downloadVerified(areaId, area, content);
+            if (verified) area.verified = verified;
             await _appendCustomArea(area);
             await progressFill.finish(true);
             ok = true;

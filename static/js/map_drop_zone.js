@@ -734,6 +734,8 @@
             ...(terrain ? { terrain: true } : {}),
             savedAt: new Date().toISOString(),
           };
+          const verified = await downloadVerified(areaId, area, content);
+          if (verified) area.verified = verified;
           await _appendCustomArea(area);
           await progressFill.finish(true);
           paintRun('done', undefined, area.bytes);

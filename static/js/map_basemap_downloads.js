@@ -4107,6 +4107,55 @@ async function _stampAreaVerified(areaId, result) {
 }
 
 /**
+ * What a completed pinned download learned about its area, as the
+ * `verified` stamp its new record carries — the stamp `syncArea` writes
+ * after a sync.
+ *
+ * A download that succeeded has just fetched the whole tile grid and the
+ * area's content plan; it is the freshest reading the device can take.
+ * Recording none left a new row grey ("Not checked yet") until the user
+ * pressed Sync, which then found nothing to fetch and turned it green: a
+ * press that changed the reading and no data.
+ *
+ * The map answer is the tile-grid reading a sync takes (`_areaTilesHeld`)
+ * over the record about to be written, so the download claims no more
+ * than the bucket holds. The content answer is the run's own content
+ * outcome. Every
+ * caller writes its record only for a run that succeeded, so this asks
+ * nothing about the tiles' run result.
+ *
+ * @param {string} areaId
+ * @param {Object} record The record the caller is about to write.
+ * @param {{total?: number, ok?: number, short?: boolean}|null|undefined}
+ *   content The runner's content half.
+ * @returns {Promise<Object|null>} The stamp, or null when none can be
+ *   read (no journey core on this page, or nothing learned).
+ */
+async function downloadVerified(areaId, record, content) {
+  try {
+    const journey = self.pwaOfflineJourneyCore;
+    const core = self.pwaBasemapDownloadCore;
+    if (!journey || typeof journey.verifiedFromSync !== 'function' || !core) return null;
+    const tilesHeld = await _areaTilesHeld(areaId, record);
+    // A run with no content half took no content reading, so it claims
+    // none (no principal); an empty plan that was not short is a complete
+    // answer, as `refreshAreaContent` reads one.
+    const principal = content
+      ? document.querySelector('meta[name="pwa-user-id"]')?.getAttribute('content') || ''
+      : '';
+    const complete =
+      !!content && (core.contentOutcome(content).complete || (!content.short && !content.total));
+    return journey.verifiedFromSync(
+      { tiles: 'none', tilesHeld: tilesHeld, content: complete },
+      new Date().toISOString(),
+      principal,
+    );
+  } catch (_err) {
+    return null;
+  }
+}
+
+/**
  * Rewrite one area's record in its array, on one transaction.
  *
  * @param {string} areaId

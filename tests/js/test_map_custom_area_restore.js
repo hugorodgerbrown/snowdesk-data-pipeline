@@ -322,6 +322,34 @@ describe('restoring a custom area (SNOW-1136)', () => {
     );
   });
 
+  it('marks a completed download checked, with no Sync needed', async () => {
+    // Hugo's report: a fresh download read "Not checked yet" until a Sync
+    // that fetched nothing turned it green. The download is the reading.
+    await import('../../static/js/offline_journey_core.js');
+    await window.pwaCustomAreaDownload.restoreArea({ areaId: AREA_ID, bbox: BBOX, type: 'custom' });
+
+    const record = window.pwaDb.rows.get('basemap.customAreas')[0];
+    expect(record.verified).toMatchObject({ map: 'yes', content: 'yes', principal: RESTORER });
+    expect(typeof record.verified.at).toBe('string');
+    const journey = window.pwaOfflineJourneyCore;
+    const verdict = journey.verdictFor(journey.stagesFromRecord(record, new Date(), RESTORER));
+    expect(verdict.verdict).not.toBe('unknown');
+  });
+
+  it('stamps nothing for a download that fell short', async () => {
+    await import('../../static/js/offline_journey_core.js');
+    window.pwaWarmCache.mockImplementation(async (urls) => ({
+      ok: urls.length - 1,
+      failed: 1,
+      bytes: 2048,
+      cancelled: false,
+    }));
+    await window.pwaCustomAreaDownload.restoreArea({ areaId: AREA_ID, bbox: BBOX, type: 'custom' });
+
+    const records = window.pwaDb.rows.get('basemap.customAreas') || [];
+    expect(records.every((entry) => !entry.verified)).toBe(true);
+  });
+
   it('stamps the record with the restoring account (SNOW-1142)', async () => {
     await window.pwaCustomAreaDownload.restoreArea({
       areaId: AREA_ID,

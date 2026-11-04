@@ -479,6 +479,20 @@ describe('region download byte recording (SNOW-632)', () => {
     expect(recorded.bytes).not.toBe(measured);
   });
 
+  it('records the finished download as checked, so the row needs no Sync', async () => {
+    // A fresh region read "Not checked yet" until a Sync that fetched
+    // nothing turned it green. The download is the reading.
+    await import('../../static/js/offline_journey_core.js');
+    try {
+      await downloadRegion();
+      const recorded = await recordedRegion();
+      expect(recorded.verified).toMatchObject({ map: 'yes' });
+      expect(typeof recorded.verified.at).toBe('string');
+    } finally {
+      delete window.pwaOfflineJourneyCore;
+    }
+  });
+
   it("records the picker's active basemap key, and paints it onto the roundel (SNOW-645)", async () => {
     nextReportedBytes = 111;
     await downloadRegion();
