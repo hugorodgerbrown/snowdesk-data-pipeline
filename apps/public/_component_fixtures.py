@@ -2182,6 +2182,19 @@ UGC_PANEL_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
     {
+        # SNOW-1420: the downloads sheet is the home for offline, so each
+        # row it holds leads with the area's verdict as a dot. The markup
+        # renders it neutral; map_downloads_manager.js paints the colour
+        # and the reason line from the stored record.
+        "caption": "Downloads row with its offline answer — a verdict dot",
+        "context": {
+            "label": "Zermatt",
+            "meta": "Region · 24.6 MB",
+            "status_dot": True,
+            "actions_template": "includes/_map_downloads_row_actions.html",
+        },
+    },
+    {
         # SNOW-711. The account page's favourite row is the only one with
         # a disclosure: the map panels reach a pin's detail by tapping the
         # pin, which is a control they already have and this page has not.

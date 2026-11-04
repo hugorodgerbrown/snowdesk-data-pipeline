@@ -323,6 +323,13 @@
     // fills it.
     'sync-row-label': 'Sync %(name)s now',
     'sync-failed': "That area couldn't be brought up to date. Try again.",
+    // SNOW-1420: each row's offline answer — see `paintRowAnswer`.
+    'area-status-ready': 'Works offline',
+    'area-reason-conditions': 'Bulletins out of date',
+    'area-reason-things': 'Some trips or pins missing',
+    'area-status-open-map': 'Map data missing',
+    'area-status-unknown': 'Not checked yet',
+    'area-status-running': 'Syncing…',
     // SNOW-932: the subtitle clause for a row whose CONTENT half fell
     // short. A separate word from 'kind-incomplete' on purpose — this
     // row's map DRAWS and the area IS available offline; it is the
@@ -388,6 +395,7 @@
     'forget-failed': "That area couldn't be forgotten. Try again.",
     // SNOW-634: [data-panel-add]'s offline refusal.
     'add-offline': "You're offline — connect to download a new area.",
+    'sync-offline': 'Syncing needs a connection.',
     // SNOW-637: the same refusal as the disabled trigger's own label — the
     // toast above is phrased as a reply to a tap, which reads wrong on a
     // control nobody has touched yet.
@@ -960,10 +968,13 @@
     const core = manageCore();
     if (!core) return;
 
-    const [allAreas, budgetMb] = await Promise.all([
+    const [allAreas, budgetMb, records] = await Promise.all([
       readAreas(),
       readMeta(BUDGET_KEY),
+      // SNOW-1420: the stored records each row's offline answer is read from.
+      window.pwaDownloadsSyncAll ? window.pwaDownloadsSyncAll.records() : new Map(),
     ]);
+    areaRecords = records;
     // SNOW-749: drop anything the user has forgotten this session whose
     // queued mutation has not drained yet — see FORGOTTEN's own comment.
     // An area forgotten and then RE-DOWNLOADED here is back on the device,
@@ -987,6 +998,7 @@
     const rows = manageRowsFor(core, list);
     // SNOW-1140: what "Download all" would queue, in list order.
     restorable = restorableRows(rows);
+    listedRows = rows;
     // SNOW-844: and which of them are on this device but cannot render.
     // Awaited before the rows are built, not after: the flag decides the
     // row's subtitle and whether it carries a Repair control, and a
@@ -1140,6 +1152,86 @@
       }
       if (addButton) addButton.textContent = STRINGS['add-disabled'] || '';
     }
+
+    paintSyncAll(rows);
+  }
+
+  /**
+   * SNOW-1420: the foot's Sync all — every area on this device, one at a
+   * time (`map_downloads_sync_all.js`).
+   *
+   * Hidden with nothing on this device to sync. Disabled while a run is
+   * going and while the app is not using the network — disabled rather
+   * than hidden, because a control that vanishes offline reads as a bug —
+   * with the run's progress as its label while it runs.
+   *
+   * @param {Array<{id: string, onDevice?: boolean, orphaned?: boolean}>} rows
+   * @returns {void}
+   */
+  function paintSyncAll(rows) {
+    const button = /** @type {HTMLButtonElement|null} */ (
+      sheet.querySelector('[data-downloads-sync-all]')
+    );
+    if (!button) return;
+    const syncAll = window.pwaDownloadsSyncAll;
+    const ids = syncableIds(rows);
+    button.hidden = !syncAll || ids.length === 0;
+    const state = syncAll ? syncAll.state() : { running: false, label: '' };
+    button.disabled = state.running || !networkInUse();
+    const idle = button.querySelector('[data-sync-all-state="idle"]');
+    const running = button.querySelector('[data-sync-all-state="running"]');
+    if (idle) idle.classList.toggle('hidden', state.running);
+    if (running) {
+      running.classList.toggle('hidden', !state.running);
+      if (state.running && state.label) running.textContent = state.label;
+    }
+  }
+
+  /**
+   * SNOW-1420: the bucket ids Sync all runs over — every row on this
+   * device with a record to sync, in the sheet's order.
+   *
+   * @param {Array<{id: string, onDevice?: boolean, orphaned?: boolean}>} rows
+   * @returns {Array<string>}
+   */
+  function syncableIds(rows) {
+    return rows.filter((row) => row.onDevice !== false && !row.orphaned).map((row) => row.id);
+  }
+
+  // SNOW-1420: the rows the last render listed, for Sync all's press —
+  // the delegated click handler sees a cloned button, not the rows.
+  /** @type {Array<Object>} */
+  var listedRows = [];
+
+  /**
+   * SNOW-1420: Sync all pressed.
+   *
+   * Refused offline with the same toast every other fetching control on
+   * this sheet gives. The sheet repaints after every step, so the row
+   * being synced shows it; a run that left any area short says so once,
+   * in a toast, when it ends.
+   *
+   * @param {MouseEvent} event
+   * @returns {boolean} Whether this click was Sync all.
+   */
+  function _handleSyncAllClick(event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    if (!target || !target.closest || !target.closest('[data-downloads-sync-all]')) return false;
+    const syncAll = window.pwaDownloadsSyncAll;
+    if (!syncAll) return true;
+    if (!networkInUse()) {
+      window.MapSheet?.toast(STRINGS['sync-offline']);
+      return true;
+    }
+    const ids = syncableIds(listedRows);
+    if (ids.length === 0) return true;
+    syncAll.press(ids, render).then((result) => {
+      const shortfall = syncAll.shortfall(result);
+      if (shortfall) window.MapSheet?.toast(shortfall);
+      window.pwaLayerSyncStatus?.refresh();
+      window.pwaRegionDownload?.refreshState();
+    });
+    return true;
   }
 
   /**
@@ -1382,6 +1474,80 @@
     );
   }
 
+  // SNOW-1420: the dot each verdict paints, in the design system's
+  // offline-availability family (`sync-*`), never the status colours.
+  // `running` is the one interaction colour: a sync in flight on this row.
+  const VERDICT_DOT = Object.freeze({
+    ready: 'bg-sync-ok',
+    refresh: 'bg-sync-partial',
+    'open-map': 'bg-sync-blocked',
+    unknown: 'bg-sync-off',
+    running: 'bg-accent animate-pulse',
+  });
+
+  // SNOW-1420: the stored area records, keyed by bucket id, as the last
+  // render read them. Module state for the same reason `syncing` is: the
+  // rows are re-cloned on every render and answer from what render read.
+  /** @type {Map<string, Object>} */
+  var areaRecords = new Map();
+
+  /**
+   * SNOW-1420: one row's answer — running while a sync is on it, else its
+   * stored record's verdict — or null for a row with nothing to answer
+   * for: an account-only row holds nothing here, and an orphaned bucket
+   * has no record.
+   *
+   * @param {{id: string, onDevice?: boolean, orphaned?: boolean}} row
+   * @returns {{verdict: string, reason: string}|null}
+   */
+  function rowAnswer(row) {
+    if (row.onDevice === false || row.orphaned) return null;
+    const syncAll = window.pwaDownloadsSyncAll;
+    // A shell cached before SNOW-1420 has no verdict module: no answer,
+    // rather than a "Not checked yet" nothing on that page can change.
+    if (!syncAll) return null;
+    if (syncing.has(row.id) || syncAll.state().current === row.id) {
+      return { verdict: 'running', reason: '' };
+    }
+    return syncAll.verdict(areaRecords.get(row.id));
+  }
+
+  /**
+   * SNOW-1420: paint one row's dot and reason line from its answer, or
+   * remove both when it has none.
+   *
+   * The reason's words are the sheet's own strings: "Bulletins out of
+   * date", "Some trips or pins missing", "Map data missing", "Not checked
+   * yet", "Syncing…". A yes says nothing on screen, and "Works offline" to
+   * a screen reader.
+   *
+   * @param {DocumentFragment} fragment
+   * @param {{verdict: string, reason: string}|null} answer
+   * @returns {void}
+   */
+  function paintRowAnswer(fragment, answer) {
+    const dot = fragment.querySelector('[data-row-status]');
+    const notice = fragment.querySelector('[data-row-notice]');
+    if (!answer) {
+      if (dot) dot.remove();
+      if (notice) notice.remove();
+      return;
+    }
+    if (dot) {
+      dot.classList.remove('bg-sync-off');
+      dot.classList.add(...VERDICT_DOT[answer.verdict].split(' '));
+      dot.setAttribute('data-area-verdict', answer.verdict);
+    }
+    if (!notice) return;
+    const key =
+      answer.verdict === 'refresh' ? `area-reason-${answer.reason}` : `area-status-${answer.verdict}`;
+    notice.textContent = STRINGS[key] || '';
+    notice.classList.toggle('hidden', !notice.textContent);
+    // A yes has no visible line; a screen reader still hears it.
+    notice.classList.toggle('sr-only', answer.verdict === 'ready');
+    if (answer.verdict === 'ready') notice.classList.remove('hidden');
+  }
+
   /**
    * Build one list row.
    *
@@ -1475,6 +1641,16 @@
     //     here". It costs this device nothing, so a size would be "0.0 MB"
     //     — a download that somehow takes no space rather than one that is
     //     not here.
+    // SNOW-1420: the row's answer to "will this work offline?" — a
+    // traffic-light dot and, for anything but a yes, one line saying why
+    // (docs/decisions/downloads-is-the-home-for-offline.md). A row with
+    // nothing to answer for (account-only, orphaned) has neither.
+    const answer = rowAnswer(row);
+    paintRowAnswer(fragment, answer);
+    // Hugo, 2026-11-04: a row whose reason line shows says nothing more
+    // about its bulletins in the meta — the reason is the one caveat.
+    const reasonShown = !!answer && answer.verdict !== 'ready';
+
     const subtitle = fragment.querySelector('[data-row-meta]');
     // SNOW-1139: read at paint time, not at IIFE time — base.html loads it
     // in <head>, but a row is only ever built long after both have run.
@@ -1519,7 +1695,9 @@
         // takes a caveat: "Custom area · OpenFreeMap · 12.0 MB ·
         // Bulletins not saved". The same caveat-on-a-Yes shape the row is
         // not dimmed for, and for the same reason.
-        if (row.contentIncomplete) {
+        if (reasonShown) {
+          // SNOW-1420: the reason line under the meta already says it.
+        } else if (row.contentIncomplete) {
           subtitle.textContent += ' · ' + (STRINGS['kind-content-incomplete'] || '');
         } else if (stamp && row.contentAt && stamp.isBeforeToday(row.contentAt)) {
           // SNOW-1139: the bulletins this area holds were fetched on an
@@ -1971,6 +2149,7 @@
       return;
     }
     if (_handleDownloadAllClick(event)) return;
+    if (_handleSyncAllClick(event)) return;
     if (_handleSyncClick(event)) return;
     if (_handleDownloadHereClick(event)) return;
     if (_handleRenameClick(event)) return;
@@ -2021,7 +2200,7 @@
     // SNOW-748: the mode, not the radio — a forced offline mode leaves
     // `navigator.onLine` true, and a sync is network use.
     if (!networkInUse()) {
-      window.MapSheet?.toast(STRINGS['add-offline']);
+      window.MapSheet?.toast(STRINGS['sync-offline']);
       return true;
     }
 

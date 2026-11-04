@@ -460,49 +460,9 @@ because the repository is the authority and the mock is a drawing:
                         <div class="shrink-0">{% include "includes/_theme_preference.html" %}</div>
                     </div>
 
-                    {% comment %}
-                        SNOW-930: the offline-content audit, the reset
-                        control with its size breakdown and the sync log
-                        were all here, and none of them belonged. Every
-                        reading in them is computed client-side from Cache
-                        Storage, IndexedDB and navigator.storage.estimate()
-                        — facts about this browser, with no account
-                        anywhere in them — and they were gated only because
-                        this page was the one page available to put them
-                        in. That is the accident SNOW-921 corrected for the
-                        "Offline mode" switch, which had become an account
-                        feature because the account dropdown was the only
-                        menu there was. The page you need when you have no
-                        signal cannot be behind a login.
-
-                        They live at /offline/ now (public/offline.html),
-                        which is public, warmable into the offline shell,
-                        and since SNOW-1415 is the debug page, reached from
-                        here and from Help rather than the network menu. This row is
-                        what is left: a pointer, in the place the block
-                        used to be, so a reader who knows where it was
-                        still finds it.
-
-                        Theme stays. It is a display preference with no
-                        relationship to the network, and moving it would
-                        make the new page a second settings page rather
-                        than one answer to one question.
-                    {% endcomment %}
-                    <div class="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                        <div class="min-w-0">
-                            <h3 class="text-sm font-semibold text-text-1">{% trans "Debug offline issues" %}</h3>
-                            <p class="text-sm text-text-2">
-                                {% trans "Check what is saved on this device, and reset it if it is stuck." %}
-                            </p>
-                        </div>
-                        <a
-                            href="{% url 'public:offline_page' %}"
-                            data-testid="settings-offline-link"
-                            class="{% button_classes variant='ghost' size='compact' %} self-start shrink-0 whitespace-nowrap"
-                        >
-                            {% trans "Open" %}
-                        </a>
-                    </div>
+                    {# SNOW-930 moved the offline audit, reset and sync log to /offline/, #}
+                    {# and left a pointer here. SNOW-1420 took the pointer away: /offline/ #}
+                    {# is the developers' debug page, served but linked from nowhere.     #}
 
                     {% endcard %}
                 </section>

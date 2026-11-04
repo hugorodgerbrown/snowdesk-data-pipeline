@@ -10,11 +10,11 @@
  *       failed (an ``AbortError`` is a caller cancelling its own request,
  *       not a connectivity failure, so it is excluded), OR the service
  *       worker is in an offline mode.
- *   (2) Readiness on demand — pressing that symbol opens the network menu
- *       (``includes/_connection_panel.html``), anchored beneath it in the
- *       header, which answers per downloaded area whether it will work
- *       offline (SNOW-1415), carries one Sync button, names the network
- *       state in one line, and offers the way back to the network.
+ *   (2) The network menu — pressing that symbol opens
+ *       ``includes/_connection_panel.html``, anchored beneath it in the
+ *       header, which names the network state in one line and holds the
+ *       Offline mode switch (SNOW-1420), plus "Try reconnecting" while the
+ *       worker has latched.
  *   (3) Network-required buttons — any element carrying
  *       ``data-network-required`` is set ``disabled`` when offline and
  *       re-enabled when back online. Non-button elements get an
@@ -46,7 +46,7 @@
  * age for the downloads' content. SNOW-1415 removed both, with the
  * ``sync.last_at`` row behind the first: a reader about to lose signal asks
  * whether each area will work, not when the device last reached the
- * server, and the per-area rows answer that (see "The area rows" below).
+ * server, and the Downloads sheet's per-area rows answer that (SNOW-1420).
  *
  * Qualifying requests — ``/api/*`` and other non-static-asset
  * same-origin responses (HTML partials/navigations included) — also
@@ -95,8 +95,7 @@
  *     like the two dropdowns beside it — so pressing it opens the panel and
  *     pressing it again closes it, and it never changes the network mode.
  *     Opening and closing are the BROWSER's; this module follows the
- *     ``toggle`` event to keep ``aria-expanded`` in step and re-read the
- *     areas, and nav.html's own script adds outside-click, Escape and the
+ *     ``toggle`` event to keep ``aria-expanded`` in step, and nav.html's own script adds outside-click, Escape and the
  *     panel's close control. That is why nothing here binds a click on the
  *     symbol, and why the panel needs no help from ``overlays.js``.
  *   * ``[data-network-toggle]`` — the "Offline mode" row, an
@@ -187,20 +186,15 @@
  * ``aria-hidden`` — a screen reader gets the symbol's accessible name and the
  * panel's summary line, which say the same things in words.
  *
- * The area rows (SNOW-1415)
- * --------------------------
- * One row per downloaded area, each answering "will this work offline?"
- * with the verdict /offline/'s panels give: `offline_journey_core.js`'s
- * `stagesFromRecord` and `verdictFor`, over the stored record alone. That
- * core is loaded globally by base.html for this. The tile-capable pages
- * (the map and /offline/) stamp what they verified on each record, so a
- * bulletin page can answer without reading a tile. The header symbol
- * carries the device's overall answer as a small mark: ready, syncing or
- * needs attention, and nothing at all with no areas or no signal.
- *
- * Sync runs `offline_ready_core.js` in place on the map page and navigates
- * to ``/map/?sync=all`` everywhere else; the map runs it on arrival through
- * ``window.pwaConnectionPanel.syncAll``.
+ * What the panel no longer holds (SNOW-1420)
+ * -------------------------------------------
+ * SNOW-1415 put one row per downloaded area here, a Sync, an empty-state
+ * callout and a readiness mark on the header symbol. SNOW-1420 moved the
+ * per-area answer and the Sync to the map's Downloads sheet
+ * (`map_downloads_sync_all.js`, docs/decisions/downloads-is-the-home-for-
+ * offline.md), took the mark off the symbol, and brought the Offline mode
+ * switch back. The panel holds the state line, that switch, and "Try
+ * reconnecting" while the worker has latched.
  *
  * Deferred to SNOW-375 / follow-ups:
  *   * Pull-to-refresh explicit-network path.
@@ -257,25 +251,6 @@
   // either exists depends on the page and on who is reading it.
   const NETWORK_INDICATOR_SELECTOR = '[data-network-indicator]';
   const NETWORK_TOGGLE_SELECTOR = '[data-network-toggle]';
-
-  // SNOW-951/1141/1415: the area block — the block itself (which carries
-  // the map's url for a press off the map), the list the area rows are
-  // cloned into, the row <template>, the offline note, the one press and
-  // its two outcome lines.
-  const NETWORK_SYNC_SELECTOR = '[data-network-sync]';
-  // SNOW-1415: the shape of the map url the Sync block carries — a path
-  // from the root, letters, digits, '-', '_' and '/' only, never '//'.
-  const SAME_SITE_PATH = /^\/(?!\/)[A-Za-z0-9_\-\/]*$/;
-  const NETWORK_SYNC_LIST_SELECTOR = '[data-network-sync-list]';
-  // SNOW-1415: the "No offline areas yet" callout, shown with no areas.
-  const NETWORK_EMPTY_SELECTOR = '[data-network-empty]';
-  const NETWORK_SYNC_ROW_SELECTOR = '[data-network-sync-row]';
-  const NETWORK_SYNC_OFFLINE_SELECTOR = '[data-network-sync-offline]';
-  const NETWORK_READY_SELECTOR = '[data-network-ready]';
-  const NETWORK_READY_SUMMARY_SELECTOR = '[data-network-ready-summary]';
-  const NETWORK_READY_QUEUE_SELECTOR = '[data-network-ready-queue]';
-  // SNOW-1141: the store the drain reads, for the "still waiting" count.
-  const MUTATION_STORE = 'queue:mutations';
 
   // SNOW-921: the traffic arrows beside the header glyph — up for a request
   // going out, down for a response coming back (``includes/nav.html``).
@@ -344,498 +319,6 @@
   }
 
   /**
-   * The stored custom areas, legacy row included (SNOW-928 review).
-   *
-   * A device that still holds its one custom download under the
-   * pre-SNOW-635 ``basemap.customArea`` key, and has not yet loaded a page
-   * that triggers the lazy migration, has a real download that a direct
-   * read of ``basemap.customAreas`` cannot see.
-   *
-   * READ-ONLY, and deliberately not a call to
-   * ``pwaBasemapAreas.readCustomAreas()``. That function MIGRATES as a
-   * side effect of reading, and this module loads on every page in the
-   * site — including the Django admin — so routing this read through it
-   * would fire the migration from pages that have nothing to do with
-   * downloads. The precedence rule is mirrored rather than shared: an
-   * ARRAY at the new key wins even when empty ("already migrated, nothing
-   * left"), and only an absent or non-array value falls through to the
-   * legacy row.
-   *
-   * @returns {Promise<{value: Array<Object>}>} Shaped like a ``meta:app``
-   *   row so the caller can treat both reads alike.
-   */
-  async function readCustomAreaRecords() {
-    try {
-      const row = await window.pwaDb.get('meta:app', 'basemap.customAreas');
-      if (Array.isArray(row && row.value)) return { value: row.value };
-      const legacyRow = await window.pwaDb.get('meta:app', 'basemap.customArea');
-      const legacy = legacyRow && legacyRow.value;
-      if (!legacy || !Array.isArray(legacy.bbox)) return { value: [] };
-      return { value: [legacy] };
-    } catch (_err) {
-      // Best-effort, like every other read here — the caller keeps
-      // whatever the rows last said.
-      return { value: [] };
-    }
-  }
-
-  /**
-   * SNOW-1415: re-read the areas this device holds, and repaint the rows
-   * and the header symbol from them.
-   *
-   * Read on boot, on every panel open and after each area of a sync
-   * settles — the records move only when a sync or a download runs, which
-   * can happen in another tab. Never throws: a device whose IndexedDB will
-   * not answer keeps whatever the panel last said.
-   *
-   * @returns {Promise<void>}
-   */
-  async function refreshAreas() {
-    if (!window.pwaDb || typeof window.pwaDb.get !== 'function') return;
-    try {
-      const rows = await Promise.all([
-        window.pwaDb.get('meta:app', 'basemap.regions'),
-        readCustomAreaRecords(),
-      ]);
-      const areas = [];
-      rows.forEach((row, index) => {
-        const list = (row && row.value) || [];
-        if (!Array.isArray(list)) return;
-        // The two stores in the order they were read above: regions, then
-        // custom areas. Which one an entry came from decides how it is
-        // identified and named, so the index carries that rather than each
-        // entry being sniffed for a field.
-        const isRegion = index === 0;
-        list.forEach((entry) => {
-          if (!entry) return;
-          const identified = syncableArea(entry, isRegion);
-          if (identified) areas.push(identified);
-        });
-      });
-      downloadsAreas = areas;
-    } catch (_err) {
-      // Best-effort, per the docstring.
-    }
-    renderAreaRows();
-  }
-
-  /**
-   * SNOW-951: one stored record as the area rows need it — an id to act
-   * on, a name to show and (SNOW-1415) the record itself, which the row's
-   * verdict is read from.
-   *
-   * The id is the PINNED BUCKET id for a custom area (`entry.id`) and the
-   * `region_id` for a region. The bucket-id format belongs to
-   * `basemap_download_core.js`'s `areaIdForRegion`, which this module
-   * deliberately does not load, so the region id travels as itself and the
-   * map resolves it there (`resolveSyncAreaId`).
-   *
-   * @param {Object} entry A `basemap.regions` or `basemap.customAreas` row.
-   * @param {boolean} isRegion Which store it came out of.
-   * @returns {{id: string, label: string, record: Object}|null} Null for an
-   *   entry with no id at all — a half-written record is not something to
-   *   answer for.
-   */
-  function syncableArea(entry, isRegion) {
-    const strings = networkStrings();
-    if (isRegion) {
-      if (!entry.region_id) return null;
-      // The stored name, or the region id itself — the same fallback
-      // `basemap_downloaded_areas.js` applies, so the two surfaces cannot
-      // name one area differently.
-      return { id: entry.region_id, label: entry.name || entry.region_id, record: entry };
-    }
-    if (!entry.id) return null;
-    let label = entry.name || '';
-    if (!label && Number.isFinite(entry.ordinal)) {
-      label = window.pwaStrings
-        ? window.pwaStrings.interpolate(strings['area-default-name'], { n: entry.ordinal })
-        : '';
-    }
-    return { id: entry.id, label: label || entry.id, record: entry };
-  }
-
-  /**
-   * Whether this page was rendered for a signed-in reader — base.html's
-   * `pwa-user-id`, empty when signed out. A signed-out reader has no
-   * things of their own, so their areas get no things stage.
-   *
-   * @returns {boolean}
-   */
-  function signedIn() {
-    return !!currentPrincipal();
-  }
-
-  /**
-   * The account this page was rendered for — base.html's `pwa-user-id`,
-   * '' when signed out. A stamped things answer is only read back to the
-   * account it was stamped for.
-   *
-   * @returns {string}
-   */
-  function currentPrincipal() {
-    const meta = document.querySelector('meta[name="pwa-user-id"]');
-    return (meta && meta.getAttribute('content')) || '';
-  }
-
-  /**
-   * SNOW-1415: one area's answer, from its record alone.
-   *
-   * The stages come from `offline_journey_core.js`'s `stagesFromRecord`
-   * and the verdict from its `verdictFor`, the same verdict /offline/'s
-   * panels give, so the two surfaces cannot disagree about one area.
-   * A "mostly" (`refresh`) names its first No: the bulletins and weather,
-   * then the reader's things.
-   *
-   * One rule is the panel's own: an area no tile-capable page has checked
-   * (an unknown map) reads "Not checked yet" whatever its content age.
-   * `verdictFor` would let a stale bulletin outrank the unknown map and
-   * say "Mostly", which claims the map is there when nothing has looked.
-   *
-   * @param {{record: Object}} area
-   * @returns {{verdict: 'ready'|'refresh'|'open-map'|'unknown', reason: string}}
-   */
-  function areaVerdict(area) {
-    const journey = window.pwaOfflineJourneyCore;
-    if (!journey) return { verdict: 'unknown', reason: '' };
-    const stages = journey.stagesFromRecord(area.record, new Date(), {
-      signedIn: signedIn(),
-      principal: currentPrincipal(),
-    });
-    if (stages.map.status === 'unknown') return { verdict: 'unknown', reason: '' };
-    const verdict = journey.verdictFor(stages);
-    let reason = '';
-    if (verdict === 'refresh') {
-      reason = stages.conditions.status === 'no' ? 'conditions' : 'things';
-    }
-    return { verdict: verdict, reason: reason };
-  }
-
-  /**
-   * SNOW-1415: the whole device's answer, for the header symbol.
-   *
-   *   - `''` — no areas: the symbol stays the plain signal glyph.
-   *   - `syncing` — a sync is running.
-   *   - `ready` — every area answers Yes.
-   *   - `attention` — any area does not.
-   *
-   * @returns {''|'syncing'|'ready'|'attention'}
-   */
-  function overallReadiness() {
-    if (downloadsAreas.length === 0) return '';
-    if (readyRun && readyRun.running) return 'syncing';
-    return downloadsAreas.every((area) => areaVerdict(area).verdict === 'ready')
-      ? 'ready'
-      : 'attention';
-  }
-
-  /**
-   * SNOW-1415: paint the header symbol's readiness mark.
-   *
-   * No signal is the signal glyph's own answer (struck through), so the
-   * mark is hidden whenever the app is not reaching the server. The state
-   * is also written to `data-offline-readiness` so a test, or a reader in
-   * DevTools, can ask the symbol what it is showing.
-   *
-   * @returns {void}
-   */
-  function paintReadiness() {
-    const reaching = effectiveOnline();
-    const state = reaching ? overallReadiness() : '';
-    const indicator = document.querySelector(NETWORK_INDICATOR_SELECTOR);
-    if (indicator) indicator.setAttribute('data-offline-readiness', state || 'none');
-    for (const name of ['ready', 'syncing', 'attention']) {
-      toggleRole(`readiness-${name}`, state === name);
-    }
-  }
-
-  /**
-   * SNOW-1415: one row per area, cloned from the panel's <template>.
-   *
-   * Rebuilt rather than patched on every read, because the list itself
-   * moves — an area downloaded or removed in another tab is a different
-   * list. What a sync in flight has learned survives the rebuild in
-   * `readyRun`, which is why it lives outside the DOM.
-   *
-   * HIDDEN with nothing downloaded: a reader with no areas has nothing to
-   * answer for, and a heading over an empty list reads as a fault.
-   *
-   * @returns {void}
-   */
-  function renderAreaRows() {
-    const block = document.querySelector(NETWORK_SYNC_SELECTOR);
-    const list = block ? block.querySelector(NETWORK_SYNC_LIST_SELECTOR) : null;
-    const template = block ? block.querySelector(NETWORK_SYNC_ROW_SELECTOR) : null;
-    if (block && list && template) {
-      list.textContent = '';
-      block.classList.toggle('hidden', downloadsAreas.length === 0);
-      document
-        .querySelector(NETWORK_EMPTY_SELECTOR)
-        ?.classList.toggle('hidden', downloadsAreas.length > 0);
-      for (const area of downloadsAreas) {
-        const row = /** @type {DocumentFragment} */ (template.content.cloneNode(true));
-        const item = row.querySelector('li');
-        // The stamp-on-clone pattern every row on the downloads sheet uses.
-        if (item) item.setAttribute('data-area-id', area.id);
-        const label = row.querySelector('[data-area-label]');
-        if (label) label.textContent = area.label;
-        list.appendChild(row);
-      }
-    }
-    paintReady();
-  }
-
-  /**
-   * SNOW-1141/1415: paint the Sync button, its outcome lines and every
-   * row's answer, and refuse the press while the app is not using the
-   * network.
-   *
-   * Every fixed word is rendered in the template and toggled here; the
-   * sentences that carry a number come from
-   * ``includes/_network_mode_strings.html`` (docs/i18n.md). The refusal is
-   * a DISABLED control plus a sentence rather than a hidden one: a control
-   * that vanishes offline reads as a bug.
-   *
-   * @returns {void}
-   */
-  function paintReady() {
-    const online = effectiveOnline();
-    const running = !!(readyRun && readyRun.running);
-    const strings = networkStrings();
-    const core = window.pwaOfflineReadyCore;
-    const note = document.querySelector(NETWORK_SYNC_OFFLINE_SELECTOR);
-    if (note) note.classList.toggle('hidden', online || downloadsAreas.length === 0);
-
-    const button = /** @type {HTMLButtonElement|null} */ (
-      document.querySelector(NETWORK_READY_SELECTOR)
-    );
-    if (button) {
-      button.disabled = running || !online;
-      button.querySelectorAll('[data-ready-state]').forEach((span) => {
-        const state = span.getAttribute('data-ready-state');
-        span.classList.toggle('hidden', state !== (running ? 'running' : 'idle'));
-      });
-      const progress = button.querySelector('[data-ready-progress]');
-      if (progress && running && core) {
-        progress.textContent = core.progressText(readyRun.step, strings);
-      }
-    }
-
-    const described =
-      readyRun && readyRun.result && core
-        ? core.describe(readyRun.result, strings)
-        : { summary: '', queue: '' };
-    const summary = document.querySelector(NETWORK_READY_SUMMARY_SELECTOR);
-    if (summary) {
-      summary.textContent = described.summary;
-      summary.classList.toggle('hidden', !described.summary);
-    }
-    const queue = document.querySelector(NETWORK_READY_QUEUE_SELECTOR);
-    if (queue) {
-      queue.textContent = described.queue;
-      queue.classList.toggle('hidden', !described.queue);
-    }
-
-    const byId = new Map(downloadsAreas.map((area) => [area.id, area]));
-    document.querySelectorAll(`${NETWORK_SYNC_LIST_SELECTOR} [data-area-id]`).forEach((row) => {
-      const area = byId.get(row.getAttribute('data-area-id') || '');
-      if (!area) return;
-      const inFlight = !!(running && readyRun.current === area.id);
-      const answer = inFlight ? { verdict: 'running', reason: '' } : areaVerdict(area);
-      row.setAttribute('data-area-verdict', answer.verdict);
-      // The dot and the line under the name, each shown for its verdict.
-      row.querySelectorAll('[data-area-status], [data-area-dot]').forEach((span) => {
-        const verdict = span.getAttribute('data-area-status') || span.getAttribute('data-area-dot');
-        span.classList.toggle('hidden', verdict !== answer.verdict);
-      });
-      row.querySelectorAll('[data-area-reason]').forEach((span) => {
-        span.classList.toggle('hidden', span.getAttribute('data-area-reason') !== answer.reason);
-      });
-    });
-    paintReadiness();
-  }
-
-  /**
-   * SNOW-951: the pinned bucket id one row's area id names.
-   *
-   * A custom area IS its bucket id; a region carries its region id, and
-   * turning one into the other belongs to
-   * ``basemap_download_core.js``'s ``areaIdForRegion`` — the format is
-   * deliberately never assembled by hand anywhere in the tree. That core
-   * is loaded exactly where this matters (the map page, the only place
-   * ``syncArea`` exists at all).
-   *
-   * @param {string} areaId As stamped on the row.
-   * @returns {string}
-   */
-  function resolveSyncAreaId(areaId) {
-    const core = self.pwaBasemapDownloadCore;
-    if (!core || typeof core.areaIdForRegion !== 'function') return areaId;
-    if (typeof core.isCustomAreaId === 'function' && core.isCustomAreaId(areaId)) return areaId;
-    return core.areaIdForRegion(areaId);
-  }
-
-  /**
-   * SNOW-1415: hand the press to the map, which can run it.
-   *
-   * ``/map/?sync=all`` — the map's downloads module runs the same sync
-   * once it is ready, opens this panel so the rows show the result, and
-   * strips the parameter (`map_basemap_downloads.js`). Only the map can
-   * mend tiles, so only the map can answer for them. The map's url is the
-   * block's own ``data-map-url``, rendered from the url conf.
-   *
-   * @returns {void}
-   */
-  function navigateToMapSync() {
-    const block = document.querySelector(NETWORK_SYNC_SELECTOR);
-    const href = block ? block.getAttribute('data-map-url') : '';
-    // Only a plain same-site path, as `{% url %}` renders it: the attribute
-    // is page text, and nothing but a path of ours is a place to send the
-    // reader (no scheme, no host, no `//`).
-    if (!href || !SAME_SITE_PATH.test(href)) return;
-    self.location.assign(href + '?sync=all');
-  }
-
-  /**
-   * SNOW-1141: how many queued edits are still waiting to send.
-   *
-   * @returns {Promise<number>}
-   */
-  async function waitingMutations() {
-    const db = window.pwaDb;
-    const core = window.pwaOfflineReadyCore;
-    if (!db || typeof db.getAll !== 'function' || !core) return 0;
-    try {
-      return core.waitingCount(await db.getAll(MUTATION_STORE));
-    } catch (_err) {
-      return 0;
-    }
-  }
-
-  /**
-   * SNOW-1141/1415: Sync — the queue, then every area.
-   *
-   * On the MAP page ``window.pwaBasemapDownloads.syncArea`` exists, so the
-   * press runs in place and reports in the panel it was made from — the
-   * panel stays open, because the result is the answer to the question the
-   * press asked. Everywhere else it navigates to ``/map/?sync=all``.
-   *
-   * Each area's row re-reads its record as soon as that area settles,
-   * because the sync has just stamped what it verified there.
-   *
-   * @returns {void}
-   */
-  function pressReady() {
-    // The MODE, not the radio — a forced offline mode leaves
-    // `navigator.onLine` true, and a sync is network use. The button is
-    // disabled in that state; this is the guard for a press that raced
-    // the repaint.
-    if (!effectiveOnline()) return;
-    if (readyRun && readyRun.running) return;
-    const core = window.pwaOfflineReadyCore;
-    const bridge = window.pwaBasemapDownloads;
-    if (!core || !bridge || typeof bridge.syncArea !== 'function') {
-      navigateToMapSync();
-      return;
-    }
-    const run = {
-      running: true,
-      step: /** @type {Object|null} */ (null),
-      current: '',
-      result: /** @type {Object|null} */ (null),
-    };
-    readyRun = run;
-    paintReady();
-    const queue = window.pwaMutationQueue;
-    core
-      .run({
-        drain: () => (queue && typeof queue.drain === 'function' ? queue.drain() : undefined),
-        waiting: waitingMutations,
-        areas: downloadsAreas.map((area) => area.id),
-        syncOne: async (areaId, onStage) =>
-          core.areaOutcome(await bridge.syncArea(resolveSyncAreaId(areaId), onStage)),
-        onStep: (step) => {
-          run.step = step;
-          if (step.phase === 'area') run.current = step.id;
-          if (step.phase === 'done') {
-            run.current = '';
-            if (readyRun === run) refreshAreas();
-            return;
-          }
-          if (readyRun === run) paintReady();
-        },
-      })
-      .then((result) => {
-        run.result = result;
-      })
-      .catch(() => {
-        run.result = { total: downloadsAreas.length, ready: 0, waiting: 0, outcomes: [] };
-      })
-      .finally(() => {
-        run.running = false;
-        if (readyRun !== run) return;
-        refreshAreas();
-      });
-  }
-
-  /**
-   * SNOW-1415: run Sync on arrival — the map's ``?sync=all``, handed here
-   * by `map_basemap_downloads.js` once its downloads module is ready.
-   *
-   * Opens the panel first, so the rows show the run as it goes, and reads
-   * the areas before pressing, because a press with no areas read yet
-   * would run over nothing.
-   *
-   * @returns {Promise<void>}
-   */
-  async function syncAll() {
-    const disclosure = panelDisclosure();
-    if (disclosure && !disclosure.open) {
-      // `toggle` fires a task later, and its handler clears a SETTLED
-      // press — so the press waits for it rather than racing it.
-      const opened = new Promise((resolve) => {
-        disclosure.addEventListener('toggle', () => resolve(undefined), { once: true });
-      });
-      disclosure.open = true;
-      await opened;
-    }
-    await refreshAreas();
-    pressReady();
-  }
-
-  /**
-   * SNOW-1141: "Download again" on a row whose map is missing.
-   *
-   * On the map page the Manage downloads sheet is right here, so it opens
-   * in place rather than reloading the map; everywhere else the link's own
-   * href (``/map/?panel=downloads``) is followed.
-   *
-   * @param {MouseEvent} event
-   * @returns {void}
-   */
-  function pressRedownload(event) {
-    const manager = window.pwaDownloadsManager;
-    if (!manager || typeof manager.open !== 'function') return;
-    event.preventDefault();
-    const disclosure = panelDisclosure();
-    if (disclosure) disclosure.open = false;
-    manager.open();
-  }
-
-  // SNOW-951/1415: `{id, label, record}` per area, in the order the two
-  // stores yield them, for the rows and the header symbol.
-  let downloadsAreas = [];
-
-  // SNOW-1141: the current Sync press — `running`, the step it is on, the
-  // area it is on now and, once settled, its result. Module state rather
-  // than DOM state because the rows are rebuilt from the <template> on
-  // every read, and a press still in flight must survive that. A SETTLED
-  // press's summary is cleared on the next open (`syncPanelState`): its
-  // answer belongs to the moment it was given.
-  /** @type {{running: boolean, step: Object|null, current: string, result: Object|null}|null} */
-  let readyRun = null;
-
-  /**
    * The <details> carrying the symbol and its panel, or null on a page that
    * renders neither.
    *
@@ -860,7 +343,7 @@
 
   /**
    * Follow the disclosure's own open/closed state: paint the symbol's
-   * ``aria-expanded``, and re-read the areas each time the panel opens.
+   * ``aria-expanded``.
    *
    * Called from the ``toggle`` event, so it lands however the panel was
    * closed — the symbol again, the "×", Escape, or a click outside — without
@@ -872,15 +355,6 @@
     const open = panelIsOpen();
     const indicator = document.querySelector(NETWORK_INDICATOR_SELECTOR);
     if (indicator) indicator.setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (open) {
-      // SNOW-1141: a settled press's answer is not carried into a new
-      // opening of the menu; one still running is.
-      if (readyRun && !readyRun.running) readyRun = null;
-      // Re-read what the downloads hold on every open: the records move
-      // only when a sync or a download runs, which can have happened in
-      // another tab since this page loaded.
-      refreshAreas();
-    }
   }
 
   /**
@@ -905,12 +379,6 @@
     const reaching = online && networkMode === 'auto';
     renderNetworkUi(reaching);
     renderNetworkCopy(reaching);
-    // SNOW-951/1141: and the press's own refusal, which follows the same
-    // effective-online reading the rest of this function does. Only its
-    // STATE, not the list: which areas exist has not changed, and
-    // re-reading IndexedDB on every interface blink would be waste on the
-    // device least able to afford it.
-    paintReady();
   }
 
   /**
@@ -924,29 +392,33 @@
    * the network, or it is trying and failing — and the mode distinguishes the
    * last two, which agree on more than they differ on. Both offline modes
    * share the summary line: it answers "is this app contacting the server",
-   * and the answer is no either way. They share the CTA, because the way out
-   * is the same, under different labels: "Try reconnecting" asserts a
-   * repair, which is false when the user chose the mode while online.
+   * and the answer is no either way. Only the latched mode has the "Try
+   * reconnecting" CTA: the forced mode's way out is the Offline mode switch
+   * in the same panel (SNOW-1420).
    *
    * @param {boolean} reaching — the app is using the network.
    * @returns {void}
    */
   function renderNetworkCopy(reaching) {
     const auto = networkMode === 'auto';
-    const forced = networkMode === 'offline-forced';
     const latched = networkMode === 'offline';
     toggleRole('online-message', auto && reaching);
     toggleRole('offline-message', auto && !reaching);
     toggleRole('latched-message', !auto);
-    // Same button, two labels: "try reconnecting" reads as a repair, which is
-    // the wrong promise when nothing is broken and the user simply chose this.
     toggleRole('reconnect-label', latched);
-    toggleRole('resume-label', forced);
-    // The way back to normal operation, offered only where it does something
-    // — under either offline mode, and not while the app is merely struggling
-    // and still trying on its own, nor while it is succeeding.
+    // A shell cached before SNOW-1420 still renders this second label.
+    toggleRole('resume-label', !auto && !latched);
+    // The way back to normal operation, offered only where it does something:
+    // not while the app is merely struggling and still trying on its own, nor
+    // while it is succeeding.
     const cta = document.querySelector(PANEL_CTA_SELECTOR);
-    if (cta) cta.classList.toggle('hidden', auto);
+    // SNOW-1420: a forced mode is the user's own switch, which sits in this
+    // panel now, so switching it off is the way back and a second control
+    // for the same thing would compete. The button stays for a forced mode
+    // only on a page with no switch (a shell cached before SNOW-921), where
+    // it is the one exit.
+    const hasSwitch = !!document.querySelector(NETWORK_TOGGLE_SELECTOR);
+    if (cta) cta.classList.toggle('hidden', !(latched || (!auto && !hasSwitch)));
   }
 
   /**
@@ -1040,19 +512,6 @@
       'Snowdesk has not been saved on this device yet, so switching Offline mode on ' +
       'will stop it opening at all until you switch it off again.',
     'lockout-confirm': 'Switch it on anyway?',
-    'area-default-name': 'Custom area %(n)s',
-    'ready-running': 'Syncing…',
-    'ready-progress': 'Syncing… (%(n)s of %(total)s)',
-    'ready-all': 'Ready — %(total)s areas up to date',
-    'ready-all-one': 'Ready — 1 area up to date',
-    'ready-some': '%(ready)s of %(total)s ready',
-    'queue-waiting': '%(n)s changes still waiting to send',
-    'queue-waiting-one': '1 change still waiting to send',
-    // SNOW-1415: what one area's sync is fetching now (`progressText`).
-    'sync-stage-map': 'Checking the map… (%(n)s of %(total)s)',
-    'sync-stage-bulletins': 'Saving bulletins… (%(n)s of %(total)s)',
-    'sync-stage-weather': 'Saving weather… (%(n)s of %(total)s)',
-    'sync-stage-things': 'Saving your trips and pins… (%(n)s of %(total)s)',
   };
 
   /**
@@ -1165,25 +624,6 @@
     // signed-out user who gets auto-latched can leave that state only here.
     document.querySelector(PANEL_CTA_SELECTOR)?.addEventListener('click', () => {
       requestNetworkMode('auto');
-    });
-    // SNOW-1141: the one press, and a tiles-gone row's "Download again".
-    // Delegated on the block, because every row is rebuilt on each panel
-    // open and a listener bound to a link would go with the link it was
-    // bound to — the same reason the downloads sheet and the audit report
-    // both delegate.
-    document.querySelector(NETWORK_SYNC_SELECTOR)?.addEventListener('click', (event) => {
-      const target = /** @type {HTMLElement} */ (event.target);
-      if (!target || !target.closest) return;
-      if (target.closest(NETWORK_READY_SELECTOR)) {
-        pressReady();
-        return;
-      }
-      if (target.closest('[data-area-redownload]')) pressRedownload(event);
-    });
-    // SNOW-1415: the empty state's "Download an area" opens the same sheet.
-    document.querySelector(NETWORK_EMPTY_SELECTOR)?.addEventListener('click', (event) => {
-      const target = /** @type {HTMLElement} */ (event.target);
-      if (target && target.closest && target.closest('a')) pressRedownload(event);
     });
     // SNOW-748: the menu's "Offline mode" switch. Its two directions are not
     // symmetrical — going offline asks for ``'offline-forced'`` (a choice,
@@ -1769,11 +1209,6 @@
     // latched with the panel still claiming it is merely struggling.
     bindNetworkModeControls();
     await hydratePersistedMode();
-    // SNOW-1415: and what this device's downloads hold, so the rows and
-    // the header symbol answer from the first paint. Not awaited: holding
-    // the mode re-assertion below behind an IndexedDB read would leave a
-    // latched worker in 'auto' for the length of it.
-    refreshAreas();
     // SNOW-742: re-assert the persisted mode to the worker. A worker
     // terminated while idle comes back in 'auto' having forgotten the latch;
     // this is what restores it, and it is why the worker never has to read
@@ -1805,13 +1240,6 @@
   // Frozen, like the other ``window.pwa*`` surfaces (docs/offline-map.md): the
   // mode itself is owned by the service worker, and nothing on the page may
   // assert connectivity by assignment.
-  // SNOW-1415: the map's ``?sync=all`` arrival hands the press here
-  // (``map_basemap_downloads.js``), because this module owns the panel the
-  // result is shown in. Frozen, like the other ``window.pwa*`` surfaces.
-  window.pwaConnectionPanel = Object.freeze({
-    syncAll: () => syncAll(),
-  });
-
   window.pwaConnectivity = Object.freeze({
     /**
      * True when the app is using the network: the interface is up and no

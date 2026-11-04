@@ -89,41 +89,26 @@ it gains is somewhere to send a reader who does have a connection.
 
             {% card padding="p-0" extra="overflow-hidden divide-y divide-border" %}
             {% comment %}
-                SNOW-1415: the debug controls, moved here from the header's
-                connection panel. The Offline mode switch is bound by
-                static/js/pwa_offline.js (loaded on every page) by its id,
-                and revealed by it — it drives a service worker, so a row
-                that appeared without the script would be a dead control.
-                The label is a <label for="…"> and a SIBLING of the include,
-                never a wrapper: _switch.html's own outer element is itself
-                a <label>, and labels must not nest.
+                SNOW-1415 moved the debug controls here from the header's
+                connection panel; SNOW-1420 moved the Offline mode switch
+                back, because it is a control for users, not for debugging.
 
                 "Open debug log" opens the trace panel base.html renders
                 behind the same ``debug_log`` flag; static/js/debug_log_panel.js
                 binds every ``[data-open-debug-log]``.
             {% endcomment %}
-            <div class="p-4" data-testid="offline-debug-controls">
-                <div
-                    data-network-toggle
-                    data-testid="network-toggle"
-                    class="hidden items-center gap-3 py-1"
-                >
-                    <label for="nav-offline-mode" class="grow cursor-pointer text-sm text-text-1">
-                        {% trans "Offline mode" %}
-                    </label>
-                    {% include "includes/_switch.html" with id="nav-offline-mode" %}
-                </div>
-                {% if debug_log_visible %}
+            {% if debug_log_visible %}
+                <div class="p-4" data-testid="offline-debug-controls">
                     <button
                         type="button"
                         data-open-debug-log
                         data-testid="open-debug-log"
-                        class="{% button_classes variant='ghost' size='compact' %} mt-2"
+                        class="{% button_classes variant='ghost' size='compact' %}"
                     >
                         {% trans "Open debug log" %}
                     </button>
-                {% endif %}
-            </div>
+                </div>
+            {% endif %}
             {% comment %}
                 The audit, above Reset rather than below it — the placement
                 SNOW-907 argued for on settings and the reason it holds

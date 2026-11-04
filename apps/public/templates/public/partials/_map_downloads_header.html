@@ -101,16 +101,8 @@ now, not the header, at that strip's own 16px.
     >
         {% trans "You're over your budget. Your next download will remove the oldest areas to make room — or remove some yourself below." %}
     </p>
-    {# SNOW-860: the one line pointing at everything this panel is NOT     #}
-    {# about. These rows are the areas the user chose and the budget they  #}
-    {# set for them; the shared overview maps, the cached pages, the       #}
-    {# unsent changes and the preferences are not here and are not in that #}
-    {# budget (SNOW-867), and the place they are stated — and cleared — is #}
-    {# the offline page's "This device" breakdown (SNOW-1137 pointed this  #}
-    {# at /offline/ rather than settings). A link, not a                   #}
-    {# second copy of the breakdown: this panel answers "what did I        #}
-    {# download and where", that one answers "what would I lose", and a    #}
-    {# duplicate here would compete with the per-row actions below.        #}
+    {# SNOW-860 put a line here pointing at /offline/ for everything this   #}
+    {# panel is not about. SNOW-1420 removed it: /offline/ is unlisted.      #}
     {% if terrain_filter_eligible %}
         <div data-downloads-terrain class="flex items-center justify-between gap-3">
             <div class="min-w-0">
@@ -122,11 +114,4 @@ now, not the header, at that strip's own 16px.
             {% include "includes/_switch.html" with id="map-downloads-terrain" %}
         </div>
     {% endif %}
-    <p class="text-xs text-text-3">
-        {% url 'public:offline_page' as offline_url %}
-        {% blocktrans trimmed %}
-            Snowdesk stores more than this on your device.
-            <a href="{{ offline_url }}" class="text-link">See what this device holds</a>
-        {% endblocktrans %}
-    </p>
 </div>

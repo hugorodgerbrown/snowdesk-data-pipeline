@@ -10,18 +10,15 @@ sync-log panel this topic documents.
 <div class="text-sm leading-prose text-text-2">
     <p class="mb-3 last:mb-0">
         {% blocktrans trimmed %}
-            Tapping the signal symbol at the top of the page names one clock: when this device last reached the server.
-            It also says which state you are in &mdash; requests are still being attempted and will update the page as
-            soon as one lands, or Snowdesk has stopped calling the network and is serving stored data until you tap "Try
-            reconnecting".
+            Tapping the signal symbol at the top of the page says which state you are in &mdash; requests are still
+            being attempted and will update the page as soon as one lands, or Snowdesk has stopped calling the network
+            and is serving stored data until you tap "Try reconnecting".
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0">
-        {% url 'public:offline_page' as offline_page_url %}
-        {% blocktrans trimmed with url=offline_page_url %}
-            The <a href="{{ url }}" class="underline">Debug offline issues</a> page has a "Sync log" panel listing your
-            device's most recent real syncs with the server (cached, offline-served pages don't count). It keeps the
-            newest 100 entries.
+        {% blocktrans trimmed %}
+            The Debug offline issues page has a "Sync log" panel listing your device's most recent real syncs with the
+            server (cached, offline-served pages don't count). It keeps the newest 100 entries.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0">

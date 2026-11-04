@@ -1,6 +1,6 @@
 ---
 name: a-pre-departure-sync-is-unconditional
-description: syncArea, the network menu's Sync, /map/?sync=all, offline_ready_core.js — refetch regardless of freshness, every area per press
+description: syncArea, the Downloads sheet's Sync all, offline_ready_core.js — refetch regardless of freshness, every area per press
 status: current
 last-reviewed: 2026-11-04
 ---
@@ -21,12 +21,12 @@ succeeded.
 
 The menu's press drains the mutation queue first, so queued edits go
 before any area, and then syncs each downloaded area one at a time
-(`static/js/offline_ready_core.js`). Off the map page it does not run the
-sync: since SNOW-1415 it navigates to `/map/?sync=all`, and the map runs the
-same sequence with the panel open
-([the-connection-panel-answers-per-area.md](the-connection-panel-answers-per-area.md)).
-Until then it went to `/offline/?sync=all`, which still runs the same
-sequence through the same core for the debug page's own use.
+(`static/js/offline_ready_core.js`). Since SNOW-1420 that press is the
+Downloads sheet's **Sync all**, and the network menu has none
+([downloads-is-the-home-for-offline.md](downloads-is-the-home-for-offline.md)).
+SNOW-1415 had it navigate to `/map/?sync=all`, which is gone; before that it
+went to `/offline/?sync=all`, which still runs the same sequence through the
+same core for the debug page's own use.
 `/offline/?sync=<area id>` still names one area, for any caller that wants
 that.
 

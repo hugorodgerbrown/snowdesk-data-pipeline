@@ -190,16 +190,82 @@ class TestDownloadsRoundelAttributes:
 class TestDownloadsSheetCopy:
     """SNOW-1137: the sheet's link, the roundel's name and the region toasts."""
 
-    def test_the_header_link_points_at_the_offline_page(self, client: Client) -> None:
-        """The breakdown it names moved to /offline/ (SNOW-930), not Settings."""
+    def test_the_header_no_longer_links_to_the_offline_page(
+        self, client: Client
+    ) -> None:
+        """SNOW-1420: /offline/ is unlisted, so the header's pointer went."""
         html = client.get(reverse("public:map")).content.decode()
-        offline_url = reverse("public:offline_page")
 
-        assert (
-            f'<a href="{offline_url}" class="text-link">See what this device holds</a>'
-            in html
-        )
+        assert "See what this device holds" not in html
+        assert f'href="{reverse("public:offline_page")}"' not in html
         assert "See it all in Settings" not in html
+
+
+@pytest.mark.django_db
+class TestDownloadsSheetAnswersOffline:
+    """SNOW-1420: the Downloads sheet is the one home for offline.
+
+    Each row carries a verdict dot and one reason line, painted by
+    ``map_downloads_manager.js`` from ``map_downloads_sync_all.js``; the
+    foot carries Sync all. Every word is rendered here (docs/i18n.md).
+    """
+
+    def _template(self, html: str, template_id: str) -> str:
+        """The inner markup of one ``<template id=…>``."""
+        return html.split(f'<template id="{template_id}">', 1)[1].split(
+            "</template>", 1
+        )[0]
+
+    def test_the_row_carries_a_verdict_dot_and_a_reason_line(
+        self, client: Client
+    ) -> None:
+        """Both hooks, empty for the script: neutral dot, hidden notice."""
+        html = client.get(reverse("public:map")).content.decode()
+        row = self._template(html, "map-downloads-row-template")
+
+        assert "data-row-status" in row
+        assert "bg-sync-off" in row.split("data-row-status", 1)[1].split(">", 1)[0]
+        notice = row.split("data-row-notice", 1)[1].split(">", 1)[0]
+        assert "hidden" in notice
+
+    def test_every_answer_is_in_the_strings_template(self, client: Client) -> None:
+        """Ready, the two reasons, map missing, unchecked and syncing."""
+        html = client.get(reverse("public:map")).content.decode()
+        strings = self._template(html, "map-downloads-strings-template")
+
+        for key, words in (
+            ("area-status-ready", "Works offline"),
+            ("area-reason-conditions", "Bulletins out of date"),
+            ("area-reason-things", "Some trips or pins missing"),
+            ("area-status-open-map", "Map data missing"),
+            ("area-status-unknown", "Not checked yet"),
+            ("area-status-running", "Syncing…"),
+        ):
+            assert f'<span data-string="{key}">{words}</span>' in strings
+        assert "Download again" not in strings
+
+    def test_the_foot_carries_sync_all_first(self, client: Client) -> None:
+        """Hidden until the script finds an area on this device to sync."""
+        html = client.get(reverse("public:map")).content.decode()
+        body = self._template(html, "map-downloads-body-template")
+        foot = body.split("data-panel-foot", 1)[1]
+
+        tag = foot.split("data-downloads-sync-all", 1)[1].split(">", 1)[0]
+        assert "hidden" in tag
+        assert "Sync all" in foot
+        assert foot.index("data-downloads-sync-all") < foot.index(
+            "data-panel-add-region"
+        )
+
+    def test_the_map_loads_the_sync_all_module_before_the_manager(
+        self, client: Client
+    ) -> None:
+        """The manager reads ``window.pwaDownloadsSyncAll`` at render time."""
+        html = client.get(reverse("public:map")).content.decode()
+
+        assert html.index("map_downloads_sync_all.js") < html.index(
+            "map_downloads_manager.js"
+        )
 
     def test_the_roundel_is_named_manage_downloads(self, client: Client) -> None:
         """The feature is "downloads"; the roundel says so without "offline"."""

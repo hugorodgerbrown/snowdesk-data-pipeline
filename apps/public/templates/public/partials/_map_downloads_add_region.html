@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n components %}
 {% comment %}
 public/partials/_map_downloads_add_region.html — the Downloads sheet's
 "Download a region" (SNOW-1414).
@@ -14,5 +14,24 @@ offline and signed out exactly as it refuses the custom area.
 First because it is the cheaper of the two to use: a region is a tap, a
 custom area is a frame to pan and zoom.
 {% endcomment %}
+{% comment %}
+SNOW-1420: Sync all, first in the foot — the Downloads sheet is the one home
+for offline (docs/decisions/downloads-is-the-home-for-offline.md). It syncs
+every area on this device, one at a time; each row's "…" menu keeps its own
+Sync now. Hidden by map_downloads_manager.js with nothing on this device to
+sync, disabled while a run is going or the app is not using the network.
+Drawn with the shared button chrome rather than includes/_button.html
+because it carries two labels, idle and running, toggled by the script.
+{% endcomment %}
+<button
+    type="button"
+    data-downloads-sync-all
+    data-testid="downloads-sync-all"
+    hidden
+    class="{% button_classes variant='primary' size='compact' full_width=True %} hover-affordance h-11.5 disabled:opacity-50"
+>
+    <span data-sync-all-state="idle">{% trans "Sync all" %}</span>
+    <span data-sync-all-state="running" class="hidden">{% trans "Syncing…" %}</span>
+</button>
 {% trans "Download a region" as add_region_label %}
 {% include "includes/_panel_add_button.html" with label=add_region_label hook="panel-add-region" %}

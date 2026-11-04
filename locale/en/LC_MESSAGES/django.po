@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-04 12:19+0000\n"
+"POT-Creation-Date: 2026-11-04 17:47+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -580,15 +580,6 @@ msgid "Theme"
 msgstr ""
 
 msgid "Applies to this browser only."
-msgstr ""
-
-msgid "Debug offline issues"
-msgstr ""
-
-msgid "Check what is saved on this device, and reset it if it is stuck."
-msgstr ""
-
-msgid "Open"
 msgstr ""
 
 msgid "Privacy"
@@ -1509,13 +1500,6 @@ msgid "Rename"
 msgstr ""
 
 msgid "Delete"
-msgstr ""
-
-msgid "Pin a region and it will be listed here."
-msgstr ""
-
-#, python-format
-msgid "Unpin %(name)s"
 msgstr ""
 
 msgid "Saved"
@@ -3922,14 +3906,6 @@ msgid ""
 "download yourself &mdash; see \"Offline downloads\" above."
 msgstr ""
 
-#, python-format
-msgid ""
-"If something is not working offline, <a href=\"%(url)s\" "
-"class=\"underline\">Debug offline issues</a> shows exactly what this device "
-"has saved, and lets you clear it if something is stuck. You do not need an "
-"account."
-msgstr ""
-
 msgid ""
 "The stacked-squares button on the right of the map opens the layers menu "
 "&mdash; one list of everything the map can draw, with a switch for each. A "
@@ -4265,24 +4241,26 @@ msgid ""
 msgstr ""
 
 msgid ""
-"Terrain takes the day's layers off the map: the danger colours and the "
-"avalanche regions they are drawn in, the bulletin's problem slopes, the "
-"weather symbols, the field reports and the season timeline. Their rows in "
-"the layers menu are greyed out while you are in Terrain. It switches nothing "
-"on."
+"Terrain takes the day's layers off the map: the danger colours, the "
+"bulletin's problem slopes, the weather symbols, the field reports and the "
+"season timeline. Their rows in the layers menu are greyed out while you are "
+"in Terrain. It switches nothing on."
 msgstr ""
 
 msgid ""
-"Everything else stays as you set it, in both modes: Steep terrain, your "
-"routes, resorts, ski tours, wildlife rest zones and your pins. Turning one "
-"on or off in Terrain changes that layer alone."
+"Everything else stays as you set it, in both modes: the avalanche region "
+"boundaries, Steep terrain, your routes, resorts, ski tours, wildlife rest "
+"zones and your pins. Turning one on or off in Terrain changes that layer "
+"alone. A tap on a region shows its name, its resorts and its pin and "
+"download buttons, without the day's conditions."
 msgstr ""
 
 msgid ""
 "In Terrain the date shrinks to a calendar icon. Tap it to come back to the "
 "dated map, on the day you left, with each of the day's layers just as you "
-"had it. The map remembers which mode you were in, and a link you share opens "
-"in the same mode."
+"had it. The panel in a region's sheet comes back to today instead, with that "
+"region still open. The map remembers which mode you were in, and a link you "
+"share opens in the same mode."
 msgstr ""
 
 msgid ""
@@ -4552,19 +4530,16 @@ msgid ""
 msgstr ""
 
 msgid ""
-"Tapping the signal symbol at the top of the page names one clock: when this "
-"device last reached the server. It also says which state you are in &mdash; "
-"requests are still being attempted and will update the page as soon as one "
-"lands, or Snowdesk has stopped calling the network and is serving stored "
-"data until you tap \"Try reconnecting\"."
+"Tapping the signal symbol at the top of the page says which state you are in "
+"&mdash; requests are still being attempted and will update the page as soon "
+"as one lands, or Snowdesk has stopped calling the network and is serving "
+"stored data until you tap \"Try reconnecting\"."
 msgstr ""
 
-#, python-format
 msgid ""
-"The <a href=\"%(url)s\" class=\"underline\">Debug offline issues</a> page "
-"has a \"Sync log\" panel listing your device's most recent real syncs with "
-"the server (cached, offline-served pages don't count). It keeps the newest "
-"100 entries."
+"The Debug offline issues page has a \"Sync log\" panel listing your device's "
+"most recent real syncs with the server (cached, offline-served pages don't "
+"count). It keeps the newest 100 entries."
 msgstr ""
 
 msgid ""
@@ -5418,6 +5393,9 @@ msgstr ""
 msgid "Playback in progress"
 msgstr ""
 
+msgid "Debug offline issues"
+msgstr ""
+
 msgid "What Snowdesk has saved on this device, and the tools to debug it."
 msgstr ""
 
@@ -5427,9 +5405,6 @@ msgid ""
 "devices, but the maps themselves, your download budget, saved pages and "
 "unsent changes stay on this device. Check it before a journey, and again if "
 "something is not behaving once you have lost signal."
-msgstr ""
-
-msgid "Offline mode"
 msgstr ""
 
 msgid "Open debug log"
@@ -5529,6 +5504,12 @@ msgstr ""
 msgid "Select a region to download its basemap"
 msgstr ""
 
+msgid "Sync all"
+msgstr ""
+
+msgid "Syncing…"
+msgstr ""
+
 msgid "Download a region"
 msgstr ""
 
@@ -5543,12 +5524,6 @@ msgstr ""
 msgid ""
 "Include it in new downloads so the terrain filter works offline. Adds about "
 "11 MB to a typical region."
-msgstr ""
-
-#, python-format
-msgid ""
-"Snowdesk stores more than this on your device. <a href=\"%(offline_url)s\" "
-"class=\"text-link\">See what this device holds</a>"
 msgstr ""
 
 msgid "Download here"
@@ -5580,6 +5555,21 @@ msgid "Sync %%(name)s now"
 msgstr ""
 
 msgid "That area couldn't be brought up to date. Try again."
+msgstr ""
+
+msgid "Works offline"
+msgstr ""
+
+msgid "Bulletins out of date"
+msgstr ""
+
+msgid "Some trips or pins missing"
+msgstr ""
+
+msgid "Map data missing"
+msgstr ""
+
+msgid "Not checked yet"
 msgstr ""
 
 msgid "Bulletins not saved"
@@ -5666,6 +5656,9 @@ msgid "That area couldn't be forgotten. Try again."
 msgstr ""
 
 msgid "You're offline — connect to download a new area."
+msgstr ""
+
+msgid "Syncing needs a connection."
 msgstr ""
 
 msgid "Downloading needs a connection"
@@ -7335,6 +7328,9 @@ msgid "Pin this region"
 msgstr ""
 
 msgid "Download this region"
+msgstr ""
+
+msgid "Select a date to view current weather and avalanche conditions"
 msgstr ""
 
 msgid "Loading region details…"
@@ -9429,49 +9425,10 @@ msgstr ""
 msgid "Offline"
 msgstr ""
 
-msgid "Your offline areas"
-msgstr ""
-
-msgid "Works offline"
-msgstr ""
-
-msgid "Bulletins out of date"
-msgstr ""
-
-msgid "Some trips or pins missing"
-msgstr ""
-
-msgid "Map data missing"
-msgstr ""
-
-msgid "Download again"
-msgstr ""
-
-msgid "Not checked yet"
-msgstr ""
-
-msgid "Syncing…"
-msgstr ""
-
-msgid "Syncing needs a connection."
-msgstr ""
-
-msgid "Sync"
-msgstr ""
-
-msgid "No offline areas yet"
-msgstr ""
-
-msgid "Download an area on the map to use it without a signal."
-msgstr ""
-
-msgid "Download an area"
+msgid "Offline mode"
 msgstr ""
 
 msgid "Try reconnecting"
-msgstr ""
-
-msgid "Use the network again"
 msgstr ""
 
 msgid "No danger rating"
@@ -10529,15 +10486,6 @@ msgid "Network menu: using the network"
 msgstr ""
 
 msgid "Network menu: offline"
-msgstr ""
-
-msgid "Your offline areas are ready"
-msgstr ""
-
-msgid "Syncing your offline areas"
-msgstr ""
-
-msgid "An offline area needs attention"
 msgstr ""
 
 msgid "Account menu"

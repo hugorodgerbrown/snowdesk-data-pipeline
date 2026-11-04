@@ -133,6 +133,10 @@ Parameters (passed via {% include … with … %}):
                 opaque string of measured quantities four panels share, set
                 mono; a sentence is not a quantity. Inside the row's own
                 `<li>`, so one item stays one list item.
+  status_dot    (bool, optional) — render a leading `[data-row-status]`
+                dot and, on a `js_filled` row, an empty `[data-row-notice]`
+                for the owning module to fill (SNOW-1420: the Downloads
+                row's offline verdict and its one reason line).
   value         (string, optional) — trailing mono figure. Measured
                 quantities only, and no current caller — see the note at
                 the top of this file. NOT rendered for a `js_filled` row
@@ -223,6 +227,12 @@ buildRow still finds its hooks by attribute, not by depth.
     {% if renameable %}data-row-renameable{% endif %}
 >
     <div class="flex items-center gap-2 py-2.25">
+        {# SNOW-1420: the Downloads row's answer to "will this work offline?" #}
+        {# — a traffic-light dot that buildRow colours from the area's        #}
+        {# verdict, or removes for a row with nothing to answer for.           #}
+        {% if status_dot %}
+            <span data-row-status aria-hidden="true" class="size-2.5 shrink-0 rounded-full bg-sync-off"></span>
+        {% endif %}
         <span class="flex min-w-0 flex-1 flex-col gap-0.5">
             {# The label's own box is the inline editor's box: identical        #}
             {# padding, radius and negative margins in both states, so          #}
@@ -338,6 +348,9 @@ buildRow still finds its hooks by attribute, not by depth.
             {% endif %}
             {% if notice %}
                 <span data-row-notice data-testid="ugc-row-notice" class="text-caption text-text-2">{{ notice }}</span>
+            {% elif status_dot and js_filled %}
+                {# SNOW-1420: the verdict's one reason line, filled by buildRow. #}
+                <span data-row-notice data-testid="ugc-row-notice" class="hidden text-caption text-text-2"></span>
             {% endif %}
         </span>
         {# SNOW-832: `value` alone, no longer `value or js_filled` — see    #}
