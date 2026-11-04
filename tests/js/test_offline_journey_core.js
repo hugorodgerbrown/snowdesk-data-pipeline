@@ -438,6 +438,121 @@ describe("the conditions stage's problem-terrain line (SNOW-1379)", () => {
   });
 });
 
+describe("the conditions stage's tours and reports lines (SNOW-1417)", () => {
+  const T1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const T2 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const tourUrls = (uuid) => [
+    '/routes/ski-tours/' + uuid + '/feature.json',
+    '/routes/ski-tours/' + uuid + '/terrain.json',
+  ];
+  const TOURS = [
+    { uuid: T1, name: 'Pigne', urls: tourUrls(T1) },
+    { uuid: T2, name: 'Rosablanche', urls: tourUrls(T2) },
+  ];
+
+  /** An area whose last sync saved two tours and two reports. */
+  function publicArea(extra) {
+    return area({
+      items: {
+        ...area().items,
+        tours: TOURS,
+        reports: [{ id: 'r1' }, { id: 'r2' }],
+        reportsNewestAt: '2026-09-10T12:00:00Z',
+        ...(extra || {}),
+      },
+    });
+  }
+
+  /** Readings holding the tour files `held` and the report ids `ids`. */
+  function holding(held, ids, overrides) {
+    const r = readings([publicArea()], overrides);
+    r.shellEntries = r.shellEntries.concat(held.map((url) => ({ url: ORIGIN + url })));
+    r.reportIds = ids;
+    return r;
+  }
+
+  const ALL = [...tourUrls(T1), ...tourUrls(T2)];
+
+  it('counts each tour whose two files are held, and each report, and says Yes', () => {
+    const p = panel(holding(ALL, new Set(['r1', 'r2'])));
+
+    expect(p.stages.conditions).toEqual({
+      status: 'yes',
+      tours: { status: 'yes', held: 2, total: 2 },
+      reports: { status: 'yes', held: 2, total: 2, newestAt: '2026-09-10T12:00:00Z' },
+    });
+    expect(p.verdict).toBe('ready');
+  });
+
+  it('does not count a tour with only one of its files', () => {
+    const p = panel(holding([...tourUrls(T1), tourUrls(T2)[0]], new Set(['r1', 'r2'])));
+
+    expect(p.stages.conditions.tours).toEqual({ status: 'no', held: 1, total: 2 });
+    expect(p.stages.conditions.status).toBe('no');
+    expect(p.stages.conditions.reason).toBe('tours-missing');
+    expect(p.verdict).toBe('refresh');
+  });
+
+  it('turns a report no longer in the overlay store into a No', () => {
+    const p = panel(holding(ALL, new Set(['r1'])));
+
+    expect(p.stages.conditions.reports.status).toBe('no');
+    expect(p.stages.conditions.reports.held).toBe(1);
+    expect(p.stages.conditions.reason).toBe('reports-missing');
+  });
+
+  it("keeps a stale stage's own reason over a missing tour", () => {
+    const r = holding([], new Set(['r1', 'r2']));
+    r.areas = [publicArea()].map((a) => ({ ...a, contentAt: '2026-09-08T07:00:00.000Z' }));
+
+    expect(panel(r).stages.conditions.reason).toBe('stale');
+  });
+
+  it('is unknown when the overlay store could not be read', () => {
+    const p = panel(holding(ALL, null));
+
+    expect(p.stages.conditions.reports).toEqual({
+      status: 'unknown',
+      held: 0,
+      total: 2,
+      newestAt: '2026-09-10T12:00:00Z',
+    });
+    expect(p.stages.conditions.status).toBe('unknown');
+  });
+
+  it('is unknown for the tours when the shell cache could not be listed', () => {
+    const p = panel(holding(ALL, new Set(['r1', 'r2']), { cachesReadable: false }));
+
+    expect(p.stages.conditions.tours).toEqual({ status: 'unknown', held: 0, total: 2 });
+  });
+
+  it('counts them for a signed-out reader too: they are public', () => {
+    const p = panel(holding(ALL, new Set(['r1', 'r2']), { currentPrincipal: null }));
+
+    expect(p.stages.conditions.tours.status).toBe('yes');
+    expect(p.stages.conditions.reports.status).toBe('yes');
+  });
+
+  it('says Yes for an area whose last sync found no reports in it', () => {
+    const r = holding(ALL, new Set());
+    r.areas = [publicArea({ reports: [], reportsNewestAt: null })];
+
+    expect(panel(r).stages.conditions.reports).toEqual({
+      status: 'yes',
+      held: 0,
+      total: 0,
+      newestAt: null,
+    });
+  });
+
+  it('draws neither line for an area synced before they were saved', () => {
+    const p = panel(readings());
+
+    expect('tours' in p.stages.conditions).toBe(false);
+    expect('reports' in p.stages.conditions).toBe(false);
+  });
+});
+
 describe('the panel list', () => {
   it('is empty with no areas, and with no audit core', () => {
     expect(journey.buildPanels(readings([]), {}, {})).toEqual([]);

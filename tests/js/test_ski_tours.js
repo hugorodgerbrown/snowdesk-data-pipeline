@@ -254,3 +254,133 @@ describe('a saved copy\'s guide (SNOW-1354)', () => {
     expect(window.pwaSkiTours.guidePill(null)).toBeNull();
   });
 });
+
+describe('offline, from what a download saved (SNOW-1417)', () => {
+  const SAVED = `${GEOJSON_URL}?bbox=7.2,46,7.5,46.2`;
+  const TOUR = { type: 'Feature', properties: { kind: 'tour', uuid: 'u1' }, geometry: null };
+
+  /** Boot offline, with one downloaded area that saved `boxes`. */
+  async function bootOffline(boxes) {
+    const map = await boot(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ type: 'FeatureCollection', features: [TOUR] }),
+      }),
+    );
+    window.pwaConnectivity = { isOnline: () => false };
+    window.pwaBasemapAreas = { downloadedAreas: async () => [{ id: 'a', tourBoxes: boxes }] };
+    return map;
+  }
+
+  afterEach(() => {
+    delete window.pwaConnectivity;
+    delete window.pwaBasemapAreas;
+  });
+
+  it('reads the saved box under the view, not a box of its own', async () => {
+    const map = await bootOffline([SAVED, `${GEOJSON_URL}?bbox=9,47,9.2,47.2`]);
+    window.pwaSkiRoutes.show();
+    map.flyTo({ center: [7.33, 46.06], zoom: 13 });
+    await settle();
+
+    // Every tours url asked is the saved one. (Earlier boots in this file
+    // leave their listeners behind, so it may be asked more than once.)
+    const asked = fetch.mock.calls.map((call) => String(call[0]));
+    const tours = asked.filter((url) => url.startsWith(GEOJSON_URL));
+    expect(tours.length).toBeGreaterThan(0);
+    expect(new Set(tours)).toEqual(new Set([SAVED]));
+  });
+
+  it('falls back to the saved box when the view\'s own fetch gets no answer', async () => {
+    const map = await bootOffline([SAVED]);
+    // Online as far as the page knows; the worker answers its offline miss.
+    window.pwaConnectivity = { isOnline: () => true };
+    answerNow = () => Promise.resolve({ ok: false, status: 504, json: () => Promise.resolve({}) });
+    const realFetch = fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url, opts) =>
+        String(url) === SAVED
+          ? Promise.resolve({
+              ok: true,
+              json: () => Promise.resolve({ type: 'FeatureCollection', features: [TOUR] }),
+            })
+          : realFetch(url, opts),
+      ),
+    );
+    window.pwaSkiRoutes.show();
+    map.flyTo({ center: [7.33, 46.06], zoom: 13 });
+    await waitFor(() => fetch.mock.calls.some((call) => String(call[0]) === SAVED));
+
+    expect(fetch.mock.calls.some((call) => String(call[0]) === SAVED)).toBe(true);
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it('drops a saved read a later view replaced, rather than painting it', async () => {
+    // Codex review: two areas, the first read landing after the second.
+    const FIRST = `${GEOJSON_URL}?bbox=7.2,46,7.5,46.2`;
+    const SECOND = `${GEOJSON_URL}?bbox=9,47,9.2,47.2`;
+    const map = await bootOffline([FIRST, SECOND]);
+    const painted = [];
+    const source = { setData: (data) => painted.push(data) };
+    map.getSource = () => source;
+    const answer = (uuid) => ({
+      ok: true,
+      json: () => Promise.resolve({
+        type: 'FeatureCollection',
+        features: [{ type: 'Feature', properties: { kind: 'tour', uuid }, geometry: null }],
+      }),
+    });
+    let releaseFirst;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) => {
+        if (String(url) === FIRST) return new Promise((resolve) => { releaseFirst = () => resolve(answer('first')); });
+        if (String(url) === SECOND) return Promise.resolve(answer('second'));
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(EMPTY_FC) });
+      }),
+    );
+    window.pwaSkiRoutes.show();
+    map.flyTo({ center: [7.33, 46.06], zoom: 13 });
+    await waitFor(() => !!releaseFirst);
+    map.flyTo({ center: [9.1, 47.1], zoom: 13 });
+    await waitFor(() => fetch.mock.calls.some((call) => String(call[0]) === SECOND));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    releaseFirst();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const tours = painted.filter((data) => data && data.features && data.features.length);
+    const last = tours[tours.length - 1];
+    expect(last.features.map((f) => f.properties.uuid)).toEqual(['second']);
+  });
+
+  it('marks only the view as loaded, not the rectangle round the boxes it read', async () => {
+    // Codex review: the view overlaps a south-western and a north-eastern
+    // box; a third box inside their bounding rectangle, off the view, must
+    // still be read when the view moves onto it.
+    const SW = `${GEOJSON_URL}?bbox=7,46,7.21,46.21`;
+    const NE = `${GEOJSON_URL}?bbox=7.29,46.29,7.5,46.5`;
+    const NW = `${GEOJSON_URL}?bbox=7,46.4,7.1,46.5`;
+    const map = await bootOffline([SW, NE, NW]);
+    window.pwaSkiRoutes.show();
+    map.flyTo({ center: [7.25, 46.25], zoom: 13 });
+    await waitFor(() => fetch.mock.calls.some((call) => String(call[0]) === NE));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(fetch.mock.calls.some((call) => String(call[0]) === NW)).toBe(false);
+
+    map.flyTo({ center: [7.06, 46.44], zoom: 13 });
+    await waitFor(() => fetch.mock.calls.some((call) => String(call[0]) === NW));
+
+    expect(fetch.mock.calls.some((call) => String(call[0]) === NW)).toBe(true);
+  });
+
+  it('says tours need signal for a summit no download covers', async () => {
+    const map = await bootOffline([`${GEOJSON_URL}?bbox=9,47,9.2,47.2`]);
+    window.pwaSkiTours.openSummit(SUMMIT);
+    map.flyTo({ center: [SUMMIT.lon, SUMMIT.lat], zoom: 13 });
+    await waitFor(() => toast.mock.calls.length > 0);
+
+    expect(toast).toHaveBeenCalledWith(TOAST);
+    expect(tourFetches).toBe(0);
+  });
+});

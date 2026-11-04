@@ -64,6 +64,9 @@ Optional context:
 {# subscription manage page can reuse the same symbols without        #}
 {# duplicating the SVG block.                                         #}
 {% include "includes/country_flags_sprite.html" %}
+{# SNOW-1417: an SAC tour's Feature and profile, for an area download.    #}
+{% url 'routes:ski_tour_feature' '00000000-0000-0000-0000-000000000000' as ski_tour_feature_nil %}
+{% url 'routes:ski_tour_terrain' '00000000-0000-0000-0000-000000000000' as ski_tour_terrain_nil %}
 <div
     id="map"
     data-regions-url="{% url 'api:regions_geojson' %}"
@@ -149,6 +152,14 @@ Optional context:
     {# SNOW-1294: SAC's summits and huts as search rows, under the same    #}
     {# flag — picking one opens the ski-touring layer's tours list.        #}
     {% if route_drawing_enabled %}data-ski-summits-url="{% url 'api:ski_summits_json' %}"{% endif %}
+    {# SNOW-1417: an area download carries the SAC tours inside it — the   #}
+    {# boxes ski_tours.js loads, and each tour's Feature and profile. The  #}
+    {# two templates carry the nil uuid, which the download replaces.      #}
+    {% if route_drawing_enabled %}
+        data-ski-tours-url="{% url 'api:ski_tours_geojson' %}"
+        data-ski-tour-feature-url="{{ ski_tour_feature_nil }}"
+        data-ski-tour-terrain-url="{{ ski_tour_terrain_nil }}"
+    {% endif %}
     {# HACK MODE (feature discovery): may this request spoof its position   #}
     {# with ?loc=? Superusers and local development only — see              #}
     {# apps.public.views._fake_location_allowed for why the field report is #}

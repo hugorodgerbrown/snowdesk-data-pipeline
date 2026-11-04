@@ -294,6 +294,13 @@
  *     forecast from. De-duplicated against what the area-content plan
  *     already holds. SNOW-1313 adds each pin's own place sheet, dated
  *     with the download's day.
+ *   tourBoxes(bbox, maxSpan) / tourBoxURL(base, box) / tourPlan(answers,
+ *   templates) / reportsInBox(feed, bbox) / withPublicItems(expectation,
+ *   extras)
+ *     SNOW-1417: an area's SAC tours, from its rectangle cut into boxes
+ *     the tours endpoint answers, each tour with its Feature and height
+ *     profile urls; the community reports inside the rectangle; and both
+ *     onto the expectation a sync stamps, as public fields.
  *   areaItemExpectation(items, templates)
  *     SNOW-1308: the same composition as ``areaItemURLs``, kept per item
  *     with its name — what a sync stamps onto the area record so the
@@ -3060,6 +3067,191 @@
     });
   }
 
+  // SNOW-1417: the widest rectangle `/api/ski-tours.geojson` answers, in
+  // degrees each way (`SKI_NETWORK_MAX_SPAN_DEG` in apps/public/api.py).
+  const SKI_TOURS_MAX_SPAN_DEG = 0.5;
+
+  /**
+   * Round to the metre-ish precision a tour box is written in, so the url
+   * a download warms and the url the map asks offline are one string.
+   *
+   * @param {number} value
+   * @returns {number}
+   */
+  function round3(value) {
+    return Math.round(value * 1000) / 1000;
+  }
+
+  /**
+   * An area's rectangle cut into boxes the SAC tours endpoint answers
+   * (SNOW-1417).
+   *
+   * The endpoint refuses a box wider than `maxSpan` either way, and an
+   * area can be wider than that. So the rectangle, rounded outward to
+   * three places, is cut into equal columns and rows, each comfortably
+   * under the cap even after its edges are rounded. Neighbouring boxes
+   * share an edge, and the endpoint answers every tour that touches a box,
+   * so a tour on a seam is in both answers (de-duplicated by uuid in
+   * `tourPlan`).
+   *
+   * @param {number[]|null|undefined} bbox `[west, south, east, north]`.
+   * @param {number} [maxSpan] Defaults to the endpoint's cap.
+   * @returns {Array<[number, number, number, number]>} West-to-east, then
+   *   south-to-north. Empty for an unreadable rectangle.
+   */
+  function tourBoxes(bbox, maxSpan) {
+    if (!Array.isArray(bbox) || bbox.length !== 4 || !bbox.every(Number.isFinite)) return [];
+    const cap = Number.isFinite(maxSpan) ? Number(maxSpan) : SKI_TOURS_MAX_SPAN_DEG;
+    const west = Math.floor(bbox[0] * 1000) / 1000;
+    const south = Math.floor(bbox[1] * 1000) / 1000;
+    const east = Math.ceil(bbox[2] * 1000) / 1000;
+    const north = Math.ceil(bbox[3] * 1000) / 1000;
+    if (!(east > west) || !(north > south)) return [];
+    // Two thousandths of slack, so rounding an edge can never push a box
+    // past the cap.
+    const usable = Math.max(cap - 0.002, 0.001);
+    const cols = Math.ceil(round3(east - west) / usable);
+    const rows = Math.ceil(round3(north - south) / usable);
+    const edges = (from, to, n) => {
+      const out = [];
+      for (let i = 0; i <= n; i += 1) out.push(i === n ? to : round3(from + ((to - from) * i) / n));
+      return out;
+    };
+    const xs = edges(west, east, cols);
+    const ys = edges(south, north, rows);
+    /** @type {Array<[number, number, number, number]>} */
+    const boxes = [];
+    for (let r = 0; r < rows; r += 1) {
+      for (let c = 0; c < cols; c += 1) boxes.push([xs[c], ys[r], xs[c + 1], ys[r + 1]]);
+    }
+    return boxes;
+  }
+
+  /**
+   * One SAC tours box's url, as ski_tours.js asks for it (SNOW-1417).
+   *
+   * @param {string} base `/api/ski-tours.geojson`.
+   * @param {number[]} box
+   * @returns {string}
+   */
+  function tourBoxURL(base, box) {
+    return base + '?bbox=' + box.join(',');
+  }
+
+  /**
+   * The SAC tours inside an area, from the answers to its boxes
+   * (SNOW-1417).
+   *
+   * Each tour once, by uuid, in first-seen order, with its name and the
+   * two urls a tap and the route panel ask for: its Feature and its
+   * height profile. An answer that is missing, malformed or says
+   * `truncated` makes the plan short, so the area is never stamped
+   * complete over a partial set of tours.
+   *
+   * @param {Array<any>} answers One per box, null where the fetch failed.
+   * @param {{feature?: string, terrain?: string}} templates Each with
+   *   `__UUID__`.
+   * @returns {{tours: Array<{uuid: string, name: string, urls: string[]}>,
+   *   short: boolean}}
+   */
+  function tourPlan(answers, templates) {
+    const tpl = templates || {};
+    let short = false;
+    const seen = new Set();
+    const tours = [];
+    for (const answer of answers || []) {
+      if (!answer || !Array.isArray(answer.features) || answer.truncated) {
+        short = true;
+        if (!answer || !Array.isArray(answer.features)) continue;
+      }
+      for (const feature of answer.features) {
+        const props = (feature && feature.properties) || {};
+        if (props.kind !== 'tour' || !props.uuid || seen.has(props.uuid)) continue;
+        seen.add(props.uuid);
+        const uuid = String(props.uuid);
+        const urls = [];
+        if (tpl.feature) urls.push(tpl.feature.replace('__UUID__', encodeURIComponent(uuid)));
+        if (tpl.terrain) urls.push(tpl.terrain.replace('__UUID__', encodeURIComponent(uuid)));
+        tours.push({ uuid: uuid, name: typeof props.name === 'string' ? props.name : '', urls: urls });
+      }
+    }
+    return { tours: tours, short: short };
+  }
+
+  /**
+   * The community reports inside an area's rectangle (SNOW-1417).
+   *
+   * Edge-inclusive, as the rest of an area's content is chosen by its
+   * crude rectangle. The id is the report's `submission`; the newest is
+   * the latest `observed_at` among them.
+   *
+   * @param {any} feed The `/api/community-reports.geojson` answer.
+   * @param {number[]|null|undefined} bbox
+   * @returns {{ids: string[], newestAt: string|null}|null} Null for an
+   *   unreadable feed or rectangle.
+   */
+  function reportsInBox(feed, bbox) {
+    if (!feed || !Array.isArray(feed.features)) return null;
+    if (!Array.isArray(bbox) || bbox.length !== 4 || !bbox.every(Number.isFinite)) return null;
+    const ids = [];
+    let newest = null;
+    let newestMs = -Infinity;
+    for (const feature of feed.features) {
+      const coords = feature && feature.geometry && feature.geometry.coordinates;
+      const props = (feature && feature.properties) || {};
+      if (!Array.isArray(coords) || !props.submission) continue;
+      const [lon, lat] = coords;
+      if (!(lon >= bbox[0] && lon <= bbox[2] && lat >= bbox[1] && lat <= bbox[3])) continue;
+      ids.push(String(props.submission));
+      const ms = typeof props.observed_at === 'string' ? Date.parse(props.observed_at) : NaN;
+      if (Number.isFinite(ms) && ms > newestMs) {
+        newestMs = ms;
+        newest = props.observed_at;
+      }
+    }
+    return { ids: ids, newestAt: newest };
+  }
+
+  /**
+   * An expectation with an area's public things on it (SNOW-1417): its SAC
+   * tours and the community reports inside it.
+   *
+   * Like the problem-terrain urls (`withProblemTerrain`) these are every
+   * reader's, so a signed-out sync carries them too. A field that was not
+   * read this time (`undefined`) is left off, so the stamp keeps whatever
+   * the record held for it.
+   *
+   * @param {Object|null} expectation
+   * @param {{tours?: Array<Object>, tourBoxes?: string[],
+   *   reports?: {ids: string[], newestAt: string|null}|null,
+   *   reportsAt?: string}} extras
+   * @returns {Object} A new expectation.
+   */
+  function withPublicItems(expectation, extras) {
+    const out = Object.assign({}, expectation || {});
+    const e = extras || {};
+    if (Array.isArray(e.tours)) out.tours = e.tours.slice();
+    if (Array.isArray(e.tourBoxes)) out.tourBoxes = e.tourBoxes.slice();
+    if (e.reports) {
+      out.reports = e.reports.ids.map((id) => ({ id: id }));
+      out.reportsNewestAt = e.reports.newestAt || null;
+      out.reportsAt = e.reportsAt || null;
+    }
+    return out;
+  }
+
+  // SNOW-1417: the public fields an expectation may carry, stamped onto
+  // `items` beside the reader's own things and kept when a sync did not
+  // read them.
+  const PUBLIC_ITEM_FIELDS = [
+    'problemTerrain',
+    'tours',
+    'tourBoxes',
+    'reports',
+    'reportsAt',
+    'reportsNewestAt',
+  ];
+
   /**
    * One area record after a content sync — the ONE stamping rule
    * (SNOW-1308).
@@ -3104,21 +3296,30 @@
     // "nothing wrong" every reader shares.
     delete next.contentIncomplete;
     next.contentAt = nowIso || new Date().toISOString();
-    const terrain =
-      expectation && Array.isArray(expectation.problemTerrain)
-        ? { problemTerrain: expectation.problemTerrain }
-        : {};
+    // SNOW-1417: every public field this sync read, and only those.
+    /** @type {Object<string, any>} */
+    const publicFields = {};
+    for (const field of PUBLIC_ITEM_FIELDS) {
+      if (expectation && expectation[field] !== undefined) publicFields[field] = expectation[field];
+    }
     if (expectation && Array.isArray(expectation.trips) && Array.isArray(expectation.pins)) {
+      // The reader's things replace the old ones whole; a public field this
+      // sync did not read keeps the record's.
+      const kept = {};
+      for (const field of PUBLIC_ITEM_FIELDS) {
+        if (next.items && next.items[field] !== undefined) kept[field] = next.items[field];
+      }
       next.items = Object.assign(
+        kept,
         {
           trips: expectation.trips,
           pins: expectation.pins,
           principal: typeof expectation.principal === 'string' ? expectation.principal : null,
         },
-        terrain,
+        publicFields,
       );
-    } else if (terrain.problemTerrain) {
-      next.items = Object.assign({}, next.items || {}, terrain);
+    } else if (Object.keys(publicFields).length > 0) {
+      next.items = Object.assign({}, next.items || {}, publicFields);
     }
     return next;
   }
@@ -3588,6 +3789,12 @@
     areaItemExpectation: areaItemExpectation,
     attestedExpectation: attestedExpectation,
     withProblemTerrain: withProblemTerrain,
+    // SNOW-1417: SAC tours and community reports in an area.
+    tourBoxes: tourBoxes,
+    tourBoxURL: tourBoxURL,
+    tourPlan: tourPlan,
+    reportsInBox: reportsInBox,
+    withPublicItems: withPublicItems,
     problemTerrainURL: problemTerrainURL,
     stampContentRecord: stampContentRecord,
     favouriteSheetURL: favouriteSheetURL,

@@ -4106,6 +4106,12 @@ describe('a trip route and a weather sheet are read offline (SNOW-965)', () => {
       // pattern — the core's and the worker's inline fallback.
       expect(classify(`${ORIGIN}/api/problem-terrain/?d=${TODAY}`)).toBe('public-json');
       expect(classify(`${ORIGIN}/api/problem-terrain/extra/`)).toBe('network');
+      // SNOW-1417: and the SAC tours a download saves, on both copies too.
+      expect(classify(`${ORIGIN}/api/ski-tours.geojson?bbox=7,46,7.25,46.2`)).toBe('public-json');
+      expect(
+        classify(`${ORIGIN}/routes/ski-tours/0b6f3c1e-8a2d-4c5e-9f10-1a2b3c4d5e6f/terrain.json`),
+      ).toBe('public-json');
+      expect(classify(`${ORIGIN}/routes/ski-tours/x/feature.json`)).toBe('network');
       expect(classify(SHARE_ROUTE)).toBe('network');
       expect(classify(`${ORIGIN}/api/area-items/?bbox=7,46,8,47`)).toBe('network');
     }

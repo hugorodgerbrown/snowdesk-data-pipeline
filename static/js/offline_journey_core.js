@@ -35,6 +35,14 @@
  *     unknown, and a signed-out reader gets no stage at all: they have no
  *     things, and an absent stage must not read as a fault.
  *
+ *   SNOW-1417: the conditions stage also carries a "SAC tours" line (each
+ *   tour's Feature and profile in Cache Storage, `toursLine`) and a
+ *   "Community reports" line (the stamped report ids against the ids the
+ *   map's overlay cache holds, which the caller reads and passes as
+ *   `readings.reportIds`, `reportsLine`). Either short makes the stage No
+ *   (`tours-missing`, `reports-missing`), as a missing problem-terrain day
+ *   does.
+ *
  * The verdict is one plain line, from `verdictFor`:
  *
  *   - `ready` — every stage is Yes.
@@ -87,11 +95,22 @@
    */
 
   /**
+   * @typedef {Object} CountLine
+   * @property {StageStatus} status Yes when everything stamped is held.
+   * @property {number} held How many are on the device.
+   * @property {number} total How many the last sync saved.
+   * @property {string|null} [newestAt] Reports only: the newest one's
+   *   observed time (SNOW-1417).
+   */
+
+  /**
    * @typedef {Object} Stage
    * @property {StageStatus} status
    * @property {string} [reason]
    * @property {ThingRow[]} [rows] User data only.
    * @property {TerrainLine} [terrain] The conditions stage only (SNOW-1379).
+   * @property {CountLine} [tours] The conditions stage only (SNOW-1417).
+   * @property {CountLine} [reports] The conditions stage only (SNOW-1417).
    */
 
   /**
@@ -353,6 +372,64 @@
   }
 
   /**
+   * The conditions stage's "SAC tours" line: how many of the tours the
+   * last sync saved will open offline (SNOW-1417).
+   *
+   * A tour opens when its Feature and its height profile are both in
+   * Cache Storage. Public, so presence is enough (`urlState`). Null where
+   * the last sync stamped no tours: an area with none, or one not synced
+   * since this ticket, or a page without the ski-touring layer.
+   *
+   * @param {any} area
+   * @param {{urls: Map<string, any>|null, origin: string,
+   *   principal?: string|null}} ctx
+   * @returns {CountLine|null}
+   */
+  function toursLine(area, ctx) {
+    var stamped = area && area.items && area.items.tours;
+    if (!Array.isArray(stamped) || stamped.length === 0) return null;
+    var total = stamped.length;
+    if (!ctx.urls) return { status: 'unknown', held: 0, total: total };
+    var held = /** @type {Map<string, any>} */ (ctx.urls);
+    var count = stamped.filter(function (/** @type {any} */ tour) {
+      var urls = tour && Array.isArray(tour.urls) ? tour.urls : [];
+      return urls.length > 0 && urls.every(function (/** @type {string} */ url) {
+        return urlState(absolute(url, ctx.origin), held, ctx.principal || null) === 'yes';
+      });
+    }).length;
+    return { status: count === total ? 'yes' : 'no', held: count, total: total };
+  }
+
+  /**
+   * The conditions stage's "Community reports" line: how many of the
+   * reports inside the area the last sync saved are in the map's overlay
+   * cache (SNOW-1417).
+   *
+   * Reports are not in Cache Storage: the map keeps the whole feed in
+   * IndexedDB (`pwaMapOverlayCache`), so the caller reads it and passes
+   * the ids it holds. Null where the last sync stamped no reports field;
+   * an empty stamp is a Yes with nothing to count.
+   *
+   * @param {any} area
+   * @param {Set<string>|null|undefined} ids The report ids the overlay
+   *   cache holds, or null when it could not be read.
+   * @returns {CountLine|null}
+   */
+  function reportsLine(area, ids) {
+    var items = area && area.items;
+    var stamped = items && items.reports;
+    if (!Array.isArray(stamped)) return null;
+    var total = stamped.length;
+    var newestAt = typeof items.reportsNewestAt === 'string' ? items.reportsNewestAt : null;
+    if (!ids) return { status: 'unknown', held: 0, total: total, newestAt: newestAt };
+    var have = /** @type {Set<string>} */ (ids);
+    var count = stamped.filter(function (/** @type {any} */ report) {
+      return !!report && have.has(String(report.id));
+    }).length;
+    return { status: count === total ? 'yes' : 'no', held: count, total: total, newestAt: newestAt };
+  }
+
+  /**
    * The "User data" stage: each trip and pin, Yes only when every url
    * it needs is cached.
    *
@@ -472,6 +549,31 @@
     var out = Object.assign({}, stage, { terrain: line });
     if (stage.status === 'no') return out;
     if (line.status === 'no') return Object.assign(out, { status: 'no', reason: 'terrain' });
+    if (line.status === 'unknown' && stage.status === 'yes') {
+      return Object.assign(out, { status: 'unknown' });
+    }
+    return out;
+  }
+
+  /**
+   * A stage with a tours or reports line folded in (SNOW-1417), by the
+   * same rule as the problem-terrain line (`withTerrainLine`): a No line
+   * makes a stage that is not already No say No with the line's reason;
+   * an unread line makes a Yes unknown.
+   *
+   * @param {Stage} stage
+   * @param {'tours'|'reports'} key
+   * @param {CountLine|null} line
+   * @param {string} reason `tours-missing` or `reports-missing`.
+   * @returns {Stage}
+   */
+  function withCountLine(stage, key, line, reason) {
+    if (!line) return stage;
+    /** @type {Stage} */
+    var out = Object.assign({}, stage);
+    out[key] = line;
+    if (stage.status === 'no') return out;
+    if (line.status === 'no') return Object.assign(out, { status: 'no', reason: reason });
     if (line.status === 'unknown' && stage.status === 'yes') {
       return Object.assign(out, { status: 'unknown' });
     }
@@ -696,6 +798,10 @@
       origin: opts.origin || '',
       principal: typeof r.currentPrincipal === 'string' ? r.currentPrincipal : null,
     };
+    // SNOW-1417: the report ids the map's overlay cache holds, read by
+    // the caller; absent is unread.
+    /** @type {Set<string>|null} */
+    var reportIds = r.reportIds instanceof Set ? r.reportIds : null;
     /** @type {any[]} */
     var areas = core.chosenAreas(r);
     /** @type {Panel[]} */
@@ -715,7 +821,17 @@
               }
             : {
                 map: mapStage(area, tiles[area.id]),
-                conditions: withTerrainLine(conditionsStage(area, r.now), problemTerrainLine(area, ctx)),
+                conditions: withCountLine(
+                  withCountLine(
+                    withTerrainLine(conditionsStage(area, r.now), problemTerrainLine(area, ctx)),
+                    'tours',
+                    toursLine(area, ctx),
+                    'tours-missing',
+                  ),
+                  'reports',
+                  reportsLine(area, reportIds),
+                  'reports-missing',
+                ),
                 things: thingsStage(area, ctx),
               };
           panels.push({
@@ -745,6 +861,9 @@
     conditionsStage: conditionsStage,
     thingsStage: thingsStage,
     problemTerrainLine: problemTerrainLine,
+    toursLine: toursLine,
+    reportsLine: reportsLine,
+    withCountLine: withCountLine,
     tileReading: tileReading,
     isSignedIn: isSignedIn,
     areaName: areaName,

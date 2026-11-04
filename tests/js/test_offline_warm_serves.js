@@ -404,6 +404,23 @@ const MAP_DATA_URLS = {
     sample: `/api/weather/Ab3dE_fGh1J/detail/?date=${TODAY}`,
     swClass: 'public-json',
   },
+  // SNOW-1417: a download warms the SAC tours inside its box, and each
+  // tour's own feature and terrain files.
+  'data-ski-tours-url': {
+    kind: 'worker-cache',
+    sample: '/api/ski-tours.geojson?bbox=7.5,45.9,7.9,46.1',
+    swClass: 'public-json',
+  },
+  'data-ski-tour-feature-url': {
+    kind: 'worker-cache',
+    sample: '/routes/ski-tours/0b6f3c1e-8a2d-4c5e-9f10-1a2b3c4d5e6f/feature.json',
+    swClass: 'public-json',
+  },
+  'data-ski-tour-terrain-url': {
+    kind: 'worker-cache',
+    sample: '/routes/ski-tours/0b6f3c1e-8a2d-4c5e-9f10-1a2b3c4d5e6f/terrain.json',
+    swClass: 'public-json',
+  },
   'data-trip-route-url-template': {
     kind: 'worker-cache',
     sample: `/trips/${TRIP}/route.geojson`,

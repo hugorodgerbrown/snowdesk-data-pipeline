@@ -109,6 +109,17 @@
     inflight: null,
     /** @type {?number} */
     timer: null,
+    /**
+     * SNOW-1417: the view an offline read of the saved boxes is under way
+     * for, so the loads a settling map fires do not read them again.
+     */
+    /** @type {?[number, number, number, number]} */
+    savedFor: null,
+    /**
+     * SNOW-1417 review: bumped by every load, so a saved read a later load
+     * replaced is dropped when it lands rather than painting over it.
+     */
+    savedToken: 0,
     /** The tour the panel was asked for last, so a late answer is dropped. */
     /** @type {?string} */
     opening: null,
@@ -326,9 +337,14 @@
    *
    * @param {string} url
    * @param {function({type: string, features: Array<any>}): void} done
+   * @param {function(): void} [missed] SNOW-1417: called instead of
+   *   settling the summit mark when the fetch fails or answers non-OK,
+   *   such as the worker's offline miss on a dead radio.
    */
-  function fetchData(url, done) {
+  function fetchData(url, done, missed) {
     if (state.inflight) state.inflight.abort();
+    // A saved read still in flight is for an older view.
+    state.savedToken += 1;
     const inflight = new AbortController();
     state.inflight = inflight;
     fetch(url, { credentials: 'same-origin', signal: inflight.signal })
@@ -339,6 +355,10 @@
         if (state.inflight !== inflight) return;
         state.inflight = null;
         const ok = !!(body && Array.isArray(body.features));
+        if (!ok && missed) {
+          missed();
+          return;
+        }
         settleSummit(ok);
         if (ok) done(body);
       })
@@ -347,7 +367,8 @@
         // mark waits for the one that replaced it.
         if (state.inflight !== inflight) return;
         state.inflight = null;
-        settleSummit(false);
+        if (missed) missed();
+        else settleSummit(false);
       });
   }
 
@@ -376,12 +397,95 @@
     /** @type {[number, number, number, number]} */
     const view = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
     if (state.mode === 'detail' && core.covers(state.loaded, view)) return;
+    // SNOW-1417: offline, the view's own rectangle was never fetched, so
+    // read the boxes a downloaded area saved instead.
+    const connectivity = /** @type {any} */ (window).pwaConnectivity;
+    if (connectivity && !connectivity.isOnline()) {
+      loadSaved(map, view);
+      return;
+    }
     const box = core.loadBox(view);
     if (!box) return;
-    fetchData(GEOJSON_URL + '?bbox=' + box.join(','), function (body) {
-      state.mode = 'detail';
-      state.loaded = box;
-      paintData(map, body);
+    fetchData(
+      GEOJSON_URL + '?bbox=' + box.join(','),
+      function (body) {
+        state.mode = 'detail';
+        state.loaded = box;
+        paintData(map, body);
+      },
+      // SNOW-1417: no answer (a dead radio the page still thinks is
+      // online, or the worker's offline miss): try what a download saved.
+      function () {
+        loadSaved(map, view);
+      },
+    );
+  }
+
+  /**
+   * SNOW-1417: every tours box the device's downloaded areas saved.
+   *
+   * @returns {Promise<string[]>}
+   */
+  function savedBoxUrls() {
+    const areas = window.pwaBasemapAreas;
+    if (!areas || typeof areas.downloadedAreas !== 'function') return Promise.resolve([]);
+    return Promise.resolve(areas.downloadedAreas())
+      .then(function (/** @type {Array<any>} */ list) {
+        /** @type {string[]} */
+        const urls = [];
+        (list || []).forEach(function (area) {
+          const boxes = area && area.tourBoxes;
+          if (Array.isArray(boxes)) boxes.forEach(function (url) { urls.push(String(url)); });
+        });
+        return urls;
+      })
+      .catch(function () {
+        return [];
+      });
+  }
+
+  /**
+   * SNOW-1417: draw a view offline from the saved boxes that overlap it.
+   * A view no downloaded area covers draws nothing, and a summit picked in
+   * search says why (`settleSummit`).
+   *
+   * @param {any} map
+   * @param {[number, number, number, number]} view
+   */
+  function loadSaved(map, view) {
+    if (state.savedFor && core.covers(state.savedFor, view)) return;
+    state.savedFor = view;
+    state.savedToken += 1;
+    const token = state.savedToken;
+    savedBoxUrls().then(function (all) {
+      if (token !== state.savedToken) return;
+      const saved = core.savedBoxesFor(view, all);
+      if (!saved.urls.length) {
+        state.savedFor = null;
+        settleSummit(false);
+        return;
+      }
+      Promise.all(
+        saved.urls.map(function (/** @type {string} */ url) {
+          return fetch(/** @type {string} */ (url), { credentials: 'same-origin' })
+            .then(function (resp) { return resp.ok ? resp.json() : null; })
+            .catch(function () { return null; });
+        }),
+      ).then(function (answers) {
+        if (token !== state.savedToken) return;
+        state.savedFor = null;
+        const body = core.mergeAnswers(answers);
+        const ok = body.features.length > 0;
+        settleSummit(ok);
+        if (!ok) return;
+        state.mode = 'detail';
+        // SNOW-1417 review: the VIEW is what is loaded, not the rectangle
+        // round the boxes read. Every saved box overlapping the view was
+        // read, so nothing more is saved for it; the boxes' bounding
+        // rectangle can take in ground whose own box was not read.
+        state.loaded = view;
+        paintData(map, body);
+      });
     });
   }
 

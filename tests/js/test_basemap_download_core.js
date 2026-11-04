@@ -2516,3 +2516,208 @@ describe('terrainScaledBytesPerTile', () => {
     expect(withTerrain).toBeLessThan(without);
   });
 });
+
+describe('SAC tours and community reports in an area (SNOW-1417)', () => {
+  const span = (box) => [box[2] - box[0], box[3] - box[1]];
+
+  describe('tourBoxes', () => {
+    it('answers one box, rounded outward, for an area under the cap', () => {
+      expect(core.tourBoxes([7.0004, 46.0006, 7.2001, 46.1999])).toEqual([[7.0, 46.0, 7.201, 46.2]]);
+    });
+
+    it('cuts a wide area into boxes each under the cap that cover it edge to edge', () => {
+      const bbox = [6.8, 45.8, 8.1, 46.4];
+      const boxes = core.tourBoxes(bbox);
+
+      expect(boxes.length).toBe(6); // three columns, two rows
+      for (const box of boxes) {
+        const [w, h] = span(box);
+        expect(w).toBeLessThan(0.5);
+        expect(h).toBeLessThan(0.5);
+      }
+      expect(Math.min(...boxes.map((b) => b[0]))).toBe(6.8);
+      expect(Math.max(...boxes.map((b) => b[2]))).toBe(8.1);
+      expect(Math.min(...boxes.map((b) => b[1]))).toBe(45.8);
+      expect(Math.max(...boxes.map((b) => b[3]))).toBe(46.4);
+      // Neighbours share an edge, so nothing falls between them.
+      expect(boxes[0][2]).toBe(boxes[1][0]);
+      expect(boxes[0][3]).toBe(boxes[3][1]);
+    });
+
+    it('keeps a box exactly at the cap under it, after rounding', () => {
+      for (const box of core.tourBoxes([7.0, 46.0, 7.5, 46.5])) {
+        expect(span(box)[0]).toBeLessThan(0.5);
+        expect(span(box)[1]).toBeLessThan(0.5);
+      }
+    });
+
+    it('answers nothing for an unreadable or empty rectangle', () => {
+      expect(core.tourBoxes(null)).toEqual([]);
+      expect(core.tourBoxes([7, 46, 7])).toEqual([]);
+      expect(core.tourBoxes([7, 46, 7, 46])).toEqual([]);
+      expect(core.tourBoxes([7, 46, NaN, 47])).toEqual([]);
+    });
+
+    it('writes the url ski_tours.js asks for', () => {
+      expect(core.tourBoxURL('/api/ski-tours.geojson', [7, 46, 7.25, 46.2])).toBe(
+        '/api/ski-tours.geojson?bbox=7,46,7.25,46.2',
+      );
+    });
+  });
+
+  describe('tourPlan', () => {
+    const templates = {
+      feature: '/routes/ski-tours/__UUID__/feature.json',
+      terrain: '/routes/ski-tours/__UUID__/terrain.json',
+    };
+    const tour = (uuid, name) => ({ properties: { kind: 'tour', uuid, name } });
+    const summit = { id: 's1', properties: { kind: 'summit', key: 's1' } };
+
+    it('lists each tour once, with its two files, across boxes', () => {
+      const plan = core.tourPlan(
+        [
+          { features: [tour('u1', 'Pigne'), summit, tour('u1', 'Pigne')] },
+          { features: [tour('u1', 'Pigne'), tour('u2', 'Rosablanche')] },
+        ],
+        templates,
+      );
+
+      expect(plan).toEqual({
+        tours: [
+          {
+            uuid: 'u1',
+            name: 'Pigne',
+            urls: ['/routes/ski-tours/u1/feature.json', '/routes/ski-tours/u1/terrain.json'],
+          },
+          {
+            uuid: 'u2',
+            name: 'Rosablanche',
+            urls: ['/routes/ski-tours/u2/feature.json', '/routes/ski-tours/u2/terrain.json'],
+          },
+        ],
+        short: false,
+      });
+    });
+
+    it('is short when a box failed or came back malformed, keeping the rest', () => {
+      const plan = core.tourPlan([null, { nope: true }, { features: [tour('u1', 'A')] }], templates);
+
+      expect(plan.short).toBe(true);
+      expect(plan.tours.map((t) => t.uuid)).toEqual(['u1']);
+    });
+
+    it('is short when a box was truncated, though its tours are kept', () => {
+      const plan = core.tourPlan([{ features: [tour('u1', 'A')], truncated: true }], templates);
+
+      expect(plan.short).toBe(true);
+      expect(plan.tours.length).toBe(1);
+    });
+  });
+
+  describe('reportsInBox', () => {
+    const report = (id, lon, lat, at) => ({
+      geometry: { coordinates: [lon, lat] },
+      properties: { submission: id, observed_at: at },
+    });
+
+    it('keeps the reports inside, edges included, and the newest time among them', () => {
+      const feed = {
+        features: [
+          report('in', 7.1, 46.1, '2026-01-05T09:00:00Z'),
+          report('edge', 7.2, 46.0, '2026-01-06T09:00:00Z'),
+          report('out', 7.3, 46.1, '2026-01-07T09:00:00Z'),
+          { geometry: { coordinates: [7.1, 46.1] }, properties: {} },
+        ],
+      };
+
+      expect(core.reportsInBox(feed, [7.0, 46.0, 7.2, 46.2])).toEqual({
+        ids: ['in', 'edge'],
+        newestAt: '2026-01-06T09:00:00Z',
+      });
+    });
+
+    it('answers an empty list for an area with none, and null for an unreadable feed', () => {
+      expect(core.reportsInBox({ features: [] }, [7, 46, 7.2, 46.2])).toEqual({
+        ids: [],
+        newestAt: null,
+      });
+      expect(core.reportsInBox(null, [7, 46, 7.2, 46.2])).toBeNull();
+      expect(core.reportsInBox({ features: [] }, null)).toBeNull();
+    });
+  });
+
+  describe('withPublicItems and the stamp', () => {
+    const tours = [{ uuid: 'u1', name: 'Pigne', urls: ['/routes/ski-tours/u1/feature.json'] }];
+    const extras = {
+      tours,
+      tourBoxes: ['/api/ski-tours.geojson?bbox=7,46,7.2,46.2'],
+      reports: { ids: ['r1'], newestAt: '2026-01-06T09:00:00Z' },
+      reportsAt: '2026-01-06T10:00:00Z',
+    };
+
+    it('puts the tours and reports on the expectation', () => {
+      expect(core.withPublicItems({ trips: [], pins: [] }, extras)).toEqual({
+        trips: [],
+        pins: [],
+        tours,
+        tourBoxes: extras.tourBoxes,
+        reports: [{ id: 'r1' }],
+        reportsNewestAt: '2026-01-06T09:00:00Z',
+        reportsAt: '2026-01-06T10:00:00Z',
+      });
+    });
+
+    it('leaves off what this sync did not read', () => {
+      expect(core.withPublicItems(null, {})).toEqual({});
+    });
+
+    it("stamps them beside a signed-in reader's things", () => {
+      const expectation = core.withPublicItems(
+        { trips: [{ uuid: 't' }], pins: [], principal: 'acct-A', problemTerrain: [] },
+        extras,
+      );
+      const next = core.stampContentRecord({ id: 'a' }, true, expectation, 'x');
+
+      expect(next.items).toEqual({
+        trips: [{ uuid: 't' }],
+        pins: [],
+        principal: 'acct-A',
+        problemTerrain: [],
+        tours,
+        tourBoxes: extras.tourBoxes,
+        reports: [{ id: 'r1' }],
+        reportsNewestAt: '2026-01-06T09:00:00Z',
+        reportsAt: '2026-01-06T10:00:00Z',
+      });
+    });
+
+    it("stamps them for a signed-out sync, keeping the account's things", () => {
+      const old = { trips: [{ uuid: 't' }], pins: [], principal: 'acct-A' };
+      const next = core.stampContentRecord(
+        { id: 'a', items: old },
+        true,
+        core.withPublicItems(null, extras),
+        'x',
+      );
+
+      expect(next.items.trips).toEqual([{ uuid: 't' }]);
+      expect(next.items.principal).toBe('acct-A');
+      expect(next.items.tours).toEqual(tours);
+      expect(next.items.reports).toEqual([{ id: 'r1' }]);
+    });
+
+    it('keeps the tours a signed-in sync did not read', () => {
+      const old = { trips: [], pins: [], principal: 'acct-A', tours, tourBoxes: ['x'] };
+      const next = core.stampContentRecord(
+        { id: 'a', items: old },
+        true,
+        { trips: [{ uuid: 'n' }], pins: [], principal: 'acct-A' },
+        'x',
+      );
+
+      expect(next.items.trips).toEqual([{ uuid: 'n' }]);
+      expect(next.items.tours).toEqual(tours);
+      expect(next.items.tourBoxes).toEqual(['x']);
+    });
+  });
+});

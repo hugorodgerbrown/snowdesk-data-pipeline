@@ -100,7 +100,14 @@
   // the map paints the day's slopes offline. Like ``/api/ratings/`` the
   // url carries the date and no account, and the answer is the same for
   // every reader; exact-url, so the warmed ``?d=`` is the one map.js asks.
-  const PUBLIC_JSON_PATH = /^\/api\/(?:weather\/(?!\d+\/)[A-Za-z0-9_-]+\/detail|problem-terrain)\/$/;
+  //
+  // SNOW-1417: and SAC's ski tours — the boxes ski_tours.js loads by view
+  // (`/api/ski-tours.geojson?bbox=`, and `?overview=1`), and each tour's
+  // Feature and height profile. Every reader's (the answers vary on
+  // language, never on an account), and warmed by an area download, so
+  // the ski-touring layer draws and a tour opens offline.
+  const PUBLIC_JSON_PATH =
+    /^(?:\/api\/(?:weather\/(?!\d+\/)[A-Za-z0-9_-]+\/detail|problem-terrain)\/|\/api\/ski-tours\.geojson|\/routes\/ski-tours\/[0-9a-f-]{36}\/(?:feature|terrain)\.json)$/;
 
   // SNOW-1312: the map's region sheet, ``/partials/region-sheet/<id>/``.
   // Public — its body reads no ``request.user`` — and warmed by every area

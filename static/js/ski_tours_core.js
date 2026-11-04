@@ -31,6 +31,10 @@
  *   loadBox(bounds)            — the rectangle to load for a view
  *   covers(box, bounds)        — whether a loaded rectangle holds a view
  *   featureUrl(template, uuid, sample) — a tour's Feature URL
+ *   boxFromUrl(url)            — the rectangle a saved tours url asked for
+ *   savedBoxesFor(bounds, urls) — the saved tours urls a view reads
+ *                                offline (SNOW-1417)
+ *   mergeAnswers(answers)      — several tours answers as one collection
  */
 
 // @ts-check
@@ -184,6 +188,88 @@
     return sample ? url + (url.includes('?') ? '&' : '?') + 'sample=1' : url;
   }
 
+  /**
+   * The rectangle a saved tours url was asked for (SNOW-1417).
+   *
+   * @param {string} url `…/ski-tours.geojson?bbox=w,s,e,n`.
+   * @returns {?Box} Null for any other url, the overview included.
+   */
+  function boxFromUrl(url) {
+    const match = /[?&]bbox=([^&]+)/.exec(String(url || ''));
+    if (!match) return null;
+    const parts = decodeURIComponent(match[1]).split(',').map(Number);
+    if (parts.length !== 4 || !parts.every(Number.isFinite)) return null;
+    return /** @type {Box} */ (parts);
+  }
+
+  /**
+   * The saved tours urls to read for a view offline (SNOW-1417).
+   *
+   * An area download warms its tours box by box, each box at most the
+   * endpoint's cap; offline, the view's own rectangle was never asked for,
+   * so the layer reads the saved boxes that overlap the view instead.
+   *
+   * @param {Box} bounds The view.
+   * @param {string[]} urls Every saved box url on the device.
+   * @returns {{urls: string[], box: ?Box}} The overlapping urls, once
+   *   each, and the rectangle they cover together (null when none).
+   */
+  function savedBoxesFor(bounds, urls) {
+    /** @type {string[]} */
+    const chosen = [];
+    /** @type {?Box} */
+    let union = null;
+    for (const url of urls || []) {
+      const box = boxFromUrl(url);
+      if (!box || chosen.indexOf(url) >= 0) continue;
+      const overlaps = box[0] <= bounds[2] && box[2] >= bounds[0]
+        && box[1] <= bounds[3] && box[3] >= bounds[1];
+      if (!overlaps) continue;
+      chosen.push(url);
+      union = union
+        ? [Math.min(union[0], box[0]), Math.min(union[1], box[1]),
+          Math.max(union[2], box[2]), Math.max(union[3], box[3])]
+        : box;
+    }
+    return { urls: chosen, box: union };
+  }
+
+  /**
+   * Several tours answers as one collection (SNOW-1417): a tour on a seam
+   * between two saved boxes is in both, so each tour's legs and each
+   * summit are kept from the first answer that has them.
+   *
+   * @param {Array<?{features?: Array<any>}>} answers
+   * @returns {{type: string, features: Array<any>}}
+   */
+  function mergeAnswers(answers) {
+    const tours = new Set();
+    const summits = new Set();
+    /** @type {Array<any>} */
+    const features = [];
+    for (const answer of answers || []) {
+      if (!answer || !Array.isArray(answer.features)) continue;
+      /** @type {Set<string>} */
+      const here = new Set();
+      for (const feature of answer.features) {
+        const props = (feature && feature.properties) || {};
+        if (props.kind === 'tour') {
+          const uuid = String(props.uuid || '');
+          if (tours.has(uuid)) continue;
+          here.add(uuid);
+          features.push(feature);
+        } else {
+          const id = String((feature && feature.id) || props.key || '');
+          if (summits.has(id)) continue;
+          summits.add(id);
+          features.push(feature);
+        }
+      }
+      here.forEach((uuid) => tours.add(uuid));
+    }
+    return { type: 'FeatureCollection', features: features };
+  }
+
   self.pwaSkiToursCore = Object.freeze({
     MINZOOM: MINZOOM,
     LABEL_MINZOOM: LABEL_MINZOOM,
@@ -195,5 +281,8 @@
     loadBox: loadBox,
     covers: covers,
     featureUrl: featureUrl,
+    boxFromUrl: boxFromUrl,
+    savedBoxesFor: savedBoxesFor,
+    mergeAnswers: mergeAnswers,
   });
 })();

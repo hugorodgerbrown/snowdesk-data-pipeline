@@ -237,6 +237,56 @@ describe('painting', () => {
     expect(conditions.querySelector('[data-journey-things]').hidden).toBe(true);
   });
 
+  it('counts the SAC tours and the community reports under the conditions (SNOW-1417)', async () => {
+    const tour = (uuid) => ({
+      uuid,
+      name: uuid,
+      urls: ['/routes/ski-tours/' + uuid + '/feature.json', '/routes/ski-tours/' + uuid + '/terrain.json'],
+    });
+    const r = readings([
+      area({
+        items: {
+          ...area().items,
+          tours: [tour('u1'), tour('u2')],
+          reports: [{ id: 'r1' }, { id: 'r2' }],
+          reportsNewestAt: null,
+        },
+      }),
+    ]);
+    for (const url of tour('u1').urls) r.shellEntries.push({ url: window.location.origin + url });
+    // The map's overlay cache, as a download leaves it: one of the two.
+    window.pwaDb = {
+      get: vi.fn(async (store, key) =>
+        store === 'data:map_overlays' && key === 'community_reports'
+          ? { key, geojson: { features: [{ properties: { submission: 'r1' } }] } }
+          : undefined,
+      ),
+    };
+    try {
+      mount();
+      announce(r);
+      const line = (kind) =>
+        panelFor('region-CH-4115').querySelector(
+          `[data-journey-stage="conditions"] [data-journey-thing="${kind}"]`,
+        );
+      await vi.waitFor(() => expect(line('reports').getAttribute('data-journey-status')).toBe('no'));
+
+      expect(line('tours').querySelector('[data-journey-thing-name]').textContent).toBe('SAC tours');
+      expect(line('tours').querySelector('[data-journey-thing-value]').textContent).toBe(
+        '1 of 2 saved',
+      );
+      expect(line('reports').querySelector('[data-journey-thing-name]').textContent).toBe(
+        'Community reports',
+      );
+      expect(line('reports').querySelector('[data-journey-thing-value]').textContent).toBe(
+        '1 of 2 saved',
+      );
+      expect(window.pwaDb.get).toHaveBeenCalledWith('data:map_overlays', 'community_reports');
+    } finally {
+      delete window.pwaDb;
+    }
+  });
+
   it('shows an orphaned bucket with its Remove and no Sync', () => {
     mount();
     announce(
