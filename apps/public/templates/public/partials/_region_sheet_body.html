@@ -71,13 +71,13 @@ Context:
 
     {% if bulletin or covered %}
         {# One child, so the wrapper's space-y does not respace the body's own blocks. #}
-        <div data-testid="region-sheet-bulletin">
+        <div data-testid="region-sheet-bulletin" data-dated>
             {% include "public/partials/_region_body.html" %}
         </div>
     {% else %}
         {# No bulletin here, but people still report from it (SNOW-1291): a tap #}
         {# on one of its pins lands on that report's row.                      #}
-        <div>
+        <div data-dated>
             {% include "observations/partials/_on_the_ground.html" %}
             <p class="text-sm text-text-2" data-testid="region-sheet-uncovered">
                 {% blocktrans with p=provider_name trimmed %}Avalanche data is not published by {{ p }} for this
@@ -90,7 +90,7 @@ Context:
     {# comes first) — only when the day has a bulletin and the region is #}
     {# inside the terrain tiles.                                          #}
     {% if terrain_switch %}
-        {% include "public/partials/_region_sheet_terrain.html" %}
+        <div data-dated>{% include "public/partials/_region_sheet_terrain.html" %}</div>
     {% endif %}
 
     {% if resorts %}

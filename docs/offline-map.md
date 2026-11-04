@@ -865,9 +865,10 @@ plain outlines and names, and a tap names a region in a form panel
 (`public/partials/_map_region_pick.html`, on `includes/_overlay_sheet.html`
 as design rule 6 asks of a task) with its size as `pwaRegionDownload.estimate()` prices it. Download closes the
 task and calls `pwaRegionDownload.start()`, so the run, its progress and its
-record are the roundel's own. It exists because Terrain mode holds the
-region sheet (docs/decisions/the-map-has-a-dated-mode-and-a-terrain-mode.md),
-and it works the same in Dated.
+record are the roundel's own. It was built when Terrain mode held the
+region sheet (docs/decisions/the-map-has-a-dated-mode-and-a-terrain-mode.md).
+Terrain draws the regions again now, and their sheet's download button, but
+the pick task stays: it is the way in from the Downloads sheet, in both modes.
 
 The control has moved twice. SNOW-521 rendered it into the bottom-right
 control stack (`#map-controls-br`), beside the layers pill — that menu is

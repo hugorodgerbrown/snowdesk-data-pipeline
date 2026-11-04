@@ -8,8 +8,9 @@
  * only map.js can get wrong:
  *
  *   - BOOT. Opened on ?mode=terrain the dated layers are installed hidden —
- *     the region fill, boundary and label, and the field reports — so the
- *     first paint never draws them;
+ *     the bulletin colour and the field reports — so the first paint never
+ *     draws them, while the region boundaries, which are fixed, are drawn
+ *     and stay tappable, with their bare names from z10;
  *   - SUPPRESSION, NEVER PREFERENCE. Releasing and holding again moves what
  *     is drawn and never a stored choice: the Bulletins step, Micro regions
  *     and "On the ground" read the same in localStorage throughout;
@@ -207,12 +208,19 @@ afterAll(() => {
 });
 
 describe('a map opened on ?mode=terrain', () => {
-  it('installs the region fill, boundary and label hidden', () => {
-    // The fill is the region tap's hit-test target: visibility none, not
-    // opacity 0, is what makes a region untappable in Terrain.
-    expect(shown(mapStub, 'regions-fill')).toBe('none');
-    expect(shown(mapStub, 'regions-line')).toBe('none');
-    expect(shown(mapStub, 'regions-label')).toBe('none');
+  it('draws the region boundary and label, and keeps the region tappable', () => {
+    // The fill is the region tap's hit-test target: installed, at opacity
+    // 0, so a tap opens the lean region sheet without painting the day.
+    expect(shown(mapStub, 'regions-fill')).toBe('visible');
+    expect(mapStub.getPaintProperty('regions-fill', 'fill-opacity')).toBe(0);
+    expect(shown(mapStub, 'regions-line')).toBe('visible');
+    expect(shown(mapStub, 'regions-label')).toBe('visible');
+  });
+
+  it('names the regions from z10 with the bare name, not the level', () => {
+    expect(shown(mapStub, 'regions-level-label')).toBe('visible');
+    expect(mapStub.getLayoutProperty('regions-level-label', 'text-field')).toEqual(['get', 'name']);
+    expect(shown(mapStub, 'regions-edge')).toBe('none');
   });
 
   it('says the bulletins are not visible, and wrote no stored choice', () => {
@@ -227,24 +235,26 @@ describe('a map opened on ?mode=terrain', () => {
 });
 
 describe('suppression, never preference', () => {
-  it('brings the regions back as the reader had them on release', async () => {
+  it('brings the colour back as the reader had it on release', async () => {
     window.pwaBulletinsLayer.setSuppressed(MAP_MODE, false);
     window.pwaCommunityReportsOverlay.setSuppressed(MAP_MODE, false);
     await settle();
 
     expect(shown(mapStub, 'regions-fill')).toBe('visible');
+    expect(mapStub.getPaintProperty('regions-fill', 'fill-opacity')).not.toBe(0);
     expect(shown(mapStub, 'regions-line')).toBe('visible');
+    expect(mapStub.getLayoutProperty('regions-level-label', 'text-field')).toEqual(['get', 'text']);
     expect(shown(mapStub, 'community-reports-point')).toBe('visible');
     expect(window.pwaBulletinsLayer.isVisible()).toBe(true);
     expect(storedChoices()).toEqual(before);
   });
 
-  it('takes them away again, and still writes nothing', () => {
+  it('takes the colour away again, leaves the boundaries, and writes nothing', () => {
     window.pwaBulletinsLayer.setSuppressed(MAP_MODE, true);
     window.pwaCommunityReportsOverlay.setSuppressed(MAP_MODE, true);
 
-    expect(shown(mapStub, 'regions-fill')).toBe('none');
-    expect(shown(mapStub, 'regions-line')).toBe('none');
+    expect(mapStub.getPaintProperty('regions-fill', 'fill-opacity')).toBe(0);
+    expect(shown(mapStub, 'regions-line')).toBe('visible');
     expect(storedChoices()).toEqual(before);
   });
 
@@ -260,17 +270,15 @@ describe('suppression, never preference', () => {
     }
   });
 
-  it('brings back a region tier the reader had OFF as off', async () => {
-    localStorage.setItem(L4_KEY, 'false');
+  it('takes the names and the region tap with Micro regions off in Terrain', () => {
+    // The picker hides the tier's own layers; map.js hears the flip and
+    // re-derives the two it shares with the bulletins.
     document.dispatchEvent(new CustomEvent('snowdesk:overlays-changed', {
       detail: { key: 'l4', visible: false },
     }));
-    window.pwaBulletinsLayer.setSuppressed(MAP_MODE, false);
-    await settle();
 
-    expect(shown(mapStub, 'regions-line')).toBe('none');
-    // The fill stays up for the Bulletins step alone.
-    expect(shown(mapStub, 'regions-fill')).toBe('visible');
+    expect(shown(mapStub, 'regions-level-label')).toBe('none');
+    expect(shown(mapStub, 'regions-fill')).toBe('none');
     expect(localStorage.getItem(BULLETINS_KEY)).toBe('0.75');
   });
 });

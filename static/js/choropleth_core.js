@@ -353,7 +353,7 @@
    *
    * ``text-field`` cannot read feature-state, where the rating lives, so the
    * level comes in as data and the source is rebuilt when a day's ratings
-   * are painted.
+   * are painted. ``name`` is the label alone, which Terrain mode draws.
    *
    * @param {Array<{id: number, properties: Object<string, *>}>} features
    *   The loaded region features (``FEATURE_BY_REGION_ID``'s values).
@@ -374,6 +374,8 @@
         geometry: { type: 'Point', coordinates: [at[0], at[1]] },
         properties: {
           text: digit ? digit + ' · ' + props.name : String(props.name || ''),
+          // The bare name, for Terrain mode, where no level is drawn.
+          name: String(props.name || ''),
           country: props.country,
           covered: props.covered,
           painted: paintedIds.has(f.id),

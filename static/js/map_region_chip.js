@@ -63,8 +63,8 @@
 
   /** Read the map and redraw the chip. */
   const update = () => {
-    // SNOW-1394: Terrain mode holds the regions with the bulletins, so the
-    // chip — a region and its level — has nothing to name.
+    // SNOW-1394: the chip names a region by its level, which Terrain mode
+    // holds with the bulletins, so it is not drawn there.
     if (window.pwaMapMode && window.pwaMapMode.isTerrain()) {
       chip.hidden = true;
       shownRegion = null;

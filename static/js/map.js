@@ -6857,10 +6857,8 @@
   //   - ``releaseOverlay`` brings a key back on its own load path, which
   //     re-reads the preference and catches the layer up with the day.
 
-  /** The region tiers Terrain holds with the bulletins. */
-  const REGION_TIER_KEYS = Object.freeze(['l1', 'l2', 'l4']);
   /** The lazily installed keys a release reloads through overlay-load. */
-  const MODE_LAZY_KEYS = Object.freeze(['l1', 'l2', 'weather', 'community_reports']);
+  const MODE_LAZY_KEYS = Object.freeze(['weather', 'community_reports']);
 
   /**
    * Add or remove one key from Terrain's held set.
@@ -6966,6 +6964,10 @@
     // hides both (the fill stays installed at 0 so borders remain tappable;
     // these have nothing to tap).
     const closeZoomShown = fill.opacity > 0 ? 'visible' : 'none';
+    // Terrain mode (SNOW-1394) holds the level, but the regions are still
+    // drawn, so from z10 the same label layer carries the bare name. It
+    // follows the Micro regions row, as regions-label does below z10.
+    const namesOnly = modeSuppressed('bulletins') && overlayDrawn('l4');
     if (map.getLayer('regions-edge')) {
       map.setLayoutProperty('regions-edge', 'visibility', closeZoomShown);
       map.setPaintProperty(
@@ -6974,7 +6976,12 @@
       );
     }
     if (map.getLayer('regions-level-label')) {
-      map.setLayoutProperty('regions-level-label', 'visibility', closeZoomShown);
+      map.setLayoutProperty(
+        'regions-level-label', 'visibility', namesOnly ? 'visible' : closeZoomShown,
+      );
+      map.setLayoutProperty(
+        'regions-level-label', 'text-field', ['get', namesOnly ? 'name' : 'text'],
+      );
     }
     if (map.getLayer('bulletin-groupings-line')) {
       map.setLayoutProperty(
@@ -7015,17 +7022,14 @@
     bulletinsVisibility = active
       ? BULLETINS_CORE.suppress(bulletinsVisibility, reason)
       : BULLETINS_CORE.unsuppress(bulletinsVisibility, reason);
-    // SNOW-1394: Terrain mode holds the regions with the bulletins — a
-    // region exists only to hold one — so the boundary tiers, their labels
-    // and the region tap (the fill, dropped by regionsFillLayout once no
-    // tier is drawn) go too. Resort-edit mode suppresses the colour alone.
+    // SNOW-1394: Terrain mode holds the bulletins and their grouping
+    // outline. The region boundaries stay: a region is fixed and exists
+    // beyond the day's bulletin (Hugo, 4 Nov 2026), so the tiers the reader
+    // chose stay drawn, and the fill stays installed at opacity 0 as the
+    // region tap's target. Resort-edit mode suppresses the colour alone.
     if (reason === BULLETINS_CORE.SUPPRESSION.MAP_MODE) {
-      for (const key of ['bulletins', 'l3', ...REGION_TIER_KEYS]) {
+      for (const key of ['bulletins', 'l3']) {
         setModeSuppressedKey(key, active);
-      }
-      for (const key of REGION_TIER_KEYS) {
-        if (active) holdOverlayLayers(key);
-        else releaseOverlay(key);
       }
     }
     applyBulletinsVisibility();
@@ -9597,13 +9601,6 @@
       // already looking at the region, close in, and framing it would zoom
       // them back out to the whole region.
       if (!(ev.detail && ev.detail.frame === false)) window.pwaMapFocus?.region?.(regionID);
-    });
-
-    // SNOW-1394: Terrain mode holds the regions, so a region selected when
-    // the reader switches to it goes: its highlight would outline a region
-    // the map no longer draws, and its sheet is the day's danger.
-    document.addEventListener('snowdesk:map-mode-changed', (ev) => {
-      if (ev.detail && ev.detail.mode === 'terrain' && selectedId !== null) deselectRegion();
     });
 
     // Pin-positioning focus (static/js/map_placement_focus.js) clears every

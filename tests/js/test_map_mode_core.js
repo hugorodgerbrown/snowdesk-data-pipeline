@@ -22,18 +22,24 @@ const core = window.pwaMapModeCore;
 const { DATED, TERRAIN } = core.MODES;
 
 describe('the dated overlays', () => {
-  it.each(['bulletins', 'l1', 'l2', 'l3', 'l4', 'problem_terrain', 'weather', 'community_reports'])(
+  it.each(['bulletins', 'l3', 'problem_terrain', 'weather', 'community_reports'])(
     '%s is dated',
     (key) => {
       expect(core.isDated(key)).toBe(true);
     },
   );
 
+  // The region tiers are fixed: a region exists beyond the day's bulletin.
   it.each([
+    'l1', 'l2', 'l4',
     'terrain_filter', 'routes', 'resorts', 'ski_tours', 'ski_summits', 'rest_zones', 'favourites',
   ])('%s is not, and Terrain never holds it', (key) => {
     expect(core.isDated(key)).toBe(false);
     expect(core.isSuppressed(key, TERRAIN)).toBe(false);
+  });
+
+  it('leaves the boundaries rows live in Terrain', () => {
+    for (const selector of core.DATED_ROW_SELECTORS) expect(selector).not.toMatch(/boundaries/);
   });
 
   it('holds nothing in Dated', () => {

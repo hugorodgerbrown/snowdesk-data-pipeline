@@ -4,12 +4,12 @@
  *
  * WHY IT EXISTS. A region download used to start in one place only: the
  * download button on the region sheet, which a tap on a region opens.
- * Terrain mode holds the region tiers, the region tap and the region sheet
- * (SNOW-1394 — a region exists only to hold a bulletin), so in Terrain a
- * region could not be downloaded at all, and Terrain is the planning mode
- * a download for tomorrow is planned in. This task is the second way in,
- * reached from the Downloads sheet beside "Download a custom area", and it
- * works the same in both modes.
+ * Terrain mode held the region tiers, the region tap and the region sheet
+ * when it shipped (SNOW-1394), so in Terrain a region could not be
+ * downloaded at all. Terrain draws the regions again now, and their sheet's
+ * button with them, but this task stays as the way in from the Downloads
+ * sheet, beside "Download a custom area", and it works the same in both
+ * modes.
  *
  * WHAT IT DOES, in order:
  *
