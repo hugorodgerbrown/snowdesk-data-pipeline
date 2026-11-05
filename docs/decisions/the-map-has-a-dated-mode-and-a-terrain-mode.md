@@ -1,11 +1,17 @@
 ---
 name: the-map-has-a-dated-mode-and-a-terrain-mode
-description: Why the map has a Dated / Terrain toggle (map_mode_core.js, SUPPRESSION.MAP_MODE, ?mode=terrain) that suppresses, never rewrites
+description: Why the map has Conditions (Dated) / Terrain modes (map_mode_core.js ONLY_IN, SUPPRESSION.MAP_MODE) that suppress, never rewrite
 status: current
-last-reviewed: 2026-11-04
+last-reviewed: 2026-11-05
 ---
 
 # The map has a Dated mode and a Terrain mode
+
+**SNOW-1421 (5 Nov 2026) changed this record.** The Dated mode is called
+"Conditions" on screen (`MODES.DATED`, `dated`, in code), and each mode now
+holds the other's own layers. See [Each mode has its own
+layers](#each-mode-has-its-own-layers-snow-1421) below; the sections
+before it describe SNOW-1394 and say where SNOW-1421 replaced them.
 
 **SNOW-1394**, behind the `map_modes` flag. Some of what the map draws
 changes by the day: the avalanche bulletin, the weather and the field
@@ -30,10 +36,12 @@ that is always on screen replaced it.
     calendar icon comes back to the dated map on the day the reader left.
 - **Terrain is the map with the dated overlays off, and nothing more.**
   Hugo: "Terrain mode is really just turning off the date data overlays."
-  - The dated overlays (`pwaMapModeCore.DATED_OVERLAYS`) are the
-    bulletins, the bulletin grouping outline (`l3`), problem-terrain sync,
-    weather, field reports and the season scrubber. The region chip, which
-    names a region by its level, goes with them.
+  - The dated overlays (`DATED_OVERLAYS` until SNOW-1421; now
+    `pwaMapModeCore.ONLY_IN.dated`) are the bulletins, the bulletin
+    grouping outline (`l3`), problem-terrain sync, weather and the season
+    scrubber. Field reports were among them until SNOW-1421 made them
+    shared. The region chip, which names a region by its level, goes with
+    them.
   - **The regions stay (4 Nov 2026).** They first went with the bulletins,
     on the reading that a region exists only to hold one. Hugo: "regions
     exist beyond the daily bulletin, and we should reflect that." So the
@@ -53,8 +61,9 @@ that is always on screen replaced it.
     its sheet repaints in place with the day. A region selected in either
     mode stays selected across a switch.
   - Terrain switches nothing on. Steep terrain stays the reader's own
-    switch in both modes, and SNOW-1377's precedence of Steep terrain over
-    the sync still applies in Dated.
+    switch. (Until SNOW-1421 it was drawn in both modes, and SNOW-1377's
+    precedence of Steep terrain over the sync applied in Dated; now it is
+    Terrain's own, so the two are never on screen together.)
   - The Today panel's sun stays in both modes. It is a panel, not a map
     surface.
 - **Suppression, never preference.** This is the rule the rest hangs on
@@ -62,17 +71,20 @@ that is always on screen replaced it.
   - The mode never calls an overlay's `show()` or `hide()` and never
     writes its stored choice. It adds `SUPPRESSION.MAP_MODE`
     (`layer_visibility_core.js`) through each overlay's `setSuppressed`
-    hook: `pwaBulletinsLayer`, `pwaWeatherLayer`,
-    `pwaCommunityReportsOverlay` and `pwaBulletinTerrain`.
+    hook: `pwaBulletinsLayer`, `pwaWeatherLayer` and `pwaBulletinTerrain`
+    for Conditions' own, and since SNOW-1421 `pwaTerrainFilter`,
+    `pwaSkiTours` and `pwaRestZones` for Terrain's.
+    (`pwaCommunityReportsOverlay`'s hook went with SNOW-1421.)
   - What is drawn is the preference AND-ed with "not held"
     (`pwaMapModeCore.effective`). Leaving Terrain brings each overlay back
     exactly as the reader had it, re-read from storage and caught up with
     the day on its own load path.
   - A choice made in Terrain changes that choice alone. Switching Steep
     terrain on and off there leaves the problem-terrain choice intact.
-- **Disabled rows do nothing.** In Terrain the dated rows of the layers
-  menu show dimmed (`data-map-mode-disabled`) and a tap on one is stopped
-  in the capture phase, before the picker hears it (Hugo: "Do nothing.").
+- **Disabled rows do nothing.** Replaced by SNOW-1421, which hides the
+  other mode's rows instead. In Terrain the dated rows of the layers menu
+  showed dimmed (`data-map-mode-disabled`) and a tap on one was stopped in
+  the capture phase, before the picker heard it (Hugo: "Do nothing.").
 - **The mode is in the URL and on the device.** `?mode=terrain` is written
   with every other parameter kept, and the date write keeps it
   (`withDate`), so a link reproduces what its sender saw. A bare URL takes
@@ -131,5 +143,65 @@ that is always on screen replaced it.
 - **Terrain turning Steep terrain on.** Tempting, since Terrain is "the
   terrain map", but it would be a second writer of the reader's switch.
   Hugo: Terrain "doesn't turn terrain on by default".
-- **Hiding the dated rows in the layers menu.** A row that disappears reads
-  as a lost layer. A dimmed one says the mode is holding it.
+- **Hiding the dated rows in the layers menu.** Rejected for SNOW-1394: a
+  row that disappears reads as a lost layer. SNOW-1421 took it up once the
+  menu said which mode it lists (below).
+
+## Each mode has its own layers (SNOW-1421)
+
+Hugo, 5 Nov 2026, explaining the map to a first-time user: "Snowdesk has
+two maps. Conditions shows the mountains on a day: avalanche danger,
+weather and what people have seen. Terrain shows the mountains themselves:
+how steep, where the tours go, where wildlife needs space." With only the
+dated layers taken away, Terrain at its defaults was Conditions without
+the danger colours. So each mode now has layers of its own.
+
+- **The per-mode table.** `pwaMapModeCore.ONLY_IN` replaces
+  `DATED_OVERLAYS`. `ONLY_IN.dated` is `bulletins`, `l3`,
+  `problem_terrain` and `weather`; `ONLY_IN.terrain` is `terrain_filter`,
+  `ski_tours`, `ski_summits` and `rest_zones`. `isSuppressed(key, mode)`
+  holds a key in the mode it does not belong to, and `suppressedIn(mode)`
+  lists what a mode holds. Everything else is shared: one setting, drawn
+  in both.
+- **Field observations are shared.** The reports are dated, but what
+  people have seen matters to someone planning too, and they are user
+  data like favourites and routes (Hugo).
+- **Still suppression, never preference.** The three Terrain-only layers
+  gain `setSuppressed` hooks, and `map_mode.js`'s `suppressFor(mode)`
+  drives all six, the holds first so the map never draws both modes'
+  layers on the way over. Conditions never writes a Terrain setting.
+- **First paint, both ways.** `map.js` seeds `modeSuppressedKeys` from
+  `suppressedIn(bootMode)` and publishes `window.pwaMapModeState`
+  (`isSuppressed`, `hold`). `ski_tours.js` (`partVisibility()`) and
+  `rest_zones.js` (`visibility()`) draw their own layers and load after
+  `map.js`, so they ask it on every install: a Conditions boot never
+  paints a stored-on SAC layer. Their hooks write through `hold`.
+- **Rest zones while drawing a route.** Draw mode asks for the rest zones
+  whatever the switch says, so `rest_zones.js` shows them in either mode
+  while a route is drawn, and the `overlay-visibility-changed` backstop
+  leaves that key to it.
+- **Steep terrain and the sync.** `bulletinTerrainShown` gives way only to
+  a Steep terrain that is drawn. Behind the flag, switching the sync on no
+  longer switches Steep terrain off (SNOW-1377 did), because that would
+  write a Terrain setting from Conditions. Off the flag nothing changed.
+- **The layers menu says which mode it lists.** Its header is a
+  Conditions | Terrain control (`[data-map-mode-tab]`, buttons with
+  `aria-pressed`) in place of the "Map layers" title and the count. A tap
+  changes the map live, exactly as the date-row toggle does, and the two
+  stay in step. The mode's own rows sit in a tinted block at the top of
+  level one (`data-mode-only`); `map.css` hides the other mode's under
+  `:root[data-map-mode]`. The dimmed rows and the capture-phase blocker
+  are gone. The order is in
+  [the-layers-menu-is-on-off-then-options.md](the-layers-menu-is-on-off-then-options.md).
+- **Some taps change with it.** "Find a route" in Conditions records the
+  tours' switch and the mode holds them. A tour opened in the route panel
+  is drawn by the panel's own layers, so it still shows.
+
+### Rejected (SNOW-1421)
+
+- **Tabs that only change which settings show.** A Terrain layer switched
+  on from the menu while the map stayed in Conditions would draw nothing,
+  which looks broken. The tabs are the mode.
+- **Separate stored settings for each mode.** One switch per layer is
+  simpler, and a layer belongs to one mode or is shared.
+

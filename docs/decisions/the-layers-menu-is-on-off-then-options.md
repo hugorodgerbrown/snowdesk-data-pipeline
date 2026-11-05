@@ -1,8 +1,8 @@
 ---
 name: the-layers-menu-is-on-off-then-options
-description: Layers menu #basemap-menu — one switch per layer, options pages (data-layers-page), master switches, zoom-limited rows (data-zoom-gate)
+description: Layers menu #basemap-menu — switch per layer, options pages, master switches, zoom gates, Conditions | Terrain tabs (data-mode-only)
 status: current
-last-reviewed: 2026-11-03
+last-reviewed: 2026-11-05
 ---
 
 # The layers menu is on/off first, options one level down
@@ -25,6 +25,37 @@ because there is always one basemap. Steep terrain's opener opens the
 terrain filter's own sheet, because that sheet is the layer's options.
 Every open starts at level one. The menu is full width on a phone, with its
 own close button; on a desktop it sits beside the roundels at a fixed width.
+
+**Behind the `map_modes` flag (SNOW-1421, Hugo 5 Nov 2026)** the menu
+lists the map's current mode, and its header is the mode:
+
+- **The header** is a Conditions | Terrain segmented control
+  (`[data-map-mode-tab]`, buttons with `aria-pressed`, driven by
+  `static/js/map_mode.js`) in place of the "Map layers" title and the
+  count. The phone's close button stays. A tap changes the map live and
+  brings the menu back to level one.
+- **The mode's own rows** come first, in a tinted block
+  (`.basemap-menu-mode-block`, `data-mode-only`): Conditions has Avalanche
+  bulletins, Sync problem terrain and Weather; Terrain has Steep terrain,
+  SAC ski touring and Wildlife rest zones. Each has three rows, so the
+  shared rows below stay where they are when the tab changes. `map.css`
+  hides the other mode's block under `:root[data-map-mode]`.
+- **Shared rows**: Resorts, Regions (Boundaries, renamed, page header
+  too), Basemap.
+- **User data** (was "Your data"): Field observations, Favourites, Routes,
+  Downloaded areas. The "Reference data" label goes: the block and the
+  tabs say what it said.
+- **Sync problem terrain** leaves the bulletins' page for a level-one
+  switch row, because it is how a planned route is checked against the
+  day and should not be a level down. It carries a z12 zoom gate
+  (`problem_terrain` in `window.pwaZoomGates`) and dims while the
+  bulletins are off (`data-bulletins-off`, `map_basemap_picker.js`), its
+  switch live and its state kept, as a zoom-gated row's is.
+
+Off the flag the menu is as described above. Both menus share
+`public/partials/_map_layers_options_row.html` (an opener and a master
+switch) and `public/partials/_map_layers_steep_terrain_row.html`, extracted
+by SNOW-1421.
 
 Bulletins and Boundaries have no single row that could be their switch, so
 each has a **master** switch (`data-layer-master`), derived from the rows on
@@ -74,8 +105,8 @@ Field observations are user-generated content, so they belong in Your data.
   the opacity control is now on the bulletins page, and it has four steps.
 - A layer drawn only past a zoom says so on its row (SNOW-1280, Hugo
   28 Oct 2026; reworked 3 Nov 2026). While the map is outside its zoom,
-  whether the layer is on or off, the row dims to 40% (Terrain mode's
-  disabled look) and "· zoom in" follows its name on the same line. The
+  whether the layer is on or off, the row dims to 40% (the look SNOW-1394's
+  disabled rows had) and "· zoom in" follows its name on the same line. The
   switch is neither dimmed nor disabled: it keeps its state and still
   toggles, so a layer can be armed before zooming in. The row names no
   zoom level, because the zoom control's scale already does, so the old
