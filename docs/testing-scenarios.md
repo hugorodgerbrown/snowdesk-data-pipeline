@@ -2,7 +2,7 @@
 name: testing-scenarios
 description: Manual test scenarios — bulletin, map, search, accounts, PWA install/update/kill-switch, offline downloads, coverage, end-user offline run
 status: current
-last-reviewed: 2026-10-31
+last-reviewed: 2026-11-05
 ---
 
 # User Testing Scenarios -- Snowdesk
@@ -50,9 +50,6 @@ SNOW-314 until the marketing page took the root — see
 | 4 | Wait for the danger colours to paint, then a moment more | The welcome card (`#map-tour-offer`) slides in at the bottom left (full width at the bottom on a phone): "Explore Snowdesk", with three rows — "Find a resort", "Explore an example route" (only once `set_example_route --commit` has run) and "Explore the map" — and a "×" (Scenario MS7) |
 | 5 | Note the pre-selected region | CH-4115 (Martigny/Verbier) is already selected, so the readout chip and breadcrumb are populated on first paint (SNOW-342) |
 | 6 | Navigate to http://localhost:8000/?d=2026-04-08 | A 301 to `http://localhost:8000/map/?d=2026-04-08` — map state on `/` is forwarded with its query string |
-
-Out of season (today past the season end) the offer also carries an
-off-season note naming the archived season's start month.
 
 ### Scenario 2: View a random sample bulletin
 
@@ -390,18 +387,19 @@ Prerequisite: sign in as `admin@snowdesk.dev`, with the ski tours synced
 
 **Goal**: Verify the "Find a resort" walkthrough (SNOW-1231): it teaches
 that a resort has no danger level of its own and its region has, each step
-moves on when the visitor does it, nothing is locked, and out of season it
-runs on the example's day and comes back to today.
+moves on when the visitor does it, nothing is locked, and on a day with no
+bulletin (no rated row today, SNOW-1431) it runs on the example's day and
+comes back to today.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Out of season, open http://localhost:8000/map/?tour-offer=1 and click "Find a resort" | The map moves to 10 April 2026 with the "Example day" badge on the date. Search opens: a dark lead, "Find a resort · 1 of 3", says to type or pick, and that the map is on 10 April 2026; under it "Popular resorts" lists Verbier, Zermatt, Davos and St. Moritz, above any resorts and regions you have pinned |
+| 1 | On a day with no bulletin, open http://localhost:8000/map/?tour-offer=1 and click "Find a resort" | The map moves to 10 April 2026 with the "Example day" badge on the date. Search opens: a dark lead, "Find a resort · 1 of 3", says to type or pick, and that the map is on 10 April 2026; under it "Popular resorts" lists Verbier, Zermatt, Davos and St. Moritz, above any resorts and regions you have pinned |
 | 2 | Pick Verbier (or type any resort and pick it) | The map flies to the resort and its sheet opens. On a desktop a dark bar beside the sheet reads "Find a resort · 2 of 3": Verbier has no danger level of its own, it sits in the Martigny-Verbier region, tap it. The "Martigny-Verbier" row under "Avalanche bulletin" is ringed and scrolled into view. On a phone the sheet rises to full and the bar lies over its top |
 | 3 | Close the sheet, then click Resume on the pill | A pill reads "Find a resort · paused" with Resume and Exit; Resume reopens Verbier and the bar comes back on step 2 |
 | 4 | Tap the ringed region row | The region's sheet opens: "3 of 3" says how to read it (the danger level first, then each problem) with a Finish button. On a phone the bar sits along the foot of the map |
 | 5 | Pick another day in the calendar, then "Back to 10 Apr" on the pill | The pill reads "You've left the example day"; the button returns the map and the bar comes back |
 | 6 | Click "Finish" | The region sheet closes, the map returns to today with the toast "Back to today · <date>", and a card reads "Keep Verbier one tap away" with "Sign in to pin Verbier" (signed in: "Pin Verbier", which pins it and turns to "Verbier is pinned"), "Try the example route" (once one is set) and "Done" |
-| 7 | In season (or with the map's season extended), repeat from step 1 | The map stays on today: no badge, no move, no toast at the end |
+| 7 | On a day with a bulletin, repeat from step 1 | The map stays on today: no badge, no move, no toast at the end |
 
 ### Scenario MS8: The tour reads the map in seven steps
 

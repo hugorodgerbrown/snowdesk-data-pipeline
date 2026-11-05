@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-11-02
+last-reviewed: 2026-11-05
 ---
 
 # Map page — functional specification
@@ -27,7 +27,7 @@ Alps, rendered with MapLibre GL JS. It is the primary way a visitor
 answers one question: **"what is the avalanche danger where I am going,
 and how is it changing?"**
 
-Tapping a region selects it: the region is outlined, and the season
+Tapping a region selects it: the region is outlined, and the danger
 ribbon and its readout chip at the top of the map switch to that
 region — its name as a geographic breadcrumb and its danger swatch for the
 selected day. The
@@ -215,7 +215,7 @@ larger area a micro-region belongs to without leaving the map. The
 **bulletin groupings** boundary inside the Bulletins row is the one derived
 tier — it is not a fixed administrative boundary but a per-day artefact
 showing which micro-regions the forecaster treated as one unit, and so it
-changes as you scrub through the season. It is also the one tier that can be
+changes as you scrub through the timeline. It is also the one tier that can be
 absent: a bulletin covering a single region is not drawn, because that
 outline would land exactly on the micro-region border beneath it and claim a
 grouping the provider never made. A day with no outline anywhere means every
@@ -296,7 +296,7 @@ users. They are shown as reference, not as authoritative geography.
   [why](decisions/the-sheet-is-the-page.md)): its curated "why it
   matters" line (only when written), the bulletin card, the day's problem
   cards, the Base / Mid / Summit forecast,
-  the season calendar and the facts, in one column. On a desktop the same
+  the danger calendar and the facts, in one column. On a desktop the same
   body is the inset panel. A forward day reads today's forecast row.
 - **Pin size carries the tier (SNOW-543).** Each resort has a curated
   `tier` — Core, Standard or Minor — and the pin radius is interpolated
@@ -1094,33 +1094,38 @@ basemap" and "Manage downloads" sections for the mechanism.
 ## 5. The timeline scrubber
 
 The scrubber is a horizontal timeline on the map's bottom-left row that
-turns the map from "today" into "any day this season". The thumb defaults
-to today's position within the **November–May** avalanche season window.
+turns the map from "today" into "any day of the latest bulletin run". Its
+track follows the data, not a fixed season (SNOW-1431,
+[`decisions/date-windows-follow-the-data.md`](decisions/date-windows-follow-the-data.md)):
+it runs from the first rated day of the latest **bulletin run** (rated days
+with no gap of more than 60 empty days) to the later of that run's last
+rated day and today. The thumb defaults to today, which is always on the
+track, so the timeline is on screen in every month — in August its track
+ends in an empty stretch up to today.
 
-**It is a season scrubber, and only that** (SNOW-794). Its track spans the
-season and nothing wider, so it is shown only while the day the map is
-showing falls inside one — the calendar is its reveal. A day outside the
-season has no position on that track, and a thumb clamping to whichever end
-it is past is a lie: the URL says July and the thumb says April. The
-calendar answers for those days instead. Two controls, each honest about
-its own job.
+**It is a timeline of that run, and only that** (SNOW-794). It is shown
+only while the day the map is showing falls on its track
+(`data-on-track`); a calendar pick before the run started has no position
+there, and a thumb clamped to the start would be a lie. The calendar
+answers for those days instead. Two controls, each honest about its own
+job.
 
-**It is desktop-only.** At 148px a season is under a pixel a day and a 40px
+**It is desktop-only.** At 148px a winter is under a pixel a day and a 40px
 fingertip covers 57 of them; it was never a date control on a phone. Below
 640px it is not rendered, and nothing is lost with it — the calendar grid
 carries the danger-by-day colour that was the only other thing it offered.
 
 - **Scrubbing.** Dragging the thumb to a date re-colours every region
   from that day's ratings, so the visitor can see how danger evolved
-  across the season — a cold snap, a storm cycle, a thaw. The open detail
+  across the run — a cold snap, a storm cycle, a thaw. The open detail
   surface follows the scrubber, re-fetching the bulletin for the
   scrubbed-to date so the text always matches the colour.
-- **Timelapse.** A play button steps through the season automatically,
+- **Timelapse.** A play button steps through the track automatically,
   animating the choropleth day by day as a time-lapse of the winter.
 - **Derived layers follow.** The bulletin-groupings layer re-dissolves for
   each scrubbed date (it only redraws once the scrubber settles, so it
   never thrashes during a drag or playback).
-- **Performance.** The full season's ratings are fetched once, by the
+- **Performance.** The whole track's ratings are fetched once, by the
   scrubber's own initialisation on every cold load (it needs the date
   range to leave its loading state — SNOW-234; SNOW-793 measured that it
   was never lazy), and served from memory thereafter, so every scrub and
@@ -1129,30 +1134,29 @@ carries the danger-by-day colour that was the only other thing it offered.
   the choropleth, keeping first paint small.
 - **Jumping to a day.** Dragging is fine for "show me the storm week" and
   poor for "show me the 16th": the track is a few hundred pixels wide and
-  the season is seven months long, so a pixel is about a day. The date pill
+  a winter's run is months long, so a pixel is about a day. The date pill
   in the bottom-left row opens a month grid beside it (SNOW-792/794) and
   picking a day goes there exactly.
 
-  **The calendar reaches further than the scrubber does.** The scrubber is a
-  season; the calendar runs from the start of the archive to the last day the
+  **The calendar reaches further than the scrubber does.** The scrubber is the
+  latest bulletin run; the calendar runs from the start of the archive to the last day the
   data covers, because the map carries weather as well as bulletins and a day
   in September has something to show even though no bulletin covers it. The
-  season is drawn as a highlight inside that range, so the grid tells you
+  days with a bulletin are filled inside that range, so the grid tells you
   where the bulletins are without refusing the days either side.
 
   **Both ends follow the data, including the far one** (SNOW-927). The
   ceiling was today until the evening bulletin — which forecasts tomorrow —
   made that the one published day the picker would not open. It reaches
-  tomorrow from about 16:00 and stays at today off season, capped a few days
+  tomorrow from about 16:00 and stays at today when no evening bulletin is out, capped a few days
   out so a mis-dated row cannot widen the grid by years. Which day the map
   *defaults* to is a separate question with a separate answer: always today.
 
   **The grid carries the danger colour too** (SNOW-794). Once a region is
   focused, each day is filled with that region's rating in the EAWS palette
   — the same fact the scrubber paints into its track, and the same
-  saturated colours the bulletin page's own season calendar uses. A day
-  inside the season with no bulletin keeps the plain season tint, so a gap
-  still reads as a gap. This is what makes dropping the scrubber on a phone
+  saturated colours the bulletin page's own danger calendar uses. A day
+  with no bulletin keeps the plain tint, so a gap still reads as a gap. This is what makes dropping the scrubber on a phone
   honest rather than a loss.
 
   **The date control is one control.** The readout that says which day the
@@ -1166,8 +1170,8 @@ carries the danger-by-day colour that was the only other thing it offered.
   empty querystring means **today** (SNOW-793): the map opens painted for
   it and the date ribbon names it, so a bare link keeps meaning "today"
   rather than pinning to the day it was copied. What SNOW-660 removed and
-  what must not come back is the *derived* default — the season's last
-  populated day, which off-season painted one polygon that nothing on
+  what must not come back is the *derived* default — the last populated
+  day, which with no bulletin today painted one polygon that nothing on
   screen explained.
 
 ---
