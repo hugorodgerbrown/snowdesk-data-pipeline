@@ -33,8 +33,8 @@ const SEASON_END = '2026-03-20';
 const TODAY = '2026-05-14';
 const TODAY_PCT = 100;
 
-// February has a gap in it: the 12th carries no ratings. The grid does not
-// mark that at all — the day is offered like any other.
+// February has a gap in it: the 12th carries no ratings. It is offered like
+// any other day, but only the rated days are filled.
 const RATED = ['2026-01-05', '2026-02-10', '2026-02-11', '2026-02-13', '2026-03-20'];
 const RATINGS = Object.fromEntries(RATED.map((d) => [d, { 'CH-4115': 2 }]));
 
@@ -60,7 +60,6 @@ function buildFixture() {
     <div id="map-calendar"
            data-state="closed"
            data-season-start="${SEASON_START}"
-           data-season-end="${SEASON_END}"
            data-today="${TODAY}"
            data-months="${MONTHS.join('|')}"
            hidden>
@@ -323,7 +322,7 @@ describe('which days it offers', () => {
 
   it('offers days outside the season, because the map has weather for them', async () => {
     // April is past the season end and before today. Every day in it is
-    // pickable, and none of them is marked in-season.
+    // pickable, and none carries a bulletin, so none is filled.
     history.replaceState(null, '', '/?d=2026-03-20');
     await loadCalendar();
     openPopup();
@@ -333,42 +332,43 @@ describe('which days it offers', () => {
     const days = dayButtons();
     expect(days.length).toBe(30);
     expect(days.every((b) => !b.disabled)).toBe(true);
-    expect(days.every((b) => !b.classList.contains('in-season'))).toBe(true);
-    // The season tint is the only per-day mark there is.
     expect(days.every((b) => b.className === 'map-calendar-day')).toBe(true);
   });
 
-  it('offers an in-season day with no bulletin, and does not mark it out', async () => {
-    // A gap in the archive is an operator's concern; a visitor who lands on
-    // 12 February sees an uncoloured map, which says it once. The grid
-    // carries no per-day mark distinguishing it from the 11th.
+  it('fills the days that have a bulletin, and leaves a gap plain but pickable', async () => {
     history.replaceState(null, '', '/?d=2026-02-11');
     await loadCalendar();
     openPopup();
 
-    // The 13th, not the 11th: the 11th is the day being shown and so
-    // carries `is-selected`, which would make the two differ for a reason
-    // that has nothing to do with bulletins.
+    expect(monthLabel()).toBe('February 2026');
+    expect(dayButton('2026-02-10').classList.contains('has-bulletin')).toBe(true);
+    expect(dayButton('2026-02-13').classList.contains('has-bulletin')).toBe(true);
     const gap = dayButton('2026-02-12');
-    const rated = dayButton('2026-02-13');
+    expect(gap.classList.contains('has-bulletin')).toBe(false);
     expect(gap.disabled).toBe(false);
-    expect(gap.className).toBe(rated.className);
   });
 
-  it('highlights the season without fencing it', async () => {
-    // The season closes on 20 March. The 21st loses the highlight and keeps
-    // the click — which is the whole distinction between the two.
-    //
-    // Asserted at the season's END rather than its start because the paging
-    // floor and the season start coincide in this fixture, so the day before
-    // the season is out of RANGE and would prove nothing about the season.
-    history.replaceState(null, '', '/?d=2026-03-20');
-    await loadCalendar();
+  it('does not fill a day whose every region is unrated', async () => {
+    // The payload can carry placeholder frames — the production defect was a
+    // run of empty rows read as season. A frame of zeros is not a bulletin.
+    history.replaceState(null, '', '/?d=2026-05-14');
+    await loadCalendar({ ...RATINGS, '2026-05-10': { 'CH-4115': 0 } });
     openPopup();
 
-    expect(dayButton('2026-03-20').classList.contains('in-season')).toBe(true);
-    expect(dayButton('2026-03-21').classList.contains('in-season')).toBe(false);
-    expect(dayButton('2026-03-21').disabled).toBe(false);
+    expect(monthLabel()).toBe('May 2026');
+    expect(dayButton('2026-05-10').classList.contains('has-bulletin')).toBe(false);
+  });
+
+  it('leaves days past the ceiling plain, even with a rating', async () => {
+    // A rating six days ahead is past the forward cap (SNOW-927), so the day
+    // is refused — and a refused day is never filled.
+    history.replaceState(null, '', '/?d=2026-05-14');
+    await loadCalendar({ ...RATINGS, '2026-05-20': { 'CH-4115': 2 } });
+    openPopup();
+
+    const future = dayButton('2026-05-20');
+    expect(future.disabled).toBe(true);
+    expect(future.classList.contains('has-bulletin')).toBe(false);
   });
 });
 
@@ -748,10 +748,10 @@ describe('the focused region\'s danger, per day (SNOW-794)', () => {
     openPopup();
     pageToFebruary();
 
-    // The 12th is the gap in RATED. It keeps its in-season tint and no
-    // danger fill, so a gap inside the season still reads as a gap.
+    // The 12th is the gap in RATED: no danger colour and no bulletin fill,
+    // so a gap inside the season still reads as a gap.
     expect(ratingClass('2026-02-12')).toBe(null);
-    expect(dayButton('2026-02-12').classList.contains('in-season')).toBe(true);
+    expect(dayButton('2026-02-12').classList.contains('has-bulletin')).toBe(false);
   });
 
   it('recolours in place when the focus moves to another region', async () => {

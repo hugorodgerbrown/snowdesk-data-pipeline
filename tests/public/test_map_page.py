@@ -1882,14 +1882,13 @@ def test_map_calendar_ships_hidden() -> None:
 
 
 @pytest.mark.django_db
-def test_map_calendar_carries_the_season_window() -> None:
+def test_map_calendar_carries_the_paging_floor() -> None:
     """
-    The popup's own season bounds match the scrubber's.
+    The popup's paging floor and today match the scrubber's.
 
-    They are read independently by two modules. The calendar uses them as a
-    HIGHLIGHT rather than a limit — every day up to today is selectable —
-    but the two surfaces still have to agree on where the season is, or the
-    band the calendar draws sits somewhere the scrubber's track does not.
+    The calendar pages from ``data-season-start`` until the ratings payload
+    resolves, so it must agree with the scrubber's. It no longer reads a
+    season end: the grid fills the days that have a bulletin instead.
     """
     client = Client()
     response = client.get(reverse("public:map"))
@@ -1897,10 +1896,11 @@ def test_map_calendar_carries_the_season_window() -> None:
 
     popup = _one(r'(<div[^>]*id="map-calendar"[^>]*>)', content, "the calendar popup")
     scrubber = _one(r'(<div[^>]*id="season-scrubber"[^>]*>)', content, "the scrubber")
-    for attribute in ("data-season-start", "data-season-end", "data-today"):
+    for attribute in ("data-season-start", "data-today"):
         value = _one(rf'{attribute}="([^"]*)"', popup, attribute)
         assert value, f"{attribute} is empty on the calendar popup"
         assert f'{attribute}="{value}"' in scrubber
+    assert "data-season-end" not in popup
 
 
 @pytest.mark.django_db
