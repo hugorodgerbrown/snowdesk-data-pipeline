@@ -113,3 +113,58 @@ describe('boundsForUuid', () => {
     expect(core.boundsForUuid(collection, uuid)).toBeNull();
   });
 });
+
+describe('wildlifeTileUrl', () => {
+  it('builds a swisstopo WMTS Web Mercator template for each wildlife layer', () => {
+    for (const layer of core.WILDLIFE_LAYERS) {
+      expect(core.wildlifeTileUrl(layer)).toBe(
+        `https://wmts.geo.admin.ch/1.0.0/${layer}/default/current/3857/{z}/{x}/{y}.png`,
+      );
+    }
+  });
+});
+
+describe('viewQuery / parseView', () => {
+  const camera = { center: { lng: 7.871234567, lat: 46.0712345 }, zoom: 12.6789, pitch: 64.04, bearing: -145.26 };
+
+  it('writes the camera, rounded, and the switches that are on', () => {
+    expect(core.viewQuery(camera, { steep: true, tours: false, wildlife: true })).toBe(
+      'at=7.87123,46.07123,12.68,64,-145.3&layers=steep,wildlife',
+    );
+  });
+
+  it('round-trips a view', () => {
+    const query = core.viewQuery(camera, { steep: false, tours: true, wildlife: true });
+    expect(core.parseView(`?${query}`)).toEqual({
+      camera: { center: [7.87123, 46.07123], zoom: 12.68, pitch: 64, bearing: -145.3 },
+      layers: { steep: false, tours: true, wildlife: true },
+    });
+  });
+
+  it('keeps an empty layers list as every switch off', () => {
+    expect(core.parseView('?layers=').layers).toEqual({ steep: false, tours: false, wildlife: false });
+  });
+
+  it('falls back to the defaults with no query', () => {
+    expect(core.parseView('')).toEqual({ camera: null, layers: { ...core.DEFAULT_LAYERS } });
+  });
+
+  it.each([
+    'at=7,46,12',
+    'at=a,46,12,60,0',
+    'at=200,46,12,60,0',
+    'at=7,46,12,89,0',
+  ])('drops a malformed camera (%s)', (query) => {
+    expect(core.parseView(`?${query}`).camera).toBeNull();
+  });
+});
+
+describe('viewQuery longitude', () => {
+  it('wraps a centre from another world copy back into [-180, 180]', () => {
+    const query = core.viewQuery(
+      { center: { lng: 367.87, lat: 46.07 }, zoom: 12, pitch: 60, bearing: 0 },
+      core.DEFAULT_LAYERS,
+    );
+    expect(core.parseView(`?${query}`).camera.center).toEqual([7.87, 46.07]);
+  });
+});

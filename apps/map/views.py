@@ -41,6 +41,7 @@ from apps.bulletins.models import (
     RegionDayRating,
 )
 from apps.map import resort_guide
+from apps.map.map_3d import map_3d_enabled
 from apps.map.problem_terrain import problem_terrain_key
 from apps.observations.models import FieldObservation
 from apps.public.map_shared import map_modes_enabled, trip_url_templates
@@ -317,6 +318,8 @@ def map_page(request: HttpRequest) -> HttpResponse:
             "alert_list_url": alert_list_url(request),
             # SNOW-1394: the Dated / Terrain toggle, behind its flag.
             "map_modes_enabled": map_modes_enabled(request),
+            # The "3D" roundel, behind the map_3d flag (apps/map/map_3d.py).
+            "map_3d_link": map_3d_enabled(request),
         },
     )
 

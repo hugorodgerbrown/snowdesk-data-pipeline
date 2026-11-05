@@ -15,7 +15,8 @@ from django.urls import reverse
 from waffle.testutils import override_flag
 
 from apps.map.map_3d import MAP_3D_DEM_TILE_URL
-from tests.factories import UserFactory
+from apps.map.models import Map3dShare
+from tests.factories import Map3dShareFactory, UserFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -119,3 +120,43 @@ def test_the_page_never_unfurls_and_is_not_indexed() -> None:
         content = _signed_in().get(URL).content.decode()
     assert 'property="og:title"' not in content
     assert '<meta name="robots" content="noindex, nofollow">' in content
+
+
+def test_tours_and_wildlife_switches_and_share_render() -> None:
+    """SAC tours (on), Wildlife (off) and Share are always on the page."""
+    with override_flag("map_3d", active=True):
+        content = _signed_in().get(URL).content.decode()
+    assert 'id="map-3d-tours"' in content
+    assert 'id="map-3d-wildlife"' in content
+    assert 'id="map-3d-share"' in content
+    assert 'id="map-3d-strings-template"' in content
+    assert "js/share.js" in content
+
+
+def test_a_flagged_reader_gets_one_share_token() -> None:
+    """Opening the page mints the reader's token once and puts it on #map-3d."""
+    client = _signed_in()
+    with override_flag("map_3d", active=True):
+        first = client.get(URL).content.decode()
+        client.get(URL)
+    share = Map3dShare.objects.get()
+    assert f'data-share-token="{share.token}"' in first
+
+
+def test_a_share_link_opens_the_page_for_an_anonymous_visitor() -> None:
+    """A live token bypasses the flag and sign-in, and shows no one's routes."""
+    share = Map3dShareFactory.create()
+    response = Client().get(URL, {"share": share.token})
+    content = response.content.decode()
+    assert response.status_code == 200
+    assert 'data-routes-url=""' in content
+    assert f'data-share-token="{share.token}"' in content
+
+
+def test_a_deleted_or_unknown_token_is_a_404() -> None:
+    """Deleting the row revokes every link that carries it."""
+    share = Map3dShareFactory.create()
+    token = share.token
+    share.delete()
+    assert Client().get(URL, {"share": token}).status_code == 404
+    assert Client().get(URL, {"share": "nope"}).status_code == 404

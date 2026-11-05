@@ -421,6 +421,18 @@ Optional context:
                     {% include "includes/_icon_layers.html" %}
                 </button>
             </div>
+            {# The 3-D map, an experiment behind the map_3d flag. static/js/map_3d_link.js #}
+            {# carries this view's camera and switches across on a click.             #}
+            {% if map_3d_link %}
+                <div class="map-utility-pill">
+                    <a
+                        id="map-3d-link"
+                        href="{% url 'public:map_3d' %}"
+                        class="map-utility-button hover-affordance text-chip font-semibold"
+                        aria-label='{% trans "Open in 3-D" %}'
+                    >{% trans "3D" %}</a>
+                </div>
+            {% endif %}
         </div>
         {# Group 2, "yours", in the collapsible wrapper. The chevron at the     #}
         {# foot reveals and hides this capsule alone, easing out of the toggle. #}

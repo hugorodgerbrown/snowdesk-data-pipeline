@@ -1,7 +1,7 @@
 """
 apps/map/apps.py — Django app configuration for the interactive map.
 
-Registers the map app so its templates are discovered. It has no models.
+Registers the map app: its templates, and the Map3dShare model.
 """
 
 from django.apps import AppConfig

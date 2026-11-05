@@ -12,6 +12,8 @@
  *     `terrainfilter://` protocol /map/ registers (this page is a separate
  *     document, so the name is free);
  *   - SAC's ski tours, asked for in a box around the camera on each move;
+ *   - Wildlife: FOEN's wildlife rest zones and federal game reserves, as
+ *     swisstopo WMTS rasters;
  *   - the reader's own routes, when signed in;
  *   - the resorts.
  *
@@ -19,6 +21,13 @@
  * the tilt: its uuid is looked up in the loaded data, because the tapped
  * feature is only a drawn fragment and a tour is one feature per leg.
  * `?route=<uuid>` opens on one of the reader's routes.
+ *
+ * Three switches (Steep terrain, SAC tours, Wildlife) show and hide their
+ * layers. The camera and the switches are mirrored into the address bar
+ * (`?at=…&layers=…`, map_3d_core.viewQuery) on every move and toggle, and
+ * Share hands that URL on, so whoever opens it sees the same view. The URL
+ * carries the reader's share token (`?share=`), which opens the page for
+ * anyone holding the link, signed in or not.
  *
  * Every URL comes from a data attribute on #map-3d (apps/map/map_3d.py).
  * The pure parts are in map_3d_core.js.
@@ -40,18 +49,64 @@
   const ROUTES_SOURCE = 'map-3d-routes';
   const RESORTS_SOURCE = 'map-3d-resorts';
   const LINE_LAYERS = ['map-3d-tours-climb', 'map-3d-tours-descent', 'map-3d-routes-line'];
+  const TOUR_LAYERS = ['map-3d-tours-casing', LINE_LAYERS[0], LINE_LAYERS[1]];
+  const WILDLIFE_LAYERS = core.WILDLIFE_LAYERS.map((/** @type {string} */ id) => `map-3d-wildlife-${id}`);
   const TOURS_DEBOUNCE_MS = 300;
   const STEEP_CACHE_TILES = 64;
+
+  // A shared link's view, else the opening camera and the default switches.
+  const view = core.parseView(window.location.search);
+  // Read before writeViewUrl rewrites the query string, which drops it.
+  const wantedRoute = new URLSearchParams(window.location.search).get('route');
+  const camera = view.camera || core.OPENING_CAMERA;
+  /** @type {Record<string, boolean>} */
+  const layerState = { ...view.layers };
 
   const map = new maplibre.Map({
     container: el,
     style: data.styleUrl,
-    center: core.OPENING_CAMERA.center.slice(),
-    zoom: core.OPENING_CAMERA.zoom,
-    pitch: core.OPENING_CAMERA.pitch,
-    bearing: core.OPENING_CAMERA.bearing,
+    center: camera.center.slice(),
+    zoom: camera.zoom,
+    pitch: camera.pitch,
+    bearing: camera.bearing,
     maxPitch: core.MAX_PITCH,
   });
+
+  /**
+   * MapLibre's visibility value for a switch.
+   *
+   * @param {string} key
+   * @returns {'visible'|'none'}
+   */
+  function visibility(key) {
+    return layerState[key] ? 'visible' : 'none';
+  }
+
+  /** @returns {string} The URL that reproduces the current view. */
+  function viewUrl() {
+    const query = core.viewQuery(
+      {
+        center: map.getCenter(),
+        zoom: map.getZoom(),
+        pitch: map.getPitch(),
+        bearing: map.getBearing(),
+      },
+      layerState,
+    );
+    // The share token (apps/map/models.py Map3dShare) opens the page for
+    // whoever follows the link, past the flag and without a sign-in.
+    const share = data.shareToken ? `share=${encodeURIComponent(data.shareToken)}&` : '';
+    return `${window.location.origin}${window.location.pathname}?${share}${query}`;
+  }
+
+  /** Mirror the view into the address bar, so it can be copied from there too. */
+  function writeViewUrl() {
+    try {
+      window.history.replaceState(null, '', viewUrl());
+    } catch (err) {
+      console.warn('map_3d: could not update the address bar', err);
+    }
+  }
 
   // ---- Steep terrain ------------------------------------------------------
 
@@ -168,7 +223,7 @@
 
   /** Ask for the tours around the camera, if it moved to a new box. */
   async function refreshTours() {
-    if (!data.skiToursUrl || map.getZoom() < core.TOURS_MIN_ZOOM) return;
+    if (!data.skiToursUrl || !layerState.tours || map.getZoom() < core.TOURS_MIN_ZOOM) return;
     const box = core.toursBbox(map.getCenter());
     if (box === toursBox) return;
     toursBox = box;
@@ -225,9 +280,31 @@
         type: 'raster',
         source: STEEP_SOURCE,
         minzoom: terrainCore.DRAW_MIN_ZOOM,
+        layout: { visibility: visibility('steep') },
         paint: { 'raster-opacity': 1, 'raster-resampling': 'nearest', 'raster-fade-duration': 0 },
       });
     }
+
+    core.WILDLIFE_LAYERS.forEach((/** @type {string} */ layer, /** @type {number} */ i) => {
+      map.addSource(WILDLIFE_LAYERS[i], {
+        type: 'raster',
+        tiles: [core.wildlifeTileUrl(layer)],
+        tileSize: 256,
+        minzoom: 8,
+        maxzoom: 18,
+        bounds: [5.9, 45.8, 10.5, 47.9],
+        attribution:
+          '<a href="https://www.wildruhezonen.ch/" target="_blank" rel="noopener">'
+          + 'Wildlife areas © BAFU / swisstopo</a>',
+      });
+      map.addLayer({
+        id: WILDLIFE_LAYERS[i],
+        type: 'raster',
+        source: WILDLIFE_LAYERS[i],
+        layout: { visibility: visibility('wildlife') },
+        paint: { 'raster-opacity': 0.75 },
+      });
+    });
 
     const width = ['interpolate', ['linear'], ['zoom'], 10, 2, 13, 3, 15, 5];
     // The white casing under each line, 3 px wider at every stop. A zoom
@@ -242,7 +319,7 @@
       type: 'line',
       source: TOURS_SOURCE,
       filter: isTour,
-      layout: lineLayout,
+      layout: { ...lineLayout, visibility: visibility('tours') },
       paint: { 'line-color': COLOURS.casing, 'line-width': casingWidth },
     });
     map.addLayer({
@@ -250,7 +327,7 @@
       type: 'line',
       source: TOURS_SOURCE,
       filter: ['all', isTour, ['!=', ['get', 'climbing'], false]],
-      layout: lineLayout,
+      layout: { ...lineLayout, visibility: visibility('tours') },
       paint: { 'line-color': COLOURS.tourClimb, 'line-width': width },
     });
     map.addLayer({
@@ -258,7 +335,7 @@
       type: 'line',
       source: TOURS_SOURCE,
       filter: ['all', isTour, ['==', ['get', 'climbing'], false]],
-      layout: lineLayout,
+      layout: { ...lineLayout, visibility: visibility('tours') },
       paint: { 'line-color': COLOURS.tourDescent, 'line-width': width },
     });
 
@@ -306,6 +383,7 @@
     map.on('moveend', () => {
       clearTimeout(toursTimer);
       toursTimer = window.setTimeout(refreshTours, TOURS_DEBOUNCE_MS);
+      writeViewUrl();
     });
     refreshTours();
 
@@ -314,19 +392,52 @@
       if (routes) {
         loaded[ROUTES_SOURCE] = routes;
         map.getSource(ROUTES_SOURCE).setData(routes);
-        const wanted = new URLSearchParams(window.location.search).get('route');
-        if (wanted) flyToBounds(core.boundsForUuid(routes, wanted));
+        if (wantedRoute) flyToBounds(core.boundsForUuid(routes, wantedRoute));
       }
     }
   });
 
-  // ---- Steep terrain switch -----------------------------------------------
+  // ---- Layer switches -----------------------------------------------------
 
-  const steepSwitch = /** @type {HTMLInputElement|null} */ (document.getElementById('map-3d-steep'));
-  if (steepSwitch) {
-    steepSwitch.addEventListener('change', () => {
-      if (!map.getLayer(STEEP_LAYER)) return;
-      map.setLayoutProperty(STEEP_LAYER, 'visibility', steepSwitch.checked ? 'visible' : 'none');
+  /** The map layers each switch shows and hides. */
+  /** @type {Record<string, string[]>} */
+  const SWITCH_LAYERS = {
+    steep: [STEEP_LAYER],
+    tours: TOUR_LAYERS,
+    wildlife: WILDLIFE_LAYERS,
+  };
+
+  for (const key of core.LAYER_KEYS) {
+    const input = /** @type {HTMLInputElement|null} */ (document.getElementById(`map-3d-${key}`));
+    if (!input) continue;
+    input.checked = !!layerState[key];
+    input.addEventListener('change', () => {
+      layerState[key] = input.checked;
+      for (const id of SWITCH_LAYERS[key]) {
+        if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visibility(key));
+      }
+      if (key === 'tours') refreshTours();
+      writeViewUrl();
+    });
+  }
+
+  // ---- Share --------------------------------------------------------------
+
+  const shareButton = document.getElementById('map-3d-share');
+  const shareStatus = document.getElementById('map-3d-share-status');
+  const share = /** @type {any} */ (self).pwaShare;
+  if (shareButton && shareStatus && share && self.pwaStrings) {
+    const STRINGS = self.pwaStrings.read('map-3d-strings-template', {
+      copied: 'Link copied',
+      failed: 'Could not copy the link',
+    });
+    let statusTimer = 0;
+    shareButton.addEventListener('click', async () => {
+      const outcome = await share.shareOrCopy(viewUrl(), document.title, 'url');
+      if (outcome !== 'copied' && outcome !== 'failed') return;
+      shareStatus.textContent = STRINGS[outcome];
+      clearTimeout(statusTimer);
+      statusTimer = window.setTimeout(() => { shareStatus.textContent = ''; }, 2500);
     });
   }
 })();

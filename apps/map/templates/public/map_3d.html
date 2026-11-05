@@ -13,13 +13,15 @@ attributes on #map-3d; nothing here binds a listener.
 .maplibregl-map, whose position: relative overrides absolute and leaves the
 map 0 px tall.
 
-One control, Steep terrain, plus the way back to /map/. Tilt and rotate are
-MapLibre's own gestures (two fingers, or right-drag), so the page adds no
-control and no icon for them.
+Three switches (Steep terrain, SAC tours, Wildlife), Share, and the way back
+to /map/. Share hands on the address bar's URL, which map_3d.js keeps in step
+with the camera and the switches, so whoever opens it sees the same view.
+Tilt and rotate are MapLibre's own gestures (two fingers, or right-drag), so
+the page adds no control and no icon for them.
 {% endcomment %}
 
-{# sharing=False and noindex: a flagged sandbox that 404s for everyone #}
-{# outside the flag, so there is nothing to unfurl or index.          #}
+{# sharing=False and noindex: a flagged sandbox that 404s for everyone   #}
+{# outside the flag or a share link, so there is nothing to unfurl.     #}
 {% block page_meta %}
     {% trans "3-D map · Snowdesk" as page_title %}
     {% trans "The mountains in 3-D, with steep terrain and routes." as page_description %}
@@ -43,17 +45,38 @@ control and no icon for them.
                 data-dem-tile-url="{{ dem_tile_url }}"
                 data-terrain-class-tile-url="{{ terrain_class_tile_url }}"
                 data-ski-tours-url="{{ ski_tours_url }}"
-                data-routes-url="{% if user.is_authenticated %}{{ routes_url }}{% endif %}"
+                data-routes-url="{% if show_routes %}{{ routes_url }}{% endif %}"
+                data-share-token="{{ share_token }}"
                 data-resorts-url="{{ resorts_url }}"
             >
             </div>
-            <div class="absolute left-3 top-3 z-10 flex items-center gap-3 rounded-card bg-card border border-border px-3 py-1 shadow-sm">
+            <div class="absolute left-3 right-3 top-3 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-card bg-card border border-border px-3 py-1 shadow-sm sm:right-auto">
                 <a href="{% url 'public:map' %}" class="text-meta text-text-2 hover:text-text-1">{% trans "Map" %}</a>
                 {% if terrain_class_tile_url %}
                     <label for="map-3d-steep" class="text-meta text-text-1">{% trans "Steep terrain" %}</label>
                     {% include "includes/_switch.html" with id="map-3d-steep" checked=True %}
                 {% endif %}
+                <label for="map-3d-tours" class="text-meta text-text-1">{% trans "SAC tours" %}</label>
+                {% include "includes/_switch.html" with id="map-3d-tours" checked=True %}
+                <label for="map-3d-wildlife" class="text-meta text-text-1">{% trans "Wildlife" %}</label>
+                {% include "includes/_switch.html" with id="map-3d-wildlife" checked=False %}
+                {# A restricted area takes one CTA as a bare icon (AGENTS.md design rule 5). #}
+                <button
+                    id="map-3d-share"
+                    type="button"
+                    class="text-text-2 hover:text-text-1"
+                    aria-label='{% trans "Share this view" %}'
+                    title='{% trans "Share this view" %}'
+                >
+                    {% include "includes/_icon_share.html" with size=17 only %}
+                </button>
+                <span id="map-3d-share-status" class="text-meta text-text-2" role="status" aria-live="polite"></span>
             </div>
+            {# Every string map_3d.js writes into the page. #}
+            <template id="map-3d-strings-template">
+                <span data-string="copied">{% trans "Link copied" %}</span>
+                <span data-string="failed">{% trans "Could not copy the link" %}</span>
+            </template>
         </div>
     </div>
 {% endblock content %}
@@ -64,6 +87,7 @@ control and no icon for them.
     <script defer src="{% static 'js/maplibre-gl.min.js' %}"></script>
     <script defer src="{% static 'js/slope_classes_core.js' %}"></script>
     <script defer src="{% static 'js/terrain_filter_core.js' %}"></script>
+    <script defer src="{% static 'js/share.js' %}"></script>
     <script defer src="{% static 'js/map_3d_core.js' %}"></script>
     <script defer src="{% static 'js/map_3d.js' %}"></script>
 {% endblock extra_js %}

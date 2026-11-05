@@ -84,6 +84,7 @@ Usage
 {% endcomment %}
 {% load i18n %}
 {% load accounts_tags %}
+{% load waffle_tags %}
 <nav class="border-b border-border">
     {# SNOW-445: the nav row spans the full viewport width (only the px-4      #}
     {# gutter constrains it) so the wordmark pins to the left gutter and the   #}
@@ -418,6 +419,20 @@ Usage
                         >
                             {% trans "Settings" %}
                         </a>
+                        {% flag "map_3d" %}
+                        {# The 3-D map, an experiment behind the map_3d flag: only its readers see the entry. #}
+                        <a
+                            role="menuitem"
+                            href="{% url 'public:map_3d' %}"
+                            class="flex items-center gap-2 px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
+                        >
+                            {% include "includes/_icon_labs.html" with size=14 only %}
+                            {% trans "3-D map" %}
+                            <span
+                                class="ml-auto rounded-pill bg-tag px-1.5 text-chip text-text-3"
+                            >{% trans "Labs" %}</span>
+                        </a>
+                        {% endflag %}
                         <div class="my-1 border-t border-border" aria-hidden="true"></div>
                         <form method="post" action="{% url 'accounts:sign_out' %}" class="contents">
                             {% csrf_token %}
