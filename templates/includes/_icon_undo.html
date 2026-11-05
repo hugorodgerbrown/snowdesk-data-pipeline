@@ -11,8 +11,10 @@ Stroke width 2, the house idiom for every glyph (see _icon_pencil.html).
 Parameters (passed via {% include … with … %}):
   size (int, optional) — rendered px, both axes. Default 14, the size the
        date row draws it at.
+  svg_class (string, optional) — classes on the <svg>.
 {% endcomment %}
 <svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
     width="{{ size|default:14 }}"
     height="{{ size|default:14 }}"
     viewBox="0 0 24 24"

@@ -33,9 +33,9 @@ from apps.design_system.design_tokens import ICON_PARTIALS, IconPartial
 ICON_GLOB = "_icon_*.html"
 
 _COMMENT_RE = re.compile(r"{%\s*comment\s*%}(.*?){%\s*endcomment\s*%}", re.DOTALL)
-_SECTION_RE = re.compile(r"^(Parameters|Context)\b")
-_PARAM_RE = re.compile(r"^\s{2,}(\w+)\s*[(:]")
-_DEFAULT_SIZE_RE = re.compile(r"size\|default:(\d+)|firstof size (\d+)")
+_SECTION_RE = re.compile(r"^Parameters\b")
+_PARAM_RE = re.compile(r"^\s{2,}(\w+)\s*\(")
+_DEFAULT_SIZE_RE = re.compile(r"size\|default:(\d+)")
 
 
 def _project_template_dirs() -> list[Path]:
@@ -94,12 +94,12 @@ def _header(path: Path) -> str:
 
 
 def _documented_parameters(header: str) -> list[str]:
-    """Return the parameter names a header's Parameters / Context section lists.
+    """Return the parameter names a header's Parameters section lists.
 
     The section runs from its heading line to the next blank line. A name
     is a line indented at least two spaces whose first word is followed by
-    ``(`` or ``:`` — ``size (int, optional) — …`` or ``size : int — …`` —
-    so wrapped continuation lines are skipped.
+    ``(`` — ``size (int, optional) — …`` — so wrapped continuation lines
+    are skipped.
 
     Args:
         header: The partial's header comment text.
@@ -165,7 +165,7 @@ def test_default_size_matches_the_partial(icon: IconPartial) -> None:
     source = _FOUND[icon.partial].read_text(encoding="utf-8")
     match = _DEFAULT_SIZE_RE.search(source)
     assert match, f"{icon.partial}: no size default found"
-    assert int(match.group(1) or match.group(2)) == icon.default_size
+    assert int(match.group(1)) == icon.default_size
 
 
 @pytest.mark.parametrize("icon", ICON_PARTIALS, ids=lambda i: i.name)
@@ -173,6 +173,19 @@ def test_parameters_match_the_partial_header(icon: IconPartial) -> None:
     """The parameters listed on the card are the ones the header documents."""
     documented = _documented_parameters(_header(_FOUND[icon.partial]))
     assert [p.name for p in icon.parameters] == documented
+
+
+@pytest.mark.parametrize("icon", ICON_PARTIALS, ids=lambda i: i.name)
+def test_every_icon_takes_svg_class(icon: IconPartial) -> None:
+    """The decision record's optional ``svg_class`` reaches the ``<svg>``.
+
+    docs/decisions/ui-icons-are-house-stroke-partials.md gives every icon
+    partial the parameter, so a caller never hard-codes a wrapper to style
+    one glyph (SNOW-1433).
+    """
+    assert "svg_class" in [p.name for p in icon.parameters]
+    source = _FOUND[icon.partial].read_text(encoding="utf-8")
+    assert '{% if svg_class %}class="{{ svg_class }}"{% endif %}' in source
 
 
 def test_documented_parameters_skips_wrapped_lines() -> None:

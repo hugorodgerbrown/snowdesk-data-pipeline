@@ -419,7 +419,6 @@ def _icon(
     default_size: int,
     *,
     why: str = "",
-    svg_class: bool = True,
     parameters: tuple[IconParameter, ...] | None = None,
     base_context: tuple[tuple[str, Any], ...] = (),
     variants: tuple[dict[str, Any], ...] = (),
@@ -427,22 +426,21 @@ def _icon(
     """Build the registry entry for ``templates/includes/_icon_<name>.html``.
 
     Most glyphs take ``size`` and ``svg_class`` and nothing else, so those
-    two are the default parameter list; a partial that reads more (or less)
-    passes its own.
+    two are the default parameter list; a partial that reads more passes
+    its own, ``svg_class`` included.
 
     Args:
         name: The glyph's stem without ``_icon_``.
         label: What the mark means.
         default_size: The partial's own ``size`` default.
         why: The header's reason for that default, if any.
-        svg_class: Whether the partial accepts ``svg_class``.
         parameters: The full parameter list, overriding the default pair.
         base_context: Keys every render needs.
         variants: Extra documented renders.
 
     """
     if parameters is None:
-        parameters = (_size(default_size, why),) + ((_SVG_CLASS,) if svg_class else ())
+        parameters = (_size(default_size, why), _SVG_CLASS)
     return IconPartial(
         partial=f"includes/_icon_{name}.html",
         label=label,
@@ -464,7 +462,6 @@ ICON_PARTIALS: tuple[IconPartial, ...] = (
         "bullseye",
         "Centre the map on this route",
         18,
-        svg_class=False,
     ),
     _icon(
         "calendar",
@@ -488,14 +485,13 @@ ICON_PARTIALS: tuple[IconPartial, ...] = (
         16,
         variants=({"caption": "16 · back", "context": {"svg_class": "rotate-180"}},),
     ),
-    _icon("close", "Close — an ×", 18, why="the sheet header's", svg_class=False),
+    _icon("close", "Close — an ×", 18, why="the sheet header's"),
     _icon("cloud", "Weather layer", 18),
     _icon(
         "compass",
         "Wind direction — labels the day strips' wind row",
         14,
         why="the arrows' own size",
-        svg_class=False,
     ),
     _icon("danger", "Avalanche bulletin — a warning triangle", 18),
     _icon(
@@ -561,7 +557,7 @@ ICON_PARTIALS: tuple[IconPartial, ...] = (
         why="the banner roundel's glyph size",
     ),
     _icon("map", "See on the map — a folded map", 18),
-    _icon("minus", "Zoom out", 18, svg_class=False),
+    _icon("minus", "Zoom out", 18),
     _icon("mountain", "Terrain mode", 18),
     _icon(
         "observation",
@@ -589,12 +585,11 @@ ICON_PARTIALS: tuple[IconPartial, ...] = (
         ),
     ),
     _icon("pencil", "Rename", 17, why="the design's row-action glyph size"),
-    _icon("plus", "Zoom in", 18, svg_class=False),
+    _icon("plus", "Zoom in", 18),
     _icon(
         "raindrops",
         "Precipitation — labels the rainfall baseline",
         22,
-        svg_class=False,
         variants=({"caption": "15 · summary line", "context": {"size": 15}},),
     ),
     _icon(
@@ -623,7 +618,6 @@ ICON_PARTIALS: tuple[IconPartial, ...] = (
         "snowflake",
         "New snow — labels the snowfall baseline",
         22,
-        svg_class=False,
         variants=({"caption": "15 · summary line", "context": {"size": 15}},),
     ),
     _icon("sun", "Today — the Today roundel and panel", 18),
@@ -647,7 +641,6 @@ ICON_PARTIALS: tuple[IconPartial, ...] = (
         "Back to today",
         14,
         why="the size the date row draws it at",
-        svg_class=False,
     ),
     _icon(
         "wifi",
@@ -657,7 +650,6 @@ ICON_PARTIALS: tuple[IconPartial, ...] = (
         variants=({"caption": "15 · nav", "context": {"size": 15}},),
     ),
     _icon("wifi_off", "Not using the network", 16, why="matching _icon_wifi.html"),
-    _icon("zoom_in", "Zoom — a magnifier with a +", 18, svg_class=False),
 )
 
 
