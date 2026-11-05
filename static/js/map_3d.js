@@ -129,21 +129,7 @@
       scripts: (data.steepWorkerScripts || '').split(' ').filter(Boolean),
       tileTemplate: data.terrainClassTileUrl,
     });
-    let nextId = 1;
-    /** @type {Map<number, {resolve: Function, reject: Function}>} */
-    const pending = new Map();
-    worker.addEventListener('message', (/** @type {MessageEvent} */ event) => {
-      const { id, bitmap, error } = event.data || {};
-      const waiter = pending.get(id);
-      if (!waiter) {
-        if (bitmap) bitmap.close();
-        return;
-      }
-      pending.delete(id);
-      if (bitmap) waiter.resolve({ data: bitmap });
-      else waiter.reject(new Error(`map_3d: steep tile failed: ${error}`));
-    });
-
+    const bridge = core.workerTileBridge(worker);
     maplibre.addProtocol(
       'terrainfilter',
       /**
@@ -153,19 +139,9 @@
       (params, abortController) => {
         const tile = terrainCore.parseProtocolUrl(params.url);
         if (!tile) return Promise.reject(new Error(`map_3d: not a tile url: ${params.url}`));
-        const id = nextId;
-        nextId += 1;
         // Never an empty answer: MapLibre 4.7.1 leaves such a tile pending,
         // so the worker always paints a tile, transparent when there is none.
-        const answer = new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
-        abortController.signal.addEventListener('abort', () => {
-          const waiter = pending.get(id);
-          pending.delete(id);
-          worker.postMessage({ type: 'abort', id });
-          if (waiter) waiter.reject(new DOMException('Aborted', 'AbortError'));
-        });
-        worker.postMessage({ type: 'tile', id, z: tile.z, x: tile.x, y: tile.y });
-        return answer;
+        return bridge.request(tile, abortController.signal);
       },
     );
   }

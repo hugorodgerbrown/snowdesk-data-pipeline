@@ -22,13 +22,17 @@
  *     WMTS rasters;
  *   - the shared view: the camera and the switches, written to and read
  *     from the page's query string (`?at=lng,lat,zoom,pitch,bearing&layers=…`),
- *     so a copied link opens on the same view for whoever follows it.
+ *     so a copied link opens on the same view for whoever follows it;
+ *   - the main thread's half of the Steep terrain worker's protocol
+ *     (map_3d_steep_worker.js): each tile request gets an id, the reply
+ *     with that id settles it, and an abort tells the worker and rejects.
  *
  * Exports (frozen `self.pwaMap3dCore`):
  *
  *   DEM_SOURCE_ID / TERRAIN_EXAGGERATION / OPENING_CAMERA / MAX_PITCH / MAX_PIXEL_RATIO
  *   prefetchDemTiles(centre, mapZoom) / tileUrl(template, tile)
  *   skySpec() / sunlightPaint()
+ *   workerTileBridge(worker)
  *   TOURS_MIN_ZOOM / TOURS_HALF_SPAN_DEG / COLOURS
  *   demSource(tileUrl)
  *   terrainSpec()
@@ -118,19 +122,19 @@
 
   /**
    * The sunlight layer's paint: a north-west sun fixed to the map (so the
-   * light does not swing as the camera turns), strong enough to model the
-   * ridges without hiding swisstopo's hachures under it.
+   * light does not swing as the camera turns), soft: enough to model the
+   * ridges, with shade light enough that swisstopo's hachures read through.
    *
    * @returns {Record<string, unknown>}
    */
   function sunlightPaint() {
     return {
-      'hillshade-exaggeration': 0.45,
+      'hillshade-exaggeration': 0.3,
       'hillshade-illumination-anchor': 'map',
       'hillshade-illumination-direction': 315,
-      'hillshade-shadow-color': '#33415c',
+      'hillshade-shadow-color': '#4a5878',
       'hillshade-highlight-color': '#ffffff',
-      'hillshade-accent-color': '#5a6b80',
+      'hillshade-accent-color': '#7a8799',
     };
   }
 
@@ -353,6 +357,52 @@
     return { camera, layers };
   }
 
+  /**
+   * The main thread's half of the Steep terrain worker's protocol: one
+   * `request(tile, signal)` per MapLibre tile. Each request posts
+   * `{type: 'tile', id, z, x, y}` and settles on the worker's reply with
+   * that id — `{data: bitmap}`, or an Error for `{id, error}`. An abort
+   * posts `{type: 'abort', id}` and rejects with an AbortError; a reply that
+   * arrives after it is dropped and its bitmap closed.
+   *
+   * @param {{postMessage: (msg: any) => void, addEventListener: (type: string, fn: (event: any) => void) => void}} worker
+   * @returns {{request: (tile: {z: number, x: number, y: number}, signal: AbortSignal) => Promise<{data: any}>, pendingCount: () => number}}
+   */
+  function workerTileBridge(worker) {
+    let nextId = 1;
+    /** @type {Map<number, {resolve: Function, reject: Function}>} */
+    const pending = new Map();
+    worker.addEventListener('message', (/** @type {MessageEvent} */ event) => {
+      const { id, bitmap, error } = event.data || {};
+      const waiter = pending.get(id);
+      if (!waiter) {
+        if (bitmap) bitmap.close();
+        return;
+      }
+      pending.delete(id);
+      if (bitmap) waiter.resolve({ data: bitmap });
+      else waiter.reject(new Error(`map_3d: steep tile failed: ${error}`));
+    });
+    return {
+      request(tile, signal) {
+        const id = nextId;
+        nextId += 1;
+        const answer = /** @type {Promise<{data: any}>} */ (
+          new Promise((resolve, reject) => pending.set(id, { resolve, reject }))
+        );
+        signal.addEventListener('abort', () => {
+          const waiter = pending.get(id);
+          pending.delete(id);
+          worker.postMessage({ type: 'abort', id });
+          if (waiter) waiter.reject(new DOMException('Aborted', 'AbortError'));
+        });
+        worker.postMessage({ type: 'tile', id, z: tile.z, x: tile.x, y: tile.y });
+        return answer;
+      },
+      pendingCount: () => pending.size,
+    };
+  }
+
   self.pwaMap3dCore = Object.freeze({
     DEM_SOURCE_ID: DEM_SOURCE_ID,
     TERRAIN_EXAGGERATION: TERRAIN_EXAGGERATION,
@@ -362,6 +412,7 @@
     prefetchDemTiles: prefetchDemTiles,
     skySpec: skySpec,
     sunlightPaint: sunlightPaint,
+    workerTileBridge: workerTileBridge,
     tileUrl: tileUrl,
     TOURS_MIN_ZOOM: TOURS_MIN_ZOOM,
     TOURS_HALF_SPAN_DEG: TOURS_HALF_SPAN_DEG,
