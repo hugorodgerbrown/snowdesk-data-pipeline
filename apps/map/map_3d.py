@@ -33,10 +33,17 @@ from django.db import models
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.urls import reverse
+from django_ratelimit.core import is_ratelimited
 
 from apps.core.http import is_top_level_navigation
 from apps.routes.models import RouteShare
-from apps.routes.services.shares import add_pending_token, pending_tokens
+from apps.routes.services.shares import (
+    SHARE_FOLLOW_GROUP,
+    SHARE_FOLLOW_RATE,
+    add_pending_token,
+    pending_tokens,
+    share_follow_bucket,
+)
 
 from .models import Map3dShare
 
@@ -120,6 +127,31 @@ def pending_route_share_for_3d(request: HttpRequest) -> str:
     return ""
 
 
+def _over_follow_budget(request: HttpRequest, token: str) -> bool:
+    """Count one follow of ``token`` and say whether the budget is spent.
+
+    The budget the share follows in apps/routes/views.py spend: one group,
+    one (token, IP) bucket, so this page and the two links share it.
+
+    Args:
+        request: The incoming HTTP request.
+        token: The route share token being followed.
+
+    Returns:
+        True when this follow is over the budget.
+
+    """
+    return bool(
+        is_ratelimited(
+            request,
+            group=SHARE_FOLLOW_GROUP,
+            key=lambda group, req: share_follow_bucket(token, req),
+            rate=SHARE_FOLLOW_RATE,
+            increment=True,
+        )
+    )
+
+
 def map_3d_enabled(request: HttpRequest) -> bool:
     """Whether this request may open the 3-D map.
 
@@ -169,6 +201,9 @@ def map_3d_page(request: HttpRequest) -> HttpResponse:
         Http404: When the flag is not active for this request and the
             request carries no live share token.
 
+    A route share that would seat its token past the follows' rate-limit
+    budget answers 429, as the share links do.
+
     """
     flagged = map_3d_enabled(request)
     route_share = route_share_for_3d(request.GET.get("route_share", ""))
@@ -185,6 +220,10 @@ def map_3d_page(request: HttpRequest) -> HttpResponse:
     elif not Map3dShare.objects.for_token(token).exists():
         raise Http404
     if route_share is not None and is_top_level_navigation(request):
+        # The share follows' own budget, so a copied address cannot seat
+        # tokens (and grow the session table) faster than the link can.
+        if _over_follow_budget(request, route_share.token):
+            return HttpResponse(status=429)
         add_pending_token(request.session, route_share.token)
     context = {
         "share_token": token,

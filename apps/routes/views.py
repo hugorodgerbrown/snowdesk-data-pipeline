@@ -132,6 +132,8 @@ from apps.routes.services.routes import (
     upload_route,
 )
 from apps.routes.services.shares import (
+    SHARE_FOLLOW_GROUP,
+    SHARE_FOLLOW_RATE,
     RouteShareTokenCollision,
     add_pending_token,
     claim_route_share,
@@ -139,6 +141,7 @@ from apps.routes.services.shares import (
     drop_pending_token,
     pending_shares,
     pending_tokens,
+    share_follow_bucket,
 )
 from apps.routes.services.ski_tours import (
     draft_tour_route,
@@ -195,14 +198,10 @@ _GPX_REJECTED_MESSAGE = (
     "containing a track or a route."
 )
 
-# The share-link follow's rate-limit budget, keyed on (token, IP). Mirrors
-# ``apps.public.views.SHARE_CLICK_RATE`` and its reasoning: a real visitor
-# re-following their own link never approaches it, while a scanner walking
-# the token space cannot grow the session table without bound.
-_SHARE_FOLLOW_RATE = "30/h"
-# One budget for both follows, 2-D and 3-D: the same link reached two ways
-# is one link to a scanner.
-_SHARE_FOLLOW_GROUP = "routes.share_follow"
+# The share-link follow's budget, shared by every way in that seats a
+# pending token (apps/routes/services/shares.py SHARE_FOLLOW_RATE).
+_SHARE_FOLLOW_RATE = SHARE_FOLLOW_RATE
+_SHARE_FOLLOW_GROUP = SHARE_FOLLOW_GROUP
 
 # The 3-D map's view parameters (static/js/map_3d_core.js viewQuery), the
 # only query a 3-D share follow carries on to /map/3d/.
@@ -282,7 +281,7 @@ def _share_follow_rate_limit_key(group: str, request: HttpRequest) -> str:
     """
     match = request.resolver_match
     token = match.kwargs.get("token", "") if match is not None else ""
-    return f"{token}|{client_ip(request)}"
+    return share_follow_bucket(token, request)
 
 
 def _pending_shares_for(request: HttpRequest) -> list[RouteShare]:

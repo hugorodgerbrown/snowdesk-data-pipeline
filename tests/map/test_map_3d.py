@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 from django.test import Client, override_settings
@@ -23,7 +24,7 @@ from waffle.testutils import override_flag
 from apps.map.map_3d import MAP_3D_DEM_TILE_URL, route_share_for_3d
 from apps.map.models import Map3dShare
 from apps.routes.models import RouteShare
-from apps.routes.services.shares import PENDING_SESSION_KEY
+from apps.routes.services.shares import PENDING_SESSION_KEY, SHARE_FOLLOW_GROUP
 from tests.factories import (
     Map3dShareFactory,
     RouteFactory,
@@ -335,3 +336,25 @@ def test_a_flagged_readers_roundel_carries_no_route_share() -> None:
         content = _map_page(client)
     assert 'href="/map/3d/"' in content
     assert 'data-route-share=""' in content
+
+
+def test_seating_a_route_share_spends_the_follow_budget() -> None:
+    """Past the share follows' budget, the page answers 429 and seats nothing."""
+    share = _route_share_by_a_3d_reader()
+    client = Client()
+    with patch("apps.map.map_3d.is_ratelimited", return_value=True) as limited:
+        response = client.get(URL, {"route_share": share.token})
+    assert response.status_code == 429
+    assert PENDING_SESSION_KEY not in client.session
+    assert limited.call_args.kwargs["group"] == SHARE_FOLLOW_GROUP
+    assert limited.call_args.kwargs["increment"] is True
+
+
+def test_the_page_and_the_link_share_one_bucket() -> None:
+    """The bucket is the share follows' own: token then client IP."""
+    share = _route_share_by_a_3d_reader()
+    with patch("apps.map.map_3d.is_ratelimited", return_value=False) as limited:
+        Client().get(URL, {"route_share": share.token}, REMOTE_ADDR="203.0.113.9")
+    request = limited.call_args.args[0]
+    key = limited.call_args.kwargs["key"]
+    assert key(SHARE_FOLLOW_GROUP, request) == f"{share.token}|203.0.113.9"
