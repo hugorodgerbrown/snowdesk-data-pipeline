@@ -42,7 +42,7 @@ boundary. See docs/decisions/the-bulletin-terrain-layer-paints-what-it-cannot-de
 Moved here from ``apps/bulletins/services/`` by SNOW-1270: the rules are a
 pure reading of the service's render model, so they are the service's too
 (``apps.ingest.public.terrain_rules``). The map's feed that groups them by
-region, ``apps/public/problem_terrain.py``, stays the instance's.
+region, ``apps/map/problem_terrain.py``, stays the instance's.
 """
 
 from __future__ import annotations

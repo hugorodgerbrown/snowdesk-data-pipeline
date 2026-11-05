@@ -1,0 +1,4599 @@
+"""
+apps/design_system/_component_fixtures.py — Synthetic context for the component library.
+
+Hand-curated variant fixtures consumed by ``kind="components"`` panels in
+the design-system page at ``/_components/``. Each component gets a
+``<COMPONENT>_VARIANTS`` tuple of context dicts (``BUTTON_VARIANTS``,
+``CHIP_VARIANTS``, ``DAY_WINDOWS_VARIANTS``, …) ready to feed straight to its
+partial via ``{% include partial with **variant.context %}``.
+
+Lives outside ``design_tokens.py`` so the registry stays free of
+data-construction logic — token panels iterate the registry, component
+panels iterate these fixtures.
+
+The leading underscore in the filename follows the project convention for
+staff-only / internal modules, signalling that nothing in here is a public
+import surface.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import datetime
+import json
+import math
+import pathlib
+from types import SimpleNamespace
+from typing import Any
+
+from django import forms
+
+from apps.bulletins.services.day_summary import summary_for
+from apps.public.guidance import load_field_guidance
+from apps.public.templatetags.components import input_classes
+from apps.routes.models import Route
+from apps.weather.services.day_strips import build_day_strips
+from apps.weather.services.hourly_chart import build_hourly_chart
+from apps.weather.services.weather_display import weather_icon_filename
+
+# String constants for elevation bound type — mirror ``apps.public.views`` so the
+# template filter (``elevation_icon``) sees the same strings without coupling
+# this fixture module to the large ``views`` module.
+_ELEVATION_LOWER = "LOWER"
+_ELEVATION_UPPER = "UPPER"
+
+
+@dataclasses.dataclass(frozen=True)
+class _ElevationBounds:
+    """Minimal elevation bounds stub for component-library fixtures.
+
+    Mirrors the public-side :class:`~apps.public.bulletin_panels.ElevationBounds` just
+    enough to satisfy the ``_rating_block.html`` template and the
+    ``elevation_icon`` filter — without importing from the large
+    ``apps.public.views`` module.
+
+    Boolean-truthy when ``display`` is non-empty, matching the behaviour
+    of the production dataclass.
+    """
+
+    lower: str
+    upper: str
+    display: str
+    bound_type: str
+
+    def __bool__(self) -> bool:
+        """Return True when the bound has a displayable value."""
+        return bool(self.display)
+
+
+# Day-windows panel (SNOW-107) ---------------------------------------------
+# Mirrors the dict shape produced by ``_build_day_windows`` in
+# ``apps/public/bulletin_panels.py``. Labels and numbers below mirror
+# ``DANGER_PANEL_META`` in the same module — copied verbatim so the fixture
+# stays self-contained and doesn't reach into a non-public symbol. Pill labels
+# mirror
+# ``_DAY_WINDOW_PILL_LABELS`` (no rebadging here — we set them directly).
+
+_DAY_WINDOW_LEVEL_META: dict[str, dict[str, str]] = {
+    "low": {"label": "Low", "number": "1"},
+    "moderate": {"label": "Moderate", "number": "2"},
+    "considerable": {"label": "Considerable", "number": "3"},
+    "high": {"label": "High", "number": "4"},
+    "very_high": {"label": "Very high", "number": "5"},
+}
+
+
+def _make_window(
+    period: str,
+    level_key: str,
+    pill_label: str,
+    modifier: str = "",
+    caption: str = "",
+    bound_type: str = "",
+) -> dict[str, Any]:
+    """Build one day-window row dict for the component-library fixture.
+
+    Pass ``bound_type`` (``"LOWER"`` = above a pivot, ``"UPPER"`` = below)
+    for a banded row — it attaches an ``elevation_bounds`` namespace so the
+    ``elevation_icon`` filter renders the mountain glyph (SNOW-298). Single
+    rows leave it unset, matching ``_build_day_windows`` output.
+    """
+    meta = _DAY_WINDOW_LEVEL_META[level_key]
+    row: dict[str, Any] = {
+        "type": period,
+        "level_key": level_key,
+        "level_css": level_key.replace("_", "-"),
+        "level_label": meta["label"],
+        "level_number": f"{meta['number']}{modifier}",
+        "caption": caption,
+        "pill_label": pill_label,
+    }
+    if bound_type:
+        # elevation_icon only reads .bound_type; a lightweight namespace
+        # keeps the fixture self-contained (no import of the views dataclass).
+        row["elevation_bounds"] = SimpleNamespace(bound_type=bound_type)
+    return row
+
+
+def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
+    """Build the day-windows variant matrix.
+
+    Seven stacked variants:
+
+    * **All-day, level grid** — five synthetic ``all_day`` rows stepping
+      ``low → very_high`` so tile + label contrast is reviewable across the
+      whole EAWS scale on one screen.  Not a realistic bulletin (real
+      bulletins have at most two windows) — a comparison harness.
+    * **All-day with sublevel modifier** — one ``all_day`` row at
+      considerable with a ``−`` modifier (badge reads ``3−``).
+    * **Cross-category later** — ``all_day`` low + ``later`` moderate,
+      the most common two-row shape in the bulletin sample.
+    * **Within-category later** — ``all_day`` considerable−  + ``later``
+      considerable (badge differential shows the intra-band rise).
+    * **Numeric-pivot bands** — two ``all_day`` rows split by elevation,
+      ``considerable`` below 2500 m and ``moderate`` above, each carrying the
+      mountain elevation glyph. Represents Météo-France / ALBINA style
+      banded bulletins (SNOW-298). Re-purposes the previous "MF elevation
+      split" fixture.
+    * **Treeline-pivot bands** — two ``all_day`` rows using "below treeline"
+      and "above treeline" captions (ALBINA treeline-pivot style).
+    * **Considerable below / high above bands** — higher-severity banded
+      pair to exercise the orange → red tile colouring.
+    """
+    all_day_grid = [
+        _make_window("all_day", "low", "All day"),
+        _make_window("all_day", "moderate", "All day"),
+        _make_window("all_day", "considerable", "All day"),
+        _make_window("all_day", "high", "All day"),
+        _make_window("all_day", "very_high", "All day"),
+    ]
+    all_day_sublevel = [
+        _make_window("all_day", "considerable", "All day", modifier="-"),
+    ]
+    cross_category = [
+        _make_window("all_day", "low", "All day"),
+        _make_window("later", "moderate", "Later"),
+    ]
+    within_category = [
+        _make_window("all_day", "considerable", "All day", modifier="-"),
+        _make_window("later", "considerable", "Later"),
+    ]
+    # Numeric-pivot bands: considerable below 2500 m / moderate above 2500 m.
+    # Re-purposed from the previous "MF elevation split" fixture. Lower band
+    # first (below → UPPER bound), then upper band (above → LOWER bound).
+    numeric_pivot_bands = [
+        _make_window(
+            "all_day",
+            "considerable",
+            "All day",
+            caption="below 2500 m",
+            bound_type="UPPER",
+        ),
+        _make_window(
+            "all_day", "moderate", "All day", caption="above 2500 m", bound_type="LOWER"
+        ),
+    ]
+    # Treeline-pivot bands: low below treeline / considerable above treeline.
+    treeline_pivot_bands = [
+        _make_window(
+            "all_day", "low", "All day", caption="below treeline", bound_type="UPPER"
+        ),
+        _make_window(
+            "all_day",
+            "considerable",
+            "All day",
+            caption="above treeline",
+            bound_type="LOWER",
+        ),
+    ]
+    # Higher-severity pair: considerable below / high above.
+    high_severity_bands = [
+        _make_window(
+            "all_day",
+            "considerable",
+            "All day",
+            caption="below 2200 m",
+            bound_type="UPPER",
+        ),
+        _make_window(
+            "all_day", "high", "All day", caption="above 2200 m", bound_type="LOWER"
+        ),
+    ]
+    return (
+        {
+            "caption": "All day · five EAWS levels",
+            "context": {"day_windows": all_day_grid},
+        },
+        {
+            "caption": "All day · sublevel modifier (3−)",
+            "context": {"day_windows": all_day_sublevel},
+        },
+        {
+            "caption": "Cross-category later · low → moderate",
+            "context": {"day_windows": cross_category},
+        },
+        {
+            "caption": "Within-category later · considerable− → considerable",
+            "context": {"day_windows": within_category},
+        },
+        {
+            "caption": "Numeric-pivot bands · considerable / moderate at 2500 m",
+            "context": {"day_windows": numeric_pivot_bands},
+        },
+        {
+            "caption": "Treeline bands · low below / considerable above treeline",
+            "context": {"day_windows": treeline_pivot_bands},
+        },
+        {
+            "caption": "High-severity bands · considerable below 2200 m / high above",
+            "context": {"day_windows": high_severity_bands},
+        },
+    )
+
+
+DAY_WINDOWS_VARIANTS: tuple[dict[str, Any], ...] = _build_day_windows_variants()
+
+
+# Season calendar variants (SNOW-1158) --------------------------------------
+# The one season calendar (public/partials/_season_calendar.html), drawn from
+# synthetic SeasonGrids reshaped by the real build_season_months. The
+# "season-calendar" entry shows the three ways the pages render it; the
+# "season-cell" entry one month holding every cell state, unlinked and
+# linked. No database access.
+
+# The design board's season, one character per day: "-" no bulletin, "1"–"5"
+# a level, "m" a moderate/considerable day. Nov 2025 – Apr 2026.
+_SEASON_BOARD: tuple[str, ...] = (
+    "-" + "2" * 4 + "-" * 10 + "1" + "2" * 7 + "3" * 6 + "2",
+    "2" * 6 + "3" * 4 + "2" * 18 + "1" * 3,
+    "1" * 2 + "2" * 5 + "3" + "4" * 3 + "3" * 20,
+    "3" * 10 + "4" * 3 + "3" * 2 + "4" * 6 + "3" * 7,
+    "2" * 14 + "3" + "2" * 10 + "3" * 3 + "2" * 3,
+    "3" * 2
+    + "2" * 3
+    + "m" * 2
+    + "3"
+    + "m" * 4
+    + "3" * 2
+    + "m" * 5
+    + "2" * 3
+    + "3" * 3
+    + "2" * 5,
+)
+_SEASON_BOARD_KEYS: dict[str, str] = {
+    "1": "low",
+    "2": "moderate",
+    "3": "considerable",
+    "4": "high",
+    "5": "very_high",
+}
+
+
+def _synthetic_grid(cells: list[Any]) -> Any:
+    """Pack synthetic cells into a ``SeasonGrid`` of Monday-first weeks."""
+    from apps.public.season_calendar import SeasonGrid
+
+    lead = cells[0].date.weekday()
+    flat: list[Any] = [None] * lead + cells
+    while len(flat) % 7:
+        flat.append(None)
+    columns = [tuple(flat[i : i + 7]) for i in range(0, len(flat), 7)]
+    return SeasonGrid(
+        columns=columns, month_labels=[""] * len(columns), season_label="25/26"
+    )
+
+
+def _board_cell(date: datetime.date, char: str) -> Any:
+    """Build one synthetic ``SeasonCell`` from a board character."""
+    from apps.public.season_calendar import SeasonCell
+
+    if char == "-":
+        return SeasonCell(
+            date=date,
+            min_rating_key="no_rating",
+            max_rating_key="no_rating",
+            subdivision="",
+            has_bulletin=False,
+        )
+    if char == "m":
+        return SeasonCell(
+            date=date,
+            min_rating_key="moderate",
+            max_rating_key="considerable",
+            subdivision="",
+            has_bulletin=True,
+        )
+    key = _SEASON_BOARD_KEYS[char]
+    return SeasonCell(
+        date=date,
+        min_rating_key=key,
+        max_rating_key=key,
+        subdivision="",
+        has_bulletin=True,
+    )
+
+
+def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
+    """Build the season calendar's three page variants for the library.
+
+    A finished season (today ringed, SNOW-1163), the same season so far
+    (today ringed, the rest "not yet") — both the resort page's unlinked
+    calendar — and the bulletin page's linked one.
+
+    Returns:
+        The variants, each a context for ``_season_calendar_demo.html``.
+
+    """
+    from apps.public.season_calendar import (
+        SeasonWindow,
+        build_season_months,
+        summarise_season,
+    )
+
+    window = SeasonWindow(
+        start=datetime.date(2025, 11, 1),
+        end=datetime.date(2026, 4, 30),
+        label="25/26",
+    )
+    cells: list[Any] = []
+    for offset, row in enumerate(_SEASON_BOARD):
+        month = 11 + offset
+        first = datetime.date(2025 + (month - 1) // 12, (month - 1) % 12 + 1, 1)
+        cells += [
+            _board_cell(first + datetime.timedelta(days=i), char)
+            for i, char in enumerate(row)
+        ]
+    full = _synthetic_grid(cells)
+    finished_today = datetime.date(2026, 10, 20)
+
+    so_far_today = datetime.date(2026, 1, 14)
+    so_far = _synthetic_grid([c for c in cells if c.date <= so_far_today])
+
+    region = SimpleNamespace(canonical_region_id="CH-4115", name_slug="verbier")
+    return (
+        {
+            "caption": "Resort page — a finished season, today ringed",
+            "context": {
+                "season_months": build_season_months(
+                    full,
+                    finished_today,
+                    window=window,
+                    ring_date=finished_today,
+                ),
+                "season_summary": summarise_season(full),
+                "linked": False,
+            },
+        },
+        {
+            "caption": "Resort page — the season so far, today ringed, rest not yet",
+            "context": {
+                "season_months": build_season_months(
+                    so_far,
+                    so_far_today,
+                    window=window,
+                    ring_date=so_far_today,
+                ),
+                "season_summary": summarise_season(so_far),
+                "linked": False,
+            },
+        },
+        {
+            "caption": "Bulletin page — linked days (JS rings the page's day)",
+            "context": {
+                "season_months": build_season_months(full, finished_today),
+                "season_summary": summarise_season(full),
+                "linked": True,
+                "region": region,
+            },
+        },
+    )
+
+
+SEASON_CALENDAR_VARIANTS: tuple[dict[str, Any], ...] = _build_season_calendar_variants()
+
+
+def _build_season_cell_variants() -> tuple[dict[str, Any], ...]:
+    """Build one month holding every season-calendar cell state.
+
+    No bulletin, the five levels, the three ways a day holds two levels
+    (an afternoon rise in min/max, an AM/PM split, an ALBINA band split —
+    all drawn as one "split" cell, peak on the right), the ring, and the
+    days after today ("not yet"). Unlinked and linked.
+
+    Returns:
+        The two variants, each a context for ``_season_calendar_demo.html``.
+
+    """
+    from apps.public.season_calendar import (
+        SeasonCell,
+        build_season_months,
+        summarise_season,
+    )
+
+    first = datetime.date(2026, 1, 1)
+    today = datetime.date(2026, 1, 12)
+
+    def day(n: int) -> datetime.date:
+        return first + datetime.timedelta(days=n - 1)
+
+    cells: list[Any] = [
+        _board_cell(day(1), "-"),
+        _board_cell(day(2), "1"),
+        _board_cell(day(3), "2"),
+        _board_cell(day(4), "3"),
+        _board_cell(day(5), "4"),
+        _board_cell(day(6), "5"),
+        _board_cell(day(7), "m"),
+        SeasonCell(
+            date=day(8),
+            min_rating_key="considerable",
+            max_rating_key="high",
+            subdivision="",
+            has_bulletin=True,
+            am_rating_key="considerable",
+            pm_rating_key="high",
+        ),
+        SeasonCell(
+            date=day(9),
+            min_rating_key="low",
+            max_rating_key="considerable",
+            subdivision="",
+            has_bulletin=True,
+            source="ALBINA",
+            bands=[
+                {
+                    "band_id": "above-2200",
+                    "label": "Above 2200 m",
+                    "rating_key": "considerable",
+                    "time_period": "all_day",
+                },
+                {
+                    "band_id": "below-2200",
+                    "label": "Below 2200 m",
+                    "rating_key": "low",
+                    "time_period": "all_day",
+                },
+            ],
+        ),
+        _board_cell(day(10), "2"),
+        _board_cell(day(11), "3"),
+        _board_cell(day(12), "3"),
+    ]
+    grid = _synthetic_grid(cells)
+    months = build_season_months(grid, today, ring_date=today)
+    region = SimpleNamespace(canonical_region_id="CH-4115", name_slug="verbier")
+    return (
+        {
+            "caption": "Every cell state — unlinked (role=img, short key)",
+            "context": {
+                "season_months": months,
+                "season_summary": summarise_season(grid),
+                "linked": False,
+            },
+        },
+        {
+            "caption": "Every cell state — linked (bulletin page, full key)",
+            "context": {
+                "season_months": months,
+                "season_summary": summarise_season(grid),
+                "linked": True,
+                "region": region,
+            },
+        },
+    )
+
+
+SEASON_CELL_VARIANTS: tuple[dict[str, Any], ...] = _build_season_cell_variants()
+
+
+# Button variants (SNOW-200) ------------------------------------------------
+# Covers all three visual variants × both sizes, plus a full-width example.
+
+BUTTON_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Primary · standard",
+        "context": {
+            "label": "View a sample bulletin →",
+            "href": "#",
+            "variant": "primary",
+            "size": "standard",
+        },
+    },
+    {
+        "caption": "Primary · compact",
+        "context": {
+            "label": "Save route",
+            "variant": "primary",
+            "size": "compact",
+        },
+    },
+    {
+        "caption": "Secondary · standard",
+        "context": {
+            "label": "Explore the map →",
+            "href": "#",
+            "variant": "secondary",
+            "size": "standard",
+        },
+    },
+    {
+        "caption": "Secondary · compact",
+        "context": {
+            "label": "Explore the map",
+            "href": "#",
+            "variant": "secondary",
+            "size": "compact",
+        },
+    },
+    {
+        "caption": "Ghost · standard",
+        "context": {
+            "label": "Sign in with a passkey",
+            "variant": "ghost",
+            "size": "standard",
+        },
+    },
+    {
+        "caption": "Ghost · compact",
+        "context": {
+            "label": "Add a passkey for this device",
+            "variant": "ghost",
+            "size": "compact",
+        },
+    },
+    {
+        "caption": "Destructive · compact",
+        "context": {
+            "label": "Delete account",
+            "variant": "destructive",
+            "size": "compact",
+        },
+    },
+    {
+        "caption": "Accent · compact — saving somebody else's object",
+        "context": {
+            "label": "Save this trip",
+            "variant": "accent",
+            "size": "compact",
+        },
+    },
+    {
+        "caption": "Primary · full width",
+        "context": {
+            "label": "Yes, delete my account",
+            "variant": "primary",
+            "size": "standard",
+            "full_width": True,
+        },
+    },
+)
+
+
+# Card variants (SNOW-200) ---------------------------------------------------
+# One per real-world padding value used across the codebase.
+
+CHIP_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Default — neutral filled (category label, EAWS matrix chips)",
+        "context": {
+            "text": "Wind slab",
+            "data_testid": "category-pill",
+        },
+    },
+    {
+        "caption": "variant=time — outlined ghost pill for time-period labels",
+        "context": {
+            "text": "All day",
+            "variant": "time",
+            "data_testid": "day-window-pill",
+        },
+    },
+    {
+        "caption": "variant=time · Later",
+        "context": {
+            "text": "Later",
+            "variant": "time",
+        },
+    },
+    {
+        "caption": "variant=time · Morning",
+        "context": {
+            "text": "Morning",
+            "variant": "time",
+        },
+    },
+)
+
+
+CARD_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "p-4 — compact passkey card",
+        "context": {
+            "title": "My MacBook Pro",
+            "body": "Last used 14 January 2026",
+            "padding": "p-4",
+        },
+    },
+    {
+        "caption": "px-5 py-4 — info banner / welcome card",
+        "context": {
+            "title": "Your route is saved.",
+            "body": "It is on the map's routes panel, and is yours alone.",
+            "padding": "px-5 py-4",
+        },
+    },
+    {
+        "caption": "p-6 — register CTA card (default)",
+        "context": {
+            "title": "Create a Snowdesk account",
+            "body": (
+                "Enter your email address and we'll send you a link to verify it."
+            ),
+            "padding": "p-6",
+        },
+    },
+    {
+        "caption": "px-6 py-8 — empty-state card",
+        "context": {
+            "title": "You haven't saved any routes yet.",
+            "body": "",
+            "padding": "px-6 py-8",
+            "center": True,
+        },
+    },
+    {
+        "caption": "p-8 — status page card (centred)",
+        "context": {
+            "title": "Check your inbox",
+            "body": ("We've sent you a link to sign in. It expires in 24 hours."),
+            "padding": "p-8",
+            "center": True,
+        },
+    },
+)
+
+
+# Status page variants (SNOW-200) -------------------------------------------
+# Rendered via the _status_page_demo.html wrapper template.
+
+
+# SNOW-1366: the Today panel, as build_today() hands it to
+# favourites/partials/_today.html — a pinned region with two resorts, one
+# reading a point elsewhere; a region listed only for its pinned resort; a
+# pinned region with no bulletin today. Alphabetical, as the panel is.
+def _today_resort(**fields: Any) -> Any:
+    """Build one TodayResort row for the library, defaults filled."""
+    from apps.favourites.today import TodayResort
+
+    base: dict[str, Any] = {
+        "uuid": "00000000-0000-0000-0000-000000000000",
+        "name": "",
+        "slug": "",
+        "url": "#",
+        "icon": "partly_cloudy-day.svg",
+        "temp_max": -2.0,
+        "source": None,
+    }
+    base.update(fields)
+    return TodayResort(**base)
+
+
+def _today_region(**fields: Any) -> Any:
+    """Build one TodayRegion row for the library, defaults filled."""
+    from apps.favourites.today import TodayRegion
+
+    base: dict[str, Any] = {
+        "region_id": "CH-4115",
+        "name": "",
+        "url": "#",
+        "level": None,
+        "subdivision": "",
+        # The tile reads max_rating / max_subdivision off the rating row.
+        "rating": None,
+        "resorts": [],
+    }
+    base.update(fields)
+    return TodayRegion(**base)
+
+
+TODAY_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Regions in name order, their pinned resorts nested",
+        "solo": True,
+        "context": {
+            "today_date": datetime.date(2026, 11, 2),
+            "today_regions": [
+                _today_region(
+                    region_id="CH-4115",
+                    name="Martigny – Verbier",
+                    level="considerable",
+                    subdivision="+",
+                    rating=SimpleNamespace(
+                        max_rating="considerable", max_subdivision="+"
+                    ),
+                    resorts=[
+                        _today_resort(
+                            name="Bruson", slug="bruson", icon="light_snow.svg"
+                        ),
+                        _today_resort(
+                            name="Verbier",
+                            slug="verbier",
+                            icon="moderate_snow.svg",
+                            temp_max=-3.0,
+                            source=SimpleNamespace(
+                                label="Mont Fort",
+                                elevation_m=3329,
+                                distance_km=2.1,
+                                is_same_place=False,
+                            ),
+                        ),
+                    ],
+                ),
+                _today_region(
+                    region_id="CH-2223",
+                    name="Obere Leventina",
+                ),
+                _today_region(
+                    region_id="CH-2211",
+                    name="Südliches Urseren",
+                    level="moderate",
+                    rating=SimpleNamespace(max_rating="moderate", max_subdivision=""),
+                    resorts=[
+                        _today_resort(name="Andermatt", slug="andermatt", temp_max=1.0)
+                    ],
+                ),
+            ],
+        },
+    },
+    {
+        "caption": "Nothing pinned yet",
+        "solo": True,
+        "context": {"today_date": datetime.date(2026, 11, 2), "today_regions": []},
+    },
+)
+
+
+# SNOW-1357: the homepage's daily read, as present_daily_read() hands it to
+# public/partials/_daily_read.html. Off season there is no read and the
+# homepage leaves the section out, so there is no empty variant to show.
+DAILY_READ_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Two countries — a swing in one, none in the other",
+        "solo": True,
+        "context": {
+            "map_url": "/map/",
+            "daily_read": {
+                "day": datetime.date(2026, 1, 14),
+                "countries": [
+                    {
+                        "country": "CH",
+                        "label": "Switzerland",
+                        "peak_level": "considerable",
+                        "sentences": [
+                            "Danger rose in 12 regions and fell in 3 since yesterday.",
+                            "Highest today: Considerable, in 8 of 40 regions.",
+                            "Named most: wind slab, in 24 of 40 regions.",
+                        ],
+                        "swing": {
+                            "region_code": "CH-4115",
+                            "region_name": "Martigny – Verbier",
+                            "url": "#",
+                            "before": "Moderate",
+                            "after": "High",
+                        },
+                    },
+                    {
+                        "country": "FR",
+                        "label": "France",
+                        "peak_level": "moderate",
+                        "sentences": [
+                            "Danger held in every region since yesterday.",
+                            "Highest today: Moderate, in 11 of 23 regions.",
+                            "Named most: persistent weak layers, in 9 of 23 regions.",
+                        ],
+                        "swing": None,
+                    },
+                ],
+            },
+        },
+    },
+    {
+        "caption": "One country, first day of the season (nothing to compare)",
+        "solo": True,
+        "context": {
+            "map_url": "/map/",
+            "daily_read": {
+                "day": datetime.date(2026, 11, 20),
+                "countries": [
+                    {
+                        "country": "AT",
+                        "label": "Austria",
+                        "peak_level": "low",
+                        "sentences": ["Highest today: Low, in 6 of 6 regions."],
+                        "swing": None,
+                    },
+                ],
+            },
+        },
+    },
+)
+
+
+STATUS_PAGE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "With CTA — link expired",
+        "context": {
+            "heading": "This link has expired",
+            "body": (
+                "Account links are only valid for 24 hours."
+                " This one has expired or is invalid."
+            ),
+            "cta_label": "Request a new link",
+            "cta_href": "#",
+        },
+    },
+    {
+        "caption": "Without CTA — check inbox",
+        "context": {
+            "heading": "Check your inbox",
+            "body": (
+                "If that address is registered, we've sent you a link to sign"
+                " in. It expires in 24 hours."
+            ),
+            "cta_label": None,
+            "cta_href": None,
+        },
+    },
+)
+
+
+# Collapsible panel (SNOW-203) ------------------------------------------------
+# Three variants exercising the _collapsible_panel.html partial:
+#   1. Closed · single body — the default (closed) state with body_html.
+#   2. Open · single body — same shape with is_open=True so the body
+#      styling and slf-prose layout are visible without interaction.
+#   3. Open · multi-entry tendency — body_template delegates to
+#      _tendency_body.html; a synthetic ``prose`` dict with a two-entry
+#      tendency list exercises the multi-day iteration path.
+#
+# The tendency_has_comment filter reads prose as a dict with a "tendency"
+# key; each entry is a dict with a "comment" key.  The filter returns True
+# when any entry has a non-empty comment, so both entries carry comment text.
+
+
+def _build_collapsible_panel_variants() -> tuple[dict[str, Any], ...]:
+    """Build the collapsible-panel variant matrix.
+
+    Returns three variants: closed simple body, open simple body, and
+    an open multi-entry tendency body rendered via ``_tendency_body.html``.
+    """
+    from django.utils.safestring import mark_safe
+
+    simple_body = mark_safe(  # noqa: S308 — static fixture HTML, not user input
+        "<p>Fresh snowfall overnight has loaded leeward slopes significantly. "
+        "Weak layers from the cold spell earlier in the week remain buried "
+        "beneath the new snow and are sensitive to additional loading.</p>"
+    )
+
+    tendency_prose = {
+        "tendency": [
+            {
+                "comment": (
+                    "<h1>Outlook for Friday</h1>"
+                    "<p>Hazard will increase through the day as temperatures "
+                    "rise above the freezing level. Wet-snow avalanches are "
+                    "likely on solar aspects above 1800 m.</p>"
+                )
+            },
+            {
+                "comment": (
+                    "<h1>Outlook for Saturday</h1>"
+                    "<p>Conditions improve with a return to colder, clearer "
+                    "weather. Danger will consolidate at Moderate (2) across "
+                    "all elevations.</p>"
+                )
+            },
+        ]
+    }
+
+    return (
+        {
+            "caption": "Closed · single body",
+            "context": {
+                "title": "Snowpack structure",
+                "data_testid": "snowpack-panel",
+                "body_html": simple_body,
+                "is_open": False,
+            },
+        },
+        {
+            "caption": "Open · single body",
+            "context": {
+                "title": "Snowpack structure",
+                "data_testid": "snowpack-panel",
+                "body_html": simple_body,
+                "is_open": True,
+            },
+        },
+        {
+            "caption": "Open · multi-entry tendency",
+            "context": {
+                "title": "Outlook for Friday",
+                "data_testid": "tendency-panel",
+                "body_template": "includes/_tendency_body.html",
+                "is_open": True,
+                "prose": tendency_prose,
+            },
+        },
+    )
+
+
+COLLAPSIBLE_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
+    _build_collapsible_panel_variants()
+)
+
+
+# ── Glossary term in prose (SNOW-853) ──────────────────────────────────────
+# The one component in this file with no partial of its own: the markup is
+# spliced into provider prose by the ``snowdesk_html`` filter, not written in
+# a template, so there is nothing to include directly. These variants go
+# through ``_tendency_body.html`` — the smallest real surface that runs prose
+# through that filter — which means the library renders the shipping code
+# path rather than a hand-written imitation of it that could drift from it.
+#
+# The prose below is written for the library, not taken from a provider: it
+# is arranged so each variant demonstrates one matching rule.
+
+GLOSSARY_TERM_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "One term · tap to open the definition",
+        "context": {
+            "prose": {
+                "tendency": [
+                    {
+                        "comment": (
+                            "<p>Individual avalanche prone locations for dry "
+                            "avalanches are to be found in particular on very "
+                            "steep shady slopes at high altitudes.</p>"
+                        )
+                    }
+                ]
+            }
+        },
+    },
+    {
+        "caption": "Longest match wins · once per block · synonyms",
+        "context": {
+            "prose": {
+                "tendency": [
+                    {
+                        "comment": (
+                            "<p>A melt-freeze crust has formed on sunny slopes; "
+                            "the crust is thick enough to bear weight. The weak "
+                            "layer beneath it stays reactive, and that weak layer "
+                            "is what the danger zone below the ridge is about.</p>"
+                            "<p>Whumpfing was reported here too — the same weak "
+                            "layer, a second block, so it is marked again.</p>"
+                        )
+                    }
+                ]
+            }
+        },
+    },
+)
+
+
+# ── Form field (SNOW-672) ───────────────────────────────────────────────────
+# A real Django form rather than a SimpleNamespace, because the partial
+# renders the widget: ``{{ field }}`` has to produce an <input>, not a repr.
+# The errored variant is bound to invalid data so the error list is the one
+# Django actually produces.
+
+
+class _DemoFieldForm(forms.Form):
+    """Throwaway form supplying one rendered field to the component library."""
+
+    email = forms.EmailField(
+        label="Email address",
+        widget=forms.EmailInput(
+            attrs={"class": input_classes(), "placeholder": "your@email.com"}
+        ),
+    )
+
+
+_DEMO_FIELD = _DemoFieldForm()["email"]
+_DEMO_FIELD_WITH_ERROR = _DemoFieldForm(data={"email": "not-an-email"})["email"]
+
+FORM_FIELD_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Required field",
+        "context": {"field": _DEMO_FIELD, "label": "Email address"},
+    },
+    {
+        "caption": "Optional field",
+        "context": {"field": _DEMO_FIELD, "label": "Name", "optional": True},
+    },
+    {
+        "caption": "With a validation error",
+        "context": {"field": _DEMO_FIELD_WITH_ERROR, "label": "Email address"},
+    },
+)
+
+PAGE_TITLE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Default — body starts straight after",
+        "context": {"text": "Colophon", "data_testid": "colophon-heading"},
+    },
+    {
+        "caption": "Tighter — a subtitle line follows",
+        "context": {"text": "Privacy Policy", "class_extra": "mb-2"},
+    },
+    {
+        "caption": "No spacing — the wrapper owns it",
+        "context": {"text": "Verbier", "class_extra": "mb-0"},
+    },
+)
+
+# Danger tile for a day with no rating (SNOW-1161) -------------------------
+DANGER_TILE_EMPTY_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "No rating", "context": {}},
+)
+
+DATED_EYEBROW_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Today — a quiet day at the right",
+        "context": {
+            "text": "Avalanche bulletin • SLF",
+            "day": datetime.date(2026, 10, 21),
+            "another_day": False,
+        },
+    },
+    {
+        "caption": "Another day — the date in the info colours",
+        "context": {
+            "text": "Weather • Open-Meteo 06:00",
+            "day": datetime.date(2026, 10, 17),
+            "another_day": True,
+        },
+    },
+    {
+        "caption": "No day (a page): the plain eyebrow",
+        "context": {"text": "On the ground"},
+    },
+)
+
+RESORT_TILE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "A resort: the gondola cabin (SNOW-1177)",
+        "context": {"kind": "resort"},
+    },
+    {"caption": "A saved pin: the placemark", "context": {"kind": "favourite"}},
+)
+
+EYEBROW_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Bulletin section heading", "context": {"text": "Day Risk Profile"}},
+    {"caption": "Bulletin section heading", "context": {"text": "Avalanche Problems"}},
+    {"caption": "Bulletin section heading", "context": {"text": "Snowpack & Weather"}},
+    {
+        "caption": "Library foundation label",
+        "context": {"text": "foundation", "tag": "p"},
+    },
+    {"caption": "Light theme heading", "context": {"text": "Light", "tag": "h3"}},
+    {"caption": "Dark theme heading", "context": {"text": "Dark", "tag": "h3"}},
+    {
+        "caption": "Staff design-system eyebrow",
+        "context": {"text": "staff · design system", "tag": "p", "class_extra": "mb-1"},
+    },
+)
+
+THREE_WORD_ADDRESS_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Resolved — links to the what3words map",
+        "context": {
+            "location": SimpleNamespace(latitude=46.080012, longitude=7.318197),
+            "words": "filled.count.soap",
+            "url": "https://what3words.com/filled.count.soap",
+        },
+    },
+    {
+        "caption": "Trip details grid (15px)",
+        "context": {
+            "location": SimpleNamespace(latitude=45.976589, longitude=7.658447),
+            "words": "cornice.saddle.willow",
+            "url": "https://what3words.com/cornice.saddle.willow",
+            "size_class": "text-label",
+        },
+    },
+    {
+        # The state every surface has to survive: flag off, no key, upstream
+        # down, or simply not resolved yet. There is never a blank where the
+        # place was.
+        "caption": "Unresolved — falls back to the coordinate pair",
+        "context": {
+            "location": SimpleNamespace(latitude=46.080012, longitude=7.318197),
+            "words": None,
+            "url": None,
+        },
+    },
+    {
+        # SNOW-1214. A trip's meeting point never shows its coordinate: it
+        # falls back to the sentence placing it against the route, and a
+        # link that opens the spot in a maps app.
+        "caption": "Meeting point, unresolved — the route sentence and a maps link",
+        "context": {
+            "location": SimpleNamespace(latitude=46.080012, longitude=7.318197),
+            "words": None,
+            "url": None,
+            "place": "On the route, 9 km in",
+            "maps_url": "https://www.google.com/maps/search/?api=1&query=46.080012%2C7.318197",
+        },
+    },
+)
+
+# The pin a place is chosen under (SNOW-1214) ------------------------------
+# The glyph only; the caller's wrapper sets its colour.
+PLACE_PIN_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Default (32px)", "context": {}},
+    {"caption": "Small (24px)", "context": {"size": 24}},
+)
+
+# Route profile and meta line (SNOW-1215) -----------------------------------
+# The profile is an empty lane that static/js/route_profile.js draws into, so
+# the library shows its shell at the two heights; the meta line is text, shown
+# with and without the figures that may be unknown.
+ROUTE_PROFILE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Default (h-20, the route panel's)", "context": {}},
+    {"caption": "Taller (h-28)", "context": {"height_class": "h-28"}},
+)
+
+ROUTE_META_LINE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "All figures, with the elapsed time",
+        "context": {
+            "distance_km": 12.9,
+            "ascent_m": 337,
+            "descent_m": 1906,
+            "duration_hm": {"hours": "2", "minutes": "51"},
+        },
+    },
+    {
+        "caption": "Ascent only, no time (a planned route)",
+        "context": {"distance_km": 8.4, "ascent_m": 645, "descent_m": None},
+    },
+    {
+        "caption": "Distance only",
+        "context": {"distance_km": 3.2, "ascent_m": None, "descent_m": None},
+    },
+)
+
+META_CELL_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Issued", "context": {"text": "Issued"}},
+    {"caption": "Valid until", "context": {"text": "Valid until"}},
+    {"caption": "Next update", "context": {"text": "Next update"}},
+)
+
+# Resort "why it matters" line (SNOW-542) -------------------------------------
+# The curated prose line, plus all three blank branches. The partial reads
+# ``resort`` directly, so the fixtures pass a stand-in object rather than a
+# flat context — ``SimpleNamespace`` is enough for the two attributes used.
+RESORT_WHY_IT_MATTERS_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Curated line",
+        "context": {
+            "resort": SimpleNamespace(
+                name="Tschiertschen",
+                why_it_matters=(
+                    "Nationally known freeride destination. Four lifts, "
+                    "disproportionate avalanche relevance."
+                ),
+            ),
+            "is_staff": False,
+            "can_favourite": True,
+        },
+    },
+    {
+        # SNOW-1155: the resort page header draws the curated line as its
+        # tagline, at body size. Only the curated branch reads the flag.
+        "caption": "Curated line — resort page tagline",
+        "context": {
+            "resort": SimpleNamespace(
+                name="Verbier",
+                why_it_matters=(
+                    "Home of the Freeride World Tour, lots of marked itineraries"
+                ),
+            ),
+            "is_staff": False,
+            "can_favourite": True,
+            "tagline": True,
+        },
+    },
+    {
+        "caption": "Blank — staff curation hint",
+        "context": {
+            "resort": SimpleNamespace(name="Haldigrat", why_it_matters=""),
+            "is_staff": True,
+            "can_favourite": True,
+        },
+    },
+    {
+        "caption": "Blank — anonymous register prompt",
+        "context": {
+            "resort": SimpleNamespace(name="Haldigrat", why_it_matters=""),
+            "is_staff": False,
+            "can_favourite": False,
+        },
+    },
+    {
+        "caption": "Blank — signed in, renders nothing",
+        "context": {
+            "resort": SimpleNamespace(name="Haldigrat", why_it_matters=""),
+            "is_staff": False,
+            "can_favourite": True,
+        },
+    },
+)
+
+
+# Resort facts block (SNOW-695; a definition list since SNOW-1155) ------------
+# The curated Resort columns the detail page stored but never rendered. The
+# partial reads ``resort`` directly, so — like the why-it-matters fixtures
+# above — a ``SimpleNamespace`` stand-in carries just the attributes used.
+# Four variants cover the whole contract: fully curated (Verbier, the design
+# board's own values, with notes as the full-width last row), fully curated
+# with no notes (the board's exact shape), partially curated (including a
+# base elevation with no top, and a season open with no close), and nothing
+# curated at all, which must render no section rather than an empty one.
+# ``class_extra`` gives each the resort page's own 320px sidebar width
+# (``lg:w-80``, the class resort.html passes).
+RESORT_FACTS_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Fully curated — notes as the full-width last row",
+        "solo": True,
+        "context": {
+            "class_extra": "lg:w-80",
+            "resort": SimpleNamespace(
+                operator_name="Téléverbier",
+                website="https://www.verbier.ch/",
+                notes=(
+                    "Lift-served access to Mont Fort; the Vallon d'Arbi and "
+                    "Mont Gelé faces are marked itineraries, not pistes."
+                ),
+                num_lifts=34,
+                num_runs=92,
+                total_piste_km=210,
+                base_elevation_m=1500,
+                top_elevation_m=3330,
+                typical_season_open="12-01",
+                typical_season_close="04-30",
+            ),
+        },
+    },
+    {
+        "caption": "Fully curated, no notes — the design board's shape",
+        "solo": True,
+        "context": {
+            "class_extra": "lg:w-80",
+            "resort": SimpleNamespace(
+                operator_name="Zermatt Bergbahnen AG",
+                website="https://www.zermatt.ch/",
+                notes="",
+                num_lifts=34,
+                num_runs=53,
+                total_piste_km=196.5,
+                base_elevation_m=1620,
+                top_elevation_m=3899,
+                typical_season_open="11-23",
+                typical_season_close="04-27",
+            ),
+        },
+    },
+    {
+        "caption": "Partially curated — one-sided elevation and season",
+        "solo": True,
+        "context": {
+            "class_extra": "lg:w-80",
+            "resort": SimpleNamespace(
+                operator_name="",
+                website="",
+                notes="",
+                num_lifts=4,
+                num_runs=None,
+                total_piste_km=None,
+                base_elevation_m=1343,
+                top_elevation_m=None,
+                typical_season_open="12-14",
+                typical_season_close="",
+            ),
+        },
+    },
+    {
+        "caption": "Nothing curated — renders no section at all",
+        "solo": True,
+        "context": {
+            "resort": SimpleNamespace(
+                operator_name="",
+                website="",
+                notes="",
+                num_lifts=None,
+                num_runs=None,
+                total_piste_km=None,
+                base_elevation_m=None,
+                top_elevation_m=None,
+                typical_season_open="",
+                typical_season_close="",
+            ),
+        },
+    },
+)
+
+
+# Place link row (Hugo, 25 Oct 2026) ------------------------------------------
+# ``includes/_place_link_row.html``: the row each map panel ends with, naming
+# the neighbouring kind of place and opening it.
+
+PLACE_LINK_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "A region — the square, no level",
+        "context": {
+            "kind": "region",
+            "title": "Martigny–Verbier",
+            "subtitle": "View region bulletin for 10 Apr 2026",
+            "href": "#",
+            "open_id": "CH-4115",
+        },
+    },
+    {
+        "caption": "A resort's bulletin callout — the region's level (27 Oct 2026)",
+        "context": {
+            "kind": "region",
+            "title": "Considerable",
+            "subtitle": "Martigny–Verbier · View bulletin",
+            "href": "#",
+            "open_id": "CH-4115",
+            "day_rating": {"max_rating": "considerable", "max_subdivision": ""},
+        },
+    },
+    {
+        "caption": "A region's resort — the round cabin",
+        "context": {
+            "kind": "resort",
+            "title": "Verbier",
+            "subtitle": "1,500–3,330 m",
+            "href": "#",
+            "open_id": "verbier",
+        },
+    },
+    {
+        "caption": "No subtitle",
+        "context": {
+            "kind": "region",
+            "title": "Conthey–Fully",
+            "subtitle": "",
+            "href": "#",
+            "open_id": "CH-4116",
+        },
+    },
+)
+
+# Danger tile (SNOW-1422) ------------------------------------------------------
+# ``includes/_danger_tile.html``: the square EAWS tile for a region's day.
+
+DANGER_TILE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "A rated day",
+        "context": {
+            "day_rating": {"max_rating": "considerable", "max_subdivision": ""},
+        },
+    },
+    {
+        "caption": "A subdivided level",
+        "context": {"day_rating": {"max_rating": "moderate", "max_subdivision": "+"}},
+    },
+    {
+        "caption": "No rating: the same square with a dash",
+        "context": {"day_rating": None},
+    },
+)
+
+
+# Place sheet Today row (SNOW-1422) ------------------------------------------
+# ``public/partials/_place_sheet_today_row.html``: Terrain's one row for the
+# day in the place sheet. ``data-terrain-only`` hides it only inside
+# ``#place-sheet``, so the library draws it as it is.
+
+PLACE_SHEET_TODAY_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "A rated day, with the day's weather",
+        "context": {
+            "day_rating": {"max_rating": "considerable", "max_subdivision": ""},
+            "level_label": "Considerable",
+            "weather": {
+                "icon_filename": "clear-day.svg",
+                "condition_label": "Clear",
+                "temp_max": -4.0,
+            },
+            "day": datetime.date(2026, 2, 12),
+            "another_day": False,
+        },
+    },
+    {
+        "caption": "No bulletin and no weather",
+        "context": {
+            "day_rating": None,
+            "level_label": "",
+            "weather": None,
+            "day": datetime.date(2026, 2, 12),
+            "another_day": False,
+        },
+    },
+)
+
+# Overlay primitives (SNOW-486) -----------------------------------------------
+# The four consolidated overlay shapes — banner, modal, sheet — each with a
+# "static" context flag so the component library renders them inline rather
+# than pinned to the real viewport edge. (Toast's own fixtures sit above,
+# pre-dating this consolidation.)
+
+# SNOW-1165: the "Showing … · Back to today" strip. The pages' only, since
+# the map's sheets took their own date row (Hugo, 21 Oct).
+ANOTHER_DAY_STRIP_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Page — full width under the nav, a link to the bare URL",
+        "context": {"day": datetime.date(2026, 4, 8), "href": "#"},
+    },
+)
+
+
+OVERLAY_BANNER_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Strip — off-season notice",
+        "context": {
+            "variant": "strip",
+            "body": "Archive bulletins are shown outside the winter season.",
+            "icon": "calendar",
+            "static": True,
+        },
+    },
+    {
+        # SNOW-639: `dismissible` used to be honoured by the floating branch
+        # only, so a strip caller passing it got no × and no complaint. Both
+        # strip states are shown side by side here so that asymmetry cannot
+        # come back unnoticed.
+        "caption": "Strip — dismissible (off-season bar)",
+        "context": {
+            "variant": "strip",
+            "body": "Archive bulletins are shown outside the winter season.",
+            "icon": "calendar",
+            "dismissible": True,
+            "static": True,
+        },
+    },
+    {
+        "caption": "Floating — no dismiss, no CTA",
+        "context": {
+            "variant": "floating",
+            "body": "Checking for updates…",
+            "static": True,
+        },
+    },
+    {
+        "caption": "Floating — dismissible, no CTA",
+        "context": {
+            "variant": "floating",
+            "icon": "refresh",
+            "title": "You're offline",
+            "body": "Showing the last cached bulletin.",
+            "title_id": "component-library-banner-title-1",
+            "dismissible": True,
+            "static": True,
+        },
+    },
+    {
+        "caption": "Floating — dismissible with CTA (stuck service worker)",
+        "context": {
+            "variant": "floating",
+            "icon": "refresh",
+            # SNOW-1025: the one state the SW banner has — the worker is
+            # stuck. Routine updates apply silently and show nothing.
+            "title": "Snowdesk needs a refresh",
+            "body": "It couldn't update itself. Reload to finish.",
+            "title_id": "component-library-banner-title-2",
+            # SNOW-586: body_id — a caller-writable hook for a body line JS
+            # rewrites at runtime (the basemap-download whole-area-eviction
+            # confirm banner injects a dynamic area-name list here).
+            "body_id": "component-library-banner-body-2",
+            "cta_id": "component-library-banner-cta",
+            "cta_label": "Reload",
+            "dismissible": True,
+            "static": True,
+        },
+    },
+    {
+        "caption": "Floating — off-map nudge (top, dismissible)",
+        "context": {
+            "variant": "floating",
+            "icon": "location-off",
+            "position": "top",
+            "title": "Off the map",
+            "body": "Your location is outside the mapped regions.",
+            "title_id": "component-library-banner-title-3",
+            "dismissible": True,
+            "static": True,
+        },
+    },
+)
+
+
+OVERLAY_MODAL_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Forced update (PWA shape)",
+        "context": {
+            "id": "component-library-overlay-modal",
+            "title_id": "component-library-overlay-modal-title",
+            "body_id": "component-library-overlay-modal-body",
+            "title": "Update required",
+            # SNOW-869: the real copy from includes/_pwa_update_modal.html.
+            # The library had drifted to a paraphrase, which is the one thing
+            # a component library must not do with the surface it documents.
+            "body": (
+                "This version of Snowdesk is no longer supported. Reload to continue."
+            ),
+            "cta_id": "component-library-overlay-modal-cta",
+            "cta_label": "Reload",
+            "static": True,
+        },
+    },
+)
+
+
+OVERLAY_SHEET_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Favourite / report sheet shell",
+        "context": {
+            "id": "component-library-overlay-sheet",
+            "aria_label": "Favourite",
+            "static": True,
+        },
+    },
+    {
+        # SNOW-1097: a sheet that declares detents. On a phone it rests at
+        # peek, half or full and the handle drags it between them (or a
+        # press steps it up); from `sm` up the handle is hidden and the
+        # sheet is the inset panel above. Shown here with the handle
+        # visible, since the library is read at desktop width.
+        "caption": "Phone sheet with detents (peek, half, full)",
+        "context": {
+            "id": "component-library-overlay-sheet-detents",
+            "aria_label": "Region",
+            "static": True,
+            "detents": "peek,half,full",
+            "initial": "peek",
+        },
+    },
+)
+
+
+# Sheet header (SNOW-474; the 44×44 × and title_class override SNOW-645
+# review) --------------------------------------------------------------------
+# Shared title + persistent × close control for the favourites/report/
+# downloads map sheets. Both title and close_action are required — supplying
+# them here keeps the include from erroring on a missing var.
+
+SHEET_HEADER_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Report sheet",
+        "context": {"title": "Report", "close_action": "dismiss"},
+    },
+    {
+        "caption": "Favourite sheet",
+        "context": {"title": "Favourite", "close_action": "dismiss"},
+    },
+    {
+        "caption": "Manage downloads sheet (title_class override)",
+        "context": {
+            "title": "Your downloads",
+            "close_action": "dismiss",
+            "title_class": "text-lg font-bold",
+        },
+    },
+)
+
+
+# Switch (SNOW-645) -----------------------------------------------------------
+# First use was the "Manage downloads" sheet's map-overlay control, which
+# SNOW-904 removed with every other panel switch and the two-capsule control
+# column restored (includes/_map_overlay_toggle.html, below). The "Offline
+# mode" row on the /offline/ debug page (moved there from the network menu
+# by SNOW-1415) and the account settings page are the other callers.
+# Pure CSS (Tailwind's peer variant) — no JS runs on this page, so both
+# states render correctly from the `checked` attribute alone.
+
+SWITCH_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Off",
+        "context": {"id": "component-library-switch-off"},
+    },
+    {
+        "caption": "On",
+        "context": {"id": "component-library-switch-on", "checked": True},
+    },
+    {
+        # SNOW-645 review: includes/_switch.html's own wrapping <label>
+        # carries has-[:disabled]:cursor-not-allowed/opacity-50, driven by
+        # the :disabled pseudo-class on the real <input> nested inside it —
+        # a state this fixture can render statically (unlike :focus-visible,
+        # which needs real interaction) via the typed `disabled` boolean.
+        "caption": "Disabled",
+        "context": {
+            "id": "component-library-switch-disabled",
+            "disabled": True,
+        },
+    },
+)
+
+
+# Switch track (SNOW-1266) ----------------------------------------------------
+# The drawn half of a switch, for a control that is already a button: the
+# map layers menu's menuitemcheckbox rows. In the menu its state comes from
+# the button's aria-checked; here there is no button, so `demo_checked`
+# draws the on state.
+
+SWITCH_TRACK_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Off", "context": {}},
+    {"caption": "On", "context": {"demo_checked": True}},
+)
+
+
+# Segmented option -------------------------------------------------------------
+# SNOW-1073: one option of a segmented control. Each variant is a lone pill, so
+# each carries its own radio name — two variants sharing one would let only one
+# of them render checked.
+SEGMENTED_OPTION_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Unselected",
+        "context": {
+            "name": "component-library-segmented-off",
+            "value": "off",
+            "label": "Light",
+        },
+    },
+    {
+        "caption": "Selected",
+        "context": {
+            "name": "component-library-segmented-on",
+            "value": "on",
+            "label": "Dark",
+            "checked": True,
+        },
+    },
+)
+
+
+# Since strip -----------------------------------------------------------------
+# SNOW-1328: what moved in a region's bulletin since the day before.
+SINCE_STRIP_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Moved",
+        "context": {
+            "heading": "Since Friday’s bulletin",
+            "sentences": [
+                "Up from Moderate (2).",
+                "Wind slab added on N–E above 2,400 m.",
+            ],
+        },
+    },
+    {
+        "caption": "Quiet",
+        "context": {
+            "heading": "Since Friday’s bulletin",
+            "sentences": [],
+            "quiet_text": "No change to the level or the problems.",
+        },
+    },
+)
+
+
+# Terrain filter key ----------------------------------------------------------
+# SNOW-978: the map's terrain-filter colour key. No parameters — one variant.
+TERRAIN_FILTER_KEY_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Default", "context": {}},
+)
+
+
+# Theme preference -------------------------------------------------------------
+# The settings page's light/dark/system radio group. It takes no parameters, so
+# there is exactly one variant — the library entry exists to make the control
+# discoverable ("reuse first"), not to show off states.
+#
+# The rendered variant always shows "System" selected, because that is what the
+# server sends: the real preference is in localStorage and
+# static/js/theme_preference.js checks the matching radio on load. The library
+# renders the partial without that script, so what appears here is the
+# no-JavaScript state, which is the honest thing to show.
+THEME_PREFERENCE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Default",
+        "context": {},
+    },
+)
+
+
+# Map overlay toggle -----------------------------------------------------------
+# The "Show on the map" footer strip of the four map panels. SNOW-658 built
+# it, SNOW-904 deleted it, and the two-capsule control column restored it —
+# bound to the layers-menu row for the same layer rather than replacing it.
+# Pure markup: static/js/map_panel_overlay_switch.js binds the four real ids,
+# and these namespaced ids are never among them.
+
+MAP_OVERLAY_TOGGLE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "As every map panel renders it",
+        "context": {
+            "id": "component-library-map-overlay-toggle-panel",
+            "label": "Show on the map",
+        },
+    },
+    {
+        "caption": "A longer label, to check the switch holds its size",
+        "context": {
+            "id": "component-library-map-overlay-toggle-long",
+            "label": "Show the community's field observations on the map",
+        },
+    },
+)
+
+
+# Overflow menu (SNOW-645) -----------------------------------------------------
+# First use: the "Manage downloads" sheet's per-row Rename/Remove actions.
+# `open=True` on one variant so the menu's contents are visible without
+# overflow_menu.js running — the component library page loads no
+# interaction JS for any partial (see that module's own header).
+
+OVERFLOW_MENU_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Closed",
+        "context": {
+            "trigger_id": "component-library-overflow-trigger-closed",
+            "menu_id": "component-library-overflow-menu-closed",
+            "trigger_label": "More actions",
+            "items": [
+                {"label": "Rename"},
+                {"label": "Remove"},
+            ],
+        },
+    },
+    {
+        "caption": "Open — custom area (Rename + Remove)",
+        "context": {
+            "trigger_id": "component-library-overflow-trigger-open",
+            "menu_id": "component-library-overflow-menu-open",
+            "trigger_label": "More actions",
+            "items": [
+                {"label": "Rename"},
+                {"label": "Remove"},
+            ],
+            "open": True,
+        },
+    },
+    {
+        "caption": "Open — region (Remove only)",
+        "context": {
+            "trigger_id": "component-library-overflow-trigger-region",
+            "menu_id": "component-library-overflow-menu-region",
+            "trigger_label": "More actions",
+            "items": [
+                {"label": "Remove"},
+            ],
+            "open": True,
+        },
+    },
+)
+
+
+# Route rail (SNOW-1018) -------------------------------------------------------
+# The route rail is rendered once, empty and hidden, and filled by
+# static/js/route_rail.js for whichever route is open — this page runs no
+# interaction JS, so the one variant shows the empty shell: the eyebrow,
+# the actions menu (every item, as an owned route has them), the ×, the
+# (blank) title and meta line, the (blank) lane, the hint and the point
+# header, rendered `static` — visible and in
+# normal flow rather than hidden and docked over a map that is not here.
+# The URL templates are placeholders; nothing here posts.
+
+ROUTE_RAIL_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Empty shell — filled by route_rail.js when a route opens",
+        "context": {
+            "route_rename_url_template": "/routes/partials/__UUID__/rename/",
+            "route_share_url_template": "/routes/__UUID__/share/",
+            "route_delete_url_template": "/routes/partials/__UUID__/delete/",
+            "route_name_max_length": Route._meta.get_field("name").max_length,
+            "static": True,
+        },
+    },
+)
+
+
+# Aspect wheel (SNOW-1063) -----------------------------------------------------
+# One route segment's heading (inner ring) and the way the ground under it
+# faces (outer ring), drawn client-side by static/js/aspect_wheel.js from
+# the state below — ``wheelState``'s shape in static/js/aspect_wheel_core.js.
+# Sectors run 0 (N) to 7 (NW); ``gradeDeg`` is the track's own gradient,
+# positive climbing. Eight states at 48 px, then the first again at 120 px.
+
+
+def _aspect_wheel_variant(
+    caption: str, state: dict[str, Any], size: int = 48
+) -> dict[str, Any]:
+    """Return one aspect-wheel variant with its state JSON-encoded."""
+    return {
+        "caption": caption,
+        "context": {"state_json": json.dumps(state), "size": size},
+    }
+
+
+_FALL_LINE_DESCENT: dict[str, Any] = {
+    "track": [4],
+    "gradeDeg": -31,
+    "prev": {"sector": 3, "gradeDeg": -28},
+    "next": {"sector": 5, "gradeDeg": -33},
+    "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 34},
+}
+
+ASPECT_WHEEL_VARIANTS: tuple[dict[str, Any], ...] = (
+    _aspect_wheel_variant(
+        "Fall-line descent — heading S down a 34° S face", _FALL_LINE_DESCENT
+    ),
+    _aspect_wheel_variant(
+        "Traverse — heading E across a 36° S face, level (under 5°)",
+        {
+            "track": [2],
+            "gradeDeg": -4,
+            "prev": {"sector": 1, "gradeDeg": -5},
+            "next": {"sector": 3, "gradeDeg": -3},
+            "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 36},
+        },
+    ),
+    _aspect_wheel_variant(
+        "Climbing the fall line — heading N up a 31° S face",
+        {
+            "track": [0],
+            "gradeDeg": 27,
+            "prev": {"sector": 7, "gradeDeg": 24},
+            "next": {"sector": 1, "gradeDeg": 26},
+            "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 31},
+        },
+    ),
+    _aspect_wheel_variant(
+        "Turn inside the segment — NW then NE, both sectors lit",
+        {
+            "track": [7, 1],
+            "gradeDeg": 12,
+            "prev": {"sector": 6, "gradeDeg": 10},
+            "next": {"sector": 2, "gradeDeg": 14},
+            "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 33},
+        },
+    ),
+    _aspect_wheel_variant(
+        "Flat ground — outer ring unlit",
+        {
+            "track": [2],
+            "gradeDeg": -4,
+            "prev": None,
+            "next": {"sector": 3, "gradeDeg": -3},
+            "terrain": {"kind": "flat"},
+        },
+    ),
+    _aspect_wheel_variant(
+        "No terrain data — outer ring grey",
+        {
+            "track": [5],
+            "gradeDeg": -14,
+            "prev": {"sector": 4, "gradeDeg": -12},
+            "next": None,
+            "terrain": {"kind": "unknown"},
+        },
+    ),
+    _aspect_wheel_variant(
+        "Level track — a bar, not a triangle",
+        {
+            "track": [6],
+            "gradeDeg": 0.8,
+            "prev": {"sector": 5, "gradeDeg": 1.2},
+            "next": {"sector": 7, "gradeDeg": -0.5},
+            "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 28},
+        },
+    ),
+    _aspect_wheel_variant(
+        "Route start — no previous segment",
+        {
+            "track": [3],
+            "gradeDeg": 8,
+            "prev": None,
+            "next": {"sector": 4, "gradeDeg": 9},
+            "terrain": {"kind": "faces", "sector": 6, "slopeDeg": 22},
+        },
+    ),
+    _aspect_wheel_variant("Fall-line descent at 120 px", _FALL_LINE_DESCENT, size=120),
+)
+
+
+# Point header (SNOW-1064; the route panel's point header since SNOW-1068) -----
+# One point on the open route, read in words: the aspect wheel at 48 px and
+# two labelled lines (SNOW-1094) — Track (heading · the track's steepness
+# on its own scale and how it lies on the slope, as one phrase) and Slope
+# (the ground in the EAWS words, with the side it falls on a traverse or a
+# turn, or both sides where a turn crosses the fall line). There is no
+# turn or switchback kind: the heading pair and the two sides already say
+# it. The lines here are what route_point_card_core.js's
+# ``reading`` writes for each state; on the map the header is filled
+# client-side from the route cursor, and hidden while no point is placed.
+
+
+def _point_card_variant(
+    caption: str,
+    state: dict[str, Any],
+    headline: str = "",
+    ground: str = "",
+) -> dict[str, Any]:
+    """Return one point-header variant."""
+    return {
+        "caption": caption,
+        "context": {
+            "static": True,
+            "state_json": json.dumps(state),
+            "headline": headline,
+            "ground": ground,
+        },
+    }
+
+
+POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
+    _point_card_variant(
+        "Fall line descent — 37° down a 42° face",
+        {
+            "track": [2],
+            "gradeDeg": -37,
+            "prev": {"sector": 2, "gradeDeg": -37},
+            "next": {"sector": 4, "gradeDeg": -26},
+            "terrain": {"kind": "faces", "sector": 2, "slopeDeg": 42},
+        },
+        "E · Fall line · 35°+",
+        "Extremely steep · 40°+",
+    ),
+    _point_card_variant(
+        "Fall line climb — 22° up a 31° face",
+        {
+            "track": [0],
+            "gradeDeg": 22,
+            "prev": {"sector": 7, "gradeDeg": 20},
+            "next": {"sector": 1, "gradeDeg": 23},
+            "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 31},
+        },
+        "N · Fall line · 20°+",
+        "Steep · 30–35°",
+    ),
+    _point_card_variant(
+        "Rising traverse — 13° across a 33° north face",
+        {
+            "track": [3],
+            "gradeDeg": 13,
+            "prev": {"sector": 2, "gradeDeg": 6},
+            "next": {"sector": 4, "gradeDeg": 3},
+            "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 33},
+        },
+        "SE · Traverse · 10–15°",
+        "Steep · 30–35°, falling skier's left",
+    ),
+    _point_card_variant(
+        "Descending traverse — 9° across a 28° face",
+        {
+            "track": [2],
+            "gradeDeg": -9,
+            "prev": {"sector": 1, "gradeDeg": -8},
+            "next": None,
+            "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 28},
+        },
+        "E · Traverse · 5–15°",
+        "Moderate · 5–30°, falling skier's right",
+    ),
+    _point_card_variant(
+        "Level traverse — under 5° across a 36° face",
+        {
+            "track": [6],
+            "gradeDeg": 2,
+            "prev": None,
+            "next": {"sector": 6, "gradeDeg": 1},
+            "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 36},
+        },
+        "W · Traverse · under 5°",
+        "Very steep · 35–40°, falling skier's right",
+    ),
+    _point_card_variant(
+        "Climb across the fall line — Col de la Chaux, 13° up through a kick turn",
+        {
+            "track": [4, 1],
+            "gradeDeg": 13.28,
+            "prev": None,
+            "next": None,
+            "terrain": {"kind": "faces", "sector": 7, "slopeDeg": 35},
+        },
+        "S → NE · Ascent · 10–15°",
+        "Very steep · 35–40°, falling skier's right, then left",
+    ),
+    _point_card_variant(
+        "Climb that turns on one side — Col de la Chaux, the side from both ends",
+        {
+            "track": [1, 2],
+            "gradeDeg": 13.29,
+            "prev": None,
+            "next": None,
+            "terrain": {"kind": "faces", "sector": 7, "slopeDeg": 31.8},
+        },
+        "NE → E · Ascent · 10–15°",
+        "Steep · 30–35°, falling skier's left",
+    ),
+    _point_card_variant(
+        "Fall line while turning — Backside, one end heads straight down",
+        {
+            "track": [0, 1],
+            "gradeDeg": -24.04,
+            "prev": None,
+            "next": None,
+            "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 30.8},
+        },
+        "N → NE · Fall line · 15–25°",
+        "Steep · 30–35°",
+    ),
+    _point_card_variant(
+        "Climbing while heading downhill — the gradient overrules the chord",
+        {
+            "track": [2],
+            "gradeDeg": 6,
+            "prev": {"sector": 1, "gradeDeg": 9},
+            "next": None,
+            "terrain": {"kind": "faces", "sector": 2, "slopeDeg": 31},
+        },
+        "E · Ascent · 5–10°",
+        "Steep · 30–35°",
+    ),
+    _point_card_variant(
+        "Flat ground — the track alone",
+        {
+            "track": [2],
+            "gradeDeg": -8,
+            "prev": None,
+            "next": None,
+            "terrain": {"kind": "flat"},
+        },
+        "E · Descent · 5–15°",
+        "Flat · under 5°",
+    ),
+    _point_card_variant(
+        "No terrain data — the ground was not sampled",
+        {
+            "track": [5],
+            "gradeDeg": 1,
+            "prev": None,
+            "next": None,
+            "terrain": {"kind": "unknown"},
+        },
+        "SW · Level",
+        "No terrain data",
+    ),
+)
+
+
+# UGC panel + row (SNOW-658) ---------------------------------------------------
+# The skeleton and row shape shared by the three map panels that manage a
+# user's own data — downloads, favourites, field observations. Hugo's "Map
+# panels — common format" design: five shell parts in a fixed order, one
+# row anatomy of five slots.
+#
+# `rows_template`, `icon_template` and `actions_template` all take a
+# template PATH because Django has no slot mechanism (see
+# includes/_ugc_panel.html's own header). The library hands the panel a
+# demo template rendering two static rows — every real caller's list
+# either loads over HTMX or is filled by JS, and this page runs neither.
+#
+# There is no `toggle_label`: the footer switch reads "Show on the map" on
+# every panel, so the shared partial owns the string. `toggle_id` is
+# namespaced so the real switch module never finds the library's copy.
+
+UGC_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Favourites panel (no header extra)",
+        "context": {
+            "title": "Favourites",
+            "icon_template": "includes/_icon_favourite.html",
+            "context_line": "Favourites are private and not shared.",
+            "section_label": "Places",
+            "rows_template": "public/partials/_ugc_panel_demo_rows.html",
+            "cta_label": "Add a favourite",
+            "toggle_id": "component-library-ugc-panel-toggle-favourites",
+        },
+    },
+    {
+        "caption": "Downloads panel (budget block in the header slot)",
+        "context": {
+            "title": "Your downloads",
+            "icon_template": "includes/_icon_downloads.html",
+            "context_line": (
+                "Your areas follow your account. The map data and the budget "
+                "stay on this device."
+            ),
+            # No section_label: this panel groups its rows under two
+            # headings of its own, rendered from its rows template.
+            "header_template": "public/partials/_map_downloads_header.html",
+            "rows_template": "public/partials/_ugc_panel_demo_rows.html",
+            # SNOW-1414: the second way to add, above the panel's own button.
+            "foot_template": "public/partials/_map_downloads_add_region.html",
+            "cta_label": "Download a custom area",
+            "toggle_id": "component-library-ugc-panel-toggle-downloads",
+        },
+    },
+)
+
+
+# UGC panel group (SNOW-832) ---------------------------------------------------
+# One titled group of rows, headed by the value of whatever axis the panel
+# groups along. The downloads panel is the one caller: its groups are
+# BASEMAPS, so each heading carries that basemap's identity colour as a
+# swatch and a rule, and its own total for this device.
+#
+# The variants below cover the three states the heading has: a named
+# group, the group whose basemap cannot be named (bg-sync-off, never
+# .basemap-identity-fill's keyless green), and a named group with rows in
+# it — which is what shows the heading against the list it heads, and the
+# reason the first row draws no hairline of its own.
+
+UGC_PANEL_GROUP_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Named group — swatch, label, this device's total",
+        "context": {
+            "label": "OpenFreeMap",
+            "label_hook": "group-label",
+            "total": "58.2 MB",
+            "basemap_key": "openfreemap_liberty",
+        },
+    },
+    {
+        "caption": "Named group, with its rows",
+        "context": {
+            "label": "Swisstopo (CH)",
+            "total": "18.2 MB",
+            "basemap_key": "swisstopo_winter",
+            "rows_template": "public/partials/_ugc_panel_group_demo_rows.html",
+        },
+    },
+    {
+        # A record written before the basemap was stored with a download,
+        # an orphaned bucket, or a key the picker no longer offers. Named
+        # rather than left blank — an unlabelled heading over real rows
+        # reads as a rendering fault — and neutral rather than green.
+        "caption": "Unnamed group — the basemap this device cannot resolve",
+        "context": {
+            "label": "Unknown basemap",
+            "total": "5.1 MB",
+            "unknown": True,
+        },
+    },
+)
+
+
+UGC_PANEL_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        # Every variant here takes the downloads panel's actions template,
+        # which is the only one that renders without a model instance in
+        # context. It is also the fullest: a pencil and a trash. A panel
+        # with one action renders the same row minus the pencil.
+        "caption": "Plain row — label, meta line, actions",
+        "context": {
+            "label": "Arolla ridge",
+            "meta": "Val d'Hérens",
+            "actions_template": "includes/_map_downloads_row_actions.html",
+        },
+    },
+    {
+        # The caption said "the label itself is the edit target" until the
+        # label grew a job of its own (below). It never was: SNOW-658 took
+        # rename off the label and left it on the pencil, which is the
+        # control this variant actually renders.
+        "caption": "Renameable row — the pencil opens an editor over the label",
+        "context": {
+            "label": "Cabane des Dix",
+            "meta": "Val des Dix",
+            "renameable": True,
+            "rename_label": "Favourite name",
+            "actions_template": "includes/_map_downloads_row_actions.html",
+        },
+    },
+    {
+        # The map panels' rows only. Pressing the name frames that place —
+        # a route's bbox, a pin's coordinates — which is why the name is a
+        # real button here and inert text in every variant above: the
+        # difference is visible at rest as the hover fill and the focus
+        # ring a `<span>` cannot take.
+        "caption": "Row whose name frames its place on the map",
+        "context": {
+            "label": "Lac de Vaux hike",
+            "meta": "8.4km · 645m ↑ · 525m ↓ · 3h10m",
+            "focus_target": "7.231800,46.089100,7.290300,46.120400",
+            "focus_label": "Zoom to Lac de Vaux hike",
+            "actions_template": "includes/_map_downloads_row_actions.html",
+        },
+    },
+    {
+        # SNOW-832: the downloads row lost its coloured left-edge rule
+        # (basemap identity is a GROUP heading now) and its trailing mono
+        # size column (folded into the meta line, beside the kind). What
+        # is left is the same anatomy every other panel's row has.
+        "caption": "Downloads row — kind and size on one meta line",
+        "context": {
+            "label": "Verbier",
+            "meta": "Region · 18.2 MB",
+            "actions_template": "includes/_map_downloads_row_actions.html",
+        },
+    },
+    {
+        # SNOW-1420: the downloads sheet is the home for offline, so each
+        # row it holds leads with the area's verdict as a dot. The markup
+        # renders it neutral; map_downloads_manager.js paints the colour
+        # and the reason line from the stored record.
+        "caption": "Downloads row with its offline answer — a verdict dot",
+        "context": {
+            "label": "Zermatt",
+            "meta": "Region · 24.6 MB",
+            "status_dot": True,
+            "actions_template": "includes/_map_downloads_row_actions.html",
+        },
+    },
+    {
+        # SNOW-711. The account page's favourite row is the only one with
+        # a disclosure: the map panels reach a pin's detail by tapping the
+        # pin, which is a control they already have and this page has not.
+        "caption": "Row with a trailing disclosure — expands under itself",
+        "context": {
+            "label": "Cabane des Dix",
+            "meta": "Val des Dix · saved 3 Feb 2026",
+            "actions_template": "includes/_map_downloads_row_actions.html",
+            "disclosure_template": "includes/_row_disclosure.html",
+            "disclosure_href": "#",
+            "disclosure_panel_id": "component-library-row-disclosure-panel",
+            "disclosure_label": "Show details for Cabane des Dix",
+        },
+    },
+)
+
+
+# Downloads inventory (SNOW-1418) ---------------------------------------------
+# What one area holds, as map_downloads_manager.js paints it under the row:
+# Hugo's mockup frame "Downloads · what's in Zermatt", with yesterday's
+# bulletin, and the same list signed out.
+_INVENTORY_HELD = "bg-sync-ok"
+_INVENTORY_SYNC = "bg-sync-partial"
+
+DOWNLOADS_INVENTORY_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Signed in, bulletin from yesterday",
+        "context": {
+            "label": "What's in Zermatt",
+            "items": [
+                {
+                    "label": "Map",
+                    "value": "61.0 MB",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+                {
+                    "label": "Terrain",
+                    "value": "11.0 MB",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+                {
+                    "label": "Avalanche bulletin",
+                    "value": "2 Nov",
+                    "dot": _INVENTORY_SYNC,
+                    "status": "Needs a sync",
+                },
+                {
+                    "label": "Weather",
+                    "value": "2 Nov 10:40",
+                    "dot": _INVENTORY_SYNC,
+                    "status": "Needs a sync",
+                },
+                {
+                    "label": "Your routes",
+                    "value": "3",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+                {
+                    "label": "Trips",
+                    "value": "1",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+                {
+                    "label": "SAC tours",
+                    "value": "41",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+                {
+                    "label": "Ski resorts",
+                    "value": "6",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+                {
+                    "label": "Community reports",
+                    "value": "12",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+            ],
+        },
+    },
+    {
+        # Signed out, the reader's own rows are absent, not zero.
+        "caption": "Signed out, saved without terrain — no routes, trips or places",
+        "context": {
+            "label": "What's in Verbier",
+            "items": [
+                {
+                    "label": "Map",
+                    "value": "96.0 MB",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+                {
+                    "label": "Terrain",
+                    "value": "Not saved",
+                    "dot": "bg-sync-blocked",
+                    "status": "Missing",
+                },
+                {
+                    "label": "Avalanche bulletin",
+                    "value": "Today",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+                {
+                    "label": "Weather",
+                    "value": "Today 07:15",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+                {
+                    "label": "SAC tours",
+                    "value": "28",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+                {
+                    "label": "Community reports",
+                    "value": "4",
+                    "dot": _INVENTORY_HELD,
+                    "status": "Works offline",
+                },
+            ],
+        },
+    },
+)
+
+
+# Row disclosure (SNOW-711) ----------------------------------------------------
+# The UGC row's trailing expand control, rendered on its own so the glyph
+# and its 44×44 target are visible outside a row. Both states are shown:
+# `aria-expanded` is flipped by the owning surface's module, and the
+# chevron's rotation is a `group-aria-expanded:` variant of that one
+# attribute, so a broken rotation is a broken state read.
+
+# SNOW-1414: a UGC panel's outlined "add" button, extracted from
+# includes/_ugc_panel.html so the Downloads sheet's "Download a region" is
+# the same control rather than a second copy. `hook` names the data
+# attribute the owning module binds; the library binds neither.
+PANEL_ADD_BUTTON_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "The panel's own add (data-panel-add)",
+        "context": {"label": "Download a custom area", "hook": "panel-add"},
+    },
+    {
+        "caption": "A second way to add, in a panel's foot (data-panel-add-region)",
+        "context": {"label": "Download a region", "hook": "panel-add-region"},
+    },
+)
+
+ROW_DISCLOSURE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Collapsed — the state every row renders in",
+        "context": {
+            "disclosure_href": "#",
+            "disclosure_hx_get": "#",
+            "disclosure_panel_id": "component-library-disclosure-collapsed",
+            "disclosure_label": "Show details for Cabane des Dix",
+        },
+    },
+    {
+        # Rendered by the library only. A real row starts collapsed and is
+        # expanded by its module, which this page does not load.
+        "caption": "Expanded — chevron rotated by aria-expanded",
+        "context": {
+            "disclosure_href": "#",
+            "disclosure_hx_get": "#",
+            "disclosure_panel_id": "component-library-disclosure-expanded",
+            "disclosure_label": "Hide details for Cabane des Dix",
+            "disclosure_expanded": True,
+        },
+    },
+)
+
+
+# SNOW-1423: the ingest report's run strip. Cells oldest first; the admin
+# links are placeholders, since a fixture names no real run.
+def _strip(states: str) -> list[dict[str, Any]]:
+    """Return run-strip cells for ``states``: . none, o ok, r running, x failed."""
+    names = {".": "none", "o": "ok", "r": "running", "x": "failed"}
+    started = datetime.datetime(2026, 11, 5, 10, 7, tzinfo=datetime.UTC)
+    return [
+        {"state": "none", "url": ""}
+        if char == "."
+        else {"state": names[char], "url": "#", "started_at": started}
+        for char in states
+    ]
+
+
+RUN_STRIP_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Hourly, all green", "context": {"strip": _strip("o" * 24)}},
+    {
+        "caption": "One failed run",
+        "context": {"strip": _strip("o" * 17 + "x" + "o" * 6)},
+    },
+    {
+        "caption": "Every six hours, one running",
+        "context": {"strip": _strip(".o....." + "o....." + "o....." + "r....")},
+    },
+)
+
+
+TOAST_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Error (HTMX banner shape) — no CTA, not dismissible",
+        "context": {
+            "kind": "error",
+            "body": "Something went wrong.",
+            "dismissible": False,
+            "static": True,
+        },
+    },
+    {
+        "caption": "Info (SW-update shape) — CTA + dismiss",
+        "context": {
+            "kind": "info",
+            "body": "An updated version is available.",
+            "cta_label": "Reload",
+            "cta_href": "#",
+            "dismissible": True,
+            "static": True,
+        },
+    },
+    {
+        "caption": "Warning with CTA",
+        "context": {
+            "kind": "warning",
+            "body": "Your session is about to expire.",
+            "cta_label": "Extend",
+            "cta_href": "#",
+            "dismissible": True,
+            "static": True,
+        },
+    },
+    {
+        "caption": "Success — dismissible only",
+        "context": {
+            "kind": "success",
+            "body": "Route saved.",
+            "dismissible": True,
+            "static": True,
+        },
+    },
+    {
+        "caption": "Info — non-dismissible",
+        "context": {
+            "kind": "info",
+            "body": "Read-only mode is active.",
+            "dismissible": False,
+            "static": True,
+        },
+    },
+)
+
+
+TOAST_BANNER_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Default copy",
+        "context": {"static": True},
+    },
+    {
+        "caption": "Custom body",
+        "context": {
+            "body": "3 changes couldn't be saved and won't be retried.",
+            "static": True,
+        },
+    },
+)
+
+
+CALLOUT_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Warning",
+        "context": {
+            "kind": "warning",
+            "heading": "We couldn't process this bulletin.",
+            "body": (
+                "We are sorry for the inconvenience. Please try again later"
+                " or check back for an updated bulletin."
+            ),
+        },
+    },
+    {
+        "caption": "Error",
+        "context": {
+            "kind": "error",
+            "heading": "Something went wrong.",
+            "body": "An unexpected error occurred. Please try again.",
+        },
+    },
+    {
+        "caption": "Success",
+        "context": {
+            "kind": "success",
+            "heading": "Bulletin processed successfully.",
+            "body": "The bulletin has been ingested and is ready to view.",
+        },
+    },
+    {
+        "caption": "Info",
+        "context": {
+            "kind": "info",
+            "heading": "Bulletin updated.",
+            "body": "A revised bulletin has been issued for this region.",
+        },
+    },
+    {
+        # SNOW-1368: the body above a bulletin shown because a newer issue
+        # for the same day did not build.
+        "caption": "Info — a later update could not be processed",
+        "context": {
+            "kind": "info",
+            "heading": "The 24 Oct 06:00 UTC update couldn’t be processed.",
+            "body": "Showing the bulletin issued 23 Oct 15:00 UTC.",
+        },
+    },
+    {
+        "caption": "Warning with diagnostic",
+        "context": {
+            "kind": "warning",
+            "heading": "We couldn't process this bulletin.",
+            "body": (
+                'Bulletin ID: <span class="font-mono">'
+                "CH-1234.2026-02-14T00:00:00+00:00</span>"
+            ),
+            "code_block": (
+                "RenderModelBuildError: missing required field"
+                " 'dangerRatings' at path $.properties"
+            ),
+            "cta_label": "Inspect in admin →",
+            "cta_href": "/admin/bulletins/bulletin/42/change/",
+        },
+    },
+)
+
+
+# One variant per movement in the day-summary matrix, so the component
+# library shows the real range rather than three static days. The explainer
+# is generated by ``summary_for`` rather than transcribed, so a copy edit in
+# the matrix can never leave this page quoting text the site no longer says.
+
+DAY_CHARACTER_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Static day — buried problem",
+        "context": {
+            "day_character": {
+                "label": "Hard-to-read day",
+                "explainer": summary_for("static", 3, ["persistent_weak_layers"]),
+            }
+        },
+    },
+    {
+        "caption": "Static day — surface problem",
+        "context": {
+            "day_character": {
+                "label": "Manageable day",
+                "explainer": summary_for("static", 2, ["wind_slab"]),
+            }
+        },
+    },
+    {
+        "caption": "Deteriorating day",
+        "context": {
+            "day_character": {
+                "label": "Hard-to-read day",
+                "explainer": summary_for(
+                    "rising",
+                    3,
+                    ["persistent_weak_layers", "wet_snow"],
+                    from_level=2,
+                ),
+            }
+        },
+    },
+    {
+        "caption": "Easing day — the problem swaps",
+        "context": {
+            "day_character": {
+                "label": "Hard-to-read day",
+                "explainer": summary_for(
+                    "easing",
+                    2,
+                    ["persistent_weak_layers", "wet_snow"],
+                    from_level=3,
+                ),
+            }
+        },
+    },
+    {
+        "caption": "Level holds, problem shifts",
+        "context": {
+            "day_character": {
+                "label": "Manageable day",
+                "explainer": summary_for("shifting", 2, ["wind_slab", "wet_snow"]),
+            }
+        },
+    },
+    {
+        "caption": "Quiet day — no problem named",
+        "context": {
+            "day_character": {
+                "label": "Stable day",
+                "explainer": summary_for("static", 1, []),
+            }
+        },
+    },
+)
+
+
+# ── Tendency outlook (SNOW-296) ─────────────────────────────────────────────
+# One variant per canonical tendency_type (steady / increasing / decreasing),
+# plus one neutral fallback variant (unknown type).  Each context dict
+# contains an ``outlook`` key shaped like a TendencyOutlook instance —
+# matching the ``with outlook=panel.tendency_outlook only`` include call.
+
+TENDENCY_OUTLOOK_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Steady — constant danger",
+        "context": {
+            "outlook": SimpleNamespace(
+                tendency_type="steady",
+                arrow="→",
+                label="Constant avalanche danger",
+                valid_until="2026-04-16T23:59:59+00:00",
+                highlights="Conditions remain broadly stable.",
+            ),
+        },
+    },
+    {
+        "caption": "Increasing danger",
+        "context": {
+            "outlook": SimpleNamespace(
+                tendency_type="increasing",
+                arrow="↗",
+                label="Increasing avalanche danger",
+                valid_until="2026-04-16T23:59:59+00:00",
+                highlights="Fresh snow and wind will increase the hazard tomorrow.",
+            ),
+        },
+    },
+    {
+        "caption": "Decreasing danger",
+        "context": {
+            "outlook": SimpleNamespace(
+                tendency_type="decreasing",
+                arrow="↘",
+                label="Decreasing avalanche danger",
+                valid_until="2026-04-16T23:59:59+00:00",
+                highlights="",
+            ),
+        },
+    },
+    {
+        "caption": "Neutral fallback — unknown tendency_type",
+        "context": {
+            "outlook": SimpleNamespace(
+                tendency_type="unknown_future_value",
+                arrow="",
+                label="Avalanche danger outlook",
+                valid_until="2026-04-16T23:59:59+00:00",
+                highlights="",
+            ),
+        },
+    },
+)
+
+
+# ── Nav (SNOW-201) ──────────────────────────────────────────────────────────
+# Covers the four meaningful states of the persistent top bar:
+# bare logo, back-link variant, season-trigger variant, and authed subscriber.
+# ``request.user`` is overridden via SimpleNamespace so the partial's
+# auth-area branches can be exercised without a real request.
+
+NAV_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Bare — logo only, unauthenticated",
+        "context": {
+            "request": SimpleNamespace(
+                user=SimpleNamespace(
+                    is_authenticated=False,
+                    is_staff=False,
+                    email="",
+                ),
+                csp_nonce="",
+            ),
+        },
+    },
+    {
+        "caption": "With back link",
+        "context": {
+            "back_url": "/regions/CH-VS-3431/",
+            "back_label": "Back to bulletin",
+            "request": SimpleNamespace(
+                user=SimpleNamespace(
+                    is_authenticated=False,
+                    is_staff=False,
+                    email="",
+                ),
+                csp_nonce="",
+            ),
+        },
+    },
+    {
+        "caption": "With season trigger",
+        "context": {
+            "season_trigger": SimpleNamespace(season_label="25/26"),
+            "request": SimpleNamespace(
+                user=SimpleNamespace(
+                    is_authenticated=False,
+                    is_staff=False,
+                    email="",
+                ),
+                csp_nonce="",
+            ),
+        },
+    },
+    {
+        "caption": "Authenticated",
+        "context": {
+            "request": SimpleNamespace(
+                user=SimpleNamespace(
+                    is_authenticated=True,
+                    is_staff=False,
+                    email="alice@example.com",
+                ),
+                csp_nonce="",
+            ),
+        },
+    },
+)
+
+
+# ── Site footer (SNOW-201) ──────────────────────────────────────────────────
+# The footer reverses URLs internally and reads no context variables, so a
+# single empty-context variant covers all states.
+
+SITE_FOOTER_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Default",
+        "context": {},
+    },
+)
+
+
+# ── Rating block (SNOW-201) ─────────────────────────────────────────────────
+# Seven cards: one per EAWS problem type at a representative danger level,
+# plus a prose-only card exercising the no-core-zone branch.
+# Shapes match the dict built from the render model traits
+# (``_problem_cards_from_render_model_traits``) — keys consumed by
+# ``_rating_block.html``.
+
+
+def _make_rating_card(
+    category: str,
+    danger_level: int,
+    danger_level_key: str,
+    problem_type: str,
+    time_period: str,
+    aspects: list[str],
+    elevation: _ElevationBounds,
+    label: str,
+    time_period_label: str,
+    core_zone_text: str,
+    comment_html: str = "",
+    panel_title: str = "",
+    title_time_suffix: str = "",
+    subdivision: str = "",
+    subdivision_label: str = "",
+    avalanche_type: str | None = None,
+    avalanche_size: int | None = None,
+    frequency_label: str | None = None,
+    stability_label: str | None = None,
+    danger_patterns: list[dict[str, str]] | None = None,
+    prose_mentions_spatial: bool = False,
+    field_guidance: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    """Build one rating-block card dict in the shape ``_rating_block.html`` expects."""
+    return {
+        "category": category,
+        "danger_level": danger_level,
+        "danger_level_key": danger_level_key,
+        "problem_type": problem_type,
+        "time_period": time_period,
+        "panel_title": panel_title,
+        "title_time_suffix": title_time_suffix,
+        "subdivision": subdivision,
+        "subdivision_label": subdivision_label,
+        "aspects": aspects,
+        "elevation": elevation,
+        "comment_html": comment_html,
+        "label": label,
+        "time_period_label": time_period_label,
+        "hide_comment": False,
+        "core_zone_text": core_zone_text,
+        "avalanche_type": avalanche_type,
+        "avalanche_size": avalanche_size,
+        "frequency_label": frequency_label,
+        "stability_label": stability_label,
+        "danger_patterns": danger_patterns or [],
+        "prose_mentions_spatial": prose_mentions_spatial,
+        # SNOW-673. Empty on most variants on purpose: the library should
+        # show the with-guidance and without-guidance cards side by side,
+        # because "renders nothing when the problem type has no entry" is
+        # half of the behaviour.
+        "field_guidance": field_guidance or [],
+    }
+
+
+# Read the shipped notes rather than restating them, so the library cannot
+# show copy the page does not (SNOW-673). ``cornices`` deliberately has no
+# entry — that variant is the "renders nothing" half of the behaviour.
+_FIELD_GUIDANCE = load_field_guidance()
+
+RATING_BLOCK_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "New snow · moderate",
+        "context": {
+            "card": _make_rating_card(
+                category="dry",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="new_snow",
+                time_period="all_day",
+                aspects=["N", "NE", "E", "SE", "S", "SW", "W", "NW"],
+                elevation=_ElevationBounds(
+                    lower="1600",
+                    upper="",
+                    display="above 1600m",
+                    bound_type=_ELEVATION_LOWER,
+                ),
+                label="New snow",
+                time_period_label="",
+                title_time_suffix="all day",
+                core_zone_text="All aspects, above 1600m",
+            ),
+        },
+    },
+    {
+        "caption": "Wind slab · considerable",
+        "context": {
+            "card": _make_rating_card(
+                category="dry",
+                danger_level=3,
+                danger_level_key="considerable",
+                problem_type="wind_slab",
+                time_period="all_day",
+                aspects=["N", "NE", "NW"],
+                elevation=_ElevationBounds(
+                    lower="2400",
+                    upper="",
+                    display="above 2400m",
+                    bound_type=_ELEVATION_LOWER,
+                ),
+                label="Wind slab",
+                time_period_label="",
+                core_zone_text="N to NW aspects, above 2400m",
+            ),
+        },
+    },
+    {
+        "caption": "Persistent weak layers · considerable",
+        "context": {
+            "card": _make_rating_card(
+                category="dry",
+                danger_level=3,
+                danger_level_key="considerable",
+                problem_type="persistent_weak_layers",
+                time_period="all_day",
+                aspects=["N", "NE", "NW", "E"],
+                elevation=_ElevationBounds(
+                    lower="2600",
+                    upper="",
+                    display="above 2600m",
+                    bound_type=_ELEVATION_LOWER,
+                ),
+                label="Persistent weak layers",
+                time_period_label="",
+                core_zone_text="N to E aspects, above 2600m",
+                field_guidance=[
+                    {
+                        "label": "Persistent weak layers",
+                        "text": _FIELD_GUIDANCE["persistent_weak_layers"],
+                    }
+                ],
+            ),
+        },
+    },
+    {
+        "caption": "Cornices · moderate",
+        "context": {
+            "card": _make_rating_card(
+                category="dry",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="cornices",
+                time_period="all_day",
+                aspects=["N", "NE", "E", "NW"],
+                elevation=_ElevationBounds(
+                    lower="2200",
+                    upper="",
+                    display="above 2200m",
+                    bound_type=_ELEVATION_LOWER,
+                ),
+                label="Cornices",
+                time_period_label="",
+                core_zone_text="N to E and NW aspects, above 2200m",
+            ),
+        },
+    },
+    {
+        "caption": "Wet snow · moderate · later",
+        "context": {
+            "card": _make_rating_card(
+                category="wet",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="wet_snow",
+                time_period="later",
+                aspects=["E", "SE", "S", "SW", "W"],
+                elevation=_ElevationBounds(
+                    lower="",
+                    upper="2200",
+                    display="below 2200m",
+                    bound_type=_ELEVATION_UPPER,
+                ),
+                label="Wet snow",
+                time_period_label="Later",
+                core_zone_text="E to W aspects, below 2200m",
+                field_guidance=[
+                    {"label": "Wet snow", "text": _FIELD_GUIDANCE["wet_snow"]}
+                ],
+            ),
+        },
+    },
+    {
+        "caption": "Gliding snow · moderate",
+        "context": {
+            "card": _make_rating_card(
+                category="wet",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="gliding_snow",
+                time_period="all_day",
+                aspects=["S", "SE", "SW"],
+                elevation=_ElevationBounds(
+                    lower="",
+                    upper="1800",
+                    display="below 1800m",
+                    bound_type=_ELEVATION_UPPER,
+                ),
+                label="Gliding snow",
+                time_period_label="",
+                core_zone_text="S-facing aspects, below 1800m",
+            ),
+        },
+    },
+    {
+        "caption": "Wet snow · prose mentions scope",
+        "context": {
+            "card": _make_rating_card(
+                category="wet",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="wet_snow",
+                time_period="all_day",
+                aspects=[],
+                elevation=_ElevationBounds(
+                    lower="",
+                    upper="",
+                    display="",
+                    bound_type="",
+                ),
+                label="Wet snow",
+                time_period_label="",
+                core_zone_text="",
+                prose_mentions_spatial=True,
+                comment_html=(
+                    "<p>Wet-snow slides likely on steep north-facing slopes "
+                    "between approximately 2000 and 2400 m.</p>"
+                ),
+            ),
+        },
+    },
+    {
+        "caption": "Wet snow · no spatial scope",
+        "context": {
+            "card": _make_rating_card(
+                category="wet",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="wet_snow",
+                time_period="all_day",
+                aspects=[],
+                elevation=_ElevationBounds(
+                    lower="",
+                    upper="",
+                    display="",
+                    bound_type="",
+                ),
+                label="Wet snow",
+                time_period_label="",
+                core_zone_text="",
+                prose_mentions_spatial=False,
+                comment_html="<p>Moist snow slides expected as the day warms.</p>",
+            ),
+        },
+    },
+    # ── SNOW-254: EUREGIO/ALBINA richer per-problem fields ──────────────────
+    {
+        "caption": "ALBINA — wind slab with EAWS matrix + danger patterns",
+        "context": {
+            "card": _make_rating_card(
+                category="dry",
+                danger_level=3,
+                danger_level_key="considerable",
+                problem_type="wind_slab",
+                time_period="all_day",
+                aspects=["N", "NE", "NW"],
+                elevation=_ElevationBounds(
+                    lower="2200",
+                    upper="",
+                    display="above 2200m",
+                    bound_type=_ELEVATION_LOWER,
+                ),
+                label="Wind slab",
+                time_period_label="",
+                core_zone_text="",
+                avalanche_type="slab",
+                avalanche_size=3,
+                frequency_label="Some",
+                stability_label="Poor",
+                danger_patterns=[
+                    {"label": "GM.6", "title": "Loose snow and warming"},
+                    {"label": "GM.4", "title": "Cold, loose snow and wind"},
+                ],
+            ),
+        },
+    },
+    {
+        "caption": "SLF — persistent weak layers, no EAWS extras",
+        "context": {
+            "card": _make_rating_card(
+                category="dry",
+                danger_level=3,
+                danger_level_key="considerable",
+                problem_type="persistent_weak_layers",
+                time_period="all_day",
+                aspects=["N", "NE", "E", "NW"],
+                elevation=_ElevationBounds(
+                    lower="2600",
+                    upper="",
+                    display="above 2600m",
+                    bound_type=_ELEVATION_LOWER,
+                ),
+                label="Persistent weak layers",
+                time_period_label="",
+                core_zone_text="N to E and NW aspects, above 2600m",
+                comment_html=(
+                    "<p>Persistent weak layers remain buried in the snowpack. "
+                    "Triggering is possible even from low additional loads.</p>"
+                ),
+            ),
+        },
+    },
+    # SNOW-291 — SLF split-day variants: editorial panel_title + subdivision
+    {
+        "caption": "SLF split-day — constant (dry, panel title, no subdivision)",
+        "context": {
+            "card": _make_rating_card(
+                category="dry",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="wind_slab",
+                time_period="all_day",
+                aspects=["N", "NE", "NW"],
+                elevation=_ElevationBounds(
+                    lower="2200",
+                    upper="",
+                    display="above 2200m",
+                    bound_type=_ELEVATION_LOWER,
+                ),
+                label="Wind slab",
+                time_period_label="",
+                core_zone_text="N to NW aspects, above 2200m",
+                panel_title="Dry avalanches, whole day",
+                subdivision="",
+                comment_html=(
+                    "<p>Wind slabs on north-facing slopes remain easily triggered.</p>"
+                ),
+            ),
+        },
+    },
+    {
+        "caption": "SLF split-day — escalating-temporal (dry 2-, whole day)",
+        "context": {
+            "card": _make_rating_card(
+                category="dry",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="wind_slab",
+                time_period="all_day",
+                aspects=["N", "NE", "E"],
+                elevation=_ElevationBounds(
+                    lower="2400",
+                    upper="",
+                    display="above 2400m",
+                    bound_type=_ELEVATION_LOWER,
+                ),
+                label="Wind slab",
+                time_period_label="",
+                core_zone_text="N to E aspects, above 2400m",
+                panel_title="Dry avalanches, whole day",
+                subdivision="-",
+                subdivision_label="lower end of the band",
+                comment_html="<p>Fresh wind slabs at altitude on shaded slopes.</p>",
+            ),
+        },
+    },
+    {
+        "caption": "SLF split-day — flat-temporal (wet 2, as the day progresses)",
+        "context": {
+            "card": _make_rating_card(
+                category="wet",
+                danger_level=2,
+                danger_level_key="moderate",
+                problem_type="wet_snow",
+                time_period="later",
+                aspects=["S", "SW", "SE", "W", "E"],
+                elevation=_ElevationBounds(
+                    lower="",
+                    upper="2400",
+                    display="below 2400m",
+                    bound_type=_ELEVATION_UPPER,
+                ),
+                label="Wet snow",
+                time_period_label="Afternoon",
+                core_zone_text="S to W aspects, below 2400m",
+                panel_title="Wet-snow avalanches, as the day progresses",
+                subdivision="",
+                comment_html=(
+                    "<p>As temperatures rise, wet-snow slides become "
+                    "more frequent on sunny slopes.</p>"
+                ),
+            ),
+        },
+    },
+)
+
+
+# ── Region tooltip (SNOW-201) ───────────────────────────────────────────────
+# Three variants covering the two rating states (rating chip present vs absent)
+# and a band of danger levels.  Fixtures use SimpleNamespace so no DB access
+# is needed at library load time.
+
+_TOOLTIP_REGION = SimpleNamespace(
+    region_id="CH-VS-3431",
+    name="Bex–Villars",
+    subregion=SimpleNamespace(
+        major=SimpleNamespace(name_en="Valais", name_native="Valais"),
+        name_en="Lower Valais",
+        name_native="Bas-Valais",
+    ),
+)
+_TOOLTIP_DATE = datetime.date(2026, 2, 14)
+
+REGION_TOOLTIP_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Considerable · no subdivision",
+        "context": {
+            "region": _TOOLTIP_REGION,
+            "day_rating": SimpleNamespace(max_rating=3, max_subdivision=None),
+            "bulletin_url": "/CH-VS-3431/",
+            "country_name": "Switzerland",
+            "target_date": _TOOLTIP_DATE,
+        },
+    },
+    {
+        "caption": "High · upper subdivision (+)",
+        "context": {
+            "region": _TOOLTIP_REGION,
+            "day_rating": SimpleNamespace(max_rating=4, max_subdivision="+"),
+            "bulletin_url": "/CH-VS-3431/",
+            "country_name": "Switzerland",
+            "target_date": _TOOLTIP_DATE,
+        },
+    },
+    {
+        "caption": "No bulletin",
+        "context": {
+            "region": _TOOLTIP_REGION,
+            "day_rating": None,
+            "bulletin_url": "",
+            "country_name": "Switzerland",
+            "target_date": _TOOLTIP_DATE,
+            "covered": True,
+            "provider_name": "SLF",
+        },
+    },
+    {
+        # SNOW-54: permanently-uncovered region (e.g. Swiss Lowlands / Jura).
+        # The pipeline has no RegionDayRating rows for this area, so the tooltip
+        # explains the upstream gap rather than showing the generic "no bulletin" label.
+        "caption": "Permanently uncovered (SLF — Swiss Lowlands)",
+        "context": {
+            "region": _TOOLTIP_REGION,
+            "day_rating": None,
+            "bulletin_url": "",
+            "country_name": "Switzerland",
+            "target_date": _TOOLTIP_DATE,
+            "covered": False,
+            "provider_name": "SLF",
+        },
+    },
+)
+
+
+# ── No-data-supplied (SNOW-201) ─────────────────────────────────────────────
+# Single variant; the partial carries no context variables.
+
+NO_DATA_SUPPLIED_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Default",
+        "context": {},
+    },
+)
+
+
+# Season scrubber transport demo (SNOW-230). Each variant pins the static
+# thumb position at a different point in the season so the library shows
+# the pill at season start, mid-season, and season end. The buttons are
+# not wired to JS on the library page — pressing them is a no-op.
+#
+# SNOW-794 moved the calendar button out of this row and into the map's
+# bottom-left stack, so what the library shows here is the transport alone.
+# The pill's own width comes from the flex line it sits on over the map;
+# the demo wrapper gives it one of its own.
+SEASON_SCRUBBER_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Season start — thumb at 0%",
+        "context": {
+            "today": datetime.date(2025, 12, 1),
+            "today_pct": 0,
+        },
+    },
+    {
+        "caption": "Mid-season — thumb at 50%",
+        "context": {
+            "today": datetime.date(2026, 2, 14),
+            "today_pct": 50,
+        },
+    },
+    {
+        "caption": "Season end — thumb at 100%",
+        "context": {
+            "today": datetime.date(2026, 4, 30),
+            "today_pct": 100,
+        },
+    },
+    {
+        "caption": "Loading state",
+        "context": {
+            "loading": True,
+            "today": datetime.date(2026, 2, 14),
+            "today_pct": 50,
+        },
+    },
+)
+
+
+# ── Map zoom control (SNOW-1077) ────────────────────────────────────────────
+# The roundel at the top of the map's bottom-left stack and the flyout it
+# opens. On /map/ static/js/map_zoom_control.js fills every value from the
+# map; here each variant sets them, across the map's range of z4 to z18.
+# The gates are the ones window.pwaZoomGates publishes on a page with every
+# layer: the ski-touring routes from z9, the region selector at z10 and
+# below, the rest zones from z11, the terrain overlay from z12 and the
+# route slope angle from z14. All five are named on every variant, bold
+# where the camera's zoom makes them available — switched on or not — in
+# the label column, each tied to its level by a curve. The labels are
+# placed by the same rule as zoom_control_core.labelRows, in the px
+# map.css sets on .map-zoom-flyout.
+
+_MAP_MIN_ZOOM = 4
+_MAP_MAX_ZOOM = 18
+# map.css .map-zoom-flyout: --zoom-scale-h, --zoom-track-x, --zoom-label-x,
+# --zoom-label-pitch.
+_ZOOM_SCALE_H = 280.0
+_ZOOM_TRACK_X = 44.0
+_ZOOM_LABEL_X = 104.0
+_ZOOM_LABEL_PITCH = 30.0
+
+
+def _zoom_pct(zoom: float) -> float:
+    """Return how far down the vertical scale ``zoom`` sits, 0..100 (top = z18)."""
+    return round((_MAP_MAX_ZOOM - zoom) / (_MAP_MAX_ZOOM - _MAP_MIN_ZOOM) * 100, 2)
+
+
+def _zoom_level_y(zoom: float) -> float:
+    """Return how far down the scale ``zoom`` sits, in px."""
+    return (_MAP_MAX_ZOOM - zoom) / (_MAP_MAX_ZOOM - _MAP_MIN_ZOOM) * _ZOOM_SCALE_H
+
+
+def _zoom_label_rows(levels: list[float]) -> list[float]:
+    """Return each label's centre in px, spread so no two overlap.
+
+    The Python twin of ``zoom_control_core.labelRows``: overlapping labels
+    merge into one group spaced a pitch apart, centred on where its members
+    want to be and kept inside the scale. ``levels`` are px, in tick order.
+    """
+    pitch, low, high = _ZOOM_LABEL_PITCH, _ZOOM_LABEL_PITCH / 2, _ZOOM_SCALE_H
+    high -= _ZOOM_LABEL_PITCH / 2
+    order = sorted(range(len(levels)), key=lambda i: (levels[i], i))
+    groups: list[dict[str, Any]] = []
+
+    def place(group: dict[str, Any]) -> None:
+        """Centre ``group`` on its members' mean, inside the scale."""
+        span = (len(group["members"]) - 1) * pitch
+        centred = group["sum"] / len(group["members"]) - span / 2
+        group["top"] = max(low, min(high - span, centred))
+
+    for index in order:
+        group: dict[str, Any] = {"members": [index], "sum": levels[index]}
+        place(group)
+        groups.append(group)
+        while len(groups) > 1:
+            last, prev = groups[-1], groups[-2]
+            if prev["top"] + len(prev["members"]) * pitch <= last["top"] + 0.001:
+                break
+            prev["members"] += last["members"]
+            prev["sum"] += last["sum"]
+            groups.pop()
+            place(prev)
+    rows = [0.0] * len(levels)
+    for group in groups:
+        for k, index in enumerate(group["members"]):
+            rows[index] = round(group["top"] + k * pitch, 2)
+    return rows
+
+
+def _zoom_connector_path(y0: float, y1: float) -> str:
+    """Return the curve from the axis at ``y0`` to a label at ``y1`` (connectorPath)."""
+    x0, x1 = _ZOOM_TRACK_X, _ZOOM_LABEL_X
+    mid = round(x0 + (x1 - x0) * 0.55, 2)
+    y0, y1 = round(y0, 2), round(y1, 2)
+    return f"M{x0:g} {y0:g} C{mid:g} {y0:g} {mid:g} {y1:g} {x1:g} {y1:g}"
+
+
+def _zoom_tick(
+    key: str,
+    label: str,
+    gate: int,
+    camera: float,
+    *,
+    up_to: bool = False,
+) -> dict[str, Any]:
+    """Return one tick, reached when ``camera`` is where the feature works."""
+    return {
+        "key": key,
+        "label": label,
+        "zoom": gate,
+        "threshold": f"≤{gate}" if up_to else f"≥{gate}",
+        "reached": int(camera) <= gate if up_to else camera >= gate,
+    }
+
+
+_ZOOM_LEVELS = tuple(
+    {"zoom": z, "pct": _zoom_pct(z)} for z in range(_MAP_MIN_ZOOM, _MAP_MAX_ZOOM + 1)
+)
+
+
+def _zoom_variant(
+    caption: str,
+    camera: float,
+    *,
+    is_open: bool = True,
+    debug: bool = False,
+) -> dict[str, Any]:
+    """Return one zoom-control variant at a camera zoom."""
+    ticks = [
+        _zoom_tick("ski_routes", "SAC ski touring", 9, camera),
+        _zoom_tick("region_select", "Region selector", 10, camera, up_to=True),
+        _zoom_tick("rest_zones", "Wildlife rest zones", 11, camera),
+        _zoom_tick("terrain_filter", "Steep terrain", 12, camera),
+        _zoom_tick("route_slopes", "Route slope angle", 14, camera),
+    ]
+    level_ys = [_zoom_level_y(tick["zoom"]) for tick in ticks]
+    rows = _zoom_label_rows(level_ys)
+    connectors = []
+    for tick, level_y, row in zip(ticks, level_ys, rows, strict=True):
+        tick["row"] = row
+        connectors.append(
+            {
+                "key": tick["key"],
+                "d": _zoom_connector_path(level_y, row),
+                "node_x": f"{_ZOOM_TRACK_X:g}",
+                "node_y": f"{level_y:g}",
+                "reached": tick["reached"],
+            }
+        )
+    return {
+        "caption": caption,
+        "context": {
+            "zoom_face": int(camera),
+            "zoom_open": is_open,
+            "zoom_marker_pct": _zoom_pct(camera),
+            # zoom_control_core.markerZoom: one decimal, rounded down.
+            "zoom_marker_value": math.floor((camera + 0.001) * 10) / 10,
+            "zoom_levels": _ZOOM_LEVELS,
+            "zoom_ticks": ticks,
+            "zoom_connectors": connectors,
+            "zoom_out_disabled": camera <= _MAP_MIN_ZOOM,
+            "zoom_in_disabled": camera >= _MAP_MAX_ZOOM,
+            "zoom_camera_visible": debug,
+            "zoom_camera": f"Camera zoom {camera:.2f}",
+        },
+    }
+
+
+MAP_ZOOM_CONTROL_VARIANTS: tuple[dict[str, Any], ...] = (
+    _zoom_variant("Closed — the roundel at z10", 10.4, is_open=False),
+    _zoom_variant("At z8 — only the region selector is available", 8.3),
+    _zoom_variant("At z12 — the terrain overlay is available", 12.4),
+    _zoom_variant("At z14 — the terrain overlay and route slope angle", 14.6),
+    _zoom_variant("At the maximum zoom (z18) — + disabled", 18),
+    _zoom_variant("At the minimum zoom (z4) — − disabled", 4),
+    _zoom_variant("DEBUG — with the camera zoom line", 12.47, debug=True),
+)
+
+# ── Bulletin headline (SNOW-249) ────────────────────────────────────────────
+# Four representative cells from the variant matrix — enough to review the
+# copy and verify the data-testid attribute is present without wiring all 12.
+
+BULLETIN_HEADLINE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Cell 4 — considerable, slab (most common SLF pattern)",
+        "context": {
+            "headline": (
+                "Reactive snowpack. Considerable danger — avoid wind-loaded steeps."
+            ),
+        },
+    },
+    {
+        "caption": "Cell 9 — temporal rise to considerable, wet snow",
+        "context": {
+            "headline": (
+                "Touchy morning, dangerous afternoon"
+                " — wet snow cycle developing as the day progresses."
+            ),
+        },
+    },
+    {
+        "caption": "Cell 6c — high danger 4+, road-high slab",
+        "context": {
+            "headline": (
+                "Widespread instability. High danger"
+                " — road and infrastructure exposure;"
+                " backcountry travel inadvisable."
+            ),
+        },
+    },
+    {
+        "caption": "Generic fallback — considerable, no matrix match",
+        "context": {
+            "headline": ("Danger level 3 considerable. Read the bulletin carefully."),
+        },
+    },
+)
+
+
+# ALBINA band-heading rating-block variants (SNOW-292) -----------------------
+# Exercises the new band_label and time_subheader fields on the card dict.
+# These are set only on the first card of each ALBINA elevation band and are
+# rendered by _rating_block.html above the card via data-testid="band-heading"
+# and data-testid="band-time-subheader" elements.
+
+RATING_BLOCK_ALBINA_BAND_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "ALBINA · above-2200m band heading (first card in band)",
+        "context": {
+            "card": {
+                **_make_rating_card(
+                    category="dry",
+                    danger_level=3,
+                    danger_level_key="considerable",
+                    problem_type="persistent_weak_layers",
+                    time_period="all_day",
+                    aspects=["N", "NE", "E", "NW", "W"],
+                    elevation=_ElevationBounds(
+                        lower="2200",
+                        upper="",
+                        display="above 2200m",
+                        bound_type=_ELEVATION_LOWER,
+                    ),
+                    label="Persistent weak layers",
+                    time_period_label="",
+                    core_zone_text="N to W aspects, above 2200m",
+                    avalanche_size=3,
+                    frequency_label="Some",
+                    stability_label="Poor",
+                ),
+                "band_id": "above-2200",
+                "band_label": "Above 2200 m",
+            },
+        },
+    },
+    {
+        "caption": "ALBINA · below-2200m band heading (second band, first card)",
+        "context": {
+            "card": {
+                **_make_rating_card(
+                    category="dry",
+                    danger_level=1,
+                    danger_level_key="low",
+                    problem_type="persistent_weak_layers",
+                    time_period="all_day",
+                    aspects=["N", "NE", "E"],
+                    elevation=_ElevationBounds(
+                        lower="",
+                        upper="2200",
+                        display="below 2200m",
+                        bound_type=_ELEVATION_UPPER,
+                    ),
+                    label="Persistent weak layers",
+                    time_period_label="",
+                    core_zone_text="N to E aspects, below 2200m",
+                    avalanche_size=1,
+                    frequency_label="Few",
+                    stability_label="Fair",
+                ),
+                "band_id": "below-2200",
+                "band_label": "Below 2200 m",
+            },
+        },
+    },
+    {
+        "caption": "ALBINA · band heading + pivot-migration subheader",
+        "context": {
+            "card": {
+                **_make_rating_card(
+                    category="wet",
+                    danger_level=3,
+                    danger_level_key="considerable",
+                    problem_type="wet_snow",
+                    time_period="earlier",
+                    aspects=["E", "SE", "S", "SW", "W"],
+                    elevation=_ElevationBounds(
+                        lower="2500",
+                        upper="",
+                        display="above 2500m",
+                        bound_type=_ELEVATION_LOWER,
+                    ),
+                    label="Wet snow",
+                    time_period_label="Earlier",
+                    core_zone_text="Solar aspects, above 2500m",
+                    avalanche_size=3,
+                    frequency_label="Some",
+                    stability_label="Poor",
+                ),
+                "band_id": "above-2500",
+                "band_label": "Above 2500 m",
+                "time_subheader": "Wet line at 2500 m earlier, 2800 m later",
+            },
+        },
+    },
+)
+
+
+# Favourite problem card (SNOW-422) -------------------------------------------
+# Four variants — one per altitude verdict apps.favourites.relevance can produce
+# (APPLIES / ABOVE / BELOW / unannotated). Reuses _make_rating_card for the
+# underlying _rating_block.html shape (same helper the rating-block entry
+# above uses) and layers on the altitude_relevance key
+# apps.favourites.relevance.annotate_problem_relevance adds at render time — the
+# only thing _favourite_problem.html itself reads before delegating to the
+# shared card partial.
+
+
+def _build_favourite_problem_variants() -> tuple[dict[str, Any], ...]:
+    """Build one favourite-problem card fixture per altitude verdict."""
+    banded_card = _make_rating_card(
+        category="dry",
+        danger_level=3,
+        danger_level_key="considerable",
+        problem_type="wind_slab",
+        time_period="all_day",
+        aspects=["N", "NE", "E"],
+        elevation=_ElevationBounds(
+            lower="2200",
+            upper="",
+            display="above 2200m",
+            bound_type=_ELEVATION_LOWER,
+        ),
+        label="Wind slab",
+        time_period_label="",
+        core_zone_text="N to E aspects, above 2200m",
+        comment_html="<p>Fresh wind slabs on N to E aspects above 2200m.</p>",
+    )
+    unannotated_card = _make_rating_card(
+        category="wet",
+        danger_level=2,
+        danger_level_key="moderate",
+        problem_type="wet_snow",
+        time_period="all_day",
+        aspects=[],
+        elevation=_ElevationBounds(lower="", upper="", display="", bound_type=""),
+        label="Wet snow",
+        time_period_label="",
+        core_zone_text="",
+        comment_html=(
+            "<p>Isolated wet-snow instability with no clear elevation band.</p>"
+        ),
+    )
+    return (
+        {
+            "caption": "Applies at this altitude",
+            "context": {"card": {**banded_card, "altitude_relevance": "APPLIES"}},
+        },
+        {
+            "caption": "Above this location",
+            "context": {"card": {**banded_card, "altitude_relevance": "ABOVE"}},
+        },
+        {
+            "caption": "Below this location",
+            "context": {"card": {**banded_card, "altitude_relevance": "BELOW"}},
+        },
+        {
+            "caption": "Unannotated (no band / treeline)",
+            "context": {"card": {**unannotated_card, "altitude_relevance": None}},
+        },
+    )
+
+
+FAVOURITE_PROBLEM_VARIANTS: tuple[dict[str, Any], ...] = (
+    _build_favourite_problem_variants()
+)
+
+
+# ---------------------------------------------------------------------------
+# Weather panel + day picker (SNOW-761, rebuilt by SNOW-789)
+# ---------------------------------------------------------------------------
+
+# Contexts here are hand-built ``WeatherDisplay`` / ``ForecastPanel`` dicts
+# rather than the output of ``build_weather_display`` against a real row: the
+# component library renders without a database, and the point of the panel is
+# its layout under each combination of present and absent fields. The
+# derivation itself is covered in
+# ``tests/weather/services/test_weather_display.py``.
+#
+# ``weather`` inside a WeatherDisplay is a model instance at call sites; here
+# it is a plain dict, because the only thing the partial reads off it is
+# ``weather_code`` for a data attribute.
+
+
+def _weather_display(**overrides: Any) -> dict[str, Any]:
+    """Build one WeatherDisplay-shaped context for the library.
+
+    Args:
+        **overrides: Any key to replace on the fully-populated default.
+
+    Returns:
+        The context dict.
+
+    """
+    display: dict[str, Any] = {
+        "weather": {"weather_code": 73},
+        "bucket": "snow",
+        "is_day": True,
+        "time_of_day": "day",
+        "sunrise_local": "06:32",
+        "sunset_local": "20:14",
+        "icon_bucket": "moderate_snow",
+        "condition_label": "Snow",
+        "icon_filename": weather_icon_filename("moderate_snow", "day"),
+        "temp_max": -1.0,
+        "temp_min": -8.0,
+        "snowfall_sum": 22.0,
+        "freezing_level_height": 1200.0,
+    }
+    display.update(overrides)
+    return display
+
+
+WEATHER_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Every field present, no location label (bulletin masthead)",
+        "context": {
+            "weather_display": _weather_display(),
+            "testid_prefix": "component-library-weather",
+        },
+    },
+    {
+        "caption": "Labelled with its location and elevation (resort page)",
+        "context": {
+            "weather_display": _weather_display(
+                weather={"weather_code": 0},
+                bucket="clear",
+                icon_bucket="clear",
+                condition_label="Clear",
+                icon_filename=weather_icon_filename("clear", "day"),
+                temp_max=6.0,
+                temp_min=-2.0,
+                snowfall_sum=0.0,
+                freezing_level_height=2600.0,
+            ),
+            "location_label": "Mont Fort · 3328 m",
+            "testid_prefix": "component-library-weather-labelled",
+        },
+    },
+    {
+        # Open-Meteo drops variables depending on which model backs the
+        # coordinates, so a partially-populated row is ordinary. Each group
+        # renders independently of the others rather than all-or-nothing.
+        "caption": "Partial row — no temperatures, no freezing level",
+        "context": {
+            "weather_display": _weather_display(
+                temp_max=None,
+                temp_min=None,
+                snowfall_sum=None,
+                freezing_level_height=None,
+            ),
+            "testid_prefix": "component-library-weather-partial",
+        },
+    },
+    {
+        # Night is not a variant of the panel's chrome — it is a different
+        # icon file, which is the whole visual difference.
+        #
+        # CLEAR, not the fixture's default snow: the icon set draws a night
+        # variant only where a sun or a moon appears (SNOW-791), so a snowy
+        # night renders the identical file and this variant would sit in the
+        # library demonstrating nothing.
+        "caption": "Night",
+        "context": {
+            "weather_display": _weather_display(
+                weather={"weather_code": 0},
+                bucket="clear",
+                is_day=False,
+                time_of_day="night",
+                icon_bucket="clear",
+                condition_label="Clear",
+                icon_filename=weather_icon_filename("clear", "night"),
+                temp_max=-4.0,
+                temp_min=-9.0,
+                snowfall_sum=0.0,
+                freezing_level_height=900.0,
+            ),
+            "testid_prefix": "component-library-weather-night",
+        },
+    },
+)
+
+
+def _forecast_panel_day(
+    *,
+    date: datetime.date,
+    icon_bucket: str,
+    condition_label: str,
+    temp_max: float | None,
+    temp_min: float | None,
+    snowfall_sum: float | None,
+    freezing_level_height: float | None,
+    sunrise_local: str = "07:12",
+    sunset_local: str = "17:04",
+    hourly: tuple[dict[str, Any], ...] = (),
+) -> dict[str, Any]:
+    """Build one ForecastPanelDay-shaped context column.
+
+    Args:
+        date: The column's calendar day.
+        icon_bucket: The day's icon bucket.
+        condition_label: The day's En-GB condition label.
+        temp_max: Daily max air temperature, °C, or None.
+        temp_min: Daily min air temperature, °C, or None.
+        snowfall_sum: Daily snowfall total, cm, or None.
+        freezing_level_height: Day's freezing level, m, or None.
+        sunrise_local: Sunrise as "HH:MM" in the day's own offset.
+        sunset_local: Sunset as "HH:MM" in the day's own offset.
+        hourly: That day's hourly rows. Empty for a day past the horizon
+            that carries no series — which is most of the week.
+
+    Returns:
+        The context dict.
+
+    """
+    return {
+        "date": date,
+        "weekday_label": date.strftime("%a"),
+        "icon_bucket": icon_bucket,
+        # Through the real helper, not an f-string that rebuilds its logic:
+        # ``cloudy`` is the one bucket shipping a single file rather than a
+        # day/night pair, so ``f"{bucket}-day.svg"`` asked for a
+        # ``cloudy-day.svg`` that has never existed and the library rendered
+        # a broken image for the Overcast column (SNOW-781).
+        "icon_filename": weather_icon_filename(icon_bucket, "day"),
+        "condition_label": condition_label,
+        "temp_max": temp_max,
+        "temp_min": temp_min,
+        "snowfall_sum": snowfall_sum,
+        "freezing_level_height": freezing_level_height,
+        "precipitation_probability_max": None,
+        "sunrise_local": sunrise_local,
+        "sunset_local": sunset_local,
+        "hourly": list(hourly),
+        # SNOW-789: every cell in the picker is a control, so this decides
+        # only whether the day has a meteogram — presence of a series. The
+        # library renders the picker and the day line separately, so
+        # nothing here reveals anything; the flag is carried so the fixture
+        # stays the same shape as the real ForecastPanelDay.
+        "selectable": bool(hourly),
+    }
+
+
+def _build_weather_masthead_variants() -> tuple[dict[str, Any], ...]:
+    """Build the weather-masthead variants.
+
+    One per container, because the containers are what the variants are
+    FOR since the page became the map's sheet (Hugo, 25 Oct 2026): the
+    page's ``<h1>``, the sheet's truncating ``<h2>`` with its ×, and a
+    point with no height and no row, which has no symbol to draw.
+
+    Returns:
+        The variant tuple.
+
+    """
+    day = _forecast_panel_day(
+        date=datetime.date(2026, 1, 12),
+        icon_bucket="moderate_snow",
+        condition_label="Snow",
+        temp_max=-1.0,
+        temp_min=-8.0,
+        snowfall_sum=22.0,
+        freezing_level_height=1200.0,
+        sunrise_local="08:14",
+        sunset_local="17:02",
+    )
+    return (
+        {
+            "caption": "On the forecast page — the name is the page's heading",
+            "solo": True,
+            "context": {
+                "heading": "Mont Fort",
+                "location": {"elevation_m": 3328.0},
+                "day": day,
+                "testid_prefix": "component-library-masthead",
+            },
+        },
+        {
+            "caption": "In the map's weather sheet — truncates, ends in its ×",
+            "solo": True,
+            "context": {
+                "heading": "Martigny-Verbier",
+                "location": {"elevation_m": 2031.0},
+                "day": day,
+                "in_map": True,
+                "testid_prefix": "component-library-masthead-sheet",
+            },
+        },
+        {
+            "caption": "No height, no row — no symbol",
+            "solo": True,
+            "context": {
+                "heading": "Weather station",
+                "location": {"elevation_m": None},
+                "day": None,
+                "testid_prefix": "component-library-masthead-bare",
+            },
+        },
+    )
+
+
+def _build_weather_day_summary_variants() -> tuple[dict[str, Any], ...]:
+    """Build the weather-day-summary variants.
+
+    A recorded day, a forward day (which opens with "Forecast"), and the
+    two sentences a day with no figures says instead.
+
+    Returns:
+        The variant tuple.
+
+    """
+    day = _forecast_panel_day(
+        date=datetime.date(2026, 1, 12),
+        icon_bucket="moderate_snow",
+        condition_label="Snow",
+        temp_max=-3.0,
+        temp_min=-10.0,
+        snowfall_sum=8.0,
+        freezing_level_height=1630.0,
+        sunrise_local="07:25",
+        sunset_local="18:40",
+    )
+    return (
+        {
+            "caption": "A day's high and low, new snow and wind",
+            "solo": True,
+            "context": {"day": day, "testid_prefix": "component-library-summary"},
+        },
+        {
+            "caption": "Dated, on the page, which has no date row",
+            "solo": True,
+            "context": {
+                "day": day,
+                "dated": True,
+                "testid_prefix": "component-library-summary-dated",
+            },
+        },
+        {
+            "caption": "A day after today is a forecast",
+            "solo": True,
+            "context": {
+                "day": day,
+                "is_forecast": True,
+                "testid_prefix": "component-library-summary-forecast",
+            },
+        },
+        {
+            "caption": "A forward day the forecast does not reach",
+            "solo": True,
+            "context": {
+                "day": None,
+                "is_forecast": True,
+                "testid_prefix": "component-library-summary-none",
+            },
+        },
+        {
+            "caption": "A past day with no row",
+            "solo": True,
+            "context": {
+                "day": None,
+                "testid_prefix": "component-library-summary-empty",
+            },
+        },
+    )
+
+
+WEATHER_DAY_SUMMARY_VARIANTS: tuple[dict[str, Any], ...] = (
+    _build_weather_day_summary_variants()
+)
+
+
+WEATHER_MASTHEAD_VARIANTS: tuple[dict[str, Any], ...] = (
+    _build_weather_masthead_variants()
+)
+
+
+def _build_weather_day_picker_variants() -> tuple[dict[str, Any], ...]:
+    """Build the weather-day-picker variants.
+
+    A full seven-day week, because seven is the grid the picker is built
+    on (``FORECAST_DAYS``) and a shorter fixture would leave the library
+    showing empty cells the real page never has. The second variant is the
+    same week with the temperatures missing, which is Open-Meteo dropping
+    a variable for the model backing those coordinates — the cells fall
+    back to em-dashes rather than collapsing.
+
+    Every cell is a control, so each library variant needs its own
+    ``selector_name``: two pickers sharing a group name would let a click
+    in one deselect the other.
+
+    Returns:
+        The variant tuple.
+
+    """
+    anchor = datetime.date(2026, 1, 12)
+    conditions = (
+        ("moderate_snow", "Snow", -1.0, -8.0),
+        ("light_snow", "Light snow", -2.0, -9.0),
+        ("cloudy", "Overcast", 0.0, -6.0),
+        ("clear", "Clear", 3.0, -4.0),
+        ("light_rain", "Light rain", 6.0, 1.0),
+        ("thunder", "Thunderstorm", 8.0, 2.0),
+        ("fog", "Fog", 4.0, -1.0),
+    )
+    week = [
+        _forecast_panel_day(
+            date=anchor + datetime.timedelta(days=index),
+            icon_bucket=bucket,
+            condition_label=label,
+            temp_max=temp_max,
+            temp_min=temp_min,
+            snowfall_sum=None,
+            freezing_level_height=1200.0,
+            # Every day carries a series — the real shape since SNOW-1337,
+            # and what decides which cells have a meteogram behind them.
+            # It changes nothing here: every cell is a control regardless
+            # (SNOW-789).
+            hourly=({"time": "2026-01-12T09:00"},),
+        )
+        for index, (bucket, label, temp_max, temp_min) in enumerate(conditions)
+    ]
+    return (
+        {
+            "caption": "A full week — the first cell opens selected",
+            "solo": True,
+            "context": {
+                "panel": {"days": week},
+                "testid_prefix": "component-library-day-picker",
+                "selector_name": "component-library-day-picker",
+            },
+        },
+        {
+            "caption": "No temperatures — Open-Meteo dropped the variable",
+            "solo": True,
+            "context": {
+                "panel": {
+                    "days": [
+                        {**day, "temp_max": None, "temp_min": None} for day in week
+                    ]
+                },
+                "testid_prefix": "component-library-day-picker-sparse",
+                "selector_name": "component-library-day-picker-sparse",
+            },
+        },
+    )
+
+
+WEATHER_DAY_PICKER_VARIANTS: tuple[dict[str, Any], ...] = (
+    _build_weather_day_picker_variants()
+)
+
+
+def _build_weather_day_line_variants() -> tuple[dict[str, Any], ...]:
+    """Build the weather-day-line variants.
+
+    Neither variant passes ``reveal_index``: the library has no picker, so
+    a row that opted into the hiding class would render as a blank panel.
+    That is the same shape the backfilled one-day page uses.
+
+    The second variant drops the freezing level, which Open-Meteo does
+    per model. It is tested ``is not None`` rather than for truthiness on
+    the page, so a genuine 0 m still prints — that is a reading, not a
+    gap.
+
+    Returns:
+        The variant tuple.
+
+    """
+    anchor = datetime.date(2026, 1, 12)
+    return (
+        {
+            "caption": "Freezing level and daylight",
+            "solo": True,
+            "context": {
+                "day": _forecast_panel_day(
+                    date=anchor,
+                    icon_bucket="moderate_snow",
+                    condition_label="Snow",
+                    temp_max=-1.0,
+                    temp_min=-8.0,
+                    snowfall_sum=22.0,
+                    freezing_level_height=1200.0,
+                    sunrise_local="08:14",
+                    sunset_local="17:02",
+                ),
+                "testid_prefix": "component-library-day-line",
+            },
+        },
+        {
+            "caption": "No freezing level — daylight alone",
+            "solo": True,
+            "context": {
+                "day": _forecast_panel_day(
+                    date=anchor + datetime.timedelta(days=3),
+                    icon_bucket="clear",
+                    condition_label="Clear",
+                    temp_max=3.0,
+                    temp_min=-4.0,
+                    snowfall_sum=None,
+                    freezing_level_height=None,
+                    sunrise_local="08:11",
+                    sunset_local="17:07",
+                ),
+                "testid_prefix": "component-library-day-line-sparse",
+            },
+        },
+    )
+
+
+WEATHER_DAY_LINE_VARIANTS: tuple[dict[str, Any], ...] = (
+    _build_weather_day_line_variants()
+)
+
+
+# ``weather`` is a plain dict rather than a model instance: the partial
+# reads one field off it, and the library renders without a database.
+WEATHER_PROVENANCE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "The last of four daily fetches",
+        "solo": True,
+        "context": {
+            "weather": {
+                "fetched_at": datetime.datetime(2026, 1, 12, 18, 5, tzinfo=datetime.UTC)
+            },
+            "testid_prefix": "component-library-provenance",
+        },
+    },
+    {
+        "caption": "A card footer with its onward link (SNOW-1157)",
+        "solo": True,
+        "context": {
+            "weather": {
+                "fetched_at": datetime.datetime(2026, 1, 12, 11, 0, tzinfo=datetime.UTC)
+            },
+            "testid_prefix": "component-library-provenance-linked",
+            "link_url": "#",
+            "link_text": "View hourly forecast →",
+        },
+    },
+)
+
+
+# Forecast source (2026-10-28) ---------------------------------------------
+# Plain dicts in the shape ``includes/_forecast_source.html`` reads from a
+# NearestForecast or a TripWeather.
+FORECAST_SOURCE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "A saved pin borrows the nearest curated point",
+        "solo": True,
+        "context": {
+            "source": {
+                "label": "Mont Fort",
+                "elevation_m": 3329,
+                "distance_km": 2.13,
+                "is_same_place": False,
+            },
+            "anchor": "pin",
+        },
+    },
+    {
+        "caption": "A trip, from its meeting point; no height known",
+        "solo": True,
+        "context": {
+            "source": {
+                "label": "Val de Bagnes",
+                "elevation_m": None,
+                "distance_km": 23.4,
+                "is_same_place": False,
+            },
+            "anchor": "meeting",
+        },
+    },
+    {
+        "caption": "The place IS the point (a saved resort's own pin)",
+        "solo": True,
+        "context": {
+            "source": {
+                "label": "Verbier",
+                "elevation_m": 1500,
+                "distance_km": 0.0,
+                "is_same_place": True,
+            },
+            "anchor": "pin",
+        },
+    },
+)
+
+
+# Resort forecast strip (SNOW-1157) -----------------------------------------
+# Mirrors ``apps.public.bulletin_panels._resort_forecast_points``: one dict per point
+# with its role, label, rounded elevation, URL, today's row (a plain dict —
+# the provenance line reads only ``fetched_at``) and its ForecastPanel, built
+# from ``_forecast_panel_day`` so the tiles read the real column shape.
+
+# One week per point: (icon bucket, label, max, min, new snow) per day.
+_ForecastWeek = tuple[tuple[str, str, float | None, float | None, float | None], ...]
+
+_SNOW_WEEK: _ForecastWeek = (
+    ("moderate_snow", "Snow", -1.0, -6.0, 8.0),
+    ("moderate_snow", "Snow", -2.0, -7.0, 12.0),
+    ("cloudy", "Overcast", 0.0, -5.0, 0.0),
+    ("clear", "Clear", 2.0, -4.0, 0.0),
+    ("clear", "Clear", 3.0, -3.0, 0.0),
+    ("cloudy", "Overcast", 1.0, -4.0, 0.0),
+    ("light_snow", "Light snow", -1.0, -6.0, 5.0),
+)
+
+_RAIN_WEEK: _ForecastWeek = (
+    ("light_rain", "Light rain", 13.0, 8.0, 0.0),
+    ("moderate_rain", "Rain", 16.0, 7.0, 0.0),
+    ("light_rain", "Light rain", 12.0, 2.0, 0.0),
+    ("cloudy", "Overcast", 15.0, 7.0, 0.0),
+    ("drizzle", "Drizzle", 9.0, 4.0, 0.0),
+    ("light_rain", "Light rain", 14.0, 6.0, 0.0),
+    ("cloudy", "Overcast", 12.0, 5.0, 0.0),
+)
+
+
+def _forecast_point(
+    role: str,
+    label: str,
+    elevation_m: int | None,
+    week: _ForecastWeek | None,
+    *,
+    anchor: datetime.date,
+    shift: float = 0.0,
+) -> dict[str, Any]:
+    """Build one point of the resort forecast strip.
+
+    Args:
+        role: ``"base"`` / ``"mid"`` / ``"top"``.
+        label: The chip's role label.
+        elevation_m: The chip's elevation, or None.
+        week: The point's days, or None for a point with no row today.
+        anchor: Today — the first tile's date.
+        shift: Degrees added to every temperature, so higher points read
+            colder than the base without a second table.
+
+    Returns:
+        The point dict.
+
+    """
+    panel = None
+    if week is not None:
+        panel = {
+            "days": [
+                _forecast_panel_day(
+                    date=anchor + datetime.timedelta(days=index),
+                    icon_bucket=bucket,
+                    condition_label=condition,
+                    temp_max=None if high is None else high + shift,
+                    temp_min=None if low is None else low + shift,
+                    snowfall_sum=snow,
+                    freezing_level_height=None,
+                )
+                for index, (bucket, condition, high, low, snow) in enumerate(week)
+            ]
+        }
+    return {
+        "role": role,
+        "label": label,
+        "elevation_m": elevation_m,
+        "url": "#",
+        "weather": (
+            {"fetched_at": datetime.datetime(2026, 1, 14, 11, 0, tzinfo=datetime.UTC)}
+            if week is not None
+            else None
+        ),
+        "panel": panel,
+    }
+
+
+def _build_resort_forecast_variants() -> tuple[dict[str, Any], ...]:
+    """Build the resort-forecast-strip variants.
+
+    Each variant names its own ``selector_name``: the chips are radios, and
+    two strips sharing a group on one library page would deselect each
+    other.
+
+    Returns:
+        The variant tuple.
+
+    """
+    winter = datetime.date(2026, 1, 14)
+    autumn = datetime.date(2026, 10, 20)
+
+    def points(week: _ForecastWeek, anchor: datetime.date) -> list[dict[str, Any]]:
+        """Return Base / Mid / Summit, each colder than the one below."""
+        return [
+            _forecast_point("base", "Base", 1494, week, anchor=anchor),
+            _forecast_point("mid", "Mid", 2200, week, anchor=anchor, shift=-3.0),
+            _forecast_point("top", "Summit", 3330, week, anchor=anchor, shift=-8.0),
+        ]
+
+    sparse_week: _ForecastWeek = (
+        ("light_snow", "Light snow", -3.0, None, None),
+        ("moderate_snow", "Snow", None, None, 14.0),
+        ("cloudy", "Overcast", -4.0, -9.0, 0.0),
+    )
+    return (
+        {
+            "caption": "Snow week — the design board, three points, Base checked",
+            "solo": True,
+            "context": {
+                "forecast_points": points(_SNOW_WEEK, winter),
+                "target_date": winter,
+                "is_today": True,
+                "forecast_available": True,
+                "forecast_updated_at": datetime.datetime(
+                    2026, 1, 15, 6, 1, tzinfo=datetime.UTC
+                ),
+                "selector_name": "component-library-forecast-snow",
+            },
+        },
+        {
+            "caption": "Rain week out of season — zero new snow reads 0 cm",
+            "solo": True,
+            "context": {
+                "forecast_points": points(_RAIN_WEEK, autumn),
+                "target_date": autumn,
+                "is_today": True,
+                "forecast_available": True,
+                "forecast_updated_at": datetime.datetime(
+                    2026, 1, 15, 6, 1, tzinfo=datetime.UTC
+                ),
+                "selector_name": "component-library-forecast-rain",
+            },
+        },
+        {
+            "caption": "Single point — the resort's pin standing in for Base",
+            "solo": True,
+            "context": {
+                "forecast_points": [
+                    _forecast_point("base", "Base", None, _SNOW_WEEK, anchor=winter)
+                ],
+                "target_date": winter,
+                "is_today": True,
+                "forecast_available": True,
+                "forecast_updated_at": datetime.datetime(
+                    2026, 1, 15, 6, 1, tzinfo=datetime.UTC
+                ),
+                "selector_name": "component-library-forecast-single",
+            },
+        },
+        {
+            "caption": (
+                "Missing data — a three-day window with dropped values, and a "
+                "Summit with no row today"
+            ),
+            "solo": True,
+            "context": {
+                "forecast_points": [
+                    _forecast_point("base", "Base", 1494, sparse_week, anchor=winter),
+                    _forecast_point("top", "Summit", 3330, None, anchor=winter),
+                ],
+                "target_date": winter,
+                "is_today": True,
+                "forecast_available": True,
+                "forecast_updated_at": datetime.datetime(
+                    2026, 1, 15, 6, 1, tzinfo=datetime.UTC
+                ),
+                "selector_name": "component-library-forecast-sparse",
+            },
+        },
+        {
+            "caption": "No forecast at all — one line stands in for the card",
+            "solo": True,
+            "context": {
+                "forecast_points": [
+                    _forecast_point("base", "Base", 1620, None, anchor=winter),
+                ],
+                "target_date": winter,
+                "is_today": True,
+                "forecast_available": False,
+                "selector_name": "component-library-forecast-none",
+            },
+        },
+    )
+
+
+RESORT_FORECAST_VARIANTS: tuple[dict[str, Any], ...] = _build_resort_forecast_variants()
+
+
+# ── Hourly chart (SNOW-723) ──────────────────────────────────────────────
+
+# The three real days committed under ``apps/weather/sample_days/``. Real
+# observed weather rather than a generated series, because a chart fixture
+# has to be shaped like weather or it cannot show whether the chart works:
+# SNOW-776's meteogram fixture was an arithmetic ramp, every band rendered
+# as a straight diagonal, and it was impossible to tell which of the visual
+# problems were real ones. See that directory's README for what each day is
+# and why these three.
+_SAMPLE_DAYS_DIR = (
+    pathlib.Path(__file__).resolve().parent.parent / "weather" / "sample_days"
+)
+
+# Each entry is (file, caption, cursor hour). The cursor hour renders the
+# time-of-day line, which only draws when the chart's day IS the current
+# day — so the library pins a "now" onto each sample day rather than
+# leaving every variant without the mark. Different hours across the three
+# so the line is visible against different parts of the shape.
+_HOURLY_CHART_CAPTIONS: tuple[tuple[str, str, tuple[int, int]], ...] = (
+    (
+        "2026-02-16-verbier-storm.json",
+        "Storm day — 15.7 cm of snow, temperature crossing zero, gusts to 53",
+        (14, 20),
+    ),
+    (
+        "2026-01-05-verbier-cold-clear.json",
+        "Cold clear day — no precipitation at all, so both bands collapse",
+        (9, 45),
+    ),
+    (
+        "2026-04-11-verbier-spring-thaw.json",
+        "Spring thaw — never near freezing, so no 0 °C line and no station mark",
+        (17, 0),
+    ),
+)
+
+
+def _load_sample_day(filename: str) -> dict[str, Any]:
+    """
+    Read one committed sample day off disk.
+
+    Args:
+        filename: The file's name within ``apps/weather/sample_days/``.
+
+    Returns:
+        The day, in the provider's own shape.
+
+    """
+    day: dict[str, Any] = json.loads(
+        (_SAMPLE_DAYS_DIR / filename).read_text(encoding="utf-8")
+    )
+    return day
+
+
+def _build_hourly_chart_variants() -> tuple[dict[str, Any], ...]:
+    """
+    Build the hourly-chart variants from the three committed sample days.
+
+    The three disagree on every axis the chart draws, which is the point:
+    between them they exercise the empty bar bands, a temperature domain
+    that never reaches zero, and a freezing level too far from the station
+    for the elevation line to be worth drawing.
+
+    Returns:
+        The variant tuple.
+
+    """
+    variants: list[dict[str, Any]] = []
+    for filename, caption, (hour, minute) in _HOURLY_CHART_CAPTIONS:
+        day = _load_sample_day(filename)
+        location = day["location"]
+        # The sample days are local time and carry their own UTC offset, so
+        # the cursor's clock is built in that offset rather than in UTC —
+        # a "now" of 14:20 has to mean 14:20 at the location, not 14:20 in
+        # a timezone the chart never mentions.
+        at_location = datetime.timezone(
+            datetime.timedelta(seconds=location["utc_offset_seconds"])
+        )
+        chart = build_hourly_chart(
+            day,
+            elevation=location["elevation"],
+            location_label=location["name"],
+            now=datetime.datetime.fromisoformat(day["date"]).replace(
+                hour=hour, minute=minute, tzinfo=at_location
+            ),
+        )
+        variants.append(
+            {
+                "caption": caption,
+                "solo": True,
+                "context": {
+                    "chart": chart,
+                    "testid_prefix": f"component-library-chart-{day['slug']}",
+                    # Provenance as we can actually state it. The design
+                    # handoff's copy said the freezing level is "derived
+                    # using atmospheric lapse rate"; it is not — it is a
+                    # variable the forecast model publishes and we request
+                    # directly (see apps.weather.services.fetch).
+                    "about": {
+                        "elevation": f"{location['elevation']:,.0f} m",
+                        "freezing": "Published by the forecast model",
+                        "updated": f"{day['date']} · 06:00 {location['timezone']}",
+                        "source": day["source"]["provider"],
+                    },
+                },
+            }
+        )
+    return tuple(variants)
+
+
+HOURLY_CHART_VARIANTS: tuple[dict[str, Any], ...] = _build_hourly_chart_variants()
+
+
+def _build_day_strips_variants() -> tuple[dict[str, Any], ...]:
+    """
+    Build the day-strips variants (SNOW-1219) from the committed sample days.
+
+    The same three days as the meteogram, each opened at the clock its
+    caption names, so the selected block differs between them: the storm's
+    afternoon, the cold day's morning, the thaw's evening.
+
+    Returns:
+        The variant tuple.
+
+    """
+    variants: list[dict[str, Any]] = []
+    for filename, caption, (hour, minute) in _HOURLY_CHART_CAPTIONS:
+        day = _load_sample_day(filename)
+        location = day["location"]
+        at_location = datetime.timezone(
+            datetime.timedelta(seconds=location["utc_offset_seconds"])
+        )
+        strips = build_day_strips(
+            day,
+            elevation=location["elevation"],
+            now=datetime.datetime.fromisoformat(day["date"]).replace(
+                hour=hour, minute=minute, tzinfo=at_location
+            ),
+        )
+        variants.append(
+            {
+                "caption": caption,
+                "solo": True,
+                "context": {
+                    "strips": strips,
+                    "testid_prefix": f"component-library-strips-{day['slug']}",
+                },
+            }
+        )
+    return tuple(variants)
+
+
+DAY_STRIPS_VARIANTS: tuple[dict[str, Any], ...] = _build_day_strips_variants()
+
+
+DAY_FIGURES_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "A day with no hourly series — one figure a row",
+        "context": {
+            "day": {
+                "temp_max": -1.0,
+                "temp_min": -8.0,
+                "freezing_level_height": 1900.0,
+                "snowfall_sum": 0.0,
+                "wind_speed_max": 18.0,
+                "wind_bearing": 315.0,
+                "sunrise_local": "07:38",
+                "sunset_local": "17:52",
+            },
+            "testid_prefix": "component-library-day-figures",
+        },
+    },
+    {
+        "caption": "A snowy later day",
+        "context": {
+            "day": {
+                "temp_max": 0.0,
+                "temp_min": -6.0,
+                "freezing_level_height": 1400.0,
+                "snowfall_sum": 11.0,
+                "wind_speed_max": 34.0,
+                "wind_bearing": 260.0,
+                "sunrise_local": "07:41",
+                "sunset_local": "17:49",
+            },
+            "testid_prefix": "component-library-day-figures-snow",
+        },
+    },
+)

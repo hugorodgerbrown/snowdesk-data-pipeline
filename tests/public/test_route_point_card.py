@@ -23,7 +23,7 @@ from django.template.loader import render_to_string
 from django.test import Client
 from django.urls import reverse
 
-from apps.public._component_fixtures import POINT_CARD_VARIANTS
+from apps.design_system._component_fixtures import POINT_CARD_VARIANTS
 from tests.factories import UserFactory
 
 

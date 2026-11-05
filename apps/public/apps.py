@@ -15,7 +15,3 @@ class PublicConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "apps.public"
     verbose_name = "Public Bulletin Site"
-
-    def ready(self) -> None:
-        """Register system checks declared in ``apps/public/checks.py``."""
-        from . import checks  # noqa: F401 — import side-effect: registers checks

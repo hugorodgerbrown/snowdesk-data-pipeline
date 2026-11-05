@@ -45,7 +45,7 @@ from rapidfuzz import fuzz, process
 
 from apps.locations.models import Location
 from apps.mcp_server.normalise import normalise
-from apps.public.api import COUNTRY_NAMES
+from apps.public.bulletin_panels import COUNTRY_NAMES
 from apps.regions.models import MajorRegion, MicroRegion, RegionAlias, Resort
 from track.geo import haversine_km
 

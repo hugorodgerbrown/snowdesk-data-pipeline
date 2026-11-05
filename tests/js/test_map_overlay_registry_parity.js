@@ -68,7 +68,7 @@ const { overlayLayers } = window.snowdeskMapState;
 const ROOT = join(import.meta.dirname, '..', '..');
 const MAP_EMBED = readFileSync(
   join(
-    ROOT, 'apps', 'public', 'templates', 'public', 'partials', '_map_embed.html',
+    ROOT, 'apps', 'map', 'templates', 'public', 'partials', '_map_embed.html',
   ),
   'utf8',
 );

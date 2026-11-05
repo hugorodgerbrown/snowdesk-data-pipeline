@@ -535,7 +535,7 @@
    two until the JS corrected the count (the roundel sizing audit). The
    "yours" capsule holds four buttons; if you add or remove a child of
    .map-controls-collapsible-inner, change the 4 below to match
-   (tests/public/test_map_page.py asserts the two agree).
+   (tests/map/test_map_page.py asserts the two agree).
 
    The wrapper animates height and is what clips; the inner — the capsule
    itself — holds the flex column, because transitioning height needs a

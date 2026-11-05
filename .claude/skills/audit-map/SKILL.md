@@ -2,7 +2,7 @@
 name: audit-map
 description: >-
   Technical review of the map subsystem — static/js/map*.js and its core
-  modules, apps/public/api.py's map endpoints, map.html and _map_embed.html,
+  modules, apps/map/api.py's map endpoints, map.html and _map_embed.html,
   static/css/map.css. Re-verifies the previous cycle's findings against the
   code, measures the page, finds what's new, then raises a dated parent ticket
   in Linear with one scoped child per new finding and writes a dated HTML
@@ -77,7 +77,7 @@ baseline commit.
 git fetch origin main
 git checkout -B chore/map-review-$(date -u +%F) origin/main
 git rev-list --count <previous-baseline>..HEAD
-git diff --name-only <previous-baseline>..HEAD -- static/js apps/public docs/map-and-api.md | sort
+git diff --name-only <previous-baseline>..HEAD -- static/js apps/map apps/public docs/map-and-api.md | sort
 ```
 
 That last diff is the cycle's reading list. A file in it that the explainer
@@ -191,7 +191,7 @@ The previous cycle cannot have anticipated the last week. Look for:
   performance finding
 - New overlays — do they register with `window.pwaMapOverlays`, and do they
   have an owner in the overlay-to-layer tables?
-- New endpoints in `apps/public/api.py` — cached like their siblings? free of
+- New endpoints in `apps/map/api.py` — cached like their siblings? free of
   `Vary: Cookie` (nothing reads `request.user`) if publicly cacheable?
 - New `docs/decisions/` entries that supersede something the explainer says
 

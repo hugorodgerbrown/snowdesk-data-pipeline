@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from apps.public.views import ElevationBounds
+    from apps.public.bulletin_panels import ElevationBounds
 
 RELEVANCE_APPLIES = "APPLIES"
 RELEVANCE_ABOVE = "ABOVE"
@@ -61,10 +61,11 @@ def _relevance_from_bounds(
     Adapt a problem card's ``ElevationBounds``-like value into a verdict.
 
     Duck-typed on ``.bound_type`` / ``.lower`` / ``.upper`` so callers don't
-    need to import ``apps.public.views.ElevationBounds`` — any object with that
-    shape works. Non-numeric bound strings (e.g. ``"treeline"``) leave the
-    problem unannotated rather than fabricate an altitude verdict, per the
-    highlight-never-suppress, never-fabricate ticket constraint.
+    need to import ``apps.public.bulletin_panels.ElevationBounds`` — any
+    object with that shape works. Non-numeric bound strings (e.g.
+    ``"treeline"``) leave the problem unannotated rather than fabricate an
+    altitude verdict, per the highlight-never-suppress, never-fabricate
+    ticket constraint.
 
     Args:
         pin_elevation: The favourite's elevation in metres.
@@ -100,7 +101,7 @@ def annotate_problem_relevance(
 
     Args:
         cards: Problem cards as produced by
-            ``apps.public.views.problem_cards_for_bulletin`` (each carries an
+            ``apps.public.bulletin_panels.problem_cards_for_bulletin`` (each carries an
             ``elevation`` key holding an ``ElevationBounds``-like value).
         pin_elevation: The favourite's elevation in metres.
 

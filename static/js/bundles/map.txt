@@ -27,7 +27,7 @@ scrubber_core.js
 # which reads MAX_FORWARD_DAYS at parse time to bound its boot ceiling.
 # The scrubber degrades quietly rather than breaking if reordered (it
 # falls back to a today-only ceiling), so nothing would crash to tell
-# you — and tests/public/test_map_script_order.py does not cover this
+# you — and tests/map/test_map_script_order.py does not cover this
 # pair, its regex matching only map*.js filenames.
 calendar_core.js
 
@@ -319,7 +319,7 @@ map_calendar.js
 # publishes at parse time — hence AFTER the bundle. Deliberately
 # outside the bundle's contiguous run (it is not a bundle member: no
 # bundle module reads it), which is what
-# tests/public/test_map_script_order.py asks of a tag placed here.
+# tests/map/test_map_script_order.py asks of a tag placed here.
 map_roundel_overlay_state.js
 
 # SNOW-1195: the date row's day steps and the scrubber's keys.
@@ -368,7 +368,7 @@ terrain_filter_sheet.js
 # HACK MODE (feature discovery): the drop-zone control — one-tap
 # "download the ground around me". Outside the map bundle (nothing in
 # the bundle reads it), so its tag sits BELOW the bundle's contiguous
-# run — see tests/public/test_map_script_order.py. After
+# run — see tests/map/test_map_script_order.py. After
 # map_geolocate.js, whose listener answers the locate request it
 # dispatches.
 map_drop_zone.js
@@ -385,7 +385,7 @@ map_region_pick.js
 # SNOW-1077: the zoom control at the top of the bottom-left stack.
 # Reads MAP and window.pwaZoomGates, both from map.js at parse time —
 # hence after the bundle, and outside its contiguous run (no bundle
-# module reads it); see tests/public/test_map_script_order.py. Its pure
+# module reads it); see tests/map/test_map_script_order.py. Its pure
 # half, zoom_control_core.js, loads just before it.
 zoom_control_core.js
 

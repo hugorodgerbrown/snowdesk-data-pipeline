@@ -3,7 +3,7 @@
 #
 # Scans every .html template under the configured template roots, and every
 # first-party .js file under static/js, for patterns that bypass the design
-# tokens registered in apps/public/design_tokens.py (radius literals, raw
+# tokens registered in apps/design_system/design_tokens.py (radius literals, raw
 # Tailwind palette utilities, inline primary-button class-strings that should
 # use a `_button` partial, etc).
 #
@@ -60,6 +60,10 @@ TEMPLATE_ROOTS: tuple[Path, ...] = (
     # SNOW-819. Added with the app, not after it — the routes entry above
     # records what happens otherwise.
     REPO_ROOT / "apps" / "trips" / "templates",
+    # SNOW-1427: the component library moved out of apps/public.
+    REPO_ROOT / "apps" / "design_system" / "templates",
+    # SNOW-1428: the map moved out of apps/public.
+    REPO_ROOT / "apps" / "map" / "templates",
 )
 
 # SNOW-619: first-party JavaScript, scanned for the same token rules. Only

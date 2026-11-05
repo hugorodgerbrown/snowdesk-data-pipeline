@@ -2,7 +2,7 @@
 apps/regions/services/resort_edit.py — rules shared by the resort write paths.
 
 Two places create a resort from a coordinate: the map editor's
-``edit_resort_create`` (``apps.public.api``) and the ops MCP server's
+``edit_resort_create`` (``apps.map.editor``) and the ops MCP server's
 ``create_resort`` (``apps.mcp_server.resort_tools``, SNOW-1401). Both need
 the same two answers, so they are stated once here:
 

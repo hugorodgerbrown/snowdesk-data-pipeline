@@ -25,7 +25,7 @@
  * roundel was signed in. SNOW-724 retired the flag, and the branch this
  * file covers became the one an anonymous visitor actually gets — which is
  * the argument for having tested it all along. See
- * apps.public.views._routes_context for the gate that remains.
+ * apps.map.views._routes_context for the gate that remains.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';

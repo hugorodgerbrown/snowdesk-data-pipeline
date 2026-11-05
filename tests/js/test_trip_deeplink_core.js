@@ -16,7 +16,7 @@ import '../../static/js/trip_deeplink_core.js';
 
 const core = self.pwaTripDeepLinkCore;
 
-/** The templates as apps.public.views._trips_context emits them. */
+/** The templates as apps.public.map_shared.trip_url_templates emits them. */
 const TEMPLATES = {
   uuid: '/trips/__UUID__/route.geojson',
   token: '/trips/s/__TOKEN__/route.geojson',

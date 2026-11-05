@@ -1137,7 +1137,7 @@ class TestObservationListThreeWordAddress:
     On its own line beneath "<region> · <age>", and ONLY here. The map's
     community overlay is public and anonymises what it publishes; the
     matching guard lives in
-    ``tests/public/test_map_api.py::TestCommunityReportsGeojson``.
+    ``tests/map/test_map_api.py::TestCommunityReportsGeojson``.
     """
 
     @override_flag("what3words", active=True)

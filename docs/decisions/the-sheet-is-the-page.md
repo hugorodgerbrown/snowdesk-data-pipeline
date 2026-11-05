@@ -17,13 +17,13 @@ map's right, for a region as for a resort (SNOW-1173).
 
 | | Region | Resort |
 |---|---|---|
-| Builder | `views.build_bulletin_body` | `views.build_resort_body` |
+| Builder | `bulletin_panels.build_bulletin_body` | `bulletin_panels.build_resort_body` |
 | Body | `public/partials/_region_body.html` | `public/partials/_resort_body.html` |
 | Page | `bulletin.html` (`bulletin_detail`) | `resort.html` (`resort_detail`) |
 | Sheet | `_region_sheet_body.html` (`region_sheet_partial`, every width since SNOW-1173) | `_place_sheet_body.html` (`resort_sheet_partial`, every width) |
 
 **A location's weather joined them (Hugo, 24 Oct 2026):** builder
-`views._location_forecast_context`, body
+`weather_points._location_forecast_context`, body
 `public/partials/_weather_body.html`, page `location_weather.html`, sheet
 `_weather_detail.html` (`api.weather_detail`). The sheet opens the week on
 the map's day; see [`weather-surfaces`](../weather-surfaces.md). Since 25

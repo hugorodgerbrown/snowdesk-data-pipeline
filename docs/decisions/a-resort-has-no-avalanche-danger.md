@@ -101,14 +101,14 @@ danger back on the resort.
   same reason — by the bubble phase the row has been repainted away.
 - A weather point that is neither a resort's point nor a region's centroid
   offers no "Where this is" rows rather than scanning every boundary on a
-  tap (`views._weather_point_places`).
+  tap (`weather_points._weather_point_places`).
 
 ## The first visit is taught it (SNOW-1231)
 
 Someone arriving for the first time looks for their resort's danger, and
 this decision means they will not find it on the resort. So the welcome
 card's "Find a resort" is a three-step walkthrough rather than plain search
-(`static/js/map_resort_guide.js`, `apps/public/resort_guide.py`): search
+(`static/js/map_resort_guide.js`, `apps/map/resort_guide.py`): search
 opens with a few popular resorts, the resort's sheet says the resort has no
 danger level of its own and rings its region row, and the region's sheet is
 the bulletin. It watches the ordinary surfaces rather than replacing them,

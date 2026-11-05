@@ -52,7 +52,7 @@ prefixes depend on this ordering — don't reorder
 | Route | View | Notes |
 |-------|------|-------|
 | `/` | `public.views.home` | **The homepage.** The headline, then the daily read — "Across the Alps today", what moved since yesterday per country, from `RegionDayRating` and the stored bulletin states, cached 15 minutes and absent on a day nothing is rated (SNOW-1357, `apps/public/daily_read.py`) — then four cards (conditions, route planning, weather, trips) each with a screenshot, the authority caveat and one button into `/map/`. Loads no map JavaScript. A request carrying any parameter other than attribution (`utm_*`, `ref`, …) is a map link from before the move and 301s to `/map/` with the query string intact. |
-| `/map/` | `public.views.map_page` | **The interactive map** — the app, and the manifest's `start_url`. Nothing over it on load; the tour is offered once, after the map settles (`#map-tour-offer`, SNOW-1117). CH-4115 (Martigny/Verbier) is pre-selected so the readout chip and breadcrumb are correct on first paint (SNOW-342). `?edit=resorts` / `?edit=locations` open the editors for a superuser (SNOW-74/86/724/755). |
+| `/map/` | `map.views.map_page` | **The interactive map** — the app, and the manifest's `start_url`. Nothing over it on load; the tour is offered once, after the map settles (`#map-tour-offer`, SNOW-1117). CH-4115 (Martigny/Verbier) is pre-selected so the readout chip and breadcrumb are correct on first paint (SNOW-342). `?edit=resorts` / `?edit=locations` open the editors for a superuser (SNOW-74/86/724/755). |
 | `/<region_id>/` | `bulletin_detail` | Today's bulletin for a region, never redirecting away. |
 | `/<region_id>/<slug>/` | `bulletin_detail` | Slugged form, the canonical shareable URL. |
 | `/<region_id>/<slug>/<date_str>/` | `bulletin_detail` | A specific day. Past days are immutable. |
@@ -109,8 +109,8 @@ guarded by `require_htmx` (a plain HTTP request gets a 400 — invariant 4 in
 [`AGENTS.md`](../AGENTS.md)). They live under a `partials/` prefix:
 
 - `/partials/season/<region_id>/` — season calendar ([`docs/calendar.md`](calendar.md))
-- `/partials/region-sheet/<region_id>/` — the phone region sheet's body, opened by any region selection on a phone (SNOW-1098, `apps/public/region_sheet.py`)
-- `/partials/place-sheet/resort/<slug>/` and `/partials/place-sheet/favourite/<uuid>/` — the phone place sheet's body, opened by a resort-pin or saved-pin tap on a phone; the favourite one is owner-only, a 404 for anyone else (SNOW-1100, `apps/public/place_sheet.py`)
+- `/partials/region-sheet/<region_id>/` — the phone region sheet's body, opened by any region selection on a phone (SNOW-1098, `apps/map/region_sheet.py`)
+- `/partials/place-sheet/resort/<slug>/` and `/partials/place-sheet/favourite/<uuid>/` — the phone place sheet's body, opened by a resort-pin or saved-pin tap on a phone; the favourite one is owner-only, a 404 for anyone else (SNOW-1100, `apps/map/place_sheet.py`)
 - `/partials/report/`, `/partials/report/form/`, `/partials/report/list/`,
   `/partials/report/<uuid>/delete/` — field-report submission, the
   reporter's own list, and delete

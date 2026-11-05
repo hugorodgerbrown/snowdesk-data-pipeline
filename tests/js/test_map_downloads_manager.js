@@ -19,12 +19,12 @@
  * not load, so there is no DOM element here for a click to reach any more.
  *
  * The fixture below mirrors
- * apps/public/templates/public/partials/_map_downloads_sheet.html. It is a
+ * apps/map/templates/public/partials/_map_downloads_sheet.html. It is a
  * hand-copy, which is the standing trade-off for this harness: Vitest
  * cannot render a Django template, so the alternative is not a better
  * fixture but no DOM coverage at all. The row and strings templates are
  * asserted against the REAL rendered page in
- * tests/public/test_map_page.py, which is what catches those two drifting
+ * tests/map/test_map_page.py, which is what catches those two drifting
  * apart; SNOW-649 retired tests/e2e/test_manage_downloads.py, which used to
  * cover the rest of the sheet's markup the same way.
  *
@@ -81,7 +81,7 @@ const DEFAULT_CUSTOM_NAME = 'Custom area %(n)s';
  * the real markup: it belongs to the rows partial by subject, but nesting
  * a `<template>` inside the body `<template>` makes the body unreadable
  * to anything that finds its end at the next `</template>` — which
- * `document.getElementById` and tests/public/test_ugc_panels.py both
+ * `document.getElementById` and tests/map/test_ugc_panels.py both
  * effectively do.
  *
  * The node ORDER here is kept in step with the real template even though

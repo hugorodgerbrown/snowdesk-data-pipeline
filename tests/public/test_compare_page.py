@@ -225,7 +225,7 @@ class TestSnowdeskEntryMatchesTheCode:
 
         sheet = (
             Path(settings.BASE_DIR)
-            / "apps/public/templates/public/partials/_map_terrain_filter_sheet.html"
+            / "apps/map/templates/public/partials/_map_terrain_filter_sheet.html"
         ).read_text()
         assert 'value="slope"' in sheet
         assert "slope-angle layer for Switzerland" in page

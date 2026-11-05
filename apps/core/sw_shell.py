@@ -113,11 +113,11 @@ def _shell_template_paths() -> tuple[Path, ...]:
     """
     return (
         REPO_ROOT / "apps" / "public" / "templates" / "public" / "base.html",
-        REPO_ROOT / "apps" / "public" / "templates" / "public" / "map.html",
+        REPO_ROOT / "apps" / "map" / "templates" / "public" / "map.html",
         REPO_ROOT / "apps" / "public" / "templates" / "public" / "offline.html",
         REPO_ROOT
         / "apps"
-        / "public"
+        / "map"
         / "templates"
         / "public"
         / "partials"

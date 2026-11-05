@@ -162,7 +162,7 @@ record:
 ## Data wiring
 
 `card.aspects` is populated by `_enrich_render_model_problem()` in
-`apps/public/views.py` (via `enrich_render_model`), from the render
+`apps/public/bulletin_panels.py` (via `enrich_render_model`), from the render
 model's per-problem `aspects` list. The original note, written before
 that helper existed, read:
 

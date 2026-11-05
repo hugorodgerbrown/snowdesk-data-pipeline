@@ -530,7 +530,7 @@ class TestTheRouteOpenFurniture:
         ribbon and the tour offer are conditional, and the test database
         has no season for the ribbon to render.
         """
-        partials = Path(__file__).resolve().parents[2] / "apps" / "public" / "templates"
+        partials = Path(__file__).resolve().parents[2] / "apps" / "map" / "templates"
         source = "".join(
             (partials / "public" / "partials" / name).read_text(encoding="utf-8")
             for name in ("_map_embed.html", "_season_ribbon.html")

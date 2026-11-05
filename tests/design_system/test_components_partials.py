@@ -1,0 +1,538 @@
+"""
+tests/design_system/test_components_partials.py — Tests for the new component partials.
+
+Covers:
+  _button.html     — all three variants × both sizes, full_width, is_anchor,
+                     extra_classes, button_id, button_type default.
+  _card.html       — chrome classes present, padding forwarded, center flag,
+                     extra classes, inner content preserved.
+  _status_page.html — rendered via real child templates (manage_sent,
+                     link_expired, account_deleted) using the test client;
+                     asserts on structural chrome and content.
+
+Follows the pattern in tests/public/test_nav_partial.py: render_to_string
+for partials, test client for full-page templates.
+"""
+
+from __future__ import annotations
+
+import pytest
+from django.contrib.auth.models import AnonymousUser
+from django.http import HttpRequest
+from django.template.loader import render_to_string
+from django.test import Client, RequestFactory
+
+from apps.public.templatetags.components import (
+    _button_chrome_classes,
+    _card_chrome_classes,
+)
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def rf() -> RequestFactory:
+    """Return a Django RequestFactory."""
+    return RequestFactory()
+
+
+@pytest.fixture()
+def anon_request(rf: RequestFactory) -> HttpRequest:
+    """Return a GET request with an anonymous user attached."""
+    request = rf.get("/")
+    request.user = AnonymousUser()
+    return request
+
+
+# ---------------------------------------------------------------------------
+# Helper function unit tests (pure Python, no DB)
+# ---------------------------------------------------------------------------
+
+
+class TestButtonChromeClasses:
+    """Unit tests for the _button_chrome_classes helper."""
+
+    def test_primary_standard_anchor(self) -> None:
+        """Primary standard anchor includes bg-text-1, size and inline-block."""
+        cls = _button_chrome_classes("primary", "standard", False, True)
+        assert "bg-text-1" in cls
+        assert "text-card" in cls
+        assert "px-5 py-2.5" in cls
+        assert "inline-block" in cls
+        assert "w-full" not in cls
+
+    def test_primary_compact_button(self) -> None:
+        """Primary compact button uses smaller padding, no inline-block."""
+        cls = _button_chrome_classes("primary", "compact", False, False)
+        assert "px-4 py-2" in cls
+        assert "inline-block" not in cls
+
+    def test_secondary_standard(self) -> None:
+        """Secondary variant includes border-text-1 and bg-card."""
+        cls = _button_chrome_classes("secondary", "standard", False, True)
+        assert "bg-card" in cls
+        assert "border-text-1" in cls
+        assert "text-text-1" in cls
+
+    def test_ghost_standard(self) -> None:
+        """Ghost variant includes border-text-3/30 and text-text-2."""
+        cls = _button_chrome_classes("ghost", "standard", False, False)
+        assert "border-text-3/30" in cls
+        assert "text-text-2" in cls
+
+    def test_destructive_is_outlined_not_filled(self) -> None:
+        """SNOW-746: destructive draws the status-error colour on the border.
+
+        Outlined, not filled — the settings page's Delete account row sits
+        among quiet outlines, and a solid red button there would be the
+        loudest thing on the page. The fill belongs to hover only.
+        """
+        cls = _button_chrome_classes("destructive", "compact", False, False)
+        assert "border-status-error-text" in cls
+        assert "text-status-error-text" in cls
+        assert "hover:bg-status-error-bg" in cls
+
+    def test_destructive_is_distinguishable_from_ghost(self) -> None:
+        """The delete control must not resolve to the same chrome as Reset.
+
+        Both sit on the settings page; if the variants collapsed, the page
+        would offer two identical-looking buttons for a reversible and an
+        irreversible action.
+        """
+        destructive = _button_chrome_classes("destructive", "compact", False, False)
+        ghost = _button_chrome_classes("ghost", "compact", False, False)
+        assert destructive != ghost
+
+    def test_accent_is_filled_in_the_interactive_blue(self) -> None:
+        """SNOW-848: the control that saves somebody else's object.
+
+        Filled, unlike ``destructive``, and in accent rather than the ink
+        ``primary`` uses. The trip page's links and its w3w address are
+        already accent; its one filled control matches its own page rather
+        than importing the black CTA from the account forms.
+        """
+        cls = _button_chrome_classes("accent", "compact", False, False)
+        assert "bg-accent" in cls
+        assert "text-accent-text" in cls
+        assert "hover:bg-accent-hover" in cls
+
+    def test_accent_is_distinguishable_from_primary(self) -> None:
+        """Two filled variants that resolved to one chrome would make the
+        distinction the docstring above draws invisible.
+        """
+        accent = _button_chrome_classes("accent", "compact", False, False)
+        primary = _button_chrome_classes("primary", "compact", False, False)
+        assert accent != primary
+
+    def test_full_width(self) -> None:
+        """full_width=True appends w-full."""
+        cls = _button_chrome_classes("primary", "standard", True, False)
+        assert "w-full" in cls
+
+    def test_unknown_variant_falls_back_to_primary(self) -> None:
+        """An unrecognised variant name falls back to primary styling."""
+        cls = _button_chrome_classes("nonexistent", "standard", False, False)
+        assert "bg-text-1" in cls
+
+
+class TestCardChromeClasses:
+    """Unit tests for the _card_chrome_classes helper."""
+
+    def test_default_chrome_present(self) -> None:
+        """Default call produces all four chrome classes."""
+        cls = _card_chrome_classes("p-6", False, "")
+        assert "bg-card" in cls
+        assert "rounded-card" in cls
+        assert "border-text-3/10" in cls
+        assert "shadow-sm" in cls
+        assert "p-6" in cls
+
+    def test_center_adds_text_center(self) -> None:
+        """center=True appends text-center."""
+        cls = _card_chrome_classes("p-6", True, "")
+        assert "text-center" in cls
+
+    def test_extra_appended(self) -> None:
+        """extra string is appended verbatim."""
+        cls = _card_chrome_classes("p-4", False, "mb-3 passkey-card")
+        assert "mb-3" in cls
+        assert "passkey-card" in cls
+
+    def test_no_center_by_default(self) -> None:
+        """center=False does not produce text-center."""
+        cls = _card_chrome_classes("p-8", False, "")
+        assert "text-center" not in cls
+
+
+# ---------------------------------------------------------------------------
+# _button.html partial rendering
+# ---------------------------------------------------------------------------
+
+
+class TestButtonPartial:
+    """Tests for the _button.html partial template."""
+
+    def test_primary_anchor_renders_a_tag(self) -> None:
+        """href supplied → renders an <a> with primary classes and inline-block."""
+        html = render_to_string(
+            "includes/_button.html",
+            {"label": "Click me", "href": "/foo/", "variant": "primary"},
+        )
+        assert "<a" in html
+        assert 'href="/foo/"' in html
+        assert "bg-text-1" in html
+        assert "text-card" in html
+        assert "inline-block" in html
+        assert "<button" not in html
+
+    def test_primary_button_renders_button_tag(self) -> None:
+        """No href → renders a <button> with type=submit."""
+        html = render_to_string(
+            "includes/_button.html",
+            {"label": "Submit", "variant": "primary"},
+        )
+        assert "<button" in html
+        assert "submit" in html
+        assert "<a" not in html
+        assert "inline-block" not in html
+
+    def test_secondary_anchor(self) -> None:
+        """secondary variant anchor includes border-text-1."""
+        html = render_to_string(
+            "includes/_button.html",
+            {"label": "Map", "href": "/map/", "variant": "secondary"},
+        )
+        assert "border-text-1" in html
+        assert "bg-card" in html
+
+    def test_ghost_standard(self) -> None:
+        """ghost variant button includes border-text-3/30."""
+        html = render_to_string(
+            "includes/_button.html",
+            {"label": "Passkey", "variant": "ghost"},
+        )
+        assert "border-text-3/30" in html
+        assert "text-text-2" in html
+
+    def test_destructive_button(self) -> None:
+        """SNOW-746: destructive variant button carries the status-error border."""
+        html = render_to_string(
+            "includes/_button.html",
+            {"label": "Delete account", "variant": "destructive"},
+        )
+        assert "border-status-error-text" in html
+        assert "text-status-error-text" in html
+
+    def test_compact_size(self) -> None:
+        """size=compact uses px-4 py-2 padding."""
+        html = render_to_string(
+            "includes/_button.html",
+            {"label": "Subscribe", "variant": "primary", "size": "compact"},
+        )
+        assert "px-4 py-2" in html
+        assert "px-5 py-2.5" not in html
+
+    def test_full_width(self) -> None:
+        """full_width=True adds w-full."""
+        html = render_to_string(
+            "includes/_button.html",
+            {"label": "Confirm", "variant": "primary", "full_width": True},
+        )
+        assert "w-full" in html
+
+    def test_extra_classes_appended(self) -> None:
+        """extra_classes value is appended to the class attribute."""
+        html = render_to_string(
+            "includes/_button.html",
+            {
+                "label": "Subscribe",
+                "variant": "primary",
+                "size": "compact",
+                "extra_classes": "whitespace-nowrap",
+            },
+        )
+        assert "whitespace-nowrap" in html
+
+    def test_button_id_rendered(self) -> None:
+        """button_id is rendered as an auto-escaped ``id`` attribute."""
+        html = render_to_string(
+            "includes/_button.html",
+            {
+                "label": "Passkey",
+                "variant": "ghost",
+                "button_type": "button",
+                "button_id": "btn-passkey",
+            },
+        )
+        assert 'id="btn-passkey"' in html
+        assert 'type="button"' in html
+
+    def test_button_type_default_is_submit(self) -> None:
+        """button_type defaults to submit when not supplied."""
+        html = render_to_string(
+            "includes/_button.html",
+            {"label": "Go", "variant": "primary"},
+        )
+        assert "submit" in html
+
+    def test_label_present(self) -> None:
+        """The label string appears as button text."""
+        html = render_to_string(
+            "includes/_button.html",
+            {"label": "View a sample bulletin →", "href": "#", "variant": "primary"},
+        )
+        assert "View a sample bulletin" in html
+
+
+# ---------------------------------------------------------------------------
+# _card.html partial rendering
+# ---------------------------------------------------------------------------
+
+
+class TestCardPartial:
+    """Tests for the _card.html showcase partial."""
+
+    def test_default_p6_chrome(self) -> None:
+        """p-6 card has all four chrome classes."""
+        html = render_to_string(
+            "includes/_card.html",
+            {"title": "My title", "body": "My body", "padding": "p-6"},
+        )
+        assert "bg-card" in html
+        assert "rounded-card" in html
+        assert "border-text-3/10" in html
+        assert "shadow-sm" in html
+        assert "p-6" in html
+
+    def test_padding_forwarded(self) -> None:
+        """Custom padding value appears in the rendered class attribute."""
+        html = render_to_string(
+            "includes/_card.html",
+            {"title": "T", "body": "B", "padding": "px-5 py-4"},
+        )
+        assert "px-5 py-4" in html
+
+    def test_center_adds_text_center(self) -> None:
+        """center=True appends text-center to the wrapper div."""
+        html = render_to_string(
+            "includes/_card.html",
+            {"title": "T", "body": "B", "padding": "p-8", "center": True},
+        )
+        assert "text-center" in html
+
+    def test_no_center_by_default(self) -> None:
+        """No center kwarg → text-center absent."""
+        html = render_to_string(
+            "includes/_card.html",
+            {"title": "T", "body": "B", "padding": "p-6"},
+        )
+        assert "text-center" not in html
+
+    def test_inner_content_preserved(self) -> None:
+        """Title and body text appear inside the rendered card."""
+        html = render_to_string(
+            "includes/_card.html",
+            {"title": "Hello card", "body": "This is the body.", "padding": "p-6"},
+        )
+        assert "Hello card" in html
+        assert "This is the body." in html
+
+    def test_extra_classes_forwarded(self) -> None:
+        """extra kwarg classes appear on the wrapper div."""
+        html = render_to_string(
+            "includes/_card.html",
+            {"title": "T", "body": "B", "padding": "p-4", "extra": "mb-3 foo-bar"},
+        )
+        assert "mb-3" in html
+        assert "foo-bar" in html
+
+
+# ---------------------------------------------------------------------------
+# Status page children rendered via test client
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestStatusPageChildren:
+    """Tests for templates that extend _status_page.html.
+
+    Uses the test client so URL resolution and context processors work
+    correctly (mirrors the approach in test_nav_partial.py for full-page
+    templates rather than partials).
+    """
+
+    def test_manage_sent_renders_status_shell(self, client: Client) -> None:
+        """manage_sent.html renders the centred flex shell and card chrome."""
+        # manage_sent is rendered by manage_view on unauthenticated POST;
+        # render directly via render_to_string with a request so context
+        # processors fire, then check structural classes.
+        rf = RequestFactory()
+        request = rf.get("/")
+        request.user = AnonymousUser()
+        html = render_to_string("accounts/manage_sent.html", {}, request=request)
+        assert "min-h-[80vh]" in html
+        assert "bg-card" in html
+        assert "rounded-card" in html
+        assert "Check your inbox" in html
+        # No CTA block rendered. Scope the check to the status card column
+        # (marked by `max-w-md`) so the nav's own "Sign in" anchor button —
+        # which legitimately carries `inline-block` for anonymous viewers —
+        # does not register as a false CTA.
+        status_card = html.split("max-w-md", 1)[1]
+        assert "inline-block" not in status_card
+
+    def test_link_expired_has_cta_button(self, anon_request: HttpRequest) -> None:
+        """link_expired.html renders the 'Request a new link' primary anchor."""
+        html = render_to_string("accounts/link_expired.html", {}, request=anon_request)
+        assert "This link has expired" in html
+        assert "Request a new link" in html
+        assert "inline-block" in html
+
+    def test_account_deleted_has_cta_button(self, anon_request: HttpRequest) -> None:
+        """account_deleted.html renders the 'Back to Snowdesk' anchor."""
+        html = render_to_string(
+            "accounts/account_deleted.html", {}, request=anon_request
+        )
+        assert "Your account has been deleted" in html
+        assert "Back to Snowdesk" in html
+        assert "inline-block" in html
+
+    def test_all_status_pages_share_chrome(self, anon_request: HttpRequest) -> None:
+        """All three status pages share the same flex + card wrapper classes.
+
+        SNOW-707 removed a fourth, ``manage_saved.html`` — an orphan left
+        by SNOW-802 that no view rendered and that still announced
+        "Subscriptions saved".
+        """
+        templates = [
+            "accounts/manage_sent.html",
+            "accounts/link_expired.html",
+            "accounts/account_deleted.html",
+        ]
+        for tpl in templates:
+            html = render_to_string(tpl, {}, request=anon_request)
+            assert "min-h-[80vh]" in html, f"{tpl}: missing flex shell"
+            assert "max-w-md" in html, f"{tpl}: missing max-w-md"
+            assert "bg-card" in html, f"{tpl}: missing card chrome"
+            assert "rounded-card" in html, f"{tpl}: missing card chrome"
+
+
+class TestComponentLibraryWeatherIcons:
+    """Every weather icon a library fixture names must be a real file.
+
+    SNOW-781: the day-strip fixture built its filename as
+    ``f"{icon_bucket}-day.svg"``, which was then right for eleven of the
+    twelve icon buckets and wrong for ``cloudy`` — the one that shipped a
+    single file rather than a day/night pair. The library rendered a broken
+    image for the Overcast column, and no test noticed because every
+    assertion was about markup rather than about whether the asset existed.
+    That strip is now the day picker and the day line (SNOW-789); the helper
+    the fixtures share is the same one, so the trap is too — and SNOW-791
+    widened it, since the current set draws a pair for two buckets only.
+
+    This walks the filenames the fixtures actually carry, so it covers the
+    hand-written ones as well as the derived ones.
+    """
+
+    def _icon_names(self) -> set[str]:
+        """Collect every icon filename the weather fixtures name.
+
+        Returns:
+            The set of basenames, e.g. ``{"cloudy.svg", "clear-day.svg"}``.
+
+        """
+        from apps.design_system._component_fixtures import (
+            WEATHER_DAY_LINE_VARIANTS,
+            WEATHER_DAY_PICKER_VARIANTS,
+            WEATHER_PANEL_VARIANTS,
+        )
+
+        names: set[str] = set()
+        for variant in WEATHER_DAY_PICKER_VARIANTS:
+            for day in variant["context"]["panel"]["days"]:
+                names.add(day["icon_filename"])
+        for variant in WEATHER_DAY_LINE_VARIANTS:
+            names.add(variant["context"]["day"]["icon_filename"])
+        for variant in WEATHER_PANEL_VARIANTS:
+            display = variant["context"]["weather_display"]
+            if display.get("icon_filename"):
+                names.add(display["icon_filename"])
+        return names
+
+    def test_the_fixtures_name_icons_that_exist(self) -> None:
+        """No fixture asks for an icon that is not on disk."""
+        from django.conf import settings
+
+        from apps.weather.icon_sets import active_icon_dir
+
+        names = self._icon_names()
+        assert names, "fixtures named no icons — the walk is broken, not clean"
+        icon_dir = settings.BASE_DIR / "static" / active_icon_dir()
+        missing = sorted(name for name in names if not (icon_dir / name).is_file())
+        assert not missing, f"fixtures name icons that do not exist: {missing}"
+
+    def test_every_resolvable_filename_exists_on_disk(self) -> None:
+        """Every bucket resolves, at either hour, to a file that is there.
+
+        Wider than the fixture walk above, and deliberately so: that one
+        covers the filenames the library HAPPENS to name, which is why
+        SNOW-781's broken Overcast column reached the page. This one covers
+        the helper's whole output — 12 buckets by two times of day — so a
+        bucket no fixture exercises cannot go missing quietly.
+        """
+        from django.conf import settings
+
+        from apps.weather.icon_sets import active_icon_dir
+        from apps.weather.services.weather_display import (
+            WEATHER_ICON_BUCKETS,
+            weather_icon_filename,
+        )
+
+        icon_dir = settings.BASE_DIR / "static" / active_icon_dir()
+        resolved = {
+            weather_icon_filename(bucket, time_of_day)
+            for bucket in WEATHER_ICON_BUCKETS
+            for time_of_day in ("day", "night")
+        }
+        assert resolved, "the helper resolved nothing — the walk is broken, not clean"
+        missing = sorted(name for name in resolved if not (icon_dir / name).is_file())
+        assert not missing, f"buckets resolve to icons that do not exist: {missing}"
+
+    def test_single_file_buckets_resolve_to_one_file_at_either_hour(self) -> None:
+        """A bucket with no day/night pair must not have one invented for it.
+
+        Ten of the twelve buckets ship a single drawing: the icon set draws
+        a day/night variant only where a sun or a moon appears, so weather
+        in front of a cloud is one file (SNOW-791). This asserted ``cloudy``
+        alone until then, which would still have passed while stating
+        something false.
+        """
+        from apps.weather.services.weather_display import (
+            WEATHER_ICON_BUCKETS,
+            WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT,
+            weather_icon_filename,
+        )
+
+        single = [
+            bucket
+            for bucket in WEATHER_ICON_BUCKETS
+            if bucket not in WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT
+        ]
+        assert len(single) == 10, "the single-file set changed — is that intended?"
+        for bucket in single:
+            assert weather_icon_filename(bucket, "day") == f"{bucket}.svg"
+            assert weather_icon_filename(bucket, "night") == f"{bucket}.svg"
+
+    def test_paired_buckets_resolve_to_a_distinct_file_per_hour(self) -> None:
+        """The two buckets that DO have a pair resolve to different files."""
+        from apps.weather.services.weather_display import (
+            WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT,
+            weather_icon_filename,
+        )
+
+        assert WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT == {"clear", "partly_cloudy"}
+        for bucket in WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT:
+            assert weather_icon_filename(bucket, "day") == f"{bucket}-day.svg"
+            assert weather_icon_filename(bucket, "night") == f"{bucket}-night.svg"

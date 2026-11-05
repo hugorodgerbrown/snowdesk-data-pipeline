@@ -1,0 +1,20 @@
+{% comment %}
+apps/design_system/templates/public/partials/_season_calendar_demo.html
+
+Component-library view of the season calendar (SNOW-1158) — the one shared
+partial, public/partials/_season_calendar.html, in the card the resort page
+puts it in. Backs both the "season-calendar" (page variants) and the
+"season-cell" (every cell state) panels; there is no separate cell partial.
+
+Context (from SEASON_CALENDAR_VARIANTS / SEASON_CELL_VARIANTS in
+_component_fixtures.py):
+    season_months  : SeasonMonths
+    season_summary : SeasonSummary
+    linked         : bool — the bulletin page's linked variant
+    region         : namespace with canonical_region_id + name_slug (linked)
+{% endcomment %}
+<div class="bg-bg px-3 py-4">
+    <div class="rounded-card border border-border bg-card p-5 sm:p-6">
+        {% include "public/partials/_season_calendar.html" %}
+    </div>
+</div>

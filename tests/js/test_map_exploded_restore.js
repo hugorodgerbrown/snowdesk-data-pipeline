@@ -6,7 +6,7 @@
  * layer but one, photographs the canvas, and must hand the map back exactly as
  * it found it. Three of the four review findings are about that handover, and
  * none of them is visible from the server-rendered assertions in
- * tests/public/test_map_explainer.py — they need the module actually running
+ * tests/map/test_map_explainer.py — they need the module actually running
  * against a map, which is this layer's job (docs/client-side-tests.md).
  *
  * The fourth finding is a cascade bug with no runtime surface in jsdom (which

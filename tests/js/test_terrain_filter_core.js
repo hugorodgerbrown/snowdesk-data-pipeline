@@ -199,7 +199,7 @@ describe('the committed fixture tile', () => {
   });
 
   it('decodes the known pixels the generator placed', () => {
-    // Values from apps/public/dev_terrain_class.py for tile 12/2130/1455.
+    // Values from apps/map/dev_terrain_class.py for tile 12/2130/1455.
     expect(at(81, 122)).toMatchObject({ kind: 'data', height: 3400, octant: 1, band: 0 });
     expect(at(81, 107)).toMatchObject({ height: 3269, octant: 0, band: 7 }); // north flank
     expect(at(96, 122)).toMatchObject({ height: 3268, octant: 2, band: 7 }); // east flank

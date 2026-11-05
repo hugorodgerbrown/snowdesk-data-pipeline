@@ -108,14 +108,14 @@ _TEMPLATE_SUFFIXES = frozenset({".html", ".txt"})
 # that the template walk could never have seen, three of them outside
 # the range the ticket had listed.
 _EXTRA_COPY_FILES = [
-    _ROOT / "apps" / "public" / "_component_fixtures.py",
+    _ROOT / "apps" / "design_system" / "_component_fixtures.py",
     # The category labels and descriptions above each panel, rendered by
     # ``_components/partials/_panel.html``. Added after the first version
     # of this walk covered the fixtures and missed the prose beside them:
     # the status-page panel still said it served "all five confirmation /
     # error pages in the subscriptions flow", of which the count, the
     # flow and its existence were each wrong.
-    _ROOT / "apps" / "public" / "design_tokens.py",
+    _ROOT / "apps" / "design_system" / "design_tokens.py",
 ]
 
 # Django comments, replaced by their own newlines so line numbers survive.
@@ -225,7 +225,7 @@ _ALERT_SURFACES: dict[str, str] = {
         "Describes alerts conditionally: off until you turn them on."
     ),
     "templates/_debug/alerts_replay.html": "Staff-only season replay (SNOW-949).",
-    "apps/public/design_tokens.py": (
+    "apps/design_system/design_tokens.py": (
         "The since-strip registry entry names the alert it shares words with; "
         "staff-only component library."
     ),
@@ -251,7 +251,7 @@ _ALLOWED: dict[str, list[tuple[str, str]]] = {
             "is being offered anything.",
         ),
     ],
-    "apps/public/_component_fixtures.py": [
+    "apps/design_system/_component_fixtures.py": [
         (
             "Bulletin updated.",
             "An ingest banner, not a notification. It sits in the admin set "

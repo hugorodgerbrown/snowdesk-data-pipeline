@@ -1,0 +1,233 @@
+{% extends "public/base.html" %}
+{% load i18n js_bundles static %}
+{% comment %}
+apps/map/templates/public/map.html — the interactive map at /map/ (the app).
+
+SNOW-314: the full-frame map. The map surface uses the _map_embed.html partial
+(show_tour_offer=True adds the one-time tour offer inside #map, SNOW-1117 — it
+replaced the #home-intro welcome panel). The offmap-banner, edit panels and
+edit JS are included here too.
+
+The map lived at / (as public/home.html) from SNOW-344 until the marketing
+homepage took the root; / now 301s here when it carries map query
+parameters (views.home).
+
+This template owns the page metadata (page_meta) and loads map_tour_offer.js
+in addition to the shared map assets.
+{% endcomment %}
+
+{# SNOW-553: title and description now feed the share card as well as the #}
+{# tab and the SERP snippet. The separate, shorter og:description this    #}
+{# page used to carry is gone — one string, so the two can't drift.       #}
+{# SNOW-535: kept under ~155 characters so search results show it whole.  #}
+{% block page_meta %}
+    {% trans "Avalanche map · Snowdesk" as page_title %}
+    {% trans "Avalanche bulletins for Switzerland, France, Austria, South Tyrol and Trentino, on one map. Read the day's danger, submit field observations." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description %}
+{% endblock page_meta %}
+
+{# SNOW-314: full-viewport map surface — sized to the page's own height   #}
+{# (via .map-fullscreen in map.css) instead of the default min-h-screen, so #}
+{# the nav, the map and the site footer fit the screen exactly on a phone,  #}
+{# in Safari and in the home-screen app alike.                              #}
+{% block body_class %}bg-bg text-text-1 font-sans flex flex-col map-fullscreen{% endblock %}
+
+{% block extra_head %}
+    {# Warm the basemap connection before anything asks for it. MapLibre only #}
+    {# requests the style JSON once map.js has been fetched, parsed and run,  #}
+    {# so the DNS + TCP + TLS handshake to the tile host would otherwise      #}
+    {# start after all of that — hundreds of milliseconds into the load on a  #}
+    {# mobile connection, with the map's first bytes queued behind it.        #}
+    {# crossorigin is required, not optional: MapLibre fetches the style and  #}
+    {# tiles in CORS mode, and a preconnect without it warms a separate       #}
+    {# connection pool that those requests never touch.                       #}
+    <link rel="preconnect" href="{{ basemap_origin }}" crossorigin>
+    {# The two boot feeds map.js fetches first, started from the head so they #}
+    {# load in parallel with the scripts instead of after them. Preload, not  #}
+    {# prefetch: prefetch is a hint for the NEXT navigation, so map.js's own   #}
+    {# fetch() never reused it and the regions feed was downloaded twice.      #}
+    {# as="fetch" + crossorigin (anonymous) match fetch()'s default cors mode  #}
+    {# and same-origin credentials; without either the preload is not reused. #}
+    {# The URLs must stay byte-identical to the ones map.js builds.            #}
+    <link rel="preload" as="fetch" crossorigin href="{% url 'api:regions_geojson' %}?country=ch">
+    <link
+        rel="preload"
+        as="fetch"
+        crossorigin
+        href="{% url 'api:ratings' %}?d={{ display_date|date:'Y-m-d' }}&country=ch"
+    >
+    <link rel="stylesheet" href="{% static 'css/maplibre-gl.css' %}">
+    <link rel="stylesheet" href="{% static 'css/map.css' %}">
+    {# The explainer is an opt-in map mode. Keep its styles off the normal #}
+    {# homepage path; production's manifest storage fingerprints this URL. #}
+    {% if request.GET.layers == 'exploded' %}
+        <link rel="stylesheet" href="{% static 'css/map_exploded.css' %}">
+    {% endif %}
+    {# Per-country RSS/Atom feeds (SNOW-396). Feed readers and LLM crawlers  #}
+    {# pick these up from the page head; the four hrefs cover every country. #}
+    <link
+        rel="alternate"
+        type="application/rss+xml"
+        title="Snowdesk — Switzerland avalanche bulletins"
+        href="{% url 'public:country_bulletin_feed' country='ch' %}"
+    >
+    <link
+        rel="alternate"
+        type="application/rss+xml"
+        title="Snowdesk — Austria avalanche bulletins"
+        href="{% url 'public:country_bulletin_feed' country='at' %}"
+    >
+    <link
+        rel="alternate"
+        type="application/rss+xml"
+        title="Snowdesk — Italy avalanche bulletins"
+        href="{% url 'public:country_bulletin_feed' country='it' %}"
+    >
+    <link
+        rel="alternate"
+        type="application/rss+xml"
+        title="Snowdesk — France avalanche bulletins"
+        href="{% url 'public:country_bulletin_feed' country='fr' %}"
+    >
+{% endblock %}
+
+{% block content %}
+    {# SNOW-1334: the map surface stays light in dark mode. Everything this   #}
+    {# page draws over the map sits inside this wrapper, which restates the   #}
+    {# light tokens under .dark (src/css/main.css 1c); the site nav and      #}
+    {# footer, rendered by base.html outside the block, stay dark.           #}
+    {# display: contents, so the wrapper adds no box: #map and every overlay #}
+    {# keep taking part in the body's flex column exactly as before, and     #}
+    {# custom properties still inherit through it.                           #}
+    <div class="map-surface-light contents">
+        {# SNOW-324/486: off-map notification. Hidden by default; map.js reveals it #}
+        {# when the locate pill is tapped while the user is outside the map's       #}
+        {# bounds, and a 7s timeout auto-dismisses. Rendered through the shared     #}
+        {# floating-banner primitive (top-centre card, dismissible) and wired to    #}
+        {# overlays.js via data-overlay — the same shape and × as every other       #}
+        {# floating nudge, on all viewports.                                        #}
+        {% trans "Off the map" as offmap_title %}
+        {% trans "Your location is outside the mapped regions." as offmap_body %}
+        {% include "includes/_overlay_banner.html" with variant="floating" id="offmap-banner" position="top" icon="location-off" title=offmap_title title_id="offmap-banner-title" body=offmap_body aria_live="polite" dismissible=True %}
+        {# SNOW-682: locate-failed notification. Same primitive, same top-centre  #}
+        {# slot and the same JS owner as the off-map banner above — and mutually  #}
+        {# exclusive with it, since both are answers to the same tap. Revealed by #}
+        {# map_geolocate.js when no fix arrives within its five-second budget     #}
+        {# (offline on a phone, the common case is a cold GPS lock that never     #}
+        {# lands), and auto-dismissed after 12s. The CTA re-runs the locate: it   #}
+        {# is the retry the user would otherwise get by hunting for the roundel   #}
+        {# again, which is exactly what a banner sitting over the map is in the   #}
+        {# way of.                                                                #}
+        {% trans "Can't find your location" as locate_failed_title %}
+        {% trans "Your device didn't give us a position. Move somewhere with a clearer view of the sky, then try again." as locate_failed_body %}
+        {% trans "Try again" as locate_failed_cta %}
+        {% include "includes/_overlay_banner.html" with variant="floating" id="locate-failed-banner" position="top" icon="location-off" title=locate_failed_title title_id="locate-failed-banner-title" body=locate_failed_body cta_id="locate-retry" cta_label=locate_failed_cta aria_live="polite" dismissible=True %}
+        {# SNOW-828: the trip-arrival banner. Revealed by map.js when the page   #}
+        {# is opened on ?trip= or ?trip_share= and the route has been drawn —    #}
+        {# it names WHICH trip the line belongs to (the title is written at      #}
+        {# runtime from the geojson's own properties, which is what body_id and  #}
+        {# title_id are the hooks for) and offers the way back to the page the   #}
+        {# reader came from. Without it the arrival is an unexplained magenta    #}
+        {# line, since the trip is drawn transiently and appears in no panel.    #}
+        {# Bottom-centre rather than top: the two banners above are answers to a #}
+        {# locate tap and this is not, so they are not mutually exclusive and    #}
+        {# must not share a slot.                                               #}
+        {% trans "Showing this trip's route." as trip_arrival_body %}
+        {% trans "Back to the trip" as trip_arrival_cta %}
+        {% include "includes/_overlay_banner.html" with variant="floating" id="trip-arrival-banner" title=" " title_id="trip-arrival-banner-title" body=trip_arrival_body body_id="trip-arrival-banner-body" cta_id="trip-arrival-back" cta_label=trip_arrival_cta aria_live="polite" dismissible=True %}
+        {# SNOW-1117: show_tour_offer renders the hidden #map-tour-offer card, #}
+        {# and map_help_autostart=False stops the tour starting by itself: on  #}
+        {# this page it opens from the offer's "Start the tour" or the "?"     #}
+        {# roundel, never over a map the visitor has not seen yet.            #}
+        {% include "public/partials/_map_embed.html" with show_tour_offer=True map_help_autostart=False %}
+        {# SNOW-344: edit-resorts panel (moved from map.html).               #}
+        {% if edit_target == "resorts" %}{% include "public/partials/edit_resorts_panel.html" %}{% endif %}
+        {# SNOW-755: edit-locations panel — the same surface for the curated Location estate. #}
+        {% if edit_target == "locations" %}{% include "public/partials/edit_locations_panel.html" %}{% endif %}
+        {# The one toast instance MapSheet.toast() reveals — server-rendered   #}
+        {# and hidden, so the markup, tokens and ARIA roles have a single      #}
+        {# owner and the "×" is handled by overlays.js like every other toast. #}
+        {% include "includes/_toast.html" with id="map-sheet-toast" kind="warning" body="" %}
+        {# SNOW-333: field-report sheet + JS — shared with the map surface.  #}
+        {% include "public/partials/_report_surface.html" %}
+        {# SNOW-414: favourite-pin sheet + JS — shared with the map surface. #}
+        {% include "public/partials/_favourites_surface.html" %}
+        {# SNOW-686: saved-routes sheet + JS — shared with the map surface.     #}
+        {# Ungated since SNOW-724 retired the ``routes`` rollout flag; the      #}
+        {# sheet renders for every visitor, and routes.js branches on           #}
+        {# ``routes_eligible`` (authentication) for its sign-in CTA.            #}
+        {% include "public/partials/_routes_surface.html" %}
+        {# SNOW-1256: draw a route on the map — only while the route_drawing   #}
+        {# flag is on for this request. After the routes surface, whose panel  #}
+        {# holds the "Draw on the map" CTA that opens it.                      #}
+        {% if route_drawing_enabled %}
+            {% include "public/partials/_route_draw_surface.html" %}
+            {# SNOW-1278: "Find a route" — SAC's tours on the map, tapped.     #}
+            {% include "public/partials/_ski_tours_surface.html" %}
+            {# SNOW-1384: FOEN's wildlife rest zones as a layer, and its sheet. #}
+            {% include "public/partials/_rest_zones_surface.html" %}
+        {% endif %}
+        <template id="sheet-playback-band-template">
+            <div role="status" class="px-2 py-2">
+                {% trans "Playback in progress" as sheet_playback_band %}
+                {% include "includes/_eyebrow.html" with tag="p" text=sheet_playback_band %}
+            </div>
+        </template>
+        {# SNOW-761: weather detail sheet + JS. No roundel — the trigger is the  #}
+        {# condition symbol on the map itself, so this surface is inert until    #}
+        {# one is tapped.                                                        #}
+        {% include "public/partials/_weather_surface.html" %}
+        {# SNOW-1098: the region sheet a map tap opens on a phone. #}
+        {% include "public/partials/_region_sheet_surface.html" %}
+        {% include "public/partials/_place_sheet_surface.html" %}
+        {# SNOW-1366: the Today panel, opened from the date row's sun. Before  #}
+        {# the trail surface, whose module reopens it from a back pill.        #}
+        {% include "public/partials/_today_surface.html" %}
+        {# The back pill between the three place panels (Hugo, 25 Oct 2026). #}
+        {% include "public/partials/_panel_trail_surface.html" %}
+        {# SNOW-1119: help mode — the "?" roundel names every control and guides #}
+        {# the sheets. After the sheets, which its guides describe.               #}
+        {% include "public/partials/_map_help_mode.html" %}
+        {# SNOW-588: "Manage downloads" sheet + JS — what this device has     #}
+        {# stored offline, what it costs, and a delete. SNOW-634: opened from #}
+        {# the map roundel (#map-custom-download-control) now, not the       #}
+        {# layers menu's old "Manage downloads…" row — that row is gone.     #}
+        {% include "public/partials/_map_downloads_sheet.html" %}
+        {# SNOW-978: the terrain filter's sheet — opened by the adjust button    #}
+        {# beside the layers menu's terrain filter row (SNOW-1109). Only for an  #}
+        {# eligible page.                                                         #}
+        {% if terrain_filter_eligible %}
+            {% include "public/partials/_map_terrain_filter_sheet.html" %}
+        {% endif %}
+        {# SNOW-1412: the scripts of every sheet and panel above, listed in    #}
+        {# static/js/bundles/map_surfaces.txt. Here, inside the content block, #}
+        {# because they must keep running BEFORE base.html's end-of-body       #}
+        {# scripts (db.js, telemetry.js, favourites_offline.js…), as they did  #}
+        {# when each partial tagged its own. Deferred scripts run in document #}
+        {# order, so where in the block this sits does not matter.            #}
+        {% js_bundle "map_surfaces" %}
+    </div>
+{% endblock %}
+
+{% block extra_js %}
+    {# SNOW-1412: the map's own scripts, listed in static/js/bundles/map.txt. #}
+    {# One file on staging and production (bin/bundle-js), one tag per     #}
+    {# module in development and tests. Runs after base.html's scripts,    #}
+    {# as these always have.                                                #}
+    {% js_bundle "map" %}
+    {% if request.GET.layers == 'exploded' %}
+        {# Loaded after map.js publishes snowdeskLayerExplainer; omitted from #}
+        {# ordinary map visits so the feature has no JS cost until opened.  #}
+        {% include "includes/_map_explainer_strings.html" %}
+        <script defer src="{% static 'js/map_exploded.js' %}"></script>
+    {% endif %}
+    {# SNOW-344: edit-resorts JS (moved from map.html). #}
+    {% if edit_target == "resorts" %}<script defer src="{% static 'js/map_edit_resorts.js' %}"></script>{% endif %}
+    {# SNOW-755: edit-locations JS. The core module carries the logic and #}
+    {# must load first — map_edit_locations.js reads its frozen export at    #}
+    {# parse time, and both are deferred, so document order is the order.    #}
+    {% if edit_target == "locations" %}
+        <script defer src="{% static 'js/map_edit_locations_core.js' %}"></script>
+        <script defer src="{% static 'js/map_edit_locations.js' %}"></script>
+    {% endif %}
+{% endblock %}

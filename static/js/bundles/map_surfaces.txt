@@ -168,7 +168,7 @@ favourites.js
 # like favourites.js it is loaded from its own surface partial and reaches
 # shared map state through window.snowdeskMapState, so it is not listed in
 # MAP_BUNDLE (tests/js/_load_map_bundle.js) and does not sit inside the
-# bundle's contiguous run (tests/public/test_map_script_order.py).
+# bundle's contiguous run (tests/map/test_map_script_order.py).
 # SNOW-764: the native-share/clipboard helper, loaded BEFORE routes.js —
 # SNOW-887 moved share.js to map.html: the favourites panel became its
 # second consumer on this page, and a second tag here would run the module

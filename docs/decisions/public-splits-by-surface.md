@@ -15,8 +15,10 @@ three apps, one surface each, in this order:
    becomes `apps/public/weather_points.py`, each with a public API
    (SNOW-1426).
 2. **`apps/design_system`** takes the staff component library: design
-   tokens, fixtures, previews, the token checks and the `/_components/`,
-   `/_icon-sets/` and `/_errors/` pages (SNOW-1427).
+   tokens, fixtures, the token checks and the `/_components/`,
+   `/_icon-sets/` and `/_errors/` pages (SNOW-1427). The help page's
+   `component_previews` stays in apps/public: it is the help page's
+   context, not part of the library.
 3. **`apps/map`** takes the map page, the map JSON endpoints, the in-map
    editor and the region and place sheets (SNOW-1428).
 
@@ -58,9 +60,16 @@ template tags stay in `apps/public`.
 |---|---|---|
 | `apps/public/urls.py` | `apps.design_system` | `views` |
 | `apps/public/urls.py`, `api_urls.py`, `config/urls.py` | `apps.map` | its view modules |
-| `apps.map` | `apps.public` | `bulletin_panels`, `weather_points`, `decorators`, `errors` |
+| `apps.map` | `apps.public` | `bulletin_panels`, `weather_points`, `decorators`, `errors`, `season_calendar`, `map_shared` |
 
 Nothing else in `apps/` or `config/` imports either new app.
+
+`season_calendar` and `map_shared` were added while SNOW-1428 was being
+implemented. The map's season ribbon is built by the same module as the
+bulletin season page. `map_shared.py` holds `map_modes_enabled` and
+`trip_url_templates`, two answers the help and `/offline/` pages must give
+exactly as the map does. Hugo chose this over duplicating them, on
+2026-11-05.
 
 **Consequences.**
 
@@ -70,7 +79,7 @@ Nothing else in `apps/` or `config/` imports either new app.
   `apps/design_system`. A map module that needs a bulletin helper
   imports it from `bulletin_panels`, or adds it there; it never imports
   from `apps.public.views`.
-- `design_system` is the working name. SNOW-1427 confirms it.
+- `design_system` is the name Hugo confirmed on 2026-11-05.
 - **Left for later, not in this split:** moving the shared tags to
   `apps/core`, and a fourth cut of the ~14k lines that remain in
   apps/public. Either needs its own ticket.

@@ -1,0 +1,2372 @@
+"""
+apps/design_system/design_tokens.py — Component-library registry.
+
+Hand-curated catalogue of everything the design-system page at
+``/_components/`` renders. Two top-level groups, both built from the same
+``FoundationCategory`` dataclass:
+
+1. **Foundations** — design tokens, mirroring src/css/main.css's
+   ``@theme {}`` block. Mirroring it COMPLETELY: every ``--color-*``
+   declared there is either listed here or carries a reason in
+   ``TOKEN_EXEMPTIONS`` below (SNOW-969). ``kind`` is one of
+   ``"swatches"``, ``"typography"``, ``"radius"``, ``"layout"``,
+   ``"icons"``. Each entry's ``tokens`` field
+   carries ``Token`` and/or ``IconToken`` instances. The
+   registry-vs-CSS sync check in ``apps/design_system/checks.py`` walks this group.
+
+2. **Components** — rendered HTML components. ``kind`` is ``"components"``.
+   Each entry sources its render content from its ``partial`` template
+   path and a ``variants`` tuple of context dicts; the renderer iterates
+   the variants and ``{% include partial with **variant.context %}`` for
+   each. Variant fixtures live in ``apps/design_system/_component_fixtures.py`` so
+   this file stays free of synthetic-data construction.
+
+The shape is deliberately Python-side (not parsed from CSS) so the renderer
+stays simple and the registry can carry presentation hints (panel kind,
+description, ordering) the CSS doesn't know about. Theme-invariant tokens
+(EAWS, weather) declare ``dark=None``; the swatch templates use
+``style="background: var(<name>)"`` so a single inlined declaration picks
+up the right value automatically depending on whether the token sits inside
+a ``.dark`` ancestor.
+"""
+
+from dataclasses import dataclass
+from typing import Any
+
+from django.conf import settings
+
+from apps.design_system._component_fixtures import (
+    ANOTHER_DAY_STRIP_VARIANTS,
+    ASPECT_WHEEL_VARIANTS,
+    BULLETIN_HEADLINE_VARIANTS,
+    BUTTON_VARIANTS,
+    CALLOUT_VARIANTS,
+    CARD_VARIANTS,
+    CHIP_VARIANTS,
+    COLLAPSIBLE_PANEL_VARIANTS,
+    DAILY_READ_VARIANTS,
+    DANGER_TILE_EMPTY_VARIANTS,
+    DANGER_TILE_VARIANTS,
+    DATED_EYEBROW_VARIANTS,
+    DAY_CHARACTER_VARIANTS,
+    DAY_FIGURES_VARIANTS,
+    DAY_STRIPS_VARIANTS,
+    DAY_WINDOWS_VARIANTS,
+    DOWNLOADS_INVENTORY_VARIANTS,
+    EYEBROW_VARIANTS,
+    FAVOURITE_PROBLEM_VARIANTS,
+    FORECAST_SOURCE_VARIANTS,
+    FORM_FIELD_VARIANTS,
+    GLOSSARY_TERM_VARIANTS,
+    HOURLY_CHART_VARIANTS,
+    MAP_OVERLAY_TOGGLE_VARIANTS,
+    MAP_ZOOM_CONTROL_VARIANTS,
+    META_CELL_VARIANTS,
+    NAV_VARIANTS,
+    NO_DATA_SUPPLIED_VARIANTS,
+    OVERFLOW_MENU_VARIANTS,
+    OVERLAY_BANNER_VARIANTS,
+    OVERLAY_MODAL_VARIANTS,
+    OVERLAY_SHEET_VARIANTS,
+    PAGE_TITLE_VARIANTS,
+    PANEL_ADD_BUTTON_VARIANTS,
+    PLACE_LINK_ROW_VARIANTS,
+    PLACE_PIN_VARIANTS,
+    PLACE_SHEET_TODAY_ROW_VARIANTS,
+    POINT_CARD_VARIANTS,
+    RATING_BLOCK_ALBINA_BAND_VARIANTS,
+    RATING_BLOCK_VARIANTS,
+    REGION_TOOLTIP_VARIANTS,
+    RESORT_FACTS_VARIANTS,
+    RESORT_FORECAST_VARIANTS,
+    RESORT_TILE_VARIANTS,
+    RESORT_WHY_IT_MATTERS_VARIANTS,
+    ROUTE_META_LINE_VARIANTS,
+    ROUTE_PROFILE_VARIANTS,
+    ROUTE_RAIL_VARIANTS,
+    ROW_DISCLOSURE_VARIANTS,
+    RUN_STRIP_VARIANTS,
+    SEASON_CALENDAR_VARIANTS,
+    SEASON_CELL_VARIANTS,
+    SEASON_SCRUBBER_VARIANTS,
+    SEGMENTED_OPTION_VARIANTS,
+    SHEET_HEADER_VARIANTS,
+    SINCE_STRIP_VARIANTS,
+    SITE_FOOTER_VARIANTS,
+    STATUS_PAGE_VARIANTS,
+    SWITCH_TRACK_VARIANTS,
+    SWITCH_VARIANTS,
+    TENDENCY_OUTLOOK_VARIANTS,
+    TERRAIN_FILTER_KEY_VARIANTS,
+    THEME_PREFERENCE_VARIANTS,
+    THREE_WORD_ADDRESS_VARIANTS,
+    TOAST_BANNER_VARIANTS,
+    TOAST_VARIANTS,
+    TODAY_VARIANTS,
+    UGC_PANEL_GROUP_VARIANTS,
+    UGC_PANEL_ROW_VARIANTS,
+    UGC_PANEL_VARIANTS,
+    WEATHER_DAY_LINE_VARIANTS,
+    WEATHER_DAY_PICKER_VARIANTS,
+    WEATHER_DAY_SUMMARY_VARIANTS,
+    WEATHER_MASTHEAD_VARIANTS,
+    WEATHER_PANEL_VARIANTS,
+    WEATHER_PROVENANCE_VARIANTS,
+)
+from apps.weather.icon_sets import icon_set_dir
+
+# SNOW-791: condition icons live under the configured set's directory while
+# four candidates are compared (apps/weather/icon_sets.py). Resolved once at
+# import — the component library documents the configured set, not whatever
+# a ``?icons=`` session has pinned.
+_ICON_DIR = icon_set_dir(settings.WEATHER_ICON_SET)
+
+
+@dataclass(frozen=True)
+class Token:
+    """One CSS custom property surfaced in the component library.
+
+    Attributes:
+        name: CSS custom-property name including the leading ``--``.
+        label: Human-readable caption shown alongside the swatch.
+        light: Literal CSS value in the light theme — shown as caption text.
+        dark: Literal CSS value in the dark theme, or ``None`` if the token
+            is theme-invariant (EAWS scale, weather backdrops).
+
+    """
+
+    name: str
+    label: str
+    light: str
+    dark: str | None
+
+
+@dataclass(frozen=True)
+class IconToken:
+    """One static-asset SVG icon surfaced in the component library.
+
+    Distinct from ``Token`` because icons don't carry a CSS value — they
+    have a static-relative path, an optional ``alt`` for accessibility,
+    and a ``group`` so the panel template can sub-section the rendered
+    grid (favicons / danger-level pictograms / avalanche problem icons).
+
+    Attributes:
+        name: File-stem identifier shown as the caption monospace label.
+        label: Human-readable caption.
+        path: Path relative to ``STATIC_URL``; passed straight to ``{% static %}``.
+        group: Sub-group label used by the icons panel to sub-section the grid.
+
+    """
+
+    name: str
+    label: str
+    path: str
+    group: str
+
+
+@dataclass(frozen=True)
+class FoundationCategory:
+    """One sidebar entry / one panel-worth of content.
+
+    Used for both Foundations entries (``kind`` in ``swatches``,
+    ``typography``, ``radius``, ``layout``, ``icons``; populated via
+    ``tokens``) and Components entries (``kind="components"``; populated
+    via ``partial`` + ``variants``). The class name is preserved from
+    SNOW-103 for backwards compatibility with the existing sync check;
+    the ``Foundation`` prefix is now mildly inaccurate but renaming would
+    churn imports across the whole library.
+
+    Attributes:
+        slug: URL slug used in ``/partials/_components/<slug>/``.
+        label: Sidebar label.
+        description: One-line panel intro shown above the content.
+        kind: Panel template hint; the panel wrapper dispatches to
+            ``_<kind>.html`` based on this value.
+        tokens: Tuple of ``Token`` and/or ``IconToken`` entries rendered
+            inside the panel. Required when ``kind`` is a foundations
+            kind; ignored (defaults to empty) when ``kind="components"``.
+            The sync check in ``apps/design_system/checks.py`` filters to ``Token``
+            instances since only those map to CSS custom properties.
+        partial: Django template path included once per variant when
+            ``kind="components"``. Required for components entries;
+            ignored for foundations.
+        variants: Tuple of context dicts. Each variant carries a
+            ``caption`` plus the keys the ``partial`` reads. Variants may
+            optionally carry ``solo=True`` — that variant spans both
+            columns on a two-column layout. Required for components
+            entries; ignored for foundations.
+        panel_layout: Layout shape for the panel content. ``"stack"`` is
+            a vertical stack (default, used by foundations and most
+            components). ``"two-col"`` is single-column on mobile and
+            two-column on desktop (≥ md breakpoint) — useful for
+            paired variant matrices.
+        swatch_columns: Optional fixed column count for the swatch grid
+            (``kind="swatches"`` only). Defaults to ``None``, which
+            renders the responsive grid (2 → 3 → 4 columns at sm/lg).
+            Set to a positive int when the token list has a meaningful
+            row/column structure that lines up — e.g. EAWS uses ``5`` so
+            each column corresponds to one danger level (low → very_high).
+
+    """
+
+    slug: str
+    label: str
+    description: str
+    kind: str
+    tokens: tuple[Token | IconToken, ...] = ()
+    partial: str | None = None
+    variants: tuple[dict[str, Any], ...] = ()
+    panel_layout: str = "stack"
+    swatch_columns: int | None = None
+
+
+@dataclass(frozen=True)
+class LibraryGroup:
+    """One top-level grouping in the component-library sidebar.
+
+    Today there are two: Foundations (design tokens) and Components
+    (rendered HTML partials). Each renders as a sidebar heading followed
+    by its category entries, in the order declared.
+
+    Attributes:
+        slug: Stable identifier used by tests; not surfaced in the URL.
+        label: Sidebar heading text.
+        categories: Tuple of category entries shown under this heading.
+
+    """
+
+    slug: str
+    label: str
+    categories: tuple[FoundationCategory, ...]
+
+
+@dataclass(frozen=True)
+class TokenExemption:
+    """One ``--color-*`` property, or family of them, the library omits.
+
+    The registry is authoritative over which colours EXIST (the reverse
+    check in ``apps/design_system/checks.py``), so a token declared in
+    ``@theme {}`` and left out of ``FOUNDATION_CATEGORIES`` has to say why
+    here. The reason is the whole point: it is what a reviewer reads to
+    judge whether the omission is still true, and "not needed" answers
+    nothing. The set is auditable by reading this tuple: it is short by
+    design, one entry per omission plus a prefix form for a family, and
+    an entry that stops matching anything in ``@theme`` should be deleted
+    along with the token it covered.
+
+    Attributes:
+        pattern: A CSS custom-property name, or — with a trailing ``*`` —
+            a name prefix covering a whole family. The prefix form exists
+            for families keyed to something outside the design system
+            (one token per ``settings.BASEMAP_STYLES`` entry), where
+            listing today's members would make adding the next one a
+            check failure with nothing to learn from it.
+        reason: Why the token is not browsable at ``/_components/``.
+            Required; a blank one is a check error, not a silent pass.
+
+    """
+
+    pattern: str
+    reason: str
+
+    def matches(self, name: str) -> bool:
+        """Return whether ``name`` is covered by this exemption.
+
+        Args:
+            name: CSS custom-property name including the leading ``--``.
+
+        """
+        if self.pattern.endswith("*"):
+            return name.startswith(self.pattern[:-1])
+        return name == self.pattern
+
+
+# Exemptions live HERE rather than in checks.py because they are a
+# statement about the registry below — these are the colours the
+# component library deliberately does not show — and the person adding a
+# token should meet both options on one screen: list it, or say why not.
+# checks.py stays mechanical: it reads this and reports, and holds no
+# opinion about any individual token.
+TOKEN_EXEMPTIONS: tuple[TokenExemption, ...] = (
+    TokenExemption(
+        "--color-admin-bg",
+        "Django admin chrome (the pipeline admin's page background), not a "
+        "public-site surface: /_components/ documents what the public site "
+        "is built from, and an admin-only colour browsable there would read "
+        "as available to a page that must never use it.",
+    ),
+    TokenExemption(
+        "--color-admin-nav",
+        "Django admin chrome (the admin top nav bar) — see --color-admin-bg.",
+    ),
+    TokenExemption(
+        "--color-admin-nav-text",
+        "Django admin chrome (ink on the admin top nav bar) — see --color-admin-bg.",
+    ),
+    TokenExemption(
+        "--color-basemap-*",
+        "One identity colour per settings.BASEMAP_STYLES key, so the set is "
+        "keyed to the basemap catalogue rather than to the design system: "
+        "adding a basemap adds a token, and the choice of hue is made by "
+        "elimination against the ones already taken (see the block comment "
+        "in main.css), not by a designer browsing swatches. Exempted by "
+        "prefix so the next basemap is a one-line change in the CSS.",
+    ),
+)
+
+
+FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
+    FoundationCategory(
+        slug="typography",
+        label="Typography",
+        description="Type families and the heading / body / mono ramp.",
+        kind="typography",
+        tokens=(
+            Token("--font-sans", "Sans", "'DM Sans', system-ui, sans-serif", None),
+            Token("--font-mono", "Mono", "'DM Mono', ui-monospace, monospace", None),
+        ),
+    ),
+    FoundationCategory(
+        slug="type-scale",
+        label="Type scale",
+        description=(
+            "Labels, chip captions and the prose body line-height. Plugs the "
+            "gaps in the Tailwind default ramp that previously appeared as "
+            "``text-[9px]`` / ``text-[9.5px]`` / ``leading-[1.6]`` arbitraries."
+        ),
+        kind="typescale",
+        tokens=(
+            Token("--text-meta", "Meta label", "11px", None),
+            Token("--text-pill", "Pill-chip caption", "9.5px", None),
+            Token("--text-caption", "Caption", "11px", None),
+            Token("--text-summary", "Summary title", "13px", None),
+            Token("--text-row-meta", "Row meta line", "12px", None),
+            Token("--text-label", "Problem / wordmark label", "15px", None),
+            Token("--leading-prose", "Prose body leading", "1.6", None),
+        ),
+    ),
+    FoundationCategory(
+        slug="surfaces",
+        label="Surfaces",
+        description=(
+            "Page background and card surface fills, plus the translucent "
+            "fills that sit over them — the chip pair, the two frosted "
+            "glasses and the scrim behind a popover. The translucent five "
+            "are black on light and white on dark (the same idiom as the "
+            "border pair) so each reads correctly over whatever surface "
+            "happens to be underneath."
+        ),
+        kind="swatches",
+        tokens=(
+            Token("--color-bg", "Page background", "#f2f0ec", "#1c1b19"),
+            Token("--color-card", "Card", "#ffffff", "#2a2825"),
+            Token("--color-card-subtle", "Card (subtle)", "#fafaf8", "#23211f"),
+            Token("--color-card-hover", "Card (hover)", "#eeeae2", "#353330"),
+            Token("--color-tag", "Tag", "#f5f3ef", "#302e2a"),
+            Token(
+                "--color-chip",
+                "Chip",
+                "rgba(0, 0, 0, 0.06)",
+                "rgba(255, 255, 255, 0.06)",
+            ),
+            Token(
+                "--color-chip-strong",
+                "Chip (hover)",
+                "rgba(0, 0, 0, 0.08)",
+                "rgba(255, 255, 255, 0.08)",
+            ),
+            Token(
+                "--color-day-filled",
+                "Calendar day with a bulletin",
+                "rgba(0, 0, 0, 0.13)",
+                "rgba(255, 255, 255, 0.16)",
+            ),
+            Token(
+                "--color-glass",
+                "Glass (overlay)",
+                "rgba(255, 255, 255, 0.85)",
+                "rgba(20, 22, 26, 0.78)",
+            ),
+            Token(
+                "--color-popup-glass",
+                "Glass (map popup)",
+                "rgba(248, 246, 240, 0.65)",
+                "rgba(20, 22, 26, 0.6)",
+            ),
+            Token(
+                "--color-scrim",
+                "Scrim (popover backdrop)",
+                "rgba(0, 0, 0, 0.4)",
+                "rgba(0, 0, 0, 0.6)",
+            ),
+        ),
+    ),
+    FoundationCategory(
+        slug="text-ramp",
+        label="Text ramp",
+        description="Three-step neutral ramp for headings, body and meta.",
+        kind="swatches",
+        tokens=(
+            Token("--color-text-1", "Primary", "#1a1916", "#edece8"),
+            Token("--color-text-2", "Secondary", "#6b6860", "#a8a49c"),
+            Token("--color-text-3", "Tertiary", "#6e6b65", "#9a968e"),
+        ),
+    ),
+    FoundationCategory(
+        slug="borders",
+        label="Borders",
+        description=(
+            "Hairlines and stronger separators, plus the selection ring "
+            "the calendar draws around the chosen date."
+        ),
+        kind="swatches",
+        tokens=(
+            Token(
+                "--color-border",
+                "Border",
+                "rgba(0, 0, 0, 0.09)",
+                "rgba(255, 255, 255, 0.09)",
+            ),
+            Token(
+                "--color-border-strong",
+                "Border strong",
+                "rgba(0, 0, 0, 0.16)",
+                "rgba(255, 255, 255, 0.16)",
+            ),
+            Token("--color-ring-selected", "Selected ring", "#3b82f6", "#60a5fa"),
+        ),
+    ),
+    FoundationCategory(
+        slug="accent",
+        label="Accent",
+        description=(
+            "The one plain interactive blue — every link, the accent "
+            "button, the overlay switch's ON state, the meteogram's "
+            "freezing-level series. Deliberately NOT --color-status-info-*: "
+            "that is the “info” severity on the flash-message "
+            "scale, and a link carries no severity. The hover step is a "
+            "shade DOWN on light and a shade UP on dark; the text colour "
+            "is white in both themes, because it is only ever read against "
+            "a fill of the accent itself. The tint is the accent as a quiet "
+            "fill under accent text or an accent stroke: the terrain filter "
+            "sheet's selected options (SNOW-1109)."
+        ),
+        kind="swatches",
+        tokens=(
+            Token("--color-accent", "Accent", "#2563eb", "#3b82f6"),
+            Token("--color-accent-hover", "Accent (hover)", "#1d4ed8", "#60a5fa"),
+            Token("--color-accent-text", "Accent (on-fill text)", "#ffffff", "#ffffff"),
+            Token(
+                "--color-accent-tint",
+                "Accent (tint)",
+                "rgba(37, 99, 235, 0.14)",
+                "rgba(59, 130, 246, 0.22)",
+            ),
+            # SNOW-1395: the "Your location" sheet's tile repeats MapLibre's
+            # user-location dot, so the sheet shows what was tapped.
+            Token("--color-location-dot", "Location dot", "#1da1f2", "#1da1f2"),
+        ),
+    ),
+    FoundationCategory(
+        slug="status",
+        label="Status",
+        description=(
+            "Flash messages and status badges, the inline form-validation "
+            "ink, and the info callout the day-character banner sits in — "
+            "each a background paired with the text that goes on it."
+        ),
+        kind="swatches",
+        tokens=(
+            Token("--color-status-error-bg", "Error bg", "#fee2e2", "#451a1a"),
+            Token("--color-status-error-text", "Error text", "#991b1b", "#fca5a5"),
+            Token("--color-status-warning-bg", "Warning bg", "#fef3c7", "#452a0a"),
+            Token("--color-status-warning-text", "Warning text", "#92400e", "#fcd34d"),
+            Token("--color-status-success-bg", "Success bg", "#d1fae5", "#14332a"),
+            Token("--color-status-success-text", "Success text", "#065f46", "#6ee7b7"),
+            Token("--color-status-info-bg", "Info bg", "#dbeafe", "#1e2a4a"),
+            Token("--color-status-info-text", "Info text", "#1e40af", "#93c5fd"),
+            Token("--color-form-error", "Form error text", "#ef4444", "#f87171"),
+            Token("--color-callout-info-bg", "Callout bg", "#ffffff", "#2a2825"),
+            Token(
+                "--color-callout-info-border",
+                "Callout border",
+                "rgba(0, 0, 0, 0.12)",
+                "rgba(255, 255, 255, 0.12)",
+            ),
+            Token("--color-callout-info-text", "Callout text", "#6b6860", "#a8a49c"),
+        ),
+    ),
+    FoundationCategory(
+        slug="sync",
+        label="Sync status",
+        description=(
+            "The four states of offline availability — the map layers "
+            "popover's dots and the download roundel. Its own scale rather "
+            "than a borrowing from Status above: this says whether "
+            "something is on the device, not how severe a message is. "
+            "Partial is the one to read twice — downloaded, but missing "
+            "something it needs to render, so a one-tap repair rather than "
+            "a dead end."
+        ),
+        kind="swatches",
+        swatch_columns=4,
+        tokens=(
+            Token("--color-sync-ok", "Cached", "#16a34a", "#4ade80"),
+            Token("--color-sync-partial", "Incomplete", "#d97706", "#fbbf24"),
+            Token("--color-sync-blocked", "Unavailable", "#dc2626", "#f87171"),
+            Token("--color-sync-off", "Not cached", "#9ca3af", "#6b7280"),
+        ),
+    ),
+    FoundationCategory(
+        slug="eaws",
+        label="EAWS scale",
+        description="Five-level danger scale (theme-invariant by EAWS spec).",
+        kind="swatches",
+        swatch_columns=5,
+        tokens=(
+            Token("--color-eaws-low", "Low", "#ccff66", None),
+            Token("--color-eaws-moderate", "Moderate", "#ffff00", None),
+            Token("--color-eaws-considerable", "Considerable", "#ff9900", None),
+            Token("--color-eaws-high", "High", "#ff0000", None),
+            Token("--color-eaws-very-high", "Very high", "#820100", None),
+            Token("--color-eaws-low-tint", "Low tint", "#e8ffb8", None),
+            Token("--color-eaws-moderate-tint", "Moderate tint", "#fff7b8", None),
+            Token(
+                "--color-eaws-considerable-tint", "Considerable tint", "#ffe5c2", None
+            ),
+            Token("--color-eaws-high-tint", "High tint", "#ffd9d9", None),
+            Token("--color-eaws-very-high-tint", "Very-high tint", "#1a0000", None),
+            Token("--color-eaws-low-text", "Low text", "#3a5a00", None),
+            Token("--color-eaws-moderate-text", "Moderate text", "#4d4500", None),
+            Token(
+                "--color-eaws-considerable-text", "Considerable text", "#5c3000", None
+            ),
+            Token("--color-eaws-high-text", "High text", "#6b0000", None),
+            Token("--color-eaws-very-high-text", "Very-high text", "#ffffff", None),
+            Token("--color-eaws-low-fg", "Low fg", "#1a1916", None),
+            Token("--color-eaws-moderate-fg", "Moderate fg", "#1a1916", None),
+            Token("--color-eaws-considerable-fg", "Considerable fg", "#1a1916", None),
+            Token("--color-eaws-high-fg", "High fg", "#ffffff", None),
+            Token("--color-eaws-very-high-fg", "Very-high fg", "#ffffff", None),
+            Token("--color-eaws-mixed-fg", "Mixed-level fg", "#1a0000", None),
+        ),
+    ),
+    FoundationCategory(
+        slug="slope",
+        label="Slope angle",
+        description=(
+            "Slope-angle classes, SLF classification, painted from our "
+            "terrain-class tiles by the terrain filter's slope mode "
+            "(SNOW-1073; theme-invariant; nothing under 30° is painted). The "
+            "last four are the route line's own — a line cannot go blank "
+            "where the layer does without reading as a break, and a "
+            "sampled-but-unanswered stretch is not a gentle one (SNOW-910). "
+            "The last two are MARKS drawn over that line rather than "
+            "bands of it, and borrow no colour from the scale on purpose: "
+            "a marker tinted from the ramp reads as a further class of "
+            "ground (SNOW-964). The five -fg tokens are the ink for a label "
+            "written on a class's fill, the terrain filter sheet's slope "
+            "ramp (SNOW-1109)."
+        ),
+        kind="swatches",
+        swatch_columns=5,
+        tokens=(
+            Token("--color-slope-30", "30–35°", "#f2e50a", None),
+            Token("--color-slope-35", "35–40°", "#f46f24", None),
+            Token("--color-slope-40", "40–45°", "#de055b", None),
+            Token("--color-slope-45", "45–50°", "#c889bb", None),
+            Token("--color-slope-50", "Over 50°", "#4b4b4b", None),
+            Token("--color-slope-30-fg", "Label on 30–35°", "#1a1916", None),
+            Token("--color-slope-35-fg", "Label on 35–40°", "#1a1916", None),
+            Token("--color-slope-40-fg", "Label on 40–45°", "#ffffff", None),
+            Token("--color-slope-45-fg", "Label on 45–50°", "#1a1916", None),
+            Token("--color-slope-50-fg", "Label on over 50°", "#ffffff", None),
+            Token("--color-slope-gentle", "Under 30° (line)", "#38bdf8", None),
+            Token("--color-slope-unknown", "Not surveyed (line)", "#94a3b8", None),
+            Token(
+                "--color-track-level", "Level track (wheel, under 5°)", "#bae6fd", None
+            ),
+            Token("--color-passage-core", "No-fall passage (marker)", "#f8fafc", None),
+            Token("--color-fall-line-arrow", "Fall line (marker)", "#1a1916", None),
+        ),
+    ),
+    FoundationCategory(
+        slug="terrain-filter",
+        label="Terrain filter",
+        description=(
+            "The map's terrain filter (SNOW-978): ground matching the "
+            "reader's aspect / slope / elevation filter, tinted at about 45% "
+            "so contours read through it, and the hatch over ground the "
+            "tiles carry no data for. Theme-invariant, like every map mark. "
+            "The pixels are painted on the device by "
+            "static/js/terrain_filter_core.js, which carries these two as "
+            "literals; a Vitest test holds them equal."
+        ),
+        kind="swatches",
+        swatch_columns=5,
+        tokens=(
+            Token("--color-terrain-match", "Matches the filter", "#2563eb", None),
+            Token("--color-terrain-nodata", "No data (hatch)", "#475569", None),
+        ),
+    ),
+    FoundationCategory(
+        slug="problem-terrain",
+        label="Problem terrain",
+        description=(
+            "The region sheet's problem-terrain layer (SNOW-979): the "
+            "selected region's ground of 30° and over, painted by the day's "
+            "bulletin. Ground a problem describes takes that problem's EAWS "
+            "colour (the danger tokens — the colour is the rating); these "
+            "two paint the rest of the steep ground, so none of it is left "
+            "blank. Undescribed is a 135° hatch, the other way from the "
+            "terrain filter's no-data hatch; undecided (a treeline band or "
+            "a prose-only problem) a flat grey. Theme-invariant. Painted on "
+            "the device by static/js/bulletin_terrain_core.js, which "
+            "carries these as literals; a Vitest test holds them equal."
+        ),
+        kind="swatches",
+        swatch_columns=5,
+        tokens=(
+            Token(
+                "--color-bulletin-terrain-undescribed",
+                "Additional steep terrain, >30° (hatch)",
+                "#57534e",
+                None,
+            ),
+            Token(
+                "--color-bulletin-terrain-undecided",
+                "Described, can't be placed",
+                "#78716c",
+                None,
+            ),
+        ),
+    ),
+    FoundationCategory(
+        slug="map-marks",
+        label="Map marks",
+        description=(
+            "What the map draws OVER the choropleth: the saved-route line "
+            "and its casing, and the two point markers. Theme-invariant, "
+            "because the ground underneath is a basemap rather than a card "
+            "— the line has to hold over pale satellite imagery and "
+            "over the danger ramp alike, and neither changes with the site "
+            "theme. The hues are picked by elimination: the EAWS 1–5 "
+            "ramp is a standard and is not ours to reuse, so the markers "
+            "take blue and amber and the route line takes the one hue "
+            "family left. MapLibre paint properties cannot read a CSS "
+            "custom property, so static/js/map.js carries these literals in "
+            "module constants and points back at @theme; they are declared "
+            "here so the set can be read side by side."
+        ),
+        kind="swatches",
+        swatch_columns=4,
+        tokens=(
+            Token("--color-route-line", "Saved route", "#c026d3", None),
+            Token("--color-route-line-casing", "Saved route (casing)", "#1a1916", None),
+            Token("--color-marker-favourite", "Favourite star", "#1a73e8", None),
+            # SNOW-1289: the three observation families.
+            Token(
+                "--color-obs-warning",
+                "Observation — warning signs",
+                "#1a1916",
+                "#edece8",
+            ),
+            Token("--color-obs-surface", "Observation — snow surface", "#0369a1", None),
+            Token("--color-obs-trail", "Observation — on the trail", "#0f766e", None),
+            # The map legend's wildlife rest-zone key (rest_zones_core.js
+            # paints the zones with the same two literals).
+            Token("--color-rest-binding", "Rest zone — closed by law", "#c62828", None),
+            Token("--color-rest-recommended", "Rest zone — advised", "#e08a00", None),
+            # SNOW-1018: not drawn on the map but under the route's profile
+            # on rail one, and listed here beside the route line because
+            # the descent fill IS the route's colour (SNOW-1019 swapped
+            # the pair: a slate climb, a fuchsia descent).
+            Token("--color-route-rail-climb", "Rail leg — climb", "#64748b", None),
+            Token("--color-route-rail-descent", "Rail leg — descent", "#c026d3", None),
+            # SNOW-1307: an SAC tour not yet saved, on the map and in its
+            # profile, in SAC's own blue so a reader's routes stand apart.
+            Token("--color-sac-climb", "SAC tour — way up", "#1d4ed8", None),
+            Token("--color-sac-descent", "SAC tour — way down", "#38bdf8", None),
+        ),
+    ),
+    FoundationCategory(
+        slug="weather",
+        label="Weather header",
+        description=(
+            "Bulletin-header backdrops, 7 buckets × day/night "
+            "(theme-invariant), plus the condition icon's halo — the one "
+            "token here that DOES change with the theme, because the pale "
+            "cloud it outlines on a light card needs no edge on a dark one."
+        ),
+        kind="swatches",
+        tokens=(
+            Token("--color-weather-clear-day", "Clear · day", "#5fa1d3", None),
+            Token("--color-weather-clear-night", "Clear · night", "#1a2a4a", None),
+            Token(
+                "--color-weather-partly-cloudy-day",
+                "Partly cloudy · day",
+                "#8aabc8",
+                None,
+            ),
+            Token(
+                "--color-weather-partly-cloudy-night",
+                "Partly cloudy · night",
+                "#22324a",
+                None,
+            ),
+            Token("--color-weather-cloudy-day", "Cloudy · day", "#a3aab3", None),
+            Token("--color-weather-cloudy-night", "Cloudy · night", "#2a2e34", None),
+            Token("--color-weather-fog-day", "Fog · day", "#b6b3aa", None),
+            Token("--color-weather-fog-night", "Fog · night", "#2c2e35", None),
+            Token("--color-weather-rain-day", "Rain · day", "#7a92aa", None),
+            Token("--color-weather-rain-night", "Rain · night", "#1d2932", None),
+            Token("--color-weather-snow-day", "Snow · day", "#b3c2ce", None),
+            Token("--color-weather-snow-night", "Snow · night", "#1f2a3a", None),
+            Token("--color-weather-thunder-day", "Thunder · day", "#5e6470", None),
+            Token("--color-weather-thunder-night", "Thunder · night", "#101220", None),
+            Token("--color-weather-fallback", "Fallback", "#3a3733", None),
+            Token(
+                "--color-weather-icon-halo",
+                "Condition icon halo",
+                "rgba(41, 45, 54, 0.85)",
+                "transparent",
+            ),
+        ),
+    ),
+    FoundationCategory(
+        slug="chart",
+        label="Meteogram",
+        description=(
+            "The hourly chart's own marks — two series colours, the "
+            "accumulation fill, the day/night axis bar and the legend "
+            "note. The other four series reuse foundations above: "
+            "temperature is text-1, freezing level and the metre scale are "
+            "accent, gusts are text-2, axis furniture is border."
+        ),
+        kind="swatches",
+        tokens=(
+            Token("--color-chart-precip", "Precipitation · mm", "#0f766e", None),
+            Token("--color-chart-wind", "Sustained wind", "#4a4740", None),
+            Token(
+                "--color-chart-snow",
+                "New snow · cm",
+                "rgba(37, 99, 235, 0.35)",
+                None,
+            ),
+            Token("--color-chart-night", "Axis bar · night", "#475569", "#64748b"),
+            Token(
+                "--color-chart-daylight", "Axis bar · daylight", "#f59e0b", "#fcd34d"
+            ),
+            Token("--color-strip-night", "Time selector · night", "#d2d3d4", "#1a1917"),
+            Token(
+                "--color-strip-night-text",
+                "Time selector · ink on night",
+                "#57544e",
+                "#9a968e",
+            ),
+            Token("--color-chart-note-bg", "Legend note · fill", "#eef2ff", "#252a44"),
+            Token("--color-chart-note-text", "Legend note · ink", "#2563eb", "#93c5fd"),
+        ),
+    ),
+    FoundationCategory(
+        slug="radius",
+        label="Radius",
+        description="Corner-radius scale for cards, tags and pills.",
+        kind="radius",
+        tokens=(
+            Token("--radius-card", "Card", "12px", None),
+            Token("--radius-tag", "Tag", "8px", None),
+            Token("--radius-sm", "Small", "6px", None),
+            Token("--radius-pill", "Pill", "4px", None),
+        ),
+    ),
+    FoundationCategory(
+        slug="layout",
+        label="Layout",
+        description="Breakpoints and content widths.",
+        kind="layout",
+        tokens=(
+            Token("--breakpoint-tablet", "Tablet ≥", "600px", None),
+            Token("--breakpoint-desktop", "Desktop ≥", "960px", None),
+            Token("--container-card-mobile", "Card (mobile)", "390px", None),
+            Token("--container-narrow", "Content (narrow)", "640px", None),
+            Token("--container-wide", "Content (wide)", "720px", None),
+            Token("--container-grid-max", "Grid (max)", "1200px", None),
+        ),
+    ),
+    FoundationCategory(
+        slug="icons",
+        label="Icons",
+        description=(
+            "Static SVG assets shipped with the site: danger-tinted favicons, "
+            "EAWS danger-level pictograms and EAWS avalanche-problem icons."
+        ),
+        kind="icons",
+        tokens=(
+            # ---- Favicons (browser tab + bookmark; tinted by danger level) ----
+            IconToken("favicon", "Default", "favicon.svg", "Favicon"),
+            IconToken("favicon-staging", "Staging", "favicon-staging.svg", "Favicon"),
+            IconToken("favicon-low", "Low", "favicon-low.svg", "Favicon"),
+            IconToken(
+                "favicon-moderate", "Moderate", "favicon-moderate.svg", "Favicon"
+            ),
+            IconToken(
+                "favicon-considerable",
+                "Considerable",
+                "favicon-considerable.svg",
+                "Favicon",
+            ),
+            IconToken("favicon-high", "High", "favicon-high.svg", "Favicon"),
+            IconToken(
+                "favicon-very_high", "Very high", "favicon-very_high.svg", "Favicon"
+            ),
+            # ---- EAWS danger-level pictograms (per-category, 1–5 + no rating) ----
+            IconToken(
+                "Dry-Snow-1",
+                "Dry · 1 (Low)",
+                "icons/eaws/danger_levels/Dry-Snow-1.svg",
+                "Danger level",
+            ),
+            IconToken(
+                "Dry-Snow-2",
+                "Dry · 2 (Moderate)",
+                "icons/eaws/danger_levels/Dry-Snow-2.svg",
+                "Danger level",
+            ),
+            IconToken(
+                "Dry-Snow-3",
+                "Dry · 3 (Considerable)",
+                "icons/eaws/danger_levels/Dry-Snow-3.svg",
+                "Danger level",
+            ),
+            IconToken(
+                "Dry-Snow-4-5",
+                "Dry · 4–5 (High / Very High)",
+                "icons/eaws/danger_levels/Dry-Snow-4-5.svg",
+                "Danger level",
+            ),
+            IconToken(
+                "Wet-Snow-1",
+                "Wet · 1 (Low)",
+                "icons/eaws/danger_levels/Wet-Snow-1.svg",
+                "Danger level",
+            ),
+            IconToken(
+                "Wet-Snow-2",
+                "Wet · 2 (Moderate)",
+                "icons/eaws/danger_levels/Wet-Snow-2.svg",
+                "Danger level",
+            ),
+            IconToken(
+                "Wet-Snow-3",
+                "Wet · 3 (Considerable)",
+                "icons/eaws/danger_levels/Wet-Snow-3.svg",
+                "Danger level",
+            ),
+            IconToken(
+                "Wet-Snow-4",
+                "Wet · 4 (High)",
+                "icons/eaws/danger_levels/Wet-Snow-4.svg",
+                "Danger level",
+            ),
+            IconToken(
+                "Wet-Snow-5",
+                "Wet · 5 (Very High)",
+                "icons/eaws/danger_levels/Wet-Snow-5.svg",
+                "Danger level",
+            ),
+            IconToken(
+                "No-Rating",
+                "No rating",
+                "icons/eaws/danger_levels/No-Rating.svg",
+                "Danger level",
+            ),
+            # ---- EAWS avalanche-problem icons (canonical via hazard_icon filter) ----
+            IconToken(
+                "New-Snow",
+                "New snow",
+                "icons/eaws/avalanche_problems/New-Snow.svg",
+                "Avalanche problem",
+            ),
+            IconToken(
+                "Wind-Slab",
+                "Wind slab",
+                "icons/eaws/avalanche_problems/Wind-Slab.svg",
+                "Avalanche problem",
+            ),
+            IconToken(
+                "Persistent-Weak-Layer",
+                "Persistent weak layer",
+                "icons/eaws/avalanche_problems/Persistent-Weak-Layer.svg",
+                "Avalanche problem",
+            ),
+            IconToken(
+                "Wet-Snow",
+                "Wet snow",
+                "icons/eaws/avalanche_problems/Wet-Snow.svg",
+                "Avalanche problem",
+            ),
+            IconToken(
+                "Gliding-Snow",
+                "Gliding snow",
+                "icons/eaws/avalanche_problems/Gliding-Snow.svg",
+                "Avalanche problem",
+            ),
+            IconToken(
+                "Cornices",
+                "Cornices",
+                "icons/eaws/avalanche_problems/Cornices.svg",
+                "Avalanche problem",
+            ),
+            IconToken(
+                "No-Distinct-Avalanche-Problem",
+                "No distinct problem",
+                "icons/eaws/avalanche_problems/No-Distinct-Avalanche-Problem.svg",
+                "Avalanche problem",
+            ),
+            # ---- Yr / MET Norway weather icons (MIT, see weather/LICENSE.md) ----
+            # 14 entries: two day/night pairs (the buckets drawn with a sun or a
+            # moon) plus ten single files. Granularity is higher than
+            # WEATHER_BUCKETS — drizzle and light/moderate/heavy rain all map to
+            # the "rain" bucket — so a surface can choose its asset by WMO code
+            # rather than by bucket alone. `drizzle` and `light_rain` are the same
+            # drawing under two names; see the licence file for why.
+            IconToken(
+                "clear-day", "Clear · day", _ICON_DIR + "clear-day.svg", "Weather"
+            ),
+            IconToken(
+                "clear-night",
+                "Clear · night",
+                _ICON_DIR + "clear-night.svg",
+                "Weather",
+            ),
+            IconToken(
+                "partly_cloudy-day",
+                "Partly cloudy · day",
+                _ICON_DIR + "partly_cloudy-day.svg",
+                "Weather",
+            ),
+            IconToken(
+                "partly_cloudy-night",
+                "Partly cloudy · night",
+                _ICON_DIR + "partly_cloudy-night.svg",
+                "Weather",
+            ),
+            IconToken("cloudy", "Cloudy", _ICON_DIR + "cloudy.svg", "Weather"),
+            IconToken("fog", "Fog", _ICON_DIR + "fog.svg", "Weather"),
+            IconToken("drizzle", "Drizzle", _ICON_DIR + "drizzle.svg", "Weather"),
+            IconToken(
+                "light_rain",
+                "Light rain",
+                _ICON_DIR + "light_rain.svg",
+                "Weather",
+            ),
+            IconToken(
+                "moderate_rain",
+                "Moderate rain",
+                _ICON_DIR + "moderate_rain.svg",
+                "Weather",
+            ),
+            IconToken(
+                "heavy_rain",
+                "Heavy rain",
+                _ICON_DIR + "heavy_rain.svg",
+                "Weather",
+            ),
+            IconToken(
+                "light_snow",
+                "Light snow",
+                _ICON_DIR + "light_snow.svg",
+                "Weather",
+            ),
+            IconToken(
+                "moderate_snow",
+                "Moderate snow",
+                _ICON_DIR + "moderate_snow.svg",
+                "Weather",
+            ),
+            IconToken(
+                "heavy_snow",
+                "Heavy snow",
+                _ICON_DIR + "heavy_snow.svg",
+                "Weather",
+            ),
+            IconToken("thunder", "Thunder", _ICON_DIR + "thunder.svg", "Weather"),
+            IconToken(
+                "sunrise",
+                "Sunrise",
+                "icons/weather/sunrise.svg",
+                "Weather",
+            ),
+            IconToken(
+                "sunset",
+                "Sunset",
+                "icons/weather/sunset.svg",
+                "Weather",
+            ),
+        ),
+    ),
+)
+
+
+COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
+    FoundationCategory(
+        slug="day-windows",
+        label="Day windows",
+        description=(
+            "Per-window EAWS rating panel — one row per validTimePeriod with "
+            "a coloured danger-level tile, label and time-window pill. "
+            "Banded periods (ALBINA / Météo-France with two elevation-split "
+            "danger levels in one period) emit a row per band, each carrying "
+            "the mountain elevation glyph beside the tile to mark the "
+            "above/below band (SNOW-298); single-band periods (SLF; "
+            "constant-danger ALBINA) omit the glyph. Variants cover the "
+            "all-day case (≈95% of bulletins) across every danger level, a "
+            "realistic split-day layout, and numeric- and treeline-pivot "
+            "banded examples."
+        ),
+        kind="components",
+        partial="includes/day_windows.html",
+        variants=DAY_WINDOWS_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="callout",
+        label="Callout",
+        description=(
+            "Inline status callout — four semantic kinds (warning, error, success, "
+            "info) backed by the --color-status-* palette, with optional body, "
+            "monospace diagnostic block, and call-to-action link."
+        ),
+        kind="components",
+        partial="includes/_callout.html",
+        variants=CALLOUT_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="run-strip",
+        label="Run strip",
+        description=(
+            "One cell per slice of a time window, coloured by the worst "
+            "scheduled run in it: success, running or failed (taller). An "
+            "empty slice is a dot. Each cell links to its run in the admin. "
+            "The staff ingest report draws one per feed (SNOW-1423)."
+        ),
+        kind="components",
+        partial="includes/_run_strip.html",
+        variants=RUN_STRIP_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="toast",
+        label="Toast",
+        description=(
+            "Fixed-position notification toast — bottom-centred pill backed by "
+            "the --color-status-* palette. Used for the service-worker update "
+            "banner (info kind with Reload CTA) and HTMX error banners (error "
+            "kind, no CTA). Single-slot; ARIA live region keyed off kind."
+        ),
+        kind="components",
+        partial="includes/_toast.html",
+        variants=TOAST_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="toast-banner",
+        label="Toast banner",
+        description=(
+            "Full-width top-of-page toast (SNOW-376) — distinct from the "
+            "bottom-centred Toast above. Purpose-built for the mutation-"
+            "queue permanent-failure UX: a queued client mutation that a "
+            "server response has permanently rejected. Single status-error "
+            "kind; ARIA alert/assertive."
+        ),
+        kind="components",
+        partial="includes/_toast_banner.html",
+        variants=TOAST_BANNER_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="overlay-banner",
+        label="Overlay banner",
+        description=(
+            "Persistent, condition-driven banner primitive (SNOW-486) — the "
+            "'strip' variant is a full-width in-flow edge bar (off-season "
+            "notice); the 'floating' variant is a fixed bottom-centre card "
+            "with an optional icon, CTA and dismiss. Migrated the sw-update "
+            "banner and the install prompts; the mutation-queue toast keeps "
+            "its own template (a documented exception — see "
+            "docs/decisions/overlay-primitives.md)."
+        ),
+        kind="components",
+        partial="includes/_overlay_banner.html",
+        variants=OVERLAY_BANNER_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="another-day-strip",
+        label="Another-day strip",
+        description=(
+            "'Showing Wed 8 Apr 2026 · Back to today' (SNOW-1165) — rendered "
+            "only when a region or resort page shows a day that is not "
+            "today, full width under the nav, linking to the bare URL. The "
+            "map's sheets say it in their own date row instead (sheet-date-"
+            "row). Status-info palette by meaning."
+        ),
+        kind="components",
+        partial="includes/_another_day_strip.html",
+        variants=ANOTHER_DAY_STRIP_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="overlay-modal",
+        label="Overlay modal",
+        description=(
+            "Full-screen backdrop + centred card primitive (SNOW-486), "
+            "CTA-only by design — no dismiss control. Shared shell for the "
+            "two PWA modals (forced update, reset required)."
+        ),
+        kind="components",
+        partial="includes/_overlay_modal.html",
+        variants=OVERLAY_MODAL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="overlay-sheet",
+        label="Overlay sheet",
+        description=(
+            "Fly-out sheet primitive (SNOW-486) shared by the favourite and "
+            "report map surfaces — fixed to the viewport edge on mobile, a "
+            "floating card on larger screens. Content is injected by the "
+            "owning JS module (favourites.js / report.js) at open time; the "
+            "shell itself carries the data-overlay dismiss contract. A sheet "
+            "that declares detents (SNOW-1097) gets a handle on phones and "
+            "rests at peek, half or full. Three named kinds, chosen by what "
+            "opened it: an object sheet (a thing tapped on the map; the only "
+            "kind with detents), a roundel panel (a list or setting a "
+            "roundel opened and toggles; must not cover the roundels) and "
+            "a form panel (a task; no drag-to-close). See "
+            "docs/design-system.md, Map panels."
+        ),
+        kind="components",
+        partial="includes/_overlay_sheet.html",
+        variants=OVERLAY_SHEET_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="day-character-callout",
+        label="Day character callout",
+        description=(
+            "Inline bordered banner surfacing the day-character assessment "
+            "above the bulletin body. Combines the Snowdesk favicon, a bold "
+            "label, and a one-line explainer in a quiet warm-grey tint that "
+            "holds in both light and dark modes."
+        ),
+        kind="components",
+        partial="includes/day_character_callout.html",
+        variants=DAY_CHARACTER_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="tendency-outlook",
+        label="Tendency outlook",
+        description=(
+            "Directional outlook card for ALBINA bulletins. Shows a Unicode "
+            "arrow (→ / ↗ / ↘), a bold danger-direction label, the target "
+            "date, and optional forecaster highlights prose. Suppressed for "
+            "SLF bulletins and any bulletin without a tendency_type."
+        ),
+        kind="components",
+        partial="includes/_tendency_outlook.html",
+        variants=TENDENCY_OUTLOOK_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="bulletin-headline",
+        label="Bulletin headline",
+        description=(
+            "Data-driven one-liner below the day-character callout. "
+            "Keyed on (source, partition_type, peak_rating, direction, "
+            "family); top-12 SLF cells get hand-authored copy, everything "
+            "else falls back to a generic danger-level phrase. "
+            "Carries data-testid='bulletin-headline'."
+        ),
+        kind="components",
+        partial="public/_bulletin_headline.html",
+        variants=BULLETIN_HEADLINE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="season-calendar",
+        label="Season calendar",
+        description=(
+            "The one season calendar (public/partials/_season_calendar.html, "
+            "SNOW-1158) — the resort page's season section, the bulletin "
+            "page's season sheet, the /help/ illustration. Months as rows and "
+            "one dot per day against a 1·5·10…30 axis; in a narrow container "
+            "(a container query) months become columns of short bars. "
+            "Unlinked: one role=img with the season summary as its "
+            "aria-label and the short key. Linked: each day with a bulletin "
+            "links to it, and the full key counts each level."
+        ),
+        kind="components",
+        partial="public/partials/_season_calendar_demo.html",
+        variants=SEASON_CALENDAR_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="season-cell",
+        label="Season cell",
+        description=(
+            "Every state a day of the season calendar draws (.season-day, "
+            "data-state): no bulletin (outlined), the five EAWS levels, two "
+            "levels in one day (an afternoon rise, an AM/PM split or an ALBINA "
+            "band split — lower level left, the peak right), the 2px ring, "
+            "and not yet (faint). Drawn by the shared calendar partial; there "
+            "is no separate cell partial."
+        ),
+        kind="components",
+        partial="public/partials/_season_calendar_demo.html",
+        variants=SEASON_CELL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="season-scrubber",
+        label="Season scrubber",
+        description=(
+            "Floating media-player transport at the bottom of /map/. Four circular "
+            "buttons (skip-to-start, play-reverse, play-forward, skip-to-end) "
+            "bracketing a draggable track; the two play buttons flank the track as a "
+            "symmetric pair. The library variants pin the thumb at season start, "
+            "mid-season, and season end so the thumb positioning is visible at the "
+            "extremes; interaction is non-functional on this page (JS lives in map.js)."
+        ),
+        kind="components",
+        partial="public/partials/_season_scrubber_demo.html",
+        variants=SEASON_SCRUBBER_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="map-zoom-control",
+        label="Map zoom control",
+        description=(
+            "The roundel at the top of the map's bottom-left stack (SNOW-1077), "
+            "the help and (i) roundels' size. Its face is the whole tile zoom "
+            "the map is drawing and its accessible name says it ('Zoom level "
+            "13'). It opens a flyout into the crook the legend card uses: − "
+            "and + as 44 px targets, disabled at the map's z4 and z18; a "
+            "scale across that range with a marker at the camera; and a tick "
+            "for each zoom-gated layer that is on — the terrain filter from "
+            "z12, a route's slope colours from z14 — with a row naming it. A "
+            "tick and its row turn from muted to full strength once the "
+            "camera reaches the gate. Under DEBUG a last line gives the "
+            "camera zoom to two decimals. Filled on /map/ by "
+            "static/js/map_zoom_control.js; the gates come from "
+            "window.pwaZoomGates in map.js. Static here."
+        ),
+        kind="components",
+        partial="public/partials/_map_zoom_control_demo.html",
+        variants=MAP_ZOOM_CONTROL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="button",
+        label="Button",
+        description=(
+            "Primary, secondary and ghost button variants across standard and "
+            "compact sizes. Renders either an ``<a>`` or a ``<button>`` depending "
+            "on whether ``href`` is supplied."
+        ),
+        kind="components",
+        partial="includes/_button.html",
+        variants=BUTTON_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="card",
+        label="Card",
+        description=(
+            "Surface card chrome — ``bg-card rounded-card border shadow-sm`` — "
+            "across every padding variant used in the codebase."
+        ),
+        kind="components",
+        partial="includes/_card.html",
+        variants=CARD_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="daily-read",
+        label="Daily read",
+        description=(
+            'The homepage\'s "Across the Alps today" (SNOW-1357): what moved '
+            "since yesterday, per country, every sentence a count or a name "
+            "from the providers' bulletins. Built by apps/public/daily_read.py; "
+            "absent off season."
+        ),
+        kind="components",
+        partial="public/partials/_daily_read.html",
+        variants=DAILY_READ_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="today-panel",
+        label="Today panel",
+        description=(
+            "The map's Today panel (SNOW-1366): one row per region the "
+            "reader pinned or holds a pinned resort in, with the region's "
+            "danger today and its move since yesterday, and the pinned "
+            "resorts nested under it with their weather. Alphabetical, "
+            "always today. Built by apps/favourites/today.py."
+        ),
+        kind="components",
+        partial="favourites/partials/_today.html",
+        variants=TODAY_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="status-page",
+        label="Status page",
+        description=(
+            "Centred status-page shell — flex full-viewport wrapper → max-w-md "
+            "column → p-8 centred card — used by the nine confirmation and "
+            "error pages in the account flow."
+        ),
+        kind="components",
+        partial="public/partials/_status_page_demo.html",
+        variants=STATUS_PAGE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="nav",
+        label="Nav",
+        description=(
+            "Persistent top navigation bar — wordmark, optional back-chevron link, "
+            "optional season-trigger button, and a right-side auth/admin area "
+            "carrying the sync badge and the network menu (connectivity glyph, "
+            "SNOW-921 traffic arrows, offline-mode switch, debug-log entry). "
+            "Variants cover the bare logo-only state, back link, season trigger, "
+            "and an authenticated user."
+        ),
+        kind="components",
+        partial="includes/nav.html",
+        variants=NAV_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="site-footer",
+        label="Site footer",
+        description=(
+            "Global site footer — one line of legal links (Help, Terms of Use, "
+            "Privacy Policy, Colophon) followed by the running release. "
+            "Reverses URLs internally; the release comes from the "
+            "``pwa_version`` context processor, so no context variables are "
+            "passed in."
+        ),
+        kind="components",
+        partial="public/_site_footer.html",
+        variants=SITE_FOOTER_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="rating-block",
+        label="Rating block",
+        description=(
+            "Problem card for the bulletin page — danger-band header, aspect/elevation "
+            "row, and prose comment. Eight core variants cover every EAWS problem "
+            "type at a representative danger level: new snow, wind slab, persistent "
+            "weak layers, "
+            "cornices (dry), wet snow, gliding snow (wet), plus two prose-only "
+            "empty-state variants — scope mentioned ('See description below') vs "
+            "no scope ('All aspects · all elevations')."
+        ),
+        kind="components",
+        partial="public/_rating_block.html",
+        variants=RATING_BLOCK_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="rating-block-albina-bands",
+        label="Rating block — ALBINA band headings",
+        description=(
+            "ALBINA elevation-band section headings injected above the first card of "
+            "each band group (SNOW-292). The band_label field renders as "
+            "data-testid='band-heading'; the optional time_subheader (pivot migration) "
+            "renders as data-testid='band-time-subheader'. SLF and MF cards never "
+            "carry these fields and are unaffected."
+        ),
+        kind="components",
+        partial="public/_rating_block.html",
+        variants=RATING_BLOCK_ALBINA_BAND_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="region-tooltip",
+        label="Region tooltip",
+        description=(
+            "MapLibre popup body for a micro-region — danger-tile chip, region name, "
+            "geographic breadcrumb, and bulletin CTA. Three variants: considerable "
+            "rating, high with upper-band subdivision, and no-bulletin fallback."
+        ),
+        kind="components",
+        partial="public/_region_tooltip.html",
+        variants=REGION_TOOLTIP_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="no-data-supplied",
+        label="No data supplied",
+        description=(
+            "Empty-state placeholder used inside collapsible bulletin panels "
+            "(Outlook, etc.) when the upstream feed supplied the field structurally "
+            "but with no usable content. Single variant; no context variables required."
+        ),
+        kind="components",
+        partial="includes/_no_data_supplied.html",
+        variants=NO_DATA_SUPPLIED_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="collapsible-panel",
+        label="Collapsible panel",
+        description=(
+            "Expandable ``<details>`` panel used for the four Snowpack & Weather "
+            "sections on the bulletin page. Three variants: closed simple body, "
+            "open simple body, and open multi-entry tendency body."
+        ),
+        kind="components",
+        partial="includes/_collapsible_panel.html",
+        variants=COLLAPSIBLE_PANEL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="glossary-term",
+        label="Glossary term in prose",
+        description=(
+            "An EAWS term marked where the reader meets it, in the provider's own "
+            "prose (SNOW-853). The dotted-underlined word is a <button>; tapping it "
+            "opens a native [popover] carrying the standard's verbatim definition "
+            "and a link to its EAWS anchor — no JavaScript is involved. The markup "
+            "is spliced in by the snowdesk_html filter rather than authored in a "
+            "template, so these variants render through includes/_tendency_body.html "
+            "— the smallest real surface that runs prose through that filter. Two "
+            "variants: one term in a sentence, and a block exercising longest-match, "
+            "first-occurrence-per-block and synonym matching."
+        ),
+        kind="components",
+        partial="includes/_tendency_body.html",
+        variants=GLOSSARY_TERM_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="form-field",
+        label="Form field",
+        description=(
+            "One labelled control with its error list — the shape every "
+            "account form repeats. Ten call sites across six templates had "
+            "written it by hand before SNOW-672. The widget comes from the "
+            "form; this owns the chrome around it."
+        ),
+        kind="components",
+        partial="includes/_form_field.html",
+        variants=FORM_FIELD_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="page-title",
+        label="Page title",
+        description=(
+            "The <h1> at the top of an ordinary content page. Thirteen call "
+            "sites had written it by hand in three variants (SNOW-672); this "
+            "is the one that wins. Bottom spacing stays a caller decision — "
+            "mb-2 when a subtitle follows, mb-6 when the body starts after."
+        ),
+        kind="components",
+        partial="includes/_page_title.html",
+        variants=PAGE_TITLE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="eyebrow",
+        label="Eyebrow",
+        description=(
+            "Small uppercase eyebrow heading used above bulletin sections, "
+            "guide sections, and component-library panels. Accepts an "
+            "element tag override so the partial fits both h2/h3 headings "
+            "and standalone <p> labels."
+        ),
+        kind="components",
+        partial="includes/_eyebrow.html",
+        variants=EYEBROW_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="danger-tile-empty",
+        label="Danger tile — no rating",
+        description=(
+            "An outlined '–' in the shape of .danger-tile, for a day with no "
+            "bulletin, so a row that holds a level's tile keeps its shape. "
+            "Drawn by the resort page's bulletin card (SNOW-1156)."
+        ),
+        kind="components",
+        partial="includes/_danger_tile_empty.html",
+        variants=DANGER_TILE_EMPTY_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="dated-eyebrow",
+        label="Dated eyebrow",
+        description=(
+            "A section eyebrow that names the day its section is for, at the "
+            'right of the row: a quiet "Today", or on another day the date '
+            "in the info colours. Used by a map sheet's DATED sections — the "
+            'bulletin, the weather, "On the ground" — in place of the '
+            'full-width "Data from" row the sheets carried until 29 Oct '
+            "2026. Without a day it is the plain eyebrow, so a body shared "
+            "with a page passes one only in the sheet."
+        ),
+        kind="components",
+        partial="includes/_dated_eyebrow.html",
+        variants=DATED_EYEBROW_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="resort-tile",
+        label="Resort tile",
+        description=(
+            "The round tile a place (a resort or a saved pin) leads with, "
+            "where a region leads with its square danger tile — the search "
+            "rows' two shapes, carried onto the place sheet. A resort draws "
+            "the gondola cabin, a saved pin the placemark."
+        ),
+        kind="components",
+        partial="includes/_resort_tile.html",
+        variants=RESORT_TILE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="three-word-address",
+        label="Three word address",
+        description=(
+            "A location as a what3words address, linking to their map — the "
+            "only place a 3m square can be seen. Used on trip cards, the "
+            "trip details grid and the favourite card. NEVER renders blank: "
+            "a favourite falls back to the coordinate pair, and a trip's "
+            "meeting point to the sentence placing it against the route "
+            "plus an Open in maps link — a meeting point never shows its "
+            "latitude and longitude (SNOW-1214)."
+        ),
+        kind="components",
+        partial="includes/_three_word_address.html",
+        variants=THREE_WORD_ADDRESS_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="place-pin",
+        label="Place pin",
+        description=(
+            "The pin a place is chosen under. It stays still over the map's "
+            "centre and the map moves beneath it — the map page's favourite "
+            "and field-report placement and the Plan page's meeting point. "
+            "Only the glyph: the caller's wrapper positions it, lifts it and "
+            "sets its colour through currentColor."
+        ),
+        kind="components",
+        partial="includes/_place_pin.html",
+        variants=PLACE_PIN_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="route-profile",
+        label="Route profile",
+        description=(
+            "A route's elevation profile (SNOW-1215): one fill per leg, "
+            "climbing and descending in the route panel's two colours, "
+            "under one outline, with distance ticks along the foot — and, "
+            "where a point is placed, a cursor line with its elevation and "
+            "distance. One drawing on three surfaces: the map's route "
+            "panel, the Plan page's route card and the trip page. An "
+            "empty lane that static/js/route_profile.js draws into, so "
+            "this page shows the shell alone."
+        ),
+        kind="components",
+        partial="includes/_route_profile.html",
+        variants=ROUTE_PROFILE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="route-meta-line",
+        label="Route meta line",
+        description=(
+            "A route's figures in the routes list's format — '12.9km · "
+            "337m ↑ · 1906m ↓ · 2h51m' (SNOW-1215). The distance always; "
+            "ascent, descent and elapsed time each only when known, never "
+            "as zero. Text only: the caller owns the element. The Plan "
+            "page's route card and the trip page render it; the routes "
+            "row keeps its own copy because it composes the line."
+        ),
+        kind="components",
+        partial="includes/_route_meta_line.html",
+        variants=ROUTE_META_LINE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="meta-cell",
+        label="Meta cell label",
+        description=(
+            "Tiny uppercase label paragraph used as the top line of each "
+            "metadata-strip cell on the bulletin page. Label-only emit — "
+            "the caller owns the wrapping <div> and the value paragraph."
+        ),
+        kind="components",
+        partial="includes/_meta_cell.html",
+        variants=META_CELL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="resort-facts",
+        label="Resort facts block",
+        description=(
+            'The resort page\'s "About this resort" sidebar (SNOW-695, '
+            "redrawn as a definition list by SNOW-1155): a section eyebrow "
+            "above a card holding one <dl> — mono uppercase label left, "
+            "15px value (text-label) right-aligned, a hairline between "
+            "rows — for elevation range, lifts, runs, piste, typical season, "
+            "operator, website and notes. Formatted by "
+            "apps.public.resort_facts, the one formatter the place sheet's "
+            "summary line also reads (SNOW-1161): elevation carries a "
+            "thousands separator (1,500–3,330 m), the season reads 1 Dec – "
+            '30 Apr, the website is "Official website" with the '
+            "external-link glyph, and notes is the one full-width, "
+            "left-aligned row. An unset field renders no row, and the whole "
+            "section, eyebrow included, is omitted when every field is "
+            "unset. Elevation and season each compose two nullable columns "
+            "and degrade to a one-sided from/to reading."
+        ),
+        kind="components",
+        partial="public/partials/_resort_facts.html",
+        variants=RESORT_FACTS_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="place-link-row",
+        label="Place link row",
+        description=(
+            "The row each map panel ends with, naming another kind of place "
+            "and opening it: a resort's avalanche region, a region's "
+            "resorts, a weather point's region and resort (Hugo, 25 Oct "
+            "2026). It leads with the tile of the kind it opens — the "
+            "square for a region, the round cabin for a resort — and a "
+            "region row carries no level. A real link to the place's page; "
+            "on the map map_panel_trail.js opens the place's sheet in place "
+            "with a back pill instead."
+        ),
+        kind="components",
+        partial="includes/_place_link_row.html",
+        variants=PLACE_LINK_ROW_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="danger-tile",
+        label="Danger tile",
+        description=(
+            "The square EAWS tile for a region's day: the level's colour and "
+            "digit, with the subdivision ('3+') when the bulletin gives one, "
+            "or a dash in the same square with no rating. Shared by the "
+            "region sheet's peek, the place link row, a saved pin's level "
+            "line and the place sheet's Today row (SNOW-1422). The bordered "
+            "'No danger rating' glyph is _danger_tile_empty.html."
+        ),
+        kind="components",
+        partial="includes/_danger_tile.html",
+        variants=DANGER_TILE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="place-sheet-today-row",
+        label="Place sheet Today row",
+        description=(
+            "Terrain's one row for the day in the place sheet (SNOW-1422, "
+            "behind map_modes): the region's level tile, 'Today', and under "
+            "it the level's name and one weather reading, the day's icon "
+            "and high. It stands in for every section marked data-dated, "
+            "and map.css shows it in Terrain only. A tap switches the map "
+            "to Conditions on today with the sheet left open."
+        ),
+        kind="components",
+        partial="public/partials/_place_sheet_today_row.html",
+        variants=PLACE_SHEET_TODAY_ROW_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="resort-forecast",
+        label="Resort forecast strip",
+        description=(
+            "The resort page's Forecast section (SNOW-1157): an h2 eyebrow, "
+            "then a card with one chip per point — Base, Mid, Summit, each "
+            "with its elevation — choosing that point's seven-day strip. "
+            "The chips are visually hidden radios and labels; the "
+            "selection is CSS-only (:checked ~ rules paired on data-point in "
+            "main.css), Base checked, the chips one segmented row under the "
+            "week with the checked one in the accent tint. Today's tile "
+            "leads, wider (1.9fr; a full row on a phone) with a Max / Min / "
+            "New snow list; six unlabelled tiles "
+            "follow with weekday, icon, high, low and new snow in mono. "
+            "Zero new snow reads '0 cm'; a dropped value reads '—'. Each "
+            "tile is a role=group with a spoken summary, and today's names "
+            "its point. The eyebrow reads 'Weather • Open-Meteo HH:MM'; "
+            "under the chips, 'View hourly forecast →' to the shown "
+            "point; a point with no row today says "
+            "'No forecast yet.' and keeps the link. With no row at any "
+            "point the card goes and one line reads 'No forecast available "
+            "for 18 May 2026'."
+        ),
+        kind="components",
+        partial="public/partials/_resort_forecast.html",
+        variants=RESORT_FORECAST_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="resort-why-it-matters",
+        label="Resort why-it-matters line",
+        description=(
+            'The curated one-sentence "why it matters" line for a resort '
+            "(SNOW-542), shared by the resort page and the resort-pin popup. "
+            "On the resort page it is the header's tagline (tagline=True, "
+            "body size rather than text-sm; SNOW-1155). "
+            "Blank is a first-class state with three branches: a dashed "
+            "curation hint for staff, a register prompt for anonymous "
+            "visitors, and nothing at all for a signed-in reader (who has no "
+            "way to contribute copy yet)."
+        ),
+        kind="components",
+        partial="public/partials/_resort_why_it_matters.html",
+        variants=RESORT_WHY_IT_MATTERS_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="chip",
+        label="Chip",
+        description=(
+            "Mono uppercase pill chip. Two variants: the default filled "
+            "pill, which carries an opaque bg-tag and is the one to use "
+            "inside a hazard bar (the EAWS tint takes no dark-mode "
+            "override, so a transparent chip there drops to ~2:1); and "
+            "the 'time' ghost pill, for the Day Risk Profile rows, which "
+            "sit on bg-card. The dry/wet type variants were removed in "
+            "SNOW-727 — the problem card's title bar already names the "
+            "category."
+        ),
+        kind="components",
+        partial="includes/_chip.html",
+        variants=CHIP_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="sheet-header",
+        label="Sheet header",
+        description=(
+            "Shared title + persistent × close control for the favourites, "
+            "report, and downloads map fly-out sheets (SNOW-474; the × grew "
+            "a 44×44 tap target and the title an optional title_class "
+            "override in SNOW-645 review). The × carries the close_action "
+            "value as its data-action attribute, so it triggers the owning "
+            "sheet's existing delegated close listener. SNOW-658 adds an "
+            "optional icon_template: the three UGC panels put the glyph of "
+            "the roundel that opens them before the title, as the panel's "
+            "one identity mark."
+        ),
+        kind="components",
+        partial="includes/_sheet_header.html",
+        variants=SHEET_HEADER_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="segmented-option",
+        label="Segmented option",
+        description=(
+            "One option of a segmented control: a real radio drawn as a pill "
+            "in a rounded track, the selected pill filled with the accent "
+            "(SNOW-1073). The caller writes the fieldset, its legend and the "
+            "track, and includes this once per option. Used by the theme "
+            "preference. (The terrain filter's mode control used it until "
+            "SNOW-1109 replaced it with two option tiles.)"
+        ),
+        kind="components",
+        partial="includes/_segmented_option.html",
+        variants=SEGMENTED_OPTION_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="since-strip",
+        label="Since strip",
+        description=(
+            "What moved in a region's bulletin since the day before, at the "
+            "top of the region body (SNOW-1328): a quiet eyebrow and the "
+            "movements in the bulletin alert's own words, or one line when "
+            "nothing moved."
+        ),
+        kind="components",
+        partial="includes/_since_strip.html",
+        variants=SINCE_STRIP_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="switch",
+        label="Switch",
+        description=(
+            "iOS-style ON/OFF switch (SNOW-645) — a real checkbox input "
+            "with role=switch, styled with Tailwind's peer variant, no JS. "
+            "First use: the Manage downloads sheet's map-overlay control. "
+            "Renders the control only — a caller supplies its own label "
+            "alongside it."
+        ),
+        kind="components",
+        partial="includes/_switch.html",
+        variants=SWITCH_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="switch-track",
+        label="Switch track",
+        description=(
+            "The drawn half of a switch (SNOW-1266), for a control that is "
+            "already a button — the map layers menu's menuitemcheckbox rows. "
+            "Same 44×26 track and 20px thumb as the Switch; aria-hidden, and "
+            "it reads its state from the nearest `group` ancestor's "
+            "aria-checked, so the button stays the one copy of the state."
+        ),
+        kind="components",
+        partial="includes/_switch_track.html",
+        variants=SWITCH_TRACK_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="terrain-filter-key",
+        label="Terrain filter key",
+        description=(
+            "The map terrain filter's colour key (SNOW-978): the match tint "
+            "and the no-data hatch, or — in the slope mode (SNOW-1073) — the "
+            "five slope classes and the hatch; the script hides the rows of "
+            "the mode not set. Rendered in the map legend. The filter sheet "
+            "carried it too until SNOW-1109, whose slope ramp is its own key; "
+            "the sheet keeps only the no-data row."
+        ),
+        kind="components",
+        partial="includes/_terrain_filter_key.html",
+        variants=TERRAIN_FILTER_KEY_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="theme-preference",
+        label="Theme preference",
+        description=(
+            "The settings page's light/dark/system radio group — the write "
+            "side of the `theme` localStorage key that "
+            "includes/theme_head.html reads. Three options rather than a "
+            "switch because that key has three states, and writing only two "
+            "would make 'follow the OS' unreachable once touched. 'System' "
+            "is spelled by removing the key. Renders here in its "
+            "no-JavaScript state: the server always sends 'System' checked "
+            "because it cannot see localStorage."
+        ),
+        kind="components",
+        partial="includes/_theme_preference.html",
+        variants=THEME_PREFERENCE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="map-overlay-toggle",
+        label="Map overlay toggle",
+        description=(
+            "The 'Show on the map' footer strip of the four map panels — a "
+            "label plus includes/_switch.html in a bg-tag box. A view "
+            "control for the map BEHIND the sheet, bound to the layers-menu "
+            "row for the same layer by static/js/map_panel_overlay_switch.js, "
+            "which finds each real switch by id; flipping either control "
+            "moves the other."
+        ),
+        kind="components",
+        partial="includes/_map_overlay_toggle.html",
+        variants=MAP_OVERLAY_TOGGLE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="ugc-panel",
+        label="UGC panel",
+        description=(
+            "The skeleton shared by the three map panels that manage a "
+            "user's own data (SNOW-658) — downloads, favourites, field "
+            "observations. Five parts, always in this order: header (the "
+            "opening roundel's icon plus the title, at one size for all "
+            "three), context strip (one line saying where the data lives), "
+            "list (mono uppercase section label, then hairline-separated "
+            "rows — never cards), one add-CTA, and the 'Show on the map' "
+            "switch at the foot, bound to the layers-menu row for the "
+            "panel's own layer (the menu still lists every layer in one "
+            "place). The icon, rows and header-extra slots take template "
+            "paths, since Django has no slot mechanism."
+        ),
+        kind="components",
+        partial="includes/_ugc_panel.html",
+        variants=UGC_PANEL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="ugc-panel-row",
+        label="UGC panel row",
+        description=(
+            "One row inside a UGC panel's list (SNOW-658). Five slots in a "
+            "fixed order: an optional semantic rule, the label, a muted "
+            "meta line, an optional mono value (measured quantities only), "
+            "and right-aligned icon actions with the trash always last. "
+            "Rows are not cards — a hairline separates them and nothing "
+            "boxes them. A renameable row edits its label in place. Serves "
+            "both a server-side loop and a JS-cloned <template>. SNOW-711 "
+            "adds an optional trailing disclosure (see Row disclosure "
+            "below), outside the action cluster because it is not an "
+            "action, and puts the account page's favourite rows on this "
+            "same row — the last surface still managing user data with an "
+            "always-visible text field and an underlined 'Remove'. The "
+            "name is inert text except on the three map panels whose rows "
+            "are places, where it is a button that frames that place; "
+            "rename stays the pencil's, so the two are still different "
+            "controls."
+        ),
+        kind="components",
+        partial="includes/_ugc_panel_row.html",
+        variants=UGC_PANEL_ROW_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="ugc-panel-group",
+        label="UGC panel group",
+        description=(
+            "One titled group of rows inside a UGC panel's list "
+            "(SNOW-832). The downloads panel is the one caller and the "
+            "reason it exists: its list is grouped by BASEMAP, because "
+            "that is the axis along which a stored area is or is not "
+            "usable — switching base map is switching to a map you have "
+            "not stored — while the kind (region / custom area) moved "
+            "down into each row's own meta line. The heading carries the "
+            "group's identity colour twice, as a round swatch before the "
+            "label and a 2px rule under the whole line, both through the "
+            "same .basemap-identity-fill / data-basemap-key mechanism the "
+            "budget bar and the download roundels use. A group that "
+            "cannot be named takes the neutral bg-sync-off instead, never "
+            "that class's keyless green, which claims 'downloaded, "
+            "basemap unknown'. Replaces the two fixed REGIONS / CUSTOM "
+            "AREAS wrappers SNOW-645 wrote inline: how many groups there "
+            "are is data, so the panel renders one copy into a <template> "
+            "and clones it per group."
+        ),
+        kind="components",
+        partial="includes/_ugc_panel_group.html",
+        variants=UGC_PANEL_GROUP_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="panel-add-button",
+        label="Panel add button",
+        description=(
+            "A UGC panel's full-width outlined add button (SNOW-658), its "
+            "own partial since SNOW-1414. includes/_ugc_panel.html renders "
+            "one at every panel's foot, hooked by data-panel-add; the "
+            "Downloads sheet renders a second above it through the panel's "
+            "foot_template, 'Download a region', hooked by "
+            "data-panel-add-region, so the two ways to add are one control "
+            "with two hooks rather than two copies of its classes and "
+            "glyph. Disabled styling is built in: the Downloads sheet "
+            "disables both offline."
+        ),
+        kind="components",
+        partial="includes/_panel_add_button.html",
+        variants=PANEL_ADD_BUTTON_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="row-disclosure",
+        label="Row disclosure",
+        description=(
+            "The chevron at a UGC row's trailing edge (SNOW-711), filling "
+            "includes/_ugc_panel_row.html's disclosure_template slot: it "
+            "expands that row's own detail underneath it. A chevron rather "
+            "than an arrow because it expands in place — the meaning "
+            "_collapsible_panel.html already gives the mark — and a real "
+            "<a href> rather than a button, so it navigates to the same "
+            "detail with no JavaScript. Its first caller is the account "
+            "page's favourite row, where it replaced a 'Details →' text "
+            "link sitting beside two icon controls. SNOW-1418: the map "
+            "Downloads sheet's area row is the second, with no href: it "
+            "opens the area's inventory, read from the device."
+        ),
+        kind="components",
+        partial="includes/_row_disclosure.html",
+        variants=ROW_DISCLOSURE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="downloads-inventory",
+        label="Downloads inventory",
+        description=(
+            "What one downloaded area holds (SNOW-1418), opened under its "
+            "Downloads row by the row disclosure: the map, the bulletin, "
+            "the weather, the reader's routes, trips and saved places, the "
+            "SAC tours, the resorts and the community reports. Each item "
+            "has a dot in the offline-availability family (green held, "
+            "amber needs a sync, red missing, grey not checked) and a mono "
+            "value. map_downloads_manager.js fills it from "
+            "pwaOfflineJourneyCore.inventoryFor; the library passes items."
+        ),
+        kind="components",
+        partial="includes/_downloads_inventory.html",
+        variants=DOWNLOADS_INVENTORY_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="overflow-menu",
+        label="Overflow menu",
+        description=(
+            "Reusable ellipsis kebab overflow menu (SNOW-645) — a trigger "
+            "button opening a role=menu popover, dismissed on outside "
+            "click, Escape, scroll or resize by the delegated, "
+            "instance-agnostic static/js/overflow_menu.js, which also "
+            "places it: position:fixed measured from the trigger on every "
+            "open, because the map panels clip on both axes. The Open "
+            "variants below are rendered pre-expanded (this page loads no "
+            "interaction JS) so the menu contents are visible without a "
+            "click, and therefore render in normal flow rather than at "
+            "the coordinates the script would give them. ONE CALLER: the "
+            "route row (routes/partials/_route_row_actions.html, "
+            "SNOW-830). The other three UGC panels keep their visible "
+            "trash — SNOW-658's 'no ellipsis menu' ruling is narrowed to "
+            "exclude routes, not withdrawn, because only that row grew to "
+            "four inline controls and squeezed its own name out."
+        ),
+        kind="components",
+        partial="includes/_overflow_menu.html",
+        variants=OVERFLOW_MENU_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="route-rail",
+        label="Route rail",
+        description=(
+            "The route panel (SNOW-1018; one rail since SNOW-1065, one "
+            "panel pinned top-left since SNOW-1068): the open route's "
+            "profile, 400 px wide under the region chip's row on desktop "
+            "and a bottom sheet on a phone. The name as the title and its "
+            "figures in the routes list's meta line ('12.9km · 337m ↑ · "
+            "1906m ↓ · 2h51m'), the profile, a hint ('Tap or drag the "
+            "profile to view terrain data', hidden while a point is "
+            "placed), then the point "
+            "header (the aspect wheel and the reading). On a phone peek "
+            "ends under the hint, half adds the point header and full "
+            "(staff) the debug readout (2026-10-18). The profile is "
+            "always shown, one filled shape per leg "
+            "under one outline with distance ticks; a tap on its top line "
+            "places a point, drawn as a line with a dot on the outline and "
+            "the point's elevation and distance beside it. The × always "
+            "closes the route. The '…' menu (Terrain, "
+            "then the routes row's four in its order) and × at the top "
+            "right. Rendered once, empty and hidden, and filled by "
+            "static/js/route_rail.js, so this page shows the shell alone."
+        ),
+        kind="components",
+        partial="includes/_route_rail.html",
+        variants=ROUTE_RAIL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="aspect-wheel",
+        label="Aspect wheel",
+        description=(
+            "One route segment's heading and the way the ground under it "
+            "faces (SNOW-1063): two eight-sector compass rings, north up. "
+            "The outer ring lights the sector the ground faces, in the "
+            "slope class of its angle; the inner ring lights the heading, "
+            "in the class of the track's own gradient, with the previous "
+            "and next segments' headings at 35%. The centre grades the "
+            "track (SNOW-1069): one, two or three chevrons for its second, "
+            "third, and fourth or fifth step, pointing up for a climb "
+            "and down for a descent; a level track draws a bar. Flat "
+            "ground leaves the outer ring unlit, and "
+            "missing terrain data fills it grey. The inner ring is filled "
+            "on the track scale (SNOW-1064) — level under 5° in a lighter "
+            "blue, then four steps on a climb's bounds (5 / 10 / 15 / 20°) "
+            "or a descent's (5 / 15 / 25 / 35°) — so its colour agrees "
+            "with the point header's band for the track; the "
+            "outer ring keeps the slope classes. Drawn by "
+            "static/js/aspect_wheel.js through aspect_wheel_core.js; "
+            "mounted on the map in the route panel's point header."
+        ),
+        kind="components",
+        partial="includes/_aspect_wheel.html",
+        variants=ASPECT_WHEEL_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="point-card",
+        label="Point header",
+        description=(
+            "One point on the open route, read in words (SNOW-1064): the "
+            "aspect wheel at 48 px with the line labelled Skier's track "
+            "beside it, centred on it, and the line labelled Terrain slope "
+            "under both at full width (2026-10-19), in the route panel "
+            "under the profile and its hint. Skier's track is the heading, "
+            "the kind and the track's band of degrees, 'NW → W · Descent · "
+            "5–15°': the compass point the inner ring lights, or the first "
+            "and last joined by an arrow where the segment turns; ascent, "
+            "descent, traverse or fall line; and the range of the track's "
+            "step, on a climb's scale (5 / 10 / 15 / 20°) or a descent's "
+            "(5 / 15 / 25 / 35°). A segment that heads into two sectors is "
+            "the fall line where it descends with either end heading "
+            "straight down, otherwise an ascent or descent by its "
+            "gradient. Up or down is the wheel's centre mark. Terrain "
+            "slope names the ground in the EAWS words with its class's "
+            "band ('Steep · 30–35°'), and the side it falls on a traverse "
+            "('falling skier's right'); a turning segment takes the side "
+            "from its two ends, both where they differ ('…, left, then "
+            "right'). Bands, never the measured angle; no aspects. "
+            "Unlit until a point is placed; pressing the wheel clears the "
+            "point. "
+            "Filled on the map by static/js/route_point_card.js from "
+            "route_point_card_core.js; the states here are rendered "
+            "server-side with the words the core writes."
+        ),
+        kind="components",
+        partial="includes/_route_point_card.html",
+        variants=POINT_CARD_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="favourite-problem",
+        label="Favourite problem",
+        description=(
+            "Altitude-annotated avalanche-problem card on the favourite detail "
+            "card (SNOW-422): the shared _rating_block.html card plus an "
+            "altitude-relevance chip (applies/above/below this location)."
+        ),
+        kind="components",
+        partial="favourites/partials/_favourite_problem.html",
+        variants=FAVOURITE_PROBLEM_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="weather-panel",
+        label="Weather panel",
+        description=(
+            "One day's weather at one location (SNOW-761) — condition icon, "
+            "En-GB label, hi/lo, snowfall, freezing level and the sunrise–"
+            "sunset pair. Shared by the bulletin masthead, the resort page "
+            "and the favourite card, which is why it carries no colour of "
+            "its own: it drops into whichever card includes it. Every "
+            "measurement group renders independently, so a partially-"
+            "populated row shows what it has — Open-Meteo drops variables "
+            "depending on which model backs the coordinates. The whole "
+            "panel is absent when there is no row, which is the ordinary "
+            "state for a historical date."
+        ),
+        kind="components",
+        partial="includes/_weather_panel.html",
+        variants=WEATHER_PANEL_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="weather-masthead",
+        label="Weather masthead",
+        description=(
+            "The header of one location's weather, on the forecast page "
+            "AND in the map's weather sheet — the page is the sheet (Hugo, "
+            "25 Oct 2026). The day's condition symbol, the kind of place "
+            '("Weather point", as every map panel names its kind) above '
+            "its name, and the height beside it, which is what makes a "
+            "reading mean anything. On the page the name is the <h1>; in "
+            "the sheet it is an <h2> that truncates, and the row ends in "
+            "the sheet's ×. The ways onward that used to sit here are the "
+            'body\'s "Where this is" rows.'
+        ),
+        kind="components",
+        partial="includes/_weather_masthead.html",
+        variants=WEATHER_MASTHEAD_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="weather-day-summary",
+        label="Weather day summary",
+        description=(
+            "The day's figures in one line under the weather masthead — "
+            "high and low, new snow, strongest wind — on the forecast page "
+            "and as the last line of the map sheet's peek. A day after "
+            'today opens with "Forecast" (SNOW-1105); a day with no '
+            "figures says why in a sentence instead."
+        ),
+        kind="components",
+        partial="includes/_weather_day_summary.html",
+        variants=WEATHER_DAY_SUMMARY_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="weather-day-picker",
+        label="Weather day picker",
+        description=(
+            "The week as NAVIGATION (SNOW-789) — seven cells carrying a "
+            "weekday, a condition icon and a high/low, and nothing else. "
+            "Freezing level, wind and the snowfall chip were in the strip "
+            "this replaces and are gone: they are per-day facts, so they "
+            "belong to the selected day's own line rather than to seven "
+            "columns at once. EVERY cell is a radio, which is the change "
+            "at the heart of the ticket — the old strip gave one only to "
+            "the two days carrying an hourly series, so five columns were "
+            "inert. Selection changes the border colour and nothing else, "
+            "so stepping along the week cannot shift a cell's contents. "
+            "The reveal beneath it is CSS-only and hand-written in "
+            "``src/css/main.css``; each input/label pair keeps its own "
+            "wrapper because ``peer-checked:`` is the general sibling "
+            "combinator."
+        ),
+        kind="components",
+        partial="includes/_weather_day_picker.html",
+        variants=WEATHER_DAY_PICKER_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="weather-day-line",
+        label="Weather day line",
+        description=(
+            "The selected day, stated once (SNOW-789) — date and "
+            "condition, then the two figures that decide whether a plan "
+            "holds: where it is freezing, and how long there is light. "
+            "High and low are deliberately ABSENT; they are in the cell "
+            "the reader just pressed and in the meteogram below, and a "
+            "third statement is the duplication this ticket removed. "
+            "Freezing level is tested ``is not None`` rather than for "
+            "truthiness, because 0 m means freezing at the valley floor. "
+            "Visibility lives on this row's own root element rather than "
+            "on a wrapper: the reveal resolves to ``display: flex`` and "
+            "this row IS the flex container, so a wrapper would leave it "
+            "shrunk to its content with the hairline rule pulled in with "
+            "it."
+        ),
+        kind="components",
+        partial="includes/_weather_day_line.html",
+        variants=WEATHER_DAY_LINE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="weather-provenance",
+        label="Weather provenance",
+        description=(
+            "One line closing the location forecast page (SNOW-789): who "
+            "the row came from, and when it was last fetched. With a link "
+            "(SNOW-1157) it is a card footer instead — no hairline, the "
+            "line, then the onward link — as under each resort forecast "
+            "pane. A TIME, not "
+            "a date — today's row is rewritten in place across four "
+            "fetches a day, so how recent it is is the whole point, and "
+            "the day it belongs to is already on the day line above. It "
+            "credits Open-Meteo rather than naming a forecast model: "
+            "Open-Meteo picks the backing model per coordinate and does "
+            "not report which, so a page naming one would be inventing "
+            "it."
+        ),
+        kind="components",
+        partial="includes/_weather_provenance.html",
+        variants=WEATHER_PROVENANCE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="forecast-source",
+        label="Forecast source",
+        description=(
+            'Which curated point a borrowed forecast is from: "Forecast '
+            'for Mont Fort (3,329 m), 2.1 km from this pin." Only resort '
+            "points and region centres are fetched (Hugo, 2026-10-28), so "
+            "a saved pin, a trip's meeting point and a route's start each "
+            "read the nearest one, at any distance, and every one of them "
+            "says so in these words. The point is chosen by distance; its "
+            "height is stated so a reader can judge a peak against a "
+            "valley. A sentence with no wrapper: each caller sets it in "
+            "its own block."
+        ),
+        kind="components",
+        partial="includes/_forecast_source.html",
+        variants=FORECAST_SOURCE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="hourly-chart",
+        label="Hourly chart",
+        description=(
+            "One day's weather in detail (SNOW-723) — three charts sharing "
+            "one time axis, each with its own header, summary, vertical "
+            "scale and resolution. Temperature (hourly) carries the air "
+            "temperature and the freezing level on two scales; "
+            "precipitation (hourly) carries new snow and rainfall on their "
+            "own baselines; wind (three-hourly) carries speed, gusts and "
+            "the direction the wind comes from. Both vertical scales are "
+            "derived per day rather than fixed — the three variants are "
+            "real observed days chosen to disagree with each other, and "
+            "two of them fall entirely outside the domains the design was "
+            "first drawn against. Distinct from the forecast chart above, "
+            "which carries the shape of a WEEK; this one is a single day."
+        ),
+        kind="components",
+        partial="includes/_hourly_chart.html",
+        variants=HOURLY_CHART_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="day-strips",
+        label="Day strips",
+        description=(
+            "One day as four linked strips on one time axis (SNOW-1219) — "
+            "temperature, freezing level (with the location's height as a "
+            "dotted rule), snow / rain and wind — each with a row of "
+            "figures under it, one per three-hour block: max over min, the "
+            "block's total, the strongest wind over the strongest gust. "
+            "One selector on one line picks a block, and a band through "
+            "every strip, the bold figure in each row and the four headers "
+            "follow it (static/js/day_strips.js; here the server's choice "
+            "is drawn). The map's weather sheet draws this in place of the "
+            "hourly chart; the location page keeps the hourly chart."
+        ),
+        kind="components",
+        partial="includes/_day_strips.html",
+        variants=DAY_STRIPS_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="day-figures",
+        label="Day figures",
+        description=(
+            "A day past the hourly window in the map's weather sheet "
+            "(SNOW-1219): the day strips' rows with one figure each — "
+            "temperature, freezing level, snow, wind — plus the daylight, "
+            "and a line saying when the hour-by-hour forecast arrives."
+        ),
+        kind="components",
+        partial="includes/_day_figures.html",
+        variants=DAY_FIGURES_VARIANTS,
+        panel_layout="stack",
+    ),
+)
+
+
+LIBRARY_GROUPS: tuple[LibraryGroup, ...] = (
+    LibraryGroup("foundations", "Foundations", FOUNDATION_CATEGORIES),
+    LibraryGroup("components", "Components", COMPONENT_CATEGORIES),
+)
+
+
+_BY_SLUG: dict[str, FoundationCategory] = {
+    category.slug: category for group in LIBRARY_GROUPS for category in group.categories
+}
+
+
+def get_category(slug: str) -> FoundationCategory | None:
+    """Return the library category matching ``slug``, or None if unknown.
+
+    Walks every category across both groups (Foundations + Components),
+    so callers don't need to know which group a slug belongs to.
+    """
+    return _BY_SLUG.get(slug)

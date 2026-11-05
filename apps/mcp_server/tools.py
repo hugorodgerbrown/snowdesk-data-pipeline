@@ -88,13 +88,12 @@ from apps.ingest.public import caaml_envelope, source_caaml
 from apps.locations.models import Location
 from apps.mcp_server import resolvers, season
 from apps.mcp_server.ui_resources import DANGER_MAP_URI
-from apps.public.api import COUNTRY_NAMES
-from apps.public.views import _plain_text
+from apps.public.bulletin_panels import COUNTRY_NAMES, plain_text
 from apps.regions.models import MicroRegion, Resort
 from apps.weather.models import Weather
 
 # Rank order for "at or above" comparisons in get_danger_history. Mirrors
-# apps/public/api.py's private _RATING_TO_INT, minus NO_RATING — duplicated
+# apps/map/api.py's private _RATING_TO_INT, minus NO_RATING — duplicated
 # rather than imported since that constant is a module-private
 # implementation detail of a different app's choropleth encoding, not a
 # shared public API. NO_RATING is deliberately excluded here (rather than
@@ -544,7 +543,7 @@ def _serialise_problem(
         or None,
         "elevation": elevation,
         "aspects": list(problem.get("aspects") or []),
-        "comment": _plain_text(problem.get("comment_html")) or None,
+        "comment": plain_text(problem.get("comment_html")) or None,
         "avalanche_size": problem.get("avalanche_size"),
     }
 

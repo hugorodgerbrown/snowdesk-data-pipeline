@@ -362,7 +362,7 @@ FEATURES: tuple[Feature, ...] = (
             # SNOW-948. NO since SNOW-1062 withdrew the per-route bulletin
             # reading (there is no route_bulletin.py, bulletin_join.py or
             # routes:bulletin left). The problem-terrain layer
-            # (apps/public/problem_terrain.py) paints region-wide and reads
+            # (apps/map/problem_terrain.py) paints region-wide and reads
             # nothing off a route, so it is a map layer, not a tour score.
             # What a tour DOES carry is SAC's grade — SkiTour.grade, shown on
             # the route panel's meta line (data-string="meta-sac-grade" in

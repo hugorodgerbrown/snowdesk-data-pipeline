@@ -67,7 +67,7 @@
 
   /**
    * The placeholder each identifier space is spelled with, matching
-   * `apps.public.views._trips_context`.
+   * `apps.public.map_shared.trip_url_templates`.
    *
    * @type {Object<string, string>}
    */

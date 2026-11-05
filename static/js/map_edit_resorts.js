@@ -644,7 +644,7 @@
   const selectTargetBySlug = (slug) => {
     // The catalogue carries every resort with full display fields
     // (region_name, canton, latitude, longitude) so a single lookup
-    // suffices — see public/api.py::edit_resorts_queue.
+    // suffices — see map/editor.py::edit_resorts_queue.
     const entry = allResorts.find((e) => e.slug === slug);
     if (entry) selectTarget(entry);
   };

@@ -1,0 +1,109 @@
+{% load i18n components %}
+{% comment %}
+public/partials/_map_custom_download_control.html — offline-downloads
+roundel (SNOW-522; behaviour rewritten by SNOW-634 and SNOW-635).
+
+Takes the bottom-right utility-stack slot the per-region download control
+(_map_download_control.html) vacated when it moved back into the ribbon
+header. The glyph is unchanged from SNOW-522 (a viewfinder/frame, distinct
+from the per-region control's plain download arrow) and the roundel is
+still NOT hidden-until-focused — unlike the per-region control it has no
+dependency on a focused region, so it is always present in the
+bottom-right stack (matching every other roundel there).
+
+SNOW-522 through SNOW-632 had this roundel open the "Download a custom
+area" framing overlay (#map-frame-overlay, _map_embed.html) directly, with
+its own five-state machine (idle/busy/done/error/offline) painted onto it
+by map.js. SNOW-588 then added a SEPARATE "Manage downloads…" row in the
+layers menu, opening a sheet that listed every downloaded area (regions
+AND this custom one) — the same subject reachable two ways, one of them
+buried in a menu about map layers.
+
+SNOW-634 collapses them: clicking this roundel now opens the downloads
+sheet (public/partials/_map_downloads_sheet.html) — the layers-menu row
+is gone, this IS the way in — and "Download a custom area" is an action
+inside that sheet ([data-panel-add]) rather than the roundel's own
+click. Clicking is unconditional — no busy state to guard (framing hides
+#map-controls-br, this roundel's own container, for as long as it is
+open, so it can never be clicked mid-run) and no offline guard (the sheet
+lists and deletes offline, which is exactly when storage pressure is
+felt). aria-controls points at the sheet it now opens, not the overlay.
+
+SNOW-658: the roundel carries ONE state, `data-overlay-shown`, and it
+means here exactly what it means on the favourites and field-observation
+roundels — "my overlay is drawn on the map right now"
+(static/js/map_roundel_overlay_state.js). It
+replaces `data-download-state="idle|done"`, where "done" meant "this
+device holds at least one downloaded area": a true fact, but a different
+one, and one roundel cannot carry two states and still be readable. The
+sheet this roundel opens answers "what have I downloaded" properly — a row
+list, per-area swatches, a budget bar — so nothing was lost by taking that
+answer off the button that opens it. The label stays server-rendered
+below; the overlay state is composed onto it, never replacing it. It
+has no visual marker: the ring SNOW-658 drew for it was dropped with the
+two-capsule column, where this button is the last of the "yours" capsule
+and takes the capsule's shared glass rather than its own.
+
+SNOW-635: dropped the `data-area-label` attribute this element used to
+carry ("Custom area", the display name a completed download recorded onto
+its own `basemap.customArea.name` at download time). Every custom area now
+gets its own sequential default label ("Custom area N", derived from
+`ordinal` at render time — see _map_downloads_sheet.html's
+`default-custom-name` string) rather than a single frozen-at-download-time
+one, so this element no longer has a name to hand it.
+
+SNOW-749: this element is the CONFIG CARRIER for the whole downloads
+surface — both start controls and the account sync read their wiring off
+it. That includes static/js/map_region_download.js, whose own button
+(#map-download-control, in the season ribbon) is a different element
+entirely: the two controls start the same kind of work under the same
+gate, and duplicating six attributes onto the ribbon button would be the
+same decision written twice. Both partials render inside
+public/partials/_map_embed.html, so this element is on the page whenever
+that one is.
+
+`data-downloads-eligible` is authentication, and it is the whole gate.
+SNOW-749 carried a second attribute beside it — `data-downloads-sync`,
+the `download_sync` rollout flag — so the client could tell "the gate is
+switched off" from "this visitor passes the gate". The flag was dropped
+before merge on query cost (see apps.map.views._downloads_context), and
+with it the only state that made those two facts distinguishable, so the
+second attribute went too rather than being left always-true.
+
+The four URLs are emitted unconditionally. They are `reverse()` output,
+not data, and every endpoint behind them 403s an anonymous request on its
+own — so there is nothing to withhold, and withholding them would leave
+the signed-out sign-in path unable to say where it leads.
+
+Context: `downloads_eligible`, `downloads_signin_url`,
+`download_sync_url`, `download_areas_url`,
+`download_rename_url_template`, `download_forget_url_template` — all from
+apps.map.views._downloads_context.
+{% endcomment %}
+<button
+    type="button"
+    id="map-custom-download-control"
+    class="{% roundel_classes extra='map-custom-download-control map-download-control' %}"
+    data-overlay-shown="false"
+    data-downloads-eligible="{{ downloads_eligible|yesno:'true,false' }}"
+    data-signin-url="{{ downloads_signin_url }}"
+    data-download-sync-url="{{ download_sync_url }}"
+    data-download-areas-url="{{ download_areas_url }}"
+    data-download-rename-url-template="{{ download_rename_url_template }}"
+    data-download-forget-url-template="{{ download_forget_url_template }}"
+    aria-haspopup="dialog"
+    aria-controls="map-downloads-sheet"
+    aria-label='{% trans "Manage downloads" %}'
+    title='{% trans "Manage downloads" %}'
+>
+    {# Viewfinder/frame glyph — four corner brackets — distinct from the   #}
+    {# plain download-arrow glyph the per-region control uses. Unchanged   #}
+    {# by SNOW-634: only this roundel's labels and behaviour changed, not  #}
+    {# its icon.                                                           #}
+    {#                                                                     #}
+    {# SNOW-658: the paths moved into includes/_icon_downloads.html. The   #}
+    {# panel this roundel opens now carries the SAME mark in its header —  #}
+    {# it is the panel's only identity mark, confirming which roundel was  #}
+    {# tapped — and one glyph rendered in two places needs one source.     #}
+    {% include "includes/_icon_downloads.html" with size=18 svg_class="map-download-control-icon map-download-control-icon--idle" only %}
+</button>
