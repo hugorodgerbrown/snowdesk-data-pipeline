@@ -53,11 +53,9 @@ from apps.bulletins.models import RegionBulletin
 # case-insensitive URL matching without lowercasing at every call site.
 _SUPPORTED_COUNTRIES: frozenset[str] = frozenset({"ch", "at", "it", "fr"})
 
-# Human-readable country names. Duplicated from ``apps.public.api.COUNTRY_NAMES``
-# rather than imported to keep this module's import graph independent of
-# ``apps.public.api`` (which imports from ``apps.public.views``, creating a chain
-# that has already caused one circular import — see
-# ``serve_llms_full_txt`` in ``apps/public/views.py``).
+# Human-readable country names. Duplicated from
+# ``apps.public.bulletin_panels.COUNTRY_NAMES`` rather than imported, so this
+# module stays out of the render layer's import graph.
 _COUNTRY_NAMES: dict[str, str] = {
     "ch": "Switzerland",
     "at": "Austria",

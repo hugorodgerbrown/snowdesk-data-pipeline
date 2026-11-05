@@ -90,8 +90,8 @@ from apps.favourites.services import (
 )
 from apps.favourites.today import build_today, today_region_pks, today_subjects
 from apps.locations.services.what3words import what3words_map_url
+from apps.public.bulletin_panels import problem_cards_for_bulletin
 from apps.public.templatetags.snowdesk_time import danger_level_digit
-from apps.public.views import problem_cards_for_bulletin
 from apps.regions.models import MicroRegion, Resort
 from apps.weather.services.nearest import nearest_forecast
 from apps.weather.services.weather_display import (
@@ -560,7 +560,7 @@ def _favourite_card_context(
 
     When a region and today's default bulletin both resolve, also builds
     the avalanche-problems section (SNOW-422): the bulletin's problem cards
-    (``apps.public.views.problem_cards_for_bulletin``), each annotated with an
+    (``apps.public.bulletin_panels.problem_cards_for_bulletin``), each annotated with an
     altitude verdict relative to ``favourite.pin_elevation``
     (``apps.favourites.relevance.annotate_problem_relevance``). Every problem the
     bulletin publishes is always included — the annotation only highlights

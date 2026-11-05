@@ -7,6 +7,7 @@ returns an HTMX-only HTML fragment. Lives in ``core/`` so any app
 worrying about cross-app dependency direction.
 """
 
+import functools
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -35,6 +36,7 @@ def require_htmx(view_func: _ViewFunc) -> _ViewFunc:
 
     """
 
+    @functools.wraps(view_func)
     def wrapper(request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         """Check the request is an HTMX request before delegating."""
         if not request.htmx:  # type: ignore[attr-defined]
@@ -42,6 +44,4 @@ def require_htmx(view_func: _ViewFunc) -> _ViewFunc:
             return HttpResponse("HTMX requests only.", status=400)
         return view_func(request, *args, **kwargs)
 
-    wrapper.__name__ = view_func.__name__
-    wrapper.__doc__ = view_func.__doc__
     return wrapper

@@ -101,7 +101,7 @@ danger back on the resort.
   same reason — by the bubble phase the row has been repainted away.
 - A weather point that is neither a resort's point nor a region's centroid
   offers no "Where this is" rows rather than scanning every boundary on a
-  tap (`views._weather_point_places`).
+  tap (`weather_points._weather_point_places`).
 
 ## The first visit is taught it (SNOW-1231)
 

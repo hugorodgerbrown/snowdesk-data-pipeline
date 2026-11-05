@@ -243,7 +243,7 @@ class TestDayCharacterInPanelContext:
         """The panel context dict includes the day_character key."""
         from datetime import UTC, datetime
 
-        from apps.public.views import _build_panel_context
+        from apps.public.bulletin_panels import _build_panel_context
         from tests.factories import BulletinFactory
 
         def _wrap(properties: dict) -> dict:

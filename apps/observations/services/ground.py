@@ -4,7 +4,7 @@ apps/observations/services/ground.py — what people found on the ground.
 The one reading of "which field reports does this day show" (SNOW-1290,
 SNOW-1291), shared by the map's "On the ground" layer
 (``apps.public.api.community_reports_geojson``) and the region panel's
-section of the same name (``apps.public.views.build_bulletin_body``):
+section of the same name (``apps.public.bulletin_panels.build_bulletin_body``):
 
 * ``report_window`` turns the day on screen into the ``[start, end)``
   window read: today is live (today) plus recent (the three days before),

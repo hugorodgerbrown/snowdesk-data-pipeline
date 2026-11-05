@@ -19,7 +19,7 @@ for all three detents:
     region, which are map objects and so belong to the sheet alone.
 
 The body is ``public/partials/_region_body.html`` with its context from
-``apps.public.views.build_bulletin_body``, and the bulletin is the page's
+``apps.public.bulletin_panels.build_bulletin_body``, and the bulletin is the page's
 own pick — the latest issue forecasting the day that built — so the sheet
 and the page cannot show different issues or describe them differently.
 That is the issue that rated the day, ``RegionDayRating.source_bulletin``,
@@ -28,7 +28,7 @@ names only a built issue. One query asks whether a newer issue exists: a
 newer one that failed to build is passed over and named in the body's
 notice (SNOW-1368), and a newer built one, which a rating not yet
 recomputed can miss, is shown. A day with no rated issue asks the page's
-rule (``_resolve_selected_pick``) instead.
+rule (``resolve_selected_pick``) instead.
 
 The body is the same for every reader but staff (SNOW-1317), so the copy
 an area download keeps unstamped (SNOW-1312) is sound to serve to whoever
@@ -62,21 +62,21 @@ from django.utils.cache import patch_cache_control
 
 from apps.bulletins.models import Bulletin, RegionDayRating
 from apps.bulletins.services.coverage import covered_region_ids
-from apps.bulletins.services.selection import select_default_pick
+from apps.bulletins.services.selection import issues_for_date, select_default_pick
 from apps.core.decorators import require_htmx
 from apps.ingest.public import TerrainRule
-from apps.public.api import _PROVIDER_BY_COUNTRY, COUNTRY_NAMES
+from apps.public.bulletin_panels import (
+    COUNTRY_NAMES,
+    DANGER_PANEL_META,
+    PROVIDER_BY_COUNTRY,
+    build_bulletin_body,
+    resolve_selected_pick,
+)
 from apps.public.decorators import lowercase_region_id
 from apps.public.problem_terrain import (
     TERRAIN_COUNTRIES,
     bulletin_terrain_rules,
     problem_terrain_key,
-)
-from apps.public.views import (
-    _DANGER_PANEL_META,
-    _issues_for_date,
-    _resolve_selected_pick,
-    build_bulletin_body,
 )
 from apps.regions.models import MicroRegion, Resort
 
@@ -162,8 +162,8 @@ def _sheet_pick(
         if newer:
             selected, skipped = select_default_pick([selected, *newer], target_date)
     else:
-        selected, skipped = _resolve_selected_pick(
-            _issues_for_date(region, target_date), target_date, None
+        selected, skipped = resolve_selected_pick(
+            issues_for_date(region, target_date), target_date, None
         )
     return selected, skipped
 
@@ -211,7 +211,7 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
 
     selected, skipped = _sheet_pick(region, target_date, day_rating)
 
-    level_meta = _DANGER_PANEL_META.get(day_rating.max_rating) if day_rating else None
+    level_meta = DANGER_PANEL_META.get(day_rating.max_rating) if day_rating else None
 
     body = build_bulletin_body(request, region, target_date, selected, skipped)
     # SNOW-1377: every reader gets the switch wherever the tiles cover the
@@ -232,7 +232,7 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
         "another_day": target_date != timezone.localdate(),
         "country_name": COUNTRY_NAMES.get(country, country),
         "covered": region.region_id in covered_region_ids(),
-        "provider_name": _PROVIDER_BY_COUNTRY.get(country, ""),
+        "provider_name": PROVIDER_BY_COUNTRY.get(country, ""),
         "resorts": list(Resort.objects.resorts().filter(region=region)),
         # SNOW-979: the "Sync with map terrain" switch and its key;
         # SNOW-1194 moved the rules themselves to /api/problem-terrain/.

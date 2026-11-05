@@ -47,7 +47,7 @@ _ELEVATION_UPPER = "UPPER"
 class _ElevationBounds:
     """Minimal elevation bounds stub for component-library fixtures.
 
-    Mirrors the public-side :class:`~apps.public.views.ElevationBounds` just
+    Mirrors the public-side :class:`~apps.public.bulletin_panels.ElevationBounds` just
     enough to satisfy the ``_rating_block.html`` template and the
     ``elevation_icon`` filter — without importing from the large
     ``apps.public.views`` module.
@@ -68,9 +68,10 @@ class _ElevationBounds:
 
 # Day-windows panel (SNOW-107) ---------------------------------------------
 # Mirrors the dict shape produced by ``_build_day_windows`` in
-# ``apps/public/views.py``. Labels and numbers below mirror ``_DANGER_PANEL_META``
-# in the same module — copied verbatim so the fixture stays self-contained
-# and doesn't reach into a non-public symbol. Pill labels mirror
+# ``apps/public/bulletin_panels.py``. Labels and numbers below mirror
+# ``DANGER_PANEL_META`` in the same module — copied verbatim so the fixture
+# stays self-contained and doesn't reach into a non-public symbol. Pill labels
+# mirror
 # ``_DAY_WINDOW_PILL_LABELS`` (no rebadging here — we set them directly).
 
 _DAY_WINDOW_LEVEL_META: dict[str, dict[str, str]] = {
@@ -4213,7 +4214,7 @@ FORECAST_SOURCE_VARIANTS: tuple[dict[str, Any], ...] = (
 
 
 # Resort forecast strip (SNOW-1157) -----------------------------------------
-# Mirrors ``apps.public.views._resort_forecast_points``: one dict per point
+# Mirrors ``apps.public.bulletin_panels._resort_forecast_points``: one dict per point
 # with its role, label, rounded elevation, URL, today's row (a plain dict —
 # the provenance line reads only ``fetched_at``) and its ForecastPanel, built
 # from ``_forecast_panel_day`` so the tiles read the real column shape.

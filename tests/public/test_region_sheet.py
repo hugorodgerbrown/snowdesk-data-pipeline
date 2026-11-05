@@ -884,7 +884,7 @@ class TestIssueFromTheDayRating:
         RegionDayRatingFactory.create(
             region=region, date=day, max_rating="considerable", source_bulletin=bulletin
         )
-        with patch("apps.public.region_sheet._issues_for_date") as lookup:
+        with patch("apps.public.region_sheet.issues_for_date") as lookup:
             response = _get(client, _url(region.region_id.lower()))
         assert response.status_code == 200
         lookup.assert_not_called()

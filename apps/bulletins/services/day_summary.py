@@ -95,7 +95,7 @@ HIDDEN_PROBLEMS: frozenset[str] = frozenset({"persistent_weak_layers", "gliding_
 # them from an alert's state by the same rule.
 
 # Lower-case mid-sentence phrasing for the EAWS problem types. Distinct
-# from ``_PROBLEM_LABELS`` in apps/public/views.py, which are Title Case
+# from ``PROBLEM_LABELS`` in apps/public/bulletin_panels.py, which are Title Case
 # tag labels — these run inside a sentence.
 PROBLEM_PHRASES: dict[str, StrOrPromise] = {
     "new_snow": _("new snow"),

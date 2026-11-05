@@ -38,7 +38,7 @@ from apps.favourites.relevance import (
     annotate_problem_relevance,
     band_relevance,
 )
-from apps.public.views import (
+from apps.public.bulletin_panels import (
     ElevationBounds,
     _resolve_problem_cards,
     enrich_render_model,

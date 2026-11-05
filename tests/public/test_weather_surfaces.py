@@ -47,7 +47,7 @@ from freezegun import freeze_time
 
 from apps.favourites.models import Favourite
 from apps.locations.models import Location
-from apps.public.views import _location_forecast_context
+from apps.public.weather_points import _location_forecast_context
 from tests.factories import (
     FavouriteFactory,
     LocationFactory,

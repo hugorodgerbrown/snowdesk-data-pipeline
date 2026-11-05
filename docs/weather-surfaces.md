@@ -430,7 +430,7 @@ on this page.
 ### Three page shapes
 
 Discriminated by `show_day_picker`, computed once in
-`apps.public.views._location_forecast_context` as
+`apps.public.weather_points._location_forecast_context` as
 `len(panel["days"]) > 1`. **Never by the date** — a same-day backfill and
 a week-old one must render identically.
 
