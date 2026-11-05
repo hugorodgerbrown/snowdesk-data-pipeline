@@ -36,7 +36,7 @@ const FIXTURE = `
     <button id="map-day-next" type="button"></button>
     <button id="map-mode-terrain" type="button" aria-pressed="false">Terrain</button>
     <template id="map-mode-strings-template">
-      <span data-string="back-to-date">Back to the dated map</span>
+      <span data-string="back-to-date">Back to Conditions</span>
     </template>
     <button id="map-today-panel-toggle" type="button"></button>
   </div>
@@ -163,7 +163,7 @@ describe('the control', () => {
     expect(document.documentElement.dataset.mapMode).toBe('terrain');
     expect(document.getElementById('map-mode-terrain').getAttribute('aria-pressed')).toBe('true');
     expect(document.getElementById('map-calendar-toggle').getAttribute('aria-label')).toBe(
-      'Back to the dated map',
+      'Back to Conditions',
     );
     expect(modeEvents).toEqual(['terrain']);
   });

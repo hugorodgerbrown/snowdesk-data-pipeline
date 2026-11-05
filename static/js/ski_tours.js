@@ -154,9 +154,15 @@
     return (window.snowdeskMapState && window.snowdeskMapState.map) || null;
   }
 
-  /** @returns {boolean} Whether either part is switched on. */
+  /**
+   * Whether either part is switched on and not held by the map's mode,
+   * so a Conditions map never fetches tours it cannot draw (SNOW-1421).
+   *
+   * @returns {boolean}
+   */
   function shown() {
-    return !!(window.pwaSkiRoutes && window.pwaSkiRoutes.isShown());
+    const on = !!(window.pwaSkiRoutes && window.pwaSkiRoutes.isShown());
+    return on && !(held('ski_tours') && held('ski_summits'));
   }
 
   /** @returns {boolean} Whether a placement mode (draw mode) has the map. */

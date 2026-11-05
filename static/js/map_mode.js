@@ -67,9 +67,9 @@
   const dateLabel = dateToggle ? dateToggle.getAttribute('aria-label') || '' : '';
   const STRINGS = self.pwaStrings
     ? self.pwaStrings.read('map-mode-strings-template', {
-      'back-to-date': 'Back to the dated map',
+      'back-to-date': 'Back to Conditions',
     })
-    : { 'back-to-date': 'Back to the dated map' };
+    : { 'back-to-date': 'Back to Conditions' };
 
   /**
    * Read the stored mode; private mode can throw.
