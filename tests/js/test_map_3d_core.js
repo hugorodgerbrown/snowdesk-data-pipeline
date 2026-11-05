@@ -22,16 +22,23 @@ import '../../static/js/map_3d_core.js';
 const core = window.pwaMap3dCore;
 
 describe('demSource / terrainSpec', () => {
-  it('builds a Terrarium raster-dem source from the template', () => {
-    const source = core.demSource('https://dem.example/{z}/{x}/{y}.png');
+  it('builds a Terrarium raster-dem source on the page\'s elevation protocol', () => {
+    const source = core.demSource();
     expect(source).toMatchObject({
       type: 'raster-dem',
-      tiles: ['https://dem.example/{z}/{x}/{y}.png'],
+      tiles: ['map3ddem://{z}/{x}/{y}'],
       encoding: 'terrarium',
       tileSize: 512,
       maxzoom: 15,
     });
     expect(source.attribution).toContain('Mapterhorn');
+    expect(source.attribution).toContain('Terrain Tiles');
+  });
+
+  it('reads a tile back from a protocol url, and nothing else', () => {
+    expect(core.parseDemUrl('map3ddem://12/2133/1458')).toEqual({ z: 12, x: 2133, y: 1458 });
+    expect(core.parseDemUrl('https://tiles.example/12/2133/1458.webp')).toBeNull();
+    expect(core.parseDemUrl('map3ddem://12/x/1458')).toBeNull();
   });
 
   it('points the terrain at the DEM source with a modest exaggeration', () => {
@@ -315,5 +322,106 @@ describe('workerTileBridge', () => {
     worker.reply({ id: 1, bitmap: late });
     expect(late.close).toHaveBeenCalledOnce();
     expect(bridge.pendingCount()).toBe(0);
+  });
+});
+
+describe('createDemLoader', () => {
+  const TILE = { z: 12, x: 2133, y: 1458 };
+  const PRIMARY = 'https://mt.example/{z}/{x}/{y}.webp';
+  const FALLBACK = 'https://aws.example/{z}/{x}/{y}.png';
+
+  /** A Response stand-in. */
+  function answer(status) {
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      arrayBuffer: async () => new ArrayBuffer(8),
+      blob: async () => new Blob(['png']),
+    };
+  }
+
+  /** A loader whose fetch answers from `route(url)`. */
+  function loader(route) {
+    const fetchTile = vi.fn(async (url) => route(url));
+    const enlarge = vi.fn(async () => 'enlarged');
+    return { fetchTile, enlarge, dem: core.createDemLoader({ primary: PRIMARY, fallback: FALLBACK, fetchTile, enlarge }) };
+  }
+
+  const signal = () => new AbortController().signal;
+
+  it('answers from Mapterhorn when it is up, without touching AWS', async () => {
+    const { fetchTile, enlarge, dem } = loader(() => answer(200));
+    const result = await dem.load(TILE, signal());
+    expect(result.data).toBeInstanceOf(ArrayBuffer);
+    expect(fetchTile.mock.calls.map(([url]) => url)).toEqual(['https://mt.example/12/2133/1458.webp']);
+    expect(enlarge).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the same AWS tile, enlarged, on a 404 without counting it', async () => {
+    const { fetchTile, enlarge, dem } = loader((url) => answer(url.startsWith('https://mt') ? 404 : 200));
+    for (let i = 0; i < core.DEM_FALLBACK_AFTER + 1; i += 1) {
+      expect((await dem.load(TILE, signal())).data).toBe('enlarged');
+    }
+    expect(fetchTile.mock.calls.at(-2)[0]).toBe('https://mt.example/12/2133/1458.webp');
+    expect(fetchTile.mock.calls.at(-1)[0]).toBe('https://aws.example/12/2133/1458.png');
+    expect(enlarge).toHaveBeenCalledTimes(core.DEM_FALLBACK_AFTER + 1);
+    expect(dem.usingFallback()).toBe(false);
+  });
+
+  it('goes straight to AWS after Mapterhorn fails enough times in a row', async () => {
+    const { fetchTile, dem } = loader((url) => {
+      if (url.startsWith('https://mt')) throw new TypeError('Failed to fetch');
+      return answer(200);
+    });
+    for (let i = 0; i < core.DEM_FALLBACK_AFTER; i += 1) await dem.load(TILE, signal());
+    expect(dem.usingFallback()).toBe(true);
+    fetchTile.mockClear();
+    await dem.load(TILE, signal());
+    expect(fetchTile.mock.calls.map(([url]) => url)).toEqual(['https://aws.example/12/2133/1458.png']);
+  });
+
+  it('keeps the latch when a request already in flight succeeds after it', async () => {
+    let release;
+    const late = new Promise((resolve) => { release = resolve; });
+    let calls = 0;
+    const { fetchTile, dem } = loader((url) => {
+      if (!url.startsWith('https://mt')) return answer(200);
+      calls += 1;
+      if (calls === 1) return late.then(() => answer(200));
+      throw new TypeError('Failed to fetch');
+    });
+    const slow = dem.load(TILE, signal());
+    for (let i = 0; i < core.DEM_FALLBACK_AFTER; i += 1) await dem.load(TILE, signal());
+    expect(dem.usingFallback()).toBe(true);
+    release();
+    await slow;
+    expect(dem.usingFallback()).toBe(true);
+    fetchTile.mockClear();
+    await dem.load(TILE, signal());
+    expect(fetchTile.mock.calls.map(([url]) => url)).toEqual(['https://aws.example/12/2133/1458.png']);
+  });
+
+  it('counts a 5xx as a failure, and a success resets the count', async () => {
+    let status = 503;
+    const { dem } = loader((url) => answer(url.startsWith('https://mt') ? status : 200));
+    for (let i = 0; i < core.DEM_FALLBACK_AFTER - 1; i += 1) await dem.load(TILE, signal());
+    status = 200;
+    await dem.load(TILE, signal());
+    status = 503;
+    for (let i = 0; i < core.DEM_FALLBACK_AFTER - 1; i += 1) await dem.load(TILE, signal());
+    expect(dem.usingFallback()).toBe(false);
+  });
+
+  it('rejects when both fail, and passes an abort straight through', async () => {
+    const { dem } = loader(() => answer(500));
+    await expect(dem.load(TILE, signal())).rejects.toThrow('no elevation tile 12/2133/1458 (500)');
+
+    const controller = new AbortController();
+    const aborting = loader(() => {
+      controller.abort();
+      throw new DOMException('Aborted', 'AbortError');
+    });
+    await expect(aborting.dem.load(TILE, controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(aborting.fetchTile).toHaveBeenCalledOnce();
   });
 });

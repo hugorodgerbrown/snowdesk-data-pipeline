@@ -8,7 +8,8 @@
  * (docs/decisions/a-3d-map-is-maplibre-terrain.md). What can be decided
  * without a map or a DOM is here, so Vitest can pin it:
  *
- *   - the elevation source and terrain spec handed to MapLibre;
+ *   - the elevation source and terrain spec handed to MapLibre, and the
+ *     loader behind it that falls back from Mapterhorn to AWS;
  *   - the opening camera;
  *   - the box of tours asked for around the camera — a tilted view's own
  *     bounds reach the horizon, far past what /api/ski-tours.geojson
@@ -38,7 +39,8 @@
  *   skySpec() / sunlightPaint()
  *   workerTileBridge(worker)
  *   TOURS_MIN_ZOOM / TOURS_HALF_SPAN_DEG / COLOURS
- *   demSource(tileUrl)
+ *   DEM_TILE_SIZE / DEM_PROTOCOL / DEM_FALLBACK_TILE_URL / DEM_FALLBACK_AFTER
+ *   demSource() / parseDemUrl(url) / createDemLoader(options)
  *   terrainSpec()
  *   toursBbox(centre, halfSpan?)
  *   lineBounds(geometry)
@@ -59,6 +61,15 @@
   /** The elevation tiles' size in pixels, and the deepest zoom asked for. */
   const DEM_TILE_SIZE = 512;
   const DEM_MAX_ZOOM = 15;
+
+  /**
+   * The page's elevation protocol, the fallback tiles (AWS's open Terrarium
+   * set: 256 px, global, z0–15, no token) and how many Mapterhorn failures
+   * in a row send every later tile straight to them.
+   */
+  const DEM_PROTOCOL = 'map3ddem';
+  const DEM_FALLBACK_TILE_URL = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
+  const DEM_FALLBACK_AFTER = 3;
 
   /**
    * How much the relief is stretched upwards. 1 is true scale; a little
@@ -145,21 +156,86 @@
   }
 
   /**
-   * The elevation source: Mapterhorn's Terrarium-encoded 512 px tiles.
-   * They go to z17 over Switzerland; z15 (about 2 m a pixel) is past what
-   * the terrain mesh can show, and each zoom past it quadruples the tiles.
+   * The elevation source. Its tiles go through the page's `map3ddem://`
+   * protocol (createDemLoader): Mapterhorn's Terrarium-encoded 512 px
+   * tiles first, AWS's when Mapterhorn fails. Mapterhorn goes to z17 over
+   * Switzerland; z15 (about 2 m a pixel) is past what the terrain mesh can
+   * show, and each zoom past it quadruples the tiles.
    *
-   * @param {string} tileUrl An XYZ template.
    * @returns {{type: 'raster-dem', tiles: string[], encoding: 'terrarium', tileSize: number, maxzoom: number, attribution: string}}
    */
-  function demSource(tileUrl) {
+  function demSource() {
     return {
       type: 'raster-dem',
-      tiles: [tileUrl],
+      tiles: [`${DEM_PROTOCOL}://{z}/{x}/{y}`],
       encoding: 'terrarium',
       tileSize: DEM_TILE_SIZE,
       maxzoom: DEM_MAX_ZOOM,
-      attribution: '<a href="https://mapterhorn.com/attribution" target="_blank" rel="noopener">© Mapterhorn</a>',
+      attribution: '<a href="https://mapterhorn.com/attribution" target="_blank" rel="noopener">© Mapterhorn</a>'
+        + ' · <a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" target="_blank" rel="noopener">Terrain Tiles</a>',
+    };
+  }
+
+  /**
+   * A `map3ddem://z/x/y` URL's tile, or null for anything else.
+   *
+   * @param {string} url
+   * @returns {{z: number, x: number, y: number}|null}
+   */
+  function parseDemUrl(url) {
+    const match = new RegExp(`^${DEM_PROTOCOL}://(\\d+)/(\\d+)/(\\d+)$`).exec(url);
+    if (!match) return null;
+    return { z: Number(match[1]), x: Number(match[2]), y: Number(match[3]) };
+  }
+
+  /**
+   * Loads one elevation tile for the `map3ddem://` protocol: Mapterhorn
+   * first, then AWS's Terrarium tile of the same z/x/y. A Mapterhorn tile is
+   * 512 px and an AWS one 256 px over the same ground, so the AWS tile is
+   * enlarged (`enlarge`, nearest-neighbour: Terrarium heights are encoded
+   * across the three channels, so blending neighbours would invent heights).
+   *
+   * A 404 is a hole in Mapterhorn's pyramid and falls back for that tile
+   * only. A network failure or a 5xx counts as Mapterhorn being down: after
+   * DEM_FALLBACK_AFTER in a row the loader goes straight to AWS for the rest
+   * of the visit, so an outage does not cost every tile a failed request. A
+   * Mapterhorn success before then resets the count; one that lands after
+   * (a request already in flight) does not lift the latch.
+   *
+   * @param {{primary: string, fallback: string, fetchTile: (url: string, signal: AbortSignal) => Promise<Response>, enlarge: (blob: Blob) => Promise<any>}} options
+   * @returns {{load: (tile: {z: number, x: number, y: number}, signal: AbortSignal) => Promise<{data: any}>, usingFallback: () => boolean}}
+   */
+  function createDemLoader(options) {
+    let failures = 0;
+    // Once set, never cleared: a Mapterhorn request started before the
+    // latch may still succeed after it, and must not reopen Mapterhorn.
+    let latched = false;
+    const fail = () => {
+      failures += 1;
+      if (failures >= DEM_FALLBACK_AFTER) latched = true;
+    };
+    return {
+      async load(tile, signal) {
+        if (!latched) {
+          try {
+            const response = await options.fetchTile(tileUrl(options.primary, tile), signal);
+            if (response.ok) {
+              if (!latched) failures = 0;
+              return { data: await response.arrayBuffer() };
+            }
+            if (response.status !== 404) fail();
+          } catch (err) {
+            if (signal.aborted) throw err;
+            fail();
+          }
+        }
+        const response = await options.fetchTile(tileUrl(options.fallback, tile), signal);
+        if (!response.ok) {
+          throw new Error(`map_3d: no elevation tile ${tile.z}/${tile.x}/${tile.y} (${response.status})`);
+        }
+        return { data: await options.enlarge(await response.blob()) };
+      },
+      usingFallback: () => latched,
     };
   }
 
@@ -460,7 +536,13 @@
     TOURS_MIN_ZOOM: TOURS_MIN_ZOOM,
     TOURS_HALF_SPAN_DEG: TOURS_HALF_SPAN_DEG,
     COLOURS: COLOURS,
+    DEM_TILE_SIZE: DEM_TILE_SIZE,
+    DEM_PROTOCOL: DEM_PROTOCOL,
+    DEM_FALLBACK_TILE_URL: DEM_FALLBACK_TILE_URL,
+    DEM_FALLBACK_AFTER: DEM_FALLBACK_AFTER,
     demSource: demSource,
+    parseDemUrl: parseDemUrl,
+    createDemLoader: createDemLoader,
     terrainSpec: terrainSpec,
     toursBbox: toursBbox,
     lineBounds: lineBounds,

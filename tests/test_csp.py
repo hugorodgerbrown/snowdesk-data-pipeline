@@ -226,6 +226,21 @@ def test_csp_allows_every_swisstopo_tile_shard() -> None:
     )
 
 
+@pytest.mark.django_db
+def test_csp_allows_both_3d_elevation_origins() -> None:
+    """SNOW-1445: /map/3d/ reads Mapterhorn's tiles and falls back to AWS's.
+
+    Both are fetched by the page's ``map3ddem://`` protocol handler, so both
+    belong in connect-src; a missing fallback would only show during a
+    Mapterhorn outage, as a flat map.
+    """
+    connect_src = _sources(_csp(Client().get("/")), "connect-src")
+    expected = {"https://tiles.mapterhorn.com", "https://s3.amazonaws.com"}
+    assert expected <= connect_src, (
+        f"connect-src is missing {sorted(expected - connect_src)}"
+    )
+
+
 def test_csp_names_no_slope_raster_origin() -> None:
     """SNOW-1073: swisstopo's slope raster is gone.
 
