@@ -129,7 +129,7 @@ def test_tours_and_wildlife_switches_and_share_render() -> None:
     assert 'id="map-3d-tours"' in content
     assert 'id="map-3d-wildlife"' in content
     assert 'id="map-3d-share"' in content
-    assert 'id="map-3d-strings"' in content
+    assert 'id="map-3d-strings-template"' in content
     assert "js/share.js" in content
 
 

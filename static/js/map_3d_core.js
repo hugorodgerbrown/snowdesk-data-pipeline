@@ -218,8 +218,11 @@
    */
   function viewQuery(camera, layers) {
     const fixed = (/** @type {number} */ n, /** @type {number} */ d) => String(Number(n.toFixed(d)));
+    // MapLibre's centre can sit in another world copy past ±180; wrap it
+    // back, or parseView would refuse the link.
+    const lng = ((((camera.center.lng + 180) % 360) + 360) % 360) - 180;
     const at = [
-      fixed(camera.center.lng, 5),
+      fixed(lng, 5),
       fixed(camera.center.lat, 5),
       fixed(camera.zoom, 2),
       fixed(camera.pitch, 1),

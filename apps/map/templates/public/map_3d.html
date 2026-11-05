@@ -60,12 +60,20 @@ the page adds no control and no icon for them.
                 {% include "includes/_switch.html" with id="map-3d-tours" checked=True %}
                 <label for="map-3d-wildlife" class="text-meta text-text-1">{% trans "Wildlife" %}</label>
                 {% include "includes/_switch.html" with id="map-3d-wildlife" checked=False %}
-                {% trans "Share" as share_label %}
-                {% include "includes/_button.html" with label=share_label button_type="button" button_id="map-3d-share" variant="ghost" size="compact" %}
+                {# A restricted area takes one CTA as a bare icon (AGENTS.md design rule 5). #}
+                <button
+                    id="map-3d-share"
+                    type="button"
+                    class="text-text-2 hover:text-text-1"
+                    aria-label='{% trans "Share this view" %}'
+                    title='{% trans "Share this view" %}'
+                >
+                    {% include "includes/_icon_share.html" with size=17 only %}
+                </button>
                 <span id="map-3d-share-status" class="text-meta text-text-2" role="status" aria-live="polite"></span>
             </div>
             {# Every string map_3d.js writes into the page. #}
-            <template id="map-3d-strings">
+            <template id="map-3d-strings-template">
                 <span data-string="copied">{% trans "Link copied" %}</span>
                 <span data-string="failed">{% trans "Could not copy the link" %}</span>
             </template>

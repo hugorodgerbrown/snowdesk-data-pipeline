@@ -158,3 +158,13 @@ describe('viewQuery / parseView', () => {
     expect(core.parseView(`?${query}`).camera).toBeNull();
   });
 });
+
+describe('viewQuery longitude', () => {
+  it('wraps a centre from another world copy back into [-180, 180]', () => {
+    const query = core.viewQuery(
+      { center: { lng: 367.87, lat: 46.07 }, zoom: 12, pitch: 60, bearing: 0 },
+      core.DEFAULT_LAYERS,
+    );
+    expect(core.parseView(`?${query}`).camera.center).toEqual([7.87, 46.07]);
+  });
+});

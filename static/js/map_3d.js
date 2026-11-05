@@ -56,6 +56,8 @@
 
   // A shared link's view, else the opening camera and the default switches.
   const view = core.parseView(window.location.search);
+  // Read before writeViewUrl rewrites the query string, which drops it.
+  const wantedRoute = new URLSearchParams(window.location.search).get('route');
   const camera = view.camera || core.OPENING_CAMERA;
   /** @type {Record<string, boolean>} */
   const layerState = { ...view.layers };
@@ -390,8 +392,7 @@
       if (routes) {
         loaded[ROUTES_SOURCE] = routes;
         map.getSource(ROUTES_SOURCE).setData(routes);
-        const wanted = new URLSearchParams(window.location.search).get('route');
-        if (wanted) flyToBounds(core.boundsForUuid(routes, wanted));
+        if (wantedRoute) flyToBounds(core.boundsForUuid(routes, wantedRoute));
       }
     }
   });
@@ -426,7 +427,7 @@
   const shareStatus = document.getElementById('map-3d-share-status');
   const share = /** @type {any} */ (self).pwaShare;
   if (shareButton && shareStatus && share && self.pwaStrings) {
-    const STRINGS = self.pwaStrings.read('map-3d-strings', {
+    const STRINGS = self.pwaStrings.read('map-3d-strings-template', {
       copied: 'Link copied',
       failed: 'Could not copy the link',
     });
