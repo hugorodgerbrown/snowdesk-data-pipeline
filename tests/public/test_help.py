@@ -324,9 +324,9 @@ class TestHelpPageFlagGating:
         assert b'data-testid="help-topic-map-modes"' not in response.content
 
     def test_map_modes_panel_present_behind_the_flag(self, client: Client) -> None:
-        """Signed in with the flag, the topic answers "what does the date /
-        terrain toggle do": what Terrain takes away, what it keeps, the way
-        back.
+        """Signed in with the flag, the topic answers "what are the two
+        maps" for a first-time reader (SNOW-1421): what each is for, how to
+        switch, what they share, the way back.
         """
         client.force_login(UserFactory.create())
         with override_flag("map_modes", active=True):
@@ -334,11 +334,19 @@ class TestHelpPageFlagGating:
         assert _details_id_of(content, "help-topic-map-modes") == "help-topic-map-modes"
         for testid in (
             "help-map-modes-two",
-            "help-map-modes-terrain",
+            "help-map-modes-switch",
             "help-map-modes-kept",
             "help-map-modes-back",
         ):
             assert f'data-testid="{testid}"' in content
+        assert "Conditions and Terrain" in content
+        topic = content[content.index('data-testid="help-map-modes-two"') :]
+        topic = topic[: topic.index("</div>")]
+        assert "Snowdesk has two maps." in topic
+        assert "tabs at the top of the layers menu" in topic
+        # SNOW-1421 hid the other mode's rows rather than greying them out.
+        assert "greyed out" not in topic
+        assert "Dated" not in topic
 
     def test_downloads_account_paragraphs_are_always_present(
         self, client: Client

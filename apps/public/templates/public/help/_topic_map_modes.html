@@ -1,6 +1,6 @@
 {% comment %}
-apps/public/templates/public/help/_topic_map_modes.html — "Dated and
-Terrain" panel body (SNOW-1394).
+apps/public/templates/public/help/_topic_map_modes.html — "Conditions and
+Terrain" panel body (SNOW-1394, rewritten by SNOW-1421).
 
 Content partial for the help page; included via the body_template
 parameter of includes/_collapsible_panel.html. Rendered only behind the
@@ -8,40 +8,38 @@ map_modes flag (help_page's ``map_modes_visible``), with the toggle it
 describes, and listed in apps.mcp_server.docs_corpus.GATED_HELP_TOPICS so
 the public MCP docs tools do not answer from it until it is ungated.
 
-It answers the question a reader asks of the toggle — "what does the date
-/ terrain switch do?" — in the words the toggle uses: what Terrain takes
-away, what it leaves, and that the day is kept.
+Written for a first-time reader (Hugo, 5 Nov 2026): what each map is for,
+how to switch, what both share, and the way back. "Conditions" is the
+code's `dated` mode.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
     <p class="mb-3 last:mb-0" data-testid="help-map-modes-two">
         {% blocktrans trimmed %}
-            The switch at the start of the date row puts the map in one of two modes. The date half is the map for a
-            day: the avalanche bulletin, the weather and the field reports, all for the date it shows. The mountain half
-            is Terrain: the map for planning and browsing, with nothing on it that changes from one day to the next.
+            Snowdesk has two maps. Conditions shows the mountains on a day: avalanche danger, the weather and what
+            people have seen. It shows today unless you pick another date. Terrain shows the mountains themselves: how
+            steep they are, where the tours go and where wildlife needs space. Use it to plan.
         {% endblocktrans %}
     </p>
-    <p class="mb-3 last:mb-0" data-testid="help-map-modes-terrain">
+    <p class="mb-3 last:mb-0" data-testid="help-map-modes-switch">
         {% blocktrans trimmed %}
-            Terrain takes the day's layers off the map: the danger colours, the bulletin's problem slopes, the weather
-            symbols, the field reports and the season timeline. Their rows in the layers menu are greyed out while you
-            are in Terrain. It switches nothing on.
+            Switch with the toggle by the date, or with the tabs at the top of the layers menu. The menu lists the map's
+            own layers first, in a tinted block, then the ones both maps share: resorts, regions, the basemap and user
+            data, field observations included.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-map-modes-kept">
         {% blocktrans trimmed %}
-            Everything else stays as you set it, in both modes: the avalanche region boundaries, Steep terrain, your
-            routes, resorts, ski tours, wildlife rest zones and your pins. Turning one on or off in Terrain changes that
-            layer alone. A tap on a region shows its name, its resorts and its pin and download buttons, without the
-            day's conditions.
+            Each map keeps its layers as you set them. Turning one on or off changes that layer alone, and neither map
+            switches anything on for you. A tap on a region in Terrain shows its name, its resorts and its pin and
+            download buttons, without the day's conditions.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-map-modes-back">
         {% blocktrans trimmed %}
-            In Terrain the date shrinks to a calendar icon. Tap it to come back to the dated map, on the day you left,
-            with each of the day's layers just as you had it. The panel in a region's sheet comes back to today instead,
-            with that region still open. The map remembers which mode you were in, and a link you share opens in the
-            same mode.
+            In Terrain the date shrinks to a calendar icon. Tap it to go back to Conditions on the day you left. The
+            panel in a region's sheet goes back to today instead, with that region still open. The map remembers which
+            one you were on, and a link you share opens on the same one.
         {% endblocktrans %}
     </p>
 </div>
