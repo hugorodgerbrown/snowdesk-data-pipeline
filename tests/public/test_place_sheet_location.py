@@ -24,7 +24,14 @@ from django.urls import reverse
 
 from apps.public.your_location import GROUND_DEVICE, GROUND_TERRAIN, Ground
 from apps.regions.models import MicroRegion
-from tests.factories import MicroRegionFactory, RegionDayRatingFactory, UserFactory
+from tests.factories import (
+    LocationFactory,
+    MicroRegionFactory,
+    RegionDayRatingFactory,
+    ResortLocationFactory,
+    UserFactory,
+    WeatherFactory,
+)
 from tests.public.test_resort_detail import _todays_bulletin
 
 # A fix NE of Verbier, on the ground the tests below describe.
@@ -243,3 +250,37 @@ class TestStar:
         content = _get(client).content.decode()
         assert "data-location-star-signin" in content
         assert reverse("accounts:sign_in") in content
+
+
+@pytest.mark.django_db
+class TestTerrainTodayRow:
+    """SNOW-1422: the fix's Today row, and the rest of its day marked data-dated."""
+
+    def test_the_row_names_the_level_and_one_reading(self, client: Client) -> None:
+        region = _rated_region()
+        point = LocationFactory.create(latitude=LAT + 0.01, longitude=LON)
+        ResortLocationFactory.create(location=point)
+        WeatherFactory.create(location=point, temperature_2m_max=-6.0)
+        content = _get(client, region=region).content.decode()
+        start = content.index('data-testid="place-sheet-today"')
+        row = content[
+            content.rindex("<button", 0, start) : content.index("</button>", start)
+        ]
+        assert "data-terrain-only" in row
+        assert 'data-level="considerable"' in row
+        text = " ".join(re.sub(r"<[^>]+>", " ", row).split())
+        assert text.startswith("3 Today Considerable")
+        assert "-6°" in text
+
+    def test_the_body_under_the_peek_is_dated(self, client: Client) -> None:
+        content = _get(client, region=_rated_region()).content.decode()
+        region = content.index('data-testid="location-region"')
+        assert content.rindex('<div class="space-y-4" data-dated>', 0, region) > (
+            content.index('data-testid="place-sheet-today"')
+        )
+
+    def test_outside_coverage_the_row_says_no_bulletin(self, client: Client) -> None:
+        content = _get(client).content.decode()
+        start = content.index('data-testid="place-sheet-today"')
+        row = content[start : content.index("</button>", start)]
+        assert "No bulletin" in row

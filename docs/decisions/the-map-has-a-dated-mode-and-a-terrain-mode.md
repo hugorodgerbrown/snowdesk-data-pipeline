@@ -1,6 +1,6 @@
 ---
 name: the-map-has-a-dated-mode-and-a-terrain-mode
-description: Why the map has Conditions (Dated) / Terrain modes (map_mode_core.js ONLY_IN, SUPPRESSION.MAP_MODE) that suppress, never rewrite
+description: Conditions / Terrain map modes (ONLY_IN, SUPPRESSION.MAP_MODE) that suppress, never rewrite; no Terrain region taps, Today row
 status: current
 last-reviewed: 2026-11-05
 ---
@@ -12,6 +12,10 @@ last-reviewed: 2026-11-05
 holds the other's own layers. See [Each mode has its own
 layers](#each-mode-has-its-own-layers-snow-1421) below; the sections
 before it describe SNOW-1394 and say where SNOW-1421 replaced them.
+
+**SNOW-1422 (5 Nov 2026) changed it again.** Terrain has no region taps,
+and the place sheet there has one Today row. See [No regions to choose in
+Terrain](#no-regions-to-choose-in-terrain-snow-1422).
 
 **SNOW-1394**, behind the `map_modes` flag. Some of what the map draws
 changes by the day: the avalanche bulletin, the weather and the field
@@ -40,8 +44,8 @@ that is always on screen replaced it.
     `pwaMapModeCore.ONLY_IN.dated`) are the bulletins, the bulletin
     grouping outline (`l3`), problem-terrain sync, weather and the season
     scrubber. Field reports were among them until SNOW-1421 made them
-    shared. The region chip, which names a region by its level, goes with
-    them.
+    shared. The region chip, which named a region by its level, went with
+    them; SNOW-1422 removed it in both modes.
   - **The regions stay (4 Nov 2026).** They first went with the bulletins,
     on the reading that a region exists only to hold one. Hugo: "regions
     exist beyond the daily bulletin, and we should reflect that." So the
@@ -49,7 +53,8 @@ that is always on screen replaced it.
     both modes, and their layers-menu rows stay live. From z10, where Dated
     labels a region "3 · Martigny-Verbier", Terrain labels it with the bare
     name (`regions-level-label` reads `name`, not `text`).
-  - **A tap opens a lean region sheet.** The fill stays installed at
+  - **A tap opens a lean region sheet.** Replaced by SNOW-1422, which
+    takes region taps out of Terrain (below). The fill stays installed at
     opacity 0 as the tap target, so a tap opens the same sheet as in Dated.
     What it marks `data-dated` (the level tile, the bulletin, the field
     reports, the problem-terrain switch) is hidden in Terrain by map.css,
@@ -120,7 +125,7 @@ that is always on screen replaced it.
   suppression, never preference.
 - **A region row on another panel still opens its region.** A resort
   sheet's region row is an explicit ask, so `snowdesk:region-open` is not
-  refused in Terrain.
+  refused in Terrain. Since SNOW-1422 it goes to Conditions on today first.
 - **The pure core loads for everyone; the flag decides whether it is read.**
   `map_mode_core.js` is on every `/map/`, because every core `map.js`
   reads must be (`test_home_scripts.py`). `map.js` and the shared date
@@ -207,4 +212,56 @@ the danger colours. So each mode now has layers of its own.
   which looks broken. The tabs are the mode.
 - **Separate stored settings for each mode.** One switch per layer is
   simpler, and a layer belongs to one mode or is shared.
+
+## No regions to choose in Terrain (SNOW-1422)
+
+Hugo, 5 Nov 2026: in Terrain a region tap opened a sheet that could say
+nothing about the day, and a panel that sent the reader back to
+Conditions. A region is about the day's conditions, so Terrain has none to
+choose.
+
+- **No region taps.** With `pwaMapMode.isTerrain()`, `map.js`'s click
+  dispatcher does not query `regions-fill`, so a tap reaches a resort pin,
+  a rest zone or the empty-map close. The fill's pointer cursor and the
+  double-click zoom to a region are off too. The fill stays installed:
+  Conditions still taps it, and the boundaries are drawn in both modes.
+- **Entering Terrain drops the region.** It clears the selection, which
+  closes the region sheet, and replaces the hash so the `?mode=terrain`
+  just written stays. It does not close the place sheet, as
+  `deselectRegion()`'s `closeMapDetailSurfaces()` would: a resort is a
+  Terrain thing too.
+- **Any other way in goes to Conditions on today.** A search pick
+  (`chooseRegion`), `snowdesk:region-open` from a sheet's region row, a
+  hash (initial load, `hashchange`, `popstate`) and the tour's "Tap a
+  region" step call `pwaMapMode.toConditionsToday()` first, then select.
+  That helper is what the region sheet's panel did (Dated, then today
+  through `snowdesk:scrub-to`), lifted onto `window.pwaMapMode`.
+- **The place sheet's Today row.** A resort, a saved pin and the reader's
+  location render one row in the peek
+  (`public/partials/_place_sheet_today_row.html`, `data-terrain-only`):
+  the region's level tile, "Today", the level's name and one weather
+  reading, the day's icon and high (`place_sheet._today_row_weather`, from
+  what the view already loaded, so it costs no query). Every section about
+  the day carries `data-dated`, and `map.css` shows one or the other under
+  `:root[data-map-mode="terrain"]` in `#place-sheet`. In Terrain
+  `map_place_sheet.js` asks for today (`#season-scrubber[data-today]`), so
+  the row is always today's, and refetches an open sheet when a mode change
+  moves the day it reads. A tap on the row calls `toConditionsToday()` with
+  the sheet left open, so it repaints in full.
+- **The region sheet's Terrain parts went.** The "Select a date…" panel
+  (`[data-map-mode-to-dated]`), its handler in `map_mode.js`, the
+  `data-dated` marks and their hide rules: the sheet no longer opens in
+  Terrain.
+- **The region chip went, in both modes** (Hugo, not behind the flag);
+  [the-region-colour-gives-way-by-zoom.md](the-region-colour-gives-way-by-zoom.md)
+  has its history. Past z10 a region is reached by zooming out in
+  Conditions or by search.
+
+### Rejected (SNOW-1422)
+
+- **Today in full in Terrain.** The place sheet would read as Conditions
+  fixed to today (option A of the mockup). One row says the day exists and
+  where to see it.
+- **Closing the place sheet on entering Terrain.** It is the one sheet that
+  has something to say in both modes.
 

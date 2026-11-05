@@ -2605,7 +2605,7 @@
 
   // SNOW-1379: the countries the terrain-class tiles cover, by the prefix
   // of a region id ("CH-4115" → "CH"). The same list as `TERRAIN_COUNTRIES`
-  // in map_region_chip_core.js and apps/public/problem_terrain.py; held
+  // in map_slopes_notice_core.js and apps/public/problem_terrain.py; held
   // here rather than imported because this core loads on pages that load
   // neither.
   const TERRAIN_COUNTRIES = Object.freeze(['CH']);

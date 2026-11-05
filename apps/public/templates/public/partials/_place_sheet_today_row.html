@@ -1,0 +1,71 @@
+{% load i18n snowdesk_time weather_icons %}
+{% comment %}
+public/partials/_place_sheet_today_row.html — the place sheet's one row in
+Terrain (SNOW-1422, behind ``map_modes``).
+
+Terrain has no day of its own, so "Today" is the only day it can name
+(Hugo, 5 Nov 2026, option B of the mockup). The row stands in for every
+section of the place sheet marked ``data-dated``: the region's level tile,
+"Today", and under it the level's name and one weather reading — the day's
+condition icon and high. It is ``data-terrain-only``, so map.css shows it in
+Terrain alone, and in Terrain ``map_place_sheet.js`` asks for today's body,
+so the row is always today's. A tap on it (``data-place-sheet-today``)
+switches the map to Conditions on today with the sheet left open, and the
+sheet repaints in full. A visually hidden "Show today's conditions" ends
+its accessible name, so a screen reader hears where the tap goes.
+
+Rendered by ``_place_sheet_body.html`` inside the peek, for a resort, a
+saved pin and the reader's location alike, so a phone shows it without a
+drag.
+
+Context:
+  day_rating  — the region's RegionDayRating for the day, or None.
+  level_label — the level's name, or "".
+  weather     — ``place_sheet._today_row_weather``'s reading
+                (``icon_filename``, ``condition_label``, ``temp_max``), or
+                None.
+  day         — the day the body was read for.
+  another_day — whether that is not today; then the row names the day.
+{% endcomment %}
+<button
+    type="button"
+    class="mt-4 flex w-full items-center gap-3 rounded-card border border-border bg-card px-3.5 py-3 text-left hover-affordance"
+    data-terrain-only
+    data-place-sheet-today
+    data-testid="place-sheet-today"
+>
+    {% if day_rating %}
+        {% include "includes/_danger_tile.html" with day_rating=day_rating decorative=True testid="place-sheet-today-level" only %}
+    {% else %}
+        {% include "includes/_danger_tile_empty.html" only %}
+    {% endif %}
+    <span class="min-w-0 flex-1">
+        <span class="block text-label font-semibold text-text-1">
+            {% if another_day %}
+                {{ day|date:"D j M" }}
+            {% else %}
+                {% translate "Today" %}
+            {% endif %}
+        </span>
+        <span class="flex min-w-0 items-center gap-1.5 text-sm text-text-2">
+            <span class="truncate">{% firstof level_label _("No bulletin") %}</span>
+            {% if weather %}
+                <span class="text-text-3" aria-hidden="true">·</span>
+                <span class="flex flex-none items-center gap-1" data-testid="place-sheet-today-weather">
+                    <img
+                        src="{% weather_icon_url weather.icon_filename %}"
+                        class="{% weather_icon_class %} h-4 w-4"
+                        alt="{{ weather.condition_label }}"
+                    >
+                    {% if weather.temp_max is not None %}{{ weather.temp_max|floatformat:0 }}°{% endif %}
+                </span>
+            {% endif %}
+        </span>
+    </span>
+    {# The row's name says where a tap goes, which the chevron only shows. #}
+    <span class="sr-only" data-testid="place-sheet-today-action">{% translate "Show today's conditions" %}</span>
+    <span
+        class="flex-none text-text-3"
+        aria-hidden="true"
+    >{% include "includes/_icon_chevron_right.html" with size=18 only %}</span>
+</button>

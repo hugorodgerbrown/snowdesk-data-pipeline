@@ -334,19 +334,11 @@ map_weather_window.js
 
 # SNOW-1394: the Dated / Terrain toggle. Calls the suppression
 # hooks map.js publishes, binds over map_calendar.js's date
-# control and map_day_nav.js's steps, so after all three; before
-# map_region_chip.js, which reads window.pwaMapMode. Outside the
+# control and map_day_nav.js's steps, so after all three. Outside the
 # bundle's contiguous run because no bundle module reads it. Loaded
 # for everyone since SNOW-1412: it returns early unless
 # #map-mode-terrain rendered, which only the map_modes flag does.
 map_mode.js
-
-# SNOW-1376: the region chip — its pure half, then the DOM half. Reads
-# MAP and the bridges map.js publishes, so after the bundle; outside
-# its contiguous run because no bundle module reads it.
-map_region_chip_core.js
-
-map_region_chip.js
 
 # SNOW-1196: the problem-terrain layer's legend key and menu-row line.
 # Reads window.pwaBulletinTerrain (map.js).
@@ -355,7 +347,7 @@ map_problem_terrain_key.js
 # SNOW-1378: the once-per-device card that says the bulletin's slopes
 # have taken over from z12 — its pure half, then the DOM half. Reads
 # MAP and window.pwaBulletinTerrain / pwaTerrainFilter (map.js), so
-# after the bundle and outside its contiguous run, like the chip.
+# after the bundle and outside its contiguous run.
 map_slopes_notice_core.js
 
 map_slopes_notice.js

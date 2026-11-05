@@ -867,8 +867,10 @@ as design rule 6 asks of a task) with its size as `pwaRegionDownload.estimate()`
 task and calls `pwaRegionDownload.start()`, so the run, its progress and its
 record are the roundel's own. It was built when Terrain mode held the
 region sheet (docs/decisions/the-map-has-a-dated-mode-and-a-terrain-mode.md).
-Terrain draws the regions again now, and their sheet's download button, but
-the pick task stays: it is the way in from the Downloads sheet, in both modes.
+Terrain draws the regions again now, but since SNOW-1422 a region is not
+chosen there (choosing one moves the map to Conditions on today), so the
+pick task stays: it is the way in from the Downloads sheet in both modes,
+and the one way to download a region without leaving Terrain.
 
 The control has moved twice. SNOW-521 rendered it into the bottom-right
 control stack (`#map-controls-br`), beside the layers pill — that menu is

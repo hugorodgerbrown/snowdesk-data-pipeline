@@ -16,6 +16,9 @@
  *     disabled (hiding is map.css's, which jsdom cannot compute, so it is
  *     pinned in tests/public/test_map_page.py instead);
  *   - in Terrain a tap on the date comes back to Dated, not to the calendar;
+ *   - toConditionsToday() goes to Dated on today (SNOW-1422), and entering
+ *     Terrain announces snowdesk:map-mode-changed, which map.js and the
+ *     place sheet act on;
  *   - the Today panel's sun is left alone.
  */
 
@@ -63,10 +66,7 @@ const FIXTURE = `
       <li role="none"><button data-layers-back>Back</button></li>
     </ul>
   </div>
-  <div id="season-scrubber" data-today="2026-02-12"></div>
-  <div id="region-sheet">
-    <button type="button" data-terrain-only data-map-mode-to-dated>Select a date</button>
-  </div>`;
+  <div id="season-scrubber" data-today="2026-02-12"></div>`;
 
 let calls;
 let menuClicks;
@@ -377,41 +377,65 @@ describe('the date in Terrain', () => {
     expect(calendarOpens).toBe(0);
   });
 
-  it("switches to Dated on today from the region sheet's panel", async () => {
-    const scrubs = [];
-    const listen = (e) => scrubs.push(e.detail);
-    document.addEventListener('snowdesk:scrub-to', listen);
-    await load();
-    document.getElementById('map-mode-terrain').click();
-    document.querySelector('[data-map-mode-to-dated]').click();
-    document.removeEventListener('snowdesk:scrub-to', listen);
-
-    expect(window.pwaMapMode.get()).toBe('dated');
-    expect(new URLSearchParams(location.search).has('mode')).toBe(false);
-    // Today, not the 10th the reader left: the panel offers current conditions.
-    expect(scrubs).toEqual([{ date: '2026-02-12', source: 'today' }]);
-    expect(calendarOpens).toBe(0);
-  });
-
-  it('asks for no day change from the panel when the map is on today', async () => {
-    history.replaceState(null, '', '/map/?d=2026-02-12');
-    const scrubs = [];
-    const listen = (e) => scrubs.push(e.detail);
-    document.addEventListener('snowdesk:scrub-to', listen);
-    await load();
-    document.getElementById('map-mode-terrain').click();
-    document.querySelector('[data-map-mode-to-dated]').click();
-    document.removeEventListener('snowdesk:scrub-to', listen);
-
-    expect(window.pwaMapMode.get()).toBe('dated');
-    expect(scrubs).toEqual([]);
-  });
-
   it('opens the calendar as ever in Dated', async () => {
     await load();
     document.getElementById('map-calendar-toggle').click();
 
     expect(calendarOpens).toBe(1);
     expect(window.pwaMapMode.get()).toBe('dated');
+  });
+});
+
+describe('toConditionsToday (SNOW-1422)', () => {
+  /** Record the day requests a call makes. */
+  const recordScrubs = () => {
+    const scrubs = [];
+    const listen = (e) => scrubs.push(e.detail);
+    document.addEventListener('snowdesk:scrub-to', listen);
+    return { scrubs, stop: () => document.removeEventListener('snowdesk:scrub-to', listen) };
+  };
+
+  it('announces snowdesk:map-mode-changed on entering Terrain', async () => {
+    await load();
+    document.getElementById('map-mode-terrain').click();
+
+    expect(modeEvents).toEqual(['terrain']);
+  });
+
+  it('switches to Dated on today, not the day the reader left', async () => {
+    await load();
+    document.getElementById('map-mode-terrain').click();
+    const { scrubs, stop } = recordScrubs();
+    window.pwaMapMode.toConditionsToday();
+    stop();
+
+    expect(window.pwaMapMode.get()).toBe('dated');
+    expect(modeEvents).toEqual(['terrain', 'dated']);
+    expect(new URLSearchParams(location.search).has('mode')).toBe(false);
+    // Today, not the 10th the reader left.
+    expect(scrubs).toEqual([{ date: '2026-02-12', source: 'today' }]);
+    expect(document.documentElement.dataset.mapMode).toBe('dated');
+  });
+
+  it('asks for no day change when the map is already on today', async () => {
+    history.replaceState(null, '', '/map/?d=2026-02-12');
+    await load();
+    document.getElementById('map-mode-terrain').click();
+    const { scrubs, stop } = recordScrubs();
+    window.pwaMapMode.toConditionsToday();
+    stop();
+
+    expect(window.pwaMapMode.get()).toBe('dated');
+    expect(scrubs).toEqual([]);
+  });
+
+  it('moves to today from Dated too, with no mode event', async () => {
+    await load();
+    const { scrubs, stop } = recordScrubs();
+    window.pwaMapMode.toConditionsToday();
+    stop();
+
+    expect(modeEvents).toEqual([]);
+    expect(scrubs).toEqual([{ date: '2026-02-12', source: 'today' }]);
   });
 });

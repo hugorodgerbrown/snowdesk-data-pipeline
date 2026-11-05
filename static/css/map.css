@@ -1990,83 +1990,6 @@ html[data-route-drawing] #map-slopes-notice {
     }
 }
 
-/* —— The region chip (SNOW-1376) ———————————————————————————————
-   The region at the map's centre and its level, from z10, where the fill
-   has faded to a trace (SNOW-1375). A member of the bottom-left stack just
-   above the date row, so it shares the stack's left edge and steps aside
-   with the selection column (the `.map-legend > :not(#map-date-row)` rule
-   above). Glass, like the date row's controls; it takes its own pointer
-   events back from the stack. */
-.map-region-chip {
-    pointer-events: auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    max-width: min(22rem, 100%);
-    min-height: 44px;
-    padding: 6px 12px 6px 6px;
-    border: 0.5px solid var(--color-border);
-    border-radius: 999px;
-    background: var(--color-glass);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    box-shadow: var(--shadow-glass);
-    color: var(--color-text-1);
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-}
-
-.map-region-chip[hidden] {
-    display: none;
-}
-
-/* The open legend card stands where the chip sits and would be drawn
-   under it, covering the card's foot (credit and "All keys & sources"). */
-.map-legend[data-state="expanded"] .map-region-chip {
-    visibility: hidden;
-}
-
-.map-region-chip-level {
-    flex: none;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 600;
-    font-size: 0.875rem;
-}
-
-.map-region-chip-text {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    line-height: 1.25;
-}
-
-.map-region-chip-name {
-    font-size: 0.875rem;
-    font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.map-region-chip-detail {
-    font-size: 0.75rem;
-    color: var(--color-text-2);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-/* The route rail is its own reading of the ground: the chip withdraws. */
-#map[data-route-rail-open] .map-region-chip {
-    display: none;
-}
-
 /* ``.map-date-pill`` (the 28px readout that floated above the scrubber thumb)
    was removed along with its mapDatePillInit IIFE in static/js/map.js. The
    scrubbed date has been reported by .map-date-ribbon in the bottom-left row
@@ -2438,20 +2361,21 @@ html[data-route-drawing] #map-slopes-notice {
     display: none;
 }
 
-/* The region sheet in Terrain (SNOW-1394): the region without its day. What
-   the sheet marks data-dated (the level tile, the bulletin, the field
-   reports, the problem-terrain switch) goes, and the data-terrain-only panel
-   that switches back to the day shows in its place. Off the map_modes flag
-   <html> carries no data-map-mode, so the panel never shows. */
-#region-sheet [data-terrain-only] {
+/* The place sheet in Terrain (SNOW-1422): a resort, a saved pin or the
+   reader's location with one Today row in place of its day. What the body
+   marks data-dated (the bulletin, the weather, the problems, the links on
+   to the day) goes, and the data-terrain-only row shows instead. Off the
+   map_modes flag <html> carries no data-map-mode, so the row never shows.
+   The region sheet has no such rules: it does not open in Terrain. */
+#place-sheet [data-terrain-only] {
     display: none;
 }
 
-:root[data-map-mode="terrain"] #region-sheet [data-terrain-only] {
+:root[data-map-mode="terrain"] #place-sheet [data-terrain-only] {
     display: flex;
 }
 
-:root[data-map-mode="terrain"] #region-sheet [data-dated] {
+:root[data-map-mode="terrain"] #place-sheet [data-dated] {
     display: none;
 }
 

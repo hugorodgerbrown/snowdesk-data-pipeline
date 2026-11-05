@@ -30,6 +30,10 @@ resort's panel read as a second copy of its region's. They are the
 region's, and live on its panel and page; the resort keeps the one row
 (``includes/_place_link_row.html``) that opens it, with no level on it.
 
+``data-dated`` (SNOW-1422) marks the bulletin row and the forecast, the
+sections about the day: in Terrain the place sheet hides them for its Today
+row (map.css, ``#place-sheet`` only, so the page is untouched).
+
 ``in_map`` (set by the place sheet) keeps the body to one column whatever
 the viewport, since the desktop inset panel is a phone's width, and
 tightens the gap between sections to the sheet's (gap-6 since 27 Oct 2026, so HALF holds the bulletin and today's weather).
@@ -50,7 +54,7 @@ Context (beyond what each included partial documents):
 <div class="flex flex-col gap-8{% if not in_map %} lg:flex-row lg:items-start lg:gap-10{% endif %}">
     <div class="flex min-w-0 flex-col {% if in_map %}gap-6{% else %}gap-12 lg:flex-1{% endif %}">
         {# The way to the region's bulletin leads: the danger is the region's. #}
-        <section aria-labelledby="resort-region-heading" data-testid="resort-region">
+        <section aria-labelledby="resort-region-heading" data-testid="resort-region" data-dated>
             {% if bulletin_source_label %}
                 {% blocktranslate trimmed with source=bulletin_source_label asvar region_eyebrow %}
                     Avalanche bulletin • {{ source }}
@@ -85,7 +89,7 @@ Context (beyond what each included partial documents):
             </div>
         </section>
         {% if forecast_points %}
-            {% include "public/partials/_resort_forecast.html" %}
+            <div data-dated>{% include "public/partials/_resort_forecast.html" %}</div>
         {% endif %}
         {% if in_map %}
             {% include "public/partials/_resort_facts.html" with folded=True %}

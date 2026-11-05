@@ -1,6 +1,7 @@
 {% comment %}
 apps/public/templates/public/help/_topic_map_modes.html — "Conditions and
-Terrain" panel body (SNOW-1394, rewritten by SNOW-1421).
+Terrain" panel body (SNOW-1394, rewritten by SNOW-1421; SNOW-1422 took
+out the region tap and added the place sheet's Today row).
 
 Content partial for the help page; included via the body_template
 parameter of includes/_collapsible_panel.html. Rendered only behind the
@@ -31,15 +32,17 @@ code's `dated` mode.
     <p class="mb-3 last:mb-0" data-testid="help-map-modes-kept">
         {% blocktrans trimmed %}
             Each map keeps its layers as you set them. Turning one on or off changes that layer alone, and neither map
-            switches anything on for you. A tap on a region in Terrain shows its name, its resorts and its pin and
-            download buttons, without the day's conditions.
+            switches anything on for you. In Terrain a tap on a region does nothing, because regions are about the day's
+            conditions. Tap a resort or a pin instead: its sheet shows one Today row with the avalanche level and the
+            weather.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-map-modes-back">
         {% blocktrans trimmed %}
             In Terrain the date shrinks to a calendar icon. Tap it to go back to Conditions on the day you left. The
-            panel in a region's sheet goes back to today instead, with that region still open. The map remembers which
-            one you were on, and a link you share opens on the same one.
+            Today row in a resort's or a pin's sheet goes to Conditions on today instead, with the sheet still open.
+            Picking a region from search also goes to Conditions on today. The map remembers which one you were on, and
+            a link you share opens on the same one.
         {% endblocktrans %}
     </p>
 </div>

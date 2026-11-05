@@ -35,6 +35,13 @@ the day, one warning row when the fix stands in that day's problem terrain
 day's weather borrowed from the nearest curated point, as a saved pin's is.
 The star saves the spot as a dropped pin.
 
+TERRAIN (SNOW-1422, behind ``map_modes``). Every kind also renders one
+Today row (``_place_sheet_today_row.html``): the region's level and one
+weather reading, built by ``_today_row_weather`` from what each view already
+holds, so the row costs no query. map.css shows it in Terrain in place of
+the sections marked ``data-dated``, and ``map_place_sheet.js`` asks for
+today there, so the row is always today's.
+
 Every view reads the day the map is showing (``?d=``, today by default), as
 the region sheet does, so a reader looking at a past day reads that day's
 weather and rating. A saved pin with no rating for the day and no resort
@@ -45,6 +52,7 @@ to peek and half.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import date
 from typing import Any
 from uuid import UUID
@@ -104,6 +112,52 @@ def _target_date(request: HttpRequest) -> date | None:
         return date.fromisoformat(raw)
     except ValueError:
         return None
+
+
+def _today_row_weather(day: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """Pick the one weather reading the Terrain Today row states.
+
+    Args:
+        day: A ``WeatherDisplay`` or a ``ForecastPanelDay`` for the day, or
+            None.
+
+    Returns:
+        ``icon_filename``, ``condition_label`` and ``temp_max`` (the day's
+        high, or None), or None with no reading.
+
+    """
+    if not day:
+        return None
+    return {
+        "icon_filename": day["icon_filename"],
+        "condition_label": day["condition_label"],
+        "temp_max": day["temp_max"],
+    }
+
+
+def _resort_today_weather(
+    forecast_points: list[dict[str, Any]], target_date: date
+) -> dict[str, Any] | None:
+    """Read a resort's Today-row weather off its forecast points.
+
+    The first point with a forecast is the one the sheet's forecast opens
+    on (Base when there is one), so the row and the strip agree.
+
+    Args:
+        forecast_points: ``build_resort_body``'s ``forecast_points``.
+        target_date: The day the sheet shows.
+
+    Returns:
+        The reading, as ``_today_row_weather`` shapes it, or None.
+
+    """
+    for point in forecast_points:
+        panel = point["panel"]
+        if not panel:
+            continue
+        day = next((d for d in panel["days"] if d["date"] == target_date), None)
+        return _today_row_weather(day)
+    return None
 
 
 def _peek_context(region: MicroRegion | None, target_date: date) -> dict[str, Any]:
@@ -196,6 +250,9 @@ def _place_context(
             (day for day in forecast_panel["days"] if day["date"] == target_date),
             None,
         )
+    weather_display = (
+        build_weather_display(weather, now) if row_date == target_date else None
+    )
     return {
         **_peek_context(region, target_date),
         "bulletin": bulletin,
@@ -206,10 +263,10 @@ def _place_context(
         "problem_cards": problem_cards,
         "location": location,
         "forecast_source": source,
-        "weather_display": build_weather_display(weather, now)
-        if row_date == target_date
-        else None,
+        "weather_display": weather_display,
         "forward_day": forward_day,
+        # SNOW-1422: the Terrain Today row's one reading, from the row above.
+        "today_weather": _today_row_weather(weather_display or forward_day),
         # The page opens a forward day inside today's row with that day
         # selected (SNOW-1105), so the link names the day itself.
         "forecast_url": f"{base_url}?date={target_date.isoformat()}"
@@ -260,9 +317,13 @@ def resort_sheet_partial(request: HttpRequest, slug: str) -> HttpResponse:
 
     # SNOW-1164: under the peek row, the resort page's own body for the
     # map's day — built by the page's own builder, so the two cannot drift.
+    body = build_resort_body(resort, target_date)
     context = {
         # The body states the region's level itself (its bulletin callout).
-        **build_resort_body(resort, target_date),
+        **body,
+        # SNOW-1422: the Terrain Today row's reading, off the forecast the
+        # body already read.
+        "today_weather": _resort_today_weather(body["forecast_points"], target_date),
         # The day the body's dated eyebrows name (includes/_dated_eyebrow.html;
         # Hugo, 29 Oct 2026) — the sheet's only, since the page's title names it.
         "section_day": target_date,
@@ -337,6 +398,7 @@ def favourite_sheet_partial(request: HttpRequest, uuid: UUID) -> HttpResponse:
         {
             "kind": "favourite",
             "name": favourite.name,
+            "another_day": target_date != timezone.localdate(),
             "favourite": favourite,
             "resort": favourite.resort,
             # A resort with no slug (from before SNOW-796) has no page yet,

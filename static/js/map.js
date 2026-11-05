@@ -9675,12 +9675,12 @@
         if (href) window.location.assign(href);
         return;
       }
+      // SNOW-1422: a region row asked for in Terrain opens on today's
+      // Conditions.
+      toConditionsFirst();
       if (feature.id === selectedId) window.pwaRegionSheet?.reopen?.();
       selectFeature(feature.id);
-      // SNOW-1376: the region chip asks with `frame: false` — the reader is
-      // already looking at the region, close in, and framing it would zoom
-      // them back out to the whole region.
-      if (!(ev.detail && ev.detail.frame === false)) window.pwaMapFocus?.region?.(regionID);
+      window.pwaMapFocus?.region?.(regionID);
     });
 
     // Pin-positioning focus (static/js/map_placement_focus.js) clears every
@@ -9765,6 +9765,38 @@
         detail: { region_id: null, region_name: null },
       }));
     };
+
+    // SNOW-1422: Terrain has no regions to choose. A tap there does not
+    // query the fill, and a region chosen any other way (a search pick, a
+    // sheet's region row, a hash) moves the map to Conditions on today
+    // first, so it opens with its day. window.pwaMapMode is map_mode.js's,
+    // which loads after this file and only behind the map_modes flag, so
+    // both are read at the moment of use; off the flag neither acts.
+    const inTerrain = () => !!window.pwaMapMode?.isTerrain?.();
+    const toConditionsFirst = () => {
+      if (inTerrain()) window.pwaMapMode?.toConditionsToday?.();
+    };
+
+    // Entering Terrain drops the region selection and closes the region
+    // sheet, which listens for the null selection. Narrower than
+    // deselectRegion: an open place sheet or pin popup stays, because a
+    // resort is a Terrain thing too (the place sheet repaints its Today
+    // row). The hash is replaced rather than popped, so the ?mode=terrain
+    // map_mode.js has just written stays in the URL.
+    document.addEventListener('snowdesk:map-mode-changed', (ev) => {
+      if (!(ev.detail && ev.detail.mode === 'terrain') || selectedId === null) return;
+      if (popupHistoryOpen) {
+        // Replaced, not popped (history.back()), to keep ?mode=terrain; the
+        // accepted cost is that Back lands on the entry before the selection.
+        history.replaceState(null, '', location.pathname + location.search);
+        popupHistoryOpen = false;
+        popupHashWasPushed = false;
+      }
+      clearSelectionDom();
+      document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
+        detail: { region_id: null, region_name: null },
+      }));
+    });
 
     // Re-usable selection logic. Both the map click handler and the search
     // dropdown route through this so "make this region the active one" has
@@ -9851,6 +9883,9 @@
         return;
       }
       if (!map.getLayer('regions-fill')) return;
+      // SNOW-1422: the step shows a region with its day, so in Terrain it
+      // goes to Conditions on today first, as every other way in does.
+      toConditionsFirst();
       const canvas = map.getCanvas();
       const middle = [canvas.clientWidth / 2, canvas.clientHeight / 2];
       const hit =
@@ -10431,6 +10466,12 @@
       // geometry has not loaded, keeps the popup below.
       const regionFeature = props.region_id ? FEATURE_BY_REGION_ID[props.region_id] : null;
       if (regionFeature && regionFeature.id != null && props.submission) {
+        // SNOW-1422: field observations are drawn in both modes, but the
+        // sheet they open is a region's, which is Conditions': in Terrain
+        // the map moves to Conditions on today first. A report the today
+        // body does not list (older than its three recent days) lands on
+        // the section, as any report outside the window does.
+        toConditionsFirst();
         document.dispatchEvent(new CustomEvent('snowdesk:observation-focus', {
           detail: { submission: props.submission, region_id: props.region_id },
         }));
@@ -10978,6 +11019,8 @@
       // double-click is the map's own zoom-in rather than a zoom back OUT
       // to the region's bounds.
       if (!regionsSelectableAt(map.getZoom())) return;
+      // SNOW-1422: nor in Terrain, which has no region taps.
+      if (inTerrain()) return;
       e.preventDefault();
       if (!e.features.length) return;
       const feature = FEATURE_BY_ID[e.features[0].id];
@@ -11080,10 +11123,9 @@
 
       // SNOW-1065: with a route open, a tap on the map that no marker and no
       // weather symbol took clears the route and the point together — the
-      // panel closes — and does nothing else. The tap was aimed at leaving the route, not at a
-      // region, and on a phone the region chip is withdrawn while the panel
-      // is open, so a region selected under it would be a change the reader
-      // cannot see.
+      // panel closes — and does nothing else. The tap was aimed at leaving
+      // the route, not at a region, and a region selected under the panel
+      // would be a change the reader cannot see.
       //
       // A resort pin is the exception (2026-10-19): it is a thing on the
       // map like a marker or a weather symbol, which already take their
@@ -11110,7 +11152,11 @@
       // No marker claimed the tap. Resolve region intent from the fill layer
       // and the resort pins. SNOW-235: both are lazy-installed, so filter to
       // present layers — queryRenderedFeatures throws on an unknown layer id.
-      const layers = ['regions-fill', 'resorts-pin'].filter((id) => map.getLayer(id));
+      // SNOW-1422: in Terrain the fill is not asked at all, so a tap reaches
+      // a resort, a rest zone or the empty-map close below, and never a
+      // region.
+      const layers = [inTerrain() ? '' : 'regions-fill', 'resorts-pin']
+        .filter((id) => id && map.getLayer(id));
       const features = layers.length
         ? map.queryRenderedFeatures(e.point, { layers })
         : [];
@@ -11193,7 +11239,8 @@
     // target. Left alone rather than cleared there, so it never wipes the
     // pointer a route, pin or weather symbol on top of the fill has set.
     map.on('mouseenter', 'regions-fill', () => {
-      if (regionsSelectableAt(map.getZoom())) map.getCanvas().style.cursor = 'pointer';
+      // SNOW-1422: nor in Terrain, where a region is not a tap target.
+      if (!inTerrain() && regionsSelectableAt(map.getZoom())) map.getCanvas().style.cursor = 'pointer';
     });
     map.on('mouseleave', 'regions-fill', () => { map.getCanvas().style.cursor = ''; });
 
@@ -11258,6 +11305,8 @@
           // in their state; the initial-load entry has null state. Use that
           // to decide whether a later close can safely ``history.back``.
           popupHashWasPushed = !!(event.state && event.state.popup);
+          // SNOW-1422: a region's hash in Terrain opens on today's Conditions.
+          toConditionsFirst();
           selectFeature(numericId, { urlMode: 'mark' });
         } else {
           popupHistoryOpen = false;
@@ -11282,6 +11331,7 @@
         // hash, which is part of the entry the user landed on), so a
         // subsequent close can safely pop it.
         popupHashWasPushed = true;
+        toConditionsFirst();
         selectFeature(numericId, { urlMode: 'mark' });
       } else if (location.hash === '' || location.hash === '#') {
         popupHistoryOpen = false;
@@ -11938,6 +11988,8 @@
       // empty field is what lists the pinned regions next time.
       inputEl.value = '';
       collapseSearch();
+      // SNOW-1422: a region picked in Terrain opens on today's Conditions.
+      toConditionsFirst();
       // Moves the selection (highlight + ribbon + readout + hash). Picking the
       // region that is already selected changes nothing — the deselect
       // toggle is a map gesture only, so a search pick never clears the
@@ -12015,6 +12067,9 @@
     // history entry. Unknown / malformed hashes are silently ignored.
     const initialFeatureId = featureIdFromHash();
     if (initialFeatureId !== null) {
+      // SNOW-1422: a deep link to a region in Terrain opens it on today's
+      // Conditions.
+      toConditionsFirst();
       selectFeature(initialFeatureId, { urlMode: 'mark' });
     }
 

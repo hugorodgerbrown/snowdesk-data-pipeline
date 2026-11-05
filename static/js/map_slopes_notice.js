@@ -32,8 +32,8 @@
  *   - prefers-reduced-motion: the card appears without its slide-in.
  *
  * A classic script loaded after map.js: it reads the shared `MAP` and the
- * bridges map.js publishes, as map_region_chip.js does. map.css withdraws
- * it while a route is open or drawn.
+ * bridges map.js publishes. map.css withdraws it while a route is open or
+ * drawn.
  */
 
 (function slopesNoticeInit() {

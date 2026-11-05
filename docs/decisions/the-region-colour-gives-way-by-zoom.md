@@ -1,8 +1,8 @@
 ---
 name: the-region-colour-gives-way-by-zoom
-description: Region fill fades out over z8.5–10; from z10 an inside edge band, level label and region chip (regions-edge, region-labels, map-region-chip)
+description: Region fill fades out over z8.5–10; from z10 an edge band and level label (regions-edge, region-labels); region chip removed
 status: current
-last-reviewed: 2026-11-02
+last-reviewed: 2026-11-05
 ---
 
 # The region colour gives way by zoom
@@ -60,7 +60,14 @@ and band, and turns all three off at 0
   unsupported-region rule (`BULLETIN_DATA_LAYER_IDS`,
   `UNSUPPORTED_REGION_LAYER_IDS`).
 
-**The region chip (SNOW-1376).** From z10 a chip in the bottom-left stack,
+**The region chip (SNOW-1376), removed by SNOW-1422 (Hugo, 5 Nov 2026).**
+The chip is gone, in both map modes: its files (`map_region_chip.js`,
+`map_region_chip_core.js`), its markup and strings in `_map_embed.html`,
+its CSS and the `frame: false` path of `snowdesk:region-open` that only it
+used. A region past z10 is reached by zooming out in Conditions or by
+search. What it was:
+
+From z10 a chip in the bottom-left stack,
 just above the date row (`#map-region-chip`, `map_region_chip.js` with its
 rules in `map_region_chip_core.js`), names the region at the map's centre
 and its level, so the level stays on screen when one region fills it. Its
