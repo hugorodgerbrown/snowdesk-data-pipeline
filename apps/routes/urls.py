@@ -16,6 +16,8 @@ URL structure:
   routes/<uuid>/share/               POST — mint a share link (SNOW-764)
   routes/<uuid>/terrain.json         GET  — owner's terrain rows (SNOW-1146)
   routes/s/<token>/                  GET  — follow a share link (SNOW-764)
+  routes/s/<token>/3d/               GET  — follow a share link into the
+                                            3-D map
   routes/s/<token>/terrain.json      GET  — a pending share's terrain rows
                                             (SNOW-1230)
   routes/s/<token>/dismiss/          POST — drop a pending share from the
@@ -141,6 +143,11 @@ urlpatterns = [
         "s/<str:token>/",
         views.route_share_redirect,
         name="share_redirect",
+    ),
+    path(
+        "s/<str:token>/3d/",
+        views.route_share_redirect_3d,
+        name="share_redirect_3d",
     ),
     path(
         "s/<str:token>/terrain.json",

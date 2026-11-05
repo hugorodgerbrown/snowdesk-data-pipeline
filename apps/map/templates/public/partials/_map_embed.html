@@ -422,13 +422,15 @@ Optional context:
                 </button>
             </div>
             {# The 3-D map, an experiment behind the map_3d flag. static/js/map_3d_link.js #}
-            {# carries this view's camera and switches across on a click.             #}
+            {# carries this view's camera and switches across on a click. A friend    #}
+            {# sent a route by a 3-D reader gets it too, carrying that route share.   #}
             {% if map_3d_link %}
                 <div class="map-utility-pill">
                     <a
                         id="map-3d-link"
-                        href="{% url 'public:map_3d' %}"
+                        href="{% url 'public:map_3d' %}{% if map_3d_route_share %}?route_share={{ map_3d_route_share|urlencode }}{% endif %}"
                         data-dem-tile-url="{{ map_3d_dem_tile_url }}"
+                        data-route-share="{{ map_3d_route_share }}"
                         class="map-utility-button hover-affordance text-chip font-semibold"
                         aria-label='{% trans "Open in 3-D" %}'
                     >{% trans "3D" %}</a>

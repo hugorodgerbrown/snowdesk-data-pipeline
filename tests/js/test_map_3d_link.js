@@ -2,7 +2,8 @@
  * tests/js/test_map_3d_link.js — /map/'s "3D" roundel carries the view across.
  *
  * Pinned: a click rewrites the link to the 2-D camera and the stored
- * switches, and a flat camera takes the 3-D opening pitch.
+ * switches, a flat camera takes the 3-D opening pitch, and a followed
+ * route share rides along as ?route_share=.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,8 +19,8 @@ function fakeMap(pitch) {
   };
 }
 
-async function boot(pitch, fetchSpy) {
-  document.body.innerHTML = '<a id="map-3d-link" href="/map/3d/" data-dem-tile-url="https://t.example/{z}/{x}/{y}.webp">3D</a>';
+async function boot(pitch, fetchSpy, routeShare = '') {
+  document.body.innerHTML = `<a id="map-3d-link" href="/map/3d/" data-dem-tile-url="https://t.example/{z}/{x}/{y}.webp" data-route-share="${routeShare}">3D</a>`;
   window.fetch = fetchSpy || vi.fn(() => Promise.resolve({ ok: true }));
   window.snowdeskMapState = { map: fakeMap(pitch) };
   vi.resetModules();
@@ -32,6 +33,17 @@ async function boot(pitch, fetchSpy) {
 
 describe('map_3d_link', () => {
   beforeEach(() => window.localStorage.clear());
+
+  it('keeps a followed route share on the link', async () => {
+    const url = await boot(0, undefined, 'tok1');
+    expect(url.searchParams.get('route_share')).toBe('tok1');
+    expect(url.searchParams.get('at')).not.toBeNull();
+  });
+
+  it('carries no route share when there is none', async () => {
+    const url = await boot(0);
+    expect(url.searchParams.has('route_share')).toBe(false);
+  });
 
   it('carries the camera, tilting a flat one, and the default switches', async () => {
     const url = await boot(0);

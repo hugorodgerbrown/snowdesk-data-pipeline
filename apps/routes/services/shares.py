@@ -52,6 +52,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.utils import timezone
 
+from apps.core.http import client_ip
 from apps.regions.services.track_regions import resolve_track_regions
 from apps.routes.models import Route, RouteShare
 from apps.routes.services.routes import _assert_under_cap, _locked_cap_recheck
@@ -61,6 +62,7 @@ from apps.routes.services.track_render import stamped_fields
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
     from django.contrib.sessions.backends.base import SessionBase
+    from django.http import HttpRequest
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +73,16 @@ logger = logging.getLogger(__name__)
 # eventually differs. Sits beside ``analytics_utm`` in the session's
 # documented contents (docs/accounts.md).
 PENDING_SESSION_KEY = "route_shares"
+
+# The share-link follow's rate-limit budget, keyed on (token, IP). Mirrors
+# ``apps.public.views.SHARE_CLICK_RATE`` and its reasoning: a real visitor
+# re-following their own link never approaches it, while a scanner walking
+# the token space cannot grow the session table without bound. ONE budget
+# for every way in that seats a pending token — the 2-D and 3-D follows in
+# apps/routes/views.py and /map/3d/?route_share= (apps/map/map_3d.py) — so
+# the same link reached three ways is one link to a scanner.
+SHARE_FOLLOW_RATE = "30/h"
+SHARE_FOLLOW_GROUP = "routes.share_follow"
 
 # How many times a token collision is retried before giving up. Mirrors
 # ``apps.public.api._SHARE_TOKEN_MAX_RETRIES``: with ~66 bits of entropy a
@@ -389,6 +401,20 @@ def claim_route_share(user: "User", token: str) -> Route:
 # ---------------------------------------------------------------------------
 # The pending list — tokens followed but not yet claimed
 # ---------------------------------------------------------------------------
+
+
+def share_follow_bucket(token: str, request: "HttpRequest") -> str:
+    """Return the follow budget's bucket for a token: ``token|client IP``.
+
+    Args:
+        token: The share token being followed.
+        request: The current HTTP request.
+
+    Returns:
+        An opaque bucket key.
+
+    """
+    return f"{token}|{client_ip(request)}"
 
 
 def pending_tokens(session: "SessionBase") -> list[str]:

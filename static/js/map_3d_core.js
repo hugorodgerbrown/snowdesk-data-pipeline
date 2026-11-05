@@ -17,12 +17,16 @@
  *   - the bounds of a tapped line, which the camera flies to. A tapped
  *     MapLibre feature is only the drawn fragment (clipped at tile edges)
  *     and a tour arrives as one feature per leg, so the bounds are the
- *     union of every loaded feature carrying the tapped uuid;
+ *     union of every loaded feature carrying the tapped uuid (or, for a
+ *     route someone shared, its share `token`: routes.geojson gives a
+ *     non-owner no uuid);
  *   - the layer switches' defaults, and FOEN's wildlife areas as swisstopo
  *     WMTS rasters;
  *   - the shared view: the camera and the switches, written to and read
  *     from the page's query string (`?at=lng,lat,zoom,pitch,bearing&layers=…`),
- *     so a copied link opens on the same view for whoever follows it.
+ *     so a copied link opens on the same view for whoever follows it, and
+ *     the link itself: the page's address with the token that opens it, or
+ *     a route share link into 3-D (`/routes/s/<token>/3d/?…`).
  *
  * Exports (frozen `self.pwaMap3dCore`):
  *
@@ -33,11 +37,13 @@
  *   terrainSpec()
  *   toursBbox(centre, halfSpan?)
  *   lineBounds(geometry)
- *   boundsForUuid(collection, uuid)
+ *   boundsFor(collection, key, value)
  *   LAYER_KEYS / DEFAULT_LAYERS / WILDLIFE_LAYERS
  *   wildlifeTileUrl(layer)
  *   viewQuery(camera, layers)
  *   parseView(search)
+ *   pageUrl(origin, pathname, tokens, query)
+ *   routeShare3dUrl(shareUrl, query)
  */
 (function () {
   'use strict';
@@ -211,18 +217,19 @@
 
   /**
    * The union of the line bounds of every feature in a collection whose
-   * `uuid` is the one given, or null when none has a line.
+   * property `key` is `value`, or null when none has a line.
    *
    * @param {{features?: Array<{geometry?: any, properties?: any}>}|null|undefined} collection
-   * @param {unknown} uuid
+   * @param {string} key `uuid`, or `token` for a shared route.
+   * @param {unknown} value
    * @returns {[[number, number], [number, number]]|null}
    */
-  function boundsForUuid(collection, uuid) {
-    if (!collection || !Array.isArray(collection.features) || !uuid) return null;
+  function boundsFor(collection, key, value) {
+    if (!collection || !Array.isArray(collection.features) || !value) return null;
     /** @type {[[number, number], [number, number]]|null} */
     let out = null;
     for (const feature of collection.features) {
-      if (!feature.properties || feature.properties.uuid !== uuid) continue;
+      if (!feature.properties || feature.properties[key] !== value) continue;
       const b = lineBounds(feature.geometry);
       if (!b) continue;
       out = out
@@ -315,6 +322,42 @@
     return { camera, layers };
   }
 
+  /**
+   * The page's own address for a view, carrying the token that opens it.
+   *
+   * `share` is the reader's Map3dShare token (apps/map/models.py), which
+   * opens the page past the flag; `routeShare` is the route share the page
+   * was opened on, which keeps that route on it. Either may be empty.
+   *
+   * @param {string} origin `location.origin`.
+   * @param {string} pathname `location.pathname`.
+   * @param {{share?: string, routeShare?: string}} tokens
+   * @param {string} query viewQuery's output.
+   * @returns {string}
+   */
+  function pageUrl(origin, pathname, tokens, query) {
+    const params = [];
+    if (tokens.share) params.push(`share=${encodeURIComponent(tokens.share)}`);
+    if (tokens.routeShare) params.push(`route_share=${encodeURIComponent(tokens.routeShare)}`);
+    params.push(query);
+    return `${origin}${pathname}?${params.join('&')}`;
+  }
+
+  /**
+   * A route share link into 3-D: `/routes/s/<token>/` (what routes'
+   * share-create answers) plus `3d/` and the view, so the friend opens on
+   * the sharer's camera and switches (routes:share_redirect_3d).
+   *
+   * @param {string} shareUrl The absolute route share link.
+   * @param {string} query viewQuery's output.
+   * @returns {string}
+   */
+  function routeShare3dUrl(shareUrl, query) {
+    const url = new URL('3d/', shareUrl.endsWith('/') ? shareUrl : `${shareUrl}/`);
+    url.search = query;
+    return url.toString();
+  }
+
   self.pwaMap3dCore = Object.freeze({
     DEM_SOURCE_ID: DEM_SOURCE_ID,
     TERRAIN_EXAGGERATION: TERRAIN_EXAGGERATION,
@@ -330,12 +373,14 @@
     terrainSpec: terrainSpec,
     toursBbox: toursBbox,
     lineBounds: lineBounds,
-    boundsForUuid: boundsForUuid,
+    boundsFor: boundsFor,
     LAYER_KEYS: LAYER_KEYS,
     DEFAULT_LAYERS: DEFAULT_LAYERS,
     WILDLIFE_LAYERS: WILDLIFE_LAYERS,
     wildlifeTileUrl: wildlifeTileUrl,
     viewQuery: viewQuery,
     parseView: parseView,
+    pageUrl: pageUrl,
+    routeShare3dUrl: routeShare3dUrl,
   });
 })();

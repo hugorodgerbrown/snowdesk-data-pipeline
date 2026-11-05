@@ -4,19 +4,33 @@ tests/map/test_map_3d.py — the 3-D terrain map at /map/3d/ (SNOW-1438).
 Pins the gate (a 404 for anyone outside the map_3d flag, and no waffle query
 for an anonymous visitor), the URLs the script reads from #map-3d, the
 Steep terrain switch following TERRAIN_CLASS_TILE_URL, and the page never
-unfurling or being indexed.
+unfurling or being indexed. Then the route share: ``?route_share=`` opening
+the page on one route for anyone, only for a share by a 3-D reader, and
+/map/'s 3D roundel offered to a friend who followed one.
 """
 
 from __future__ import annotations
 
+import uuid
+from datetime import timedelta
+from unittest.mock import patch
+
 import pytest
 from django.test import Client, override_settings
 from django.urls import reverse
+from django.utils import timezone
 from waffle.testutils import override_flag
 
-from apps.map.map_3d import MAP_3D_DEM_TILE_URL
+from apps.map.map_3d import MAP_3D_DEM_TILE_URL, route_share_for_3d
 from apps.map.models import Map3dShare
-from tests.factories import Map3dShareFactory, UserFactory
+from apps.routes.models import RouteShare
+from apps.routes.services.shares import PENDING_SESSION_KEY, SHARE_FOLLOW_GROUP
+from tests.factories import (
+    Map3dShareFactory,
+    RouteFactory,
+    RouteShareFactory,
+    UserFactory,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -160,3 +174,187 @@ def test_a_deleted_or_unknown_token_is_a_404() -> None:
     share.delete()
     assert Client().get(URL, {"share": token}).status_code == 404
     assert Client().get(URL, {"share": "nope"}).status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# A route share opens the page on that route
+# ---------------------------------------------------------------------------
+
+
+def _route_share_by_a_3d_reader(**kwargs: object) -> RouteShare:
+    """Return a live route share whose sharer holds a Map3dShare.
+
+    Args:
+        **kwargs: Passed to the RouteShare factory.
+
+    Returns:
+        The share.
+
+    """
+    share = RouteShareFactory.create(**kwargs)
+    Map3dShareFactory.create(created_by=share.created_by)
+    return share
+
+
+def test_a_route_share_opens_the_page_for_an_anonymous_visitor() -> None:
+    """The route is drawn through routes.geojson; the sharer's token is not handed on."""
+    share = _route_share_by_a_3d_reader()
+    sharer_token = Map3dShare.objects.get(created_by=share.created_by).token
+    client = Client()
+    response = client.get(URL, {"route_share": share.token})
+    content = response.content.decode()
+    assert response.status_code == 200
+    assert f'data-routes-url="{reverse("routes:geojson")}"' in content
+    assert f'data-route-share-token="{share.token}"' in content
+    assert 'data-share-token=""' in content
+    assert sharer_token not in content
+    # Only a reader inside the flag shares their own routes from here.
+    assert 'data-route-share-url-template=""' in content
+    assert client.session[PENDING_SESSION_KEY] == [share.token]
+
+
+def test_a_route_share_visitor_sees_only_the_shared_route() -> None:
+    """routes.geojson, as the page asks for it, holds the share and none of the sharer's routes."""
+    share = _route_share_by_a_3d_reader()
+    RouteFactory.create(user=share.created_by)
+    client = Client()
+    client.get(URL, {"route_share": share.token})
+    features = client.get(reverse("routes:geojson")).json()["features"]
+    assert [f["properties"].get("token") for f in features] == [share.token]
+    assert all("uuid" not in f["properties"] for f in features)
+
+
+def test_a_prefetch_of_a_route_share_writes_nothing_to_the_session() -> None:
+    """As the share follow: only a real navigation seats the token."""
+    share = _route_share_by_a_3d_reader()
+    client = Client()
+    response = client.get(
+        URL, {"route_share": share.token}, HTTP_SEC_PURPOSE="prefetch"
+    )
+    assert response.status_code == 200
+    assert PENDING_SESSION_KEY not in client.session
+
+
+@pytest.mark.parametrize(
+    "dead",
+    ["no_3d_sharer", "expired", "example", "unknown"],
+)
+def test_a_route_share_that_may_not_open_3d_is_a_404(dead: str) -> None:
+    """Sharer outside 3-D, expired, the example route, or no such token."""
+    if dead == "no_3d_sharer":
+        token = RouteShareFactory.create().token
+    elif dead == "expired":
+        token = _route_share_by_a_3d_reader(
+            expires_at=timezone.now() - timedelta(days=1)
+        ).token
+    elif dead == "example":
+        token = _route_share_by_a_3d_reader(is_example=True).token
+    else:
+        token = "nope"
+    assert Client().get(URL, {"route_share": token}).status_code == 404
+
+
+def test_deleting_the_sharers_3d_share_stops_their_route_links() -> None:
+    """The Map3dShare row is the one switch for everything a reader shares."""
+    share = _route_share_by_a_3d_reader()
+    Map3dShare.objects.filter(created_by=share.created_by).delete()
+    assert Client().get(URL, {"route_share": share.token}).status_code == 404
+
+
+def test_a_flagged_reader_can_share_their_routes() -> None:
+    """The share-create template rides on #map-3d, with its uuid placeholder."""
+    with override_flag("map_3d", active=True):
+        content = _signed_in().get(URL).content.decode()
+    template = reverse("routes:share_create", args=[uuid.UUID(int=0)]).replace(
+        str(uuid.UUID(int=0)), "__UUID__"
+    )
+    assert f'data-route-share-url-template="{template}"' in content
+    assert 'data-csrf-token=""' not in content
+    assert "Share this route in 3-D" in content
+
+
+def test_route_share_for_3d_ignores_a_blank_token() -> None:
+    """No query for a page opened without ?route_share=."""
+    assert route_share_for_3d("") is None
+
+
+# ---------------------------------------------------------------------------
+# /map/'s 3D roundel for a friend who followed a route share
+# ---------------------------------------------------------------------------
+
+
+def _map_page(client: Client) -> str:
+    """Return /map/'s HTML.
+
+    Args:
+        client: The client to ask with.
+
+    Returns:
+        The page.
+
+    """
+    return client.get(reverse("public:map")).content.decode()
+
+
+def test_a_friend_sent_a_3d_readers_route_gets_the_roundel() -> None:
+    """Outside the flag, the roundel carries the followed share."""
+    share = _route_share_by_a_3d_reader()
+    client = Client()
+    client.get(reverse("routes:share_redirect", args=[share.token]))
+    content = _map_page(client)
+    assert 'id="map-3d-link"' in content
+    assert f'href="/map/3d/?route_share={share.token}"' in content
+    assert f'data-route-share="{share.token}"' in content
+    assert "js/map_3d_link.js" in content
+
+
+def test_the_newest_eligible_share_is_the_one_carried() -> None:
+    """Followed in order: a 3-D one, a plain one, a second 3-D one."""
+    first = _route_share_by_a_3d_reader()
+    plain = RouteShareFactory.create()
+    newest = _route_share_by_a_3d_reader()
+    client = Client()
+    for share in (first, newest, plain):
+        client.get(reverse("routes:share_redirect", args=[share.token]))
+    assert f'data-route-share="{newest.token}"' in _map_page(client)
+
+
+def test_a_share_by_someone_outside_3d_brings_no_roundel() -> None:
+    """A plain route share leaves /map/ as it was."""
+    share = RouteShareFactory.create()
+    client = Client()
+    client.get(reverse("routes:share_redirect", args=[share.token]))
+    assert 'id="map-3d-link"' not in _map_page(client)
+
+
+def test_a_flagged_readers_roundel_carries_no_route_share() -> None:
+    """Their 3-D map draws their followed shares anyway."""
+    share = _route_share_by_a_3d_reader()
+    client = _signed_in()
+    client.get(reverse("routes:share_redirect", args=[share.token]))
+    with override_flag("map_3d", active=True):
+        content = _map_page(client)
+    assert 'href="/map/3d/"' in content
+    assert 'data-route-share=""' in content
+
+
+def test_seating_a_route_share_spends_the_follow_budget() -> None:
+    """Past the share follows' budget, the page answers 429 and seats nothing."""
+    share = _route_share_by_a_3d_reader()
+    client = Client()
+    with patch("apps.map.map_3d.is_ratelimited", return_value=True) as limited:
+        response = client.get(URL, {"route_share": share.token})
+    assert response.status_code == 429
+    assert PENDING_SESSION_KEY not in client.session
+    assert limited.call_args.kwargs["group"] == SHARE_FOLLOW_GROUP
+    assert limited.call_args.kwargs["increment"] is True
+
+
+def test_the_page_and_the_link_share_one_bucket() -> None:
+    """The bucket is the share follows' own: token then client IP."""
+    share = _route_share_by_a_3d_reader()
+    with patch("apps.map.map_3d.is_ratelimited", return_value=False) as limited:
+        Client().get(URL, {"route_share": share.token}, REMOTE_ADDR="203.0.113.9")
+    request = limited.call_args.args[0]
+    key = limited.call_args.kwargs["key"]
+    assert key(SHARE_FOLLOW_GROUP, request) == f"{share.token}|203.0.113.9"

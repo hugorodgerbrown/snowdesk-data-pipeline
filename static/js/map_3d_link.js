@@ -15,6 +15,11 @@
  * A flat 2-D camera is tilted to the 3-D map's opening pitch: opening a
  * 3-D map looking straight down shows nothing the 2-D one did not.
  *
+ * A friend sent a route by a 3-D reader gets the roundel outside the flag,
+ * with that share's token on `data-route-share` (apps/map/map_3d.py
+ * pending_route_share_for_3d). The link keeps it as `?route_share=`, which
+ * is what opens the 3-D map for them with the route on it.
+ *
  * PREFETCH. The moment a pointer, a finger or focus reaches the roundel,
  * the elevation tiles the 3-D view asks for first are fetched into the
  * browser's cache (map_3d_core.prefetchDemTiles; Mapterhorn caches them
@@ -88,6 +93,8 @@
         wildlife: readSwitch('snowdesk.map.overlay.rest_zones', false),
       },
     );
-    link.href = `${link.pathname}?${query}`;
+    const routeShare = link.dataset.routeShare;
+    const prefix = routeShare ? `route_share=${encodeURIComponent(routeShare)}&` : '';
+    link.href = `${link.pathname}?${prefix}${query}`;
   });
 })();
