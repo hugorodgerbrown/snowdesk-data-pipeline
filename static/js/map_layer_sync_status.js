@@ -374,7 +374,7 @@
    * is unit-tested on its own, so a bare cross-script identifier would be in
    * its temporal dead zone at parse time and undefined in isolation. The
    * template renders the attribute from that same declaration, and
-   * ``tests/public/test_map_country_groups.py`` fails if the two disagree.
+   * ``tests/map/test_map_country_groups.py`` fails if the two disagree.
    *
    * Falls back to the key's own suffix, so a row without the attribute
    * behaves exactly as it did before this ticket.

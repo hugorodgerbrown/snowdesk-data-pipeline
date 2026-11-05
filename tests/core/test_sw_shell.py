@@ -39,10 +39,15 @@ def _write_shell_tree(root: Path) -> None:
     (css_dir / "main.css").write_text("body { color: red; }\n", encoding="utf-8")
 
     templates_dir = root / "apps" / "public" / "templates" / "public"
-    partials_dir = templates_dir / "partials"
+    templates_dir.mkdir(parents=True, exist_ok=True)
+    # SNOW-1428: the map page and its embed live in apps/map.
+    map_templates_dir = root / "apps" / "map" / "templates" / "public"
+    partials_dir = map_templates_dir / "partials"
     partials_dir.mkdir(parents=True, exist_ok=True)
     (templates_dir / "base.html").write_text("<html></html>\n", encoding="utf-8")
-    (templates_dir / "map.html").write_text("<div>map page</div>\n", encoding="utf-8")
+    (map_templates_dir / "map.html").write_text(
+        "<div>map page</div>\n", encoding="utf-8"
+    )
     # SNOW-930: the public offline-content page, warmed into the shell
     # alongside the map (``SHELL_PAGES``) and therefore hashed with it.
     (templates_dir / "offline.html").write_text(
@@ -79,9 +84,9 @@ class TestComputeShellHash:
             "static/js/bundles/map.txt",
             "src/css/main.css",
             "apps/public/templates/public/base.html",
-            "apps/public/templates/public/map.html",
+            "apps/map/templates/public/map.html",
             "apps/public/templates/public/offline.html",
-            "apps/public/templates/public/partials/_map_embed.html",
+            "apps/map/templates/public/partials/_map_embed.html",
             "static/offline.html",
         ],
     )

@@ -9,7 +9,9 @@ don't share a namespace — ``{% url "api:ratings" %}`` vs
 
 from django.urls import include, path
 
-from . import api, problem_terrain
+from apps.map import api as map_api, editor, problem_terrain
+
+from . import api
 
 app_name = "api"
 
@@ -42,13 +44,13 @@ urlpatterns = [
     ),
     # SNOW-239: unified ratings endpoint. Replaces today-summaries + season-ratings.
     # Accepts optional ?d=YYYY-MM-DD and ?country=ch|fr|at|it filters.
-    path("ratings/", api.ratings, name="ratings"),
+    path("ratings/", map_api.ratings, name="ratings"),
     # SNOW-1194: every region's problem-terrain rules for a day — the
     # "Sync with map terrain" layer paints the whole map from it.
     path("problem-terrain/", problem_terrain.problem_terrain, name="problem_terrain"),
-    path("resorts-by-region/", api.resorts_by_region, name="resorts_by_region"),
-    path("resorts.geojson", api.resorts_geojson, name="resorts_geojson"),
-    path("regions.geojson", api.regions_geojson, name="regions_geojson"),
+    path("resorts-by-region/", map_api.resorts_by_region, name="resorts_by_region"),
+    path("resorts.geojson", map_api.resorts_geojson, name="resorts_geojson"),
+    path("regions.geojson", map_api.regions_geojson, name="regions_geojson"),
     # SNOW-761: the map's Weather overlay. ONE feed, anchored on Location —
     # it replaces the resort-anchored /api/forecast-weather.geojson and the
     # region-anchored /api/region-weather.geojson that SNOW-762 removed.
@@ -56,36 +58,38 @@ urlpatterns = [
     # reaches favourites, and a public feed built from it leaks private pins.
     # SNOW-1276: swisstopo's ski-touring segments crossing one rectangle —
     # the vector network a drawn route snaps to. Public reference data.
-    path("ski-network.geojson", api.ski_network_geojson, name="ski_network_geojson"),
-    path("ski-tours.geojson", api.ski_tours_geojson, name="ski_tours_geojson"),
+    path(
+        "ski-network.geojson", map_api.ski_network_geojson, name="ski_network_geojson"
+    ),
+    path("ski-tours.geojson", map_api.ski_tours_geojson, name="ski_tours_geojson"),
     # SNOW-1384: FOEN's wildlife rest zones in one rectangle, for one day —
     # the map's "Wildlife rest zones" layer, behind the route_drawing flag.
-    path("rest-zones.geojson", api.rest_zones_geojson, name="rest_zones_geojson"),
+    path("rest-zones.geojson", map_api.rest_zones_geojson, name="rest_zones_geojson"),
     # SNOW-1294: every SAC summit and hut as a search row, read once.
-    path("ski-summits.json", api.ski_summits_json, name="ski_summits_json"),
-    path("weather.geojson", api.weather_geojson, name="weather_geojson"),
+    path("ski-summits.json", map_api.ski_summits_json, name="ski_summits_json"),
+    path("weather.geojson", map_api.weather_geojson, name="weather_geojson"),
     # SNOW-761: the sheet body behind a tap on a weather symbol. Keyed on
     # Location like the feed it is tapped from, and 404s for anything
     # outside Location.objects.public() — see the view.
     # SNOW-797: keyed on Location.short_id; the integer form 301s to it.
     path(
         "weather/<int:location_id>/detail/",
-        api.weather_detail_legacy_redirect,
+        map_api.weather_detail_legacy_redirect,
         name="weather_detail_legacy",
     ),
     path(
         "weather/<short_id:short_id>/detail/",
-        api.weather_detail,
+        map_api.weather_detail,
         name="weather_detail",
     ),
     path(
         "major-regions.geojson",
-        api.major_regions_geojson,
+        map_api.major_regions_geojson,
         name="major_regions_geojson",
     ),
     path(
         "sub-regions.geojson",
-        api.sub_regions_geojson,
+        map_api.sub_regions_geojson,
         name="sub_regions_geojson",
     ),
     # SNOW-521: full precomputed basemap_download blob (incl. z tile
@@ -93,7 +97,7 @@ urlpatterns = [
     # #region-readout download icon is clicked.
     path(
         "region-basemap-tiles/",
-        api.region_basemap_tiles,
+        map_api.region_basemap_tiles,
         name="region_basemap_tiles",
     ),
     # SNOW-953: what one rectangle contains — the micro-regions it touches
@@ -102,7 +106,7 @@ urlpatterns = [
     # this answer cacheable and the same for everyone.
     path(
         "area-content/",
-        api.area_content,
+        map_api.area_content,
         name="area_content",
     ),
     # SNOW-965: the signed-in user's own trips and pins inside one
@@ -110,7 +114,7 @@ urlpatterns = [
     # never cached — area-content's public twin above is the cacheable one.
     path(
         "area-items/",
-        api.area_items,
+        map_api.area_items,
         name="area_items",
     ),
     # SNOW-323: dissolved bulletin grouping boundaries for ONE date
@@ -119,12 +123,12 @@ urlpatterns = [
     # historical backfill pushed it past the worker's memory limit.
     path(
         "bulletin-groupings.geojson",
-        api.bulletin_groupings_geojson,
+        map_api.bulletin_groupings_geojson,
         name="bulletin_groupings_geojson",
     ),
     path(
         "region/<region_id:region_id>/summary/",
-        api.region_summary,
+        map_api.region_summary,
         name="region_summary",
     ),
     # SNOW-419: community-reports overlay — anonymised, clustered
@@ -132,7 +136,7 @@ urlpatterns = [
     # and no flag (SNOW-724 retired the rollout flags).
     path(
         "community-reports.geojson",
-        api.community_reports_geojson,
+        map_api.community_reports_geojson,
         name="community_reports_geojson",
     ),
     # SNOW-74 — edit-resorts mode endpoints. Always registered; the
@@ -141,7 +145,7 @@ urlpatterns = [
     # shape they did when this was DEBUG-only.
     path(
         "edit/resorts/queue/",
-        api.edit_resorts_queue,
+        editor.edit_resorts_queue,
         name="edit_resorts_queue",
     ),
     # Literal segment, declared before the ``<slug:slug>`` pattern. The
@@ -151,12 +155,12 @@ urlpatterns = [
     # other surface since SNOW-796).
     path(
         "edit/resorts/create/",
-        api.edit_resort_create,
+        editor.edit_resort_create,
         name="edit_resort_create",
     ),
     path(
         "edit/resorts/<slug:slug>/save/",
-        api.edit_resort_save,
+        editor.edit_resort_save,
         name="edit_resort_save",
     ),
     # SNOW-755 — edit-locations mode endpoints, gated the same way. The
@@ -170,27 +174,27 @@ urlpatterns = [
     # the last integer keys in the URL tree are gone.
     path(
         "edit/locations/queue/",
-        api.edit_locations_queue,
+        editor.edit_locations_queue,
         name="edit_locations_queue",
     ),
     path(
         "edit/locations/create/",
-        api.edit_location_create,
+        editor.edit_location_create,
         name="edit_location_create",
     ),
     path(
         "edit/locations/links/<uuid:link_uuid>/unlink/",
-        api.edit_location_unlink,
+        editor.edit_location_unlink,
         name="edit_location_unlink",
     ),
     path(
         "edit/locations/<short_id:short_id>/save/",
-        api.edit_location_save,
+        editor.edit_location_save,
         name="edit_location_save",
     ),
     path(
         "edit/locations/<short_id:short_id>/link/",
-        api.edit_location_link,
+        editor.edit_location_link,
         name="edit_location_link",
     ),
     # SNOW-391: hosted MCP (Model Context Protocol) JSON-RPC endpoint.

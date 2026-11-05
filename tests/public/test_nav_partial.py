@@ -782,7 +782,7 @@ class TestNavPanelHoldsNoAreas:
 
     SNOW-1415 put one row per downloaded area in this panel, a Sync, an
     empty-state callout and a readiness mark on the header symbol. All of it
-    moved (``tests/public/test_downloads_surface.py``), and the panel keeps
+    moved (``tests/map/test_downloads_surface.py``), and the panel keeps
     the state line, the Offline mode switch and "Try reconnecting".
     """
 

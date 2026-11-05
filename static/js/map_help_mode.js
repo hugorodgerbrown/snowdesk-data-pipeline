@@ -20,7 +20,7 @@
  *     guided at once.
  *
  * Everything a reader sees is rendered by
- * apps/public/templates/public/partials/_map_help_mode.html; this module
+ * apps/map/templates/public/partials/_map_help_mode.html; this module
  * reads the controls (#map-help-controls) and the guides
  * ([data-sheet-guide]) from it, positions what it draws, and wires it.
  *

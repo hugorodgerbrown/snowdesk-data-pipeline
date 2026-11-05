@@ -129,7 +129,7 @@ per-`(country, date)` payload cache) rather than inside
 derivation any other caller can trust for a live answer. A stale memoised
 value is safe by construction: staleness can only make the threshold OLDER
 (smaller), so it can only under-report which dates are settled, never
-wrongly mark a still-mutable one. `tests/public/test_map_api.py`'s
+wrongly mark a still-mutable one. `tests/map/test_map_api.py`'s
 `test_groupings_query_count` warms the memo explicitly (a direct call, not
 an HTTP round trip) before measuring, so its query budget reflects steady
 warm-cache traffic, not a cold-memo request.

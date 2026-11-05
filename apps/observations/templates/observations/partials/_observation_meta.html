@@ -17,7 +17,7 @@ whichever way the user reached it, and that symmetry is still worth keeping
 where it can be. It cannot be kept here. This list is scoped by
 ``for_user``, so a reader is looking at their own reports; the map overlay
 is public and carries everyone's, which is why
-``apps.public.api.community_reports_geojson`` rounds its coordinates to
+``apps.map.api.community_reports_geojson`` rounds its coordinates to
 three decimals (~80-110 m) and never sends the raw field. A three word
 address names a 3m square, so putting one in that payload would undo the
 anonymisation that endpoint exists to apply. See

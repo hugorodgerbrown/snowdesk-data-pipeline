@@ -117,7 +117,7 @@ def subject(
     # The picker's basemaps, not every BASEMAP_STYLES key: a style kept only
     # as a BASEMAP= override (swisstopo_light) has no button to press, and
     # the suite picks a basemap the way a user does.
-    from apps.public.views import _basemaps_for_picker
+    from apps.map.views import _basemaps_for_picker
 
     picker_keys = sorted(basemap["key"] for basemap in _basemaps_for_picker())
     drawn = draw_subject(candidates, picker_keys, seed=offline_seed)

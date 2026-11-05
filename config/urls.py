@@ -28,7 +28,7 @@ When ``settings.DEBUG`` is true, the development-only mirrors are mounted:
   ``apps/bulletins/local_mirrors/albina_archive.ndjson``.
 
 - ``/dev/terrain-class/v1/<z>/<x>/<y>.png`` — synthetic terrain-class tiles
-  around Verbier (``apps.public.dev_terrain_class``, SNOW-978), so the map's
+  around Verbier (``apps.map.dev_terrain_class``, SNOW-978), so the map's
   terrain filter can run against contract-exact tiles with
   ``TERRAIN_CLASS_TILE_URL`` pointed at the dev server.
 
@@ -124,7 +124,7 @@ urlpatterns = [
 # the prefix. Production never imports these modules.
 if settings.DEBUG:
     # Imported here, not at the top, so a production process never loads it.
-    from apps.public.dev_terrain_class import terrain_class_tile
+    from apps.map.dev_terrain_class import terrain_class_tile
 
     urlpatterns.extend(
         [

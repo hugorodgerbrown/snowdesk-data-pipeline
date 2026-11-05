@@ -1,0 +1,339 @@
+{% load i18n humanize components resort_tags snowdesk_time %}
+{% comment %}
+public/partials/_place_sheet_body.html — what a tapped resort pin or saved
+pin's phone sheet says (SNOW-1100).
+
+Rendered by ``apps.map.place_sheet`` (``resort_sheet_partial`` and
+``favourite_sheet_partial``) and swapped by ``static/js/map_place_sheet.js``
+into ``#place-sheet``, an ``includes/_overlay_sheet.html`` that declares the
+detents peek, half and full. One fragment serves both kinds and all three
+detents, ordered so that each detent shows the next part of it:
+
+  1. PEEK (``data-sheet-peek``) — the header ROW: the round pin tile
+     (``includes/_resort_tile.html``, a place's shape in search; the square
+     danger tile is a region's), the place's name, the actions and the ×.
+     The day is not in the peek: a resort's dated eyebrows name it
+     ("Avalanche bulletin • SLF … Today", includes/_dated_eyebrow.html), a
+     saved pin's weather line and bulletin link already did, and the
+     full-width "Data from <day>" row that sat here went (Hugo, 29 Oct
+     2026: "Date is everywhere on the page"). Nothing else — no level, code
+     or region in the header (Hugo, 21 Oct: it could not be told from the
+     region sheet, and had too much squeezed in). A resort's action is the Save star; a
+     saved pin's are the panel row's own "…" menu
+     (``_favourite_row_menu_items.html``: Share → Rename → Delete). The
+     header is ``data-sheet-drag`` and, for a saved pin, also the row the
+     inline rename edits (``data-row-renameable``).
+  2. HALF (ends under ``data-sheet-half``) — for a RESORT, where the sheet
+     OPENS (Hugo, 27 Oct 2026; ``map_place_sheet.js`` sets
+     ``data-detent-initial``): the bulletin callout ("Avalanche bulletin •
+     SLF", the region's level or "No bulletin available on this date"),
+     then the weather section down to today's tile for the chosen point.
+     The curated line moved into the folded "About this resort". For a
+     saved pin, which still opens at PEEK: the region's level, then the
+     day's weather at the place and "Full forecast →".
+  3. FULL — a resort's week, Base / Mid / Summit chips, "View hourly
+     forecast →" and "About this resort"; a saved pin's avalanche problems,
+     then the links onward: the day's bulletin (primary) and the resort
+     page (secondary). With none of those there is nothing for FULL to
+     show, so ``data-sheet-detents`` drops it. A tap on the handle at FULL
+     steps down to PEEK.
+
+YOUR LOCATION (SNOW-1395). A tap on the map's locate-me dot opens a third
+kind, ``location``: the kind line "Your location", and for a title the
+ground under the fix itself — "2,410 m · NE · 30–35°", the band in the
+slope layer's colour from 30° — because the data is the heading (Hugo, 3
+Nov 2026: fewest words, no line that restates another). Then the region's
+bulletin row for the day, one warning row inside it only when the fix
+stands in that day's problem terrain (nothing at all otherwise — Hugo, 3
+Nov), the day's borrowed weather, and at FULL the problems annotated
+against the fix's height. The star saves the spot as a dropped pin.
+
+TERRAIN (SNOW-1422, behind ``map_modes``). Inside the peek, one Today row
+(``_place_sheet_today_row.html``, ``data-terrain-only``): the region's level
+and one weather reading. Every section about the day carries ``data-dated``
+(here, in ``_resort_body.html`` and in ``_place_sheet_location_body.html``),
+and map.css shows the one or the other under ``:root[data-map-mode]``. What
+is the place itself stays in both: the header, a resort's facts, a saved
+resort's page link.
+
+WHAT THE SHEET DOES NOT SAY (SNOW-1161, docs/decisions/the-map-opens-a-
+resort-in-the-sheet.md). The sheet is "this place, on the map's day"; the
+resort page is "this resort, today". So the full facts list, the week, the
+season and every blank state belong to the page: no "About this resort"
+list (the summary line reads the same formatter as the page's card), no
+"The week" (the sheet already follows the scrubber, and a week inside it
+read as a second date control), no sign-up prompt or curation hint where
+"why it matters" is unwritten, and no dashed placeholder anywhere.
+
+Context:
+  kind            — "resort", "favourite" or "location".
+  name            — the place's name; "" for an unnamed pin.
+  region          — MicroRegion or None.
+  day_rating      — RegionDayRating for target_date, or None.
+  level_label     — the danger level's name, or "".
+  target_date     — the day the map is showing.
+  bulletin_url    — that day's bulletin page, or "".
+  problem_cards   — the bulletin's problem cards, possibly annotated.
+  location        — the place's Location, or None.
+  forecast_source — the NearestForecast the weather is borrowed from: the
+                    curated point nearest the pin (Hugo, 2026-10-28 — a pin
+                    buys no fetch of its own), or None.
+  weather_display — build_weather_display's result for that point's row
+                    for the day, or None (always None on a forward day).
+  forward_day     — on a forward day, today's forecast entry for it, or None.
+  forecast_url    — that point's forecast page, or "".
+  resort          — the Resort (a resort, or a saved resort), or None.
+  resort_url      — the resort page, or "".
+  favourite       — the Favourite (kind "favourite" only), with
+                    ``w3w_share_text`` hung on it.
+  signin_url      — the resort's sign-in star (kind "resort" only). The
+                    Save star itself carries no reader state (SNOW-1318):
+                    map_place_sheet.js paints it. The href is the BARE
+                    sign-in url and must stay so: this is a require_htmx
+                    fragment, so {% sign_in_href %} would name the
+                    fragment's url as `next`. map_place_sheet.js gives it
+                    the live map url through snowdeskSigninCta.bindNext
+                    (SNOW-903). Kind "location" passes it too.
+  ground          — kind "location": apps.map.your_location.Ground.
+  in_terrain      — kind "location": one line per problem whose ground
+                    the fix stands on, or [].
+  fix_lat, fix_lon — kind "location": the fix, for the star's new pin.
+  favourites_eligible — kind "location": whether the reader can save.
+  today_weather   — the Today row's one reading (SNOW-1422), or None.
+  another_day     — whether target_date is not today.
+{% endcomment %}
+{% trans "Unnamed pin" as unnamed_pin %}
+{% firstof name unnamed_pin as label %}
+<div
+    class="space-y-4"
+    data-testid="place-sheet-body"
+    data-place-kind="{{ kind }}"
+    {% if kind == "resort" %}data-panel-key="resort:{{ resort.slug }}" data-panel-label="{{ label }}"{% endif %}
+    data-sheet-detents="{% if kind == 'resort' or resort_url or day_rating %}peek,half,full{% else %}peek,half{% endif %}"
+>
+    {# Another day says so in the peek's date row, as the region sheet's #}
+    {# does (Hugo, 21 Oct; it replaced SNOW-1165's strip above the row).  #}
+    <div
+        data-sheet-peek
+        data-sheet-drag
+        {% if kind == "favourite" %}id="place-sheet-row" data-row-renameable{% endif %}
+    >
+        <div class="flex items-center gap-4">
+            {# A place leads with the round pin tile, as its search row does; #}
+            {# the square danger tile is a region's (Hugo, 21 Oct).           #}
+            {% if kind == "location" %}
+                {# The blue dot the reader tapped, as the map draws it. #}
+                <span
+                    class="inline-flex h-9 w-9 flex-none items-center justify-center rounded-full bg-accent-tint"
+                    aria-hidden="true"
+                    data-testid="location-tile"
+                ><span class="location-tile-dot"></span></span>
+            {% else %}
+                {% include "includes/_resort_tile.html" with kind=kind only %}
+            {% endif %}
+            <div class="min-w-0 flex-1">
+                {# The kind of place, above its name, on every map panel (Hugo, 25 Oct 2026). #}
+                {% if kind == "resort" %}
+                    {% translate "Ski resort" as place_kind %}
+                {% elif kind == "location" %}
+                    {% translate "Your location" as place_kind %}
+                {% else %}
+                    {% translate "Saved place" as place_kind %}
+                {% endif %}
+                {% include "includes/_eyebrow.html" with tag="p" text=place_kind data_testid="sheet-kind" only %}
+                {% if kind == "location" %}
+                    {# The ground is the title: height · aspect · slope band. #}
+                    <h2
+                        class="flex min-w-0 items-center gap-1.5 whitespace-nowrap text-lg font-semibold leading-tight text-text-1"
+                        data-testid="location-title"
+                    >
+                        {% if ground.height_m is not None %}
+                            <span>{{ ground.height_m|intcomma }}&nbsp;m</span>
+                            {% if ground.octant %}<span class="text-text-3" aria-hidden="true">·</span><span
+                                >{{ ground.octant }}</span>{% endif %}
+                            {% if ground.slope_band is not None %}
+                                <span class="text-text-3" aria-hidden="true">·</span>
+                                <span
+                                    class="slope-chip"
+                                    {% if ground.slope_class is not None %}
+                                        data-slope-class="{{ ground.slope_class }}"
+                                    {% endif %}
+                                    data-testid="location-slope"
+                                >{{ ground.slope_label }}</span>
+                            {% endif %}
+                        {% elif region %}
+                            <span class="truncate">{{ region.name }}</span>
+                        {% else %}
+                            <span class="truncate">{{ fix_lat|floatformat:4 }}, {{ fix_lon|floatformat:4 }}</span>
+                        {% endif %}
+                    </h2>
+                {% else %}
+                    <h2
+                        data-row-label
+                        class="truncate text-lg font-semibold leading-tight text-text-1"
+                        title="{{ label }}"
+                    >
+                        {{ label }}
+                    </h2>
+                {% endif %}
+                {% if kind == "favourite" %}
+                    {% trans "Favourite name" as rename_label %}
+                    <input
+                        type="text"
+                        data-row-rename-input
+                        hidden
+                        value="{{ name }}"
+                        maxlength="100"
+                        aria-label="{{ rename_label }}"
+                        class="-mx-1.5 w-full min-w-0 rounded-pill border border-accent bg-card px-1.5 py-0.5 text-lg font-semibold text-text-1 focus:outline-none"
+                    >
+                {% endif %}
+            </div>
+            {% if kind == "resort" %}
+                {# The star and its sign-in link are glass roundels, the shape  #}
+                {# the region sheet's pin takes (Hugo, 4 Nov 2026: one shape    #}
+                {# for one act). components.roundel_classes is the one source.  #}
+                {# SNOW-1318: the star is rendered the same for every reader — #}
+                {# a disabled outline, and a hidden sign-in link beside it —  #}
+                {# so one copy of this body serves everyone, offline too.      #}
+                {# map_place_sheet.js paints it from map.js's favourites feed  #}
+                {# (window.pwaFavouritedResorts): the star for a signed-in     #}
+                {# reader once the feed is read, the link for anyone else.     #}
+                {% trans "Save resort" as save_label %}
+                {% trans "Remove from saved places" as remove_label %}
+                {% trans "Sign in to save this resort" as signin_label %}
+                <button
+                    type="button"
+                    data-resort-star
+                    data-resort-slug="{{ resort.slug }}"
+                    data-resort-name="{{ resort.name }}"
+                    data-resort-lat="{{ resort.pin_coordinates.0|default:'' }}"
+                    data-resort-lon="{{ resort.pin_coordinates.1|default:'' }}"
+                    data-favourited="false"
+                    data-favourite-uuid=""
+                    data-label-save="{{ save_label }}"
+                    data-label-remove="{{ remove_label }}"
+                    aria-pressed="false"
+                    aria-label="{{ save_label }}"
+                    title="{{ save_label }}"
+                    disabled
+                    class="{% roundel_classes extra='map-sheet-roundel' %}"
+                >
+                    {% include "includes/_icon_favourite.html" with size=18 only %}
+                </button>
+                <a
+                    href="{{ signin_url }}"
+                    data-signin-url="{{ signin_url }}"
+                    data-resort-star-signin
+                    data-resort-slug="{{ resort.slug }}"
+                    data-resort-name="{{ resort.name }}"
+                    data-resort-lat="{{ resort.pin_coordinates.0|default:'' }}"
+                    data-resort-lon="{{ resort.pin_coordinates.1|default:'' }}"
+                    hidden
+                    aria-label="{{ signin_label }}"
+                    title="{{ signin_label }}"
+                    class="{% roundel_classes extra='map-sheet-roundel' %}"
+                >
+                    {% include "includes/_icon_favourite.html" with size=18 only %}
+                </a>
+            {% elif kind == "location" %}
+                {# The star saves the spot as a dropped pin (map_place_sheet.js). #}
+                {% if favourites_eligible %}
+                    {% trans "Save as a pin" as save_pin_label %}
+                    <button
+                        type="button"
+                        data-location-star
+                        data-lat="{{ fix_lat|stringformat:'.6f' }}"
+                        data-lon="{{ fix_lon|stringformat:'.6f' }}"
+                        aria-pressed="false"
+                        aria-label="{{ save_pin_label }}"
+                        title="{{ save_pin_label }}"
+                        class="{% roundel_classes extra='map-sheet-roundel' %}"
+                    >
+                        {% include "includes/_icon_favourite.html" with size=18 only %}
+                    </button>
+                {% else %}
+                    {% trans "Sign in to save this spot" as signin_pin_label %}
+                    <a
+                        href="{{ signin_url }}"
+                        data-signin-url="{{ signin_url }}"
+                        data-location-star-signin
+                        aria-label="{{ signin_pin_label }}"
+                        title="{{ signin_pin_label }}"
+                        class="{% roundel_classes extra='map-sheet-roundel' %}"
+                    >
+                        {% include "includes/_icon_favourite.html" with size=18 only %}
+                    </a>
+                {% endif %}
+            {% else %}
+                {% blocktrans trimmed with name=label asvar row_actions_aria_label %}Actions for
+                    {{ name }}{% endblocktrans %}
+                {% include "includes/_overflow_menu.html" with trigger_id="place-sheet-actions" menu_id="place-sheet-actions-menu" trigger_label=row_actions_aria_label items_template="favourites/partials/_favourite_row_menu_items.html" row_target="#place-sheet-row" %}
+            {% endif %}
+            <button
+                type="button"
+                data-action="dismiss"
+                aria-label="{% trans 'Close' %}"
+                class="{% icon_button_classes extra='-mr-3' %}"
+            >
+                {% include "includes/_icon_close.html" only %}
+            </button>
+        </div>
+        {# SNOW-1422: Terrain's one row for the day, in the peek so a phone #}
+        {# shows it without a drag; map.css shows it in Terrain only, in     #}
+        {# place of everything below marked data-dated.                      #}
+        {% include "public/partials/_place_sheet_today_row.html" with day_rating=day_rating level_label=level_label weather=today_weather day=target_date another_day=another_day only %}
+    </div>
+
+    {% if kind == "location" %}
+        {% include "public/partials/_place_sheet_location_body.html" %}
+    {% elif kind == "resort" %}
+        {# SNOW-1164: under the peek row, the resort page's own body for   #}
+        {# the map's day. The curated line is in its folded "About this    #}
+        {# resort" (Hugo, 27 Oct 2026), so the bulletin leads HALF.         #}
+        <div data-testid="place-sheet-resort-body">
+            {% include "public/partials/_resort_body.html" with in_map=True %}
+        </div>
+    {% else %}
+        {# A saved pin: the region's level leads (a resort's is in its      #}
+        {# bulletin card; neither is in the header since Hugo's review of   #}
+        {# 21 Oct), then HALF ends under the day's weather at the place     #}
+        {# (data-sheet-half). The problems follow, for FULL.                #}
+        <div class="space-y-4" data-dated>
+            <p class="flex min-w-0 items-center gap-3 text-sm text-text-2" data-testid="place-sheet-level">
+                {% if region %}
+                    {% if day_rating %}
+                        {% include "includes/_danger_tile.html" with day_rating=day_rating testid="place-sheet-rating" only %}
+                    {% else %}
+                        {% include "includes/_danger_tile_empty.html" only %}
+                    {% endif %}
+                    <span class="truncate">
+                        {% firstof level_label _("No bulletin") as level_text %}
+                        {% blocktrans with level=level_text region=region.name trimmed %}{{ level }} · in
+                            {{ region }}{% endblocktrans %}
+                    </span>
+                {% else %}
+                    {% trans "No avalanche bulletin covers this spot" %}
+                {% endif %}
+            </p>
+            {% include "public/partials/_place_sheet_weather.html" %}
+            {% include "public/partials/_place_sheet_problems.html" %}
+        </div>
+
+        {# FULL: the links on — the day's bulletin first, then a saved     #}
+        {# resort's page.                                                   #}
+        <div class="flex flex-col gap-2" data-testid="place-sheet-links">
+            {% if day_rating %}
+                {% blocktrans with region=region.name d=target_date|date:"j M" trimmed asvar bulletin_label %}
+                    Read the {{ region }} bulletin for {{ d }} →
+                {% endblocktrans %}
+                <div class="flex flex-col" data-dated>
+                    {% include "includes/_button.html" with label=bulletin_label href=bulletin_url full_width=True %}
+                </div>
+            {% endif %}
+            {% if resort_url %}
+                {% include "includes/_button.html" with label=_("View resort →") href=resort_url variant="secondary" full_width=True %}
+            {% endif %}
+        </div>
+    {% endif %}
+</div>

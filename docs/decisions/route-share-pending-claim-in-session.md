@@ -76,6 +76,6 @@ exactly what a signed-out recipient has not got.
   content outlives one page load, which matters on a shared device where an
   anonymous reader is whoever holds the phone.
 * **`routes_eligible` no longer means "authenticated"** in
-  `apps.public.views._routes_context`. It means "there is a routes list for
+  `apps.map.views._routes_context`. It means "there is a routes list for
   this request"; `routes_upload_eligible` is the authentication question
   that value used to answer, and `static/js/routes.js` reads both.

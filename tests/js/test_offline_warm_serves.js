@@ -971,7 +971,7 @@ describe.each(VARIANTS)('the install-time lists are served offline (%s)', (_labe
  */
 function mapDataUrlAttributes() {
   const source = readFileSync(
-    join(process.cwd(), 'apps', 'public', 'templates', 'public', 'partials', '_map_embed.html'),
+    join(process.cwd(), 'apps', 'map', 'templates', 'public', 'partials', '_map_embed.html'),
     'utf8',
   );
   const stripped = source.replace(/\{#[\s\S]*?#\}/g, '').replace(/\{%[\s\S]*?%\}/g, ' ');

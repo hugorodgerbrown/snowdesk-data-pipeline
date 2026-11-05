@@ -807,7 +807,7 @@ def build_resort_body(
 
     SNOW-1164: one body, two containers. ``public/partials/_resort_body.html``
     renders this on the resort page (``resort_detail``) and in the map's
-    place sheet (``apps.public.place_sheet.resort_sheet_partial``), so a
+    place sheet (``apps.map.place_sheet.resort_sheet_partial``), so a
     fact about a resort is added here and reaches both.
 
     A resort has no avalanche danger of its own (Hugo, 25 Oct 2026,
@@ -2138,7 +2138,7 @@ def enrich_render_model(
     Converts raw render model problem dicts (int elevation bounds) into the
     richer shape ``_rating_block.html`` expects, adding labels, ElevationBounds,
     field_guidance, and hide_comment. Called from both the bulletin page view
-    and the map drawer endpoint (``apps.public.api.region_summary``) so the two
+    and the map drawer endpoint (``apps.map.api.region_summary``) so the two
     rendering paths share a single data shape.
 
     Args:

@@ -1,0 +1,3268 @@
+"""
+tests/map/test_map_page.py — Tests for the canonical map page (/).
+
+SNOW-344: /map/ is now a 301 redirect to /; all tests that previously
+targeted /map/ now target / (via reverse("public:map")).
+
+Narrow scope: the page resolves, the three API endpoint URLs are baked
+into the markup via data-* attributes, and the static JS/CSS links are
+present. The JavaScript itself is not exercised here (there is no JS
+test runner in the project); the API endpoints it consumes have their
+own integration tests in ``test_map_api.py``.
+"""
+
+from __future__ import annotations
+
+import datetime
+import html
+import re
+from html.parser import HTMLParser
+from pathlib import Path
+
+import pytest
+from django.conf import settings
+from django.test import Client, override_settings
+from django.urls import reverse
+from freezegun import freeze_time
+from waffle.testutils import override_flag
+
+from tests.factories import (
+    AccountFactory,
+    MicroRegionFactory,
+    RegionDayRatingFactory,
+    UserFactory,
+)
+
+# SNOW-978: a configured class-tile template, for the tests that need the
+# terrain filter — and since SNOW-1073 the slope layer — on the page.
+TERRAIN_CLASS_URL = "https://tiles.example.test/terrain-class/v1/{z}/{x}/{y}.png"
+
+
+@pytest.mark.django_db
+def test_map_page_renders() -> None:
+    """GET / returns 200 and contains the map container."""
+    client = Client()
+    response = client.get(reverse("public:map"))
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert 'id="map"' in content
+    # SNOW-1098: data-region-sheet-url must be present on #map so
+    # map_region_sheet.js can build the per-region sheet URL. The 'XX-0000'
+    # placeholder is the literal string Django renders for the region_id
+    # kwarg; the module string-replaces it with the real region id. (SNOW-1173
+    # dropped data-region-summary-url: the chip's dropdown that read it is
+    # gone.)
+    assert "data-region-sheet-url" in content
+    assert "data-region-summary-url" not in content
+    assert "XX-0000" in content
+    # SNOW-236: data-season-end must be present on #map so map.js can clamp
+    # the cold-open fetch to the last populated date after season end.
+    assert 'data-season-end="' in content
+
+
+@pytest.mark.django_db
+def test_map_page_injects_api_urls() -> None:
+    """
+    The API URLs resolve via ``{% url %}`` and are exposed to JS through
+    data-* attributes on the #map element. SNOW-239 replaced the legacy
+    data-summaries-url + data-season-ratings-url with a single
+    data-ratings-url pointing at the unified /api/ratings/ endpoint.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert f'data-regions-url="{reverse("api:regions_geojson")}"' in content
+    assert f'data-ratings-url="{reverse("api:ratings")}"' in content
+    assert f'data-resorts-url="{reverse("api:resorts_by_region")}"' in content
+    assert f'data-resorts-geojson-url="{reverse("api:resorts_geojson")}"' in content
+
+
+@pytest.mark.django_db
+@freeze_time("2026-02-15")
+def test_map_element_carries_no_season_end_attribute() -> None:
+    """
+    ``#map`` must NOT carry ``data-season-end`` — nothing reads it.
+
+    SNOW-236 put it there for a cold-open boot path in map.js that read it
+    at module scope, before the scrubber IIFE ran. SNOW-660 deleted that
+    path along with ``bootDateKey``, leaving the attribute rendered on every
+    page load with no reader anywhere — and a test asserting its presence
+    "so that map.js can read it", which is behaviour that had stopped
+    existing. SNOW-794 dropped both.
+
+    Asserted rather than simply deleted because the attribute is the sort of
+    thing a later ticket re-adds by reflex when it wants season bounds in
+    JS. They are on ``#season-scrubber``, ``#season-ribbon`` and
+    ``#map-calendar``, each read by the module that owns that element.
+    """
+    region = MicroRegionFactory.create(region_id="CH-5500")
+    RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 5))
+
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+
+    map_div_start = content.index('id="map"')
+    map_div_attrs = content[map_div_start : content.index(">", map_div_start)]
+    assert "data-season-end" not in map_div_attrs
+    # The elements that DO need the bounds still carry them.
+    assert 'data-season-end="2026-03-05"' in content
+
+
+@pytest.mark.django_db
+def test_map_page_renders_resorts_overlay_toggle() -> None:
+    """
+    SNOW-78: a Resorts checkbox sits in the basemap-picker overlays
+    section so the user can toggle the geocoded-resort pin layer on/off.
+    Default is ``aria-checked="false"`` — the layer opens hidden.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert 'data-overlay-key="resorts"' in content
+    assert "Resorts" in content
+    # The toggle starts unchecked so the map opens uncluttered; the JS
+    # reads the persisted preference from localStorage on first paint.
+    resorts_btn_idx = content.index('data-overlay-key="resorts"')
+    aria_idx = content.find('aria-checked="false"', resorts_btn_idx)
+    next_li_idx = content.find("<li ", resorts_btn_idx)
+    assert 0 <= aria_idx < next_li_idx if next_li_idx > 0 else aria_idx >= 0
+
+
+@pytest.mark.django_db
+def test_map_page_renders_micro_regions_overlay_toggle() -> None:
+    """
+    SNOW-390: the Micro regions checkbox is a normal overlay toggle, matching
+    L1 / L2 / L3 / Resorts. Default is ``aria-checked="true"`` — the
+    micro-region boundary is visible on first paint — but the button is no
+    longer locked with ``disabled`` / ``aria-disabled`` / a "required" tooltip.
+
+    SNOW-656 narrowed what this row carries: the danger-rating choropleth it
+    used to drive alongside the boundary is the separate Bulletins row below.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert 'data-overlay-key="l4"' in content
+    l4_btn_idx = content.index('data-overlay-key="l4"')
+    next_li_idx = content.find("<li ", l4_btn_idx)
+    button_scope = (
+        content[l4_btn_idx:next_li_idx] if next_li_idx > 0 else content[l4_btn_idx:]
+    )
+    assert 'aria-checked="true"' in button_scope
+    assert 'aria-disabled="true"' not in button_scope
+    assert "disabled" not in button_scope
+    assert "required" not in button_scope
+
+
+@pytest.mark.django_db
+def test_bulletin_opacity_is_a_row_in_the_layers_menu() -> None:
+    """
+    The five bulletin-opacity steps are a row in the layers menu.
+
+    SNOW-656 governed the danger choropleth and the dissolved bulletin
+    boundary with a five-step control on a roundel of its own, whose flyout
+    opened to the left. The two-capsule column moved those steps into the
+    menu, so every display choice is in one place. The roundel and its
+    flyout are gone. SNOW-1266 put them on the Avalanche bulletins page and
+    took the 0 step out: off is that row's switch on level one now.
+    """
+    client = Client()
+    content = client.get(reverse("public:map")).content.decode()
+
+    assert 'id="map-fill-toggle"' not in content
+    assert 'id="map-fill-pill"' not in content
+    assert 'id="map-fill-flyout"' not in content
+
+    ancestors = _ancestor_ids(content, "map-bulletin-opacity")
+    assert "basemap-menu" in ancestors, ancestors
+    assert "basemap-menu-page-bulletins" in ancestors, ancestors
+
+    group = _one(
+        r'(<div[^>]*id="map-bulletin-opacity"[^>]*>)', content, "the opacity group"
+    )
+    assert 'role="radiogroup"' in group
+    assert 'aria-label="Bulletin opacity"' in group
+
+    # After the three providers it shades.
+    albina_idx = content.index('data-overlay-key="country.albina"')
+    assert albina_idx < content.index('id="map-bulletin-opacity"')
+
+    # SNOW-1266: "off" is the level-one switch, not a step.
+    for step in ("0.25", "0.5", "0.75", "1"):
+        assert f'data-bulletins-step="{step}"' in content, step
+    assert 'data-bulletins-step="0"' not in content
+
+    # Exactly one step is pre-checked, and it is the default one. Each step is
+    # a <button …>, so scoping to the tag that carries the step attribute is
+    # what tells the checked one from its three siblings.
+    buttons = re.findall(r"<button[^>]*data-bulletins-step=\"[\d.]+\"[^>]*>", content)
+    assert len(buttons) == 4, buttons
+    checked = [b for b in buttons if 'aria-checked="true"' in b]
+    assert len(checked) == 1, checked
+    assert 'data-bulletins-step="0.5"' in checked[0]
+    # Not menu rows: the picker's row loop would read a step as a basemap
+    # radio and swap the style.
+    for button in buttons:
+        assert "basemap-menu-item" not in button, button
+
+
+# The two capsules, and their members in render order. Ids only: every one of
+# these is what the JS binds, so they are also what must not move.
+_MAP_GROUP = ("locate-toggle", "basemap-toggle")
+_YOURS_GROUP = (
+    "favourite-add-btn",
+    "report-btn",
+    "route-add-btn",
+    "map-custom-download-control",
+)
+
+
+@pytest.mark.django_db
+def test_the_control_column_is_two_groups() -> None:
+    """
+    The bottom-right column is two capsules: "the map", then "yours".
+
+    The map group — locate and layers — sits outside
+    ``#map-controls-collapsible`` and so is always on screen. The yours group
+    — favourites, field observations, routes, downloads, in that order — is
+    the collapsible group itself, so the chevron folds it alone.
+    """
+    client = Client()
+    content = client.get(reverse("public:map")).content.decode()
+
+    for control in _MAP_GROUP:
+        ancestors = _ancestor_ids(content, control)
+        assert "map-control-group-map" in ancestors, (control, ancestors)
+        assert "map-controls-collapsible" not in ancestors, (control, ancestors)
+        assert "map-controls-br" in ancestors, (control, ancestors)
+
+    for control in _YOURS_GROUP:
+        ancestors = _ancestor_ids(content, control)
+        assert "map-control-group-yours" in ancestors, (control, ancestors)
+        assert "map-controls-collapsible" in ancestors, (control, ancestors)
+
+    order = [content.index(f'id="{control}"') for control in _MAP_GROUP + _YOURS_GROUP]
+    assert order == sorted(order), "the column's members are out of order"
+
+    # The yours capsule IS the collapsible inner, so the open-height count
+    # (its direct children) is exactly its buttons.
+    inner = _one(
+        r'(<div[^>]*id="map-control-group-yours"[^>]*>)', content, "the yours group"
+    )
+    assert "map-controls-collapsible-inner" in inner
+    assert "map-control-group" in inner.split('class="')[1].split('"')[0].split()
+
+
+@pytest.mark.django_db
+def test_layers_menu_is_outside_both_groups() -> None:
+    """
+    ``#basemap-menu`` is a child of the stack, not of the capsule its pill sits in.
+
+    SNOW-664 moved it out of the collapsible group, which is ``overflow:
+    hidden`` and clips both axes. The "map" capsule clips its children to its
+    rounded outline just the same, so a menu opening leftward from inside it
+    would be cut off with no other symptom.
+    """
+    client = Client()
+    content = client.get(reverse("public:map")).content.decode()
+
+    ancestors = _ancestor_ids(content, "basemap-menu")
+    assert "map-controls-br" in ancestors, ancestors
+    assert "map-control-group-map" not in ancestors, ancestors
+    assert "map-controls-collapsible" not in ancestors, ancestors
+
+
+def test_no_css_rule_draws_the_overlay_shown_marker() -> None:
+    """
+    The on-map ring keyed on ``data-overlay-shown`` is gone, by design.
+
+    SNOW-658 drew a blue inset ring on every roundel whose overlay was on the
+    map. Readers took it for "this button is selected", and it repeated what
+    the map itself shows, so the two-capsule column dropped it. The attribute
+    stays (map_roundel_overlay_state.js composes it into the aria-label), so
+    the guard is on the stylesheet: no selector may key on it.
+    """
+    css = (settings.BASE_DIR / "static" / "css" / "map.css").read_text()
+    without_comments = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+    assert "data-overlay-shown" not in without_comments
+
+
+def _uncommented_css(*parts: str) -> str:
+    """Read a stylesheet under BASE_DIR with its comments stripped."""
+    css = Path(settings.BASE_DIR, *parts).read_text()
+    return re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+
+
+def test_hover_affordance_hovers_only_where_a_pointer_can() -> None:
+    """
+    SNOW-1131: the chip fill on ``:hover`` sits inside ``(hover: hover)``.
+
+    A touch screen leaves ``:hover`` on the last element tapped, so an
+    unguarded rule left a grey wash on the download roundel after every
+    press. Every ``.hover-affordance:hover`` selector must therefore appear
+    after the media query opens and nowhere outside it.
+    """
+    css = _uncommented_css("src", "css", "main.css")
+    media = css.index("@media (hover: hover)")
+    hovers = [m.start() for m in re.finditer(r"\.hover-affordance:hover\b", css)]
+    assert hovers, "the .hover-affordance:hover rule has gone from main.css"
+    for at in hovers:
+        assert at > media, "a .hover-affordance:hover rule sits outside (hover: hover)"
+        assert css.rfind("@media", 0, at) == media
+
+
+def test_the_done_roundel_whitens_the_glyph_it_shows() -> None:
+    """
+    SNOW-1131: on the solid ``done`` disc the white rule targets the refresh glyph.
+
+    SNOW-924 made ``done`` show the refresh glyph; the colour rule still
+    named the idle arrow, which ``done`` hides, so the refresh arrow was
+    drawn in ink on the green fill.
+    """
+    css = _uncommented_css("static", "css", "map.css")
+    rule = re.search(
+        r'\[data-download-state="done"\]\s+\.map-download-control-icon--(\w+)\s*\{[^}]*color:\s*#fff',
+        css,
+    )
+    assert rule is not None
+    assert rule.group(1) == "refresh"
+
+
+@pytest.mark.django_db
+def test_help_tour_reads_the_map_in_four_chapters() -> None:
+    """
+    SNOW-1118: seven steps in four chapters, about the map before its buttons.
+
+    The tour it replaced walked every control in the column in DOM order —
+    thirteen steps that never said what the colours mean or that a region
+    opens. Now it reads the map (the colours, a region, the day), then how
+    to move about it, then what is yours, then where help lives. The three
+    ways of moving share one step, and the "yours" capsule is one step that
+    rings the whole capsule. The bulletin-fill roundel's step went with the
+    roundel — the layers step names the opacity row instead.
+    """
+    client = Client()
+    content = client.get(reverse("public:map")).content.decode()
+
+    steps = re.findall(
+        r'<li\s+data-help-target="([^"]*)"\s+data-help-chapter="([a-z]+)"', content
+    )
+    assert steps == [
+        ("", "read"),
+        ("#region-sheet | #search-pill", "read"),
+        ("#map-calendar-toggle", "read"),
+        ("#search-toggle, #locate-toggle, #map-zoom-toggle", "move"),
+        ("#basemap-toggle", "move"),
+        ("#map-control-group-yours", "yours"),
+        ("#map-help-toggle", "help"),
+    ]
+    chapters = re.findall(r'<li data-chapter="([a-z]+)">', content)
+    assert chapters == ["read", "move", "yours", "help"]
+    assert "#map-fill-toggle" not in content
+
+
+@pytest.mark.django_db
+@override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+@freeze_time("2026-02-17")
+def test_help_mode_names_only_controls_the_page_draws() -> None:
+    """
+    SNOW-1119: every control help mode names, and every sheet it keys, is
+    on the page.
+
+    Help mode finds each control by its selector and draws its name beside
+    it; a control renamed in the template would simply lose its name and
+    its card, with nothing failing. This holds the list to the page. The
+    region chip and its download control live in the season ribbon, which
+    renders only once the season has a rated day.
+    """
+    region = MicroRegionFactory.create(region_id="CH-4115", name="Martigny Verbier")
+    RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 2, 17))
+    client = Client()
+    content = client.get(reverse("public:map")).content.decode()
+
+    assert 'id="map-help-mode"' in content
+    assert "js/map_help_mode.js" in content
+    selectors = re.findall(r'data-(?:control|sheet)="#([\w-]+)"', content)
+    assert len(selectors) == 19
+    missing = [s for s in selectors if f'id="{s}"' not in content]
+    assert missing == []
+
+
+@pytest.mark.django_db
+def test_help_mode_links_each_card_to_a_help_topic() -> None:
+    """
+    SNOW-1119: each card's "More in Help" lands on a topic that exists.
+
+    The cards and sheet guides link to ``/help/#<topic>``; the topic ids
+    are the ``anchor_id`` each collapsible panel on /help/ renders.
+    """
+    client = Client()
+    content = client.get(reverse("public:map")).content.decode()
+    help_page = client.get(reverse("public:help")).content.decode()
+
+    topics = set(re.findall(r'data-topic="([\w-]+)"', content))
+    assert topics
+    missing = [t for t in sorted(topics) if f'id="{t}"' not in help_page]
+    assert missing == []
+
+
+@pytest.mark.django_db
+def test_map_page_renders_resorts_legend_entry() -> None:
+    """SNOW-78: the danger-scale legend includes a Resorts entry."""
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert 'data-testid="map-legend-resorts"' in content
+    assert "map-legend-pin" in content
+
+
+@pytest.mark.django_db
+def test_map_page_renders_the_resort_glyph_template() -> None:
+    """SNOW-1177: the search's resort rows clone the gondola cabin.
+
+    map.js builds each resort row's tile from #search-resort-icon-template,
+    so the template must carry the _icon_resort.html partial — the cabin's
+    cable and body — rather than the placemark it replaced.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    match = re.search(
+        r'<template id="search-resort-icon-template">(.*?)</template>',
+        content,
+        re.DOTALL,
+    )
+    assert match is not None
+    glyph = match.group(1)
+    assert 'class="search-result-pin"' in glyph
+    assert 'd="M3 6.5 21 3"' in glyph
+    assert '<rect x="6.5" y="9"' in glyph
+    assert "a7 7 0 1 0-14 0" not in glyph
+
+
+@pytest.mark.django_db
+def test_map_data_attribution_section_ships_hidden() -> None:
+    """SNOW-640: the "Map data" section starts collapsed, not empty.
+
+    ``map.js``'s ``updateMapAttribution`` reveals it only once the active
+    style yields at least one source attribution. Server-rendering it
+    visible would paint a heading over a blank line for the whole window
+    between first paint and the style resolving — and permanently, for a
+    style that carries no attribution at all, which is the staging defect
+    this ticket was raised for.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+
+    section_idx = content.index('id="map-attribution-section"')
+    # The `hidden` attribute has to be on the section element itself, not
+    # merely somewhere nearby — scope the assertion to the opening tag.
+    opening_tag = content[section_idx : content.index(">", section_idx)]
+    assert "hidden" in opening_tag
+    # The paragraph the JS fills stays inside it, so both hooks it looks
+    # up by id are served together or not at all.
+    assert 'id="map-attribution-text"' in content
+    assert content.index('id="map-attribution-text"') > section_idx
+
+
+@pytest.mark.django_db
+def test_map_page_omits_zoom_indicator() -> None:
+    """
+    SNOW-445: the always-visible zoom-level readout pill (SNOW-442) was a
+    developer/debug artefact and has been removed from the user-facing map.
+    The live zoom is exposed on the console instead (window.snowdeskMap).
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert 'id="map-zoom-indicator"' not in content
+    assert 'id="map-zoom-indicator-value"' not in content
+
+
+@pytest.mark.django_db
+def test_map_page_loads_assets() -> None:
+    """The page references the MapLibre library, the map CSS, and map JS."""
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert "maplibre-gl" in content
+    assert "/static/css/map.css" in content
+    assert "/static/js/map.js" in content
+
+
+@pytest.mark.django_db
+def test_the_date_control_has_a_today_half() -> None:
+    """SNOW-1165: "Today" follows the date control, rendered disabled.
+
+    A bare /map/ is today, so the server renders it disabled and
+    map_today.js enables it on any other day. Its core loads before it.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    toggle = content.index('id="map-calendar-toggle"')
+    start = content.index('id="map-today-control"')
+    assert toggle < start
+    tag = content[content.rindex("<button", 0, start) : content.index(">", start)]
+    assert 'type="button"' in tag
+    assert "disabled" in tag
+    assert "aria-label='Back to today'" in tag
+    core = content.index("/static/js/today_core.js")
+    assert core < content.index("/static/js/map_today.js")
+
+
+@pytest.mark.django_db
+def test_the_date_control_has_day_steps_either_side() -> None:
+    """SNOW-1195: ‹ before the date control and › after it, before "Today".
+
+    map_day_nav.js binds both; its core loads before it.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    prev = content.index('id="map-day-prev"')
+    toggle = content.index('id="map-calendar-toggle"')
+    nxt = content.index('id="map-day-next"')
+    today = content.index('id="map-today-control"')
+    assert prev < toggle < nxt < today
+    assert "aria-label='Previous day'" in content
+    assert "aria-label='Next day'" in content
+    core = content.index("/static/js/day_nav_core.js")
+    assert core < content.index("/static/js/map_day_nav.js")
+    assert content.index("/static/js/map_scrubber.js") < content.index(
+        "/static/js/map_day_nav.js"
+    )
+
+
+@pytest.mark.django_db
+def test_the_today_sun_follows_today_and_carries_the_alert_dot() -> None:
+    """SNOW-1366: the sun opens Today; it took the bell's place and its dot.
+
+    It follows "Today" in the date row, controls the Today sheet, and for
+    an account with alerts on names where the dot reads the alerts from.
+    The bell (SNOW-1333) and its card are gone.
+    """
+    account = AccountFactory.create(notify_when="NEW_BULLETIN")
+    client = Client()
+    client.force_login(account.user)
+    with override_flag("bulletin_alerts", active=True):
+        content = client.get(reverse("public:map")).content.decode()
+    start = content.index('id="map-today-panel-toggle"')
+    tag = content[content.rindex("<button", 0, start) : content.index(">", start)]
+    assert content.index('id="map-today-control"') < start
+    assert 'aria-controls="today-sheet"' in tag
+    assert "aria-label='Your places today'" in tag
+    assert 'data-alerts-url="/account/alerts/recent/"' in tag
+    assert "data-today-dot" in content
+    assert 'id="today-sheet"' in content
+    assert "/favourites/partials/today/" in content
+    assert "/static/js/today_panel.js" in content
+    assert 'id="map-alerts"' not in content
+    assert "/static/js/map_alerts.js" not in content
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("case", ["flag_off", "alerts_off"])
+def test_the_sun_has_no_alerts_to_read_without_alerts(case: str) -> None:
+    """SNOW-1366: signed in with alerts off (or the flag off), no dot to read."""
+    client = Client()
+    notify = "OFF" if case == "alerts_off" else "NEW_BULLETIN"
+    client.force_login(AccountFactory.create(notify_when=notify).user)
+    with override_flag("bulletin_alerts", active=case != "flag_off"):
+        content = client.get(reverse("public:map")).content.decode()
+    assert 'id="map-today-panel-toggle"' in content
+    assert "data-alerts-url" not in content
+
+
+@pytest.mark.django_db
+def test_no_today_sun_for_a_visitor() -> None:
+    """SNOW-1366: a visitor has pinned nothing, so has no Today panel."""
+    content = Client().get(reverse("public:map")).content.decode()
+    assert 'id="map-today-panel-toggle"' not in content
+    assert 'id="today-sheet"' not in content
+    assert "map-day-notes" not in content
+
+
+@pytest.mark.django_db
+def test_the_date_row_has_no_standing_pills() -> None:
+    """SNOW-1206: no empty-day, weather or problem-terrain pill in the row.
+
+    Each said one thing about the day, read as standing chrome, and on a
+    tablet pushed the row under the bottom-right roundel.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    assert 'id="map-day-empty"' not in content
+    assert 'id="map-weather-window"' not in content
+    assert "map-date-notice" not in content
+    assert '<template id="map-day-nav-strings-template">' not in content
+
+
+@pytest.mark.django_db
+def test_the_weather_row_ships_hidden_with_its_strings() -> None:
+    """SNOW-1196: "Forecast only" waits for map_weather_window.js to judge the day.
+
+    The row's detail line sits inside the weather row. The module loads after map.js, which
+    publishes the window it reads.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    summary = content.index("data-weather-window-summary")
+    tag = content[content.rindex("<span", 0, summary) : content.index(">", summary)]
+    assert "hidden" in tag
+    assert '<template id="map-weather-window-strings-template">' in content
+    assert 'data-string="forecast-only"' in content
+    assert content.index("/static/js/map.js") < content.index(
+        "/static/js/map_weather_window.js"
+    )
+
+
+@pytest.mark.django_db
+def test_the_sheets_pause_band_loads_before_the_three_sheets() -> None:
+    """SNOW-1239: the paused-sheet band and its core precede every reader.
+
+    The weather, place and region sheets read ``window.pwaSheetPlayback``
+    and clone ``#sheet-playback-band-template`` at playback; the deferred
+    scripts run in document order, so the core must come first.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    band = content.index('<template id="sheet-playback-band-template">')
+    assert "Playback in progress" in content[band : content.index("</template>", band)]
+    core = content.index("/static/js/sheet_playback_core.js")
+    for script in (
+        "map_weather_detail.js",
+        "map_place_sheet.js",
+        "map_region_sheet.js",
+    ):
+        assert core < content.index(f"/static/js/{script}")
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_the_problem_terrain_layer_has_no_date_row_chip() -> None:
+    """SNOW-1206: the layer is named by the layers menu and the legend, not the date row.
+
+    The module that keeps the legend in step loads after map.js, which
+    publishes the bridge it reads. It needs no strings since SNOW-1410
+    removed the menu row's second line.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    assert 'id="map-terrain-chip"' not in content
+    assert "data-terrain-chip" not in content
+    assert "map-problem-terrain-strings-template" not in content
+    assert content.index("/static/js/map.js") < content.index(
+        "/static/js/map_problem_terrain_key.js"
+    )
+
+
+@pytest.mark.django_db
+def test_the_season_scrubber_takes_keyboard_focus() -> None:
+    """SNOW-1195: role="slider" needs a tab stop for its keys to reach it."""
+    content = Client().get(reverse("public:map")).content.decode()
+    start = content.index('id="season-scrubber"')
+    tag = content[content.rindex("<div", 0, start) : content.index(">", start)]
+    assert 'role="slider"' in tag
+    assert 'tabindex="0"' in tag
+
+
+@pytest.mark.django_db
+def test_the_danger_legend_lists_all_five_levels() -> None:
+    """SNOW-1195: Very high (5) was painted on the map but missing here."""
+    content = Client().get(reverse("public:map")).content.decode()
+    for level in ("low", "moderate", "considerable", "high", "very-high"):
+        assert f"map-legend-swatch--{level}" in content
+    assert "Very high (5)" in content
+    css = (Path(__file__).resolve().parents[2] / "static/css/map.css").read_text()
+    assert ".map-legend-swatch--very-high" in css
+
+
+@pytest.mark.django_db
+@override_settings(BASEMAP="swisstopo_winter")
+def test_map_page_injects_default_basemap_key() -> None:
+    """
+    SNOW-58: ``settings.BASEMAP`` is rendered onto the #map element as
+    ``data-default-basemap-key`` so the JS can fall back to the
+    env-resolved default when localStorage is empty or names a basemap
+    that has since been removed from the catalogue.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert 'data-default-basemap-key="swisstopo_winter"' in content
+
+
+@pytest.mark.django_db
+def test_map_page_renders_basemap_picker() -> None:
+    """
+    SNOW-58: the picker renders one ``menuitemradio`` button per entry
+    in the ``basemaps`` context, each carrying ``data-basemap-key`` and
+    ``data-basemap-url``. Order is curated server-side via
+    ``_BASEMAP_LABELS``; verifying both keys are present is enough to
+    pin the contract — JS resolves the active option at runtime.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert 'id="basemap-pill"' in content
+    assert 'id="basemap-menu"' in content
+    for key in ("openfreemap_liberty", "swisstopo_winter", "ign_plan", "basemap_at"):
+        assert f'data-basemap-key="{key}"' in content
+        assert f'data-basemap-url="{settings.BASEMAP_STYLES[key]}"' in content
+    # ``swisstopo_light`` stays in BASEMAP_STYLES as a BASEMAP= env override
+    # but is intentionally excluded from the picker (SNOW-367).
+    assert 'data-basemap-key="swisstopo_light"' not in content
+
+
+@pytest.mark.django_db
+def test_map_view_passes_basemap_catalogue() -> None:
+    """
+    The view exposes ``basemaps`` and ``default_basemap_key`` in template
+    context so the template can render the picker without re-deriving
+    the catalogue from settings inline.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    ctx = response.context
+    assert "basemaps" in ctx
+    assert "default_basemap_key" in ctx
+    keys = [bm["key"] for bm in ctx["basemaps"]]
+    assert keys == ["openfreemap_liberty", "swisstopo_winter", "ign_plan", "basemap_at"]
+    labels = [str(bm["label"]) for bm in ctx["basemaps"]]
+    assert labels == ["OpenFreeMap", "Swisstopo (CH)", "IGN (FR)", "basemap.at (AT)"]
+    assert all({"key", "label", "url"} <= set(bm) for bm in ctx["basemaps"])
+    assert ctx["default_basemap_key"] == settings.BASEMAP
+
+
+def test_every_basemap_style_declares_its_countries() -> None:
+    """
+    SNOW-891: every ``BASEMAP_STYLES`` key declares its coverage.
+
+    The EAWS boundary outlines are scoped to the active basemap's countries,
+    so a style with no entry would draw no outlines at all — the bug this
+    ticket fixed, reintroduced through the back door. ``config.settings.base``
+    raises at import on a missing key; this pins the same contract from the
+    test suite so the omission is named rather than surfacing as a boot
+    failure on deploy.
+    """
+    assert set(settings.BASEMAP_COUNTRIES) == set(settings.BASEMAP_STYLES)
+
+
+def test_basemap_countries_are_countries_the_map_carries() -> None:
+    """
+    SNOW-891: every declared code is one of the four the map holds geometry
+    for. A code outside ``MAP_COUNTRY_CODES`` has no ``?country=`` feed
+    behind it, so the boundary load would fetch a 400 and draw nothing.
+    """
+    declared = {code for codes in settings.BASEMAP_COUNTRIES.values() for code in codes}
+    assert declared <= set(settings.MAP_COUNTRY_CODES)
+
+
+@pytest.mark.django_db
+def test_map_page_renders_basemap_countries_on_every_picker_row() -> None:
+    """
+    SNOW-891: each picker row carries ``data-basemap-countries``.
+
+    ``map.js`` reads it off the checked row to scope the boundary outlines,
+    and ``map_layer_sync_status.js`` reads it to probe the boundary tiers'
+    dots. It travels through the DOM rather than a JS constant because the
+    sync-status module loads before the map bundle.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    for key in ("openfreemap_liberty", "swisstopo_winter", "ign_plan", "basemap_at"):
+        codes = " ".join(settings.BASEMAP_COUNTRIES[key])
+        assert f'data-basemap-countries="{codes}"' in content
+
+
+@pytest.mark.django_db
+def test_map_view_passes_basemap_countries_in_context() -> None:
+    """
+    SNOW-891: ``_basemaps_for_picker`` carries the coverage as a
+    space-separated string, matching the ``data-country-codes`` shape the
+    provider rows already use.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    by_key = {bm["key"]: bm for bm in response.context["basemaps"]}
+    assert by_key["openfreemap_liberty"]["countries"] == "ch fr at it"
+    assert by_key["swisstopo_winter"]["countries"] == "ch"
+    assert by_key["ign_plan"]["countries"] == "fr"
+    assert by_key["basemap_at"]["countries"] == "at"
+
+
+def test_basemap_styles_openfreemap_liberty_matches_style_url_setting() -> None:
+    """
+    SNOW-242: ``BASEMAP_STYLES["openfreemap_liberty"]`` and
+    ``OPENFREEMAP_STYLE_URL`` are derived from the same env-configurable
+    setting — asserting equality here pins that single-source-of-truth
+    contract rather than duplicating the URL.
+    """
+    assert (
+        settings.BASEMAP_STYLES["openfreemap_liberty"] == settings.OPENFREEMAP_STYLE_URL
+    )
+
+
+@pytest.mark.django_db
+def test_map_page_accepts_date_query_param() -> None:
+    """
+    SNOW-47: ``/?d=YYYY-MM-DD`` still 200s. The selected date is
+    consumed entirely by JS (which reads ``location.search`` after the
+    page loads), so the only server-side guarantee is that the page
+    doesn't reject or strip the query string. The scrubber data
+    attributes that the JS needs to interpret ``?d=`` must still be
+    present in the rendered markup.
+    """
+    client = Client()
+    response = client.get(reverse("public:map") + "?d=2026-02-15")
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert "data-season-start=" in content
+    assert "data-season-end=" in content
+    assert "data-today=" in content
+
+
+@pytest.mark.django_db
+def test_map_page_renders_the_area_content_endpoint_and_no_day_reach() -> None:
+    """
+    SNOW-953: the download's content plan comes from one server request.
+
+    ``data-area-content-url`` is the endpoint that answers what a boundary
+    contains. SNOW-1312: a download looks forward only, so the page no
+    longer carries ``data-content-past-days`` — the reach backwards it
+    configured is gone.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+
+    assert f'data-area-content-url="{reverse("api:area_content")}"' in content
+    assert "data-content-past-days" not in content
+
+
+@pytest.mark.django_db
+def test_map_page_renders_what_an_area_items_plan_is_composed_from() -> None:
+    """
+    SNOW-965: a download carries the reader's own trips and the forecasts
+    their pins borrow — the endpoint that names them and the two trip
+    templates their urls are composed from.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+
+    assert f'data-area-items-url="{reverse("api:area_items")}"' in content
+    assert 'data-trip-page-url-template="/trips/__UUID__/"' in content
+    assert 'data-trip-route-url-template="/trips/__UUID__/route.geojson"' in content
+
+
+@pytest.mark.django_db
+def test_map_page_renders_unified_time_controls() -> None:
+    """
+    The play button (#scrubber-play) must be rendered server-side so the JS
+    only has to wire behaviour onto pre-existing DOM.
+
+    SNOW-314: the floating date pill (#map-date-pill) was removed from the
+    scrubber controls; the date is now shown in the persistent region readout
+    (#region-readout) which is part of the season ribbon.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert 'id="scrubber-play"' in content
+    assert 'id="map-date-pill"' not in content
+
+
+@pytest.mark.django_db
+def test_map_page_renders_timelapse_transport_buttons() -> None:
+    """
+    The five transport buttons (skip-start, play-reverse, play-forward,
+    skip-end) must all be present in the rendered markup so that map.js
+    can wire behaviour onto pre-existing DOM nodes.  SNOW-230 replaced the
+    old single-button speed cycler with a four-button layout; SNOW-315
+    replaced the fast-forward button with a reverse button, making five
+    controls total — assert the new IDs are present and the removed ones
+    are absent.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert 'id="scrubber-skip-start"' in content
+    assert 'id="scrubber-reverse"' in content
+    assert 'id="scrubber-play"' in content
+    assert 'id="scrubber-skip-end"' in content
+    # Removed elements must no longer appear.
+    assert 'id="scrubber-fast"' not in content
+    assert 'id="scrubber-speed"' not in content
+    assert "data-speed=" not in content
+
+
+@pytest.mark.django_db
+def test_map_page_no_offline_toggle_or_precache_url() -> None:
+    """SNOW-79: the SNOW-9 "Save offline" button and its data-attribute are gone.
+
+    The PWA shell SW now caches assets at runtime via stale-while-
+    revalidate, so an explicit opt-in download UI is no longer needed.
+    The previous ``#offline-toggle`` button + its
+    ``data-offline-manifest-url`` attribute must not be in the rendered
+    map page — keeping them around would re-introduce the "stuck on
+    stale data" reports that motivated this rewrite.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert 'id="offline-toggle"' not in content
+    assert "data-offline-manifest-url" not in content
+    # The SNOW-9 opt-in was ``static/js/offline.js`` — a bare filename with
+    # no prefix. The assertion is anchored on that closing quote so the
+    # newer PWA scripts (``pwa_offline.js``, SNOW-377) whose names happen
+    # to end with ``offline.js`` do not falsely trip it.
+    assert '/offline.js"' not in content
+    assert "'offline.js'" not in content
+
+
+@pytest.mark.django_db
+def test_map_page_inherits_pwa_manifest_link() -> None:
+    """SNOW-79: every public page (incl. /) links the manifest from base.html."""
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert 'rel="manifest"' in content
+    assert "manifest.webmanifest" in content
+    assert "sw_register.js" in content
+
+
+@pytest.mark.django_db
+def test_map_page_loads_vendored_maplibre_assets() -> None:
+    """map.html must reference the vendored maplibre-gl assets from /static/, not unpkg.
+
+    SNOW-169 vendored maplibre-gl 4.7.1 JS and CSS into static/ so the page
+    no longer depends on an external CDN at runtime or in the CSP allow-list.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert "maplibre-gl.min" in content
+    assert "maplibre-gl.css" in content
+    assert "unpkg.com" not in content
+
+
+@pytest.mark.django_db
+def test_map_page_renders_scrubber_loading_state() -> None:
+    """
+    SNOW-234: the scrubber is rendered with data-state="loading" and a
+    loading placeholder element so the user sees feedback immediately
+    while the season_ratings fetch is in flight. The transport controls
+    stay in the DOM (hidden by CSS) so map.js can wire behaviour onto
+    pre-existing nodes regardless of fetch timing.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert 'data-state="loading"' in content
+    assert "season-scrubber-loading" in content
+    assert "Season data loading" in content
+    # Transport controls must remain in the DOM (hidden by CSS only).
+    assert 'id="scrubber-play"' in content
+    assert 'id="scrubber-reverse"' in content
+    assert 'id="scrubber-skip-start"' in content
+    assert 'id="scrubber-skip-end"' in content
+    assert 'id="scrubber-fast"' not in content
+
+
+def _layers_page(content: str, slug: str) -> str:
+    """One page of the layers menu's markup: level one or a layer's options."""
+    start = content.index(f'data-layers-page="{slug}"')
+    # From the page's opening tag to the next page, or the menu's end.
+    ends = [
+        i
+        for i in (
+            content.find("data-layers-page=", start + 1),
+            content.find('id="map-controls-toggle"', start),
+        )
+        if i != -1
+    ]
+    return content[start : min(ends)]
+
+
+@pytest.mark.django_db
+def test_map_layer_menu_level_one_order() -> None:
+    """SNOW-1266: one row per layer, in two groups, in one fixed order.
+
+    Hugo's design F (28 Oct 2026): "Reference data" — the layers Snowdesk draws
+    from the providers and its own reference data — then "Your data", what the
+    reader made. Within "Reference data" the dated layers come first and
+    together, since Terrain mode switches them off together (Hugo, 3 Nov
+    2026): bulletins, weather, boundaries; then resorts and the basemap. Each row is a switch; bulletins, boundaries and basemap
+    also open a page of options. SNOW-904's four collapsible sections
+    (Places, Conditions, Boundaries, Basemap) are asserted gone, because a
+    stale heading beside a new one is exactly the drift this pins.
+    """
+    client = Client()
+    content = client.get(reverse("public:map")).content.decode()
+
+    main = _layers_page(content, "main")
+    markers = [
+        ">Reference data<",
+        'data-layers-open="bulletins"',
+        'data-overlay-key="weather"',
+        'data-layers-open="boundaries"',
+        'data-overlay-key="community_reports"',
+        'data-overlay-key="resorts"',
+        'data-layers-open="basemap"',
+        ">Your data<",
+        'data-overlay-key="favourites"',
+        'data-overlay-key="routes"',
+        'data-overlay-key="downloads"',
+    ]
+    positions = [main.index(marker) for marker in markers]
+    assert positions == sorted(positions), markers
+    # Field reports are dated reference data with a level-one row of their
+    # own, after Boundaries (Hugo, 3 Nov 2026: "field observations are not
+    # part of bulletins"), so they left SNOW-1290's place on that page.
+    assert 'data-overlay-key="community_reports"' not in _layers_page(
+        content, "bulletins"
+    )
+    reports = main[main.index('data-overlay-key="community_reports"') :]
+    reports = reports[: reports.index("</button>")]
+    assert ">Field observations<" in reports
+    assert "data-layer-switch" in reports
+    assert ">Map layers<" in content
+    assert "data-section-toggle" not in content
+    assert "Map display options" not in content
+    assert "Display downloaded areas" not in content
+    assert 'data-layer-master="ski_touring"' not in content
+
+
+@pytest.mark.django_db
+def test_map_layer_menu_ski_routes_row_follows_steep_terrain() -> None:
+    """SNOW-1267: with ``route_drawing`` on, the ski-touring row sits in
+    "Reference data" among the static layers: after Resorts and Steep
+    terrain, before the Basemap (the order of 3 Nov 2026).
+
+    The row rides on the drawing flag, which needs a signed-in user, so the
+    level-one order test above (anonymous) never sees it.
+    """
+    client = Client()
+    client.force_login(UserFactory.create())
+    with override_flag("route_drawing", active=True):
+        content = client.get(reverse("public:map")).content.decode()
+
+    main = _layers_page(content, "main")
+    markers = [
+        ">Reference data<",
+        'data-layers-open="boundaries"',
+        'data-overlay-key="resorts"',
+        'data-layer-master="ski_touring"',
+        'data-layers-open="basemap"',
+        ">Your data<",
+    ]
+    positions = [main.index(marker) for marker in markers]
+    assert positions == sorted(positions), markers
+
+
+# SNOW-1384: what the wildlife rest zones layer puts on the page — the
+# switch row, the config, the sheet, its body and strings, and both scripts.
+REST_ZONE_MARKERS = (
+    'data-overlay-key="rest_zones"',
+    'id="rest-zones-config"',
+    'id="rest-zone-sheet"',
+    'id="rest-zone-body-template"',
+    'id="rest-zone-strings-template"',
+    # Not the two scripts: since SNOW-1412 they load for everyone, from
+    # static/js/bundles/map_surfaces.txt, and rest_zones.js returns early
+    # without #rest-zones-config.
+)
+
+
+@pytest.mark.django_db
+def test_rest_zones_layer_is_absent_signed_out() -> None:
+    """SNOW-1384: the layer rides on route_drawing, which needs an account."""
+    with override_flag("route_drawing", active=True):
+        content = Client().get(reverse("public:map")).content.decode()
+    for marker in REST_ZONE_MARKERS:
+        assert marker not in content, marker
+
+
+@pytest.mark.django_db
+def test_rest_zones_layer_is_absent_without_the_flag() -> None:
+    """SNOW-1384: signed in, but outside the flag, nothing of the layer."""
+    client = Client()
+    client.force_login(UserFactory.create())
+    with override_flag("route_drawing", active=False):
+        content = client.get(reverse("public:map")).content.decode()
+    for marker in REST_ZONE_MARKERS:
+        assert marker not in content, marker
+
+
+@pytest.mark.django_db
+def test_rest_zones_layer_renders_once_behind_the_flag() -> None:
+    """SNOW-1384: signed in with the flag, each piece once; the row after the
+    ski-touring row and before the Basemap; the core before the module; the
+    config naming the endpoint.
+    """
+    client = Client()
+    client.force_login(UserFactory.create())
+    with override_flag("route_drawing", active=True):
+        content = client.get(reverse("public:map")).content.decode()
+    for marker in REST_ZONE_MARKERS:
+        assert content.count(marker) == 1, marker
+    main = _layers_page(content, "main")
+    markers = [
+        'data-layer-master="ski_touring"',
+        'data-overlay-key="rest_zones"',
+        'data-layers-open="basemap"',
+    ]
+    positions = [main.index(marker) for marker in markers]
+    assert positions == sorted(positions), markers
+    assert content.index("/static/js/rest_zones_core.js") < content.index(
+        "/static/js/rest_zones.js"
+    )
+    assert f'data-geojson-url="{reverse("api:rest_zones_geojson")}"' in content
+    assert 'data-string="gate-rest_zones"' in content
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_layers_menu_marks_its_zoom_limited_rows() -> None:
+    """SNOW-1280: each zoom-limited row carries its gate key and an empty,
+    hidden hint on its name line, and the script that fills it loads after
+    the zoom control's core.
+
+    3 Nov 2026: no level is named — no "· ≥z10" suffix and no note heading
+    the menu — since the zoom control's scale shows the levels, and no
+    second "Zoom in to view" line, which changed the row's height. The
+    row's ``data-row-label`` stays the bare name, which
+    map_basemap_picker.js reads.
+    """
+    client = Client()
+    client.force_login(UserFactory.create())
+    with override_flag("route_drawing", active=True):
+        content = client.get(reverse("public:map")).content.decode()
+
+    main = _layers_page(content, "main")
+    # SNOW-1384: and Wildlife rest zones, on the drawing flag's pages.
+    assert main.count("data-zoom-gate=") == 3
+    for key, label in (
+        ("terrain_filter", "Steep terrain"),
+        ("ski_routes", "SAC ski touring"),
+        ("rest_zones", "Wildlife rest zones"),
+    ):
+        start = main.index(f'data-zoom-gate="{key}"')
+        row = main[start : main.index("</li>", start)]
+        assert re.search(rf"data-row-label>{label}</span>", row)
+        assert re.search(r"data-zoom-hint\s+hidden></span>", row)
+        assert "Zoom in to view" not in row
+    assert "data-zoom-suffix" not in main
+    assert "data-zoom-note" not in main
+    assert 'id="map-layers-zoom-strings-template"' in content
+    assert 'data-string="zoom-in">· zoom in<' in content
+    assert content.index("/static/js/zoom_control_core.js") < content.index(
+        "/static/js/map_layers_zoom_gates.js"
+    )
+
+
+@pytest.mark.django_db
+def test_layers_menu_without_zoom_limited_layers_has_no_gate_rows() -> None:
+    """SNOW-1280: an anonymous visitor on an environment without terrain
+    tiles sees neither zoom-limited row, so nothing carries a gate key.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    assert "data-zoom-gate=" not in _layers_page(content, "main")
+
+
+@pytest.mark.django_db
+def test_map_layer_menu_options_pages() -> None:
+    """SNOW-1266: what each options page holds, and that none shows at first.
+
+    Providers and opacity under bulletins, the EAWS tiers and unsupported
+    regions under boundaries. The menu renders the same rows for everyone —
+    favourites and routes included; tapping one of those two signed out
+    hands off to the sign-in sheet, a JS behaviour covered in tests/js.
+    Only the FIRST provider row says "bulletins" (SNOW-904).
+    """
+    client = Client()
+    content = client.get(reverse("public:map")).content.decode()
+
+    for slug in ("bulletins", "boundaries", "basemap"):
+        tag = _one(
+            rf'(<ul[^>]*data-layers-page="{slug}"[^>]*>)', content, f"the {slug} page"
+        )
+        assert re.search(r"\shidden[\s>]", tag), tag
+        assert "data-layers-back" in _layers_page(content, slug)
+
+    bulletins = _layers_page(content, "bulletins")
+    for key in ("country.ch", "country.fr", "country.albina"):
+        assert f'data-overlay-key="{key}"' in bulletins, key
+    boundaries = _layers_page(content, "boundaries")
+    for key in ("l1", "l2", "l4", "unsupported"):
+        assert f'data-overlay-key="{key}"' in boundaries, key
+
+    for label in (
+        "SLF bulletins (CH)",
+        "MétéoFrance (FR)",
+        "ALBINA (AT, IT)",
+        "Field observations",
+        "Major regions (EAWS L1)",
+        "Downloaded areas",
+    ):
+        assert label in content, label
+    assert 'data-overlay-key="slope"' not in content
+    assert "MétéoFrance bulletins" not in content
+    assert "ALBINA bulletins" not in content
+
+
+@pytest.mark.django_db
+def test_map_layer_menu_master_switches_render_their_state() -> None:
+    """SNOW-1266: bulletins and boundaries carry a switch of their own.
+
+    Each is derived from the rows on its page, and renders the configured
+    defaults (an opacity step above 0; one EAWS tier) as on, so the first
+    paint agrees with the map before map_basemap_picker.js runs.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    for slug in ("bulletins", "boundaries"):
+        tag = _one(rf'(<button[^>]*data-layer-master="{slug}"[^>]*>)', content, slug)
+        assert 'role="menuitemcheckbox"' in tag
+        assert 'aria-checked="true"' in tag
+        assert "data-layer-switch" in tag
+
+
+@pytest.mark.django_db
+def test_map_layer_menu_renders_sync_status_dots() -> None:
+    """
+    SNOW-505: each always-rendered overlay row (l1/l2/l4/resorts) carries
+    a server-rendered ``.sync-dot`` starting at ``data-sync-state="unknown"``
+    — ``map_layer_sync_status.js`` resolves it to cached/uncached the first
+    time the popover opens.
+
+    SNOW-521 dropped the L3 (bulletin groupings) overlay row entirely.
+    SNOW-656 briefly added a Bulletins row and then removed it again: the
+    bulletin-fill control is a roundel on the map, not a row in this menu, so
+    it has no dot here. Its feed (``/api/ratings/``) is one of the four a
+    country load fetches, so a country missing it already shows red on its
+    own row.
+
+    SNOW-904 added the three user-data rows to this list. All three are
+    IndexedDB-backed and probed like any other resource, so all three carry
+    a dot — and the two rows that carry NONE are asserted separately, in
+    ``test_the_two_dotless_rows_carry_no_dot``.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+
+    for key in (
+        "l1",
+        "l2",
+        "l4",
+        "resorts",
+        "weather",
+        "favourites",
+        "routes",
+        "community_reports",
+    ):
+        key_idx = content.index(f'data-overlay-key="{key}"')
+        button_close_idx = content.index("</button>", key_idx)
+        button_scope = content[key_idx:button_close_idx]
+        assert 'class="sync-dot" data-sync-state="unknown"' in button_scope, key
+    assert 'data-overlay-key="l3"' not in content
+    assert 'data-overlay-key="bulletins"' not in content
+
+
+@pytest.mark.django_db
+def test_the_dotless_row_carries_no_dot() -> None:
+    """SNOW-904: the downloads row renders without a ``.sync-dot``.
+
+    Downloads draws a list that is local by definition, so its answer is
+    always yes and the dot carries no information. (SNOW-1073 removed the
+    other dotless row, swisstopo's slope raster.)
+
+    A green dot on this menu means one thing since SNOW-904 — the payload
+    this row draws is in a cache right now — and a row that cannot answer
+    that question gets no dot rather than a permanently blank one.
+    """
+    client = Client()
+    content = client.get(reverse("public:map")).content.decode()
+
+    for key in ("downloads",):
+        key_idx = content.index(f'data-overlay-key="{key}"')
+        button_scope = content[key_idx : content.index("</button>", key_idx)]
+        assert "sync-dot" not in button_scope, key
+
+
+@pytest.mark.django_db
+def test_map_layer_menu_holds_every_user_data_row() -> None:
+    """
+    SNOW-904 inverts what SNOW-658 asserted here. That ticket took the
+    favourites and community_reports rows OUT of this menu and into the
+    footer of the panel each subject's roundel opens, on a "one subject,
+    one way in" rule; SNOW-687 gave routes the same treatment, and
+    SNOW-645 had already done it for downloads.
+
+    The cost was that a reader asking what can go on their map had to open
+    five surfaces to find out, and no single surface answered it. All four
+    are rows here now, driving the same ``window.pwa*Overlay`` bridges.
+
+    The two-capsule control column put a "Show on the map" switch back in
+    each panel, bound to its row here rather than replacing it — so the
+    menu still holds every row, and each switch renders inside its own
+    panel's <template>, never in the menu.
+
+    Asserted for a signed-in user, mirroring the test this replaces.
+    """
+    account = AccountFactory.create()
+    client = Client()
+    client.force_login(account.user)
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+
+    for key in ("favourites", "community_reports", "routes", "downloads"):
+        assert f'data-overlay-key="{key}"' in content, key
+    # The menu runs from its own opening tag to the chevron that follows it
+    # in the stack; no panel switch may render inside that span.
+    menu_start = content.index('id="basemap-menu"')
+    menu_end = content.index('id="map-controls-toggle"')
+    for toggle_id in (
+        "map-favourites-overlay-toggle",
+        "map-community-reports-overlay-toggle",
+        "map-routes-overlay-toggle",
+        "map-downloads-overlay-toggle",
+    ):
+        toggle_idx = content.index(f'id="{toggle_id}"')
+        assert not menu_start < toggle_idx < menu_end, toggle_id
+
+
+@pytest.mark.django_db
+def test_basemap_menu_omits_sync_status_caption() -> None:
+    """
+    SNOW-521 removed the "Browsed areas only" ``#basemap-sync-status``
+    caption row from the "Base map" section — its coverage story is now
+    carried entirely by the per-region download icon in
+    ``#region-readout``, not a basemap-wide caption.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+
+    assert 'id="basemap-sync-status"' not in content
+
+
+@pytest.mark.django_db
+class TestMapPageDataDrivenSeasonBounds:
+    """
+    SNOW-173: data-season-start / data-season-end reflect the actual
+    RegionDayRating min/max dates when rows exist for the season, rather
+    than always using the calendar Nov 1 / May 31 boundaries.
+    """
+
+    @freeze_time("2026-02-15")
+    def test_season_bounds_reflect_data_min_max(self) -> None:
+        """
+        When RegionDayRating rows exist for the current season, the map page
+        renders data-season-start and data-season-end matching the earliest
+        and latest dates in those rows — not the calendar-window boundaries.
+        """
+        region = MicroRegionFactory.create(region_id="CH-5500")
+        # Season 2025/2026: rows spanning Dec 2025 – Mar 2026 (narrower than
+        # the Nov 1 – May 31 calendar window)
+        RegionDayRatingFactory.create(region=region, date=datetime.date(2025, 12, 10))
+        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 1, 20))
+        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 5))
+
+        client = Client()
+        response = client.get(reverse("public:map"))
+        content = response.content.decode()
+
+        assert 'data-season-start="2025-12-10"' in content
+        assert 'data-season-end="2026-03-05"' in content
+
+    @freeze_time("2026-02-15")
+    def test_season_bounds_fall_back_to_calendar_when_no_data(self) -> None:
+        """
+        When no RegionDayRating rows exist for the season, data-season-start
+        and data-season-end fall back to the calendar Nov 1 / May 31 window.
+        """
+        client = Client()
+        response = client.get(reverse("public:map"))
+        content = response.content.decode()
+
+        # Calendar fallback for the 2025/2026 season
+        assert 'data-season-start="2025-11-01"' in content
+        assert 'data-season-end="2026-05-31"' in content
+
+
+# ---------------------------------------------------------------------------
+# SNOW-324: report_mode — floating Report button on the map
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_report_button_shown_for_anonymous_with_signin_cta() -> None:
+    """Report button is shown for anonymous users (SNOW-333).
+
+    Anonymous users see the button but are directed to sign in — report_eligible
+    is False and data-signin-url is populated so report.js renders a CTA instead
+    of the geolocation flow.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    # Button must be present so anonymous users can tap and see the sign-in CTA.
+    assert "report-btn" in content
+    # report_eligible must be false so JS branches to the CTA path.
+    assert 'data-report-eligible="false"' in content
+    # report_unverified must be false — anonymous users get the sign-in CTA, not
+    # the "verify your email" prompt (SNOW-477).
+    assert 'data-report-unverified="false"' in content
+    # sign-in URL must be present so JS can build the CTA link.
+    assert "data-signin-url" in content
+
+
+@pytest.mark.django_db
+def test_report_button_shown_for_account() -> None:
+    """Report button and sheet are shown for a logged-in account."""
+    account = AccountFactory.create()
+    client = Client()
+    client.force_login(account.user)
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert "report-btn" in content
+    assert "report-sheet" in content
+    assert "report.js" in content
+
+
+@pytest.mark.django_db
+def test_report_eligible_true_for_verified_user() -> None:
+    """A verified user has report_eligible=True in the rendered button.
+
+    Eligibility requires both authentication and a verified ``Account`` — the
+    same gate the server enforces (SNOW-477) — so a bare authenticated user is
+    not enough.
+    """
+    user = UserFactory.create()
+    AccountFactory.create(user=user, is_verified=True)
+    client = Client()
+    client.force_login(user)
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert "report-btn" in content
+    assert 'data-report-eligible="true"' in content
+    assert 'data-report-unverified="false"' in content
+
+
+@pytest.mark.django_db
+def test_report_list_url_is_the_bare_list_endpoint() -> None:
+    """The panel's list URL is ``observations:list`` with nothing appended.
+
+    It carried ``?variant=map`` from SNOW-752 to SNOW-803, while
+    ``/account/observations/`` read the same endpoint and must not get
+    map-focus rows. That page is gone and the sheet is the endpoint's only
+    surface, so the rows are map-focused unconditionally
+    (tests/observations/test_views.py) and the URL has no variant to name.
+    """
+    user = UserFactory.create()
+    AccountFactory.create(user=user, is_verified=True)
+    client = Client()
+    client.force_login(user)
+    content = client.get(reverse("public:map")).content.decode()
+
+    assert f'data-report-list-url="{reverse("observations:list")}"' in content
+    assert "?variant=" not in content
+
+
+@pytest.mark.django_db
+def test_report_unverified_for_authenticated_unverified_user() -> None:
+    """An authenticated-but-unverified user is not eligible but is flagged unverified.
+
+    This is the SNOW-477 case: the client used to mark them eligible (auth
+    only), so ``report.js`` fired the form-load GET which the server 403'd.
+    ``report_eligible`` is now False and ``report_unverified`` is True so the
+    sheet shows a "verify your email" prompt instead.
+    """
+    user = UserFactory.create()
+    AccountFactory.create(user=user, is_verified=False)
+    client = Client()
+    client.force_login(user)
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+    assert "report-btn" in content
+    assert 'data-report-eligible="false"' in content
+    assert 'data-report-unverified="true"' in content
+
+
+# ---------------------------------------------------------------------------
+# Hover affordance (SNOW-658)
+# ---------------------------------------------------------------------------
+
+# Every clickable control on the map, by the class that identifies it. Each
+# one had its own hover treatment before this ticket — four of them across
+# these seven names — and each now carries the shared ``hover-affordance``
+# class instead (src/css/main.css: pointer cursor plus a translucent
+# infill).
+MAP_CONTROL_CLASSES = (
+    "map-utility-button",
+    "basemap-menu-item",
+    "map-fill-step",
+    "map-download-control",
+    "map-legend-toggle",
+    "map-controls-toggle",
+)
+
+_CLASS_ATTR_RE = re.compile(r'class="([^"]*)"')
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("control", MAP_CONTROL_CLASSES)
+def test_every_map_control_carries_the_shared_hover_affordance(
+    control: str,
+) -> None:
+    """A control a user can click says so under the pointer, the same way.
+
+    Hugo: "The affordances are inconsistent - for all interactive elements
+    (roundels, 'x' closure, 'add' buttons) it should be consistent on hover
+    - change the mouse pointer, and add infill." The treatment lives in one
+    class rather than in a hover pair per call site, which is what let four
+    of them drift apart; this test is what stops a new control — or a new
+    copy of an existing one — shipping without it.
+    """
+    client = Client()
+    content = client.get(reverse("public:map")).content.decode()
+
+    occurrences = [
+        classes
+        for classes in _CLASS_ATTR_RE.findall(content)
+        if control in classes.split()
+    ]
+    assert occurrences, f"no {control} rendered — has it been renamed?"
+    for classes in occurrences:
+        assert "hover-affordance" in classes.split(), classes
+
+
+class _CollapsibleChildCounter(HTMLParser):
+    """Count the direct element children of ``.map-controls-collapsible-inner``.
+
+    Stdlib rather than a parser dependency: the markup being counted is a
+    flat run of ``<div>``/``<button>`` roundels whose only descendants are
+    balanced ``<svg>`` wrappers and self-closing ``<path>``/``<polygon>``
+    shapes, which ``html.parser`` handles without help. ``_VOID`` is carried
+    anyway so a future ``<img>`` or ``<input>`` inside a roundel cannot throw
+    the depth count off silently.
+    """
+
+    #: Elements that never take a closing tag, so they must not open a level.
+    _VOID = frozenset(
+        {
+            "area",
+            "base",
+            "br",
+            "col",
+            "embed",
+            "hr",
+            "img",
+            "input",
+            "link",
+            "meta",
+            "source",
+            "track",
+            "wbr",
+        }
+    )
+
+    def __init__(self) -> None:
+        """Start outside the target element with an empty count."""
+        super().__init__(convert_charrefs=True)
+        self.count = 0
+        self._depth: int | None = None
+        self._done = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Enter the target element, or count/descend once inside it."""
+        if self._done:
+            return
+        if self._depth is None:
+            classes = dict(attrs).get("class") or ""
+            if "map-controls-collapsible-inner" in classes.split():
+                self._depth = 0
+            return
+        if tag in self._VOID:
+            # Opens no level, so it is a child at the current depth rather
+            # than a new one.
+            if self._depth == 0:
+                self.count += 1
+            return
+        self._depth += 1
+        if self._depth == 1:
+            self.count += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        """Leave the current level, latching shut on the target's own close."""
+        if self._done or self._depth is None or tag in self._VOID:
+            return
+        if self._depth == 0:
+            # The target element's own closing tag. Latch rather than reset:
+            # without this the counter would treat everything after the stack
+            # as a fresh level-1 run and keep counting.
+            self._done = True
+            return
+        self._depth -= 1
+
+
+@pytest.mark.django_db
+def test_collapsible_group_css_fallback_matches_the_rendered_child_count() -> None:
+    """map.css's ``--map-controls-count`` fallback must equal the real count.
+
+    The fallback is only read before mapControlsCollapseInit publishes the
+    live count — but ``.map-controls-br`` is server-rendered
+    ``data-expanded="true"``, so a stale fallback is a visible clip rather
+    than an unused default: ``#map-controls-collapsible`` is
+    ``overflow: hidden``, and a group sized for fewer children than it holds
+    swallows the ones at the top until the JS corrects it.
+
+    It has gone stale once already — it sat at 4 after SNOW-664 moved the
+    layers roundel into the group and SNOW-656 added the bulletin fill,
+    hiding both on a pre-JS paint. (It is 4 again now, honestly: the group
+    is the "yours" capsule's four buttons.) This is a cross-file invariant that
+    neither file can hold alone, which is why it is asserted here rather
+    than left to the comment above the rule.
+    """
+    client = Client()
+    content = client.get(reverse("public:map")).content.decode()
+
+    counter = _CollapsibleChildCounter()
+    counter.feed(content)
+    assert counter.count, (
+        "no .map-controls-collapsible-inner children found — has the "
+        "bottom-right control stack been restructured?"
+    )
+
+    css = (settings.BASE_DIR / "static" / "css" / "map.css").read_text()
+    fallbacks = {int(n) for n in re.findall(r"--map-controls-count,\s*(\d+)", css)}
+    assert fallbacks, "the --map-controls-count fallback has gone from map.css"
+    assert fallbacks == {counter.count}, (
+        f"map.css falls back to {sorted(fallbacks)} but the stack renders "
+        f"{counter.count} children — update the fallback in "
+        f"`.map-controls-br[data-expanded='true'] #map-controls-collapsible`."
+    )
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_the_layers_menu_has_no_slope_row() -> None:
+    """SNOW-1073: swisstopo's slope raster, its row and its template are gone.
+
+    The slope layer is the terrain filter's "colour by slope" mode, opened
+    from the filter's own row, so Layers keeps no separate slope row — and
+    nothing of the raster reaches ``#map`` for map.js to install.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+
+    assert 'data-overlay-key="slope"' not in content
+    assert "Display slope angles" not in content
+    assert "data-slope-layer-eligible" not in content
+    assert "data-slope-tile-url" not in content
+    assert "hangneigung" not in content
+    assert "js/slope_overlay_core" not in content
+    assert 'data-testid="map-legend-slope"' not in content
+    # The slope layer's way in is the terrain filter's row (SNOW-1109: a
+    # checkbox) and the adjust button beside it.
+    assert 'data-overlay-key="terrain"' in content
+    assert "data-terrain-filter-open" in content
+
+
+@pytest.mark.django_db
+def test_the_basemap_page_holds_the_radios_alone() -> None:
+    """SNOW-1266: one basemap is always drawn, so the page is a radio list.
+
+    The downloaded-areas row that sat under the hairline moved to Yours,
+    and the terrain filter that sat beside it is Steep terrain on level
+    one. Level one's Basemap row has no switch — there is no "off".
+    """
+    client = Client()
+    content = client.get(reverse("public:map")).content.decode()
+
+    page = _layers_page(content, "basemap")
+    assert page.count('role="menuitemradio"') >= 1
+    assert "data-overlay-key=" not in page
+    assert "basemap-menu-separator" not in page
+    assert 'data-layer-master="basemap"' not in content
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_slope_key_is_in_the_terrain_filter_legend_with_its_caveat() -> None:
+    """SNOW-691, SNOW-1073: the five classes and a route to the caveats.
+
+    The slope layer's key now sits in the terrain filter's legend section,
+    shown in the slope mode. The link is the reason this test exists rather
+    than a bare "the swatches are present". The caveats live on /help/
+    because they run to several paragraphs in a panel that has room for
+    none — but a shading a reader might mistake for permission cannot ship
+    with no path to the warnings, so the heading being a link is the
+    load-bearing part.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    legend = content[content.index('data-testid="map-legend-terrain-filter"') :]
+    legend = legend[: legend.index("</section>")]
+
+    for band in ("30–35°", "35–40°", "40–45°", "45–50°", "Over 50°"):
+        assert band in legend, band
+    assert "#help-topic-slope" in legend
+
+
+# ---------------------------------------------------------------------------
+# SNOW-792 — the map's date picker
+# ---------------------------------------------------------------------------
+
+
+class _AncestorIdFinder(HTMLParser):
+    """Collect the ``id`` of every open element enclosing a target id.
+
+    Stdlib rather than a parser dependency, matching ``_CollapsibleChildCounter``
+    above. ``_VOID`` keeps self-closing tags from opening a level, which would
+    otherwise leave the stack permanently too deep and report ancestors that
+    closed long ago.
+    """
+
+    _VOID = frozenset(
+        {
+            "area",
+            "base",
+            "br",
+            "col",
+            "embed",
+            "hr",
+            "img",
+            "input",
+            "link",
+            "meta",
+            "param",
+            "source",
+            "track",
+            "wbr",
+            "path",
+            "polygon",
+            "polyline",
+            "circle",
+            "rect",
+            "line",
+            "use",
+            "stop",
+        }
+    )
+
+    def __init__(self, target_id: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self._target = target_id
+        self._stack: list[str | None] = []
+        #: ``None`` until the target is seen — distinguishes "not found"
+        #: from "found at top level", which are different failures.
+        self.ancestors: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Push a level, recording the enclosing ids if this is the target."""
+        if tag in self._VOID:
+            return
+        element_id = dict(attrs).get("id")
+        if element_id == self._target and self.ancestors is None:
+            self.ancestors = [i for i in self._stack if i is not None]
+        self._stack.append(element_id)
+
+    def handle_endtag(self, tag: str) -> None:
+        """Pop a level."""
+        if tag in self._VOID:
+            return
+        if self._stack:
+            self._stack.pop()
+
+
+def _ancestor_ids(content: str, target_id: str) -> list[str]:
+    """The ids of every element enclosing ``target_id``, outermost first.
+
+    Args:
+        content: The rendered page.
+        target_id: The ``id`` to locate.
+
+    Returns:
+        The enclosing ids that carry one.
+
+    """
+    finder = _AncestorIdFinder(target_id)
+    finder.feed(content)
+    assert finder.ancestors is not None, f"#{target_id} is not on the page"
+    return finder.ancestors
+
+
+def _one(pattern: str, content: str, what: str) -> str:
+    """The first capture group of ``pattern`` in ``content``, or fail saying what.
+
+    A bare ``re.search(...).group(1)`` in a test reports an ``AttributeError``
+    on ``None`` when the markup it is looking for has gone, which names the
+    test's own line rather than the thing that disappeared.
+
+    Args:
+        pattern: A regex with at least one capture group.
+        content: The rendered page.
+        what: What is being looked for, for the failure message.
+
+    Returns:
+        The first capture group.
+
+    """
+    match = re.search(pattern, content, re.S)
+    assert match is not None, f"{what} is missing from the map page"
+    return match.group(1)
+
+
+@pytest.mark.django_db
+def test_map_calendar_toggle_is_the_date_control() -> None:
+    """
+    The calendar toggle IS the date readout — one control, not two.
+
+    SNOW-794 merged them. ``#map-date-ribbon`` said the day and
+    ``#map-calendar-toggle``, a transport button over in the scrubber's row,
+    changed it: two halves of one job, a screen apart. They are now one pill
+    in the bottom-left stack, with the readout nested inside the button.
+
+    Both ids survive, and that is the point of this test: ``map.js`` writes
+    the date into ``#map-date-ribbon`` on every date-changed / preview /
+    playback frame, and ``map_calendar.js`` binds ``#map-calendar-toggle``
+    for open/close and aria-expanded. Nesting is what let the merge happen
+    without either module knowing.
+
+    It deliberately no longer carries ``.scrubber-transport-button``. That
+    class is hidden by the scrubber's ``loading`` and ``error`` states, and
+    since SNOW-794 the calendar is the map's ONLY date control below 640px
+    and whenever the day shown is out of season — gating it on the
+    scrubber's data would leave those visitors with no way to change the
+    date at all.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+
+    toggle = _one(
+        r'(<button[^>]*id="map-calendar-toggle"[^>]*>)',
+        content,
+        "the calendar toggle",
+    )
+    assert "map-date-control" in toggle
+    assert "scrubber-transport-button" not in toggle
+    # The readout lives INSIDE the button — that nesting is the merge.
+    assert "map-calendar-toggle" in _ancestor_ids(content, "map-date-ribbon")
+
+
+@pytest.mark.django_db
+def test_map_calendar_toggle_points_at_the_popup() -> None:
+    """The toggle is wired to the popup for assistive technology.
+
+    ``aria-controls`` has to name an element that exists, and
+    ``aria-expanded`` has to ship in its closed state — map_calendar.js
+    only ever flips it.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+
+    toggle = _one(
+        r'(<button[^>]*id="map-calendar-toggle"[^>]*>)',
+        content,
+        "the calendar toggle",
+    )
+    assert 'aria-controls="map-calendar"' in toggle
+    assert 'aria-expanded="false"' in toggle
+    assert 'id="map-calendar"' in content
+
+
+@pytest.mark.django_db
+def test_map_calendar_ships_hidden() -> None:
+    """The popup is closed at first paint.
+
+    Server-rendered rather than hidden by JS on boot: a grid that flashes
+    over the map before the module runs is a visible defect, and the module
+    is deferred.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+
+    popup = _one(r'(<div[^>]*id="map-calendar"[^>]*>)', content, "the calendar popup")
+    assert "hidden" in popup
+    assert 'data-state="closed"' in popup
+
+
+@pytest.mark.django_db
+def test_map_calendar_carries_the_season_window() -> None:
+    """
+    The popup's own season bounds match the scrubber's.
+
+    They are read independently by two modules. The calendar uses them as a
+    HIGHLIGHT rather than a limit — every day up to today is selectable —
+    but the two surfaces still have to agree on where the season is, or the
+    band the calendar draws sits somewhere the scrubber's track does not.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+
+    popup = _one(r'(<div[^>]*id="map-calendar"[^>]*>)', content, "the calendar popup")
+    scrubber = _one(r'(<div[^>]*id="season-scrubber"[^>]*>)', content, "the scrubber")
+    for attribute in ("data-season-start", "data-season-end", "data-today"):
+        value = _one(rf'{attribute}="([^"]*)"', popup, attribute)
+        assert value, f"{attribute} is empty on the calendar popup"
+        assert f'{attribute}="{value}"' in scrubber
+
+
+@pytest.mark.django_db
+def test_map_calendar_carries_translated_labels() -> None:
+    """
+    Every word in the grid comes from the server.
+
+    ``makemessages`` never scans JavaScript, so a month name written as a JS
+    literal ships as English to every locale (docs/i18n.md). The popup
+    builds its grid client-side, which makes this attribute and the weekday
+    row the only route those words have onto the page.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+
+    popup = _one(r'(<div[^>]*id="map-calendar"[^>]*>)', content, "the calendar popup")
+    months = _one(r'data-months="([^"]*)"', popup, "data-months").split("|")
+    assert len(months) == 12
+    assert months[0] == "January"
+    assert months[11] == "December"
+
+    weekdays = _one(
+        r'<div class="map-calendar-weekdays"[^>]*>(.*?)</div>',
+        content,
+        "the weekday header",
+    )
+    # Monday first, matching buildMonthGrid's cell order — a Sunday-first
+    # header over a Monday-first grid mislabels every column.
+    assert re.findall(r"<span>([^<]*)</span>", weekdays)[0] == "Mon"
+
+
+@pytest.mark.django_db
+@freeze_time("2026-02-15")
+def test_scrubber_track_spans_the_season_not_a_rolling_window() -> None:
+    """
+    ``#season-scrubber``'s bounds are the season, and nothing wider.
+
+    SNOW-794's first pass gave it a twelve-month rolling window with the
+    season drawn on it as a band, so it could place any day the calendar
+    offers. That made one control try to be two. The calendar is "pick a
+    date, any date"; this is a season scrubber, and it is simply not shown
+    for a day outside the season.
+    """
+    region = MicroRegionFactory.create(region_id="CH-5500")
+    for day in (datetime.date(2026, 2, 10), datetime.date(2026, 2, 20)):
+        RegionDayRatingFactory.create(region=region, date=day)
+
+    client = Client()
+    content = client.get(reverse("public:map")).content.decode()
+
+    scrubber = _one(
+        r'(<div[^>]*id="season-scrubber"[^>]*>)', content, "the season scrubber"
+    )
+    # Narrowed to the data inside the season (SNOW-173), not today-minus-a-year.
+    assert 'data-season-start="2026-02-10"' in scrubber
+    assert 'data-season-end="2026-02-20"' in scrubber
+    assert "data-window-start" not in scrubber
+    assert "data-window-end" not in scrubber
+
+
+@pytest.mark.django_db
+@freeze_time("2026-02-15")
+def test_scrubber_is_revealed_only_for_a_day_inside_the_season() -> None:
+    """
+    ``data-in-season`` follows the day the map is showing.
+
+    The calendar is the scrubber's reveal. A day outside the season has no
+    position on a track that IS the season, and a thumb clamped to whichever
+    end it is past was the defect this ticket opened with.
+
+    Server-rendered from ``?d=`` so first paint is already right rather than
+    correcting itself a frame later; static/js/map_scrubber_reveal.js keeps
+    it current afterwards. The element is always rendered — one that is not
+    in the DOM could not come back when the visitor picks an in-season day.
+    """
+    region = MicroRegionFactory.create(region_id="CH-5500")
+    for day in (datetime.date(2026, 2, 1), datetime.date(2026, 2, 28)):
+        RegionDayRatingFactory.create(region=region, date=day)
+
+    client = Client()
+
+    def in_season(url: str) -> str:
+        scrubber = _one(
+            r'(<div[^>]*id="season-scrubber"[^>]*>)',
+            client.get(url).content.decode(),
+            "the season scrubber",
+        )
+        return _one(r'data-in-season="(\w+)"', scrubber, "the in-season flag")
+
+    home = reverse("public:map")
+    # No ?d= — today stands in, and today is inside this season.
+    assert in_season(home) == "true"
+    assert in_season(f"{home}?d=2026-02-14") == "true"
+    # Both edges are inclusive.
+    assert in_season(f"{home}?d=2026-02-01") == "true"
+    assert in_season(f"{home}?d=2026-02-28") == "true"
+    # Outside it, either side.
+    assert in_season(f"{home}?d=2026-01-31") == "false"
+    assert in_season(f"{home}?d=2025-07-15") == "false"
+    # A malformed ?d= is no choice at all, so today decides — the same
+    # reading the map itself takes, so the two cannot disagree.
+    assert in_season(f"{home}?d=not-a-date") == "true"
+
+
+@pytest.mark.django_db
+def test_help_roundel_moved_out_of_the_overlay_column() -> None:
+    """
+    ``#map-help-toggle`` sits in the bottom-left stack, not the right column.
+
+    Everything in ``.map-controls-br`` changes what the map SHOWS — layers,
+    basemap, downloads, the UGC pins. Help changes nothing;
+    it explains, which is what the bottom-left stack is for.
+
+    The move also drops the collapsible group's child count by one, and
+    map.css computes that group's open height from a hardcoded fallback —
+    see ``test_collapsible_group_css_fallback_matches_the_rendered_child_count``,
+    which is what catches the two going out of step.
+    """
+    client = Client()
+    content = client.get(reverse("public:map")).content.decode()
+
+    ancestors = _ancestor_ids(content, "map-help-toggle")
+    assert "map-legend" in ancestors, (
+        f"help should be in the bottom-left stack. Ancestors: {ancestors}"
+    )
+    assert "map-controls-collapsible" not in ancestors
+    assert "map-controls-br" not in ancestors
+
+
+@pytest.mark.django_db
+def test_map_calendar_panel_lives_in_the_bottom_left_stack() -> None:
+    """
+    The panel renders inside ``#map-legend``, beside the legend card.
+
+    SNOW-794 moved it. It was a ``position: fixed`` sheet at top level, in
+    the bottom-RIGHT slot with the UGC panels — but its trigger moved to the
+    bottom-left stack, and a panel that opens on the far side of the map
+    from the button that opened it is a worse rule than the one it obeyed.
+
+    It is now ``position: absolute``, anchored to that stack's own box, so
+    the nesting is load-bearing rather than incidental: outside
+    ``#map-legend`` it has no containing block to open from, and it would
+    land in the viewport's corner instead of the map's.
+
+    Still out of ``.map-controls-br`` — that column is z-index 4 and would
+    trap it — which is the half of the old contract that survives.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+
+    ancestors = _ancestor_ids(response.content.decode(), "map-calendar")
+    assert "map-legend" in ancestors, (
+        "#map-calendar must be inside #map-legend — it is position:absolute "
+        f"and that stack is its containing block. Ancestors: {ancestors}"
+    )
+    assert "map-controls-br" not in ancestors, (
+        "#map-calendar is nested inside the bottom-right control stack "
+        f"(z-index 4), which would trap it. Ancestors: {ancestors}"
+    )
+
+
+@pytest.mark.django_db
+def test_map_calendar_toggle_sits_on_the_bottom_row_beside_the_scrubber() -> None:
+    """
+    The tap target is on the bottom-left stack's last line, ahead of the
+    season scrubber that shares it.
+
+    SNOW-794 took it out of the scrubber's transport row. The transport
+    moves you ALONG the season; this jumps to a named day, and on the
+    viewports where the scrubber is not drawn at all it is the only date
+    control there is — so it cannot live inside the thing that disappears.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+
+    assert "map-date-row" in _ancestor_ids(content, "map-calendar-toggle")
+    # Ahead of the scrubber on that line, and out of the transport row.
+    assert content.index('id="map-calendar-toggle"') < content.index(
+        'id="season-scrubber"'
+    )
+    assert content.index('id="map-calendar-toggle"') < content.index(
+        'id="scrubber-skip-end"'
+    )
+
+
+@pytest.mark.django_db
+def test_map_calendar_is_in_the_help_tour() -> None:
+    """The date control has its own step, in the "Read the map" chapter.
+
+    SNOW-1118: the map shows one day at a time, which is part of reading it,
+    so the step sits with the colours and the region rather than at the end
+    of a walk down the bottom-left stack (SNOW-794's order).
+    """
+    client = Client()
+    content = client.get(reverse("public:map")).content.decode()
+
+    step = re.search(
+        r'<li\s+data-help-target="#map-calendar-toggle"\s+data-help-chapter="([a-z]+)"',
+        content,
+    )
+    assert step is not None
+    assert step.group(1) == "read"
+
+
+@pytest.mark.django_db
+def test_downloads_row_template_renders_a_pressable_name() -> None:
+    """SNOW-811: the downloads row's name is a button that frames its area.
+
+    The other three map panels reach the shared row's focus slot by passing
+    ``focus_target`` with a coordinate they already have. This panel's rows
+    are cloned from a ``<template>`` and filled by JS, so it reaches the
+    same slot through ``js_filled`` and gets the button with an EMPTY
+    ``data-row-focus`` for ``buildRow`` to stamp — the same value-less-here
+    shape ``data-downloads-rename`` and ``data-downloads-delete`` use.
+
+    Asserted on the rendered template rather than trusted to the Vitest
+    fixture, which is a hand-copy of this markup: the two drifting apart is
+    exactly what a server-side assertion catches.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+
+    row_template = content.split('id="map-downloads-row-template"', 1)[1].split(
+        "</template>", 1
+    )[0]
+    assert "data-row-label" in row_template
+    assert 'data-row-focus=""' in row_template
+    # The inert span branch is what this ticket replaced; a row template
+    # carrying it again would be the regression.
+    assert "<span data-row-label" not in row_template
+
+
+@pytest.mark.django_db
+def test_downloads_strings_template_carries_the_focus_label() -> None:
+    """The focus button's accessible name is server-translated (SNOW-811).
+
+    ``buildRow`` fills the label, so "Zoom to <name>" cannot be a literal in
+    ``map_downloads_manager.js`` — ``makemessages`` never scans JavaScript,
+    and ``tox -e i18n-lint`` fails the build for one. It is rendered here
+    and read back through ``window.pwaStrings``.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+
+    strings = content.split('id="map-downloads-strings-template"', 1)[1].split(
+        "</template>", 1
+    )[0]
+    assert 'data-string="focus-row-label"' in strings
+    assert "Zoom to" in strings
+
+
+@pytest.mark.django_db
+def test_downloads_row_menu_offers_download_here_first_and_forget_last() -> None:
+    """SNOW-1135: an account-only row's pair, in the menu, in rule-4 order.
+
+    The menu carries every item ``buildRow`` may keep, and it strips the
+    ones a row does not earn — so the ORDER is fixed here, in the rendered
+    template: the constructive action first, the destructive one last.
+    Forget also renders as a bare icon, for an account-only row that has
+    it as its only action.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+
+    row_template = content.split('id="map-downloads-row-template"', 1)[1].split(
+        "</template>", 1
+    )[0]
+    menu = row_template.split('role="menu"', 1)[1]
+    inline = row_template.split('role="menu"', 1)[0]
+    positions = [
+        menu.index(hook)
+        for hook in (
+            "data-downloads-here",
+            "data-downloads-sync",
+            "data-downloads-rename",
+            "data-downloads-delete",
+            "data-downloads-forget",
+        )
+    ]
+    assert positions == sorted(positions)
+    assert "data-downloads-forget" in inline
+
+
+@pytest.mark.django_db
+def test_downloads_strings_template_carries_the_forget_copy() -> None:
+    """SNOW-1135: Forget's confirm, its accessible name and its failure line.
+
+    Plus the Remove confirm for a synced row, which points at "Not on this
+    device" — where the area stays after a removal.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+
+    strings = content.split('id="map-downloads-strings-template"', 1)[1].split(
+        "</template>", 1
+    )[0]
+    for key in (
+        "confirm-forget",
+        "forget-row-label",
+        "forget-failed",
+        "confirm-remove-kept",
+    ):
+        assert f'data-string="{key}"' in strings
+    assert "removed from your account" in strings
+    assert "Not on this device" in strings
+
+
+@pytest.mark.django_db
+def test_downloads_group_template_carries_download_all() -> None:
+    """SNOW-1140: "Download all" is rendered on the group heading.
+
+    ``buildGroup`` keeps it only on the "Not on this device" group with two
+    or more restorable rows, so the template renders it on every group and
+    the label is server-translated here rather than written in JavaScript.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    group = content.split('id="map-downloads-group-template"', 1)[1].split(
+        "</template>", 1
+    )[0]
+    assert 'data-hook="group-action"' in group
+    assert "Download all" in group
+
+
+@pytest.mark.django_db
+def test_downloads_strings_template_carries_the_restore_copy() -> None:
+    """SNOW-1140: the Download all confirms and the restore notice's title."""
+    content = Client().get(reverse("public:map")).content.decode()
+    strings = content.split('id="map-downloads-strings-template"', 1)[1].split(
+        "</template>", 1
+    )[0]
+    for key in (
+        "confirm-download-all",
+        "confirm-download-all-other",
+        "restore-notice",
+        "restore-notice-one",
+    ):
+        assert f'data-string="{key}"' in strings
+    assert "of your downloads" in strings
+
+
+@pytest.mark.django_db
+def test_map_renders_the_restore_notice_hidden_with_its_cta() -> None:
+    """SNOW-1140: the one-time notice ships hidden, with the hooks JS uses.
+
+    It is revealed only by ``map_downloads_manager.js``, and only for a
+    signed-in visitor online — so the server never renders it visible.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    notice = content.split('id="map-downloads-restore-notice"', 1)[1].split(
+        'id="map-downloads-restore-notice-open"', 1
+    )[0]
+    assert "hidden" in notice.split(">", 1)[0]
+    assert 'id="map-downloads-restore-notice-title"' in notice
+    assert 'id="map-downloads-restore-notice-open"' in content
+    assert "Show downloads" in content
+    assert "js/downloads_restore_queue_core.js" in content
+
+
+_MAP_STATE_JS = Path(__file__).parent.parent.parent / "static" / "js" / "map_state.js"
+
+
+@pytest.mark.django_db
+def test_the_route_terrain_strings_are_gone() -> None:
+    """No ``route-terrain-*`` key is rendered or mirrored (SNOW-1095).
+
+    They were the route detail sheet's terrain line — steepest angle,
+    length over 30°, unsurveyed length, no-fall passages — and went with
+    the sheet. Checked in BOTH hand-maintained places: the strings
+    template and the ``MAP_STRINGS`` fallbacks in ``map_state.js``.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    template = content.split('id="map-strings-template"', 1)[1]
+    strings = template.split("</template>", 1)[0]
+    fallbacks = _MAP_STATE_JS.read_text(encoding="utf-8")
+
+    assert 'data-string="route-terrain-' not in strings
+    assert "'route-terrain-" not in fallbacks
+
+
+@pytest.mark.django_db
+def test_the_route_key_names_the_two_kinds_of_leg() -> None:
+    """A climb and a descent each have a row, and nothing is left of the bands.
+
+    SNOW-1017 redrew a saved route as its legs, so the key that explained
+    six slope colours would now explain a line nobody can see.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    section = content.split('id="map-route-legs-section"', 1)[1]
+    key = section.split("</section>", 1)[0]
+
+    assert "map-legend-swatch--leg-climb" in key
+    assert "Climbing" in key
+    assert "map-legend-swatch--leg-descent" in key
+    assert "Descending" in key
+    # From ROUTE_SLOPE_MINZOOM the line is coloured by slope, which has
+    # its own one row (the legend's every-overlay pass, 3 Nov 2026), not
+    # SNOW-910's six bands.
+    assert "map-legend-line--route-slope" in key
+    assert "map-legend-swatch--slope-" not in key
+    assert "Not surveyed" not in key
+
+
+@pytest.mark.django_db
+def test_the_route_key_has_no_row_for_marks_the_map_no_longer_draws() -> None:
+    """No fall-line, crux or passage row: SNOW-1019 took all three marks off.
+
+    A key row for a mark that is not on the map sends the reader looking
+    for something that is not there.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    section = content.split('id="map-route-legs-section"', 1)[1]
+    key = section.split("</section>", 1)[0]
+
+    assert "map-legend-swatch--fall-line" not in key
+    assert "map-legend-swatch--crux" not in key
+    assert "map-legend-swatch--passage" not in key
+    assert "Key passage" not in key
+    assert "No-fall passage" not in key
+    assert "point the way the ground falls" not in key
+    # The profile's leg highlight (SNOW-1065) is described in the help
+    # page's Map key topic since the legend's keys became marks only.
+    assert "below the map" not in key
+
+
+@pytest.mark.django_db
+class TestFakeLocationGate:
+    """``data-fake-location-allowed`` opens ``?loc=`` for testing only.
+
+    A spoofed fix reaches the field-report flow as readily as it reaches the
+    drop zone, and a made-up position on a community observation is bad data
+    other people act on. So the client only honours ``?loc=`` when the
+    server says it may.
+    """
+
+    def _flag(self, client: Client) -> str:
+        content = client.get(reverse("public:map")).content.decode()
+        marker = 'data-fake-location-allowed="'
+        return content.split(marker, 1)[1].split('"', 1)[0]
+
+    def test_anonymous_visitor_may_not_spoof(self, client: Client) -> None:
+        """The gate is shut for the public, DEBUG off."""
+        with override_settings(DEBUG=False):
+            assert self._flag(client) == "false"
+
+    def test_superuser_may_spoof(self, client: Client) -> None:
+        """A superuser can test the position-dependent surfaces."""
+        superuser = AccountFactory.create(
+            user__email="loc-super@example.com",
+            user__is_superuser=True,
+            user__is_staff=True,
+        )
+        client.force_login(superuser.user)
+        with override_settings(DEBUG=False):
+            assert self._flag(client) == "true"
+
+    def test_local_development_may_spoof(self, client: Client) -> None:
+        """DEBUG is the other half — a dev server has no superuser to hand."""
+        with override_settings(DEBUG=True):
+            assert self._flag(client) == "true"
+
+
+class TestTheMapPageFitsTheScreen:
+    """The map page is exactly as tall as the area it is laid out in.
+
+    ``min-height: 100dvh`` came out one status bar too tall in the iOS
+    home-screen app, where the page starts below a black-translucent status
+    bar but 100dvh still measures the whole screen; the page then scrolled,
+    the nav off the top and the footer under the home indicator. The body
+    is now a fixed ``height: 100%`` of html, which resolves against the
+    area the page is actually laid out in.
+    """
+
+    CSS = (Path(settings.BASE_DIR) / "static" / "css" / "map.css").read_text()
+
+    def _body(self, selector: str) -> str:
+        """Return the body of the rule whose selector is exactly ``selector``.
+
+        Args:
+            selector: The rule's selector list, as written.
+
+        Returns:
+            The declarations between its braces.
+
+        """
+        rules: list[tuple[str, str]] = re.findall(r"([^{}]+)\{([^{}]*)\}", self.CSS)
+        for found, body in rules:
+            if " ".join(found.split("*/")[-1].split()) == selector:
+                return body
+        raise AssertionError(f"no rule for {selector!r} in map.css")
+
+    @pytest.mark.django_db
+    def test_the_map_page_body_carries_the_class(self) -> None:
+        """/map/'s body is the one the rules below size."""
+        content = Client().get(reverse("public:map")).content.decode()
+        body_tag = re.search(r"<body[^>]*>", content)
+        assert body_tag is not None
+        assert "map-fullscreen" in body_tag.group(0)
+        assert "min-h-screen" not in body_tag.group(0)
+
+    def test_html_and_body_take_the_laid_out_height(self) -> None:
+        """html and the map page's body are height: 100%, a fixed height."""
+        body = self._body(
+            "html:has(> body.map-fullscreen), html:has(> body.map-fullscreen) > body"
+        )
+        assert re.search(r"(^|;|\s)height:\s*100%", body)
+
+    def test_no_viewport_unit_minimum_can_push_the_page_taller(self) -> None:
+        """The fallback is a height, not a 100dvh minimum."""
+        body = self._body(".map-fullscreen")
+        assert "min-height" not in body
+        assert re.search(r"(^|;|\s)height:\s*100dvh", body)
+
+    def test_the_nav_is_an_opaque_sticky_top_edge(self) -> None:
+        """iOS 26 blurs the top edge unless a sticky, opaque box sits there.
+
+        The nav is sticky at the top with the page's background, so WebKit
+        extends its colour into the status bar instead of blurring it, and
+        its z-index clears the map's 0-8 overlay band.
+        """
+        body = self._body("body.map-fullscreen > nav")
+        assert re.search(r"(^|;|\s)position:\s*sticky", body)
+        assert re.search(r"(^|;|\s)top:\s*0", body)
+        assert re.search(r"(^|;|\s)z-index:\s*9", body)
+        assert re.search(r"(^|;|\s)background-color:\s*var\(--color-bg\)", body)
+
+    @pytest.mark.django_db
+    def test_the_nav_is_a_direct_child_of_the_body(self) -> None:
+        """The sticky rule's child combinator reaches the rendered nav."""
+        content = Client().get(reverse("public:map")).content.decode()
+        assert re.search(r"<body[^>]*>\s*<nav[\s>]", content)
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_terrain_filter_renders_when_tile_url_configured() -> None:
+    """SNOW-978: an eligible page carries the filter's every surface.
+
+    The tile template reaches ``#map`` for map.js; the layers menu gets the
+    terrain filter's row; the legend section (with its summary line), the
+    sheet and its two templates render; and both scripts load. The chip
+    that used to sit along the map's top edge is gone — the menu row is the
+    one way in.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+
+    assert 'data-terrain-filter-eligible="true"' in content
+    assert f'data-terrain-class-tile-url="{TERRAIN_CLASS_URL}"' in content
+    assert "Terrain filter…" not in content
+    assert 'id="map-terrain-filter-chip"' not in content
+    assert "data-terrain-filter-legend-summary" in content
+    assert 'data-testid="map-legend-terrain-filter"' in content
+    assert 'id="map-terrain-filter-sheet"' in content
+    assert 'id="map-terrain-filter-template"' in content
+    assert 'id="map-terrain-filter-strings-template"' in content
+    assert "js/terrain_filter_core" in content
+    assert "js/terrain_filter_sheet" in content
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_steep_terrain_row_is_a_switch_and_an_options_opener() -> None:
+    """SNOW-1109, SNOW-1266: the switch toggles the filter; the left half adjusts it.
+
+    The switch is a ``menuitemcheckbox`` overlay row keyed ``terrain``,
+    which map_basemap_picker.js drives through window.pwaTerrainFilter. The
+    opener is its own ``menuitem`` in the same ``<li>``, carrying the row's
+    name and the filter's summary line, and it is the one that opens the
+    sheet.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    start = content.index('data-overlay-key="terrain"')
+    li = content[
+        content.rindex('<li role="none" class="basemap-menu-layer"', 0, start) :
+    ]
+    li = li[: li.index("</li>")]
+
+    switch = _one(r'(<button[^>]*data-overlay-key="terrain"[^>]*>)', li, "the switch")
+    assert 'role="menuitemcheckbox"' in switch
+    assert "basemap-menu-item--overlay" in switch
+    assert 'aria-checked="false"' in switch
+    assert 'aria-label="Steep terrain"' in switch
+    opener = _one(r"(<button[^>]*data-terrain-filter-open[^>]*>)", li, "the opener")
+    assert 'role="menuitem"' in opener
+    assert 'aria-label="Steep terrain options"' in opener
+    assert 'aria-controls="map-terrain-filter-sheet"' in opener
+    assert "data-terrain-filter-summary" in li
+    assert ">Steep terrain<" in li
+
+
+def _problem_terrain_map() -> str:
+    """The map page as an anonymous reader, with the terrain tiles configured.
+
+    SNOW-1377 took SNOW-1374's flag off: every reader gets the controls.
+    """
+    return Client().get(reverse("public:map")).content.decode()
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_terrain_filter_sheet_has_no_problem_terrain_switch() -> None:
+    """SNOW-1377: the bulletin's layer left the Steep terrain sheet.
+
+    SNOW-1297 had put its switch at the sheet's top; it is switched from
+    the layers menu and the region sheet now.
+    """
+    content = _problem_terrain_map()
+    sheet = content[content.index('id="map-terrain-filter-template"') :]
+    sheet = sheet[: sheet.index("</template>")]
+
+    assert 'id="terrain-filter-problem-terrain-toggle"' not in sheet
+    assert "data-panel-overlay-toggle" not in sheet
+    assert "Sync with map terrain" not in sheet
+    assert "Highlight problem terrain" not in sheet
+    assert sheet.count('name="terrain-filter-mode"') == 2
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_terrain_filter_sheet_renders_the_compact_controls() -> None:
+    """SNOW-1073, SNOW-1109: two mode tiles, the ramp, the rose, the lists.
+
+    "One tint" is the server-rendered default; "By slope" is the slope
+    layer. The sheet has no switch of its own (the menu row is the switch)
+    and no segmented control; the ramp, the rose and the mountain carry
+    their own key, so the colour key partial is the legend's alone. The
+    legend keeps a heading per mode leading to its help topic.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    sheet = content[content.index('id="map-terrain-filter-template"') :]
+    sheet = sheet[: sheet.index("</template>")]
+
+    assert sheet.count('name="terrain-filter-mode"') == 2
+    match = sheet[sheet.index('value="match"') :][:120]
+    slope = sheet[sheet.index('value="slope"') :][:120]
+    assert "checked" in match
+    assert "checked" not in slope
+    assert "One tint" in sheet
+    assert "By slope" in sheet
+    # 2026-10-23: "By bulletin" left for its own layers-menu row.
+    assert "By bulletin" not in sheet
+    assert 'value="bulletin"' not in sheet
+    assert "segmented" not in sheet
+    assert 'id="map-terrain-filter-enabled"' not in sheet
+    assert "data-terrain-filter-availability" not in sheet
+    assert "data-terrain-filter-key=" not in sheet
+    assert "data-terrain-filter-bulletin" not in sheet
+    assert "map-legend-swatch--terrain-very_high" not in sheet
+    # The ramp: five toggle tiles, one per slope class.
+    assert "data-terrain-filter-ramp" in sheet
+    for index in range(5):
+        assert f'data-slope-class="{index}"' in sheet
+    assert "map-legend-swatch--terrain-nodata" in sheet
+    # The rose: eight keyboard-operable wedges and the "All" centre.
+    assert sheet.count('role="button"') == 9
+    for octant in range(8):
+        assert f'data-octant="{octant}"' in sheet
+    assert "data-terrain-filter-all-aspects" in sheet
+    # The mountain and the two lists, each opening on "Any".
+    assert "data-terrain-filter-mountain" in sheet
+    assert "data-terrain-filter-min-elevation" in sheet
+    assert "data-terrain-filter-max-elevation" in sheet
+    assert sheet.count('<option value="">Any</option>') == 2
+
+    legend = content[content.index('data-testid="map-legend-terrain-filter"') :]
+    legend = legend[: legend.index("</section>")]
+    assert 'data-terrain-filter-key="slope" hidden' in legend
+    assert "#help-topic-slope" in legend
+    assert "#help-topic-terrain-filter" in legend
+    assert 'data-terrain-filter-key="bulletin"' not in legend
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_sync_with_map_terrain_is_on_the_bulletins_page() -> None:
+    """SNOW-1377: "Sync with map terrain", a switch row under the bulletins.
+
+    Hugo, 23 Oct: its own row, next to the bulletins it comes from; SNOW-1266
+    moved it onto the Avalanche bulletins options page; since 3 Nov 2026 it
+    sits under the providers and the opacity steps come last. SNOW-1377 renamed it and drew it as a switch track; it renders
+    unchecked (map.js seeds it, on by default) for an anonymous reader, with
+    no second line (SNOW-1410: redundant on this page). It is not a level-one layer,
+    so it carries no data-layer-switch for the menu's count. Its key is its
+    own legend section, hidden until the layer is on.
+    """
+    content = _problem_terrain_map()
+    bulletins = _layers_page(content, "bulletins")
+    row = bulletins[bulletins.index('data-overlay-key="problem_terrain"') - 250 :]
+    row = row[: row.index("</button>")]
+    assert 'role="menuitemcheckbox"' in row
+    assert 'aria-checked="false"' in row
+    assert "basemap-menu-layer-row" in row
+    assert "group-aria-checked:bg-accent" in row
+    assert "data-layer-switch" not in row
+    assert ">Sync with map terrain<" in row
+    assert "basemap-menu-item-detail" not in row
+    assert "Highlight problem terrain" not in content
+    assert (
+        bulletins.index('data-overlay-key="country.albina"')
+        < bulletins.index('data-overlay-key="problem_terrain"')
+        < bulletins.index('id="map-bulletin-opacity"')
+    )
+    assert 'data-overlay-key="problem_terrain"' not in _layers_page(content, "main")
+
+    legend = content[content.index('data-testid="map-legend-problem-terrain"') :]
+    legend = legend[: legend.index("</section>")]
+    assert re.search(r"data-problem-terrain-legend\s+hidden", legend)
+    assert "#help-topic-bulletin-terrain" in legend
+    # The levels are the danger scale's colours, which the card's first
+    # tier already shows once (Hugo, 3 Nov 2026: "The scale is the danger
+    # level - it doesn't need repeating"); only the marks off it remain.
+    assert "map-legend-swatch--terrain-very_high" not in legend
+    assert "Same colours, on the slopes" in legend
+    assert "map-legend-swatch--terrain-undescribed" in legend
+    assert "map-legend-swatch--terrain-nodata" in legend
+    assert 'id="map-problem-terrain-strings-template"' not in content
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+@pytest.mark.parametrize("signed_in", [False, True])
+def test_problem_terrain_is_enabled_for_every_reader(signed_in: bool) -> None:
+    """SNOW-1377: no flag — the map's script is told the layer may be drawn."""
+    client = Client()
+    if signed_in:
+        client.force_login(UserFactory.create())
+    content = client.get(reverse("public:map")).content.decode()
+    assert 'data-problem-terrain-enabled="true"' in content
+    assert 'data-overlay-key="problem_terrain"' in content
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL="")
+def test_no_problem_terrain_row_without_the_terrain_tiles() -> None:
+    """It paints from the terrain filter's tiles, so it shares their gate."""
+    content = Client().get(reverse("public:map")).content.decode()
+    assert 'data-problem-terrain-enabled="false"' in content
+    assert 'data-overlay-key="problem_terrain"' not in content
+    assert "data-problem-terrain-legend" not in content
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL="")
+def test_terrain_filter_absent_without_tile_url() -> None:
+    """SNOW-978: the setting defaults to empty, which turns the filter off.
+
+    Nothing of it renders — no row, no chip, no sheet, no script, and above
+    all no tile template, which would be an invitation to install a layer
+    the environment has not configured.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+
+    assert 'data-terrain-filter-eligible="false"' in content
+    assert "data-terrain-class-tile-url=" not in content
+    assert "data-terrain-filter-open" not in content
+    assert 'data-overlay-key="terrain"' not in content
+    assert 'id="map-terrain-filter-sheet"' not in content
+    # SNOW-1412: the sheet's script loads for everyone (a member of
+    # static/js/bundles/map.txt) and returns early without the sheet above.
+    # The core is a plain library and loads either way.
+    assert "js/terrain_filter_core" in content
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_steep_terrain_is_a_level_one_row_whose_options_are_the_filter_sheet() -> None:
+    """SNOW-1266: "Steep terrain" sits in "Reference data" after Resorts,
+    with the static layers, below the dated ones (the order of 3 Nov 2026).
+
+    It is the terrain filter (SNOW-978/1109) named for what it draws. Its
+    switch is the ``terrain`` overlay row; its options half opens the
+    filter's own sheet, which IS that layer's options, rather than a page
+    of the menu.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    main = _layers_page(content, "main")
+    opener = main.index("data-terrain-filter-open")
+    switch = main.index('data-overlay-key="terrain"')
+    assert main.index('data-overlay-key="resorts"') < opener < switch
+    assert switch < main.index('data-layers-open="basemap"')
+    assert ">Steep terrain<" in main
+    assert 'aria-controls="map-terrain-filter-sheet"' in main
+
+
+# ---------------------------------------------------------------------------
+# The zoom control (SNOW-1077)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestZoomControl:
+    """The zoom roundel is public; only its camera-zoom line is DEBUG.
+
+    Before SNOW-1077 the slot held a DEBUG-only ``<output>`` that read the
+    zoom and did nothing when pressed. The control is now a ``<button>``
+    every reader gets, opening a flyout with − and +, so the page has to
+    render it — and its script — with DEBUG off.
+    """
+
+    def _content(self, client: Client) -> str:
+        return client.get(reverse("public:map")).content.decode()
+
+    def test_renders_the_roundel_and_flyout_without_debug(self, client: Client) -> None:
+        """The roundel controls its flyout, and the script loads."""
+        with override_settings(DEBUG=False):
+            content = self._content(client)
+        assert 'id="map-zoom-toggle"' in content
+        assert 'aria-controls="map-zoom-flyout"' in content
+        assert 'id="map-zoom-flyout"' in content
+        assert 'data-zoom-step="out"' in content
+        assert 'data-zoom-step="in"' in content
+        assert 'id="map-zoom-strings-template"' in content
+        assert "js/map_zoom_control.js" in content
+        assert "js/zoom_control_core.js" in content
+        # The old DEBUG readout is gone, element and script alike.
+        assert 'id="map-zoom-readout"' not in content
+        assert "map_zoom_readout" not in content
+
+    def test_roundel_is_a_button_with_a_zoom_level_name(self, client: Client) -> None:
+        """A button, named "Zoom level" until the script adds the number."""
+        with override_settings(DEBUG=False):
+            content = self._content(client)
+        start = content.rindex("<button", 0, content.index('id="map-zoom-toggle"'))
+        tag = content[start : content.index(">", start)]
+        assert "aria-label='Zoom level'" in tag or 'aria-label="Zoom level"' in tag
+        assert 'aria-haspopup="dialog"' in tag
+        assert 'aria-expanded="false"' in tag
+
+    def test_flyout_is_a_named_dialog(self, client: Client) -> None:
+        """What the roundel's aria-haspopup promises: a dialog with a name."""
+        content = self._content(client)
+        start = content.rindex("<div", 0, content.index('id="map-zoom-flyout"'))
+        tag = content[start : content.index(">", start)]
+        assert 'role="dialog"' in tag
+        assert "aria-label='Zoom'" in tag or 'aria-label="Zoom"' in tag
+
+    def test_camera_line_is_absent_without_debug(self, client: Client) -> None:
+        """The two-decimal camera zoom is a developer's instrument."""
+        with override_settings(DEBUG=False):
+            assert "data-zoom-camera" not in self._content(client)
+
+    def test_camera_line_renders_under_debug(self, client: Client) -> None:
+        """DEBUG keeps what the hack-mode readout gave developers."""
+        with override_settings(DEBUG=True):
+            assert "data-zoom-camera" in self._content(client)
+
+    def test_roundel_tops_the_bottom_left_stack(self, client: Client) -> None:
+        """It sits above the help and (i) roundels, as the readout did."""
+        content = self._content(client)
+        zoom = content.index('id="map-zoom-toggle"')
+        assert zoom < content.index('id="map-help-toggle"')
+        assert zoom < content.index('id="map-legend-toggle"')
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_downloads_sheet_has_no_terrain_switch_when_the_filter_is_configured() -> None:
+    """Every download includes terrain data, so the sheet offers no switch.
+
+    The framing readout still carries the line that states what it adds.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    body = content[content.index('id="map-downloads-body-template"') :]
+    body = body[: body.index("</template>")]
+
+    assert "data-downloads-terrain" not in body
+    assert 'id="map-downloads-terrain"' not in body
+    assert 'id="map-frame-terrain-readout"' in content
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL="")
+def test_downloads_sheet_has_no_terrain_data_without_the_filter() -> None:
+    """SNOW-1072: no class tileset, no switch — there is nothing to include."""
+    content = Client().get(reverse("public:map")).content.decode()
+
+    assert "data-downloads-terrain" not in content
+    assert 'id="map-downloads-terrain"' not in content
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_terrain_filter_sheet_has_the_standard_panel_header() -> None:
+    """The filter opens as the standard map panel, headed like the UGC panels.
+
+    The layers roundel's glyph (includes/_icon_layers.html) heads the panel,
+    as the favourites, observations and routes roundels' glyphs head theirs,
+    with the one-line context strip under the title.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+
+    sheet = content[content.index('id="map-terrain-filter-template"') :]
+    sheet = sheet[: sheet.index("</template>")]
+    layers_glyph = '<path d="M12 2 2 7l10 5 10-5-10-5Z" />'
+    assert layers_glyph in sheet
+    assert "The map changes as you change these." in sheet
+    roundel = content[content.index('id="basemap-toggle"') :][:1200]
+    assert layers_glyph in roundel
+
+
+# What a phone detent sheet covers at each detent, measured at 390×844
+# (SNOW-1098): peek cuts the bottom row on both sides, half and full cover
+# both stacks whole.
+_SHEET_HIDES = {
+    "peek": (".map-controls-toggle", "#map-legend-toggle"),
+    "half": ("#map-controls-br", "#map-legend"),
+    "full": ("#map-controls-br", "#map-legend"),
+}
+
+
+@pytest.mark.parametrize(("detent", "targets"), list(_SHEET_HIDES.items()))
+def test_a_detent_sheet_hides_what_it_covers(
+    detent: str, targets: tuple[str, ...]
+) -> None:
+    """Covered controls are hidden, not left cut or reachable by keyboard.
+
+    The sheet slides over the furniture without moving it, so its top edge
+    can land part-way up a roundel, and a covered button stays in the tab
+    order. ``visibility: hidden`` on the covered ones removes both.
+    """
+    css = (settings.BASE_DIR / "static" / "css" / "map.css").read_text()
+    hidden = {
+        selector.strip()
+        for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css)
+        if "visibility: hidden" in body
+        for selector in selectors.split("*/")[-1].split(",")
+    }
+
+    for target in targets:
+        assert f":root[data-map-sheet='{detent}'] {target}" in hidden
+
+
+@pytest.mark.django_db
+def test_the_controls_a_detent_sheet_hides_are_on_the_page() -> None:
+    """Every element the hide rules name renders, so no rule goes stale."""
+    content = Client().get(reverse("public:map")).content.decode()
+
+    for target in {t for targets in _SHEET_HIDES.values() for t in targets}:
+        if target.startswith("#"):
+            assert f'id="{target[1:]}"' in content
+        else:
+            assert target[1:] in content
+
+
+class _SurfaceAncestry(HTMLParser):
+    """Record, per element of interest, whether it sits inside the map surface.
+
+    SNOW-1334. The key is an element's ``id``, or its tag name for ``nav``
+    and ``footer``. The value is True when an open ancestor carries
+    ``map-surface-light``. Tolerant of HTML's implicit closes: an end tag
+    pops back to the nearest open element of the same name, so a ``<p>``
+    or ``<li>`` the page never closes cannot leave the stack too deep.
+    """
+
+    _VOID = frozenset(
+        {
+            "area",
+            "base",
+            "br",
+            "col",
+            "embed",
+            "hr",
+            "img",
+            "input",
+            "link",
+            "meta",
+            "source",
+            "track",
+            "wbr",
+        }
+    )
+
+    def __init__(self) -> None:
+        """Start with an empty stack and nothing recorded."""
+        super().__init__(convert_charrefs=True)
+        self._stack: list[tuple[str, bool]] = []
+        self.inside: dict[str, bool] = {}
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Note where this element sits, then open it."""
+        values = dict(attrs)
+        within = bool(self._stack) and self._stack[-1][1]
+        if values.get("id"):
+            self.inside.setdefault(str(values["id"]), within)
+        if tag in ("nav", "footer"):
+            self.inside.setdefault(tag, within)
+        if tag in self._VOID:
+            return
+        marks = "map-surface-light" in (values.get("class") or "").split()
+        self._stack.append((tag, within or marks))
+
+    def handle_endtag(self, tag: str) -> None:
+        """Close back to the nearest open element of this name."""
+        for depth in range(len(self._stack) - 1, -1, -1):
+            if self._stack[depth][0] == tag:
+                del self._stack[depth:]
+                return
+
+
+@pytest.mark.django_db
+def test_the_map_surface_stays_light_and_the_chrome_does_not() -> None:
+    """Everything the map page draws sits inside the light map surface.
+
+    SNOW-1334: in dark mode the map's search, sheets, menus, toasts, date
+    row and scrubber stay light, because every basemap is light. They
+    inherit that from one ``map-surface-light`` wrapper around the whole
+    content block. The site nav and footer, which base.html renders outside
+    that block, stay in the page's theme.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    parser = _SurfaceAncestry()
+    parser.feed(content)
+
+    for element_id in (
+        "map",
+        "search-input",
+        "search-results",
+        "basemap-menu",
+        "region-sheet",
+        "favourite-sheet",
+        "map-sheet-toast",
+        "map-calendar-toggle",
+    ):
+        assert parser.inside.get(element_id) is True, element_id
+    assert parser.inside.get("nav") is False
+    assert parser.inside.get("footer") is False
+
+
+def test_the_wrapper_adds_no_box() -> None:
+    """The map surface wrapper is ``display: contents``.
+
+    #map and every overlay are flex children of the full-screen body
+    (static/css/map.css ``.map-fullscreen``); a wrapper with a box of its
+    own would take that layout away from them.
+    """
+    template = (
+        Path(settings.BASE_DIR) / "apps/map/templates/public/map.html"
+    ).read_text()
+
+    assert '<div class="map-surface-light contents">' in template
+
+
+def test_map_css_has_no_dark_mode_rules_left() -> None:
+    """No ``.dark`` rule in map.css repaints the map surface.
+
+    SNOW-1334 removed the two blocks (fifteen selectors) that moved the
+    scrubber, region readout and roundels onto light ink in dark mode.
+    The surface no longer goes dark, so a new ``.dark`` rule here would
+    paint dark-mode ink on light glass.
+    """
+    css = (Path(settings.BASE_DIR) / "static/css/map.css").read_text()
+    rules = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+
+    assert not re.search(r"(^|[\s,}])\.dark[\s.:\[]", rules)
+
+
+def test_the_search_dropdown_draws_only_with_tokens() -> None:
+    """Every colour in the search dropdown is a ``--color-*`` token.
+
+    SNOW-1334: the rows named map.css's --ink / --muted / --border and
+    beige and white literals, none of which has a dark value, so in dark
+    mode the names sat at 1.2:1 on the dark card.
+    """
+    css = (Path(settings.BASE_DIR) / "static/css/map.css").read_text()
+    start = css.index(".search-results {")
+    end = css.index(".map-fullscreen {")
+    block = re.sub(r"/\*.*?\*/", "", css[start:end], flags=re.S)
+
+    assert not re.search(r"var\(--(ink|muted|border|paper)\)", block)
+    assert not re.search(r"#[0-9a-fA-F]{3,8}\b", block)
+
+
+@pytest.mark.django_db
+def test_region_chip_is_gone() -> None:
+    """SNOW-1422: the region chip (SNOW-1376) is removed, in both modes.
+
+    A region past z10 is reached by zooming out or by search; nothing on
+    the map page draws, strings or loads the chip.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    assert "map-region-chip" not in content
+    assert "map_region_chip" not in content
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_slopes_notice_renders_hidden_with_its_strings() -> None:
+    """SNOW-1378: the card, its copy and its fallback key render, hidden.
+
+    map_slopes_notice.js shows it once per device, the first time the map
+    settles at z12 or closer over the bulletin's slopes.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    start = content.index('id="map-slopes-notice"')
+    opening = content[content.rindex("<div", 0, start) : content.index(">", start)]
+    assert re.search(r"\shidden\b", opening)
+    assert 'role="region"' in opening
+    key_url = reverse(
+        "public:slopes_notice_key_partial", kwargs={"region_id": "XX-0000"}
+    )
+    assert f'data-key-url="{key_url}"' in opening
+    card = content[start : content.index('id="map-slopes-notice-more"', start) + 300]
+    text = html.unescape(" ".join(re.sub(r"<[^>]+>", " ", card).split()))
+    assert "Now showing the bulletin's slopes" in text
+    assert (
+        "Close in, the region colour gives way to the slopes the bulletin's "
+        "problems describe. Zoom out to see regions again."
+    ) in text
+    assert "Got it" in text
+    assert "What's shown?" in text
+    assert f"{reverse('public:help')}#help-topic-bulletin-terrain" in card
+    # The fallback is the legend's whole-scale key.
+    assert "data-slopes-notice-key" in card
+    assert "map-legend-swatch--terrain-very_high" in card
+    assert "Additional steep terrain (>30°)" in text
+    assert "js/map_slopes_notice_core.js" in content
+    assert "js/map_slopes_notice.js" in content
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL="")
+def test_no_slopes_notice_without_the_terrain_tiles() -> None:
+    """No tiles, no slopes painted, nothing to announce."""
+    content = Client().get(reverse("public:map")).content.decode()
+    assert 'id="map-slopes-notice"' not in content
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1394: the Dated / Terrain toggle, behind the map_modes flag
+# ---------------------------------------------------------------------------
+
+MAP_MODE_MARKERS = (
+    # A leading space, so data-testid="map-mode-terrain" is not counted too.
+    ' id="map-mode-terrain"',
+    ' id="map-mode-strings-template"',
+    "data-today-label='Today'",
+    # Not map_mode.js: since SNOW-1412 it loads for everyone and returns
+    # early without #map-mode-terrain (test_map_script_order.py).
+)
+
+
+def _map_as(*, signed_in: bool, flag: bool) -> str:
+    """Render /map/ for a visitor or a signed-in user, with the flag set."""
+    client = Client()
+    if signed_in:
+        client.force_login(UserFactory.create())
+    with override_flag("map_modes", active=flag):
+        return client.get(reverse("public:map")).content.decode()
+
+
+@pytest.mark.django_db
+def test_map_modes_toggle_renders_only_behind_the_flag() -> None:
+    """Signed in with the flag: the control, its strings and both scripts,
+    each once, with the flag's data attribute on #map; the separate
+    "Today" button goes, because the date says "Today" itself.
+    """
+    content = _map_as(signed_in=True, flag=True)
+    for marker in MAP_MODE_MARKERS:
+        assert content.count(marker) == 1, marker
+    assert 'data-map-modes-enabled="true"' in content
+    # The pure core loads for everyone; the flag decides whether it is read.
+    assert content.count("/static/js/map_mode_core.js") == 1
+    assert 'id="map-today-control"' not in content
+    # The Today panel's sun is a panel, not a map surface: it stays.
+    assert 'id="map-today-panel-toggle"' in content
+    # The toggle follows the day steps, so it moves with them on a phone.
+    assert content.index('id="map-day-next"') < content.index('id="map-mode-terrain"')
+
+
+@pytest.mark.parametrize(("signed_in", "flag"), [(True, False), (False, True)])
+@pytest.mark.django_db
+def test_map_modes_toggle_is_absent_otherwise(signed_in: bool, flag: bool) -> None:
+    """Outside the flag, or signed out (no waffle query is paid for an
+    anonymous request), the date row is as it was before the toggle.
+    """
+    content = _map_as(signed_in=signed_in, flag=flag)
+    for marker in MAP_MODE_MARKERS:
+        assert marker not in content, marker
+    assert 'data-map-modes-enabled="false"' in content
+    assert 'id="map-today-control"' in content
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1421: a layers menu per mode, behind the map_modes flag
+# ---------------------------------------------------------------------------
+
+
+def _menu_as(*, flag: bool) -> str:
+    """Render /map/ signed in, with the layers that need flags or tiles."""
+    client = Client()
+    client.force_login(UserFactory.create())
+    with (
+        override_flag("map_modes", active=flag),
+        override_flag("route_drawing", active=True),
+        override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL),
+    ):
+        return client.get(reverse("public:map")).content.decode()
+
+
+def _menu_header(content: str) -> str:
+    """The layers menu's pinned header, up to level one."""
+    start = content.index('class="basemap-menu-header"')
+    return content[start : content.index('data-layers-page="main"', start)]
+
+
+def _mode_block(main: str, mode: str) -> str:
+    """One mode's own block on level one, from its marker to its list's end."""
+    start = main.index(f'data-mode-only="{mode}"')
+    return main[start : main.index("</ul>", start)]
+
+
+@pytest.mark.django_db
+def test_layers_menu_header_is_the_mode_switch_behind_the_flag() -> None:
+    """The header is a Conditions | Terrain control, each segment a button
+    with aria-pressed, in place of the "Map layers" title and the count.
+    The phone's close button stays.
+    """
+    header = _menu_header(_menu_as(flag=True))
+    tabs = re.findall(r'data-map-mode-tab="(\w+)"\s+aria-pressed="(\w+)"', header)
+    assert tabs == [("dated", "true"), ("terrain", "false")]
+    assert header.index(">Conditions<") < header.index(">Terrain<")
+    assert ">Map layers<" not in header
+    assert "data-layers-count" not in header
+    assert "data-layers-close" in header
+
+
+@pytest.mark.django_db
+def test_layers_menu_lists_each_mode_then_the_shared_rows() -> None:
+    """Level one, flag on (Hugo, 5 Nov 2026): Conditions' own block
+    (Avalanche bulletins, Sync problem terrain, Weather), Terrain's own
+    block (Steep terrain, SAC ski touring, Wildlife rest zones), then the
+    shared Resorts, Regions and Basemap, then "User data". "Reference data"
+    goes.
+    """
+    main = _layers_page(_menu_as(flag=True), "main")
+    markers = [
+        'data-mode-only="dated"',
+        'data-layers-open="bulletins"',
+        'data-overlay-key="problem_terrain"',
+        'data-overlay-key="weather"',
+        'data-mode-only="terrain"',
+        'data-overlay-key="terrain"',
+        'data-layer-master="ski_touring"',
+        'data-overlay-key="rest_zones"',
+        'data-overlay-key="resorts"',
+        'data-layers-open="boundaries"',
+        'data-layers-open="basemap"',
+        ">User data<",
+        'data-overlay-key="community_reports"',
+        'data-overlay-key="favourites"',
+        'data-overlay-key="routes"',
+        'data-overlay-key="downloads"',
+    ]
+    positions = [main.index(marker) for marker in markers]
+    assert positions == sorted(positions), markers
+    assert ">Reference data<" not in main
+    assert ">Your data<" not in main
+    dated = _mode_block(main, "dated")
+    terrain = _mode_block(main, "terrain")
+    for own in ('data-overlay-key="weather"', 'data-overlay-key="problem_terrain"'):
+        assert own in dated and own not in terrain
+    for own in ('data-overlay-key="terrain"', 'data-overlay-key="rest_zones"'):
+        assert own in terrain and own not in dated
+    # The shared rows are in neither block.
+    for shared in (
+        'data-overlay-key="resorts"',
+        'data-overlay-key="community_reports"',
+    ):
+        assert shared not in dated and shared not in terrain
+
+
+@pytest.mark.django_db
+def test_sync_problem_terrain_is_a_first_level_row_behind_the_flag() -> None:
+    """The problem-terrain switch leaves the bulletins' page for a switch
+    row of its own, gated at z12.
+    """
+    content = _menu_as(flag=True)
+    main = _layers_page(content, "main")
+    row = main[main.index('data-zoom-gate="problem_terrain"') :]
+    row = row[: row.index("</li>")]
+    assert 'data-overlay-key="problem_terrain"' in row
+    assert ">Sync problem terrain<" in row
+    assert "data-layer-switch" in row
+    assert 'data-overlay-key="problem_terrain"' not in _layers_page(
+        content, "bulletins"
+    )
+    assert "Sync with map terrain" not in content
+
+
+@pytest.mark.django_db
+def test_regions_is_named_regions_behind_the_flag() -> None:
+    """Boundaries is "Regions", on level one and on its page's header."""
+    content = _menu_as(flag=True)
+    main = _layers_page(content, "main")
+    row = main[main.index('data-layers-open="boundaries"') :]
+    assert ">Regions<" in row[: row.index("</li>")]
+    page = _layers_page(content, "boundaries")
+    assert 'class="basemap-menu-page-title">Regions<' in page
+    assert ">Boundaries<" not in main + page
+
+
+@pytest.mark.django_db
+def test_layers_menu_is_unchanged_without_the_flag() -> None:
+    """Off the flag: "Map layers" and the count, one list in the order of
+    3 Nov 2026, the problem-terrain switch on the bulletins' page, no tabs
+    and no mode blocks.
+    """
+    content = _menu_as(flag=False)
+    header = _menu_header(content)
+    assert ">Map layers<" in header
+    assert "data-layers-count" in header
+    assert "data-map-mode-tab" not in content
+    assert "data-mode-only" not in content
+    main = _layers_page(content, "main")
+    markers = [
+        ">Reference data<",
+        'data-layers-open="bulletins"',
+        'data-overlay-key="weather"',
+        'data-layers-open="boundaries"',
+        'data-overlay-key="community_reports"',
+        'data-overlay-key="resorts"',
+        'data-overlay-key="terrain"',
+        'data-layer-master="ski_touring"',
+        'data-overlay-key="rest_zones"',
+        'data-layers-open="basemap"',
+        ">Your data<",
+        'data-overlay-key="favourites"',
+    ]
+    positions = [main.index(marker) for marker in markers]
+    assert positions == sorted(positions), markers
+    assert 'data-overlay-key="problem_terrain"' not in main
+    bulletins = _layers_page(content, "bulletins")
+    assert 'data-overlay-key="problem_terrain"' in bulletins
+    assert ">Sync with map terrain<" in bulletins
+    assert ">Boundaries<" in main
+
+
+def test_map_css_hides_the_other_modes_rows_under_the_mode() -> None:
+    """The hiding is the stylesheet's alone (jsdom cannot compute it): each
+    mode's ``[data-mode-only]`` rows go under the other mode's
+    ``:root[data-map-mode]``, which only the flag's page carries, and the
+    Terrain-era dimming of dated rows is gone.
+    """
+    css = _uncommented_css("static", "css", "map.css")
+    rule = re.search(
+        r':root\[data-map-mode="dated"\] #basemap-menu \[data-mode-only="terrain"\],\s*'
+        r':root\[data-map-mode="terrain"\] #basemap-menu \[data-mode-only="dated"\]\s*'
+        r"\{\s*display:\s*none;\s*\}",
+        css,
+    )
+    assert rule, "the per-mode hide rule is missing"
+    # Nothing hides a mode's rows outside :root[data-map-mode].
+    for selector in re.findall(r"([^{}]*\[data-mode-only[^{}]*)\{", css):
+        for part in selector.split(","):
+            if "display" in part:
+                continue
+            assert (
+                ":root[data-map-mode" in part or ".basemap-menu-mode-block" in part
+            ), part
+    assert "data-map-mode-disabled" not in css

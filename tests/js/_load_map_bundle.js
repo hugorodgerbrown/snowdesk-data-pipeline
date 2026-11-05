@@ -27,7 +27,7 @@
  * zone.
  *
  * SNOW-647: this list and the template's script tags have to agree, and
- * `tests/public/test_map_script_order.py` now enforces that rather than
+ * `tests/map/test_map_script_order.py` now enforces that rather than
  * asking. It renders the homepage, filters the scripts down to the entries
  * below, and fails if the two sequences differ — in either direction, and
  * including a new map module tagged in the template but never added here.
@@ -67,7 +67,7 @@ const STATIC_JS = path.resolve(
  * names nothing a reader could act on.
  *
  * Deliberately declared BEFORE the bundle array below: SNOW-647's
- * `tests/public/test_map_script_order.py` parses that array out of this
+ * `tests/map/test_map_script_order.py` parses that array out of this
  * file's text by splitting on its export statement, so anything above it is
  * invisible to that check — which is right, since these are not bundle
  * members and map.html loads them outside the bundle's contiguous run.

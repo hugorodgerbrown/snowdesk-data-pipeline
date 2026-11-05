@@ -8,7 +8,7 @@
  * re-seed in its `styledata` handler after a basemap swap, and
  * `map_season_ribbon.js`. They are configured server-side now, rendered onto
  * `#map`, and read back through one owner: `mapDefaults()` in
- * `map_state.js`. `tests/public/test_map_defaults.py` covers the server half.
+ * `map_state.js`. `tests/map/test_map_defaults.py` covers the server half.
  *
  * Four things are pinned here, and the second is the one that matters most.
  *

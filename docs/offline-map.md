@@ -830,7 +830,7 @@ leaving the toggle looking like it did nothing — `#map-offline-toast-favourite
 `#map-offline-toast-community_reports`,
 `#map-offline-toast-routes`, and a shared `#map-offline-toast-layer` for
 l1/l2/l3/resorts (rendered in
-`apps/public/templates/public/partials/_map_embed.html`).
+`apps/map/templates/public/partials/_map_embed.html`).
 
 That toast is the *only* thing the user gets in this state, and it is
 deliberately paired with the layers-menu row and the panel's "Show on the
@@ -2445,7 +2445,7 @@ itself sits beside the ROW template in `_map_downloads_sheet.html`, not
 nested inside the body template — legal and clone-safe, but it makes the
 body template unreadable to anything that finds its end at the next
 `</template>`, which `getElementById` and
-`tests/public/test_ugc_panels.py` both effectively do. The include carries
+`tests/map/test_ugc_panels.py` both effectively do. The include carries
 `only`, without which the group partial's `{% include rows_template %}`
 would find the panel's own `rows_template` still in scope and recurse.
 
@@ -2846,7 +2846,7 @@ the server.
 **Basemap subtitle label.** The basemap name shown in a row's subtitle
 (when resolvable) is the same label the picker itself shows: `buildRow`
 reads it off the picker's rendered `.basemap-menu-item` buttons rather
-than duplicating `apps/public/views.py`'s `_BASEMAP_LABELS`, so the two
+than duplicating `apps/map/views.py`'s `_BASEMAP_LABELS`, so the two
 surfaces can never drift and no new JS string literal exists for
 `tox -e i18n-lint` to flag.
 
@@ -2965,7 +2965,7 @@ untrue. SNOW-930 acted on the same reasoning from the other direction: the
 offline-content report and the reset control were on settings for no
 reason but availability, and they are at `/offline/` now. Every string in the sheet is written to say otherwise;
 `tests/js/test_map_downloads_manager.js` asserts the sheet's behaviour and
-`tests/public/test_map_page.py` asserts the row and strings templates as the
+`tests/map/test_map_page.py` asserts the row and strings templates as the
 server actually renders them.
 
 An earlier version of this section gave a fourth reason — that region
@@ -3068,7 +3068,7 @@ is reached through two frozen globals:
   two halves
   of a group heading — what a basemap is called, and where it sits in the
   picker's own order. Both of the last two read the picker's rendered
-  `[data-basemap-key]` DOM, so `apps/public/views.py`'s `_BASEMAP_LABELS`
+  `[data-basemap-key]` DOM, so `apps/map/views.py`'s `_BASEMAP_LABELS`
   stays the single definition of label and order alike. (`rename` is a
   no-op for a region id — regions are never renameable.) Without it the
   sheet opens
@@ -3354,8 +3354,8 @@ yet). It re-probes on every popover open and, now, on every
 **l3 (bulletin groupings) is deliberately absent (SNOW-532).** The
 bulletin-boundary layer has no row in `#basemap-menu` — SNOW-521 removed
 `data-overlay-key="l3"` from
-`apps/public/templates/public/partials/_map_embed.html`
-(`tests/public/test_map_page.py` asserts its absence in the rendered page,
+`apps/map/templates/public/partials/_map_embed.html`
+(`tests/map/test_map_page.py` asserts its absence in the rendered page,
 alongside `#basemap-sync-status`), and
 since PR #506 the boundary follows L4's visibility rather than carrying a
 toggle of its own. SNOW-526 nonetheless added an `OVERLAY_RESOURCES.l3`
@@ -3758,7 +3758,7 @@ you add or rename a shot, update `PWA_SCREENSHOTS` to match.
   `apple-mobile-web-app-status-bar-style`,
   `apple-mobile-web-app-title`) are emitted on every public page that
   extends `base.html` (SNOW-118).
-- `tests/public/test_map_page.py` — the inverted offline-toggle
+- `tests/map/test_map_page.py` — the inverted offline-toggle
   assertion: `#offline-toggle` must **not** appear in the rendered
   map page.
 - `tests/js/test_sw_register_warm_cache.js`, `tests/js/test_basemap_cache_core.js`
@@ -3775,9 +3775,9 @@ you add or rename a shot, update `PWA_SCREENSHOTS` to match.
   ORDER (eviction runs only after every check that can abort the run), the
   byte accounting including the re-download path, and the custom-area store.
 - `tests/js/test_map_downloads_manager.js` (`tox -e js`) plus
-  `tests/public/test_map_page.py` — the Manage downloads sheet's rows and
+  `tests/map/test_map_page.py` — the Manage downloads sheet's rows and
   states, and the row/strings templates as the server renders them.
-- `tests/public/test_map_page.py` (SNOW-521, SNOW-532) — the items dropped
+- `tests/map/test_map_page.py` (SNOW-521, SNOW-532) — the items dropped
   alongside the download rework (`[data-overlay-key="l3"]`,
   `#basemap-sync-status`) are absent from the rendered map page.
 

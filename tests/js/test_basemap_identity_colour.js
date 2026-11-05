@@ -155,7 +155,7 @@ describe('basemapOrder (SNOW-832 — the group headings\' own order)', () => {
   // The Manage downloads sheet groups its rows by basemap and lists the
   // groups in the order the PICKER offers them, so the panel and the
   // picker read the same way round. Read off the same DOM basemapLabel
-  // reads, for the same reason: apps/public/views.py's _BASEMAP_LABELS is
+  // reads, for the same reason: apps/map/views.py's _BASEMAP_LABELS is
   // the single definition of both the label and the order (see
   // basemap_options' own docstring), and a copy in JS is a second list to
   // keep in step with nothing able to notice it drifting.

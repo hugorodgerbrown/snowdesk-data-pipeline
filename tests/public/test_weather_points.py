@@ -16,7 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from apps.public import api, views, weather_points
+from apps.map import api
+from apps.public import views, weather_points
 
 MOVED = (
     "weather_point_context",
@@ -40,6 +41,6 @@ def test_views_defines_none_of_them() -> None:
 
 
 def test_both_callers_share_one_builder() -> None:
-    """The weather page and ``api.weather_detail`` use the same function."""
+    """The weather page and the map's ``weather_detail`` use one function."""
     assert views.weather_point_context is weather_points.weather_point_context
     assert api.weather_point_context is weather_points.weather_point_context

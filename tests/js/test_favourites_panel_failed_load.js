@@ -37,7 +37,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import '../../static/js/i18n_strings.js';
 import '../../static/js/map_sheet.js';
 
-// As apps.public.views._favourites_context builds it. The query string is
+// As apps.map.views._favourites_context builds it. The query string is
 // deliberate: favourites_offline.js matches the list request by path
 // substring, and ?variant=map must not stop it matching.
 const LIST_URL = '/favourites/partials/list/?variant=map';

@@ -4,7 +4,7 @@ apps/routes/services/rest_zones.py — FOEN's wildlife rest zones on the map.
 The map's "Wildlife rest zones" layer (SNOW-1384) draws this instance's
 ``RestZone`` rows, which ``ski_network.py`` applies from the service
 (SNOW-1263). What the layer needs from a row is decided here, so the
-endpoint (``apps/public/api.py`` ``rest_zones_geojson``) only selects rows.
+endpoint (``apps/map/api.py`` ``rest_zones_geojson``) only selects rows.
 
   in_force(period, day)
       Whether a zone's protected period covers one day. FOEN states the

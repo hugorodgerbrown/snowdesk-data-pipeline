@@ -833,7 +833,7 @@
   // ---------------------------------------------------------------------------
   // Resort star (SNOW-499; in the place sheet since SNOW-1161, which retired
   // the resort popup) — favourite/unfavourite a resort from the sheet's peek
-  // row (public/templates/public/partials/_place_sheet_body.html).
+  // row (map/templates/public/partials/_place_sheet_body.html).
   // Delegated from document — the sheet's body is fetched by
   // map_place_sheet.js well after this script's own load-time query
   // selectors ran (this is reached only when favourites_visible is true,

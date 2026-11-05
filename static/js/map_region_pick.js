@@ -50,7 +50,7 @@
  *
  * LOAD ORDER: after map.js (it reads `snowdeskMapState.map` at open, not at
  * parse) and after map_region_download.js, whose bridge it calls. Outside
- * the map bundle's contiguous run — see tests/public/test_map_script_order.py.
+ * the map bundle's contiguous run — see tests/map/test_map_script_order.py.
  *
  * Exports (frozen `window.pwaRegionPick`): open(), close(), isActive().
  */

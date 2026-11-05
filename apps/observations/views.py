@@ -420,7 +420,7 @@ def _attach_three_word_addresses(
     reading their own reports and a 3m address tells them nothing they did
     not supply. The map's community overlay is the opposite: it is public,
     it carries other people's reports, and
-    ``apps.public.api.community_reports_geojson`` exists to anonymise them
+    ``apps.map.api.community_reports_geojson`` exists to anonymise them
     — rounding coordinates to three decimals (~80-110 m) and never sending
     the raw field. A three word address names a 3m square, so putting one
     in that payload would hand back an order of magnitude more precision
@@ -459,7 +459,7 @@ def observation_list(request: HttpRequest) -> HttpResponse:
     endpoint into ``[data-report-rows]`` when the roundel is tapped.  Scoped to
     the requesting user by ``for_user`` — a report is a personal record here,
     not the anonymised community overlay (that is
-    ``apps.public.api.community_reports_geojson``).
+    ``apps.map.api.community_reports_geojson``).
 
     Ordering is the model's own ``-observed_at``, so the most recent report
     leads the list.

@@ -66,8 +66,8 @@ SNOW-252 regression fixture; see
 
 | Surface | Where | Field read |
 |---------|-------|------------|
-| Map choropleth | `apps/public/api.py` `_build_ratings_payload` | `max_rating` via `_RATING_TO_INT` |
-| Map tooltip (region summary chip) | `apps/public/api.py` `region_summary` → `apps/public/templates/public/_region_tooltip.html` | `day_rating.max_rating` |
+| Map choropleth | `apps/map/api.py` `_build_ratings_payload` | `max_rating` via `_RATING_TO_INT` |
+| Map tooltip (region summary chip) | `apps/map/api.py` `region_summary` → `apps/map/templates/public/_region_tooltip.html` | `day_rating.max_rating` |
 | Season calendar cells (resort page, bulletin season sheet) | `apps/public/season_calendar.py` `build_season_grid` → `build_season_months` → `apps/public/templates/public/partials/_season_calendar.html` | `rdr.max_rating` as `max_rating_key` → `MonthDay.level` (`data-level`). A two-level day draws both halves, but its upper half is always the peak and its `data-level` is the peak |
 | Bulletin season sheet selected-day readout | `static/js/season_sheet.js` `fillReadout` | the selected cell's `data-level` (the peak) |
 
@@ -89,7 +89,7 @@ inline from `upsert_bulletin` after each ingest). The same function:
    `make_template_fragment_key("season_calendar", ...)` in
    `apply_bulletin_day_ratings`).
 
-The `ratings` endpoint at `apps/public/api.py` uses a 5-minute server-side
+The `ratings` endpoint at `apps/map/api.py` uses a 5-minute server-side
 `cache.get_or_set` keyed on `(country, date)`. After a new bulletin lands the
 choropleth colour is stale for at most 5 minutes; the season calendar is
 invalidated immediately.
@@ -99,10 +99,10 @@ invalidated immediately.
 - `tests/bulletins/services/test_day_rating.py::TestPeakSemantics` — verifies
   that `recompute_region_day` produces `max_rating` = afternoon peak on a
   two-period escalating day.
-- `tests/public/test_map_api.py::test_ratings_choropleth_emits_peak_for_split_day`
+- `tests/map/test_map_api.py::test_ratings_choropleth_emits_peak_for_split_day`
   — choropleth endpoint returns `3` (considerable) for a morning=2, afternoon=3
   fixture.
-- `tests/public/test_map_api.py::test_region_summary_tooltip_chip_shows_peak_on_split_day`
+- `tests/map/test_map_api.py::test_region_summary_tooltip_chip_shows_peak_on_split_day`
   — tooltip chip `data-level` and `level` JSON key are both `"considerable"`.
 - `tests/public/test_season_calendar.py::TestSeasonCalendarPeakSemantics` —
   calendar cell `max_rating_key` is the peak on a split day.

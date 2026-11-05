@@ -1700,7 +1700,7 @@ describe('glyphURLs', () => {
  * SNOW-953 moved the SELECTION to the server — the rectangle predicates
  * and the sweep over 149 real CH boundaries that used to sit here now
  * live in `tests/regions/services/test_area_content.py` and
- * `tests/public/test_area_content_api.py`. What stays is the geometry a
+ * `tests/map/test_area_content_api.py`. What stays is the geometry a
  * client still derives (`featureBBox`, `areaBBox`) and the urls it
  * composes from the server's answer (`areaContentURLs`).
  * -------------------------------------------------------------------- */
@@ -1786,7 +1786,7 @@ describe('areaContentURLs', () => {
   // rectangle rule those tests used to exercise is now
   // `apps/regions/services/area_content.py`'s, with its own golden vector
   // and its own superset sweep over all 149 real CH boundaries in
-  // `tests/public/test_area_content_api.py`.
+  // `tests/map/test_area_content_api.py`.
   const REGIONS = [
     { id: 'CH-1111', slug: 'inside' },
     { id: 'CH-2222', slug: 'straddles' },

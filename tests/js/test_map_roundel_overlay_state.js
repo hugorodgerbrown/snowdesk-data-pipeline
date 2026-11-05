@@ -252,7 +252,7 @@ beforeAll(async () => {
   // reaches through the shared classic-script scope home.html gives it. Its
   // own <script> tag is outside the bundle's contiguous run, so it is passed
   // here rather than added to MAP_BUNDLE (which mirrors that run exactly,
-  // and is checked against the template by tests/public/test_map_script_order.py).
+  // and is checked against the template by tests/map/test_map_script_order.py).
   loadMapBundle(MAP_BUNDLE.concat(['map_placement_focus.js']));
   // MapLibre never fires 'load' in jsdom, and the styledata handler this
   // suite drives directly is registered from inside it.

@@ -120,7 +120,7 @@ def _rename_url_template() -> str:
     Handed to the account page's list template so
     ``static/js/account_favourites.js`` can build one row's rename URL at
     commit time, from the uuid riding on that row's own pencil. The same
-    ``__UUID__`` trick ``apps.public.views._favourites_context`` uses for
+    ``__UUID__`` trick ``apps.map.views._favourites_context`` uses for
     the map panel: reverse with a dummy uuid, then string-replace.
 
     Reversed per call rather than once at import — this module is imported
@@ -310,7 +310,7 @@ def favourite_create_from_resort(request: HttpRequest) -> HttpResponse:
     """Create a Favourite from a public Resort and return the saved-pin partial.
 
     Entry point is the place sheet's resort star
-    (``apps/public/templates/public/partials/_place_sheet_body.html``; the
+    (``apps/map/templates/public/partials/_place_sheet_body.html``; the
     resort popup that also carried it went with SNOW-1161), submitted via
     ``static/js/favourites.js``'s client mutation queue — same offline-capable
     path as ``favourite_create`` (SNOW-499).
@@ -546,7 +546,7 @@ def _favourite_card_context(
     card, which was always its other surface.
 
     When ``favourite.region`` is set, resolves today's ``RegionDayRating``
-    for it (mirroring ``apps.public.api.region_summary``) so the card can show
+    for it (mirroring ``apps.map.api.region_summary``) so the card can show
     the regional danger rating and a link to the evergreen bulletin page.
     When ``region`` is ``None`` (the pin falls outside every known
     boundary), the card renders a "no bulletin coverage here" note

@@ -19,7 +19,7 @@
  * -----------------------------------------
  * The members are classic scripts that share ONE global lexical scope: a
  * top-level `const` in map_state.js is read as a bare identifier by map.js
- * (tests/public/test_map_script_order.py). A bundler wraps each module in a
+ * (tests/map/test_map_script_order.py). A bundler wraps each module in a
  * function and that sharing stops. Joining the files keeps it exactly, and
  * the `\n;\n` separator stops one file's last expression running into the
  * next file's first.

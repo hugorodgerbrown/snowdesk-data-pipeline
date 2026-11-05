@@ -78,7 +78,7 @@ import '../../static/js/row_removed.js';
 import '../../static/js/map_sheet.js';
 import '../../static/js/share.js';
 
-// As apps.public.views._routes_context builds it — the map sheet asks for the
+// As apps.map.views._routes_context builds it — the map sheet asks for the
 // lean row variant.
 const LIST_URL = '/routes/partials/list/?variant=map';
 const CREATE_URL = '/routes/partials/create/';

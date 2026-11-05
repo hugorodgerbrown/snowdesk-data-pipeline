@@ -55,7 +55,7 @@ folder):
   overrides is missing from the block, or if a restated value differs from
   its `@theme` definition.
 - `static/css/map.css` holds no `.dark` rules, and
-  `tests/public/test_map_page.py` keeps it that way. Map-surface CSS is
+  `tests/map/test_map_page.py` keeps it that way. Map-surface CSS is
   written for light only.
 - A new map surface, such as another embedded MapLibre map, takes the class
   on its root. Anything a script appends to `document.body` from a map

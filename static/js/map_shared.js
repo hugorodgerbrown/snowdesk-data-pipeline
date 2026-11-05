@@ -22,7 +22,7 @@
  * lazy, so none of them reads either binding before that write.
  */
 
-// Wire-format int → rating string. Inverse of public/api.py::_RATING_TO_INT.
+// Wire-format int → rating string. Inverse of map/api.py::_RATING_TO_INT.
 // Hoisted so the timelapse and the scrubber share one definition.
 const INT_TO_RATING = ['no_rating', 'low', 'moderate', 'considerable', 'high', 'very_high'];
 

@@ -49,7 +49,7 @@ import '../../static/js/row_focus.js';
 import '../../static/js/row_removed.js';
 import '../../static/js/map_sheet.js';
 
-// As apps.public.views._favourites_context builds it — the map sheet asks for
+// As apps.map.views._favourites_context builds it — the map sheet asks for
 // the lean row variant (SNOW-658).
 const LIST_URL = '/favourites/partials/list/?variant=map';
 

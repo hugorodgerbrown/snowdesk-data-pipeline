@@ -128,7 +128,7 @@
   // Geolocation outright.
   //
   // Gated server-side (`data-fake-location-allowed`, superusers and local
-  // development — see apps.public.views._fake_location_allowed). The gate
+  // development — see apps.map.views._fake_location_allowed). The gate
   // exists because the same fix reaches a community field observation,
   // which other people act on; spoofing your own map is a different thing
   // from spoofing that.

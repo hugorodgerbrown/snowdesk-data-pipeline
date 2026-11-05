@@ -60,9 +60,16 @@ template tags stay in `apps/public`.
 |---|---|---|
 | `apps/public/urls.py` | `apps.design_system` | `views` |
 | `apps/public/urls.py`, `api_urls.py`, `config/urls.py` | `apps.map` | its view modules |
-| `apps.map` | `apps.public` | `bulletin_panels`, `weather_points`, `decorators`, `errors` |
+| `apps.map` | `apps.public` | `bulletin_panels`, `weather_points`, `decorators`, `errors`, `season_calendar`, `map_shared` |
 
 Nothing else in `apps/` or `config/` imports either new app.
+
+`season_calendar` and `map_shared` were added while SNOW-1428 was being
+implemented. The map's season ribbon is built by the same module as the
+bulletin season page. `map_shared.py` holds `map_modes_enabled` and
+`trip_url_templates`, two answers the help and `/offline/` pages must give
+exactly as the map does. Hugo chose this over duplicating them, on
+2026-11-05.
 
 **Consequences.**
 

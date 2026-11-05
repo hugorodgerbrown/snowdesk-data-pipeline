@@ -102,6 +102,6 @@ the colour is made in the browser:
   offline download pins them: with the "Terrain data" opt-in from SNOW-1072,
   and in every download since 4 Nov 2026.
 - Local development uses the DEBUG-only synthetic tiles in
-  `apps/public/dev_terrain_class.py`
+  `apps/map/dev_terrain_class.py`
   (`TERRAIN_CLASS_TILE_URL=http://localhost:3000/dev/terrain-class/v1/{z}/{x}/{y}.png`),
   which follow the same contract.
