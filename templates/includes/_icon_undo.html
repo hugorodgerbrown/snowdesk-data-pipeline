@@ -1,0 +1,28 @@
+{% comment %}
+templates/includes/_icon_undo.html — the back-to-today glyph: an arrow that
+turns back on itself.
+
+First drawn inline on the date row's "Today" (#map-today-control, SNOW-1165);
+extracted when the calendar's own "Today" (public/partials/_map_calendar.html,
+behind map_modes) became its second caller.
+
+Stroke width 2, the house idiom for every glyph (see _icon_pencil.html).
+
+Parameters (passed via {% include … with … %}):
+  size (int, optional) — rendered px, both axes. Default 14, the size the
+       date row draws it at.
+{% endcomment %}
+<svg
+    width="{{ size|default:14 }}"
+    height="{{ size|default:14 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+</svg>

@@ -337,6 +337,7 @@ class TestHelpPageFlagGating:
             "help-map-modes-switch",
             "help-map-modes-kept",
             "help-map-modes-back",
+            "help-map-modes-today",
         ):
             assert f'data-testid="{testid}"' in content
         assert "Conditions and Terrain" in content
@@ -351,6 +352,9 @@ class TestHelpPageFlagGating:
         assert "a tap on a region does nothing" in topic
         assert "one Today row" in topic
         assert "panel in a region's sheet" not in topic
+        # 5 Nov 2026: the calendar's Today and the Today panel's Show today.
+        assert "open the calendar and press Today" in topic
+        assert "Show today" in topic
 
     def test_downloads_account_paragraphs_are_always_present(
         self, client: Client

@@ -27,6 +27,22 @@
  *     sheet a row opens would show the map's day: a level of 3 on the row
  *     and "No bulletin on this date" in the sheet it opened. The commit is
  *     synchronous, so it lands before map_panel_trail.js opens the sheet.
+ *     Behind map_modes it goes through ``window.pwaMapMode
+ *     .toConditionsToday()`` instead, and in Terrain too: a resort's sheet
+ *     in Terrain is today's but keeps its danger and forecast sections
+ *     off, so the level the row showed would not be in the sheet it opened.
+ *   - IT SAYS WHEN THE MAP IS ELSEWHERE (behind map_modes; Hugo, 5 Nov
+ *     2026). With the date row's "Today" gone, a panel that is always
+ *     today beside a map that is not reads as a contradiction. On another
+ *     day, or in Terrain, [data-today-elsewhere] at the top names where the
+ *     map is ("Map shows 2 Nov 2026", the day in the date ribbon's own
+ *     ``formatDatePopup``; or "Map shows Terrain") and its "Show today"
+ *     calls ``toConditionsToday()``. The panel stays open, and the notice
+ *     goes once the map's ``snowdesk:date-changed`` and
+ *     ``snowdesk:map-mode-changed`` say it is on today in Conditions.
+ *     ``window.pwaMapMode`` is map_mode.js's, which loads after this file
+ *     and only behind the flag, so it is read at the moment of use; off the
+ *     flag the notice never shows.
  *   - THE DOT IS THE BELL'S. The sun took the place of SNOW-1333's bell,
  *     which listed the account's alerts of the past week; Today shows the
  *     same places as they are now, so the list went (Hugo, 2 Nov 2026).
@@ -51,6 +67,8 @@
 
   var FALLBACKS = {
     error: 'Today could not be loaded. Check your connection and try again.',
+    'showing-day': 'Map shows %(day)s',
+    'showing-terrain': 'Map shows Terrain',
   };
   const STRINGS = window.pwaStrings
     ? window.pwaStrings.read('today-strings-template', FALLBACKS)
@@ -124,6 +142,7 @@
    */
   function render() {
     sheet.replaceChildren(template.content.cloneNode(true));
+    paintElsewhere();
     const rows = rowsEl();
     const url = rows ? rows.dataset.todayUrl || '' : '';
     if (!rows || !url || typeof htmx === 'undefined') return;
@@ -169,20 +188,84 @@
   document.addEventListener('snowdesk:date-changed', function (event) {
     const detail = /** @type {CustomEvent} */ (event).detail;
     mapDate = (detail && detail.date) || mapDate;
+    paintElsewhere();
   });
+  document.addEventListener('snowdesk:map-mode-changed', paintElsewhere);
+
+  /**
+   * Where the map is, when it is not where this panel is.
+   *
+   * @returns {string} ``'terrain'``, ``'day'`` for Conditions on another
+   *   day, or ``''`` for Conditions on today and whenever the map has no
+   *   modes (off the flag).
+   */
+  function elsewhere() {
+    const mode = window.pwaMapMode;
+    if (!mode || !today) return '';
+    if (mode.isTerrain()) return 'terrain';
+    return mapDate === today ? '' : 'day';
+  }
+
+  /**
+   * The map's day as the date ribbon writes it. ``formatDatePopup`` is
+   * map_shared.js's, a bare identifier of the classic-script bundle that
+   * loads after this one; read here at the moment of use.
+   *
+   * @param {string} dateKey
+   * @returns {string}
+   */
+  function dayLabel(dateKey) {
+    return typeof formatDatePopup === 'function' ? formatDatePopup(dateKey) : dateKey;
+  }
+
+  /** Show or hide the open panel's "Map shows …" notice.
+   * @returns {void}
+   */
+  function paintElsewhere() {
+    const notice = sheet.querySelector('[data-today-elsewhere]');
+    if (!(notice instanceof HTMLElement)) return;
+    const where = elsewhere();
+    notice.hidden = !where;
+    const label = notice.querySelector('[data-today-elsewhere-label]');
+    if (!where || !label) return;
+    label.textContent =
+      where === 'terrain'
+        ? STRINGS['showing-terrain']
+        : window.pwaStrings
+          ? window.pwaStrings.interpolate(STRINGS['showing-day'], { day: dayLabel(mapDate) })
+          : STRINGS['showing-day'].replace('%(day)s', dayLabel(mapDate));
+  }
+
+  /**
+   * Bring the map to what this panel shows: Conditions on today. Behind
+   * map_modes through map_mode.js's one path there; off it, the scrubber's
+   * own request, as the date row's "Today" makes it.
+   *
+   * @returns {void}
+   */
+  function mapToToday() {
+    const mode = window.pwaMapMode;
+    if (mode) {
+      if (elsewhere()) mode.toConditionsToday();
+      return;
+    }
+    if (!today || mapDate === today) return;
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:scrub-to', {
+        detail: { date: today, source: 'today-panel' },
+      })
+    );
+  }
 
   // Capture phase, so the map is on today before the row's sheet opens.
   sheet.addEventListener(
     'click',
     function (event) {
       const target = /** @type {HTMLElement} */ (event.target);
-      if (!target || !target.closest || !target.closest('a[data-panel-open]')) return;
-      if (!today || mapDate === today) return;
-      document.dispatchEvent(
-        new CustomEvent('snowdesk:scrub-to', {
-          detail: { date: today, source: 'today-panel' },
-        })
-      );
+      if (!target || !target.closest) return;
+      // "Show today", and a followed row. The notice goes when the map's
+      // own events say it has arrived; the panel stays open for the first.
+      if (target.closest('[data-today-show], a[data-panel-open]')) mapToToday();
     },
     true
   );
