@@ -16,6 +16,7 @@ Tests that require the actual GeoLite2-City.mmdb database file are marked
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -125,6 +126,36 @@ class TestGeoLookup:
         result = geo_lookup("8.8.8.8")
         assert result is None
 
+    def test_missing_mmdb_logs_a_warning_not_an_error(
+        self,
+        settings: Settings,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A missing file is expected on staging, so it must not file a Sentry error."""
+        settings.GEOIP_PATH = tmp_path / "nonexistent.mmdb"
+        reset_reader_for_testing()
+        with caplog.at_level(logging.DEBUG, logger="apps.bulletins.services.geoip"):
+            geo_lookup("8.8.8.8")
+        levels = [record.levelno for record in caplog.records]
+        assert logging.WARNING in levels
+        assert max(levels) < logging.ERROR
+
+    def test_unreadable_mmdb_still_logs_an_error(
+        self,
+        settings: Settings,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A file that exists but will not open is a real fault, logged at ERROR."""
+        corrupt = tmp_path / "corrupt.mmdb"
+        corrupt.write_bytes(b"not a maxmind database")
+        settings.GEOIP_PATH = corrupt
+        reset_reader_for_testing()
+        with caplog.at_level(logging.DEBUG, logger="apps.bulletins.services.geoip"):
+            assert geo_lookup("8.8.8.8") is None
+        assert any(record.levelno == logging.ERROR for record in caplog.records)
+
     def test_geoip_path_none_returns_none(self, settings: Settings) -> None:
         """When GEOIP_PATH is None/unset, return None gracefully."""
         settings.GEOIP_PATH = None
@@ -224,7 +255,9 @@ class TestGeoLookupWithStubReader:
         self, monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
     ) -> type[_StubReader]:
         """Patch ``geoip2.database.Reader`` with a fresh ``_StubReader``."""
-        settings.GEOIP_PATH = tmp_path / "stub.mmdb"
+        stub_path = tmp_path / "stub.mmdb"
+        stub_path.touch()  # the reader opens only a file that exists
+        settings.GEOIP_PATH = stub_path
         _StubReader.instances = []
         _StubReader.response = _city_response()
         _StubReader.error = None

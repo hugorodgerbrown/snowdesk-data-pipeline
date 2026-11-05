@@ -39,6 +39,7 @@ Any Sentry-compatible host (GlitchTip, Better Stack) works by changing
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 import sentry_sdk
@@ -130,6 +131,29 @@ def _route_of(pathname: str) -> str:
     return "/" + match.route.lstrip("/")
 
 
+# Browser errors that are not ours. Microsoft's link scanners (Outlook Safe
+# Links, Defender) open emailed links in a headless browser that rejects a
+# promise with this message on whatever page it lands on — in practice the
+# account-access link. Nothing in static/js calls a method named "update" by
+# id, so a match is never a Snowdesk bug.
+_FOREIGN_JS_ERRORS = (
+    re.compile(r"^Object Not Found Matching Id:\d+, MethodName:\w+, ParamCount:\d+$"),
+)
+
+
+def _is_foreign_js_error(message: str) -> bool:
+    """Return True when ``message`` is a known error from someone else's script.
+
+    Args:
+        message: The browser report's error message.
+
+    Returns:
+        True when the message matches an entry in ``_FOREIGN_JS_ERRORS``.
+
+    """
+    return any(pattern.match(message) for pattern in _FOREIGN_JS_ERRORS)
+
+
 def capture_js_error(
     properties: dict[str, object],
     *,
@@ -145,7 +169,8 @@ def capture_js_error(
     still counts against the page it happened on. The page is its route
     pattern, never the path, and the path is replaced by the pattern
     wherever else it appears — an inline script's ``filename`` and stack
-    frames are the document's own URL. A no-op when the SDK is not
+    frames are the document's own URL. A report whose message matches
+    ``_FOREIGN_JS_ERRORS`` is dropped. A no-op when the SDK is not
     initialised.
 
     Args:
@@ -164,6 +189,9 @@ def capture_js_error(
         return value
 
     message = str(scrub(properties.get("message") or ""))
+    if _is_foreign_js_error(message):
+        logger.debug("sentry: dropped a foreign browser error on %s", pathname)
+        return
     filename = str(scrub(properties.get("filename") or ""))
     kind = str(properties.get("kind") or "")
     if message:
