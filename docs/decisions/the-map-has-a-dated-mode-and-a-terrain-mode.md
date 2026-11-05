@@ -1,6 +1,6 @@
 ---
 name: the-map-has-a-dated-mode-and-a-terrain-mode
-description: Why the map has Conditions (Dated) / Terrain modes (map_mode_core.js ONLY_IN, SUPPRESSION.MAP_MODE) that suppress, never rewrite; no region taps in Terrain and the place sheet's Today row (toConditionsToday)
+description: Conditions / Terrain map modes (ONLY_IN, SUPPRESSION.MAP_MODE) that suppress, never rewrite; no Terrain region taps, Today row
 status: current
 last-reviewed: 2026-11-05
 ---

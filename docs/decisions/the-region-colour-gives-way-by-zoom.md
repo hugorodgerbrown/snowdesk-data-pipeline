@@ -1,6 +1,6 @@
 ---
 name: the-region-colour-gives-way-by-zoom
-description: Region fill fades out over z8.5–10; from z10 an inside edge band and level label (regions-edge, region-labels); the region chip (map-region-chip) was removed by SNOW-1422
+description: Region fill fades out over z8.5–10; from z10 an edge band and level label (regions-edge, region-labels); region chip removed
 status: current
 last-reviewed: 2026-11-05
 ---
