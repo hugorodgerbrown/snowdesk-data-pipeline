@@ -17,7 +17,12 @@
  *   - the bounds of a tapped line, which the camera flies to. A tapped
  *     MapLibre feature is only the drawn fragment (clipped at tile edges)
  *     and a tour arrives as one feature per leg, so the bounds are the
- *     union of every loaded feature carrying the tapped uuid.
+ *     union of every loaded feature carrying the tapped uuid;
+ *   - the layer switches' defaults, and FOEN's wildlife areas as swisstopo
+ *     WMTS rasters;
+ *   - the shared view: the camera and the switches, written to and read
+ *     from the page's query string (`?at=lng,lat,zoom,pitch,bearing&layers=…`),
+ *     so a copied link opens on the same view for whoever follows it.
  *
  * Exports (frozen `self.pwaMap3dCore`):
  *
@@ -28,6 +33,10 @@
  *   toursBbox(centre, halfSpan?)
  *   lineBounds(geometry)
  *   boundsForUuid(collection, uuid)
+ *   LAYER_KEYS / DEFAULT_LAYERS / WILDLIFE_LAYERS
+ *   wildlifeTileUrl(layer)
+ *   viewQuery(camera, layers)
+ *   parseView(search)
  */
 (function () {
   'use strict';
@@ -173,6 +182,83 @@
     return out;
   }
 
+  /** The page's layer switches, in the order the link lists them. */
+  const LAYER_KEYS = Object.freeze(['steep', 'tours', 'wildlife']);
+
+  /** Each switch's state when the link does not say: wildlife off, as on /map/. */
+  const DEFAULT_LAYERS = Object.freeze({ steep: true, tours: true, wildlife: false });
+
+  /**
+   * FOEN's wildlife areas, as swisstopo's WMTS draws them: the wildlife rest
+   * zones and the federal game reserves. Open government data, public and
+   * token-less; the CSP already allows wmts.geo.admin.ch (SNOW-1260).
+   */
+  const WILDLIFE_LAYERS = Object.freeze([
+    'ch.bafu.wrz-wildruhezonen_portal',
+    'ch.bafu.wrz-jagdbanngebiete_select',
+  ]);
+
+  /**
+   * The XYZ template of one swisstopo WMTS layer in Web Mercator.
+   *
+   * @param {string} layer The geo.admin layer id.
+   * @returns {string}
+   */
+  function wildlifeTileUrl(layer) {
+    return `https://wmts.geo.admin.ch/1.0.0/${layer}/default/current/3857/{z}/{x}/{y}.png`;
+  }
+
+  /**
+   * The query string that reproduces a view: `at=lng,lat,zoom,pitch,bearing`
+   * and `layers=` listing the switches that are on (empty when none is).
+   *
+   * @param {{center: {lng: number, lat: number}, zoom: number, pitch: number, bearing: number}} camera
+   * @param {Record<string, boolean>} layers
+   * @returns {string} Without the leading `?`.
+   */
+  function viewQuery(camera, layers) {
+    const fixed = (/** @type {number} */ n, /** @type {number} */ d) => String(Number(n.toFixed(d)));
+    const at = [
+      fixed(camera.center.lng, 5),
+      fixed(camera.center.lat, 5),
+      fixed(camera.zoom, 2),
+      fixed(camera.pitch, 1),
+      fixed(camera.bearing, 1),
+    ].join(',');
+    const on = LAYER_KEYS.filter((key) => layers[key]);
+    return `at=${at}&layers=${on.join(',')}`;
+  }
+
+  /**
+   * Read a view back from a query string. Anything malformed or out of
+   * range is dropped rather than guessed at, so a mangled link still opens
+   * the map.
+   *
+   * @param {string} search The page's `location.search`.
+   * @returns {{camera: {center: [number, number], zoom: number, pitch: number, bearing: number}|null, layers: Record<string, boolean>}}
+   */
+  function parseView(search) {
+    const params = new URLSearchParams(search);
+    /** @type {{center: [number, number], zoom: number, pitch: number, bearing: number}|null} */
+    let camera = null;
+    const at = params.get('at');
+    if (at) {
+      const n = at.split(',').map(Number);
+      const ok = n.length === 5 && n.every(Number.isFinite)
+        && Math.abs(n[0]) <= 180 && Math.abs(n[1]) <= 90
+        && n[2] >= 0 && n[2] <= 22 && n[3] >= 0 && n[3] <= MAX_PITCH;
+      if (ok) camera = { center: [n[0], n[1]], zoom: n[2], pitch: n[3], bearing: n[4] };
+    }
+    /** @type {Record<string, boolean>} */
+    const layers = { ...DEFAULT_LAYERS };
+    const listed = params.get('layers');
+    if (listed !== null) {
+      const on = listed.split(',');
+      for (const key of LAYER_KEYS) layers[key] = on.includes(key);
+    }
+    return { camera, layers };
+  }
+
   self.pwaMap3dCore = Object.freeze({
     DEM_SOURCE_ID: DEM_SOURCE_ID,
     TERRAIN_EXAGGERATION: TERRAIN_EXAGGERATION,
@@ -186,5 +272,11 @@
     toursBbox: toursBbox,
     lineBounds: lineBounds,
     boundsForUuid: boundsForUuid,
+    LAYER_KEYS: LAYER_KEYS,
+    DEFAULT_LAYERS: DEFAULT_LAYERS,
+    WILDLIFE_LAYERS: WILDLIFE_LAYERS,
+    wildlifeTileUrl: wildlifeTileUrl,
+    viewQuery: viewQuery,
+    parseView: parseView,
   });
 })();

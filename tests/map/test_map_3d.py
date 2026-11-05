@@ -119,3 +119,14 @@ def test_the_page_never_unfurls_and_is_not_indexed() -> None:
         content = _signed_in().get(URL).content.decode()
     assert 'property="og:title"' not in content
     assert '<meta name="robots" content="noindex, nofollow">' in content
+
+
+def test_tours_and_wildlife_switches_and_share_render() -> None:
+    """SAC tours (on), Wildlife (off) and Share are always on the page."""
+    with override_flag("map_3d", active=True):
+        content = _signed_in().get(URL).content.decode()
+    assert 'id="map-3d-tours"' in content
+    assert 'id="map-3d-wildlife"' in content
+    assert 'id="map-3d-share"' in content
+    assert 'id="map-3d-strings"' in content
+    assert "js/share.js" in content
