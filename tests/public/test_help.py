@@ -347,6 +347,10 @@ class TestHelpPageFlagGating:
         # SNOW-1421 hid the other mode's rows rather than greying them out.
         assert "greyed out" not in topic
         assert "Dated" not in topic
+        # SNOW-1422: no region taps in Terrain; the place sheet's Today row.
+        assert "a tap on a region does nothing" in topic
+        assert "one Today row" in topic
+        assert "panel in a region's sheet" not in topic
 
     def test_downloads_account_paragraphs_are_always_present(
         self, client: Client
