@@ -13,8 +13,10 @@ because the root sets ``fill="none"`` for the strokes.
 
 Parameters (passed via {% include … with … %}):
   size (int, optional) — rendered px, both axes. Default 18.
+  svg_class (string, optional) — classes on the <svg>.
 {% endcomment %}
 <svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
     width="{{ size|default:18 }}"
     height="{{ size|default:18 }}"
     viewBox="0 0 24 24"

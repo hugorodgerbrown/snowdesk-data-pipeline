@@ -11,13 +11,21 @@ visually-hidden table names the column. It is therefore aria-hidden, with
 no title, and contributes nothing to the accessible name.
 
 Inherits its colour from the caller via currentColor.
-Context:
-    size : int — width and height in px (default 22). The chart draws it
-           at 22 beside a baseline and at 15 inline in a summary line,
-           where 22 would outweigh the figure it annotates.
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 22. The
+            chart draws it at 22 beside a baseline and at 15 inline in a
+            summary line, where 22 would outweigh the figure it annotates.
+  svg_class (string, optional) — classes on the <svg>.
 {% endcomment %}
-{% firstof size 22 as px %}
-<svg width="{{ px }}" height="{{ px }}" viewBox="0 0 24 24" fill="none" aria-hidden="true" class="block">
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:22 }}"
+    height="{{ size|default:22 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    aria-hidden="true"
+>
     <g stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 2.75v18.5" />
         <path d="M4 7.375l16 9.25" />

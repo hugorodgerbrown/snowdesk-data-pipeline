@@ -12,13 +12,15 @@ House stroke style: 24 grid, 2px stroke, currentColor, decorative and
 aria-hidden; the row it labels is aria-hidden too, the figures under the
 plot carry the readings.
 
-Context:
-    size : int — width and height in px (default 14, the arrows' own size).
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 14, the
+            arrows' own size.
+  svg_class (string, optional) — classes on the <svg>.
 {% endcomment %}
-{% firstof size 14 as px %}
 <svg
-    width="{{ px }}"
-    height="{{ px }}"
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:14 }}"
+    height="{{ size|default:14 }}"
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
@@ -26,7 +28,6 @@ Context:
     stroke-linecap="round"
     stroke-linejoin="round"
     aria-hidden="true"
-    class="block"
 >
     <circle cx="12" cy="12" r="9.5" />
     <path d="M15.8 8.2 13.6 13.6 8.2 15.8 10.4 10.4z" fill="currentColor" />
