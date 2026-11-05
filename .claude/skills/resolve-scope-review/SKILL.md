@@ -131,6 +131,14 @@ files directly.
   call, anything the code cannot settle. Do not guess a product decision to
   avoid `Requires input`.
 - Carry forward the scope's own Open questions the same way.
+- **A change to what is built or why goes back to Hugo.** Hugo signed off the
+  scope before Codex saw it, so an accepted suggestion that materially changes
+  it (behaviour added or dropped, a different approach to the problem, a ticket
+  split in two) is not folded in silently. State it as a question for Hugo in
+  the revised scope's Open questions, naming the change and asking him to
+  confirm, so Step 5 moves the ticket to `Requires input`. A clarification, a
+  missing touch-list path or a better test does not go back. The call is
+  Claude's (`AGENTS.md` → Workflow), in routine mode too.
 
 Then write two things:
 
