@@ -33,6 +33,7 @@ api:edit_location_save  api/edit/locations/<short_id:short_id>/save/  apps.map.e
 api:edit_location_link  api/edit/locations/<short_id:short_id>/link/  apps.map.editor.edit_location_link
 public:home    apps.public.views.home
 public:map  map/  apps.map.views.map_page
+public:map_3d  map/3d/  apps.map.map_3d.map_3d_page
 public:terms  terms/  django.views.generic.base.RedirectView
 public:alerts_day  alerts/<str:day>/  apps.public.alert_views.alerts_day
 public:colophon  colophon/  apps.public.views.colophon

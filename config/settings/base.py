@@ -962,6 +962,10 @@ def csp_defaults(
             # SNOW-1260: MapLibre fetches raster tiles with fetch(), so the
             # ski-routes overlay's origin is here as well as in img-src.
             SWISSTOPO_WMTS_ORIGIN,
+            # SNOW-1438: the 3-D map's elevation tiles (AWS's open Terrarium
+            # set), fetched by MapLibre's raster-dem source. Only /map/3d/
+            # asks for them.
+            "https://s3.amazonaws.com",
             *([analytics_origin] if analytics_origin else []),
         ],
         "manifest-src": ["'self'"],

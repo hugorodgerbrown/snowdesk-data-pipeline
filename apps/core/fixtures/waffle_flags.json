@@ -31,6 +31,11 @@
       "name": "map_modes",
       "note": "Gates the map's Dated / Terrain toggle (SNOW-1394): the toggle in the date row, Terrain mode's suppression of the dated overlays (bulletins and their regions, problem-terrain sync, weather, field reports, the season scrubber) and its matching /help/ section. A rollout gate: superusers first. Off, the map has its date row as before and a stored or linked mode is ignored.",
       "superusers": true
+    },
+    {
+      "name": "map_3d",
+      "note": "Gates the SNOW-1438 3-D terrain map at /map/3d/ (apps/map/map_3d.py): MapLibre terrain with Steep terrain, SAC tours, the reader's own routes and the resorts draped over it. A sandbox: superusers while it is tried out. Outside the flag the page is a 404.",
+      "superusers": true
     }
   ]
 }

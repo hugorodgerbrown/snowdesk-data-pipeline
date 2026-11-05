@@ -66,7 +66,7 @@ from django.urls import path
 from django.views.generic import RedirectView
 
 from apps.design_system import views as design_system_views
-from apps.map import place_sheet, region_sheet, views as map_views
+from apps.map import map_3d, place_sheet, region_sheet, views as map_views
 
 from . import alert_views, debug_views, views
 from .feeds import CountryBulletinFeed
@@ -80,6 +80,8 @@ urlpatterns = [
     # The interactive map — the app. This reverses SNOW-344, which had made
     # /map/ a redirect to /.
     path("map/", map_views.map_page, name="map"),
+    # SNOW-1438: the 3-D terrain map, a sandbox behind the map_3d flag.
+    path("map/3d/", map_3d.map_3d_page, name="map_3d"),
     # SNOW-770 merged the old /terms/ page into /terms-of-service/. The URL
     # stays registered — and stays HERE, ahead of the generic
     # <str:region_id>/ patterns, or "terms" starts resolving as a region_id
