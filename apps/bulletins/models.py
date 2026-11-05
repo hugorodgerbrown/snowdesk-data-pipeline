@@ -529,6 +529,13 @@ class RegionBulletin(BaseModel):
 # RegionDayRating
 # ---------------------------------------------------------------------------
 
+# A region with no rated day for more than this many days ends a bulletin
+# run: the next rated day starts a new one (and the ``season_start`` alert);
+# a shorter gap (SLF pauses early in the winter) is a resumption
+# (SNOW-1356). Lives here rather than in ``services/alerts.py`` so the
+# queryset can read it without an import cycle (SNOW-1431).
+SEASON_GAP_DAYS: int = 60
+
 
 class RegionDayRatingQuerySet(models.QuerySet["RegionDayRating"]):
     """Custom queryset for RegionDayRating."""
@@ -573,6 +580,113 @@ class RegionDayRatingQuerySet(models.QuerySet["RegionDayRating"]):
 
         """
         return self.filter(region=region, date__gte=start, date__lte=end)
+
+    def rated(self) -> "RegionDayRatingQuerySet":
+        """
+        Return the rows a bulletin actually rated (SNOW-1431).
+
+        A *rated row* has a ``source_bulletin`` and a ``max_rating`` other
+        than ``no_rating``: the test ``build_season_grid`` uses for
+        ``has_bulletin``. ``recompute_region_day`` writes a ``no_rating`` row
+        for a (region, day) with no qualifying bulletin, and a provider can
+        publish a ``no_rating`` bulletin; neither is data a window should
+        stretch to. ``max_rating`` is the test because it is ``no_rating``
+        only when ``min_rating`` is too.
+
+        Every date window that follows the data (the map scrubber, the
+        bulletin calendar, the ``season_start`` alert's lookback) reads this
+        predicate, so they agree on what a bulletin day is
+        (docs/decisions/date-windows-follow-the-data.md).
+
+        Returns:
+            The queryset narrowed to rated rows.
+
+        """
+        return self.filter(source_bulletin__isnull=False).exclude(
+            max_rating=RegionDayRating.Rating.NO_RATING
+        )
+
+    def latest_run(self, region: Any = None) -> tuple[_date, _date] | None:
+        """
+        Return the first and last rated day of the latest bulletin run.
+
+        A *bulletin run* is a stretch of rated days with no gap of more than
+        ``SEASON_GAP_DAYS`` empty days between two consecutive rated dates.
+        The gap is the count of days strictly between them: rated days on
+        1 March and 1 May have 60 empty days between them (``(later -
+        earlier).days - 1``) and stay one run; one more empty day splits
+        them. That is the ``season_start`` alert's arithmetic too:
+        ``had_bulletin_in_season`` looks back ``SEASON_GAP_DAYS`` days from
+        the day before a bulletin, so the same 60 empty days still count as
+        a resumption there.
+
+        Reads distinct rated dates newest first, in one query over the
+        ``date`` index, and stops at the first gap that splits a run, so a
+        long archive is never read past the latest run.
+
+        Args:
+            region: A MicroRegion to narrow to, or None for every region.
+
+        Returns:
+            A ``(first, last)`` tuple of dates, or None when there is no
+            rated row.
+
+        """
+        rows = self.rated()
+        if region is not None:
+            rows = rows.filter(region=region)
+        dates = (
+            rows.order_by("-date").values_list("date", flat=True).distinct().iterator()
+        )
+        last: _date | None = None
+        first: _date | None = None
+        for day in dates:
+            if first is not None and (first - day).days - 1 > SEASON_GAP_DAYS:
+                break
+            if last is None:
+                last = day
+            first = day
+        if first is None or last is None:
+            return None
+        return first, last
+
+    def latest_run_start(self, region: Any = None) -> _date | None:
+        """
+        Return the first rated day of the latest bulletin run, or None.
+
+        See ``latest_run`` for what a run is and where it breaks.
+
+        Args:
+            region: A MicroRegion to narrow to, or None for every region.
+
+        Returns:
+            The run's first rated date, or None when there is no rated row.
+
+        """
+        run = self.latest_run(region)
+        return run[0] if run is not None else None
+
+    def first_rated_date(self, region: Any) -> _date | None:
+        """
+        Return the region's first rated day, or None if it has none.
+
+        Where the bulletin page's calendar grid and the map's ribbon start.
+        Unlike ``earliest_date`` it skips ``no_rating`` rows, which no
+        bulletin rated.
+
+        Args:
+            region: The MicroRegion to look up.
+
+        Returns:
+            The earliest rated ``date`` among the region's rows, or None.
+
+        """
+        first: _date | None = (
+            self.rated()
+            .filter(region=region)
+            .aggregate(first=models.Min("date"))["first"]
+        )
+        return first
 
     def season_date_bounds(
         self, start: _date, end: _date

@@ -29,11 +29,11 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from apps.bulletins.models import SEASON_GAP_DAYS
 from apps.bulletins.services.alert_wording import PlaceAlert, alert_message
 from apps.bulletins.services.alerts import (
     ALERT_TZ,
     NIGHT_ENDS,
-    SEASON_GAP_DAYS,
     decide,
     in_night_hold,
 )
