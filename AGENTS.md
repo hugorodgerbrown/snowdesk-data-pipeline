@@ -179,7 +179,7 @@ that should never unfurl passes `sharing=False` and a comment saying why
 ## Design system
 
 The reference is the staff-only component library at `/_components/` (source
-`apps/public/design_tokens.py`; fixtures `apps/public/_component_fixtures.py`).
+`apps/design_system/design_tokens.py`; fixtures `apps/design_system/_component_fixtures.py`).
 Read it before adding a visual surface. `DESIGN.md` and the
 [external design system](https://claude.ai/artifact/6n3bKzXkQfr5QsANFDjPUq) are
 synced copies; `src/css/main.css` is the source of truth for tokens.

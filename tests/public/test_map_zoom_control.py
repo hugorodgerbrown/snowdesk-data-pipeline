@@ -20,7 +20,7 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import translation
 
-from apps.public._component_fixtures import (
+from apps.design_system._component_fixtures import (
     MAP_ZOOM_CONTROL_VARIANTS,
     _zoom_label_rows,
 )

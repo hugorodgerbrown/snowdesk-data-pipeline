@@ -65,6 +65,8 @@ resolver matches the literal suffixes first.
 from django.urls import path
 from django.views.generic import RedirectView
 
+from apps.design_system import views as design_system_views
+
 from . import alert_views, debug_views, place_sheet, region_sheet, views
 from .feeds import CountryBulletinFeed
 
@@ -185,12 +187,12 @@ urlpatterns = [
     # Underscore prefix follows the project convention for staff-only routes.
     path(
         "_components/",
-        debug_views.component_library,
+        design_system_views.component_library,
         name="components_index",
     ),
     path(
         "partials/_components/<slug:slug>/",
-        debug_views.component_library_panel,
+        design_system_views.component_library_panel,
         name="components_panel",
     ),
     # SNOW-791: every icon bucket against every candidate set, side by side.
@@ -198,12 +200,14 @@ urlpatterns = [
     # drawn together now that SNOW-842 removed the floating strip.
     path(
         "_icon-sets/",
-        debug_views.icon_set_comparison,
+        design_system_views.icon_set_comparison,
         name="icon_sets",
     ),
     # SNOW-1151: each error page as its handler renders it, with its real
     # status — the handlers never run in a DEBUG build.
-    path("_errors/<str:kind>/", debug_views.error_preview, name="error_preview"),
+    path(
+        "_errors/<str:kind>/", design_system_views.error_preview, name="error_preview"
+    ),
     # Web Push spike — staff-only demo page.
     path("_push-demo/", debug_views.push_demo, name="push_demo"),
     # SNOW-949: a season of bulletin alerts for one region, replayed.

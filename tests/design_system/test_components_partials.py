@@ -1,5 +1,5 @@
 """
-tests/public/test_components_partials.py — Tests for the new component partials.
+tests/design_system/test_components_partials.py — Tests for the new component partials.
 
 Covers:
   _button.html     — all three variants × both sizes, full_width, is_anchor,
@@ -443,7 +443,7 @@ class TestComponentLibraryWeatherIcons:
             The set of basenames, e.g. ``{"cloudy.svg", "clear-day.svg"}``.
 
         """
-        from apps.public._component_fixtures import (
+        from apps.design_system._component_fixtures import (
             WEATHER_DAY_LINE_VARIANTS,
             WEATHER_DAY_PICKER_VARIANTS,
             WEATHER_PANEL_VARIANTS,

@@ -636,7 +636,7 @@
      ink at all — white is the lightest colour there is and it reaches
      4.00:1 — so the choice was never white-vs-compliant, it was
      white-vs-near-black, and near-black on EAWS red reads worse than the
-     number it fails to protect. tests/public/test_eaws_contrast.py pins
+     number it fails to protect. tests/design_system/test_eaws_contrast.py pins
      the pair so the exception stays visible and stays one.
 
      A cell showing TWO levels at once cannot follow the rule: it paints

@@ -243,6 +243,7 @@ INSTALLED_APPS = [
     "apps.weather",
     "apps.bulletins",
     "apps.public",
+    "apps.design_system",
     "apps.accounts",
     "apps.analytics",
     "apps.observations",

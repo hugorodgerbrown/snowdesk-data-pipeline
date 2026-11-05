@@ -1,5 +1,5 @@
 """
-tests/public/test_chart_contrast.py — contrast guard for the meteogram palette.
+tests/design_system/test_chart_contrast.py — contrast guard for the meteogram palette.
 
 The hourly chart's colours went into the design-token registry in SNOW-790,
 which is what makes this guard possible: the registry is the CSS by the time
@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import pytest
 
-from apps.public.design_tokens import FOUNDATION_CATEGORIES, Token
+from apps.design_system.design_tokens import FOUNDATION_CATEGORIES, Token
 from tests.public._contrast import contrast_ratio
 
 # WCAG 2.1 AA. Text on a fill; the legend note is 14px, so no large-text
