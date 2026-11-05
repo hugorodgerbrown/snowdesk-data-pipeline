@@ -2,7 +2,7 @@
 name: ui-icons-are-house-stroke-partials
 description: UI icons are _icon_*.html partials — 24×24, stroke-2, currentColor, one source per mark; three Font Awesome filled glyphs excepted
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-11-05
 ---
 
 # UI icons are house stroke partials
@@ -54,10 +54,14 @@ enumerated here.
 **Consequences.** A new mark means a new `_icon_*.html`, not an inline
 `<svg>` in the template that happens to need it first — and a second
 surface wanting the same mark includes the partial rather than pasting the
-path. Icon partials carry no component-library registry entry (none of them
-do — the registry's "Icons" foundation lists the favicon and
-EAWS pictogram assets, not these partials): the library documents composed
-surfaces, and an icon is a primitive of one.
+path. Every icon partial is registered in the component library, in
+`ICON_PARTIALS` (`apps/design_system/design_tokens.py`), and browsable as the
+"UI icons" foundation at `/_components/?slug=ui-icons`;
+`tests/design_system/test_design_tokens.py` fails on one that is not. Until
+5 Nov 2026 this record said the opposite — that an icon is a primitive of a
+composed surface and needs no entry — which left forty glyphs that a designer
+could only compare by opening forty files. Hugo's rule that day: all icons
+are in the component library.
 
 A fourth filled glyph needs an argument that answers this file, not a
 precedent from the three above — "there is already a filled one" is not
