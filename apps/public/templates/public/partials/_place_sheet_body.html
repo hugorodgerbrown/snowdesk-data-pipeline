@@ -303,11 +303,7 @@ Context:
             <p class="flex min-w-0 items-center gap-3 text-sm text-text-2" data-testid="place-sheet-level">
                 {% if region %}
                     {% if day_rating %}
-                        <span
-                            class="danger-tile flex-none"
-                            data-level="{{ day_rating.max_rating }}"
-                            data-testid="place-sheet-rating"
-                        >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
+                        {% include "includes/_danger_tile.html" with day_rating=day_rating testid="place-sheet-rating" only %}
                     {% else %}
                         {% include "includes/_danger_tile_empty.html" only %}
                     {% endif %}

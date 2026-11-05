@@ -888,6 +888,10 @@ class TestTerrainTodayRow:
         assert _text(row).startswith("3 Today Considerable")
         assert 'data-testid="place-sheet-today-weather"' in row
         assert "-4°" in _text(row)
+        # Its accessible name ends with where a tap goes (visually hidden).
+        assert re.search(
+            r'class="sr-only"[^>]*>Show today(&#x27;|\')s conditions<', row
+        )
         # In the peek, under the header, so a phone shows it without a drag.
         peek = content.index("data-sheet-peek")
         assert peek < content.index('data-testid="place-sheet-today"')

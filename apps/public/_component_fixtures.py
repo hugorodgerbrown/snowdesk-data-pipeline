@@ -1374,6 +1374,27 @@ PLACE_LINK_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
     },
 )
 
+# Danger tile (SNOW-1422) ------------------------------------------------------
+# ``includes/_danger_tile.html``: the square EAWS tile for a region's day.
+
+DANGER_TILE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "A rated day",
+        "context": {
+            "day_rating": {"max_rating": "considerable", "max_subdivision": ""},
+        },
+    },
+    {
+        "caption": "A subdivided level",
+        "context": {"day_rating": {"max_rating": "moderate", "max_subdivision": "+"}},
+    },
+    {
+        "caption": "No rating: the same square with a dash",
+        "context": {"day_rating": None},
+    },
+)
+
+
 # Place sheet Today row (SNOW-1422) ------------------------------------------
 # ``public/partials/_place_sheet_today_row.html``: Terrain's one row for the
 # day in the place sheet. ``data-terrain-only`` hides it only inside

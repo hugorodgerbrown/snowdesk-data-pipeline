@@ -5,8 +5,9 @@
  * Terrain has no regions to choose. What is pinned here:
  *
  *   - a tap on a region selects nothing, and a resort under it still opens;
- *   - a search pick, `snowdesk:region-open` and a hash in Terrain each go to
- *     Conditions on today first (`pwaMapMode.toConditionsToday`), then select;
+ *   - a search pick, `snowdesk:region-open`, a hash and a field-observation
+ *     pin in Terrain each go to Conditions on today first
+ *     (`pwaMapMode.toConditionsToday`), then select — in that order;
  *   - entering Terrain drops the region selection, which closes the region
  *     sheet, and leaves an open place sheet open;
  *   - in Conditions each of these behaves as it did, and with no
@@ -43,6 +44,18 @@ const REGIONS_GEOJSON = {
   ],
 };
 
+/** A field-observation pin inside the region (SNOW-1291). */
+const REPORT = {
+  layer: { id: 'community-reports-point' },
+  geometry: { type: 'Point', coordinates: [7.005, 46.005] },
+  properties: {
+    region_id: REGION_ID,
+    submission: 'sub-1',
+    types: '["whumpf"]',
+    type_labels: '["Whumpf"]',
+  },
+};
+
 const RESORT = {
   layer: { id: 'resorts-pin' },
   geometry: { type: 'Point', coordinates: [7.005, 46.005] },
@@ -57,7 +70,7 @@ let asked = [];
 /** A MapLibre stub whose hit-test answers only for the layers asked about. */
 function stubMapLibre() {
   const handlers = {};
-  const present = new Set(['resorts-pin', 'regions-fill']);
+  const present = new Set(['resorts-pin', 'regions-fill', 'community-reports-point']);
   const canvas = { style: {}, clientWidth: 100, clientHeight: 100 };
   const map = {
     on: (event, layerOrHandler, maybeHandler) => {
@@ -143,11 +156,20 @@ let mapStub;
 let regionHit;
 /** Every snowdesk:region-selected map.js announced, this test. */
 let regionEvents = [];
-/** The mode the stub reports, and what toConditionsToday() did. */
+/** The mode the stub reports. */
 let terrain = false;
-let moves = [];
+/**
+ * One log, in order: 'to-conditions' for each toConditionsToday(),
+ * 'focus:<submission>' for each observation focus, and each region id
+ * selected, so a test can pin that the mode moves BEFORE the selection.
+ */
+let log = [];
 document.addEventListener('snowdesk:region-selected', (event) => {
   regionEvents.push(event.detail);
+  if (event.detail.region_id) log.push(event.detail.region_id);
+});
+document.addEventListener('snowdesk:observation-focus', (event) => {
+  log.push(`focus:${event.detail.submission}`);
 });
 
 /** Tap the map once, on whatever `hitFeatures` holds. */
@@ -226,6 +248,7 @@ beforeAll(async () => {
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
   await import('../../static/js/map_sheet.js');
+  await import('../../static/js/community_reports_core.js');
   installRouteRailStub();
   loadMapBundle();
   for (const handler of mapStub.handlers.load || []) await handler();
@@ -249,12 +272,12 @@ afterAll(() => {
 beforeEach(async () => {
   await deselect();
   regionEvents = [];
-  moves = [];
+  log = [];
   window.pwaPlaceSheet = { open: vi.fn(() => true), close: vi.fn(), isOpen: () => true };
   window.pwaMapMode = {
     isTerrain: () => terrain,
     toConditionsToday: vi.fn(() => {
-      moves.push(terrain ? 'from-terrain' : 'from-dated');
+      log.push('to-conditions');
       terrain = false;
     }),
   };
@@ -316,8 +339,7 @@ describe('a region chosen another way in Terrain', () => {
   it('goes to Conditions on today, then selects, from search', () => {
     terrain = true;
     searchPick();
-    expect(moves).toEqual(['from-terrain']);
-    expect(selected()).toEqual([REGION_ID]);
+    expect(log).toEqual(['to-conditions', REGION_ID]);
   });
 
   it('goes to Conditions on today, then selects, from a region row', () => {
@@ -325,8 +347,7 @@ describe('a region chosen another way in Terrain', () => {
     document.dispatchEvent(new CustomEvent('snowdesk:region-open', {
       detail: { region_id: REGION_ID },
     }));
-    expect(moves).toEqual(['from-terrain']);
-    expect(selected()).toEqual([REGION_ID]);
+    expect(log).toEqual(['to-conditions', REGION_ID]);
   });
 
   it('goes to Conditions on today, then selects, from a hash', () => {
@@ -334,16 +355,27 @@ describe('a region chosen another way in Terrain', () => {
     // Pushed, as editing the fragment in the address bar does.
     history.pushState(null, '', `${location.pathname}#${REGION_ID}`);
     window.dispatchEvent(new HashChangeEvent('hashchange'));
-    expect(moves).toEqual(['from-terrain']);
-    expect(selected()).toEqual([REGION_ID]);
+    expect(log).toEqual(['to-conditions', REGION_ID]);
+  });
+
+  it('goes to Conditions on today, then focuses and selects, from a field observation', () => {
+    terrain = true;
+    hitFeatures = [REPORT];
+    tapTheMap();
+    expect(log).toEqual(['to-conditions', 'focus:sub-1', REGION_ID]);
+  });
+
+  it('opens a field observation in Conditions without moving the mode', () => {
+    hitFeatures = [REPORT];
+    tapTheMap();
+    expect(log).toEqual(['focus:sub-1', REGION_ID]);
   });
 
   it('leaves the mode alone in Conditions', () => {
     document.dispatchEvent(new CustomEvent('snowdesk:region-open', {
       detail: { region_id: REGION_ID },
     }));
-    expect(moves).toEqual([]);
-    expect(selected()).toEqual([REGION_ID]);
+    expect(log).toEqual([REGION_ID]);
   });
 
   it('selects as ever with no map_mode.js (off the flag)', () => {
@@ -359,13 +391,17 @@ describe('entering Terrain', () => {
     tapTheMap();
     window.pwaPlaceSheet.close.mockClear();
     regionEvents = [];
+    // What map_mode.js writes before it announces the change.
+    history.replaceState(history.state, '', `${location.pathname}?mode=terrain${location.hash}`);
 
     enterMode('terrain');
 
     expect(regionEvents).toEqual([{ region_id: null, region_name: null }]);
     expect(window.pwaPlaceSheet.close).not.toHaveBeenCalled();
-    // The hash goes and the query (where ?mode= lives) stays.
+    // The hash goes, replaced rather than popped, so ?mode=terrain stays.
     expect(location.hash).toBe('');
+    expect(location.search).toBe('?mode=terrain');
+    history.replaceState(null, '', location.pathname);
   });
 
   it('announces nothing with no region selected', () => {

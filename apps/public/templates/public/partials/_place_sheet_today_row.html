@@ -11,7 +11,8 @@ condition icon and high. It is ``data-terrain-only``, so map.css shows it in
 Terrain alone, and in Terrain ``map_place_sheet.js`` asks for today's body,
 so the row is always today's. A tap on it (``data-place-sheet-today``)
 switches the map to Conditions on today with the sheet left open, and the
-sheet repaints in full.
+sheet repaints in full. A visually hidden "Show today's conditions" ends
+its accessible name, so a screen reader hears where the tap goes.
 
 Rendered by ``_place_sheet_body.html`` inside the peek, for a resort, a
 saved pin and the reader's location alike, so a phone shows it without a
@@ -34,12 +35,7 @@ Context:
     data-testid="place-sheet-today"
 >
     {% if day_rating %}
-        <span
-            class="danger-tile flex-none"
-            data-level="{{ day_rating.max_rating }}"
-            aria-hidden="true"
-            data-testid="place-sheet-today-level"
-        >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
+        {% include "includes/_danger_tile.html" with day_rating=day_rating decorative=True testid="place-sheet-today-level" only %}
     {% else %}
         {% include "includes/_danger_tile_empty.html" only %}
     {% endif %}
@@ -66,5 +62,10 @@ Context:
             {% endif %}
         </span>
     </span>
-    <span class="flex-none text-text-3">{% include "includes/_icon_chevron_right.html" with size=18 only %}</span>
+    {# The row's name says where a tap goes, which the chevron only shows. #}
+    <span class="sr-only" data-testid="place-sheet-today-action">{% translate "Show today's conditions" %}</span>
+    <span
+        class="flex-none text-text-3"
+        aria-hidden="true"
+    >{% include "includes/_icon_chevron_right.html" with size=18 only %}</span>
 </button>

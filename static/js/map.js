@@ -9786,6 +9786,8 @@
     document.addEventListener('snowdesk:map-mode-changed', (ev) => {
       if (!(ev.detail && ev.detail.mode === 'terrain') || selectedId === null) return;
       if (popupHistoryOpen) {
+        // Replaced, not popped (history.back()), to keep ?mode=terrain; the
+        // accepted cost is that Back lands on the entry before the selection.
         history.replaceState(null, '', location.pathname + location.search);
         popupHistoryOpen = false;
         popupHashWasPushed = false;
@@ -10464,6 +10466,12 @@
       // geometry has not loaded, keeps the popup below.
       const regionFeature = props.region_id ? FEATURE_BY_REGION_ID[props.region_id] : null;
       if (regionFeature && regionFeature.id != null && props.submission) {
+        // SNOW-1422: field observations are drawn in both modes, but the
+        // sheet they open is a region's, which is Conditions': in Terrain
+        // the map moves to Conditions on today first. A report the today
+        // body does not list (older than its three recent days) lands on
+        // the section, as any report outside the window does.
+        toConditionsFirst();
         document.dispatchEvent(new CustomEvent('snowdesk:observation-focus', {
           detail: { submission: props.submission, region_id: props.region_id },
         }));

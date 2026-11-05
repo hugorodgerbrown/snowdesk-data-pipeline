@@ -46,6 +46,7 @@ from apps.public._component_fixtures import (
     COLLAPSIBLE_PANEL_VARIANTS,
     DAILY_READ_VARIANTS,
     DANGER_TILE_EMPTY_VARIANTS,
+    DANGER_TILE_VARIANTS,
     DATED_EYEBROW_VARIANTS,
     DAY_CHARACTER_VARIANTS,
     DAY_FIGURES_VARIANTS,
@@ -1641,6 +1642,22 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_place_link_row.html",
         variants=PLACE_LINK_ROW_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="danger-tile",
+        label="Danger tile",
+        description=(
+            "The square EAWS tile for a region's day: the level's colour and "
+            "digit, with the subdivision ('3+') when the bulletin gives one, "
+            "or a dash in the same square with no rating. Shared by the "
+            "region sheet's peek, the place link row, a saved pin's level "
+            "line and the place sheet's Today row (SNOW-1422). The bordered "
+            "'No danger rating' glyph is _danger_tile_empty.html."
+        ),
+        kind="components",
+        partial="includes/_danger_tile.html",
+        variants=DANGER_TILE_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(
