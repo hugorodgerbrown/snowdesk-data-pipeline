@@ -15,6 +15,7 @@ Covers:
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from unittest import mock
 
@@ -458,3 +459,39 @@ def test_a_missing_switch_runs_the_job_and_warns(
         jobs["fetch_bulletins"].func()
     mock_cc.assert_called_once()
     assert "schedule_fetch_bulletins is missing" in caplog.text
+
+
+class TestFetchBulletinsJobReportsOnce:
+    """The fetch_bulletins job does not re-log a reported failure (SNOW-1425)."""
+
+    def test_reported_failure_is_logged_at_warning_and_swallowed(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A ReportedCommandError never reaches APScheduler's ERROR log."""
+        from apps.core.command_errors import ReportedCommandError  # noqa: PLC0415 — mirrors the job's lazy import
+
+        failure = ReportedCommandError("One or more sources failed — ALBINA: x")
+        with (
+            mock.patch("django.core.management.call_command", side_effect=failure),
+            caplog.at_level(logging.DEBUG, logger="schedule"),
+        ):
+            schedule_module._run_fetch_bulletins()
+
+        records = [r for r in caplog.records if r.name == "schedule"]
+        assert [r.levelno for r in records if r.levelno >= logging.WARNING] == [
+            logging.WARNING
+        ]
+        assert "ALBINA" in caplog.text
+
+    def test_any_other_exception_still_reaches_the_scheduler(self) -> None:
+        """A plain CommandError, or anything else, is re-raised as before."""
+        from django.core.management.base import CommandError  # noqa: PLC0415 — test-local import
+
+        with (
+            mock.patch(
+                "django.core.management.call_command",
+                side_effect=CommandError("bad arguments"),
+            ),
+            pytest.raises(CommandError, match="bad arguments"),
+        ):
+            schedule_module._run_fetch_bulletins()

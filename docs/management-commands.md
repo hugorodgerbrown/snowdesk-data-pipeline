@@ -2,7 +2,7 @@
 name: management-commands
 description: Commands — RegisteredCommand / CommandRun register, fetch_bulletins, fetch_weather, purge_*, prune_command_runs, backfill_*
 status: current
-last-reviewed: 2026-11-03
+last-reviewed: 2026-11-05
 ---
 
 # Management commands
@@ -52,6 +52,15 @@ summarised in AGENTS.md; this is the full contract. Rationale:
 5. **Exit non-zero on failure.** Any unhandled error, or a partially
    failed batch (`records_failed > 0`), must surface as a non-zero exit
    so cron/CI can detect it.
+
+   **Log a failure at ERROR once, where it starts** (SNOW-1425). Every
+   ERROR log becomes a Sentry event, so a layer that only passes a failure
+   on logs it at WARNING. When the cause is already logged at ERROR (as
+   `PipelineRun.mark_failed` does), raise
+   `apps.core.command_errors.ReportedCommandError` rather than a plain
+   `CommandError`. It is still a `CommandError`, so the exit stays non-zero
+   and the register still records the run as FAILED. A caller that catches
+   it logs at WARNING.
 
 6. **Stream a growable queryset — never materialise it, and count down as
    you go, naming each row (SNOW-602, SNOW-1054).** A plain `for obj in qs:` loads every matching row

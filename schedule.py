@@ -195,20 +195,36 @@ def switched(job_id: str, func: Callable[[], None]) -> Callable[[], None]:
 
 
 def _run_fetch_bulletins() -> None:
-    """Invoke the ``fetch_bulletins`` management command for all sources."""
+    """Invoke the ``fetch_bulletins`` management command for all sources.
+
+    A ``ReportedCommandError`` (every source failure already logged at ERROR)
+    is logged here at WARNING and not re-raised, so APScheduler does not log
+    it a second time. Any other exception reaches APScheduler as before.
+    """
     from django.core.management import (
         call_command,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
     )
 
-    logger.info("schedule: firing fetch_bulletins")
-    call_command(
-        "fetch_bulletins",
-        "--source",
-        "SLF",
-        "ALBINA",
-        "METEOFRANCE",
-        "--commit",
+    from apps.core.command_errors import (  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
+        ReportedCommandError,
     )
+
+    logger.info("schedule: firing fetch_bulletins")
+    try:
+        call_command(
+            "fetch_bulletins",
+            "--source",
+            "SLF",
+            "ALBINA",
+            "METEOFRANCE",
+            "--commit",
+        )
+    except ReportedCommandError as exc:
+        # Each source failure was logged at ERROR where it started; letting
+        # APScheduler log the job's exception too would file another Sentry
+        # event for the same failure (SNOW-1425). The run is still recorded
+        # FAILED in the command register.
+        logger.warning("schedule: fetch_bulletins failed: %s", exc)
 
 
 def _run_send_bulletin_alerts() -> None:
