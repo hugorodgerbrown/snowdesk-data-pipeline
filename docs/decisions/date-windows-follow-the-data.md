@@ -65,8 +65,9 @@ bulletin page's day navigation relies on that.
 ## The windows
 
 - **Map scrubber and timelapse** (`apps/map/views.py` `_base_map_context`):
-  from the first day of `latest_run()` (or today, with no rated row) to the
-  later of the run's last rated day and today. Today is always on the track, so the
+  from the earlier of today and the first day of `latest_run()` (a run can
+  start tomorrow, after a gap) to the later of the run's last rated day and
+  today. Today is always on the track, so the
   scrubber is on screen on an unchosen map in every month. In August its
   track ends in an empty stretch up to today. Hugo chose that over ending
   the track at the run's last day ("latest run through today", 2026-11-05).

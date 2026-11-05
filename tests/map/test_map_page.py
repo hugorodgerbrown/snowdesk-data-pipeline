@@ -1396,6 +1396,19 @@ class TestMapPageWindowFollowsTheData:
         assert 'data-season-end="2026-08-15"' in scrubber
         assert 'data-on-track="true"' in scrubber
 
+    @freeze_time("2026-11-05")
+    def test_a_run_that_starts_tomorrow_keeps_today_on_the_track(self) -> None:
+        """The first bulletin after a gap can target tomorrow; today stays on."""
+        region = MicroRegionFactory.create(region_id="CH-5500")
+        _rated(region, datetime.date(2026, 4, 30))
+        _rated(region, datetime.date(2026, 11, 6))
+
+        scrubber = self._scrubber()
+
+        assert 'data-season-start="2026-11-05"' in scrubber
+        assert 'data-season-end="2026-11-06"' in scrubber
+        assert 'data-on-track="true"' in scrubber
+
     @freeze_time("2026-02-15")
     def test_an_empty_db_gives_today_to_today(self) -> None:
         """With no rated row the track is today alone, and shown."""

@@ -499,7 +499,9 @@ def _base_map_context(
     """
     run = cached_latest_run()
     data_end = run[1] if run is not None else None
-    season_start = run[0] if run is not None else today
+    # Clamped to today: the first bulletin after a long gap can target
+    # tomorrow, and today must still be on the track.
+    season_start = min(run[0], today) if run is not None else today
     season_end = max(data_end, today) if data_end is not None else today
     span = (season_end - season_start).days
     elapsed = max(0, min((today - season_start).days, span))
