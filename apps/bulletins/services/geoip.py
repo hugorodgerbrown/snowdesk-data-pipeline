@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from django.conf import settings
@@ -106,6 +107,13 @@ def _get_reader() -> "geoip2.database.Reader | None":
         geoip_path = getattr(settings, "GEOIP_PATH", None)
         if not geoip_path:
             logger.warning("geoip: GEOIP_PATH is not configured — geo lookup disabled")
+            _reader_initialised = True
+            return None
+        if not Path(geoip_path).is_file():
+            # Expected wherever bin/fetch-geoip-data is switched off (staging,
+            # GEOIP_DOWNLOAD=off), so a warning, not an error: an error files a
+            # Sentry event on every boot.
+            logger.warning("geoip: no database at %s — geo lookup disabled", geoip_path)
             _reader_initialised = True
             return None
         try:

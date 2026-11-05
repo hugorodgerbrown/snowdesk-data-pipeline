@@ -130,6 +130,45 @@ class TestCaptureJsError:
         assert event["extra"] == {}
 
 
+class TestForeignJsErrors:
+    """Errors thrown by link scanners' own scripts never reach Sentry."""
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Object Not Found Matching Id:2, MethodName:update, ParamCount:4",
+            "Object Not Found Matching Id:13, MethodName:simulateEvent, ParamCount:1",
+        ],
+    )
+    def test_link_scanner_rejection_is_dropped(self, message: str) -> None:
+        """The Outlook Safe Links rejection on the access page is not sent."""
+        with patch("sentry_sdk.capture_event") as capture:
+            sentry.capture_js_error(
+                {
+                    "kind": "unhandledrejection",
+                    "pathname": "/account/access/abc123/",
+                    "message": message,
+                },
+                client_version="v1",
+                platform="web",
+            )
+        capture.assert_not_called()
+
+    def test_similar_message_of_our_own_is_still_sent(self) -> None:
+        """Only the exact scanner shape is dropped, not anything mentioning it."""
+        with patch("sentry_sdk.capture_event") as capture:
+            sentry.capture_js_error(
+                {
+                    "kind": "error",
+                    "pathname": "/map/",
+                    "message": "Error: Object Not Found Matching Id:2 in route store",
+                },
+                client_version="v1",
+                platform="web",
+            )
+        capture.assert_called_once()
+
+
 class TestTokenPathsNeverLeave:
     """A token in the page path is replaced by the route pattern (Codex P1)."""
 
