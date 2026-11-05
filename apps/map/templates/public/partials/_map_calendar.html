@@ -33,17 +33,18 @@ card and the row's buttons — it is ``position: absolute`` and needs that row
 as its containing block.
 
 Context expected:
-* season_start           — datetime.date: first day of the highlighted season.
-* season_end             — datetime.date: last day of it.
+* season_start           — datetime.date: first day of the season; the paging
+                           floor until the ratings payload resolves.
 * today                  — datetime.date: the today marker, and the latest
                            selectable day — the future is the one hard stop.
 * calendar_month_names   — 12 localised month names, January first.
 * calendar_weekday_abbrs — 7 localised weekday abbreviations, Monday first.
 
-The season bounds are a HIGHLIGHT, not a limit. The map carries weather as
-well as bulletins, so a day in September has something to show even though
-no bulletin covers it; an earlier draft made the season the selectable range
-and could not reach those days at all.
+The season is not a limit. The map carries weather as well as bulletins, so
+a day in September has something to show even though no bulletin covers it;
+an earlier draft made the season the selectable range and could not reach
+those days at all. The grid fills the days that have a bulletin, read from
+the ratings payload in map_calendar.js.
 
 The grid itself is built by static/js/map_calendar.js rather than
 server-rendered: a season alone is ~245 day buttons and the reachable range
@@ -62,7 +63,6 @@ user-facing string is a JavaScript literal (see docs/i18n.md).
     class="map-calendar rounded-card border border-border bg-card p-3 shadow-glass"
     data-state="closed"
     data-season-start="{{ season_start|date:'Y-m-d' }}"
-    data-season-end="{{ season_end|date:'Y-m-d' }}"
     data-today="{{ today|date:'Y-m-d' }}"
     {# Pipe-separated because a month name cannot contain a pipe in any #}
     {# locale, and one attribute beats twelve. Read back by             #}

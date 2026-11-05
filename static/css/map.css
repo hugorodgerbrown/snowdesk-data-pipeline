@@ -6666,21 +6666,16 @@ body.map-framing #map-legend {
     pointer-events: none;
 }
 
-/* The avalanche season — a tint behind the days bulletins run for. A
-   highlight, not a fence: every day here is selectable either way, and this
-   only says where the bulletins are. Deliberately quieter than the two ring
-   states below, which mark ONE day each.
-
-   It is the only per-day mark. A dot on the days actually carrying a
-   bulletin was here briefly and went: the gap it revealed inside the season
-   is an operator's concern, and a visitor who lands on such a day already
-   sees an uncoloured map. */
-.map-calendar-day.in-season {
-    background: var(--color-chip);
+/* A bulletin exists for this day in some region. It replaced a season band
+   that tinted every day between the season bounds, bulletin or not, at 6%
+   — too faint to read and, from empty rows, sometimes wrong. A day with no
+   bulletin stays plain and selectable: the map has weather for it. */
+.map-calendar-day.has-bulletin {
+    background: var(--color-day-filled);
 }
 
-.map-calendar-day.in-season:hover:not(:disabled) {
-    background: var(--color-chip-strong);
+.map-calendar-day.has-bulletin:hover:not(:disabled) {
+    box-shadow: inset 0 0 0 2px var(--color-text-1);
 }
 
 /* SNOW-794: the focused region's danger, per day. This is the fact the
@@ -6699,12 +6694,12 @@ body.map-framing #map-legend {
    .danger-band, not for a numeral in a 28px disc that has to match a
    ribbon cell beside it.
 
-   Each rule doubles the class deliberately: `.map-calendar-day.in-season`
+   Each rule doubles the class deliberately: `.map-calendar-day.has-bulletin`
    above is a COMPOUND selector, so a single-class rating rule loses to it
    however late it appears, and every rated day would keep the neutral
-   in-season chip. Matching its specificity lets document order decide, which
+   bulletin fill. Matching its specificity lets document order decide, which
    is what "the danger colour is the stronger statement" needs — a rated day
-   is in season by definition. */
+   has a bulletin by definition. */
 .map-calendar-day.map-calendar-day--low {
     background: var(--color-eaws-low);
     color: var(--color-eaws-low-fg);

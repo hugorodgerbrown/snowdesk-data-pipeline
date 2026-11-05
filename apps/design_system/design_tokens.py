@@ -376,6 +376,12 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
                 "rgba(255, 255, 255, 0.08)",
             ),
             Token(
+                "--color-day-filled",
+                "Calendar day with a bulletin",
+                "rgba(0, 0, 0, 0.13)",
+                "rgba(255, 255, 255, 0.16)",
+            ),
+            Token(
                 "--color-glass",
                 "Glass (overlay)",
                 "rgba(255, 255, 255, 0.85)",
