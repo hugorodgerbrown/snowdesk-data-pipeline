@@ -14,7 +14,7 @@
  * with.
  *
  * Deliberately dependency-free: every export is a pure function of its
- * arguments. The range bounds, the season bounds, the ratings cache and the
+ * arguments. The range bounds, the bulletin days, the ratings and the
  * selected date are all passed in explicitly rather than read from
  * module-scope globals.
  *
@@ -37,16 +37,20 @@
  * the way the floor always had, because the evening bulletin forecasts
  * TOMORROW and a picker fenced at today could not open the day it had
  * already been sent. Off season the ceiling stays at today, which is the
- * later of the two. The season is a HIGHLIGHT inside that range
- * (``inSeason`` on each cell), not a fence around it: it tells you where the
- * bulletins are without refusing the days either side.
+ * later of the two.
  *
- * There is no second, per-day mark for "this day actually has a bulletin".
- * There was one — a dot, driven by the ratings cache — and it went because
- * the thing it distinguished, a gap in the archive inside the season, is an
- * operator's concern and not a visitor's. A visitor who lands on such a day
- * sees an uncoloured map, which is the same answer told once instead of
- * twice.
+ * ## The one per-day mark is "a bulletin exists"
+ *
+ * Each cell carries ``hasBulletin``: true when the ratings cache holds a
+ * rating for that date in any region. The grid fills those days, and a
+ * tapped region swaps the fill for its danger colour (``rating``).
+ *
+ * It replaced a season band (``inSeason``, SNOW-792) that tinted every day
+ * between the season bounds. The band said "bulletins run here" without
+ * checking: it missed the early-season days before 1 November, and in
+ * November 2026 production tinted 4-16 Nov from empty ``no_rating`` rows
+ * while no provider had published. Which days actually have a bulletin is
+ * the question a visitor opening the picker has.
  *
  * Public API — attached to ``window.pwaCalendarCore``:
  *
@@ -59,6 +63,9 @@
  *   clampMonthKey(monthKey, minKey, maxKey)
  *     The month, pulled inside the reachable range if it falls outside it.
  *     This is what stops prev/next walking off into 1970 or next year.
+ *   bulletinDays(ratingsCache)
+ *     The set of date keys rated above 0 for at least one region — what
+ *     ``buildMonthGrid``'s ``bulletinDays`` option takes.
  *   buildMonthGrid(monthKey, opts)
  *     The cells for one month, Monday-first, as a flat array of 7×N
  *     entries. See the function docstring for the cell shape.
@@ -268,6 +275,33 @@
   }
 
   /**
+   * The dates the ratings cache rates for at least one region.
+   *
+   * A frame whose every value is 0 (``no_rating``) or null is not a
+   * bulletin day: the payload can carry placeholder rows, and marking them
+   * is the defect this replaced.
+   *
+   * @param {Object|null} ratingsCache Date key → {region id: danger int}.
+   * @returns {Set<string>} Date keys with at least one rating above 0.
+   */
+  function bulletinDays(ratingsCache) {
+    var out = new Set();
+    if (!ratingsCache || typeof ratingsCache !== 'object') return out;
+    for (var key of Object.keys(ratingsCache)) {
+      if (!DATE_KEY_RE.test(key)) continue;
+      var frame = ratingsCache[key];
+      if (!frame || typeof frame !== 'object') continue;
+      for (var regionId of Object.keys(frame)) {
+        if (frame[regionId] > 0) {
+          out.add(key);
+          break;
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
    * Build one month's grid of day cells, Monday-first.
    *
    * The array is ALWAYS 42 cells — six weeks — however few the month needs.
@@ -291,27 +325,27 @@
    *       dateKey: '2026-02-16',
    *       day: 16,               // for the visible label
    *       selectable: true,      // inside [min, max]
-   *       inSeason: true,        // inside the avalanche season: a HIGHLIGHT
+   *       hasBulletin: true,     // rated for some region that day
    *       rating: 3,             // EAWS danger int for the focused region,
    *                              // or null — SNOW-794
    *       selected: false,       // the date the map is currently showing
    *       isToday: false,
    *     }
    *
-   * ``inSeason`` is deliberately separate from ``selectable`` rather than
-   * folded into it. A day outside the season is still a day the map has
-   * weather for — refusing it was the bug this shape exists to prevent.
-   * Unselectable means outside ``[min, max]`` and nothing else; SNOW-927
-   * moved ``max`` off the clock, so "not the future" is no longer what it
-   * comes to.
+   * ``hasBulletin`` is deliberately separate from ``selectable``. A day
+   * with no bulletin is still a day the map has weather for, so it stays
+   * pickable; unselectable means outside ``[min, max]`` and nothing else.
+   * SNOW-927 moved ``max`` off the clock, so "not the future" is no longer
+   * what it comes to.
    *
    * @param {string} monthKey A ``YYYY-MM`` month key.
    * @param {Object} opts Grid inputs.
    * @param {string} [opts.min] Earliest reachable day ``YYYY-MM-DD``.
    * @param {string} [opts.max] Latest reachable day ``YYYY-MM-DD`` — today,
    *   or the last day the payload covers when that is later (SNOW-927).
-   * @param {string} [opts.seasonStart] Season start ``YYYY-MM-DD``.
-   * @param {string} [opts.seasonEnd] Season end ``YYYY-MM-DD``.
+   * @param {Set<string>|null} [opts.bulletinDays] Date keys the ratings
+   *   cache rates for at least one region (see ``bulletinDays``). Days in
+   *   it get ``hasBulletin: true``.
    * @param {string} [opts.selected] The currently-showing date, or ''.
    * @param {string} [opts.today] Today's date key, for the today marker.
    * @param {Object<string, number>} [opts.ratings] SNOW-794: date key →
@@ -328,8 +362,7 @@
 
     var min = options.min || '';
     var max = options.max || '';
-    var seasonStart = options.seasonStart || '';
-    var seasonEnd = options.seasonEnd || '';
+    var bulletinDays = options.bulletinDays || null;
     var selected = options.selected || '';
     var today = options.today || '';
     var ratings = options.ratings || null;
@@ -349,13 +382,15 @@
 
     for (i = 0; i < dayCount; i++) {
       var dateKey = keyFromMs(firstMs + i * MS_PER_DAY);
+      var selectable = (!min || dateKey >= min) && (!max || dateKey <= max);
       cells.push({
         blank: false,
         dateKey: dateKey,
         day: i + 1,
-        selectable: (!min || dateKey >= min) && (!max || dateKey <= max),
-        inSeason:
-          (!seasonStart || dateKey >= seasonStart) && (!seasonEnd || dateKey <= seasonEnd),
+        selectable: selectable,
+        // Never on a day the grid refuses: a fill on a greyed-out day reads
+        // as an offer the click then declines.
+        hasBulletin: selectable && !!bulletinDays && bulletinDays.has(dateKey),
         rating: ratings && ratings[dateKey] != null ? ratings[dateKey] : null,
         selected: dateKey === selected,
         isToday: dateKey === today,
@@ -397,6 +432,7 @@
     latestKnownDate: latestKnownDate,
     MAX_FORWARD_DAYS: MAX_FORWARD_DAYS,
     buildMonthGrid: buildMonthGrid,
+    bulletinDays: bulletinDays,
     swipeStep: swipeStep,
     SWIPE_MIN_PX: SWIPE_MIN_PX,
   });

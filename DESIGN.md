@@ -46,6 +46,7 @@ colors:
   ring-selected: "#3b82f6"
   chip: "rgba(0, 0, 0, 0.06)"
   chip-strong: "rgba(0, 0, 0, 0.08)"
+  day-filled: "rgba(0, 0, 0, 0.13)"
   accent: "#2563eb"
   accent-hover: "#1d4ed8"
   accent-text: "#ffffff"
@@ -377,6 +378,7 @@ Applied with `.dark` on `<html>`. EAWS, slope, weather-header and marker colours
 | `ring-selected` | `#3b82f6` | `#60a5fa` |
 | `chip` | `rgba(0, 0, 0, 0.06)` | `rgba(255, 255, 255, 0.06)` |
 | `chip-strong` | `rgba(0, 0, 0, 0.08)` | `rgba(255, 255, 255, 0.08)` |
+| `day-filled` | `rgba(0, 0, 0, 0.13)` | `rgba(255, 255, 255, 0.16)` |
 | `accent` | `#2563eb` | `#3b82f6` |
 | `accent-hover` | `#1d4ed8` | `#60a5fa` |
 | `accent-text` | `#ffffff` | `#ffffff` |
