@@ -21,12 +21,14 @@ from pathlib import Path
 
 import pytest
 from django.conf import settings
+from django.core.cache import cache
 from django.test import Client, override_settings
 from django.urls import reverse
 from freezegun import freeze_time
 from waffle.testutils import override_flag
 
 from apps.bulletins.models import RegionDayRating
+from apps.map.views import LATEST_RUN_CACHE_KEY, cached_latest_run
 from apps.regions.models import MicroRegion
 from tests.factories import (
     AccountFactory,
@@ -1414,6 +1416,26 @@ class TestMapPageWindowFollowsTheData:
         url = f"{reverse('public:map')}?d=2025-11-30"
 
         assert 'data-on-track="false"' in self._scrubber(url)
+
+    @freeze_time("2026-02-15")
+    def test_the_run_is_cached_between_requests(self) -> None:
+        """A second /map/ hit reuses the cached run rather than re-reading it."""
+        region = MicroRegionFactory.create(region_id="CH-5500")
+        _rated(region, datetime.date(2026, 2, 1))
+        assert 'data-season-start="2026-02-01"' in self._scrubber()
+
+        # An earlier rated day would move the start, if it were read.
+        _rated(region, datetime.date(2026, 1, 10))
+        assert 'data-season-start="2026-02-01"' in self._scrubber()
+
+        cache.delete(LATEST_RUN_CACHE_KEY)
+        assert 'data-season-start="2026-01-10"' in self._scrubber()
+
+    @freeze_time("2026-02-15")
+    def test_no_run_is_cached_as_a_value(self) -> None:
+        """With no rated row, the cached ``[]`` still answers without a query."""
+        assert cached_latest_run() is None
+        assert cache.get(LATEST_RUN_CACHE_KEY) == []
 
     @freeze_time("2026-08-15")
     def test_the_ribbon_header_renders_with_no_rated_row(self) -> None:

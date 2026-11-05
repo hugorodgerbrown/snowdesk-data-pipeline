@@ -8,7 +8,7 @@ Covers:
   - for_region_month() returns only in-range rows
   - for_region_range() returns only in-range rows (inclusive bounds)
   - rated() keeps rows with a source bulletin and a real rating
-  - latest_run() / latest_run_start(): one run; a gap over 60 empty days
+  - latest_run(): one run; a gap over 60 empty days
     splits; exactly 60 does not; unrated rows ignored; region filter; empty
   - first_rated_date() skips no_rating rows that earliest_date() counts
   - earliest_date() returns the region's earliest rated day, or None
@@ -263,12 +263,11 @@ class TestRated:
 
 
 @pytest.mark.django_db
-class TestLatestRunStart:
-    """Tests for ``RegionDayRatingQuerySet.latest_run_start()`` (SNOW-1431)."""
+class TestLatestRun:
+    """Tests for ``RegionDayRatingQuerySet.latest_run()`` (SNOW-1431)."""
 
     def test_empty_table_returns_none(self) -> None:
         """No rated row: no run."""
-        assert RegionDayRating.objects.latest_run_start() is None
         assert RegionDayRating.objects.latest_run() is None
 
     def test_one_run_starts_at_its_first_day(self) -> None:
@@ -281,7 +280,10 @@ class TestLatestRunStart:
         ):
             rated(region, day)
         # Pauses of 39 and 120 days: the second splits, so start again.
-        assert RegionDayRating.objects.latest_run_start() == datetime.date(2026, 4, 30)
+        assert RegionDayRating.objects.latest_run() == (
+            datetime.date(2026, 4, 30),
+            datetime.date(2026, 4, 30),
+        )
         RegionDayRating.objects.filter(date=datetime.date(2026, 4, 30)).delete()
         assert RegionDayRating.objects.latest_run() == (
             datetime.date(2025, 11, 20),
@@ -308,7 +310,10 @@ class TestLatestRunStart:
         # 2 March – 30 April is 60 empty days.
         rated(region, datetime.date(2026, 5, 1))
 
-        assert RegionDayRating.objects.latest_run_start() == datetime.date(2026, 3, 1)
+        assert RegionDayRating.objects.latest_run() == (
+            datetime.date(2026, 3, 1),
+            datetime.date(2026, 5, 1),
+        )
 
     def test_unrated_rows_are_ignored(self) -> None:
         """``no_rating`` rows and rows with no bulletin neither bridge nor start."""
@@ -334,14 +339,15 @@ class TestLatestRunStart:
         rated(region_b, datetime.date(2026, 2, 15))
         rated(region_a, datetime.date(2026, 4, 1))
 
-        assert RegionDayRating.objects.latest_run_start() == datetime.date(2026, 1, 1)
-        assert RegionDayRating.objects.latest_run_start(region_a) == datetime.date(
-            2026, 4, 1
+        assert RegionDayRating.objects.latest_run() == (
+            datetime.date(2026, 1, 1),
+            datetime.date(2026, 4, 1),
         )
-        assert (
-            RegionDayRating.objects.latest_run_start(MicroRegionFactory.create())
-            is None
+        assert RegionDayRating.objects.latest_run(region_a) == (
+            datetime.date(2026, 4, 1),
+            datetime.date(2026, 4, 1),
         )
+        assert RegionDayRating.objects.latest_run(MicroRegionFactory.create()) is None
 
 
 @pytest.mark.django_db

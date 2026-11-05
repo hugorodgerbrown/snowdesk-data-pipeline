@@ -1,6 +1,6 @@
 ---
 name: date-windows-follow-the-data
-description: Date windows follow bulletin runs, not a fixed season (rated(), latest_run_start, SEASON_GAP_DAYS, scrubber_on_track, MCP 366-day cap)
+description: Date windows follow bulletin runs, not a fixed season (rated(), latest_run, SEASON_GAP_DAYS, scrubber_on_track, MCP 366-day cap)
 status: current
 last-reviewed: 2026-11-05
 ---
@@ -52,18 +52,21 @@ at most 61 days earlier, that is, at most 60 empty days between. The constant
 moved from `services/alerts.py` to the models module so the queryset can read
 it without an import cycle. The alerts module imports it from there.
 
-`latest_run()` reads distinct rated dates newest first, in one query over the
-`date` index, and stops at the first gap that splits a run. A long archive is
-never read past the latest run. `latest_run_start(region=None)` is its first
-day. `first_rated_date(region)` is the region's earliest rated day.
+`latest_run()` reads distinct rated dates newest first, in one query, and
+stops consuming them at the first gap that splits a run. The database still
+evaluates the `DISTINCT` over every rated row, so the query's cost grows with
+the archive. The map therefore reads it through `apps.map.views.cached_latest_run`,
+a five-minute cache entry (`map:latest_run:v1`, the same TTL as the
+single-date ratings payload) holding the run as ISO strings.
+`first_rated_date(region)` is the region's earliest rated day.
 `earliest_date` is unchanged, because it counts `no_rating` rows and the
 bulletin page's day navigation relies on that.
 
 ## The windows
 
 - **Map scrubber and timelapse** (`apps/map/views.py` `_base_map_context`):
-  from `latest_run_start()` (or today, with no rated row) to the later of the
-  run's last rated day and today. Today is always on the track, so the
+  from the first day of `latest_run()` (or today, with no rated row) to the
+  later of the run's last rated day and today. Today is always on the track, so the
   scrubber is on screen on an unchosen map in every month. In August its
   track ends in an empty stretch up to today. Hugo chose that over ending
   the track at the run's last day ("latest run through today", 2026-11-05).
@@ -105,7 +108,8 @@ attributes). These describe resorts, providers or code, not a bulletin window.
 - One rule (`rated()` and `SEASON_GAP_DAYS`) now drives the windows and the
   alert, so they cannot disagree about whether a day had a bulletin.
 - The map page runs one distinct-dates query (`latest_run`) in place of the
-  season aggregate, plus an `EXISTS` for `is_offseason`. The bulletin page's
+  season aggregate, at most once per five minutes through the cache, plus an
+  `EXISTS` for `is_offseason`. The bulletin page's
   `season_header` adds one indexed aggregate.
 - Supersedes the fixed-window reasoning in
   [`map-defaults-to-today-not-the-last-rated-day.md`](map-defaults-to-today-not-the-last-rated-day.md):

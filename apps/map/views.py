@@ -22,6 +22,7 @@ from urllib.parse import urlencode
 
 import waffle
 from django.conf import settings
+from django.core.cache import cache
 from django.http import (
     HttpRequest,
     HttpResponse,
@@ -402,6 +403,50 @@ def _shown_date(request: HttpRequest) -> datetime.date | None:
         return None
 
 
+# SNOW-1431: ``latest_run`` evaluates a DISTINCT over every rated row, and
+# every /map/ hit needs it. Cached for the same five minutes as the
+# single-date ratings payload (``apps.map.api``), so a new run reaches the
+# track no later than it reaches the choropleth. Bump the version suffix
+# if the stored shape changes.
+LATEST_RUN_CACHE_KEY = "map:latest_run:v1"
+_LATEST_RUN_TTL = 300
+
+
+def _compute_latest_run() -> list[str]:
+    """
+    Return the latest bulletin run as ISO strings for the cache.
+
+    Returns:
+        ``[first, last]`` as ``YYYY-MM-DD`` strings, or ``[]`` when no row
+        is rated. Strings and a list, so any cache backend's serialiser
+        takes it, and an empty list so "no run" is a cached value rather
+        than a miss.
+
+    """
+    run = RegionDayRating.objects.latest_run()
+    if run is None:
+        return []
+    return [run[0].isoformat(), run[1].isoformat()]
+
+
+def cached_latest_run() -> tuple[datetime.date, datetime.date] | None:
+    """
+    Return ``RegionDayRating.objects.latest_run()``, cached for five minutes.
+
+    Returns:
+        The latest run's ``(first, last)`` rated days, or None when no row
+        is rated.
+
+    """
+    stored = cache.get_or_set(
+        LATEST_RUN_CACHE_KEY, _compute_latest_run, timeout=_LATEST_RUN_TTL
+    )
+    if not stored:
+        return None
+    first, last = stored
+    return datetime.date.fromisoformat(first), datetime.date.fromisoformat(last)
+
+
 def _base_map_context(
     today: datetime.date,
     shown_date: datetime.date | None = None,
@@ -415,7 +460,7 @@ def _base_map_context(
     The scrubber's track follows the data (SNOW-1431,
     docs/decisions/date-windows-follow-the-data.md): it starts at the first
     rated day of the latest bulletin run
-    (``RegionDayRatingQuerySet.latest_run``) and ends at the later of that
+    (``cached_latest_run``) and ends at the later of that
     run's last rated day and today. Today is therefore always on the track,
     in August as in January, and an empty DB gives ``[today, today]``. The
     context keeps the ``season_start`` / ``season_end`` names the templates
@@ -447,7 +492,7 @@ def _base_map_context(
         row is rated).
 
     """
-    run = RegionDayRating.objects.latest_run()
+    run = cached_latest_run()
     data_end = run[1] if run is not None else None
     season_start = run[0] if run is not None else today
     season_end = max(data_end, today) if data_end is not None else today

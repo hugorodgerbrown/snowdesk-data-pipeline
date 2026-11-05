@@ -620,9 +620,11 @@ class RegionDayRatingQuerySet(models.QuerySet["RegionDayRating"]):
         the day before a bulletin, so the same 60 empty days still count as
         a resumption there.
 
-        Reads distinct rated dates newest first, in one query over the
-        ``date`` index, and stops at the first gap that splits a run, so a
-        long archive is never read past the latest run.
+        Reads distinct rated dates newest first in one query and stops
+        consuming them at the first gap that splits a run. The database
+        still evaluates the ``DISTINCT`` over every rated row, so the cost
+        grows with the archive; the map caches the result
+        (``apps.map.views.cached_latest_run``).
 
         Args:
             region: A MicroRegion to narrow to, or None for every region.
@@ -649,22 +651,6 @@ class RegionDayRatingQuerySet(models.QuerySet["RegionDayRating"]):
         if first is None or last is None:
             return None
         return first, last
-
-    def latest_run_start(self, region: Any = None) -> _date | None:
-        """
-        Return the first rated day of the latest bulletin run, or None.
-
-        See ``latest_run`` for what a run is and where it breaks.
-
-        Args:
-            region: A MicroRegion to narrow to, or None for every region.
-
-        Returns:
-            The run's first rated date, or None when there is no rated row.
-
-        """
-        run = self.latest_run(region)
-        return run[0] if run is not None else None
 
     def first_rated_date(self, region: Any) -> _date | None:
         """

@@ -338,7 +338,8 @@ subdomain — is tracked in SNOW-485.
 sits in the map's bottom-left row (`#map-date-row`) — from 640px up, and
 only while the shown day falls on its track (SNOW-794, see "The map's date
 picker" above). The track runs from the latest bulletin run's first rated
-day (`RegionDayRatingQuerySet.latest_run_start`) to the later of that run's
+day (`RegionDayRatingQuerySet.latest_run`, cached for five minutes by
+`apps.map.views.cached_latest_run`) to the later of that run's
 last rated day and today (SNOW-1431,
 [`decisions/date-windows-follow-the-data.md`](decisions/date-windows-follow-the-data.md)),
 so today is always on it. The thumb rests at today's position, and since
