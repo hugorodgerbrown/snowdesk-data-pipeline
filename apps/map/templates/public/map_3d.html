@@ -1,0 +1,69 @@
+{% extends "public/base.html" %}
+{% load i18n static %}
+{% comment %}
+apps/map/templates/public/map_3d.html — the 3-D terrain map at /map/3d/
+(SNOW-1438).
+
+A sandbox behind the map_3d flag (apps/map/map_3d.py): the relief in 3-D,
+with Steep terrain, SAC's ski tours, the reader's own routes and the resorts
+draped over it. static/js/map_3d.js draws everything from the data
+attributes on #map-3d; nothing here binds a listener.
+
+#map-3d is sized h-full, not absolute inset-0: MapLibre gives its container
+.maplibregl-map, whose position: relative overrides absolute and leaves the
+map 0 px tall.
+
+One control, Steep terrain, plus the way back to /map/. Tilt and rotate are
+MapLibre's own gestures (two fingers, or right-drag), so the page adds no
+control and no icon for them.
+{% endcomment %}
+
+{# sharing=False and noindex: a flagged sandbox that 404s for everyone #}
+{# outside the flag, so there is nothing to unfurl or index.          #}
+{% block page_meta %}
+    {% trans "3-D map · Snowdesk" as page_title %}
+    {% trans "The mountains in 3-D, with steep terrain and routes." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False noindex=True %}
+{% endblock page_meta %}
+
+{% block body_class %}bg-bg text-text-1 font-sans flex flex-col map-fullscreen{% endblock %}
+
+{% block extra_head %}
+    <link rel="stylesheet" href="{% static 'css/maplibre-gl.css' %}">
+    <link rel="stylesheet" href="{% static 'css/map.css' %}">
+{% endblock extra_head %}
+
+{% block content %}
+    <div class="map-surface-light contents">
+        <div class="relative flex-1 min-h-0">
+            <div
+                id="map-3d"
+                class="h-full w-full"
+                data-style-url="{{ style_url }}"
+                data-dem-tile-url="{{ dem_tile_url }}"
+                data-terrain-class-tile-url="{{ terrain_class_tile_url }}"
+                data-ski-tours-url="{{ ski_tours_url }}"
+                data-routes-url="{% if user.is_authenticated %}{{ routes_url }}{% endif %}"
+                data-resorts-url="{{ resorts_url }}"
+            >
+            </div>
+            <div class="absolute left-3 top-3 z-10 flex items-center gap-3 rounded-card bg-card border border-border px-3 py-1 shadow-sm">
+                <a href="{% url 'public:map' %}" class="text-meta text-text-2 hover:text-text-1">{% trans "Map" %}</a>
+                {% if terrain_class_tile_url %}
+                    <label for="map-3d-steep" class="text-meta text-text-1">{% trans "Steep terrain" %}</label>
+                    {% include "includes/_switch.html" with id="map-3d-steep" checked=True %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+{% endblock content %}
+
+{% block site_footer %}{% endblock site_footer %}
+
+{% block extra_js %}
+    <script defer src="{% static 'js/maplibre-gl.min.js' %}"></script>
+    <script defer src="{% static 'js/slope_classes_core.js' %}"></script>
+    <script defer src="{% static 'js/terrain_filter_core.js' %}"></script>
+    <script defer src="{% static 'js/map_3d_core.js' %}"></script>
+    <script defer src="{% static 'js/map_3d.js' %}"></script>
+{% endblock extra_js %}

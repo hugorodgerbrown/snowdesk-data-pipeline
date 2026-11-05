@@ -43,6 +43,7 @@ interface Window {
   /** static/js/day_nav_core.js — the date row's day steps and empty-day lookup (SNOW-1195). */
   pwaDayNavCore: any;
   pwaStaleDayCore: any;
+  pwaMap3dCore: any;
   /** static/js/sheet_playback_core.js — an object sheet pauses while the timeline plays (SNOW-1239). */
   pwaSheetPlayback: {
     createGuard(): {
