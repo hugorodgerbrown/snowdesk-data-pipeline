@@ -217,6 +217,10 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  bulletins, day ratings and weather. No models; never
                  reads a user-owned table (docs/data-feed.md)
   public/        Public-facing bulletin site (route map: docs/site-structure.md)
+                 Splitting by surface (docs/decisions/public-splits-by-surface.md):
+                 the component library is moving to design_system/ (SNOW-1427)
+                 and the map page, its JSON API and sheets to map/ (SNOW-1428).
+                 urls.py and api_urls.py stay here as the routing hub
     api.py       Plain JsonResponse endpoints — the map's feeds, plus
                  share-create, /api/version + sw-config, the bulletin
                  JSON alternates, weather detail and the superuser edit
