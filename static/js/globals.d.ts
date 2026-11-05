@@ -300,8 +300,17 @@ interface Window {
   pwaMapModeCore: any;
   /** static/js/map.js — the keys the map mode holds off the map, for the modules that draw their own layers: isSuppressed(key) / hold(key, active) (SNOW-1421). */
   pwaMapModeState: { isSuppressed: (key: string) => boolean; hold: (key: string, active: boolean) => void };
-  /** static/js/map_mode.js — the Dated / Terrain toggle: get() / set(mode) / isTerrain() (SNOW-1394). */
-  pwaMapMode: any;
+  /**
+   * static/js/map_mode.js — the Dated / Terrain toggle (SNOW-1394). Absent
+   * off the map_modes flag. toConditionsToday() switches to Dated on today
+   * (SNOW-1422).
+   */
+  pwaMapMode?: {
+    get: () => string;
+    set: (mode: string) => void;
+    isTerrain: () => boolean;
+    toConditionsToday: () => void;
+  };
   /** static/js/map.js — the weather symbols' Terrain-mode hook: setSuppressed(reason, active) / isSuppressed() (SNOW-1394). */
   pwaWeatherLayer: any;
   /** static/js/map.js — the Bulletins layer: setSuppressed(reason, active) / isVisible(). */

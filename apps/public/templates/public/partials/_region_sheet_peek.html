@@ -24,10 +24,10 @@ body lands:
     selection, the day's level off the map, the map's day), so a tap paints the peek
     at once instead of waiting on the network.
 
-The tile carries ``data-dated``: Terrain mode hides it (map.css), as it
-hides the rest of the day in the body. Under the breadcrumb, Terrain alone
-shows a "Select a date…" panel (``data-terrain-only``) that switches back
-to the day (SNOW-1394).
+The sheet does not open in Terrain (SNOW-1422): a region chosen there
+moves the map to Conditions on today first (map.js), so nothing here is
+marked for one mode. The "Select a date…" panel SNOW-1394 put under the
+breadcrumb went with that.
 
 The slots the script fills carry ``data-region-sheet-slot``. The tile is
 the "–" of ``no_rating`` until there is a level, in both copies, so the
@@ -51,15 +51,13 @@ Context:
             {# Always a tile — a region's shape, as its search row's is — with   #}
             {# the search row's "–" on a day with no rating (Hugo, 21 Oct).     #}
             {% if blank or not day_rating %}
-                <span class="danger-tile flex-none" data-level="no_rating" data-region-sheet-slot="rating" data-dated
-                >–</span>
+                <span class="danger-tile flex-none" data-level="no_rating" data-region-sheet-slot="rating">–</span>
             {% else %}
                 <span
                     class="danger-tile flex-none"
                     data-level="{{ day_rating.max_rating }}"
                     data-testid="region-sheet-rating"
                     data-region-sheet-slot="rating"
-                    data-dated
                 >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
             {% endif %}
             <div class="min-w-0 flex-1">
@@ -120,23 +118,5 @@ Context:
                 {{ region.subregion.name_en|default:region.subregion.name_native }}
             {% endif %}
         </p>
-        {# Terrain mode (SNOW-1394) draws the region but not the day: what  #}
-        {# carries ``data-dated`` is hidden there, and this panel, the way  #}
-        {# back to the day, shows in its place (map.css). In the peek, so a #}
-        {# phone shows it without a drag. A press switches to Dated on      #}
-        {# today, with this region still open (map_mode.js).                #}
-        <button
-            type="button"
-            class="mt-4 flex w-full items-center gap-3 rounded-card bg-status-info-bg px-3.5 py-3 text-left text-sm text-status-info-text hover-affordance"
-            data-terrain-only
-            data-map-mode-to-dated
-            data-testid="region-sheet-to-dated"
-        >
-            {% include "includes/_icon_calendar.html" with size=20 only %}
-            <span
-                class="min-w-0 flex-1"
-            >{% translate "Select a date to view current weather and avalanche conditions" %}</span>
-            {% include "includes/_icon_chevron_right.html" with size=18 only %}
-        </button>
     </div>
 </div>

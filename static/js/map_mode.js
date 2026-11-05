@@ -40,13 +40,14 @@
  *     parameter kept, and the mode is stored, so a link and a reload both
  *     reproduce it. A date write keeps it (map_shared.js writeUrlDateParam).
  *   - THE PAGE. <html data-map-mode> is what map.css reads — the collapsed
- *     segments, the hidden season scrubber, the region sheet's dated parts —
+ *     segments, the hidden season scrubber, the place sheet's dated parts —
  *     and snowdesk:map-mode-changed is what map.js, the legend and the
  *     place sheet hear.
- *   - THE REGION SHEET'S PANEL. In Terrain the sheet shows the region
- *     without its day, and a "Select a date…" panel
- *     ([data-map-mode-to-dated]) in its place. A press on it switches to
- *     Dated on today, with the region still open.
+ *   - CONDITIONS ON TODAY (SNOW-1422). `toConditionsToday()` switches to
+ *     Dated and moves the map to today, not the day the reader left. It is
+ *     what map.js calls before it selects a region chosen in Terrain (a
+ *     search pick, a sheet's region row, a hash), since a region is not a
+ *     Terrain thing, and what the place sheet's Today row calls.
  *
  * The Today panel's sun is a panel, not a map surface, and stays in both.
  *
@@ -215,19 +216,20 @@
       e.preventDefault();
       e.stopImmediatePropagation();
       setMode(core.MODES.DATED);
-      return;
-    }
-    // The region sheet's "Select a date…" panel: back to Dated on TODAY,
-    // not the day the reader left, because the panel offers current
-    // conditions (Hugo, 4 Nov 2026). The region stays selected, so its
-    // sheet repaints in place with the day.
-    if (target.closest('[data-map-mode-to-dated]')) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      setMode(core.MODES.DATED);
-      goToToday();
     }
   }, true);
+
+  /**
+   * Switch to Conditions on TODAY, not the day the reader left (Hugo,
+   * 4 Nov 2026: what Terrain offers of the day is current conditions).
+   * Whatever is open stays open and repaints with the day.
+   *
+   * @returns {void}
+   */
+  const toConditionsToday = () => {
+    setMode(core.MODES.DATED);
+    goToToday();
+  };
 
   // A boot ?mode= is written through to this device, so the next bare
   // visit opens where the link left the reader. And the other way: a bare
@@ -244,5 +246,6 @@
     get: () => mode,
     set: setMode,
     isTerrain: () => mode === core.MODES.TERRAIN,
+    toConditionsToday,
   });
 })();
