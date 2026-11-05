@@ -380,6 +380,27 @@ describe('createDemLoader', () => {
     expect(fetchTile.mock.calls.map(([url]) => url)).toEqual(['https://aws.example/12/2133/1458.png']);
   });
 
+  it('keeps the latch when a request already in flight succeeds after it', async () => {
+    let release;
+    const late = new Promise((resolve) => { release = resolve; });
+    let calls = 0;
+    const { fetchTile, dem } = loader((url) => {
+      if (!url.startsWith('https://mt')) return answer(200);
+      calls += 1;
+      if (calls === 1) return late.then(() => answer(200));
+      throw new TypeError('Failed to fetch');
+    });
+    const slow = dem.load(TILE, signal());
+    for (let i = 0; i < core.DEM_FALLBACK_AFTER; i += 1) await dem.load(TILE, signal());
+    expect(dem.usingFallback()).toBe(true);
+    release();
+    await slow;
+    expect(dem.usingFallback()).toBe(true);
+    fetchTile.mockClear();
+    await dem.load(TILE, signal());
+    expect(fetchTile.mock.calls.map(([url]) => url)).toEqual(['https://aws.example/12/2133/1458.png']);
+  });
+
   it('counts a 5xx as a failure, and a success resets the count', async () => {
     let status = 503;
     const { dem } = loader((url) => answer(url.startsWith('https://mt') ? status : 200));

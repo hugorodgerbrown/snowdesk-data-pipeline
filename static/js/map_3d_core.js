@@ -199,27 +199,34 @@
    * only. A network failure or a 5xx counts as Mapterhorn being down: after
    * DEM_FALLBACK_AFTER in a row the loader goes straight to AWS for the rest
    * of the visit, so an outage does not cost every tile a failed request. A
-   * Mapterhorn success resets the count.
+   * Mapterhorn success before then resets the count; one that lands after
+   * (a request already in flight) does not lift the latch.
    *
    * @param {{primary: string, fallback: string, fetchTile: (url: string, signal: AbortSignal) => Promise<Response>, enlarge: (blob: Blob) => Promise<any>}} options
    * @returns {{load: (tile: {z: number, x: number, y: number}, signal: AbortSignal) => Promise<{data: any}>, usingFallback: () => boolean}}
    */
   function createDemLoader(options) {
     let failures = 0;
-    const down = () => failures >= DEM_FALLBACK_AFTER;
+    // Once set, never cleared: a Mapterhorn request started before the
+    // latch may still succeed after it, and must not reopen Mapterhorn.
+    let latched = false;
+    const fail = () => {
+      failures += 1;
+      if (failures >= DEM_FALLBACK_AFTER) latched = true;
+    };
     return {
       async load(tile, signal) {
-        if (!down()) {
+        if (!latched) {
           try {
             const response = await options.fetchTile(tileUrl(options.primary, tile), signal);
             if (response.ok) {
-              failures = 0;
+              if (!latched) failures = 0;
               return { data: await response.arrayBuffer() };
             }
-            if (response.status !== 404) failures += 1;
+            if (response.status !== 404) fail();
           } catch (err) {
             if (signal.aborted) throw err;
-            failures += 1;
+            fail();
           }
         }
         const response = await options.fetchTile(tileUrl(options.fallback, tile), signal);
@@ -228,7 +235,7 @@
         }
         return { data: await options.enlarge(await response.blob()) };
       },
-      usingFallback: down,
+      usingFallback: () => latched,
     };
   }
 
