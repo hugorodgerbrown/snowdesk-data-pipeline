@@ -1,34 +1,37 @@
 /*
- * static/js/map_mode_core.js — the map's two modes, Dated and Terrain
- * (SNOW-1394).
+ * static/js/map_mode_core.js — the map's two modes, Conditions and Terrain
+ * (SNOW-1394, SNOW-1421).
  *
- * Some of what the map draws changes by the day: the bulletins, the
- * problem-terrain sync, the weather and the field reports. Everything else —
- * the region boundaries, Steep terrain, routes, resorts, ski tours, rest
- * zones, pins — is the same tomorrow as today.
- * Terrain mode is the map with the dated overlays switched off, and nothing
- * more (Hugo, 2 Nov 2026): it switches nothing on, Steep terrain included.
+ * Conditions (code: `dated`) is the map for a day: the bulletins, the
+ * problem-terrain sync and the weather. Terrain is the mountains
+ * themselves: Steep terrain, SAC's ski tours and summits, and the wildlife
+ * rest zones. Each mode holds the other's own layers off the map
+ * (SNOW-1421; until then Terrain only took the dated ones away). The rest —
+ * the region boundaries, resorts, the basemap, the field reports and the
+ * reader's own data — is shared, drawn in both as its switch says. Neither
+ * mode switches anything on (Hugo, 2 Nov 2026).
  *
  * The rule this module exists to keep: SUPPRESSION, NEVER PREFERENCE. The
  * mode never rewrites a reader's stored choice. What is drawn is the stored
- * preference AND-ed with "not suppressed by Terrain", so leaving Terrain
- * brings each overlay back exactly as the reader had it, and a choice made
- * in Terrain (Steep terrain on or off) changes that choice alone.
+ * preference AND-ed with "not held by the mode", so coming back to a mode
+ * brings each of its layers back exactly as the reader had it, and a
+ * choice made in one mode changes that choice alone.
  *
  * Pure: map.js reads it at boot, before the first paint, so `?mode=terrain`
- * never flashes the dated layers; static/js/map_mode.js reads it to draw the
- * control and write the URL. See
- * docs/decisions/the-map-has-a-dated-mode-and-a-terrain-mode.md.
+ * never flashes the Conditions layers (nor a Conditions boot the Terrain
+ * ones); static/js/map_mode.js reads it to draw the controls and write the
+ * URL. See docs/decisions/the-map-has-a-dated-mode-and-a-terrain-mode.md.
  *
  * Exports (frozen `self.pwaMapModeCore`):
  *
- *   MODES / STORAGE_KEY / URL_PARAM / DATED_OVERLAYS / DATED_ROW_SELECTORS
+ *   MODES / STORAGE_KEY / URL_PARAM / ONLY_IN
  *   parseMode(value)
  *   readMode(search, stored)
  *   withMode(search, mode)
  *   withDate(search, dateKey)
- *   isDated(key)
+ *   modeOf(key)
  *   isSuppressed(key, mode)
+ *   suppressedIn(mode)
  *   effective(key, preference, mode)
  *   problemTerrainShown(input)
  *   toggled(mode)
@@ -39,7 +42,10 @@
 (function () {
   'use strict';
 
-  /** The two modes. Dated is the default, and what an unknown value means. */
+  /**
+   * The two modes. Dated ("Conditions" on screen) is the default, and what
+   * an unknown value means.
+   */
   const MODES = Object.freeze({ DATED: 'dated', TERRAIN: 'terrain' });
 
   /** Where the reader's last mode is kept on this device. */
@@ -49,42 +55,23 @@
   const URL_PARAM = 'mode';
 
   /**
-   * The overlay keys Terrain mode takes off the map — map.js's
-   * `overlayState` keys, plus `l3`, the bulletin grouping outline, which
-   * has no row of its own.
+   * The layers each mode has to itself — map.js's `overlayState` keys, plus
+   * `l3`, the bulletin grouping outline, which has no row of its own. A key
+   * in one list is held off the map in the other mode; a key in neither is
+   * shared.
    *
-   * The region tiers (`l1`, `l2`, `l4`) are deliberately absent: a region
-   * is fixed, and exists beyond the day's bulletin (Hugo, 4 Nov 2026), so
-   * Terrain draws the boundaries the reader chose and a tap opens a lean
-   * region sheet. `l3`, the bulletin grouping, IS dated: it changes daily.
+   * The region tiers (`l1`, `l2`, `l4`) are shared: a region is fixed, and
+   * exists beyond the day's bulletin (Hugo, 4 Nov 2026). `l3`, the bulletin
+   * grouping, changes daily, so it is Conditions'.
    *
-   * `terrain_filter` (Steep terrain) is absent too: it is the reader's own
-   * switch in both modes.
+   * `community_reports` (Field observations) is shared too (Hugo,
+   * 5 Nov 2026): the reports are dated, but what people have seen is worth
+   * as much to someone planning in Terrain.
    */
-  const DATED_OVERLAYS = Object.freeze([
-    'bulletins',
-    'l3',
-    'problem_terrain',
-    'weather',
-    'community_reports',
-  ]);
-
-  /**
-   * The layers-menu controls that drive a dated overlay. In Terrain each
-   * shows disabled and a tap on it does nothing. The bulletins and
-   * boundaries rows open pages of their own, so disabling the row on the
-   * menu's first page covers everything under it; field reports and the
-   * problem-terrain sync live on the bulletins page and are listed too, for
-   * a reader who had that page open when the mode changed. The boundaries
-   * rows are not here: Terrain draws the boundaries.
-   */
-  const DATED_ROW_SELECTORS = Object.freeze([
-    '[data-layers-open="bulletins"]',
-    '[data-layer-master="bulletins"]',
-    '[data-overlay-key="weather"]',
-    '[data-overlay-key="community_reports"]',
-    '[data-overlay-key="problem_terrain"]',
-  ]);
+  const ONLY_IN = Object.freeze({
+    [MODES.DATED]: Object.freeze(['bulletins', 'l3', 'problem_terrain', 'weather']),
+    [MODES.TERRAIN]: Object.freeze(['terrain_filter', 'ski_tours', 'ski_summits', 'rest_zones']),
+  });
 
   /**
    * Read one stored or linked value as a mode.
@@ -146,24 +133,38 @@
   }
 
   /**
-   * Whether an overlay key is one Terrain takes off the map.
+   * The mode an overlay key belongs to, or null for a shared one.
    *
    * @param {string} key
-   * @returns {boolean}
+   * @returns {?string} A member of `MODES`, or null.
    */
-  function isDated(key) {
-    return DATED_OVERLAYS.includes(key);
+  function modeOf(key) {
+    if (ONLY_IN[MODES.DATED].includes(key)) return MODES.DATED;
+    if (ONLY_IN[MODES.TERRAIN].includes(key)) return MODES.TERRAIN;
+    return null;
   }
 
   /**
-   * Whether the mode is holding an overlay off the map.
+   * Whether the mode is holding an overlay off the map: the key belongs to
+   * the other mode.
    *
    * @param {string} key
    * @param {string} mode
    * @returns {boolean}
    */
   function isSuppressed(key, mode) {
-    return parseMode(mode) === MODES.TERRAIN && isDated(key);
+    const own = modeOf(key);
+    return own !== null && own !== parseMode(mode);
+  }
+
+  /**
+   * Every key a mode holds off the map: the other mode's own.
+   *
+   * @param {string} mode
+   * @returns {ReadonlyArray<string>}
+   */
+  function suppressedIn(mode) {
+    return ONLY_IN[toggled(mode)];
   }
 
   /**
@@ -189,8 +190,9 @@
 
   /**
    * Whether the problem-terrain sync is drawn. Steep terrain takes
-   * precedence over it (SNOW-1377) in either mode, and Terrain suppresses
-   * it; neither writes the reader's choice.
+   * precedence over it (SNOW-1377) where both are drawn, which, with the
+   * two in different modes, is only ever off the map_modes flag; Terrain
+   * suppresses the sync. Neither writes the reader's choice.
    *
    * @param {ProblemTerrainInput} input
    * @returns {boolean}
@@ -198,7 +200,7 @@
   function problemTerrainShown(input) {
     return !!input.available
       && effective('problem_terrain', input.problemTerrain, input.mode)
-      && !input.steepTerrain;
+      && !effective('terrain_filter', input.steepTerrain, input.mode);
   }
 
   /**
@@ -215,14 +217,14 @@
     MODES,
     STORAGE_KEY,
     URL_PARAM,
-    DATED_OVERLAYS,
-    DATED_ROW_SELECTORS,
+    ONLY_IN,
     parseMode,
     readMode,
     withMode,
     withDate,
-    isDated,
+    modeOf,
     isSuppressed,
+    suppressedIn,
     effective,
     problemTerrainShown,
     toggled,
