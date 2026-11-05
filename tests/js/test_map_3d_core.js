@@ -202,3 +202,18 @@ describe('prefetchDemTiles / tileUrl', () => {
       .toBe('https://t.example/1/2/3.webp');
   });
 });
+
+describe('skySpec / sunlightPaint', () => {
+  it('keeps the haze off the near ground', () => {
+    const sky = core.skySpec();
+    expect(sky['fog-ground-blend']).toBeLessThan(0.3);
+    expect(sky['sky-color']).toMatch(/^#[0-9a-f]{6}$/);
+  });
+
+  it('lights from the north-west, fixed to the map, at a modest strength', () => {
+    const paint = core.sunlightPaint();
+    expect(paint['hillshade-illumination-direction']).toBe(315);
+    expect(paint['hillshade-illumination-anchor']).toBe('map');
+    expect(paint['hillshade-exaggeration']).toBeLessThanOrEqual(0.5);
+  });
+});

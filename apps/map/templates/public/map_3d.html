@@ -44,6 +44,8 @@ the page adds no control and no icon for them.
                 data-style-url="{{ style_url }}"
                 data-dem-tile-url="{{ dem_tile_url }}"
                 data-terrain-class-tile-url="{{ terrain_class_tile_url }}"
+                data-steep-worker-url="{% static 'js/map_3d_steep_worker.js' %}"
+                data-steep-worker-scripts="{% static 'js/slope_classes_core.js' %} {% static 'js/terrain_filter_core.js' %}"
                 data-ski-tours-url="{{ ski_tours_url }}"
                 data-routes-url="{% if show_routes %}{{ routes_url }}{% endif %}"
                 data-share-token="{{ share_token }}"

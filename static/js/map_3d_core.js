@@ -28,6 +28,7 @@
  *
  *   DEM_SOURCE_ID / TERRAIN_EXAGGERATION / OPENING_CAMERA / MAX_PITCH / MAX_PIXEL_RATIO
  *   prefetchDemTiles(centre, mapZoom) / tileUrl(template, tile)
+ *   skySpec() / sunlightPaint()
  *   TOURS_MIN_ZOOM / TOURS_HALF_SPAN_DEG / COLOURS
  *   demSource(tileUrl)
  *   terrainSpec()
@@ -95,6 +96,43 @@
     casing: '#ffffff',
     resort: '#1a1a1a',
   });
+
+  /**
+   * The sky and the haze toward the horizon: an alpine blue overhead fading
+   * to a pale horizon, with the haze kept off the near ground so the
+   * foreground stays crisp. MapLibre paint values, so hex here.
+   *
+   * @returns {Record<string, unknown>}
+   */
+  function skySpec() {
+    return {
+      'sky-color': '#5b9bd5',
+      'horizon-color': '#dbe9f6',
+      'fog-color': '#e6eef7',
+      'sky-horizon-blend': 0.8,
+      'horizon-fog-blend': 0.9,
+      'fog-ground-blend': 0.15,
+      'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 10, 1, 14, 0.6],
+    };
+  }
+
+  /**
+   * The sunlight layer's paint: a north-west sun fixed to the map (so the
+   * light does not swing as the camera turns), strong enough to model the
+   * ridges without hiding swisstopo's hachures under it.
+   *
+   * @returns {Record<string, unknown>}
+   */
+  function sunlightPaint() {
+    return {
+      'hillshade-exaggeration': 0.45,
+      'hillshade-illumination-anchor': 'map',
+      'hillshade-illumination-direction': 315,
+      'hillshade-shadow-color': '#33415c',
+      'hillshade-highlight-color': '#ffffff',
+      'hillshade-accent-color': '#5a6b80',
+    };
+  }
 
   /**
    * The elevation source: Mapterhorn's Terrarium-encoded 512 px tiles.
@@ -322,6 +360,8 @@
     MAX_PITCH: MAX_PITCH,
     MAX_PIXEL_RATIO: MAX_PIXEL_RATIO,
     prefetchDemTiles: prefetchDemTiles,
+    skySpec: skySpec,
+    sunlightPaint: sunlightPaint,
     tileUrl: tileUrl,
     TOURS_MIN_ZOOM: TOURS_MIN_ZOOM,
     TOURS_HALF_SPAN_DEG: TOURS_HALF_SPAN_DEG,
