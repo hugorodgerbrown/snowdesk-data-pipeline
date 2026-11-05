@@ -372,7 +372,7 @@ def build_season_months(
     month. Pure — it reads only the already-built grid, no query.
 
     The months drawn run from the grid's first day (the region's first
-    rated day, SNOW-1431) to the later of its last bulletin and tomorrow
+    rated day, SNOW-1431) to the later of its last day and tomorrow
     (:func:`_last_drawn_day`). Every month drawn is drawn in full.
 
     Each day's state: a day with a bulletin draws its level, or ``"split"``
@@ -395,7 +395,7 @@ def build_season_months(
     if not by_date:
         return SeasonMonths(months=[], ring_date=None, axis=SEASON_AXIS)
     span_start = min(by_date)
-    span_end = _last_drawn_day(by_date, today)
+    span_end = _last_drawn_day(max(by_date), today)
 
     months: list[SeasonMonth] = []
     first = span_start.replace(day=1)
@@ -419,20 +419,28 @@ def build_season_months(
 
 
 def _last_drawn_day(
-    by_date: dict[datetime.date, SeasonCell],
+    grid_end: datetime.date,
     today: datetime.date,
 ) -> datetime.date:
     """
     Return the last day of the calendar's span (SNOW-1158, SNOW-1431).
 
-    The later of the last bulletin's day and tomorrow (the latest a
-    bulletin can target). There is no padding to a fixed season close: a
-    run that ended in April draws through the month of tomorrow, empty days
-    and all, because that is what happened since.
+    The later of the grid's last day and tomorrow. A grid from
+    :func:`build_season_grid` always ends on tomorrow (the latest day a
+    bulletin can target), so for the bulletin page this is tomorrow; only a
+    hand-built grid running past it (a fixture) draws further. There is no
+    padding to a fixed season close: a run that ended in April draws
+    through the month of tomorrow, empty days and all.
+
+    Args:
+        grid_end: The grid's last day.
+        today: The current calendar date.
+
+    Returns:
+        The last day whose month is drawn.
+
     """
-    tomorrow = today + datetime.timedelta(days=1)
-    published = [day for day, cell in by_date.items() if cell.has_bulletin]
-    return max(max(published, default=tomorrow), tomorrow)
+    return max(grid_end, today + datetime.timedelta(days=1))
 
 
 def _month_day(

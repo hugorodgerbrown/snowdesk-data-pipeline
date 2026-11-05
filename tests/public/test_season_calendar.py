@@ -1006,8 +1006,8 @@ class TestSeasonMonths:
         assert months.months[-1].days[19].state == "none"
         assert months.months[-1].days[21].state == "future"
 
-    def test_a_bulletin_after_tomorrow_extends_the_span(self) -> None:
-        """The later of the last bulletin and tomorrow ends the span."""
+    def test_a_grid_past_tomorrow_extends_the_span(self) -> None:
+        """The later of the grid's last day and tomorrow ends the span."""
         today = datetime.date(2026, 5, 10)
         cells = [
             _cell(datetime.date(2025, 11, 1), "low"),
