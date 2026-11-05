@@ -13,8 +13,8 @@ Claude Code scopes and implements every ticket; Codex reviews scopes and PRs.
   `resolve-scope-review`, `implement`, `work-on`, `merge-prs`, `release`.
 - Say one line when starting a skill, such as "Running `implement` for SNOW-123."
   No rule may depend on which skill is running unless Hugo can see it.
-- `implement` runs from `Ready for dev` to a merged PR. Plan approval is its only
-  stop, unless Hugo adds one such as "stop before pushing".
+- `implement` runs from `Ready for dev` to a merged PR without stopping. A plan
+  needs no approval. Hugo can add a stop, such as "stop before pushing".
 - One session works one ticket. Warn before starting work on a second, unless the
   session was framed as cross-ticket from the start.
 

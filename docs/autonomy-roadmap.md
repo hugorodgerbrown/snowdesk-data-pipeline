@@ -2,7 +2,7 @@
 name: autonomy-roadmap
 description: Target state for Claude and Codex working without Hugo except on design decisions; human gates in scope, implement, merge-prs, release
 status: draft
-last-reviewed: 2026-11-03
+last-reviewed: 2026-11-05
 ---
 
 # Autonomy roadmap
@@ -37,7 +37,6 @@ Hugo's answers of 3 November 2026 on the end state:
 | Gate | Where | End state |
 |---|---|---|
 | Scope approval in the sidebar | `scope` Step 3; `resolve-scope-review` Steps 4 and 6; `work-on` Steps 2 and 2b | Removed, unless the ticket holds a design decision |
-| Plan approval in the sidebar | `implement` Step 3; `work-on` Step 3 | Removed |
 | Batch confirmation; only Hugo can start it | `merge-prs` | Unsettled |
 | Nothing picks up `Ready for dev` | Missing routine | A routine that takes one ticket per run |
 
@@ -45,6 +44,8 @@ Hugo's answers of 3 November 2026 on the end state:
 
 ## Removed
 
+- **Plan approval**, 5 November 2026. `implement` writes the plan and builds it.
+  Scope approval stays.
 - **Commit message approval**, 3 November 2026. A rule that depends on which skill
   is running is one Hugo cannot see, so commits no longer wait in any session.
   Merging follows the same rule, and Claude says one line when it starts a skill.
