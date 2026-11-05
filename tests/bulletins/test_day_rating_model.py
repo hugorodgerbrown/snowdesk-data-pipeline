@@ -7,7 +7,7 @@ Covers:
   - Queryset ordering
   - for_region_month() returns only in-range rows
   - for_region_range() returns only in-range rows (inclusive bounds)
-  - season_date_bounds() returns (None, None) for empty window; min/max for
+  - season_date_bounds() ignores no_rating rows; returns (None, None) for empty window; min/max for
     rows inside; ignores rows outside [start, end]
   - earliest_date() returns the region's earliest rated day, or None
   - unique_together raises IntegrityError on duplicate (region, date)
@@ -277,6 +277,39 @@ class TestSeasonDateBounds:
         )
         assert first == datetime.date(2025, 11, 1)
         assert last == datetime.date(2026, 5, 31)
+
+    def test_ignores_unrated_rows(self) -> None:
+        """season_date_bounds skips no_rating rows, which no bulletin backs."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        for day in (datetime.date(2025, 11, 4), datetime.date(2025, 11, 16)):
+            RegionDayRatingFactory.create(
+                region=region,
+                date=day,
+                min_rating=RegionDayRating.Rating.NO_RATING,
+                max_rating=RegionDayRating.Rating.NO_RATING,
+            )
+        RegionDayRatingFactory.create(region=region, date=datetime.date(2025, 11, 8))
+
+        first, last = RegionDayRating.objects.season_date_bounds(
+            datetime.date(2025, 11, 1),
+            datetime.date(2026, 5, 31),
+        )
+        assert first == datetime.date(2025, 11, 8)
+        assert last == datetime.date(2025, 11, 8)
+
+    def test_only_unrated_rows_returns_none_none(self) -> None:
+        """A window holding only no_rating rows has no data-driven bounds."""
+        RegionDayRatingFactory.create(
+            date=datetime.date(2025, 11, 4),
+            min_rating=RegionDayRating.Rating.NO_RATING,
+            max_rating=RegionDayRating.Rating.NO_RATING,
+        )
+
+        bounds = RegionDayRating.objects.season_date_bounds(
+            datetime.date(2025, 11, 1),
+            datetime.date(2026, 5, 31),
+        )
+        assert bounds == (None, None)
 
 
 @pytest.mark.django_db

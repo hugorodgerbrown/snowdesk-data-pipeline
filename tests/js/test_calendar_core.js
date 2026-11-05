@@ -12,8 +12,8 @@
  *   cache: the floor from `earliestKnownDate`, and since SNOW-927 the
  *   ceiling from `latestKnownDate`, which is today until the evening
  *   bulletin puts tomorrow in the payload.
- *   the SEASON — a highlight inside it. Days outside the season are still
- *   selectable, because the map has weather for them.
+ *   the BULLETIN days — the grid's one per-day mark, read from the same
+ *   cache. Days without one are still selectable: the map has weather.
  *
  * The season used throughout starts and ends mid-month, which is the real
  * shape of one: the scrubber's bounds are narrowed to the actual
@@ -32,7 +32,6 @@ import '../../static/js/calendar_core.js';
 const core = window.pwaCalendarCore;
 
 const SEASON_START = '2025-11-12';
-const SEASON_END = '2026-04-20';
 // Out of season, as the site is for half the year.
 const TODAY = '2026-09-02';
 const RANGE_MIN = SEASON_START;
@@ -250,41 +249,37 @@ describe('buildMonthGrid', () => {
     // The season ended in April; these are June days. Refusing them was the
     // bug — a picker fenced to the season cannot reach a day the weather
     // layer can answer for.
-    const cells = grid('2026-06', {
-      min: RANGE_MIN,
-      max: TODAY,
-      seasonStart: SEASON_START,
-      seasonEnd: SEASON_END,
-    });
+    const cells = grid('2026-06', { min: RANGE_MIN, max: TODAY });
     const days = cells.filter((c) => !c.blank);
     expect(days.every((c) => c.selectable)).toBe(true);
-    expect(days.every((c) => !c.inSeason)).toBe(true);
+    expect(days.every((c) => !c.hasBulletin)).toBe(true);
   });
 
-  it('offers in-season days whether or not a bulletin exists for them', () => {
-    // A gap in the archive is a day with no choropleth, not a day the map
-    // cannot show — and the grid does not distinguish the two. It carries
-    // no per-day "has a bulletin" mark at all; landing on such a day shows
-    // an uncoloured map, which is the same answer told once.
+  it('marks the bulletin days, and only those', () => {
     const cells = grid('2026-01', {
       min: RANGE_MIN,
       max: TODAY,
-      seasonStart: SEASON_START,
-      seasonEnd: SEASON_END,
+      bulletinDays: new Set(['2026-01-10', '2026-01-12']),
     });
-    const days = cells.filter((c) => !c.blank && c.dateKey >= SEASON_START);
-    expect(days.every((c) => c.selectable && c.inSeason)).toBe(true);
-    expect(days.every((c) => !('hasRatings' in c))).toBe(true);
+    const marked = cells.filter((c) => c.hasBulletin).map((c) => c.dateKey);
+    expect(marked).toEqual(['2026-01-10', '2026-01-12']);
+    // The gap between them stays selectable: the map has weather for it.
+    expect(cellFor(cells, '2026-01-11').selectable).toBe(true);
   });
 
-  it('marks the season boundary days as in-season and the ones outside as not', () => {
-    const cells = grid('2025-11', { seasonStart: SEASON_START, seasonEnd: SEASON_END });
-    expect(cellFor(cells, '2025-11-11').inSeason).toBe(false);
-    expect(cellFor(cells, '2025-11-12').inSeason).toBe(true);
+  it('never marks a day outside the reachable range', () => {
+    const cells = grid('2026-09', {
+      min: RANGE_MIN,
+      max: TODAY,
+      bulletinDays: new Set(['2026-09-02', '2026-09-03']),
+    });
+    expect(cellFor(cells, '2026-09-02').hasBulletin).toBe(true);
+    expect(cellFor(cells, '2026-09-03').hasBulletin).toBe(false);
+  });
 
-    const april = grid('2026-04', { seasonStart: SEASON_START, seasonEnd: SEASON_END });
-    expect(cellFor(april, '2026-04-20').inSeason).toBe(true);
-    expect(cellFor(april, '2026-04-21').inSeason).toBe(false);
+  it('marks nothing when no bulletin days are given', () => {
+    const cells = grid('2026-01', { min: RANGE_MIN, max: TODAY });
+    expect(cells.some((c) => c.hasBulletin)).toBe(false);
   });
 
   it('stays fully selectable when the ratings cache never resolves', () => {
@@ -382,5 +377,27 @@ describe('swipeStep (SNOW-1160)', () => {
   it('answers 0 for travel it cannot measure', () => {
     expect(core.swipeStep(NaN, 0)).toBe(0);
     expect(core.swipeStep(-100, Infinity)).toBe(0);
+  });
+});
+
+describe('bulletinDays', () => {
+  it('collects the dates rated above 0 for any region', () => {
+    const days = core.bulletinDays({
+      '2026-10-21': { 'CH-4115': 0, 'CH-1111': 2 },
+      '2026-10-24': { 'CH-4115': 1 },
+      '2026-11-04': { 'CH-4115': 0 },
+      '2026-11-05': { 'CH-4115': null },
+      '2026-11-06': {},
+    });
+    expect([...days].sort()).toEqual(['2026-10-21', '2026-10-24']);
+  });
+
+  it('ignores keys that are not dates and frames that are not objects', () => {
+    const days = core.bulletinDays({ nonsense: { a: 3 }, '2026-01-01': null });
+    expect(days.size).toBe(0);
+  });
+
+  it('answers an empty set for a missing cache', () => {
+    expect(core.bulletinDays(null).size).toBe(0);
   });
 });

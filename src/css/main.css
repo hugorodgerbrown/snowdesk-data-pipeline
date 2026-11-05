@@ -302,6 +302,11 @@
   --color-chip:         rgba(0, 0, 0, 0.06);
   --color-chip-strong:  rgba(0, 0, 0, 0.08);
 
+  /* A calendar day that has a bulletin (static/css/map.css .has-bulletin).
+     Twice the chip's weight: the chip is a hover surface, this is a fact a
+     glance at the grid must pick out. */
+  --color-day-filled:   rgba(0, 0, 0, 0.13);
+
   /* Accent (SNOW-645 review) — the "Manage downloads" sheet's overlay switch
      is the first control in this app whose ON state needs a plain interactive
      blue with no status meaning; --color-status-info-text (blue-800, "info"
@@ -899,6 +904,7 @@
      --color-border-strong's own light/dark idiom exactly. */
   --color-chip:         rgba(255, 255, 255, 0.06);
   --color-chip-strong:  rgba(255, 255, 255, 0.08);
+  --color-day-filled:   rgba(255, 255, 255, 0.16);
 
   /* Accent — see the light-mode definition above. A lighter blue reads
      better against the dark card than the light value would; the switch's
@@ -1022,6 +1028,7 @@
   --color-ring-selected: #3b82f6;
   --color-chip: rgba(0, 0, 0, 0.06);
   --color-chip-strong: rgba(0, 0, 0, 0.08);
+  --color-day-filled: rgba(0, 0, 0, 0.13);
   --color-accent: #2563eb;
   --color-accent-hover: #1d4ed8;
   --color-accent-text: #ffffff;
