@@ -175,7 +175,9 @@ def map_page(request: HttpRequest) -> HttpResponse:
       ``default_subregion_name`` — str: L2 sub-region name for the breadcrumb.
       ``default_major_name``  — str: L1 major-region name for the breadcrumb.
       ``is_offseason``        — True when no region has a rated row for
-                                today (SNOW-1431): data, not a date.
+                                today (SNOW-1431): data, not a date. No
+                                template reads it; it picks
+                                ``resort_guide_date`` below.
       ``edit_target``         — "resorts" when resort-edit mode is active,
                                 else "". The empty string is the normal map.
       ``edit_queue_url``      — URL for the edit queue API (resorts only).

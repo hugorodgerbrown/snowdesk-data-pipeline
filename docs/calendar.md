@@ -201,9 +201,10 @@ after the swap `static/js/season_sheet.js` adds `.season-day-ring` and
 and nothing intercepts the click, so one tap opens that day's bulletin.
 SNOW-1158's select-then-read readout panel ("Read the bulletin for …")
 was removed by SNOW-1163: it cost a second tap to reach a bulletin. The
-sheet's header carries the resort page's eyebrow, its season named by
-`season_header`'s `season_name`. There are no season tabs: the page has
-never offered a second season.
+sheet's header carries the resort page's eyebrow and the title "Danger
+calendar". `season_header` returns only `{"first_date": …}`, so the header
+names no season (SNOW-1431). There are no tabs: the grid is one span, from
+the region's first rated day to tomorrow.
 
 **Route ordering**: `partials/season/...` is registered before
 `<region_id:region_id>/` in [`apps/public/urls.py`](../apps/public/urls.py). Same

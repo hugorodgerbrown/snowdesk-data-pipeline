@@ -2,7 +2,7 @@
 name: the-route-rail-keeps-its-own-lifetime
 description: route_rail.js stays out of pwaMapOverlays, reads openNames(); closeOtherSheets, two-phase Escape, route-rail-changed, data-route-rail-open
 status: current
-last-reviewed: 2026-11-01
+last-reviewed: 2026-11-05
 ---
 
 # The route rail keeps its own lifetime, outside the overlay registry
@@ -57,8 +57,8 @@ narrower rule that covers exactly them.
   `#map[data-route-rail-open]` and `:root[data-map-sheet]` withdraw the
   controls that would open a competing surface. Surfaces that appear by
   themselves read the same mark and stay away: the tour offer in
-  `map_tour_offer.js` and the between-seasons note in
-  `map_between_seasons.js`.
+  `map_tour_offer.js`, and the between-seasons note in
+  `map_between_seasons.js` until SNOW-1431 removed it.
 - **Escape goes to what the reader is looking at.** On the window's
   capture phase the rail records whether something else will take the
   key: a focused field, an open `[data-overlay]` (every
