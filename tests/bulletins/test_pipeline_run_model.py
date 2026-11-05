@@ -4,12 +4,14 @@ tests/bulletins/test_pipeline_run_model.py — Tests for the PipelineRun model.
 Covers the terminal-state rule (SNOW-1228): ``mark_finished`` stores
 PARTIAL when the run recorded any failed record and SUCCESS otherwise,
 while ``mark_success`` — for callers that record no failures — always
-stores SUCCESS.
+stores SUCCESS. ``mark_failed`` logs one ERROR naming the run, what
+triggered it (the provider, for fetch_bulletins) and the cause (SNOW-1425).
 """
 
 from __future__ import annotations
 
 import datetime
+import logging
 
 import pytest
 
@@ -95,3 +97,30 @@ class TestPipelineRunToString:
         run = PipelineRunFactory.create()
 
         assert str(run) == run.to_string()
+
+
+@pytest.mark.django_db
+class TestPipelineRunMarkFailed:
+    """Tests for PipelineRun.mark_failed's single ERROR log (SNOW-1425)."""
+
+    def test_logs_one_error_naming_the_trigger_and_cause(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The one ERROR names the run, the provider and the cause."""
+        run = PipelineRunFactory.create(
+            status=PipelineRun.Status.RUNNING,
+            triggered_by="fetch_bulletins command [ALBINA]",
+        )
+
+        with caplog.at_level(logging.ERROR, logger="apps.bulletins.models"):
+            run.mark_failed(TimeoutError("Read timed out"))
+
+        errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
+        assert len(errors) == 1
+        message = errors[0].getMessage()
+        assert str(run.pk) in message
+        assert "[ALBINA]" in message
+        assert "Read timed out" in message
+        run.refresh_from_db()
+        assert run.status == PipelineRun.Status.FAILED
+        assert run.error_message == "Read timed out"

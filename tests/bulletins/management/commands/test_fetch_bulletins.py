@@ -18,6 +18,7 @@ Covers the unified fetch_bulletins command introduced in SNOW-190:
 """
 
 import json
+import logging
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from io import StringIO
@@ -33,6 +34,7 @@ from django.test import RequestFactory, override_settings
 
 from apps.bulletins.dev_views import slf_mirror
 from apps.bulletins.models import Bulletin, PipelineRun, RegionDayRating
+from apps.core.command_errors import ReportedCommandError
 from apps.ingest.models import SourceBulletin
 from apps.ingest.public import read_slf_archive, write_slf_archive
 from tests.factories import BulletinFactory, MicroRegionFactory, PipelineRunFactory
@@ -1402,3 +1404,145 @@ class TestFetchBulletinsMeteofranceRefusal:
         run = PipelineRun.objects.get()
         assert run.status == PipelineRun.Status.PARTIAL
         assert run.records_failed == 1
+
+
+_COMMAND_LOGGER = "apps.bulletins.management.commands.fetch_bulletins"
+
+
+def _error_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    """Return the captured records at ERROR or above, from any logger.
+
+    Args:
+        caplog: pytest's log capture fixture.
+
+    Returns:
+        Every captured record whose level is ERROR or higher.
+
+    """
+    return [r for r in caplog.records if r.levelno >= logging.ERROR]
+
+
+@pytest.mark.django_db
+class TestFetchBulletinsReportsEachFailureOnce:
+    """A failed source is logged at ERROR once, where it starts (SNOW-1425)."""
+
+    def test_timed_out_provider_logs_exactly_one_error(
+        self, settings: Any, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A real ALBINA fetch that times out: one ERROR, then WARNINGs.
+
+        The timeout escapes the walk, ``PipelineRun.mark_failed`` logs it at
+        ERROR naming the provider, and the command passes it on at WARNING
+        while still failing.
+        """
+        settings.ALBINA_REGIONS = ("AT-07",)
+        timeout = requests.ReadTimeout("Read timed out. (read timeout=30)")
+
+        with (
+            patch("apps.ingest.sources.albina.requests.get", side_effect=timeout),
+            caplog.at_level(logging.DEBUG),
+            pytest.raises(ReportedCommandError, match="ALBINA"),
+        ):
+            call_command(
+                "fetch_bulletins",
+                "--source",
+                "albina",
+                "--date",
+                "2026-03-15",
+                "--commit",
+                stdout=StringIO(),
+            )
+
+        errors = _error_records(caplog)
+        assert len(errors) == 1, [r.getMessage() for r in errors]
+        assert errors[0].name == "apps.bulletins.models"
+        assert "[ALBINA]" in errors[0].getMessage()
+        assert "Read timed out" in errors[0].getMessage()
+        warnings = [
+            r
+            for r in caplog.records
+            if r.name == _COMMAND_LOGGER and r.levelno == logging.WARNING
+        ]
+        assert len(warnings) == 1
+        assert PipelineRun.objects.get().status == PipelineRun.Status.FAILED
+
+    @patch(PATCH_SLF)
+    def test_failed_run_status_is_passed_on_at_warning(
+        self, mock_run: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A FAILED run adds no ERROR of the command's own, and still fails."""
+        mock_run.return_value = _make_failed_run("connection refused")
+
+        with (
+            caplog.at_level(logging.DEBUG, logger=_COMMAND_LOGGER),
+            pytest.raises(CommandError, match="connection refused"),
+        ):
+            call_command(
+                "fetch_bulletins", "--source", "slf", "--date", "2026-03-15", "--commit"
+            )
+
+        own = [r for r in caplog.records if r.name == _COMMAND_LOGGER]
+        assert not [r for r in own if r.levelno >= logging.ERROR]
+        assert len([r for r in own if r.levelno == logging.WARNING]) == 1
+
+    @patch(PATCH_SLF)
+    def test_raising_pipeline_still_logs_an_error(
+        self, mock_run: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Nothing else logged an exception the pipeline raised, so ERROR it."""
+        mock_run.side_effect = RuntimeError("unexpected error")
+
+        with (
+            caplog.at_level(logging.DEBUG, logger=_COMMAND_LOGGER),
+            pytest.raises(CommandError),
+        ):
+            call_command(
+                "fetch_bulletins", "--source", "slf", "--date", "2026-03-15", "--commit"
+            )
+
+        errors = _error_records(caplog)
+        assert len(errors) == 1
+        assert errors[0].name == _COMMAND_LOGGER
+
+    @patch(PATCH_SLF)
+    def test_failed_records_still_log_an_error(
+        self, mock_run: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """records_failed > 0 is not reported elsewhere, so it stays at ERROR."""
+        mock_run.return_value = _make_failed_records_run(records_failed=2)
+
+        with (
+            caplog.at_level(logging.DEBUG, logger=_COMMAND_LOGGER),
+            pytest.raises(CommandError),
+        ):
+            call_command(
+                "fetch_bulletins", "--source", "slf", "--date", "2026-03-15", "--commit"
+            )
+
+        assert [r.name for r in _error_records(caplog)] == [_COMMAND_LOGGER]
+
+    @patch(PATCH_ALBINA)
+    @patch(PATCH_SLF)
+    def test_aggregate_is_reported_and_names_every_source(
+        self, mock_slf: MagicMock, mock_albina: MagicMock
+    ) -> None:
+        """The closing error is a ReportedCommandError naming both sources."""
+        mock_slf.return_value = _make_failed_run("slf down")
+        mock_albina.side_effect = RuntimeError("albina down")
+
+        with pytest.raises(ReportedCommandError) as excinfo:
+            call_command(
+                "fetch_bulletins",
+                "--source",
+                "slf",
+                "albina",
+                "--date",
+                "2026-03-15",
+                "--commit",
+            )
+
+        message = str(excinfo.value)
+        assert "SLF: " in message
+        assert "slf down" in message
+        assert "ALBINA: " in message
+        assert "albina down" in message

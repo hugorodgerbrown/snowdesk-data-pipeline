@@ -77,6 +77,7 @@ from apps.bulletins.services.slf_fetcher import (
     BulletinSource,
     get_sources,
 )
+from apps.core.command_errors import ReportedCommandError
 from apps.core.command_iteration import non_negative_float
 from apps.core.command_register import RegisteredCommand
 
@@ -223,6 +224,12 @@ class Command(RegisteredCommand):
                     local_mirror=local_mirror,
                     delay=delay,
                 )
+            except ReportedCommandError as exc:
+                # Already logged at ERROR where it started (PipelineRun
+                # .mark_failed); another ERROR would file a second Sentry
+                # event for the same failure (SNOW-1425).
+                failures.append(f"{source_name}: {exc}")
+                logger.warning("fetch_bulletins source=%s failed: %s", source_name, exc)
             except CommandError as exc:
                 # Record the failure but continue with remaining sources.
                 failures.append(f"{source_name}: {exc}")
@@ -231,8 +238,10 @@ class Command(RegisteredCommand):
                 )
 
         if failures:
+            # Every failure above was logged at ERROR exactly once, so the
+            # aggregate is already reported: the scheduler logs it at WARNING.
             joined = "; ".join(failures)
-            raise CommandError(f"One or more sources failed — {joined}")
+            raise ReportedCommandError(f"One or more sources failed — {joined}")
 
     def _run_source(
         self,
@@ -262,8 +271,10 @@ class Command(RegisteredCommand):
             delay: Seconds to sleep between requests.
 
         Raises:
-            CommandError: If the pipeline raises, returns a failed status, or
-                completes with ``records_failed > 0``.
+            ReportedCommandError: If the pipeline returns a failed status;
+                ``PipelineRun.mark_failed`` has logged the cause at ERROR.
+            CommandError: If the pipeline raises, the stash flush fails, or
+                the run completes with ``records_failed > 0``.
 
         """
         start, end, start_source = self._resolve_dates(options, source)
@@ -301,7 +312,8 @@ class Command(RegisteredCommand):
             raise CommandError(f"{source.name} pipeline failed: {exc}") from exc
 
         if run.status == PipelineRun.Status.FAILED:
-            raise CommandError(
+            # mark_failed logged the cause at ERROR when it failed the run.
+            raise ReportedCommandError(
                 f"{source.name} pipeline run {run.pk} failed: {run.error_message}"
             )
 
