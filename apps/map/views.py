@@ -41,7 +41,11 @@ from apps.bulletins.models import (
     RegionDayRating,
 )
 from apps.map import resort_guide
-from apps.map.map_3d import MAP_3D_DEM_TILE_URL, map_3d_enabled
+from apps.map.map_3d import (
+    MAP_3D_DEM_TILE_URL,
+    map_3d_enabled,
+    pending_route_share_for_3d,
+)
 from apps.map.problem_terrain import problem_terrain_key
 from apps.observations.models import FieldObservation
 from apps.public.map_shared import map_modes_enabled, trip_url_templates
@@ -279,6 +283,10 @@ def map_page(request: HttpRequest) -> HttpResponse:
     # SNOW-1230/1231: one query answers both the welcome card's example
     # link (is one set?) and the resort guide's no-bulletin day (its day).
     example = RouteShare.objects.example().only("example_date").first()
+    map_3d_flagged = map_3d_enabled(request)
+    # A flagged reader's roundel opens the plain 3-D map, which draws their
+    # routes and their followed shares anyway.
+    map_3d_route_share = "" if map_3d_flagged else pending_route_share_for_3d(request)
 
     return render(
         request,
@@ -318,8 +326,10 @@ def map_page(request: HttpRequest) -> HttpResponse:
             "alert_list_url": alert_list_url(request),
             # SNOW-1394: the Dated / Terrain toggle, behind its flag.
             "map_modes_enabled": map_modes_enabled(request),
-            # The "3D" roundel, behind the map_3d flag (apps/map/map_3d.py).
-            "map_3d_link": map_3d_enabled(request),
+            # The "3D" roundel, behind the map_3d flag (apps/map/map_3d.py),
+            # or carrying a route a 3-D reader shared to whoever followed it.
+            "map_3d_link": map_3d_flagged or bool(map_3d_route_share),
+            "map_3d_route_share": map_3d_route_share,
             # What the roundel prefetches, so the 3-D terrain is cached first.
             "map_3d_dem_tile_url": MAP_3D_DEM_TILE_URL,
         },

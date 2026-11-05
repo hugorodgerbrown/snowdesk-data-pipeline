@@ -47,6 +47,7 @@ from unittest.mock import patch
 
 import pytest
 from django.test import Client
+from django.urls import reverse
 from django.utils import timezone
 
 from apps.routes.models import Route
@@ -297,6 +298,80 @@ class TestRouteShareRedirect:
         """A navigation, and only a navigation."""
         share = RouteShareFactory.create()
         assert client.post(_redirect_url(share.token)).status_code == 405
+
+
+@pytest.mark.django_db
+class TestRouteShareRedirect3d:
+    """Following a share link into the 3-D map: /routes/s/<token>/3d/."""
+
+    def test_the_url_is_the_share_link_plus_3d(self) -> None:
+        """The link hangs off the route share URL."""
+        assert reverse("routes:share_redirect_3d", args=["abc"]) == "/routes/s/abc/3d/"
+
+    def test_a_live_token_redirects_to_the_3d_map(self, client: Client) -> None:
+        """302, not stored, to /map/3d/ carrying the token."""
+        share = RouteShareFactory.create()
+
+        response = client.get(f"/routes/s/{share.token}/3d/")
+
+        assert response.status_code == 302
+        assert response["Location"] == f"/map/3d/?route_share={share.token}"
+        assert response["Cache-Control"] == "no-store"
+
+    def test_the_token_lands_in_the_session(self, client: Client) -> None:
+        """The same pending token the 2-D follow seats."""
+        share = RouteShareFactory.create()
+
+        client.get(f"/routes/s/{share.token}/3d/")
+
+        assert client.session[PENDING_SESSION_KEY] == [share.token]
+
+    def test_the_view_is_carried_and_nothing_else(self, client: Client) -> None:
+        """``at`` and ``layers`` go across; any other parameter is dropped."""
+        share = RouteShareFactory.create()
+
+        response = client.get(
+            f"/routes/s/{share.token}/3d/",
+            {"at": "7.8,46.1,12,60,-20", "layers": "steep,tours", "x": "1"},
+        )
+
+        assert response["Location"] == (
+            f"/map/3d/?route_share={share.token}"
+            "&at=7.8,46.1,12,60,-20&layers=steep,tours"
+        )
+
+    def test_an_unknown_token_returns_404(self, client: Client) -> None:
+        """As the 2-D follow."""
+        assert client.get("/routes/s/nope/3d/").status_code == 404
+
+    def test_an_expired_share_returns_410_and_writes_nothing(
+        self, client: Client
+    ) -> None:
+        """As the 2-D follow."""
+        share = RouteShareFactory.create(expires_at=timezone.now() - timedelta(days=1))
+
+        response = client.get(f"/routes/s/{share.token}/3d/")
+
+        assert response.status_code == 410
+        assert PENDING_SESSION_KEY not in client.session
+
+    def test_a_prefetch_redirects_without_writing(self, client: Client) -> None:
+        """As the 2-D follow."""
+        share = RouteShareFactory.create()
+
+        response = client.get(
+            f"/routes/s/{share.token}/3d/", HTTP_SEC_PURPOSE="prefetch"
+        )
+
+        assert response.status_code == 302
+        assert PENDING_SESSION_KEY not in client.session
+
+    def test_the_rate_limited_branch_returns_429(self, client: Client) -> None:
+        """The follows' shared budget answers 429 when spent."""
+        share = RouteShareFactory.create()
+        with patch("django_ratelimit.decorators.is_ratelimited", return_value=True):
+            response = client.get(f"/routes/s/{share.token}/3d/")
+        assert response.status_code == 429
 
 
 # ---------------------------------------------------------------------------

@@ -24,6 +24,8 @@ plus three navigation/JSON endpoints outside the ``partials/`` prefix:
 - ``route_share_redirect`` (GET/HEAD) — SNOW-764: follows a share link,
   records the token in the session and 302s to the map. A navigation, not
   a fragment, which is why it sits outside ``partials/``.
+- ``route_share_redirect_3d`` (GET/HEAD) — the same follow into the 3-D
+  map (``/routes/s/<token>/3d/``).
 
 plus one JSON endpoint the owner's Share button calls:
 
@@ -89,6 +91,7 @@ import json
 import logging
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlencode
 from uuid import UUID
 
 from django.conf import settings
@@ -129,6 +132,8 @@ from apps.routes.services.routes import (
     upload_route,
 )
 from apps.routes.services.shares import (
+    SHARE_FOLLOW_GROUP,
+    SHARE_FOLLOW_RATE,
     RouteShareTokenCollision,
     add_pending_token,
     claim_route_share,
@@ -136,6 +141,7 @@ from apps.routes.services.shares import (
     drop_pending_token,
     pending_shares,
     pending_tokens,
+    share_follow_bucket,
 )
 from apps.routes.services.ski_tours import (
     draft_tour_route,
@@ -192,11 +198,14 @@ _GPX_REJECTED_MESSAGE = (
     "containing a track or a route."
 )
 
-# The share-link follow's rate-limit budget, keyed on (token, IP). Mirrors
-# ``apps.public.views.SHARE_CLICK_RATE`` and its reasoning: a real visitor
-# re-following their own link never approaches it, while a scanner walking
-# the token space cannot grow the session table without bound.
-_SHARE_FOLLOW_RATE = "30/h"
+# The share-link follow's budget, shared by every way in that seats a
+# pending token (apps/routes/services/shares.py SHARE_FOLLOW_RATE).
+_SHARE_FOLLOW_RATE = SHARE_FOLLOW_RATE
+_SHARE_FOLLOW_GROUP = SHARE_FOLLOW_GROUP
+
+# The 3-D map's view parameters (static/js/map_3d_core.js viewQuery), the
+# only query a 3-D share follow carries on to /map/3d/.
+_SHARE_3D_VIEW_PARAMS = ("at", "layers")
 
 # The owner's Share button's budget. Keyed on ``user`` because the endpoint
 # is auth-only, matching ``route_create``'s own limiter. Each call mints a
@@ -262,7 +271,8 @@ def _share_follow_rate_limit_key(group: str, request: HttpRequest) -> str:
     unrelated links.
 
     Args:
-        group: The django-ratelimit group name (unused — one group here).
+        group: The django-ratelimit group name (unused — one group here,
+            shared by the 2-D and 3-D follows).
         request: The current HTTP request.
 
     Returns:
@@ -271,7 +281,7 @@ def _share_follow_rate_limit_key(group: str, request: HttpRequest) -> str:
     """
     match = request.resolver_match
     token = match.kwargs.get("token", "") if match is not None else ""
-    return f"{token}|{client_ip(request)}"
+    return share_follow_bucket(token, request)
 
 
 def _pending_shares_for(request: HttpRequest) -> list[RouteShare]:
@@ -980,7 +990,12 @@ def route_share_create(request: HttpRequest, uuid: UUID) -> JsonResponse:
 
 
 @require_http_methods(["GET", "HEAD"])
-@ratelimit(key=_share_follow_rate_limit_key, rate=_SHARE_FOLLOW_RATE, block=False)
+@ratelimit(
+    group=_SHARE_FOLLOW_GROUP,
+    key=_share_follow_rate_limit_key,
+    rate=_SHARE_FOLLOW_RATE,
+    block=False,
+)
 def route_share_redirect(request: HttpRequest, token: str) -> HttpResponse:
     """Follow a share link: remember the token and 302 to the map.
 
@@ -1029,6 +1044,67 @@ def route_share_redirect(request: HttpRequest, token: str) -> HttpResponse:
         A 302 to the map, or a 404/410/429.
 
     """
+    return _follow_route_share(
+        request, token, f"{reverse('public:map')}?route_share={token}"
+    )
+
+
+@require_http_methods(["GET", "HEAD"])
+@ratelimit(
+    group=_SHARE_FOLLOW_GROUP,
+    key=_share_follow_rate_limit_key,
+    rate=_SHARE_FOLLOW_RATE,
+    block=False,
+)
+def route_share_redirect_3d(request: HttpRequest, token: str) -> HttpResponse:
+    """Follow a share link into the 3-D map: ``/routes/s/<token>/3d/``.
+
+    The same follow as ``route_share_redirect`` — the same 404/410/429, the
+    same rate-limit bucket and the same pending token seated in the session
+    — with the 3-D map as the destination: ``/map/3d/?route_share=<token>``.
+    Whether that share may open the 3-D map at all is the map's question,
+    not this view's (``apps.map.map_3d.route_share_for_3d``): apps/routes
+    does not import apps/map (``tests/map/test_boundary.py``).
+
+    The 3-D map's own Share appends its view (``?at=…&layers=…``) to this
+    link, so the recipient opens on the sharer's camera and switches. Those
+    two parameters are carried across and nothing else.
+
+    Args:
+        request: The incoming GET or HEAD request.
+        token: The share token, from the URL.
+
+    Returns:
+        A 302 to the 3-D map, or a 404/410/429.
+
+    """
+    query = {"route_share": token}
+    for key in _SHARE_3D_VIEW_PARAMS:
+        value = request.GET.get(key)
+        if value is not None:
+            query[key] = value
+    return _follow_route_share(
+        request, token, f"{reverse('public:map_3d')}?{urlencode(query, safe=',')}"
+    )
+
+
+def _follow_route_share(
+    request: HttpRequest, token: str, destination: str
+) -> HttpResponse:
+    """Check a followed share, seat its token in the session and redirect.
+
+    The body the two share follows (2-D and 3-D) have in common; see
+    ``route_share_redirect`` for why each step is the way it is.
+
+    Args:
+        request: The incoming GET or HEAD request.
+        token: The share token, from the URL.
+        destination: Where a live share sends the visitor.
+
+    Returns:
+        A 302 to ``destination``, or a 404/410/429.
+
+    """
     if getattr(request, "limited", False):
         return HttpResponse(status=429)
 
@@ -1050,7 +1126,6 @@ def route_share_redirect(request: HttpRequest, token: str) -> HttpResponse:
     if is_top_level_navigation(request):
         add_pending_token(request.session, token)
 
-    destination = f"{reverse('public:map')}?route_share={token}"
     redir = HttpResponseRedirect(destination)
     redir["Cache-Control"] = "no-store"
     return redir
@@ -1227,7 +1302,8 @@ def _draw_preview_rate_limit_key(group: str, request: HttpRequest) -> str:
     """Return the rate-limit bucket for a draft preview: the client IP.
 
     Args:
-        group: The django-ratelimit group name (unused — one group here).
+        group: The django-ratelimit group name (unused — one group here,
+            shared by the 2-D and 3-D follows).
         request: The current HTTP request.
 
     Returns:
@@ -1370,7 +1446,8 @@ def _ski_tour_feature_rate(group: str, request: HttpRequest) -> str:
     """Return the tour Feature's budget: the walk's when it samples (SNOW-1417).
 
     Args:
-        group: The django-ratelimit group name (unused — one group here).
+        group: The django-ratelimit group name (unused — one group here,
+            shared by the 2-D and 3-D follows).
         request: The current HTTP request.
 
     Returns:

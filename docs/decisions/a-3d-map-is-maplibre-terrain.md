@@ -48,3 +48,19 @@ work, not app JS, so a different engine buys no speed either.
   thing to measure before 3-D reaches `/map/`.
 - Offline: Terrarium tiles are not in an area download. Bringing 3-D to
   `/map/` offline means adding the DEM to downloads.
+
+**Sharing (5 Nov 2026).** Two links open the sandbox past the flag, for
+anyone, signed in or not, and both stop when the sharer's `Map3dShare` row
+is deleted in the admin:
+
+- `?share=<token>` (`Map3dShare`, one per reader) opens the page with no
+  routes at all: a reader's routes are private.
+- A route share, `/routes/s/<token>/3d/` (`routes:share_redirect_3d`): the
+  ordinary route share link with `3d/` on the end. It opens
+  `/map/3d/?route_share=<token>` on that one route, drawn through the
+  session's pending shares in `routes.geojson`, so the visitor sees the
+  shared route and none of the sharer's others. Only a live, non-example
+  share by a reader holding a `Map3dShare` qualifies
+  (`map_3d.route_share_for_3d`). Inside the flag, Share on the 3-D map sends
+  this link for the route that is open; a friend who followed the 2-D link
+  gets /map/'s "3D" roundel carrying it (`pending_route_share_for_3d`).
