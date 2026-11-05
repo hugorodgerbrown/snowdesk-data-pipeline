@@ -66,6 +66,6 @@ same call SNOW-723 made for the meteogram itself.
   property of the data, not a gap waiting to be filled.
 - **The page never branches on the calendar.** The discriminator is
   `show_day_picker` (`len(panel["days"]) > 1`), computed in
-  `apps.public.views._location_forecast_context`. "Is this a past date" is
+  `apps.public.weather_points._location_forecast_context`. "Is this a past date" is
   never asked, so a same-day backfill and a week-old one render the same
   way.

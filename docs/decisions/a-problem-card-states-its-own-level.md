@@ -15,7 +15,7 @@ Every problem card's title bar leads with its level in words and number —
 "**Considerable (3-)** Dry avalanches · all day" — with the subdivision's
 words after it for a screen reader. The Day Risk Profile renders only where
 it says what no card can: an elevation split (ALBINA, Météo-France), or a
-day with no problem cards (`views._day_risk_profile_adds_to_cards`). On the
+day with no problem cards (`bulletin_panels._day_risk_profile_adds_to_cards`). On the
 map's region sheet the peek holds the tile, the name and the breadcrumb; the
 bulletin's first heading names the day (a-sheet-names-its-day-in-its-section-headers.md).
 

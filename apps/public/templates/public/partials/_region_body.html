@@ -14,7 +14,7 @@ is therefore one partial in two containers:
     peek row, which already names the region and the day.
 
 A fact about the day is added here, never to one container alone. The
-context comes from ``apps.public.views.build_bulletin_body``, the one
+context comes from ``apps.public.bulletin_panels.build_bulletin_body``, the one
 builder both containers call.
 
 Context:
@@ -140,7 +140,7 @@ Context:
             {% comment %}
                    Day-character callout banner — editorial commentary
                    produced by compute_day_character() in the render-model
-                   service. Hidden while views.SHOW_DAY_CHARACTER is
+                   service. Hidden while bulletin_panels.SHOW_DAY_CHARACTER is
                    False (the copy is being reworked); also suppressed when
                    no day_character is available (defensive — should always
                    be present when the panel renders).
@@ -161,7 +161,7 @@ Context:
                    each card's title now leads with its own level and
                    window, so the profile renders for an elevation split
                    or a day with no cards — see
-                   views._day_risk_profile_adds_to_cards.
+                   bulletin_panels._day_risk_profile_adds_to_cards.
 
                    Flat-but-split: the sub-caption appears only when
                    day_movement is "shifting" — the level holds AND a

@@ -27,7 +27,7 @@ See "Going public" before turning either on.
 | Log | One `BulletinAlert` row per (account, region, day, state). The previous row is the "last told" state, so the log *is* the change memory | `apps/bulletins/models.py::BulletinAlert` |
 | Email | Sent from `ALERTS_FROM_EMAIL` via a django-tasks worker, with one-click `List-Unsubscribe` | `apps/accounts/services/alert_email.py` |
 | Landing | A bundle lands on `/alerts/<day>/`; a one-place alert on the map's region panel (`/map/?d=…#region`) | `apps/public/alert_views.py`, `public/alerts_day.html` |
-| Since strip | "Since Friday" sentences at the top of the region body, same words as the alert | `templates/includes/_since_strip.html`, `public.views._since_strip` |
+| Since strip | "Since Friday" sentences at the top of the region body, same words as the alert | `templates/includes/_since_strip.html`, `public.bulletin_panels._since_strip` |
 | Settings | Mode, email, this device, and a switch per place | `apps/accounts/alert_views.py`, `_alert_settings.html`, `alerts_optin.js` |
 | Dot | The Today sun in the map's date row shows a red dot (per device) while the newest message of the past week is one this device has not opened Today since; drawn only for an account with alerts on. The bell that listed the messages was retired by SNOW-1366 | `alerts.recent_alerts`, `accounts:alert_recent` (`/account/alerts/recent/`), `alert_views.alert_list_url`, `static/js/today_panel.js` |
 | Replay | A real season's alerts for one region, in delivery order | `services/replay.py`, `replay_bulletin_alerts`, staff `/_alerts-replay/` |

@@ -166,30 +166,13 @@ from apps.weather.models import Weather
 from apps.weather.services.fetch import FORECAST_DAYS
 from apps.weather.services.weather_display import build_point_weather_days
 
-from .decorators import lowercase_region_id
-from .views import (
-    _resolve_region_for_bulletin,
-    _weather_point_context,
+from .bulletin_panels import (
+    COUNTRY_NAMES,
+    PROVIDER_BY_COUNTRY,
+    resolve_region_for_bulletin,
 )
-
-# ISO 3166-1 alpha-2 → English country name mapping. Used by the region
-# tooltip breadcrumb and the ?country= filter on the GeoJSON endpoints.
-COUNTRY_NAMES: dict[str, str] = {
-    "CH": "Switzerland",
-    "FR": "France",
-    "AT": "Austria",
-    "IT": "Italy",
-}
-
-# ISO 3166-1 alpha-2 → avalanche provider label mapping. Used by the region
-# tooltip to identify the upstream data publisher for permanently-uncovered
-# regions. Météo-France retains its accent — it is a proper noun.
-_PROVIDER_BY_COUNTRY: dict[str, str] = {
-    "CH": "SLF",
-    "AT": "ALBINA",
-    "IT": "ALBINA",
-    "FR": "Météo-France",
-}
+from .decorators import lowercase_region_id
+from .weather_points import weather_point_context
 
 # Valid values for the mandatory ?country= query param on GeoJSON endpoints.
 # Stored as uppercase ISO-2 codes; the query param is accepted case-insensitively.
@@ -2093,7 +2076,7 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
 
     # SNOW-54: resolve coverage and provider label for the tooltip branch.
     covered = region.region_id in covered_region_ids()
-    provider_name = _PROVIDER_BY_COUNTRY.get(region.subregion.major.country, "")
+    provider_name = PROVIDER_BY_COUNTRY.get(region.subregion.major.country, "")
 
     level = day_rating.max_rating if day_rating else "no_rating"
 
@@ -2240,7 +2223,7 @@ def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
         {
             "html": render_to_string(
                 "public/partials/_weather_detail.html",
-                _weather_point_context(location, target_date, timezone.now()),
+                weather_point_context(location, target_date, timezone.now()),
                 request=request,
             ),
         }
@@ -3944,7 +3927,7 @@ def share_create(request: HttpRequest) -> JsonResponse:
         return error_response
 
     try:
-        region = _resolve_region_for_bulletin(region_id)  # type: ignore[arg-type]
+        region = resolve_region_for_bulletin(region_id)  # type: ignore[arg-type]
     except Http404:
         return JsonResponse({"error": "region_not_found"}, status=404)
 

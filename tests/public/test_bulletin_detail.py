@@ -31,9 +31,9 @@ from apps.bulletins.services.selection import (
     select_bulletin_for_date,
     select_default_issue as _select_default_issue,
 )
+from apps.public.bulletin_panels import _has_later_bulletin
 from apps.public.views import (
     _get_nav_dates,
-    _has_later_bulletin,
     _issues_for_date,
     _resolve_selected_issue,
 )
@@ -681,7 +681,7 @@ class TestBulletinDetailView:
             },
         )
 
-        with patch("apps.public.views.RENDER_MODEL_VERSION", 2):
+        with patch("apps.public.bulletin_panels.RENDER_MODEL_VERSION", 2):
             with patch(
                 "apps.ingest.normalise.render_model.build_render_model"
             ) as builder:

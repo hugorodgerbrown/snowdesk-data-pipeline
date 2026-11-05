@@ -483,7 +483,8 @@ def _without_places(monkeypatch: pytest.MonkeyPatch) -> None:
     card's own narrowing without the "Where this is" rows lifting it to FULL.
     """
     monkeypatch.setattr(
-        "apps.public.views._weather_point_places", lambda location: (None, None)
+        "apps.public.weather_points._weather_point_places",
+        lambda location: (None, None),
     )
 
 

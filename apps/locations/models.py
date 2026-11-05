@@ -623,7 +623,7 @@ class ResortLocationQuerySet(models.QuerySet["ResortLocation"]):
         """Return the links a resort leads with.
 
         The resort page's forecast strip sorts on this flag (``-is_primary``
-        in ``apps.public.views._resort_forecast_points``) so the primary link
+        in ``apps.public.bulletin_panels._resort_forecast_points``) so the primary link
         leads within its role; nothing reads this queryset method directly
         yet. It
         defaults to the ``BASE`` role, and that remains the right thing to

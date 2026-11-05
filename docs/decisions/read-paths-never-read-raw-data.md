@@ -24,7 +24,7 @@ layer and the MCP read tools all hold to it:
 - `issues_for_date` and `select_bulletins_for_regions` deferred
   `raw_data` until SNOW-1337 dropped the column.
 
-**No request rebuilds a render model.** `_get_render_model` returns a row's
+**No request rebuilds a render model.** `get_render_model` returns a row's
 stored model when it is at `RENDER_MODEL_VERSION` and otherwise the same
 `{"version": 0, "error": …}` sentinel a failed build stores, so the page
 shows its error card. A `RENDER_MODEL_VERSION` bump ships with a

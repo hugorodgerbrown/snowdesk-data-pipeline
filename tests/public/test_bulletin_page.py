@@ -28,8 +28,8 @@ from pytest_django.fixtures import Settings
 
 from apps.bulletins.models import Bulletin
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
-from apps.public import views
-from apps.public.views import BULLETIN_SOURCE_LINKS
+from apps.public import bulletin_panels
+from apps.public.bulletin_panels import BULLETIN_SOURCE_LINKS
 from apps.regions.models import MicroRegion
 from tests.factories import (
     AccountFactory,
@@ -150,7 +150,7 @@ def _problem(
     """
     Build a raw render-model problem dict (as stored in DB, pre-enrichment).
 
-    ``apps.public.views.enrich_render_model`` converts these to the richer shape
+    ``apps.public.bulletin_panels.enrich_render_model`` converts these to the richer shape
     expected by templates at render time.  Tests must store only JSON-safe
     structures in the DB.
     """
@@ -433,7 +433,7 @@ class TestEnrichAvalancheProblemAspectOrder:
 
     def _enrich(self, aspects: list[str]) -> dict[str, Any]:
         """Return ``{"aspects": …}`` sorted as a problem card sorts them."""
-        from apps.public.views import _sort_aspects_clockwise
+        from apps.public.bulletin_panels import _sort_aspects_clockwise
 
         return {"aspects": _sort_aspects_clockwise(aspects)}
 
@@ -2098,7 +2098,7 @@ class TestDayWindowsElevationSplit:
 
     def test_single_rating_per_period_unchanged(self) -> None:
         """One rating in a period → one row with empty caption (SLF baseline)."""
-        from apps.public.views import _day_windows_from_rm_ratings
+        from apps.public.bulletin_panels import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings([self._rm_rating("moderate")])
         assert len(rows) == 1
@@ -2107,7 +2107,7 @@ class TestDayWindowsElevationSplit:
 
     def test_matching_bands_collapse_to_single_row(self) -> None:
         """Two band ratings with same level → one row, no elevation caption."""
-        from apps.public.views import _day_windows_from_rm_ratings
+        from apps.public.bulletin_panels import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings(
             [
@@ -2120,7 +2120,7 @@ class TestDayWindowsElevationSplit:
 
     def test_differing_numeric_bands_emit_two_rows(self) -> None:
         """Differing band levels with numeric pivot → two rows, ordered low→high."""
-        from apps.public.views import _day_windows_from_rm_ratings
+        from apps.public.bulletin_panels import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings(
             [
@@ -2139,7 +2139,7 @@ class TestDayWindowsElevationSplit:
 
     def test_treeline_pivot_emits_distinct_captions(self) -> None:
         """Treeline-pivoted bands produce 'below treeline' / 'above treeline'."""
-        from apps.public.views import _day_windows_from_rm_ratings
+        from apps.public.bulletin_panels import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings(
             [
@@ -2158,7 +2158,7 @@ class TestDayWindowsElevationSplit:
 
     def test_albina_no_all_day_emits_per_period(self) -> None:
         """No ``all_day`` rating → emit earlier then later, each potentially split."""
-        from apps.public.views import _day_windows_from_rm_ratings
+        from apps.public.bulletin_panels import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings(
             [
@@ -2178,7 +2178,7 @@ class TestDayWindowsElevationSplit:
 
     def test_all_day_split_with_later_overlay(self) -> None:
         """A split all_day with a higher later overlay emits both, in order."""
-        from apps.public.views import _day_windows_from_rm_ratings
+        from apps.public.bulletin_panels import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings(
             [
@@ -2205,7 +2205,7 @@ class TestDayWindowsElevationSplit:
         low/no-elevation]. The banded pair already partitions the whole mountain; the
         unbanded 'low' is redundant and must be suppressed so only 2 rows render.
         """
-        from apps.public.views import _day_windows_from_rm_ratings
+        from apps.public.bulletin_panels import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings(
             [
@@ -2228,7 +2228,7 @@ class TestDayWindowsElevationSplit:
 
         SLF all_day regression: a single unbanded rating must not be suppressed.
         """
-        from apps.public.views import _day_windows_from_rm_ratings
+        from apps.public.bulletin_panels import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings([self._rm_rating("moderate")])
         assert len(rows) == 1
@@ -2236,7 +2236,7 @@ class TestDayWindowsElevationSplit:
 
     def test_banded_only_kept_unchanged(self) -> None:
         """Two banded ratings with no unbanded entry are not affected by the rule."""
-        from apps.public.views import _day_windows_from_rm_ratings
+        from apps.public.bulletin_panels import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings(
             [
@@ -2361,7 +2361,7 @@ class TestMFElevationBandSplitBulletinPage:
 
     def test_day_risk_panel_row_level_keys(self) -> None:
         """Two-row MF panel has 'low' (lower band) and 'moderate' (upper band)."""
-        from apps.public.views import _day_windows_from_rm_ratings
+        from apps.public.bulletin_panels import _day_windows_from_rm_ratings
 
         rm_ratings = [
             {
@@ -2394,7 +2394,7 @@ class TestMFElevationBandSplitBulletinPage:
 
     def test_day_risk_panel_elevation_captions(self) -> None:
         """Both rows carry non-empty elevation captions with '2400' in them."""
-        from apps.public.views import _day_windows_from_rm_ratings
+        from apps.public.bulletin_panels import _day_windows_from_rm_ratings
 
         rm_ratings = [
             {
@@ -2481,9 +2481,9 @@ class TestDayWindowsElevationBounds:
 
     def test_above_band_is_lower_bound_type(self) -> None:
         """A lowerBound-only band ("above X") resolves to bound_type LOWER."""
-        from apps.public.views import _rm_elevation_bounds
+        from apps.public.bulletin_panels import rm_elevation_bounds
 
-        bounds = _rm_elevation_bounds(
+        bounds = rm_elevation_bounds(
             {"lower": 2400, "upper": None, "treeline": False, "treeline_side": None}
         )
         assert bounds.bound_type == "LOWER"
@@ -2491,9 +2491,9 @@ class TestDayWindowsElevationBounds:
 
     def test_below_band_is_upper_bound_type(self) -> None:
         """An upperBound-only band ("below X") resolves to bound_type UPPER."""
-        from apps.public.views import _rm_elevation_bounds
+        from apps.public.bulletin_panels import rm_elevation_bounds
 
-        bounds = _rm_elevation_bounds(
+        bounds = rm_elevation_bounds(
             {"lower": None, "upper": 2400, "treeline": False, "treeline_side": None}
         )
         assert bounds.bound_type == "UPPER"
@@ -2501,14 +2501,14 @@ class TestDayWindowsElevationBounds:
 
     def test_treeline_side_is_reconstructed(self) -> None:
         """The treeline token is put back on the correct bound for the glyph."""
-        from apps.public.views import _rm_elevation_bounds
+        from apps.public.bulletin_panels import rm_elevation_bounds
 
-        above = _rm_elevation_bounds(
+        above = rm_elevation_bounds(
             {"lower": None, "upper": None, "treeline": True, "treeline_side": "lower"}
         )
         assert above.bound_type == "LOWER"
         assert "treeline" in above.display
-        below = _rm_elevation_bounds(
+        below = rm_elevation_bounds(
             {"lower": None, "upper": None, "treeline": True, "treeline_side": "upper"}
         )
         assert below.bound_type == "UPPER"
@@ -2516,13 +2516,13 @@ class TestDayWindowsElevationBounds:
 
     def test_empty_elevation_is_falsey(self) -> None:
         """A missing elevation yields an empty (falsey) ElevationBounds."""
-        from apps.public.views import _rm_elevation_bounds
+        from apps.public.bulletin_panels import rm_elevation_bounds
 
-        assert not _rm_elevation_bounds(None)
+        assert not rm_elevation_bounds(None)
 
     def test_banded_rows_carry_elevation_bounds(self) -> None:
         """Each row of a banded pair carries an ElevationBounds with a bound_type."""
-        from apps.public.views import _day_windows_from_rm_ratings
+        from apps.public.bulletin_panels import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings(
             [
@@ -2536,7 +2536,7 @@ class TestDayWindowsElevationBounds:
 
     def test_single_row_has_no_elevation_bounds(self) -> None:
         """An unbanded (single) row leaves ``elevation_bounds`` unset — no glyph."""
-        from apps.public.views import _day_windows_from_rm_ratings
+        from apps.public.bulletin_panels import _day_windows_from_rm_ratings
 
         rows = _day_windows_from_rm_ratings([self._rm_rating("moderate")])
         assert len(rows) == 1
@@ -2840,7 +2840,7 @@ class TestDayCharacterEyebrow:
     ) -> None:
         """Turn the callout on, except for the test that pins the default."""
         if request.node.name != "test_hidden_by_default":
-            monkeypatch.setattr("apps.public.views.SHOW_DAY_CHARACTER", True)
+            monkeypatch.setattr("apps.public.bulletin_panels.SHOW_DAY_CHARACTER", True)
 
     def test_hidden_by_default(
         self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
@@ -3323,7 +3323,7 @@ class TestKeyMessageFromRenderModel:
 
     def test_first_problem_comment_wins(self) -> None:
         """A problem comment is preferred over the prose sections."""
-        from apps.public.views import _key_message
+        from apps.public.bulletin_panels import _key_message
 
         rm = _render_model_with_traits(
             [_dry_trait_problems([_problem(comment_html="<p>Fresh  wind slabs.</p>")])]
@@ -3332,7 +3332,7 @@ class TestKeyMessageFromRenderModel:
 
     def test_falls_back_to_snowpack_structure(self) -> None:
         """With no problem comment, the snowpack structure is quoted."""
-        from apps.public.views import _key_message
+        from apps.public.bulletin_panels import _key_message
 
         rm = _render_model_with_traits(
             [_dry_trait_problems([_problem(comment_html="")])]
@@ -3341,7 +3341,7 @@ class TestKeyMessageFromRenderModel:
 
     def test_falls_back_to_weather_review(self) -> None:
         """With no snowpack structure either, the weather review is quoted."""
-        from apps.public.views import _key_message
+        from apps.public.bulletin_panels import _key_message
 
         rm = _render_model_with_traits(
             [],
@@ -3354,7 +3354,7 @@ class TestKeyMessageFromRenderModel:
 
     def test_error_sentinel_has_no_key_message(self) -> None:
         """A stale row's sentinel carries no prose, so no key message."""
-        from apps.public.views import _key_message
+        from apps.public.bulletin_panels import _key_message
 
         assert _key_message({"version": 0, "error": "stale"}) == ""
 
@@ -3542,7 +3542,7 @@ class TestBestRatingFromRmEntries:
 
     def _call(self, entries: list[dict[str, Any]]) -> tuple[str, str] | None:
         """Call the helper under test."""
-        from apps.public.views import _best_rating_from_rm_entries
+        from apps.public.bulletin_panels import _best_rating_from_rm_entries
 
         return _best_rating_from_rm_entries(entries)
 
@@ -3602,7 +3602,7 @@ class TestNormaliseDangerPattern:
 
     def _call(self, raw: str) -> dict[str, str]:
         """Call the helper under test."""
-        from apps.public.views import _normalise_danger_pattern
+        from apps.public.bulletin_panels import _normalise_danger_pattern
 
         return _normalise_danger_pattern(raw)
 
@@ -3687,14 +3687,14 @@ class TestDangerPatternPropagation:
 
     def test_no_patterns_produces_empty_list_on_card(self) -> None:
         """Calling with no danger_patterns leaves each card with an empty list."""
-        from apps.public.views import _problem_cards_from_render_model_traits
+        from apps.public.bulletin_panels import _problem_cards_from_render_model_traits
 
         cards = _problem_cards_from_render_model_traits([self._minimal_trait()])
         assert cards[0]["danger_patterns"] == []
 
     def test_patterns_propagated_to_single_card(self) -> None:
         """Danger patterns passed in are normalised and placed on the card."""
-        from apps.public.views import _problem_cards_from_render_model_traits
+        from apps.public.bulletin_panels import _problem_cards_from_render_model_traits
 
         cards = _problem_cards_from_render_model_traits(
             [self._minimal_trait()], danger_patterns=["DP1"]
@@ -3705,7 +3705,7 @@ class TestDangerPatternPropagation:
 
     def test_patterns_propagated_to_all_cards(self) -> None:
         """When multiple traits are built, all cards receive the same pattern list."""
-        from apps.public.views import _problem_cards_from_render_model_traits
+        from apps.public.bulletin_panels import _problem_cards_from_render_model_traits
 
         traits = [
             self._minimal_trait("wind_slab"),
@@ -3722,7 +3722,7 @@ class TestDangerPatternPropagation:
 
     def test_slf_card_has_empty_patterns(self) -> None:
         """SLF cards built with no patterns carry an empty danger_patterns list."""
-        from apps.public.views import _problem_cards_from_render_model_traits
+        from apps.public.bulletin_panels import _problem_cards_from_render_model_traits
 
         cards = _problem_cards_from_render_model_traits(
             [self._minimal_trait()], danger_patterns=[]
@@ -3871,7 +3871,7 @@ def _render_model_with_ratings(
 
     Used to drive the morning-rating badge tests without going through the
     raw CAAML path — the projected ratings list is the primary source for
-    :func:`apps.public.views._resolve_period_danger_from_rm`.
+    :func:`apps.public.bulletin_panels._resolve_period_danger_from_rm`.
     """
     return {
         "version": 5,
@@ -5265,7 +5265,7 @@ class TestAvalancheSizeLabel:
 
     def _card_from_trait(self, avalanche_size: int | None) -> dict:
         """Build a card dict from a trait with the given avalanche_size."""
-        from apps.public.views import _build_single_trait_card
+        from apps.public.bulletin_panels import _build_single_trait_card
 
         trait = {
             "category": "dry",
@@ -5384,7 +5384,7 @@ class TestDayCharacterNoLeadingPeriod:
     @pytest.fixture(autouse=True)
     def _show_day_character(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Turn the callout on; it is hidden by default."""
-        monkeypatch.setattr("apps.public.views.SHOW_DAY_CHARACTER", True)
+        monkeypatch.setattr("apps.public.bulletin_panels.SHOW_DAY_CHARACTER", True)
 
     @pytest.fixture
     def region(self) -> MicroRegion:
@@ -6352,19 +6352,28 @@ class TestDayRiskProfileAddsToCards:
     """``_day_risk_profile_adds_to_cards`` — the profile only where it adds."""
 
     def test_no_rows_never_renders(self) -> None:
-        assert views._day_risk_profile_adds_to_cards([], [{"label": "x"}]) is False
+        assert (
+            bulletin_panels._day_risk_profile_adds_to_cards([], [{"label": "x"}])
+            is False
+        )
 
     def test_rows_without_cards_render(self) -> None:
         """Nothing else on the body would state the level."""
         rows = [{"caption": ""}]
-        assert views._day_risk_profile_adds_to_cards(rows, []) is True
+        assert bulletin_panels._day_risk_profile_adds_to_cards(rows, []) is True
 
     def test_time_windows_with_cards_do_not_render(self) -> None:
         """Each card's title bar already carries its window's level."""
         rows = [{"caption": ""}, {"caption": ""}]
-        assert views._day_risk_profile_adds_to_cards(rows, [{"label": "x"}]) is False
+        assert (
+            bulletin_panels._day_risk_profile_adds_to_cards(rows, [{"label": "x"}])
+            is False
+        )
 
     def test_an_elevation_split_renders(self) -> None:
         """No single card's title can say 'below 2400 m'."""
         rows = [{"caption": "below 2400m"}, {"caption": "above 2400m"}]
-        assert views._day_risk_profile_adds_to_cards(rows, [{"label": "x"}]) is True
+        assert (
+            bulletin_panels._day_risk_profile_adds_to_cards(rows, [{"label": "x"}])
+            is True
+        )

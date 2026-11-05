@@ -384,7 +384,7 @@ def help_illustrations() -> dict[str, Any]:
 
 @dataclasses.dataclass(frozen=True)
 class _ElevationBounds:
-    """Minimal stand-in for ``apps.public.views.ElevationBounds``.
+    """Minimal stand-in for ``apps.public.bulletin_panels.ElevationBounds``.
 
     The real dataclass cannot be imported here: ``views`` imports this
     module, so reaching back into it would close a cycle. Only the four

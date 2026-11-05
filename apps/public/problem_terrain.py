@@ -61,7 +61,7 @@ from django.views.decorators.vary import vary_on_headers
 from apps.bulletins.models import Bulletin, RegionBulletin, RegionDayRating
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.ingest.public import TerrainRule, derived_of
-from apps.public.views import _DANGER_PANEL_META, _get_render_model
+from apps.public.bulletin_panels import DANGER_PANEL_META, get_render_model
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ TERRAIN_COUNTRIES = frozenset({"CH"})
 # Seconds a day's payload is shared between requests, and between browsers.
 _CACHE_TTL_S = 300
 
-# What reading a bulletin's rules needs (``_get_render_model`` and its id),
+# What reading a bulletin's rules needs (``get_render_model`` and its id),
 # on the bulletin itself and through a rating's ``source_bulletin``.
 _RULE_FIELDS_OWN = ("bulletin_id", "render_model", "render_model_version")
 _RULE_FIELDS = tuple(f"source_bulletin__{name}" for name in _RULE_FIELDS_OWN)
@@ -102,7 +102,7 @@ def bulletin_terrain_rules(bulletin: Bulletin) -> list[TerrainRule]:
     # The rules the service stored with the model (SNOW-1341). A stale row
     # reads as the version-0 sentinel, which carries none — and describes
     # no ground, as before.
-    rules: list[TerrainRule] = derived_of(_get_render_model(bulletin))["terrain_rules"]
+    rules: list[TerrainRule] = derived_of(get_render_model(bulletin))["terrain_rules"]
     return rules
 
 
@@ -131,7 +131,7 @@ def problem_terrain_key(rules: list[TerrainRule] | None) -> dict[str, Any]:
         "levels": [
             {
                 "level": _LEVEL_BY_RATING[rating],
-                "label": _DANGER_PANEL_META[_LEVEL_BY_RATING[rating]]["label"],
+                "label": DANGER_PANEL_META[_LEVEL_BY_RATING[rating]]["label"],
             }
             for rating in ratings
         ],

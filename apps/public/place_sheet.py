@@ -17,7 +17,7 @@ resort's action is its Save star; a saved pin's are the panel row's own
 "…" menu (Share → Rename → Delete, the order every list keeps).
 
 Under the peek row a RESORT shows the resort page's own body for the map's
-day (SNOW-1164, ``views.build_resort_body`` and
+day (SNOW-1164, ``bulletin_panels.build_resort_body`` and
 ``public/partials/_resort_body.html``), so on a phone the sheet at full
 height is the page: the bulletin card, the day's problem cards, the
 forecast, the season calendar and the facts. The sheet's own links
@@ -74,14 +74,14 @@ from apps.favourites.relevance import annotate_problem_relevance
 from apps.ingest.public import problems_at
 from apps.locations.models import Location
 from apps.locations.services.what3words import what3words_map_url
-from apps.public.errors import error_response
-from apps.public.region_sheet import CURRENT_DAY_MAX_AGE_S, PAST_DAY_MAX_AGE_S
-from apps.public.views import (
-    _DANGER_PANEL_META,
-    _PROBLEM_LABELS,
+from apps.public.bulletin_panels import (
+    DANGER_PANEL_META,
+    PROBLEM_LABELS,
     build_resort_body,
     problem_cards_for_bulletin,
 )
+from apps.public.errors import error_response
+from apps.public.region_sheet import CURRENT_DAY_MAX_AGE_S, PAST_DAY_MAX_AGE_S
 from apps.public.your_location import Ground, read_ground
 from apps.regions.models import MicroRegion, Resort
 from apps.regions.services.point_match import region_for_point
@@ -177,7 +177,7 @@ def _peek_context(region: MicroRegion | None, target_date: date) -> dict[str, An
         if region is not None
         else None
     )
-    level_meta = _DANGER_PANEL_META.get(day_rating.max_rating) if day_rating else None
+    level_meta = DANGER_PANEL_META.get(day_rating.max_rating) if day_rating else None
     return {
         "region": region,
         "day_rating": day_rating,
@@ -472,7 +472,7 @@ def _in_problem_terrain(bulletin: Any, ground: Ground) -> list[str]:
     lines = []
     for problem in found:
         label = str(
-            _PROBLEM_LABELS.get(
+            PROBLEM_LABELS.get(
                 problem["problem_type"],
                 problem["problem_type"].replace("_", " ").capitalize(),
             )
