@@ -42,6 +42,7 @@ from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
+from freezegun import freeze_time
 
 from apps.accounts.models import Account
 from apps.bulletins.models import RegionDayRating
@@ -766,17 +767,24 @@ class TestOfflineCopy:
     """
 
     def _bodies(self, client: Client, django_user_model: Any) -> tuple[str, str]:
-        """Render one region's sheet signed out, then signed in."""
-        region = MicroRegionFactory.create()
-        _rated_today(region)
-        FieldObservationFactory.create(region=region, observed_at=timezone.now())
-        url = _url(region.region_id.lower(), timezone.localdate().isoformat())
-        anonymous = _get(client, url).content.decode()
-        user = django_user_model.objects.create_user(
-            "reader", "reader@example.com", first_name="Zebedee"
-        )
-        client.force_login(user)
-        signed_in = _get(client, url).content.decode()
+        """Render one region's sheet signed out, then signed in.
+
+        The clock is frozen so the observation's relative time ("now",
+        "a second ago") reads the same in both renders: without it the two
+        requests could straddle a second and differ for no reason to do
+        with the reader.
+        """
+        with freeze_time(timezone.now()):
+            region = MicroRegionFactory.create()
+            _rated_today(region)
+            FieldObservationFactory.create(region=region, observed_at=timezone.now())
+            url = _url(region.region_id.lower(), timezone.localdate().isoformat())
+            anonymous = _get(client, url).content.decode()
+            user = django_user_model.objects.create_user(
+                "reader", "reader@example.com", first_name="Zebedee"
+            )
+            client.force_login(user)
+            signed_in = _get(client, url).content.decode()
         return anonymous, signed_in
 
     def test_the_body_is_the_same_for_every_reader(
