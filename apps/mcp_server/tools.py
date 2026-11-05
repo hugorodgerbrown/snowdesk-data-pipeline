@@ -16,7 +16,7 @@ keeps none:
 * ``get_avalanche_problems`` — the structured avalanche-problem list
   (type, elevation, aspects, comment) for one region on one day.
 * ``get_danger_history`` — per-day min/max ratings for one region over a
-  date range, clamped to a single avalanche season.
+  date range, capped at 366 days ending no later than tomorrow.
 * ``list_resorts_in_region`` — geocoded resorts within one region.
 * ``get_bulletin_metadata`` — provenance (issued_at, source, source_url,
   language variants) for one region on one day.
@@ -61,7 +61,7 @@ a caller reasons about) plus a thin ``_handle_*`` adapter that unpacks the
 JSON-RPC ``arguments`` dict and calls it — the adapter is what
 ``apps.mcp_server.protocol`` invokes via the ``TOOLS`` registry. Keeping the
 two separate means the business-logic functions stay directly unit
-testable (e.g. passing an explicit ``today`` to make season clamping
+testable (e.g. passing an explicit ``today`` to make the window cap
 deterministic) without needing to fake a JSON-RPC arguments dict in every
 test.
 """
@@ -86,7 +86,7 @@ from apps.bulletins.services.selection import (
 )
 from apps.ingest.public import caaml_envelope, source_caaml
 from apps.locations.models import Location
-from apps.mcp_server import resolvers, season
+from apps.mcp_server import resolvers
 from apps.mcp_server.ui_resources import DANGER_MAP_URI
 from apps.public.bulletin_panels import COUNTRY_NAMES, plain_text
 from apps.regions.models import MicroRegion, Resort
@@ -580,6 +580,12 @@ def _handle_get_avalanche_problems(arguments: dict[str, Any]) -> dict[str, Any]:
 # get_danger_history
 # ---------------------------------------------------------------------------
 
+# The cost cap on one get_danger_history call (SNOW-1431): a leap year's
+# worth of days, so any twelve-month question fits in one call. It replaced
+# a clamp to the 1 November – 31 May season, which refused October and
+# summer bulletins and split every range that crossed 1 November.
+_DANGER_HISTORY_MAX_DAYS = 366
+
 
 def get_danger_history(
     region_id: str,
@@ -591,9 +597,13 @@ def get_danger_history(
 ) -> dict[str, Any]:
     """Return per-day min/max danger ratings for a region over a date range.
 
-    Cost-capped to a single region and a single avalanche season (Nov 1 ->
-    May 31): the requested range is clamped to whichever season contains
-    (or most recently preceded) ``today``.
+    Cost-capped to a single region and at most
+    :data:`_DANGER_HISTORY_MAX_DAYS` days (SNOW-1431): the window ends at
+    the earlier of ``to_date`` and tomorrow (the latest day a bulletin can
+    target) and reaches back no further than 366 days from there. A longer
+    range is clamped from its start. There is no fixed season: a range that
+    crosses 1 November or runs through the summer is answered as asked
+    (docs/decisions/date-windows-follow-the-data.md).
 
     Args:
         region_id: Exact region identifier, e.g. ``"CH-4115"``.
@@ -602,15 +612,16 @@ def get_danger_history(
         min_rating: Optional ``RegionDayRating.Rating`` value; when set,
             the response also counts days whose peak (``max_rating``)
             rating is at or above this threshold.
-        today: Overrides "today" for season resolution — a
+        today: Overrides "today" for the window cap — a
             settable-in-tests seam; production callers never pass this.
 
     Returns:
-        A dict with the requested and effective date windows, the season
-        bounds, whether clamping occurred, the per-day ratings, and (when
-        ``min_rating`` is set) the qualifying-day count. A range that
-        falls entirely outside the season window returns ``days: []``
-        with ``clamped: True`` rather than an error.
+        A dict with the requested and effective date windows, the cap's
+        bounds (``window_start`` / ``window_end``), whether clamping
+        occurred, the per-day ratings, and (when ``min_rating`` is set) the
+        qualifying-day count. A range that falls entirely outside the
+        window returns ``days: []`` with ``clamped: True`` rather than an
+        error.
 
     Raises:
         ToolError: ``region_id`` is unknown, or ``min_rating`` is not a
@@ -624,9 +635,10 @@ def get_danger_history(
         raise ToolError(f"Invalid 'min_rating': {min_rating!r}.")
 
     resolved_today = today or timezone.localdate()
-    season_start, season_end = season.current_or_last_season(resolved_today)
-    effective_from = max(from_date, season_start)
-    effective_to = min(to_date, season_end)
+    window_end = min(to_date, resolved_today + dt.timedelta(days=1))
+    window_start = window_end - dt.timedelta(days=_DANGER_HISTORY_MAX_DAYS - 1)
+    effective_from = max(from_date, window_start)
+    effective_to = window_end
     clamped = effective_from != from_date or effective_to != to_date
 
     days: list[dict[str, Any]] = []
@@ -657,8 +669,8 @@ def get_danger_history(
         "requested_to": to_date.isoformat(),
         "effective_from": effective_from.isoformat(),
         "effective_to": effective_to.isoformat(),
-        "season_start": season_start.isoformat(),
-        "season_end": season_end.isoformat(),
+        "window_start": window_start.isoformat(),
+        "window_end": window_end.isoformat(),
         "clamped": clamped,
         "days": days,
         "count": len(days),
@@ -695,7 +707,10 @@ def _danger_history_summary(
         f"{effective_from} to {effective_to}."
     ]
     if clamped:
-        parts.append("Range clamped to the avalanche season window.")
+        parts.append(
+            f"Range clamped to at most {_DANGER_HISTORY_MAX_DAYS} days, "
+            "ending no later than tomorrow."
+        )
     if min_rating is not None:
         parts.append(
             f"{count_at_or_above_min_rating} day(s) at or above '{min_rating}'."
@@ -1248,8 +1263,8 @@ def _handle_find_regions_near(arguments: dict[str, Any]) -> dict[str, Any]:
 # ranges.
 _TREND_DEFAULT_DAYS = 14
 
-# Hard cap on the trend window. Same shape as get_danger_history: the
-# season-clamp already bounds cost, so the cap here is about semantics
+# Hard cap on the trend window. Same shape as get_danger_history: its
+# 366-day cap already bounds cost, so the cap here is about semantics
 # (a 200-day "trend" isn't a trend) rather than query cost.
 _TREND_MAX_DAYS = 90
 
@@ -1270,7 +1285,7 @@ def get_danger_trend(
     """Return the danger rating series plus a computed trend layer.
 
     Answers "is danger rising or falling in Verbier?" in one call.
-    Wraps :func:`get_danger_history` (so season-clamp, region
+    Wraps :func:`get_danger_history` (so its window cap, region
     resolution, and DB reads are shared verbatim) and layers three
     pure-function helpers on top: ``direction`` (rising / stable /
     falling), ``change_point`` (most recent rating transition), and
@@ -2456,9 +2471,10 @@ TOOLS: dict[str, ToolSpec] = {
         name="get_danger_history",
         description=(
             "Return per-day minimum/maximum danger ratings for one region "
-            "over a date range. The range is clamped to a single avalanche "
-            "season (1 November - 31 May) to bound query cost; the response "
-            "reports the effective window and whether clamping occurred. "
+            "over a date range. The range is capped at 366 days, ending no "
+            "later than tomorrow, to bound query cost; a longer range is "
+            "clamped from its start. The response reports the effective "
+            "window and whether clamping occurred. "
             "Optionally counts days whose peak rating is at or above "
             "min_rating."
         ),
