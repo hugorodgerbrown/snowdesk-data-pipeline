@@ -194,9 +194,11 @@ class TestBulletins:
         _all_green()
         for source in (Bulletin.Source.SLF, Bulletin.Source.ALBINA):
             BulletinFactory.create(source=source, issued_at=NOW - dt.timedelta(hours=3))
+        # Failed records make the run PARTIAL; only SLF's slots failed.
         _run(
             "fetch_bulletins",
             dt.timedelta(hours=2),
+            status=CommandRun.STATUS.PARTIAL,
             counts={"slf_failed": 2, "albina_failed": 0},
         )
 
@@ -241,6 +243,28 @@ class TestWeather:
         row = _rows(build_report("24h", now=NOW))["forecast"]
 
         assert _metrics(row) == {"refreshed": 1, "places": 2}
+
+    def test_backfilled_history_does_not_keep_forecast_fresh(self) -> None:
+        """A past day written just now by the backfill is not a forecast."""
+        for command, ago in _COMMANDS.items():
+            _run(command, ago)
+        place = ResortLocationFactory.create().location
+        WeatherFactory.create(
+            location=place,
+            observed_on=NOW.date(),
+            fetched_at=NOW - dt.timedelta(hours=10),
+        )
+        WeatherFactory.create(
+            location=place,
+            observed_on=NOW.date() - dt.timedelta(days=30),
+            fetched_at=NOW - dt.timedelta(minutes=5),
+        )
+
+        row = _rows(build_report("1h", now=NOW))["forecast"]
+
+        assert _metrics(row)["refreshed"] == 0
+        assert row["status"] == "red"
+        assert row["reason"].startswith("last fetched")
 
     def test_place_without_today_is_red(self) -> None:
         """An active place with no row for today turns the forecast red."""

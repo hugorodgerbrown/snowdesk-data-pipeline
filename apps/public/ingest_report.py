@@ -39,7 +39,7 @@ from typing import Any
 
 from django.conf import settings
 from django.core.serializers.json import DjangoJSONEncoder
-from django.db.models import Max
+from django.db.models import Max, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 
@@ -79,6 +79,9 @@ _FAILED_STATUSES = frozenset(
         CommandRun.STATUS.INTERRUPTED,
     }
 )
+#: A run that stopped as a whole. ``PARTIAL`` is left out: it means some
+#: records failed, and a bulletin fetch says which provider's they were.
+_WHOLE_RUN_FAILED = frozenset({CommandRun.STATUS.FAILED, CommandRun.STATUS.INTERRUPTED})
 
 _DB_TASK_BACKEND = "django_tasks_db.DatabaseBackend"
 
@@ -249,7 +252,7 @@ def _bulletin_feed(source: str, label: str) -> Feed:
     def run_failed(run: CommandRun) -> bool:
         """Return whether the run, or this provider's slots in it, failed."""
         return (
-            run.status in _FAILED_STATUSES
+            run.status in _WHOLE_RUN_FAILED
             or _count(run.counts or {}, f"{prefix}_failed") > 0
         )
 
@@ -280,7 +283,8 @@ def _forecast_metrics(ctx: Context) -> list[tuple[str, int]]:
     """
     active = Location.objects.active()
     refreshed = (
-        Weather.objects.filter(fetched_at__gte=ctx.start, location__in=active)
+        _forecast_rows(ctx)
+        .filter(fetched_at__gte=ctx.start, location__in=active)
         .values("location")
         .distinct()
         .count()
@@ -288,9 +292,20 @@ def _forecast_metrics(ctx: Context) -> list[tuple[str, int]]:
     return [("refreshed", refreshed), ("places", active.count())]
 
 
+def _forecast_rows(ctx: Context) -> QuerySet[Weather]:
+    """Return the forecast's rows: today and the days ahead.
+
+    The backfill writes past days with a fresh ``fetched_at``, so counting
+    them would keep the forecast green after its fetches had stopped.
+    """
+    return Weather.objects.filter(observed_on__gte=timezone.localtime(ctx.now).date())
+
+
 def _forecast_latest(ctx: Context) -> dt.datetime | None:
-    """Return when weather was last written."""
-    fetched: dt.datetime | None = Weather.objects.aggregate(m=Max("fetched_at"))["m"]
+    """Return when a forecast row (today or later) was last written."""
+    fetched: dt.datetime | None = _forecast_rows(ctx).aggregate(m=Max("fetched_at"))[
+        "m"
+    ]
     return fetched
 
 
@@ -581,7 +596,7 @@ def _changes(feed: Feed, ctx: Context) -> list[dict[str, Any]]:
         parts = feed.changes(run.counts or {})
         if not failed and not parts:
             continue
-        whole_run = run.status in _FAILED_STATUSES
+        whole_run = run.status in _WHOLE_RUN_FAILED
         entries.append(
             {
                 "feed": feed.group
