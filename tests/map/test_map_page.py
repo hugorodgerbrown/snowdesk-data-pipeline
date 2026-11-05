@@ -384,10 +384,10 @@ def test_help_mode_names_only_controls_the_page_draws() -> None:
     it; a control renamed in the template would simply lose its name and
     its card, with nothing failing. This holds the list to the page. The
     region chip and its download control live in the season ribbon, which
-    renders only once the season has a rated day.
+    renders only once the region has a rated day.
     """
     region = MicroRegionFactory.create(region_id="CH-4115", name="Martigny Verbier")
-    RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 2, 17))
+    _rated(region, datetime.date(2026, 2, 17))
     client = Client()
     content = client.get(reverse("public:map")).content.decode()
 

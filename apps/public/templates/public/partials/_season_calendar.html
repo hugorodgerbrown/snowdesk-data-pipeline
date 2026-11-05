@@ -8,7 +8,7 @@
    so the pages cannot drift apart.
 
    Layout. One markup, re-laid out by CSS alone (src/css/main.css, "Season
-   calendar"): in a wide container the months are rows (Nov … Apr), a month
+   calendar"): in a wide container the months are rows (one per month drawn), a month
    label column, then one dot per day against a 1 · 5 · 10 … 30 axis; in a
    narrow one (a container query, so the sheet and the resort column each
    decide by their own width) the months become columns of short bars with
@@ -52,10 +52,10 @@
     data-variant="{% if linked %}linked{% else %}summary{% endif %}"
 >
     {% if not linked %}
-        {% blocktrans with label=season_months.season_label count days=season_summary.days_with_bulletin trimmed asvar season_days %}
-            Season {{ label }}: {{ days }} day with a bulletin
+        {% blocktrans count days=season_summary.days_with_bulletin trimmed asvar season_days %}
+            {{ days }} day with a bulletin
         {% plural %}
-            Season {{ label }}: {{ days }} days with a bulletin
+            {{ days }} days with a bulletin
         {% endblocktrans %}
         {% blocktrans with days=season_summary.considerable_or_higher trimmed asvar season_high %}
             {{ days }} at Considerable or higher

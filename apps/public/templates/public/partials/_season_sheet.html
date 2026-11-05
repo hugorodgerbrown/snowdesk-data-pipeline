@@ -1,6 +1,6 @@
 {% load i18n %}
 {% comment %}
-   Season heatmap sheet shell (SNOW-170) — fixed-position dialog frame,
+   Danger calendar sheet shell (SNOW-170) — fixed-position dialog frame,
    backdrop, header, dismiss button, and scroll wrapper. The inner grid is
    deferred: an empty #season-grid placeholder fires one HTMX GET to
    partials/season/<region_id>/ on the first open (via the custom
@@ -15,7 +15,7 @@
    keyboard-reachable in addition to being a focus-trapped dialog.
 
    Context: region, page_date, season_calendar (season_header's dict:
-   season_label, season_name).
+   first_date; SNOW-1431).
 
    Underscore prefix marks this as a plain include (not an HTMX response).
 {% endcomment %}
@@ -25,21 +25,21 @@
         class="season-sheet"
         role="dialog"
         aria-modal="true"
-        aria-label="{% trans 'Season heatmap' %}"
+        aria-label="{% trans 'Danger calendar' %}"
         data-testid="season-sheet"
     >
         <div class="season-sheet-header">
             {# SNOW-1158: the same eyebrow the resort page's calendar carries. #}
             <span class="font-mono uppercase tracking-widest text-meta text-text-3">
-                {% blocktrans with region=region.name season=season_calendar.season_name trimmed %}
-                    Avalanche danger • {{ region }} region • {{ season }}
+                {% blocktrans with region=region.name trimmed %}
+                    Avalanche danger • {{ region }} region
                 {% endblocktrans %}
             </span>
             <button
                 type="button"
                 class="season-sheet-dismiss"
                 data-season-dismiss
-                aria-label="{% trans 'Close season heatmap' %}"
+                aria-label="{% trans 'Close' %}"
             >
                 <svg
                     width="16"

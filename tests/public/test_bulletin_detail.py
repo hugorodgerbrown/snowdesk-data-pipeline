@@ -1099,13 +1099,24 @@ class TestSeasonCalendar:
     The grid is now deferred via HTMX (SNOW-170): the bulletin page
     renders a shell with an HTMX placeholder; the actual grid markup is
     served by the season_calendar_partial view on first open.
+
+    Since SNOW-1431 the calendar opens once the region has a rated row,
+    which the autouse fixture gives it.
     """
 
-    @override_settings(SEASON_START_DATE=date(2026, 3, 1))
+    @pytest.fixture(autouse=True)
+    def _rated_day(self, region: MicroRegion) -> None:
+        """Give the region a rated row before the page's day."""
+        RegionDayRatingFactory.create(
+            region=region,
+            date=date(2026, 3, 1),
+            source_bulletin=BulletinFactory.create(),
+        )
+
     def test_context_has_season_calendar(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """``season_calendar`` context is a truthy dict with season_label."""
+        """``season_calendar`` context is a truthy dict with the first rated day."""
         _make_am_bulletin(region, date(2026, 3, 15))
         with _freeze("2026-03-15T10:00:00+00:00"):
             url = reverse(
@@ -1120,9 +1131,8 @@ class TestSeasonCalendar:
 
         ctx = response.context["season_calendar"]
         assert ctx is not None
-        assert ctx["season_label"]  # e.g. "25/26"
+        assert ctx == {"first_date": date(2026, 3, 1)}
 
-    @override_settings(SEASON_START_DATE=date(2026, 3, 1))
     def test_section_renders_shell_not_grid(
         self, client: Client, region: MicroRegion
     ) -> None:
@@ -1144,7 +1154,6 @@ class TestSeasonCalendar:
         # Grid deferred — not in the initial response.
         assert b'data-testid="season-calendar"' not in response.content
 
-    @override_settings(SEASON_START_DATE=date(2026, 3, 1))
     def test_today_tile_carries_today_modifier(
         self, client: Client, region: MicroRegion
     ) -> None:
@@ -1166,7 +1175,6 @@ class TestSeasonCalendar:
         assert b'id="season-grid"' in response.content
         assert b'data-testid="season-calendar"' not in response.content
 
-    @override_settings(SEASON_START_DATE=date(2026, 3, 1))
     def test_historic_url_carries_selected_date_on_grid_placeholder(
         self, client: Client, region: MicroRegion
     ) -> None:
@@ -1187,7 +1195,6 @@ class TestSeasonCalendar:
         # handler can ring the selected day client-side.
         assert b'data-selected-date="2026-03-05"' in response.content
 
-    @override_settings(SEASON_START_DATE=date(2026, 3, 1))
     def test_tomorrow_row_renders_when_present(
         self, client: Client, region: MicroRegion
     ) -> None:

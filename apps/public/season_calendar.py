@@ -1,15 +1,17 @@
 """
-apps/public/season_calendar.py — Build a season-long heatmap grid for the bulletin page.
+apps/public/season_calendar.py — Build a region's danger calendar for the bulletin page.
 
 The bulletin page already shows the current day's rating block and the
 month-grid nav-glyph calendar. This module backs a third, complementary
-surface: a GitHub-contributions-style heatmap covering the whole season at
-a glance, one tile per day from ``settings.SEASON_START_DATE`` through
-``today + 1``.
+surface: a heatmap covering every day of the region's bulletins at a
+glance, one tile per day from the region's first rated day
+(``RegionDayRatingQuerySet.first_rated_date``) through ``today + 1``. The
+span follows the data, not a fixed 1 November – 30 April season (SNOW-1431,
+docs/decisions/date-windows-follow-the-data.md).
 
 The grid is laid out as weeks-as-columns (Mon..Sun rows, European
 convention). The leading column is padded with ``None`` cells when the
-season starts mid-week; the trailing column is padded after the end date
+span starts mid-week; the trailing column is padded after the end date
 so all seven rows align.
 
 Tiles for days that have a ``RegionDayRating`` row link to the day's
@@ -20,16 +22,11 @@ module; the rendered grid is cached at the view layer in
 ``season_calendar_partial`` (keyed on ``(canonical_region_id, today_iso)``)
 and invalidated by ``apply_bulletin_day_ratings`` after ingest.
 
-``season_header`` is a cheap helper that returns ``{"season_label": "<NN/NN>"}``
-when the season has started (used by the bulletin view to decide whether
+``season_header`` is a cheap helper that returns ``{"first_date": <date>}``
+when the region has a rated row (used by the bulletin view to decide whether
 to render the shell + trigger without building the full grid).
 
-SNOW-1126 adds the resort page's season strip: ``season_window`` names the
-1 Nov – 30 Apr season a date belongs to (the previous one from May to
-October), ``build_season_grid`` accepts it as an optional ``window``, and
-``summarise_season`` counts the grid into the strip's text summary. The
-strip renders server-side in ``resort_detail`` — no view-layer cache, one
-indexed range query.
+``summarise_season`` counts the grid into the calendar's text summary.
 
 SNOW-1158 redraws every season calendar as one shared, month-shaped
 component (``public/partials/_season_calendar.html``). ``build_season_months``
@@ -45,9 +42,8 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import logging
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any
 
-from django.conf import settings
 from django.utils.dates import MONTHS_3
 
 from apps.bulletins.models import RegionDayRating
@@ -59,13 +55,6 @@ logger = logging.getLogger(__name__)
 
 _DAYS_PER_WEEK = 7
 
-# SNOW-1126: the avalanche season, as (month, day) bounds. A season opens
-# on 1 November and closes on 30 April of the following year; a date from
-# 1 May to 31 October belongs to no season, and ``season_window`` answers
-# with the one that has just ended.
-SEASON_OPENS: tuple[int, int] = (11, 1)
-SEASON_CLOSES: tuple[int, int] = (4, 30)
-
 # EAWS levels low → very high. The index is the rank ``summarise_season``
 # slices to count the days at Considerable or higher; ``no_rating`` is
 # deliberately absent.
@@ -76,21 +65,6 @@ _RATED_LEVELS: tuple[str, ...] = (
     RegionDayRating.Rating.HIGH,
     RegionDayRating.Rating.VERY_HIGH,
 )
-
-
-class SeasonWindow(NamedTuple):
-    """
-    The date range one season covers, from :func:`season_window`.
-
-    ``start`` is 1 November (clamped to ``settings.SEASON_START_DATE``),
-    ``end`` is 30 April of the following year, and ``label`` is the SLF-style
-    two-year identifier (``"25/26"``) of the nominal season — computed before
-    the clamp, so a clamped start never shifts the label.
-    """
-
-    start: datetime.date
-    end: datetime.date
-    label: str
 
 
 @dataclasses.dataclass(frozen=True)
@@ -181,7 +155,8 @@ class RibbonDay:
     A single day entry in the season ribbon strip.
 
     The ribbon is a flat chronological list of coloured cells — one per day
-    from ``SEASON_START_DATE`` through today — docked beside the map scrubber.
+    from the region's first rated day through today — docked beside the map
+    scrubber.
     Cells are coloured by ``max_rating_key`` so the strip gives an at-a-glance
     view of how danger peaked each day for the selected region.
 
@@ -201,18 +176,14 @@ class SeasonRibbon:
     Output of :func:`build_season_ribbon`.
 
     ``days`` is a flat chronological list of :class:`RibbonDay` objects, one
-    per calendar day from ``SEASON_START_DATE`` through today.
-
-    ``season_label`` is the SLF-style two-year season identifier (e.g.
-    ``"25/26"``), used by the ribbon header.
+    per calendar day from the region's first rated day through today.
 
     """
 
     days: list[RibbonDay]
-    season_label: str
 
     def __bool__(self) -> bool:
-        """Return ``False`` when the ribbon is empty (e.g. before season start)."""
+        """Return ``False`` when the ribbon is empty (no rated day yet)."""
         return bool(self.days)
 
 
@@ -223,31 +194,26 @@ class SeasonGrid:
 
     ``columns`` is a list of 7-tuples (Mon..Sun rows). Each entry is
     either a :class:`SeasonCell` or ``None`` for padding cells outside the
-    season.
+    span.
 
     ``month_labels`` is a list parallel to ``columns``: each entry holds
     an abbreviated month name (``"Nov"``) only on the first column of
     that calendar month, and an empty string otherwise. The template
     iterates it zipped with ``columns`` to draw the labels row.
-
-    ``season_label`` is the two-year season identifier in SLF style
-    (e.g. ``"25/26"`` for the season starting in autumn 2025), used by
-    the page-nav trigger to make the current season explicit.
     """
 
     columns: list[tuple[SeasonCell | None, ...]]
     month_labels: list[str]
-    season_label: str = ""
 
     def __bool__(self) -> bool:
-        """Return ``False`` when the grid is empty (e.g. before season start)."""
+        """Return ``False`` when the grid is empty (no rated day yet)."""
         return bool(self.columns)
 
 
 @dataclasses.dataclass(frozen=True)
 class SeasonSummary:
     """
-    Output of :func:`summarise_season` — the season strip's text summary.
+    Output of :func:`summarise_season` — the calendar's text summary.
 
     ``days_with_bulletin`` counts the cells with ``has_bulletin``;
     ``level_counts`` is one ``(rating_key, count)`` pair per EAWS level that
@@ -257,7 +223,6 @@ class SeasonSummary:
     information.
     """
 
-    season_label: str
     days_with_bulletin: int
     level_counts: list[tuple[str, int]]
     considerable_or_higher: int
@@ -333,14 +298,12 @@ class SeasonMonths:
 
     ``months`` runs from the month of the span's first day to the month of
     its last, inclusive. ``ring_date`` is the ringed day (or ``None``).
-    ``season_label`` is the four-digit form (``"2025/26"``) the calendar's
-    eyebrow and summary name. ``axis`` is the 31 day-axis labels, a number
-    on 1, 5, 10, … 30 and ``""`` elsewhere.
+    ``axis`` is the 31 day-axis labels, a number on 1, 5, 10, … 30 and
+    ``""`` elsewhere.
     """
 
     months: list[SeasonMonth]
     ring_date: datetime.date | None
-    season_label: str
     axis: tuple[str, ...]
 
     def __bool__(self) -> bool:
@@ -360,42 +323,9 @@ SEASON_AXIS: tuple[str, ...] = tuple(
 _LEVEL_RANK: dict[str, int] = {key: rank for rank, key in enumerate(_RATED_LEVELS)}
 
 
-def season_window(today: datetime.date) -> SeasonWindow:
-    """
-    Return the season ``today`` belongs to, or the one that has just ended.
-
-    From 1 November to 30 April that is the running season; from 1 May to
-    31 October it is the previous one (``SEASON_OPENS`` / ``SEASON_CLOSES``).
-    The start is clamped to ``settings.SEASON_START_DATE``, the earliest day
-    the pipeline holds bulletins for, so a window never reaches back past the
-    archive. A clamp past the end leaves ``start > end``, which
-    :func:`build_season_grid` renders as an empty grid.
-
-    Args:
-        today: The current calendar date.
-
-    Returns:
-        The :class:`SeasonWindow` ``(start, end, label)``.
-
-    """
-    open_month, open_day = SEASON_OPENS
-    close_month, close_day = SEASON_CLOSES
-    start_year = (
-        today.year if (today.month, today.day) >= SEASON_OPENS else today.year - 1
-    )
-    nominal_start = datetime.date(start_year, open_month, open_day)
-    end = datetime.date(start_year + 1, close_month, close_day)
-    earliest: datetime.date = settings.SEASON_START_DATE
-    return SeasonWindow(
-        start=max(nominal_start, earliest),
-        end=end,
-        label=_season_label(nominal_start),
-    )
-
-
 def summarise_season(grid: SeasonGrid) -> SeasonSummary:
     """
-    Count a season grid into the resort strip's text summary.
+    Count a season grid into the calendar's text summary.
 
     Pure: reads only the already-built cells. Only cells with
     ``has_bulletin`` count — a ``no_rating`` placeholder is not a day with a
@@ -420,7 +350,6 @@ def summarise_season(grid: SeasonGrid) -> SeasonSummary:
             counts[cell.max_rating_key] += 1
     considerable_rank = _RATED_LEVELS.index(RegionDayRating.Rating.CONSIDERABLE)
     return SeasonSummary(
-        season_label=grid.season_label,
         days_with_bulletin=days,
         level_counts=[(key, n) for key, n in counts.items() if n],
         considerable_or_higher=sum(
@@ -432,22 +361,18 @@ def summarise_season(grid: SeasonGrid) -> SeasonSummary:
 def build_season_months(
     grid: SeasonGrid,
     today: datetime.date,
-    window: SeasonWindow | None = None,
     ring_date: datetime.date | None = None,
 ) -> SeasonMonths:
     """
     Reshape a season grid into months × days (SNOW-1158).
 
     The one data shape behind ``public/partials/_season_calendar.html`` on
-    both the resort page and the bulletin page: one row per month (a column
-    on a phone) and one cell per day of that month. Pure — it reads only the
-    already-built grid, no query.
+    the bulletin page, the /help/ illustration and the component library:
+    one row per month (a column on a phone) and one cell per day of that
+    month. Pure — it reads only the already-built grid, no query.
 
-    The months drawn run from the season's start — ``window.start``, or,
-    without a window, the grid's first day (the bulletin page's
-    ``SEASON_START_DATE``) — through that season's April, so a running
-    season shows its remaining days faint. They extend past April only to
-    the last month that holds a bulletin, and never beyond tomorrow's month
+    The months drawn run from the grid's first day (the region's first
+    rated day, SNOW-1431) to the later of its last bulletin and tomorrow
     (:func:`_last_drawn_day`). Every month drawn is drawn in full.
 
     Each day's state: a day with a bulletin draws its level, or ``"split"``
@@ -459,25 +384,18 @@ def build_season_months(
         grid: A grid from :func:`build_season_grid`.
         today: The current calendar date — days after it with no bulletin
             are "not yet", not "no bulletin".
-        window: Optional :class:`SeasonWindow` naming the span to draw.
         ring_date: The day to ring, or ``None`` (the bulletin page rings the
             selected day client-side, so its cached grid stays one body).
 
     Returns:
-        A :class:`SeasonMonths`; falsy when the grid is empty and no window
-        was given.
+        A :class:`SeasonMonths`; falsy when the grid is empty.
 
     """
     by_date: dict[datetime.date, SeasonCell] = {c.date: c for c in _grid_cells(grid)}
-    if window is not None:
-        span_start = window.start
-    elif by_date:
-        span_start = min(by_date)
-    else:
-        return SeasonMonths(
-            months=[], ring_date=None, season_label="", axis=SEASON_AXIS
-        )
-    span_end = _last_drawn_day(by_date, span_start, today)
+    if not by_date:
+        return SeasonMonths(months=[], ring_date=None, axis=SEASON_AXIS)
+    span_start = min(by_date)
+    span_end = _last_drawn_day(by_date, today)
 
     months: list[SeasonMonth] = []
     first = span_start.replace(day=1)
@@ -497,38 +415,24 @@ def build_season_months(
             )
         )
         first = cursor
-    return SeasonMonths(
-        months=months,
-        ring_date=ring_date,
-        season_label=_season_long_label(span_start),
-        axis=SEASON_AXIS,
-    )
+    return SeasonMonths(months=months, ring_date=ring_date, axis=SEASON_AXIS)
 
 
 def _last_drawn_day(
     by_date: dict[datetime.date, SeasonCell],
-    span_start: datetime.date,
     today: datetime.date,
 ) -> datetime.date:
     """
-    Return the last day of the calendar's span (SNOW-1158).
+    Return the last day of the calendar's span (SNOW-1158, SNOW-1431).
 
-    The season's 30 April, unless a bulletin was published after it — then
-    the last bulletin's day, capped at tomorrow (the latest a bulletin can
-    target), so a May bulletin adds May and nothing adds an empty summer.
+    The later of the last bulletin's day and tomorrow (the latest a
+    bulletin can target). There is no padding to a fixed season close: a
+    run that ended in April draws through the month of tomorrow, empty days
+    and all, because that is what happened since.
     """
-    close_month, close_day = SEASON_CLOSES
-    april = datetime.date(_season_start_year(span_start) + 1, close_month, close_day)
+    tomorrow = today + datetime.timedelta(days=1)
     published = [day for day, cell in by_date.items() if cell.has_bulletin]
-    last = max(published, default=april)
-    if last <= april:
-        return april
-    return min(last, today + datetime.timedelta(days=1))
-
-
-def _season_start_year(day: datetime.date) -> int:
-    """Return the year the season holding ``day`` opened (1 November)."""
-    return day.year if (day.month, day.day) >= SEASON_OPENS else day.year - 1
+    return max(max(published, default=tomorrow), tomorrow)
 
 
 def _month_day(
@@ -595,23 +499,12 @@ def _grid_cells(grid: SeasonGrid) -> list[SeasonCell]:
     return [cell for column in grid.columns for cell in column if cell is not None]
 
 
-def _season_long_label(start: datetime.date) -> str:
-    """Name the season ``start`` falls in, four-digit form (``"2025/26"``).
-
-    A date before ``SEASON_OPENS`` in its year belongs to the season that
-    opened the year before.
-    """
-    start_year = _season_start_year(start)
-    return f"{start_year}/{(start_year + 1) % 100:02d}"
-
-
 def build_season_grid(
     region: "MicroRegion",
     today: datetime.date,
-    window: SeasonWindow | None = None,
 ) -> SeasonGrid:
     """
-    Build the season-long heatmap grid for ``region``.
+    Build the heatmap grid for ``region``, from its first rated day.
 
     All cells have ``is_selected=False`` — client-side highlighting applies
     after the HTMX swap (keyed off ``data-selected-date`` on the grid
@@ -621,29 +514,18 @@ def build_season_grid(
         region: The region whose ratings to render.
         today: Current date — the day after this is the last column of
             the grid (the SLF afternoon bulletin targets ``today + 1``).
-        window: Optional :class:`SeasonWindow` (SNOW-1126, the resort
-            page's strip). When given, the grid runs from ``window.start``
-            to the earlier of ``window.end`` and ``today + 1``, and carries
-            ``window.label``. When omitted — the bulletin page's heatmap —
-            the grid runs from ``SEASON_START_DATE`` to ``today + 1``,
-            unchanged.
 
     Returns:
-        A :class:`SeasonGrid` ready to render. Empty when the computed
-        end date precedes the start.
+        A :class:`SeasonGrid` from the region's first rated day
+        (``RegionDayRatingQuerySet.first_rated_date``, SNOW-1431) to
+        ``today + 1``. Empty when the region has no rated row, or its first
+        one is after tomorrow.
 
     """
-    start: datetime.date
-    if window is None:
-        start = settings.SEASON_START_DATE
-        end = today + datetime.timedelta(days=1)
-        season_label = _season_label(start)
-    else:
-        start = window.start
-        end = min(window.end, today + datetime.timedelta(days=1))
-        season_label = window.label
-    if end < start:
-        return SeasonGrid(columns=[], month_labels=[], season_label=season_label)
+    end = today + datetime.timedelta(days=1)
+    start = RegionDayRating.objects.first_rated_date(region)
+    if start is None or end < start:
+        return SeasonGrid(columns=[], month_labels=[])
 
     rows = RegionDayRating.objects.for_region_range(region, start, end)
     by_date: dict[datetime.date, RegionDayRating] = {r.date: r for r in rows}
@@ -706,38 +588,33 @@ def build_season_grid(
 
     columns = _pack_into_columns(cells, start)
     month_labels = _month_label_indices(columns)
-    return SeasonGrid(
-        columns=columns,
-        month_labels=month_labels,
-        season_label=season_label,
-    )
+    return SeasonGrid(columns=columns, month_labels=month_labels)
 
 
-def season_header(today: datetime.date) -> dict[str, Any] | None:
+def season_header(region: "MicroRegion", today: datetime.date) -> dict[str, Any] | None:
     """
-    Return a minimal context dict for the season trigger/shell, or ``None``.
+    Return a minimal context dict for the calendar trigger/shell, or ``None``.
 
-    Returns ``{"season_label": "<NN/NN>", "season_name": "<NNNN/NN>"}``
-    when the season has started (i.e. ``today + 1 >= SEASON_START_DATE``),
-    so the bulletin view can decide whether to render the trigger and shell
-    without building the full grid. ``season_name`` heads the sheet.
-    Returns ``None`` before the season start.
+    Returns ``{"first_date": <date>}`` — the region's first rated day — when
+    the region has one on or before tomorrow, so the bulletin view can
+    decide whether to render the trigger and shell without building the
+    full grid. The dict is truthy, which is the gate ``bulletin.html`` and
+    ``nav.html`` read. It carries no season label: the calendar's span
+    follows the data (SNOW-1431). Returns ``None`` for a region with no
+    rated row, whose calendar would be empty.
 
     Args:
+        region: The MicroRegion the bulletin page shows.
         today: Current calendar date.
 
     Returns:
         The header dict, or ``None``.
 
     """
-    start: datetime.date = settings.SEASON_START_DATE
-    end = today + datetime.timedelta(days=1)
-    if end < start:
+    first = RegionDayRating.objects.first_rated_date(region)
+    if first is None or first > today + datetime.timedelta(days=1):
         return None
-    return {
-        "season_label": _season_label(start),
-        "season_name": _season_long_label(start),
-    }
+    return {"first_date": first}
 
 
 def build_season_ribbon(
@@ -748,26 +625,25 @@ def build_season_ribbon(
     Build the flat chronological season ribbon for ``region``.
 
     The ribbon is a simpler counterpart to :func:`build_season_grid`: a flat
-    list of one :class:`RibbonDay` per calendar day from ``SEASON_START_DATE``
-    through ``today`` (inclusive), ordered oldest-first. Days after ``today``
+    list of one :class:`RibbonDay` per calendar day from the region's first
+    rated day through ``today`` (inclusive), ordered oldest-first. Days after ``today``
     are excluded — the ribbon is a retrospective view of the season so far.
 
-    Reuses the same ``RegionDayRating`` queryset as ``build_season_grid``; no
-    additional DB queries. Rendering is cached at the view layer.
+    Reads the same ``RegionDayRating`` rows as ``build_season_grid``: one
+    aggregate for the first rated day, one range query for the rows.
 
     Args:
         region: The region whose ratings to render (e.g. CH-4115).
         today: Current date — the last day included in the ribbon.
 
     Returns:
-        A :class:`SeasonRibbon` ready to render. Empty (falsy) when today
-        precedes ``SEASON_START_DATE``.
+        A :class:`SeasonRibbon` ready to render. Empty (falsy) when the
+        region has no rated day on or before today.
 
     """
-    start: datetime.date = settings.SEASON_START_DATE
-    season_label = _season_label(start)
-    if today < start:
-        return SeasonRibbon(days=[], season_label=season_label)
+    start = RegionDayRating.objects.first_rated_date(region)
+    if start is None or today < start:
+        return SeasonRibbon(days=[])
 
     rows = RegionDayRating.objects.for_region_range(region, start, today)
     by_date: dict[datetime.date, RegionDayRating] = {r.date: r for r in rows}
@@ -791,17 +667,7 @@ def build_season_ribbon(
         )
         cursor += datetime.timedelta(days=1)
 
-    return SeasonRibbon(days=days, season_label=season_label)
-
-
-def _season_label(start: datetime.date) -> str:
-    """Build the SLF-style two-year season identifier (e.g. ``"25/26"``).
-
-    The Northern-hemisphere avalanche season runs from autumn through to
-    late spring of the following year. The label is always two two-digit
-    years separated by a slash.
-    """
-    return f"{start.year % 100:02d}/{(start.year + 1) % 100:02d}"
+    return SeasonRibbon(days=days)
 
 
 def _pack_into_columns(

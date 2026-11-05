@@ -423,10 +423,16 @@ class TestHomePageBreadcrumbData:
             major=ch_major,
             name_en=subregion_name_en,
         )
-        MicroRegionFactory.create(
+        region = MicroRegionFactory.create(
             region_id="CH-4115",
             name="Martigny Verbier",
             subregion=sub,
+        )
+        # The ribbon renders from the region's first rated day (SNOW-1431).
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2026, 2, 1),
+            source_bulletin=BulletinFactory.create(),
         )
 
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))

@@ -2610,7 +2610,7 @@ def _bulletin_detail_response(
                 "prev_date": prev_date,
                 "next_date": next_date,
                 "year": datetime.date.today().year,
-                "season_calendar": season_header(today),
+                "season_calendar": season_header(region, today),
                 "canonical_url": canonical_url,
                 "map_url": map_url,
             },
@@ -2624,7 +2624,7 @@ def _bulletin_detail_response(
     body = build_bulletin_body(request, region, page_date, selected, skipped)
     panel = body["panel"]
     next_update_time = body["next_update_time"]
-    season_calendar = season_header(today)
+    season_calendar = season_header(region, today)
 
     # Emit bulletin_viewed (no-ops silently on /examples/* paths). The page
     # only: the map's region sheet renders the same body without counting
