@@ -2,8 +2,8 @@
 name: implement
 description: |
   Take a scoped Linear ticket from Ready-for-dev through to a merged PR in one
-  flow: create the branch, plan, implement + review,
-  push, open the PR, and merge once CI and Codex are clean. Use when the user says "implement SNOW-NN", "implement
+  flow: create the branch, write the plan, implement + review, push, open the
+  PR, and merge once CI and Codex are clean. Use when the user says "implement SNOW-NN", "implement
   this", "go on SNOW-NN", or just "implement" / "go" / "continue" when a
   feature branch is already checked out. Do NOT use for: scoping a ticket
   (`scope` skill), ad-hoc edits unrelated to a ticket, or any message without
@@ -13,8 +13,10 @@ allowed-tools: Agent, Bash, Read, Edit, Write, Grep, Glob, mcp__Linear, mcp__cla
 
 # Implement SNOW-$1
 
-End-to-end implementation flow with no mandatory stop. It runs through to a
-merged PR without prompting the user, unless they appended a pause directive.
+End-to-end implementation flow. There is no mandatory stop: Hugo reviews the
+scope, not the plan. The flow runs from `Ready for dev` through to an open PR
+without prompting the user, unless they appended a pause directive to the
+trigger.
 
 ## Optional pause directives
 
@@ -24,8 +26,8 @@ checkpoint as a hard stop. If the phrasing is ambiguous, ask which checkpoint
 they mean — do not guess.
 
 - **plan-only** — phrases like "plan only", "stop after the plan", "just the
-  plan", "don't implement yet". Stop after step 3 (the plan). Do not
-  invoke the implementer.
+  plan", "don't implement yet". Stop after step 3 (the plan). Do not invoke
+  the implementer.
 - **stop-before-push** — phrases like "stop before pushing", "stop before the
   PR", "don't open the PR yet", "review only". Run through step 4
   (implement + review). Stop before step 5.
@@ -142,15 +144,29 @@ only cares about PR open / merge, not branch existence.
 
 ## Step 3 — Write the plan
 
-Read the code the scope touches, then write the plan in the conversation:
+Write an implementation plan, then go straight on to step 4. **Do not stop for
+approval**: Hugo signed off the scope, Codex reviewed it, and the plan only
+works out how to build what that scope promises. Do not use plan mode, which
+exists to gate on approval.
 
-- **Files to touch** — concrete paths
-- **Order of changes**
-- **Test strategy** — tests to write or update, and what already covers it
-- **Risks / open questions**
+Read the relevant parts of the codebase to ground the plan, and take acceptance
+criteria from the scope (the Linear comment). Print the plan to the transcript
+for the record, covering:
 
-The plan needs no approval. Go straight to step 4, unless the directive is
-`plan-only`: then stop with the resume message.
+- **Files to touch** — concrete paths in the Snowdesk repo
+- **Order of changes** — what gets built first, second, third
+- **Test strategy** — what tests to write or update, what existing tests
+  cover this surface
+- **Risks / open questions** — anything that might bite during
+  implementation
+
+The plan may not widen the scope. If working it out shows the scope was wrong,
+stop and comment on the ticket first (`AGENTS.md` → Workflow, "Stop and ask").
+A departure that stays inside the scope's intent is a deviation, listed in the
+PR body under Deviations from scope.
+
+**Pause check:** if the directive is `plan-only`, stop here with the resume
+message. Otherwise continue to step 4.
 
 ## Step 4 — Implement and review
 

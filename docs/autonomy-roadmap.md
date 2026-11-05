@@ -44,8 +44,10 @@ Hugo's answers of 3 November 2026 on the end state:
 
 ## Removed
 
-- **Plan approval**, 5 November 2026. `implement` writes the plan and builds it.
-  Scope approval stays.
+- **Plan approval in the sidebar**, 5 November 2026. Hugo reviews the scope, not the
+  implementation plan. Once the scope is signed off and Codex has reviewed it,
+  `implement` writes the plan and builds with no stop. If Codex's review changes
+  the scope, Claude decides whether to refer back to Hugo.
 - **Commit message approval**, 3 November 2026. A rule that depends on which skill
   is running is one Hugo cannot see, so commits no longer wait in any session.
   Merging follows the same rule, and Claude says one line when it starts a skill.

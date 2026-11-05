@@ -4,7 +4,7 @@ description: |
   Work a Linear ticket as far as it can go in this session: scope it and hand
   it to Codex (Backlog → Todo), or — once Codex has replied — resolve the
   review and implement it through to an open PR (Todo → Ready for dev → In
-  Progress → In Review), with every approval gate intact. The ticket may be referenced as a bare number — every ticket in
+  Progress → In Review), with the scope approval gates intact (there is no plan approval). The ticket may be referenced as a bare number — every ticket in
   this project is SNOW-prefixed, so "work on 295" means SNOW-295. Use when
   the user says "work on SNOW-NN", "work on NN", "take NN through to
   review", "scope and implement NN", "do SNOW-NN end to end", or any
@@ -92,8 +92,8 @@ revised scope.
 
 Invoke the Skill tool with `skill: implement` and args of the ticket
 number plus any pause directive held from step 0. Follow the implement
-skill in full: branch creation, ticket to In Progress, the plan (no
-approval), implementer/reviewer loop, query-count check, push, PR, ticket
+skill in full: branch creation, ticket to In Progress, the plan (written
+without an approval stop), implementer/reviewer loop, query-count check, push, PR, ticket
 to In Review.
 
 The implement skill re-fetches the ticket and its comments, so it will
