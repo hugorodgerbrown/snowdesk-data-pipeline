@@ -626,8 +626,13 @@ def build_season_ribbon(
 
     The ribbon is a simpler counterpart to :func:`build_season_grid`: a flat
     list of one :class:`RibbonDay` per calendar day from the region's first
-    rated day through ``today`` (inclusive), ordered oldest-first. Days after ``today``
-    are excluded — the ribbon is a retrospective view of the season so far.
+    rated day through ``today`` (inclusive), ordered oldest-first. Days after
+    ``today`` are excluded — the ribbon is a retrospective view.
+
+    A region with no rated day on or before ``today`` gets a one-day ribbon
+    of today alone. The map's ``#season-ribbon`` header, and the region chip
+    and pin roundel inside it, render only when the ribbon is truthy, so it
+    must never come back empty.
 
     Reads the same ``RegionDayRating`` rows as ``build_season_grid``: one
     aggregate for the first rated day, one range query for the rows.
@@ -637,13 +642,11 @@ def build_season_ribbon(
         today: Current date — the last day included in the ribbon.
 
     Returns:
-        A :class:`SeasonRibbon` ready to render. Empty (falsy) when the
-        region has no rated day on or before today.
+        A :class:`SeasonRibbon` ready to render, holding at least ``today``.
 
     """
-    start = RegionDayRating.objects.first_rated_date(region)
-    if start is None or today < start:
-        return SeasonRibbon(days=[])
+    first = RegionDayRating.objects.first_rated_date(region)
+    start = today if first is None else min(first, today)
 
     rows = RegionDayRating.objects.for_region_range(region, start, today)
     by_date: dict[datetime.date, RegionDayRating] = {r.date: r for r in rows}

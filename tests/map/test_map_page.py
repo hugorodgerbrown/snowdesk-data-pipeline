@@ -1415,6 +1415,21 @@ class TestMapPageWindowFollowsTheData:
 
         assert 'data-on-track="false"' in self._scrubber(url)
 
+    @freeze_time("2026-08-15")
+    def test_the_ribbon_header_renders_with_no_rated_row(self) -> None:
+        """An empty DB with CH-4115 present still renders the ribbon header.
+
+        ``#season-ribbon`` carries ``#region-surface`` and ``#region-readout``
+        (the region chip and pin roundel), so it must not depend on CH-4115
+        having a rated day.
+        """
+        MicroRegionFactory.create(region_id="CH-4115")
+
+        content = Client().get(reverse("public:map")).content.decode()
+
+        for element_id in ("season-ribbon", "region-surface", "region-readout"):
+            assert f'id="{element_id}"' in content, element_id
+
 
 # ---------------------------------------------------------------------------
 # SNOW-324: report_mode — floating Report button on the map

@@ -704,14 +704,26 @@ class TestSeasonCalendarTimeSplit:
 class TestBuildSeasonRibbon:
     """Tests for the build_season_ribbon helper (SNOW-314)."""
 
-    def test_empty_when_today_before_the_first_rated_day(self) -> None:
-        """Returns an empty (falsy) ribbon before the region's first rated day."""
+    def test_today_alone_when_the_region_has_no_rated_day(self) -> None:
+        """A region with no rated row gets a truthy one-day ribbon of today.
+
+        The map's ribbon header, region chip and pin roundel render only
+        when the ribbon is truthy, so it must never come back empty.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        today = datetime.date(2026, 1, 3)
+        ribbon = build_season_ribbon(region, today=today)
+        assert ribbon
+        assert [d.date for d in ribbon.days] == [today]
+        assert ribbon.days[0].has_bulletin is False
+
+    def test_today_alone_before_the_first_rated_day(self) -> None:
+        """A first rated day after today still leaves today alone on the ribbon."""
         region = MicroRegionFactory.create(region_id="CH-4115")
         _rated(region, datetime.date(2026, 1, 5))
         today = datetime.date(2026, 1, 3)  # before the Jan 5 bulletin
         ribbon = build_season_ribbon(region, today=today)
-        assert not ribbon
-        assert ribbon.days == []
+        assert [d.date for d in ribbon.days] == [today]
 
     def test_days_ordered_oldest_first(self) -> None:
         """Ribbon days run chronologically from the first rated day through today."""
