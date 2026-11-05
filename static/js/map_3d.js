@@ -70,6 +70,7 @@
     pitch: camera.pitch,
     bearing: camera.bearing,
     maxPitch: core.MAX_PITCH,
+    pixelRatio: Math.min(window.devicePixelRatio || 1, core.MAX_PIXEL_RATIO),
   });
 
   /**

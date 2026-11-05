@@ -14,6 +14,12 @@
  *
  * A flat 2-D camera is tilted to the 3-D map's opening pitch: opening a
  * 3-D map looking straight down shows nothing the 2-D one did not.
+ *
+ * PREFETCH. The moment a pointer, a finger or focus reaches the roundel,
+ * the elevation tiles the 3-D view asks for first are fetched into the
+ * browser's cache (map_3d_core.prefetchDemTiles; Mapterhorn caches them
+ * for 7 days), so the terrain is there when the page opens. Once per
+ * view: moving the map arms it again.
  */
 (function () {
   'use strict';
@@ -39,6 +45,29 @@
     } catch (err) {
       return fallback;
     }
+  }
+
+  const demTemplate = link.dataset.demTileUrl || '';
+  let prefetched = '';
+
+  /** Warm the cache with the elevation tiles around the 2-D view. */
+  function prefetch() {
+    const state = /** @type {any} */ (window).snowdeskMapState;
+    const map = state && state.map;
+    if (!map || !demTemplate) return;
+    const centre = map.getCenter();
+    const zoom = map.getZoom();
+    const tiles = core.prefetchDemTiles(centre, zoom);
+    const key = tiles.map((/** @type {{z: number, x: number, y: number}} */ t) => `${t.z}/${t.x}/${t.y}`).join(' ');
+    if (key === prefetched) return;
+    prefetched = key;
+    for (const tile of tiles) {
+      fetch(core.tileUrl(demTemplate, tile), { credentials: 'omit' }).catch(() => {});
+    }
+  }
+
+  for (const type of ['pointerenter', 'focus', 'touchstart']) {
+    link.addEventListener(type, prefetch, { passive: true });
   }
 
   link.addEventListener('click', () => {

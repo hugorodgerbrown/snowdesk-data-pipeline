@@ -18,8 +18,9 @@ function fakeMap(pitch) {
   };
 }
 
-async function boot(pitch) {
-  document.body.innerHTML = '<a id="map-3d-link" href="/map/3d/">3D</a>';
+async function boot(pitch, fetchSpy) {
+  document.body.innerHTML = '<a id="map-3d-link" href="/map/3d/" data-dem-tile-url="https://t.example/{z}/{x}/{y}.webp">3D</a>';
+  window.fetch = fetchSpy || vi.fn(() => Promise.resolve({ ok: true }));
   window.snowdeskMapState = { map: fakeMap(pitch) };
   vi.resetModules();
   await import('../../static/js/map_3d_link.js');
@@ -46,5 +47,18 @@ describe('map_3d_link', () => {
     const url = await boot(45);
     expect(url.searchParams.get('at')).toBe('7.5,46.2,11,45,10');
     expect(url.searchParams.get('layers')).toBe('steep,wildlife');
+  });
+});
+
+describe('map_3d_link prefetch', () => {
+  it('fetches the 3x3 elevation block once per view when the pointer arrives', async () => {
+    const fetchSpy = vi.fn(() => Promise.resolve({ ok: true }));
+    await boot(0, fetchSpy);
+    fetchSpy.mockClear();
+    const link = document.getElementById('map-3d-link');
+    link.dispatchEvent(new Event('pointerenter'));
+    link.dispatchEvent(new Event('focus'));
+    expect(fetchSpy).toHaveBeenCalledTimes(9);
+    expect(fetchSpy.mock.calls[0][0]).toMatch(/^https:\/\/t\.example\/9\/\d+\/\d+\.webp$/);
   });
 });

@@ -41,7 +41,7 @@ from apps.bulletins.models import (
     RegionDayRating,
 )
 from apps.map import resort_guide
-from apps.map.map_3d import map_3d_enabled
+from apps.map.map_3d import MAP_3D_DEM_TILE_URL, map_3d_enabled
 from apps.map.problem_terrain import problem_terrain_key
 from apps.observations.models import FieldObservation
 from apps.public.map_shared import map_modes_enabled, trip_url_templates
@@ -320,6 +320,8 @@ def map_page(request: HttpRequest) -> HttpResponse:
             "map_modes_enabled": map_modes_enabled(request),
             # The "3D" roundel, behind the map_3d flag (apps/map/map_3d.py).
             "map_3d_link": map_3d_enabled(request),
+            # What the roundel prefetches, so the 3-D terrain is cached first.
+            "map_3d_dem_tile_url": MAP_3D_DEM_TILE_URL,
         },
     )
 
