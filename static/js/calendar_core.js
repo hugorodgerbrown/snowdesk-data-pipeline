@@ -281,7 +281,8 @@
    * bulletin day: the payload can carry placeholder rows, and marking them
    * is the defect this replaced.
    *
-   * @param {Object|null} ratingsCache Date key → {region id: danger int}.
+   * @param {Object<string, Object<string, number|null>>|null} ratingsCache
+   *   Date key → {region id: danger int}.
    * @returns {Set<string>} Date keys with at least one rating above 0.
    */
   function bulletinDays(ratingsCache) {
@@ -292,7 +293,8 @@
       var frame = ratingsCache[key];
       if (!frame || typeof frame !== 'object') continue;
       for (var regionId of Object.keys(frame)) {
-        if (frame[regionId] > 0) {
+        var value = frame[regionId];
+        if (value != null && value > 0) {
           out.add(key);
           break;
         }
