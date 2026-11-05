@@ -202,8 +202,7 @@ def test_map_mode_scripts_load_in_their_places_behind_the_flag() -> None:
     decides each layer's first visibility — and by ``map_shared.js``'s date
     write, so it precedes the whole bundle. ``map_mode.js`` calls the hooks
     ``map.js`` publishes and binds over ``map_calendar.js``'s date control
-    and ``map_day_nav.js``'s steps, and ``map_region_chip.js`` reads the
-    ``window.pwaMapMode`` it publishes, so it sits between those. Neither
+    and ``map_day_nav.js``'s steps, so it sits after those. Neither
     breaks the bundle's contiguous run (the class above, without the flag).
     """
     client = Client()
@@ -216,7 +215,6 @@ def test_map_mode_scripts_load_in_their_places_behind_the_flag() -> None:
     toggle_at = rendered.index("map_mode.js")
     for before in (BOOT_FILE, "map_calendar.js", "map_day_nav.js"):
         assert rendered.index(before) < toggle_at, before
-    assert toggle_at < rendered.index("map_region_chip.js")
     positions = [i for i, name in enumerate(rendered) if name in set(bundle)]
     span = rendered[positions[0] : positions[-1] + 1]
     assert "map_mode.js" not in span
@@ -226,8 +224,7 @@ def test_map_mode_scripts_load_in_their_places_behind_the_flag() -> None:
 @pytest.mark.django_db
 def test_map_mode_toggle_loads_for_everyone_but_renders_only_behind_the_flag() -> None:
     """Off, the toggle's markup is absent, so a stored or linked ?mode= has
-    nothing to apply it. Its script still loads, in its place before
-    ``map_region_chip.js`` (SNOW-1412): it is a member of the map bundle, and
+    nothing to apply it. Its script still loads (SNOW-1412): it is a member of the map bundle, and
     it returns early without ``#map-mode-terrain``. The pure core loads
     before the bundle's contiguous run, as every core map.js reads does.
     """
@@ -235,7 +232,7 @@ def test_map_mode_toggle_loads_for_everyone_but_renders_only_behind_the_flag() -
     content = client.get(reverse("public:map")).content.decode()
     rendered = _SCRIPT_SRC_RE.findall(content)
     assert ' id="map-mode-terrain"' not in content
-    assert rendered.index("map_mode.js") < rendered.index("map_region_chip.js")
+    assert "map_mode.js" in rendered
     assert rendered.index("map_mode_core.js") < rendered.index(_map_bundle()[0])
 
 

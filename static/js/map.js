@@ -9677,10 +9677,7 @@
       }
       if (feature.id === selectedId) window.pwaRegionSheet?.reopen?.();
       selectFeature(feature.id);
-      // SNOW-1376: the region chip asks with `frame: false` — the reader is
-      // already looking at the region, close in, and framing it would zoom
-      // them back out to the whole region.
-      if (!(ev.detail && ev.detail.frame === false)) window.pwaMapFocus?.region?.(regionID);
+      window.pwaMapFocus?.region?.(regionID);
     });
 
     // Pin-positioning focus (static/js/map_placement_focus.js) clears every
@@ -11080,10 +11077,9 @@
 
       // SNOW-1065: with a route open, a tap on the map that no marker and no
       // weather symbol took clears the route and the point together — the
-      // panel closes — and does nothing else. The tap was aimed at leaving the route, not at a
-      // region, and on a phone the region chip is withdrawn while the panel
-      // is open, so a region selected under it would be a change the reader
-      // cannot see.
+      // panel closes — and does nothing else. The tap was aimed at leaving
+      // the route, not at a region, and a region selected under the panel
+      // would be a change the reader cannot see.
       //
       // A resort pin is the exception (2026-10-19): it is a thing on the
       // map like a marker or a weather symbol, which already take their

@@ -41,7 +41,8 @@
  *     reproduce it. A date write keeps it (map_shared.js writeUrlDateParam).
  *   - THE PAGE. <html data-map-mode> is what map.css reads — the collapsed
  *     segments, the hidden season scrubber, the region sheet's dated parts —
- *     and snowdesk:map-mode-changed is what the region chip hears.
+ *     and snowdesk:map-mode-changed is what map.js, the legend and the
+ *     place sheet hear.
  *   - THE REGION SHEET'S PANEL. In Terrain the sheet shows the region
  *     without its day, and a "Select a date…" panel
  *     ([data-map-mode-to-dated]) in its place. A press on it switches to
@@ -49,8 +50,7 @@
  *
  * The Today panel's sun is a panel, not a map surface, and stays in both.
  *
- * Loaded after map.js, map_day_nav.js, map_calendar.js and map_today.js,
- * and before map_region_chip.js, which reads window.pwaMapMode.
+ * Loaded after map.js, map_day_nav.js, map_calendar.js and map_today.js.
  */
 
 (function mapModeInit() {

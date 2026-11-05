@@ -294,10 +294,6 @@ interface Window {
   pwaRegionLevel: any;
   /** static/js/map_region_sheet.js — reopen() → whether the sheet reopened for the region still selected. */
   pwaRegionSheet: any;
-  /** static/js/map_region_chip_core.js — the region chip's decisions: chipState(input) (SNOW-1376). */
-  pwaRegionChipCore: any;
-  /** static/js/map_region_chip.js — the region chip: update() (SNOW-1376). */
-  pwaRegionChip: any;
   /** static/js/map_slopes_notice_core.js — when the "Now showing the bulletin's slopes" card shows: eligible, hasBeenSeen, claim (SNOW-1378). */
   pwaSlopesNoticeCore: any;
   /** static/js/map_mode_core.js — the Conditions (Dated) / Terrain mode's pure rules: ONLY_IN, readMode, withMode, withDate, modeOf, isSuppressed, suppressedIn, effective, problemTerrainShown (SNOW-1394, SNOW-1421). */
