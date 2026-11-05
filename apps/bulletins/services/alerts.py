@@ -69,7 +69,12 @@ from django_tasks import task
 from apps.accounts.models import Account
 from apps.accounts.push_service import dispatch_push
 from apps.accounts.services.alert_email import send_alert_email
-from apps.bulletins.models import Bulletin, BulletinAlert, RegionDayRating
+from apps.bulletins.models import (
+    SEASON_GAP_DAYS,
+    Bulletin,
+    BulletinAlert,
+    RegionDayRating,
+)
 from apps.bulletins.services.alert_wording import (
     ALERT_TZ,
     AlertKind,
@@ -97,11 +102,6 @@ logger = logging.getLogger(__name__)
 
 NIGHT_STARTS = datetime.time(22, 0)
 NIGHT_ENDS = datetime.time(6, 30)
-
-# A region with no bulletin for this long before a day starts a new
-# season on it; a shorter gap (SLF pauses early in the winter) is a
-# resumption (SNOW-1356).
-SEASON_GAP_DAYS: int = 60
 
 _KIND_TO_ROW: dict[AlertKind, str] = {
     "new": BulletinAlert.Kind.NEW,
@@ -311,16 +311,21 @@ def had_bulletin_in_season(region: MicroRegion, day: datetime.date) -> bool:
             bulletin's own).
 
     Returns:
-        True when any day in the ``SEASON_GAP_DAYS`` before ``day`` has an
-        authoritative bulletin.
+        True when any day in the ``SEASON_GAP_DAYS`` before ``day`` has a
+        rated row (``RegionDayRatingQuerySet.rated``): a provider's
+        ``no_rating`` bulletin is no bulletin here, as it is to the map's
+        and calendar's date windows (SNOW-1431).
 
     """
-    return RegionDayRating.objects.filter(
-        region=region,
-        date__gte=day - datetime.timedelta(days=SEASON_GAP_DAYS),
-        date__lt=day,
-        source_bulletin__isnull=False,
-    ).exists()
+    return (
+        RegionDayRating.objects.rated()
+        .filter(
+            region=region,
+            date__gte=day - datetime.timedelta(days=SEASON_GAP_DAYS),
+            date__lt=day,
+        )
+        .exists()
+    )
 
 
 def day_state(region: MicroRegion, day: datetime.date) -> BulletinState | None:

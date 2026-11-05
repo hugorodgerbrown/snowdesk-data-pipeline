@@ -278,9 +278,7 @@ def _synthetic_grid(cells: list[Any]) -> Any:
     while len(flat) % 7:
         flat.append(None)
     columns = [tuple(flat[i : i + 7]) for i in range(0, len(flat), 7)]
-    return SeasonGrid(
-        columns=columns, month_labels=[""] * len(columns), season_label="25/26"
-    )
+    return SeasonGrid(columns=columns, month_labels=[""] * len(columns))
 
 
 def _board_cell(date: datetime.date, char: str) -> Any:
@@ -316,25 +314,21 @@ def _board_cell(date: datetime.date, char: str) -> Any:
 def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
     """Build the season calendar's three page variants for the library.
 
-    A finished season (today ringed, SNOW-1163), the same season so far
-    (today ringed, the rest "not yet") — both the resort page's unlinked
-    calendar — and the bulletin page's linked one.
+    A finished run of bulletins (today ringed, SNOW-1163), the same run so
+    far (today ringed, the rest of the month "not yet") — both the unlinked
+    calendar the help page draws — and the bulletin page's linked one.
+    Grid-only since SNOW-1431: the months drawn run from the first bulletin
+    to the later of the last bulletin and tomorrow.
 
     Returns:
         The variants, each a context for ``_season_calendar_demo.html``.
 
     """
     from apps.public.season_calendar import (
-        SeasonWindow,
         build_season_months,
         summarise_season,
     )
 
-    window = SeasonWindow(
-        start=datetime.date(2025, 11, 1),
-        end=datetime.date(2026, 4, 30),
-        label="25/26",
-    )
     cells: list[Any] = []
     for offset, row in enumerate(_SEASON_BOARD):
         month = 11 + offset
@@ -344,7 +338,7 @@ def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
             for i, char in enumerate(row)
         ]
     full = _synthetic_grid(cells)
-    finished_today = datetime.date(2026, 10, 20)
+    finished_today = datetime.date(2026, 4, 29)
 
     so_far_today = datetime.date(2026, 1, 14)
     so_far = _synthetic_grid([c for c in cells if c.date <= so_far_today])
@@ -352,12 +346,11 @@ def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
     region = SimpleNamespace(canonical_region_id="CH-4115", name_slug="verbier")
     return (
         {
-            "caption": "Resort page — a finished season, today ringed",
+            "caption": "Not linked — a finished run, today ringed",
             "context": {
                 "season_months": build_season_months(
                     full,
                     finished_today,
-                    window=window,
                     ring_date=finished_today,
                 ),
                 "season_summary": summarise_season(full),
@@ -365,12 +358,11 @@ def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
             },
         },
         {
-            "caption": "Resort page — the season so far, today ringed, rest not yet",
+            "caption": "Not linked — the run so far, today ringed, rest not yet",
             "context": {
                 "season_months": build_season_months(
                     so_far,
                     so_far_today,
-                    window=window,
                     ring_date=so_far_today,
                 ),
                 "season_summary": summarise_season(so_far),
@@ -2759,9 +2751,9 @@ NAV_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
     {
-        "caption": "With season trigger",
+        "caption": "With calendar trigger",
         "context": {
-            "season_trigger": SimpleNamespace(season_label="25/26"),
+            "season_trigger": {"first_date": datetime.date(2025, 11, 20)},
             "request": SimpleNamespace(
                 user=SimpleNamespace(
                     is_authenticated=False,

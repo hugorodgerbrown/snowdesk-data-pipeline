@@ -17,8 +17,9 @@ Two facts come from here:
   handful of CORE-tier resorts, in this order (Hugo, SNOW-1231). Every
   resort is Swiss, so placing the visitor would change little; a resort
   with no pin is left out, because the row opens the pin.
-- **The guide's day.** In season the guide runs on the map's own day; out
-  of season there is no bulletin to read, so it moves the map to the
+- **The guide's day.** On a day with bulletins the guide runs on the map's
+  own day; when no region has a rated row today (``is_offseason``,
+  SNOW-1431) there is no bulletin to read, so it moves the map to the
   example route's day (``RouteShare.example_date``) and back again at the
   end, as the example walkthrough does.
 """
@@ -81,11 +82,11 @@ def guide_date(
     """Return the day the guide moves the map to, or None to keep the map's day.
 
     Args:
-        is_offseason: Whether today is past the season's last bulletin.
+        is_offseason: Whether no region has a rated row for today.
         example_date: The example route's day, when an example is set.
 
     Returns:
-        None in season; out of season the example's day, else the default
+        None on a day with bulletins; otherwise the example's day, else the default
         example day, which has a full bulletin on every environment seeded
         from the fixtures.
 

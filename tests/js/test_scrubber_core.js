@@ -282,3 +282,33 @@ describe('intToKey', () => {
     expect(core.intToKey(99, ratingTable)).toBe('no_rating');
   });
 });
+
+describe('datesInWindow', () => {
+  // SNOW-1431: the timelapse frames are the payload's days on the track.
+  const DAYS = ['2026-03-01', '2025-10-20', '2025-12-01', '2026-01-10'];
+
+  it('keeps the days inside the window, ascending', () => {
+    expect(core.datesInWindow(DAYS, '2025-11-01', '2026-02-01')).toEqual([
+      '2025-12-01',
+      '2026-01-10',
+    ]);
+  });
+
+  it('includes both ends of the window', () => {
+    expect(core.datesInWindow(DAYS, '2025-10-20', '2026-03-01')).toEqual([
+      '2025-10-20',
+      '2025-12-01',
+      '2026-01-10',
+      '2026-03-01',
+    ]);
+  });
+
+  it('leaves a side open when its bound is empty', () => {
+    expect(core.datesInWindow(DAYS, '', '2025-12-01')).toEqual(['2025-10-20', '2025-12-01']);
+    expect(core.datesInWindow(DAYS, '2026-01-10', null)).toEqual(['2026-01-10', '2026-03-01']);
+  });
+
+  it('returns an empty list when no day is inside', () => {
+    expect(core.datesInWindow(DAYS, '2026-06-01', '2026-07-01')).toEqual([]);
+  });
+});

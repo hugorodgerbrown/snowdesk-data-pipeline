@@ -181,7 +181,7 @@ def synthetic_season_grid() -> SeasonGrid:
                 break
         labels.append(label)
 
-    return SeasonGrid(columns=columns, month_labels=labels, season_label="25/26")
+    return SeasonGrid(columns=columns, month_labels=labels)
 
 
 def synthetic_season_calendar() -> dict[str, Any]:

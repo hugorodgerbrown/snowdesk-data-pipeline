@@ -651,10 +651,8 @@ class TestGetAvalancheProblems:
 class TestGetDangerHistory:
     """Tests for tools.get_danger_history."""
 
-    def test_range_fully_inside_season_is_not_clamped(
-        self, region: MicroRegion
-    ) -> None:
-        """A request wholly inside the season window is returned unclamped."""
+    def test_range_inside_the_window_is_not_clamped(self, region: MicroRegion) -> None:
+        """A request inside the 366-day window is returned unclamped."""
         for day, rating in (
             (10, RegionDayRating.Rating.LOW),
             (11, RegionDayRating.Rating.MODERATE),
@@ -676,6 +674,11 @@ class TestGetDangerHistory:
         assert result["clamped"] is False
         assert result["effective_from"] == "2026-01-10"
         assert result["effective_to"] == "2026-01-12"
+        # 366 days inclusive, ending at to_date (before tomorrow).
+        assert result["window_start"] == "2025-01-12"
+        assert result["window_end"] == "2026-01-12"
+        assert "season_start" not in result
+        assert "season_end" not in result
         assert result["count"] == 3
         assert [d["max_rating"] for d in result["days"]] == [
             "low",
@@ -683,10 +686,15 @@ class TestGetDangerHistory:
             "high",
         ]
 
-    def test_range_straddling_season_start_is_clamped(
+    def test_range_crossing_1_november_is_not_clamped(
         self, region: MicroRegion
     ) -> None:
-        """A request starting before the season is clamped to season_start."""
+        """SNOW-1431: an October bulletin is answered, not cut at 1 November."""
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2025, 10, 28),
+            max_rating=RegionDayRating.Rating.MODERATE,
+        )
         RegionDayRatingFactory.create(
             region=region,
             date=datetime.date(2025, 11, 2),
@@ -700,15 +708,58 @@ class TestGetDangerHistory:
             today=datetime.date(2025, 11, 10),
         )
 
-        assert result["clamped"] is True
-        assert result["effective_from"] == "2025-11-01"
-        assert result["season_start"] == "2025-11-01"
-        assert result["season_end"] == "2026-05-31"
+        assert result["clamped"] is False
+        assert result["effective_from"] == "2025-10-25"
+        assert [d["date"] for d in result["days"]] == ["2025-10-28", "2025-11-02"]
+        assert "clamped" not in result["summary"].lower()
 
-    def test_range_entirely_outside_season_returns_empty_days(
+    def test_range_longer_than_366_days_is_clamped_from_the_start(
         self, region: MicroRegion
     ) -> None:
-        """A range entirely outside the season window is a successful empty result."""
+        """Two years asked for: the latest 366 days come back."""
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2024, 12, 1),
+            max_rating=RegionDayRating.Rating.LOW,
+        )
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2025, 7, 1),
+            max_rating=RegionDayRating.Rating.LOW,
+        )
+
+        result = tools.get_danger_history(
+            region.region_id,
+            datetime.date(2024, 1, 1),
+            datetime.date(2025, 12, 31),
+            today=datetime.date(2026, 3, 1),
+        )
+
+        assert result["clamped"] is True
+        assert result["effective_from"] == "2024-12-31"
+        assert result["effective_to"] == "2025-12-31"
+        assert result["window_start"] == "2024-12-31"
+        assert result["window_end"] == "2025-12-31"
+        assert [d["date"] for d in result["days"]] == ["2025-07-01"]
+        assert "at most 366 days" in result["summary"]
+
+    def test_the_window_ends_no_later_than_tomorrow(self, region: MicroRegion) -> None:
+        """A range running into the future is clamped to tomorrow."""
+        result = tools.get_danger_history(
+            region.region_id,
+            datetime.date(2026, 1, 20),
+            datetime.date(2026, 3, 1),
+            today=datetime.date(2026, 2, 1),
+        )
+
+        assert result["clamped"] is True
+        assert result["effective_to"] == "2026-02-02"
+        assert result["window_end"] == "2026-02-02"
+
+    def test_range_entirely_in_the_future_returns_empty_days(
+        self, region: MicroRegion
+    ) -> None:
+        """A range wholly after tomorrow is a successful empty result."""
         result = tools.get_danger_history(
             region.region_id,
             datetime.date(2026, 6, 1),
@@ -1700,18 +1751,18 @@ class TestGetDangerTrend:
         assert result["requested_from"] == "2026-01-01"
         assert result["requested_to"] == "2026-01-14"
 
-    def test_off_season_returns_empty_series_and_null_trend_shape(
+    def test_a_summer_week_without_bulletins_has_a_null_trend_shape(
         self, region: MicroRegion
     ) -> None:
-        """A window entirely outside the season returns empty days + null trend."""
-        # today = 15 July — the season-clamp yields an empty effective
-        # window and get_danger_history returns days: [] with clamped: true.
+        """A window with no rated day returns empty days + null trend."""
+        # today = 15 July — since SNOW-1431 the window is not clamped to a
+        # season; it simply holds no rows.
         result = tools.get_danger_trend(
             region.region_id, days=7, today=datetime.date(2026, 7, 15)
         )
 
         assert result["days"] == []
-        assert result["clamped"] is True
+        assert result["clamped"] is False
         assert result["direction"] == "stable"
         assert result["change_point"] is None
         assert result["current_streak"] is None

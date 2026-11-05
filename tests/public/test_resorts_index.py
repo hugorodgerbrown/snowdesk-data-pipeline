@@ -208,10 +208,9 @@ class TestOffSeason:
         content = _page()
         off_season = _section(content, "resorts-off-season")
 
-        assert (
-            "No avalanche bulletins today. The season usually opens in November."
-            in off_season
-        )
+        assert "No avalanche bulletins today." in off_season
+        # SNOW-1431: no fixed season to promise a month for.
+        assert "usually opens" not in off_season
         names = [m.group(2) for m in _LINK_TEXT_RE.finditer(off_season)]
         assert names == ["Andermatt", "Verbier"]
         assert "1444&ndash;2961 m" in off_season

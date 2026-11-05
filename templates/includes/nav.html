@@ -70,10 +70,11 @@ back_url : str, optional
     separates the chevron from the wordmark.
 back_label : str, optional
     Label shown next to the chevron. Defaults to "Back" — prefer a
-    destination-specific label ("Map", "Season") where possible so the
+    destination-specific label ("Map", "Calendar") where possible so the
     user knows where the arrow leads.
 season_trigger : bool, optional
-    When truthy, a labelled "SEASON" button is rendered right-aligned.
+    When truthy, a labelled "CALENDAR" button is rendered right-aligned: it
+    opens the bulletin page's danger calendar (season_header's dict).
 
 Usage
 -----
@@ -127,9 +128,9 @@ Usage
                 data-season-trigger
                 aria-haspopup="dialog"
                 aria-expanded="false"
-                aria-label="{% blocktrans with label=season_trigger.season_label %}Show {{ label }} season heatmap{% endblocktrans %}"
+                aria-label="{% trans 'Show danger calendar' %}"
             >
-                <span>{{ season_trigger.season_label }} {% trans "Season" %}</span>
+                <span>{% trans "Calendar" %}</span>
                 {% include "includes/_icon_calendar.html" with size=14 %}
             </button>
         {% endif %}

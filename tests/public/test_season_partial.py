@@ -45,6 +45,7 @@ from apps.public.season_calendar import (
     build_season_months,
     summarise_season,
 )
+from apps.regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -52,7 +53,16 @@ from tests.factories import (
     RegionDayRatingFactory,
 )
 
-_SEASON_START = datetime.date(2025, 11, 3)
+
+def _region_with_a_rated_day() -> MicroRegion:
+    """Create a region whose calendar has a first rated day (SNOW-1431)."""
+    region = MicroRegionFactory.create()
+    RegionDayRatingFactory.create(
+        region=region,
+        date=timezone.localdate() - datetime.timedelta(days=10),
+        source_bulletin=BulletinFactory.create(),
+    )
+    return region
 
 
 def _url(region_id: str) -> str:
@@ -94,18 +104,16 @@ class TestSeasonPartialGuards:
 class TestSeasonPartialContent:
     """Tests for the content of the season_calendar_partial response."""
 
-    @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_returns_grid_with_season_calendar_testid(self, client: Client) -> None:
         """HTMX GET returns a fragment with data-testid="season-calendar"."""
-        region = MicroRegionFactory.create()
+        region = _region_with_a_rated_day()
         response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
         assert response.status_code == 200
         assert b'data-testid="season-calendar"' in response.content
 
-    @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_is_the_linked_calendar_with_the_colour_key(self, client: Client) -> None:
         """The linked variant — no role=img — with the colours-only key (SNOW-1163)."""
-        region = MicroRegionFactory.create()
+        region = _region_with_a_rated_day()
         response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
         content = response.content.decode()
         assert 'data-variant="linked"' in content
@@ -119,10 +127,9 @@ class TestSeasonPartialContent:
         assert "This bulletin" not in content
         assert "season-day-ring" not in key
 
-    @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_every_cell_carries_data_date_attribute(self, client: Client) -> None:
         """Every rendered cell anchor/div carries a data-date="YYYY-MM-DD" attribute."""
-        region = MicroRegionFactory.create()
+        region = _region_with_a_rated_day()
         response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
         assert response.status_code == 200
         content = response.content.decode()
@@ -135,15 +142,13 @@ class TestSeasonPartialContent:
             # Confirm it parses cleanly.
             datetime.date.fromisoformat(date_str)
 
-    @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_no_day_is_ringed_server_side(self, client: Client) -> None:
         """The ring is never in the partial — the selected day is ringed client-side."""
-        region = MicroRegionFactory.create()
+        region = _region_with_a_rated_day()
         response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
         assert response.status_code == 200
         assert b"season-day season-day-ring" not in response.content
 
-    @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_region_with_rated_days_renders_interactive_cells(
         self, client: Client
     ) -> None:
@@ -198,7 +203,6 @@ class TestSeasonPartialCache:
         """Clear the cache before each test."""
         cache.clear()
 
-    @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_second_request_issues_zero_db_queries(
         self, client: Client, django_assert_num_queries: Any
     ) -> None:
@@ -221,7 +225,6 @@ class TestSeasonPartialCache:
         assert response2.status_code == 200
         assert response1.content == response2.content
 
-    @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_apply_bulletin_day_ratings_invalidates_cache(self, client: Client) -> None:
         """After priming the cache, apply_bulletin_day_ratings deletes the key."""
         region = MicroRegionFactory.create()
@@ -275,10 +278,7 @@ class TestSeasonPartialCache:
             bumped = season_calendar_cache_key("ch-4115", "2026-01-12", "en")
         assert bumped != current
 
-    @override_settings(
-        SEASON_START_DATE=_SEASON_START,
-        LANGUAGES=[("en", "English"), ("de", "Deutsch")],
-    )
+    @override_settings(LANGUAGES=[("en", "English"), ("de", "Deutsch")])
     def test_apply_bulletin_day_ratings_invalidates_every_language(self) -> None:
         """SNOW-1128: ingest deletes the cached body for every language."""
         region = MicroRegionFactory.create()
@@ -315,7 +315,7 @@ def test_split_day_label_is_one_sentence() -> None:
         am_rating_key="low",
         pm_rating_key="moderate",
     )
-    grid = SeasonGrid(columns=[(cell,)], month_labels=[""], season_label="25/26")
+    grid = SeasonGrid(columns=[(cell,)], month_labels=[""])
     html = render_to_string(
         "public/partials/_season_calendar.html",
         {
@@ -341,7 +341,6 @@ class TestAlbinaCalendarTileRendering:
     Regression guard: SLF and MF cells must NOT carry ``data-band-mode``.
     """
 
-    @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_albina_elevation_only_cell_attributes(self, client: Client) -> None:
         """An elevation-only ALBINA day draws as a two-level cell."""
         region = MicroRegionFactory.create(region_id="at-9901")
@@ -379,7 +378,6 @@ class TestAlbinaCalendarTileRendering:
         assert 'data-lo="low" data-hi="considerable"' in cell
         assert 'data-level="considerable"' in cell
 
-    @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_albina_elevation_time_cell_attributes(self, client: Client) -> None:
         """A 2×2 ALBINA day draws as a two-level cell: lowest band, peak band."""
         region = MicroRegionFactory.create(region_id="at-9902")
@@ -428,7 +426,6 @@ class TestAlbinaCalendarTileRendering:
         assert 'data-state="split"' in cell
         assert 'data-lo="low" data-hi="high"' in cell
 
-    @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_slf_cell_has_no_band_mode(self, client: Client) -> None:
         """SLF cell does not carry data-band-mode (regression guard)."""
         region = MicroRegionFactory.create(region_id="ch-9901")
@@ -448,7 +445,6 @@ class TestAlbinaCalendarTileRendering:
         html = response.content.decode()
         assert "data-band-mode=" not in html
 
-    @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_mf_cell_has_no_band_mode(self, client: Client) -> None:
         """MeteoFrance cell does not carry data-band-mode (regression guard)."""
         region = MicroRegionFactory.create(region_id="fr-9901")
@@ -496,7 +492,6 @@ class TestAlbinaCalendarTileRendering:
 class TestSeasonPartialTimeSplit:
     """Tests for AM/PM days rendered by the partial (SNOW-291, redrawn by SNOW-1158)."""
 
-    @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_equal_am_pm_draws_one_level(self, client: Client) -> None:
         """An AM/PM pair at one level is a one-level day, not a split."""
         region = MicroRegionFactory.create()
@@ -527,7 +522,6 @@ class TestSeasonPartialTimeSplit:
         cell = response.content.decode().split('data-date="2025-11-04"')[1]
         assert cell.split(">")[0].count('data-state="moderate"') == 1
 
-    @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_time_split_cell_tooltip_names_both_periods(self, client: Client) -> None:
         """An AM/PM split day names both levels, the peak second."""
         region = MicroRegionFactory.create()
@@ -561,7 +555,6 @@ class TestSeasonPartialTimeSplit:
         assert 'data-lo="moderate" data-hi="considerable"' in cell
         assert 'aria-label="4 Nov 2025 · Moderate and Considerable"' in cell
 
-    @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_uniform_cell_is_not_split(self, client: Client) -> None:
         """A uniform (non-split) day draws its one level."""
         region = MicroRegionFactory.create()

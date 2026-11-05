@@ -90,7 +90,7 @@ async function loadScrubber(seasonRatings) {
   const repaints = [];
   globalThis.COUNTRY_STATE = { ch: true, fr: false, at: false, it: false };
   globalThis.MAP_READY_PROMISE = Promise.resolve();
-  globalThis.MAP_STRINGS = { 'season-unavailable': 'Season data unavailable' };
+  globalThis.MAP_STRINGS = { 'season-unavailable': 'Bulletins unavailable' };
   // Overridable so a test can make the season fetch hang or fail — the
   // scrubber pulls it at init to leave its loading state, and the SNOW-793
   // default must not be hostage to it.

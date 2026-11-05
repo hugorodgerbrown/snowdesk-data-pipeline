@@ -2,10 +2,10 @@
 {% comment %}
 public/partials/_map_calendar.html — the map's date picker (SNOW-792): a
 month grid that opens from the bottom-left date control and commits a chosen
-day through the season scrubber's own commit point.
+day through the timeline scrubber's own commit point.
 
-The scrubber track is a few hundred pixels wide and spans twelve months, so
-a pixel is well under a day and hitting a chosen date by drag is a fiddle —
+The scrubber track is a few hundred pixels wide and spans the latest
+bulletin run through today (SNOW-1431), so a pixel is well under a day and hitting a chosen date by drag is a fiddle —
 and below 640px the scrubber does not render at all, which makes this the
 only date control there. It owns no commit path of its own: picking a day
 dispatches ``snowdesk:scrub-to`` and map_scrubber.js does the rest.
@@ -33,8 +33,9 @@ card and the row's buttons — it is ``position: absolute`` and needs that row
 as its containing block.
 
 Context expected:
-* season_start           — datetime.date: first day of the season; the paging
-                           floor until the ratings payload resolves.
+* season_start           — datetime.date: first day of the scrubber's track
+                           (the latest bulletin run's first rated day); the
+                           paging floor until the ratings payload resolves.
 * today                  — datetime.date: the today marker, and the latest
                            selectable day — the future is the one hard stop.
 * calendar_month_names   — 12 localised month names, January first.
@@ -42,14 +43,14 @@ Context expected:
 * map_modes_enabled      — bool: the Conditions / Terrain toggle is on, and
                            with it the footer's "Today" (below).
 
-The season is not a limit. The map carries weather as well as bulletins, so
+The track is not a limit. The map carries weather as well as bulletins, so
 a day in September has something to show even though no bulletin covers it;
 an earlier draft made the season the selectable range and could not reach
 those days at all. The grid fills the days that have a bulletin, read from
 the ratings payload in map_calendar.js.
 
 The grid itself is built by static/js/map_calendar.js rather than
-server-rendered: a season alone is ~245 day buttons and the reachable range
+server-rendered: a winter alone is ~245 day buttons and the reachable range
 is longer still, so putting them in the home page's DOM for a control most
 visits never open is a cost every visitor pays for a few who don't. What the
 server DOES supply is every translated word — the month names below travel

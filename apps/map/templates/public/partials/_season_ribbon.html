@@ -1,15 +1,15 @@
 {% load i18n %}
 {% comment %}
-public/partials/_season_ribbon.html — Season-long danger-rating ribbon strip.
+public/partials/_season_ribbon.html — the danger-rating ribbon strip.
 
-Renders a flat horizontal row of one cell per calendar day from SEASON_START_DATE
-through today, coloured by the day's peak (max_rating_key) for the currently
-selected region. Defaults to CH-4115 (Martigny / Verbier) at first paint.
+Renders a flat horizontal row of one cell per calendar day from the region's
+first rated day through today (SNOW-1431), coloured by the day's peak
+(max_rating_key) for the currently selected region. Defaults to CH-4115 (Martigny / Verbier) at first paint.
 
 Context expected:
   ribbon            — SeasonRibbon instance from build_season_ribbon().
-  season_start      — datetime.date: season window start (for data-season-start).
-  season_end        — datetime.date: season window end (for data-season-end).
+  season_start      — datetime.date: the scrubber track's start (for data-season-start).
+  season_end        — datetime.date: the track's end (for data-season-end).
   default_region_id — str: the region whose ribbon is server-rendered (CH-4115).
 
 SNOW-660: ``data-default-date`` (today) is gone. It seeded the ribbon's
@@ -41,7 +41,7 @@ for it was dead.
         data-default-subregion-name="{{ default_subregion_name|default:'' }}"
         data-default-major-name="{{ default_major_name|default:'' }}"
         data-default-region-slug="{{ default_region_slug|default:'' }}"
-        aria-label="{% blocktrans trimmed with label=ribbon.season_label %}Season {{ label }} danger ribbon{% endblocktrans %}"
+        aria-label="{% trans 'Danger ribbon' %}"
         role="region"
     >
         <div class="ribbon-header">

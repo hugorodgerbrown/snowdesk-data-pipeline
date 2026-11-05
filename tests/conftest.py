@@ -18,6 +18,10 @@ Email tests no longer need a sync-force fixture — the test settings module
 inherits ``ImmediateBackend`` from ``development.py``, which runs tasks inline
 and populates ``mail.outbox`` synchronously.
 
+The ``_fresh_latest_run`` autouse fixture (SNOW-1431) drops the map's
+cached ``latest_run`` before each test, so a test that writes ratings never
+reads the track a previous test cached.
+
 ``pytest_configure`` swaps the production password hasher for MD5 for the
 duration of the run. ``PBKDF2PasswordHasher`` runs 1,500,000 iterations by
 design — 0.11s per hash on CI hardware — and every factory that builds a
@@ -198,3 +202,20 @@ def _no_live_terrain_origin(settings: Settings) -> None:
     # SNOW-1316: track.terrain_grid memoises a loaded grid in-process; one
     # test's mocked grid must not answer the next.
     clear_grid_cache()
+
+
+@pytest.fixture(autouse=True)
+def _fresh_latest_run() -> None:
+    """Drop the map's cached ``latest_run`` before each test (SNOW-1431).
+
+    ``apps.map.views.cached_latest_run`` holds the track for five minutes
+    in the process-wide cache; factories write ratings without going
+    through any invalidation, so without this a test would see the run a
+    previous test left behind. Imported here because Django is not set up
+    when this module loads.
+    """
+    from django.core.cache import cache
+
+    from apps.map.views import LATEST_RUN_CACHE_KEY
+
+    cache.delete(LATEST_RUN_CACHE_KEY)

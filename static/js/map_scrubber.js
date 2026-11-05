@@ -1,5 +1,5 @@
 /*
- * static/js/map_scrubber.js — the season scrubber — drag to commit a date, and the ?d= URL sync.
+ * static/js/map_scrubber.js — the timeline scrubber — drag to commit a date, and the ?d= URL sync.
  *
  * SNOW-610, step 4: extracted verbatim from map.js. Runs at parse time and
  * binds its own DOM, so it loads AFTER map.js in the position it held
@@ -361,13 +361,12 @@
   // reload, leaving the map uncoloured while the URL and the grid both
   // named it.
   //
-  // The season still decides one thing, just not this one: whether the
-  // SCRUBBER is on screen at all (``data-in-season``, see
-  // static/js/map_scrubber_reveal.js). A day outside it has no position on
-  // a track that is the season, so the control is hidden rather than
-  // pointed somewhere false — which is also what became of the clamped
-  // off-season thumb SNOW-793's own boot fallback describes below. The
-  // clamp still happens; there is simply nothing on screen to see it.
+  // The track still decides one thing, just not this one: whether the
+  // SCRUBBER is on screen at all (``data-on-track``, see
+  // static/js/map_scrubber_reveal.js). A day before the latest bulletin
+  // run has no position on the track, so the control is hidden rather
+  // than pointed somewhere false. The clamp still happens; there is simply
+  // nothing on screen to see it.
   // SNOW-927: the bound is a parameter rather than a closure read, because
   // boot asks this question twice against two different ceilings — see
   // below.
@@ -443,15 +442,11 @@
     // a bare URL means today, and writing ``?d=`` here would freeze a
     // shared link onto the day it was copied.
     //
-    // No season guard. Off season today sits past the narrowed season end
-    // and ``dateKeyToPct`` clamps the thumb to the end of the track — but
-    // since SNOW-794 there is nothing on screen to see that clamp: the
-    // scrubber is not rendered at all for a day outside the season
-    // (``data-in-season``, static/js/map_scrubber_reveal.js). What remains
-    // is the half that was always right — an uncoloured map with the
-    // ribbon naming today, which is the honest reading of an off-season
-    // day and the one thing SNOW-660's last-populated-day default could
-    // not give.
+    // No guard. Since SNOW-1431 the track runs through today, so today
+    // always has a place on it; on a day with no bulletin the map is
+    // uncoloured with the ribbon naming today, which is the honest reading
+    // and the one thing SNOW-660's last-populated-day default could not
+    // give.
     commitDate(todayKey, { silent: true });
   }
 
@@ -514,13 +509,13 @@
   // listener with no dispatcher). It is the right name for this, and
   // reviving it is cheaper than inventing a second one that means the same.
   //
-  // NOT guarded on the season window. The picker reaches every day up to
-  // today, season or not, because the map carries weather as well as
-  // bulletins and September has an answer even though no bulletin covers
-  // it. An out-of-season date parks the thumb at whichever end of the track
-  // it is past — `dateKeyToPct` clamps to [0, 100] — which is the honest
-  // reading of "the season ran out", not a mismatch to hide by refusing the
-  // date. The ribbon and the choropleth report the same thing: no ratings.
+  // NOT guarded on the track. The picker reaches every day up to today,
+  // bulletins or not, because the map carries weather as well as bulletins
+  // and September has an answer even though no bulletin covers it. A date
+  // before the latest run parks the thumb at the start of the track —
+  // `dateKeyToPct` clamps to [0, 100] — and map_scrubber_reveal.js hides
+  // the scrubber for it. The ribbon and the choropleth report the same
+  // thing: no ratings.
   document.addEventListener('snowdesk:scrub-to', (e) => {
     const dateKey = e.detail && e.detail.date;
     if (!dateKey) return;

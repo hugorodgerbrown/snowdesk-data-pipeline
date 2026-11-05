@@ -152,12 +152,12 @@ reachable via the SNOW-81 deep-link in the masthead.
         {% url 'public:bulletin' region_id=region.canonical_region_id slug=slug as today_url %}
         {% include "includes/_another_day_strip.html" with day=page_date href=today_url only %}
     {% endif %}
-    {# ── Season heatmap sheet ─────────────────────────────────────────── #}
+    {# ── Danger calendar sheet ────────────────────────────────────────── #}
     {# The shell is fixed-position; rendering it at the top of the content #}
     {# area keeps it logically adjacent to the trigger. The inner grid is  #}
     {# deferred: a #season-grid placeholder fires one HTMX GET on first    #}
     {# open via the custom snowdesk:load event (SNOW-170). Hidden when      #}
-    {# season_header returns None (e.g. before SEASON_START_DATE).          #}
+    {# season_header returns None (a region with no rated row, SNOW-1431). #}
     {% if season_calendar %}
         {% include "public/partials/_season_sheet.html" %}
         {# SNOW-621: the sheet's behaviour lives in static/js/season_sheet.js #}

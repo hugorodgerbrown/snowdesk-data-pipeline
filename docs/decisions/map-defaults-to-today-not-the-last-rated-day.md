@@ -2,7 +2,7 @@
 name: map-defaults-to-today-not-the-last-rated-day
 description: Why the map defaults to today, never the last rated day (readDisplayDate, data-today); why the ceiling (latestKnownDate) follows the data
 status: current
-last-reviewed: 2026-10-19
+last-reviewed: 2026-11-05
 ---
 
 # The map defaults to today, never to the last rated day
@@ -54,6 +54,13 @@ ratings payload is reintroducing SNOW-660's bug, whatever it is called.
 absence for that reason.
 
 ## Today unconditionally, off-season included
+
+> **Superseded in part by SNOW-1431**
+> ([`date-windows-follow-the-data.md`](date-windows-follow-the-data.md)).
+> The track no longer ends at a narrowed `season_end`: it runs from the
+> latest bulletin run's first day through today, so today is always on it
+> and nothing clamps. The rule below, that the default is today and never a
+> derived day, stands unchanged.
 
 Off season today has no ratings and sits past the narrowed `season_end`.
 The default still commits it: the thumb clamps to the end of the track,

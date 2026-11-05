@@ -2,7 +2,7 @@
 name: nav_implementation_spec
 description: templates/includes/nav.html — back_url/back_label/season_trigger, account and staff dropdowns, network menu, sync badge
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-11-05
 ---
 
 # Navigation implementation spec
@@ -24,8 +24,8 @@ Left to right:
 1. Optional back-chevron link + a thin vertical divider (`back_url`).
 2. The Snowdesk wordmark, always linking home. It renders at `text-lg`
    standalone and drops to `text-label` when sharing the row with a back link.
-3. Optional right-aligned **Season** button (`season_trigger`), on bulletin
-   pages only.
+3. Optional right-aligned **Calendar** button (`season_trigger`), on
+   bulletin pages only. It opens the danger calendar.
 4. The right-side cluster: sync badge, then the connectivity symbol (which
    opens the network menu), then account auth, then staff admin.
 
@@ -77,7 +77,7 @@ load-bearing.
 |-----------|------|-------------|
 | `back_url` | str | Optional. URL for the chevron-back link. Omit where "back" has no obvious target (home/map). |
 | `back_label` | str | Optional. Defaults to a translated "Back" — prefer a destination-specific label ("Map") so the user knows where the arrow leads. |
-| `season_trigger` | dict | Optional. The `season_header()` context — `{"season_label": "<NN/NN>"}`, or `None` before the season starts. When truthy a labelled "SEASON" button renders right-aligned. Bulletin pages only. (The partial's docstring calls this a bool; it is read as `season_trigger.season_label`.) |
+| `season_trigger` | dict | Optional. The `season_header(region, today)` context — `{"first_date": <date>}`, the region's first rated day, or `None` for a region with none (SNOW-1431). When truthy a "Calendar" button (aria-label "Show danger calendar") renders right-aligned; only its truthiness is read. Bulletin pages only. |
 
 ## Usage per page
 
@@ -85,7 +85,7 @@ load-bearing.
 {# Most pages (via public/base.html) — wordmark only #}
 {% include "includes/nav.html" %}
 
-{# Bulletin page — back to the map, plus the season trigger #}
+{# Bulletin page — back to the map, plus the calendar trigger #}
 {% include "includes/nav.html" with back_url=map_url back_label="Map" season_trigger=season_calendar %}
 ```
 

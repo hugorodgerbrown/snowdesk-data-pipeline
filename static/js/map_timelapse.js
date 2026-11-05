@@ -1,5 +1,5 @@
 /*
- * static/js/map_timelapse.js — the five season-playback transport buttons.
+ * static/js/map_timelapse.js — the five timeline-playback transport buttons.
  *
  * SNOW-610, step 4: extracted verbatim from map.js. Runs at parse time and
  * binds its own DOM, so it loads AFTER map.js in the position it held
@@ -10,11 +10,11 @@
  * from static/js/map_shared.js. Both load first.
  */
 
-// Season timelapse — five transport buttons on the scrubber:
-//   |<  skip to season start
+// Timelapse — five transport buttons on the scrubber:
+//   |<  skip to the start of the track
 //   <   play in reverse from current thumb position (second press = stop)
 //   >   play forward from current thumb position (second press = stop)
-//   >|  skip to season end
+//   >|  skip to the end of the track
 //
 // Each frame repaints region colours via feature-state and announces a
 // snowdesk:date-changed event so the date readout stays in sync. Pressing
@@ -35,8 +35,8 @@
   // Drive the scrubber thumb so playback position is visible.
   const scrubber = document.getElementById('season-scrubber');
   const scrubberThumb = scrubber ? scrubber.querySelector('.season-scrubber-thumb') : null;
-  // SNOW-794: the scrubber's TRACK span (twelve months ending today), not the
-  // avalanche season — the two used to be one pair under one name. Playback
+  // The scrubber's TRACK span: the latest bulletin run through today
+  // (SNOW-1431), under the ``season*`` names it has always had. Playback
   // still steps through ``sortedDates``, real data days; this is only how a
   // frame becomes a thumb position.
   const seasonStartMs = scrubber ? Date.parse(scrubber.dataset.seasonStart) : NaN;
@@ -194,7 +194,14 @@
     if (cache === null) {
       try {
         cache = await getSeasonRatings();
-        sortedDates = Object.keys(cache).sort();
+        // SNOW-1431: the payload can hold days either side of the track
+        // (it is read by the calendar too). A frame off the track hides
+        // the scrubber, Stop button and all, so keep playback inside it.
+        sortedDates = window.pwaScrubberCore.datesInWindow(
+          Object.keys(cache),
+          scrubber ? scrubber.dataset.seasonStart : null,
+          scrubber ? scrubber.dataset.seasonEnd : null,
+        );
       } catch (_err) {
         return;
       }
@@ -277,8 +284,8 @@
   }
 
   // Skip-to-start / skip-to-end: jump the thumb to the first/last data
-   // day. Falls back to ``data-season-start``/``data-season-end`` before
-  // the ratings cache resolves. moveScrubber owns the thumb position +
+  // day on the track. Falls back to ``data-season-start``/``data-season-end``
+  // before the ratings cache resolves, or when no data day is on the track. moveScrubber owns the thumb position +
   // aria-valuenow update; the synthetic date-changed event (source:
   // 'scrubber') causes the running timelapse to surrender control via
   // its own listener.
@@ -301,13 +308,17 @@
 
   if (skipStartButton) {
     skipStartButton.addEventListener('click', () => {
-      commitJump(sortedDates ? sortedDates[0] : (scrubber ? scrubber.dataset.seasonStart : null));
+      commitJump(sortedDates && sortedDates.length
+        ? sortedDates[0]
+        : (scrubber ? scrubber.dataset.seasonStart : null));
     });
   }
 
   if (skipEndButton) {
     skipEndButton.addEventListener('click', () => {
-      commitJump(sortedDates ? sortedDates[sortedDates.length - 1] : (scrubber ? scrubber.dataset.seasonEnd : null));
+      commitJump(sortedDates && sortedDates.length
+        ? sortedDates[sortedDates.length - 1]
+        : (scrubber ? scrubber.dataset.seasonEnd : null));
     });
   }
 })();

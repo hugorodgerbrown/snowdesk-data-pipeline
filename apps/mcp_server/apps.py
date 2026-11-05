@@ -3,7 +3,7 @@ apps/mcp_server/apps.py — AppConfig for the mcp_server application.
 
 The app has no models or migrations — it exists only to register the
 ``POST /api/mcp/`` JSON-RPC endpoint and the pure-Python modules
-(``normalise``, ``season``, ``resolvers``, ``tools``, ``protocol``) that
+(``normalise``, ``resolvers``, ``tools``, ``protocol``) that
 back it.
 """
 

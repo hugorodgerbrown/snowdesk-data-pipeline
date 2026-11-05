@@ -4,8 +4,8 @@
  *
  * `getSeasonRatings` (map_shared.js) dispatches
  * 'snowdesk:country-ratings-loaded' with `{ code: 'ch' }` once Switzerland's
- * season lands. The between-seasons note and the tour offer wait for the first
- * such event as their "the colours are on the map" signal, and since boot no
+ * season lands. The tour offer waits for the first such event as its "the
+ * colours are on the map" signal, and since boot no
  * longer fetches the season of a country only the basemap outlines, nothing
  * else raises one on a Swiss-only visit.
  */
