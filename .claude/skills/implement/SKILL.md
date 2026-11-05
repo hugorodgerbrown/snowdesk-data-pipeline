@@ -201,8 +201,8 @@ review time:
   yes, use it — don't write a fresh copy.
 - Is the same shape currently inlined in another template that I'm about to
   inline again? If yes, extract a new partial and register it in
-  `apps/public/design_tokens.py` (with a fixture in
-  `apps/public/_component_fixtures.py`) rather than producing a second inline copy.
+  `apps/design_system/design_tokens.py` (with a fixture in
+  `apps/design_system/_component_fixtures.py`) rather than producing a second inline copy.
 - Are all colours expressed via design tokens (`bg-card`, `text-text-1`,
   `border-border`, `bg-status-*`) rather than raw Tailwind palette utilities
   (`bg-slate-200`, `text-red-600`)?

@@ -1,5 +1,5 @@
 """
-apps/public/_component_fixtures.py — Synthetic context for the component library.
+apps/design_system/_component_fixtures.py — Synthetic context for the component library.
 
 Hand-curated variant fixtures consumed by ``kind="components"`` panels in
 the design-system page at ``/_components/``. Each component gets a

@@ -1,8 +1,8 @@
 """
-apps/public/templatetags/component_library_tags.py — Tags for the design system.
+apps/design_system/templatetags/component_library_tags.py — Tags for the design system.
 
 Used exclusively by the component-library page at ``/_components/`` and
-its panels under ``apps/public/templates/_components/``. Exposes:
+its panels under ``apps/design_system/templates/_components/``. Exposes:
 
 * ``include_variant`` — render an arbitrary partial against a
   ``variant.context`` dict so each ``kind="components"`` entry can source
@@ -21,7 +21,7 @@ from typing import Any
 from django import template
 from django.template.loader import get_template
 
-from apps.public.design_tokens import LibraryGroup
+from apps.design_system.design_tokens import LibraryGroup
 
 register = template.Library()
 
@@ -48,7 +48,7 @@ def include_variant(
     The return value is a ``SafeString`` because ``Template.render`` has
     already routed the output through the autoescaping engine — no
     ``mark_safe`` on user-supplied content is involved (the variant data
-    is hand-curated in ``apps/public/_component_fixtures.py``).
+    is hand-curated in ``apps/design_system/_component_fixtures.py``).
 
     When a request is available on the parent context (the normal case for
     Django views), the partial is rendered via the backend ``Template.render``

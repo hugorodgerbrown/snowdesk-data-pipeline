@@ -1,7 +1,7 @@
 """
-apps/public/checks.py — Django system checks for the public app.
+apps/design_system/checks.py — Django system checks for the component library.
 
-Currently hosts a single check that keeps ``apps/public/design_tokens.py`` and
+Currently hosts a single check that keeps ``apps/design_system/design_tokens.py`` and
 ``src/css/main.css`` from drifting apart. The Python registry is the
 component-library's source of truth for *what to render*, but the CSS file
 is the source of truth for *what those tokens actually resolve to* at
@@ -45,7 +45,7 @@ from django.conf import settings
 from django.core.checks import Error, Tags, register
 
 if TYPE_CHECKING:  # pragma: no cover — import cycle at runtime, not at type time
-    from apps.public.design_tokens import TokenExemption
+    from apps.design_system.design_tokens import TokenExemption
 
 CSS_PATH = Path("src") / "css" / "main.css"
 
@@ -57,7 +57,7 @@ CSS_PATH = Path("src") / "css" / "main.css"
 # E006 — token dark-value mismatch between registry and .dark {}.
 # E007 — --color-* declared in @theme {} but neither registered nor exempted.
 # E008 — exemption declared with a blank reason.
-CHECK_ID_PREFIX = "apps.public.design_tokens"
+CHECK_ID_PREFIX = "apps.design_system.design_tokens"
 
 # The reverse check's scope — see the module docstring for why it is
 # colours only.
@@ -71,7 +71,7 @@ def check_design_tokens_match_css(app_configs: Any, **kwargs: Any) -> list[Error
     Errors include the offending token name and both the registry value
     and the CSS value, so the fix is mechanical (copy/paste either side).
     """
-    from apps.public.design_tokens import (
+    from apps.design_system.design_tokens import (
         FOUNDATION_CATEGORIES,
         TOKEN_EXEMPTIONS,
         Token,

@@ -216,17 +216,23 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  tombstones, then --recent N or --golden-week days of
                  bulletins, day ratings and weather. No models; never
                  reads a user-owned table (docs/data-feed.md)
+  design_system/ The staff-only component library (SNOW-1427): design
+                 tokens, the component fixtures, the token system checks
+                 and the /_components/, /_icon-sets/ and /_errors/ pages.
+                 No models. Nothing imports it except public/urls.py,
+                 which routes its views (tests/design_system/test_boundary.py)
   public/        Public-facing bulletin site (route map: docs/site-structure.md)
                  Splitting by surface (docs/decisions/public-splits-by-surface.md):
-                 the component library is moving to design_system/ (SNOW-1427)
-                 and the map page, its JSON API and sheets to map/ (SNOW-1428).
-                 urls.py and api_urls.py stay here as the routing hub
+                 the component library moved to design_system/ (SNOW-1427)
+                 and the map page, its JSON API and sheets are moving to
+                 map/ (SNOW-1428). urls.py and api_urls.py stay here as the
+                 routing hub
     api.py       Plain JsonResponse endpoints — the map's feeds, plus
                  share-create, /api/version + sw-config, the bulletin
                  JSON alternates, weather detail and the superuser edit
                  endpoints
     api_urls.py  URL routing for /api/ (namespace: api:)
-    debug_views.py Staff-only design-debug pages (mounted unconditionally, staff-gated — not a DEBUG gate)
+    debug_views.py Staff-only debug pages (mounted unconditionally, staff-gated — not a DEBUG gate)
 track/           Pure track maths (SNOW-1316), root-level: imports no Django
                  and no apps.* (tests/track/test_boundary.py). The geo
                  helpers (track.geo), the terrain reader (terrain,

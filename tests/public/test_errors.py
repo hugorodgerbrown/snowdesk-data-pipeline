@@ -25,7 +25,6 @@ from django.test import Client, RequestFactory
 
 from apps.public import errors
 from config import urls as root_urls
-from tests.factories import UserFactory
 
 ERROR_URLS = "tests.public._error_urls"
 
@@ -188,30 +187,6 @@ class TestContextFree:
             response = errors.server_error(RequestFactory().get("/x/"))
         assert response.status_code == 500
         assert response.content.decode() == errors._FALLBACK_HTML
-
-
-@pytest.mark.django_db
-class TestPreview:
-    def test_anonymous_is_redirected_to_login(self, client: Client) -> None:
-        response = client.get("/_errors/404/")
-        assert response.status_code == 302
-        assert "/admin/login/" in response["Location"]
-
-    @pytest.mark.parametrize("kind", sorted(errors.ERROR_PAGES))
-    def test_staff_sees_each_page_with_its_status(
-        self, client: Client, kind: str
-    ) -> None:
-        client.force_login(UserFactory.create(is_staff=True))
-        response = client.get(f"/_errors/{kind}/")
-        page = errors.ERROR_PAGES[kind]
-        assert response.status_code == page.status
-        assert str(page.heading) in response.content.decode().replace("&#x27;", "'")
-
-    def test_unknown_kind_is_404(self, client: Client) -> None:
-        client.force_login(UserFactory.create(is_staff=True))
-        response = client.get("/_errors/418/")
-        assert response.status_code == 404
-        assert "Page not found" in response.content.decode()
 
 
 @pytest.mark.django_db

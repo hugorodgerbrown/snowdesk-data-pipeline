@@ -1,5 +1,5 @@
 """
-apps/public/design_tokens.py — Component-library registry.
+apps/design_system/design_tokens.py — Component-library registry.
 
 Hand-curated catalogue of everything the design-system page at
 ``/_components/`` renders. Two top-level groups, both built from the same
@@ -12,13 +12,13 @@ Hand-curated catalogue of everything the design-system page at
    ``"swatches"``, ``"typography"``, ``"radius"``, ``"layout"``,
    ``"icons"``. Each entry's ``tokens`` field
    carries ``Token`` and/or ``IconToken`` instances. The
-   registry-vs-CSS sync check in ``apps/public/checks.py`` walks this group.
+   registry-vs-CSS sync check in ``apps/design_system/checks.py`` walks this group.
 
 2. **Components** — rendered HTML components. ``kind`` is ``"components"``.
    Each entry sources its render content from its ``partial`` template
    path and a ``variants`` tuple of context dicts; the renderer iterates
    the variants and ``{% include partial with **variant.context %}`` for
-   each. Variant fixtures live in ``apps/public/_component_fixtures.py`` so
+   each. Variant fixtures live in ``apps/design_system/_component_fixtures.py`` so
    this file stays free of synthetic-data construction.
 
 The shape is deliberately Python-side (not parsed from CSS) so the renderer
@@ -35,7 +35,7 @@ from typing import Any
 
 from django.conf import settings
 
-from apps.public._component_fixtures import (
+from apps.design_system._component_fixtures import (
     ANOTHER_DAY_STRIP_VARIANTS,
     ASPECT_WHEEL_VARIANTS,
     BULLETIN_HEADLINE_VARIANTS,
@@ -185,7 +185,7 @@ class FoundationCategory:
         tokens: Tuple of ``Token`` and/or ``IconToken`` entries rendered
             inside the panel. Required when ``kind`` is a foundations
             kind; ignored (defaults to empty) when ``kind="components"``.
-            The sync check in ``apps/public/checks.py`` filters to ``Token``
+            The sync check in ``apps/design_system/checks.py`` filters to ``Token``
             instances since only those map to CSS custom properties.
         partial: Django template path included once per variant when
             ``kind="components"``. Required for components entries;
@@ -245,7 +245,7 @@ class TokenExemption:
     """One ``--color-*`` property, or family of them, the library omits.
 
     The registry is authoritative over which colours EXIST (the reverse
-    check in ``apps/public/checks.py``), so a token declared in
+    check in ``apps/design_system/checks.py``), so a token declared in
     ``@theme {}`` and left out of ``FOUNDATION_CATEGORIES`` has to say why
     here. The reason is the whole point: it is what a reviewer reads to
     judge whether the omission is still true, and "not needed" answers

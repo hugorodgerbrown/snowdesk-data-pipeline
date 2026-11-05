@@ -1,5 +1,5 @@
 """
-tests/public/test_eaws_contrast.py — contrast guard for the EAWS colour pairs.
+tests/design_system/test_eaws_contrast.py — contrast guard for the EAWS colour pairs.
 
 The EAWS danger scale is a fixed standard: five backgrounds this project
 cannot adjust, three of which are bright and two of which are the same red.
@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import pytest
 
-from apps.public.design_tokens import FOUNDATION_CATEGORIES, Token
+from apps.design_system.design_tokens import FOUNDATION_CATEGORIES, Token
 from tests.public._contrast import (
     contrast_ratio as _contrast_ratio,
     relative_luminance as _relative_luminance,

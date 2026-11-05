@@ -25,7 +25,7 @@ from django.template.loader import render_to_string
 from django.test import Client
 
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
-from apps.public._component_fixtures import _ElevationBounds, _make_rating_card
+from apps.design_system._component_fixtures import _ElevationBounds, _make_rating_card
 from apps.public.guidance import load_field_guidance
 from apps.regions.models import MicroRegion
 from tests.factories import (

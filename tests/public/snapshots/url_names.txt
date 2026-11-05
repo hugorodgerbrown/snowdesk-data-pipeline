@@ -49,10 +49,10 @@ public:resort_legacy  resorts/<int:resort_id>/<slug:slug>/  apps.public.views.re
 public:resort_date  resorts/<slug:slug>/<str:date_str>/  apps.public.views.resort_detail
 public:location_weather_legacy  weather/<int:location_id>/  apps.public.views.location_weather_legacy_redirect
 public:location_weather  weather/<short_id:short_id>/  apps.public.views.location_weather
-public:components_index  _components/  apps.public.debug_views.component_library
-public:components_panel  partials/_components/<slug:slug>/  apps.public.debug_views.component_library_panel
-public:icon_sets  _icon-sets/  apps.public.debug_views.icon_set_comparison
-public:error_preview  _errors/<str:kind>/  apps.public.debug_views.error_preview
+public:components_index  _components/  apps.design_system.views.component_library
+public:components_panel  partials/_components/<slug:slug>/  apps.design_system.views.component_library_panel
+public:icon_sets  _icon-sets/  apps.design_system.views.icon_set_comparison
+public:error_preview  _errors/<str:kind>/  apps.design_system.views.error_preview
 public:push_demo  _push-demo/  apps.public.debug_views.push_demo
 public:alerts_replay  _alerts-replay/  apps.public.debug_views.alerts_replay
 public:sw_version  _sw-version/  apps.public.debug_views.sw_version

@@ -337,10 +337,10 @@ that enforce them live in `AGENTS.md` ("Design system"); this section records
 what the layer is for and where its edges are.
 
 **Reuse first, extract second, inline never.** The registry in
-[`apps/public/design_tokens.py`](../apps/public/design_tokens.py) is the
+[`apps/design_system/design_tokens.py`](../apps/design_system/design_tokens.py) is the
 canonical inventory, rendered for browsing at the staff-only `/_components/`.
 A new partial is not finished until it has a registry entry and a variant
-fixture in [`apps/public/_component_fixtures.py`](../apps/public/_component_fixtures.py).
+fixture in [`apps/design_system/_component_fixtures.py`](../apps/design_system/_component_fixtures.py).
 
 **Ordinary pages are in the system too.** This was the layer's blind spot for
 most of the project's life: the bulletin and map surfaces were thoroughly
