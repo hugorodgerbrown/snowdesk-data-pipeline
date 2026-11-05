@@ -60,6 +60,18 @@
  * the archive inside the season — is an operator's concern, and a visitor
  * who lands on such a day already sees an uncoloured map. Two marks for one
  * answer is one more than the grid can spend.
+ *
+ * ## "Today" in its footer, behind map_modes
+ *
+ * With the Conditions / Terrain toggle the date row's own "Today"
+ * (#map-today-control, map_today.js) is not rendered, so the card carries
+ * the way back instead (#map-calendar-today; Hugo, 5 Nov 2026). Like the
+ * one it stands in for it is always shown and disabled while the map is on
+ * today. A press goes through ``window.pwaMapMode.toConditionsToday()``,
+ * map_mode.js's single path to Conditions on today (it dispatches the same
+ * ``snowdesk:scrub-to`` the date row's did, with today read from
+ * ``#season-scrubber[data-today]``), and the card closes. Off the flag the
+ * button is not in the page and none of this runs.
  */
 
 (function mapCalendarInit() {
@@ -79,6 +91,8 @@
   const monthLabel = document.getElementById('map-calendar-month');
   const prevButton = document.getElementById('map-calendar-prev');
   const nextButton = document.getElementById('map-calendar-next');
+  // Rendered only behind map_modes; see the header.
+  const todayButton = document.getElementById('map-calendar-today');
 
   const seasonStart = root.dataset.seasonStart || '';
   const seasonEnd = root.dataset.seasonEnd || '';
@@ -227,6 +241,7 @@
     const lastMonth = core.monthKeyOf(maxKey);
     prevButton.disabled = !firstMonth || visibleMonth <= firstMonth;
     nextButton.disabled = !lastMonth || visibleMonth >= lastMonth;
+    paintToday();
 
     grid.replaceChildren();
     for (const cell of cells) {
@@ -269,6 +284,38 @@
       if (cell.isToday) button.classList.add('is-today');
       grid.appendChild(button);
     }
+  }
+
+  /**
+   * Enable the footer's "Today" whenever the map is on another day. A bare
+   * URL (no ``?d=``) is today (SNOW-793).
+   *
+   * @returns {void}
+   */
+  function paintToday() {
+    if (!todayButton) return;
+    todayButton.disabled = !todayKey || (currentDateKey() || todayKey) === todayKey;
+  }
+
+  /**
+   * Move the map to Conditions on today, then close.
+   *
+   * @returns {void}
+   */
+  function goToToday() {
+    if (!todayKey) return;
+    const mode = window.pwaMapMode;
+    if (mode && typeof mode.toConditionsToday === 'function') {
+      mode.toConditionsToday();
+    } else {
+      // The scrubber owns the commit — see the header.
+      document.dispatchEvent(
+        new CustomEvent('snowdesk:scrub-to', {
+          detail: { date: todayKey, source: 'today' },
+        })
+      );
+    }
+    close();
   }
 
   /**
@@ -336,6 +383,14 @@
     if (!next || next === visibleMonth) return;
     visibleMonth = next;
     render();
+  }
+
+  if (todayButton) {
+    todayButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (todayButton.disabled) return;
+      goToToday();
+    });
   }
 
   prevButton.addEventListener('click', (e) => {

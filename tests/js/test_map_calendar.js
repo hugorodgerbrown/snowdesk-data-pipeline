@@ -612,6 +612,94 @@ describe('the date moving underneath it', () => {
   });
 });
 
+describe('"Today" in the footer, behind map_modes', () => {
+  /** Add the footer's button, as the partial renders it behind the flag. */
+  function addTodayButton() {
+    const button = document.createElement('button');
+    button.id = 'map-calendar-today';
+    button.type = 'button';
+    button.disabled = true;
+    document.getElementById('map-calendar').append(button);
+    return button;
+  }
+
+  afterEach(() => {
+    delete window.pwaMapMode;
+  });
+
+  it('is disabled while the map is on today, bare URL or ?d=', async () => {
+    const button = addTodayButton();
+    await loadCalendar();
+    openPopup();
+    expect(button.disabled).toBe(true);
+
+    openPopup();
+    history.replaceState(null, '', '/?d=' + TODAY);
+    openPopup();
+    expect(button.disabled).toBe(true);
+  });
+
+  it('is enabled on another day', async () => {
+    history.replaceState(null, '', '/?d=2026-02-11');
+    const button = addTodayButton();
+    await loadCalendar();
+    openPopup();
+
+    expect(button.disabled).toBe(false);
+  });
+
+  it('moves the map to Conditions on today and closes', async () => {
+    history.replaceState(null, '', '/?d=2026-02-11');
+    const button = addTodayButton();
+    window.pwaMapMode = { toConditionsToday: vi.fn() };
+    await loadCalendar();
+    openPopup();
+
+    button.click();
+
+    expect(window.pwaMapMode.toConditionsToday).toHaveBeenCalledTimes(1);
+    expect(document.getElementById('map-calendar').hidden).toBe(true);
+  });
+
+  it('commits today through the scrubber when the map has no modes', async () => {
+    history.replaceState(null, '', '/?d=2026-02-11');
+    const button = addTodayButton();
+    const { commits } = await loadCalendar();
+    openPopup();
+
+    button.click();
+
+    expect(commits.at(-1).date).toBe(TODAY);
+    expect(location.search).toBe('?d=' + TODAY);
+    expect(document.getElementById('map-calendar').hidden).toBe(true);
+  });
+
+  it('does nothing while disabled', async () => {
+    const button = addTodayButton();
+    window.pwaMapMode = { toConditionsToday: vi.fn() };
+    await loadCalendar();
+    openPopup();
+
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(window.pwaMapMode.toConditionsToday).not.toHaveBeenCalled();
+  });
+
+  it('disables itself once the map reaches today under it', async () => {
+    history.replaceState(null, '', '/?d=2026-02-11');
+    const button = addTodayButton();
+    await loadCalendar();
+    openPopup();
+
+    history.replaceState(null, '', '/?d=' + TODAY);
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:date-changed', { detail: { date: TODAY, source: 'scrubber' } })
+    );
+
+    expect(button.disabled).toBe(true);
+  });
+});
+
 describe('the focused region\'s danger, per day (SNOW-794)', () => {
   // The scrubber ribbon painted danger-by-day into its track. Below 640px
   // there is no scrubber any more, so the grid carries that fact instead —
