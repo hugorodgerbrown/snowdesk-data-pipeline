@@ -19,7 +19,11 @@
  *     favourites and routes only, never field observations, which are
  *     public data;
  *   - the opacity steps dispatch ``snowdesk:bulletins-step`` and leave the
- *     menu open.
+ *     menu open;
+ *   - with the map_modes flag, the first-level "Sync problem terrain" row
+ *     dims while the bulletins are off and its switch stays live
+ *     (SNOW-1421), and a header with no count (the flag's tabs replace it)
+ *     is fine.
  *
  * The picker is a classic script reading bare identifiers from the shared
  * script scope (`writeStorage`, `OVERLAY_STORAGE_KEY`, …), which under
@@ -44,10 +48,12 @@ let writes;
  * wrapper carrying the header, a level-one `role="menu"` of layer rows, and
  * one hidden `role="menu"` page per layer with options.
  *
- * @param {{favouritesEligible?: boolean, routesEligible?: boolean, step?: string, tier?: string}} [options]
+ * @param {{favouritesEligible?: boolean, routesEligible?: boolean, step?: string, tier?: string, modes?: boolean}} [options]
+ *   `modes`: the map_modes flag's shape — tabs for a header, and "Sync
+ *   problem terrain" on level one after the bulletins.
  */
 function buildFixture({
-  favouritesEligible = true, routesEligible = true, step = 'none', tier = 'none',
+  favouritesEligible = true, routesEligible = true, step = 'none', tier = 'none', modes = false,
 } = {}) {
   const switchRow = (key, label) => `
     <li role="none">
@@ -116,13 +122,15 @@ function buildFixture({
       </div>
       <div id="basemap-menu" data-signin-url="/account/sign-in/" hidden>
         <div class="basemap-menu-header">
-          <p class="basemap-menu-title">Map layers</p>
-          <p class="basemap-menu-count" data-layers-count></p>
+          ${modes
+    ? '<button type="button" data-map-mode-tab="dated">Conditions</button>'
+    : '<p class="basemap-menu-title">Map layers</p><p class="basemap-menu-count" data-layers-count></p>'}
           <button type="button" class="basemap-menu-close" data-layers-close></button>
         </div>
         <ul class="basemap-menu-list" role="menu" data-layers-page="main">
           <li role="presentation" class="basemap-menu-group-label">Reference data</li>
           ${optionsRow('bulletins', 'Avalanche bulletins')}
+          ${modes ? switchRow('problem_terrain', 'Sync problem terrain') : ''}
           ${switchRow('weather', 'Weather')}
           ${switchRow('resorts', 'Resorts')}
           ${optionsRow('boundaries', 'Boundaries')}
@@ -632,6 +640,69 @@ describe('the sign-in hand-off', () => {
 
     expect(document.getElementById('map-layer-signin-sheet').hidden).toBe(true);
     expect(window.pwaFavouritesOverlay.show).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('"Sync problem terrain" on level one (SNOW-1421)', () => {
+  const syncItem = () => rowFor('problem_terrain').closest('li');
+
+  beforeEach(() => {
+    window.pwaBulletinTerrain = { show: vi.fn(), hide: vi.fn(), isEnabled: vi.fn(() => true) };
+  });
+
+  afterEach(() => {
+    delete window.pwaBulletinTerrain;
+  });
+
+  it('dims while the bulletins are off', async () => {
+    buildFixture({ modes: true });
+    await loadPicker();
+
+    expect(syncItem().hasAttribute('data-bulletins-off')).toBe(true);
+  });
+
+  it('is plain while the bulletins are on', async () => {
+    buildFixture({ modes: true, step: '0.5' });
+    await loadPicker();
+
+    expect(syncItem().hasAttribute('data-bulletins-off')).toBe(false);
+  });
+
+  it('keeps its switch live and its state while dimmed', async () => {
+    buildFixture({ modes: true });
+    // map.js seeds the row from the bridge before the picker runs.
+    rowFor('problem_terrain').setAttribute('aria-checked', 'true');
+    await loadPicker();
+
+    expect(syncItem().hasAttribute('data-bulletins-off')).toBe(true);
+    expect(rowFor('problem_terrain').getAttribute('aria-checked')).toBe('true');
+    rowFor('problem_terrain').click();
+    expect(window.pwaBulletinTerrain.hide).toHaveBeenCalledTimes(1);
+  });
+
+  it('follows the bulletins switch', async () => {
+    buildFixture({ modes: true, step: '0.5' });
+    await loadPicker();
+    // The step map.js mirrors back once the master switches the bulletins off.
+    for (const seg of document.querySelectorAll('[data-bulletins-step]')) {
+      seg.setAttribute('aria-checked', 'false');
+    }
+    document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
+
+    expect(syncItem().hasAttribute('data-bulletins-off')).toBe(true);
+  });
+
+  it('leaves the row on the bulletins page alone off the flag', async () => {
+    buildFixture({ step: 'none' });
+    document.getElementById('basemap-menu-group-bulletins').insertAdjacentHTML(
+      'afterend',
+      '<li role="none"><button type="button" class="basemap-menu-item basemap-menu-item--overlay" '
+        + 'data-overlay-key="problem_terrain" aria-checked="false">Sync with map terrain</button></li>',
+    );
+    await loadPicker();
+
+    expect(syncItem().hasAttribute('data-bulletins-off')).toBe(false);
+    expect(count()).toBe('No layers on');
   });
 });
 

@@ -69,6 +69,7 @@
     'gate-ski_routes': 'SAC ski touring',
     'gate-rest_zones': 'Wildlife rest zones',
     'gate-terrain_filter': 'Steep terrain',
+    'gate-problem_terrain': 'Sync problem terrain',
     'gate-route_slopes': 'Route slope angle',
     'threshold-from': '≥%(zoom)s',
     'threshold-up-to': '≤%(zoom)s',

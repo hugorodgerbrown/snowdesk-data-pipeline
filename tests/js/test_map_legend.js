@@ -13,7 +13,9 @@
  *     other, moving focus;
  *   - the second tier's "On" marks follow what is switched on;
  *   - the one-line credit names the tile providers, and the avalanche
- *     providers only while their key is in view.
+ *     providers only while their key is in view;
+ *   - each map mode keys its own layers and not the other's (SNOW-1421),
+ *     even where the other's section was left showing by its module.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -30,6 +32,8 @@ const MARKUP = `
           <div data-legend-item="report-live"></div>
           <div data-legend-item="report-recent"></div>
         </section>
+        <section data-legend-key="terrain_filter" data-terrain-filter-legend hidden>Steep</section>
+        <section data-legend-key="ski_tours">Tours</section>
         <section data-legend-key="routes" hidden>Routes</section>
         <section data-legend-key="pins">
           <div data-legend-item="pin-resort"></div>
@@ -43,6 +47,8 @@ const MARKUP = `
         <button type="button" data-legend-go="now">Back</button>
         <span data-legend-on="danger" hidden>On</span>
         <span data-legend-on="routes" hidden>On</span>
+        <span data-legend-on="problem_terrain" hidden>On</span>
+        <span data-legend-on="terrain_filter" hidden>On</span>
         <p id="map-attribution-text"><a href="#">© swisstopo</a> · swisstopo — swissALTI3D</p>
       </div>
     </div>
@@ -51,8 +57,10 @@ const MARKUP = `
 
 /** What queryRenderedFeatures answers, per layer id. */
 let features;
-/** Layers the stub style holds, all visible. */
+/** Layers the stub style holds, visible unless in `hiddenLayers`. */
 let layers;
+/** Layers the stub style holds at `visibility: none`. */
+let hiddenLayers;
 let bulletinsOn;
 
 const card = () => document.getElementById('map-legend-card');
@@ -71,14 +79,18 @@ beforeEach(async () => {
   document.body.innerHTML = MARKUP;
   features = {};
   layers = new Set(['regions-fill', 'community-reports-point', 'resorts-pin', 'favourites-pin']);
+  hiddenLayers = new Set();
   bulletinsOn = true;
   globalThis.readStorage = () => null;
   globalThis.writeStorage = () => {};
   globalThis.MAP = {
     on: vi.fn(),
     getLayer: (id) => (layers.has(id) ? { id } : undefined),
-    getLayoutProperty: () => 'visible',
-    queryRenderedFeatures: ({ layers: ids }) => ids.flatMap((id) => features[id] || []),
+    getLayoutProperty: (id) => (hiddenLayers.has(id) ? 'none' : 'visible'),
+    // A hidden layer renders nothing, as MapLibre's does.
+    queryRenderedFeatures: ({ layers: ids }) => ids
+      .filter((id) => !hiddenLayers.has(id))
+      .flatMap((id) => features[id] || []),
   };
   window.pwaBulletinsLayer = { isVisible: () => bulletinsOn };
   window.pwaTerrainFilter = { availability: () => 'ok' };
@@ -88,6 +100,7 @@ beforeEach(async () => {
 afterEach(() => {
   delete window.pwaBulletinsLayer;
   delete window.pwaTerrainFilter;
+  delete window.pwaMapModeState;
   globalThis.MAP = null;
 });
 
@@ -183,5 +196,55 @@ describe('the two pages', () => {
     open();
     expect(document.querySelector('[data-legend-on="danger"]').hidden).toBe(false);
     expect(document.querySelector('[data-legend-on="routes"]').hidden).toBe(true);
+  });
+});
+
+describe('each map mode (SNOW-1421)', () => {
+  const CONDITIONS_ONLY = ['bulletins', 'l3', 'problem_terrain', 'weather'];
+  const TERRAIN_ONLY = ['terrain_filter', 'ski_tours', 'ski_summits', 'rest_zones'];
+  const on = (name) => !document.querySelector(`[data-legend-on="${name}"]`).hidden;
+
+  /**
+   * The page as one mode leaves it: the reader had both terrain layers and
+   * the tours on, so both terrain sections were shown by their modules,
+   * and the mode holds the other's own (map.js's pwaMapModeState).
+   *
+   * @param {string[]} held The keys the mode holds.
+   */
+  function inMode(held) {
+    window.pwaMapModeState = { isSuppressed: (k) => held.includes(k) };
+    key('problem_terrain').hidden = false;
+    key('terrain_filter').hidden = false;
+    layers.add('ski-tours-line');
+    features['ski-tours-line'] = [{ properties: { climbing: true } }];
+    if (held.includes('ski_tours')) hiddenLayers.add('ski-tours-line');
+  }
+
+  it('keys Conditions\' own and none of Terrain\'s in Conditions', () => {
+    inMode(TERRAIN_ONLY);
+    open();
+    expect(outOfView(key('problem_terrain'))).toBe(false);
+    expect(outOfView(key('terrain_filter'))).toBe(true);
+    expect(outOfView(key('ski_tours'))).toBe(true);
+    expect(on('problem_terrain')).toBe(true);
+    expect(on('terrain_filter')).toBe(false);
+  });
+
+  it('keys Terrain\'s own and none of Conditions\' in Terrain', () => {
+    inMode(CONDITIONS_ONLY);
+    open();
+    expect(outOfView(key('problem_terrain'))).toBe(true);
+    expect(outOfView(key('terrain_filter'))).toBe(false);
+    expect(outOfView(key('ski_tours'))).toBe(false);
+    expect(on('problem_terrain')).toBe(false);
+    expect(on('terrain_filter')).toBe(true);
+  });
+
+  it('keys both terrain layers off the flag, where nothing is held', () => {
+    key('problem_terrain').hidden = false;
+    key('terrain_filter').hidden = false;
+    open();
+    expect(outOfView(key('problem_terrain'))).toBe(false);
+    expect(outOfView(key('terrain_filter'))).toBe(false);
   });
 });

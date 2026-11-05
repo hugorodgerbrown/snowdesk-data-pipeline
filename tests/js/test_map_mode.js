@@ -1,16 +1,20 @@
 /*
- * tests/js/test_map_mode.js — the Dated / Terrain toggle (SNOW-1394).
+ * tests/js/test_map_mode.js — the Conditions / Terrain toggle (SNOW-1394)
+ * and its second control, the layers menu's tabs (SNOW-1421).
  *
  * static/js/map_mode.js against stub suppression hooks, so what it ASKS of
  * map.js is the assertion; tests/js/test_map_mode_suppression.js boots
  * map.js and pins what the hooks then paint. What is pinned here:
  *
  *   - the control's two states, on <html data-map-mode> and aria-pressed;
- *   - a change calls every dated overlay's setSuppressed with MAP_MODE, and
- *     no show() or hide(); a boot calls none (map.js applied it already);
+ *   - a change holds the other mode's own layers and releases this one's,
+ *     through every hook's setSuppressed with MAP_MODE (holds first), and
+ *     calls no show() or hide(); a boot calls none (map.js applied it);
  *   - the URL keeps ?d= and every other parameter, and the mode is stored;
- *   - in Terrain the dated menu rows are disabled and a tap on one does
- *     nothing, while a static row still works;
+ *   - the menu's tabs set the mode live and stay in step with the date
+ *     row; the rows carry their data-mode-only markers and are never
+ *     disabled (hiding is map.css's, which jsdom cannot compute, so it is
+ *     pinned in tests/public/test_map_page.py instead);
  *   - in Terrain a tap on the date comes back to Dated, not to the calendar;
  *   - the Today panel's sun is left alone.
  */
@@ -36,15 +40,29 @@ const FIXTURE = `
     </template>
     <button id="map-today-panel-toggle" type="button"></button>
   </div>
-  <ul id="basemap-menu">
-    <li role="none"><button data-layers-open="bulletins">Avalanche bulletins</button>
-      <button data-layer-master="bulletins">switch</button></li>
-    <li role="none"><button data-overlay-key="weather">Weather</button></li>
-    <li role="none"><button data-overlay-key="resorts">Resorts</button></li>
-    <li role="none"><button data-overlay-key="terrain">Steep terrain</button></li>
-    <li role="none"><button data-layers-open="boundaries">Boundaries</button></li>
-    <li role="none"><button data-overlay-key="community_reports">On the ground</button></li>
-  </ul>
+  <div id="basemap-menu">
+    <div class="basemap-menu-header">
+      <button type="button" data-map-mode-tab="dated" aria-pressed="true">Conditions</button>
+      <button type="button" data-map-mode-tab="terrain" aria-pressed="false">Terrain</button>
+    </div>
+    <ul data-layers-page="main">
+      <li role="none" data-mode-only="dated"><ul>
+        <li role="none"><button data-layers-open="bulletins">Avalanche bulletins</button>
+          <button data-layer-master="bulletins">switch</button></li>
+        <li role="none"><button data-overlay-key="weather">Weather</button></li>
+      </ul></li>
+      <li role="none" data-mode-only="terrain"><ul>
+        <li role="none"><button data-overlay-key="terrain">Steep terrain</button></li>
+        <li role="none"><button data-layers-open="ski_touring">SAC ski touring</button></li>
+      </ul></li>
+      <li role="none"><button data-overlay-key="resorts">Resorts</button></li>
+      <li role="none"><button data-layers-open="boundaries">Regions</button></li>
+      <li role="none"><button data-overlay-key="community_reports">Field observations</button></li>
+    </ul>
+    <ul data-layers-page="ski_touring" hidden>
+      <li role="none"><button data-layers-back>Back</button></li>
+    </ul>
+  </div>
   <div id="season-scrubber" data-today="2026-02-12"></div>
   <div id="region-sheet">
     <button type="button" data-terrain-only data-map-mode-to-dated>Select a date</button>
@@ -84,8 +102,12 @@ beforeEach(() => {
   added = [];
   window.pwaBulletinsLayer = hook('bulletins');
   window.pwaWeatherLayer = hook('weather');
-  window.pwaCommunityReportsOverlay = hook('community_reports');
   window.pwaBulletinTerrain = hook('problem_terrain');
+  window.pwaTerrainFilter = hook('terrain_filter');
+  window.pwaSkiTours = hook('ski_tours');
+  window.pwaRestZones = hook('rest_zones');
+  // A shared layer: no hook of its own, and never asked.
+  window.pwaCommunityReportsOverlay = hook('community_reports');
   // Stand-ins for the handlers the toggle has to get in front of: the
   // layers picker's row click and map_calendar.js's toggle.
   document.getElementById('basemap-menu').addEventListener('click', (e) => {
@@ -105,7 +127,10 @@ beforeEach(() => {
 afterEach(() => {
   for (const [type, fn, opts] of added) document.removeEventListener(type, fn, opts);
   vi.restoreAllMocks();
-  for (const name of ['pwaBulletinsLayer', 'pwaWeatherLayer', 'pwaCommunityReportsOverlay', 'pwaBulletinTerrain', 'pwaMapMode']) {
+  for (const name of [
+    'pwaBulletinsLayer', 'pwaWeatherLayer', 'pwaCommunityReportsOverlay', 'pwaBulletinTerrain',
+    'pwaTerrainFilter', 'pwaSkiTours', 'pwaRestZones', 'pwaMapMode',
+  ]) {
     delete window[name];
   }
 });
@@ -153,28 +178,32 @@ describe('the control', () => {
 });
 
 describe('suppression, never preference', () => {
-  it('asks every dated overlay to be held, and never shows or hides one', async () => {
+  it('holds Conditions\' own and releases Terrain\'s, holds first, never showing or hiding one', async () => {
     await load();
     document.getElementById('map-mode-terrain').click();
 
     expect(calls).toEqual([
       ['bulletins', 'map-mode', true],
       ['weather', 'map-mode', true],
-      ['community_reports', 'map-mode', true],
       ['problem_terrain', 'map-mode', true],
+      ['terrain_filter', 'map-mode', false],
+      ['ski_tours', 'map-mode', false],
+      ['rest_zones', 'map-mode', false],
     ]);
   });
 
-  it('releases them all on the way back', async () => {
+  it('holds Terrain\'s own and releases Conditions\' on the way back', async () => {
     await load();
     document.getElementById('map-mode-terrain').click();
     calls = [];
     document.getElementById('map-calendar-toggle').click();
 
     expect(calls).toEqual([
+      ['terrain_filter', 'map-mode', true],
+      ['ski_tours', 'map-mode', true],
+      ['rest_zones', 'map-mode', true],
       ['bulletins', 'map-mode', false],
       ['weather', 'map-mode', false],
-      ['community_reports', 'map-mode', false],
       ['problem_terrain', 'map-mode', false],
     ]);
   });
@@ -192,7 +221,7 @@ describe('suppression, never preference', () => {
     document.getElementById('map-mode-terrain').click();
     document.getElementById('map-mode-terrain').click();
 
-    expect(calls).toHaveLength(4);
+    expect(calls).toHaveLength(6);
     expect(modeEvents).toEqual(['terrain']);
   });
 });
@@ -241,51 +270,100 @@ describe('the URL and this device', () => {
   });
 });
 
-describe('the layers menu in Terrain', () => {
-  it('disables the dated rows and only them', async () => {
+describe('the layers menu\'s tabs', () => {
+  const tab = (name) => document.querySelector(`[data-map-mode-tab="${name}"]`);
+  const pressed = () => ['dated', 'terrain'].map((name) => tab(name).getAttribute('aria-pressed'));
+
+  it('opens pressed on the mode the map opens in', async () => {
+    history.replaceState(null, '', '/map/?mode=terrain');
+    await load();
+
+    expect(pressed()).toEqual(['false', 'true']);
+  });
+
+  it('changes the mode live from the menu, as the date row does', async () => {
+    await load();
+    tab('terrain').click();
+
+    expect(window.pwaMapMode.get()).toBe('terrain');
+    expect(document.documentElement.dataset.mapMode).toBe('terrain');
+    expect(pressed()).toEqual(['false', 'true']);
+    expect(document.getElementById('map-mode-terrain').getAttribute('aria-pressed')).toBe('true');
+    expect(location.search).toBe('?d=2026-02-10&panel=routes&mode=terrain');
+    expect(calls).toHaveLength(6);
+    expect(modeEvents).toEqual(['terrain']);
+  });
+
+  it('follows the date row, and the date row follows it', async () => {
     await load();
     document.getElementById('map-mode-terrain').click();
+    expect(pressed()).toEqual(['false', 'true']);
 
+    tab('dated').click();
+    expect(pressed()).toEqual(['true', 'false']);
+    expect(document.getElementById('map-mode-terrain').getAttribute('aria-pressed')).toBe('false');
+    expect(modeEvents).toEqual(['terrain', 'dated']);
+  });
+
+  it('does nothing for a tap on the pressed tab', async () => {
+    await load();
+    tab('dated').click();
+
+    expect(calls).toEqual([]);
+    expect(modeEvents).toEqual([]);
+  });
+
+  it('keeps its taps from reaching the page', async () => {
+    const outside = [];
+    const listen = () => outside.push('click');
+    document.addEventListener('click', listen);
+    await load();
+    tab('terrain').click();
+    document.removeEventListener('click', listen);
+
+    expect(outside).toEqual([]);
+  });
+
+  it('goes back to the first level from an options page', async () => {
+    let backs = 0;
+    document.querySelector('[data-layers-back]').addEventListener('click', () => { backs += 1; });
+    document.querySelector('[data-layers-page="ski_touring"]').hidden = false;
+    await load();
+    tab('terrain').click();
+
+    expect(backs).toBe(1);
+  });
+
+  it('marks each mode\'s own rows and leaves the shared ones unmarked', async () => {
+    await load();
+    const marked = (selector) => document.querySelector(selector).closest('[data-mode-only]');
+
+    expect(marked('[data-layers-open="bulletins"]').dataset.modeOnly).toBe('dated');
+    expect(marked('[data-overlay-key="weather"]').dataset.modeOnly).toBe('dated');
+    expect(marked('[data-overlay-key="terrain"]').dataset.modeOnly).toBe('terrain');
+    expect(marked('[data-layers-open="ski_touring"]').dataset.modeOnly).toBe('terrain');
     for (const selector of [
-      '[data-layers-open="bulletins"]', '[data-layer-master="bulletins"]',
-      '[data-overlay-key="weather"]', '[data-overlay-key="community_reports"]',
+      '[data-overlay-key="resorts"]', '[data-layers-open="boundaries"]',
+      '[data-overlay-key="community_reports"]',
     ]) {
-      expect(row(selector).getAttribute('aria-disabled')).toBe('true');
-    }
-    // Regions are fixed, so Terrain draws them: their row stays live.
-    for (const selector of [
-      '[data-overlay-key="resorts"]', '[data-overlay-key="terrain"]',
-      '[data-layers-open="boundaries"]',
-    ]) {
-      expect(row(selector).hasAttribute('aria-disabled')).toBe(false);
+      expect(marked(selector)).toBeNull();
     }
   });
 
-  it('does nothing for a tap on a disabled row', async () => {
+  it('disables no row in either mode, and passes every tap through', async () => {
     await load();
-    document.getElementById('map-mode-terrain').click();
+    for (const name of ['terrain', 'dated']) {
+      tab(name).click();
+      for (const button of document.querySelectorAll('#basemap-menu ul button')) {
+        expect(button.hasAttribute('aria-disabled')).toBe(false);
+        expect(button.closest('li').hasAttribute('data-map-mode-disabled')).toBe(false);
+      }
+    }
     row('[data-overlay-key="weather"]').click();
-    row('[data-layers-open="bulletins"]').click();
-
-    expect(menuClicks).toEqual([]);
-  });
-
-  it('still passes a tap on a static row through', async () => {
-    await load();
-    document.getElementById('map-mode-terrain').click();
+    tab('terrain').click();
     row('[data-overlay-key="terrain"]').click();
 
-    expect(menuClicks).toEqual(['Steep terrain']);
-  });
-
-  it('enables every row again in Dated', async () => {
-    await load();
-    document.getElementById('map-mode-terrain').click();
-    document.getElementById('map-calendar-toggle').click();
-    row('[data-overlay-key="weather"]').click();
-
-    expect(row('[data-overlay-key="weather"]').hasAttribute('aria-disabled')).toBe(false);
-    expect(menuClicks).toEqual(['Weather']);
+    expect(menuClicks).toEqual(['Weather', 'Steep terrain']);
   });
 });
 

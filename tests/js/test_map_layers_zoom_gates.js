@@ -11,7 +11,11 @@
  *     whether its layer is on or off, and recovers when the map gets there;
  *   - the switch is never touched: it keeps its state;
  *   - an up-to gate says "· zoom out";
- *   - a row whose gate the registry does not list stays plain.
+ *   - a row whose gate the registry does not list stays plain;
+ *   - "Sync problem terrain" (SNOW-1421, on level one with the map_modes
+ *     flag) dims below z12 as the others do, whatever the bulletins do.
+ *     Its registry entry is map.js's, pinned with the layer in
+ *     tests/js/test_map_problem_terrain_bridge.js.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -28,6 +32,10 @@ const MARKUP = `
       </li>
       <li data-zoom-gate="ski_routes">
         <button data-layer-switch aria-checked="true"><span data-row-label>SAC ski touring</span>
+          <span data-zoom-hint hidden></span></button>
+      </li>
+      <li data-zoom-gate="problem_terrain">
+        <button data-layer-switch aria-checked="true"><span data-row-label>Sync problem terrain</span>
           <span data-zoom-hint hidden></span></button>
       </li>
       <li data-zoom-gate="far_view">
@@ -63,6 +71,7 @@ beforeEach(() => {
     { key: 'region_select', zoom: 10, upTo: true },
     { key: 'ski_routes', zoom: 10, upTo: false },
     { key: 'terrain_filter', zoom: 12, upTo: false },
+    { key: 'problem_terrain', zoom: 12, upTo: false },
     { key: 'far_view', zoom: 8, upTo: true },
   ];
   window.pwaZoomGates = { list: () => gates };
@@ -96,7 +105,7 @@ describe('a row outside its zoom', () => {
   it('leaves its switch as it was', async () => {
     await load();
     const switches = [...document.querySelectorAll('[data-layer-switch]')];
-    expect(switches.map((sw) => sw.getAttribute('aria-checked'))).toEqual(['false', 'true']);
+    expect(switches.map((sw) => sw.getAttribute('aria-checked'))).toEqual(['false', 'true', 'true']);
     expect(switches.some((sw) => sw.hasAttribute('disabled'))).toBe(false);
   });
 
@@ -124,5 +133,30 @@ describe('a row inside its zoom', () => {
     await load();
     expect(dimmed('ski_routes')).toBe(false);
     expect(hint('ski_routes').hidden).toBe(true);
+  });
+});
+
+describe('"Sync problem terrain" (SNOW-1421)', () => {
+  it('dims and says to zoom in below z12, keeping its switch on', async () => {
+    await load();
+    zoomTo(11);
+    expect(dimmed('problem_terrain')).toBe(true);
+    expect(hint('problem_terrain').textContent).toBe('· zoom in');
+    expect(row('problem_terrain').querySelector('[data-layer-switch]').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('recovers at z12, where its slopes are drawn', async () => {
+    await load();
+    zoomTo(12);
+    expect(dimmed('problem_terrain')).toBe(false);
+    expect(hint('problem_terrain').hidden).toBe(true);
+  });
+
+  it('leaves the bulletins\' own dimming to the layers menu', async () => {
+    row('problem_terrain').setAttribute('data-bulletins-off', '');
+    await load();
+    zoomTo(12);
+    expect(row('problem_terrain').hasAttribute('data-bulletins-off')).toBe(true);
+    expect(dimmed('problem_terrain')).toBe(false);
   });
 });

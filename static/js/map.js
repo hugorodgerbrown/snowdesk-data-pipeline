@@ -126,19 +126,22 @@
   // of the SAC/swisstopo winter routes, drawn from z10 inside Switzerland.
   // Gated with draw mode behind the route_drawing flag, whose guide it is.
   const SKI_ROUTES_ELIGIBLE = mapEl.dataset.skiRoutesEligible === 'true';
-  // SNOW-1394: the map's Dated / Terrain mode, behind the map_modes flag.
-  // Read HERE, before a single layer is installed, so a page opened on
-  // ?mode=terrain paints its first frame without the dated overlays rather
-  // than drawing them and then taking them away. Every install below asks
-  // ``modeSuppressed`` for its initial visibility; map_mode.js drives the
-  // changes after boot through the setSuppressed hooks this IIFE exposes.
-  // Without the flag (or the core) the mode is Dated and nothing is held.
+  // SNOW-1394: the map's Conditions (``dated``) / Terrain mode, behind the
+  // map_modes flag. Read HERE, before a single layer is installed, so a
+  // page opened on ?mode=terrain paints its first frame without the
+  // Conditions layers, and a Conditions boot without Terrain's (SNOW-1421),
+  // rather than drawing them and then taking them away. Every install below
+  // asks ``modeSuppressed`` for its initial visibility, and so do
+  // ski_tours.js and rest_zones.js, through window.pwaMapModeState;
+  // map_mode.js drives the changes after boot through the setSuppressed
+  // hooks. Without the flag (or the core) nothing is held.
   const MAP_MODE_CORE = self.pwaMapModeCore || null;
   const MAP_MODES_ENABLED = mapEl.dataset.mapModesEnabled === 'true' && !!MAP_MODE_CORE;
   /**
-   * The keys Terrain mode is currently holding off the map. A Set of
-   * ``overlayState`` keys (plus ``l3``), never a copy of any preference:
-   * what is drawn is the preference AND-ed with "not in here".
+   * The keys the mode is currently holding off the map: the other mode's
+   * own (pwaMapModeCore.ONLY_IN). A Set of ``overlayState`` keys (plus
+   * ``l3``), never a copy of any preference: what is drawn is the
+   * preference AND-ed with "not in here".
    *
    * @type {Set<string>}
    */
@@ -147,12 +150,10 @@
     let storedMode = null;
     try { storedMode = localStorage.getItem(MAP_MODE_CORE.STORAGE_KEY); } catch (_) { /* private mode */ }
     const bootMode = MAP_MODE_CORE.readMode(location.search, storedMode);
-    for (const key of MAP_MODE_CORE.DATED_OVERLAYS) {
-      if (MAP_MODE_CORE.isSuppressed(key, bootMode)) modeSuppressedKeys.add(key);
-    }
+    for (const key of MAP_MODE_CORE.suppressedIn(bootMode)) modeSuppressedKeys.add(key);
   }
   /**
-   * Whether Terrain mode is holding an overlay off the map.
+   * Whether the mode is holding an overlay off the map.
    *
    * @param {string} key An ``overlayState`` key, or ``l3``.
    * @returns {boolean}
@@ -776,9 +777,9 @@
         checked = overlayState.terrain_filter;
       } else if (key === 'problem_terrain') {
         // SNOW-1377: the row says what is drawn, and Steep terrain's
-        // colours replace the bulletin's slopes while it is on — the
+        // colours replace the bulletin's slopes while it is drawn — the
         // bulletinTerrainShown() rule, which is declared further down.
-        checked = overlayState.problem_terrain && !overlayState.terrain_filter;
+        checked = overlayDrawn('problem_terrain') && !overlayDrawn('terrain_filter');
       } else {
         checked = overlayState[key];
       }
@@ -4704,11 +4705,12 @@
   let terrainAvailability = null;
 
   /**
-   * Whether the filter's own raster draws: switched on.
+   * Whether the filter's own raster draws: switched on, and not held by
+   * Conditions mode (SNOW-1421).
    *
    * @returns {boolean}
    */
-  const terrainFilterRasterShown = () => !!overlayState.terrain_filter;
+  const terrainFilterRasterShown = () => overlayDrawn('terrain_filter');
 
   /**
    * A 2D canvas of one tile's size — an OffscreenCanvas where the browser
@@ -4885,13 +4887,14 @@
     SKI_ROUTES_ELIGIBLE && readBoolStorage(OVERLAY_STORAGE_KEY[key], true);
 
   /**
-   * Show or hide each part's layers as its switch says.
+   * Show or hide each part's layers as its switch says, and hidden while
+   * Conditions mode holds them (SNOW-1421).
    *
    * @returns {void}
    */
   const applySkiTouringVisibility = () => {
     for (const key of /** @type {const} */ (['ski_tours', 'ski_summits'])) {
-      const on = readSkiTouringPart(key);
+      const on = readSkiTouringPart(key) && !modeSuppressed(key);
       for (const id of OVERLAY_LAYERS[key]) {
         if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
       }
@@ -5124,6 +5127,29 @@
         announceTerrainFilter();
       },
       availability: () => terrainAvailability || currentTerrainAvailability(),
+      /**
+       * SNOW-1421: hold or release the raster for Conditions mode, without
+       * writing the reader's choice. isEnabled() stays that choice (the
+       * sheet and the menu row read it); what is drawn is it AND-ed with
+       * this.
+       *
+       * @param {string} reason A ``pwaLayerVisibilityCore.SUPPRESSION`` value.
+       * @param {boolean} active
+       */
+      setSuppressed(reason, active) {
+        if (reason !== BULLETINS_CORE.SUPPRESSION.MAP_MODE) return;
+        if (modeSuppressed('terrain_filter') === !!active) return;
+        setModeSuppressedKey('terrain_filter', !!active);
+        installTerrainFilterLayer();
+        syncTerrainFilterRaster();
+        // The bulletin's slopes give way only to a Steep terrain that is drawn.
+        if (BULLETIN_TERRAIN_ELIGIBLE) {
+          syncBulletinTerrain();
+          announceProblemTerrain();
+        }
+        document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
+        announceTerrainFilter();
+      },
     });
   }
 
@@ -5223,12 +5249,14 @@
 
   /**
    * Whether the layer should be drawn: its row switched on, and the
-   * terrain filter off (SNOW-1377 — Steep terrain takes precedence).
+   * terrain filter not drawn (SNOW-1377 — Steep terrain takes precedence).
+   * SNOW-1421: "drawn", not "switched on": in Conditions mode Steep terrain
+   * is held off the map, so a stored-on Steep terrain hides nothing there.
    *
    * @returns {boolean}
    */
   const bulletinTerrainShown = () =>
-    PROBLEM_TERRAIN_ENABLED && !!overlayState.problem_terrain && !overlayState.terrain_filter
+    PROBLEM_TERRAIN_ENABLED && !!overlayState.problem_terrain && !terrainFilterRasterShown()
     // SNOW-1394: and Terrain mode is not holding it. The stored choice is
     // untouched either way (pwaMapModeCore.problemTerrainShown).
     && !modeSuppressed('problem_terrain');
@@ -5533,7 +5561,10 @@
       writeStorage(OVERLAY_STORAGE_KEY.problem_terrain, String(on));
       // SNOW-1377: the reader asked for the bulletin's slopes, which the
       // terrain filter would hide, so it goes off. Its settings are kept.
-      if (on && overlayState.terrain_filter) setTerrainFilterEnabled(false);
+      // SNOW-1421: not with the map_modes flag. There the two layers are in
+      // different modes, so this write would change a Terrain setting from
+      // Conditions, and Steep terrain is never drawn over the sync anyway.
+      if (on && overlayState.terrain_filter && !MAP_MODES_ENABLED) setTerrainFilterEnabled(false);
       syncBulletinTerrain();
       document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
       announceProblemTerrain();
@@ -6847,12 +6878,12 @@
     });
   });
 
-  // ==== SNOW-1394: Terrain mode's suppression of the dated overlays ====
+  // ==== SNOW-1394, SNOW-1421: each mode's suppression of the other's ====
   //
-  // SUPPRESSION, NEVER PREFERENCE. Terrain mode takes the dated overlays
+  // SUPPRESSION, NEVER PREFERENCE. A mode takes the other mode's own layers
   // off the map without touching a single stored choice — no show(), no
-  // hide(), no writeStorage — so leaving it brings each one back exactly as
-  // the reader had it. The pieces:
+  // hide(), no writeStorage — so coming back brings each one back exactly
+  // as the reader had it. The pieces:
   //
   //   - ``modeSuppressedKeys`` (seeded at boot, before any install, from
   //     ?mode= or the stored mode) says which keys are held;
@@ -6860,14 +6891,25 @@
   //     the overlay-load handler AND-s its re-read preference with it, so a
   //     lazy load or a basemap swap never paints a held layer;
   //   - ``holdOverlayLayers`` runs on every
-  //     ``snowdesk:overlay-visibility-changed`` as a backstop, for a panel
-  //     switch that paints a held overlay (the reports panel's "Show on the
-  //     map" records the reader's choice and is then held like any other);
+  //     ``snowdesk:overlay-visibility-changed`` as a backstop, for a
+  //     control that paints a held overlay ("Find a route" switches the SAC
+  //     tours on from Conditions, recording the reader's choice; the mode
+  //     then holds them like any other);
   //   - ``releaseOverlay`` brings a key back on its own load path, which
-  //     re-reads the preference and catches the layer up with the day.
+  //     re-reads the preference and catches the layer up with the day;
+  //   - window.pwaMapModeState lets the two modules that draw their own
+  //     layers (ski_tours.js, rest_zones.js) read and set the held keys, so
+  //     their first install is already held (SNOW-1421).
 
   /** The lazily installed keys a release reloads through overlay-load. */
-  const MODE_LAZY_KEYS = Object.freeze(['weather', 'community_reports']);
+  const MODE_LAZY_KEYS = Object.freeze(['weather']);
+
+  /**
+   * The held keys the backstop leaves alone: rest_zones.js owns those
+   * layers and shows them while a route is drawn, in either mode (Hugo,
+   * 3 Nov 2026), which a blanket hide would undo.
+   */
+  const MODE_SELF_HELD_KEYS = Object.freeze(['rest_zones']);
 
   /**
    * Add or remove one key from Terrain's held set.
@@ -6916,10 +6958,10 @@
   };
 
   /**
-   * The weather and field-report hooks: hold or release one overlay for
-   * Terrain mode. Only ``SUPPRESSION.MAP_MODE`` is a reason these take.
+   * The weather hook: hold or release one overlay for the mode. Only
+   * ``SUPPRESSION.MAP_MODE`` is a reason it takes.
    *
-   * @param {string} key ``weather`` or ``community_reports``.
+   * @param {string} key ``weather``.
    * @param {string} reason A ``pwaLayerVisibilityCore.SUPPRESSION`` value.
    * @param {boolean} active Whether the reason is now in force.
    * @returns {void}
@@ -6934,7 +6976,29 @@
   };
 
   document.addEventListener('snowdesk:overlay-visibility-changed', () => {
-    for (const key of modeSuppressedKeys) holdOverlayLayers(key);
+    for (const key of modeSuppressedKeys) {
+      if (!MODE_SELF_HELD_KEYS.includes(key)) holdOverlayLayers(key);
+    }
+  });
+
+  // SNOW-1421: the held set, for the modules outside this IIFE that draw
+  // their own layers. ski_tours.js and rest_zones.js load after map.js and
+  // read ``isSuppressed`` for each install, so a Conditions boot never
+  // paints a stored-on SAC layer; their setSuppressed hooks write through
+  // ``hold``. Only the MAP_MODE reason reaches here, so ``hold`` takes the
+  // key alone. Inert off the flag: nothing is ever held.
+  window.pwaMapModeState = Object.freeze({
+    /**
+     * @param {string} key An ``overlayState`` key.
+     * @returns {boolean} Whether the mode holds it off the map.
+     */
+    isSuppressed: (key) => modeSuppressed(key),
+    /**
+     * @param {string} key An ``overlayState`` key.
+     * @param {boolean} active Whether the mode now holds it.
+     * @returns {void}
+     */
+    hold: (key, active) => setModeSuppressedKey(key, !!active),
   });
 
   // ==== SNOW-656: the Bulletins row ====
@@ -8191,9 +8255,6 @@
     },
     isVisible: () => panelOverlayPainted('community_reports'),
     isEnabled: () => !!overlayState.community_reports,
-    // SNOW-1394: Terrain mode's hook. isEnabled stays the reader's choice
-    // (the panel switch reads it); isVisible is what is drawn.
-    setSuppressed: (reason, active) => setOverlaySuppressed('community_reports', reason, active),
   });
 
   // SNOW-687: the fourth bridge, and the same shape as the three above —
@@ -8241,6 +8302,11 @@
   //     Named only on a page that has the layers.
   //   rest_zones — FOEN's wildlife rest zones from REST_ZONES_MINZOOM
   //     (z10, SNOW-1384), on the same pages as ski_routes.
+  //   problem_terrain — the bulletin's problem slopes from
+  //     TERRAIN_CORE.MIN_ZOOM (z12), where its tiles start (SNOW-1421: its
+  //     row moved to the menu's first level, so it carries the gate too).
+  //     Named only on a page that has the layer, behind the map_modes flag
+  //     that moved the row.
   // rest_zones_core.js's MINZOOM, which loads after this file and so cannot
   // be read here; tests/js/test_map_rest_zone_tap.js holds the two equal.
   const REST_ZONES_MINZOOM = 10;
@@ -8249,6 +8315,9 @@
     ...(SKI_ROUTES_ELIGIBLE ? [Object.freeze({ key: 'ski_routes', zoom: SKI_TOURING_MINZOOM })] : []),
     ...(SKI_ROUTES_ELIGIBLE ? [Object.freeze({ key: 'rest_zones', zoom: REST_ZONES_MINZOOM })] : []),
     Object.freeze({ key: 'terrain_filter', zoom: TERRAIN_CORE ? TERRAIN_CORE.DRAW_MIN_ZOOM : 11 }),
+    ...(PROBLEM_TERRAIN_ENABLED && MAP_MODES_ENABLED && TERRAIN_CORE
+      ? [Object.freeze({ key: 'problem_terrain', zoom: TERRAIN_CORE.MIN_ZOOM })]
+      : []),
     Object.freeze({ key: 'route_slopes', zoom: ROUTE_SLOPE_MINZOOM }),
   ]);
 

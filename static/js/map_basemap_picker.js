@@ -137,7 +137,9 @@
     // "Sync with map terrain" (SNOW-1377; "Highlight problem terrain" from
     // 2026-10-23): the bulletins' own terrain, a switch row under Avalanche
     // bulletins rather than a colour of the filter. isEnabled() is what is
-    // drawn, so the row reads off while Steep terrain is on.
+    // drawn, so the row reads off while Steep terrain is drawn. SNOW-1421:
+    // with the map_modes flag it is "Sync problem terrain", a first-level
+    // row of Conditions' own.
     problem_terrain: () => window.pwaBulletinTerrain,
     // SNOW-1185: "Show unsupported regions" — a re-filter of the micro
     // regions that only map.js's applyCountryFilters can compose.
@@ -292,6 +294,14 @@
       const group = document.getElementById(`basemap-menu-group-${summary.dataset.pageSummary}`);
       if (group) summary.textContent = summaryFor(group);
     }
+    // SNOW-1421: with the map_modes flag, "Sync problem terrain" is a
+    // first-level row beside Avalanche bulletins, and there is nothing to
+    // sync while the bulletins are off. Its row dims as a zoom-gated one
+    // does (map.css), and its switch stays live and keeps its state. Off
+    // the flag the row is on the bulletins' own page, and nothing changes.
+    const syncRow = menu.querySelector('[data-layers-page="main"] [data-overlay-key="problem_terrain"]');
+    const syncItem = syncRow && syncRow.closest('li');
+    if (syncItem) syncItem.toggleAttribute('data-bulletins-off', !bulletinsOn());
   };
 
   // SNOW-658: this menu's name in the shared map-overlay registry — the
