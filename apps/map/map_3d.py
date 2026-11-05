@@ -8,7 +8,10 @@ before anything about /map/ changes
 (docs/decisions/a-3d-map-is-maplibre-terrain.md).
 
 Behind the ``map_3d`` waffle flag. Outside it the page is a 404, not a
-redirect or a teaser: there is nothing here for anyone else yet.
+redirect or a teaser: there is nothing here for anyone else yet. The one
+way past the flag is a share link: ``?share=<token>`` naming a live
+``Map3dShare`` opens the page for anyone, signed in or not, and deleting
+that row in the admin stops it.
 """
 
 from __future__ import annotations
@@ -20,6 +23,8 @@ from django.conf import settings
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.urls import reverse
+
+from .models import Map3dShare
 
 logger = logging.getLogger(__name__)
 
@@ -69,12 +74,24 @@ def map_3d_page(request: HttpRequest) -> HttpResponse:
         The full page.
 
     Raises:
-        Http404: When the flag is not active for this request.
+        Http404: When the flag is not active for this request and the
+            request carries no live share token.
 
     """
-    if not map_3d_enabled(request):
+    flagged = map_3d_enabled(request)
+    token = request.GET.get("share", "")
+    if flagged:
+        # The reader's own token, minted the first time they open the page,
+        # so Share always has one to put in the link.
+        share, _ = Map3dShare.objects.get_or_create(created_by_id=request.user.pk)
+        token = share.token
+    elif not Map3dShare.objects.for_token(token).exists():
         raise Http404
     context = {
+        "share_token": token,
+        # A visitor through a share link sees no one's routes: they are
+        # private to the account that drew them.
+        "show_routes": flagged,
         "style_url": settings.BASEMAP_STYLES[MAP_3D_BASEMAP],
         "dem_tile_url": MAP_3D_DEM_TILE_URL,
         "terrain_class_tile_url": settings.TERRAIN_CLASS_TILE_URL or "",

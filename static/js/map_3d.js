@@ -25,7 +25,9 @@
  * Three switches (Steep terrain, SAC tours, Wildlife) show and hide their
  * layers. The camera and the switches are mirrored into the address bar
  * (`?at=…&layers=…`, map_3d_core.viewQuery) on every move and toggle, and
- * Share hands that URL on, so whoever opens it sees the same view.
+ * Share hands that URL on, so whoever opens it sees the same view. The URL
+ * carries the reader's share token (`?share=`), which opens the page for
+ * anyone holding the link, signed in or not.
  *
  * Every URL comes from a data attribute on #map-3d (apps/map/map_3d.py).
  * The pure parts are in map_3d_core.js.
@@ -89,7 +91,10 @@
       },
       layerState,
     );
-    return `${window.location.origin}${window.location.pathname}?${query}`;
+    // The share token (apps/map/models.py Map3dShare) opens the page for
+    // whoever follows the link, past the flag and without a sign-in.
+    const share = data.shareToken ? `share=${encodeURIComponent(data.shareToken)}&` : '';
+    return `${window.location.origin}${window.location.pathname}?${share}${query}`;
   }
 
   /** Mirror the view into the address bar, so it can be copied from there too. */
