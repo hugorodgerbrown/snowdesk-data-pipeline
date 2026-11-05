@@ -2,7 +2,7 @@
 name: mcp-server
 description: MCP JSON-RPC at POST /api/mcp/ and staff /api/ops/mcp/ — mcp-auth auth, tools, MCP Apps view, search_docs / read_doc
 status: current
-last-reviewed: 2026-11-03
+last-reviewed: 2026-11-05
 ---
 
 # MCP server
@@ -693,6 +693,7 @@ writes below.
 | `task_queue_health` | `django_tasks_db` backlog by status, oldest waiting task, 24 h of failures (inline backends report no queue) |
 | `weather_freshness` | Active locations with today's `Weather` row, the last fetch time and the last `fetch_weather` run |
 | `location_estate_health` | Location count by kind, and rows without elevation, without what3words, and orphaned (`LocationQuerySet.orphaned()`) |
+| `ingest_report` | What each scheduled feed pulled in over `window` (`1h`, `24h`, `7d`): per feed its state (ok, warn, red, off), figures, run strip, newest data and next run; the runs that changed something or failed; the task queue. The `/_ingest/` page's data ([`ingest-report.md`](ingest-report.md), SNOW-1423) |
 | `feature_flags` | Each waffle flag's live targeting, each switch's state and note, each sample's percent, drift from `apps/core/fixtures/waffle_flags.json`, and the last ten waffle changes from the admin log (`recent_changes`: who, when, why) |
 | `set_switch` | **Writes.** Turns an existing switch `on` or `off` — e.g. a `schedule_<job>` switch to pause a scheduled job |
 | `list_runnable_commands` | The commands `run_command` can start (`mcp_runnable = True`): help, options, whether each has `--commit`, its last run, and whether this environment has a task worker |

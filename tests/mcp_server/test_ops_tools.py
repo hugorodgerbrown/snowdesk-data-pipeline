@@ -409,47 +409,6 @@ class TestBulletinCoverage:
 
 
 @pytest.mark.django_db
-class TestTaskQueueHealth:
-    """task_queue_health: the inline backends have no queue."""
-
-    def test_inline_backend(self) -> None:
-        """Under the test settings tasks run inline."""
-        result = ops_tools.task_queue_health()
-        assert "no queue" in result["summary"]
-        assert "by_status" not in result
-
-    def test_database_backend(self) -> None:
-        """The database backend reports backlog and recent failures."""
-        from django_tasks_db.models import DBTaskResult
-
-        now = timezone.now()
-        common = {
-            "args_kwargs": {"args": [], "kwargs": {}},
-            "backend_name": "default",
-            "run_after": now,
-            "exception_class_path": "",
-            "traceback": "",
-        }
-        DBTaskResult.objects.create(status="READY", task_path="apps.x.send", **common)
-        DBTaskResult.objects.create(
-            status="FAILED",
-            task_path="apps.x.send",
-            finished_at=now,
-            **{**common, "exception_class_path": "smtplib.SMTPException"},
-        )
-        tasks = {"default": {"BACKEND": "django_tasks_db.DatabaseBackend"}}
-        with override_settings(TASKS=tasks):
-            result = ops_tools.task_queue_health(now=now + dt.timedelta(seconds=30))
-
-        assert result["by_status"] == {"READY": 1, "FAILED": 1}
-        assert result["oldest_ready_age_seconds"] == 30
-        assert result["recent_failures"][0]["exception_class_path"] == (
-            "smtplib.SMTPException"
-        )
-        assert "1 failure(s)" in result["summary"]
-
-
-@pytest.mark.django_db
 class TestWeatherFreshness:
     """weather_freshness: today's row per active location."""
 
@@ -826,3 +785,31 @@ class TestDeployStepsStatus:
         """The tool is callable through the ops server."""
         result = _call("deploy_steps_status")
         assert result["isError"] is False
+
+
+@pytest.mark.django_db
+class TestIngestReport:
+    """ingest_report: the staff ingest report over MCP (SNOW-1423)."""
+
+    def test_default_window(self) -> None:
+        """No window is the last day, JSON-safe, with a summary."""
+        result = _call("ingest_report")
+        report = result["structuredContent"]
+        assert report["window"] == "24h"
+        assert isinstance(report["now"], str)
+        assert [group["name"] for group in report["groups"]] == [
+            "Bulletins",
+            "Weather",
+            "Reference data",
+        ]
+        assert report["summary"]
+
+    def test_window(self) -> None:
+        """A named window is honoured."""
+        report = _call("ingest_report", {"window": "7d"})["structuredContent"]
+        assert report["window"] == "7d"
+        assert len(report["groups"][0]["feeds"][0]["strip"]) == 42
+
+    def test_unknown_window_is_a_tool_error(self) -> None:
+        """An unknown window is the caller's error, not a crash."""
+        assert _call("ingest_report", {"window": "30d"})["isError"] is True

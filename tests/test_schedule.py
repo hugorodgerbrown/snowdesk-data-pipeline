@@ -50,9 +50,9 @@ def test_build_scheduler_returns_blocking_scheduler(
     assert isinstance(scheduler, BlockingScheduler)
 
 
-def test_scheduler_has_exactly_thirteen_jobs(scheduler: BlockingScheduler) -> None:
-    """The scheduler has exactly thirteen registered jobs."""
-    assert len(scheduler.get_jobs()) == 14
+def test_scheduler_has_exactly_fifteen_jobs(scheduler: BlockingScheduler) -> None:
+    """The scheduler has exactly fifteen registered jobs."""
+    assert len(scheduler.get_jobs()) == 15
 
 
 def test_job_ids(jobs: dict) -> None:
@@ -72,6 +72,7 @@ def test_job_ids(jobs: dict) -> None:
         "prune_command_runs",
         "reconcile_slope_samples",
         "render_ski_tours",
+        "check_ingest",
     }
 
 
@@ -181,6 +182,20 @@ def test_check_resort_locations_calls_the_check_mode() -> None:
     with mock.patch("django.core.management.call_command", autospec=True) as mock_cc:
         schedule_module._run_check_resort_locations()
     mock_cc.assert_called_once_with("link_resort_locations", "--check")
+
+
+def test_check_ingest_runs_hourly_at_fifty_past(jobs: dict) -> None:
+    """:50 every hour — after the :40 mirror, before the next :02 fetch."""
+    trigger = jobs["check_ingest"].trigger
+    assert {str(e) for e in _get_field(trigger, "minute").expressions} == {"50"}
+    assert str(_get_field(trigger, "hour")) == "*"
+
+
+def test_check_ingest_calls_the_command_with_no_flags() -> None:
+    """It writes nothing, so there is no --commit to pass (SNOW-1423)."""
+    with mock.patch("django.core.management.call_command", autospec=True) as mock_cc:
+        schedule_module._run_check_ingest()
+    mock_cc.assert_called_once_with("check_ingest")
 
 
 def test_fill_what3words_runs_off_the_fetch_hours(jobs: dict) -> None:
@@ -416,6 +431,7 @@ def test_import_rest_zones_commits() -> None:
         "prune_command_runs",
         "reconcile_slope_samples",
         "render_ski_tours",
+        "check_ingest",
     ],
 )
 def test_each_job_obeys_its_own_switch(jobs: dict, job_id: str) -> None:

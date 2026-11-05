@@ -90,6 +90,11 @@ pre-loaded with the recurring data-pipeline jobs:
   that resort's page renders no Forecasts section while nothing anywhere
   says so (SNOW-885). It raises on a non-empty answer, so the failure shows
   in the worker log rather than needing somebody to read a count.
+- **check_ingest** — fires at :50 every hour, running ``check_ingest``.
+  Writes nothing: it raises when any feed in the staff ingest report
+  (``/_ingest/``) is red, so a feed that goes quiet without failing reaches
+  Sentry (SNOW-1423). At :50, after the :40 mirror and before the next
+  hour's fetch.
 - **purge_expired_oauth_tokens** — fires at 03:45 UTC, running
   ``purge_expired_oauth_tokens --commit``. Deletes expired MCP OAuth
   tokens and codes with django-oauth-toolkit's ``clear_expired()``
@@ -347,6 +352,20 @@ def _run_check_resort_locations() -> None:
     call_command("link_resort_locations", "--check")
 
 
+def _run_check_ingest() -> None:
+    """Invoke ``check_ingest``: raise when any scheduled feed is red (SNOW-1423).
+
+    Writes nothing. A red feed raises ``CommandError``, which reaches the
+    worker log and Sentry; that error is the alert.
+    """
+    from django.core.management import (
+        call_command,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
+    )
+
+    logger.info("schedule: firing check_ingest")
+    call_command("check_ingest")
+
+
 def _run_purge_expired_oauth_tokens() -> None:
     """Invoke ``purge_expired_oauth_tokens`` to delete expired OAuth tokens."""
     from django.core.management import (
@@ -376,7 +395,7 @@ def build_scheduler() -> BlockingScheduler:
     Returns
     -------
     BlockingScheduler
-        A scheduler with thirteen jobs pre-registered:
+        A scheduler with fifteen jobs pre-registered:
 
         ``fetch_bulletins``
             Cron: ``minute=2,7`` (every hour at :02 and :07 UTC, SNOW-1380).
@@ -406,6 +425,8 @@ def build_scheduler() -> BlockingScheduler:
             Cron: ``hour=3, minute=45`` (once a day, SNOW-1035).
         ``prune_command_runs``
             Cron: ``hour=3, minute=50`` (once a day, SNOW-1189).
+        ``check_ingest``
+            Cron: ``minute=50`` (every hour; read-only alarm, SNOW-1423).
 
     """
     scheduler = BlockingScheduler(timezone="UTC")
@@ -544,6 +565,16 @@ def build_scheduler() -> BlockingScheduler:
         switched("render_ski_tours", _run_render_ski_tours),
         trigger=CronTrigger(hour=5, minute=30, timezone="UTC"),
         id="render_ski_tours",
+        **_common,
+    )
+
+    # SNOW-1423: the ingest report's alarm. At :50, after the :40 mirror
+    # and before the next hour's :02 fetch, so each hourly feed has run
+    # since the last check. Read-only: it competes for nothing.
+    scheduler.add_job(
+        switched("check_ingest", _run_check_ingest),
+        trigger=CronTrigger(minute=50, timezone="UTC"),
+        id="check_ingest",
         **_common,
     )
 

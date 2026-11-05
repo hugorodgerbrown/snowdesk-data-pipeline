@@ -128,6 +128,7 @@ def test_mcp_runnable_commands_are_pinned() -> None:
         "backfill_route_slope_samples",
         "backfill_trip_slope_samples",
         "backfill_weather",
+        "check_ingest",
         "diagnose_region_coverage",
         "fetch_bulletins",
         "fetch_weather",

@@ -211,6 +211,13 @@ urlpatterns = [
     # SW shell cache-version page — staff-only, surfaces live vs deployed
     # CACHE_VERSION (SNOW-517).
     path("_sw-version/", debug_views.sw_version, name="sw_version"),
+    # SNOW-1423: what the scheduled jobs pulled in, refreshed every minute.
+    path("_ingest/", debug_views.ingest_report, name="ingest_report"),
+    path(
+        "partials/_ingest/",
+        debug_views.ingest_report_panel,
+        name="ingest_report_panel",
+    ),
     # SNOW-1020: one route's angle, aspect, bearing and track gradient per
     # segment, with a CSV of the same rows. Linked from the Route admin.
     path(

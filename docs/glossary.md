@@ -2,7 +2,7 @@
 name: glossary
 description: Domain term → code symbol map — CAAML, DPBRA, massif, Bulletin/RegionBulletin, render model, day rating, sentinels, Location, Weather
 status: current
-last-reviewed: 2026-11-04
+last-reviewed: 2026-11-05
 ---
 
 # Glossary — domain terms to code symbols
@@ -21,6 +21,7 @@ a code symbol.
 | ALBINA | EUREGIO (Tyrol/South Tyrol/Trentino) avalanche service | `apps/bulletins/services/albina_fetcher.py` |
 | Météo-France | French provider; serves DPBRA XML, not CAAML | `apps/bulletins/services/meteofrance_fetcher.py` |
 | Ingest | The rehostable unit that fetches and normalises the providers' data, importing no other `apps.*` package; the rest of the project imports it only through its facade | `apps/ingest/`, facade `apps/ingest/public.py`, guard `tests/ingest/test_boundary.py`; `docs/decisions/ingestion-is-a-rehostable-unit.md` |
+| Ingest report | Staff view of what each scheduled feed pulled in over a window, each feed `ok`, `warn`, `red` or `off` (off-season); a red feed fails the hourly `check_ingest` | `apps/public/ingest_report.py` (`build_report`, `FEEDS`, `red_feeds`), `/_ingest/` |
 | Reference data | Everything a signed-out visitor sees on the map: provider data, curated places and resorts, and the domain facts derived from them. Held once in the service and synced into every instance; user data never is | `docs/decisions/reference-data-has-one-source-of-truth.md`; `apps.ingest.public` |
 | Source location | One reference place the weather service fetches — a resort point or a region centre — keyed by the service's uuid; tombstoned (`deleted_at`), never deleted. Mirrored, with a `document` of its kind, what3words address and the regions it centres, from production's curated `Location` rows by `fetch_weather` and `mirror_reference_data` until the service has its own editor | `apps.ingest.models.SourceLocation`, `sync_source_locations`; `Location.source_uuid`, `LocationQuerySet.reference_data()`; `mirror_reference_locations` in `apps/weather/services/reference.py` |
 | Source pass, source resort | A season pass or a resort as the reference-data service holds it: one JSON `document` in the shape a client applies, keyed by the service's uuid, every relation named by a source uuid; tombstoned, never deleted. Mirrored from production's `Pass` and `Resort` hourly until the service has its own editor (SNOW-1271) | `apps.ingest.models.SourcePass`, `SourceResort`, `sync_source_documents`; `Pass.source_uuid`, `Resort.source_uuid`, `reference_data()`; `mirror_reference_data` in `apps/regions/services/reference.py` |

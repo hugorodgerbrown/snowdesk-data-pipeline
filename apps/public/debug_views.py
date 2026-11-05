@@ -9,7 +9,8 @@ shell-version page (``/_sw-version/``, SNOW-517), the icon-set
 comparison grid (``/_icon-sets/``, SNOW-791), one route's terrain
 per segment (``/_route-terrain/<uuid>/``, SNOW-1020), and the error-page
 previews (``/_errors/<kind>/``, SNOW-1151) and the bulletin alert season
-replay (``/_alerts-replay/``, SNOW-949).
+replay (``/_alerts-replay/``, SNOW-949), and the ingest report
+(``/_ingest/``, SNOW-1423).
 
 Auth: ``staff_member_required`` only — no DEBUG gate. Every page here is
 reachable in production by any staff user, by design (everyone with
@@ -32,10 +33,12 @@ from django.http import (
     Http404,
     HttpRequest,
     HttpResponse,
+    HttpResponseBadRequest,
     HttpResponseNotFound,
     JsonResponse,
 )
 from django.shortcuts import get_object_or_404, render
+from django.utils import timezone
 
 from apps.accounts.push_config import VAPID_PUBLIC_KEY
 from apps.bulletins.services.alerts import ALERT_TZ
@@ -46,6 +49,7 @@ from apps.core.sw_shell import cache_version
 from apps.ingest.public import WMO_CODE_TO_ICON_BUCKET
 from apps.public.design_tokens import LIBRARY_GROUPS, get_category
 from apps.public.errors import ERROR_PAGES, error_response
+from apps.public.ingest_report import WINDOWS, build_report, parse_window
 from apps.routes.models import Route
 from apps.weather.icon_sets import (
     ICON_SETS,
@@ -198,6 +202,39 @@ def error_preview(request: HttpRequest, kind: str) -> HttpResponse:
     if kind not in ERROR_PAGES:
         raise Http404(kind)
     return error_response(request, kind)
+
+
+def _ingest_report_context(request: HttpRequest) -> dict[str, Any] | None:
+    """Build the ingest report for ``?window=``, or None for an unknown window."""
+    try:
+        window = parse_window(request.GET.get("window"))
+    except ValueError:
+        return None
+    return {"report": build_report(window, now=timezone.now()), "windows": WINDOWS}
+
+
+@staff_member_required
+def ingest_report(request: HttpRequest) -> HttpResponse:
+    """Staff page: what each scheduled feed pulled in, live (SNOW-1423).
+
+    ``?window=`` is ``1h``, ``24h`` (the default) or ``7d``; anything else
+    is a 400. The panel re-fetches itself every minute from
+    ``ingest_report_panel``.
+    """
+    context = _ingest_report_context(request)
+    if context is None:
+        return HttpResponseBadRequest("Unknown window.")
+    return render(request, "_debug/ingest_report.html", context)
+
+
+@staff_member_required
+@require_htmx
+def ingest_report_panel(request: HttpRequest) -> HttpResponse:
+    """HTMX fragment: the ingest report's panel, for its one-minute refresh."""
+    context = _ingest_report_context(request)
+    if context is None:
+        return HttpResponseBadRequest("Unknown window.")
+    return render(request, "_debug/_ingest_report_panel.html", context)
 
 
 @staff_member_required

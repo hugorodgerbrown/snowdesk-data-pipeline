@@ -1,0 +1,25 @@
+{% comment %}
+  Run strip (SNOW-1423): one cell per slice of a time window, coloured by
+  the worst run in it. Drawn by the staff ingest report at /_ingest/.
+
+  Required context:
+    strip — list of cells, oldest first. Each cell has:
+              state      "none" | "ok" | "running" | "failed"
+              url        the run's admin page ("" for none)
+              started_at the run's start (absent for none)
+{% endcomment %}
+<span class="inline-flex items-end gap-px h-4" data-testid="run-strip">
+    {% for cell in strip %}
+        {% if cell.state == "none" %}
+            <span class="block w-1 h-1 rounded-sm bg-chip-strong" data-state="none"></span>
+        {% else %}
+            <a
+                href="{{ cell.url }}"
+                class="block w-1 rounded-sm {% if cell.state == 'failed' %}h-4 bg-status-error-text{% elif cell.state == 'running' %}h-3 bg-status-info-text{% else %}h-3 bg-status-success-text{% endif %}"
+                data-state="{{ cell.state }}"
+                title="{{ cell.started_at|date:'j M H:i' }}"
+                aria-label="Run {{ cell.started_at|date:'j M H:i' }}: {{ cell.state }}"
+            ></a>
+        {% endif %}
+    {% endfor %}
+</span>

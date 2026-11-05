@@ -1,0 +1,122 @@
+{% comment %}
+  The ingest report's live panel (SNOW-1423): every feed, the Changes list
+  and the task queue. Rendered inside /_ingest/ and re-fetched every minute
+  from partials/_ingest/.
+
+  Context: report — apps.public.ingest_report.build_report()
+{% endcomment %}
+<p id="ingest-report-live" class="text-meta text-text-3 flex items-center gap-1.5 mb-3" data-testid="ingest-live">
+    <span class="inline-block w-2 h-2 rounded-pill bg-status-success-text"></span>
+    Live · {{ report.now|date:"H:i" }}
+</p>
+<section class="bg-card border border-border rounded-card overflow-hidden" data-testid="ingest-feeds">
+    <div class="hidden md:grid md:grid-cols-[11rem_7rem_1fr_13rem_9rem_6rem] gap-3 px-4 py-2 text-meta uppercase tracking-wide text-text-3 border-b border-border bg-card-subtle">
+        <span>Feed</span><span>Last run</span><span>Figures</span><span>Runs</span><span>Latest</span><span>Next</span>
+    </div>
+    {% for group in report.groups %}
+        <h2 class="px-4 py-1.5 text-meta uppercase tracking-wide font-semibold text-text-3 bg-card-subtle border-b border-border">
+            {{ group.name }}
+        </h2>
+        {% for feed in group.feeds %}
+            <div
+                class="grid grid-cols-[1fr_auto] md:grid-cols-[11rem_7rem_1fr_13rem_9rem_6rem] gap-x-3 gap-y-1 px-4 py-2.5 border-b border-border items-center text-sm"
+                data-testid="ingest-feed"
+                data-feed="{{ feed.key }}"
+                data-status="{{ feed.status }}"
+            >
+                <span class="flex items-center gap-2 font-semibold text-text-1">
+                    <span
+                        class="inline-block w-2 h-2 rounded-pill shrink-0 {% if feed.status == 'red' %}bg-status-error-text{% elif feed.status == 'warn' %}bg-status-warning-text{% elif feed.status == 'off' %}bg-chip-strong{% else %}bg-status-success-text{% endif %}"
+                    ></span>
+                    {{ feed.label }}
+                </span>
+                <span class="font-mono text-meta text-text-3 text-right md:text-left">
+                    {% if feed.last_run_at %}
+                        <a
+                            href="{{ feed.last_run_url }}"
+                            class="hover:text-text-1"
+                        >{{ feed.last_run_at|date:"j M H:i" }}</a>
+                    {% else %}
+                        never
+                    {% endif %}
+                </span>
+                <span class="text-text-2" data-testid="ingest-metrics">
+                    {% for metric in feed.metrics %}
+                        <span class="whitespace-nowrap" data-testid="ingest-metric"><b
+                                class="text-text-1"
+                            >{{ metric.value }}</b>
+                            {{ metric.label }}</span>
+                        {% if not forloop.last %}·{% endif %}
+                    {% endfor %}
+                </span>
+                <span>
+                    {% if feed.weekly and report.window != "7d" %}
+                        <span class="text-meta text-text-3">weekly</span>
+                    {% else %}
+                        {% include "includes/_run_strip.html" with strip=feed.strip %}
+                    {% endif %}
+                </span>
+                <span class="text-meta text-text-2">
+                    {% if feed.latest_at %}{{ feed.latest_at|date:"j M H:i" }}{% endif %}
+                    {% if feed.reason %}
+                        <span
+                            class="inline-block rounded-pill px-2 text-meta font-semibold {% if feed.status == 'red' %}bg-status-error-bg text-status-error-text{% elif feed.status == 'warn' %}bg-status-warning-bg text-status-warning-text{% else %}bg-chip text-text-2{% endif %}"
+                        >{{ feed.reason }}</span>
+                    {% endif %}
+                </span>
+                <span
+                    class="font-mono text-meta text-text-3 text-right md:text-left"
+                >{{ feed.next_run_at|date:"D H:i" }}</span>
+            </div>
+        {% endfor %}
+    {% endfor %}
+</section>
+<div class="grid gap-4 md:grid-cols-[1fr_20rem] mt-4">
+    <section class="bg-card border border-border rounded-card overflow-hidden" data-testid="ingest-changes">
+        <h2 class="px-4 py-2.5 font-semibold text-text-1 border-b border-border">Changes</h2>
+        {% for change in report.changes %}
+            <a
+                href="{{ change.url }}"
+                class="flex items-baseline gap-3 px-4 py-2 border-b border-border text-sm hover:bg-card-hover"
+                data-testid="ingest-change"
+            >
+                <span
+                    class="font-mono text-meta text-text-3 w-20 shrink-0"
+                >{{ change.started_at|date:"j M H:i" }}</span>
+                <span
+                    class="inline-block w-2 h-2 rounded-pill shrink-0 self-center {% if change.failed %}bg-status-error-text{% else %}bg-status-success-text{% endif %}"
+                ></span>
+                <span class="text-text-2">
+                    <b class="text-text-1">{{ change.feed }}</b>
+                    {% if change.failed %}· failed{% endif %}
+                    {% if change.parts %}· {{ change.parts|join:", " }}{% endif %}
+                </span>
+            </a>
+        {% empty %}
+            <p class="px-4 py-3 text-sm text-text-3">Nothing new.</p>
+        {% endfor %}
+    </section>
+    <section class="bg-card border border-border rounded-card overflow-hidden self-start" data-testid="ingest-queue">
+        <h2 class="px-4 py-2.5 font-semibold text-text-1 border-b border-border">Task queue</h2>
+        {% with queue=report.task_queue %}
+            {% if queue.by_status is not None %}
+                <dl class="grid grid-cols-[5rem_1fr] text-sm">
+                    <dt class="px-4 py-2 font-mono font-semibold text-text-1 border-b border-border">
+                        {{ queue.by_status.READY|default:0 }}
+                    </dt>
+                    <dd class="py-2 text-text-2 border-b border-border">waiting</dd>
+                    <dt class="px-4 py-2 font-mono font-semibold text-text-1 border-b border-border">
+                        {{ queue.by_status.SUCCESSFUL|default:0 }}
+                    </dt>
+                    <dd class="py-2 text-text-2 border-b border-border">done</dd>
+                    <dt class="px-4 py-2 font-mono font-semibold text-status-error-text">
+                        {{ queue.by_status.FAILED|default:0 }}
+                    </dt>
+                    <dd class="py-2 text-text-2">failed</dd>
+                </dl>
+            {% else %}
+                <p class="px-4 py-3 text-sm text-text-3">{{ queue.summary }}</p>
+            {% endif %}
+        {% endwith %}
+    </section>
+</div>
