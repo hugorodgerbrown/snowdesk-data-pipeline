@@ -21,13 +21,14 @@ const core = window.pwaMap3dCore;
 describe('demSource / terrainSpec', () => {
   it('builds a Terrarium raster-dem source from the template', () => {
     const source = core.demSource('https://dem.example/{z}/{x}/{y}.png');
-    expect(source).toEqual({
+    expect(source).toMatchObject({
       type: 'raster-dem',
       tiles: ['https://dem.example/{z}/{x}/{y}.png'],
       encoding: 'terrarium',
-      tileSize: 256,
+      tileSize: 512,
       maxzoom: 15,
     });
+    expect(source.attribution).toContain('Mapterhorn');
   });
 
   it('points the terrain at the DEM source with a modest exaggeration', () => {
@@ -166,5 +167,38 @@ describe('viewQuery longitude', () => {
       core.DEFAULT_LAYERS,
     );
     expect(core.parseView(`?${query}`).camera.center).toEqual([7.87, 46.07]);
+  });
+});
+
+describe('MAX_PIXEL_RATIO', () => {
+  it('caps the canvas at 2x', () => {
+    expect(core.MAX_PIXEL_RATIO).toBe(2);
+  });
+});
+
+describe('prefetchDemTiles / tileUrl', () => {
+  it('returns the 3x3 block two zooms below the map, around the centre', () => {
+    const tiles = core.prefetchDemTiles({ lng: 7.87, lat: 46.07 }, 12.6);
+    expect(tiles).toHaveLength(9);
+    expect(new Set(tiles.map((t) => t.z))).toEqual(new Set([11]));
+    // The centre tile of z11 over Saas-Fee.
+    expect(tiles[4]).toEqual({ z: 11, x: 1068, y: 728 });
+  });
+
+  it('never asks past the DEM source maxzoom', () => {
+    const tiles = core.prefetchDemTiles({ lng: 7.87, lat: 46.07 }, 20);
+    expect(tiles.every((t) => t.z === 15)).toBe(true);
+  });
+
+  it('wraps x across the antimeridian and drops rows off the world', () => {
+    const tiles = core.prefetchDemTiles({ lng: 179.99, lat: 85 }, 4);
+    expect(tiles.every((t) => t.x >= 0 && t.x < 4)).toBe(true);
+    expect(tiles.every((t) => t.y >= 0)).toBe(true);
+    expect(tiles.length).toBeLessThan(9);
+  });
+
+  it('fills an XYZ template', () => {
+    expect(core.tileUrl('https://t.example/{z}/{x}/{y}.webp', { z: 1, x: 2, y: 3 }))
+      .toBe('https://t.example/1/2/3.webp');
   });
 });

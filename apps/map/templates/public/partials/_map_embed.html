@@ -428,6 +428,7 @@ Optional context:
                     <a
                         id="map-3d-link"
                         href="{% url 'public:map_3d' %}"
+                        data-dem-tile-url="{{ map_3d_dem_tile_url }}"
                         class="map-utility-button hover-affordance text-chip font-semibold"
                         aria-label='{% trans "Open in 3-D" %}'
                     >{% trans "3D" %}</a>

@@ -26,7 +26,8 @@
  *
  * Exports (frozen `self.pwaMap3dCore`):
  *
- *   DEM_SOURCE_ID / TERRAIN_EXAGGERATION / OPENING_CAMERA / MAX_PITCH
+ *   DEM_SOURCE_ID / TERRAIN_EXAGGERATION / OPENING_CAMERA / MAX_PITCH / MAX_PIXEL_RATIO
+ *   prefetchDemTiles(centre, mapZoom) / tileUrl(template, tile)
  *   TOURS_MIN_ZOOM / TOURS_HALF_SPAN_DEG / COLOURS
  *   demSource(tileUrl)
  *   terrainSpec()
@@ -44,6 +45,10 @@
   /** The raster-dem source's id. */
   const DEM_SOURCE_ID = 'map-3d-dem';
 
+  /** The elevation tiles' size in pixels, and the deepest zoom asked for. */
+  const DEM_TILE_SIZE = 512;
+  const DEM_MAX_ZOOM = 15;
+
   /**
    * How much the relief is stretched upwards. 1 is true scale; a little
    * more reads better on a phone-sized screen, and more than 1.5 starts to
@@ -58,6 +63,12 @@
     pitch: 64,
     bearing: 215,
   });
+
+  /**
+   * The canvas's pixel-ratio ceiling. A 3x phone draws 2.25x the pixels of
+   * 2x for detail nobody sees on a tilted map, and every frame pays for it.
+   */
+  const MAX_PIXEL_RATIO = 2;
 
   /** MapLibre's ceiling is 85; past this the horizon eats the screen. */
   const MAX_PITCH = 80;
@@ -86,19 +97,61 @@
   });
 
   /**
-   * The elevation source: Terrarium-encoded PNG tiles.
+   * The elevation source: Mapterhorn's Terrarium-encoded 512 px tiles.
+   * They go to z17 over Switzerland; z15 (about 2 m a pixel) is past what
+   * the terrain mesh can show, and each zoom past it quadruples the tiles.
    *
    * @param {string} tileUrl An XYZ template.
-   * @returns {{type: 'raster-dem', tiles: string[], encoding: 'terrarium', tileSize: number, maxzoom: number}}
+   * @returns {{type: 'raster-dem', tiles: string[], encoding: 'terrarium', tileSize: number, maxzoom: number, attribution: string}}
    */
   function demSource(tileUrl) {
     return {
       type: 'raster-dem',
       tiles: [tileUrl],
       encoding: 'terrarium',
-      tileSize: 256,
-      maxzoom: 15,
+      tileSize: DEM_TILE_SIZE,
+      maxzoom: DEM_MAX_ZOOM,
+      attribution: '<a href="https://mapterhorn.com/attribution" target="_blank" rel="noopener">© Mapterhorn</a>',
     };
+  }
+
+  /**
+   * The elevation tiles a 3-D view around a point will ask for first, so
+   * /map/'s 3D roundel can warm the browser's cache before the page opens.
+   * MapLibre draws 512 px terrain about two zooms below the map's own, so
+   * this is the 3x3 block at that zoom around the centre.
+   *
+   * @param {{lng: number, lat: number}} centre
+   * @param {number} mapZoom The camera zoom the 3-D map will open at.
+   * @returns {Array<{z: number, x: number, y: number}>}
+   */
+  function prefetchDemTiles(centre, mapZoom) {
+    const z = Math.max(0, Math.min(DEM_MAX_ZOOM, Math.round(mapZoom) - 2));
+    const n = 2 ** z;
+    const lat = Math.max(-85, Math.min(85, centre.lat)) * Math.PI / 180;
+    const cx = Math.floor(((centre.lng + 180) / 360) * n);
+    const cy = Math.floor(((1 - Math.asinh(Math.tan(lat)) / Math.PI) / 2) * n);
+    /** @type {Array<{z: number, x: number, y: number}>} */
+    const out = [];
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        const y = cy + dy;
+        if (y < 0 || y >= n) continue;
+        out.push({ z, x: (((cx + dx) % n) + n) % n, y });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * One tile's URL from an XYZ template.
+   *
+   * @param {string} template
+   * @param {{z: number, x: number, y: number}} tile
+   * @returns {string}
+   */
+  function tileUrl(template, tile) {
+    return template.replace('{z}', String(tile.z)).replace('{x}', String(tile.x)).replace('{y}', String(tile.y));
   }
 
   /**
@@ -267,6 +320,9 @@
     TERRAIN_EXAGGERATION: TERRAIN_EXAGGERATION,
     OPENING_CAMERA: OPENING_CAMERA,
     MAX_PITCH: MAX_PITCH,
+    MAX_PIXEL_RATIO: MAX_PIXEL_RATIO,
+    prefetchDemTiles: prefetchDemTiles,
+    tileUrl: tileUrl,
     TOURS_MIN_ZOOM: TOURS_MIN_ZOOM,
     TOURS_HALF_SPAN_DEG: TOURS_HALF_SPAN_DEG,
     COLOURS: COLOURS,

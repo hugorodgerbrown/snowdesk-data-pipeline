@@ -33,11 +33,13 @@ logger = logging.getLogger(__name__)
 # Steep terrain only cover Switzerland anyway.
 MAP_3D_BASEMAP = "swisstopo_winter"
 
-# AWS's open Terrarium elevation tiles: global, token-less, z0-15. The CSP
-# entry for this origin is in config/settings/base.py.
-MAP_3D_DEM_TILE_URL = (
-    "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
-)
+# Mapterhorn's open Terrarium elevation tiles: 512 px WebP, served from
+# Europe with a 7-day cache, built over Switzerland from swisstopo's
+# swissALTI3D (Open Government Data) and elsewhere from Copernicus GLO-30.
+# Sharper relief than AWS's Terrarium set, which had no cache headers and
+# answered from us-east. The CSP entry for this origin is in
+# config/settings/base.py.
+MAP_3D_DEM_TILE_URL = "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp"
 
 
 def map_3d_enabled(request: HttpRequest) -> bool:
