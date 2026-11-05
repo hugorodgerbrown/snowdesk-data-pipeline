@@ -500,7 +500,7 @@
     if (!currentRoute) return viewUrl();
     const uuid = currentRoute;
     if (!routeLinks[uuid]) {
-      const url = data.routeShareUrlTemplate.replace('__UUID__', uuid);
+      const url = (data.routeShareUrlTemplate || '').replace('__UUID__', uuid);
       routeLinks[uuid] = share.createShare(url, data.csrfToken);
       // A failed mint is not kept, so the next tap asks again.
       routeLinks[uuid].catch(() => { delete routeLinks[uuid]; });
