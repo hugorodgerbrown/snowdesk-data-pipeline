@@ -1945,7 +1945,7 @@ Optional context:
                 role="slider"
                 {# SNOW-1195: focusable, so the keys map_day_nav.js binds reach it. #}
                 tabindex="0"
-                aria-label='{% trans "Season scrubber" %}'
+                aria-label='{% trans "Timeline" %}'
                 aria-valuemin="0"
                 aria-valuemax="100"
                 aria-valuenow="{{ today_pct }}"
@@ -1961,7 +1961,7 @@ Optional context:
                 data-on-track="{{ scrubber_on_track|yesno:'true,false' }}"
                 data-state="loading"
             >
-                <div class="season-scrubber-loading">{% trans "Season data loading…" %}</div>
+                <div class="season-scrubber-loading">{% trans "Loading…" %}</div>
                 {% include "public/partials/_season_scrubber_controls.html" %}
             </div>
         </div>
@@ -2047,7 +2047,7 @@ Optional context:
             data-help-title='{% trans "Choose the day" %}'
         >
             <p data-help-body>
-                {% trans "The map shows one day at a time. Tap the date for a calendar of the season, coloured by the selected region’s danger." %}
+                {% trans "The map shows one day at a time. Tap the date for a calendar, coloured by the selected region’s danger." %}
             </p>
         </li>
         {# Three controls, one step: each is a way of moving the map, and a  #}
@@ -2735,10 +2735,10 @@ Optional context:
 {# no longer has. The same sentences are still rendered server-side by       #}
 {# public/_region_tooltip.html, which is what the region panel shows.        #}
 <template id="map-strings-template">
-    <span data-string="season-unavailable">{% trans "Season data unavailable" %}</span>
-    <span data-string="timelapse-play">{% trans "Play season timelapse" %}</span>
-    <span data-string="timelapse-play-reverse">{% trans "Play season timelapse in reverse" %}</span>
-    <span data-string="timelapse-stop">{% trans "Stop season timelapse" %}</span>
+    <span data-string="season-unavailable">{% trans "Bulletins unavailable" %}</span>
+    <span data-string="timelapse-play">{% trans "Play timelapse" %}</span>
+    <span data-string="timelapse-play-reverse">{% trans "Play timelapse in reverse" %}</span>
+    <span data-string="timelapse-stop">{% trans "Stop timelapse" %}</span>
     <span data-string="timelapse-stop-reverse">{% trans "Stop reverse timelapse" %}</span>
     {# SNOW-632: the custom-area framing overlay's CTA readout and top      #}
     {# banner. "frame-up-to"/"frame-over-ceiling" replace two literals that #}

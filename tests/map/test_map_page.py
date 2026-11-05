@@ -961,7 +961,8 @@ def test_map_page_renders_scrubber_loading_state() -> None:
     content = response.content.decode()
     assert 'data-state="loading"' in content
     assert "season-scrubber-loading" in content
-    assert "Season data loading" in content
+    assert "Loading…" in content
+    assert "Season data loading" not in content
     # Transport controls must remain in the DOM (hidden by CSS only).
     assert 'id="scrubber-play"' in content
     assert 'id="scrubber-reverse"' in content

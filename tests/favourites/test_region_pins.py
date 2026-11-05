@@ -34,6 +34,7 @@ from apps.favourites.services import (
     delete_region_favourite,
 )
 from tests.factories import (
+    BulletinFactory,
     FavouriteFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
@@ -272,11 +273,15 @@ class TestRegionPinSurfaces:
         """SNOW-814: signed in, a toggle; signed out, a way in. Never nothing.
 
         The roundel lives in the season ribbon's header, which only renders
-        when the season has data — hence the frozen clock and the rating.
+        once the region has a rated day (SNOW-1431) — hence the frozen clock
+        and the rating, with a bulletin behind it.
         """
         region = MicroRegionFactory.create(region_id="CH-4115")
         RegionDayRatingFactory.create(
-            region=region, date=datetime.date(2026, 2, 17), max_rating="high"
+            region=region,
+            date=datetime.date(2026, 2, 17),
+            max_rating="high",
+            source_bulletin=BulletinFactory.create(),
         )
 
         anonymous = client.get(reverse("public:map")).content.decode()

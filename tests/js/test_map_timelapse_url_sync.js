@@ -55,9 +55,9 @@ async function loadTimelapse() {
   globalThis.MAP = { isStyleLoaded: () => true };
   globalThis.IS_PLAYING = false;
   globalThis.MAP_STRINGS = {
-    'timelapse-play': 'Play season timelapse',
-    'timelapse-play-reverse': 'Play season timelapse in reverse',
-    'timelapse-stop': 'Stop season timelapse',
+    'timelapse-play': 'Play timelapse',
+    'timelapse-play-reverse': 'Play timelapse in reverse',
+    'timelapse-stop': 'Stop timelapse',
     'timelapse-stop-reverse': 'Stop reverse timelapse',
   };
   globalThis.getSeasonRatings = () => Promise.resolve(RATINGS);

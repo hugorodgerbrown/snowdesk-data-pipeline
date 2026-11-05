@@ -1,6 +1,6 @@
 {% comment %}
-apps/public/templates/public/help/_topic_timeline.html — "The season
-timeline" panel body.
+apps/public/templates/public/help/_topic_timeline.html — "The timeline"
+panel body.
 
 Content partial for the help page (SNOW-456); included via the
 body_template parameter of includes/_collapsible_panel.html.
@@ -16,14 +16,14 @@ where they were standing.
 <div class="text-sm leading-prose text-text-2">
     <p class="mb-3 last:mb-0">
         {% blocktrans trimmed %}
-            The scrubber along the bottom of the map moves it through the season, a day at a time. Drag the thumb, and
-            every region's colour changes to its danger rating for the date you land on.
+            The scrubber along the bottom of the map moves it through the days, from the latest run of bulletins up to
+            today. Drag the thumb, and every region's colour changes to its danger rating for the date you land on.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-timeline-transport">
         {% blocktrans trimmed %}
-            The buttons either side of the track work like a media player: skip to the start or the end of the season,
-            or play the whole thing as a timelapse, forwards or backwards. A second press stops it.
+            The buttons either side of the track work like a media player: skip to the start or the end, or play the
+            whole thing as a timelapse, forwards or backwards. A second press stops it.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-timeline-date-pill">
@@ -34,7 +34,7 @@ where they were standing.
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-timeline-weather-window">
         {% blocktrans trimmed %}
-            The weather layer is the one thing that does not follow the whole season. It is a forecast, so it covers
+            The weather layer is the one thing that does not follow the whole track. It is a forecast, so it covers
             today and the week ahead: scrub back past today and the symbols go, while the danger colours stay.
         {% endblocktrans %}
     </p>

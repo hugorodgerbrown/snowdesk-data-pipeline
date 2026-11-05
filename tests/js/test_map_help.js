@@ -62,7 +62,7 @@ const STEP_DEFS = [
   { target: '#report-btn', title: 'Report conditions', body: 'Share a quick field observation with other visitors.' },
   { target: '#map-help-toggle', title: 'Map help', body: 'Reopen this tour whenever you need it.' },
   { target: '#map-controls-toggle', title: 'Hide the controls', body: 'Collapse the controls to clear the map; your choice is remembered.' },
-  { target: '#season-scrubber', title: 'Timeline scrubber', body: 'Run through the season day by day.' },
+  { target: '#season-scrubber', title: 'Timeline scrubber', body: 'Step through the days.' },
   { target: '#map-legend-toggle', title: 'Map information', body: 'View attribution and EAWS danger level key.' },
   { target: '#map-date-ribbon', title: 'Map display date', body: 'The date currently shown on the map.' },
 ];
