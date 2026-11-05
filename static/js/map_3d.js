@@ -14,13 +14,16 @@
  *   - SAC's ski tours, asked for in a box around the camera on each move;
  *   - Wildlife: FOEN's wildlife rest zones and federal game reserves, as
  *     swisstopo WMTS rasters;
- *   - the reader's own routes, when signed in;
+ *   - the reader's own routes, when signed in, and a route shared with
+ *     them (`?route_share=<token>`, apps/map/map_3d.py);
  *   - the resorts.
  *
  * A tap on a tour or a route flies the camera to the whole of it, keeping
  * the tilt: its uuid is looked up in the loaded data, because the tapped
  * feature is only a drawn fragment and a tour is one feature per leg.
- * `?route=<uuid>` opens on one of the reader's routes.
+ * `?route=<uuid>` opens on one of the reader's routes, and
+ * `?route_share=<token>` frames the shared route when the link names no
+ * camera of its own.
  *
  * Three switches (Steep terrain, SAC tours, Wildlife) show and hide their
  * layers. The camera and the switches are mirrored into the address bar
@@ -28,6 +31,13 @@
  * Share hands that URL on, so whoever opens it sees the same view. The URL
  * carries the reader's share token (`?share=`), which opens the page for
  * anyone holding the link, signed in or not.
+ *
+ * SHARING A ROUTE. With one of the reader's own routes opened (`?route=`
+ * or a tap on it), Share mints that route a share link (routes'
+ * share-create, the 2-D Share's endpoint) and sends it into 3-D:
+ * `/routes/s/<token>/3d/?at=…&layers=…`, the same view with the route on
+ * it, for anyone. A tap on a tour puts Share back to the plain view. The
+ * button's label says which it will send.
  *
  * Every URL comes from a data attribute on #map-3d (apps/map/map_3d.py).
  * The pure parts are in map_3d_core.js.
@@ -57,7 +67,17 @@
   // A shared link's view, else the opening camera and the default switches.
   const view = core.parseView(window.location.search);
   // Read before writeViewUrl rewrites the query string, which drops it.
-  const wantedRoute = new URLSearchParams(window.location.search).get('route');
+  const opening = new URLSearchParams(window.location.search);
+  const wantedRoute = opening.get('route');
+  // Framed only when the link has no camera: a shared view keeps its own.
+  const wantedShare = view.camera ? '' : data.routeShareToken;
+  /**
+   * The reader's own route that Share sends, when one is open. Only inside
+   * the flag, which is when the share-create template is on the page.
+   *
+   * @type {string}
+   */
+  let currentRoute = data.routeShareUrlTemplate ? (wantedRoute || '') : '';
   const camera = view.camera || core.OPENING_CAMERA;
   /** @type {Record<string, boolean>} */
   const layerState = { ...view.layers };
@@ -83,9 +103,9 @@
     return layerState[key] ? 'visible' : 'none';
   }
 
-  /** @returns {string} The URL that reproduces the current view. */
-  function viewUrl() {
-    const query = core.viewQuery(
+  /** @returns {string} The query that reproduces the current view. */
+  function currentQuery() {
+    return core.viewQuery(
       {
         center: map.getCenter(),
         zoom: map.getZoom(),
@@ -94,10 +114,19 @@
       },
       layerState,
     );
+  }
+
+  /** @returns {string} The URL that reproduces the current view. */
+  function viewUrl() {
     // The share token (apps/map/models.py Map3dShare) opens the page for
-    // whoever follows the link, past the flag and without a sign-in.
-    const share = data.shareToken ? `share=${encodeURIComponent(data.shareToken)}&` : '';
-    return `${window.location.origin}${window.location.pathname}?${share}${query}`;
+    // whoever follows the link, past the flag and without a sign-in; the
+    // route share keeps the route the page was opened on.
+    return core.pageUrl(
+      window.location.origin,
+      window.location.pathname,
+      { share: data.shareToken, routeShare: data.routeShareToken },
+      currentQuery(),
+    );
   }
 
   /** Mirror the view into the address bar, so it can be copied from there too. */
@@ -374,8 +403,17 @@
         const feature = e.features && e.features[0];
         if (!feature) return;
         const source = feature.source || feature.layer && feature.layer.source;
-        const uuid = feature.properties && feature.properties.uuid;
-        flyToBounds(core.boundsForUuid(loaded[source], uuid) || core.lineBounds(feature.geometry));
+        const props = feature.properties || {};
+        const bounds = props.uuid
+          ? core.boundsFor(loaded[source], 'uuid', props.uuid)
+          : core.boundsFor(loaded[source], 'token', props.token);
+        flyToBounds(bounds || core.lineBounds(feature.geometry));
+        // Share sends the reader's own route once one is tapped, and the
+        // view again once a tour is. A shared route has no uuid to send.
+        if (data.routeShareUrlTemplate) {
+          currentRoute = source === ROUTES_SOURCE && props.uuid ? props.uuid : '';
+          labelShare();
+        }
       });
       map.on('mouseenter', id, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; });
@@ -393,7 +431,8 @@
       if (routes) {
         loaded[ROUTES_SOURCE] = routes;
         map.getSource(ROUTES_SOURCE).setData(routes);
-        if (wantedRoute) flyToBounds(core.boundsForUuid(routes, wantedRoute));
+        if (wantedRoute) flyToBounds(core.boundsFor(routes, 'uuid', wantedRoute));
+        else if (wantedShare) flyToBounds(core.boundsFor(routes, 'token', wantedShare));
       }
     }
   });
@@ -427,18 +466,69 @@
   const shareButton = document.getElementById('map-3d-share');
   const shareStatus = document.getElementById('map-3d-share-status');
   const share = /** @type {any} */ (self).pwaShare;
-  if (shareButton && shareStatus && share && self.pwaStrings) {
-    const STRINGS = self.pwaStrings.read('map-3d-strings-template', {
+  const STRINGS = self.pwaStrings
+    ? self.pwaStrings.read('map-3d-strings-template', {
       copied: 'Link copied',
       failed: 'Could not copy the link',
-    });
+      share_view: 'Share this view',
+      share_route: 'Share this route in 3-D',
+    })
+    : null;
+
+  /** Say on the button whether Share sends the view or the open route. */
+  function labelShare() {
+    if (!shareButton || !STRINGS) return;
+    const label = currentRoute ? STRINGS.share_route : STRINGS.share_view;
+    shareButton.setAttribute('aria-label', label);
+    shareButton.setAttribute('title', label);
+  }
+
+  /**
+   * Each route's share link, minted once per page: every mint is a new
+   * RouteShare row, and one link per route is all a page needs.
+   *
+   * @type {Record<string, Promise<string>>}
+   */
+  const routeLinks = {};
+
+  /**
+   * The link Share sends: the open route's 3-D share link, or the view.
+   *
+   * @returns {Promise<string>}
+   */
+  async function shareLink() {
+    if (!currentRoute) return viewUrl();
+    const uuid = currentRoute;
+    if (!routeLinks[uuid]) {
+      const url = data.routeShareUrlTemplate.replace('__UUID__', uuid);
+      routeLinks[uuid] = share.createShare(url, data.csrfToken);
+      // A failed mint is not kept, so the next tap asks again.
+      routeLinks[uuid].catch(() => { delete routeLinks[uuid]; });
+    }
+    return core.routeShare3dUrl(await routeLinks[uuid], currentQuery());
+  }
+
+  if (shareButton && shareStatus && share && STRINGS) {
+    labelShare();
     let statusTimer = 0;
-    shareButton.addEventListener('click', async () => {
-      const outcome = await share.shareOrCopy(viewUrl(), document.title, 'url');
-      if (outcome !== 'copied' && outcome !== 'failed') return;
-      shareStatus.textContent = STRINGS[outcome];
+    /** @param {string} text */
+    const say = (text) => {
+      shareStatus.textContent = text;
       clearTimeout(statusTimer);
       statusTimer = window.setTimeout(() => { shareStatus.textContent = ''; }, 2500);
+    };
+    shareButton.addEventListener('click', async () => {
+      let link;
+      try {
+        link = await shareLink();
+      } catch (err) {
+        console.warn('map_3d: could not make a share link for the route', err);
+        say(STRINGS.failed);
+        return;
+      }
+      const outcome = await share.shareOrCopy(link, document.title, 'url');
+      if (outcome !== 'copied' && outcome !== 'failed') return;
+      say(STRINGS[outcome]);
     });
   }
 })();

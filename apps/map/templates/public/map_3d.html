@@ -16,6 +16,9 @@ map 0 px tall.
 Three switches (Steep terrain, SAC tours, Wildlife), Share, and the way back
 to /map/. Share hands on the address bar's URL, which map_3d.js keeps in step
 with the camera and the switches, so whoever opens it sees the same view.
+With one of the reader's own routes opened (?route= or a tap), Share sends
+that route instead: a route share link into 3-D, /routes/s/<token>/3d/,
+carrying the same view (apps/map/map_3d.py).
 Tilt and rotate are MapLibre's own gestures (two fingers, or right-drag), so
 the page adds no control and no icon for them.
 {% endcomment %}
@@ -47,6 +50,9 @@ the page adds no control and no icon for them.
                 data-ski-tours-url="{{ ski_tours_url }}"
                 data-routes-url="{% if show_routes %}{{ routes_url }}{% endif %}"
                 data-share-token="{{ share_token }}"
+                data-route-share-token="{{ route_share_token }}"
+                data-route-share-url-template="{{ route_share_url_template }}"
+                data-csrf-token="{% if route_share_url_template %}{{ csrf_token }}{% endif %}"
                 data-resorts-url="{{ resorts_url }}"
             >
             </div>
@@ -76,6 +82,8 @@ the page adds no control and no icon for them.
             <template id="map-3d-strings-template">
                 <span data-string="copied">{% trans "Link copied" %}</span>
                 <span data-string="failed">{% trans "Could not copy the link" %}</span>
+                <span data-string="share_view">{% trans "Share this view" %}</span>
+                <span data-string="share_route">{% trans "Share this route in 3-D" %}</span>
             </template>
         </div>
     </div>

@@ -90,7 +90,7 @@ describe('lineBounds', () => {
   });
 });
 
-describe('boundsForUuid', () => {
+describe('boundsFor', () => {
   const legs = {
     type: 'FeatureCollection',
     features: [
@@ -102,7 +102,7 @@ describe('boundsForUuid', () => {
   };
 
   it('unions every leg with the uuid, and skips other uuids and points', () => {
-    expect(core.boundsForUuid(legs, 'a')).toEqual([[7, 45.9], [7.3, 46.1]]);
+    expect(core.boundsFor(legs, 'uuid', 'a')).toEqual([[7, 45.9], [7.3, 46.1]]);
   });
 
   it.each([
@@ -111,7 +111,45 @@ describe('boundsForUuid', () => {
     [null, 'a'],
     [{}, 'a'],
   ])('is null when nothing matches (%#)', (collection, uuid) => {
-    expect(core.boundsForUuid(collection, uuid)).toBeNull();
+    expect(core.boundsFor(collection, 'uuid', uuid)).toBeNull();
+  });
+
+  it('matches a shared route by its token, which carries no uuid', () => {
+    const shared = {
+      features: [
+        { properties: { token: 't1', pending: true }, geometry: { type: 'LineString', coordinates: [[8, 46], [8.2, 46.3]] } },
+        { properties: { uuid: 't1' }, geometry: { type: 'LineString', coordinates: [[9, 47], [9.1, 47.1]] } },
+      ],
+    };
+    expect(core.boundsFor(shared, 'token', 't1')).toEqual([[8, 46], [8.2, 46.3]]);
+  });
+});
+
+describe('pageUrl', () => {
+  it('carries the Map3dShare token, then the route share, then the view', () => {
+    expect(core.pageUrl('https://s.example', '/map/3d/', { share: 'a b', routeShare: 'r1' }, 'at=1&layers=')).toBe(
+      'https://s.example/map/3d/?share=a%20b&route_share=r1&at=1&layers=',
+    );
+  });
+
+  it('leaves out an empty token', () => {
+    expect(core.pageUrl('https://s.example', '/map/3d/', { share: '', routeShare: '' }, 'at=1')).toBe(
+      'https://s.example/map/3d/?at=1',
+    );
+  });
+});
+
+describe('routeShare3dUrl', () => {
+  it('hangs 3d/ and the view off the route share link', () => {
+    expect(core.routeShare3dUrl('https://s.example/routes/s/tok/', 'at=7,46,12,60,0&layers=tours')).toBe(
+      'https://s.example/routes/s/tok/3d/?at=7,46,12,60,0&layers=tours',
+    );
+  });
+
+  it('copes with a link without its trailing slash', () => {
+    expect(core.routeShare3dUrl('https://s.example/routes/s/tok', 'at=1')).toBe(
+      'https://s.example/routes/s/tok/3d/?at=1',
+    );
   });
 });
 
