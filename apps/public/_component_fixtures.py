@@ -2430,6 +2430,33 @@ ROW_DISCLOSURE_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# SNOW-1423: the ingest report's run strip. Cells oldest first; the admin
+# links are placeholders, since a fixture names no real run.
+def _strip(states: str) -> list[dict[str, Any]]:
+    """Return run-strip cells for ``states``: . none, o ok, r running, x failed."""
+    names = {".": "none", "o": "ok", "r": "running", "x": "failed"}
+    started = datetime.datetime(2026, 11, 5, 10, 7, tzinfo=datetime.UTC)
+    return [
+        {"state": "none", "url": ""}
+        if char == "."
+        else {"state": names[char], "url": "#", "started_at": started}
+        for char in states
+    ]
+
+
+RUN_STRIP_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Hourly, all green", "context": {"strip": _strip("o" * 24)}},
+    {
+        "caption": "One failed run",
+        "context": {"strip": _strip("o" * 17 + "x" + "o" * 6)},
+    },
+    {
+        "caption": "Every six hours, one running",
+        "context": {"strip": _strip(".o....." + "o....." + "o....." + "r....")},
+    },
+)
+
+
 TOAST_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Error (HTMX banner shape) — no CTA, not dismissible",

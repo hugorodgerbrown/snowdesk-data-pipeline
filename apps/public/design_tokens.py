@@ -85,6 +85,7 @@ from apps.public._component_fixtures import (
     ROUTE_PROFILE_VARIANTS,
     ROUTE_RAIL_VARIANTS,
     ROW_DISCLOSURE_VARIANTS,
+    RUN_STRIP_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
     SEASON_CELL_VARIANTS,
     SEASON_SCRUBBER_VARIANTS,
@@ -1034,6 +1035,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_callout.html",
         variants=CALLOUT_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="run-strip",
+        label="Run strip",
+        description=(
+            "One cell per slice of a time window, coloured by the worst "
+            "scheduled run in it: success, running or failed (taller). An "
+            "empty slice is a dot. Each cell links to its run in the admin. "
+            "The staff ingest report draws one per feed (SNOW-1423)."
+        ),
+        kind="components",
+        partial="includes/_run_strip.html",
+        variants=RUN_STRIP_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

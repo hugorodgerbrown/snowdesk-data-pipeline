@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from typing import Any
 
 import pytest
@@ -39,6 +40,7 @@ from django.test import Client, override_settings
 from django.urls import reverse
 
 from apps.accounts.models import Account
+from apps.core.models import CommandRun
 from apps.core.sw_shell import cache_version
 from apps.public.design_tokens import (
     LIBRARY_GROUPS,
@@ -47,7 +49,12 @@ from apps.public.design_tokens import (
     Token,
 )
 from apps.routes.models import Route
-from tests.factories import AccountFactory, RouteFactory, UserFactory
+from tests.factories import (
+    AccountFactory,
+    CommandRunFactory,
+    RouteFactory,
+    UserFactory,
+)
 from track.slope_samples import stride_coordinates
 from track.terrain_detail import COLUMNS
 
@@ -675,3 +682,87 @@ class TestRouteTerrainPage:
             kwargs={"route_uuid": "00000000-0000-4000-8000-000000000000"},
         )
         assert staff_client.get(url).status_code == 404
+
+
+@pytest.mark.django_db
+class TestIngestReportPage:
+    """The staff ingest report at /_ingest/ and its HTMX panel (SNOW-1423)."""
+
+    def test_anonymous_user_redirected_to_admin_login(self) -> None:
+        """A logged-out user is bounced to the admin login page."""
+        response = Client().get(reverse("public:ingest_report"))
+        assert response.status_code == 302
+        assert "/admin/login/" in response["Location"]
+
+    def test_non_staff_user_redirected(self, regular_user: Account) -> None:
+        """A logged-in non-staff user is bounced too."""
+        client = Client()
+        client.force_login(regular_user.user)
+        response = client.get(reverse("public:ingest_report"))
+        assert response.status_code == 302
+
+    def test_staff_sees_every_feed_with_its_own_labels(
+        self, staff_client: Client
+    ) -> None:
+        """Each feed renders its own figures, not one fixed pair."""
+        CommandRunFactory.create(
+            command="backfill_weather",
+            invoked_via=CommandRun.INVOKED_VIA.SCHEDULER,
+            counts={"enqueued": 50},
+        )
+        response = staff_client.get(reverse("public:ingest_report"))
+        assert response.status_code == 200
+        html = response.content.decode()
+        text = {}
+        for chunk in html.split('data-testid="ingest-feed"')[1:]:
+            key = re.search(r'data-feed="(\w+)"', chunk)
+            assert key is not None
+            metrics = re.findall(
+                r'data-testid="ingest-metric">\s*<b[^>]*>(\d+)</b>\s*(\w+)\s*</span>',
+                chunk,
+            )
+            text[key.group(1)] = " · ".join(f"{n} {label}" for n, label in metrics)
+        assert text["forecast"] == "0 refreshed · 0 places"
+        assert text["backfill"] == "50 queued · 0 failed"
+        assert text["slf"] == "0 new · 0 changed"
+        assert response.context["report"]["window"] == "24h"
+
+    def test_window_param(self, staff_client: Client) -> None:
+        """?window=7d builds the week's report."""
+        response = staff_client.get(reverse("public:ingest_report"), {"window": "7d"})
+        assert response.status_code == 200
+        assert response.context["report"]["window"] == "7d"
+
+    def test_unknown_window_is_400(self, staff_client: Client) -> None:
+        """A window the report does not know is a bad request."""
+        response = staff_client.get(reverse("public:ingest_report"), {"window": "9y"})
+        assert response.status_code == 400
+
+    def test_page_polls_the_panel(self, staff_client: Client) -> None:
+        """The page refreshes its panel every minute and loads htmx."""
+        html = staff_client.get(reverse("public:ingest_report")).content.decode()
+        assert 'hx-trigger="every 60s"' in html
+        assert reverse("public:ingest_report_panel") in html
+        assert "js/htmx" in html
+
+    def test_panel_rejects_a_plain_request(self, staff_client: Client) -> None:
+        """The fragment view is HTMX-only."""
+        response = staff_client.get(reverse("public:ingest_report_panel"))
+        assert response.status_code == 400
+
+    def test_panel_renders_the_fragment(self, htmx_staff_client: Client) -> None:
+        """Under HTMX the panel returns the inner HTML, no page shell."""
+        response = htmx_staff_client.get(
+            reverse("public:ingest_report_panel"), {"window": "1h"}
+        )
+        assert response.status_code == 200
+        html = response.content.decode()
+        assert 'data-testid="ingest-feeds"' in html
+        assert "<html" not in html
+
+    def test_panel_unknown_window_is_400(self, htmx_staff_client: Client) -> None:
+        """The panel validates the window as the page does."""
+        response = htmx_staff_client.get(
+            reverse("public:ingest_report_panel"), {"window": "x"}
+        )
+        assert response.status_code == 400

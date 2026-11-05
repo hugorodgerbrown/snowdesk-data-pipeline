@@ -69,6 +69,8 @@ def _htmx_pages() -> dict[str, tuple[Client, str]]:
     organiser_client.force_login(organiser)
     recipient_client = Client()
     recipient_client.force_login(recipient)
+    staff_client = Client()
+    staff_client.force_login(UserFactory.create())
 
     route: Route = RouteFactory.create(user=organiser)
     # A week out rather than a fixed date: a share link's life is measured
@@ -99,6 +101,8 @@ def _htmx_pages() -> dict[str, tuple[Client, str]]:
             reverse("trips:share_page", args=[trip.share_token]),
         ),
         "trips_list": (organiser_client, reverse("trips:list")),
+        # SNOW-1423: the staff ingest report polls its panel every minute.
+        "ingest_report": (staff_client, reverse("public:ingest_report")),
     }
 
 
@@ -119,7 +123,7 @@ class TestHtmxIsLoadedWhereItIsUsed:
 
     @pytest.mark.parametrize(
         "label",
-        ["trip_new", "trip_detail", "trip_share_page"],
+        ["trip_new", "trip_detail", "trip_share_page", "ingest_report"],
     )
     def test_the_trips_pages_still_render_the_attributes(self, label: str) -> None:
         """The guard above is only worth anything if these still post.

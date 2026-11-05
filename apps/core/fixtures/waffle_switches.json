@@ -66,6 +66,11 @@
       "active": true
     },
     {
+      "name": "schedule_check_ingest",
+      "note": "SNOW-1423: the scheduled job check_ingest, hourly at :50 UTC (schedule.py): raises when any feed in the ingest report is red, so Sentry alerts. Off skips its runs from the next firing; on resumes them.",
+      "active": true
+    },
+    {
       "name": "schedule_render_ski_tours",
       "note": "SNOW-1316: the scheduled job render_ski_tours --commit, daily at 05:30 UTC (schedule.py): the reference-data service walks and draws every SAC tour not yet walked, then applies them to this host. Off skips its runs from the next firing; on resumes them.",
       "active": true

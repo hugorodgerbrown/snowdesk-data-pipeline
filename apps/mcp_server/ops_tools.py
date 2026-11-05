@@ -19,8 +19,8 @@ Two families:
   ``DEPLOY_STEPS`` file ``bin/cut-release`` ships with each release against
   the register.
 * **Health** — ``build_info``, ``ingest_status``, ``bulletin_coverage``,
-  ``task_queue_health``, ``weather_freshness``, ``location_estate_health``
-  and ``feature_flags``.
+  ``task_queue_health``, ``weather_freshness``, ``location_estate_health``,
+  ``ingest_report`` (SNOW-1423) and ``feature_flags``.
 * **Commands** — ``list_runnable_commands``, ``run_command`` (writes:
   queues an ``mcp_runnable`` command on the task worker) and
   ``get_command_task``, defined in ``apps.mcp_server.command_tools`` and
@@ -71,6 +71,7 @@ from django.utils import timezone
 from apps.bulletins.models import Bulletin, PipelineRun, RegionDayRating
 from apps.core.command_register import _environment
 from apps.core.models import CommandRun
+from apps.core.task_queue import task_queue_health
 from apps.locations.models import Location
 from apps.mcp_server.command_tools import COMMAND_TOOLS
 from apps.mcp_server.docs_corpus import ops_corpus
@@ -83,6 +84,7 @@ from apps.mcp_server.tools import (
     _optional_iso_date,
     _require_str,
 )
+from apps.public.ingest_report import WINDOWS, as_json, build_report, parse_window
 from apps.regions.models import MicroRegion
 from apps.weather.models import Weather
 
@@ -802,58 +804,29 @@ def _handle_bulletin_coverage(arguments: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def task_queue_health(*, now: dt.datetime | None = None) -> dict[str, Any]:
-    """Return the background task queue's backlog and recent failures.
+def ingest_report(window: str = "24h") -> dict[str, Any]:
+    """Return what each scheduled feed pulled in over a window (SNOW-1423).
 
-    Only the database backend (production) keeps rows. Elsewhere tasks run
-    inline in the request, so there is no queue to report.
+    The same report as the staff page at ``/_ingest/``.
 
     Args:
-        now: The reference time; defaults to now. A test seam.
+        window: ``1h``, ``24h`` or ``7d``.
 
     Returns:
-        ``backend``, and for the database backend ``by_status``,
-        ``oldest_ready_age_seconds`` and ``recent_failures``; plus
-        ``summary``.
+        The report from ``apps.public.ingest_report.build_report``, with
+        every datetime as an ISO string; its ``summary`` names the red feeds.
 
     """
-    backend = settings.TASKS["default"]["BACKEND"]
-    if backend != "django_tasks_db.DatabaseBackend":
-        return {
-            "backend": backend,
-            "summary": f"Tasks run inline ({backend.rsplit('.', 1)[-1]}); no queue.",
-        }
-    # Imported here: the app is installed everywhere, but only this branch
-    # reads its table.
-    from django_tasks_db.models import DBTaskResult
+    return as_json(build_report(window, now=timezone.now()))
 
-    now = now or timezone.now()
-    by_status = dict(DBTaskResult.objects.values_list("status").annotate(n=Count("id")))
-    oldest = (
-        DBTaskResult.objects.ready()
-        .order_by("enqueued_at")
-        .values_list("enqueued_at", flat=True)
-    ).first()
-    failures = (
-        DBTaskResult.objects.failed()
-        .filter(finished_at__gte=now - RECENT)
-        .values("task_path", "exception_class_path")
-        .annotate(n=Count("id"))
-        .order_by("-n")[:10]
-    )
-    oldest_age = round((now - oldest).total_seconds()) if oldest else None
-    failed_24h = sum(row["n"] for row in failures)
-    return {
-        "backend": backend,
-        "by_status": by_status,
-        "oldest_ready_age_seconds": oldest_age,
-        "recent_failures": list(failures),
-        "summary": (
-            f"{by_status.get('READY', 0)} ready, oldest "
-            f"{oldest_age if oldest_age is not None else 0}s; "
-            f"{failed_24h} failure(s) in 24h."
-        ),
-    }
+
+def _handle_ingest_report(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Validate ``ingest_report`` arguments and call it."""
+    try:
+        window = parse_window(_optional_str(arguments, "window"))
+    except ValueError as exc:
+        raise ToolError(str(exc)) from exc
+    return ingest_report(window)
 
 
 def weather_freshness(*, today: dt.date | None = None) -> dict[str, Any]:
@@ -1414,6 +1387,28 @@ OPS_TOOLS: dict[str, ToolSpec] = {
         ),
         input_schema=_NO_ARGUMENTS,
         handler=_no_arguments(weather_freshness),
+    ),
+    "ingest_report": ToolSpec(
+        name="ingest_report",
+        description=(
+            "Return what each scheduled feed pulled in over the last hour, "
+            "day or week: bulletins per provider, weather, the backfill, "
+            "the estate mirror, SAC tours, tour drawings and rest zones. "
+            "Per feed: status (ok, warn, red, off), its figures, its runs, "
+            "the newest data and the next run; plus the runs that changed "
+            "something or failed, and the task queue."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "window": {
+                    "type": "string",
+                    "enum": list(WINDOWS),
+                    "description": "How far back to look; default 24h.",
+                },
+            },
+        },
+        handler=_handle_ingest_report,
     ),
     "location_estate_health": ToolSpec(
         name="location_estate_health",

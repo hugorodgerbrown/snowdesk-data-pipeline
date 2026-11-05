@@ -1,0 +1,38 @@
+{% extends "public/base.html" %}
+{% load static %}
+
+{# SNOW-1423: sharing=False. Staff-only ops page (staff-gated, see       #}
+{# apps/public/debug_views.py's module docstring); nothing to share.     #}
+{% block page_meta %}
+    {% include "includes/_page_meta.html" with title="Ingest" description="Staff-only report of what the scheduled jobs pulled in." sharing=False %}
+{% endblock page_meta %}
+
+{% block content %}
+    <main class="max-w-6xl w-full mx-auto px-4 py-6 space-y-4">
+        <header class="flex flex-wrap items-center gap-3">
+            <h1 class="text-2xl font-semibold text-text-1">Ingest</h1>
+            <nav class="inline-flex bg-chip rounded-pill p-0.5 text-sm" aria-label="Window">
+                {% for key in windows %}
+                    <a
+                        href="?window={{ key }}"
+                        class="px-3 py-1 rounded-pill font-semibold {% if key == report.window %}bg-card text-text-1{% else %}text-text-2{% endif %}"
+                        {% if key == report.window %}aria-current="page"{% endif %}
+                    >{{ key }}</a>
+                {% endfor %}
+            </nav>
+        </header>
+        <div
+            id="ingest-report"
+            hx-get="{% url 'public:ingest_report_panel' %}?window={{ report.window }}"
+            hx-trigger="every 60s"
+            hx-swap="innerHTML"
+            hx-indicator="#ingest-report-live"
+        >
+            {% include "_debug/_ingest_report_panel.html" %}
+        </div>
+    </main>
+{% endblock content %}
+
+{% block extra_js %}
+    <script src="{% static 'js/htmx.min.js' %}"></script>
+{% endblock extra_js %}
