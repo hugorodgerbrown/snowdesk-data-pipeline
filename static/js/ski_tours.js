@@ -39,6 +39,17 @@
  *   savedBlock(sac)     — a saved copy's block for the panel: the credit
  *   guidePill(sac)      — a saved copy's "SAC guide ↗" pill for its title
  *                         (SNOW-1354), or null
+ *   setSuppressed(reason, active)
+ *                       — SNOW-1421: Conditions mode holds both parts off
+ *                         the map (map_mode.js); never writes a switch
+ *
+ * THE MODE (SNOW-1421). The tours and summits are Terrain's own layers, so
+ * Conditions holds them off the map. Each part's visibility asks
+ * window.pwaMapModeState (map.js, which knows the boot mode before this
+ * file runs), so the first install on a Conditions boot is already hidden
+ * however the stored switches stand; the hook covers later changes. A tour
+ * opened in the route panel is drawn by the panel's own layers, so it still
+ * shows in Conditions.
  */
 
 // @ts-check
@@ -64,6 +75,11 @@
   const SAVE_URL = (config.dataset.saveUrl || '').replace(NIL_UUID, '__UUID__');
   const SIGNIN_URL = config.dataset.signinUrl || '';
   const SAVE_ELIGIBLE = config.dataset.saveEligible === 'true';
+
+  // The map mode's suppression reason (layer_visibility_core.js).
+  const MAP_MODE_REASON = self.pwaLayerVisibilityCore
+    ? self.pwaLayerVisibilityCore.SUPPRESSION.MAP_MODE
+    : 'map-mode';
 
   const SOURCE = 'ski-tours';
   // A way up and a way down, a layer each, so map_state.js can name them.
@@ -138,9 +154,15 @@
     return (window.snowdeskMapState && window.snowdeskMapState.map) || null;
   }
 
-  /** @returns {boolean} Whether either part is switched on. */
+  /**
+   * Whether either part is switched on and not held by the map's mode,
+   * so a Conditions map never fetches tours it cannot draw (SNOW-1421).
+   *
+   * @returns {boolean}
+   */
   function shown() {
-    return !!(window.pwaSkiRoutes && window.pwaSkiRoutes.isShown());
+    const on = !!(window.pwaSkiRoutes && window.pwaSkiRoutes.isShown());
+    return on && !(held('ski_tours') && held('ski_summits'));
   }
 
   /** @returns {boolean} Whether a placement mode (draw mode) has the map. */
@@ -149,17 +171,27 @@
   }
 
   /**
-   * A part's layers' visibility: as its switch says, and hidden while a
-   * placement mode has the map. PlacementFocus hides only the layers that
-   * exist when it starts, and the tours are often added later, on the
-   * first zoom past z9.
+   * Whether the map's mode holds a part off the map (SNOW-1421).
+   *
+   * @param {'ski_tours'|'ski_summits'} key
+   * @returns {boolean}
+   */
+  function held(key) {
+    return !!(window.pwaMapModeState && window.pwaMapModeState.isSuppressed(key));
+  }
+
+  /**
+   * A part's layers' visibility: as its switch says, hidden while a
+   * placement mode has the map, and hidden while the map's mode holds it.
+   * PlacementFocus hides only the layers that exist when it starts, and the
+   * tours are often added later, on the first zoom past z9.
    *
    * @param {'ski_tours'|'ski_summits'} key
    * @returns {'visible'|'none'}
    */
   function partVisibility(key) {
     const on = window.pwaSkiRoutes && window.pwaSkiRoutes.isPartShown(key);
-    return on && !focused() ? 'visible' : 'none';
+    return on && !focused() && !held(key) ? 'visible' : 'none';
   }
 
   /** Show or hide each part's layers, once they exist. */
@@ -728,6 +760,7 @@
   function openSummit(summit) {
     const map = getMap();
     if (!summit || !summit.key || !map) return;
+    toTerrain();
     if (navigator.onLine === false) {
       state.summitPending = null;
       window.MapSheet.toast(STRINGS['tours-offline']);
@@ -743,8 +776,22 @@
     }
   }
 
-  /** "Find a route": the routes panel closes, the tours come on, the hint shows. */
+  /**
+   * Move the map to Terrain, where the tours draw (SNOW-1421). Finding a
+   * tour is a planning task, and in Conditions the mode holds the tours,
+   * so a hint to tap one would point at nothing. A no-op off the
+   * map_modes flag, where window.pwaMapMode is not defined.
+   *
+   * @returns {void}
+   */
+  function toTerrain() {
+    const mode = window.pwaMapMode;
+    if (mode && !mode.isTerrain()) mode.set('terrain');
+  }
+
+  /** "Find a route": the map goes to Terrain, the routes panel closes, the tours come on, the hint shows. */
   function find() {
+    toTerrain();
     window.pwaMapOverlays?.closeAll();
     window.pwaSkiRoutes?.show();
     showHint(true);
@@ -803,5 +850,18 @@
      */
     savedBlock: (props) => (claimTemplate ? buildClaim(props, { saved: true }) : null),
     guidePill: guidePill,
+    /**
+     * SNOW-1421: hold or release both parts for the map's mode, without
+     * writing either switch. Only the mode's reason is taken.
+     *
+     * @param {string} reason A ``pwaLayerVisibilityCore.SUPPRESSION`` value.
+     * @param {boolean} active
+     */
+    setSuppressed: (reason, active) => {
+      if (reason !== MAP_MODE_REASON || !window.pwaMapModeState) return;
+      window.pwaMapModeState.hold('ski_tours', active);
+      window.pwaMapModeState.hold('ski_summits', active);
+      document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
+    },
   });
 })();

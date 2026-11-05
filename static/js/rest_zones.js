@@ -37,12 +37,21 @@
  *   hide()       — the switch off
  *   isEnabled()  — whether the switch is on
  *   MINZOOM      — the zoom the zones are drawn from
+ *   setSuppressed(reason, active)
+ *                — SNOW-1421: Conditions mode holds the zones off the map
+ *                  (map_mode.js); never writes the switch
  *
  * A PLACEMENT. Placing a pin or drawing a route clears the map of every
  * other overlay (map_placement_focus.js), but never of these: the zones
  * are legally binding, and still there while something is placed. While
  * a route is drawn they show even with the switch off; once it is saved
  * or drawing stops, the switch decides again.
+ *
+ * THE MODE (SNOW-1421). The zones are Terrain's own layer, so Conditions
+ * holds them off the map — except while a route is drawn, which asks for
+ * them in either mode. `visibility()` asks window.pwaMapModeState (map.js,
+ * which knows the boot mode before this file runs), so the first install on
+ * a Conditions boot is already hidden; the hook covers later changes.
  */
 
 // @ts-check
@@ -66,6 +75,10 @@
   const FILL = 'rest-zones-fill';
   const LINE = 'rest-zones-line';
   const LOAD_DEBOUNCE_MS = 250;
+  // The map mode's suppression reason (layer_visibility_core.js).
+  const MAP_MODE_REASON = self.pwaLayerVisibilityCore
+    ? self.pwaLayerVisibilityCore.SUPPRESSION.MAP_MODE
+    : 'map-mode';
   // The key the layers menu's row persists under; the literal is the
   // fallback for a page whose map_state.js predates the row.
   const STORAGE_KEY = (window.snowdeskMapState
@@ -144,16 +157,21 @@
     }
   }
 
+  /** @returns {boolean} Whether the map's mode holds the zones off the map (SNOW-1421). */
+  function held() {
+    return !!(window.pwaMapModeState && window.pwaMapModeState.isSuppressed('rest_zones'));
+  }
+
   /**
-   * Whether the zones are drawn: the switch is on, or a route is being
-   * drawn. Draw mode shows them whatever the switch says, and the switch
-   * decides again once the route is saved or drawing stops (Hugo,
-   * 3 Nov 2026).
+   * Whether the zones are drawn: the switch is on and the map's mode does
+   * not hold them, or a route is being drawn. Draw mode shows them whatever
+   * the switch and the mode say, and they decide again once the route is
+   * saved or drawing stops (Hugo, 3 Nov 2026).
    *
    * @returns {boolean}
    */
   function shown() {
-    return isEnabled() || state.drawing;
+    return (isEnabled() && !held()) || state.drawing;
   }
 
   /** @returns {boolean} Whether a placement mode (a pin, a route) has the map. */
@@ -403,7 +421,7 @@
     const map = getMap();
     // While a pin is placed the zones are drawn but take no tap: the tap
     // belongs to the placement.
-    if (!map || !isEnabled() || placing() || !map.getLayer(FILL)) return false;
+    if (!map || !isEnabled() || held() || placing() || !map.getLayer(FILL)) return false;
     if (map.getZoom() < core.MINZOOM) return false;
     const zone = core.pickZone(map.queryRenderedFeatures([point.x, point.y], {
       layers: [FILL, LINE],
@@ -458,5 +476,19 @@
     hide: () => setEnabled(false),
     isEnabled: isEnabled,
     MINZOOM: core.MINZOOM,
+    /**
+     * SNOW-1421: hold or release the zones for the map's mode, without
+     * writing the switch. Only the mode's reason is taken.
+     *
+     * @param {string} reason A ``pwaLayerVisibilityCore.SUPPRESSION`` value.
+     * @param {boolean} active
+     */
+    setSuppressed: (reason, active) => {
+      if (reason !== MAP_MODE_REASON || !window.pwaMapModeState) return;
+      window.pwaMapModeState.hold('rest_zones', active);
+      applyVisibility();
+      if (shown()) scheduleLoad();
+      document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
+    },
   });
 })();

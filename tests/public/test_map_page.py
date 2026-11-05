@@ -3101,3 +3101,183 @@ def test_map_modes_toggle_is_absent_otherwise(signed_in: bool, flag: bool) -> No
         assert marker not in content, marker
     assert 'data-map-modes-enabled="false"' in content
     assert 'id="map-today-control"' in content
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1421: a layers menu per mode, behind the map_modes flag
+# ---------------------------------------------------------------------------
+
+
+def _menu_as(*, flag: bool) -> str:
+    """Render /map/ signed in, with the layers that need flags or tiles."""
+    client = Client()
+    client.force_login(UserFactory.create())
+    with (
+        override_flag("map_modes", active=flag),
+        override_flag("route_drawing", active=True),
+        override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL),
+    ):
+        return client.get(reverse("public:map")).content.decode()
+
+
+def _menu_header(content: str) -> str:
+    """The layers menu's pinned header, up to level one."""
+    start = content.index('class="basemap-menu-header"')
+    return content[start : content.index('data-layers-page="main"', start)]
+
+
+def _mode_block(main: str, mode: str) -> str:
+    """One mode's own block on level one, from its marker to its list's end."""
+    start = main.index(f'data-mode-only="{mode}"')
+    return main[start : main.index("</ul>", start)]
+
+
+@pytest.mark.django_db
+def test_layers_menu_header_is_the_mode_switch_behind_the_flag() -> None:
+    """The header is a Conditions | Terrain control, each segment a button
+    with aria-pressed, in place of the "Map layers" title and the count.
+    The phone's close button stays.
+    """
+    header = _menu_header(_menu_as(flag=True))
+    tabs = re.findall(r'data-map-mode-tab="(\w+)"\s+aria-pressed="(\w+)"', header)
+    assert tabs == [("dated", "true"), ("terrain", "false")]
+    assert header.index(">Conditions<") < header.index(">Terrain<")
+    assert ">Map layers<" not in header
+    assert "data-layers-count" not in header
+    assert "data-layers-close" in header
+
+
+@pytest.mark.django_db
+def test_layers_menu_lists_each_mode_then_the_shared_rows() -> None:
+    """Level one, flag on (Hugo, 5 Nov 2026): Conditions' own block
+    (Avalanche bulletins, Sync problem terrain, Weather), Terrain's own
+    block (Steep terrain, SAC ski touring, Wildlife rest zones), then the
+    shared Resorts, Regions and Basemap, then "User data". "Reference data"
+    goes.
+    """
+    main = _layers_page(_menu_as(flag=True), "main")
+    markers = [
+        'data-mode-only="dated"',
+        'data-layers-open="bulletins"',
+        'data-overlay-key="problem_terrain"',
+        'data-overlay-key="weather"',
+        'data-mode-only="terrain"',
+        'data-overlay-key="terrain"',
+        'data-layer-master="ski_touring"',
+        'data-overlay-key="rest_zones"',
+        'data-overlay-key="resorts"',
+        'data-layers-open="boundaries"',
+        'data-layers-open="basemap"',
+        ">User data<",
+        'data-overlay-key="community_reports"',
+        'data-overlay-key="favourites"',
+        'data-overlay-key="routes"',
+        'data-overlay-key="downloads"',
+    ]
+    positions = [main.index(marker) for marker in markers]
+    assert positions == sorted(positions), markers
+    assert ">Reference data<" not in main
+    assert ">Your data<" not in main
+    dated = _mode_block(main, "dated")
+    terrain = _mode_block(main, "terrain")
+    for own in ('data-overlay-key="weather"', 'data-overlay-key="problem_terrain"'):
+        assert own in dated and own not in terrain
+    for own in ('data-overlay-key="terrain"', 'data-overlay-key="rest_zones"'):
+        assert own in terrain and own not in dated
+    # The shared rows are in neither block.
+    for shared in (
+        'data-overlay-key="resorts"',
+        'data-overlay-key="community_reports"',
+    ):
+        assert shared not in dated and shared not in terrain
+
+
+@pytest.mark.django_db
+def test_sync_problem_terrain_is_a_first_level_row_behind_the_flag() -> None:
+    """The problem-terrain switch leaves the bulletins' page for a switch
+    row of its own, gated at z12.
+    """
+    content = _menu_as(flag=True)
+    main = _layers_page(content, "main")
+    row = main[main.index('data-zoom-gate="problem_terrain"') :]
+    row = row[: row.index("</li>")]
+    assert 'data-overlay-key="problem_terrain"' in row
+    assert ">Sync problem terrain<" in row
+    assert "data-layer-switch" in row
+    assert 'data-overlay-key="problem_terrain"' not in _layers_page(
+        content, "bulletins"
+    )
+    assert "Sync with map terrain" not in content
+
+
+@pytest.mark.django_db
+def test_regions_is_named_regions_behind_the_flag() -> None:
+    """Boundaries is "Regions", on level one and on its page's header."""
+    content = _menu_as(flag=True)
+    main = _layers_page(content, "main")
+    row = main[main.index('data-layers-open="boundaries"') :]
+    assert ">Regions<" in row[: row.index("</li>")]
+    page = _layers_page(content, "boundaries")
+    assert 'class="basemap-menu-page-title">Regions<' in page
+    assert ">Boundaries<" not in main + page
+
+
+@pytest.mark.django_db
+def test_layers_menu_is_unchanged_without_the_flag() -> None:
+    """Off the flag: "Map layers" and the count, one list in the order of
+    3 Nov 2026, the problem-terrain switch on the bulletins' page, no tabs
+    and no mode blocks.
+    """
+    content = _menu_as(flag=False)
+    header = _menu_header(content)
+    assert ">Map layers<" in header
+    assert "data-layers-count" in header
+    assert "data-map-mode-tab" not in content
+    assert "data-mode-only" not in content
+    main = _layers_page(content, "main")
+    markers = [
+        ">Reference data<",
+        'data-layers-open="bulletins"',
+        'data-overlay-key="weather"',
+        'data-layers-open="boundaries"',
+        'data-overlay-key="community_reports"',
+        'data-overlay-key="resorts"',
+        'data-overlay-key="terrain"',
+        'data-layer-master="ski_touring"',
+        'data-overlay-key="rest_zones"',
+        'data-layers-open="basemap"',
+        ">Your data<",
+        'data-overlay-key="favourites"',
+    ]
+    positions = [main.index(marker) for marker in markers]
+    assert positions == sorted(positions), markers
+    assert 'data-overlay-key="problem_terrain"' not in main
+    bulletins = _layers_page(content, "bulletins")
+    assert 'data-overlay-key="problem_terrain"' in bulletins
+    assert ">Sync with map terrain<" in bulletins
+    assert ">Boundaries<" in main
+
+
+def test_map_css_hides_the_other_modes_rows_under_the_mode() -> None:
+    """The hiding is the stylesheet's alone (jsdom cannot compute it): each
+    mode's ``[data-mode-only]`` rows go under the other mode's
+    ``:root[data-map-mode]``, which only the flag's page carries, and the
+    Terrain-era dimming of dated rows is gone.
+    """
+    css = _uncommented_css("static", "css", "map.css")
+    rule = re.search(
+        r':root\[data-map-mode="dated"\] #basemap-menu \[data-mode-only="terrain"\],\s*'
+        r':root\[data-map-mode="terrain"\] #basemap-menu \[data-mode-only="dated"\]\s*'
+        r"\{\s*display:\s*none;\s*\}",
+        css,
+    )
+    assert rule, "the per-mode hide rule is missing"
+    # Nothing hides a mode's rows outside :root[data-map-mode].
+    for selector in re.findall(r"([^{}]*\[data-mode-only[^{}]*)\{", css):
+        for part in selector.split(","):
+            if "display" in part:
+                continue
+            assert (
+                ":root[data-map-mode" in part or ".basemap-menu-mode-block" in part
+            ), part
+    assert "data-map-mode-disabled" not in css

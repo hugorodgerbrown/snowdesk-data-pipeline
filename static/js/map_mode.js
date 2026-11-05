@@ -1,9 +1,10 @@
 /*
- * static/js/map_mode.js — the map's Dated / Terrain toggle (SNOW-1394).
+ * static/js/map_mode.js — the map's Conditions / Terrain toggle (SNOW-1394,
+ * SNOW-1421). Conditions is the `dated` mode in code.
  *
- * One control in the date row, two segments: the date, with its day steps
- * either side, and a mountain. The active segment carries the label and the
- * inactive one collapses to an icon:
+ * Two controls for one mode. The first is in the date row, two segments:
+ * the date, with its day steps either side, and a mountain. The active
+ * segment carries the label and the inactive one collapses to an icon:
  *
  *     Dated:    [ ‹ Today › | ⛰ ]       Terrain:  [ 📅 | ⛰ Terrain ]
  *
@@ -14,19 +15,27 @@
  * collapses to its calendar glyph, and a tap on it comes back to the dated
  * map on the day the reader left, rather than opening the calendar.
  *
+ * The second is the layers menu's header (SNOW-1421): a Conditions |
+ * Terrain segmented control (`[data-map-mode-tab]`, each a button with
+ * aria-pressed). A tap there changes the map live, exactly as the date row
+ * does, and the two stay in step because both are drawn from one `mode`.
+ *
  * What the mode does is the pure module's (map_mode_core.js); this one
  * applies it:
  *
- *   - SUPPRESSION, NEVER PREFERENCE. It calls each dated overlay's
- *     setSuppressed hook (window.pwaBulletinsLayer, pwaWeatherLayer,
- *     pwaCommunityReportsOverlay, pwaBulletinTerrain) with
- *     SUPPRESSION.MAP_MODE, and never a show() or hide(), so no stored
- *     choice moves. map.js read the boot mode itself before installing a
- *     layer, so a page opened on ?mode=terrain never flashes the dated
- *     layers; this module calls the hooks only on a change.
- *   - THE LAYERS MENU. A dated row shows disabled in Terrain, and a tap on
- *     it does nothing (Hugo, 2 Nov 2026). Caught in the capture phase, so
- *     the picker's own handler never hears it.
+ *   - SUPPRESSION, NEVER PREFERENCE. It calls the setSuppressed hook of
+ *     every layer one mode has to itself (window.pwaBulletinsLayer,
+ *     pwaWeatherLayer, pwaBulletinTerrain for Conditions; pwaTerrainFilter,
+ *     pwaSkiTours, pwaRestZones for Terrain) with SUPPRESSION.MAP_MODE, and
+ *     never a show() or hide(), so no stored choice moves. map.js read the
+ *     boot mode itself before installing a layer, and ski_tours.js and
+ *     rest_zones.js read it from map.js, so neither mode's first paint
+ *     flashes the other's layers; this module calls the hooks only on a
+ *     change.
+ *   - THE LAYERS MENU. Each mode's own rows carry data-mode-only, and
+ *     map.css hides the other mode's under <html data-map-mode>; nothing
+ *     here touches a row. A tab tap also brings the menu back to its first
+ *     level, which is what the tabs choose between.
  *   - THE URL AND THIS DEVICE. ?mode=terrain is written with every other
  *     parameter kept, and the mode is stored, so a link and a reload both
  *     reproduce it. A date write keeps it (map_shared.js writeUrlDateParam).
@@ -58,9 +67,9 @@
   const dateLabel = dateToggle ? dateToggle.getAttribute('aria-label') || '' : '';
   const STRINGS = self.pwaStrings
     ? self.pwaStrings.read('map-mode-strings-template', {
-      'back-to-date': 'Back to the dated map',
+      'back-to-date': 'Back to Conditions',
     })
-    : { 'back-to-date': 'Back to the dated map' };
+    : { 'back-to-date': 'Back to Conditions' };
 
   /**
    * Read the stored mode; private mode can throw.
@@ -91,21 +100,26 @@
 
   let mode = core.readMode(location.search, readStored());
 
-  /**
-   * The dated rows of the layers menu, as they are now. Queried each time:
-   * the menu is server-rendered once, but a row a page lacks is simply
-   * absent.
-   *
-   * @returns {Element[]}
-   */
-  const datedRows = () => {
-    const menu = document.getElementById('basemap-menu');
-    if (!menu) return [];
-    return core.DATED_ROW_SELECTORS.flatMap((selector) => Array.from(menu.querySelectorAll(selector)));
-  };
+  /** The layers menu's Conditions | Terrain segments (SNOW-1421). */
+  const tabs = /** @type {HTMLElement[]} */ (Array.from(document.querySelectorAll('[data-map-mode-tab]')));
 
   /**
-   * Draw the control and the menu for the current mode. Touches no layer.
+   * Every layer one mode has to itself, and the hook that holds it. The
+   * bulletins' hook holds their grouping outline (`l3`) too, and the ski
+   * tours' both of SAC's parts. Read lazily: map.js, ski_tours.js and
+   * rest_zones.js publish them, and the last two load after this file.
+   */
+  const HOOKS = Object.freeze([
+    ['bulletins', () => window.pwaBulletinsLayer],
+    ['weather', () => window.pwaWeatherLayer],
+    ['problem_terrain', () => window.pwaBulletinTerrain],
+    ['terrain_filter', () => window.pwaTerrainFilter],
+    ['ski_tours', () => window.pwaSkiTours],
+    ['rest_zones', () => window.pwaRestZones],
+  ]);
+
+  /**
+   * Draw both controls for the current mode. Touches no layer and no row.
    *
    * @returns {void}
    */
@@ -113,31 +127,31 @@
     const terrain = mode === core.MODES.TERRAIN;
     document.documentElement.dataset.mapMode = mode;
     terrainButton.setAttribute('aria-pressed', terrain ? 'true' : 'false');
+    for (const tab of tabs) {
+      tab.setAttribute('aria-pressed', tab.dataset.mapModeTab === mode ? 'true' : 'false');
+    }
     if (dateToggle) {
       dateToggle.setAttribute('aria-label', terrain ? STRINGS['back-to-date'] : dateLabel);
       // The calendar cannot open from Terrain, so it does not say it can.
       if (terrain) dateToggle.removeAttribute('aria-controls');
       else dateToggle.setAttribute('aria-controls', 'map-calendar');
     }
-    for (const row of datedRows()) {
-      if (terrain) row.setAttribute('aria-disabled', 'true');
-      else row.removeAttribute('aria-disabled');
-      const item = row.closest('li');
-      if (item) item.toggleAttribute('data-map-mode-disabled', terrain);
-    }
   };
 
   /**
-   * Hold or release every dated overlay through its suppression hook.
+   * Hold the other mode's own layers and release this one's, each through
+   * its suppression hook. The holds go first, so the map never draws both
+   * modes' layers at once on the way over.
    *
-   * @param {boolean} active
+   * @param {string} target The mode now in force.
    * @returns {void}
    */
-  const suppressDated = (active) => {
-    window.pwaBulletinsLayer?.setSuppressed(SUPPRESSION, active);
-    window.pwaWeatherLayer?.setSuppressed(SUPPRESSION, active);
-    window.pwaCommunityReportsOverlay?.setSuppressed?.(SUPPRESSION, active);
-    window.pwaBulletinTerrain?.setSuppressed?.(SUPPRESSION, active);
+  const suppressFor = (target) => {
+    const held = HOOKS.filter(([key]) => core.isSuppressed(key, target));
+    const released = HOOKS.filter(([key]) => !core.isSuppressed(key, target));
+    for (const [key, resolve] of held.concat(released)) {
+      resolve()?.setSuppressed?.(SUPPRESSION, core.isSuppressed(key, target));
+    }
   };
 
   /**
@@ -169,7 +183,7 @@
     mode = target;
     // An open calendar closes on its own: the tap that got here was outside
     // it (map_calendar.js's outside-tap dismiss).
-    suppressDated(mode === core.MODES.TERRAIN);
+    suppressFor(mode);
     render();
     writeStored(mode);
     history.replaceState(history.state, '', location.pathname + core.withMode(location.search, mode) + location.hash);
@@ -178,8 +192,21 @@
 
   terrainButton.addEventListener('click', () => setMode(core.MODES.TERRAIN));
 
+  for (const tab of tabs) {
+    tab.addEventListener('click', (e) => {
+      // Inside the menu: its outside-tap dismiss must not hear this.
+      e.stopPropagation();
+      setMode(tab.dataset.mapModeTab || '');
+      // The tabs choose what the first level lists, so an options page
+      // left open (the other mode's, perhaps) goes back to it.
+      const menu = document.getElementById('basemap-menu');
+      const back = menu && menu.querySelector('[data-layers-page]:not([hidden]) [data-layers-back]');
+      if (back instanceof HTMLElement) back.click();
+    });
+  }
+
   // Capture phase, so these run before map_calendar.js's toggle handler and
-  // the layers picker's row handler, and can stop them.
+  // can stop it.
   document.addEventListener('click', (e) => {
     if (mode !== core.MODES.TERRAIN) return;
     const target = /** @type {?Element} */ (e.target instanceof Element ? e.target : null);
@@ -199,11 +226,6 @@
       e.stopImmediatePropagation();
       setMode(core.MODES.DATED);
       goToToday();
-      return;
-    }
-    if (target.closest('#basemap-menu [data-map-mode-disabled]')) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
     }
   }, true);
 

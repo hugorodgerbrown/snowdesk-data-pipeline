@@ -384,3 +384,61 @@ describe('offline, from what a download saved (SNOW-1417)', () => {
     expect(tourFetches).toBe(0);
   });
 });
+
+describe('a map in Conditions, which holds the tours (SNOW-1421)', () => {
+  afterEach(() => {
+    delete window.pwaMapModeState;
+  });
+
+  it('fetches no tours while the mode holds both parts', async () => {
+    window.pwaMapModeState = { isSuppressed: () => true, hold: () => {} };
+    const map = await boot(lands);
+    window.pwaSkiRoutes.show();
+    map.flyTo({ center: [7.3, 46.0], zoom: 11 });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(tourFetches).toBe(0);
+  });
+
+  it('fetches them once the mode lets them draw', async () => {
+    let held = true;
+    window.pwaMapModeState = { isSuppressed: () => held, hold: () => {} };
+    const map = await boot(lands);
+    window.pwaSkiRoutes.show();
+    map.flyTo({ center: [7.3, 46.0], zoom: 11 });
+    held = false;
+    document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
+    await settle();
+    expect(tourFetches).toBeGreaterThan(0);
+  });
+});
+
+describe('finding a tour from Conditions (SNOW-1421)', () => {
+  afterEach(() => {
+    delete window.pwaMapMode;
+  });
+
+  /** A pwaMapMode stub in the given mode, recording `set`. */
+  const modeStub = (terrain) => ({ isTerrain: () => terrain, set: vi.fn() });
+
+  it('moves the map to Terrain on "Find a route"', async () => {
+    window.pwaMapMode = modeStub(false);
+    await boot(lands);
+    document.body.insertAdjacentHTML('beforeend', '<button data-ski-tour-find>Find a route</button>');
+    document.querySelector('[data-ski-tour-find]').click();
+    expect(window.pwaMapMode.set).toHaveBeenCalledWith('terrain');
+  });
+
+  it('moves the map to Terrain on a summit pick', async () => {
+    window.pwaMapMode = modeStub(false);
+    await boot(lands);
+    window.pwaSkiTours.openSummit(SUMMIT);
+    expect(window.pwaMapMode.set).toHaveBeenCalledWith('terrain');
+  });
+
+  it('leaves a map already in Terrain alone', async () => {
+    window.pwaMapMode = modeStub(true);
+    await boot(lands);
+    window.pwaSkiTours.openSummit(SUMMIT);
+    expect(window.pwaMapMode.set).not.toHaveBeenCalled();
+  });
+});

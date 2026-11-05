@@ -198,6 +198,15 @@
       || terrain.availability() === 'ok';
     const bulletins = window.pwaBulletinsLayer;
     const favourited = window.pwaFavouritedResorts;
+    // SNOW-1421: each map mode holds the other's own layers. The layer keys
+    // follow by themselves (a held layer is hidden, so switchedOn and the
+    // rendered features say so); the two terrain keys are read off their
+    // sections, which their modules show from the reader's switch, so a
+    // key the mode holds is keyed for nothing.
+    const state = window.pwaMapModeState;
+    const held = (/** @type {string} */ key) => !!(state && state.isSuppressed(key));
+    const problemTerrainOn = sectionOn('problem_terrain') && !held('problem_terrain');
+    const terrainFilterOn = sectionOn('terrain_filter') && !held('terrain_filter');
     return {
       isPinnedResort: (slug) => {
         const state = favourited && typeof favourited.stateFor === 'function'
@@ -206,10 +215,10 @@
         return !!(state && state.favourited);
       },
       bulletins: !!(bulletins && bulletins.isVisible()),
-      problemTerrain: sectionOn('problem_terrain') && paints,
-      problemTerrainOn: sectionOn('problem_terrain'),
-      terrainFilter: sectionOn('terrain_filter') && paints,
-      terrainFilterOn: sectionOn('terrain_filter'),
+      problemTerrain: problemTerrainOn && paints,
+      problemTerrainOn,
+      terrainFilter: terrainFilterOn && paints,
+      terrainFilterOn,
       switchedOn,
       routeLegsOn: sectionOn('routes'),
       downloads: sectionOn('downloads'),

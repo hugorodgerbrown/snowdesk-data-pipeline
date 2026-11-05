@@ -12,7 +12,10 @@
  *     is hidden and no region's `terrain` feature state is set, so the
  *     choropleth's edge band shows — WITHOUT the stored switch being
  *     rewritten, so turning Steep terrain off brings both back;
- *   - switching "Sync with map terrain" on turns Steep terrain off;
+ *   - switching "Sync with map terrain" on turns Steep terrain off — but
+ *     not with the map_modes flag (SNOW-1421), where the two are in
+ *     different modes: there a Steep terrain Conditions holds hides nothing
+ *     and is never written, and the row carries a z12 zoom gate;
  *   - a device that left the filter on in the retired "By bulletin" colour
  *     comes back with problem terrain on and the filter off, its own
  *     settings kept, and the carry-over runs once.
@@ -134,10 +137,15 @@ function stubMapLibre() {
   return map;
 }
 
-/** The DOM map.js's boot reads, carrying the two rows under test. */
-function buildFixture() {
+/**
+ * The DOM map.js's boot reads, carrying the two rows under test.
+ *
+ * @param {boolean} [modes] Render the map_modes flag's attribute.
+ */
+function buildFixture(modes = false) {
   document.body.innerHTML = `
     <div id="map"
+         data-map-modes-enabled="${modes ? 'true' : 'false'}"
          data-regions-url="/api/regions.geojson"
          data-ratings-url="/api/ratings/"
          data-resorts-url="/api/resorts.json"
@@ -195,13 +203,15 @@ const settle = () => new Promise((r) => setTimeout(r, 50));
  * problem-terrain fetch land.
  *
  * @param {Object<string, string>} stored localStorage to start from.
+ * @param {{modes?: boolean}} [options] `modes`: boot with the map_modes
+ *   flag, in Conditions (the bare URL's mode).
  * @returns {Promise<object>} The stub map.
  */
-async function boot(stored) {
+async function boot(stored, options = {}) {
   localStorage.clear();
   for (const [key, value] of Object.entries(stored)) localStorage.setItem(key, value);
   window.history.replaceState({}, '', `/?d=${DAY}`);
-  buildFixture();
+  buildFixture(!!options.modes);
   window.pwaDb = {
     get: vi.fn(async () => undefined),
     put: vi.fn(async () => {}),
@@ -229,6 +239,8 @@ async function boot(stored) {
   await import('../../static/js/slope_classes_core.js');
   await import('../../static/js/terrain_filter_core.js');
   await import('../../static/js/bulletin_terrain_core.js');
+  await import('../../static/js/layer_visibility_core.js');
+  await import('../../static/js/map_mode_core.js');
   loadMapBundle();
   for (const handler of map.handlers.load || []) await handler();
   await settle();
@@ -336,6 +348,42 @@ describe('Steep terrain takes precedence', () => {
     window.pwaTerrainFilter.show();
     expect(window.pwaTerrainFilter.isEnabled()).toBe(true);
     expect(localStorage.getItem(SWITCH_KEY)).toBe('false');
+  });
+});
+
+describe('with the map_modes flag, in Conditions (SNOW-1421)', () => {
+  it('paints the slopes over a stored-on Steep terrain the mode holds', async () => {
+    const map = await boot({ [FILTER_SWITCH_KEY]: 'true' }, { modes: true });
+    expect(window.pwaTerrainFilter.isEnabled()).toBe(true);
+    expect(map.getLayoutProperty('terrain-filter-raster', 'visibility')).toBe('none');
+    expect(window.pwaBulletinTerrain.isEnabled()).toBe(true);
+    expect(row().getAttribute('aria-checked')).toBe('true');
+    expect(rasterVisibility(map)).toBe('visible');
+    expect(regionPainted(map)).toBe(true);
+  });
+
+  it('leaves Steep terrain switched on when "Sync problem terrain" is switched on', async () => {
+    await boot({ [FILTER_SWITCH_KEY]: 'true', [SWITCH_KEY]: 'false' }, { modes: true });
+    row().click();
+    expect(localStorage.getItem(SWITCH_KEY)).toBe('true');
+    expect(localStorage.getItem(FILTER_SWITCH_KEY)).toBe('true');
+    expect(window.pwaTerrainFilter.isEnabled()).toBe(true);
+    expect(window.pwaBulletinTerrain.isEnabled()).toBe(true);
+  });
+
+  it('draws Steep terrain and hides the slopes once Terrain releases it, writing neither', async () => {
+    const map = await boot({ [FILTER_SWITCH_KEY]: 'true' }, { modes: true });
+    window.pwaBulletinTerrain.setSuppressed('map-mode', true);
+    window.pwaTerrainFilter.setSuppressed('map-mode', false);
+    expect(map.getLayoutProperty('terrain-filter-raster', 'visibility')).toBe('visible');
+    expect(rasterVisibility(map)).toBe('none');
+    expect(localStorage.getItem(FILTER_SWITCH_KEY)).toBe('true');
+    expect(localStorage.getItem(SWITCH_KEY)).toBe(null);
+  });
+
+  it('names the sync among the zoom gates, at z12', async () => {
+    await boot({}, { modes: true });
+    expect(window.pwaZoomGates.list()).toContainEqual({ key: 'problem_terrain', zoom: 12, upTo: false });
   });
 });
 

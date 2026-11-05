@@ -1,10 +1,12 @@
 /*
- * tests/js/test_map_mode_core.js — the Dated / Terrain mode's pure rules
- * (SNOW-1394).
+ * tests/js/test_map_mode_core.js — the Conditions / Terrain mode's pure
+ * rules (SNOW-1394, SNOW-1421).
  *
  * What is pinned:
- *   - the dated-overlay set: bulletins, regions, problem terrain, weather and
- *     field reports in; Steep terrain and the static overlays out;
+ *   - the per-mode table: bulletins, their grouping, problem terrain and
+ *     weather are Conditions' own; Steep terrain, SAC's tours and summits
+ *     and the rest zones are Terrain's; the field reports, the region tiers
+ *     and the reader's data are shared. Each mode holds the other's;
  *   - the URL and storage round trip, an unknown value read as Dated, a
  *     link's ?mode= winning over the device's last mode;
  *   - a mode change keeps ?d= and every other parameter, and a date write
@@ -21,29 +23,41 @@ import '../../static/js/map_mode_core.js';
 const core = window.pwaMapModeCore;
 const { DATED, TERRAIN } = core.MODES;
 
-describe('the dated overlays', () => {
-  it.each(['bulletins', 'l3', 'problem_terrain', 'weather', 'community_reports'])(
-    '%s is dated',
-    (key) => {
-      expect(core.isDated(key)).toBe(true);
-    },
-  );
+const DATED_ONLY = ['bulletins', 'l3', 'problem_terrain', 'weather'];
+const TERRAIN_ONLY = ['terrain_filter', 'ski_tours', 'ski_summits', 'rest_zones'];
+// The region tiers are fixed (a region exists beyond the day's bulletin),
+// and the field reports matter to a planner too (Hugo, 5 Nov 2026).
+const SHARED = ['l1', 'l2', 'l4', 'community_reports', 'routes', 'resorts', 'favourites', 'downloads'];
 
-  // The region tiers are fixed: a region exists beyond the day's bulletin.
-  it.each([
-    'l1', 'l2', 'l4',
-    'terrain_filter', 'routes', 'resorts', 'ski_tours', 'ski_summits', 'rest_zones', 'favourites',
-  ])('%s is not, and Terrain never holds it', (key) => {
-    expect(core.isDated(key)).toBe(false);
+describe('the per-mode table', () => {
+  it('lists each mode\'s own layers', () => {
+    expect([...core.ONLY_IN[DATED]]).toEqual(DATED_ONLY);
+    expect([...core.ONLY_IN[TERRAIN]]).toEqual(TERRAIN_ONLY);
+  });
+
+  it.each(DATED_ONLY)('%s is Conditions\' own: held in Terrain, drawn in Conditions', (key) => {
+    expect(core.modeOf(key)).toBe(DATED);
+    expect(core.isSuppressed(key, TERRAIN)).toBe(true);
+    expect(core.isSuppressed(key, DATED)).toBe(false);
+  });
+
+  it.each(TERRAIN_ONLY)('%s is Terrain\'s own: held in Conditions, drawn in Terrain', (key) => {
+    expect(core.modeOf(key)).toBe(TERRAIN);
+    expect(core.isSuppressed(key, DATED)).toBe(true);
     expect(core.isSuppressed(key, TERRAIN)).toBe(false);
   });
 
-  it('leaves the boundaries rows live in Terrain', () => {
-    for (const selector of core.DATED_ROW_SELECTORS) expect(selector).not.toMatch(/boundaries/);
+  it.each(SHARED)('%s is shared, and neither mode holds it', (key) => {
+    expect(core.modeOf(key)).toBeNull();
+    expect(core.isSuppressed(key, DATED)).toBe(false);
+    expect(core.isSuppressed(key, TERRAIN)).toBe(false);
   });
 
-  it('holds nothing in Dated', () => {
-    for (const key of core.DATED_OVERLAYS) expect(core.isSuppressed(key, DATED)).toBe(false);
+  it('holds the other mode\'s own in each', () => {
+    expect([...core.suppressedIn(DATED)]).toEqual(TERRAIN_ONLY);
+    expect([...core.suppressedIn(TERRAIN)]).toEqual(DATED_ONLY);
+    // An unknown mode reads as Conditions.
+    expect([...core.suppressedIn('bogus')]).toEqual(TERRAIN_ONLY);
   });
 });
 
@@ -134,31 +148,42 @@ describe('suppression, never preference', () => {
     const prefs = Object.freeze({ ...start });
     const dated = drawn(prefs, DATED);
 
-    // Into Terrain: every dated overlay off, Steep terrain as the reader had it.
+    // In Conditions: its own as the reader had them, Steep terrain held,
+    // the shared reports as the reader had them.
+    expect(dated.weather).toBe(prefs.weather);
+    expect(dated.terrain_filter).toBe(false);
+    expect(dated.community_reports).toBe(prefs.community_reports);
+    // Steep terrain is not drawn here, so it never hides the sync.
+    expect(dated.problem_terrain).toBe(prefs.problem_terrain);
+
+    // Into Terrain: Conditions' own off, Steep terrain as the reader had it.
     const inTerrain = drawn(prefs, TERRAIN);
     expect(inTerrain.weather).toBe(false);
-    expect(inTerrain.community_reports).toBe(false);
     expect(inTerrain.problem_terrain).toBe(false);
+    expect(inTerrain.community_reports).toBe(prefs.community_reports);
     expect(inTerrain.terrain_filter).toBe(prefs.terrain_filter);
 
     // Steep terrain toggled there and back changes Steep terrain alone.
     const toggled = { ...prefs, terrain_filter: !prefs.terrain_filter };
     expect(drawn(toggled, TERRAIN).terrain_filter).toBe(!prefs.terrain_filter);
+    expect(drawn(toggled, DATED)).toEqual(dated);
     expect(toggled.problem_terrain).toBe(prefs.problem_terrain);
     const back = { ...toggled, terrain_filter: prefs.terrain_filter };
 
-    // Back to Dated: exactly what was drawn before, from untouched choices.
+    // Back to Conditions: exactly what was drawn before, from untouched choices.
     expect(back).toEqual(start);
     expect(drawn(back, DATED)).toEqual(dated);
   });
 
-  it('lets Steep terrain take precedence over the sync in Dated (SNOW-1377)', () => {
-    expect(core.problemTerrainShown({
-      available: true, problemTerrain: true, steepTerrain: true, mode: DATED,
-    })).toBe(false);
-    expect(core.problemTerrainShown({
-      available: true, problemTerrain: true, steepTerrain: false, mode: DATED,
-    })).toBe(true);
+  it('never lets a Steep terrain the mode holds hide the sync (SNOW-1377)', () => {
+    // Steep terrain takes precedence only where it is drawn, and with the
+    // two layers in different modes that is never in Conditions.
+    const shown = (steepTerrain, mode) => core.problemTerrainShown({
+      available: true, problemTerrain: true, steepTerrain, mode,
+    });
+    expect(shown(true, DATED)).toBe(true);
+    expect(shown(false, DATED)).toBe(true);
+    expect(shown(true, TERRAIN)).toBe(false);
     expect(core.problemTerrainShown({
       available: false, problemTerrain: true, steepTerrain: false, mode: DATED,
     })).toBe(false);

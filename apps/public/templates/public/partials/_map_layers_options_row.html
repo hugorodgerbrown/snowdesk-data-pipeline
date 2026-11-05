@@ -1,0 +1,67 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_layers_options_row.html — one level-one row of the
+map's layers menu that HAS options (SNOW-1266): two controls on one line.
+
+The left half is the opener — the layer's icon, its name, a second line
+naming what is on in its options (map_basemap_picker.js fills
+[data-page-summary]) and a chevron — which opens the layer's options on a
+page of their own (`basemap-menu-page-<page>`). The right half is the
+layer's master switch, on while any row on that page is
+(`data-layer-master`, map_basemap_picker.js ROW_MASTERS and the bulletins
+master). A layer with no switch (the basemap: there is always one) keeps
+an empty slot, so the chevrons line up with the rows above it.
+
+A row that is only a switch is public/partials/_map_layers_switch_row.html.
+Extracted by SNOW-1421 from four inline copies in _map_embed.html, when the
+map_modes flag's menu became their second caller.
+
+Parameters (passed via {% include … with … only %}):
+  page      (string) — the options page's slug: data-layers-open, the
+            page's id and its data-page-summary.
+  label     (string) — the layer's translated name.
+  icon      (string) — the house icon to lead with: includes/_icon_<icon>.html.
+  master    (bool, optional) — carry a master switch. Without it, the
+            empty slot.
+  checked   (bool, optional) — the master switch's server-rendered state.
+  zoom_gate (string, optional) — the layer's key in window.pwaZoomGates
+            (SNOW-1280): the row dims and says "· zoom in" outside it.
+{% endcomment %}
+<li role="none" class="basemap-menu-layer" {% if zoom_gate %}data-zoom-gate="{{ zoom_gate }}"{% endif %}>
+    <button
+        type="button"
+        role="menuitem"
+        class="basemap-menu-layer-options hover-affordance"
+        data-layers-open="{{ page }}"
+        aria-haspopup="true"
+        aria-controls="basemap-menu-page-{{ page }}"
+    >
+        <span
+            class="basemap-menu-layer-icon"
+        >{% include "includes/_icon_"|add:icon|add:".html" with size=18 only %}</span>
+        <span class="basemap-menu-item-text">
+            {% if zoom_gate %}
+                {% include "public/partials/_map_layers_zoom_label.html" with label=label only %}
+            {% else %}
+                <span data-row-label>{{ label }}</span>
+            {% endif %}
+            <span class="basemap-menu-item-detail" data-page-summary="{{ page }}"></span>
+        </span>
+        {% include "includes/_icon_chevron_right.html" with size=16 svg_class="basemap-menu-layer-chevron" only %}
+    </button>
+    {% if master %}
+        <button
+            type="button"
+            role="menuitemcheckbox"
+            class="basemap-menu-switch group hover-affordance"
+            data-layer-master="{{ page }}"
+            data-layer-switch
+            aria-checked="{% if checked %}true{% else %}false{% endif %}"
+            aria-label="{{ label }}"
+        >
+            {% include "includes/_switch_track.html" only %}
+        </button>
+    {% else %}
+        <span class="basemap-menu-switch" aria-hidden="true"></span>
+    {% endif %}
+</li>
