@@ -164,7 +164,7 @@
    * @returns {ReadonlyArray<string>}
    */
   function suppressedIn(mode) {
-    return ONLY_IN[toggled(mode)];
+    return toggled(mode) === MODES.TERRAIN ? ONLY_IN[MODES.TERRAIN] : ONLY_IN[MODES.DATED];
   }
 
   /**
