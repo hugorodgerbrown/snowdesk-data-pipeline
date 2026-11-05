@@ -193,9 +193,12 @@ the danger colours. So each mode now has layers of its own.
   `:root[data-map-mode]`. The dimmed rows and the capture-phase blocker
   are gone. The order is in
   [the-layers-menu-is-on-off-then-options.md](the-layers-menu-is-on-off-then-options.md).
-- **Some taps change with it.** "Find a route" in Conditions records the
-  tours' switch and the mode holds them. A tour opened in the route panel
-  is drawn by the panel's own layers, so it still shows.
+- **Finding a tour moves the map to Terrain.** "Find a route" and a
+  summit picked in search switch the mode (`ski_tours.js` `toTerrain`):
+  finding a tour is a planning task, and in Conditions the mode holds the
+  tours, so the "tap a route" hint would point at nothing. A tour already
+  open in the route panel is drawn by the panel's own layers, so it still
+  shows in Conditions.
 
 ### Rejected (SNOW-1421)
 

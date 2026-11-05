@@ -760,6 +760,7 @@
   function openSummit(summit) {
     const map = getMap();
     if (!summit || !summit.key || !map) return;
+    toTerrain();
     if (navigator.onLine === false) {
       state.summitPending = null;
       window.MapSheet.toast(STRINGS['tours-offline']);
@@ -775,8 +776,22 @@
     }
   }
 
-  /** "Find a route": the routes panel closes, the tours come on, the hint shows. */
+  /**
+   * Move the map to Terrain, where the tours draw (SNOW-1421). Finding a
+   * tour is a planning task, and in Conditions the mode holds the tours,
+   * so a hint to tap one would point at nothing. A no-op off the
+   * map_modes flag, where window.pwaMapMode is not defined.
+   *
+   * @returns {void}
+   */
+  function toTerrain() {
+    const mode = window.pwaMapMode;
+    if (mode && !mode.isTerrain()) mode.set('terrain');
+  }
+
+  /** "Find a route": the map goes to Terrain, the routes panel closes, the tours come on, the hint shows. */
   function find() {
+    toTerrain();
     window.pwaMapOverlays?.closeAll();
     window.pwaSkiRoutes?.show();
     showHint(true);
