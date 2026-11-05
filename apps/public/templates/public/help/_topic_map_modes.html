@@ -10,7 +10,9 @@ describes, and listed in apps.mcp_server.docs_corpus.GATED_HELP_TOPICS so
 the public MCP docs tools do not answer from it until it is ungated.
 
 Written for a first-time reader (Hugo, 5 Nov 2026): what each map is for,
-how to switch, what both share, and the way back. "Conditions" is the
+how to switch, what both share, the way back, and (5 Nov 2026) the way
+back to today: the calendar's Today and the Today panel's Show today.
+"Conditions" is the
 code's `dated` mode.
 {% endcomment %}
 {% load i18n %}
@@ -43,6 +45,12 @@ code's `dated` mode.
             Today row in a resort's or a pin's sheet goes to Conditions on today instead, with the sheet still open.
             Picking a region from search also goes to Conditions on today. The map remembers which one you were on, and
             a link you share opens on the same one.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-map-modes-today">
+        {% blocktrans trimmed %}
+            To get back to today, open the calendar and press Today. If you have pinned places, the Today panel says
+            when the map is on another day or in Terrain, and Show today brings it back.
         {% endblocktrans %}
     </p>
 </div>

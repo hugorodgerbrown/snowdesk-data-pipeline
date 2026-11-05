@@ -36,6 +36,21 @@ that is always on screen replaced it.
   - The date says the day itself, never "Now", because "Now" is wrong
     once the day moves. On today it reads "Today", so the separate
     "Today" button is not rendered with the toggle.
+  - **The way back to today (5 Nov 2026).** With that button gone, nothing
+    but stepping days or finding today in the grid led back. Hugo chose
+    two ways (options C and B of the back-to-today mockup):
+    - The calendar card ends with a primary "Today"
+      (`#map-calendar-today`, `_map_calendar.html`, only behind the flag).
+      Like the button it stands in for, it is always shown and disabled
+      on today. A press calls `pwaMapMode.toConditionsToday()` and the
+      card closes (`map_calendar.js`).
+    - The Today panel, always today, says when the map is not: on another
+      day or in Terrain a notice at its top reads "Map shows 2 Nov 2026"
+      (the date ribbon's `formatDatePopup`) or "Map shows Terrain", with a
+      "Show today" that calls `toConditionsToday()` and leaves the panel
+      open (`today_panel.js`). A row followed from the panel does the same
+      first, in Terrain too, so the sheet it opens shows the level the row
+      showed.
   - A tap on the date opens the calendar. In Terrain, a tap on the
     calendar icon comes back to the dated map on the day the reader left.
 - **Terrain is the map with the dated overlays off, and nothing more.**
