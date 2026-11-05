@@ -3042,6 +3042,8 @@ MAP_MODE_MARKERS = (
     ' id="map-mode-terrain"',
     ' id="map-mode-strings-template"',
     "data-today-label='Today'",
+    # The way back to today with the date row's "Today" gone (5 Nov 2026).
+    ' id="map-calendar-today"',
     # Not map_mode.js: since SNOW-1412 it loads for everyone and returns
     # early without #map-mode-terrain (test_map_script_order.py).
 )
@@ -3086,6 +3088,46 @@ def test_map_modes_toggle_is_absent_otherwise(signed_in: bool, flag: bool) -> No
         assert marker not in content, marker
     assert 'data-map-modes-enabled="false"' in content
     assert 'id="map-today-control"' in content
+
+
+@pytest.mark.django_db
+def test_the_calendar_carries_today_in_its_footer_behind_the_flag() -> None:
+    """Behind map_modes the calendar card ends with a primary "Today",
+    rendered disabled (a bare /map/ is today) for map_calendar.js to enable
+    on another day; the undo glyph is the date row's old one.
+    """
+    content = _map_as(signed_in=True, flag=True)
+    card = content[content.index('id="map-calendar"') :]
+    card = card[: card.index('id="map-calendar-grid"') + 2000]
+    start = card.index('id="map-calendar-today"')
+    tag = card[card.rindex("<button", 0, start) : card.index(">", start)]
+    assert "disabled" in tag
+    assert "bg-text-1" in tag  # button_classes' primary
+    assert "aria-label='Back to today'" in tag
+    button = card[start : card.index("</button>", start)]
+    assert 'd="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"' in button
+    assert "Today" in button
+
+
+@pytest.mark.django_db
+def test_the_today_panel_carries_its_map_elsewhere_notice() -> None:
+    """The Today panel's body has the hidden "Map shows …" notice and its
+    "Show today", and its strings template the two labels today_panel.js
+    writes into it (static/js reads them, never a literal).
+    """
+    content = _map_as(signed_in=True, flag=True)
+    template = content[content.index('id="today-sheet-template"') :]
+    template = template[: template.index("</template>")]
+    start = template.index("data-today-elsewhere")
+    tag = template[template.rindex("<div", 0, start) : template.index(">", start)]
+    assert "hidden" in tag
+    assert "data-today-elsewhere-label" in template
+    assert "data-today-show" in template
+    assert "Show today" in template
+    strings = content[content.index('id="today-strings-template"') :]
+    strings = strings[: strings.index("</template>")]
+    assert '<span data-string="showing-day">Map shows %(day)s</span>' in strings
+    assert '<span data-string="showing-terrain">Map shows Terrain</span>' in strings
 
 
 # ---------------------------------------------------------------------------

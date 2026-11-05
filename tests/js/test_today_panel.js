@@ -13,7 +13,10 @@
  *     panel up, and moves a map on another day to today first;
  *   - the bell's dot, now the sun's: shown while the newest alert is newer
  *     than the last opening, cleared by opening, hidden on a failed read;
- *   - window.pwaTodayPanel, the back pill's way back in.
+ *   - window.pwaTodayPanel, the back pill's way back in;
+ *   - behind map_modes (window.pwaMapMode present): the "Map shows …"
+ *     notice on another day or in Terrain, its "Show today", and a followed
+ *     row moving the map to Conditions on today first.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -26,10 +29,16 @@ const MARKUP = `
   <div id="today-sheet" hidden></div>
   <div id="season-scrubber" data-today="2026-11-02"></div>
   <template id="today-sheet-template">
+    <div data-today-elsewhere hidden>
+      <span data-today-elsewhere-label></span>
+      <button type="button" data-today-show>Show today</button>
+    </div>
     <div data-today-rows data-today-url="/favourites/partials/today/"><p>Loading today…</p></div>
   </template>
   <template id="today-strings-template">
     <span data-string="error">Today could not be loaded.</span>
+    <span data-string="showing-day">Map shows %(day)s</span>
+    <span data-string="showing-terrain">Map shows Terrain</span>
   </template>`;
 
 const ALERT = { sent_at: '2026-11-02T07:05:00+01:00' };
@@ -92,6 +101,7 @@ afterEach(() => {
   delete window.MapSheet;
   delete window.pwaTodayPanel;
   delete globalThis.htmx;
+  delete window.pwaMapMode;
   vi.restoreAllMocks();
 });
 
@@ -196,5 +206,123 @@ describe('the dot', () => {
     expect(dot().hidden).toBe(true);
     await load(null);
     expect(dot().hidden).toBe(true);
+  });
+});
+
+describe('behind map_modes, the map elsewhere', () => {
+  const notice = () => document.querySelector('#today-sheet [data-today-elsewhere]');
+  const label = () => document.querySelector('#today-sheet [data-today-elsewhere-label]');
+
+  /**
+   * A stand-in for map_mode.js: a mode, and a toConditionsToday that
+   * raises the events the real one does.
+   *
+   * @param {string} initial 'dated' or 'terrain'.
+   */
+  function stubMapMode(initial) {
+    let mode = initial;
+    window.pwaMapMode = {
+      isTerrain: () => mode === 'terrain',
+      setTerrain: () => {
+        mode = 'terrain';
+        document.dispatchEvent(new CustomEvent('snowdesk:map-mode-changed', { detail: { mode } }));
+      },
+      toConditionsToday: vi.fn(() => {
+        mode = 'dated';
+        document.dispatchEvent(new CustomEvent('snowdesk:map-mode-changed', { detail: { mode } }));
+        document.dispatchEvent(
+          new CustomEvent('snowdesk:date-changed', { detail: { date: '2026-11-02' } })
+        );
+      }),
+    };
+  }
+
+  /** @param {string} date */
+  const moveMapTo = (date) =>
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date } }));
+
+  it('is hidden while the map is on today in Conditions', async () => {
+    stubMapMode('dated');
+    await load({ alerts: [] });
+    $('map-today-panel-toggle').click();
+    expect(notice().hidden).toBe(true);
+  });
+
+  it('names the day the map is on, in the date ribbon\'s format', async () => {
+    stubMapMode('dated');
+    globalThis.formatDatePopup = (d) => 'popup:' + d;
+    await load({ alerts: [] });
+    moveMapTo('2026-11-01');
+    $('map-today-panel-toggle').click();
+    expect(notice().hidden).toBe(false);
+    expect(label().textContent).toBe('Map shows popup:2026-11-01');
+    delete globalThis.formatDatePopup;
+  });
+
+  it('says Terrain in Terrain, whatever the day', async () => {
+    stubMapMode('terrain');
+    await load({ alerts: [] });
+    $('map-today-panel-toggle').click();
+    expect(notice().hidden).toBe(false);
+    expect(label().textContent).toBe('Map shows Terrain');
+  });
+
+  it('follows the map while open', async () => {
+    stubMapMode('dated');
+    await load({ alerts: [] });
+    $('map-today-panel-toggle').click();
+    moveMapTo('2026-10-30');
+    expect(notice().hidden).toBe(false);
+    moveMapTo('2026-11-02');
+    expect(notice().hidden).toBe(true);
+    window.pwaMapMode.setTerrain();
+    expect(notice().hidden).toBe(false);
+  });
+
+  it('"Show today" brings the map to Conditions on today and stays open', async () => {
+    stubMapMode('terrain');
+    await load({ alerts: [] });
+    $('map-today-panel-toggle').click();
+    document.querySelector('#today-sheet [data-today-show]').click();
+    expect(window.pwaMapMode.toConditionsToday).toHaveBeenCalledTimes(1);
+    expect(notice().hidden).toBe(true);
+    expect($('today-sheet').hidden).toBe(false);
+  });
+
+  it('a followed row moves the map to Conditions on today first', async () => {
+    stubMapMode('terrain');
+    await load({ alerts: [] });
+    const scrubs = [];
+    const onScrub = (e) => scrubs.push(e.detail.date);
+    document.addEventListener('snowdesk:scrub-to', onScrub);
+    $('map-today-panel-toggle').click();
+    const link = document.createElement('a');
+    link.setAttribute('data-panel-open', 'resort');
+    link.addEventListener('click', (e) => e.preventDefault());
+    rows().append(link);
+    link.click();
+    expect(window.pwaMapMode.toConditionsToday).toHaveBeenCalledTimes(1);
+    // map_mode.js's one path, not a second scrub-to of this module's own.
+    expect(scrubs).toEqual([]);
+    document.removeEventListener('snowdesk:scrub-to', onScrub);
+  });
+
+  it('a followed row leaves a map already on today alone', async () => {
+    stubMapMode('dated');
+    await load({ alerts: [] });
+    $('map-today-panel-toggle').click();
+    const link = document.createElement('a');
+    link.setAttribute('data-panel-open', 'region');
+    link.addEventListener('click', (e) => e.preventDefault());
+    rows().append(link);
+    link.click();
+    expect(window.pwaMapMode.toConditionsToday).not.toHaveBeenCalled();
+  });
+
+  it('never shows off the flag', async () => {
+    await load({ alerts: [] });
+    moveMapTo('2026-11-01');
+    $('map-today-panel-toggle').click();
+    expect(notice().hidden).toBe(true);
   });
 });
