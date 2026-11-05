@@ -21,13 +21,16 @@
  * the rating-int→key lookup table are all passed in explicitly rather than
  * read from module-scope globals.
  *
- * SNOW-794: the span these functions map percentages over is the avalanche
- * season, and only that. The ticket briefly gave the scrubber a twelve-month
- * window with the season inset inside it as a band, so it could place any day
+ * SNOW-794: the span these functions map percentages over is the scrubber's
+ * track, and only that. The ticket briefly gave the scrubber a twelve-month
+ * window with the track inset inside it as a band, so it could place any day
  * the calendar offers — and reverted: one control trying to be two is what
  * let the thumb and ``?d=`` disagree in the first place. The calendar is
- * "pick a date, any date"; this is a season scrubber, and it is simply not
- * shown for a day outside the season (static/js/map_scrubber_reveal.js).
+ * "pick a date, any date"; the scrubber is not shown for a day off its track
+ * (static/js/map_scrubber_reveal.js). SNOW-1431: the track is no longer a
+ * fixed season; it runs from the latest bulletin run's first rated day to the
+ * later of its last rated day and today
+ * (docs/decisions/date-windows-follow-the-data.md).
  *
  * Public API — attached to ``window.pwaScrubberCore``:
  *
@@ -62,6 +65,10 @@
  *     True when ``dateKey`` parses and is not past ``maxMs`` — the same set
  *     of days the calendar offers (SNOW-794). SNOW-927: the bound is the
  *     caller's and follows the data; it is no longer always today.
+ *   datesInWindow(dates, startKey, endKey)
+ *     The entries of ``dates`` inside ``[startKey, endKey]``, ascending. An
+ *     empty or missing bound leaves that side open. The timelapse frames
+ *     and skip targets, so neither lands off the track (SNOW-1431).
  *   intToKey(n, ratingTable)
  *     Rating int → EAWS key string via ``ratingTable`` (index lookup);
  *     ``'no_rating'`` for ``null``/``undefined``/out-of-range ``n``.
@@ -254,6 +261,25 @@
   }
 
   /**
+   * The entries of ``dates`` inside ``[startKey, endKey]``, ascending.
+   *
+   * ISO ``YYYY-MM-DD`` keys order lexically, so plain string comparison is
+   * a date comparison. An empty or missing bound leaves that side open.
+   *
+   * @param {string[]} dates
+   * @param {string|null|undefined} startKey
+   * @param {string|null|undefined} endKey
+   * @returns {string[]}
+   */
+  function datesInWindow(dates, startKey, endKey) {
+    return dates
+      .filter(function (d) {
+        return (!startKey || d >= startKey) && (!endKey || d <= endKey);
+      })
+      .sort();
+  }
+
+  /**
    * Rating int → EAWS key string via ``ratingTable`` index lookup.
    *
    * @param {number|null|undefined} n
@@ -273,6 +299,7 @@
     nextFrame: nextFrame,
     deriveEffectiveTodayKey: deriveEffectiveTodayKey,
     isSelectableDate: isSelectableDate,
+    datesInWindow: datesInWindow,
     intToKey: intToKey,
   });
 })();
