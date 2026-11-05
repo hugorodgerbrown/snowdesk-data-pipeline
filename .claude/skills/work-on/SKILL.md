@@ -92,8 +92,8 @@ revised scope.
 
 Invoke the Skill tool with `skill: implement` and args of the ticket
 number plus any pause directive held from step 0. Follow the implement
-skill in full: branch creation, ticket to In Progress, the plan-approval
-hard gate, implementer/reviewer loop, query-count check, push, PR, ticket
+skill in full: branch creation, ticket to In Progress, the plan (no
+approval), implementer/reviewer loop, query-count check, push, PR, ticket
 to In Review.
 
 The implement skill re-fetches the ticket and its comments, so it will
