@@ -15,7 +15,9 @@
  *   - the reader's own routes, when signed in;
  *   - the resorts.
  *
- * A tap on a tour or a route flies the camera to it, keeping the tilt.
+ * A tap on a tour or a route flies the camera to the whole of it, keeping
+ * the tilt: its uuid is looked up in the loaded data, because the tapped
+ * feature is only a drawn fragment and a tour is one feature per leg.
  * `?route=<uuid>` opens on one of the reader's routes.
  *
  * Every URL comes from a data attribute on #map-3d (apps/map/map_3d.py).
@@ -160,6 +162,9 @@
   const EMPTY = { type: 'FeatureCollection', features: [] };
   let toursTimer = 0;
   let toursBox = '';
+  /** The last data set on each line source, by source id, for tap lookups. */
+  /** @type {Record<string, any>} */
+  const loaded = {};
 
   /** Ask for the tours around the camera, if it moved to a new box. */
   async function refreshTours() {
@@ -168,16 +173,18 @@
     if (box === toursBox) return;
     toursBox = box;
     const tours = await getJson(`${data.skiToursUrl}?bbox=${box}`);
-    if (tours && box === toursBox) map.getSource(TOURS_SOURCE).setData(tours);
+    if (tours && box === toursBox) {
+      loaded[TOURS_SOURCE] = tours;
+      map.getSource(TOURS_SOURCE).setData(tours);
+    }
   }
 
   /**
-   * Fly to a line, keeping the tilt and the heading.
+   * Fly to bounds, keeping the tilt and the heading.
    *
-   * @param {any} geometry
+   * @param {[[number, number], [number, number]]|null} bounds
    */
-  function flyToLine(geometry) {
-    const bounds = core.lineBounds(geometry);
+  function flyToBounds(bounds) {
     if (!bounds) return;
     map.fitBounds(bounds, {
       padding: 80,
@@ -286,7 +293,11 @@
 
     for (const id of LINE_LAYERS) {
       map.on('click', id, (/** @type {any} */ e) => {
-        if (e.features && e.features[0]) flyToLine(e.features[0].geometry);
+        const feature = e.features && e.features[0];
+        if (!feature) return;
+        const source = feature.source || feature.layer && feature.layer.source;
+        const uuid = feature.properties && feature.properties.uuid;
+        flyToBounds(core.boundsForUuid(loaded[source], uuid) || core.lineBounds(feature.geometry));
       });
       map.on('mouseenter', id, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; });
@@ -301,12 +312,10 @@
     if (data.routesUrl) {
       const routes = await getJson(data.routesUrl);
       if (routes) {
+        loaded[ROUTES_SOURCE] = routes;
         map.getSource(ROUTES_SOURCE).setData(routes);
         const wanted = new URLSearchParams(window.location.search).get('route');
-        const match = wanted && routes.features.find(
-          (/** @type {any} */ f) => f.properties && f.properties.uuid === wanted,
-        );
-        if (match) flyToLine(match.geometry);
+        if (wanted) flyToBounds(core.boundsForUuid(routes, wanted));
       }
     }
   });

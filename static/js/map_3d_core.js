@@ -14,7 +14,10 @@
  *     bounds reach the horizon, far past what /api/ski-tours.geojson
  *     answers (SKI_NETWORK_MAX_SPAN_DEG, 0.5°), so the box is the centre
  *     plus a fixed half-span;
- *   - the bounds of a tapped line, which the camera flies to.
+ *   - the bounds of a tapped line, which the camera flies to. A tapped
+ *     MapLibre feature is only the drawn fragment (clipped at tile edges)
+ *     and a tour arrives as one feature per leg, so the bounds are the
+ *     union of every loaded feature carrying the tapped uuid.
  *
  * Exports (frozen `self.pwaMap3dCore`):
  *
@@ -24,6 +27,7 @@
  *   terrainSpec()
  *   toursBbox(centre, halfSpan?)
  *   lineBounds(geometry)
+ *   boundsForUuid(collection, uuid)
  */
 (function () {
   'use strict';
@@ -143,6 +147,32 @@
     return [[west, south], [east, north]];
   }
 
+  /**
+   * The union of the line bounds of every feature in a collection whose
+   * `uuid` is the one given, or null when none has a line.
+   *
+   * @param {{features?: Array<{geometry?: any, properties?: any}>}|null|undefined} collection
+   * @param {unknown} uuid
+   * @returns {[[number, number], [number, number]]|null}
+   */
+  function boundsForUuid(collection, uuid) {
+    if (!collection || !Array.isArray(collection.features) || !uuid) return null;
+    /** @type {[[number, number], [number, number]]|null} */
+    let out = null;
+    for (const feature of collection.features) {
+      if (!feature.properties || feature.properties.uuid !== uuid) continue;
+      const b = lineBounds(feature.geometry);
+      if (!b) continue;
+      out = out
+        ? [
+          [Math.min(out[0][0], b[0][0]), Math.min(out[0][1], b[0][1])],
+          [Math.max(out[1][0], b[1][0]), Math.max(out[1][1], b[1][1])],
+        ]
+        : b;
+    }
+    return out;
+  }
+
   self.pwaMap3dCore = Object.freeze({
     DEM_SOURCE_ID: DEM_SOURCE_ID,
     TERRAIN_EXAGGERATION: TERRAIN_EXAGGERATION,
@@ -155,5 +185,6 @@
     terrainSpec: terrainSpec,
     toursBbox: toursBbox,
     lineBounds: lineBounds,
+    boundsForUuid: boundsForUuid,
   });
 })();

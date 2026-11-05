@@ -7,7 +7,9 @@
  *   - the tours box never spans more than /api/ski-tours.geojson answers
  *     (0.5°), whatever half-span is asked for;
  *   - a tapped line's bounds cover LineString and MultiLineString, and
- *     anything else is null rather than a camera move to nowhere.
+ *     anything else is null rather than a camera move to nowhere;
+ *   - a tap frames the whole route or tour (every leg with its uuid), not
+ *     the clipped fragment MapLibre hands back.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -84,5 +86,30 @@ describe('lineBounds', () => {
     [{ type: 'LineString', coordinates: [] }],
   ])('is null for %j', (geometry) => {
     expect(core.lineBounds(geometry)).toBeNull();
+  });
+});
+
+describe('boundsForUuid', () => {
+  const legs = {
+    type: 'FeatureCollection',
+    features: [
+      { properties: { uuid: 'a' }, geometry: { type: 'LineString', coordinates: [[7, 46], [7.1, 46.1]] } },
+      { properties: { uuid: 'b' }, geometry: { type: 'LineString', coordinates: [[9, 47], [9.1, 47.1]] } },
+      { properties: { uuid: 'a' }, geometry: { type: 'LineString', coordinates: [[7.1, 46.1], [7.3, 45.9]] } },
+      { properties: { uuid: 'a', kind: 'summit' }, geometry: { type: 'Point', coordinates: [8, 48] } },
+    ],
+  };
+
+  it('unions every leg with the uuid, and skips other uuids and points', () => {
+    expect(core.boundsForUuid(legs, 'a')).toEqual([[7, 45.9], [7.3, 46.1]]);
+  });
+
+  it.each([
+    [legs, 'missing'],
+    [legs, ''],
+    [null, 'a'],
+    [{}, 'a'],
+  ])('is null when nothing matches (%#)', (collection, uuid) => {
+    expect(core.boundsForUuid(collection, uuid)).toBeNull();
   });
 });
