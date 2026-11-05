@@ -1374,6 +1374,38 @@ PLACE_LINK_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
     },
 )
 
+# Place sheet Today row (SNOW-1422) ------------------------------------------
+# ``public/partials/_place_sheet_today_row.html``: Terrain's one row for the
+# day in the place sheet. ``data-terrain-only`` hides it only inside
+# ``#place-sheet``, so the library draws it as it is.
+
+PLACE_SHEET_TODAY_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "A rated day, with the day's weather",
+        "context": {
+            "day_rating": {"max_rating": "considerable", "max_subdivision": ""},
+            "level_label": "Considerable",
+            "weather": {
+                "icon_filename": "clear-day.svg",
+                "condition_label": "Clear",
+                "temp_max": -4.0,
+            },
+            "day": datetime.date(2026, 2, 12),
+            "another_day": False,
+        },
+    },
+    {
+        "caption": "No bulletin and no weather",
+        "context": {
+            "day_rating": None,
+            "level_label": "",
+            "weather": None,
+            "day": datetime.date(2026, 2, 12),
+            "another_day": False,
+        },
+    },
+)
+
 # Overlay primitives (SNOW-486) -----------------------------------------------
 # The four consolidated overlay shapes — banner, modal, sheet — each with a
 # "static" context flag so the component library renders them inline rather

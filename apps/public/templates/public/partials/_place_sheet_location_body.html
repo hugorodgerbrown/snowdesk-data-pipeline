@@ -17,8 +17,11 @@ Context (from ``place_sheet.location_sheet_partial``):
                     NE · 2,200 m+"), highest rating first, or [].
   section_day, another_day — the day the dated eyebrows name.
   plus _place_sheet_weather.html's and _place_sheet_problems.html's.
+
+All of it is about the day, so the whole body carries ``data-dated``: in
+Terrain the sheet's Today row stands in for it (SNOW-1422).
 {% endcomment %}
-<div class="space-y-4">
+<div class="space-y-4" data-dated>
     <section aria-labelledby="location-region-heading" data-testid="location-region">
         {% translate "Avalanche bulletin" as region_eyebrow %}
         {% include "includes/_dated_eyebrow.html" with tag="h3" heading_id="location-region-heading" text=region_eyebrow class_extra="mb-3" day=section_day another_day=another_day only %}

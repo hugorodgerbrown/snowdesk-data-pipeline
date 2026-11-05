@@ -30,6 +30,9 @@ Covers both views, ``resort_sheet_partial`` and ``favourite_sheet_partial``:
     point's short id for the map to open its weather sheet in place.
   - SNOW-1318: a resort's sheet reads nothing about the reader, so every
     reader gets the same body and it answers ``private, max-age``.
+  - SNOW-1422: the Terrain Today row (the level and one weather reading) in
+    the peek of both kinds, and ``data-dated`` on every section about the
+    day, for map.css to swap.
 """
 
 from __future__ import annotations
@@ -103,11 +106,12 @@ def _resort(**kwargs: Any) -> Resort:
 
 
 def _peek(content: str) -> str:
-    """Return the sheet's peek block, up to where the body starts."""
+    """Return the sheet's peek header, up to the Terrain row or the body."""
     start = content.index("data-sheet-peek")
     ends = [
         content.find(marker, start)
         for marker in (
+            'data-testid="place-sheet-today"',
             'data-testid="place-sheet-resort-body"',
             'data-testid="place-sheet-level"',
         )
@@ -843,3 +847,121 @@ class TestMapPage:
         ) in content
         assert 'data-location-sheet-url="/partials/place-sheet/location/"' in content
         assert 'id="place-sheet-strings-template"' in content
+
+
+def _today_row(content: str) -> str:
+    """Return the Terrain Today row, its opening tag to its closing one."""
+    match = re.search(
+        r'<button\b[^>]*data-testid="place-sheet-today".*?</button>', content, re.S
+    )
+    assert match is not None
+    return match.group(0)
+
+
+def _dated_tags(content: str) -> list[str]:
+    """Return every opening tag that carries ``data-dated``."""
+    return re.findall(r"<[a-z]+\b[^>]*\bdata-dated\b[^>]*>", content)
+
+
+@pytest.mark.django_db
+class TestTerrainTodayRow:
+    """SNOW-1422: one Today row in the peek, and the day marked data-dated."""
+
+    def test_a_resort_row_names_the_level_and_one_reading(self, client: Client) -> None:
+        resort = _resort()
+        bulletin = _todays_bulletin(resort.region)
+        RegionDayRatingFactory.create(
+            region=resort.region,
+            max_rating="considerable",
+            source="SLF",
+            source_bulletin=bulletin,
+        )
+        WeatherFactory.create(
+            location=_primary_location(resort), temperature_2m_max=-4.2
+        )
+        content = _get(client, _resort_url(resort.slug)).content.decode()
+        row = _today_row(content)
+        assert "data-terrain-only" in row
+        assert "data-place-sheet-today" in row
+        assert 'data-testid="place-sheet-today-level"' in row
+        assert 'data-level="considerable"' in row
+        assert _text(row).startswith("3 Today Considerable")
+        assert 'data-testid="place-sheet-today-weather"' in row
+        assert "-4°" in _text(row)
+        # In the peek, under the header, so a phone shows it without a drag.
+        peek = content.index("data-sheet-peek")
+        assert peek < content.index('data-testid="place-sheet-today"')
+        assert content.index('data-testid="place-sheet-today"') < content.index(
+            'data-testid="place-sheet-resort-body"'
+        )
+
+    def test_a_resort_marks_its_bulletin_and_forecast_dated(
+        self, client: Client
+    ) -> None:
+        resort = _resort(num_lifts=34)
+        WeatherFactory.create(location=_primary_location(resort))
+        content = _get(client, _resort_url(resort.slug)).content.decode()
+        tags = _dated_tags(content)
+        assert any('data-testid="resort-region"' in tag for tag in tags)
+        forecast = content.index('data-testid="resort-forecast"')
+        assert content.rindex("<div data-dated>", 0, forecast) > content.index(
+            'data-testid="resort-region"'
+        )
+        # The resort itself stays: its facts are not about the day.
+        facts = content.index('data-testid="resort-facts"')
+        assert content.rindex("data-dated", 0, facts) < forecast
+
+    def test_a_resort_with_no_bulletin_or_forecast_says_so(
+        self, client: Client
+    ) -> None:
+        resort = _resort()
+        row = _today_row(_get(client, _resort_url(resort.slug)).content.decode())
+        assert 'data-testid="danger-tile-empty"' in row
+        assert "No bulletin" in _text(row)
+        assert 'data-testid="place-sheet-today-weather"' not in row
+
+    def test_a_saved_pin_row_names_the_level_and_one_reading(
+        self, client: Client
+    ) -> None:
+        favourite = _pin(client)
+        RegionDayRatingFactory.create(region=favourite.region, max_rating="moderate")
+        _curated_near(favourite, temperature_2m_max=2.0)
+        content = _get(client, _favourite_url(favourite.uuid)).content.decode()
+        row = _today_row(content)
+        assert 'data-level="moderate"' in row
+        assert _text(row).startswith("2 Today Moderate")
+        assert "2°" in _text(row)
+
+    def test_a_saved_pin_marks_its_day_dated(self, client: Client) -> None:
+        favourite = _pin(client)
+        RegionDayRatingFactory.create(region=favourite.region, max_rating="moderate")
+        _curated_near(favourite)
+        content = _get(client, _favourite_url(favourite.uuid)).content.decode()
+        level = content.index('data-testid="place-sheet-level"')
+        assert content.rindex('class="space-y-4" data-dated', 0, level) > content.index(
+            'data-testid="place-sheet-today"'
+        )
+        links = content[content.index('data-testid="place-sheet-links"') :]
+        assert links.index("data-dated") < links.index("bulletin for")
+
+    def test_another_day_names_the_day(self, client: Client) -> None:
+        resort = _resort()
+        content = _get(client, _resort_url(resort.slug, "2026-02-03")).content.decode()
+        row = _text(_today_row(content))
+        assert "Tue 3 Feb" in row
+        assert "Today" not in row
+
+    def test_the_row_costs_no_query(
+        self, client: Client, django_assert_max_num_queries: Any
+    ) -> None:
+        """The row reads only what the body already loaded."""
+        resort = _resort()
+        WeatherFactory.create(location=_primary_location(resort))
+        _get(client, _resort_url(resort.slug))
+        with mock.patch(
+            "apps.public.place_sheet._resort_today_weather", return_value=None
+        ):
+            with django_assert_max_num_queries(100) as without:
+                _get(client, _resort_url(resort.slug))
+        with django_assert_max_num_queries(len(without.captured_queries)):
+            _get(client, _resort_url(resort.slug))

@@ -70,6 +70,7 @@ from apps.public._component_fixtures import (
     PAGE_TITLE_VARIANTS,
     PANEL_ADD_BUTTON_VARIANTS,
     PLACE_LINK_ROW_VARIANTS,
+    PLACE_SHEET_TODAY_ROW_VARIANTS,
     PLACE_PIN_VARIANTS,
     POINT_CARD_VARIANTS,
     RATING_BLOCK_ALBINA_BAND_VARIANTS,
@@ -1640,6 +1641,22 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_place_link_row.html",
         variants=PLACE_LINK_ROW_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="place-sheet-today-row",
+        label="Place sheet Today row",
+        description=(
+            "Terrain's one row for the day in the place sheet (SNOW-1422, "
+            "behind map_modes): the region's level tile, 'Today', and under "
+            "it the level's name and one weather reading, the day's icon "
+            "and high. It stands in for every section marked data-dated, "
+            "and map.css shows it in Terrain only. A tap switches the map "
+            "to Conditions on today with the sheet left open."
+        ),
+        kind="components",
+        partial="public/partials/_place_sheet_today_row.html",
+        variants=PLACE_SHEET_TODAY_ROW_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

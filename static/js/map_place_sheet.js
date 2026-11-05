@@ -75,6 +75,16 @@
  * altitude reading (when it gave one) and a line saying the rest needs a
  * connection (Hugo, 3 Nov 2026: degrade gracefully).
  *
+ * TERRAIN (SNOW-1422, behind map_modes). Terrain has no day of its own, so
+ * there the sheet asks for TODAY (`#season-scrubber[data-today]`, the
+ * page's today, never the browser's) whatever day Conditions was left on,
+ * and the body's Today row (`[data-place-sheet-today]`, shown by map.css
+ * in place of the `data-dated` sections) is always today's. A mode change
+ * refetches an open sheet when the day it needs changed. A tap on the row
+ * calls `window.pwaMapMode.toConditionsToday()` and leaves the sheet open,
+ * so it repaints in full on today. Off the flag `window.pwaMapMode` is
+ * absent and the sheet reads the map's day, as ever.
+ *
  * PAUSED DURING PLAYBACK (SNOW-1239). While the timeline plays the sheet
  * stays open under a "Playback in progress" band
  * (window.pwaSheetPlayback, sheet_playback_core.js), fetches nothing for
@@ -139,6 +149,24 @@
   let place = null;
   /** @type {?string} */
   let dateKey = null;
+  /** @type {string} The URL the last load asked for (SNOW-1422). */
+  let lastUrl = '';
+
+  /** @returns {boolean} Whether the map is in Terrain (SNOW-1422). */
+  const inTerrain = () => !!window.pwaMapMode?.isTerrain?.();
+
+  /**
+   * The day the sheet reads: the map's, or in Terrain today, which is the
+   * page's (`#season-scrubber[data-today]`). With no today on the page,
+   * the map's day.
+   *
+   * @returns {?string}
+   */
+  const sheetDate = () => {
+    if (!inTerrain()) return dateKey;
+    const scrubber = document.getElementById('season-scrubber');
+    return (scrubber && scrubber.dataset.today) || dateKey;
+  };
 
   const isPhone = () =>
     typeof window.matchMedia !== 'function' || !window.matchMedia(DESKTOP_QUERY).matches;
@@ -258,7 +286,8 @@
         query.push('alt=' + encodeURIComponent(String(Math.round(place.altitude))));
       }
     }
-    if (url && dateKey) query.push('d=' + encodeURIComponent(dateKey));
+    const day = sheetDate();
+    if (url && day) query.push('d=' + encodeURIComponent(day));
     return url && query.length ? url + '?' + query.join('&') : url;
   };
 
@@ -287,6 +316,7 @@
   const load = () => {
     const url = urlFor();
     if (!url) return Promise.resolve();
+    lastUrl = url;
     const ask = guard.begin();
     const current = place;
     if (!sheet.querySelector('[data-testid="place-sheet-body"]')) {
@@ -519,9 +549,18 @@
       const shortId = forecast.getAttribute('data-forecast-short-id');
       if (shortId) {
         ev.preventDefault();
-        window.pwaWeatherDetail.open(shortId, dateKey || undefined);
+        window.pwaWeatherDetail.open(shortId, sheetDate() || undefined);
         return;
       }
+    }
+
+    // SNOW-1422: the Terrain Today row goes to Conditions on today. The
+    // sheet stays open, and the mode change and the day it moves to
+    // repaint it in full.
+    if (target.closest?.('[data-place-sheet-today]')) {
+      ev.preventDefault();
+      window.pwaMapMode?.toConditionsToday?.();
+      return;
     }
 
     const share = target.closest?.('[data-favourite-share]');
@@ -606,6 +645,9 @@
     const detail = /** @type {CustomEvent} */ (ev).detail || {};
     dateKey = detail.date || null;
     if (!controller.isOpen()) return;
+    // SNOW-1422: in Terrain the sheet reads today whatever the map's day,
+    // so a day change that leaves its URL as it was asks for nothing.
+    if (inTerrain() && urlFor() === lastUrl) return;
     // SNOW-1239: a timelapse frame during playback only records the day.
     if (!playback.shouldReload(detail.source, playback.isPlaying())) {
       pendingRefresh = true;
@@ -618,6 +660,23 @@
     pendingRefresh = false;
     playback.markPaused(sheet, false);
     load();
+  });
+
+  // SNOW-1422: a mode change can change the day the sheet reads (Terrain
+  // reads today), so an open sheet asks again when its URL moved. After
+  // the event's other listeners, in a microtask: toConditionsToday() moves
+  // the day straight after the mode, and when that day change has already
+  // loaded today there is nothing left to ask for.
+  document.addEventListener('snowdesk:map-mode-changed', () => {
+    if (!controller.isOpen() || !place) return;
+    queueMicrotask(() => {
+      if (!controller.isOpen() || !place || urlFor() === lastUrl) return;
+      if (playback.isPlaying()) {
+        pendingRefresh = true;
+        return;
+      }
+      load();
+    });
   });
 
   // SNOW-1239: playback starting pauses the open sheet; stopping lifts the

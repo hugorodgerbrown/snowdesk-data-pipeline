@@ -666,3 +666,115 @@ describe("the resort star, painted from the map's favourites (SNOW-1318)", () =>
       .toBe("This day isn't downloaded for offline use.");
   });
 });
+
+describe('in Terrain (SNOW-1422)', () => {
+  const TODAY = '2026-02-12';
+  const TODAY_ROW_BODY = `
+    <div data-testid="place-sheet-body" data-place-kind="resort">
+      <div data-sheet-peek>
+        <h2>Verbier</h2>
+        <button type="button" data-terrain-only data-place-sheet-today>Today</button>
+      </div>
+      <section data-dated>Avalanche bulletin</section>
+    </div>
+  `;
+  let terrain;
+  let scrubber;
+
+  /** Announce a mode change, as map_mode.js does. */
+  const enterMode = (mode) => {
+    terrain = mode === 'terrain';
+    document.dispatchEvent(new CustomEvent('snowdesk:map-mode-changed', { detail: { mode } }));
+  };
+
+  beforeEach(() => {
+    terrain = true;
+    scrubber = document.createElement('div');
+    scrubber.id = 'season-scrubber';
+    scrubber.dataset.today = TODAY;
+    document.body.appendChild(scrubber);
+    window.pwaMapMode = {
+      isTerrain: () => terrain,
+      // What map_mode.js does: the mode, then the day.
+      toConditionsToday: vi.fn(() => {
+        enterMode('dated');
+        document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date: TODAY } }));
+      }),
+    };
+    // The map was left on another day in Conditions.
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date: '2026-02-10' } }));
+    fetchMock.mockImplementation(() => answer(TODAY_ROW_BODY));
+  });
+
+  afterEach(() => {
+    scrubber.remove();
+    delete window.pwaMapMode;
+  });
+
+  it("asks for today's body, not the day Conditions was left on", () => {
+    window.pwaPlaceSheet.open({ kind: 'resort', id: 'verbier' });
+    expect(fetchMock.mock.calls[0][0]).toBe(`/partials/place-sheet/resort/verbier/?d=${TODAY}`);
+  });
+
+  it('asks for the map day in Conditions, as ever', () => {
+    terrain = false;
+    window.pwaPlaceSheet.open({ kind: 'resort', id: 'verbier' });
+    expect(fetchMock.mock.calls[0][0]).toBe('/partials/place-sheet/resort/verbier/?d=2026-02-10');
+  });
+
+  it('asks again for today when the map enters Terrain with the sheet open', async () => {
+    terrain = false;
+    window.pwaPlaceSheet.open({ kind: 'favourite', id: 'abc' });
+    await settle();
+    fetchMock.mockClear();
+
+    enterMode('terrain');
+    await settle();
+
+    expect(window.pwaPlaceSheet.isOpen()).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe(`/partials/place-sheet/favourite/abc/?d=${TODAY}`);
+  });
+
+  it('asks nothing on a mode change that leaves the day as it was', async () => {
+    terrain = false;
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date: TODAY } }));
+    window.pwaPlaceSheet.open({ kind: 'resort', id: 'verbier' });
+    await settle();
+    fetchMock.mockClear();
+
+    enterMode('terrain');
+    await settle();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('asks nothing for a day change in Terrain, which reads today', async () => {
+    window.pwaPlaceSheet.open({ kind: 'resort', id: 'verbier' });
+    await settle();
+    fetchMock.mockClear();
+
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date: '2026-02-11' } }));
+    await settle();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('goes to Conditions on today from the Today row, with the sheet left open', async () => {
+    window.pwaPlaceSheet.open({ kind: 'resort', id: 'verbier' });
+    await settle();
+    fetchMock.mockClear();
+
+    sheet.querySelector('[data-place-sheet-today]').click();
+    await settle();
+
+    expect(window.pwaMapMode.toConditionsToday).toHaveBeenCalledTimes(1);
+    expect(window.pwaPlaceSheet.isOpen()).toBe(true);
+    // It repaints on today, never on the day Conditions was left on: the
+    // mode change asks nothing (the URL is the one it read), and the day
+    // change to today reads today again.
+    for (const [url] of fetchMock.mock.calls) {
+      expect(url).toBe(`/partials/place-sheet/resort/verbier/?d=${TODAY}`);
+    }
+  });
+});
