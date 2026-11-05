@@ -3405,6 +3405,8 @@ def test_the_3d_roundel_shows_only_inside_the_map_3d_flag() -> None:
         unflagged = client.get(reverse("public:map")).content.decode()
     assert 'id="map-3d-link"' in flagged
     assert "js/map_3d_link.js" in flagged
-    assert 'data-dem-tile-url="https://tiles.mapterhorn.com/{z}/{x}/{y}.webp"' in flagged
+    assert (
+        'data-dem-tile-url="https://tiles.mapterhorn.com/{z}/{x}/{y}.webp"' in flagged
+    )
     assert 'id="map-3d-link"' not in unflagged
     assert "js/map_3d_link.js" not in unflagged
