@@ -50,16 +50,13 @@
  * about 16:00 the payload holds a day this grid was greying out. Off season,
  * where the payload stops months back, the ceiling stays at today.
  *
- * The avalanche season is a highlight inside that range, not a fence around
- * it. An earlier draft refused every day outside it, which was wrong the
- * moment the map grew a weather layer — weather has an answer for a day in
- * September, and the picker could not reach it.
+ * ## The one per-day mark
  *
- * That highlight is the ONLY per-day mark. A dot on the days actually
- * carrying a bulletin came and went: the thing it distinguished — a gap in
- * the archive inside the season — is an operator's concern, and a visitor
- * who lands on such a day already sees an uncoloured map. Two marks for one
- * answer is one more than the grid can spend.
+ * A day is filled when the ratings cache rates it for any region
+ * (``hasBulletin``); a tapped region swaps the fill for its danger colour.
+ * This replaced a season band that tinted every day between the season
+ * bounds whether or not a bulletin existed, and missed the early-season
+ * days before 1 November that did have one.
  */
 
 (function mapCalendarInit() {
@@ -81,7 +78,6 @@
   const nextButton = document.getElementById('map-calendar-next');
 
   const seasonStart = root.dataset.seasonStart || '';
-  const seasonEnd = root.dataset.seasonEnd || '';
   const todayKey = root.dataset.today || '';
   // Localised month names, January first — see the partial for why they
   // travel as one pipe-separated attribute rather than twelve.
@@ -115,6 +111,9 @@
   // had picked it.
   let ratingsCache = null;
   let regionId = null;
+  // The days the cache rates for any region — the grid's fill. Derived once
+  // per payload rather than per render: the cache is a season of frames.
+  let bulletinDays = null;
 
   // ``INT_TO_RATING`` is map_shared.js's, shared as a bare identifier by the
   // classic-script bundle. The typeof guard mirrors ``readUrlDateParam``
@@ -166,15 +165,16 @@
   getSeasonRatings()
     .then((data) => {
       ratingsCache = data || null;
+      bulletinDays = core.bulletinDays(ratingsCache);
       minKey = core.earliestKnownDate(data, seasonStart);
       maxKey = core.latestKnownDate(data, todayKey);
       if (isOpen()) render();
     })
     .catch(() => {
       // The picker still works without it: every day up to today stays
-      // selectable and the season highlight is server-rendered data, so all
-      // that is lost is a floor tighter than the season start and, since
-      // SNOW-927, a ceiling later than today. The scrubber
+      // selectable, so all that is lost is the bulletin fill, a floor
+      // tighter than the season start and, since SNOW-927, a ceiling later
+      // than today. The scrubber
       // reports the fetch failure in its own loading strip, so saying it
       // again here would be a second copy of one message.
     });
@@ -208,8 +208,7 @@
     const cells = core.buildMonthGrid(visibleMonth, {
       min: minKey,
       max: maxKey,
-      seasonStart: seasonStart,
-      seasonEnd: seasonEnd,
+      bulletinDays: bulletinDays,
       selected: currentDateKey(),
       today: todayKey,
       ratings: ratingsForRegion(),
@@ -247,18 +246,16 @@
       // literal reaches the DOM (docs/i18n.md).
       button.setAttribute('aria-label', cell.day + ' ' + monthName + ' ' + year);
       if (!cell.selectable) button.disabled = true;
-      // The season band — "bulletins run here". It does not gate the click.
-      if (cell.inSeason) button.classList.add('in-season');
+      // A bulletin exists for this day in some region. It does not gate
+      // the click: a day without one still has weather.
+      if (cell.hasBulletin) button.classList.add('has-bulletin');
       // SNOW-794: the focused region's danger for this day — the fact the
       // scrubber ribbon painted into its track, which is why the scrubber
       // can go entirely on a phone. Null — no region chosen, or no bulletin
-      // that day — leaves the cell on its in-season tint, so a gap inside
-      // the season still reads as a gap.
+      // for it that day — leaves the cell on its bulletin fill or plain.
       //
-      // The class drives the eaws-*-TINT/-TEXT token pair, not the saturated
-      // ribbon fill: these cells carry a numeral, and #ff0000 admits no
-      // readable ink. The tints are the measured, contrast-checked pair
-      // (src/css/main.css) built for exactly this.
+      // The class drives the saturated EAWS fill with its matching -fg ink
+      // (static/css/map.css), the pair contrast-checked for a numeral.
       if (cell.rating != null) {
         button.classList.add('map-calendar-day--' + ratingKey(cell.rating));
       }
@@ -440,8 +437,12 @@
   // `maxKey` only. The floor has the same staleness and always has; widening
   // this to `minKey` would change paging behaviour the ticket never looked
   // at, so it is left alone deliberately rather than by oversight.
+  //
+  // The bulletin fill is re-derived too: a merged country's days have
+  // bulletins the Swiss-only payload did not.
   document.addEventListener('snowdesk:country-ratings-loaded', () => {
     if (!ratingsCache) return;
+    bulletinDays = core.bulletinDays(ratingsCache);
     maxKey = core.latestKnownDate(ratingsCache, todayKey);
     if (isOpen()) render();
   });
