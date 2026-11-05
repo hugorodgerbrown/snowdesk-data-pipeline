@@ -1,0 +1,47 @@
+{% load component_library_tags %}
+{% comment %}
+apps/design_system/templates/_components/partials/_ui_icons.html — UI icon panel.
+
+Renders every IconPartial in ``category.tokens``: one card per house stroke
+glyph (templates/includes/_icon_*.html), alphabetical as the registry lists
+them. Each card draws the glyph once per ``icon.renders`` entry (its default
+size, the 24px grid size, then the sizes and states its header documents)
+through ``include_variant``, so the partial renders exactly as a caller's
+``{% include %}`` would. Below that: the glyph's name, what it means, the
+include line and the parameters it reads.
+
+The glyphs draw in currentColor, so they take ``text-text-1`` from the card
+and follow the light / dark section the panel wrapper puts them in.
+
+Context:
+    category : FoundationCategory whose tokens are IconPartial instances.
+{% endcomment %}
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="ui-icons">
+    {% for icon in category.tokens %}
+        <figure class="rounded-tag border border-border bg-card p-4 space-y-3" data-icon="{{ icon.name }}">
+            <div class="flex flex-wrap items-end gap-4 text-text-1">
+                {% for render in icon.renders %}
+                    <div class="flex flex-col items-center gap-1">
+                        <div class="flex h-8 min-w-8 items-center justify-center">
+                            {% include_variant icon.partial render %}
+                        </div>
+                        <span class="text-caption font-mono text-text-3">{{ render.caption }}</span>
+                    </div>
+                {% endfor %}
+            </div>
+            <figcaption class="space-y-1">
+                <p class="text-xs font-mono text-text-1 break-all">{{ icon.name }}</p>
+                <p class="text-xs text-text-2">{{ icon.label }}</p>
+                <p class="text-caption font-mono text-text-3 break-all">{{ icon.include_snippet }}</p>
+                <dl class="text-caption text-text-3 space-y-0.5">
+                    {% for param in icon.parameters %}
+                        <div>
+                            <dt class="inline font-mono text-text-2">{{ param.name }}</dt>
+                            <dd class="inline">{{ param.note }}</dd>
+                        </div>
+                    {% endfor %}
+                </dl>
+            </figcaption>
+        </figure>
+    {% endfor %}
+</div>

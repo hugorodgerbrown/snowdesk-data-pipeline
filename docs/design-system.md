@@ -2,7 +2,7 @@
 name: design-system
 description: Design handover — editorial and interaction principles, icon vs ellipsis rule, design tokens, the component layer, field guidance
 status: current
-last-reviewed: 2026-10-31
+last-reviewed: 2026-11-05
 ---
 
 
@@ -341,6 +341,20 @@ what the layer is for and where its edges are.
 canonical inventory, rendered for browsing at the staff-only `/_components/`.
 A new partial is not finished until it has a registry entry and a variant
 fixture in [`apps/design_system/_component_fixtures.py`](../apps/design_system/_component_fixtures.py).
+
+**All icons are in the library** (Hugo, 5 Nov 2026). The static SVG assets
+(favicons, EAWS pictograms, weather icons) are the "Icons" foundation; the
+house stroke glyphs — every `_icon_*.html` partial
+([why they are partials](decisions/ui-icons-are-house-stroke-partials.md)) —
+are the "UI icons" foundation at `/_components/?slug=ui-icons`, one card per
+glyph drawn at its default size, at the 24px grid size and at the sizes and
+states its header documents, with its include line and parameters. A new
+glyph adds one line to `ICON_PARTIALS` in
+[`design_tokens.py`](../apps/design_system/design_tokens.py), alphabetically;
+[`tests/design_system/test_design_tokens.py`](../tests/design_system/test_design_tokens.py)
+fails on an `_icon_*.html` in any template directory that is not listed, and
+on a default size or parameter list that has drifted from the partial's
+header.
 
 **Ordinary pages are in the system too.** This was the layer's blind spot for
 most of the project's life: the bulletin and map surfaces were thoroughly

@@ -17,6 +17,8 @@ Covers:
   - The partial endpoint rejects non-HTMX requests with 400 (require_htmx).
   - Every IconToken.path resolves via the staticfiles finders so a typo
     can't slip through to the page as a broken-image square.
+  - The UI icons panel draws a card per ``_icon_*.html`` glyph, with its
+    include line, parameters and documented states.
   - The error-page previews (/_errors/<kind>/, SNOW-1151) require staff,
     render each page with its real status and 404 an unknown kind.
 """
@@ -33,6 +35,7 @@ from django.urls import reverse
 
 from apps.accounts.models import Account
 from apps.design_system.design_tokens import (
+    ICON_PARTIALS,
     LIBRARY_GROUPS,
     FoundationCategory,
     IconToken,
@@ -387,6 +390,39 @@ def test_new_slug_index_page_renders_200_with_known_marker(
     assert markers[slug] in body, (
         f"Expected marker {markers[slug]!r} not found in rendered output for {slug!r}"
     )
+
+
+@pytest.mark.django_db
+class TestUiIconsPanel:
+    """The UI icons panel draws every ``_icon_*.html`` glyph (Hugo, 5 Nov 2026)."""
+
+    def test_index_page_renders_every_icon_card(self, staff_client: Client) -> None:
+        """Deep-linking to ``ui-icons`` draws one card per glyph in each theme."""
+        response = staff_client.get(f"{_index_url()}?slug=ui-icons")
+        assert response.status_code == 200
+        body = response.content.decode()
+        assert 'data-testid="ui-icons"' in body
+        for name in ("close", "favourite", "observation_family"):
+            assert f'data-icon="{name}"' in body
+        # Light and dark sections each render the whole set.
+        assert body.count("data-icon=") == 2 * len(ICON_PARTIALS)
+
+    def test_each_card_carries_its_include_line_and_parameters(
+        self, htmx_staff_client: Client
+    ) -> None:
+        """A card names the partial a caller includes and the keys it reads."""
+        response = htmx_staff_client.get(_panel_url("ui-icons"))
+        assert response.status_code == 200
+        body = response.content.decode()
+        assert "includes/_icon_favourite.html" in body
+        assert ">filled</dt>" in body
+        assert "22 · panel header" in body
+
+    def test_documented_states_render(self, htmx_staff_client: Client) -> None:
+        """The filled star and the rotated arrow are drawn, not just captioned."""
+        body = htmx_staff_client.get(_panel_url("ui-icons")).content.decode()
+        assert 'class="rotate-180"' in body
+        assert 'fill="currentColor"' in body
 
 
 @pytest.mark.django_db
