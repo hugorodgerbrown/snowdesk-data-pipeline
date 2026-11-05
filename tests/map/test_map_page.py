@@ -3392,3 +3392,18 @@ def test_map_css_hides_the_other_modes_rows_under_the_mode() -> None:
                 ":root[data-map-mode" in part or ".basemap-menu-mode-block" in part
             ), part
     assert "data-map-mode-disabled" not in css
+
+
+@pytest.mark.django_db
+def test_the_3d_roundel_shows_only_inside_the_map_3d_flag() -> None:
+    """Inside map_3d the map carries the 3D link and its script; outside, neither."""
+    client = Client()
+    client.force_login(UserFactory.create())
+    with override_flag("map_3d", active=True):
+        flagged = client.get(reverse("public:map")).content.decode()
+    with override_flag("map_3d", active=False):
+        unflagged = client.get(reverse("public:map")).content.decode()
+    assert 'id="map-3d-link"' in flagged
+    assert "js/map_3d_link.js" in flagged
+    assert 'id="map-3d-link"' not in unflagged
+    assert "js/map_3d_link.js" not in unflagged

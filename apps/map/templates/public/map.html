@@ -215,6 +215,10 @@ in addition to the shared map assets.
     {# module in development and tests. Runs after base.html's scripts,    #}
     {# as these always have.                                                #}
     {% js_bundle "map" %}
+    {% if map_3d_link %}
+        <script defer src="{% static 'js/map_3d_core.js' %}"></script>
+        <script defer src="{% static 'js/map_3d_link.js' %}"></script>
+    {% endif %}
     {% if request.GET.layers == 'exploded' %}
         {# Loaded after map.js publishes snowdeskLayerExplainer; omitted from #}
         {# ordinary map visits so the feature has no JS cost until opened.  #}
