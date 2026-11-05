@@ -537,6 +537,7 @@ ICON_PARTIALS: tuple[IconPartial, ...] = (
             {"caption": "18 · filled", "context": {"filled": True}},
         ),
     ),
+    _icon("labs", "Labs — an experimental feature behind a flag", 17),
     _icon(
         "layers",
         "Layers — the layers roundel",
