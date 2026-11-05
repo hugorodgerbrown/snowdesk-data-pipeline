@@ -46,7 +46,7 @@
  * LOAD ORDER: runs at parse time and reads `MAP`, so it loads after map.js,
  * and after zoom_control_core.js. Outside the map bundle (nothing in the
  * bundle reads it), so its tag sits below the bundle's contiguous run — see
- * tests/public/test_map_script_order.py.
+ * tests/map/test_map_script_order.py.
  */
 
 (function mapZoomControlInit() {

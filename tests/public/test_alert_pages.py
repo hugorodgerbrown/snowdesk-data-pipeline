@@ -38,7 +38,7 @@ from tests.factories import (
     TripFactory,
     UserFactory,
 )
-from tests.public.test_region_sheet import _render_model
+from tests.map.test_region_sheet import _render_model
 
 
 def _publish(region: Any, day: datetime.date, key: str) -> None:

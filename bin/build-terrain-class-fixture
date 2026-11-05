@@ -5,7 +5,7 @@
 # the same pixel contract the map's protocol handler reads, so a mistake in
 # the decode cannot hide behind a hand-built Uint8ClampedArray that shares
 # the mistake. That PNG is tile 12/2130/1455 of the DEBUG-only synthetic
-# tileset in apps/public/dev_terrain_class.py — the one tile that holds both
+# tileset in apps/map/dev_terrain_class.py — the one tile that holds both
 # domes, the lake (level ground) and the no-data hole.
 #
 # Re-run it when the synthetic surface changes, and commit the result:
@@ -29,7 +29,7 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from apps.public.dev_terrain_class import tile_png
+from apps.map.dev_terrain_class import tile_png
 
 FIXTURE_TILE = (12, 2130, 1455)
 OUTPUT = REPO / "tests" / "js" / "fixtures" / "terrain-class" / "fixture.png"

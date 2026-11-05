@@ -30,7 +30,7 @@
 
   /** Where the layer starts to paint (bulletin_terrain_core.js, map.js). */
   const MIN_ZOOM = 12;
-  /** Countries the terrain-class tiles cover (apps/public/problem_terrain.py). */
+  /** Countries the terrain-class tiles cover (apps/map/problem_terrain.py). */
   const TERRAIN_COUNTRIES = Object.freeze(['CH']);
   /** The device's record that the card has been shown. */
   const SEEN_KEY = 'snowdesk.map.slopes_notice_seen';

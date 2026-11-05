@@ -2605,7 +2605,7 @@
 
   // SNOW-1379: the countries the terrain-class tiles cover, by the prefix
   // of a region id ("CH-4115" → "CH"). The same list as `TERRAIN_COUNTRIES`
-  // in map_slopes_notice_core.js and apps/public/problem_terrain.py; held
+  // in map_slopes_notice_core.js and apps/map/problem_terrain.py; held
   // here rather than imported because this core loads on pages that load
   // neither.
   const TERRAIN_COUNTRIES = Object.freeze(['CH']);
@@ -3072,7 +3072,7 @@
   }
 
   // SNOW-1417: the widest rectangle `/api/ski-tours.geojson` answers, in
-  // degrees each way (`SKI_NETWORK_MAX_SPAN_DEG` in apps/public/api.py).
+  // degrees each way (`SKI_NETWORK_MAX_SPAN_DEG` in apps/map/api.py).
   const SKI_TOURS_MAX_SPAN_DEG = 0.5;
 
   /**

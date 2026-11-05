@@ -17,7 +17,7 @@ and missed three things someone heading out needs.
 1. **A private endpoint, `/api/area-items/`, names the reader's own things
    in a rectangle**: the trips they are on whose snapshot `bounds` touch
    the box, and their placed pins inside it, each with the curated point
-   it borrows a forecast from (`apps/public/area_items.py`). Same
+   it borrows a forecast from (`apps/map/area_items.py`). Same
    edge-inclusive rectangle rule as `/api/area-content/`. Anonymous gets
    200 and two empty lists for no query. `private, no-store`,
    `Vary: Cookie`, no ETag. Three queries however many pins:

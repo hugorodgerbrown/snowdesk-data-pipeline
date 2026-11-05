@@ -750,7 +750,7 @@ def routes_geojson(request: HttpRequest) -> JsonResponse:
     swap. Owner-scoped via ``Route.objects.for_user()``, in **one** query
     however many routes the user has.
 
-    Freshness headers follow ``apps.public.api.community_reports_geojson``
+    Freshness headers follow ``apps.map.api.community_reports_geojson``
     rather than ``favourites_geojson`` (which carries none):
     ``generated_at`` is the newest route's ``updated_at``, falling back to
     "now" for a user with no routes at all, and ``unsafe_after`` is

@@ -63,7 +63,7 @@ is *larger* than the region — again the correct side.
 
 A rectangle test can only ever over-select, so this holds by construction —
 but only while every step in the chain keeps over-stating rather than
-tightening. `tests/public/test_area_content_api.py` pins it against all 149
+tightening. `tests/map/test_area_content_api.py` pins it against all 149
 real CH micro-region boundaries, sweeping generated rectangles across the
 country at three sizes and asserting that every region with a boundary
 vertex inside the box is selected. The client's own half of the chain —

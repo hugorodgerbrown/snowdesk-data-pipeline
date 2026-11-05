@@ -66,8 +66,9 @@ from django.urls import path
 from django.views.generic import RedirectView
 
 from apps.design_system import views as design_system_views
+from apps.map import place_sheet, region_sheet, views as map_views
 
-from . import alert_views, debug_views, place_sheet, region_sheet, views
+from . import alert_views, debug_views, views
 from .feeds import CountryBulletinFeed
 
 app_name = "public"
@@ -78,7 +79,7 @@ urlpatterns = [
     path("", views.home, name="home"),
     # The interactive map — the app. This reverses SNOW-344, which had made
     # /map/ a redirect to /.
-    path("map/", views.map_page, name="map"),
+    path("map/", map_views.map_page, name="map"),
     # SNOW-770 merged the old /terms/ page into /terms-of-service/. The URL
     # stays registered — and stays HERE, ahead of the generic
     # <str:region_id>/ patterns, or "terms" starts resolving as a region_id

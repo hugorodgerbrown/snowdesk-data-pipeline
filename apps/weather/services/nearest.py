@@ -25,7 +25,7 @@ answers it.
 **The scan and the choice are separate helpers** (SNOW-965).
 ``forecast_candidates`` reads the day's candidates once and
 ``nearest_candidate`` picks from them, so a caller resolving many places —
-``apps.public.area_items`` borrowing a forecast for every pin in a
+``apps.map.area_items`` borrowing a forecast for every pin in a
 downloaded area — pays one scan however many places it asks about.
 ``nearest_forecast`` is their composition, with the same tie-break: the
 first candidate at the smallest distance wins.

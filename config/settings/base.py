@@ -244,6 +244,7 @@ INSTALLED_APPS = [
     "apps.bulletins",
     "apps.public",
     "apps.design_system",
+    "apps.map",
     "apps.accounts",
     "apps.analytics",
     "apps.observations",
@@ -1472,7 +1473,7 @@ BASEMAP_ORIGIN = basemap_origin(BASEMAP_STYLE_URL)
 # overlay-key → country-code routing stays where it already lives, in
 # ``COUNTRY_GROUPS`` (static/js/map_state.js), because ALBINA publishes for
 # two countries and a second copy of that mapping here would be the drift
-# tests/public/test_map_country_groups.py exists to prevent.
+# tests/map/test_map_country_groups.py exists to prevent.
 MAP_BULLETIN_PROVIDERS = {
     "slf": "country.ch",
     "meteofrance": "country.fr",
@@ -1520,7 +1521,7 @@ if MAP_DEFAULT_BOUNDARY and MAP_DEFAULT_BOUNDARY not in MAP_BOUNDARY_TIERS:
 # place by failing the deploy on a value off the scale rather than letting
 # ``nearestStep`` silently snap 0.37 to 0.25 — an operator who set a value
 # the map then ignored would have no way to tell. The copy is guarded by a
-# parity test (tests/public/test_map_defaults.py).
+# parity test (tests/map/test_map_defaults.py).
 MAP_OPACITY_STEPS = (0.0, 0.25, 0.5, 0.75, 1.0)
 
 # How strongly the danger choropleth is painted on a first visit. Default:

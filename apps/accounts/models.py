@@ -318,7 +318,7 @@ def user_is_verified(user: AbstractBaseUser | AnonymousUser) -> bool:
 
     This is the single definition shared by the server-side gate in
     ``apps/observations/views.py`` (``_auth_gate``) and the client-eligibility flag
-    built in ``apps/public/views.py`` (``_report_context``).  Keeping one function
+    built in ``apps/map/views.py`` (``_report_context``).  Keeping one function
     stops the two from drifting — the drift between them was the root cause of
     SNOW-477, where an authenticated-but-unverified user was marked eligible
     client-side but 403'd server-side.

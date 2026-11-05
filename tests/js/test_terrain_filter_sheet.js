@@ -13,7 +13,7 @@
  * a stubbed window.pwaBulletinTerrain checks the sheet never touches it.
  *
  * The fixture mirrors the hooks of
- * apps/public/templates/public/partials/_map_terrain_filter_sheet.html.
+ * apps/map/templates/public/partials/_map_terrain_filter_sheet.html.
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';

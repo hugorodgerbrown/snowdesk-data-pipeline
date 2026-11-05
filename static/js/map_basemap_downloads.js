@@ -145,7 +145,7 @@ function basemapLabel(key) {
  * (SNOW-832).
  *
  * The same source as `basemapLabel` above, and for the same reason:
- * `apps/public/views.py`'s `_BASEMAP_LABELS` is the single definition of
+ * `apps/map/views.py`'s `_BASEMAP_LABELS` is the single definition of
  * both the label AND the order (see `basemap_options`' own docstring —
  * the picker's display order is curated there, not in
  * `settings.BASEMAP_STYLES`), and duplicating the order into JS would be

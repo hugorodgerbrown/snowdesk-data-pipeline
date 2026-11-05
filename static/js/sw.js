@@ -3969,7 +3969,7 @@ function _offlineMissResponse() {
  * sheet's ``data-reader`` — rendered with the map page, which is the
  * reader's own — shows the matching one by a CSS rule, so a copy saved
  * under one account shows whoever opens it their own call.
- * ``tests/public/test_region_sheet.py``'s ``TestOfflineCopy`` holds the
+ * ``tests/map/test_region_sheet.py``'s ``TestOfflineCopy`` holds the
  * body to being byte-identical across readers. It is rendered in the
  * reader's language and kept in the one it was saved in. Accepted limit: a
  * signed-in user with no Account (``pwa-user-id`` ``""``, an operator made

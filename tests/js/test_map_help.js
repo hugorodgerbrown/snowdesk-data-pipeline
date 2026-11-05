@@ -95,7 +95,7 @@ function targetsMarkup() {
 
 /**
  * Build the #map-help-overlay fixture (mirroring
- * apps/public/templates/public/partials/_map_embed.html) plus its step targets,
+ * apps/map/templates/public/partials/_map_embed.html) plus its step targets,
  * optionally carrying the data-map-help-no-autostart opt-out home.html
  * sets (SNOW-535) to gate map_help.js's auto-start.
  */

@@ -125,7 +125,7 @@
    *
    * SNOW-749 had a third, the `download_sync` rollout flag. It was dropped
    * before merge on query cost (see
-   * ``apps.public.views._downloads_context``), so the gate is the session
+   * ``apps.map.views._downloads_context``), so the gate is the session
    * alone.
    *
    * @returns {boolean}

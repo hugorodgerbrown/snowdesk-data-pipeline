@@ -120,7 +120,7 @@ def micro_region_index() -> list[RegionBox]:
     """Return a bounding box for every micro-region the map draws.
 
     The filter is the one ``_build_micro_regions_payload``
-    (``apps/public/api.py``) applies — a mapped parent
+    (``apps/map/api.py``) applies — a mapped parent
     (``display_on_map``), a stored boundary, and any of
     ``settings.MAP_COUNTRY_CODES`` — so the candidate set here is exactly
     the one the client used to plan from when it had loaded all four

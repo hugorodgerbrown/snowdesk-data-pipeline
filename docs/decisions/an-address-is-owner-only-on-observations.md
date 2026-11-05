@@ -11,7 +11,7 @@ last-reviewed: 2026-10-01
 
 A `FieldObservation`'s three word address renders on **the reporter's own
 list** (`observation_list`, scoped by `for_user`) and **never** in
-`apps.public.api.community_reports_geojson`.
+`apps.map.api.community_reports_geojson`.
 
 The map's pin popup and the panel row therefore show different things. That
 asymmetry is deliberate. `_observation_meta.html` and

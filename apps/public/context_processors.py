@@ -214,7 +214,7 @@ def debug_log_visible(request: HttpRequest) -> dict[str, Any]:
     1. **Lazy.** A context processor runs for every ``render()``, so an
        eager read would bill responses that never render the panel at all:
        the JSON API endpoints returning a partial as ``{"html": ...}``
-       (``apps.public.api.region_summary`` and friends) and every HTMX
+       (``apps.map.api.region_summary`` and friends) and every HTMX
        fragment. ``SimpleLazyObject`` defers it until a template actually
        reads the variable.
     2. **Anonymous short-circuit.** ``request.user.is_authenticated`` is

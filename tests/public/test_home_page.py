@@ -49,7 +49,7 @@ from django.test import Client, RequestFactory, override_settings
 from django.urls import reverse
 from freezegun import freeze_time
 
-from apps.public.views import (
+from apps.map.views import (
     _community_reports_context,
     _default_region_label,
     _favourites_context,
@@ -636,7 +636,7 @@ class TestHomeEditMode:
     """SNOW-344: /?edit=resorts gates the edit-resorts panel on superuser.
 
     Mirrors the TestMapViewEditMode suite that previously lived against
-    map_view (tests/public/test_edit_resorts_api.py). The same rules
+    map_view (tests/map/test_edit_resorts_api.py). The same rules
     apply now that home() absorbs the edit-resorts context block; SNOW-724
     swapped the ``edit_map`` waffle flag for ``request.user.is_superuser``
     without changing the audience.

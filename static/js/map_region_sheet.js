@@ -56,7 +56,7 @@
  *   - a fetched body is kept in memory by its URL (region and day) for
  *     BODY_TTL_MS, so going back to a region, or scrubbing back to a day,
  *     paints it with no request. The view sends a matching Cache-Control
- *     (apps/public/region_sheet.py), so the browser's own cache answers a
+ *     (apps/map/region_sheet.py), so the browser's own cache answers a
  *     reload: a past day's body for a day, today's for ten minutes, because
  *     bulletins are amended during the day.
  *

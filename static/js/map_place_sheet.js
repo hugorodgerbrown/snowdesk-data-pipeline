@@ -20,7 +20,7 @@
  *
  * map.js decides which surface a tap opens and calls
  * `window.pwaPlaceSheet.open({kind, id, name, createdAt})`; this module
- * fetches the body (apps/public/place_sheet.py) for the day the map is
+ * fetches the body (apps/map/place_sheet.py) for the day the map is
  * showing and paints it. A newer open drops an older answer.
  *
  * THE ACTIONS. A resort's Save star is favourites.js's own [data-resort-star]

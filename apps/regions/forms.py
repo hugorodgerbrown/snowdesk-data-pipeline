@@ -5,7 +5,7 @@ Provides:
   - ResortDetailsForm: the hand-curated Resort metadata fields (SNOW-500)
     edited from the in-map resort editor's side panel. The panel is a JSON
     client, not an HTML form post, so this form exists purely as the
-    validation layer for ``apps.public.api.edit_resort_save`` — it is never
+    validation layer for ``apps.map.editor.edit_resort_save`` — it is never
     rendered. Using a ModelForm keeps every constraint (max_length, the
     MM-DD ``MONTH_DAY_VALIDATOR``, URL syntax, PositiveSmallInteger range)
     in one place: the model.
@@ -47,7 +47,7 @@ class ResortDetailsForm(forms.ModelForm):
     Bound against an existing ``Resort`` instance by the save endpoint. The
     endpoint merges the incoming JSON over the instance's current values
     before binding, so an absent key means "leave alone" rather than
-    "blank it" — see ``apps.public.api.edit_resort_save``.
+    "blank it" — see ``apps.map.editor.edit_resort_save``.
     """
 
     class Meta:

@@ -14,7 +14,7 @@
  *   - the menu's tabs set the mode live and stay in step with the date
  *     row; the rows carry their data-mode-only markers and are never
  *     disabled (hiding is map.css's, which jsdom cannot compute, so it is
- *     pinned in tests/public/test_map_page.py instead);
+ *     pinned in tests/map/test_map_page.py instead);
  *   - in Terrain a tap on the date comes back to Dated, not to the calendar;
  *   - toConditionsToday() goes to Dated on today (SNOW-1422), and entering
  *     Terrain announces snowdesk:map-mode-changed, which map.js and the

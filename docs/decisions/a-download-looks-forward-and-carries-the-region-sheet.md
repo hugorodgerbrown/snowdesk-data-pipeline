@@ -57,7 +57,7 @@ disabled outline beside a hidden sign-in link, and `map_place_sheet.js`
 paints it from the favourites feed `map.js` already holds
 (`window.pwaFavouritedResorts`, offline from the overlay cache) — so its
 body is byte-identical for every reader (`TestResortOfflineCopy` in
-`tests/public/test_place_sheet.py`) and it answers `private, max-age` on
+`tests/map/test_place_sheet.py`) and it answers `private, max-age` on
 the region sheet's policy. It joins `PUBLIC_PARTIAL_PATH` in both copies,
 so it takes point 3 above whole: path + `d`, unstamped, `HX-Request` on
 the warm, the offline-miss 504 and its "This day isn't downloaded" line.
@@ -116,7 +116,7 @@ rendered with the map page from `user.is_authenticated`
 the choice holds the moment a body lands, from the network or the worker's
 cache. The map page is the reader's own — the worker keeps it partitioned
 by principal — so the attribute is right offline too.
-`tests/public/test_region_sheet.py` (`TestOfflineCopy`) holds the body to
+`tests/map/test_region_sheet.py` (`TestOfflineCopy`) holds the body to
 being byte-identical across readers, bar the glossary popovers' run-on ids.
 A body is served in the language it was saved in.
 

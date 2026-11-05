@@ -9,7 +9,7 @@
  * directly; this file is what turns that into a sheet, and deliberately
  * holds no logic worth testing without a DOM.
  *
- * Markup: apps/public/templates/public/partials/_map_downloads_sheet.html.
+ * Markup: apps/map/templates/public/partials/_map_downloads_sheet.html.
  * Opened from ``#map-custom-download-control`` (the bottom-right roundel —
  * public/partials/_map_custom_download_control.html), driven by that
  * button's own click handler in map.js calling ``window.pwaDownloadsManager
@@ -642,7 +642,7 @@
   // this file's own position in the document relative to that one's
   // <script> tag: by the time a user can open this sheet, every deferred
   // script on the page — including map_basemap_downloads.js — has already
-  // run. tests/public/test_map_script_order.py's own docstring lists this
+  // run. tests/map/test_map_script_order.py's own docstring lists this
   // file as one of the eight map*.js modules deliberately outside
   // MAP_BUNDLE's load-order contract, which only binds modules that need
   // each other AT PARSE TIME.

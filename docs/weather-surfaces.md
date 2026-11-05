@@ -24,7 +24,7 @@ restoration.
 
 | Surface | Anchor | Which day |
 |---------|--------|-----------|
-| Favourite card ([`apps/favourites/templates/favourites/partials/_favourite_card.html`](../apps/favourites/templates/favourites/partials/_favourite_card.html)) and a pin's place sheet ([`apps/public/templates/public/partials/_place_sheet_body.html`](../apps/public/templates/public/partials/_place_sheet_body.html)) | the nearest `public()` location with a row for the day, at any distance, named under the weather (`nearest_forecast`) | today, or the map's day on the sheet |
+| Favourite card ([`apps/favourites/templates/favourites/partials/_favourite_card.html`](../apps/favourites/templates/favourites/partials/_favourite_card.html)) and a pin's place sheet ([`apps/map/templates/public/partials/_place_sheet_body.html`](../apps/map/templates/public/partials/_place_sheet_body.html)) | the nearest `public()` location with a row for the day, at any distance, named under the weather (`nearest_forecast`) | today, or the map's day on the sheet |
 | Resort forecast strip ([`apps/public/templates/public/partials/_resort_forecast.html`](../apps/public/templates/public/partials/_resort_forecast.html)) | the resort's BASE / MID / TOP `ResortLocation`, the pin standing in for Base | today and the six days after it |
 | Location forecast page ([`apps/public/templates/public/location_weather.html`](../apps/public/templates/public/location_weather.html)) | one `Location` | `?date=` or today |
 | Map overlay ([`static/js/map.js`](../static/js/map.js)) | every `Location.objects.public()` | the scrubbed date |
@@ -33,7 +33,7 @@ restoration.
 
 The first three are server-rendered; the map overlay is a GeoJSON feed and a
 MapLibre symbol layer, plus a tap sheet
-([`apps/public/templates/public/partials/_weather_detail.html`](../apps/public/templates/public/partials/_weather_detail.html))
+([`apps/map/templates/public/partials/_weather_detail.html`](../apps/map/templates/public/partials/_weather_detail.html))
 that hands off to the location forecast page.
 
 **The resort page draws a week per point (SNOW-1157).** It is still a
@@ -658,7 +658,7 @@ meeting points stopped buying a fetch
 by policy rather than by definition — a paid fetch for a private pin would
 widen `active()`, and serving it here would publish a stranger's pin and
 its coordinates.
-`tests/public/test_weather_geojson_api.py` asserts a favourite-only
+`tests/map/test_weather_geojson_api.py` asserts a favourite-only
 location is absent, because a comment would not have caught it.
 
 A location with no row for today still gets a feature, with an empty

@@ -80,5 +80,5 @@ one.
 Add the file to the right list at the right position. Do not tag it in the
 template. `tests/public/templatetags/test_js_bundles.py` checks every member
 exists and is listed once, and that each list renders as one contiguous run
-in list order; `tests/public/test_map_script_order.py` still checks the
+in list order; `tests/map/test_map_script_order.py` still checks the
 `MAP_BUNDLE` order Vitest boots.

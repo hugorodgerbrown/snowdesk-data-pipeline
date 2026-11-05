@@ -20,7 +20,7 @@
  * [data-overflow-menu] the event landed in or near". At most one menu is
  * ever open at once, matching every other popover in this app.
  *
- * Loaded once from apps/public/templates/public/partials/_routes_surface.html,
+ * Loaded once from apps/map/templates/public/partials/_routes_surface.html,
  * next to share.js / routes.js — the scripts that surface needs and no
  * other page does. (It claimed to load from _map_downloads_sheet.html for
  * its whole life; nothing loaded it anywhere, because SNOW-658 dropped

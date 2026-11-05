@@ -62,6 +62,8 @@ TEMPLATE_ROOTS: tuple[Path, ...] = (
     REPO_ROOT / "apps" / "trips" / "templates",
     # SNOW-1427: the component library moved out of apps/public.
     REPO_ROOT / "apps" / "design_system" / "templates",
+    # SNOW-1428: the map moved out of apps/public.
+    REPO_ROOT / "apps" / "map" / "templates",
 )
 
 # SNOW-619: first-party JavaScript, scanned for the same token rules. Only
