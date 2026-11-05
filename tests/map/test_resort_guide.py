@@ -6,16 +6,16 @@ Covers:
   - popular_resorts() lists the popular slugs that have a pin, in
     POPULAR_RESORT_SLUGS order, with their region's id and name; a missing
     or unpinned resort is left out.
-  - guide_date() keeps the map's day in season, and out of season moves it
-    to the example's day, or the default example day with none set.
+  - guide_date() keeps the map's day on a day with bulletins, and otherwise
+    moves it to the example's day, or the default example day with none set.
   - The map page renders the guide (#map-resort-guide with its day, the
     bar, the pill, the finish card, the strings template) and the popular
     resorts as JSON, and the finish card's pin is a favourites star for a
     signed-in visitor and a sign-in link otherwise.
   - The map's context carries both values, the day read from the example
     share in the same query that answers the welcome card's link.
-  - SNOW-1244: the between-seasons note renders out of season only, with
-    its season, sample day and region, and the map page loads its script.
+  - SNOW-1431: no between-seasons note in any state; with no rated row
+    today the guide still has its day.
 """
 
 from __future__ import annotations
@@ -25,14 +25,16 @@ import json
 import re
 
 import pytest
-from django.template.loader import render_to_string
 from django.test import Client
 from django.urls import reverse
+from freezegun import freeze_time
 
 from apps.map import resort_guide
 from apps.routes.services.example import DEFAULT_EXAMPLE_DATE
 from tests.factories import (
+    BulletinFactory,
     MicroRegionFactory,
+    RegionDayRatingFactory,
     ResortFactory,
     RouteShareFactory,
     UserFactory,
@@ -92,11 +94,11 @@ class TestGuideDate:
     """guide_date() — the day the guide moves the map to."""
 
     def test_keeps_the_maps_day_in_season(self) -> None:
-        """In season there is a bulletin to read today."""
+        """With a rated row today there is a bulletin to read."""
         assert resort_guide.guide_date(False, datetime.date(2026, 4, 10)) is None
 
     def test_moves_to_the_examples_day_out_of_season(self) -> None:
-        """Out of season it borrows the example route's day."""
+        """With no rated row today it borrows the example route's day."""
         day = datetime.date(2026, 3, 2)
         assert resort_guide.guide_date(True, day) == day
 
@@ -176,39 +178,31 @@ class TestMapPage:
         assert "Continue with email to upload" in content
 
 
-class TestBetweenSeasonsNote:
-    """SNOW-1244: the note that explains today's empty off-season map."""
+class TestNoBetweenSeasonsNote:
+    """SNOW-1431: the between-seasons note is gone; the guide's day stays."""
 
-    def _render(self, *, is_offseason: bool) -> str:
-        """Render the partial as the map page would, out of season or in."""
-        return render_to_string(
-            "public/partials/_map_between_seasons.html",
-            {
-                "is_offseason": is_offseason,
-                "season_label": "2025/26",
-                "archived_season_start": datetime.date(2025, 11, 1),
-                "resort_guide_date": datetime.date(2026, 4, 10),
-                "resort_guide_popular": [{"region_id": "CH-4115"}],
-            },
+    @freeze_time("2026-08-15")
+    def test_a_day_without_bulletins_has_no_note_but_a_guide_day(self) -> None:
+        """No rated row today: no note, and the guide still moves the map."""
+        RegionDayRatingFactory.create(
+            date=datetime.date(2026, 4, 10), source_bulletin=BulletinFactory.create()
         )
+        response = Client().get(reverse("public:map"))
+        content = response.content.decode()
 
-    def test_out_of_season_it_names_the_month_and_the_sample(self) -> None:
-        """The note says when bulletins return and offers the sample day."""
-        content = self._render(is_offseason=True)
+        assert response.context["is_offseason"] is True
+        assert response.context["resort_guide_date"] == DEFAULT_EXAMPLE_DATE
+        assert 'id="map-between-seasons"' not in content
+        assert "js/map_between_seasons.js" not in content
+        assert "Between seasons" not in content
 
-        assert 'id="map-between-seasons"' in content
-        assert 'data-season="2025/26"' in content
-        assert 'data-sample-date="2026-04-10"' in content
-        assert 'data-region-id="CH-4115"' in content
-        assert "No avalanche bulletins until November" in content
-        assert "Explore a sample bulletin · 10 Apr" in content
+    @freeze_time("2026-02-15")
+    def test_a_day_with_bulletins_has_no_note_and_keeps_its_day(self) -> None:
+        """A rated row today: no note, and the guide runs on the map's day."""
+        RegionDayRatingFactory.create(
+            date=datetime.date(2026, 2, 15), source_bulletin=BulletinFactory.create()
+        )
+        response = Client().get(reverse("public:map"))
 
-    def test_in_season_it_renders_nothing(self) -> None:
-        """In season the map has colour, so there is nothing to explain."""
-        assert self._render(is_offseason=False).strip() == ""
-
-    def test_the_map_page_loads_its_script(self) -> None:
-        """The script is on the map page, which renders the note off-season."""
-        content = Client().get(reverse("public:map")).content.decode()
-
-        assert "js/map_between_seasons.js" in content
+        assert response.context["resort_guide_date"] is None
+        assert 'id="map-between-seasons"' not in response.content.decode()

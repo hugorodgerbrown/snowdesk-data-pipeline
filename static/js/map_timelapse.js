@@ -1,5 +1,5 @@
 /*
- * static/js/map_timelapse.js — the five season-playback transport buttons.
+ * static/js/map_timelapse.js — the five timeline-playback transport buttons.
  *
  * SNOW-610, step 4: extracted verbatim from map.js. Runs at parse time and
  * binds its own DOM, so it loads AFTER map.js in the position it held
@@ -10,11 +10,11 @@
  * from static/js/map_shared.js. Both load first.
  */
 
-// Season timelapse — five transport buttons on the scrubber:
-//   |<  skip to season start
+// Timelapse — five transport buttons on the scrubber:
+//   |<  skip to the start of the track
 //   <   play in reverse from current thumb position (second press = stop)
 //   >   play forward from current thumb position (second press = stop)
-//   >|  skip to season end
+//   >|  skip to the end of the track
 //
 // Each frame repaints region colours via feature-state and announces a
 // snowdesk:date-changed event so the date readout stays in sync. Pressing
@@ -35,8 +35,8 @@
   // Drive the scrubber thumb so playback position is visible.
   const scrubber = document.getElementById('season-scrubber');
   const scrubberThumb = scrubber ? scrubber.querySelector('.season-scrubber-thumb') : null;
-  // SNOW-794: the scrubber's TRACK span (twelve months ending today), not the
-  // avalanche season — the two used to be one pair under one name. Playback
+  // The scrubber's TRACK span: the latest bulletin run through today
+  // (SNOW-1431), under the ``season*`` names it has always had. Playback
   // still steps through ``sortedDates``, real data days; this is only how a
   // frame becomes a thumb position.
   const seasonStartMs = scrubber ? Date.parse(scrubber.dataset.seasonStart) : NaN;

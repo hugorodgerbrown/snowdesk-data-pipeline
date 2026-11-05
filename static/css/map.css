@@ -1854,9 +1854,8 @@ body.map-fullscreen > nav {
 }
 
 /* While a route is drawn the map's notes step aside with its overlays: the
-   between-seasons note and the tour offer sit where the cross needs the
-   ground to be seen. Set on <html> by route_draw.js. */
-html[data-route-drawing] #map-between-seasons,
+   tour offer and the slopes notice sit where the cross needs the ground to
+   be seen. Set on <html> by route_draw.js. */
 html[data-route-drawing] #map-tour-offer,
 html[data-route-drawing] #map-slopes-notice {
     display: none !important;
@@ -3883,18 +3882,18 @@ html[data-route-drawing] #map-slopes-notice {
 /* —— When the scrubber is on screen (SNOW-794) ————————————————
    Two conditions, both of them absences rather than preferences.
 
-   1. OFF-SEASON. The track is the avalanche season; a day outside it has no
-      position on that track, and a thumb clamped to whichever end it is past
-      is the lie this ticket opened with. `data-in-season` is server-rendered
-      for first paint and kept current by static/js/map_scrubber_reveal.js.
-      The calendar covers those days — it is "pick a date, any date", this is
-      a season scrubber, and the calendar is what reveals it.
+   1. OFF THE TRACK. The track is the latest bulletin run through today
+      (SNOW-1431), so today is always on it; a day the calendar offers
+      before the run started has no position there, and a thumb clamped to
+      the start is the lie SNOW-794 opened with. `data-on-track` is
+      server-rendered for first paint and kept current by
+      static/js/map_scrubber_reveal.js. The calendar covers those days.
 
    2. NARROW VIEWPORTS. At 148px a season is under a pixel a day and a 40px
       fingertip covers 57 of them. It was never a date control on a phone;
       since SNOW-794 the calendar grid carries the danger-by-day colour that
       was the only other thing it offered, so nothing is lost with it gone. */
-.season-scrubber[data-in-season="false"] {
+.season-scrubber[data-on-track="false"] {
     display: none;
 }
 
@@ -4842,19 +4841,6 @@ html[data-route-drawing] #map-slopes-notice {
     margin: 0 0 12px;
 }
 
-/* Off-season reference line — rendered only when is_offseason is True, and
-   the only surface carrying the archive notice. */
-.map-tour-offer-offseason {
-    font-size: 11px;
-    line-height: 1.4;
-    color: var(--color-text-3);
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    margin: 0 0 12px;
-    padding: 6px 8px;
-    background: rgba(0, 0, 0, 0.04);
-    border-radius: 6px;
-}
-
 /* SNOW-1230: the welcome's choices — a list of rows, each a whole-row
    target with an icon tile, a title and a line under it. The "?" menu
    (#map-help-menu) is built from the same rows. */
@@ -5319,39 +5305,6 @@ html[data-route-drawing] #map-slopes-notice {
     color: var(--color-text-2);
     font-weight: 500;
     text-decoration: underline;
-}
-
-/* SNOW-1244 — the between-seasons note (#map-between-seasons): the finish
-   card's look, along the top of the map under the controls, where the
-   example guide's bar sits on a phone. map_between_seasons.js sets `top`. */
-.map-between-seasons {
-    position: absolute;
-    left: calc(env(safe-area-inset-left, 0px) + 12px);
-    right: calc(env(safe-area-inset-right, 0px) + 12px);
-    z-index: 6;
-    padding: 16px 18px;
-    border: 0.5px solid var(--color-border);
-    border-radius: 12px;
-    background: var(--color-card);
-    box-shadow: var(--shadow-glass);
-    color: var(--color-text-1);
-    font-family: var(--sans);
-}
-
-.map-between-seasons[hidden] {
-    display: none;
-}
-
-.map-between-seasons .map-tour-offer-eyebrow {
-    padding-right: 28px;
-}
-
-@media (min-width: 640px) {
-    .map-between-seasons {
-        left: var(--map-edge-inset-left);
-        right: auto;
-        width: var(--route-column-width);
-    }
 }
 
 .map-example-finish-btn:focus-visible {

@@ -161,10 +161,10 @@ def map_page(request: HttpRequest) -> HttpResponse:
 
     CH-4115 (Martigny / Verbier) is pre-selected so the readout chip and
     breadcrumb are correct on first paint (SNOW-342); the scrubber paints that
-    region's season into the track. The template carries a hidden one-time
-    offer of the map tour (``#map-tour-offer``, SNOW-1117), with the off-season
-    note when today is past the season end; it replaced the ``#home-intro``
-    welcome panel now that the homepage says what Snowdesk is.
+    region's ratings into the track. The template carries a hidden one-time
+    offer of the map tour (``#map-tour-offer``, SNOW-1117); it replaced the
+    ``#home-intro`` welcome panel now that the homepage says what Snowdesk
+    is.
 
     Context:
       ``ribbon``              — default-region (CH-4115) SeasonRibbon or None.
@@ -173,7 +173,8 @@ def map_page(request: HttpRequest) -> HttpResponse:
       ``default_region_slug`` — str: the pre-selected region's bulletin slug.
       ``default_subregion_name`` — str: L2 sub-region name for the breadcrumb.
       ``default_major_name``  — str: L1 major-region name for the breadcrumb.
-      ``is_offseason``        — True when today is past the active season end.
+      ``is_offseason``        — True when no region has a rated row for
+                                today (SNOW-1431): data, not a date.
       ``edit_target``         — "resorts" when resort-edit mode is active,
                                 else "". The empty string is the normal map.
       ``edit_queue_url``      — URL for the edit queue API (resorts only).
@@ -198,8 +199,8 @@ def map_page(request: HttpRequest) -> HttpResponse:
                                 offers it only when there is one.
       ``resort_guide_popular`` — the "Find a resort" guide's popular
                                 resorts (SNOW-1231, ``resort_guide``).
-      ``resort_guide_date``   — the day that guide moves the map to out of
-                                season, or None in season.
+      ``resort_guide_date``   — the day that guide moves the map to on a
+                                day with no bulletin, or None otherwise.
 
     Args:
         request: The incoming HTTP request.
@@ -220,21 +221,9 @@ def map_page(request: HttpRequest) -> HttpResponse:
         default_major_name,
     ) = _default_region_label()
 
-    # The season is considered "off" when today is past the season_end bound
-    # already narrowed to actual data in _base_map_context().
-    season_end: datetime.date = base_ctx["season_end"]
-    is_offseason = today > season_end
-    # Label + resume-month for the intro-card off-season reference (the
-    # full-width archive bar SNOW-445 added has been dropped). Derived from
-    # the *data window's* calendar season (November → May of the season
-    # containing season_end), NOT from `today` (which drifts into the next
-    # calendar season over the summer) nor from the data-narrowed
-    # season_start (the first populated date, not the Nov 1 boundary).
-    # Precomputed here rather than via a template filter chain.
-    archived_season_start, _archived_season_end = _season_date_range(season_end)
-    season_label = (
-        f"{archived_season_start.year}/{(archived_season_start.year + 1) % 100:02d}"
-    )
+    # SNOW-1431: "off season" is data, not a date — no region has a rated
+    # row for today. It moves the resort walkthrough to a day that has one.
+    is_offseason = not RegionDayRating.objects.rated().filter(date=today).exists()
 
     # SNOW-344 (merged from map_view): edit mode when the querystring and
     # the request user's superuser bit both agree. Silently ignored for
@@ -281,7 +270,7 @@ def map_page(request: HttpRequest) -> HttpResponse:
     terrain_filter_ctx = _terrain_filter_context()
     trips_ctx = trip_url_templates()
     # SNOW-1230/1231: one query answers both the welcome card's example
-    # link (is one set?) and the resort guide's off-season day (its day).
+    # link (is one set?) and the resort guide's no-bulletin day (its day).
     example = RouteShare.objects.example().only("example_date").first()
 
     return render(
@@ -306,15 +295,13 @@ def map_page(request: HttpRequest) -> HttpResponse:
             "default_subregion_name": default_subregion_name,
             "default_major_name": default_major_name,
             "is_offseason": is_offseason,
-            "season_label": season_label,
-            "archived_season_start": archived_season_start,
             # SNOW-1230: the welcome card's "Explore an example route", and
             # the "?" menu's way back to it, render only while an example
             # is set (set_example_route). One indexed EXISTS, on this page
             # alone — not in _routes_context, which the homepage runs too.
             "example_route_url": reverse("routes:example") if example else "",
             # SNOW-1231: the "Find a resort" walkthrough's popular resorts
-            # and, out of season, the day it moves the map to.
+            # and, on a day with no bulletin, the day it moves the map to.
             "resort_guide_popular": resort_guide.popular_resorts(),
             "resort_guide_date": resort_guide.guide_date(
                 is_offseason, example.example_date if example else None
@@ -347,39 +334,6 @@ _BASEMAP_LABELS: dict[str, Promise] = {
     "ign_plan": _("IGN (FR)"),
     "basemap_at": _("basemap.at (AT)"),
 }
-
-# Avalanche seasons run roughly Nov → May. The canonical boundary is
-# November 1 — any date on or after Nov 1 belongs to the season that
-# starts in that calendar year; dates before Nov 1 belong to the season
-# that started in the previous calendar year. Used by the map scrubber
-# + timelapse to size the slider track.
-_SEASON_START_MONTH = 11
-
-_SEASON_START_DAY = 1
-
-
-def _season_date_range(reference: datetime.date) -> tuple[datetime.date, datetime.date]:
-    """
-    Return the date range for the avalanche season containing ``reference``.
-
-    The season runs from November 1 of the start year to May 31 of the
-    following year. Dates before November belong to the season that
-    started the previous November.
-
-    Args:
-        reference: Any date within the desired season.
-
-    Returns:
-        A ``(season_start, season_end)`` tuple of ``datetime.date`` objects.
-
-    """
-    if reference.month >= _SEASON_START_MONTH:
-        start_year = reference.year
-    else:
-        start_year = reference.year - 1
-    season_start = datetime.date(start_year, _SEASON_START_MONTH, _SEASON_START_DAY)
-    season_end = datetime.date(start_year + 1, 5, 31)
-    return season_start, season_end
 
 
 def _basemaps_for_picker() -> list[dict[str, Any]]:
@@ -424,7 +378,7 @@ def _shown_date(request: HttpRequest) -> datetime.date | None:
 
     SNOW-660 made ``?d=`` the single home of the chosen day, written and read
     by the client. This is a READ, not a second writer: the server needs it
-    only to decide whether the season scrubber renders at all (SNOW-794), so
+    only to decide whether the scrubber is on screen (SNOW-794), so
     that first paint is already correct instead of correcting itself a frame
     later.
 
@@ -453,33 +407,29 @@ def _base_map_context(
     shown_date: datetime.date | None = None,
 ) -> dict[str, Any]:
     """
-    Build the shared map context for the season scrubber and ribbon.
+    Build the shared map context for the timeline scrubber and ribbon.
 
     Shared between ``home()`` (the canonical map page) and any other view
     that embeds the full map surface.
 
-    The scrubber's track IS the avalanche season, and nothing else — the
-    Nov 1 / May 31 calendar bounds narrowed to the actual ``RegionDayRating``
-    data when rows exist (SNOW-173), falling back to the calendar window when
-    the season has not started or the DB is empty. The same pair is what the
-    calendar grid tints as ``in-season`` and what ``home()`` reads for its
-    off-season note.
+    The scrubber's track follows the data (SNOW-1431,
+    docs/decisions/date-windows-follow-the-data.md): it starts at the first
+    rated day of the latest bulletin run
+    (``RegionDayRatingQuerySet.latest_run``) and ends at the later of that
+    run's last rated day and today. Today is therefore always on the track,
+    in August as in January, and an empty DB gives ``[today, today]``. The
+    context keeps the ``season_start`` / ``season_end`` names the templates
+    and ``data-season-*`` attributes have always used.
 
-    SNOW-794 briefly gave the scrubber a twelve-month window of its own so it
-    could place any day the calendar offers. That was the wrong shape: it
-    made one control try to be two. The calendar is "pick a date, any date";
-    the scrubber is a SEASON scrubber, and a day outside the season is
-    simply not its business — ``scrubber_in_season`` below is how it says so.
+    SNOW-794 made the calendar the scrubber's reveal: the calendar is "pick
+    a date, any date", and a day it offers before the run started has no
+    position on the track. ``scrubber_on_track`` says whether the shown day
+    has one; when it has not, the scrubber is hidden rather than clamped to
+    a day the URL does not name. Computed server-side so first paint is
+    already right rather than correcting itself.
 
     ``today_pct`` is clamped to [0, 100] so the thumb always sits inside the
-    track; off-season it pins to whichever end today is past, which nothing
-    reads while the scrubber is hidden but keeps the markup coherent.
-
-    ``scrubber_in_season`` decides whether the scrubber renders at all: the
-    calendar is its reveal. In season it is there to drag; out of season
-    there is no stretch of track the shown day belongs to, and a control
-    that cannot answer is better absent than lying. Computed server-side so
-    first paint is already right rather than correcting itself.
+    track.
 
     Args:
         today: Current date — passed in so callers can freeze time in tests.
@@ -491,24 +441,21 @@ def _base_map_context(
         A dict with ``basemaps``, ``default_basemap_key``,
         ``map_default_overlays`` / ``map_default_boundary`` /
         ``map_default_opacity_step`` (SNOW-872's configurable opening view),
-        ``season_start``, ``season_end``, ``today``, ``today_pct``,
-        ``scrubber_in_season``, ``display_date``, and ``data_end`` (the latest
-        ``RegionDayRating.date`` in the window, or ``None`` when the season
-        has not started or the DB is empty).
+        ``season_start``, ``season_end`` (the track's bounds), ``today``,
+        ``today_pct``, ``scrubber_on_track``, ``display_date``, and
+        ``data_end`` (the latest run's last rated day, or ``None`` when no
+        row is rated).
 
     """
-    season_start, season_end = _season_date_range(today)
-    data_start, data_end = RegionDayRating.objects.season_date_bounds(
-        season_start, season_end
-    )
-    if data_start is not None and data_end is not None:
-        season_start = data_start
-        season_end = data_end
+    run = RegionDayRating.objects.latest_run()
+    data_end = run[1] if run is not None else None
+    season_start = run[0] if run is not None else today
+    season_end = max(data_end, today) if data_end is not None else today
     span = (season_end - season_start).days
     elapsed = max(0, min((today - season_start).days, span))
     today_pct = round(elapsed / span * 100, 2) if span else 100.0
     effective_date = shown_date or today
-    scrubber_in_season = season_start <= effective_date <= season_end
+    scrubber_on_track = season_start <= effective_date <= season_end
     return {
         "basemaps": _basemaps_for_picker(),
         "default_basemap_key": settings.BASEMAP,
@@ -531,13 +478,13 @@ def _base_map_context(
         "season_end": season_end,
         "today": today,
         "today_pct": today_pct,
-        "scrubber_in_season": scrubber_in_season,
+        "scrubber_on_track": scrubber_on_track,
         # The day map.js's boot leg fetches ratings for — ``readDisplayDate()``,
         # the ``?d=`` the visitor asked for or else today. map.html preloads
         # that exact URL so the fetch is answered from the preload rather than
         # queued behind map.js. It used to prefetch ``season_end``, a day
-        # SNOW-660/793 stopped booting on: off season that was a wasted
-        # request for a date nothing paints, plus the real one after it.
+        # SNOW-660/793 stopped booting on: a wasted request for a date
+        # nothing paints, plus the real one after it.
         "display_date": effective_date,
         "data_end": data_end,
         # SNOW-792: the scrubber's calendar popup builds its month grid in

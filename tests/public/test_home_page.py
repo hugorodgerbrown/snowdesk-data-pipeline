@@ -5,8 +5,9 @@ Covers:
   - GET /map/ returns 200 with the map container (#map).
   - The tour offer (#map-tour-offer) is rendered, hidden (SNOW-1117).
   - The season ribbon (#season-ribbon) is present when data exists.
-  - Off-season note present in #map-tour-offer when is_offseason is True, and
-    no full-width off-season bar above the map (SNOW-445's strip, dropped).
+  - No off-season line in #map-tour-offer and no full-width off-season bar
+    above the map, in any state; is_offseason is "no rated row today"
+    (SNOW-1431).
   - The sample-bulletin URL itself returns 200 (against test_data fixture).
   - #season-ribbon carries data-default-region-name and -slug on homepage
     (CH-4115 pre-selection, retained — SNOW-342).
@@ -230,46 +231,18 @@ class TestHomePageBasic:
 
 @pytest.mark.django_db
 class TestHomePageOffseason:
-    """Tests for the off-season note in the tour offer and the persistent bar."""
+    """No off-season notice on the map, in any state (SNOW-1431)."""
 
-    @freeze_time("2026-06-15")  # past the May 31 season end
-    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
-    def test_offseason_note_present_when_past_season_end(self) -> None:
-        """Off-season note (.map-tour-offer-offseason) appears in the offer after season end."""
-        client = Client()
-        response = client.get(reverse("public:map"))
-        content = response.content.decode()
-        assert "map-tour-offer-offseason" in content
-
-    @freeze_time("2026-06-15")  # past the May 31 season end
-    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
-    def test_no_offseason_bar_above_the_map(self) -> None:
-        """The full-width off-season strip is gone, off-season included.
+    @freeze_time("2026-07-20")  # summer, after a run that ended in February
+    def test_no_offseason_line_or_bar_on_a_day_without_bulletins(self) -> None:
+        """The welcome card's archive line and the old full-width bar are gone.
 
         SNOW-445 put an archive notice in a full-width bar between the
-        header and the map, and SNOW-639 made it dismissable. It stated a
-        resume month the data no longer supported, so it was dropped; the
-        #map-tour-offer note asserted above is the one remaining surface. The
-        old bottom-left chip it had itself replaced stays gone too.
-        """
-        client = Client()
-        response = client.get(reverse("public:map"))
-        content = response.content.decode()
-        assert 'id="map-offseason-bar"' not in content
-        assert 'id="map-offseason-note"' not in content
-        assert "New season starts in" not in content
-
-    @freeze_time("2026-07-20")  # summer — past the data window
-    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
-    def test_offseason_label_uses_calendar_season_not_data_start(self) -> None:
-        """SNOW-445: the note names the November→May season, not the first data date.
-
-        With data that starts mid-season (February), the archive label must
-        still read "2025/26" and "starts in November" — derived from the
-        calendar season containing the data window, not the data-narrowed
-        season_start (which is the first populated date, e.g. February).
-        Regression guard: an earlier cut derived the label from season_start
-        and rendered "starts in April — 2026/26".
+        header and the map, SNOW-639 made it dismissable and a later ticket
+        moved it into #map-tour-offer as "Map shows 25/26 season — live
+        bulletins resume in November". SNOW-1431 dropped it with the fixed
+        season it named: the scrubber's track runs through today, and a day
+        with no bulletin says so by having no colour.
         """
         region = MicroRegionFactory.create(region_id="CH-5500")
         bulletin = BulletinFactory.create()
@@ -277,38 +250,26 @@ class TestHomePageOffseason:
             RegionDayRatingFactory.create(
                 region=region, date=day, source_bulletin=bulletin
             )
-        client = Client()
-        response = client.get(reverse("public:map"))
+        response = Client().get(reverse("public:map"))
         content = response.content.decode()
-        assert "map-tour-offer-offseason" in content
-        assert "Map shows 2025/26 season" in content
-        assert "live bulletins resume in November" in content
-        assert "2026/26" not in content
 
-    @freeze_time("2026-03-10")  # today is past data_end when no data exists after Feb
-    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
-    def test_offseason_note_absent_during_season(self) -> None:
-        """Off-season note is absent when today is within the active season window.
-
-        Uses today=2026-03-10 with data through 2026-03-15 so that data_end
-        (2026-03-15) > today, meaning is_offseason=False.  Without the factory
-        row, data_end would be None and season_end would fall back to the
-        calendar end (2026-05-31), which is also > today — making the factory
-        data load non-vacuous: the assertion exercises the in-season branch via
-        the data-narrowed season_end rather than the calendar fallback.
-        """
-        region = MicroRegionFactory.create(region_id="CH-5500")
-        bulletin = BulletinFactory.create()
-        # data_end will be 2026-03-15; today (2026-03-10) < data_end → in-season.
-        RegionDayRatingFactory.create(
-            region=region,
-            date=datetime.date(2026, 3, 15),
-            source_bulletin=bulletin,
-        )
-        client = Client()
-        response = client.get(reverse("public:map"))
-        content = response.content.decode()
+        assert response.context["is_offseason"] is True
         assert "map-tour-offer-offseason" not in content
+        assert "resume in" not in content
+        assert 'id="map-offseason-bar"' not in content
+        assert 'id="map-offseason-note"' not in content
+        assert "New season starts in" not in content
+
+    @freeze_time("2026-03-10")
+    def test_a_rated_row_today_is_not_offseason(self) -> None:
+        """``is_offseason`` is data: a rated row for today makes it False."""
+        RegionDayRatingFactory.create(
+            date=datetime.date(2026, 3, 10), source_bulletin=BulletinFactory.create()
+        )
+        response = Client().get(reverse("public:map"))
+
+        assert response.context["is_offseason"] is False
+        assert "map-tour-offer-offseason" not in response.content.decode()
 
 
 @pytest.mark.django_db
@@ -929,9 +890,9 @@ class TestBootFeedPreloads:
         preloads = self._preloads("?d=2026-01-05")
         assert preloads[1].endswith('href="/api/ratings/?d=2026-01-05&country=ch">')
 
-    @freeze_time("2026-06-15")  # past the May 31 season end
+    @freeze_time("2026-06-15")  # a summer day with no bulletin
     def test_off_season_preloads_today_not_the_season_end(self) -> None:
-        """Off season the boot leg still asks for today; so does the preload."""
+        """With no bulletin today the boot leg still asks for today; so does the preload."""
         preloads = self._preloads()
         assert preloads[1].endswith('href="/api/ratings/?d=2026-06-15&country=ch">')
 

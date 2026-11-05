@@ -688,42 +688,6 @@ class RegionDayRatingQuerySet(models.QuerySet["RegionDayRating"]):
         )
         return first
 
-    def season_date_bounds(
-        self, start: _date, end: _date
-    ) -> tuple[_date | None, _date | None]:
-        """
-        Return (min_date, max_date) of rated rows inside [start, end].
-
-        Aggregates across all regions — callers use this to find the
-        data-driven edges of the season window regardless of which region
-        each row belongs to.
-
-        A ``no_rating`` row is not data: ``recompute_region_day`` writes one
-        for a (region, day) with no qualifying bulletin, and production held
-        a run of them dated 4–16 Nov 2026 with no bulletin behind any. Counting
-        them stretched the map's season window to days nothing covered.
-        ``max_rating`` is the test because it is ``no_rating`` only when
-        ``min_rating`` is too.
-
-        Both values are None when no rows exist for the season, and callers
-        should fall back to the calendar window in that case.
-
-        Args:
-            start: Season window start date (inclusive).
-            end: Season window end date (inclusive).
-
-        Returns:
-            A ``(min_date, max_date)`` tuple, or ``(None, None)`` if the
-            queryset contains no rows within ``[start, end]``.
-
-        """
-        agg = (
-            self.filter(date__gte=start, date__lte=end)
-            .exclude(max_rating=RegionDayRating.Rating.NO_RATING)
-            .aggregate(first=models.Min("date"), last=models.Max("date"))
-        )
-        return agg["first"], agg["last"]
-
     def earliest_date(self, region: Any) -> _date | None:
         """
         Return the earliest rated day for *region*, or None if it has none.

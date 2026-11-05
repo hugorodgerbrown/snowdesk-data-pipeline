@@ -26,8 +26,11 @@ from django.urls import reverse
 from freezegun import freeze_time
 from waffle.testutils import override_flag
 
+from apps.bulletins.models import RegionDayRating
+from apps.regions.models import MicroRegion
 from tests.factories import (
     AccountFactory,
+    BulletinFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
     UserFactory,
@@ -36,6 +39,13 @@ from tests.factories import (
 # SNOW-978: a configured class-tile template, for the tests that need the
 # terrain filter — and since SNOW-1073 the slope layer — on the page.
 TERRAIN_CLASS_URL = "https://tiles.example.test/terrain-class/v1/{z}/{x}/{y}.png"
+
+
+def _rated(region: MicroRegion, day: datetime.date) -> RegionDayRating:
+    """Create a rated row (SNOW-1431): a bulletin behind it and a rating."""
+    return RegionDayRatingFactory.create(
+        region=region, date=day, source_bulletin=BulletinFactory.create()
+    )
 
 
 @pytest.mark.django_db
@@ -96,7 +106,7 @@ def test_map_element_carries_no_season_end_attribute() -> None:
     ``#map-calendar``, each read by the module that owns that element.
     """
     region = MicroRegionFactory.create(region_id="CH-5500")
-    RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 5))
+    _rated(region, datetime.date(2026, 3, 5))
 
     client = Client()
     response = client.get(reverse("public:map"))
@@ -1339,47 +1349,70 @@ def test_basemap_menu_omits_sync_status_caption() -> None:
 
 
 @pytest.mark.django_db
-class TestMapPageDataDrivenSeasonBounds:
+class TestMapPageWindowFollowsTheData:
     """
-    SNOW-173: data-season-start / data-season-end reflect the actual
-    RegionDayRating min/max dates when rows exist for the season, rather
-    than always using the calendar Nov 1 / May 31 boundaries.
+    SNOW-1431: the scrubber's track is the latest bulletin run through today.
+
+    ``data-season-start`` is the run's first rated day and
+    ``data-season-end`` the later of its last rated day and today, whatever
+    the calendar month (docs/decisions/date-windows-follow-the-data.md).
     """
 
-    @freeze_time("2026-02-15")
-    def test_season_bounds_reflect_data_min_max(self) -> None:
-        """
-        When RegionDayRating rows exist for the current season, the map page
-        renders data-season-start and data-season-end matching the earliest
-        and latest dates in those rows — not the calendar-window boundaries.
-        """
+    @staticmethod
+    def _scrubber(url: str = "") -> str:
+        """Return the scrubber's opening tag on the map page at ``url``."""
+        content = Client().get(url or reverse("public:map")).content.decode()
+        return _one(
+            r'(<div[^>]*id="season-scrubber"[^>]*>)', content, "the season scrubber"
+        )
+
+    @freeze_time("2025-10-25")
+    def test_an_october_bulletin_is_on_the_track(self) -> None:
+        """A run that opens before 1 November starts the track there."""
         region = MicroRegionFactory.create(region_id="CH-5500")
-        # Season 2025/2026: rows spanning Dec 2025 – Mar 2026 (narrower than
-        # the Nov 1 – May 31 calendar window)
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2025, 12, 10))
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 1, 20))
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 5))
+        _rated(region, datetime.date(2025, 10, 20))
 
-        client = Client()
-        response = client.get(reverse("public:map"))
-        content = response.content.decode()
+        scrubber = self._scrubber()
 
-        assert 'data-season-start="2025-12-10"' in content
-        assert 'data-season-end="2026-03-05"' in content
+        assert 'data-season-start="2025-10-20"' in scrubber
+        assert 'data-season-end="2025-10-25"' in scrubber
+        assert 'data-on-track="true"' in scrubber
+
+    @freeze_time("2026-08-15")
+    def test_in_august_the_track_runs_from_the_run_to_today(self) -> None:
+        """After a run ending in May the track still ends on today."""
+        region = MicroRegionFactory.create(region_id="CH-5500")
+        for day in (datetime.date(2025, 12, 10), datetime.date(2026, 5, 3)):
+            _rated(region, day)
+        for day in (datetime.date(2026, 1, 20), datetime.date(2026, 3, 5)):
+            _rated(region, day)
+
+        scrubber = self._scrubber()
+
+        assert 'data-season-start="2025-12-10"' in scrubber
+        assert 'data-season-end="2026-08-15"' in scrubber
+        assert 'data-on-track="true"' in scrubber
 
     @freeze_time("2026-02-15")
-    def test_season_bounds_fall_back_to_calendar_when_no_data(self) -> None:
-        """
-        When no RegionDayRating rows exist for the season, data-season-start
-        and data-season-end fall back to the calendar Nov 1 / May 31 window.
-        """
-        client = Client()
-        response = client.get(reverse("public:map"))
-        content = response.content.decode()
+    def test_an_empty_db_gives_today_to_today(self) -> None:
+        """With no rated row the track is today alone, and shown."""
+        RegionDayRatingFactory.create(date=datetime.date(2026, 2, 1))
 
-        # Calendar fallback for the 2025/2026 season
-        assert 'data-season-start="2025-11-01"' in content
-        assert 'data-season-end="2026-05-31"' in content
+        scrubber = self._scrubber()
+
+        assert 'data-season-start="2026-02-15"' in scrubber
+        assert 'data-season-end="2026-02-15"' in scrubber
+        assert 'data-on-track="true"' in scrubber
+
+    @freeze_time("2026-08-15")
+    def test_a_day_before_the_run_is_off_the_track(self) -> None:
+        """A ``?d=`` before the run started hides the scrubber."""
+        region = MicroRegionFactory.create(region_id="CH-5500")
+        _rated(region, datetime.date(2025, 12, 10))
+
+        url = f"{reverse('public:map')}?d=2025-11-30"
+
+        assert 'data-on-track="false"' in self._scrubber(url)
 
 
 # ---------------------------------------------------------------------------
@@ -1937,17 +1970,17 @@ def test_map_calendar_carries_translated_labels() -> None:
 @freeze_time("2026-02-15")
 def test_scrubber_track_spans_the_season_not_a_rolling_window() -> None:
     """
-    ``#season-scrubber``'s bounds are the season, and nothing wider.
+    ``#season-scrubber``'s bounds are the latest run, and nothing wider.
 
     SNOW-794's first pass gave it a twelve-month rolling window with the
     season drawn on it as a band, so it could place any day the calendar
     offers. That made one control try to be two. The calendar is "pick a
-    date, any date"; this is a season scrubber, and it is simply not shown
-    for a day outside the season.
+    date, any date"; the scrubber spans the latest bulletin run through
+    today (SNOW-1431), and is not shown for a day before it.
     """
     region = MicroRegionFactory.create(region_id="CH-5500")
     for day in (datetime.date(2026, 2, 10), datetime.date(2026, 2, 20)):
-        RegionDayRatingFactory.create(region=region, date=day)
+        _rated(region, day)
 
     client = Client()
     content = client.get(reverse("public:map")).content.decode()
@@ -1955,7 +1988,7 @@ def test_scrubber_track_spans_the_season_not_a_rolling_window() -> None:
     scrubber = _one(
         r'(<div[^>]*id="season-scrubber"[^>]*>)', content, "the season scrubber"
     )
-    # Narrowed to the data inside the season (SNOW-173), not today-minus-a-year.
+    # The latest run (SNOW-1431), not today-minus-a-year.
     assert 'data-season-start="2026-02-10"' in scrubber
     assert 'data-season-end="2026-02-20"' in scrubber
     assert "data-window-start" not in scrubber
@@ -1964,46 +1997,46 @@ def test_scrubber_track_spans_the_season_not_a_rolling_window() -> None:
 
 @pytest.mark.django_db
 @freeze_time("2026-02-15")
-def test_scrubber_is_revealed_only_for_a_day_inside_the_season() -> None:
+def test_scrubber_is_revealed_only_for_a_day_on_its_track() -> None:
     """
-    ``data-in-season`` follows the day the map is showing.
+    ``data-on-track`` follows the day the map is showing.
 
-    The calendar is the scrubber's reveal. A day outside the season has no
-    position on a track that IS the season, and a thumb clamped to whichever
-    end it is past was the defect this ticket opened with.
+    The calendar is the scrubber's reveal. A day off the track (before the
+    latest bulletin run, SNOW-1431) has no position on it, and a thumb
+    clamped to whichever end it is past was the defect SNOW-794 opened with.
 
     Server-rendered from ``?d=`` so first paint is already right rather than
     correcting itself a frame later; static/js/map_scrubber_reveal.js keeps
     it current afterwards. The element is always rendered — one that is not
-    in the DOM could not come back when the visitor picks an in-season day.
+    in the DOM could not come back when the visitor picks a day on the track.
     """
     region = MicroRegionFactory.create(region_id="CH-5500")
     for day in (datetime.date(2026, 2, 1), datetime.date(2026, 2, 28)):
-        RegionDayRatingFactory.create(region=region, date=day)
+        _rated(region, day)
 
     client = Client()
 
-    def in_season(url: str) -> str:
+    def on_track(url: str) -> str:
         scrubber = _one(
             r'(<div[^>]*id="season-scrubber"[^>]*>)',
             client.get(url).content.decode(),
             "the season scrubber",
         )
-        return _one(r'data-in-season="(\w+)"', scrubber, "the in-season flag")
+        return _one(r'data-on-track="(\w+)"', scrubber, "the on-track flag")
 
     home = reverse("public:map")
-    # No ?d= — today stands in, and today is inside this season.
-    assert in_season(home) == "true"
-    assert in_season(f"{home}?d=2026-02-14") == "true"
+    # No ?d= — today stands in, and today is always on the track.
+    assert on_track(home) == "true"
+    assert on_track(f"{home}?d=2026-02-14") == "true"
     # Both edges are inclusive.
-    assert in_season(f"{home}?d=2026-02-01") == "true"
-    assert in_season(f"{home}?d=2026-02-28") == "true"
-    # Outside it, either side.
-    assert in_season(f"{home}?d=2026-01-31") == "false"
-    assert in_season(f"{home}?d=2025-07-15") == "false"
+    assert on_track(f"{home}?d=2026-02-01") == "true"
+    assert on_track(f"{home}?d=2026-02-28") == "true"
+    # Off it, either side.
+    assert on_track(f"{home}?d=2026-01-31") == "false"
+    assert on_track(f"{home}?d=2025-07-15") == "false"
     # A malformed ?d= is no choice at all, so today decides — the same
     # reading the map itself takes, so the two cannot disagree.
-    assert in_season(f"{home}?d=not-a-date") == "true"
+    assert on_track(f"{home}?d=not-a-date") == "true"
 
 
 @pytest.mark.django_db

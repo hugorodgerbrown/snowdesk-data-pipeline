@@ -415,9 +415,6 @@ resort_guide_core.js
 
 map_resort_guide.js
 
-# SNOW-1244: the between-seasons note; reads the guides' surfaces.
-map_between_seasons.js
-
 # Collapsible bottom-right control group. Independent of map.js — it
 # only reads #map-controls-br's DOM — but must load before map_help.js
 # so it is listening for snowdesk:map-help-open by the time an
