@@ -174,8 +174,9 @@ def map_page(request: HttpRequest) -> HttpResponse:
       ``default_region_slug`` — str: the pre-selected region's bulletin slug.
       ``default_subregion_name`` — str: L2 sub-region name for the breadcrumb.
       ``default_major_name``  — str: L1 major-region name for the breadcrumb.
-      ``is_offseason``        — True when no region has a rated row for
-                                today (SNOW-1431): data, not a date. No
+      ``is_offseason``        — True when the latest bulletin run has no
+                                rated day on or after today (SNOW-1431):
+                                data, not a date. No
                                 template reads it; it picks
                                 ``resort_guide_date`` below.
       ``edit_target``         — "resorts" when resort-edit mode is active,
@@ -224,9 +225,11 @@ def map_page(request: HttpRequest) -> HttpResponse:
         default_major_name,
     ) = _default_region_label()
 
-    # SNOW-1431: "off season" is data, not a date — no region has a rated
-    # row for today. It moves the resort walkthrough to a day that has one.
-    is_offseason = not RegionDayRating.objects.rated().filter(date=today).exists()
+    # SNOW-1431: "off season" is data, not a date — the latest bulletin run
+    # (cached, already read by _base_map_context) has no rated day on or
+    # after today. It moves the resort walkthrough to a day that has one.
+    data_end: datetime.date | None = base_ctx["data_end"]
+    is_offseason = data_end is None or data_end < today
 
     # SNOW-344 (merged from map_view): edit mode when the querystring and
     # the request user's superuser bit both agree. Silently ignored for

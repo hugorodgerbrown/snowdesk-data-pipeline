@@ -642,8 +642,8 @@ def build_season_ribbon(
     and pin roundel inside it, render only when the ribbon is truthy, so it
     must never come back empty.
 
-    Reads the same ``RegionDayRating`` rows as ``build_season_grid``: one
-    aggregate for the first rated day, one range query for the rows.
+    One query: the region's rows up to ``today``, from which the first rated
+    day (``RegionDayRatingQuerySet.rated``'s test) is found in Python.
 
     Args:
         region: The region whose ratings to render (e.g. CH-4115).
@@ -653,11 +653,15 @@ def build_season_ribbon(
         A :class:`SeasonRibbon` ready to render, holding at least ``today``.
 
     """
-    first = RegionDayRating.objects.first_rated_date(region)
-    start = today if first is None else min(first, today)
-
-    rows = RegionDayRating.objects.for_region_range(region, start, today)
+    rows = RegionDayRating.objects.filter(region=region, date__lte=today)
     by_date: dict[datetime.date, RegionDayRating] = {r.date: r for r in rows}
+    rated = [
+        day
+        for day, rdr in by_date.items()
+        if rdr.source_bulletin_id is not None
+        and rdr.max_rating != RegionDayRating.Rating.NO_RATING
+    ]
+    start = min(rated, default=today)
 
     days: list[RibbonDay] = []
     cursor = start

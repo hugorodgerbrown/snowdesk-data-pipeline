@@ -73,7 +73,8 @@ bulletin page's day navigation relies on that.
   `map_scrubber_reveal.js` stays as a generic guard: `data-on-track`
   (`scrubber_on_track`) is false only for a calendar pick before the run
   started.
-- **Map "off-season"**: `is_offseason` means no rated row for today. That is
+- **Map "off-season"**: `is_offseason` means the latest run has no rated day
+  on or after today. That is
   data, not a date. It still moves the resort walkthrough to a day with a
   bulletin (`resort_guide.guide_date`). The "Between seasons" note and the
   welcome card's "live bulletins resume in November" line are deleted. Both
@@ -108,8 +109,9 @@ attributes). These describe resorts, providers or code, not a bulletin window.
 - One rule (`rated()` and `SEASON_GAP_DAYS`) now drives the windows and the
   alert, so they cannot disagree about whether a day had a bulletin.
 - The map page runs one distinct-dates query (`latest_run`) in place of the
-  season aggregate, at most once per five minutes through the cache, plus an
-  `EXISTS` for `is_offseason`. The bulletin page's
+  season aggregate, at most once per five minutes through the cache, and
+  `is_offseason` reads the same cached run, so the map stays at its query
+  baseline. The bulletin page's
   `season_header` adds one indexed aggregate.
 - Supersedes the fixed-window reasoning in
   [`map-defaults-to-today-not-the-last-rated-day.md`](map-defaults-to-today-not-the-last-rated-day.md):
