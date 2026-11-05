@@ -1,0 +1,52 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_layers_steep_terrain_row.html — the layers menu's
+Steep terrain row (the terrain filter, SNOW-978/1109), named for what it
+draws.
+
+Its options are the filter's own sheet — the mode (slope colours or my
+filter), aspects, slope and height — so the left half opens that sheet
+(data-terrain-filter-open) rather than a page of the menu, and its second
+line is the filter's summary (terrain_filter_sheet.js). The switch is a
+`.basemap-menu-item--overlay` row keyed `terrain`, toggled through
+window.pwaTerrainFilter (map_basemap_picker.js OVERLAY_BRIDGES).
+
+Extracted by SNOW-1421 from _map_embed.html, which renders it in both the
+map_modes flag's menu and the one without it. The caller checks
+terrain_filter_eligible.
+{% endcomment %}
+{% trans "Steep terrain" as layer_steep_terrain %}
+{% trans "Steep terrain options" as steep_terrain_options %}
+<li role="none" class="basemap-menu-layer" data-zoom-gate="terrain_filter">
+    <button
+        type="button"
+        role="menuitem"
+        class="basemap-menu-layer-options hover-affordance"
+        data-terrain-filter-open
+        aria-haspopup="dialog"
+        aria-controls="map-terrain-filter-sheet"
+        aria-label="{{ steep_terrain_options }}"
+    >
+        <span class="basemap-menu-layer-icon">{% include "includes/_icon_slope.html" with size=18 only %}</span>
+        <span class="basemap-menu-item-text">
+            {% include "public/partials/_map_layers_zoom_label.html" with label=layer_steep_terrain only %}
+            <span
+                class="basemap-menu-item-detail"
+                data-terrain-filter-summary
+                hidden
+            ></span>
+        </span>
+        {% include "includes/_icon_chevron_right.html" with size=16 svg_class="basemap-menu-layer-chevron" only %}
+    </button>
+    <button
+        type="button"
+        role="menuitemcheckbox"
+        class="basemap-menu-item basemap-menu-item--overlay basemap-menu-switch group hover-affordance"
+        data-overlay-key="terrain"
+        data-layer-switch
+        aria-checked="false"
+        aria-label="{{ layer_steep_terrain }}"
+    >
+        {% include "includes/_switch_track.html" only %}
+    </button>
+</li>

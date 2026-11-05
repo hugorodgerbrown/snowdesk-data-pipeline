@@ -641,9 +641,39 @@ Optional context:
             {# drives them exactly as before; only the two master switches   #}
             {# (bulletins, boundaries) are new, and they are not items.       #}
             {# See docs/decisions/the-layers-menu-is-on-off-then-options.md.  #}
+            {#                                                                #}
+            {# SNOW-1421, behind map_modes: the header is the map's mode, a   #}
+            {# Conditions | Terrain control (map_mode.js) that changes the    #}
+            {# map live, in place of the title and the count. Level one opens #}
+            {# on a tinted block of the mode's own layers (data-mode-only;    #}
+            {# map.css hides the other mode's), then the shared ones and      #}
+            {# "User data". Off the flag the menu is as it was.               #}
             <div class="basemap-menu-header">
-                <p class="basemap-menu-title">{% trans "Map layers" %}</p>
-                <p class="basemap-menu-count" data-layers-count aria-live="polite"></p>
+                {% if map_modes_enabled %}
+                    <div class="map-mode-tabs" role="group" aria-label='{% trans "Map mode" %}'>
+                        <button
+                            type="button"
+                            class="map-mode-tab hover-affordance"
+                            data-map-mode-tab="dated"
+                            aria-pressed="true"
+                        >
+                            {% include "includes/_icon_calendar.html" with size=16 only %}
+                            <span>{% trans "Conditions" %}</span>
+                        </button>
+                        <button
+                            type="button"
+                            class="map-mode-tab hover-affordance"
+                            data-map-mode-tab="terrain"
+                            aria-pressed="false"
+                        >
+                            {% include "includes/_icon_mountain.html" with size=16 only %}
+                            <span>{% trans "Terrain" %}</span>
+                        </button>
+                    </div>
+                {% else %}
+                    <p class="basemap-menu-title">{% trans "Map layers" %}</p>
+                    <p class="basemap-menu-count" data-layers-count aria-live="polite"></p>
+                {% endif %}
                 {# Phone only (CSS): there the menu is full width over the  #}
                 {# roundel that opened it, so it carries its own way out.   #}
                 <button
@@ -655,208 +685,111 @@ Optional context:
                     {% include "includes/_icon_close.html" with size=18 only %}
                 </button>
             </div>
-            <ul class="basemap-menu-list" role="menu" data-layers-page="main">
-                <li role="presentation" class="basemap-menu-group-label">{% trans "Reference data" %}</li>
-                {# The order (Hugo, 3 Nov 2026): the dated layers first and   #}
-                {# together, since Terrain mode switches them off together —  #}
-                {# Avalanche bulletins, Weather, Boundaries — then the static #}
-                {# ones: Resorts, Steep terrain and the ski-touring layers,    #}
-                {# and the Basemap last.                                        #}
-                {% trans "Avalanche bulletins" as layer_bulletins %}
-                <li role="none" class="basemap-menu-layer">
-                    <button
-                        type="button"
-                        role="menuitem"
-                        class="basemap-menu-layer-options hover-affordance"
-                        data-layers-open="bulletins"
-                        aria-haspopup="true"
-                        aria-controls="basemap-menu-page-bulletins"
-                    >
-                        <span
-                            class="basemap-menu-layer-icon"
-                        >{% include "includes/_icon_danger.html" with size=18 only %}</span>
-                        <span class="basemap-menu-item-text">
-                            <span data-row-label>{{ layer_bulletins }}</span>
-                            <span class="basemap-menu-item-detail" data-page-summary="bulletins"></span>
-                        </span>
-                        {% include "includes/_icon_chevron_right.html" with size=16 svg_class="basemap-menu-layer-chevron" only %}
-                    </button>
-                    {# On while any opacity step above 0 is checked: the switch #}
-                    {# is the old "Bulletins off" step, and switching it back on #}
-                    {# restores the step it was switched off at.                 #}
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-switch group hover-affordance"
-                        data-layer-master="bulletins"
-                        data-layer-switch
-                        aria-checked="{% if map_default_opacity_step %}true{% else %}false{% endif %}"
-                        aria-label="{{ layer_bulletins }}"
-                    >
-                        {% include "includes/_switch_track.html" only %}
-                    </button>
-                </li>
-                {% include "public/partials/_map_layers_switch_row.html" with key="weather" label=_("Weather") icon="cloud" sync=True weather=True only %}
+            {% trans "Avalanche bulletins" as layer_bulletins %}
+            {% trans "Basemap" as layer_basemap %}
+            {% trans "SAC ski touring" as layer_ski_touring %}
+            {% if map_modes_enabled %}
+                {% trans "Regions" as layer_boundaries %}
+                <ul class="basemap-menu-list" role="menu" data-layers-page="main">
+                    {# Conditions' own (Hugo, 5 Nov 2026): the bulletins, the  #}
+                    {# problem-terrain sync, moved up from the bulletins' page  #}
+                    {# as a row of its own, and the weather.                    #}
+                    <li role="none" class="basemap-menu-mode-block" data-mode-only="dated">
+                        <ul class="basemap-menu-group" role="group" aria-label='{% trans "Conditions" %}'>
+                            {% include "public/partials/_map_layers_options_row.html" with page="bulletins" label=layer_bulletins icon="danger" master=True checked=map_default_opacity_step only %}
+                            {# "Sync problem terrain": the bulletin drawn on the   #}
+                            {# ground, from z12. ON by default (map.js). It dims    #}
+                            {# while the bulletins are off, with its switch live    #}
+                            {# (map_basemap_picker.js). Steep terrain, which took   #}
+                            {# precedence over it, is Terrain's now.                #}
+                            {% if terrain_filter_eligible %}
+                                {% include "public/partials/_map_layers_switch_row.html" with key="problem_terrain" label=_("Sync problem terrain") icon="slope" zoom_gate="problem_terrain" only %}
+                            {% endif %}
+                            {% include "public/partials/_map_layers_switch_row.html" with key="weather" label=_("Weather") icon="cloud" sync=True weather=True only %}
+                        </ul>
+                    </li>
+                    {# Terrain's own: Steep terrain, SAC's ski touring and the #}
+                    {# wildlife rest zones, each on the pages it was before.   #}
+                    {% if terrain_filter_eligible or route_drawing_enabled %}
+                        <li role="none" class="basemap-menu-mode-block" data-mode-only="terrain">
+                            <ul class="basemap-menu-group" role="group" aria-label='{% trans "Terrain" %}'>
+                                {% if terrain_filter_eligible %}
+                                    {% include "public/partials/_map_layers_steep_terrain_row.html" only %}
+                                {% endif %}
+                                {% if route_drawing_enabled %}
+                                    {% include "public/partials/_map_layers_options_row.html" with page="ski_touring" label=layer_ski_touring icon="compass" master=True zoom_gate="ski_routes" only %}
+                                    {% include "public/partials/_map_layers_switch_row.html" with key="rest_zones" label=_("Wildlife rest zones") icon="rest_zone" zoom_gate="rest_zones" only %}
+                                {% endif %}
+                            </ul>
+                        </li>
+                    {% endif %}
+                    {# Shared by both modes: one setting each. #}
+                    {% include "public/partials/_map_layers_switch_row.html" with key="resorts" label=_("Resorts") icon="resort" sync=True only %}
+                    {% include "public/partials/_map_layers_options_row.html" with page="boundaries" label=layer_boundaries icon="boundary" master=True checked=map_default_boundary only %}
+                    {% include "public/partials/_map_layers_options_row.html" with page="basemap" label=layer_basemap icon="map" only %}
+                    {# What people made: shared too. Field observations are   #}
+                    {# everyone's reports, so they sit here (Hugo, 5 Nov 2026). #}
+                    <li role="presentation" class="basemap-menu-group-label">{% trans "User data" %}</li>
+                    {% include "public/partials/_map_layers_switch_row.html" with key="community_reports" label=_("Field observations") icon="observation" sync=True only %}
+                    {% include "public/partials/_map_layers_switch_row.html" with key="favourites" label=_("Favourites") icon="favourite" sync=True only %}
+                    {% include "public/partials/_map_layers_switch_row.html" with key="routes" label=_("Routes") icon="route" sync=True only %}
+                    {% include "public/partials/_map_layers_switch_row.html" with key="downloads" label=_("Downloaded areas") icon="downloads" only %}
+                </ul>
+            {% else %}
                 {% trans "Boundaries" as layer_boundaries %}
-                <li role="none" class="basemap-menu-layer">
-                    <button
-                        type="button"
-                        role="menuitem"
-                        class="basemap-menu-layer-options hover-affordance"
-                        data-layers-open="boundaries"
-                        aria-haspopup="true"
-                        aria-controls="basemap-menu-page-boundaries"
-                    >
-                        <span
-                            class="basemap-menu-layer-icon"
-                        >{% include "includes/_icon_boundary.html" with size=18 only %}</span>
-                        <span class="basemap-menu-item-text">
-                            <span data-row-label>{{ layer_boundaries }}</span>
-                            <span class="basemap-menu-item-detail" data-page-summary="boundaries"></span>
-                        </span>
-                        {% include "includes/_icon_chevron_right.html" with size=16 svg_class="basemap-menu-layer-chevron" only %}
-                    </button>
-                    {# On while any EAWS tier is on. Off remembers which were, #}
-                    {# and on puts them back (Micro regions on a first visit).  #}
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-switch group hover-affordance"
-                        data-layer-master="boundaries"
-                        data-layer-switch
-                        aria-checked="{% if map_default_boundary %}true{% else %}false{% endif %}"
-                        aria-label="{{ layer_boundaries }}"
-                    >
-                        {% include "includes/_switch_track.html" only %}
-                    </button>
-                </li>
-                {# Field observations (SNOW-1290's "On the ground"): everyone's #}
-                {# reports, live today and recent for three days. Dated, so it    #}
-                {# sits with the dated layers; not part of the bulletins (Hugo,   #}
-                {# 3 Nov 2026), so no longer on their page. ON by default.        #}
-                {% include "public/partials/_map_layers_switch_row.html" with key="community_reports" label=_("Field observations") icon="observation" sync=True only %}
-                {% include "public/partials/_map_layers_switch_row.html" with key="resorts" label=_("Resorts") icon="resort" sync=True only %}
-                {% if terrain_filter_eligible %}
-                    {% trans "Steep terrain" as layer_steep_terrain %}
-                    {% trans "Steep terrain options" as steep_terrain_options %}
-                    {# The terrain filter (SNOW-978/1109), named for what it    #}
-                    {# draws. Its options are the filter's own sheet — the mode #}
-                    {# (slope colours or my filter), aspects, slope and height — #}
-                    {# so the left half opens that sheet, as the adjust button  #}
-                    {# beside the old row did. The switch is the row it was.    #}
-                    <li role="none" class="basemap-menu-layer" data-zoom-gate="terrain_filter">
-                        <button
-                            type="button"
-                            role="menuitem"
-                            class="basemap-menu-layer-options hover-affordance"
-                            data-terrain-filter-open
-                            aria-haspopup="dialog"
-                            aria-controls="map-terrain-filter-sheet"
-                            aria-label="{{ steep_terrain_options }}"
-                        >
-                            <span
-                                class="basemap-menu-layer-icon"
-                            >{% include "includes/_icon_slope.html" with size=18 only %}</span>
-                            <span class="basemap-menu-item-text">
-                                {% include "public/partials/_map_layers_zoom_label.html" with label=layer_steep_terrain only %}
-                                <span
-                                    class="basemap-menu-item-detail"
-                                    data-terrain-filter-summary
-                                    hidden
-                                ></span>
-                            </span>
-                            {% include "includes/_icon_chevron_right.html" with size=16 svg_class="basemap-menu-layer-chevron" only %}
-                        </button>
-                        <button
-                            type="button"
-                            role="menuitemcheckbox"
-                            class="basemap-menu-item basemap-menu-item--overlay basemap-menu-switch group hover-affordance"
-                            data-overlay-key="terrain"
-                            data-layer-switch
-                            aria-checked="false"
-                            aria-label="{{ layer_steep_terrain }}"
-                        >
-                            {% include "includes/_switch_track.html" only %}
-                        </button>
-                    </li>
-                {% endif %}
-                {# SNOW-1285: SAC's ski tours and the summits they go to,   #}
-                {# drawn from z9 inside Switzerland, two layers on a page of #}
-                {# their own. ON by default: map.js seeds the rows from     #}
-                {# localStorage, true when unset. The switch is a master,    #}
-                {# on while either is, as the boundaries' is.               #}
-                {% if route_drawing_enabled %}
-                    {% trans "SAC ski touring" as layer_ski_touring %}
-                    <li role="none" class="basemap-menu-layer" data-zoom-gate="ski_routes">
-                        <button
-                            type="button"
-                            role="menuitem"
-                            class="basemap-menu-layer-options hover-affordance"
-                            data-layers-open="ski_touring"
-                            aria-haspopup="true"
-                            aria-controls="basemap-menu-page-ski_touring"
-                        >
-                            <span
-                                class="basemap-menu-layer-icon"
-                            >{% include "includes/_icon_compass.html" with size=18 only %}</span>
-                            <span class="basemap-menu-item-text">
-                                {% include "public/partials/_map_layers_zoom_label.html" with label=layer_ski_touring only %}
-                                <span class="basemap-menu-item-detail" data-page-summary="ski_touring"></span>
-                            </span>
-                            {% include "includes/_icon_chevron_right.html" with size=16 svg_class="basemap-menu-layer-chevron" only %}
-                        </button>
-                        <button
-                            type="button"
-                            role="menuitemcheckbox"
-                            class="basemap-menu-switch group hover-affordance"
-                            data-layer-master="ski_touring"
-                            data-layer-switch
-                            aria-checked="false"
-                            aria-label="{{ layer_ski_touring }}"
-                        >
-                            {% include "includes/_switch_track.html" only %}
-                        </button>
-                    </li>
-                    {# SNOW-1384: FOEN's wildlife rest zones, drawn from z11 by #}
-                    {# rest_zones.js, which owns the switch. OFF by default.     #}
-                    {% include "public/partials/_map_layers_switch_row.html" with key="rest_zones" label=_("Wildlife rest zones") icon="rest_zone" zoom_gate="rest_zones" only %}
-                {% endif %}
-                {% trans "Basemap" as layer_basemap %}
-                <li role="none" class="basemap-menu-layer">
-                    <button
-                        type="button"
-                        role="menuitem"
-                        class="basemap-menu-layer-options hover-affordance"
-                        data-layers-open="basemap"
-                        aria-haspopup="true"
-                        aria-controls="basemap-menu-page-basemap"
-                    >
-                        <span
-                            class="basemap-menu-layer-icon"
-                        >{% include "includes/_icon_map.html" with size=18 only %}</span>
-                        <span class="basemap-menu-item-text">
-                            <span data-row-label>{{ layer_basemap }}</span>
-                            <span class="basemap-menu-item-detail" data-page-summary="basemap"></span>
-                        </span>
-                        {% include "includes/_icon_chevron_right.html" with size=16 svg_class="basemap-menu-layer-chevron" only %}
-                    </button>
-                    {# No switch: there is always one basemap. The empty slot    #}
-                    {# keeps the chevron in line with the rows above it.          #}
-                    <span class="basemap-menu-switch" aria-hidden="true"></span>
-                </li>
-                <li role="presentation" class="basemap-menu-group-label">{% trans "Your data" %}</li>
-                {# Each is the same setting as its own panel's "Show on the map" #}
-                {# switch (static/js/map_panel_overlay_switch.js). Favourites and #}
-                {# routes hand an anonymous visitor to sign-in. Field            #}
-                {# observations moved to the bulletins page as "On the ground"   #}
-                {# (SNOW-1290): everyone's reports, read beside the bulletin.    #}
-                {% include "public/partials/_map_layers_switch_row.html" with key="favourites" label=_("Favourites") icon="favourite" sync=True only %}
-                {% include "public/partials/_map_layers_switch_row.html" with key="routes" label=_("Routes") icon="route" sync=True only %}
-                {# Downloaded areas: no sync dot (the list is local-only), and  #}
-                {# aria-checked is NOT server-renderable — SNOW-857's tri-state #}
-                {# preference is seeded by map.js from pwaDownloadedOverlay.    #}
-                {% include "public/partials/_map_layers_switch_row.html" with key="downloads" label=_("Downloaded areas") icon="downloads" only %}
-            </ul>
+                <ul class="basemap-menu-list" role="menu" data-layers-page="main">
+                    <li role="presentation" class="basemap-menu-group-label">{% trans "Reference data" %}</li>
+                    {# The order (Hugo, 3 Nov 2026): the dated layers first and   #}
+                    {# together, since Terrain mode switches them off together —  #}
+                    {# Avalanche bulletins, Weather, Boundaries — then the static #}
+                    {# ones: Resorts, Steep terrain and the ski-touring layers,    #}
+                    {# and the Basemap last.                                        #}
+                    {# The bulletins' switch is on while any opacity step above 0 #}
+                    {# is checked: it is the old "Bulletins off" step, and        #}
+                    {# switching it back on restores the step it was switched off #}
+                    {# at.                                                         #}
+                    {% include "public/partials/_map_layers_options_row.html" with page="bulletins" label=layer_bulletins icon="danger" master=True checked=map_default_opacity_step only %}
+                    {% include "public/partials/_map_layers_switch_row.html" with key="weather" label=_("Weather") icon="cloud" sync=True weather=True only %}
+                    {# The boundaries' switch is on while any EAWS tier is on.    #}
+                    {# Off remembers which were, and on puts them back (Micro     #}
+                    {# regions on a first visit).                                 #}
+                    {% include "public/partials/_map_layers_options_row.html" with page="boundaries" label=layer_boundaries icon="boundary" master=True checked=map_default_boundary only %}
+                    {# Field observations (SNOW-1290's "On the ground"): everyone's #}
+                    {# reports, live today and recent for three days. Dated, so it    #}
+                    {# sits with the dated layers; not part of the bulletins (Hugo,   #}
+                    {# 3 Nov 2026), so no longer on their page. ON by default.        #}
+                    {% include "public/partials/_map_layers_switch_row.html" with key="community_reports" label=_("Field observations") icon="observation" sync=True only %}
+                    {% include "public/partials/_map_layers_switch_row.html" with key="resorts" label=_("Resorts") icon="resort" sync=True only %}
+                    {% if terrain_filter_eligible %}
+                        {% include "public/partials/_map_layers_steep_terrain_row.html" only %}
+                    {% endif %}
+                    {# SNOW-1285: SAC's ski tours and the summits they go to,   #}
+                    {# drawn from z9 inside Switzerland, two layers on a page of #}
+                    {# their own. ON by default: map.js seeds the rows from     #}
+                    {# localStorage, true when unset. The switch is a master,    #}
+                    {# on while either is, as the boundaries' is.               #}
+                    {% if route_drawing_enabled %}
+                        {% include "public/partials/_map_layers_options_row.html" with page="ski_touring" label=layer_ski_touring icon="compass" master=True zoom_gate="ski_routes" only %}
+                        {# SNOW-1384: FOEN's wildlife rest zones, drawn from z11 by #}
+                        {# rest_zones.js, which owns the switch. OFF by default.     #}
+                        {% include "public/partials/_map_layers_switch_row.html" with key="rest_zones" label=_("Wildlife rest zones") icon="rest_zone" zoom_gate="rest_zones" only %}
+                    {% endif %}
+                    {# No switch: there is always one basemap. #}
+                    {% include "public/partials/_map_layers_options_row.html" with page="basemap" label=layer_basemap icon="map" only %}
+                    <li role="presentation" class="basemap-menu-group-label">{% trans "Your data" %}</li>
+                    {# Each is the same setting as its own panel's "Show on the map" #}
+                    {# switch (static/js/map_panel_overlay_switch.js). Favourites and #}
+                    {# routes hand an anonymous visitor to sign-in. Field            #}
+                    {# observations moved to the bulletins page as "On the ground"   #}
+                    {# (SNOW-1290): everyone's reports, read beside the bulletin.    #}
+                    {% include "public/partials/_map_layers_switch_row.html" with key="favourites" label=_("Favourites") icon="favourite" sync=True only %}
+                    {% include "public/partials/_map_layers_switch_row.html" with key="routes" label=_("Routes") icon="route" sync=True only %}
+                    {# Downloaded areas: no sync dot (the list is local-only), and  #}
+                    {# aria-checked is NOT server-renderable — SNOW-857's tri-state #}
+                    {# preference is seeded by map.js from pwaDownloadedOverlay.    #}
+                    {% include "public/partials/_map_layers_switch_row.html" with key="downloads" label=_("Downloaded areas") icon="downloads" only %}
+                </ul>
+            {% endif %}
             {# ---- Options pages. One shown at a time, in place of level one. ---- #}
             <ul
                 id="basemap-menu-page-bulletins"
@@ -924,7 +857,9 @@ Optional context:
                 {# repeated the context (Hugo, 3 Nov 2026). While Steep terrain  #}
                 {# is on, its colours replace the bulletin's slopes and this row #}
                 {# reads off; switching it on turns Steep terrain off.           #}
-                {% if terrain_filter_eligible %}
+                {# SNOW-1421: with the map_modes flag it is "Sync problem        #}
+                {# terrain", a row of level one, so it is not here.              #}
+                {% if terrain_filter_eligible and not map_modes_enabled %}
                     <li role="separator" class="basemap-menu-separator"></li>
                     <li role="none">
                         <button

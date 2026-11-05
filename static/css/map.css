@@ -1075,7 +1075,12 @@
 [data-zoom-hidden] .basemap-menu-layer-icon,
 [data-zoom-hidden] .basemap-menu-item-name,
 [data-zoom-hidden] .basemap-menu-item-detail,
-[data-zoom-hidden] .basemap-menu-layer-chevron {
+[data-zoom-hidden] .basemap-menu-layer-chevron,
+/* SNOW-1421: "Sync problem terrain" dims the same way while the bulletins
+   are off (map_basemap_picker.js): nothing to sync, the switch still live. */
+[data-bulletins-off] .basemap-menu-layer-icon,
+[data-bulletins-off] .basemap-menu-item-name,
+[data-bulletins-off] .basemap-menu-item-detail {
     opacity: 0.4;
 }
 
@@ -2450,11 +2455,80 @@ html[data-route-drawing] #map-slopes-notice {
     display: none;
 }
 
-/* A dated layers-menu row in Terrain: shown, dimmed, and a tap does
-   nothing (map_mode.js stops it in the capture phase). */
-#basemap-menu [data-map-mode-disabled] > * {
-    opacity: 0.4;
-    cursor: default;
+/* SNOW-1421: the layers menu's header, behind map_modes — the map's mode
+   as a Conditions | Terrain segmented control (map_mode.js), in place of
+   the "Map layers" title and the count. The pressed segment is the card
+   raised out of a tag-coloured track, the date row's own active-segment
+   look. */
+.map-mode-tabs {
+    display: flex;
+    flex: 1 1 auto;
+    gap: 2px;
+    min-width: 0;
+    padding: 2px;
+    background: var(--color-tag);
+    border-radius: 10px;
+}
+
+.map-mode-tab {
+    display: inline-flex;
+    flex: 1 1 0;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+    min-height: 32px;
+    padding: 0 10px;
+    background: transparent;
+    border: 0;
+    border-radius: 8px;
+    color: var(--color-text-2);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.map-mode-tab[aria-pressed="true"] {
+    background: var(--color-card);
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-1);
+}
+
+.map-mode-tab:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: 1px;
+}
+
+/* With the tabs the header centres its controls, rather than aligning a
+   title's baseline. */
+.basemap-menu-header:has(.map-mode-tabs) {
+    align-items: center;
+}
+
+/* Each mode's own rows, as one tinted block at the top of level one: the
+   status-info tint for Conditions, the status-success one for Terrain,
+   each softened so a row's text keeps its contrast. */
+.basemap-menu-mode-block {
+    margin: 2px 0 4px;
+    padding: 2px 0;
+    border-radius: 10px;
+}
+
+.basemap-menu-mode-block[data-mode-only="dated"] {
+    background: color-mix(in srgb, var(--color-status-info-bg) 55%, transparent);
+}
+
+.basemap-menu-mode-block[data-mode-only="terrain"] {
+    background: color-mix(in srgb, var(--color-status-success-bg) 45%, transparent);
+}
+
+/* Only the current mode's block shows. Under :root[data-map-mode], which
+   map_mode.js writes and only the map_modes flag's page carries. */
+:root[data-map-mode="dated"] #basemap-menu [data-mode-only="terrain"],
+:root[data-map-mode="terrain"] #basemap-menu [data-mode-only="dated"] {
+    display: none;
 }
 
 @media (max-width: 639.98px) {
