@@ -117,6 +117,10 @@ def test_steep_terrain_switch_shows_with_the_class_tiles() -> None:
     assert 'data-terrain-class-tile-url="https://tiles.example/' in content
     assert 'id="map-3d-steep"' in content
     assert "Steep terrain" in content
+    assert "js/map_3d_steep_worker.js" in content
+    assert (
+        "/static/js/slope_classes_core.js /static/js/terrain_filter_core.js" in content
+    )
 
 
 @override_settings(TERRAIN_CLASS_TILE_URL="")

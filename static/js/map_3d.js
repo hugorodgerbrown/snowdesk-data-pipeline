@@ -55,6 +55,7 @@
   const COLOURS = core.COLOURS;
   const STEEP_SOURCE = 'map-3d-steep';
   const STEEP_LAYER = 'map-3d-steep-raster';
+  const SUNLIGHT_LAYER = 'map-3d-sunlight';
   const TOURS_SOURCE = 'map-3d-tours';
   const ROUTES_SOURCE = 'map-3d-routes';
   const RESORTS_SOURCE = 'map-3d-resorts';
@@ -62,7 +63,6 @@
   const TOUR_LAYERS = ['map-3d-tours-casing', LINE_LAYERS[0], LINE_LAYERS[1]];
   const WILDLIFE_LAYERS = core.WILDLIFE_LAYERS.map((/** @type {string} */ id) => `map-3d-wildlife-${id}`);
   const TOURS_DEBOUNCE_MS = 300;
-  const STEEP_CACHE_TILES = 64;
 
   // A shared link's view, else the opening camera and the default switches.
   const view = core.parseView(window.location.search);
@@ -140,88 +140,37 @@
 
   // ---- Steep terrain ------------------------------------------------------
 
-  const steepEnabled = !!(data.terrainClassTileUrl && terrainCore);
+  // The fetch, decode and classify of every class tile run in a worker
+  // (map_3d_steep_worker.js), so a tilted view streaming tiles to the
+  // horizon never stalls panning. The worker imports the two cores by their
+  // hashed static URLs, which the page passes (data-steep-worker-scripts).
+  const steepEnabled = !!(
+    data.terrainClassTileUrl && terrainCore && data.steepWorkerUrl && typeof Worker === 'function'
+  );
   const steepFilter = steepEnabled
     ? terrainCore.normaliseFilter({ ...terrainCore.DEFAULT_FILTER, mode: 'slope' })
     : null;
-  const steepClassify = steepFilter ? terrainCore.createClassifier(steepFilter) : null;
-  const steepPalette = steepFilter ? terrainCore.paletteFor(steepFilter) : null;
-  const steepCache = steepEnabled ? terrainCore.createTileCache(STEEP_CACHE_TILES) : null;
-
-  /**
-   * Decode a class tile to its raw pixels. The bytes are numbers, not
-   * colours, so neither premultiplication nor colour management may touch
-   * them (terrain-filter-is-class-tiles-filtered-on-device.md).
-   *
-   * @param {Blob} blob
-   * @returns {Promise<Uint8ClampedArray>}
-   */
-  async function decodeClassTile(blob) {
-    const size = terrainCore.TILE_SIZE;
-    const bitmap = await createImageBitmap(blob, {
-      premultiplyAlpha: 'none',
-      colorSpaceConversion: 'none',
-    });
-    const canvas = new OffscreenCanvas(size, size);
-    const ctx = /** @type {OffscreenCanvasRenderingContext2D} */ (
-      canvas.getContext('2d', { willReadFrequently: true })
-    );
-    ctx.drawImage(bitmap, 0, 0);
-    bitmap.close();
-    return ctx.getImageData(0, 0, size, size).data;
-  }
-
-  /**
-   * One tile's class pixels: a real 204 inside coverage is no data, and a
-   * failed request draws nothing and is not cached, as on /map/.
-   *
-   * @param {{z: number, x: number, y: number}} tile
-   * @param {AbortSignal} signal
-   * @returns {Promise<Uint8ClampedArray|null>}
-   */
-  async function loadClassTile(tile, signal) {
-    const key = `${tile.z}/${tile.x}/${tile.y}`;
-    const cached = steepCache.get(key);
-    if (cached !== undefined) return cached;
-    let response;
-    try {
-      response = await fetch(
-        terrainCore.tileUrl(data.terrainClassTileUrl, tile.z, tile.x, tile.y),
-        { signal, credentials: 'omit' },
-      );
-    } catch (err) {
-      if (signal.aborted) throw err;
-      return null;
-    }
-    if (response.status === 204) {
-      const empty = terrainCore.tileInCoverage(tile.z, tile.x, tile.y)
-        ? terrainCore.noDataTile()
-        : null;
-      steepCache.set(key, empty);
-      return empty;
-    }
-    if (!response.ok) return null;
-    const pixels = await decodeClassTile(await response.blob());
-    steepCache.set(key, pixels);
-    return pixels;
-  }
 
   if (steepEnabled) {
+    const worker = new Worker(data.steepWorkerUrl || '');
+    worker.postMessage({
+      type: 'init',
+      scripts: (data.steepWorkerScripts || '').split(' ').filter(Boolean),
+      tileTemplate: data.terrainClassTileUrl,
+    });
+    const bridge = core.workerTileBridge(worker);
     maplibre.addProtocol(
       'terrainfilter',
       /**
        * @param {{url: string}} params
        * @param {AbortController} abortController
        */
-      async (params, abortController) => {
+      (params, abortController) => {
         const tile = terrainCore.parseProtocolUrl(params.url);
-        if (!tile) throw new Error(`map_3d: not a tile url: ${params.url}`);
-        const pixels = await loadClassTile(tile, abortController.signal);
-        const size = terrainCore.TILE_SIZE;
-        const out = new Uint8ClampedArray(size * size * 4);
-        if (pixels) terrainCore.paintTile(pixels, out, steepClassify, steepPalette, tile);
-        // Never an empty answer: MapLibre 4.7.1 leaves such a tile pending.
-        return { data: await createImageBitmap(new ImageData(out, size, size)) };
+        if (!tile) return Promise.reject(new Error(`map_3d: not a tile url: ${params.url}`));
+        // Never an empty answer: MapLibre 4.7.1 leaves such a tile pending,
+        // so the worker always paints a tile, transparent when there is none.
+        return bridge.request(tile, abortController.signal);
       },
     );
   }
@@ -284,14 +233,15 @@
   map.on('load', async () => {
     map.addSource(core.DEM_SOURCE_ID, core.demSource(data.demTileUrl));
     map.setTerrain(core.terrainSpec());
-    map.setSky({
-      'sky-color': '#bcd8f0',
-      'horizon-color': '#eef4fa',
-      'fog-color': '#ffffff',
-      'sky-horizon-blend': 0.5,
-      'horizon-fog-blend': 0.6,
-      'fog-ground-blend': 0.4,
-    });
+    map.setSky(core.skySpec());
+    // Modelled sunlight from the north-west, under the basemap's labels and
+    // over its hachures, so the relief reads as form. It shades from the
+    // terrain's own elevation source, so it downloads nothing more.
+    const firstLabel = map.getStyle().layers.find((/** @type {any} */ l) => l.type === 'symbol');
+    map.addLayer(
+      { id: SUNLIGHT_LAYER, type: 'hillshade', source: core.DEM_SOURCE_ID, paint: core.sunlightPaint() },
+      firstLabel ? firstLabel.id : undefined,
+    );
 
     if (steepEnabled) {
       map.addSource(STEEP_SOURCE, {

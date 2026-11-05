@@ -9,10 +9,13 @@
  *   - a tapped line's bounds cover LineString and MultiLineString, and
  *     anything else is null rather than a camera move to nowhere;
  *   - a tap frames the whole route or tour (every leg with its uuid), not
- *     the clipped fragment MapLibre hands back.
+ *     the clipped fragment MapLibre hands back;
+ *   - the Steep terrain worker bridge settles each request on the reply
+ *     with its own id, and an abort tells the worker, rejects, and closes
+ *     a bitmap that arrives too late.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/map_3d_core.js';
 
@@ -238,5 +241,79 @@ describe('prefetchDemTiles / tileUrl', () => {
   it('fills an XYZ template', () => {
     expect(core.tileUrl('https://t.example/{z}/{x}/{y}.webp', { z: 1, x: 2, y: 3 }))
       .toBe('https://t.example/1/2/3.webp');
+  });
+});
+
+describe('skySpec / sunlightPaint', () => {
+  it('keeps the haze off the near ground', () => {
+    const sky = core.skySpec();
+    expect(sky['fog-ground-blend']).toBeLessThan(0.3);
+    expect(sky['sky-color']).toMatch(/^#[0-9a-f]{6}$/);
+  });
+
+  it('lights from the north-west, fixed to the map, softly', () => {
+    const paint = core.sunlightPaint();
+    expect(paint['hillshade-illumination-direction']).toBe(315);
+    expect(paint['hillshade-illumination-anchor']).toBe('map');
+    expect(paint['hillshade-exaggeration']).toBeLessThanOrEqual(0.35);
+  });
+});
+
+describe('workerTileBridge', () => {
+  /** A worker stand-in: records what is posted and lets a test reply. */
+  function fakeWorker() {
+    let listener = null;
+    return {
+      posted: [],
+      postMessage(msg) {
+        this.posted.push(msg);
+      },
+      addEventListener(type, fn) {
+        if (type === 'message') listener = fn;
+      },
+      reply(data) {
+        listener({ data });
+      },
+    };
+  }
+
+  it('posts one tile request per call and settles each on its own id', async () => {
+    const worker = fakeWorker();
+    const bridge = core.workerTileBridge(worker);
+    const a = bridge.request({ z: 12, x: 1, y: 2 }, new AbortController().signal);
+    const b = bridge.request({ z: 12, x: 3, y: 4 }, new AbortController().signal);
+    expect(worker.posted).toEqual([
+      { type: 'tile', id: 1, z: 12, x: 1, y: 2 },
+      { type: 'tile', id: 2, z: 12, x: 3, y: 4 },
+    ]);
+    const second = { close: vi.fn() };
+    const first = { close: vi.fn() };
+    worker.reply({ id: 2, bitmap: second });
+    worker.reply({ id: 1, bitmap: first });
+    await expect(a).resolves.toEqual({ data: first });
+    await expect(b).resolves.toEqual({ data: second });
+    expect(bridge.pendingCount()).toBe(0);
+  });
+
+  it('rejects on a worker error', async () => {
+    const worker = fakeWorker();
+    const bridge = core.workerTileBridge(worker);
+    const answer = bridge.request({ z: 12, x: 1, y: 2 }, new AbortController().signal);
+    worker.reply({ id: 1, error: 'TypeError: boom' });
+    await expect(answer).rejects.toThrow('steep tile failed: TypeError: boom');
+  });
+
+  it('on abort tells the worker, rejects, and closes a late bitmap', async () => {
+    const worker = fakeWorker();
+    const bridge = core.workerTileBridge(worker);
+    const controller = new AbortController();
+    const answer = bridge.request({ z: 12, x: 1, y: 2 }, controller.signal);
+    controller.abort();
+    expect(worker.posted.at(-1)).toEqual({ type: 'abort', id: 1 });
+    await expect(answer).rejects.toMatchObject({ name: 'AbortError' });
+    const late = { close: vi.fn() };
+    worker.reply({ id: 1, bitmap: late });
+    expect(late.close).toHaveBeenCalledOnce();
+    expect(bridge.pendingCount()).toBe(0);
   });
 });

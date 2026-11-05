@@ -26,12 +26,17 @@
  *     from the page's query string (`?at=lng,lat,zoom,pitch,bearing&layers=…`),
  *     so a copied link opens on the same view for whoever follows it, and
  *     the link itself: the page's address with the token that opens it, or
- *     a route share link into 3-D (`/routes/s/<token>/3d/?…`).
+ *     a route share link into 3-D (`/routes/s/<token>/3d/?…`);
+ *   - the main thread's half of the Steep terrain worker's protocol
+ *     (map_3d_steep_worker.js): each tile request gets an id, the reply
+ *     with that id settles it, and an abort tells the worker and rejects.
  *
  * Exports (frozen `self.pwaMap3dCore`):
  *
  *   DEM_SOURCE_ID / TERRAIN_EXAGGERATION / OPENING_CAMERA / MAX_PITCH / MAX_PIXEL_RATIO
  *   prefetchDemTiles(centre, mapZoom) / tileUrl(template, tile)
+ *   skySpec() / sunlightPaint()
+ *   workerTileBridge(worker)
  *   TOURS_MIN_ZOOM / TOURS_HALF_SPAN_DEG / COLOURS
  *   demSource(tileUrl)
  *   terrainSpec()
@@ -101,6 +106,43 @@
     casing: '#ffffff',
     resort: '#1a1a1a',
   });
+
+  /**
+   * The sky and the haze toward the horizon: an alpine blue overhead fading
+   * to a pale horizon, with the haze kept off the near ground so the
+   * foreground stays crisp. MapLibre paint values, so hex here.
+   *
+   * @returns {Record<string, unknown>}
+   */
+  function skySpec() {
+    return {
+      'sky-color': '#5b9bd5',
+      'horizon-color': '#dbe9f6',
+      'fog-color': '#e6eef7',
+      'sky-horizon-blend': 0.8,
+      'horizon-fog-blend': 0.9,
+      'fog-ground-blend': 0.15,
+      'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 10, 1, 14, 0.6],
+    };
+  }
+
+  /**
+   * The sunlight layer's paint: a north-west sun fixed to the map (so the
+   * light does not swing as the camera turns), soft: enough to model the
+   * ridges, with shade light enough that swisstopo's hachures read through.
+   *
+   * @returns {Record<string, unknown>}
+   */
+  function sunlightPaint() {
+    return {
+      'hillshade-exaggeration': 0.3,
+      'hillshade-illumination-anchor': 'map',
+      'hillshade-illumination-direction': 315,
+      'hillshade-shadow-color': '#4a5878',
+      'hillshade-highlight-color': '#ffffff',
+      'hillshade-accent-color': '#7a8799',
+    };
+  }
 
   /**
    * The elevation source: Mapterhorn's Terrarium-encoded 512 px tiles.
@@ -323,6 +365,52 @@
   }
 
   /**
+   * The main thread's half of the Steep terrain worker's protocol: one
+   * `request(tile, signal)` per MapLibre tile. Each request posts
+   * `{type: 'tile', id, z, x, y}` and settles on the worker's reply with
+   * that id — `{data: bitmap}`, or an Error for `{id, error}`. An abort
+   * posts `{type: 'abort', id}` and rejects with an AbortError; a reply that
+   * arrives after it is dropped and its bitmap closed.
+   *
+   * @param {{postMessage: (msg: any) => void, addEventListener: (type: string, fn: (event: any) => void) => void}} worker
+   * @returns {{request: (tile: {z: number, x: number, y: number}, signal: AbortSignal) => Promise<{data: any}>, pendingCount: () => number}}
+   */
+  function workerTileBridge(worker) {
+    let nextId = 1;
+    /** @type {Map<number, {resolve: Function, reject: Function}>} */
+    const pending = new Map();
+    worker.addEventListener('message', (/** @type {MessageEvent} */ event) => {
+      const { id, bitmap, error } = event.data || {};
+      const waiter = pending.get(id);
+      if (!waiter) {
+        if (bitmap) bitmap.close();
+        return;
+      }
+      pending.delete(id);
+      if (bitmap) waiter.resolve({ data: bitmap });
+      else waiter.reject(new Error(`map_3d: steep tile failed: ${error}`));
+    });
+    return {
+      request(tile, signal) {
+        const id = nextId;
+        nextId += 1;
+        const answer = /** @type {Promise<{data: any}>} */ (
+          new Promise((resolve, reject) => pending.set(id, { resolve, reject }))
+        );
+        signal.addEventListener('abort', () => {
+          const waiter = pending.get(id);
+          pending.delete(id);
+          worker.postMessage({ type: 'abort', id });
+          if (waiter) waiter.reject(new DOMException('Aborted', 'AbortError'));
+        });
+        worker.postMessage({ type: 'tile', id, z: tile.z, x: tile.x, y: tile.y });
+        return answer;
+      },
+      pendingCount: () => pending.size,
+    };
+  }
+
+  /**
    * The page's own address for a view, carrying the token that opens it.
    *
    * `share` is the reader's Map3dShare token (apps/map/models.py), which
@@ -365,6 +453,9 @@
     MAX_PITCH: MAX_PITCH,
     MAX_PIXEL_RATIO: MAX_PIXEL_RATIO,
     prefetchDemTiles: prefetchDemTiles,
+    skySpec: skySpec,
+    sunlightPaint: sunlightPaint,
+    workerTileBridge: workerTileBridge,
     tileUrl: tileUrl,
     TOURS_MIN_ZOOM: TOURS_MIN_ZOOM,
     TOURS_HALF_SPAN_DEG: TOURS_HALF_SPAN_DEG,
