@@ -2,20 +2,21 @@
 name: implement
 description: |
   Take a scoped Linear ticket from Ready-for-dev through to a merged PR in one
-  flow: create the branch, plan, wait for plan approval, implement + review,
-  push, open the PR, and merge once CI and Codex are clean. Use when the user says "implement SNOW-NN", "implement
+  flow: create the branch, write the plan, implement + review, push, open the
+  PR, and merge once CI and Codex are clean. Use when the user says "implement SNOW-NN", "implement
   this", "go on SNOW-NN", or just "implement" / "go" / "continue" when a
   feature branch is already checked out. Do NOT use for: scoping a ticket
   (`scope` skill), ad-hoc edits unrelated to a ticket, or any message without
   either a SNOW-NN reference or an existing SNOW-NN branch checked out.
-allowed-tools: Agent, Bash, Read, Edit, Write, Grep, Glob, EnterPlanMode, ExitPlanMode, mcp__Linear, mcp__claude_ai_Linear, mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8
+allowed-tools: Agent, Bash, Read, Edit, Write, Grep, Glob, mcp__Linear, mcp__claude_ai_Linear, mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8
 ---
 
 # Implement SNOW-$1
 
-End-to-end implementation flow. The **only** mandatory stop is plan approval.
-Everything after that runs through to an open PR without prompting the user,
-unless they appended a pause directive to the trigger.
+End-to-end implementation flow. There is no mandatory stop: Hugo reviews the
+scope, not the plan. The flow runs from `Ready for dev` through to an open PR
+without prompting the user, unless they appended a pause directive to the
+trigger.
 
 ## Optional pause directives
 
@@ -25,8 +26,8 @@ checkpoint as a hard stop. If the phrasing is ambiguous, ask which checkpoint
 they mean — do not guess.
 
 - **plan-only** — phrases like "plan only", "stop after the plan", "just the
-  plan", "don't implement yet". Stop after step 3 (plan approval). Do not
-  invoke the implementer.
+  plan", "don't implement yet". Stop after step 3 (the plan). Do not invoke
+  the implementer.
 - **stop-before-push** — phrases like "stop before pushing", "stop before the
   PR", "don't open the PR yet", "review only". Run through step 4
   (implement + review). Stop before step 5.
@@ -141,37 +142,31 @@ Use Linear MCP `save_issue` with the ticket's internal `id` and the
 `In Progress` state. Do not push the branch — Linear's GitHub integration
 only cares about PR open / merge, not branch existence.
 
-## Step 3 — Produce plan and wait for approval
+## Step 3 — Write the plan
 
-Now produce an implementation plan. **Use plan mode** so the plan renders
-in the sidebar UI with a proper approval button — not as a wall of
-conversational text:
+Write an implementation plan, then go straight on to step 4. **Do not stop for
+approval**: Hugo signed off the scope, Codex reviewed it, and the plan only
+works out how to build what that scope promises. Do not use plan mode, which
+exists to gate on approval.
 
-1. Call `EnterPlanMode` to enter plan mode. While in plan mode, read the
-   relevant parts of the codebase to ground the plan and reference the
-   scope (from the Linear comment) for acceptance criteria. Edits and
-   writes are blocked in plan mode, which is the point — research only.
-2. When the plan is ready, call `ExitPlanMode` with the full plan as the
-   `plan` argument. The plan should cover:
+Read the relevant parts of the codebase to ground the plan, and take acceptance
+criteria from the scope (the Linear comment). Print the plan to the transcript
+for the record, covering:
 
-   - **Files to touch** — concrete paths in the Snowdesk repo
-   - **Order of changes** — what gets built first, second, third
-   - **Test strategy** — what tests to write or update, what existing tests
-     cover this surface
-   - **Risks / open questions** — anything that might bite during
-     implementation
+- **Files to touch** — concrete paths in the Snowdesk repo
+- **Order of changes** — what gets built first, second, third
+- **Test strategy** — what tests to write or update, what existing tests
+  cover this surface
+- **Risks / open questions** — anything that might bite during
+  implementation
 
-   `ExitPlanMode` renders the plan in the sidebar with an approve / reject
-   control. The user reviews and acts via the UI.
+The plan may not widen the scope. If working it out shows the scope was wrong,
+stop and comment on the ticket first (`AGENTS.md` → Workflow, "Stop and ask").
+A departure that stays inside the scope's intent is a deviation, listed in the
+PR body under Deviations from scope.
 
-If the user pushes back, revise and re-present via `ExitPlanMode` again —
-each revision goes through the sidebar, not as inline text.
-
-**Hard gate:** do not write any code or invoke the implementer until the
-user has approved a plan via the sidebar.
-
-**Pause check:** if the directive is `plan-only`, stop here after approval
-with the resume message. Otherwise continue to step 4.
+**Pause check:** if the directive is `plan-only`, stop here with the resume
+message. Otherwise continue to step 4.
 
 ## Step 4 — Implement and review
 
@@ -181,7 +176,7 @@ Use the Agent tool to invoke the `implementer` subagent. Pass it:
 
 - The Linear ticket number & branch name
 - A reminder to consult the Linear ticket scope (in comments) and the
-  approved plan from this session's context
+  plan from this session's context
 - An instruction to commit incrementally with conventional commit messages
   and `--author="Claude <noreply@anthropic.com>"` (the PreToolUse hook
   refuses a commit without it), run tests as it goes, and report back when

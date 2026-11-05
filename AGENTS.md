@@ -273,7 +273,12 @@ contract and PR body template:
 - **Scope review.** Codex reviews every scope of size S and above once.
   An XS scope with no open questions goes straight to `Ready for dev`. An
   unsized ticket counts as S
-  ([why](docs/decisions/codex-reviews-every-scope-once.md)).
+  ([why](docs/decisions/codex-reviews-every-scope-once.md)). If Codex's review
+  changes the scope, Claude decides whether to refer back to Hugo; a change
+  that alters what is built or why goes back, a clarification does not.
+- **Implementation plan.** Hugo reviews the scope, not the plan. Once the scope
+  is signed off and Codex has reviewed it, Claude writes the plan and builds from
+  it with no approval stop.
 - **When a ticket may be skipped.** A change that touches no model, migration,
   URL, command, dependency or stored data shape needs no ticket, scope or
   `SNOW-` prefix, whatever its line count. Copy, styling, map paint, docs and
