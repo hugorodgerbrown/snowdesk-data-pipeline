@@ -10,8 +10,11 @@ Hand-curated catalogue of everything the design-system page at
    declared there is either listed here or carries a reason in
    ``TOKEN_EXEMPTIONS`` below (SNOW-969). ``kind`` is one of
    ``"swatches"``, ``"typography"``, ``"radius"``, ``"layout"``,
-   ``"icons"``. Each entry's ``tokens`` field
-   carries ``Token`` and/or ``IconToken`` instances. The
+   ``"icons"``, ``"ui_icons"``. Each entry's ``tokens`` field
+   carries ``Token``, ``IconToken`` or ``IconPartial`` instances. The
+   ``ui-icons`` entry lists every ``_icon_*.html`` partial in the tree
+   (Hugo, 5 Nov 2026: all icons are in the component library), and
+   ``tests/design_system/test_design_tokens.py`` fails on one it misses. The
    registry-vs-CSS sync check in ``apps/design_system/checks.py`` walks this group.
 
 2. **Components** — rendered HTML components. ``kind`` is ``"components"``.
@@ -31,6 +34,7 @@ a ``.dark`` ancestor.
 """
 
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import Any
 
 from django.conf import settings
@@ -165,11 +169,89 @@ class IconToken:
 
 
 @dataclass(frozen=True)
+class IconParameter:
+    """One context key an icon partial reads, as its header comment documents it.
+
+    Attributes:
+        name: The key passed via ``{% include … with name=… %}``.
+        note: Type, whether it is optional, and what it does — a summary of
+            the partial's own header, which stays the authority.
+
+    """
+
+    name: str
+    note: str
+
+
+@dataclass(frozen=True)
+class IconPartial:
+    """One house stroke glyph — a ``_icon_*.html`` partial — in the library.
+
+    Distinct from ``IconToken`` because the glyph is a template, not a
+    static file: it is included, takes a ``size`` and inherits
+    ``currentColor``, so the panel renders it through ``include_variant``
+    rather than an ``<img>`` (docs/decisions/ui-icons-are-house-stroke-partials.md).
+
+    Attributes:
+        partial: Template path, exactly as a caller includes it.
+        label: What the mark means, in a few words.
+        default_size: The px the partial draws at when no ``size`` is
+            passed. ``tests/design_system/test_design_tokens.py`` holds it
+            to the partial's own ``default:`` so the caption cannot lie.
+        parameters: Every key the partial's header documents, in its order.
+        base_context: Keys every render needs — for a partial with no
+            useful default, such as the observation family's ``family``.
+        variants: Extra renders beyond the default and the 24px grid size,
+            each ``{"caption": …, "context": {…}}`` — the documented
+            alternative sizes and states (the panel header's 22px, the
+            filled star, the rotated arrow).
+
+    """
+
+    partial: str
+    label: str
+    default_size: int
+    parameters: tuple[IconParameter, ...]
+    base_context: tuple[tuple[str, Any], ...] = ()
+    variants: tuple[dict[str, Any], ...] = ()
+
+    @property
+    def name(self) -> str:
+        """Return the glyph's short name: the file stem without ``_icon_``."""
+        return PurePosixPath(self.partial).stem.removeprefix("_icon_")
+
+    @property
+    def include_snippet(self) -> str:
+        """Return the ``{% include %}`` line a caller pastes to draw the glyph."""
+        return f'{{% include "{self.partial}" %}}'
+
+    @property
+    def renders(self) -> tuple[dict[str, Any], ...]:
+        """Return every render the panel draws, each in ``include_variant`` shape.
+
+        The default size first, then the 24px grid size — the size every
+        glyph is drawn on, so a row of cards compares their weight like for
+        like — then the documented variants.
+        """
+        base = dict(self.base_context)
+        renders: list[dict[str, Any]] = [
+            {"caption": f"{self.default_size} · default", "context": base},
+        ]
+        if self.default_size != 24:
+            renders.append({"caption": "24 · grid", "context": {**base, "size": 24}})
+        renders.extend(
+            {"caption": variant["caption"], "context": {**base, **variant["context"]}}
+            for variant in self.variants
+        )
+        return tuple(renders)
+
+
+@dataclass(frozen=True)
 class FoundationCategory:
     """One sidebar entry / one panel-worth of content.
 
     Used for both Foundations entries (``kind`` in ``swatches``,
-    ``typography``, ``radius``, ``layout``, ``icons``; populated via
+    ``typography``, ``radius``, ``layout``, ``icons``, ``ui_icons``; populated via
     ``tokens``) and Components entries (``kind="components"``; populated
     via ``partial`` + ``variants``). The class name is preserved from
     SNOW-103 for backwards compatibility with the existing sync check;
@@ -182,7 +264,7 @@ class FoundationCategory:
         description: One-line panel intro shown above the content.
         kind: Panel template hint; the panel wrapper dispatches to
             ``_<kind>.html`` based on this value.
-        tokens: Tuple of ``Token`` and/or ``IconToken`` entries rendered
+        tokens: Tuple of ``Token``, ``IconToken`` or ``IconPartial`` entries rendered
             inside the panel. Required when ``kind`` is a foundations
             kind; ignored (defaults to empty) when ``kind="components"``.
             The sync check in ``apps/design_system/checks.py`` filters to ``Token``
@@ -213,7 +295,7 @@ class FoundationCategory:
     label: str
     description: str
     kind: str
-    tokens: tuple[Token | IconToken, ...] = ()
+    tokens: tuple[Token | IconToken | IconPartial, ...] = ()
     partial: str | None = None
     variants: tuple[dict[str, Any], ...] = ()
     panel_layout: str = "stack"
@@ -312,6 +394,262 @@ TOKEN_EXEMPTIONS: tuple[TokenExemption, ...] = (
         "in main.css), not by a designer browsing swatches. Exempted by "
         "prefix so the next basemap is a one-line change in the CSS.",
     ),
+)
+
+
+def _size(default: int, why: str = "") -> IconParameter:
+    """Return the ``size`` parameter as an icon partial's header documents it.
+
+    Args:
+        default: The px the partial falls back to.
+        why: The header's reason for that default, if it gives one.
+
+    """
+    note = f"int, optional — rendered px, both axes. Default {default}"
+    return IconParameter("size", f"{note}, {why}." if why else f"{note}.")
+
+
+_SVG_CLASS = IconParameter("svg_class", "string, optional — classes on the <svg>.")
+_PANEL_HEADER = {"caption": "22 · panel header", "context": {"size": 22}}
+
+
+def _icon(
+    name: str,
+    label: str,
+    default_size: int,
+    *,
+    why: str = "",
+    parameters: tuple[IconParameter, ...] | None = None,
+    base_context: tuple[tuple[str, Any], ...] = (),
+    variants: tuple[dict[str, Any], ...] = (),
+) -> IconPartial:
+    """Build the registry entry for ``templates/includes/_icon_<name>.html``.
+
+    Most glyphs take ``size`` and ``svg_class`` and nothing else, so those
+    two are the default parameter list; a partial that reads more passes
+    its own, ``svg_class`` included.
+
+    Args:
+        name: The glyph's stem without ``_icon_``.
+        label: What the mark means.
+        default_size: The partial's own ``size`` default.
+        why: The header's reason for that default, if any.
+        parameters: The full parameter list, overriding the default pair.
+        base_context: Keys every render needs.
+        variants: Extra documented renders.
+
+    """
+    if parameters is None:
+        parameters = (_size(default_size, why), _SVG_CLASS)
+    return IconPartial(
+        partial=f"includes/_icon_{name}.html",
+        label=label,
+        default_size=default_size,
+        parameters=parameters,
+        base_context=base_context,
+        variants=variants,
+    )
+
+
+# Every house stroke glyph, alphabetical by file name so a new one has an
+# obvious place. The guard in tests/design_system/test_design_tokens.py
+# globs every template directory for ``_icon_*.html`` and fails on one
+# missing here, on an entry with no file, and on a default size or a
+# parameter list that has drifted from the partial's header.
+ICON_PARTIALS: tuple[IconPartial, ...] = (
+    _icon("boundary", "Boundaries — the EAWS region outlines layer", 18),
+    _icon(
+        "bullseye",
+        "Centre the map on this route",
+        18,
+    ),
+    _icon(
+        "calendar",
+        "A span of days — the season heatmap and the archive strip",
+        16,
+        why="the banner strip's glyph size",
+        variants=({"caption": "14 · nav trigger", "context": {"size": 14}},),
+    ),
+    _icon(
+        "chevron",
+        "Expand in place — points down, rotated when open",
+        17,
+        why="the design's row-action glyph size",
+        variants=(
+            {"caption": "17 · expanded", "context": {"svg_class": "rotate-180"}},
+        ),
+    ),
+    _icon(
+        "chevron_right",
+        "Navigate — this opens a page of its own",
+        16,
+        variants=({"caption": "16 · back", "context": {"svg_class": "rotate-180"}},),
+    ),
+    _icon("close", "Close — an ×", 18, why="the sheet header's"),
+    _icon("cloud", "Weather layer", 18),
+    _icon(
+        "compass",
+        "Wind direction — labels the day strips' wind row",
+        14,
+        why="the arrows' own size",
+    ),
+    _icon("danger", "Avalanche bulletin — a warning triangle", 18),
+    _icon(
+        "download_arrow",
+        "Fetch this area — an arrow onto a line",
+        17,
+        why="the design's row-action glyph size",
+    ),
+    _icon(
+        "downloads",
+        "Offline downloads — a viewfinder, the downloads roundel",
+        18,
+        why="the roundel size; the panel header passes 22",
+        variants=(_PANEL_HEADER,),
+    ),
+    _icon(
+        "ellipsis",
+        "Overflow menu — three dots",
+        17,
+        why="the design's row-action glyph size",
+    ),
+    _icon(
+        "external_link",
+        "A link that leaves Snowdesk",
+        14,
+        why="the size that sits beside 15px body text",
+    ),
+    _icon(
+        "favourite",
+        "Favourite — a star, the favourites roundel",
+        18,
+        parameters=(
+            _size(18, "the roundel size; the panel header passes 22"),
+            IconParameter(
+                "filled",
+                "bool, optional — solid rather than outline, the on state "
+                "of a star used as a toggle.",
+            ),
+            _SVG_CLASS,
+        ),
+        variants=(
+            _PANEL_HEADER,
+            {"caption": "18 · filled", "context": {"filled": True}},
+        ),
+    ),
+    _icon(
+        "layers",
+        "Layers — the layers roundel",
+        18,
+        why="the roundel size; the panel header passes 22",
+        variants=(_PANEL_HEADER,),
+    ),
+    _icon(
+        "locate",
+        "Find this point on the map — a crosshair",
+        15,
+        why="sized to sit on a 13px coordinate line",
+    ),
+    _icon(
+        "location_off",
+        "We cannot place you — a pin struck through",
+        18,
+        why="the banner roundel's glyph size",
+    ),
+    _icon("map", "See on the map — a folded map", 18),
+    _icon("minus", "Zoom out", 18),
+    _icon("mountain", "Terrain mode", 18),
+    _icon(
+        "observation",
+        "Field observations — binoculars, the observation roundel",
+        18,
+        why="the roundel size; the panel header passes 22",
+        variants=(_PANEL_HEADER,),
+    ),
+    _icon(
+        "observation_family",
+        "Field-observation family — warning signs, snow surface, trail",
+        20,
+        parameters=(
+            IconParameter(
+                "family",
+                "string — an OBSERVATION_FAMILY value: WARNING, SURFACE, TRAIL.",
+            ),
+            _size(20),
+            _SVG_CLASS,
+        ),
+        base_context=(("family", "WARNING"),),
+        variants=(
+            {"caption": "20 · SURFACE", "context": {"family": "SURFACE"}},
+            {"caption": "20 · TRAIL", "context": {"family": "TRAIL"}},
+        ),
+    ),
+    _icon("pencil", "Rename", 17, why="the design's row-action glyph size"),
+    _icon("plus", "Zoom in", 18),
+    _icon(
+        "raindrops",
+        "Precipitation — labels the rainfall baseline",
+        22,
+        variants=({"caption": "15 · summary line", "context": {"size": 15}},),
+    ),
+    _icon(
+        "refresh",
+        "Pick up the new version — the update banner",
+        18,
+        why="the banner roundel's glyph size",
+    ),
+    _icon(
+        "resort",
+        "Resort — a gondola cabin",
+        16,
+        why="the search row's tile",
+    ),
+    _icon("rest_zone", "Wildlife rest zone — a ring struck through", 18),
+    _icon(
+        "route",
+        "Saved route — the routes roundel",
+        18,
+        why="the roundel size; the panel header passes 22",
+        variants=(_PANEL_HEADER,),
+    ),
+    _icon("share", "Share", 17, why="the design's row-action glyph size"),
+    _icon("slope", "Steep terrain — the slope and terrain-filter layer", 18),
+    _icon(
+        "snowflake",
+        "New snow — labels the snowfall baseline",
+        22,
+        variants=({"caption": "15 · summary line", "context": {"size": 15}},),
+    ),
+    _icon("sun", "Today — the Today roundel and panel", 18),
+    _icon(
+        "traffic_arrow",
+        "Network traffic — drawn up, rotated for a response",
+        12,
+        variants=(
+            {"caption": "12 · response", "context": {"svg_class": "rotate-180"}},
+        ),
+    ),
+    _icon(
+        "trash",
+        "Remove — always the last row action",
+        17,
+        why="the design's row-action glyph size",
+    ),
+    _icon("trip", "Plan a trip — a map pin", 17),
+    _icon(
+        "undo",
+        "Back to today",
+        14,
+        why="the size the date row draws it at",
+    ),
+    _icon(
+        "wifi",
+        "Connected — the nav's connectivity symbol",
+        16,
+        why="the nav passes 15",
+        variants=({"caption": "15 · nav", "context": {"size": 15}},),
+    ),
+    _icon("wifi_off", "Not using the network", 16, why="matching _icon_wifi.html"),
 )
 
 
@@ -1005,6 +1343,19 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
                 "Weather",
             ),
         ),
+    ),
+    FoundationCategory(
+        slug="ui-icons",
+        label="UI icons",
+        description=(
+            "The house stroke glyphs: every _icon_*.html partial, on a 24 "
+            "grid with a 2px stroke in currentColor. Each card draws the "
+            "glyph at its default size, at the 24px grid size so weights "
+            "compare like for like, and at the sizes and states its header "
+            "documents, with the include line and its parameters."
+        ),
+        kind="ui_icons",
+        tokens=ICON_PARTIALS,
     ),
 )
 

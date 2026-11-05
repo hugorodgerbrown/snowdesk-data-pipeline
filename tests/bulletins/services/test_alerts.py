@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from apps.accounts.models import Account
-from apps.bulletins.models import BulletinAlert
+from apps.bulletins.models import BulletinAlert, RegionDayRating
 from apps.bulletins.services import alerts
 from apps.bulletins.services.alerts import (
     ALERT_TZ,
@@ -962,6 +962,18 @@ class TestSeasonGap:
         """Nothing in the last sixty days: a new season."""
         region = MicroRegionFactory.create()
         publish(region, TODAY - datetime.timedelta(days=61), render())
+        assert not had_bulletin_in_season(region, TODAY)
+
+    def test_no_rating_bulletin_is_no_bulletin(self) -> None:
+        """A provider's ``no_rating`` bulletin does not keep the season going."""
+        region = MicroRegionFactory.create()
+        RegionDayRatingFactory.create(
+            region=region,
+            date=TODAY - datetime.timedelta(days=10),
+            source_bulletin=BulletinFactory.create(render_model=render()),
+            min_rating=RegionDayRating.Rating.NO_RATING,
+            max_rating=RegionDayRating.Rating.NO_RATING,
+        )
         assert not had_bulletin_in_season(region, TODAY)
 
     def test_resumed_alert_says_bulletins_are_back(self, follower: tuple) -> None:

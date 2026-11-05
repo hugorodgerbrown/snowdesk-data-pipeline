@@ -448,7 +448,7 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                 class="flex items-center gap-1 text-summary text-accent"
                 data-testid="{{ prefix }}-snow-total"
             >
-                {% include "includes/_icon_snowflake.html" with size=15 %}
+                {% include "includes/_icon_snowflake.html" with size=15 only %}
                 {{ chart.snow_total }}
             </span>
             <span class="text-summary text-text-3" aria-hidden="true">&middot;</span>
@@ -456,7 +456,7 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                 class="flex items-center gap-1 text-summary text-chart-precip"
                 data-testid="{{ prefix }}-precip-total"
             >
-                {% include "includes/_icon_raindrops.html" with size=15 %}
+                {% include "includes/_icon_raindrops.html" with size=15 only %}
                 {{ chart.precip_total }}
             </span>
         </div>
@@ -549,13 +549,13 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                     class="absolute pr-1 text-accent"
                     style="right: {{ chart.left_gutter_right }}; top: {{ chart.snow_icon_top }}"
                 >
-                    {% include "includes/_icon_snowflake.html" %}
+                    {% include "includes/_icon_snowflake.html" with svg_class="block" only %}
                 </span>
                 <span
                     class="absolute pr-1 text-chart-precip"
                     style="right: {{ chart.left_gutter_right }}; top: {{ chart.precip_icon_top }}"
                 >
-                    {% include "includes/_icon_raindrops.html" %}
+                    {% include "includes/_icon_raindrops.html" with svg_class="block" only %}
                 </span>
 
                 {% for label in chart.snow_labels %}

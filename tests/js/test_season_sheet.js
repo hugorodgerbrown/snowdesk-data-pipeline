@@ -26,7 +26,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 document.body.innerHTML = `
-  <button data-season-trigger type="button" aria-expanded="false">Season</button>
+  <button data-season-trigger type="button" aria-expanded="false">Calendar</button>
   <div data-season-sheet="closed">
     <div data-season-scroll>
       <div id="season-grid" data-selected-date="2026-01-15"></div>

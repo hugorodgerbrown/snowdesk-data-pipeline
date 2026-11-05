@@ -404,10 +404,10 @@ const VIEWPORT_STORAGE_KEY = 'snowdesk.map.viewport';
 // SERVER-side by public/_region_tooltip.html, which is what the region panel
 // shows — the client-side copies had no reader left.
 const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
-  'season-unavailable': 'Season data unavailable',
-  'timelapse-play': 'Play season timelapse',
-  'timelapse-play-reverse': 'Play season timelapse in reverse',
-  'timelapse-stop': 'Stop season timelapse',
+  'season-unavailable': 'Bulletins unavailable',
+  'timelapse-play': 'Play timelapse',
+  'timelapse-play-reverse': 'Play timelapse in reverse',
+  'timelapse-stop': 'Stop timelapse',
   'timelapse-stop-reverse': 'Stop reverse timelapse',
   // SNOW-632: the custom-area framing overlay's CTA readout and top
   // banner. 'frame-up-to' and 'frame-over-ceiling' replace two literals

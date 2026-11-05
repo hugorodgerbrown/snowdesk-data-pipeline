@@ -204,17 +204,20 @@ range.
   (`YYYY-MM-DD`, required), `min_rating` (optional:
   `low|moderate|considerable|high|very_high`).
 * **Returns:** `{region_id, region_name, requested_from, requested_to,
-  effective_from, effective_to, season_start, season_end, clamped, days:
+  effective_from, effective_to, window_start, window_end, clamped, days:
   [{date, min_rating, max_rating}], count, count_at_or_above_min_rating,
   summary}`.
 
-**Cost cap:** the requested range is always clamped to a single avalanche
-season (1 November → 31 May) — the season containing today, or, off
-season (June–October), the most recently completed one
-(`apps/mcp_server/season.py::current_or_last_season`). `clamped` reports
-whether either bound was adjusted. A range entirely outside the season
-window returns `days: []` with `clamped: true` and the season bounds — a
-successful empty response, not an error. `days` is always the **full,
+**Cost cap:** the window holds at most 366 days
+(`_DANGER_HISTORY_MAX_DAYS`). It ends at the earlier of `to_date` and
+tomorrow (the latest day a bulletin can target), and `window_start` is 365
+days before `window_end`. A longer range is clamped from its start. There is
+no fixed season: a range that crosses 1 November, or runs through the
+summer, is answered as asked (SNOW-1431,
+[`decisions/date-windows-follow-the-data.md`](decisions/date-windows-follow-the-data.md)).
+`clamped` reports whether either bound was adjusted. A range entirely after
+tomorrow returns `days: []` with `clamped: true` — a successful empty
+response, not an error. `days` is always the **full,
 unfiltered** list for the effective range; `min_rating` narrows only the
 `count_at_or_above_min_rating` metric (computed against each day's peak
 `max_rating`, per the compressed-views peak rule —
@@ -366,7 +369,7 @@ falling in Verbier?" in one call.
 
 * **Params:** `region_id` (string, required), `days` (integer,
   optional — default 14, cap 90).
-* **Returns:** the full `get_danger_history` envelope (season-clamped)
+* **Returns:** the full `get_danger_history` envelope (366-day cap)
   plus three fields:
   - `direction`: `"rising"` / `"stable"` / `"falling"` from a mean-
     shift comparison of the first vs last third of the window; the
@@ -380,7 +383,7 @@ falling in Verbier?" in one call.
   `isError` — this is the same convention as
   `get_danger_history`'s `min_rating` rejection (a tool that tried
   and couldn't satisfy), not a JSON-RPC parameter failure.
-* **Off-season windows** clamp to the season window and return `days:
+* **Windows with no rated day** (a summer week, say) return `days:
   []` with `direction: "stable"`, `change_point: null`,
   `current_streak: null` — a structured empty result, not an error.
 
@@ -489,8 +492,8 @@ wants visibility into.
 
 ## Cost caps
 
-* `get_danger_history` is capped to one region and one avalanche season
-  per call (above).
+* `get_danger_history` is capped to one region and 366 days per call,
+  ending no later than tomorrow (above).
 * `search_regions` returns at most 10 candidates.
 * `bulk_current_conditions` caps its `region_ids[]` input at 20 entries per
   call.

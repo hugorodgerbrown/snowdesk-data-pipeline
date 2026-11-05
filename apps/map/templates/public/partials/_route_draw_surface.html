@@ -153,7 +153,7 @@ Context expected:
                 data-route-draw-add
                 class='{% button_classes variant="primary" size="compact" %} hover-affordance inline-flex h-11 flex-1 items-center justify-center gap-1.5'
             >
-                {% include "includes/_icon_plus.html" with size=16 %}
+                {% include "includes/_icon_plus.html" with size=16 only %}
                 {# SNOW-1321: the first point is the start; route_draw.js #}
                 {# writes "Add point" once one is down.                    #}
                 <span data-route-draw-add-label>{% trans "Set start location" %}</span>

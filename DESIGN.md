@@ -422,6 +422,7 @@ Depth is **glass, not shadow**. Floating controls: `glass` (rgba(255,255,255,.85
 - **Region readout chip → region panel**: mono name + EAWS swatch; opens into a glass panel with breadcrumb, bulletin CTA, resorts, pinned regions.
 - **Route rails**: rail one = identity + a profile with one fill per leg (climb slate, descent fuchsia); rail two = the pressed leg's terrain.
 - **Resort forecast strip** (`_resort_forecast.html`): mono `pill` chips, one per point (Base / Mid / Summit · elevation), 44px tap height, checked chip bordered `accent` — CSS-only radios, no script; under them a seven-day strip, today first and wider (a full row on a phone) with a Max / Min / New snow list, then six `card-subtle` tiles; each pane ends with "Open-Meteo · updated HH:MM" and its own "Read the full 7-day forecast →".
+- **UI icons** (`_icon_*.html`): 24×24 stroke partials, one per mark, every one browsable at `/_components/?slug=ui-icons` at its default size, at 24px and in its documented states.
 - **UGC panel rows / overflow menu**: label first; two or more actions collapse into "…" in the order Plan a trip → Share → Rename → Delete.
 
 ## Do's and Don'ts

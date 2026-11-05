@@ -18,6 +18,11 @@
  * (the boundary, or the user pressing it), and the two skip jumps, which are
  * single discrete actions.
  *
+ * SNOW-1431: the ratings payload can hold days either side of the track
+ * (`data-season-start` to `data-season-end`). Playback and the skip jumps
+ * stay on the track, because a day off it hides the scrubber and the Stop
+ * button with it.
+ *
  * The module is loaded on its own against a stubbed scope; every cross-file
  * binding it reads is listed in `loadTimelapse`.
  */
@@ -46,21 +51,23 @@ function buildFixture() {
 /**
  * Load the timelapse against a stubbed scope.
  *
+ * @param {Record<string, object>} [ratings] The payload getSeasonRatings
+ *   resolves with; the track is always DATES.
  * @returns {Promise<{urlWrites: string[], painted: string[]}>} Every date
  *   handed to the shared URL writer, and every date painted.
  */
-async function loadTimelapse() {
+async function loadTimelapse(ratings = RATINGS) {
   const urlWrites = [];
   const painted = [];
   globalThis.MAP = { isStyleLoaded: () => true };
   globalThis.IS_PLAYING = false;
   globalThis.MAP_STRINGS = {
-    'timelapse-play': 'Play season timelapse',
-    'timelapse-play-reverse': 'Play season timelapse in reverse',
-    'timelapse-stop': 'Stop season timelapse',
+    'timelapse-play': 'Play timelapse',
+    'timelapse-play-reverse': 'Play timelapse in reverse',
+    'timelapse-stop': 'Stop timelapse',
     'timelapse-stop-reverse': 'Stop reverse timelapse',
   };
-  globalThis.getSeasonRatings = () => Promise.resolve(RATINGS);
+  globalThis.getSeasonRatings = () => Promise.resolve(ratings);
   globalThis.repaintRegionsForDate = (dateKey) => { painted.push(dateKey); };
   // The shared writer from map_shared.js. Recorded rather than performed:
   // the count is half the assertion, and a real replaceState would hide a
@@ -153,5 +160,57 @@ describe('playback and the URL', () => {
     }));
 
     expect(urlWrites).toEqual([]);
+  });
+});
+
+describe('playback stays on the track', () => {
+  // A payload with a day before the track and a day after it.
+  const WIDE = {
+    '2026-01-15': { 'CH-4115': 2 },
+    ...RATINGS,
+    '2026-03-20': { 'CH-4115': 3 },
+  };
+
+  /** Play once to the end so the ratings cache and frames are loaded. */
+  async function loadWideAndPlay() {
+    const recorded = await loadTimelapse(WIDE);
+    await playToTheEnd();
+    recorded.painted.length = 0;
+    recorded.urlWrites.length = 0;
+    return recorded;
+  }
+
+  it('never plays a frame off the track', async () => {
+    const { painted } = await loadTimelapse(WIDE);
+
+    await playToTheEnd();
+
+    expect(painted).toEqual(DATES);
+  });
+
+  it('skips to the start of the track, not the first day of the payload', async () => {
+    const { urlWrites } = await loadWideAndPlay();
+
+    document.getElementById('scrubber-skip-start').click();
+
+    expect(urlWrites).toEqual([DATES[0]]);
+  });
+
+  it('skips to the end of the track, not the last day of the payload', async () => {
+    const { urlWrites } = await loadWideAndPlay();
+
+    document.getElementById('scrubber-skip-end').click();
+
+    expect(urlWrites).toEqual([DATES[DATES.length - 1]]);
+  });
+
+  it('falls back to the track ends when no payload day is on it', async () => {
+    const { urlWrites } = await loadTimelapse({ '2026-01-15': { 'CH-4115': 2 } });
+    document.getElementById('scrubber-play').click();
+    await vi.advanceTimersByTimeAsync(0);
+
+    document.getElementById('scrubber-skip-end').click();
+
+    expect(urlWrites).toEqual([DATES[DATES.length - 1]]);
   });
 });

@@ -16,7 +16,6 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 from django.conf import settings
@@ -38,6 +37,7 @@ from tests.factories import (
     MajorRegionFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
+    RegionDayRatingFactory,
     SubRegionFactory,
 )
 
@@ -2739,18 +2739,27 @@ class TestBulletinPageContent:
 @pytest.mark.django_db
 class TestSeasonSheet:
     """
-    Season heatmap sheet — slide-down dialog surfaced from the page nav's
-    ``🗓 SEASON`` trigger. Replaces the old month-grid drawer.
+    Danger calendar sheet — slide-down dialog surfaced from the page nav's
+    ``🗓 CALENDAR`` trigger. Replaces the old month-grid drawer.
 
     Markup contract: a `[data-season-sheet="closed"]` wrapper holding a
     backdrop and a `role="dialog"` body. The sheet only renders when
-    ``season_calendar`` is non-empty — before SEASON_START_DATE the page
-    drops the trigger and the sheet entirely.
+    ``season_calendar`` is non-empty — for a region with no rated row
+    (SNOW-1431) the page drops the trigger and the sheet entirely.
 
     The grid markup is deferred — served by the season_calendar_partial
     view on first open. The bulletin page itself does NOT contain
     data-testid="season-calendar" or any .season-day cell.
     """
+
+    @pytest.fixture(autouse=True)
+    def _rated_day(self, region: MicroRegion) -> None:
+        """Give the region a rated row, which is what opens its calendar."""
+        RegionDayRatingFactory.create(
+            region=region,
+            date=date(2026, 3, 1),
+            source_bulletin=BulletinFactory.create(),
+        )
 
     def test_renders_sheet_and_trigger_when_season_active(
         self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
@@ -2775,32 +2784,29 @@ class TestSeasonSheet:
         assert "data-season-readout" not in content
         assert "data-readout-link" not in content
 
-    def test_sheet_heading_names_the_region_and_the_season(
+    def test_sheet_heading_names_the_region_and_no_season(
         self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
     ) -> None:
-        """SNOW-1158: the sheet carries the resort calendar's eyebrow."""
+        """SNOW-1158's eyebrow, without SNOW-1431's dropped "• 2025/26"."""
         url = _url("ch-4115", "valais", "2026-03-15")
         content = client.get(url).content.decode()
         sheet = content.split('data-testid="season-sheet"')[1]
-        assert f"Avalanche danger • {region.name} region • 2025/26" in " ".join(
-            sheet.split("</span>")[0].split()
-        )
+        eyebrow = " ".join(sheet.split("</span>")[0].split())
+        assert eyebrow.endswith(f"Avalanche danger • {region.name} region")
+        assert 'aria-label="Danger calendar"' in content
+        assert 'aria-label="Close"' in sheet
 
-    def test_omits_sheet_when_season_grid_empty(
+    def test_trigger_says_calendar(
         self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
     ) -> None:
-        """With SEASON_START_DATE in the future, season_header is None and the sheet is omitted."""
-        future_start = date(2099, 12, 1)
-        with patch("django.conf.settings.SEASON_START_DATE", future_start):
-            url = _url("ch-4115", "valais", "2026-03-15")
-            response = client.get(url)
-        content = response.content.decode()
-        # The bare string 'data-season-sheet' appears in a JS querySelector
-        # outside the {% if season_calendar %} block, so assert the specific
-        # HTML attribute+value form that only exists when the sheet renders.
-        assert 'data-season-sheet="closed"' not in content
-        assert 'data-testid="season-sheet"' not in content
-        assert "data-season-trigger" not in content
+        """The nav trigger reads "Calendar", with no season label (SNOW-1431)."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        content = client.get(url).content.decode()
+        trigger = content.split("data-season-trigger")[1].split("</button>")[0]
+        assert 'aria-label="Show danger calendar"' in trigger
+        assert "Calendar" in trigger
+        assert "Season" not in trigger
+        assert "25/26" not in trigger
 
     def test_season_grid_placeholder_in_sheet(
         self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
@@ -2812,6 +2818,25 @@ class TestSeasonSheet:
         assert 'id="season-grid"' in content
         assert "hx-trigger" in content
         assert "snowdesk:load" in content
+
+
+@pytest.mark.django_db
+class TestSeasonSheetWithoutRatedRow:
+    """A region with no rated row has no calendar to open (SNOW-1431)."""
+
+    def test_omits_sheet_when_the_region_has_no_rated_row(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """No rated row for the region: season_header is None and the sheet is omitted."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        response = client.get(url)
+        content = response.content.decode()
+        # The bare string 'data-season-sheet' appears in a JS querySelector
+        # outside the {% if season_calendar %} block, so assert the specific
+        # HTML attribute+value form that only exists when the sheet renders.
+        assert 'data-season-sheet="closed"' not in content
+        assert 'data-testid="season-sheet"' not in content
+        assert "data-season-trigger" not in content
 
 
 # ---------------------------------------------------------------------------

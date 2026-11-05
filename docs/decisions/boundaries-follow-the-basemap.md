@@ -2,7 +2,7 @@
 name: boundaries-follow-the-basemap
 description: EAWS boundary outlines follow the active basemap, not the Bulletins rows (BASEMAP_COUNTRIES, data-basemap-countries, boundaryCountryCodes)
 status: current
-last-reviewed: 2026-11-04
+last-reviewed: 2026-11-05
 ---
 
 # The boundary outlines follow the basemap, not the Bulletins rows
@@ -75,7 +75,9 @@ sizes the offline base layer the same way
   outline load is still in flight is painted too. Because no neighbour's
   merge now raises the first `snowdesk:country-ratings-loaded` at boot,
   `getSeasonRatings` raises it for `ch` once Switzerland's season lands,
-  which is what the between-seasons note and the tour offer wait for. The
+  which is what the between-seasons note and the tour offer wait for.
+  (SNOW-1431 removed the between-seasons note; the tour offer still waits
+  for the event.) The
   cost is that a row switched on for the first
   time while offline has no season to paint until the device is back
   online, unless an area download already saved the day's ratings.

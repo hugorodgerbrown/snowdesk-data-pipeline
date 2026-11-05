@@ -7,8 +7,10 @@ Covers:
   - Queryset ordering
   - for_region_month() returns only in-range rows
   - for_region_range() returns only in-range rows (inclusive bounds)
-  - season_date_bounds() ignores no_rating rows; returns (None, None) for empty window; min/max for
-    rows inside; ignores rows outside [start, end]
+  - rated() keeps rows with a source bulletin and a real rating
+  - latest_run(): one run; a gap over 60 empty days
+    splits; exactly 60 does not; unrated rows ignored; region filter; empty
+  - first_rated_date() skips no_rating rows that earliest_date() counts
   - earliest_date() returns the region's earliest rated day, or None
   - unique_together raises IntegrityError on duplicate (region, date)
   - Admin is registered for the model
@@ -23,7 +25,12 @@ from django.contrib import admin
 from django.db import IntegrityError
 
 from apps.bulletins.models import RegionDayRating
-from tests.factories import MicroRegionFactory, RegionDayRatingFactory
+from apps.regions.models import MicroRegion
+from tests.factories import (
+    BulletinFactory,
+    MicroRegionFactory,
+    RegionDayRatingFactory,
+)
 
 
 @pytest.mark.django_db
@@ -221,95 +228,152 @@ class TestForRegionRange:
         assert qs.count() == 0
 
 
+def rated(region: MicroRegion, day: datetime.date) -> RegionDayRating:
+    """Create a rated row: a bulletin behind it and a real rating."""
+    return RegionDayRatingFactory.create(
+        region=region, date=day, source_bulletin=BulletinFactory.create()
+    )
+
+
+def unrated(
+    region: MicroRegion, day: datetime.date, *, bulletin: bool = True
+) -> RegionDayRating:
+    """Create a ``no_rating`` row, with or without a bulletin behind it."""
+    return RegionDayRatingFactory.create(
+        region=region,
+        date=day,
+        source_bulletin=BulletinFactory.create() if bulletin else None,
+        min_rating=RegionDayRating.Rating.NO_RATING,
+        max_rating=RegionDayRating.Rating.NO_RATING,
+    )
+
+
 @pytest.mark.django_db
-class TestSeasonDateBounds:
-    """Tests for RegionDayRatingQuerySet.season_date_bounds()."""
+class TestRated:
+    """Tests for ``RegionDayRatingQuerySet.rated()`` (SNOW-1431)."""
 
-    def test_empty_queryset_returns_none_none(self) -> None:
-        """season_date_bounds returns (None, None) when no rows exist in the window."""
-        bounds = RegionDayRating.objects.season_date_bounds(
-            datetime.date(2025, 11, 1),
-            datetime.date(2026, 5, 31),
+    def test_keeps_only_rows_a_bulletin_rated(self) -> None:
+        """No source bulletin, or a ``no_rating`` row, is not a rated row."""
+        region = MicroRegionFactory.create()
+        kept = rated(region, datetime.date(2026, 1, 1))
+        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 1, 2))
+        unrated(region, datetime.date(2026, 1, 3))
+
+        assert list(RegionDayRating.objects.rated()) == [kept]
+
+
+@pytest.mark.django_db
+class TestLatestRun:
+    """Tests for ``RegionDayRatingQuerySet.latest_run()`` (SNOW-1431)."""
+
+    def test_empty_table_returns_none(self) -> None:
+        """No rated row: no run."""
+        assert RegionDayRating.objects.latest_run() is None
+
+    def test_one_run_starts_at_its_first_day(self) -> None:
+        """A single run, with short pauses, starts at its first rated day."""
+        region = MicroRegionFactory.create()
+        for day in (
+            datetime.date(2025, 11, 20),
+            datetime.date(2025, 12, 30),
+            datetime.date(2026, 4, 30),
+        ):
+            rated(region, day)
+        # Pauses of 39 and 120 days: the second splits, so start again.
+        assert RegionDayRating.objects.latest_run() == (
+            datetime.date(2026, 4, 30),
+            datetime.date(2026, 4, 30),
         )
-        assert bounds == (None, None)
-
-    def test_returns_min_and_max_for_rows_in_window(self) -> None:
-        """season_date_bounds returns (earliest, latest) date across all regions."""
-        region_a = MicroRegionFactory.create(region_id="CH-1001")
-        region_b = MicroRegionFactory.create(region_id="CH-1002")
-        RegionDayRatingFactory.create(region=region_a, date=datetime.date(2026, 1, 10))
-        RegionDayRatingFactory.create(region=region_b, date=datetime.date(2026, 3, 20))
-        RegionDayRatingFactory.create(region=region_a, date=datetime.date(2026, 2, 5))
-
-        first, last = RegionDayRating.objects.season_date_bounds(
-            datetime.date(2025, 11, 1),
-            datetime.date(2026, 5, 31),
-        )
-        assert first == datetime.date(2026, 1, 10)
-        assert last == datetime.date(2026, 3, 20)
-
-    def test_ignores_rows_outside_window(self) -> None:
-        """season_date_bounds excludes rows whose date falls outside [start, end]."""
-        region = MicroRegionFactory.create(region_id="CH-2001")
-        # Inside the window
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 2, 1))
-        # Before the window
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2025, 10, 31))
-        # After the window
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 6, 1))
-
-        first, last = RegionDayRating.objects.season_date_bounds(
-            datetime.date(2025, 11, 1),
-            datetime.date(2026, 5, 31),
-        )
-        assert first == datetime.date(2026, 2, 1)
-        assert last == datetime.date(2026, 2, 1)
-
-    def test_includes_window_boundary_dates(self) -> None:
-        """season_date_bounds includes rows exactly on the start and end dates."""
-        region = MicroRegionFactory.create(region_id="CH-3001")
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2025, 11, 1))
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 5, 31))
-
-        first, last = RegionDayRating.objects.season_date_bounds(
-            datetime.date(2025, 11, 1),
-            datetime.date(2026, 5, 31),
-        )
-        assert first == datetime.date(2025, 11, 1)
-        assert last == datetime.date(2026, 5, 31)
-
-    def test_ignores_unrated_rows(self) -> None:
-        """season_date_bounds skips no_rating rows, which no bulletin backs."""
-        region = MicroRegionFactory.create(region_id="CH-4115")
-        for day in (datetime.date(2025, 11, 4), datetime.date(2025, 11, 16)):
-            RegionDayRatingFactory.create(
-                region=region,
-                date=day,
-                min_rating=RegionDayRating.Rating.NO_RATING,
-                max_rating=RegionDayRating.Rating.NO_RATING,
-            )
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2025, 11, 8))
-
-        first, last = RegionDayRating.objects.season_date_bounds(
-            datetime.date(2025, 11, 1),
-            datetime.date(2026, 5, 31),
-        )
-        assert first == datetime.date(2025, 11, 8)
-        assert last == datetime.date(2025, 11, 8)
-
-    def test_only_unrated_rows_returns_none_none(self) -> None:
-        """A window holding only no_rating rows has no data-driven bounds."""
-        RegionDayRatingFactory.create(
-            date=datetime.date(2025, 11, 4),
-            min_rating=RegionDayRating.Rating.NO_RATING,
-            max_rating=RegionDayRating.Rating.NO_RATING,
+        RegionDayRating.objects.filter(date=datetime.date(2026, 4, 30)).delete()
+        assert RegionDayRating.objects.latest_run() == (
+            datetime.date(2025, 11, 20),
+            datetime.date(2025, 12, 30),
         )
 
-        bounds = RegionDayRating.objects.season_date_bounds(
-            datetime.date(2025, 11, 1),
-            datetime.date(2026, 5, 31),
+    def test_a_gap_over_sixty_days_splits_runs(self) -> None:
+        """Sixty-one empty days start a new run; the later run's start wins."""
+        region = MicroRegionFactory.create()
+        rated(region, datetime.date(2026, 3, 1))
+        # 2 March – 1 May is 61 empty days.
+        rated(region, datetime.date(2026, 5, 2))
+        rated(region, datetime.date(2026, 5, 10))
+
+        assert RegionDayRating.objects.latest_run() == (
+            datetime.date(2026, 5, 2),
+            datetime.date(2026, 5, 10),
         )
-        assert bounds == (None, None)
+
+    def test_a_gap_of_exactly_sixty_days_does_not_split(self) -> None:
+        """Sixty empty days between two rated days keep them one run."""
+        region = MicroRegionFactory.create()
+        rated(region, datetime.date(2026, 3, 1))
+        # 2 March – 30 April is 60 empty days.
+        rated(region, datetime.date(2026, 5, 1))
+
+        assert RegionDayRating.objects.latest_run() == (
+            datetime.date(2026, 3, 1),
+            datetime.date(2026, 5, 1),
+        )
+
+    def test_unrated_rows_are_ignored(self) -> None:
+        """``no_rating`` rows and rows with no bulletin neither bridge nor start."""
+        region = MicroRegionFactory.create()
+        rated(region, datetime.date(2026, 1, 1))
+        # These would bridge the gap if they counted.
+        unrated(region, datetime.date(2026, 2, 15))
+        unrated(region, datetime.date(2026, 3, 20), bulletin=False)
+        rated(region, datetime.date(2026, 4, 30))
+        # And these would end the run later.
+        unrated(region, datetime.date(2026, 5, 10))
+
+        assert RegionDayRating.objects.latest_run() == (
+            datetime.date(2026, 4, 30),
+            datetime.date(2026, 4, 30),
+        )
+
+    def test_runs_span_regions_unless_narrowed(self) -> None:
+        """Every region feeds the run; ``region=`` reads one region's alone."""
+        region_a = MicroRegionFactory.create()
+        region_b = MicroRegionFactory.create()
+        rated(region_a, datetime.date(2026, 1, 1))
+        rated(region_b, datetime.date(2026, 2, 15))
+        rated(region_a, datetime.date(2026, 4, 1))
+
+        assert RegionDayRating.objects.latest_run() == (
+            datetime.date(2026, 1, 1),
+            datetime.date(2026, 4, 1),
+        )
+        assert RegionDayRating.objects.latest_run(region_a) == (
+            datetime.date(2026, 4, 1),
+            datetime.date(2026, 4, 1),
+        )
+        assert RegionDayRating.objects.latest_run(MicroRegionFactory.create()) is None
+
+
+@pytest.mark.django_db
+class TestFirstRatedDate:
+    """Tests for ``RegionDayRatingQuerySet.first_rated_date()`` (SNOW-1431)."""
+
+    def test_skips_unrated_rows_that_earliest_date_counts(self) -> None:
+        """A ``no_rating`` row is the earliest date but not the first rated one."""
+        region = MicroRegionFactory.create()
+        unrated(region, datetime.date(2025, 11, 4), bulletin=False)
+        rated(region, datetime.date(2025, 11, 20))
+        rated(MicroRegionFactory.create(), datetime.date(2025, 11, 1))
+
+        assert RegionDayRating.objects.first_rated_date(region) == datetime.date(
+            2025, 11, 20
+        )
+        assert RegionDayRating.objects.earliest_date(region) == datetime.date(
+            2025, 11, 4
+        )
+
+    def test_returns_none_without_a_rated_row(self) -> None:
+        """A region with only unrated rows has no first rated day."""
+        region = MicroRegionFactory.create()
+        unrated(region, datetime.date(2025, 11, 4))
+
+        assert RegionDayRating.objects.first_rated_date(region) is None
 
 
 @pytest.mark.django_db

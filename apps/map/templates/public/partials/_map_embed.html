@@ -23,15 +23,12 @@ Context expected from the including template:
                       — float: settings.MAP_DEFAULT_OPACITY_STEP. The
                         choropleth's opening strength. Rendered with
                         localisation off — see the attribute's own comment.
-  season_start        — datetime.date: first day of the avalanche season.
-  season_end          — datetime.date: last day of it. The pair is drawn as
-                        a band on the scrubber track and tinted in the
-                        calendar grid — it is NOT the track's own span.
-  window_start        — datetime.date: first day of the scrubber's track
-                        (twelve months back from today).
-  window_end          — datetime.date: last day of it (today).
-  season_band_left_pct / season_band_width_pct
-                      — float: where the season sits on that track.
+  season_start        — datetime.date: first day of the scrubber's track,
+                        the latest bulletin run's first rated day (or
+                        today with no rated row; SNOW-1431).
+  season_end          — datetime.date: last day of it, the later of that
+                        run's last rated day and today.
+  scrubber_on_track   — bool: the shown day falls on that track.
   today               — datetime.date: current date.
   basemaps            — list of {key, label, url} dicts for the picker.
   ribbon              — SeasonRibbon or None (from build_season_ribbon).
@@ -48,8 +45,6 @@ Optional context:
                         static/js/map_slopes_notice.js shows once per device
                         the first time the map settles over the bulletin's
                         slopes.
-  is_offseason        — bool: True when today is past the season end.
-                        Drives the archive note inside #map-tour-offer.
   map_help_autostart  — bool (default True): when False, #map-help-overlay
                         carries data-map-help-no-autostart and
                         static/js/map_help.js's first-load auto-start is
@@ -1929,15 +1924,16 @@ Optional context:
             date control, out to the bottom-right column — the strip that
             was empty once the clusters dropped to the map's bottom edge.
 
-            SNOW-794: its track is the SEASON, and the calendar is its
-            reveal. `data-in-season` is false when the day the map is showing
-            falls outside the season, and CSS then hides this: there is no
-            stretch of track that day belongs to, and a scrubber whose thumb
-            has nowhere true to sit is the defect this ticket opened with.
-            The calendar answers for those days instead.
+            SNOW-1431: its track is the latest bulletin run through today,
+            so today is always on it. SNOW-794 made the calendar its reveal:
+            `data-on-track` is false when the day the map is showing falls
+            before the run, and CSS then hides this: there is no stretch of
+            track that day belongs to, and a scrubber whose thumb has nowhere
+            true to sit is the defect SNOW-794 opened with. The calendar
+            answers for those days instead.
 
             Also desktop-only, by CSS (static/css/map.css). At 148px a
-            season is under a pixel a day, and a 40px fingertip covers 57 of
+            winter is under a pixel a day, and a 40px fingertip covers 57 of
             them — it was never a date control on a phone, and the calendar
             now is.
             {% endcomment %}
@@ -1947,7 +1943,7 @@ Optional context:
                 role="slider"
                 {# SNOW-1195: focusable, so the keys map_day_nav.js binds reach it. #}
                 tabindex="0"
-                aria-label='{% trans "Season scrubber" %}'
+                aria-label='{% trans "Timeline" %}'
                 aria-valuemin="0"
                 aria-valuemax="100"
                 aria-valuenow="{{ today_pct }}"
@@ -1959,18 +1955,15 @@ Optional context:
                 {# paint is already right; static/js/map_scrubber_reveal.js  #}
                 {# keeps it current as the day changes. Always RENDERED, not #}
                 {# behind an {% templatetag openblock %} if {% templatetag closeblock %} — an element that is not in the DOM #}
-                {# cannot come back when the visitor picks an in-season day.  #}
-                data-in-season="{{ scrubber_in_season|yesno:'true,false' }}"
+                {# cannot come back when the visitor picks a day on the track. #}
+                data-on-track="{{ scrubber_on_track|yesno:'true,false' }}"
                 data-state="loading"
             >
-                <div class="season-scrubber-loading">{% trans "Season data loading…" %}</div>
+                <div class="season-scrubber-loading">{% trans "Loading…" %}</div>
                 {% include "public/partials/_season_scrubber_controls.html" %}
             </div>
         </div>
     </div>
-    {# The off-season archive notice (SNOW-343) has not lived here since      #}
-    {# SNOW-445 moved it to a full-width bar above the map; that bar is now    #}
-    {# gone too, and the note rides in #map-tour-offer, the first-visit card. #}
     {# SNOW-314: Season ribbon — flat horizontal strip of one cell per day, #}
     {# coloured by peak danger for the selected region (default CH-4115). #}
     {# Positioned above the scrubber. Requires ribbon context from view.  #}
@@ -2052,7 +2045,7 @@ Optional context:
             data-help-title='{% trans "Choose the day" %}'
         >
             <p data-help-body>
-                {% trans "The map shows one day at a time. Tap the date for a calendar of the season, coloured by the selected region’s danger." %}
+                {% trans "The map shows one day at a time. Tap the date for a calendar, coloured by the selected region’s danger." %}
             </p>
         </li>
         {# Three controls, one step: each is a way of moving the map, and a  #}
@@ -2269,17 +2262,6 @@ Optional context:
                         {% trans "Find somewhere you ski to see what Snowdesk can tell you." %}
                     {% endif %}
                 </p>
-                {% if is_offseason %}
-                    {# Off-season honesty (launch requirement): the data shown is #}
-                    {# archive, not live. It moved here with the rest of the     #}
-                    {# first-visit surface when #home-intro was removed.         #}
-                    <p class="map-tour-offer-offseason">
-                        {% blocktrans trimmed with start_month=archived_season_start|date:"F" %}
-                            Map shows {{ season_label }} season — live bulletins resume in
-                            {{ start_month }}
-                        {% endblocktrans %}
-                    </p>
-                {% endif %}
                 <ul class="map-tour-offer-options">
                     <li>
                         <button id="map-tour-offer-resort" type="button" class="map-tour-offer-option">
@@ -2330,7 +2312,6 @@ Optional context:
         </div>
         {% include "public/partials/_map_example_guide.html" %}
         {% include "public/partials/_map_resort_guide.html" %}
-        {% include "public/partials/_map_between_seasons.html" %}
         {% include "public/partials/_map_help_menu.html" %}
     {% endif %}
     {% if terrain_filter_eligible %}
@@ -2752,10 +2733,10 @@ Optional context:
 {# no longer has. The same sentences are still rendered server-side by       #}
 {# public/_region_tooltip.html, which is what the region panel shows.        #}
 <template id="map-strings-template">
-    <span data-string="season-unavailable">{% trans "Season data unavailable" %}</span>
-    <span data-string="timelapse-play">{% trans "Play season timelapse" %}</span>
-    <span data-string="timelapse-play-reverse">{% trans "Play season timelapse in reverse" %}</span>
-    <span data-string="timelapse-stop">{% trans "Stop season timelapse" %}</span>
+    <span data-string="season-unavailable">{% trans "Bulletins unavailable" %}</span>
+    <span data-string="timelapse-play">{% trans "Play timelapse" %}</span>
+    <span data-string="timelapse-play-reverse">{% trans "Play timelapse in reverse" %}</span>
+    <span data-string="timelapse-stop">{% trans "Stop timelapse" %}</span>
     <span data-string="timelapse-stop-reverse">{% trans "Stop reverse timelapse" %}</span>
     {# SNOW-632: the custom-area framing overlay's CTA readout and top      #}
     {# banner. "frame-up-to"/"frame-over-ceiling" replace two literals that #}

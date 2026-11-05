@@ -86,7 +86,7 @@ function buildFixture() {
 async function loadCalendar(ratings) {
   globalThis.COUNTRY_STATE = { ch: true, fr: false, at: false, it: false };
   globalThis.MAP_READY_PROMISE = Promise.resolve();
-  globalThis.MAP_STRINGS = { 'season-unavailable': 'Season data unavailable' };
+  globalThis.MAP_STRINGS = { 'season-unavailable': 'Bulletins unavailable' };
   globalThis.getSeasonRatings = () => Promise.resolve(ratings || RATINGS);
   globalThis.readUrlDateParam = () => {
     const d = new URL(location.href).searchParams.get('d');

@@ -372,7 +372,7 @@ Context:
         <div class="grid grid-cols-[2.25rem_1fr]" aria-hidden="true">
             {# The gutter names the row a direction, as ticks name the plots. #}
             <span class="flex items-center justify-end pr-1.5 text-text-2" data-testid="{{ prefix }}-wind-compass">
-                {% include "includes/_icon_compass.html" with size=16 %}
+                {% include "includes/_icon_compass.html" with size=16 only %}
             </span>
             <div class="grid grid-cols-8 py-1 text-text-1">
                 {% for block in strips.blocks %}

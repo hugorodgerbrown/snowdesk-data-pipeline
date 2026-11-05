@@ -27,7 +27,7 @@ catch.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
+import datetime
 
 from django.template.loader import render_to_string
 
@@ -186,8 +186,20 @@ class TestRenderedInTheNav:
         """The nav draws the calendar at its own 14px size."""
         html = render_to_string(
             "includes/nav.html",
-            {"season_trigger": SimpleNamespace(season_label="25/26")},
+            {"season_trigger": {"first_date": datetime.date(2025, 11, 20)}},
         )
 
         assert CALENDAR_GRID in html
         assert 'width="14"' in html
+
+    def test_the_season_trigger_says_calendar(self) -> None:
+        """SNOW-1431: "Calendar", with no fixed-season label."""
+        html = render_to_string(
+            "includes/nav.html",
+            {"season_trigger": {"first_date": datetime.date(2025, 11, 20)}},
+        )
+
+        assert 'aria-label="Show danger calendar"' in html
+        assert "<span>Calendar</span>" in html
+        assert "Season" not in html
+        assert "25/26" not in html

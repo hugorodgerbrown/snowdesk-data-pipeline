@@ -2,7 +2,7 @@
 name: map-and-api
 description: /map/ (public:map) MapLibre choropleth, scrubber, calendar, overlay registry, /api/ endpoints (ratings, geojson, groupings), routes.geojson
 status: current
-last-reviewed: 2026-11-03
+last-reviewed: 2026-11-05
 ---
 
 # Map page and JSON API
@@ -70,8 +70,8 @@ one of those shared bindings.
 
 `map_calendar.js` is the tenth surface, loading after `map_scrubber.js`. It
 renders a month grid so a visitor can name a day instead of hitting it with
-a drag — the scrubber track spans a seven-month season in a few hundred
-pixels, so a pixel is about a day and a release snaps to whichever rated day
+a drag — the scrubber track spans the latest bulletin run through today in
+a few hundred pixels, so a pixel is about a day and a release snaps to whichever rated day
 is nearest.
 
 **The button and the panel are in the same place** — SNOW-794 moved both.
@@ -100,7 +100,7 @@ bottom-right sheets still use that module.
 **What `positionSheet` measures changed with it.** The floor was
 `#season-scrubber`, back when that was a full-width bar across the foot. The
 scrubber now shares the bottom row rather than owning a bar, and is absent
-entirely off-season and below 640px — where its rect reads all zeros and put
+entirely below 640px (and, before SNOW-1431, off-season) — where its rect reads all zeros and put
 the floor at `-8`, sending every sheet on the map to the top of the
 viewport. It measures `#map-date-row` instead: always present, always
 lowest.
@@ -147,10 +147,14 @@ September, and the picker could not reach it at all.
 SNOW-794 finished the thought. An out-of-season date used to park the thumb
 at whichever end of the track it was past — called "the honest reading of
 the season ran out" at the time, and it was not: the URL said July and the
-thumb said April. The scrubber is now simply **not shown** for such a day
-(`data-in-season`, server-rendered and kept current by
-`static/js/map_scrubber_reveal.js`), so the calendar is its reveal. A
-control that cannot answer is better absent than wrong.
+thumb said April. The scrubber is now simply **not shown** for a day off its
+track (`data-on-track`, server-rendered as `scrubber_on_track` and kept
+current by `static/js/map_scrubber_reveal.js`), so the calendar is its
+reveal. A control that cannot answer is better absent than wrong. Since
+SNOW-1431 the track runs from the latest bulletin run's first day through
+today, so today is always on it and the guard only hides the scrubber for a
+calendar pick before the run
+([`decisions/date-windows-follow-the-data.md`](decisions/date-windows-follow-the-data.md)).
 
 **The grid carries the danger colour.** `buildMonthGrid` takes a
 `ratings` map — date key to EAWS int for the focused region — and each day
@@ -330,11 +334,16 @@ origin is derived from the same setting, so switching the basemap origin
 deploy. Live self-hosting — CORS, PMTiles range requests, and the
 subdomain — is tracked in SNOW-485.
 
-**Season scrubber and timelapse**: a horizontal scrubber sits in the
-map's bottom-left row (`#map-date-row`) — from 640px up, and only while the
-shown day falls inside a season (SNOW-794, see "The map's date picker"
-above). The thumb rests at today's position within the Nov–May
-window, and since SNOW-793 it **commits today** when the URL names no day:
+**Season scrubber and timelapse** (the "Timeline"): a horizontal scrubber
+sits in the map's bottom-left row (`#map-date-row`) — from 640px up, and
+only while the shown day falls on its track (SNOW-794, see "The map's date
+picker" above). The track runs from the latest bulletin run's first rated
+day (`RegionDayRatingQuerySet.latest_run`, cached for five minutes by
+`apps.map.views.cached_latest_run`) to the later of that run's
+last rated day and today (SNOW-1431,
+[`decisions/date-windows-follow-the-data.md`](decisions/date-windows-follow-the-data.md)),
+so today is always on it. The thumb rests at today's position, and since
+SNOW-793 it **commits today** when the URL names no day:
 a bare querystring means today, so the map opens coloured for it and
 `#map-date-ribbon` names it. SNOW-660 had left that case uncommitted
 because the default it removed was the season's *last populated* day — a
@@ -353,7 +362,7 @@ throttles `history.replaceState` by throwing and five frames a second would
 hit that limit inside half a minute. Both go through `writeUrlDateParam` in
 `static/js/map_shared.js`. Dragging recolours every region from the
 `/api/ratings/?country=ch` payload to show how danger evolved on the
-selected date, and pressing the play button steps through the season as
+selected date, and pressing the play button steps through the track as
 a timelapse. The drawer (when open) follows the scrubber via the
 `snowdesk:date-changed` event, fetching `/api/region/<id>/summary/?d=…`
 so the bulletin shown matches the scrubbed-to date. The full-season

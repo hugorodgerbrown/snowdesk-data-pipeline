@@ -23,12 +23,13 @@ controls are side by side, and a vertical kebab reads as "this column
 continues downwards" — which on a scrolling list of rows is exactly the
 wrong suggestion.
 
-STYLE — a 24-grid mark, matching _icon_share.html's own filled nodes.
-Filled circles rather than outlines for the reason that file already
-gives: at 17px an outlined 2px circle is a smudge. The design specifies
-1.6px-radius dots at the rendered size, which is r≈2.25 on this grid;
-taken to a round 2 so the three keep visible air between them (centres 6
-grid units apart, edges 2 apart).
+STYLE — the house stroke (SNOW-1434). Each dot is an r=1 circle under the
+2px round-capped stroke, so it renders as a solid r=2 dot on this grid
+without a fill: the same mark the first, filled drawing made, inside the
+rule in docs/decisions/ui-icons-are-house-stroke-partials.md rather than
+an exception to it. A true outline, a hollow ring, was tried and rejected:
+at 17px a 2px ring closes to a smudge beside Share and the pencil. Centres 6 grid units apart, edges 2 apart, so the three keep
+visible air between them.
 
 Drawn for this ticket, so there is no third-party attribution to carry.
 
@@ -42,10 +43,14 @@ Parameters (passed via {% include … with … %}):
     width="{{ size|default:17 }}"
     height="{{ size|default:17 }}"
     viewBox="0 0 24 24"
-    fill="currentColor"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
     aria-hidden="true"
 >
-    <circle cx="6" cy="12" r="2" />
-    <circle cx="12" cy="12" r="2" />
-    <circle cx="18" cy="12" r="2" />
+    <circle cx="6" cy="12" r="1" />
+    <circle cx="12" cy="12" r="1" />
+    <circle cx="18" cy="12" r="1" />
 </svg>

@@ -111,7 +111,7 @@ Routes and Offline downloads came to have neither.
         {# Split from one "season timeline & calendar" panel: the heatmap is #}
         {# opened from a bulletin page, so it belongs here, while the        #}
         {# scrubber is a map control and sits in the map group below.        #}
-        {% translate "The season calendar" as t_calendar %}
+        {% translate "The calendar" as t_calendar %}
         {% include "includes/_collapsible_panel.html" with title=t_calendar data_testid="help-topic-calendar" anchor_id="help-topic-calendar" illustration="public/help/illustrations/_season_calendar.html" body_template="public/help/_topic_calendar.html" %}
 
         {# SNOW-761: weather is not a bulletin, but it is read on the same    #}
@@ -141,7 +141,7 @@ Routes and Offline downloads came to have neither.
         {# decorate one panel is the wrong trade against the Lighthouse       #}
         {# budget, so the scrubber moves to SNOW-745 with the other surfaces  #}
         {# that need a demo form of their own.                                #}
-        {% translate "The season timeline" as t_timeline %}
+        {% translate "The timeline" as t_timeline %}
         {% include "includes/_collapsible_panel.html" with title=t_timeline data_testid="help-topic-timeline" anchor_id="help-topic-timeline" body_template="public/help/_topic_timeline.html" %}
 
         {# SNOW-1394: the Dated / Terrain toggle at the start of the date  #}
