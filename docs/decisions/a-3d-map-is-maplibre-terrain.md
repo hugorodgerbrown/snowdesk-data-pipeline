@@ -15,9 +15,16 @@ behind the `map_3d` flag, separate from `/map/`. It shows Steep terrain, SAC's
 ski tours, the reader's own routes and the resorts, because Hugo found 3-D
 most useful "in terrain mode, when looking at routes".
 
-- **Elevation** comes from AWS's open Terrarium tiles
-  (`s3.amazonaws.com/elevation-tiles-prod/terrarium`, global, z0–15, no
-  token), so the relief reaches every zoom.
+- **Elevation** comes from Mapterhorn's open Terrarium tiles
+  (`tiles.mapterhorn.com`, 512 px lossless WebP, swissALTI3D over
+  Switzerland), since SNOW-1442. When Mapterhorn fails, each tile falls back to
+  AWS's Terrarium tiles (`s3.amazonaws.com/elevation-tiles-prod/terrarium`,
+  256 px, global, z0–15, no token), enlarged nearest-neighbour so no height is
+  invented. After three network failures or 5xx answers in a row, the rest of
+  the visit goes straight to AWS (SNOW-1445,
+  `map_3d_core.createDemLoader`). Mapterhorn asks users to copy its
+  archives rather than hotlink them ([research](../research/mapterhorn/README.md)),
+  so before the 3-D map leaves Labs we serve our own copy (SNOW-1444).
 - **Steep terrain** is our class tiles, painted on the device exactly as on
   `/map/` (`terrain_filter_core`'s slope classifier and palette, through a
   `terrainfilter://` protocol the page registers for itself).

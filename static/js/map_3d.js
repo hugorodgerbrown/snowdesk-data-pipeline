@@ -138,6 +138,42 @@
     }
   }
 
+  // ---- Elevation ----------------------------------------------------------
+
+  // Mapterhorn first, AWS when it fails (map_3d_core.createDemLoader). Both
+  // are fetched without credentials, as /map/'s 3D roundel prefetches them,
+  // so a prefetched tile is answered from the browser's cache.
+  const demLoader = core.createDemLoader({
+    primary: data.demTileUrl || '',
+    fallback: core.DEM_FALLBACK_TILE_URL,
+    fetchTile: (/** @type {string} */ url, /** @type {AbortSignal} */ signal) =>
+      fetch(url, { signal, credentials: 'omit' }),
+    enlarge: async (/** @type {Blob} */ blob) => {
+      const size = core.DEM_TILE_SIZE;
+      const image = await createImageBitmap(blob);
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(image, 0, 0, size, size);
+      image.close();
+      return createImageBitmap(canvas);
+    },
+  });
+  maplibre.addProtocol(
+    core.DEM_PROTOCOL,
+    /**
+     * @param {{url: string}} params
+     * @param {AbortController} abortController
+     */
+    (params, abortController) => {
+      const tile = core.parseDemUrl(params.url);
+      if (!tile) return Promise.reject(new Error(`map_3d: not an elevation url: ${params.url}`));
+      return demLoader.load(tile, abortController.signal);
+    },
+  );
+
   // ---- Steep terrain ------------------------------------------------------
 
   // The fetch, decode and classify of every class tile run in a worker
@@ -231,7 +267,7 @@
   // ---- Layers -------------------------------------------------------------
 
   map.on('load', async () => {
-    map.addSource(core.DEM_SOURCE_ID, core.demSource(data.demTileUrl));
+    map.addSource(core.DEM_SOURCE_ID, core.demSource());
     map.setTerrain(core.terrainSpec());
     map.setSky(core.skySpec());
     // Modelled sunlight from the north-west, under the basemap's labels and

@@ -966,6 +966,9 @@ def csp_defaults(
             # Terrarium set), fetched by MapLibre's raster-dem source on
             # /map/3d/, and prefetched by /map/'s 3D roundel.
             "https://tiles.mapterhorn.com",
+            # SNOW-1445: AWS's open Terrarium tiles, which /map/3d/ falls
+            # back to when Mapterhorn fails.
+            "https://s3.amazonaws.com",
             *([analytics_origin] if analytics_origin else []),
         ],
         "manifest-src": ["'self'"],
