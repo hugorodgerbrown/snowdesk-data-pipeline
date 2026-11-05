@@ -3185,7 +3185,10 @@ def test_layers_menu_lists_each_mode_then_the_shared_rows() -> None:
     for own in ('data-overlay-key="terrain"', 'data-overlay-key="rest_zones"'):
         assert own in terrain and own not in dated
     # The shared rows are in neither block.
-    for shared in ('data-overlay-key="resorts"', 'data-overlay-key="community_reports"'):
+    for shared in (
+        'data-overlay-key="resorts"',
+        'data-overlay-key="community_reports"',
+    ):
         assert shared not in dated and shared not in terrain
 
 
@@ -3201,7 +3204,9 @@ def test_sync_problem_terrain_is_a_first_level_row_behind_the_flag() -> None:
     assert 'data-overlay-key="problem_terrain"' in row
     assert ">Sync problem terrain<" in row
     assert "data-layer-switch" in row
-    assert 'data-overlay-key="problem_terrain"' not in _layers_page(content, "bulletins")
+    assert 'data-overlay-key="problem_terrain"' not in _layers_page(
+        content, "bulletins"
+    )
     assert "Sync with map terrain" not in content
 
 
@@ -3272,5 +3277,7 @@ def test_map_css_hides_the_other_modes_rows_under_the_mode() -> None:
         for part in selector.split(","):
             if "display" in part:
                 continue
-            assert ":root[data-map-mode" in part or ".basemap-menu-mode-block" in part, part
+            assert (
+                ":root[data-map-mode" in part or ".basemap-menu-mode-block" in part
+            ), part
     assert "data-map-mode-disabled" not in css
