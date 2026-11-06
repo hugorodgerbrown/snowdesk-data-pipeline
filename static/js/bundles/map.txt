@@ -114,6 +114,15 @@ terrain_filter_core.js
 # at parse time, so it comes straight after it.
 bulletin_terrain_core.js
 
+# SNOW-1449: the flat and 3-D views' pure rules (window.pwaMapViewCore) —
+# the ?view=3d parameter, when 3-D is available, its basemap and the boot
+# camera. Read by map.js at parse time (the boot basemap and camera depend
+# on the view), so it loads before the bundle, like map_mode_core.js; it
+# reads the coverage box from terrain_filter_core.js, passed in, so it
+# comes after it. It does nothing until #map carries data-map-3d-view,
+# which only a reader in map_3d and map_modes gets.
+map_view_core.js
+
 # SNOW-761: the weather overlay's pure transforms
 # (window.pwaWeatherCore) — the WMO code -> weather icon mapping, the
 # temperature-and-altitude label, the date projection and the

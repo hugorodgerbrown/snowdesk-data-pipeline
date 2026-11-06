@@ -146,12 +146,25 @@
    * @type {Set<string>}
    */
   const modeSuppressedKeys = new Set();
+  let bootMode = 'dated';
   if (MAP_MODES_ENABLED) {
     let storedMode = null;
     try { storedMode = localStorage.getItem(MAP_MODE_CORE.STORAGE_KEY); } catch (_) { /* private mode */ }
-    const bootMode = MAP_MODE_CORE.readMode(location.search, storedMode);
+    bootMode = MAP_MODE_CORE.readMode(location.search, storedMode);
     for (const key of MAP_MODE_CORE.suppressedIn(bootMode)) modeSuppressedKeys.add(key);
   }
+  // SNOW-1449: the view, flat or 3-D (map_view_core.js), beside the mode.
+  // 3-D is Terrain's, and drawn by map_view_3d.js for a reader in both the
+  // map_3d and map_modes flags (#map[data-map-3d-view]). Read here because
+  // the view decides the boot basemap (swisstopo winter in 3-D) and the
+  // boot camera (a flat boot is never tilted), both below; the coverage
+  // half of the boot rule waits for the camera. Nothing about the view is
+  // stored, so a bare /map/ always opens flat. Without the core every
+  // reader is flat, as before.
+  const MAP_VIEW_CORE = self.pwaMapViewCore || null;
+  const MAP_VIEW_ENABLED = MAP_MODES_ENABLED && !!MAP_VIEW_CORE
+    && mapEl.dataset.map3dView === 'true';
+  let bootView = MAP_VIEW_ENABLED ? MAP_VIEW_CORE.readView(location.search, bootMode) : 'flat';
   /**
    * Whether the mode is holding an overlay off the map.
    *
@@ -241,8 +254,10 @@
   const preferredBasemapKey = (storedBasemapKey && BASEMAP_OPTIONS[storedBasemapKey])
     ? storedBasemapKey
     : DEFAULT_BASEMAP_KEY;
-  const initialBasemapKey = layerExplainerRequested ? 'swisstopo_winter' : preferredBasemapKey;
-  const initialBasemapUrl = BASEMAP_OPTIONS[initialBasemapKey];
+  // The row the picker shows selected. SNOW-1449: in 3-D the reader's own
+  // choice stays selected (its rows are disabled there), and the basemap
+  // actually drawn is decided with the camera, below (initialBasemapKey).
+  const checkedBasemapKey = layerExplainerRequested ? 'swisstopo_winter' : preferredBasemapKey;
   // SNOW-483: true once the native basemap style has failed to load (offline)
   // and the inline fallback background (buildFallbackStyle, below) is active.
   // Shared with the ``online`` recovery listener and the ``styledata``
@@ -265,7 +280,7 @@
     )) {
       btn.setAttribute(
         'aria-checked',
-        btn.dataset.basemapKey === initialBasemapKey ? 'true' : 'false',
+        btn.dataset.basemapKey === checkedBasemapKey ? 'true' : 'false',
       );
     }
   }
@@ -880,9 +895,37 @@
     readStorage(VIEWPORT_STORAGE_KEY),
     { minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM, maxBounds: MAX_BOUNDS },
   );
+  // SNOW-1449: the coverage half of the boot view. A ?view=3d whose camera
+  // opens outside the elevation's coverage (terrain_filter_core's
+  // COVERAGE_BOUNDS, the one copy of it) boots flat, and so does one
+  // outside Terrain, which readView already said; either way a flagged
+  // reader's address bar loses the parameter, so a copied link says what
+  // they see.
+  if (bootView === '3d') {
+    const centre = storedViewport
+      ? { lng: storedViewport.center[0], lat: storedViewport.center[1] }
+      : { lng: (DEFAULT_BOUNDS[0][0] + DEFAULT_BOUNDS[1][0]) / 2, lat: (DEFAULT_BOUNDS[0][1] + DEFAULT_BOUNDS[1][1]) / 2 };
+    const coverage = self.pwaTerrainFilterCore ? self.pwaTerrainFilterCore.COVERAGE_BOUNDS : null;
+    if (!MAP_VIEW_CORE.covers(centre, coverage)) bootView = 'flat';
+  }
+  if (MAP_VIEW_ENABLED) {
+    const bootSearch = MAP_VIEW_CORE.withView(location.search, bootView);
+    if (bootSearch !== location.search) {
+      history.replaceState(history.state, '', location.pathname + bootSearch + location.hash);
+    }
+  }
+  // The basemap the map boots on: swisstopo winter in 3-D, the reader's own
+  // flat (map_view_core.basemapFor; the preference is read, not written).
+  const initialBasemapKey = layerExplainerRequested
+    ? 'swisstopo_winter'
+    : (MAP_VIEW_CORE ? MAP_VIEW_CORE.basemapFor(bootView, preferredBasemapKey) : preferredBasemapKey);
+  const initialBasemapUrl = BASEMAP_OPTIONS[initialBasemapKey];
   // `bounds` and `center`/`zoom` are alternatives, not a pair, so exactly one
-  // of the two shapes is spread into the constructor below.
-  const initialCamera = storedViewport || {
+  // of the two shapes is spread into the constructor below. SNOW-1449: a
+  // flat boot zeroes a stored pitch (map_view_core.bootCamera), so a tilt
+  // is never remembered on the device; the bearing is kept.
+  const bootViewport = MAP_VIEW_CORE ? MAP_VIEW_CORE.bootCamera(storedViewport, bootView) : storedViewport;
+  const initialCamera = bootViewport || {
     bounds: DEFAULT_BOUNDS,
     fitBoundsOptions: { padding: 20 },
   };
@@ -919,6 +962,11 @@
       minZoom: MIN_ZOOM,
       maxZoom: MAX_ZOOM,
       maxBounds: MAX_BOUNDS,
+      // SNOW-1449: the flat map does not tilt. Only 3-D does, and
+      // map_view_3d.js opens the ceiling (map_3d_core.MAX_PITCH) when it
+      // enters, or while a tilt gesture in Terrain may enter it; 85 is
+      // MapLibre's own ceiling, for the moment before it has run.
+      maxPitch: bootView === '3d' ? 85 : 0,
       // SNOW-230: attribution moved to top-right so the scrubber can sit
       // flush at the bottom edge. Disable the default bottom-right slot and
       // add it explicitly at the desired corner after the Map is constructed.
@@ -1056,9 +1104,23 @@
   // basemap is selected re-fetches and rewrites it exactly as boot does; the
   // ``.catch`` swallows a still-failing fetch so we stay degraded and simply
   // retry on the next ``online`` event.
+  //
+  // SNOW-1449: the basemap retried is the one the map should be drawing
+  // NOW: swisstopo winter in 3-D (map_view_3d.js publishes the live view),
+  // else the reader's current choice, which the picker may have changed
+  // since boot. Retrying the boot basemap would swap swisstopo winter out
+  // from under 3-D, or bring back a choice the reader had left.
+  const liveBasemapKey = () => {
+    if (layerExplainerRequested) return initialBasemapKey;
+    const stored = readStorage(BASEMAP_STORAGE_KEY);
+    const preferred = stored && BASEMAP_OPTIONS[stored] ? stored : DEFAULT_BASEMAP_KEY;
+    const view = window.pwaMapView ? window.pwaMapView.get() : bootView;
+    return MAP_VIEW_CORE ? MAP_VIEW_CORE.basemapFor(view, preferred) : preferred;
+  };
   window.addEventListener('online', () => {
     if (!basemapFallbackActive) return;
-    resolveBasemapStyle(initialBasemapKey, initialBasemapUrl)
+    const key = liveBasemapKey();
+    resolveBasemapStyle(key, BASEMAP_OPTIONS[key])
       .then((style) => map.setStyle(style))
       .catch(() => {});
   });
