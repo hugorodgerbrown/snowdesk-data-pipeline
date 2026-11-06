@@ -69,6 +69,11 @@ taking a second walk of its own.
     configured, and absent on static/offline.html — in both cases the
     report makes no claim about class tiles, which is the sheet's own
     answer when it has no template either.
+
+    SNOW-1453: the elevation tile template, on the same terms, so an area
+    downloaded with terrain data is judged on its elevation tiles too.
+    Empty for a reader the map shows no 3D view, since the map pins no
+    elevation tiles there.
 {% endcomment %}
 <div
     data-offline-audit
@@ -90,6 +95,7 @@ taking a second walk of its own.
     data-content-countries="{{ content_countries|default:'' }}"
     data-today="{{ today|default:'' }}"
     data-terrain-class-tile-url="{{ terrain_class_tile_url|default:'' }}"
+    data-dem-tile-url="{{ dem_tile_url|default:'' }}"
 >
     {% comment %}
         The row, in the shape every other row in this card takes:

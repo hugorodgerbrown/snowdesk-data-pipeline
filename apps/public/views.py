@@ -116,6 +116,7 @@ from apps.ingest.public import (
     source_caaml,
 )
 from apps.locations.models import Location
+from apps.map.map_3d import map_3d_enabled
 from apps.public.errors import error_response
 from apps.regions.cantons import canton_label
 from apps.regions.models import MicroRegion, Resort
@@ -835,6 +836,12 @@ def offline_page(request: HttpRequest) -> HttpResponse:
                             while ineligible), the same value the map
                             renders as ``data-terrain-class-tile-url``
                             (SNOW-1138).
+        dem_tile_url — the 3D map's elevation tile template
+                            (``settings.MAP_3D_DEM_TILE_URL``) for a reader
+                            the map shows the 3D view to, empty otherwise
+                            (SNOW-1453). The map pins elevation tiles only
+                            where its 3D toggle renders, so the report
+                            judges them on the same readers.
 
     Args:
         request: The incoming HTTP request.
@@ -921,6 +928,11 @@ def offline_page(request: HttpRequest) -> HttpResponse:
             # same value off `#map`; empty while the filter is unconfigured,
             # which is the sheet's "not judged" case too.
             "terrain_class_tile_url": settings.TERRAIN_CLASS_TILE_URL,
+            # SNOW-1453: the elevation tile template, on the map's own gate
+            # for its 3D view (`map_3d_view` in apps/map/views.py).
+            "dem_tile_url": settings.MAP_3D_DEM_TILE_URL
+            if map_3d_enabled(request) and map_modes_enabled(request)
+            else "",
         },
     )
 

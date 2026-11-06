@@ -2464,6 +2464,26 @@ describe('agreeing with the Manage downloads sheet (SNOW-1138)', () => {
     expect(report.sections.length).toBeGreaterThan(0);
     expect(areaAnswer(region({ terrain: true, terrainTiles: null })).status).toBe('yes');
   });
+
+  // SNOW-1453: the elevation tiles ride on the same flag, on the same terms.
+  const ELEVATION_TILES = ['https://dem/7/66/45.webp', 'https://dem/10/532/360.webp'];
+
+  it('reads incomplete while an elevation tile is missing', () => {
+    const area = region({ terrain: true, terrainTiles: [], elevationTiles: ELEVATION_TILES });
+    expect(core.areaState(area).status).toBe('incomplete');
+    expect(areaAnswer(area)).toEqual({ status: 'no', reason: 'incomplete' });
+  });
+
+  it('reads Yes once every elevation tile is there', () => {
+    const area = region({ terrain: true, terrainTiles: [], elevationTiles: ELEVATION_TILES });
+    area.entries = area.entries.concat(ELEVATION_TILES);
+    expect(core.areaState(area).status).toBe('ready');
+  });
+
+  it('makes no claim about elevation tiles it could not derive', () => {
+    // Null is a reader with no 3D view, whose map pins none.
+    expect(core.areaState(region({ terrain: true, elevationTiles: null })).status).toBe('ready');
+  });
 });
 
 describe('which cached urls need a matching stamp (SNOW-1308 review)', () => {

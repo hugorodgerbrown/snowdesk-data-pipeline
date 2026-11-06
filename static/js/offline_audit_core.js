@@ -175,6 +175,9 @@
    *   tiles an area downloaded WITH terrain data should hold, derived by
    *   the same rule the sheet applies. Null or absent makes no claim — an
    *   area without the opt-in, or a page that cannot derive them.
+   * @property {string[]|null} [elevationTiles] SNOW-1453: the elevation
+   *   tiles the same area should hold, on the same flag and terms. Null or
+   *   absent makes no claim — a page with no 3D view renders no template.
    */
 
   /**
@@ -1218,7 +1221,8 @@
    * while any of its terrain-class tiles (`terrainTiles`) is missing, as
    * `markIncompleteRows` judges it — including where the record names no
    * dependencies, because the class tiles are derived from the ground,
-   * not read off `deps`.
+   * not read off `deps`. SNOW-1453 judges its elevation tiles
+   * (`elevationTiles`) the same way.
    *
    * @param {AreaReading} area
    * @returns {{status: 'ready'|'incomplete'|'missing'|'unverifiable'|'unreadable'|'orphaned',
@@ -1230,6 +1234,8 @@
     var missingDeps = missingFrom(deps, entries);
     var terrainTiles = Array.isArray(area.terrainTiles) ? area.terrainTiles : [];
     var missingTerrain = missingFrom(terrainTiles, entries);
+    var elevationTiles = Array.isArray(area.elevationTiles) ? area.elevationTiles : [];
+    var missingElevation = missingFrom(elevationTiles, entries);
     var declared = new Set(deps);
     var supporting = 0;
     for (var i = 0; i < entries.length; i += 1) {
@@ -1246,7 +1252,7 @@
       status = 'unreadable';
     } else if (area.bucketPresent === false || entries.length === 0) {
       status = 'missing';
-    } else if (missingDeps.length > 0 || missingTerrain.length > 0) {
+    } else if (missingDeps.length > 0 || missingTerrain.length > 0 || missingElevation.length > 0) {
       status = 'incomplete';
     } else if (deps.length === 0 && area.kind !== 'base') {
       // Downloaded before SNOW-844, so nothing on the record says what
