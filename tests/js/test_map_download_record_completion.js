@@ -69,6 +69,49 @@ const TILE_A = { x: 8577, y: 5811 };
 const REGION_NO_KEY = 'CH-2101';
 const TILE_B = { x: 8600, y: 5820 };
 
+// SNOW-1453: two regions carrying the terrain flag, seeded only by the
+// elevation tests below (so the overlay count above stays two). Each holds
+// a z13 row as well as its z14 tile, because elevation tiles derive from
+// the z10-13 rows.
+const DEM_TEMPLATE = 'https://dem.example.invalid/dem/2026-11/{z}/{x}/{y}.webp';
+const REGION_ELEVATION_HELD = 'CH-4211';
+const REGION_ELEVATION_MISSING = 'CH-4212';
+const REGION_ELEVATION_ELSEWHERE = 'CH-4213';
+const REGION_ELEVATION_OTHER_BASEMAP = 'CH-4214';
+const Z_HELD = { 13: [4290, 4290, 2906, 2906], 14: [8580, 8580, 5812, 5812] };
+const Z_MISSING = { 13: [4295, 4295, 2908, 2908], 14: [8590, 8590, 5816, 5816] };
+const Z_ELSEWHERE = { 13: [4300, 4300, 2910, 2910], 14: [8600, 8600, 5820, 5820] };
+const Z_OTHER_BASEMAP = { 13: [4305, 4305, 2912, 2912], 14: [8610, 8610, 5824, 5824] };
+
+/** Every `{z}/{x}/{y}` URL a record's `z` rows name under `template`. */
+function zRowURLs(template, z) {
+  const urls = [];
+  for (const [zoom, [x0, x1, y0, y1]] of Object.entries(z)) {
+    for (let x = x0; x <= x1; x += 1) {
+      for (let y = y0; y <= y1; y += 1) {
+        urls.push(template.replace('{z}', zoom).replace('{x}', String(x)).replace('{y}', String(y)));
+      }
+    }
+  }
+  return urls;
+}
+
+/** A small square region feature, centred on nothing in particular. */
+function regionFeature(id, name, lng) {
+  return {
+    type: 'Feature',
+    properties: {
+      id: id,
+      name: name,
+      download: { count: 2, mb: 1, over_ceiling: false, centre_tile: { z: 14, x: 0, y: 0 } },
+    },
+    geometry: {
+      type: 'Polygon',
+      coordinates: [[[lng, 46.4], [lng + 0.01, 46.4], [lng + 0.01, 46.41], [lng, 46.41], [lng, 46.4]]],
+    },
+  };
+}
+
 const tileURL = (template, tile) =>
   template
     .replace('{z}', String(CACHED_TILES_ZOOM))
@@ -103,6 +146,10 @@ const REGIONS_GEOJSON = {
         coordinates: [[[7.5, 46.7], [7.51, 46.7], [7.51, 46.71], [7.5, 46.71], [7.5, 46.7]]],
       },
     },
+    regionFeature(REGION_ELEVATION_HELD, 'Wildstrubel', 8.5),
+    regionFeature(REGION_ELEVATION_MISSING, 'Gstaad', 8.7),
+    regionFeature(REGION_ELEVATION_ELSEWHERE, 'Lenk', 8.9),
+    regionFeature(REGION_ELEVATION_OTHER_BASEMAP, 'Adelboden', 9.1),
   ],
 };
 
@@ -310,6 +357,7 @@ function selectRegion(regionId, name) {
 
 let mapStub;
 let dbRows;
+let cacheBuckets;
 
 beforeAll(async () => {
   buildFixture();
@@ -363,7 +411,7 @@ beforeAll(async () => {
     ],
   });
 
-  installCachesStub([
+  cacheBuckets = [
     {
       name: 'snowdesk-basemap-pinned-region-' + REGION_NO_TEMPLATE,
       // SNOW-844: the style document as well as the tile. "Downloaded"
@@ -378,7 +426,8 @@ beforeAll(async () => {
       name: 'snowdesk-basemap-pinned-region-' + REGION_NO_KEY,
       urls: [tileURL(TEMPLATE_SWISSTOPO, TILE_B)],
     },
-  ]);
+  ];
+  installCachesStub(cacheBuckets);
 
   mapStub = stubMapLibre();
   Object.defineProperty(navigator, 'storage', {
@@ -397,6 +446,9 @@ beforeAll(async () => {
 
   vi.resetModules();
   await import('../../static/js/basemap_download_core.js');
+  // SNOW-1453: the elevation coverage comes from here.
+  await import('../../static/js/slope_classes_core.js');
+  await import('../../static/js/terrain_filter_core.js');
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
   loadMapBundle();
@@ -479,5 +531,127 @@ describe('a record with no stored basemapKey', () => {
     // Display-only: only a value the cache has proven is ever persisted,
     // and this one is an inference from a sibling record.
     expect(record.basemapKey).toBeUndefined();
+  });
+});
+
+// SNOW-1453: a region carrying the terrain flag is complete only once its
+// elevation tiles are held too, and the roundel's heal stamps the record
+// the 3D view reads offline, telling it so.
+describe('elevation tiles on a region with terrain data (SNOW-1453)', () => {
+  let toggle;
+  let heard;
+  const onChanged = () => {
+    heard += 1;
+  };
+
+  /**
+   * Seed a terrain-flagged record and its bucket; `elevation` adds those
+   * tiles to it, or (`'elsewhere'`) to an overlapping area's bucket only.
+   * The record names the 3D basemap unless `basemapKey` says otherwise;
+   * its tiles are on the active template either way, so the probe reads
+   * it on its own branch.
+   */
+  function seedRegion(regionId, name, z, elevation, basemapKey = 'swisstopo_winter') {
+    const core = self.pwaBasemapDownloadCore;
+    const record = {
+      region_id: regionId,
+      name: name,
+      band: [13, 14],
+      z: z,
+      template: [[TEMPLATE_LIBERTY]],
+      basemapKey: basemapKey,
+      deps: [STYLE_URL_LIBERTY],
+      terrain: true,
+      bytes: 1024 * 1024,
+      savedAt: '2026-11-01T10:00:00.000Z',
+    };
+    dbRows.get('basemap.regions').push(record);
+    const dem = core.areaElevationTileURLs(
+      { ...record, basemapKey: 'swisstopo_winter' },
+      DEM_TEMPLATE,
+      self.pwaTerrainFilterCore.COVERAGE_BOUNDS,
+    );
+    expect(dem.length).toBeGreaterThan(0);
+    cacheBuckets.push({
+      name: 'snowdesk-basemap-pinned-region-' + regionId,
+      urls: [...zRowURLs(TEMPLATE_LIBERTY, z), STYLE_URL_LIBERTY, ...(elevation === true ? dem : [])],
+    });
+    if (elevation === 'elsewhere') {
+      cacheBuckets.push({ name: 'snowdesk-basemap-pinned-custom-overlap-' + regionId, urls: dem });
+    }
+  }
+
+  const storedRecord = (regionId) =>
+    dbRows.get('basemap.regions').find((entry) => entry.region_id === regionId);
+
+  beforeAll(() => {
+    // Created after boot, as only the template it carries is read here.
+    toggle = document.createElement('button');
+    toggle.id = 'map-view-toggle';
+    toggle.dataset.demTileUrl = DEM_TEMPLATE;
+    document.body.appendChild(toggle);
+    document.addEventListener('snowdesk:downloads-changed', onChanged);
+    seedRegion(REGION_ELEVATION_HELD, 'Wildstrubel', Z_HELD, true);
+    seedRegion(REGION_ELEVATION_MISSING, 'Gstaad', Z_MISSING, false);
+    seedRegion(REGION_ELEVATION_ELSEWHERE, 'Lenk', Z_ELSEWHERE, 'elsewhere');
+    seedRegion(REGION_ELEVATION_OTHER_BASEMAP, 'Adelboden', Z_OTHER_BASEMAP, false, 'openfreemap_liberty');
+  });
+
+  afterAll(() => {
+    toggle.remove();
+    document.removeEventListener('snowdesk:downloads-changed', onChanged);
+  });
+
+  it('stamps a region holding every elevation tile, and tells the 3D view', async () => {
+    heard = 0;
+    const btn = document.getElementById('map-download-control');
+    selectRegion(REGION_ELEVATION_HELD, 'Wildstrubel');
+    await waitFor(() => btn.dataset.downloadState === 'done' && storedRecord(REGION_ELEVATION_HELD).elevation);
+
+    expect(btn.dataset.downloadState).toBe('done');
+    expect(storedRecord(REGION_ELEVATION_HELD).elevation).toBe(DEM_TEMPLATE);
+    await waitFor(() => heard > 0);
+    expect(heard).toBeGreaterThan(0);
+  });
+
+  it('reads a region missing its elevation tiles as incomplete, and stamps nothing', async () => {
+    const btn = document.getElementById('map-download-control');
+    selectRegion(REGION_ELEVATION_MISSING, 'Gstaad');
+    await waitFor(() => btn.dataset.downloadState === 'incomplete');
+
+    expect(btn.dataset.downloadState).toBe('incomplete');
+    expect(storedRecord(REGION_ELEVATION_MISSING).elevation).toBeUndefined();
+  });
+
+  it('never overwrites a stamp from an older template', async () => {
+    const old = 'https://dem.example.invalid/dem/2025-11/{z}/{x}/{y}.webp';
+    storedRecord(REGION_ELEVATION_HELD).elevation = old;
+    heard = 0;
+    const btn = document.getElementById('map-download-control');
+    selectRegion(REGION_ELEVATION_MISSING, 'Gstaad');
+    await waitFor(() => btn.dataset.downloadState === 'incomplete');
+    selectRegion(REGION_ELEVATION_HELD, 'Wildstrubel');
+    await waitFor(() => btn.dataset.downloadState === 'done');
+
+    expect(storedRecord(REGION_ELEVATION_HELD).elevation).toBe(old);
+    expect(heard).toBe(0);
+  });
+
+  it('judges the tiles on its own bucket, not an overlapping area\'s (SNOW-1453 review)', async () => {
+    const btn = document.getElementById('map-download-control');
+    selectRegion(REGION_ELEVATION_ELSEWHERE, 'Lenk');
+    await waitFor(() => btn.dataset.downloadState === 'incomplete');
+
+    expect(btn.dataset.downloadState).toBe('incomplete');
+    expect(storedRecord(REGION_ELEVATION_ELSEWHERE).elevation).toBeUndefined();
+  });
+
+  it('expects none of a region on a basemap 3D is not drawn on (SNOW-1453 review)', async () => {
+    const btn = document.getElementById('map-download-control');
+    selectRegion(REGION_ELEVATION_OTHER_BASEMAP, 'Adelboden');
+    await waitFor(() => btn.dataset.downloadState === 'done');
+
+    expect(btn.dataset.downloadState).toBe('done');
+    expect(storedRecord(REGION_ELEVATION_OTHER_BASEMAP).elevation).toBeUndefined();
   });
 });

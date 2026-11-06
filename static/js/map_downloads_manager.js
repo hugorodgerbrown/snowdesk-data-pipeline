@@ -619,6 +619,12 @@
         ...(row.kind !== 'base' && typeof bridge.areaTerrainClassTileUrls === 'function'
           ? bridge.areaTerrainClassTileUrls(row)
           : []),
+        // SNOW-1453: and the elevation tiles, which ride on the same flag
+        // and are judged on the same terms. An area downloaded before they
+        // joined terrain data reads incomplete until a sync fetches them.
+        ...(row.kind !== 'base' && typeof bridge.areaElevationTileUrls === 'function'
+          ? bridge.areaElevationTileUrls(row)
+          : []),
       ];
       const missing = core.missingRenderDependencies(depURLs, cached);
       if (missing.length === 0) continue;
@@ -2084,8 +2090,9 @@
   /**
    * The map and terrain sizes the inventory shows. The run records one
    * total, so the terrain figure is the estimate the download was priced
-   * at (`terrainClassMb` over the area's class tiles) and the map is what
-   * is left of the total.
+   * at (`terrainClassMb` over the area's class tiles, plus `elevationMb`
+   * over its elevation tiles since SNOW-1453) and the map is what is left
+   * of the total.
    *
    * @param {any} record The area's stored record.
    * @param {string} size The row's formatted total, the fallback.
@@ -2104,7 +2111,14 @@
     const urls = typeof bridge.areaTerrainClassTileUrls === 'function'
       ? bridge.areaTerrainClassTileUrls(record)
       : [];
-    const terrainBytes = Math.min(bytes, downloadCore.terrainClassMb(urls.length) * 1024 * 1024);
+    // SNOW-1453: only for a record whose run (or sync) stamped them: one
+    // downloaded before elevation joined terrain data holds none.
+    const elevationUrls = record.elevation && typeof bridge.areaElevationTileUrls === 'function'
+      ? bridge.areaElevationTileUrls(record)
+      : [];
+    const terrainMb =
+      downloadCore.terrainClassMb(urls.length) + downloadCore.elevationMb(elevationUrls.length);
+    const terrainBytes = Math.min(bytes, terrainMb * 1024 * 1024);
     if (!bytes || !terrainBytes) return { map: size, terrain: '' };
     return {
       map: core.formatMegabytes(bytes - terrainBytes),

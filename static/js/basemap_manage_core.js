@@ -693,6 +693,9 @@
         // SNOW-1072: whether the area includes terrain data — the flag the
         // sheet's completeness check derives the class tiles from.
         terrain: !!area.terrain,
+        // SNOW-1453: the template the area's elevation tiles were fetched
+        // under, '' for none — what the 3D view reads to be drawn offline.
+        elevation: typeof area.elevation === 'string' ? area.elevation : '',
         // SNOW-1142: whose download this is — the account id it was made
         // under, '' for an anonymous one, null for a legacy record. Passed
         // through for `downloads_sync.js`'s `recordHeld`, which reads it

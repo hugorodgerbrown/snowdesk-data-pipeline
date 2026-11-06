@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-05 13:35+0000\n"
+"POT-Creation-Date: 2026-11-06 14:33+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1670,6 +1670,62 @@ msgstr ""
 msgid "Playback in progress"
 msgstr ""
 
+msgid "3D map · Snowdesk"
+msgstr ""
+
+msgid "The mountains in 3D, with steep terrain and routes."
+msgstr ""
+
+msgid "Map"
+msgstr ""
+
+msgid "Steep terrain"
+msgstr ""
+
+msgid "SAC tours"
+msgstr ""
+
+msgid "Wildlife"
+msgstr ""
+
+msgid "Share this view"
+msgstr ""
+
+msgid "Link copied"
+msgstr ""
+
+msgid "Could not copy the link"
+msgstr ""
+
+msgid "Share this route in 3D"
+msgstr ""
+
+msgid "Frame-time probe: waiting for the map to load…"
+msgstr ""
+
+#, python-format
+msgid ""
+"Frame-time probe: pass %%(n)s of %%(total)s, %%(label)s. Keep the phone "
+"still."
+msgstr ""
+
+#, python-format
+msgid ""
+"%%(label)s: median %%(median)s ms (%%(fps)s fps), p95 %%(p95)s ms, "
+"%%(over)s%% over %%(budget)s ms"
+msgstr ""
+
+#, python-format
+msgid "%%(label)s: no frames timed"
+msgstr ""
+
+#, python-format
+msgid "Frame-time probe done. First idle %%(idle)s ms. GPU: %%(gpu)s"
+msgstr ""
+
+msgid "Share the result"
+msgstr ""
+
 msgid "Editors"
 msgstr ""
 
@@ -1745,6 +1801,9 @@ msgstr ""
 msgid "Back to today"
 msgstr ""
 
+msgid "Point north"
+msgstr ""
+
 msgid "Manage downloads"
 msgstr ""
 
@@ -1812,9 +1871,6 @@ msgstr ""
 msgid "What's in %%(name)s"
 msgstr ""
 
-msgid "Map"
-msgstr ""
-
 msgid "Terrain"
 msgstr ""
 
@@ -1828,9 +1884,6 @@ msgid "Your routes"
 msgstr ""
 
 msgid "Trips"
-msgstr ""
-
-msgid "SAC tours"
 msgstr ""
 
 msgid "Ski resorts"
@@ -2073,6 +2126,18 @@ msgstr ""
 msgid "Choose basemap"
 msgstr ""
 
+msgid "3D view"
+msgstr ""
+
+msgid "3D"
+msgstr ""
+
+msgid "2D"
+msgstr ""
+
+msgid "Open in 3D"
+msgstr ""
+
 msgid "Your favourites"
 msgstr ""
 
@@ -2185,6 +2250,9 @@ msgid ""
 "swisstopo."
 msgstr ""
 
+msgid "3D uses the swisstopo winter map; yours comes back in 2D."
+msgstr ""
+
 msgid "Hide map controls"
 msgstr ""
 
@@ -2252,9 +2320,6 @@ msgstr ""
 msgid "Any day"
 msgstr ""
 
-msgid "Steep terrain"
-msgstr ""
-
 msgid "Resorts and pins"
 msgstr ""
 
@@ -2303,6 +2368,42 @@ msgid "Terrain: hide what changes by the day"
 msgstr ""
 
 msgid "Back to Conditions"
+msgstr ""
+
+msgid "Zoom in to see 3D"
+msgstr ""
+
+msgid "3D needs a connection or a downloaded area"
+msgstr ""
+
+msgid "3D covers Switzerland for now"
+msgstr ""
+
+msgid "Finish drawing the route to see 3D"
+msgstr ""
+
+msgid "Back in 2D: offline, 3D works only in a downloaded area."
+msgstr ""
+
+msgid "Back in 2D: 3D covers Switzerland for now."
+msgstr ""
+
+msgid "3D is not available on this device"
+msgstr ""
+
+msgid "3D is too slow on this device"
+msgstr ""
+
+msgid "3D comes back once the map's graphics have reset"
+msgstr ""
+
+msgid "The map's graphics reset, so it is flat again."
+msgstr ""
+
+msgid "Back in 2D: 3D is too slow on this device."
+msgstr ""
+
+msgid "3D stops here. Switch to 2D to zoom out."
 msgstr ""
 
 msgid "Your places today"
@@ -2373,6 +2474,17 @@ msgstr ""
 msgid ""
 "Search a region or resort by name. Locate centres the map on you. The number "
 "is your zoom: tap it to see what appears as you go closer."
+msgstr ""
+
+msgid "North"
+msgstr ""
+
+msgid "The needle points north. Tap it to turn the map back to north."
+msgstr ""
+
+msgid ""
+"In Terrain, tap 3D or tilt with two fingers to see the mountains in relief. "
+"Tap 2D to lay the map flat again."
 msgstr ""
 
 msgid "Layers"
@@ -2655,6 +2767,10 @@ msgid "Up to %%(mb)s MB"
 msgstr ""
 
 #, python-format
+msgid "Terrain and 3D data: up to %%(mb)s MB more"
+msgstr ""
+
+#, python-format
 msgid "Terrain data: up to %%(mb)s MB more"
 msgstr ""
 
@@ -2728,6 +2844,12 @@ msgstr ""
 msgid ""
 "Download this region's basemap — up to %%(mb)s\n"
 "            MB"
+msgstr ""
+
+#, python-format
+msgid ""
+"Download this region's basemap — up to %%(mb)s MB, plus up to %%(terrain)s "
+"MB of terrain and 3D data"
 msgstr ""
 
 #, python-format
@@ -10511,6 +10633,12 @@ msgid "Network menu: offline"
 msgstr ""
 
 msgid "Account menu"
+msgstr ""
+
+msgid "3D map"
+msgstr ""
+
+msgid "Labs"
 msgstr ""
 
 msgid "Admin menu"

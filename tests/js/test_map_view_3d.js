@@ -31,6 +31,7 @@ import '../../static/js/map_view_core.js';
 import '../../static/js/swisstopo_edge_core.js';
 import '../../static/js/map_3d_core.js';
 import '../../static/js/map_3d_terrain.js';
+import '../../static/js/basemap_download_core.js';
 import { loadMapBundle } from './_load_map_bundle.js';
 
 const core3d = window.pwaMap3dCore;
@@ -147,6 +148,7 @@ let env;
 async function boot({
   search = '?mode=terrain', mode = 'terrain', stored = null, online = true,
   webgl = true, deviceMemory = 8, userAgent = DESKTOP_UA, pitch = 0,
+  areas = [], holdAreas = false,
 } = {}) {
   const rows = Object.entries(URLS).map(([key, url]) => `
     <button class="basemap-menu-item" role="menuitemradio" data-basemap-key="${key}"
@@ -184,7 +186,13 @@ async function boot({
     toast: vi.fn(),
     addProtocol: vi.fn(),
     resolveBasemapStyle: vi.fn((key, url) => Promise.resolve(key === 'basemap_at' ? { rewritten: url } : url)),
+    // SNOW-1453: the device's downloaded areas, read from IndexedDB in the
+    // page, so asynchronously; `holdAreas` keeps the first read pending
+    // until `releaseAreas()`.
+    areas,
+    releaseAreas: () => {},
   };
+
   window.MapSheet = { toast: env.toast };
   window.pwaMapMode = { get: () => env.mode };
   window.pwaConnectivity = { isOnline: () => env.online };
@@ -195,6 +203,15 @@ async function boot({
   loadMapBundle(['map_state.js', 'map_shared.js', 'map_basemap_picker.js']);
   // After map_state.js, which publishes its own (empty) one.
   window.snowdeskMapState = { map };
+  // After the bundle too, which loads the real reader.
+  let held = holdAreas;
+  window.pwaBasemapAreas = {
+    downloadedAreas: vi.fn(() => {
+      if (!held) return Promise.resolve(env.areas);
+      held = false;
+      return new Promise((resolve) => { env.releaseAreas = () => resolve(env.areas); });
+    }),
+  };
   vi.resetModules();
   await import('../../static/js/map_view_3d.js');
   return { map, button: document.getElementById('map-view-toggle') };
@@ -413,8 +430,10 @@ describe('what lays 3D flat', () => {
     button.click();
     env.online = false;
     document.dispatchEvent(new CustomEvent('snowdesk:connectivity-changed', { detail: { online: false } }));
+    // Decided once the boxes are read again.
+    await flush();
     expect(window.pwaMapView.get()).toBe('flat');
-    expect(toasts().at(-1)).toBe('Back in 2D: 3D needs a connection.');
+    expect(toasts().at(-1)).toBe('Back in 2D: offline, 3D works only in a downloaded area.');
   });
 
   it('not a pan into the border areas swisstopo still draws (SNOW-1457)', async () => {
@@ -433,6 +452,177 @@ describe('what lays 3D flat', () => {
     expect(window.pwaMapView.get()).toBe('flat');
     expect(view()).toBeNull();
     expect(toasts().at(-1)).toBe('Back in 2D: 3D covers Switzerland and its border areas for now.');
+  });
+});
+
+// SNOW-1453: a download with terrain data pins the elevation tiles and
+// stamps its record with their template, so 3D works offline inside it.
+describe('offline, in a downloaded area', () => {
+  const DEM = 'https://dem.example/{z}/{x}/{y}.webp';
+  // Round Zermatt, stamped with the template the switch carries.
+  // On the 3D basemap: only an area downloaded on it can draw 3D offline.
+  const AREA = {
+    id: 'custom-1',
+    terrain: true,
+    elevation: DEM,
+    basemapKey: 'swisstopo_winter',
+    bbox: [7.6, 45.95, 7.9, 46.1],
+  };
+  const VERBIER = { lng: 7.23, lat: 46.1 };
+  const goOffline = () => {
+    env.online = false;
+    document.dispatchEvent(new CustomEvent('snowdesk:connectivity-changed', { detail: { online: false } }));
+  };
+
+  it('reads the device\'s own areas only, never the account\'s', async () => {
+    await boot({ areas: [AREA] });
+    await flush();
+    expect(window.pwaBasemapAreas.downloadedAreas).toHaveBeenCalledWith({ deviceOnly: true });
+  });
+
+  it('stays in 3D going offline inside the area, and leaves it with a line on a pan out', async () => {
+    const { map, button } = await boot({ areas: [AREA] });
+    await flush();
+    button.click();
+    await flush();
+    goOffline();
+    await flush();
+    expect(window.pwaMapView.get()).toBe('3d');
+
+    map.centre = { ...VERBIER };
+    map.fire('moveend');
+    expect(window.pwaMapView.get()).toBe('flat');
+    expect(view()).toBeNull();
+    expect(toasts().at(-1)).toBe('Back in 2D: offline, 3D works only in a downloaded area.');
+
+    // Back in, 3D is available again but not entered.
+    map.centre = { ...ZERMATT };
+    map.fire('moveend');
+    expect(window.pwaMapView.get()).toBe('flat');
+    expect(button.hasAttribute('aria-disabled')).toBe(false);
+  });
+
+  it('judges going offline on the areas read afresh, not the last list', async () => {
+    const { button } = await boot({ areas: [] });
+    await flush();
+    button.click();
+    await flush();
+    // Downloaded since the last read, with no event to say so.
+    env.areas = [AREA];
+    goOffline();
+    expect(window.pwaMapView.get()).toBe('3d');
+    await flush();
+    expect(window.pwaMapView.get()).toBe('3d');
+    expect(toasts()).not.toContain('Back in 2D: offline, 3D works only in a downloaded area.');
+  });
+
+  it('leaves out a stamped area downloaded on another basemap (SNOW-1453 review)', async () => {
+    const { button } = await boot({ areas: [{ ...AREA, basemapKey: 'openfreemap_liberty' }], online: false });
+    await flush();
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('leaves out an area stamped under another template', async () => {
+    const stale = { ...AREA, elevation: 'https://dem.example/2025/{z}/{x}/{y}.webp' };
+    const { button } = await boot({ areas: [stale], online: false });
+    await flush();
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('enters a ?view=3d boot inside the area once the read of the areas lands', async () => {
+    const { map, button } = await boot({
+      search: '?mode=terrain&view=3d', online: false, areas: [AREA], holdAreas: true,
+    });
+    // Until the areas are known the switch is off, for `offline`.
+    expect(window.pwaMapView.get()).toBe('flat');
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    button.click();
+    expect(window.pwaMapView.get()).toBe('flat');
+    expect(toasts()).toEqual(['3D needs a connection or a downloaded area']);
+
+    env.releaseAreas();
+    await flush();
+    expect(window.pwaMapView.get()).toBe('3d');
+    expect(inThreeD(map)).toBe(true);
+    expect(view()).toBe('3d');
+  });
+
+  it('lays the same boot flat on the reader\'s basemap outside every area', async () => {
+    const { map } = await boot({
+      search: '?mode=terrain&view=3d', online: false, areas: [{ ...AREA, bbox: [7.2, 46.05, 7.3, 46.12] }],
+      holdAreas: true,
+    });
+    env.releaseAreas();
+    await flush();
+    await flush();
+    expect(window.pwaMapView.get()).toBe('flat');
+    expect(map.setStyle).toHaveBeenCalledWith(URLS.openfreemap_liberty, { diff: false });
+    expect(view()).toBeNull();
+    expect(map.pitch).toBe(0);
+  });
+
+  it('lays the boot flat after two seconds when the read of the areas never lands', async () => {
+    vi.useFakeTimers();
+    try {
+      const { map, button } = await boot({
+        search: '?mode=terrain&view=3d', online: false, areas: [AREA], holdAreas: true,
+      });
+      await vi.advanceTimersByTimeAsync(1900);
+      expect(map.setStyle).not.toHaveBeenCalled();
+      expect(view()).toBe('3d');
+
+      await vi.advanceTimersByTimeAsync(200);
+      expect(window.pwaMapView.get()).toBe('flat');
+      expect(map.setStyle).toHaveBeenCalledWith(URLS.openfreemap_liberty, { diff: false });
+      expect(view()).toBeNull();
+      expect(map.pitch).toBe(0);
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('decides the offline boot once: the timer after an early read does nothing', async () => {
+    vi.useFakeTimers();
+    try {
+      const { map } = await boot({
+        search: '?mode=terrain&view=3d', online: false, areas: [{ ...AREA, bbox: [7.2, 46.05, 7.3, 46.12] }],
+        holdAreas: true,
+      });
+      env.releaseAreas();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(window.pwaMapView.get()).toBe('flat');
+      const swaps = map.setStyle.mock.calls.length;
+      // The reader pans into an area before the cap would have fired.
+      env.areas = [AREA];
+      document.dispatchEvent(new CustomEvent('snowdesk:downloads-changed'));
+      map.centre = { ...ZERMATT };
+      map.fire('moveend');
+      await vi.advanceTimersByTimeAsync(2500);
+      expect(window.pwaMapView.get()).toBe('flat');
+      expect(map.setStyle.mock.calls.length).toBe(swaps);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reads the areas again on snowdesk:downloads-changed', async () => {
+    const { button } = await boot({ online: false, areas: [] });
+    await flush();
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+
+    env.areas = [AREA];
+    document.dispatchEvent(new CustomEvent('snowdesk:downloads-changed'));
+    await flush();
+    expect(button.hasAttribute('aria-disabled')).toBe(false);
+    button.click();
+    expect(window.pwaMapView.get()).toBe('3d');
+
+    // And a removal lays it flat, offline.
+    env.areas = [];
+    document.dispatchEvent(new CustomEvent('snowdesk:downloads-changed'));
+    await flush();
+    expect(window.pwaMapView.get()).toBe('flat');
   });
 });
 
@@ -470,7 +660,7 @@ describe('the disabled roundel', () => {
   it.each([
     ['zoomed out', { zoom: 7 }, {}, 'Zoom in to see 3D'],
     ['outside Switzerland', { centre: PARIS }, {}, '3D covers Switzerland and its border areas for now'],
-    ['offline', {}, { online: false }, '3D needs a connection'],
+    ['offline', {}, { online: false }, '3D needs a connection or a downloaded area'],
   ])('says why when %s', async (_case, camera, options, line) => {
     const { map, button } = await boot(options);
     Object.assign(map, camera);

@@ -3543,16 +3543,75 @@ def test_the_3d_roundel_prefetches_from_the_dem_setting() -> None:
     assert f'data-dem-tile-url="{dem}"' in content
 
 
+def _string(content: str, key: str) -> str:
+    """Return the text of the first ``data-string="<key>"`` span in ``content``."""
+    match = re.search(rf'data-string="{key}"\s*>([^<]*)</span>', content)
+    assert match, key
+    return match.group(1)
+
+
+@pytest.mark.django_db
+def test_the_3d_view_says_offline_3d_works_in_a_downloaded_area() -> None:
+    """SNOW-1453: offline, 3D is drawn inside a downloaded area, and the lines say so."""
+    content = _flagged_map(map_3d=True, map_modes=True)
+    template = content[content.index('id="map-view-strings-template"') :]
+    template = template[: template.index("</template>")]
+    assert (
+        _string(template, "why-offline") == "3D needs a connection or a downloaded area"
+    )
+    assert (
+        _string(template, "left-offline")
+        == "Back in 2D: offline, 3D works only in a downloaded area."
+    )
+
+
+@pytest.mark.django_db
+def test_the_download_label_names_3d_data_only_with_the_3d_view() -> None:
+    """SNOW-1453: the "-3d" label exists only where 3D is drawn.
+
+    Every page keeps "terrain data" alone; with the 3D view it also carries
+    the "-3d" label, which map_region_download.js uses only on the 3D
+    basemap, where a download pins the elevation tiles.
+    """
+    with_view = _flagged_map(map_3d=True, map_modes=True)
+    without = _flagged_map(map_3d=False, map_modes=True)
+    for content in (with_view, without):
+        assert _string(content, "download-idle-terrain").endswith(
+            "plus up to %(terrain)s MB of terrain data"
+        )
+    assert _string(with_view, "download-idle-terrain-3d").endswith(
+        "plus up to %(terrain)s MB of terrain and 3D data"
+    )
+    assert 'data-string="download-idle-terrain-3d"' not in without
+
+
+@pytest.mark.django_db
+def test_the_frame_terrain_line_names_3d_data_only_with_the_3d_view() -> None:
+    """SNOW-1453: the framed-area readout's terrain line follows the label.
+
+    Gated the same way as ``download-idle-terrain-3d``.
+    """
+    with_view = _flagged_map(map_3d=True, map_modes=True)
+    without = _flagged_map(map_3d=False, map_modes=True)
+    for content in (with_view, without):
+        assert (
+            _string(content, "frame-terrain-up-to")
+            == "Terrain data: up to %(mb)s MB more"
+        )
+    assert (
+        _string(with_view, "frame-terrain-up-to-3d")
+        == "Terrain and 3D data: up to %(mb)s MB more"
+    )
+    assert 'data-string="frame-terrain-up-to-3d"' not in without
+
+
 @pytest.mark.django_db
 def test_map_page_says_3d_covers_the_border_areas() -> None:
     """
     SNOW-1457: 3D opens wherever swisstopo's raster winter map has detail,
     so the two lines that explain a closed 3D name the border areas too.
     """
-    client = Client()
-    client.force_login(UserFactory.create())
-    with override_flag("map_3d", active=True), override_flag("map_modes", active=True):
-        content = client.get(reverse("public:map")).content.decode()
+    content = _flagged_map(map_3d=True, map_modes=True)
     assert "3D covers Switzerland and its border areas for now" in content
     assert "Back in 2D: 3D covers Switzerland and its border areas for now." in content
     assert "3D covers Switzerland for now" not in content

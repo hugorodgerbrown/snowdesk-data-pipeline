@@ -750,10 +750,12 @@
     // SNOW-1072: plus the terrain-class tile, when this session includes
     // terrain data — the frame has to fit the ceiling with it, or a frame
     // drawn up to the ceiling is over it the moment the readout adds it.
+    // SNOW-1453: and the elevation tiles' share, where the page pins them.
     const bytesPerTile = core.terrainScaledBytesPerTile(
       core.bytesPerTileForSources(activeBasemapTileSources(MAP)),
       sourceCount,
       _includesTerrain(),
+      elevationPinnedOn(activeBasemapKey()),
     );
     const scale = core.budgetScaleForBBox(
       naturalBbox,
@@ -855,10 +857,15 @@
    */
   function _paintTerrainReadout(terrainMb) {
     if (!terrainReadoutEl) return;
-    const show = terrainMb > 0 && !!MAP_STRINGS['frame-terrain-up-to'];
+    // SNOW-1453: names 3D data only where the frame pins the elevation
+    // tiles, the 3D basemap; the figure follows the same rule.
+    const key = elevationPinnedOn(activeBasemapKey()) && MAP_STRINGS['frame-terrain-up-to-3d']
+      ? 'frame-terrain-up-to-3d'
+      : 'frame-terrain-up-to';
+    const show = terrainMb > 0 && !!MAP_STRINGS[key];
     terrainReadoutEl.hidden = !show;
     if (!show) return;
-    const text = self.pwaStrings.interpolate(MAP_STRINGS['frame-terrain-up-to'], {
+    const text = self.pwaStrings.interpolate(MAP_STRINGS[key], {
       mb: terrainMb,
     });
     if (terrainReadoutEl.textContent !== text) terrainReadoutEl.textContent = text;
@@ -1312,7 +1319,7 @@
       finish: async (
         result,
         runBlob,
-        { core, progressFill, tileSources, basemapKey, renderDeps, content },
+        { core, progressFill, tileSources, basemapKey, renderDeps, content, elevation },
       ) => {
         // SNOW-632: a cancelled run is neither success nor failure — the
         // user asked it to stop, not for it to fail — so this is checked
@@ -1396,6 +1403,9 @@
             // flag, never the class-tile URLs it implies, which the
             // probe derives again from `bbox` + `band`.
             ...(terrain ? { terrain: true } : {}),
+            // SNOW-1453: the template this run's elevation tiles came from,
+            // which the 3D view reads to be drawn here offline; local only.
+            ...(terrain && elevation ? { elevation: elevation } : {}),
             // SNOW-1308: the reader's own things this run's content plan
             // expected, by name with their urls, so the `/offline/` panels
             // name them — written with a complete content run only, the
@@ -1706,7 +1716,15 @@
         finish: async (
           result,
           runBlob,
-          { core: runCore, progressFill, tileSources, basemapKey, renderDeps, content },
+          {
+            core: runCore,
+            progressFill,
+            tileSources,
+            basemapKey,
+            renderDeps,
+            content,
+            elevation,
+          },
         ) => {
           const cancelled = !!(result && result.cancelled);
           const outcome = runCore.contentOutcome(content);
@@ -1732,6 +1750,8 @@
               ...(outcome.complete ? { contentAt: new Date().toISOString() } : {}),
               ...(outcome.incomplete ? { contentIncomplete: true } : {}),
               ...(terrain ? { terrain: true } : {}),
+              // SNOW-1453: see `handleConfirm`'s record.
+              ...(terrain && elevation ? { elevation: elevation } : {}),
               // SNOW-1308: see `handleConfirm`'s record.
               ...(outcome.complete && content && content.items ? { items: content.items } : {}),
               savedAt: new Date().toISOString(),

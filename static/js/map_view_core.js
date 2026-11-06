@@ -20,7 +20,10 @@
  *     connection, no route being drawn, a centre inside 3D's coverage
  *     and a zoom of at least MIN_ZOOM. The coverage is passed in
  *     (swisstopo_edge_core's GATE_OUTLINE since SNOW-1457), never copied
- *     here, so there is one source of it.
+ *     here, so there is one source of it. Offline (SNOW-1453), a downloaded area
+ *     whose elevation tiles are pinned stands in for the connection: the
+ *     boxes are passed in (basemap_download_core's elevationAreaBoxes),
+ *     and the rule checks them, never the cache.
  *   - THE DEVICE (SNOW-1455). Three things turn 3-D off for the rest of a
  *     visit, asked first so a device that cannot draw it is never told to
  *     zoom in: the gate at boot (deviceGate: no WebGL, or
@@ -147,6 +150,10 @@
    * @property {{lng: number, lat: number}} centre
    * @property {ReadonlyArray<number>|ReadonlyArray<ReadonlyArray<number>>|null} [bounds]
    *   The coverage: a box or a ring.
+   * @property {ReadonlyArray<ReadonlyArray<number>>|null} [offlineAreas]
+   *   SNOW-1453: `[west, south, east, north]` boxes of the downloaded areas
+   *   whose elevation tiles are pinned. Offline, 3-D is available only with
+   *   the centre inside one of them.
    */
 
   /**
@@ -161,7 +168,9 @@
     if (input.gated) return no(REASONS.DEVICE);
     if (input.tooSlow) return no(REASONS.SLOW);
     if (input.contextLost) return no(REASONS.WEBGL);
-    if (!input.online) return no(REASONS.OFFLINE);
+    if (!input.online && !(input.offlineAreas || []).some((box) => covers(input.centre, box))) {
+      return no(REASONS.OFFLINE);
+    }
     if (input.editing) return no(REASONS.EDITING);
     if (!covers(input.centre, input.bounds)) return no(REASONS.COVERAGE);
     if (!(input.zoom >= MIN_ZOOM)) return no(REASONS.ZOOM);

@@ -808,6 +808,94 @@ describe('terrain-class tiles (SNOW-1138)', () => {
   });
 });
 
+// SNOW-1453: the elevation tiles, read off the panel's `data-dem-tile-url`
+// and judged by the same rule the map's sheet uses.
+describe('elevation tiles (SNOW-1453)', () => {
+  const DEM = 'https://dem.example/dem/2026-11/{z}/{x}/{y}.webp';
+  const BBOX = [7.2, 46.08, 7.24, 46.1];
+  // On the 3D basemap, the only one whose areas hold elevation tiles.
+  const AREA = {
+    id: 'custom-e1',
+    name: 'Verbier',
+    bbox: BBOX,
+    band: [10, 14],
+    terrain: true,
+    basemapKey: 'swisstopo_winter',
+    deps: ['https://t/style.json'],
+  };
+
+  beforeAll(async () => {
+    await import('../../static/js/basemap_download_core.js');
+    await import('../../static/js/slope_classes_core.js');
+    await import('../../static/js/terrain_filter_core.js');
+  });
+
+  function expectedTiles() {
+    return window.pwaBasemapDownloadCore.areaElevationTileURLs(
+      AREA,
+      DEM,
+      window.pwaTerrainFilterCore.COVERAGE_BOUNDS,
+    );
+  }
+
+  function panel(template) {
+    const root = document.createElement('div');
+    root.setAttribute('data-offline-audit', '');
+    if (template) root.setAttribute('data-dem-tile-url', template);
+    return root;
+  }
+
+  it('derives the elevation tiles an area with terrain data should hold', async () => {
+    installCachesStub({ 'snowdesk-shell-abc': [] });
+    await seedMeta({ 'basemap.customAreas': [AREA] });
+
+    const readings = await audit.collect(panel(DEM));
+
+    expect(expectedTiles().length).toBeGreaterThan(0);
+    expect(readings.areas.find((a) => a.id === 'custom-e1').elevationTiles).toEqual(expectedTiles());
+  });
+
+  it('flags the area while its elevation tiles are missing, and clears once they are pinned', async () => {
+    const pinned = [{ url: 'https://t/style.json' }, { url: 'https://t/12/1/1.pbf' }];
+    installCachesStub({ 'snowdesk-shell-abc': [], 'snowdesk-basemap-pinned-custom-e1': pinned });
+    await seedMeta({ 'basemap.customAreas': [AREA] });
+    const missing = await audit.collect(panel(DEM));
+    expect(window.pwaOfflineAuditCore.areaState(missing.areas[0]).status).toBe('incomplete');
+
+    installCachesStub({
+      'snowdesk-shell-abc': [],
+      'snowdesk-basemap-pinned-custom-e1': [...pinned, ...expectedTiles().map((url) => ({ url }))],
+    });
+    const present = await audit.collect(panel(DEM));
+    expect(window.pwaOfflineAuditCore.areaState(present.areas[0]).status).toBe('ready');
+  });
+
+  it('makes no claim where the page carries no template, or the area no terrain', async () => {
+    installCachesStub({ 'snowdesk-shell-abc': [] });
+    await seedMeta({ 'basemap.customAreas': [AREA, { ...AREA, id: 'custom-e2', terrain: false }] });
+
+    const without = await audit.collect(panel(''));
+    expect(without.areas.find((a) => a.id === 'custom-e1').elevationTiles).toBeNull();
+
+    const flat = await audit.collect(panel(DEM));
+    expect(flat.areas.find((a) => a.id === 'custom-e2').elevationTiles).toBeNull();
+  });
+
+  it('expects none of an area on another basemap, so it reads ready without them (SNOW-1453 review)', async () => {
+    const elsewhere = { ...AREA, basemapKey: 'openfreemap_liberty' };
+    installCachesStub({
+      'snowdesk-shell-abc': [],
+      'snowdesk-basemap-pinned-custom-e1': [{ url: 'https://t/style.json' }, { url: 'https://t/12/1/1.pbf' }],
+    });
+    await seedMeta({ 'basemap.customAreas': [elsewhere] });
+
+    const readings = await audit.collect(panel(DEM));
+
+    expect(readings.areas[0].elevationTiles).toEqual([]);
+    expect(window.pwaOfflineAuditCore.areaState(readings.areas[0]).status).toBe('ready');
+  });
+});
+
 describe('rendering', () => {
   it('emits status as a data attribute and no class strings at all', async () => {
     // The contract both hosts depend on: /account/settings/ styles this

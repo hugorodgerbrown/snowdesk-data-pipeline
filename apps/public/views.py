@@ -137,7 +137,7 @@ from .bulletin_panels import (
 from .component_previews import help_illustrations
 from .daily_read import cached_daily_read, present_daily_read
 from .decorators import lowercase_region_id
-from .map_shared import map_modes_enabled, trip_url_templates
+from .map_shared import map_3d_view_enabled, map_modes_enabled, trip_url_templates
 from .season_calendar import (
     build_season_grid,
     build_season_months,
@@ -835,6 +835,12 @@ def offline_page(request: HttpRequest) -> HttpResponse:
                             while ineligible), the same value the map
                             renders as ``data-terrain-class-tile-url``
                             (SNOW-1138).
+        dem_tile_url — the 3D map's elevation tile template
+                            (``settings.MAP_3D_DEM_TILE_URL``) for a reader
+                            the map shows the 3D view to, empty otherwise
+                            (SNOW-1453). The map pins elevation tiles only
+                            where its 3D toggle renders, so the report
+                            judges them on the same readers.
 
     Args:
         request: The incoming HTTP request.
@@ -921,6 +927,11 @@ def offline_page(request: HttpRequest) -> HttpResponse:
             # same value off `#map`; empty while the filter is unconfigured,
             # which is the sheet's "not judged" case too.
             "terrain_class_tile_url": settings.TERRAIN_CLASS_TILE_URL,
+            # SNOW-1453: the elevation tile template, on the map's own gate
+            # for its 3D view (`map_3d_view` in apps/map/views.py).
+            "dem_tile_url": settings.MAP_3D_DEM_TILE_URL
+            if map_3d_view_enabled(request)
+            else "",
         },
     )
 

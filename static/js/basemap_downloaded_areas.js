@@ -287,7 +287,12 @@
   // over a transient IndexedDB error.
   //
   // @param {{strings?: Object<string, string>,
-  //   measureBytes?: function(string): Promise<number>}} [options]
+  //   measureBytes?: function(string): Promise<number>,
+  //   deviceOnly?: boolean}} [options]
+  //   SNOW-1453: `deviceOnly` leaves out the areas on the ACCOUNT, which
+  //   cost a request whenever the app is online. The 3D view reads this
+  //   list at every boot, connectivity change and downloads change, and
+  //   needs only what this device holds.
   //   `strings` carries the two translated names this reader fills in
   //   (see `FALLBACK_STRINGS`). `measureBytes` measures an ORPHANED
   //   bucket — one with no record to read a byte total off. Both callers
@@ -360,6 +365,10 @@
           // tiles it implies are derived from `z`/`bbox` above, never
           // recorded; the flag is the choice, which nothing can derive.
           terrain: !!entry.terrain,
+          // SNOW-1453: the template the area's elevation tiles were fetched
+          // under, '' when it holds none. The 3D view draws offline only
+          // inside an area stamped with today's (`elevationAreaBoxes`).
+          elevation: typeof entry.elevation === 'string' ? entry.elevation : '',
           // SNOW-1142: the account the download was made under — '' for an
           // anonymous one, null for a record written before the field
           // existed. `downloads_sync.js`'s `ownership()` decides from this
@@ -430,6 +439,8 @@
           contentAt: custom.contentAt || '',
           // SNOW-1072: see the region branch above.
           terrain: !!custom.terrain,
+          // SNOW-1453: see the region branch above.
+          elevation: typeof custom.elevation === 'string' ? custom.elevation : '',
           // SNOW-1142: see the region branch above.
           principal: principalOf(custom),
           // SNOW-1417: see the region branch above.
@@ -561,9 +572,10 @@
     // a network it cannot reach and never turns a read of local storage
     // into a rejection. With `[]` the reconciliation output is what it was
     // before this ticket, which is the path every existing caller takes.
-    var accountAreas = window.pwaDownloadsSync
-      ? await window.pwaDownloadsSync.accountAreas()
-      : [];
+    var accountAreas =
+      window.pwaDownloadsSync && !opts.deviceOnly
+        ? await window.pwaDownloadsSync.accountAreas()
+        : [];
     return manage.reconcileAreas(areas, storedIds, bytesById, accountAreas);
   }
 

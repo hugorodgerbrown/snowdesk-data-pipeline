@@ -365,10 +365,12 @@
     // terrain data, as the framing overlay sizes its frame — a circle drawn
     // to the ceiling without it would be over it once the run adds them.
     const terrain = terrainDataPreferred();
+    // SNOW-1453: and the elevation tiles' share, where the page pins them.
     const bytesPerTile = core.terrainScaledBytesPerTile(
       core.bytesPerTileForSources(activeBasemapTileSources(MAP)),
       sources,
-      terrain
+      terrain,
+      elevationPinnedOn(activeBasemapKey())
     );
     const scale = core.budgetScaleForBBox(
       circleBBox(centre.lat, centre.lon, asked),
@@ -687,7 +689,7 @@
       finish: async (
         result,
         runBlob,
-        { core, progressFill, tileSources, basemapKey, renderDeps, content },
+        { core, progressFill, tileSources, basemapKey, renderDeps, content, elevation },
       ) => {
         const cancelled = !!(result && result.cancelled);
         const ok = core.downloadSucceeded(result);
@@ -732,6 +734,8 @@
             ...(outcome.incomplete ? { contentIncomplete: true } : {}),
             // SNOW-1072: the flag, never the class-tile URLs it implies.
             ...(terrain ? { terrain: true } : {}),
+            // SNOW-1453: the elevation stamp, as map_custom_download.js.
+            ...(terrain && elevation ? { elevation: elevation } : {}),
             savedAt: new Date().toISOString(),
           };
           const verified = await downloadVerified(areaId, area, content);

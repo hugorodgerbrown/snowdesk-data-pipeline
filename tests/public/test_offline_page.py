@@ -356,6 +356,50 @@ class TestTerrainClassTiles:
 
 
 @pytest.mark.django_db
+class TestElevationTiles:
+    """SNOW-1453: the report judges an opted-in area on its elevation tiles."""
+
+    def test_it_renders_the_template_for_a_reader_with_the_3d_view(
+        self, settings: Any
+    ) -> None:
+        """The template the map's 3D toggle carries, on the toggle's own gate."""
+        settings.MAP_3D_DEM_TILE_URL = "https://tiles.example/dem/{z}/{x}/{y}.webp"
+        with (
+            override_flag("map_3d", active=True),
+            override_flag("map_modes", active=True),
+        ):
+            html = (
+                _signed_in_client().get(reverse("public:offline_page")).content.decode()
+            )
+
+        assert 'data-dem-tile-url="https://tiles.example/dem/{z}/{x}/{y}.webp"' in html
+
+    @pytest.mark.parametrize(
+        ("map_3d", "map_modes"), [(False, True), (True, False), (False, False)]
+    )
+    def test_it_renders_none_without_the_3d_view(
+        self, settings: Any, map_3d: bool, map_modes: bool
+    ) -> None:
+        """Empty, as the map pins no elevation tiles without its 3D toggle."""
+        settings.MAP_3D_DEM_TILE_URL = "https://tiles.example/dem/{z}/{x}/{y}.webp"
+        with (
+            override_flag("map_3d", active=map_3d),
+            override_flag("map_modes", active=map_modes),
+        ):
+            html = (
+                _signed_in_client().get(reverse("public:offline_page")).content.decode()
+            )
+
+        assert 'data-dem-tile-url=""' in html
+
+    def test_it_renders_none_for_a_signed_out_visitor(self) -> None:
+        """The 3D view is a signed-in reader's, so a visitor's report has none."""
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
+        assert 'data-dem-tile-url=""' in html
+
+
+@pytest.mark.django_db
 class TestSettingsNoLongerCarriesThem:
     """One copy, in one place — a second would drift."""
 

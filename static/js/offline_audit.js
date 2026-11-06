@@ -1510,6 +1510,33 @@
   }
 
   /**
+   * The elevation tiles one recorded area should hold (SNOW-1453), or null
+   * when this page cannot say — `expectedTerrainTiles`' twin, through the
+   * core's `areaElevationTileURLs`, with the template off the panel's
+   * `data-dem-tile-url`. The view renders it only for a reader the map
+   * shows the 3D view to, as the map pins elevation only where its 3D
+   * toggle is, so the two surfaces judge the same areas.
+   *
+   * @param {Object} record
+   * @param {HTMLElement|null} panel
+   * @returns {string[]|null}
+   */
+  function expectedElevationTiles(record, panel) {
+    if (!record || !record.terrain || record.kind === 'base') return null;
+    var core = self.pwaBasemapDownloadCore;
+    var terrain = self.pwaTerrainFilterCore;
+    var template = (panel && panel.getAttribute('data-dem-tile-url')) || '';
+    if (!template || !terrain || !core || typeof core.areaElevationTileURLs !== 'function') {
+      return null;
+    }
+    try {
+      return core.areaElevationTileURLs(record, template, terrain.COVERAGE_BOUNDS);
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  /**
    * Take every reading the report is built from, marking the clock as
    * each one lands.
    *
@@ -2168,6 +2195,7 @@
           bucketReadable: bucket.readable,
           entries: bucket.entries,
           terrainTiles: expectedTerrainTiles(areaRecords[i], panel),
+          elevationTiles: expectedElevationTiles(areaRecords[i], panel),
         }),
       );
     }
