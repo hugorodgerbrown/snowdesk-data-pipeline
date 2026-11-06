@@ -117,6 +117,7 @@ from apps.design_system._component_fixtures import (
     WEATHER_MASTHEAD_VARIANTS,
     WEATHER_PANEL_VARIANTS,
     WEATHER_PROVENANCE_VARIANTS,
+    WORDMARK_3D_VARIANTS,
 )
 from apps.weather.icon_sets import icon_set_dir
 
@@ -1885,6 +1886,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_danger_tile_empty.html",
         variants=DANGER_TILE_EMPTY_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="wordmark-3d",
+        label="Wordmark wearing 3-D specs",
+        description=(
+            "Temporary homepage branding for the 3-D map: the Snowdesk "
+            "wordmark wearing red/cyan 3-D specs pushed up on its head. "
+            "Hero size only; the titlebar keeps the text wordmark. "
+            "Shown inside the map_3d flag."
+        ),
+        kind="components",
+        partial="includes/_wordmark_3d.html",
+        variants=WORDMARK_3D_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(
