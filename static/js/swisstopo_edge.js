@@ -22,9 +22,10 @@
  * Nothing here is cached beyond the ancestors: MapLibre keeps the tiles it
  * draws. A mask that fails to load rejects the tile, so nothing is drawn
  * (the vector map alone, as before this ticket) and the mask is fetched
- * again on the next tile. A failed
- * WMTS request with no ancestor to stand in rejects, so MapLibre treats
- * the tile as an error and asks again later; it is never kept as empty.
+ * again on the next tile. A tile with nothing to draw rejects if any
+ * WMTS request it depended on failed, its own or an ancestor's, so
+ * MapLibre treats it as an error and asks again later; it is never kept
+ * as empty.
  * An abort is re-thrown: MapLibre cancelled the tile.
  *
  * In 4.7.1 a protocol that answers with no `data` leaves the tile pending
@@ -161,12 +162,13 @@
 
   /**
    * An ancestor tile, through the LRU. Not tied to any one tile's abort:
-   * siblings share it.
+   * siblings share it. Null when it is blank; undefined when its request
+   * failed, so the tile asking can tell the two apart.
    *
    * @param {number} z
    * @param {number} x
    * @param {number} y
-   * @returns {Promise<ImageBitmap|null>}
+   * @returns {Promise<ImageBitmap|null|undefined>}
    */
   function ancestor(z, x, y) {
     const key = z + '/' + x + '/' + y;
@@ -181,10 +183,7 @@
     const pending = fetchDetail(z, x, y)
       .catch(() => undefined)
       .then((bitmap) => {
-        if (bitmap === undefined) {
-          if (ancestorCache.get(key) === pending) ancestorCache.delete(key);
-          return null;
-        }
+        if (bitmap === undefined && ancestorCache.get(key) === pending) ancestorCache.delete(key);
         return bitmap;
       });
     ancestorCache.set(key, pending);
@@ -224,12 +223,16 @@
 
     /** @type {ImageBitmap|null|undefined} */
     let source = await fetchDetail(tile.z, tile.x, tile.y, signal);
-    const failed = source === undefined;
+    // Whether any request this tile depended on failed: its own, or an
+    // ancestor's before one with detail was found. Only a walk where every
+    // answer was a real blank may end in an empty tile.
+    let failed = source === undefined;
     let crop = { sx: 0, sy: 0, size: SIZE };
     if (!source) {
       for (const up of CORE.ancestors(tile.z, tile.x, tile.y)) {
         source = await ancestor(up.z, up.x, up.y);
         if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
+        if (source === undefined) failed = true;
         if (source) {
           crop = up;
           break;

@@ -11,7 +11,8 @@
  *   - a tile blank all the way down to z13 is transparent;
  *   - a tile on the border has Switzerland erased; one clear of it does
  *     not;
- *   - a failed request, or a mask that cannot load, rejects.
+ *   - a failed request, its own or an ancestor's, or a mask that cannot
+ *     load, rejects; a failed ancestor is asked for again.
  *
  * jsdom has no canvas, so a small fake stands in. It records what is drawn,
  * and answers getImageData from it: a drawn bitmap is white or not as the
@@ -52,6 +53,8 @@ const url = (t) => `swisstopoedge://${t.z}/${t.x}/${t.y}`;
 
 let wmtsRequests;
 let failWmts;
+/** Zooms whose WMTS requests fail. */
+let failZooms;
 let failMask;
 let contexts;
 
@@ -124,6 +127,7 @@ class FakeCanvas {
 beforeEach(() => {
   wmtsRequests = [];
   failWmts = false;
+  failZooms = new Set();
   failMask = false;
   contexts = [];
   document.body.innerHTML = `<div id="map" data-major-regions-url="${MASK_URL}"></div>`;
@@ -141,7 +145,7 @@ beforeEach(() => {
     }
     const [z, x, y] = requested.match(/3857\/(\d+)\/(\d+)\/(\d+)\.jpeg$/).slice(1).map(Number);
     wmtsRequests.push(z);
-    if (failWmts) throw new TypeError('network');
+    if (failWmts || failZooms.has(z)) throw new TypeError('network');
     const lng = ((x + 0.5) / 2 ** z) * 360 - 180;
     return { ok: true, status: 200, blob: async () => ({ z, x, y, detail: hasDetail(z, lng) }) };
   });
@@ -220,6 +224,18 @@ describe('the swisstopoedge protocol', () => {
     const handler = await load();
     failWmts = true;
     await expect(run(handler, tileAt(11.0, 47.1, 13))).rejects.toThrow(/failed/);
+  });
+
+  it('rejects a blank tile whose ancestor failed, and asks for that ancestor again', async () => {
+    const handler = await load();
+    failZooms = new Set([13]);
+    const tile = tileAt(11.0, 47.1, 16);
+    await expect(run(handler, tile)).rejects.toThrow(/failed/);
+    failZooms = new Set();
+    wmtsRequests = [];
+    const result = await run(handler, tile);
+    expect(wmtsRequests).toEqual([16, 13]);
+    expect(result.data.out.drawn.z).toBe(13);
   });
 
   it('rejects every tile while the mask cannot load, then recovers', async () => {

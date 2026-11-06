@@ -58,9 +58,10 @@ on the roadmap because it improves the 2D map today.
   with the non-zero rule. Neighbouring regions' shared edges then leave no
   anti-aliased seam, and a hole stays open.
 - **Failures.** If the mask cannot load, every tile rejects, so nothing is
-  drawn over Switzerland and MapLibre asks again later. A failed request
-  with no ancestor to stand in also rejects, and is never kept as an empty
-  tile.
+  drawn over Switzerland and MapLibre asks again later. A tile with no
+  detail to draw also rejects if any request it depended on failed, its
+  own or an ancestor's, and is never kept as an empty tile. A failed
+  ancestor is dropped from the LRU, so the retry asks for it again.
 - **128 px tiles.** MapLibre draws each 256 px tile at 128 CSS px, so it
   asks for the next zoom up. At 256 the raster's lettering was about twice
   the size of the vector map's across the border, and it was enlarged on
