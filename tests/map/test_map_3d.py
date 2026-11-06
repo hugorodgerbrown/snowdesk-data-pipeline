@@ -21,7 +21,7 @@ from django.urls import reverse
 from django.utils import timezone
 from waffle.testutils import override_flag
 
-from apps.map.map_3d import MAP_3D_DEM_TILE_URL, route_share_for_3d
+from apps.map.map_3d import route_share_for_3d
 from apps.map.models import Map3dShare
 from apps.routes.models import RouteShare
 from apps.routes.services.shares import PENDING_SESSION_KEY, SHARE_FOLLOW_GROUP
@@ -98,10 +98,14 @@ def test_the_flag_renders_the_map() -> None:
 
 def test_the_page_carries_every_url_the_script_reads() -> None:
     """The style, DEM, tours, routes and resorts URLs ride on #map-3d."""
-    with override_flag("map_3d", active=True):
+    dem = "https://tiles.example.test/dem/2026-11/{z}/{x}/{y}.webp"
+    with (
+        override_flag("map_3d", active=True),
+        override_settings(MAP_3D_DEM_TILE_URL=dem),
+    ):
         content = _signed_in().get(URL).content.decode()
     assert "ch.swisstopo.basemap-winter.vt/style.json" in content
-    assert f'data-dem-tile-url="{MAP_3D_DEM_TILE_URL}"' in content
+    assert f'data-dem-tile-url="{dem}"' in content
     assert f'data-ski-tours-url="{reverse("api:ski_tours_geojson")}"' in content
     assert f'data-routes-url="{reverse("routes:geojson")}"' in content
     assert f'data-resorts-url="{reverse("api:resorts_geojson")}"' in content

@@ -54,14 +54,6 @@ logger = logging.getLogger(__name__)
 # Steep terrain only cover Switzerland anyway.
 MAP_3D_BASEMAP = "swisstopo_winter"
 
-# Mapterhorn's open Terrarium elevation tiles: 512 px WebP, served from
-# Europe with a 7-day cache, built over Switzerland from swisstopo's
-# swissALTI3D (Open Government Data) and elsewhere from Copernicus GLO-30.
-# Sharper relief than AWS's Terrarium set, which had no cache headers and
-# answered from us-east. The CSP entry for this origin is in
-# config/settings/base.py.
-MAP_3D_DEM_TILE_URL = "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp"
-
 # The placeholder the page's script swaps for a route's uuid in the
 # share-create URL template, as apps/map/views.py's route templates spell it.
 _UUID_PLACEHOLDER = "__UUID__"
@@ -241,7 +233,9 @@ def map_3d_page(request: HttpRequest) -> HttpResponse:
         # its one route, which routes.geojson serves from the session.
         "show_routes": flagged or route_share is not None,
         "style_url": settings.BASEMAP_STYLES[MAP_3D_BASEMAP],
-        "dem_tile_url": MAP_3D_DEM_TILE_URL,
+        # SNOW-1444: a setting, so a seasonal refresh of our own copy
+        # is an env change (config/settings/base.py).
+        "dem_tile_url": settings.MAP_3D_DEM_TILE_URL,
         "terrain_class_tile_url": settings.TERRAIN_CLASS_TILE_URL or "",
         "ski_tours_url": reverse("api:ski_tours_geojson"),
         "routes_url": reverse("routes:geojson"),

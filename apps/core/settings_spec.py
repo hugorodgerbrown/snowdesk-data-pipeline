@@ -402,6 +402,14 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         validator=absolute_url,
         note="Terrain height tileset origin",
     ),
+    # SNOW-1444: an XYZ template like TERRAIN_CLASS_TILE_URL, so
+    # ``absolute_url`` is the shape check. A seasonal refresh of our own
+    # elevation copy changes its ``/dem/<version>/`` segment.
+    SettingSpec(
+        "MAP_3D_DEM_TILE_URL",
+        validator=absolute_url,
+        note="3-D map elevation tile XYZ template (our copy, by version)",
+    ),
     SettingSpec("MAXMIND_ACCOUNT_ID", secret=True, note="GeoIP download account"),
     SettingSpec("MAXMIND_LICENSE_KEY", secret=True, note="GeoIP download key"),
     # --- Email ------------------------------------------------------------

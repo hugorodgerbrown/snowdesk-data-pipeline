@@ -158,7 +158,8 @@
   /**
    * The elevation source. Its tiles go through the page's `map3ddem://`
    * protocol (createDemLoader): Mapterhorn's Terrarium-encoded 512 px
-   * tiles first, AWS's when Mapterhorn fails. Mapterhorn goes to z17 over
+   * tiles first (in production our own copy of them, MAP_3D_DEM_TILE_URL),
+   * AWS's when they fail. Mapterhorn goes to z17 over
    * Switzerland; z15 (about 2 m a pixel) is past what the terrain mesh can
    * show, and each zoom past it quadruples the tiles.
    *
@@ -195,7 +196,8 @@
    * enlarged (`enlarge`, nearest-neighbour: Terrarium heights are encoded
    * across the three channels, so blending neighbours would invent heights).
    *
-   * A 404 is a hole in Mapterhorn's pyramid and falls back for that tile
+   * A 404 is a hole in Mapterhorn's pyramid, and a 204 a tile outside our
+   * copy's supported area (SNOW-1444); either falls back for that tile
    * only. A network failure or a 5xx counts as Mapterhorn being down: after
    * DEM_FALLBACK_AFTER in a row the loader goes straight to AWS for the rest
    * of the visit, so an outage does not cost every tile a failed request. A
@@ -219,11 +221,15 @@
         if (!latched) {
           try {
             const response = await options.fetchTile(tileUrl(options.primary, tile), signal);
-            if (response.ok) {
+            // SNOW-1444: our copy covers the supported area only, and its
+            // Worker answers 204 No Content for a tile outside it, the way
+            // a PMTiles server answers for a tile the archive lacks. Like a
+            // 404 that is "not here", so it falls back without counting.
+            if (response.ok && response.status !== 204) {
               if (!latched) failures = 0;
               return { data: await response.arrayBuffer() };
             }
-            if (response.status !== 404) fail();
+            if (response.status !== 404 && response.status !== 204) fail();
           } catch (err) {
             if (signal.aborted) throw err;
             fail();

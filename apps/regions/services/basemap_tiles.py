@@ -102,6 +102,7 @@ ymin, ymax]}``) is unaffected — that stays exactly as it always was.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, TypedDict
 
 if TYPE_CHECKING:
@@ -588,3 +589,81 @@ def blob_summary(blob: dict[str, Any]) -> dict[str, Any]:
 
     """
     return {key: blob[key] for key in _SUMMARY_KEYS}
+
+
+# SNOW-1444: the zoom whose tiles measure the 3-D map's supported area —
+# the tile grid the self-hosted elevation extract is clipped to. One z12
+# tile is about 6 km across in the Alps.
+SUPPORTED_AREA_ZOOM = 12
+
+
+def supported_area_tiles(
+    boundaries: Iterable[dict[str, Any]], z: int = SUPPORTED_AREA_ZOOM
+) -> set[tuple[int, int]]:
+    """Return the ``(x, y)`` tiles at ``z`` that cover ``boundaries``, plus a ring.
+
+    A tile is "hit" when its own footprint (``_tile_bounds``) intersects
+    one of the boundaries; the result is every hit tile and its eight
+    neighbours. The margin is therefore exactly one tile of ``z``, in Web
+    Mercator, rather than a buffer in degrees, which would be wider east
+    to west than north to south at Alpine latitudes. Indices are clamped
+    to the valid ``[0, 2**z - 1]`` range.
+
+    Feeds ``export_supported_area``, whose GeoJSON clips the self-hosted
+    elevation extract (``docs/runbooks/self-hosted-tiles.md``).
+
+    Args:
+        boundaries: GeoJSON ``Polygon`` or ``MultiPolygon`` geometry dicts.
+        z: The zoom level whose tiles measure the area and its margin.
+
+    Returns:
+        The set of ``(x, y)`` tile indices.
+
+    """
+    from shapely.geometry import box, shape
+    from shapely.prepared import prep
+
+    max_index = (2**z) - 1
+    hit: set[tuple[int, int]] = set()
+    for boundary in boundaries:
+        prepared: PreparedGeometry = prep(shape(boundary))
+        xmin, xmax, ymin, ymax = tile_ranges(bbox_from_boundary(boundary), z, z)[str(z)]
+        for y in range(ymin, ymax + 1):
+            for x in range(xmin, xmax + 1):
+                if prepared.intersects(box(*_tile_bounds(x, y, z))):
+                    hit.add((x, y))
+
+    return {
+        (nx, ny)
+        for x, y in hit
+        for nx in range(max(0, x - 1), min(max_index, x + 1) + 1)
+        for ny in range(max(0, y - 1), min(max_index, y + 1) + 1)
+    }
+
+
+def tiles_to_geometry(tiles: Iterable[tuple[int, int]], z: int) -> dict[str, Any]:
+    """Dissolve ``tiles`` at ``z`` into one GeoJSON Polygon or MultiPolygon.
+
+    Each tile becomes its ``_tile_bounds`` square and the squares are
+    merged with ``shapely.ops.unary_union``, so touching tiles share no
+    internal edges: a contiguous block is one Polygon, and separate
+    clusters are the parts of a MultiPolygon.
+
+    Args:
+        tiles: ``(x, y)`` tile indices, as ``supported_area_tiles`` returns.
+        z: Their zoom level.
+
+    Returns:
+        A GeoJSON geometry dict.
+
+    Raises:
+        ValueError: When ``tiles`` is empty, which has no geometry.
+
+    """
+    from shapely.geometry import box, mapping
+    from shapely.ops import unary_union
+
+    squares = [box(*_tile_bounds(x, y, z)) for x, y in tiles]
+    if not squares:
+        raise ValueError("No tiles to dissolve: the supported area is empty.")
+    return dict(mapping(unary_union(squares)))

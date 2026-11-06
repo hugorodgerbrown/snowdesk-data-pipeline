@@ -241,6 +241,31 @@ def test_csp_allows_both_3d_elevation_origins() -> None:
     )
 
 
+@pytest.mark.django_db
+def test_csp_dem_origin_is_derived_from_the_setting_and_moves_with_it() -> None:
+    """SNOW-1444: connect-src names the origin of ``MAP_3D_DEM_TILE_URL``.
+
+    The 3-D map moves to our own copy of the elevation tiles by changing
+    the setting, so the policy has to follow it rather than name Mapterhorn
+    itself; otherwise the switch blanks the terrain once CSP enforces.
+    """
+    assert settings.MAP_3D_DEM_TILE_ORIGIN == basemap_origin(
+        settings.MAP_3D_DEM_TILE_URL
+    )
+    origin = "https://tiles.example.test"
+    tile_origin = basemap_origin(settings.OPENFREEMAP_STYLE_URL)
+    with override_settings(
+        CSP_DEFAULTS=csp_defaults(tile_origin, dem_origin=origin),
+    ):
+        clear_cache()
+        try:
+            connect_src = _sources(_csp(Client().get("/")), "connect-src")
+        finally:
+            clear_cache()
+    assert origin in connect_src
+    assert "https://tiles.mapterhorn.com" not in connect_src
+
+
 def test_csp_names_no_slope_raster_origin() -> None:
     """SNOW-1073: swisstopo's slope raster is gone.
 
