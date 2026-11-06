@@ -365,6 +365,9 @@ def test_help_tour_reads_the_map_in_four_chapters() -> None:
         ("#region-sheet | #search-pill", "read"),
         ("#map-calendar-toggle", "read"),
         ("#search-toggle, #locate-toggle, #map-zoom-toggle", "move"),
+        # SNOW-1449: the compass, dropped by the tour while the map is
+        # north-up, as it is hidden then.
+        ("#map-compass", "move"),
         ("#basemap-toggle", "move"),
         ("#map-control-group-yours", "yours"),
         ("#map-help-toggle", "help"),
