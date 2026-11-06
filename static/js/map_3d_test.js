@@ -29,9 +29,13 @@
  * unmeasured — and endTest({verdict}) puts the camera and the view back; a
  * smooth or stutter verdict lifts the watchdog's latch.
  *
- * ENDED EARLY by the panel's × ("Stop the test"), Escape, a hidden tab or
- * a lost WebGL context: the turn stops, endTest({}) restores the camera and
- * the view, and there is no verdict and nothing to send.
+ * ENDED EARLY by the panel's × ("Stop the test"), Escape, a hidden tab, a
+ * lost WebGL context or the map leaving 3D (snowdesk:map-view-changed to
+ * flat: the 2D switch, offline, out of Switzerland), which would time the
+ * rest flat: the turn stops, endTest({}) restores the camera and the view,
+ * and there is no verdict and nothing to send. A throw mid-run ends it the
+ * same way and shows "could not time". The pixel ratio and canvas size are
+ * read before endTest, while the 3D cap still holds.
  *
  * THE RESULT. The panel (public/partials/_map_3d_test_panel.html, a form
  * panel on includes/_overlay_sheet.html) shows the verdict, each pass as
@@ -353,6 +357,26 @@
       show('unavailable');
       return;
     }
+    // Whatever goes wrong from here, the view and the layers come back and
+    // no run is left holding the watchdog off.
+    try {
+      await runPasses(token, overlays);
+    } finally {
+      if (run === token) {
+        cancel();
+        show('unmeasured');
+      }
+    }
+  };
+
+  /**
+   * Time each pass, then show the verdict.
+   *
+   * @param {Run} token
+   * @param {string[]} overlays
+   * @returns {Promise<void>}
+   */
+  const runPasses = async (token, overlays) => {
     show('running');
     progress('load', 0);
     await nextIdle(FIRST_IDLE_CAP_MS, token);
@@ -397,15 +421,18 @@
    * @param {number} firstIdleMs
    */
   const finish = (token, timed, overlays, firstIdleMs) => {
-    run = null;
     const verdict = core.testVerdict(timed.map((pass) => ({ intervals: pass.intervals })));
-    const canvas = map.getCanvas();
+    // Read while still in 3D: leaving puts the uncapped pixel ratio back,
+    // and the canvas grows with it.
+    const canvasEl = map.getCanvas();
+    const screen = { width: canvasEl.width, height: canvasEl.height, ratio: map.getPixelRatio() };
     const gpu = gpuName();
     const passes = timed.map((pass) => {
       const stats = core.frameStats(pass.intervals);
       const judged = core.judgePass(pass.intervals);
       return { pass, stats, judged };
     });
+    run = null;
     win.pwaMapView.endTest({ verdict });
     token.restoreLayers();
     progress(String(core.PROBE_PASSES.length), 1);
@@ -417,9 +444,9 @@
       verdict,
       gpu,
       device_pixel_ratio: window.devicePixelRatio || 1,
-      pixel_ratio: map.getPixelRatio(),
-      canvas_width: canvas.width,
-      canvas_height: canvas.height,
+      pixel_ratio: screen.ratio,
+      canvas_width: screen.width,
+      canvas_height: screen.height,
       user_agent: navigator.userAgent,
       client_version: clientVersion(),
       probe: probeRun,
@@ -452,7 +479,7 @@
       })),
     };
     show(verdict);
-    paintResult(passes, gpu, canvas);
+    paintResult(passes, gpu, screen);
     const details = /** @type {?HTMLDetailsElement} */ (find('[data-test-details]'));
     if (details && probeRun) details.open = true;
   };
@@ -462,9 +489,10 @@
    *
    * @param {Array<{pass: any, stats: any, judged: any}>} passes
    * @param {string} gpu
-   * @param {{width: number, height: number}} canvas
+   * @param {{width: number, height: number, ratio: number}} screen The
+   *   canvas and pixel ratio the passes were drawn at, read in 3D.
    */
-  const paintResult = (passes, gpu, canvas) => {
+  const paintResult = (passes, gpu, screen) => {
     passes.forEach(({ stats, judged }, i) => {
       const row = find(`[data-test-pass="${i}"]`);
       if (row) {
@@ -493,10 +521,10 @@
     if (gpuEl) gpuEl.textContent = fill(STRINGS['figure-gpu'], { gpu: gpu || STRINGS['gpu-unknown'] });
     const screenEl = find('[data-test-screen]');
     if (screenEl) {
-      const ratio = map.getPixelRatio();
+      const { ratio } = screen;
       screenEl.textContent = fill(STRINGS['figure-screen'], {
-        width: Math.round(canvas.width / ratio),
-        height: Math.round(canvas.height / ratio),
+        width: Math.round(screen.width / ratio),
+        height: Math.round(screen.height / ratio),
         dpr: Number((window.devicePixelRatio || 1).toFixed(2)),
         ratio: Number(ratio.toFixed(2)),
       });
@@ -598,6 +626,15 @@
   // A hidden tab draws nothing, and its gap is not a slow frame.
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden || !run) return;
+    cancel();
+    sheet.close();
+  });
+
+  // Leaving 3D mid-run (the 2D switch, going offline, panning out) would
+  // time the rest of the run flat, so the run ends with no verdict.
+  document.addEventListener('snowdesk:map-view-changed', (event) => {
+    const detail = /** @type {CustomEvent} */ (event).detail;
+    if (!run || !detail || detail.view === '3d') return;
     cancel();
     sheet.close();
   });

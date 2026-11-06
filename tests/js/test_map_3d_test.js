@@ -8,12 +8,15 @@
  * tests. What is pinned here:
  *   - the passes run in order, each jumped to and turned, and the verdict
  *     is the watchdog's rule over their frames;
- *   - Stop, Escape, a hidden tab and a lost WebGL context each end the run
- *     through endTest({}), with no verdict and nothing sent;
+ *   - Stop, Escape, a hidden tab, a lost WebGL context and the map leaving
+ *     3D each end the run through endTest({}), with no verdict and nothing
+ *     sent, and a throw mid-run ends it the same way;
+ *   - the result keeps the pixel ratio and canvas size the passes were
+ *     drawn at, not the ones leaving 3D puts back;
  *   - an unmeasured run says so and cannot be sent;
  *   - offline, on a gated device and while drawing, nothing runs;
  *   - ?probe=1 starts on load with Details open, on Steep terrain and SAC
- *     tours for that run only;
+ *     tours for that run only, and a cancelled probe run hides them again;
  *   - Send posts the result once, with the overlays and the CSRF header; a
  *     204 shows it sent, a 400 or a network failure the failure line.
  */
@@ -266,6 +269,27 @@ describe('a run', () => {
     const body = JSON.parse(globalThis.fetch.mock.calls[0][1].body);
     expect(body.overlays).toEqual(['ski_tours', 'weather']);
   });
+
+  it('keeps the pixel ratio and canvas the passes were drawn at in 3D', async () => {
+    await load();
+    // A DPR-3 phone capped at 2 in 3D: leaving puts 3 back and the canvas grows.
+    let ratio = 2;
+    let canvas = { width: 824, height: 1830 };
+    env.map.getPixelRatio = () => ratio;
+    env.map.getCanvas = () => canvas;
+    window.pwaMapView.endTest.mockImplementation(() => {
+      ratio = 3;
+      canvas = { width: 1236, height: 2745 };
+    });
+    request();
+    await runPasses([FAST, FAST]);
+    expect(panel().querySelector('[data-test-screen]').textContent).toContain('412 × 915');
+    expect(panel().querySelector('[data-test-screen]').textContent).toContain('drawn at 2×');
+    visibleClick('[data-action="map-3d-test-send"]');
+    await flush();
+    const body = JSON.parse(globalThis.fetch.mock.calls[0][1].body);
+    expect(body).toMatchObject({ pixel_ratio: 2, canvas_width: 824, canvas_height: 1830 });
+  });
 });
 
 /** Click the first visible element matching `selector` in the panel. */
@@ -303,6 +327,61 @@ describe('ending a run early', () => {
     expect(window.pwaMapView.endTest).toHaveBeenCalledTimes(1);
     expect(rafQueue.size).toBe(0);
     expect(panel().querySelector('[data-map-3d-test]')).toBeNull();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('leaving 3D mid-run', () => {
+  it('cancels the run, gives no verdict, keeps the latch and sends nothing', async () => {
+    await load();
+    request();
+    await flush();
+    env.map.fire('idle');
+    await flush();
+    env.map.fire('idle');
+    await flush();
+    frames(FAST, 50);
+    // The reader taps 2D: the runner leaves 3D and says so.
+    document.dispatchEvent(new CustomEvent('snowdesk:map-view-changed', { detail: { view: 'flat' } }));
+    expect(window.pwaMapView.endTest).toHaveBeenCalledTimes(1);
+    // No verdict, so the runner's slow latch stays as it was.
+    expect(window.pwaMapView.endTest).toHaveBeenCalledWith({});
+    expect(env.map.stop).toHaveBeenCalled();
+    await runPasses([FAST, FAST]);
+    expect(window.pwaMapView.endTest).toHaveBeenCalledTimes(1);
+    expect(panel().querySelector('[data-map-3d-test]')).toBeNull();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('is not ended by the view entering 3D', async () => {
+    await load();
+    request();
+    document.dispatchEvent(new CustomEvent('snowdesk:map-view-changed', { detail: { view: '3d' } }));
+    await runPasses([FAST, FAST]);
+    expect(window.pwaMapView.endTest).toHaveBeenCalledWith({ verdict: 'smooth' });
+  });
+});
+
+describe('a run that throws', () => {
+  it('still ends the test and puts the probe layers back', async () => {
+    await load({ search: '?probe=1' });
+    expect(window.pwaTerrainFilter.show).toHaveBeenCalledTimes(1);
+    const failure = new Error('jump failed');
+    env.map.jumpTo.mockImplementation(() => { throw failure; });
+    const rejected = new Promise((resolve) => {
+      const onRejection = (event) => {
+        event.preventDefault?.();
+        resolve(event.reason);
+      };
+      window.addEventListener('unhandledrejection', onRejection, { once: true });
+      process.once('unhandledRejection', (reason) => resolve(reason));
+    });
+    await flush();
+    env.map.fire('idle');
+    expect(await rejected).toBe(failure);
+    expect(window.pwaMapView.endTest).toHaveBeenCalledWith({});
+    expect(window.pwaTerrainFilter.hide).toHaveBeenCalledTimes(1);
+    expect(state()).toBe('unmeasured');
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });
@@ -366,6 +445,19 @@ describe('?probe=1', () => {
     expect(shared.overlays).toEqual(['terrain', 'ski_tours', 'weather']);
     expect(shared.passes).toHaveLength(2);
     expect(panel().querySelector('[data-test-share-status]').textContent).toBe('Result copied');
+  });
+
+  it('hides the layers it turned on when the run is cancelled', async () => {
+    await load({ search: '?probe=1' });
+    expect(window.pwaTerrainFilter.show).toHaveBeenCalledTimes(1);
+    await flush();
+    env.map.fire('idle');
+    await flush();
+    visibleClick('[data-action="dismiss"]');
+    expect(window.pwaMapView.endTest).toHaveBeenCalledWith({});
+    expect(window.pwaTerrainFilter.hide).toHaveBeenCalledTimes(1);
+    // SAC tours were on before the run, so the cancel leaves them alone.
+    expect(window.pwaSkiRoutes.tours.hide).not.toHaveBeenCalled();
   });
 
   it('waits for a map still loading', async () => {
