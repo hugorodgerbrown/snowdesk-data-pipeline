@@ -58,7 +58,11 @@ work, not app JS, so a different engine buys no speed either.
   z12–14, so a lower-zoom DEM would still be needed. The sandbox uses
   Terrarium alone, which keeps it simple.
 - Terrain costs GPU time, which matters most on a phone. That is the first
-  thing to measure before 3-D reaches `/map/`.
+  thing to measure before 3-D reaches `/map/`. `/map/3d/?probe=1` measures
+  it on the device that opens it (SNOW-1448): it turns the camera over
+  Saas-Fee at z12.6 and over the Valais at z9, with Steep terrain and SAC
+  tours on, and reports the median, 95th-percentile and over-budget share
+  of the frame intervals against the proposed budget, a median under 33 ms.
 - Offline: Terrarium tiles are not in an area download. Bringing 3-D to
   `/map/` offline means adding the DEM to downloads.
 
