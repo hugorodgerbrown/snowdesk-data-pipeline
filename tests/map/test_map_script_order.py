@@ -268,30 +268,6 @@ def test_map_view_scripts_load_in_their_places() -> None:
         assert outside not in span, outside
 
 
-@pytest.mark.django_db
-def test_swisstopo_edge_scripts_load_before_the_bundle() -> None:
-    """SNOW-1457: the raster-beyond-the-border core and its protocol.
-
-    ``swisstopo_edge_core.js`` is read by ``map_state.js``'s
-    ``resolveBasemapStyle`` and by ``map.js`` at parse time, so it loads
-    before the bundle. ``swisstopo_edge.js`` registers its protocol at parse
-    time, so it follows ``maplibre-gl.min.js`` and the core. Neither sits
-    inside the bundle's contiguous run.
-    """
-    client = Client()
-    content = client.get(reverse("public:map")).content.decode()
-    rendered = _SCRIPT_SRC_RE.findall(content)
-    bundle = _map_bundle()
-    core_at = rendered.index("swisstopo_edge_core.js")
-    protocol_at = rendered.index("swisstopo_edge.js")
-    assert rendered.index("maplibre-gl.min.js") < core_at < protocol_at
-    assert protocol_at < rendered.index("map_state.js") == rendered.index(bundle[0])
-    positions = [i for i, name in enumerate(rendered) if name in set(bundle)]
-    span = rendered[positions[0] : positions[-1] + 1]
-    assert "swisstopo_edge_core.js" not in span
-    assert "swisstopo_edge.js" not in span
-
-
 # ---------------------------------------------------------------------------
 # SNOW-894 — the error reporter must register before any page's boot scripts
 # ---------------------------------------------------------------------------

@@ -1412,12 +1412,7 @@ BASEMAP_STYLES = {
 BASEMAP_COUNTRIES = {
     # Global style: all four, so the outlines cover the whole map.
     "openfreemap_liberty": ("ch", "fr", "at", "it"),
-    # SNOW-1457: swisstopo winter draws the raster winter map beyond the
-    # border, into part of each neighbour. A country it draws only in part
-    # is declared whole: the declaration is per country, and an outline
-    # missing over ground the map draws is the worse error
-    # (docs/decisions/boundaries-follow-the-basemap.md).
-    "swisstopo_winter": ("ch", "fr", "at", "it"),
+    "swisstopo_winter": ("ch",),
     "swisstopo_light": ("ch",),
     "ign_plan": ("fr",),
     "basemap_at": ("at",),

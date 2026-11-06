@@ -123,18 +123,6 @@ bulletin_terrain_core.js
 # which only a reader in map_3d and map_modes gets.
 map_view_core.js
 
-# SNOW-1457: swisstopo's raster winter map beyond the Swiss border. The
-# core (window.pwaSwisstopoEdgeCore) is read by map_state.js's
-# resolveBasemapStyle, by map.js at parse time (the boot 3D gate and the
-# service worker's tile origins) and by map_view_3d.js, so it loads before
-# the bundle. swisstopo_edge.js registers the swisstopoedge:// protocol at
-# parse time, so it needs maplibre-gl.min.js and the core before it. Both
-# sit with the cores, outside the bundle's contiguous run
-# (tests/map/test_map_script_order.py).
-swisstopo_edge_core.js
-
-swisstopo_edge.js
-
 # SNOW-761: the weather overlay's pure transforms
 # (window.pwaWeatherCore) — the WMO code -> weather icon mapping, the
 # temperature-and-altitude label, the date projection and the

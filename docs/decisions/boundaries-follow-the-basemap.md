@@ -2,7 +2,7 @@
 name: boundaries-follow-the-basemap
 description: EAWS boundary outlines follow the active basemap, not the Bulletins rows (BASEMAP_COUNTRIES, data-basemap-countries, boundaryCountryCodes)
 status: current
-last-reviewed: 2026-11-06
+last-reviewed: 2026-11-05
 ---
 
 # The boundary outlines follow the basemap, not the Bulletins rows
@@ -18,9 +18,8 @@ coverage instead.
 
 That coverage is declared once, server-side, in
 `settings.BASEMAP_COUNTRIES` (`config/settings/base.py`): OpenFreeMap draws
-all four countries, `swisstopo_light` draws CH, `ign_plan` FR and
-`basemap_at` AT. `swisstopo_winter` drew CH until SNOW-1457, and since
-then declares all four (below). It reaches the client on the picker row as
+all four countries, `swisstopo_winter` and `swisstopo_light` draw CH,
+`ign_plan` FR, `basemap_at` AT. It reaches the client on the picker row as
 `data-basemap-countries`, and `boundaryCountryCodes()` (`static/js/map.js`)
 reads it off the row carrying `aria-checked="true"`.
 
@@ -95,16 +94,6 @@ sizes the offline base layer the same way
   (`mergedRatings`), because that cache does not exist yet when boot loads
   the outlined countries and the merge has to be retried on a later call
   rather than skipped for the session.
-- **A basemap that draws part of a country declares the whole country.**
-  The declaration is per country. Since SNOW-1457 swisstopo winter draws
-  swisstopo's raster map into part of each neighbour
-  ([swisstopo-raster-beyond-the-border](swisstopo-raster-beyond-the-border.md)),
-  so it declares all four. Its outlines then also cross ground the raster
-  leaves blank at close zoom, such as Vienna. That is the lesser error:
-  declaring CH alone would leave Vorarlberg, Aosta and Chamonix without
-  outlines over ground the map draws in detail, and the neighbours'
-  geometry is already loaded for the default basemap. Outlines scoped to a
-  polygon per basemap would be a separate change.
 - **The layer explainer's Swiss capture still reads Swiss.**
   `?layers=exploded` forces the initial basemap to `swisstopo_winter`
   (`initialBasemapKey` in `map.js`), whose coverage is CH, so the outlines
