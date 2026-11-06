@@ -1,0 +1,50 @@
+{% load i18n l10n %}
+{% comment %}
+public/partials/_map_compass.html — the map's compass (SNOW-1449).
+
+Included by _map_embed.html directly under the zoom roundel at the top of
+the bottom-left stack, and by the component library at
+/_components/?slug=map-compass.
+
+A small roundel, the zoom and help roundels' size, shown whenever the map
+is not north-up — flat or in 3-D, for every reader — and hidden when it
+is. The needle points at north, so it turns against the map's bearing; a
+press turns the map back to north (static/js/map_compass.js, which keeps
+the pitch). The glyph is a north needle: its north half filled, its south
+half drawn in outline. It is not includes/_icon_compass.html, which is
+the wind mark.
+
+Context (all optional; on /map/ the script sets both from the map):
+* compass_shown  — bool; render the roundel shown. Unset, it renders
+                   hidden, as /map/ boots north-up.
+* compass_needle — number; the needle's turn in degrees, the map's bearing
+                   negated.
+{% endcomment %}
+<button
+    id="map-compass"
+    type="button"
+    class="map-legend-toggle map-compass hover-affordance"
+    aria-label='{% trans "Point north" %}'
+    {% if not compass_shown %}hidden{% endif %}
+>
+    <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        class="map-compass-needle"
+        data-compass-needle
+        {% if compass_needle %}
+            style="transform: rotate({% localize off %}{{ compass_needle }}{% endlocalize %}deg)"
+        {% endif %}
+    >
+        <path d="M12 2 L16 12 L8 12 Z" fill="currentColor" />
+        <path
+            d="M12 22 L8 12 L16 12 Z"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linejoin="round"
+        />
+    </svg>
+</button>

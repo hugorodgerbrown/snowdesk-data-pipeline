@@ -7129,3 +7129,59 @@ body.map-framing #map-legend {
         transition: none;
     }
 }
+
+/* ── SNOW-1449: the 3-D view ──────────────────────────────────────────────
+   The 3D roundel (#map-view-toggle) is Terrain's: hidden in Conditions, as
+   3-D is. It shows 3D while flat and 2D in 3-D; aria-pressed picks the face,
+   so the words stay server-rendered. Unavailable (zoomed out, offline,
+   outside Switzerland, drawing a route) it is aria-disabled and dimmed, and
+   a tap says why. */
+.map-utility-pill--view {
+    display: none;
+    width: var(--map-control-lg);
+    flex: 0 0 auto;
+    justify-content: center;
+}
+
+:root[data-map-mode="terrain"] .map-utility-pill--view {
+    display: inline-flex;
+}
+
+#map-view-toggle .map-view-face[data-view-face="3d"],
+#map-view-toggle[aria-pressed="true"] .map-view-face[data-view-face="flat"] {
+    display: none;
+}
+
+#map-view-toggle[aria-pressed="true"] .map-view-face[data-view-face="3d"] {
+    display: inline;
+}
+
+#map-view-toggle[aria-disabled="true"] {
+    color: var(--color-text-2);
+    opacity: 0.55;
+}
+
+/* The basemap page's line in 3-D, above its disabled rows. */
+.basemap-view-note {
+    padding: 0.5rem 0.75rem;
+    font-size: var(--text-meta);
+    line-height: 1.4;
+    color: var(--color-text-2);
+}
+
+/* The compass (#map-compass), under the zoom roundel for every reader. Its
+   author `display` would beat the UA's [hidden], so hidden is restated. The
+   needle turns about its centre against the map's bearing. */
+.map-compass[hidden] {
+    display: none;
+}
+
+.map-compass-needle {
+    transform-origin: 50% 50%;
+}
+
+/* The component library's compass demo: one roundel's slot, so a hidden
+   (north-up) variant keeps its height. */
+.map-compass-demo {
+    min-height: var(--map-control-sm);
+}

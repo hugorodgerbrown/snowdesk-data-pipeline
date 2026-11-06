@@ -119,7 +119,7 @@ bulletin_terrain_core.js
 # camera. Read by map.js at parse time (the boot basemap and camera depend
 # on the view), so it loads before the bundle, like map_mode_core.js; it
 # reads the coverage box from terrain_filter_core.js, passed in, so it
-# comes after it. It does nothing until #map carries data-map-3d-view,
+# comes after it. It does nothing until #map carries data-map-view-enabled,
 # which only a reader in map_3d and map_modes gets.
 map_view_core.js
 
@@ -399,6 +399,11 @@ map_region_pick.js
 zoom_control_core.js
 
 map_zoom_control.js
+
+# SNOW-1449: the compass under the zoom roundel, for every reader. Reads
+# the map from window.snowdeskMapState (map.js) at parse time, so after the
+# bundle and outside its contiguous run (no bundle module reads it).
+map_compass.js
 
 # SNOW-1280: the layers menu's zoom-limited rows — dimmed, with
 # "· zoom in" on the name line, while the map is outside their zoom.

@@ -3394,22 +3394,98 @@ def test_map_css_hides_the_other_modes_rows_under_the_mode() -> None:
     assert "data-map-mode-disabled" not in css
 
 
-@pytest.mark.django_db
-def test_the_3d_roundel_shows_only_inside_the_map_3d_flag() -> None:
-    """Inside map_3d the map carries the 3D link and its script; outside, neither."""
+def _flagged_map(*, map_3d: bool, map_modes: bool) -> str:
+    """Return /map/'s HTML for a signed-in reader with the two flags as given."""
     client = Client()
     client.force_login(UserFactory.create())
-    with override_flag("map_3d", active=True):
-        flagged = client.get(reverse("public:map")).content.decode()
-    with override_flag("map_3d", active=False):
-        unflagged = client.get(reverse("public:map")).content.decode()
+    with override_flag("map_3d", active=map_3d), override_flag("map_modes", active=map_modes):
+        return client.get(reverse("public:map")).content.decode()
+
+
+@pytest.mark.django_db
+def test_the_3d_roundel_shows_only_inside_the_map_3d_flag() -> None:
+    """Inside map_3d alone the map carries the 3D link and its script; outside, neither.
+
+    SNOW-1449: map_3d without map_modes keeps the link to /map/3d/, since
+    the 3-D view on /map/ is Terrain's and needs the modes.
+    """
+    flagged = _flagged_map(map_3d=True, map_modes=False)
+    unflagged = _flagged_map(map_3d=False, map_modes=False)
     assert 'id="map-3d-link"' in flagged
     assert "js/map_3d_link.js" in flagged
     assert (
         'data-dem-tile-url="https://tiles.mapterhorn.com/{z}/{x}/{y}.webp"' in flagged
     )
+    assert 'id="map-view-toggle"' not in flagged
+    assert "js/map_view_3d.js" not in flagged
+    assert 'data-map-view-enabled="false"' in flagged
     assert 'id="map-3d-link"' not in unflagged
     assert "js/map_3d_link.js" not in unflagged
+
+
+@pytest.mark.django_db
+def test_both_flags_turn_the_roundel_into_the_3d_view() -> None:
+    """SNOW-1449: in map_3d and map_modes the roundel tilts this map.
+
+    A ``<button id="map-view-toggle" aria-pressed>`` with both faces, its
+    strings, the basemap page's line and its tour step, and the view's
+    scripts in place of the link's, with the terrain helper before the
+    runner; ``#map`` says the view is on.
+    """
+    content = _flagged_map(map_3d=True, map_modes=True)
+    assert 'id="map-view-toggle"' in content
+    assert 'aria-pressed="false"' in content
+    assert 'data-view-face="flat"' in content
+    assert 'data-view-face="3d"' in content
+    assert 'id="map-view-strings-template"' in content
+    assert 'id="basemap-view-note"' in content
+    assert 'data-help-target="#map-view-toggle"' in content
+    assert 'data-map-view-enabled="true"' in content
+    assert 'id="map-3d-link"' not in content
+    assert "js/map_3d_link.js" not in content
+    core = content.index("js/map_3d_core.js")
+    helper = content.index("js/map_3d_terrain.js")
+    assert core < helper < content.index("js/map_view_3d.js")
+
+
+@pytest.mark.django_db
+def test_map_modes_alone_has_no_3d_roundel() -> None:
+    """The modes without map_3d draw neither roundel nor the view's strings."""
+    content = _flagged_map(map_3d=False, map_modes=True)
+    assert 'id="map-view-toggle"' not in content
+    assert 'id="map-3d-link"' not in content
+    assert 'id="map-view-strings-template"' not in content
+    assert 'data-map-view-enabled="false"' in content
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("signed_in", [True, False])
+def test_the_compass_renders_for_every_reader(signed_in: bool) -> None:
+    """SNOW-1449: the compass is not behind the 3-D flag.
+
+    It renders hidden (the map boots north-up), under the zoom roundel, with
+    its script, and the tour has a step for it.
+    """
+    client = Client()
+    if signed_in:
+        client.force_login(UserFactory.create())
+    content = client.get(reverse("public:map")).content.decode()
+    compass = content.index('id="map-compass"')
+    assert content.index('id="map-zoom-toggle"') < compass < content.index('id="map-help-toggle"')
+    assert "hidden" in content[compass : content.index(">", compass)]
+    assert "js/map_compass.js" in content
+    assert 'data-help-target="#map-compass"' in content
+
+
+@pytest.mark.django_db
+def test_the_3d_view_css_shows_the_roundel_in_terrain_only() -> None:
+    """The roundel is hidden by default and shown under Terrain's root."""
+    css = (Path(settings.BASE_DIR) / "static" / "css" / "map.css").read_text()
+    assert re.search(r"\.map-utility-pill--view \{\s*display:\s*none;", css)
+    assert re.search(
+        r':root\[data-map-mode="terrain"\] \.map-utility-pill--view \{\s*display:\s*inline-flex;',
+        css,
+    )
 
 
 @pytest.mark.django_db

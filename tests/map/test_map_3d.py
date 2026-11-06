@@ -327,6 +327,9 @@ def test_a_friend_sent_a_3d_readers_route_gets_the_roundel() -> None:
     assert f'href="/map/3d/?route_share={share.token}"' in content
     assert f'data-route-share="{share.token}"' in content
     assert "js/map_3d_link.js" in content
+    # SNOW-1449: the 3-D view on /map/ is a flagged reader's, never theirs.
+    assert 'id="map-view-toggle"' not in content
+    assert "js/map_view_3d.js" not in content
 
 
 def test_the_newest_eligible_share_is_the_one_carried() -> None:

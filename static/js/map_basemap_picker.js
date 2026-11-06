@@ -789,6 +789,9 @@
       const url = item.dataset.basemapUrl;
       const key = item.dataset.basemapKey;
       if (!url || !key || !MAP) return;
+      // SNOW-1449: 3-D is drawn on swisstopo winter whatever a row says,
+      // even one another module re-enabled while the map was in 3-D.
+      if (document.documentElement.dataset.mapView === '3d') return;
       // No-op if this option is already active — just close the popover.
       if (item.getAttribute('aria-checked') === 'true') {
         setMenuOpen(false);
@@ -820,6 +823,31 @@
       resolveBasemapStyle(key, url).then((style) => MAP.setStyle(style));
     });
   }
+
+  // SNOW-1449: in 3-D the map is drawn on the swisstopo winter map
+  // (map_view_3d.js), so the basemap rows are disabled and a line above them
+  // says the reader's choice comes back in 2D. ``aria-disabled`` is what the
+  // click handler above already honours; ``data-view-disabled`` marks the
+  // rows this disabled, so leaving 3-D re-enables only those and never a row
+  // map_layer_sync_status.js disabled for being offline and uncached. The
+  // stored choice and its ``aria-checked`` are left alone.
+  const VIEW_DISABLED = 'data-view-disabled';
+  const viewNote = document.getElementById('basemap-view-note');
+  document.addEventListener('snowdesk:map-view-changed', (e) => {
+    const inThreeD = !!(e.detail && e.detail.view === '3d');
+    if (viewNote) viewNote.hidden = !inThreeD;
+    for (const item of items) {
+      if (!item.dataset.basemapKey) continue;
+      if (inThreeD) {
+        if (item.getAttribute('aria-disabled') === 'true') continue;
+        item.setAttribute('aria-disabled', 'true');
+        item.setAttribute(VIEW_DISABLED, '1');
+      } else if (item.getAttribute(VIEW_DISABLED) === '1') {
+        item.removeAttribute(VIEW_DISABLED);
+        item.removeAttribute('aria-disabled');
+      }
+    }
+  });
 
   // SNOW-978 / SNOW-1109: the opener that leads the Steep terrain row (it was
   // an adjust button beside the row until SNOW-1266). Not a
