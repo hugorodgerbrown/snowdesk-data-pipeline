@@ -722,28 +722,34 @@
    *   passes it only once this area's own bucket has been found to hold an
    *   entry under it. An empty string never arrives (`_isUsable` rejects
    *   it), which is what keeps "the style has no glyphs" filed as unknown
-   *   rather than frozen in as a fact.
-   * @returns {Promise<void>}
+   *   rather than frozen in as a fact. SNOW-1453 adds `elevation`, the
+   *   3D view's stamp, on the same terms.
+   * @returns {Promise<Set<string>>} The names of the fields written —
+   *   empty when nothing changed or the write failed. SNOW-1453: the probe
+   *   reads it to tell the 3D view an `elevation` stamp has landed.
    */
   async function _healRegionRecord(regionId, fields) {
-    if (!window.pwaDb) return;
+    /** @type {Set<string>} */
+    const written = new Set();
+    if (!window.pwaDb) return written;
     try {
       const row = await window.pwaDb.get('meta:app', DOWNLOADED_REGIONS_KEY);
       const value = Array.isArray(row && row.value) ? row.value : [];
-      let changed = false;
       for (const entry of value) {
         if (!entry || entry.region_id !== regionId) continue;
         for (const [name, next] of Object.entries(fields)) {
           if (!_isUsable(next) || _isUsable(entry[name])) continue;
           entry[name] = next;
-          changed = true;
+          written.add(name);
         }
       }
-      if (!changed) return;
+      if (!written.size) return written;
       await window.pwaDb.put('meta:app', { key: DOWNLOADED_REGIONS_KEY, value: value });
     } catch (err) {
       console.warn('basemap download record heal failed', err);
+      written.clear();
     }
+    return written;
   }
 
   /**
@@ -1100,7 +1106,11 @@
             const areaId = core.areaIdForRegion(data.regionId);
             if (await pinnedAreaCacheHasPrefix(areaId, prefix)) fields.glyphPrefix = prefix;
           }
-          await _healRegionRecord(data.regionId, fields);
+          const healed = await _healRegionRecord(data.regionId, fields);
+          // SNOW-1453: the 3D view reads the stamp on this event, so an
+          // area the heal has just made drawable in 3D offline says so.
+          // Bounded: the next probe finds the stamp and writes nothing.
+          if (healed.has('elevation')) notifyDownloadsChanged();
         }
         return {
           done: tilesCached && missingDeps.length === 0,

@@ -108,6 +108,8 @@
   const EASE_MS = 600;
   /** Zoom-out input closer together than this is one attempt. */
   const ATTEMPT_GAP_MS = 700;
+  /** How long an offline ?view=3d boot waits for the downloaded areas. */
+  const BOOT_BOXES_WAIT_MS = 2000;
   const COVERAGE = terrainCore ? terrainCore.COVERAGE_BOUNDS : null;
 
   const STRINGS = self.pwaStrings.read('map-view-strings-template', {
@@ -564,10 +566,11 @@
   document.addEventListener('snowdesk:map-mode-changed', sync);
 
   // Offline, 3-D stays inside a downloaded area that holds the elevation
-  // tiles; the boxes are decided on now and read again after.
+  // tiles. The exit waits for the boxes to be read again (`refreshBoxes`
+  // decides it), so an area the reader downloaded or synced since the last
+  // read keeps them in 3-D rather than being judged on the old list.
   const onConnectivity = () => {
-    if (view === THREE_D && offlineOutside()) exit({ reason: viewCore.REASONS.OFFLINE });
-    else sync();
+    sync();
     refreshBoxes();
   };
   document.addEventListener('snowdesk:connectivity-changed', onConnectivity);
@@ -738,8 +741,15 @@
     // Online the boot is synchronous, as it always was. Offline it waits for
     // the first read of the boxes, with the switch disabled until then, so
     // nobody tilts in before the downloaded areas are known.
+    // The wait is capped: a read that never lands lays the map flat
+    // through the same path, rather than leaving the switch disabled.
     if (online()) bootInto3d();
-    else boxesSettled().then(bootInto3d);
+    else {
+      Promise.race([
+        boxesSettled(),
+        new Promise((resolve) => setTimeout(resolve, BOOT_BOXES_WAIT_MS)),
+      ]).then(bootInto3d);
+    }
   }
   sync();
 

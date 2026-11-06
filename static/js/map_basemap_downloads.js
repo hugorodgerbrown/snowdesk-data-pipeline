@@ -2441,9 +2441,11 @@ async function evictBasemapAreas(areaIds) {
  * writer; the region roundel re-probes on it. Carries no detail: the
  * listener reads the records for itself, so the two cannot disagree.
  *
- * Never dispatched from a record HEAL (`_healRegionRecord`): the roundel's
- * own probe heals, and an event there would make every probe schedule
- * the next one.
+ * Never dispatched from an ordinary record HEAL (`_healRegionRecord`): the
+ * roundel's own probe heals, and an event there would make every probe
+ * schedule the next one. SNOW-1453's one exception is a heal that writes
+ * the `elevation` stamp, which the 3D view must hear; the next probe finds
+ * the stamp and writes nothing, so it schedules one probe, not a loop.
  *
  * @returns {void}
  */

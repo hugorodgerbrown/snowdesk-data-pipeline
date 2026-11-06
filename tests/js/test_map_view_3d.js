@@ -426,6 +426,8 @@ describe('what lays 3D flat', () => {
     button.click();
     env.online = false;
     document.dispatchEvent(new CustomEvent('snowdesk:connectivity-changed', { detail: { online: false } }));
+    // Decided once the boxes are read again.
+    await flush();
     expect(window.pwaMapView.get()).toBe('flat');
     expect(toasts().at(-1)).toBe('Back in 2D: offline, 3D works only in a downloaded area.');
   });
@@ -481,6 +483,20 @@ describe('offline, in a downloaded area', () => {
     expect(button.hasAttribute('aria-disabled')).toBe(false);
   });
 
+  it('judges going offline on the areas read afresh, not the last list', async () => {
+    const { button } = await boot({ areas: [] });
+    await flush();
+    button.click();
+    await flush();
+    // Downloaded since the last read, with no event to say so.
+    env.areas = [AREA];
+    goOffline();
+    expect(window.pwaMapView.get()).toBe('3d');
+    await flush();
+    expect(window.pwaMapView.get()).toBe('3d');
+    expect(toasts()).not.toContain('Back in 2D: offline, 3D works only in a downloaded area.');
+  });
+
   it('leaves out an area stamped under another template', async () => {
     const stale = { ...AREA, elevation: 'https://dem.example/2025/{z}/{x}/{y}.webp' };
     const { button } = await boot({ areas: [stale], online: false });
@@ -518,6 +534,27 @@ describe('offline, in a downloaded area', () => {
     expect(map.setStyle).toHaveBeenCalledWith(URLS.openfreemap_liberty, { diff: false });
     expect(view()).toBeNull();
     expect(map.pitch).toBe(0);
+  });
+
+  it('lays the boot flat after two seconds when the read of the areas never lands', async () => {
+    vi.useFakeTimers();
+    try {
+      const { map, button } = await boot({
+        search: '?mode=terrain&view=3d', online: false, areas: [AREA], holdAreas: true,
+      });
+      await vi.advanceTimersByTimeAsync(1900);
+      expect(map.setStyle).not.toHaveBeenCalled();
+      expect(view()).toBe('3d');
+
+      await vi.advanceTimersByTimeAsync(200);
+      expect(window.pwaMapView.get()).toBe('flat');
+      expect(map.setStyle).toHaveBeenCalledWith(URLS.openfreemap_liberty, { diff: false });
+      expect(view()).toBeNull();
+      expect(map.pitch).toBe(0);
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('reads the areas again on snowdesk:downloads-changed', async () => {
