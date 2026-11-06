@@ -3567,31 +3567,39 @@ def test_the_3d_view_says_offline_3d_works_in_a_downloaded_area() -> None:
 
 @pytest.mark.django_db
 def test_the_download_label_names_3d_data_only_with_the_3d_view() -> None:
-    """SNOW-1453: the terrain figure carries the elevation tiles where 3D is drawn.
+    """SNOW-1453: the "-3d" label exists only where 3D is drawn.
 
-    Without the 3D view the map pins no elevation tiles, so the label keeps
-    naming terrain data alone.
+    Every page keeps "terrain data" alone; with the 3D view it also carries
+    the "-3d" label, which map_region_download.js uses only on the 3D
+    basemap, where a download pins the elevation tiles.
     """
-    with_view = _string(
-        _flagged_map(map_3d=True, map_modes=True), "download-idle-terrain"
+    with_view = _flagged_map(map_3d=True, map_modes=True)
+    without = _flagged_map(map_3d=False, map_modes=True)
+    for content in (with_view, without):
+        assert _string(content, "download-idle-terrain").endswith(
+            "plus up to %(terrain)s MB of terrain data"
+        )
+    assert _string(with_view, "download-idle-terrain-3d").endswith(
+        "plus up to %(terrain)s MB of terrain and 3D data"
     )
-    without = _string(
-        _flagged_map(map_3d=False, map_modes=True), "download-idle-terrain"
-    )
-    assert with_view.endswith("plus up to %(terrain)s MB of terrain and 3D data")
-    assert without.endswith("plus up to %(terrain)s MB of terrain data")
+    assert 'data-string="download-idle-terrain-3d"' not in without
 
 
 @pytest.mark.django_db
 def test_the_frame_terrain_line_names_3d_data_only_with_the_3d_view() -> None:
     """SNOW-1453: the framed-area readout's terrain line follows the label.
 
-    Its figure carries the elevation tiles where 3D is drawn, gated the same
-    way as ``download-idle-terrain``.
+    Gated the same way as ``download-idle-terrain-3d``.
     """
-    with_view = _string(
-        _flagged_map(map_3d=True, map_modes=True), "frame-terrain-up-to"
+    with_view = _flagged_map(map_3d=True, map_modes=True)
+    without = _flagged_map(map_3d=False, map_modes=True)
+    for content in (with_view, without):
+        assert (
+            _string(content, "frame-terrain-up-to")
+            == "Terrain data: up to %(mb)s MB more"
+        )
+    assert (
+        _string(with_view, "frame-terrain-up-to-3d")
+        == "Terrain and 3D data: up to %(mb)s MB more"
     )
-    without = _string(_flagged_map(map_3d=False, map_modes=True), "frame-terrain-up-to")
-    assert with_view == "Terrain and 3D data: up to %(mb)s MB more"
-    assert without == "Terrain data: up to %(mb)s MB more"
+    assert 'data-string="frame-terrain-up-to-3d"' not in without

@@ -3971,6 +3971,26 @@ describe('terrain data (SNOW-1072)', () => {
     );
   });
 
+  it('reads an opted-in area on another basemap as complete without elevation tiles (SNOW-1453 review)', async () => {
+    // The real rule: the region is on OpenFreeMap, where 3D cannot draw,
+    // so it holds no elevation tiles and is never judged on them.
+    window.caches.urls = [STYLE_URL, ...CLASS_URLS];
+    seed({ 'basemap.regions': region({ terrain: true }) });
+    const bridge = terrainBridge({ available: true, preferred: false });
+    const DEM = 'https://dem.example.invalid/dem/2026-11/{z}/{x}/{y}.webp';
+    bridge.areaElevationTileUrls = vi.fn((row) =>
+      window.pwaBasemapDownloadCore.areaElevationTileURLs(row, DEM, [5, 45, 11, 48]),
+    );
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(bridge.areaElevationTileUrls).toHaveBeenCalled();
+    expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe(
+      'Region · OpenFreeMap',
+    );
+  });
+
   it('offers no terrain switch: every download includes terrain', async () => {
     seed({ 'basemap.regions': region() });
     terrainBridge({ available: true, preferred: true });
@@ -4796,6 +4816,33 @@ describe('the inventory under a row (SNOW-1418)', () => {
     const listed = items(firstRowElement());
     expect(listed['Terrain']).toEqual({ value: terrainMb.toFixed(1) + ' MB', state: 'yes' });
     expect(listed['Map'].value).toBe((40 - terrainMb).toFixed(1) + ' MB');
+  });
+
+  it('leaves elevation out of the terrain size of an area on another basemap (SNOW-1453 review)', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    const DEM = 'https://dem.example.invalid/dem/2026-11/{z}/{x}/{y}.webp';
+    await boot({
+      [REGION_ID]: record({
+        terrain: true,
+        elevation: DEM,
+        basemapKey: 'openfreemap_liberty',
+        z: { 12: { 1455: [2130, 2131] } },
+        bytes: 40 * MB,
+      }),
+    });
+    const bridge = window.pwaBasemapDownloads;
+    bridge.terrainDataAvailable = () => true;
+    bridge.areaTerrainClassTileUrls = () => Array.from({ length: 200 }, (_v, i) => 'c/' + i);
+    // The real rule, which a stamp on another basemap does not get past.
+    bridge.areaElevationTileUrls = vi.fn((row) =>
+      window.pwaBasemapDownloadCore.areaElevationTileURLs(row, DEM, [5, 45, 11, 48]),
+    );
+    toggleOf(firstRowElement()).click();
+    await settle();
+
+    expect(bridge.areaElevationTileUrls).toHaveBeenCalled();
+    const terrainMb = window.pwaBasemapDownloadCore.terrainClassMb(200);
+    expect(items(firstRowElement())['Terrain'].value).toBe(terrainMb.toFixed(1) + ' MB');
   });
 
   it('leaves elevation out of the terrain size of an unstamped area (SNOW-1453)', async () => {

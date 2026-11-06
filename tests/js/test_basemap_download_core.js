@@ -2610,17 +2610,30 @@ describe('elevationTileURLs / elevationTileCount / elevationMb (SNOW-1453)', () 
 
   it('derives an area’s elevation tiles from its z, or its bbox and band, on its terrain flag', () => {
     const z = { 10: { 360: [532, 533] } };
-    expect(core.areaElevationTileURLs({ terrain: true, z }, DEM, COVERAGE)).toEqual(
+    const on3d = { terrain: true, basemapKey: 'swisstopo_winter' };
+    expect(core.areaElevationTileURLs({ ...on3d, z }, DEM, COVERAGE)).toEqual(
       core.elevationTileURLs(DEM, { z }, COVERAGE),
     );
     expect(
-      core.areaElevationTileURLs({ terrain: true, bbox: BBOX, band: [10, 14] }, DEM, COVERAGE),
+      core.areaElevationTileURLs({ ...on3d, bbox: BBOX, band: [10, 14] }, DEM, COVERAGE),
     ).toEqual(core.elevationTileURLs(DEM, core.buildBlob(BBOX, 10, 14), COVERAGE));
     // Gated on terrain data, a template and some ground.
-    expect(core.areaElevationTileURLs({ z }, DEM, COVERAGE)).toEqual([]);
-    expect(core.areaElevationTileURLs({ terrain: true, z }, '', COVERAGE)).toEqual([]);
-    expect(core.areaElevationTileURLs({ terrain: true }, DEM, COVERAGE)).toEqual([]);
+    expect(core.areaElevationTileURLs({ basemapKey: 'swisstopo_winter', z }, DEM, COVERAGE)).toEqual([]);
+    expect(core.areaElevationTileURLs({ ...on3d, z }, '', COVERAGE)).toEqual([]);
+    expect(core.areaElevationTileURLs(on3d, DEM, COVERAGE)).toEqual([]);
     expect(core.areaElevationTileURLs(null, DEM, COVERAGE)).toEqual([]);
+  });
+
+  it('expects none of an area on a basemap other than the 3D one (SNOW-1453 review)', () => {
+    const z = { 10: { 360: [532, 533] } };
+    expect(core.ELEVATION_BASEMAP_KEY).toBe('swisstopo_winter');
+    expect(core.elevationBasemap('swisstopo_winter')).toBe(true);
+    expect(core.elevationBasemap('openfreemap_liberty')).toBe(false);
+    expect(core.elevationBasemap(null)).toBe(false);
+    expect(
+      core.areaElevationTileURLs({ terrain: true, basemapKey: 'openfreemap_liberty', z }, DEM, COVERAGE),
+    ).toEqual([]);
+    expect(core.areaElevationTileURLs({ terrain: true, z }, DEM, COVERAGE)).toEqual([]);
   });
 });
 
@@ -2629,13 +2642,21 @@ describe('elevationAreaBoxes (SNOW-1453)', () => {
   const OLD = 'https://tiles.snowdesk-data.info/dem/2025-11/{z}/{x}/{y}.webp';
   const BBOX = [7.2, 46.05, 7.3, 46.12];
 
+  const ON_3D = 'swisstopo_winter';
+
   it('answers the box of each area stamped with today’s template', () => {
-    const region = { terrain: true, elevation: DEM, z: { 10: { 360: [532, 532] } } };
-    const custom = { terrain: true, elevation: DEM, bbox: BBOX, band: [10, 14] };
+    const region = { terrain: true, elevation: DEM, basemapKey: ON_3D, z: { 10: { 360: [532, 532] } } };
+    const custom = { terrain: true, elevation: DEM, basemapKey: ON_3D, bbox: BBOX, band: [10, 14] };
     expect(core.elevationAreaBoxes([region, custom], DEM)).toEqual([
       core.areaBBox(region),
       BBOX,
     ]);
+  });
+
+  it('leaves out a stamped area on a basemap other than the 3D one (SNOW-1453 review)', () => {
+    const elsewhere = { terrain: true, elevation: DEM, basemapKey: 'openfreemap_liberty', bbox: BBOX, band: [10, 14] };
+    const keyless = { terrain: true, elevation: DEM, bbox: BBOX, band: [10, 14] };
+    expect(core.elevationAreaBoxes([elsewhere, keyless], DEM)).toEqual([]);
   });
 
   it('leaves out an area with no stamp, or one from an older template', () => {
@@ -2645,7 +2666,7 @@ describe('elevationAreaBoxes (SNOW-1453)', () => {
   });
 
   it('answers [] without a template or records', () => {
-    const custom = { terrain: true, elevation: DEM, bbox: BBOX, band: [10, 14] };
+    const custom = { terrain: true, elevation: DEM, basemapKey: ON_3D, bbox: BBOX, band: [10, 14] };
     expect(core.elevationAreaBoxes([custom], '')).toEqual([]);
     expect(core.elevationAreaBoxes(null, DEM)).toEqual([]);
   });

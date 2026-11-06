@@ -362,7 +362,9 @@
  *     elevation coverage, plus their z7-9 parents, and what they cost
  *     (``ELEVATION_BYTES_PER_TILE``). ``elevationAreaBoxes`` is the list
  *     of downloaded areas 3D may be drawn in offline: those whose record
- *     carries today's template as its ``elevation`` stamp.
+ *     carries today's template as its ``elevation`` stamp. Only an area
+ *     on ``ELEVATION_BASEMAP_KEY`` (``elevationBasemap``), the basemap 3D
+ *     is drawn on, carries them.
  *   missingRenderDependencies(depURLs, cached)
  *     SNOW-844: which of an area's RENDER dependencies — its style JSON,
  *     each vector source's TileJSON, its sprite JSON+PNG at 1x and 2x —
@@ -509,6 +511,13 @@
   // edge rather than flat ground.
   var ELEVATION_BAND = [10, 13];
   var ELEVATION_PARENT_MIN_ZOOM = 7;
+
+  // SNOW-1453 review: the basemap 3D is drawn on. Mirrors
+  // map_view_core.js's BASEMAP_KEY (a test holds the two together): entering
+  // 3D swaps to it, so offline 3D can draw only where an area's download
+  // pinned THAT basemap's tiles and documents. Elevation tiles are pinned,
+  // stamped, priced and expected only for an area downloaded on it.
+  var ELEVATION_BASEMAP_KEY = 'swisstopo_winter';
 
   // SNOW-1453: how much of a frame's band ``terrainScaledBytesPerTile``
   // charges an elevation tile against. The elevation band stops one zoom
@@ -1163,6 +1172,17 @@
   }
 
   /**
+   * Whether an area on ``basemapKey`` carries elevation tiles: only one
+   * downloaded on the basemap 3D is drawn on (SNOW-1453 review).
+   *
+   * @param {string | null | undefined} basemapKey
+   * @returns {boolean}
+   */
+  function elevationBasemap(basemapKey) {
+    return basemapKey === ELEVATION_BASEMAP_KEY;
+  }
+
+  /**
    * The elevation tiles ONE recorded area should hold (SNOW-1453).
    *
    * The twin of ``areaTerrainClassTileURLs``, on the same gate: elevation
@@ -1176,11 +1196,17 @@
    *   ``basemap.customAreas`` entry, or a row carrying the same fields.
    * @param {string} template The elevation tiles' ``{z}/{x}/{y}`` template.
    * @param {number[] | null | undefined} bounds The elevation coverage.
-   * @returns {string[]} Empty for an area without terrain data, a missing
-   *   template, or a record with no ground to rebuild.
+   * Only an area downloaded on the 3D basemap (``ELEVATION_BASEMAP_KEY``)
+   * holds them: 3D cannot draw offline on any other area's tiles, so none
+   * is pinned there, and none is expected.
+   *
+   * @returns {string[]} Empty for an area without terrain data, one on
+   *   another basemap, a missing template, or a record with no ground to
+   *   rebuild.
    */
   function areaElevationTileURLs(record, template, bounds) {
     if (!record || !record.terrain || !template) return [];
+    if (!elevationBasemap(record.basemapKey)) return [];
     if (record.z) return elevationTileURLs(template, { z: record.z }, bounds);
     var band = Array.isArray(record.band) ? record.band : null;
     if (!record.bbox || !band) return [];
@@ -1208,6 +1234,9 @@
     for (var i = 0; i < records.length; i += 1) {
       var record = records[i];
       if (!record || record.elevation !== template) continue;
+      // The 3D view draws on the 3D basemap: an area on another basemap
+      // holds none of its tiles, whatever its stamp says.
+      if (!elevationBasemap(record.basemapKey)) continue;
       var box = areaBBox(record);
       if (box) boxes.push(box);
     }
@@ -4145,6 +4174,8 @@
     ELEVATION_BYTES_PER_TILE: ELEVATION_BYTES_PER_TILE,
     ELEVATION_BAND: ELEVATION_BAND,
     ELEVATION_PARENT_MIN_ZOOM: ELEVATION_PARENT_MIN_ZOOM,
+    ELEVATION_BASEMAP_KEY: ELEVATION_BASEMAP_KEY,
+    elevationBasemap: elevationBasemap,
     STORAGE_HEADROOM_FACTOR: STORAGE_HEADROOM_FACTOR,
     DOWNLOAD_BUDGET_MB: DOWNLOAD_BUDGET_MB,
     PINNED_CACHE_PREFIX: PINNED_CACHE_PREFIX,

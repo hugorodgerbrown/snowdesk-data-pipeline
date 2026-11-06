@@ -792,6 +792,8 @@ describe('terrain data (SNOW-1072)', () => {
 // record with their template, which is what the 3D view reads offline.
 describe('elevation tiles (SNOW-1453)', () => {
   const DEM = 'https://dem.example.invalid/dem/2026-11/{z}/{x}/{y}.webp';
+  // The basemap 3D is drawn on: only an area downloaded on it holds them.
+  const ON_3D = 'swisstopo_winter';
   const isElevationTile = (url) => url.startsWith('https://dem.example.invalid/');
 
   /** The 3D toggle, which carries the template; absent, nothing is pinned. */
@@ -815,7 +817,7 @@ describe('elevation tiles (SNOW-1453)', () => {
   it('refetches the missing elevation tiles of an opted-in area, and stamps it', async () => {
     const toggle = addToggle();
     try {
-      await seedArea({ terrain: true });
+      await seedArea({ terrain: true, basemapKey: ON_3D });
 
       const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
 
@@ -832,7 +834,7 @@ describe('elevation tiles (SNOW-1453)', () => {
   it('replaces a stamp from an older template once today\'s tiles are all there', async () => {
     const toggle = addToggle();
     try {
-      await seedArea({ terrain: true, elevation: 'https://dem.example.invalid/dem/2025-11/{z}/{x}/{y}.webp' });
+      await seedArea({ terrain: true, basemapKey: ON_3D, elevation: 'https://dem.example.invalid/dem/2025-11/{z}/{x}/{y}.webp' });
       const terrain = self.pwaTerrainFilterCore;
       const classTiles = self.pwaBasemapDownloadCore.terrainClassTileURLs(
         TERRAIN_TEMPLATE,
@@ -856,7 +858,7 @@ describe('elevation tiles (SNOW-1453)', () => {
     const OLD = 'https://dem.example.invalid/dem/2025-11/{z}/{x}/{y}.webp';
     const toggle = addToggle();
     try {
-      await seedArea({ terrain: true, elevation: OLD });
+      await seedArea({ terrain: true, basemapKey: ON_3D, elevation: OLD });
       const core = self.pwaBasemapDownloadCore;
       const terrain = self.pwaTerrainFilterCore;
       const blob = core.buildBlob([7.0, 46.0, 7.2, 46.2], 10, 14);
@@ -884,8 +886,54 @@ describe('elevation tiles (SNOW-1453)', () => {
     }
   });
 
+  it('expects and stamps none for an area on another basemap (SNOW-1453 review)', async () => {
+    const toggle = addToggle();
+    try {
+      // The fixture's own basemap, OpenFreeMap: 3D could not draw on it.
+      await seedArea({ terrain: true });
+
+      await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+      expect(warmedUrls(0).some(isElevationTile)).toBe(false);
+      expect((await storedArea()).elevation).toBeUndefined();
+    } finally {
+      toggle.remove();
+    }
+  });
+
+  it('judges the tiles on the area\'s own bucket, not an overlapping one (SNOW-1453 review)', async () => {
+    const toggle = addToggle();
+    try {
+      await seedArea({ terrain: true, basemapKey: ON_3D });
+      const core = self.pwaBasemapDownloadCore;
+      const terrain = self.pwaTerrainFilterCore;
+      const classTiles = core.terrainClassTileURLs(
+        TERRAIN_TEMPLATE,
+        core.buildBlob([7.0, 46.0, 7.2, 46.2], 10, 14),
+        terrain.COVERAGE_BOUNDS,
+        terrain.MIN_ZOOM,
+        terrain.MAX_ZOOM,
+      );
+      holdDependencies([...DEPS, ...classTiles]);
+      // Another area over the same ground holds every elevation tile.
+      const other = cachesStub.openBucket(PINNED_PREFIX + 'custom-overlap');
+      for (const url of expectedElevationTiles()) other.add(url);
+
+      const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+      expect(result.tiles).toBe('ok');
+      expect(warmedUrls(0).filter(isElevationTile)).toEqual(expectedElevationTiles());
+      expect(window.pwaWarmCache.mock.calls[0][1].areaId).toBe(AREA_ID);
+      const own = cachesStub.openBucket(PINNED_PREFIX + AREA_ID);
+      expect(expectedElevationTiles().every((url) => own.has(url))).toBe(true);
+      expect((await storedArea()).elevation).toBe(DEM);
+    } finally {
+      toggle.remove();
+    }
+  });
+
   it('pins and stamps nothing where the page has no 3D view', async () => {
-    await seedArea({ terrain: true });
+    await seedArea({ terrain: true, basemapKey: ON_3D });
 
     await window.pwaBasemapDownloads.syncArea(AREA_ID);
 

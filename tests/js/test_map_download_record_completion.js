@@ -76,8 +76,12 @@ const TILE_B = { x: 8600, y: 5820 };
 const DEM_TEMPLATE = 'https://dem.example.invalid/dem/2026-11/{z}/{x}/{y}.webp';
 const REGION_ELEVATION_HELD = 'CH-4211';
 const REGION_ELEVATION_MISSING = 'CH-4212';
+const REGION_ELEVATION_ELSEWHERE = 'CH-4213';
+const REGION_ELEVATION_OTHER_BASEMAP = 'CH-4214';
 const Z_HELD = { 13: [4290, 4290, 2906, 2906], 14: [8580, 8580, 5812, 5812] };
 const Z_MISSING = { 13: [4295, 4295, 2908, 2908], 14: [8590, 8590, 5816, 5816] };
+const Z_ELSEWHERE = { 13: [4300, 4300, 2910, 2910], 14: [8600, 8600, 5820, 5820] };
+const Z_OTHER_BASEMAP = { 13: [4305, 4305, 2912, 2912], 14: [8610, 8610, 5824, 5824] };
 
 /** Every `{z}/{x}/{y}` URL a record's `z` rows name under `template`. */
 function zRowURLs(template, z) {
@@ -144,6 +148,8 @@ const REGIONS_GEOJSON = {
     },
     regionFeature(REGION_ELEVATION_HELD, 'Wildstrubel', 8.5),
     regionFeature(REGION_ELEVATION_MISSING, 'Gstaad', 8.7),
+    regionFeature(REGION_ELEVATION_ELSEWHERE, 'Lenk', 8.9),
+    regionFeature(REGION_ELEVATION_OTHER_BASEMAP, 'Adelboden', 9.1),
   ],
 };
 
@@ -538,8 +544,14 @@ describe('elevation tiles on a region with terrain data (SNOW-1453)', () => {
     heard += 1;
   };
 
-  /** Seed a terrain-flagged record and its bucket; `elevation` adds those tiles. */
-  function seedRegion(regionId, name, z, elevation) {
+  /**
+   * Seed a terrain-flagged record and its bucket; `elevation` adds those
+   * tiles to it, or (`'elsewhere'`) to an overlapping area's bucket only.
+   * The record names the 3D basemap unless `basemapKey` says otherwise;
+   * its tiles are on the active template either way, so the probe reads
+   * it on its own branch.
+   */
+  function seedRegion(regionId, name, z, elevation, basemapKey = 'swisstopo_winter') {
     const core = self.pwaBasemapDownloadCore;
     const record = {
       region_id: regionId,
@@ -547,19 +559,26 @@ describe('elevation tiles on a region with terrain data (SNOW-1453)', () => {
       band: [13, 14],
       z: z,
       template: [[TEMPLATE_LIBERTY]],
-      basemapKey: 'openfreemap_liberty',
+      basemapKey: basemapKey,
       deps: [STYLE_URL_LIBERTY],
       terrain: true,
       bytes: 1024 * 1024,
       savedAt: '2026-11-01T10:00:00.000Z',
     };
     dbRows.get('basemap.regions').push(record);
-    const dem = core.areaElevationTileURLs(record, DEM_TEMPLATE, self.pwaTerrainFilterCore.COVERAGE_BOUNDS);
+    const dem = core.areaElevationTileURLs(
+      { ...record, basemapKey: 'swisstopo_winter' },
+      DEM_TEMPLATE,
+      self.pwaTerrainFilterCore.COVERAGE_BOUNDS,
+    );
     expect(dem.length).toBeGreaterThan(0);
     cacheBuckets.push({
       name: 'snowdesk-basemap-pinned-region-' + regionId,
-      urls: [...zRowURLs(TEMPLATE_LIBERTY, z), STYLE_URL_LIBERTY, ...(elevation ? dem : [])],
+      urls: [...zRowURLs(TEMPLATE_LIBERTY, z), STYLE_URL_LIBERTY, ...(elevation === true ? dem : [])],
     });
+    if (elevation === 'elsewhere') {
+      cacheBuckets.push({ name: 'snowdesk-basemap-pinned-custom-overlap-' + regionId, urls: dem });
+    }
   }
 
   const storedRecord = (regionId) =>
@@ -574,6 +593,8 @@ describe('elevation tiles on a region with terrain data (SNOW-1453)', () => {
     document.addEventListener('snowdesk:downloads-changed', onChanged);
     seedRegion(REGION_ELEVATION_HELD, 'Wildstrubel', Z_HELD, true);
     seedRegion(REGION_ELEVATION_MISSING, 'Gstaad', Z_MISSING, false);
+    seedRegion(REGION_ELEVATION_ELSEWHERE, 'Lenk', Z_ELSEWHERE, 'elsewhere');
+    seedRegion(REGION_ELEVATION_OTHER_BASEMAP, 'Adelboden', Z_OTHER_BASEMAP, false, 'openfreemap_liberty');
   });
 
   afterAll(() => {
@@ -614,5 +635,23 @@ describe('elevation tiles on a region with terrain data (SNOW-1453)', () => {
 
     expect(storedRecord(REGION_ELEVATION_HELD).elevation).toBe(old);
     expect(heard).toBe(0);
+  });
+
+  it('judges the tiles on its own bucket, not an overlapping area\'s (SNOW-1453 review)', async () => {
+    const btn = document.getElementById('map-download-control');
+    selectRegion(REGION_ELEVATION_ELSEWHERE, 'Lenk');
+    await waitFor(() => btn.dataset.downloadState === 'incomplete');
+
+    expect(btn.dataset.downloadState).toBe('incomplete');
+    expect(storedRecord(REGION_ELEVATION_ELSEWHERE).elevation).toBeUndefined();
+  });
+
+  it('expects none of a region on a basemap 3D is not drawn on (SNOW-1453 review)', async () => {
+    const btn = document.getElementById('map-download-control');
+    selectRegion(REGION_ELEVATION_OTHER_BASEMAP, 'Adelboden');
+    await waitFor(() => btn.dataset.downloadState === 'done');
+
+    expect(btn.dataset.downloadState).toBe('done');
+    expect(storedRecord(REGION_ELEVATION_OTHER_BASEMAP).elevation).toBeUndefined();
   });
 });

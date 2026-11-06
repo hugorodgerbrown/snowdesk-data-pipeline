@@ -1064,7 +1064,8 @@ describe('elevation tiles (SNOW-1453)', () => {
 
     await runAndSettle(d, options({ terrain: true }));
 
-    expect(d.elevationUrls).toHaveBeenCalledWith({ z: 12, band: 'micro', mb: 12 });
+    // On the run's own basemap, which decides whether any are pinned.
+    expect(d.elevationUrls).toHaveBeenCalledWith({ z: 12, band: 'micro', mb: 12 }, 'openfreemap_liberty');
     expect(d.warmCache.mock.calls[0][0]).toEqual([
       '/api/feed',
       '/tile/1',

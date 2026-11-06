@@ -68,7 +68,7 @@
    *   evict: function(string[]): Promise<void>,
    *   feedUrls: function(): string[],
    *   terrainClassUrls?: function(Object): string[],
-   *   elevationUrls?: function(Object): string[],
+   *   elevationUrls?: function(Object, (string|null|undefined)): string[],
    *   elevationTemplate?: function(): string,
    *   contentUrls?: function(Object, {terrain: boolean}): Promise<string[]|{urls: string[],
    *     short?: boolean}>,
@@ -344,8 +344,12 @@
     // (`elevation`, below), which is how the 3D view knows, without
     // probing the cache, that it may be drawn here offline. Empty where
     // the page has no 3D view, and then nothing is stamped.
+    // SNOW-1453 review: on the run's own basemap, which must be the one 3D
+    // is drawn on; an area on any other pins none and stamps nothing.
     const elevationUrls =
-      terrain && typeof deps.elevationUrls === 'function' ? deps.elevationUrls(blob) : [];
+      terrain && typeof deps.elevationUrls === 'function'
+        ? deps.elevationUrls(blob, basemapKey)
+        : [];
     const elevation =
       elevationUrls.length > 0 && typeof deps.elevationTemplate === 'function'
         ? deps.elevationTemplate() || ''

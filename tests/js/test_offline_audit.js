@@ -813,12 +813,14 @@ describe('terrain-class tiles (SNOW-1138)', () => {
 describe('elevation tiles (SNOW-1453)', () => {
   const DEM = 'https://dem.example/dem/2026-11/{z}/{x}/{y}.webp';
   const BBOX = [7.2, 46.08, 7.24, 46.1];
+  // On the 3D basemap, the only one whose areas hold elevation tiles.
   const AREA = {
     id: 'custom-e1',
     name: 'Verbier',
     bbox: BBOX,
     band: [10, 14],
     terrain: true,
+    basemapKey: 'swisstopo_winter',
     deps: ['https://t/style.json'],
   };
 
@@ -877,6 +879,20 @@ describe('elevation tiles (SNOW-1453)', () => {
 
     const flat = await audit.collect(panel(DEM));
     expect(flat.areas.find((a) => a.id === 'custom-e2').elevationTiles).toBeNull();
+  });
+
+  it('expects none of an area on another basemap, so it reads ready without them (SNOW-1453 review)', async () => {
+    const elsewhere = { ...AREA, basemapKey: 'openfreemap_liberty' };
+    installCachesStub({
+      'snowdesk-shell-abc': [],
+      'snowdesk-basemap-pinned-custom-e1': [{ url: 'https://t/style.json' }, { url: 'https://t/12/1/1.pbf' }],
+    });
+    await seedMeta({ 'basemap.customAreas': [elsewhere] });
+
+    const readings = await audit.collect(panel(DEM));
+
+    expect(readings.areas[0].elevationTiles).toEqual([]);
+    expect(window.pwaOfflineAuditCore.areaState(readings.areas[0]).status).toBe('ready');
   });
 });
 

@@ -64,8 +64,9 @@ work, not app JS, so a different engine buys no speed either.
   tours on, and reports the median, 95th-percentile and over-budget share
   of the frame intervals against the proposed budget, a median under 33 ms.
 - Offline: see [3D offline in a downloaded area](#3d-offline-in-a-downloaded-area-snow-1453-6-nov-2026)
-  below. Since SNOW-1453 an area download pins the elevation tiles with its
-  terrain data, and `/map/`'s 3-D works offline inside it.
+  below. Since SNOW-1453 an area downloaded on swisstopo winter pins the
+  elevation tiles with its terrain data, and `/map/`'s 3-D works offline
+  inside it.
 
 **Sharing (5 Nov 2026).** Two links open the sandbox past the flag, for
 anyone, signed in or not, and both stop when the sharer's `Map3dShare` row
@@ -221,11 +222,25 @@ re-reads the switch, and the 3D | 2D switch shows under
 
 **Decision.** The elevation tiles join an area's terrain data. Every
 download with the `terrain` flag (`DownloadArea.terrain` and the local
-record) pins them too, wherever the page has the 3-D view
-(`#map-view-toggle[data-dem-tile-url]`; nothing is pinned with `map_3d_view`
-off). There is no switch for them (Hugo, 6 Nov 2026). Offline, 3-D is
-available with the centre inside a downloaded area whose elevation tiles
-are pinned, and nowhere else.
+record) on swisstopo winter pins them too, wherever the page has the 3-D
+view (`#map-view-toggle[data-dem-tile-url]`; nothing is pinned with
+`map_3d_view` off). There is no switch for them (Hugo, 6 Nov 2026). Offline,
+3-D is available with the centre inside a downloaded area whose elevation
+tiles are pinned, and nowhere else: **offline 3-D works in areas downloaded
+on swisstopo winter.**
+
+- **Which basemap.** Entering 3-D swaps to swisstopo winter
+  (`map_view_core.BASEMAP_KEY`), and a download pins only its own basemap's
+  tiles and documents, so an area downloaded on OpenFreeMap could not draw
+  3-D offline whatever elevation it held (Codex, PR #1498). Elevation is
+  therefore pinned, stamped, priced and expected only for an area whose
+  `basemapKey` is `basemap_download_core.ELEVATION_BASEMAP_KEY`
+  (`elevationBasemap`), which a test holds equal to `BASEMAP_KEY`.
+  `areaElevationTileURLs` and `elevationAreaBoxes` both apply it, so an
+  OpenFreeMap area never reads incomplete for missing elevation, and a stamp
+  on one never offers offline 3-D. The alternative, pinning swisstopo
+  winter's tiles beside every download, would double most downloads for a
+  view few readers use offline.
 
 - **Which tiles.** `basemap_download_core.elevationTileURLs` walks the
   blob's z10–13 rows (`ELEVATION_BAND`), clipped to the coverage
@@ -247,14 +262,21 @@ are pinned, and nowhere else.
   typical download grows by about a quarter. z14 would add about 145 tiles,
   ~22 MB more, for detail past what the mesh draws at touring zooms.
 - **The estimate.** The elevation figure is folded into the one terrain
-  figure (`terrainClassMbForBlob`, `terrainClassMbForGround`), and the
-  label names "terrain and 3D data" for a reader with the 3-D view.
+  figure (`terrainClassMbForBlob`, `terrainClassMbForGround`) where the
+  download would pin them (`elevationPinnedOn`: the 3-D view, on
+  swisstopo winter), and only there does the label read "terrain and 3D
+  data" (the `-3d` strings); elsewhere it reads "terrain data".
   `terrainScaledBytesPerTile` charges a third of an elevation tile against
   every frame tile: the band is about a quarter of a z10–14 frame's tiles
   (0.27 at the ceiling, parents included), so a frame drawn to the ceiling
   stays under it.
 - **The stamp.** A run that pinned them, or a sync that left every one in
-  the bucket, stamps the record `elevation: <template>`. Local only, for
+  the area's OWN bucket, stamps the record `elevation: <template>`. Sync and
+  the region roundel judge the elevation tiles against that bucket
+  (`missingFromAreaBucket`), never the union of every bucket: an area
+  overlapping another would otherwise be stamped on the other's tiles, and
+  removing the other would leave the stamp over tiles that have gone
+  (Codex, PR #1498). What the bucket lacks is fetched into it. Local only, for
   the reason `deps` is: it says what this device's bucket holds.
   `elevationAreaBoxes(records, template)` is the `areaBBox` of every record
   stamped with today's template, and `map_view_core.availability` takes

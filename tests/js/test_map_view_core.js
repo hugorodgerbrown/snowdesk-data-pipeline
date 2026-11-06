@@ -17,6 +17,7 @@
 import { describe, expect, it } from 'vitest';
 
 import '../../static/js/map_view_core.js';
+import '../../static/js/basemap_download_core.js';
 import '../../static/js/slope_classes_core.js';
 import '../../static/js/terrain_filter_core.js';
 
@@ -34,6 +35,14 @@ const input = (over = {}) => ({
   centre: ZERMATT,
   bounds: BOUNDS,
   ...over,
+});
+
+describe('the 3D basemap', () => {
+  // SNOW-1453 review: the download core pins elevation tiles only for an
+  // area on the basemap entering 3D swaps to; the two keys must not drift.
+  it('is the basemap the download core pins elevation tiles for', () => {
+    expect(window.pwaBasemapDownloadCore.ELEVATION_BASEMAP_KEY).toBe(core.BASEMAP_KEY);
+  });
 });
 
 describe('the view in the URL', () => {

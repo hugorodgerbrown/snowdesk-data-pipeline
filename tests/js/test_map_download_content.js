@@ -1440,7 +1440,44 @@ describe('terrain data on a region download (SNOW-1072)', () => {
     );
     await waitFor(() => btn.dataset.downloadState === 'idle');
 
-    expect(btn.getAttribute('aria-label')).toMatch(/terrain (and 3D )?data/);
+    // No 3D view on this page, so no elevation tiles and no 3D in the label.
+    expect(btn.getAttribute('aria-label')).toMatch(/MB of terrain data$/);
+  });
+
+  it('names 3D data only on the 3D basemap, where elevation tiles are pinned (SNOW-1453 review)', async () => {
+    await forgetRegion();
+    const btn = document.getElementById('map-download-control');
+    const toggle = document.createElement('button');
+    toggle.id = 'map-view-toggle';
+    toggle.dataset.demTileUrl = 'https://dem.example.invalid/dem/2026-11/{z}/{x}/{y}.webp';
+    document.body.appendChild(toggle);
+    const row = document.querySelector('#basemap-menu [data-basemap-key]');
+    const select = async () => {
+      btn.removeAttribute('aria-label');
+      document.dispatchEvent(
+        new CustomEvent('snowdesk:region-selected', {
+          detail: { region_id: REGION_ID, region_name: 'Martigny — Verbier' },
+        }),
+      );
+      await waitFor(() => btn.dataset.downloadState === 'idle' && !!btn.getAttribute('aria-label'));
+      return btn.getAttribute('aria-label');
+    };
+    try {
+      // The page has the 3D view, but OpenFreeMap is not the basemap 3D
+      // draws on: nothing is pinned for it, so nothing is named.
+      const terrainMb = (label) => Number(/plus up to ([\d.]+) MB/.exec(label)[1]);
+      const flat = await select();
+      expect(flat).toMatch(/MB of terrain data$/);
+
+      // And the figure counts them only there.
+      row.dataset.basemapKey = 'swisstopo_winter';
+      const withElevation = await select();
+      expect(withElevation).toMatch(/MB of terrain and 3D data$/);
+      expect(terrainMb(withElevation)).toBeGreaterThan(terrainMb(flat));
+    } finally {
+      row.dataset.basemapKey = 'openfreemap_liberty';
+      toggle.remove();
+    }
   });
 });
 

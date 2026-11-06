@@ -467,7 +467,8 @@ layers menu.
 | 14 | On a desktop, play the timelapse | It plays in 3D without stopping or going flat |
 | 15 | Pan and zoom for a minute on a phone that passed the probe | It stays in 3D: tiles arriving mid-gesture do not trip the slow-frame check |
 | 16 | Reload a bare http://localhost:8000/map/ | It opens flat, in either stored mode |
-| 17 | SNOW-1453: with a Zermatt region downloaded (D1) and DevTools → Network → **Offline**, zoom to Zermatt and tap "3D"; then pan to Verbier | Inside the downloaded area the map tilts into relief offline. Past its edge one line reads "Back in 2D: offline, 3D works only in a downloaded area."; tapping "3D" there says "3D needs a connection or a downloaded area" |
+| 17 | SNOW-1453: with a Zermatt region downloaded on **swisstopo winter** (D1; its label reads "…of terrain and 3D data") and DevTools → Network → **Offline**, zoom to Zermatt and tap "3D"; then pan to Verbier | Inside the downloaded area the map tilts into relief offline. Past its edge one line reads "Back in 2D: offline, 3D works only in a downloaded area."; tapping "3D" there says "3D needs a connection or a downloaded area" |
+| 18 | SNOW-1453: a region downloaded on OpenFreeMap instead (its label reads "…of terrain data", with no 3D), offline, zoom into it | "3D" stays disabled with "3D needs a connection or a downloaded area": 3D draws on swisstopo winter, which that download does not hold. The Manage downloads sheet does not call the area Incomplete for it |
 
 ---
 
@@ -1432,7 +1433,7 @@ hand on staging while the automated suites were green.
 | 3 | Pan just past the hatched edge | The basemap keeps drawing, **coarsely** — stretched z9 tiles. The hatch is the only honest edge. No error page, no spinner that never ends |
 | 4 | Zoom past z14, then out below z10 | Past z14 the stored tiles overzoom: larger, no new detail, never blank. Below z10 the shared base layer draws |
 | 5 | Switch to a basemap you did not download under | The region roundel is a **hollow ring** in the other basemap's colour, and the downloaded ground is drawn as an **outline** rather than a hatch (SNOW-857) — "downloaded, for a different map", not data loss (D5) |
-| 6 | SNOW-1453, with the `map_3d` and `map_modes` flags: back inside CH-4115, tap "3D", then reload with `?view=3d` still offline | The map tilts into relief with no network: the region bucket holds elevation tiles at z7–13 (`/dem/` URLs) beside its basemap tiles. The reload opens in 3D once the downloaded areas are read; the 3D switch stays disabled until then. Pan out of the region and the map lays itself flat with one line |
+| 6 | SNOW-1453, with the `map_3d` and `map_modes` flags, and CH-4115 downloaded on **swisstopo winter** (a download on another basemap pins no elevation tiles): back inside it, tap "3D", then reload with `?view=3d` still offline | The map tilts into relief with no network: the region bucket holds elevation tiles at z7–13 (`/dem/` URLs) beside its basemap tiles. The reload opens in 3D once the downloaded areas are read; the 3D switch stays disabled until then. Pan out of the region and the map lays itself flat with one line |
 
 #### Part E — the things that are not tiles
 

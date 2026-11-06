@@ -755,7 +755,7 @@
       core.bytesPerTileForSources(activeBasemapTileSources(MAP)),
       sourceCount,
       _includesTerrain(),
-      !!elevationTileTemplate(),
+      elevationPinnedOn(activeBasemapKey()),
     );
     const scale = core.budgetScaleForBBox(
       naturalBbox,
@@ -857,10 +857,15 @@
    */
   function _paintTerrainReadout(terrainMb) {
     if (!terrainReadoutEl) return;
-    const show = terrainMb > 0 && !!MAP_STRINGS['frame-terrain-up-to'];
+    // SNOW-1453: names 3D data only where the frame pins the elevation
+    // tiles, the 3D basemap; the figure follows the same rule.
+    const key = elevationPinnedOn(activeBasemapKey()) && MAP_STRINGS['frame-terrain-up-to-3d']
+      ? 'frame-terrain-up-to-3d'
+      : 'frame-terrain-up-to';
+    const show = terrainMb > 0 && !!MAP_STRINGS[key];
     terrainReadoutEl.hidden = !show;
     if (!show) return;
-    const text = self.pwaStrings.interpolate(MAP_STRINGS['frame-terrain-up-to'], {
+    const text = self.pwaStrings.interpolate(MAP_STRINGS[key], {
       mb: terrainMb,
     });
     if (terrainReadoutEl.textContent !== text) terrainReadoutEl.textContent = text;

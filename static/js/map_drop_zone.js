@@ -370,7 +370,7 @@
       core.bytesPerTileForSources(activeBasemapTileSources(MAP)),
       sources,
       terrain,
-      !!elevationTileTemplate()
+      elevationPinnedOn(activeBasemapKey())
     );
     const scale = core.budgetScaleForBBox(
       circleBBox(centre.lat, centre.lon, asked),

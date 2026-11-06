@@ -448,7 +448,14 @@ describe('what lays 3D flat', () => {
 describe('offline, in a downloaded area', () => {
   const DEM = 'https://dem.example/{z}/{x}/{y}.webp';
   // Round Zermatt, stamped with the template the switch carries.
-  const AREA = { id: 'custom-1', terrain: true, elevation: DEM, bbox: [7.6, 45.95, 7.9, 46.1] };
+  // On the 3D basemap: only an area downloaded on it can draw 3D offline.
+  const AREA = {
+    id: 'custom-1',
+    terrain: true,
+    elevation: DEM,
+    basemapKey: 'swisstopo_winter',
+    bbox: [7.6, 45.95, 7.9, 46.1],
+  };
   const VERBIER = { lng: 7.23, lat: 46.1 };
   const goOffline = () => {
     env.online = false;
@@ -495,6 +502,12 @@ describe('offline, in a downloaded area', () => {
     await flush();
     expect(window.pwaMapView.get()).toBe('3d');
     expect(toasts()).not.toContain('Back in 2D: offline, 3D works only in a downloaded area.');
+  });
+
+  it('leaves out a stamped area downloaded on another basemap (SNOW-1453 review)', async () => {
+    const { button } = await boot({ areas: [{ ...AREA, basemapKey: 'openfreemap_liberty' }], online: false });
+    await flush();
+    expect(button.getAttribute('aria-disabled')).toBe('true');
   });
 
   it('leaves out an area stamped under another template', async () => {

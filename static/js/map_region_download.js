@@ -592,9 +592,12 @@
    *   `terrain`; null prunes nothing.
    * @param {Object} blob This run's own download blob.
    * @param {boolean} terrain Whether this run included terrain data.
+   * @param {string|null} basemapKey This run's basemap: its elevation tiles
+   *   are spared only where it pinned them (the 3D basemap), so a
+   *   re-download on another basemap takes the old ones out.
    * @returns {Promise<void>} Always resolves; the prune is best-effort.
    */
-  async function _pruneSupersededTerrain(areaId, previous, blob, terrain) {
+  async function _pruneSupersededTerrain(areaId, previous, blob, terrain, basemapKey) {
     if (!areaId || !previous || !previous.terrain) return;
     const stale = new Set([
       ...areaTerrainClassTileUrls(previous),
@@ -602,7 +605,7 @@
     ]);
     if (terrain) {
       for (const url of activeTerrainClassTileURLs(blob)) stale.delete(url);
-      for (const url of activeElevationTileURLs(blob)) stale.delete(url);
+      for (const url of activeElevationTileURLs(blob, basemapKey)) stale.delete(url);
     }
     if (!stale.size) return;
     await prunePinnedBasemapURLs(areaId, [...stale], null);
@@ -1044,18 +1047,23 @@
         // class tile leaves the area 'incomplete', and the tap's repair
         // fetches it. (SNOW-1073 removed SNOW-692's swisstopo slope tiles,
         // which this list also carried; the class tiles replace them.)
-        // SNOW-1453: and the elevation tiles, on the same flag.
-        const depURLs = [
-          ...renderDeps,
-          ...areaTerrainClassTileUrls(stored),
-          ...areaElevationTileUrls(stored),
-        ];
+        const depURLs = [...renderDeps, ...areaTerrainClassTileUrls(stored)];
+        // SNOW-1453: and the elevation tiles, on the same flag, judged
+        // against this region's OWN bucket rather than the union: they earn
+        // its stamp, and an overlapping area's copy would go with that
+        // area. An unreadable bucket counts them all missing, so nothing
+        // is stamped on no evidence; the tap's repair fetches them into it.
+        const elevationURLs = areaElevationTileUrls(stored);
         // Only asked once the tiles are all present. An area still missing
         // tiles is not downloaded at all, and 'idle' — download it — is
         // the right thing to offer; 'incomplete' would send the user to a
         // repair that fetches four documents and leaves the map blank.
         const missingDeps = tilesCached
-          ? core.missingRenderDependencies(depURLs, cached)
+          ? [
+              ...core.missingRenderDependencies(depURLs, cached),
+              ...((await missingFromAreaBucket(core.areaIdForRegion(data.regionId), elevationURLs)) ||
+                elevationURLs),
+            ]
           : [];
         // The tile set is verified present under the ACTIVE template, so
         // an incomplete record can be completed from what was just proven
@@ -1087,7 +1095,7 @@
           // must never carry — the flag is what names them.
           if (missingDeps.length === 0) fields.deps = renderDeps;
           // SNOW-1453: every elevation tile today's template implies is
-          // here too (they are in `depURLs`), so the record takes the
+          // in its own bucket too (in `missingDeps`), so the record takes the
           // stamp the 3D view reads; a tap's repair is how an area
           // downloaded before elevation joined terrain data gets it. The
           // heal fills a missing field only, so a stamp from an older
@@ -1498,8 +1506,13 @@
    */
   function _idleLabel(mb, summary) {
     const terrainMb = summary && _runIncludesTerrain() ? _regionTerrainMb(regionData) : 0;
-    if (terrainMb > 0 && MAP_STRINGS['download-idle-terrain']) {
-      return self.pwaStrings.interpolate(MAP_STRINGS['download-idle-terrain'], {
+    // SNOW-1453: names 3D data only where the run would pin the elevation
+    // tiles, the 3D basemap; the figure follows the same rule.
+    const key = elevationPinnedOn(activeBasemapKey()) && MAP_STRINGS['download-idle-terrain-3d']
+      ? 'download-idle-terrain-3d'
+      : 'download-idle-terrain';
+    if (terrainMb > 0 && MAP_STRINGS[key]) {
+      return self.pwaStrings.interpolate(MAP_STRINGS[key], {
         mb: mb,
         terrain: terrainMb,
       });
@@ -2300,7 +2313,7 @@
             renderDeps,
             glyphPrefix,
           );
-          await _pruneSupersededTerrain(areaId, priorTerrainRecord, blob, terrain);
+          await _pruneSupersededTerrain(areaId, priorTerrainRecord, blob, terrain, basemapKey);
         }
         // SNOW-569: await the on-map pulse before flipping the roundel — the
         // two are one gesture, the region finishes filling, pulses, and only

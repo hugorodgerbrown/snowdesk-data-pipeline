@@ -904,6 +904,18 @@ describe('the superseded elevation tiles (SNOW-1453)', () => {
   const BLOB = { ...REGION_BLOB, count: 2, z: { 13: [4288, 4288, 2905, 2905], ...REGION_BLOB.z } };
   let toggle;
 
+  /** Every basemap tile URL the blob's rows name under `template`. */
+  const zTiles = (template) =>
+    Object.entries(BLOB.z).flatMap(([zoom, [x0, x1, y0, y1]]) => {
+      const urls = [];
+      for (let x = x0; x <= x1; x += 1) {
+        for (let y = y0; y <= y1; y += 1) {
+          urls.push(template.replace('{z}', zoom).replace('{x}', String(x)).replace('{y}', String(y)));
+        }
+      }
+      return urls;
+    });
+
   const elevationURLs = (template) =>
     self.pwaBasemapDownloadCore.elevationTileURLs(
       template,
@@ -929,14 +941,15 @@ describe('the superseded elevation tiles (SNOW-1453)', () => {
   it("prunes the old template's elevation tiles once the re-download lands", async () => {
     const stale = elevationURLs(DEM_OLD);
     expect(stale.length).toBeGreaterThan(0);
+    // On the 3D basemap, the only one whose areas hold elevation tiles.
     seedPriorDownload({
-      template: [[TEMPLATE_A]],
-      basemapKey: 'openfreemap_liberty',
-      deps: [STYLE_A, ...SPRITE_URLS, TILEJSON],
+      template: [[TEMPLATE_B]],
+      basemapKey: 'swisstopo_winter',
+      deps: [STYLE_B, ...SPRITE_URLS, TILEJSON],
       tiles: stale,
     });
     Object.assign(recordedRegion(), { z: BLOB.z, terrain: true, elevation: DEM_OLD });
-    switchBasemap('openfreemap_liberty', TEMPLATE_A);
+    switchBasemap('swisstopo_winter', TEMPLATE_B);
     await selectRegion('idle');
 
     btn().click();
@@ -946,5 +959,29 @@ describe('the superseded elevation tiles (SNOW-1453)', () => {
     for (const url of stale) expect(urls).not.toContain(url);
     for (const url of elevationURLs(DEM_NEW)) expect(urls).toContain(url);
     expect(recordedRegion().elevation).toBe(DEM_NEW);
+  });
+
+  it('takes them all out when the region is downloaded again on another basemap (SNOW-1453 review)', async () => {
+    const held = elevationURLs(DEM_NEW);
+    seedPriorDownload({
+      template: [[TEMPLATE_B]],
+      basemapKey: 'swisstopo_winter',
+      deps: [STYLE_B, ...SPRITE_URLS, TILEJSON],
+      tiles: [...zTiles(TEMPLATE_B), ...held],
+    });
+    Object.assign(recordedRegion(), { z: BLOB.z, terrain: true, elevation: DEM_NEW });
+    switchBasemap('openfreemap_liberty', TEMPLATE_A);
+    await selectRegion('other-basemap');
+
+    btn().click();
+    await waitFor(() => replaceShown());
+    document.getElementById('map-download-replace-confirm-cta').click();
+    await waitFor(() => btn().dataset.downloadState === 'done', 5000);
+
+    // 3D cannot draw on OpenFreeMap's tiles, so none are pinned or kept.
+    const urls = bucketURLs();
+    for (const url of held) expect(urls).not.toContain(url);
+    expect(recordedRegion().basemapKey).toBe('openfreemap_liberty');
+    expect(recordedRegion().elevation).toBeUndefined();
   });
 });
