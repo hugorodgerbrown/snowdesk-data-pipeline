@@ -2,9 +2,9 @@
  * static/js/map_zoom_control.js — the map's zoom control (SNOW-1077).
  *
  * The roundel at the top of the bottom-left stack and the flyout it opens
- * (public/partials/_map_zoom_control.html). The face shows the whole zoom
- * the map is drawing and the roundel's accessible name says it ("Zoom
- * level 13"). The flyout holds − and +, a scale across the map's zoom range
+ * (public/partials/_map_zoom_control.html). The face shows the whole
+ * camera zoom and the roundel's accessible name says it ("Zoom level
+ * 13"). The flyout holds − and +, a scale across the map's zoom range
  * with a marker at the camera, and a tick — with a row naming it — for
  * each zoom-gated layer that is on.
  *
@@ -16,17 +16,19 @@
  * single-pointer alternative.
  *
  * It replaces a DEBUG-only readout in the same slot (map_zoom_readout.js),
- * and keeps two things from it: the tile zoom read off MapLibre rather than
- * computed (below), and — under DEBUG only, where the template renders the
+ * and keeps from it — under DEBUG only, where the template renders the
  * line — the camera zoom to two decimals.
  *
- * TILE ZOOM, NOT CAMERA ZOOM, on the face. The camera is continuous; the
- * map draws whole-number tiles. MapLibre's `coveringZoomLevel` for a 512px
- * vector source is `floor(camera)` clamped to the source's own range
- * (measured: camera 9.99 fetches z9, camera 10.00 fetches z10), while a
- * 256px raster source rounds instead. So this asks the transform about the
- * style's first vector source rather than assuming one rule, and falls
- * back to floor(camera) when there is none (zoom_control_core.faceZoom).
+ * CAMERA ZOOM, AND WHEN IT IS ONLY ENLARGING. The face is floor(camera)
+ * (zoom_control_core.faceZoom). It was the tile zoom until 2026-11-06,
+ * which a basemap clamps to its own maxzoom, so at camera 15.6 the face
+ * said 14 beside a flyout saying 15.6. Past that maxzoom MapLibre draws no
+ * new detail, only enlarges the last tiles, and the control says so: from
+ * maxzoom + 1 the roundel's ring goes dashed (`data-enlarged`) and, in the
+ * flyout, the track above that level goes dotted and the marker's reading
+ * turns hollow (Hugo, 2026-11-06). The maxzoom is read off the style's
+ * first vector source (`tileMaxZoom` below), since each basemap has its
+ * own; a style with none never reads as enlarged.
  *
  * THE GATES come from `window.pwaZoomGates` (map.js): one entry per gated
  * layer, `{ key, zoom, active }`. The label for a key is the strings
@@ -65,6 +67,7 @@
 
   const STRINGS = self.pwaStrings.read('map-zoom-strings-template', {
     'toggle-label': 'Zoom level %(zoom)s',
+    'toggle-label-enlarged': 'Zoom level %(zoom)s, enlarged',
     'gate-region_select': 'Region selector',
     'gate-ski_routes': 'SAC ski touring',
     'gate-rest_zones': 'Wildlife rest zones',
@@ -80,6 +83,7 @@
   const zoomOut = flyout.querySelector('[data-zoom-step="out"]');
   const zoomIn = flyout.querySelector('[data-zoom-step="in"]');
   const marker = flyout.querySelector('[data-zoom-marker]');
+  const enlargedTrack = flyout.querySelector('[data-zoom-enlarged-track]');
   const markerValue = flyout.querySelector('[data-zoom-marker-value]');
   // The readout's one decimal, in the page's language (12,4 in German).
   const tenths = new Intl.NumberFormat(document.documentElement.lang || undefined, {
@@ -94,31 +98,26 @@
   const tickTemplate = document.getElementById('map-zoom-tick-template');
 
   /**
-   * The zoom the style's vector sources are fetching tiles at.
+   * The highest zoom the basemap publishes tiles for.
    *
-   * Asks the transform rather than computing `floor(zoom)` here: the answer
-   * depends on the source's tile size, its `roundZoom` flag and its own
-   * minzoom/maxzoom clamp, and MapLibre owns all three. Read from the
-   * FIRST vector source cache — every vector source in these styles shares
-   * a tile size, so one answer serves; a style with none (the offline
-   * fallback) yields null.
+   * Read from the FIRST vector source: every vector source in these styles
+   * shares one tile pyramid, so one answer serves. A style with none (the
+   * offline fallback) yields null, and the map never reads as enlarged.
    *
    * @returns {number|null}
    */
-  function tileZoom() {
+  function tileMaxZoom() {
     try {
       const caches = map.style && map.style.sourceCaches;
       if (!caches) return null;
       for (const key of Object.keys(caches)) {
-        const cache = caches[key];
-        const source = cache && cache._source;
+        const source = caches[key] && caches[key]._source;
         if (!source || source.type !== 'vector') continue;
-        const z = map.transform.coveringZoomLevel(source);
-        return Math.max(source.minzoom || 0, Math.min(z, source.maxzoom ?? z));
+        return Number.isFinite(source.maxzoom) ? source.maxzoom : null;
       }
     } catch (_e) {
-      // The style is mid-swap, or MapLibre's internals moved. The camera
-      // is always available, and faceZoom falls back to it.
+      // The style is mid-swap, or MapLibre's internals moved. Saying
+      // nothing about enlargement is the safe answer.
     }
     return null;
   }
@@ -293,25 +292,39 @@
    */
   function render() {
     const camera = map.getZoom();
-    const whole = core.faceZoom(tileZoom(), camera);
-    if (whole !== drawnFace) {
-      drawnFace = whole;
+    const whole = core.faceZoom(camera);
+    const tileMax = tileMaxZoom();
+    const enlarged = core.isEnlarged(camera, tileMax);
+    const faceSignature = whole + (enlarged ? '+' : '');
+    if (faceSignature !== drawnFace) {
+      drawnFace = faceSignature;
       if (face) face.textContent = String(whole);
+      toggle.toggleAttribute('data-enlarged', enlarged);
       toggle.setAttribute(
         'aria-label',
-        self.pwaStrings.interpolate(STRINGS['toggle-label'], { zoom: whole }),
+        self.pwaStrings.interpolate(
+          STRINGS[enlarged ? 'toggle-label-enlarged' : 'toggle-label'], { zoom: whole },
+        ),
       );
     }
     if (flyout.hidden) return;
 
     const min = map.getMinZoom();
     const max = map.getMaxZoom();
+    if (enlargedTrack instanceof HTMLElement) {
+      const from = core.enlargedFrom(tileMax, max);
+      enlargedTrack.hidden = from === null;
+      if (from !== null) {
+        enlargedTrack.style.height = ((1 - core.scalePosition(from, min, max)) * 100).toFixed(2) + '%';
+      }
+    }
     // Judged from where the map is going, so + goes dead as soon as a tap
     // has committed the map to its maximum, not when the animation lands.
     const buttons = core.buttonState(pendingTarget ?? camera, min, max);
     setStepEnabled(zoomOut, buttons.canZoomOut, zoomIn);
     setStepEnabled(zoomIn, buttons.canZoomIn, zoomOut);
     if (marker) {
+      marker.toggleAttribute('data-enlarged', enlarged);
       marker.style.top = ((1 - core.scalePosition(camera, min, max)) * 100).toFixed(2) + '%';
     }
     if (markerValue) markerValue.textContent = tenths.format(core.markerZoom(camera));
@@ -462,7 +475,7 @@
     }
   });
 
-  // 'zoom' alone would miss a tile zoom that changes when the SOURCES
+  // 'zoom' alone would miss a tile maximum that changes when the SOURCES
   // change rather than the camera — a basemap swap, or a slow style
   // settling — hence 'idle' and the basemap event as well.
   map.on('zoom', render);

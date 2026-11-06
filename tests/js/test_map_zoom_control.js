@@ -31,6 +31,7 @@ document.body.innerHTML = `
     <div id="map-zoom-flyout" role="dialog" aria-label="Zoom" hidden>
       <button type="button" data-zoom-step="out">-</button>
       <div data-zoom-scale>
+        <span data-zoom-enlarged-track hidden></span>
         <svg data-zoom-connectors></svg>
         <ol data-zoom-levels></ol>
         <ol data-zoom-ticks></ol>
@@ -47,6 +48,7 @@ document.body.innerHTML = `
     </template>
     <template id="map-zoom-strings-template">
       <span data-string="toggle-label">Zoom level %(zoom)s</span>
+      <span data-string="toggle-label-enlarged">Zoom level %(zoom)s, enlarged</span>
       <span data-string="threshold-from">≥%(zoom)s</span>
       <span data-string="threshold-up-to">≤%(zoom)s</span>
       <span data-string="gate-region_select">Region selector</span>
@@ -104,8 +106,24 @@ const targets = () => map.zoomTo.mock.calls.map((call) => call[0]);
 /** @returns {string} The roundel's face. */
 const faceText = () => toggle.querySelector('[data-zoom-face]').textContent;
 
+/**
+ * Give the stub a style whose one vector source stops at `maxzoom`, or no
+ * style at all (the offline fallback) with null.
+ *
+ * @param {number|null} maxzoom
+ */
+function setTileMax(maxzoom) {
+  map.style = maxzoom === null ? undefined : {
+    sourceCaches: {
+      hillshade: { _source: { type: 'raster-dem', maxzoom: 12 } },
+      base: { _source: { type: 'vector', maxzoom } },
+    },
+  };
+}
+
 beforeEach(() => {
   zoom = 10.4;
+  setTileMax(null);
   // A gesture ends any step a previous test left pending.
   fireMoveEnd({ originalEvent: new Event('touchend') });
   map.zoomTo.mockClear();
@@ -124,6 +142,62 @@ describe('the roundel', () => {
     fireZoom();
     expect(faceText()).toBe('13');
     expect(toggle.getAttribute('aria-label')).toBe('Zoom level 13');
+  });
+});
+
+describe('past the basemap\'s tiles', () => {
+  const track = () => flyout.querySelector('[data-zoom-enlarged-track]');
+  const marker = () => flyout.querySelector('[data-zoom-marker]');
+
+  it('shows the camera zoom, not the tiles\' maximum', () => {
+    setTileMax(14);
+    zoom = 15.6;
+    fireZoom();
+    expect(faceText()).toBe('15');
+  });
+
+  it('dashes the roundel and names it enlarged from the level after the tiles', () => {
+    setTileMax(14);
+    zoom = 14.6;
+    fireZoom();
+    expect(toggle.hasAttribute('data-enlarged')).toBe(false);
+    expect(toggle.getAttribute('aria-label')).toBe('Zoom level 14');
+    zoom = 15.6;
+    fireZoom();
+    expect(toggle.hasAttribute('data-enlarged')).toBe(true);
+    expect(toggle.getAttribute('aria-label')).toBe('Zoom level 15, enlarged');
+  });
+
+  it('dots the track above the tiles and hollows the reading while there', () => {
+    setTileMax(14);
+    toggle.click();
+    zoom = 15.6;
+    fireZoom();
+    expect(track().hidden).toBe(false);
+    // z15 is 11/14 of the way up z4..z18, so the dotted stretch is 3/14.
+    expect(track().style.height).toBe(((3 / 14) * 100).toFixed(2) + '%');
+    expect(marker().hasAttribute('data-enlarged')).toBe(true);
+    zoom = 12;
+    fireZoom();
+    expect(track().hidden).toBe(false);
+    expect(marker().hasAttribute('data-enlarged')).toBe(false);
+  });
+
+  it('draws no dotted track for a basemap that reaches the map\'s maximum', () => {
+    setTileMax(18);
+    toggle.click();
+    zoom = 17.5;
+    fireZoom();
+    expect(track().hidden).toBe(true);
+    expect(toggle.hasAttribute('data-enlarged')).toBe(false);
+  });
+
+  it('never reads enlarged with no vector source', () => {
+    toggle.click();
+    zoom = 17.5;
+    fireZoom();
+    expect(track().hidden).toBe(true);
+    expect(toggle.hasAttribute('data-enlarged')).toBe(false);
   });
 });
 

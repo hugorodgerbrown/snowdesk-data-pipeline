@@ -16,12 +16,18 @@
  * jsdom cannot import it on its own, and an off-by-one at a bound would
  * leave + live at the map's maximum without any error anywhere.
  *
- * THE FACE IS THE TILE ZOOM, a whole number. The camera is continuous, and
- * MapLibre fetches vector tiles at floor(camera) clamped to the source's
- * range, so z13.99 is still drawing z13 tiles. `faceZoom` takes the tile
- * zoom the control read off MapLibre and falls back to floor(camera) when
- * there is none (a style mid-swap, or the offline fallback style with no
- * vector source).
+ * THE FACE IS THE WHOLE CAMERA ZOOM, floor(camera): z13.99 reads 13.
+ * Until 2026-11-06 it was the tile zoom, which a basemap clamps to its own
+ * `maxzoom` (14 on OpenFreeMap), so a camera at 15.6 read 14 beside a
+ * flyout saying 15.6 (Hugo, 2026-11-06).
+ *
+ * ENLARGED. Past the basemap's `maxzoom` MapLibre draws nothing new: it
+ * scales up the last tiles. `enlargedFrom` is the first whole zoom where
+ * that happens (maxzoom + 1, as camera 14.6 is still the ordinary
+ * fractional draw of z14 tiles), and `isEnlarged` says whether the camera
+ * is there. The roundel's ring goes dashed and the flyout's track dotted
+ * from that zoom up. Each basemap has its own maxzoom, so the control reads
+ * it off the style rather than assuming 14.
  *
  * THE GATES come from `window.pwaZoomGates` (map.js), one entry per
  * zoom-gated feature: `{ key, zoom, upTo }`. `ticks` keeps every one inside
@@ -45,7 +51,9 @@
  *
  *   EPSILON
  *   scalePosition(zoom, minZoom, maxZoom)   → 0..1
- *   faceZoom(tileZoom, cameraZoom)          → whole number
+ *   faceZoom(cameraZoom)                    → whole number
+ *   enlargedFrom(tileMaxZoom, maxZoom)      → whole number, or null
+ *   isEnlarged(cameraZoom, tileMaxZoom)     → boolean
  *   markerZoom(cameraZoom)                  → the camera to 1 dp, rounded down
  *   buttonState(zoom, minZoom, maxZoom)     → { canZoomOut, canZoomIn }
  *   ticks(gates, zoom, minZoom, maxZoom)    → Array<Tick>
@@ -108,18 +116,44 @@
   }
 
   /**
-   * The whole zoom the roundel's face shows.
+   * The whole zoom the roundel's face shows: the camera, rounded down.
    *
-   * @param {number|null} tileZoom The tile zoom MapLibre is fetching, or
-   *   null when no vector source answered.
+   * A hair early, so an eased zoom that settles at 9.9999 reads 10.
+   *
    * @param {number} cameraZoom The camera's continuous zoom.
-   * @returns {number} The tile zoom, or floor(camera) without one.
+   * @returns {number} floor(camera).
    */
-  function faceZoom(tileZoom, cameraZoom) {
-    if (typeof tileZoom === 'number' && Number.isFinite(tileZoom)) {
-      return Math.floor(tileZoom);
-    }
+  function faceZoom(cameraZoom) {
+    if (!Number.isFinite(cameraZoom)) return 0;
     return Math.floor(cameraZoom + EPSILON);
+  }
+
+  /**
+   * The first whole zoom at which the map only enlarges its tiles.
+   *
+   * @param {number|null} tileMaxZoom The basemap's highest tile zoom, or
+   *   null when no vector source answered.
+   * @param {number} maxZoom The map's maximum zoom.
+   * @returns {number|null} tileMaxZoom + 1, or null when there is no tile
+   *   maximum or the map cannot zoom past it.
+   */
+  function enlargedFrom(tileMaxZoom, maxZoom) {
+    if (typeof tileMaxZoom !== 'number' || !Number.isFinite(tileMaxZoom)) return null;
+    const from = Math.floor(tileMaxZoom) + 1;
+    return from <= maxZoom ? from : null;
+  }
+
+  /**
+   * Whether the camera is past the basemap's tiles, so the map is
+   * enlarging the last ones rather than drawing new detail.
+   *
+   * @param {number} cameraZoom The camera's continuous zoom.
+   * @param {number|null} tileMaxZoom The basemap's highest tile zoom.
+   * @returns {boolean}
+   */
+  function isEnlarged(cameraZoom, tileMaxZoom) {
+    if (typeof tileMaxZoom !== 'number' || !Number.isFinite(tileMaxZoom)) return false;
+    return faceZoom(cameraZoom) > Math.floor(tileMaxZoom);
   }
 
   /**
@@ -296,6 +330,8 @@
     EPSILON: EPSILON,
     scalePosition: scalePosition,
     faceZoom: faceZoom,
+    enlargedFrom: enlargedFrom,
+    isEnlarged: isEnlarged,
     buttonState: buttonState,
     ticks: ticks,
     isReached: isReached,

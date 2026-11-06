@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-11-05
+last-reviewed: 2026-11-06
 ---
 
 # Map page — functional specification
@@ -821,10 +821,18 @@ so the control reads correctly before JS runs.
 
 The roundel at the top of the bottom-left stack (`#map-zoom-toggle`, above
 help, the legend toggle and the date row) shows the **zoom level** the map
-is drawing, and its accessible name says it: "Zoom level 13". The number is
-the **tile zoom** — a whole number, the zoom of the tiles on screen — not
-the continuous camera: at camera 13.99 the map still draws z13 tiles, so
-the roundel says 13.
+is at, and its accessible name says it: "Zoom level 13". The number is
+the **camera zoom, rounded down**: at camera 13.99 the roundel says 13. It
+was the tile zoom until 6 Nov 2026, which a basemap caps at its own last
+tile level (14 on OpenFreeMap), so at camera 15.6 it said 14.
+
+**Enlarged.** Past the basemap's last tile zoom the map draws no new
+detail; it enlarges the last tiles. From the level after it (z15 on
+OpenFreeMap) the roundel's ring is **dashed** and its accessible name adds
+"enlarged"; in the flyout the track above that level is **dotted** and the
+marker's reading is **hollow** while the camera is there (Hugo, 6 Nov 2026).
+The last tile zoom is read off the basemap's style, so each basemap gets its
+own; a style with no vector source never reads as enlarged.
 
 Tapping it opens a flyout (`#map-zoom-flyout`) into the crook between the
 stack and the date row, where the legend card opens:
@@ -873,7 +881,7 @@ sheet, menu or card, and opening one of those closes it
 Under `DEBUG` the flyout ends with the **camera zoom** to two decimals. The
 control replaced a DEBUG-only readout in the same slot, and that figure is
 what work on the download bands (z0–7 shared, z8–9 near, z10–14 the area)
-needs: how close the camera is to the next whole tile zoom.
+needs: how close the camera is to the next whole zoom.
 
 ---
 
