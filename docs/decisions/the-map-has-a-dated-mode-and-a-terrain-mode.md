@@ -281,12 +281,15 @@ choose.
   has something to say in both modes.
 
 
-## 3-D is a view of Terrain (SNOW-1449)
+## 3D is a view of either mode (SNOW-1449, SNOW-1452)
 
-The mode says what the map shows; the view says how it is drawn. 3-D
-(`?view=3d`, `map_view_core.js`) is offered only in Terrain, so the 3D
-roundel shows only under `:root[data-map-mode="terrain"]`, and a change to
-Conditions lays the map flat. The view never writes the mode or any layer
+The mode says what the map shows; the view says how it is drawn. SNOW-1449
+offered 3D (`?view=3d`, `map_view_core.js`) in Terrain only. Since SNOW-1452
+(6 Nov 2026) both modes are drawn in 3D: the 3D switch shows under
+`:root[data-map-mode]` in either, a mode change keeps the view, and
+`?view=3d` opens in whichever mode the mode rule picks. In Conditions the
+danger fill is a light wash and problem terrain drapes on the relief. The
+view never writes the mode or any layer
 preference, and it is never stored on the device: a bare `/map/` opens
 flat even when the stored mode is Terrain. A date write carries `view` with
 `mode` (`withDate`). Details in

@@ -36,8 +36,10 @@
  *   selectedOutlinePaint(routeOpen)
  *   FILL_FADE_START_ZOOM / FILL_FADE_END_ZOOM / FILL_TRACE_OPACITY /
  *   EDGE_MIN_ZOOM / EDGE_WIDTH_PX / EDGE_OFFSET_PX
- *   regionFillOpacityExpr(resting, emphasisRatio)
- *   regionEdgeOpacityExpr(resting)
+ *   FILL_WASH_RATIO_3D / EDGE_OPACITY_RATIO_3D / EDGE_MIN_ZOOM_3D
+ *   regionFillOpacityExpr(resting, emphasisRatio, options)
+ *   regionEdgeOpacityExpr(resting, options)
+ *   regionEdgeMinZoom(options)
  *   regionLabelFeatures(features, ratingById, paintedIds)
  *
  * SNOW-1375 (Hugo, 2 Nov 2026): the region colour gives way by zoom. The
@@ -280,6 +282,14 @@
   const EDGE_OPACITY_RATIO = 1.1;
   const EDGE_OPACITY_MAX = 0.9;
 
+  // SNOW-1452: in the 3-D view the fill is a light wash at every zoom, so
+  // the swisstopo rock hachures read through it, and the edge band carries
+  // the danger colour from z9, where 3-D starts. At the default 0.5 step the
+  // wash is 0.15 and the band 0.8.
+  const FILL_WASH_RATIO_3D = 0.3;
+  const EDGE_OPACITY_RATIO_3D = 1.6;
+  const EDGE_MIN_ZOOM_3D = 9;
+
   /** Feature-state: the region's slopes are being painted (SNOW-979). */
   const SLOPES_PAINTED = ['boolean', ['feature-state', 'terrain'], false];
   /** Feature-state: the region is selected or previewed from its sheet. */
@@ -312,11 +322,18 @@
    *
    * @param {number} resting The user's resting opacity, 0–1 (the Bulletin
    *   opacity steps); 0 is off.
+   * In 3-D (SNOW-1452) it is a wash, FILL_WASH_RATIO_3D of the resting
+   * strength, with no fade by zoom.
+   *
    * @param {number} emphasisRatio The selected-region multiplier.
+   * @param {{threeD?: boolean}} [options]
    * @returns {Array<*>|number} A paint expression, or 0 when off.
    */
-  function regionFillOpacityExpr(resting, emphasisRatio) {
+  function regionFillOpacityExpr(resting, emphasisRatio, options) {
     if (!(resting > 0)) return 0;
+    if (options && options.threeD) {
+      return fillStop(+(resting * FILL_WASH_RATIO_3D).toFixed(3), emphasisRatio);
+    }
     const trace = Math.min(resting, FILL_TRACE_OPACITY);
     return [
       'interpolate', ['linear'], ['zoom'],
@@ -327,15 +344,29 @@
 
   /**
    * The edge band's ``line-opacity``: scaled from the resting strength, 0
-   * where slopes are painted, 0 altogether when the layer is off.
+   * where slopes are painted, 0 altogether when the layer is off. Stronger
+   * in 3-D (SNOW-1452), where it is the outline the wash leans on.
    *
    * @param {number} resting The user's resting opacity, 0–1.
+   * @param {{threeD?: boolean}} [options]
    * @returns {Array<*>|number}
    */
-  function regionEdgeOpacityExpr(resting) {
+  function regionEdgeOpacityExpr(resting, options) {
     if (!(resting > 0)) return 0;
-    const value = Math.min(EDGE_OPACITY_MAX, +(resting * EDGE_OPACITY_RATIO).toFixed(3));
+    const ratio = options && options.threeD ? EDGE_OPACITY_RATIO_3D : EDGE_OPACITY_RATIO;
+    const value = Math.min(EDGE_OPACITY_MAX, +(resting * ratio).toFixed(3));
     return ['case', SLOPES_PAINTED, 0, value];
+  }
+
+  /**
+   * The zoom the edge band starts at: z10 flat, z9 in 3-D (SNOW-1452), so
+   * a 3-D map at its floor still has an outline over the wash.
+   *
+   * @param {{threeD?: boolean}} [options]
+   * @returns {number}
+   */
+  function regionEdgeMinZoom(options) {
+    return options && options.threeD ? EDGE_MIN_ZOOM_3D : EDGE_MIN_ZOOM;
   }
 
   /**
@@ -398,8 +429,12 @@
     EDGE_MIN_ZOOM: EDGE_MIN_ZOOM,
     EDGE_WIDTH_PX: EDGE_WIDTH_PX,
     EDGE_OFFSET_PX: EDGE_OFFSET_PX,
+    FILL_WASH_RATIO_3D: FILL_WASH_RATIO_3D,
+    EDGE_OPACITY_RATIO_3D: EDGE_OPACITY_RATIO_3D,
+    EDGE_MIN_ZOOM_3D: EDGE_MIN_ZOOM_3D,
     regionFillOpacityExpr: regionFillOpacityExpr,
     regionEdgeOpacityExpr: regionEdgeOpacityExpr,
+    regionEdgeMinZoom: regionEdgeMinZoom,
     regionLabelFeatures: regionLabelFeatures,
   });
 })();

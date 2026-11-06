@@ -7131,8 +7131,8 @@ body.map-framing #map-legend {
 }
 
 /* ── SNOW-1449: the 3-D view ──────────────────────────────────────────────
-   The 3-D switch (#map-view-toggle) is Terrain's: hidden in Conditions, as
-   3-D is. It is a 3D | 2D segmented switch two cells tall: a sunken
+   The 3-D switch (#map-view-toggle) shows in both modes (SNOW-1452), once
+   map_mode.js has set the mode on :root. It is a 3D | 2D segmented switch two cells tall: a sunken
    track with the current view raised as a card, the Conditions | Terrain
    switch's own look (.map-mode-tab). aria-pressed picks the raised face.
    Unavailable (zoomed out, offline, outside Switzerland, drawing a route)
@@ -7186,7 +7186,7 @@ body.map-framing #map-legend {
     color: var(--color-text-1);
 }
 
-:root[data-map-mode="terrain"] .map-utility-pill--view {
+:root[data-map-mode] .map-utility-pill--view {
     display: inline-flex;
 }
 

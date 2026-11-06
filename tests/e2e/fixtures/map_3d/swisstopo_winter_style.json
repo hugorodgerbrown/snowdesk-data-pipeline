@@ -1,6 +1,7 @@
 {
   "version": 8,
   "name": "e2e-swisstopo-winter",
+  "glyphs": "https://glyphs.invalid/{fontstack}/{range}.pbf",
   "sources": {},
   "layers": [
     {"id": "background", "type": "background", "paint": {"background-color": "#eef2f6"}}

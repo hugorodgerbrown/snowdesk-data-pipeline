@@ -1,6 +1,6 @@
 ---
 name: a-3d-map-is-maplibre-terrain
-description: 3-D map on MapLibre setTerrain: /map/3d/ sandbox, /map/ ?view=3d (map_view_3d), 3-D fallbacks (frame watchdog, WebGL loss, device gate)
+description: 3D map on MapLibre setTerrain: /map/3d/ sandbox, /map/ ?view=3d in both modes, 3D wash, fallbacks (frame watchdog, WebGL, gate)
 status: current
 last-reviewed: 2026-11-06
 ---
@@ -86,14 +86,15 @@ is deleted in the admin:
 
 For a reader in both `map_3d` and `map_modes`, 3-D is a view of `/map/`
 itself rather than a separate page. It sits beside the mode, not inside it:
-the mode says what the map shows, the view how it is drawn, and 3-D is
-Terrain's alone ([the modes](the-map-has-a-dated-mode-and-a-terrain-mode.md)).
+the mode says what the map shows, the view how it is drawn
+([the modes](the-map-has-a-dated-mode-and-a-terrain-mode.md)). SNOW-1449 made
+it Terrain's alone; SNOW-1452 brought it to Conditions (below).
 A `map_3d` reader without the modes, and a friend sent a route by a 3-D
 reader, keep the "3D" link to `/map/3d/`.
 
 - **The rules** are `static/js/map_view_core.js` (`self.pwaMapViewCore`):
-  the `?view=3d` parameter beside `?mode=terrain`, read only in Terrain;
-  `availability` (Terrain, online, no route being drawn, the centre inside
+  the `?view=3d` parameter beside `?mode=terrain` (read only in Terrain
+  until SNOW-1452); `availability` (online, no route being drawn, the centre inside
   `terrain_filter_core.COVERAGE_BOUNDS`, which is passed in rather than
   copied, and zoom 9 or more); the basemap (swisstopo winter in 3-D, the
   reader's own flat, the stored choice never written); and the boot camera
@@ -101,7 +102,7 @@ reader, keep the "3D" link to `/map/3d/`.
   the boot basemap and camera and for its reconnect `setStyle`, so a
   reconnect in 3-D cannot swap swisstopo winter away.
 - **Nothing about the view is stored.** A bare `/map/` always opens flat;
-  `?view=3d` outside Terrain or outside Switzerland is stripped at boot. A
+  `?view=3d` outside Switzerland is stripped at boot. A
   date write keeps it (`map_mode_core.withDate`).
 - **The runner** is `static/js/map_view_3d.js` (`window.pwaMapView`). It
   reuses `map_3d_core` and the shared `static/js/map_3d_terrain.js`
@@ -118,10 +119,9 @@ reader, keep the "3D" link to `/map/3d/`.
   `originalEvent` even at `maxPitch` 0, but the map does not move; with the
   ceiling open the same drag tilts it, so the gesture that enters 3-D also
   carries the reader's tilt into it.
-- **Leaving.** The map goes flat, with a line, when it changes to
-  Conditions (before a sheet paints, since `map_mode.js` dispatches
-  `snowdesk:map-mode-changed` synchronously), goes offline or is panned
-  out of Switzerland. Drawing a route takes the relief and the tilt away on
+- **Leaving.** The map goes flat, with a line, when it goes offline or is
+  panned out of Switzerland. Until SNOW-1452 it also went flat on a change
+  to Conditions. Drawing a route takes the relief and the tilt away on
   swisstopo winter and gives them back when it ends.
 - **Two MapLibre 4.7.1 behaviours** shaped it. A `setStyle` stops a camera
   ease where it stands, so the tilt runs again on the new style's
@@ -138,11 +138,20 @@ reader, keep the "3D" link to `/map/3d/`.
 
 ## When the device cannot keep up (SNOW-1455, 6 Nov 2026)
 
-**The agreed budget.** A window of about two seconds of moving time
+**The budget.** A window of about two seconds of moving time
 (`map_3d_core.FRAME_WINDOW_MS`, 2000) passes when its median frame interval
-is under 33 ms (`FRAME_BUDGET_MS`) and its 95th percentile is 66 ms or less
-(`FRAME_P95_BUDGET_MS`), as judged by `frameWindowFails` on `frameStats`'
-output. The `/map/3d/?probe=1` probe and its own verdict
+is under 33 ms (`FRAME_BUDGET_MS`), as judged by `frameWindowFails` on
+`frameStats`' output, and three failing windows in a row
+(`FRAME_WINDOWS_TO_TRIP`) trip the watchdog. The first cut, as agreed on
+SNOW-1448, also failed a window whose 95th percentile was over 66 ms and
+tripped after two. On 6 Nov 2026 it laid flat the Mali-G715 phone whose
+probe run had passed (Hugo: "it runs fine. We've over tightened the 3D
+limits"). That run's opening view had a median of 16.7 ms but a p95 of
+50 ms and a worst frame of 83 ms: tiles arriving and draping mid-gesture
+stall single frames on a phone that draws 3D well, so a p95 limit trips on
+a good phone in ordinary use. Only a map that is slow throughout lifts the
+median, so the p95 limit was dropped and the count raised to three
+(SNOW-1452). The `/map/3d/?probe=1` probe and its own verdict
 (`frameStats().withinBudget`, `PROBE_PASSES`) are unchanged; the watchdog
 does not read that verdict.
 
@@ -164,11 +173,45 @@ is not told "Zoom in".
    the switch back on.
 3. **Frames over budget.** A `requestAnimationFrame` loop runs only between
    `movestart` and `moveend`, in 3-D and not while a route is drawn. Its
-   intervals go to `map_3d_core.createFrameWatch`: two failing windows in a
-   row trip it, a passing window resets the count, and windows count across
+   intervals go to `map_3d_core.createFrameWatch`: three failing windows in
+   a row trip it, a passing window resets the count, and windows count across
    gestures. Timing starts after the first `moveend` that follows each tilt
    in, so the entering ease over a fresh style is not counted (`easeTo`
    stops an ease still running and fires its `moveend` synchronously, so
    the runner disarms again after the call). The first interval of each run
    is dropped and a hidden tab is never counted. A trip blocks 3-D (`slow`)
    for the rest of the visit.
+
+## 3D in Conditions (SNOW-1452, 6 Nov 2026)
+
+3D is a view of both modes. `readView` and `availability` no longer read
+the mode (`REASONS.MODE` is gone), a mode change keeps the view and only
+re-reads the switch, and the 3D | 2D switch shows under
+`:root[data-map-mode]` in either mode. `map_mode_core.withDate` carries
+`?view=3d` in Conditions too, so stepping a day keeps a copied link in 3D.
+
+- **What drapes.** Every fill, line and raster Conditions draws drapes on
+  the relief with no change, problem terrain (the `bulletinterrain://`
+  raster) included; symbols and circles, such as weather symbols, float.
+- **The danger fill** is a light wash in 3D, and the danger-colour edge band
+  the stronger outline, from z9
+  ([the region colour](the-region-colour-gives-way-by-zoom.md#in-the-3d-view-snow-1452-6-nov-2026)).
+  `map.js` is the one writer: every 3D entry swaps the style and `map.js`
+  reinstalls the region layers on `styledata`, so a paint set by the runner
+  would be wiped or race the reinstall. `map.js` reads the live view and
+  repaints on `snowdesk:map-view-changed`; nothing is saved across it.
+- **The timelapse plays in 3D.** It plays only on a desktop, so its cost is
+  not a reason to go flat (Hugo, 6 Nov 2026). The runner hears
+  `snowdesk:timelapse-state` and runs the frame loop for as long as it
+  plays, whether the camera moves or not, and picks it up again when a
+  hidden tab comes back. A trip during playback goes flat through `exit()`,
+  whose `snowdesk:map-view-changed` carries `reason: 'slow'`, and
+  `map_timelapse.js` stops on that, which is what a desktop that cannot
+  keep up needs. The basemap swap (SNOW-58) is not relied on: a reader
+  whose basemap is swisstopo winter gets no swap.
+- **One budget for both modes.** A trip in either keeps 3D off for the visit
+  in both.
+- **Not done.** From z12 the danger fill drops for every painted region,
+  keyed on the camera zoom, so at a steep pitch distant ground beyond the
+  problem-terrain tiles may show neither. It is a manual check in MS10, and
+  a ticket only if it reads as missing data.

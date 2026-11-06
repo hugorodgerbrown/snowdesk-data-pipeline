@@ -431,7 +431,7 @@
       copied: 'Link copied',
       failed: 'Could not copy the link',
       share_view: 'Share this view',
-      share_route: 'Share this route in 3-D',
+      share_route: 'Share this route in 3D',
       probe_waiting: 'Frame-time probe: waiting for the map to load…',
       probe_pass: 'Frame-time probe: pass %(n)s of %(total)s, %(label)s. Keep the phone still.',
       probe_line: '%(label)s: median %(median)s ms (%(fps)s fps), p95 %(p95)s ms, %(over)s% over %(budget)s ms',

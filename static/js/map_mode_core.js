@@ -56,7 +56,7 @@
 
   /**
    * The view's parameter and its 3-D value (map_view_core.URL_PARAM and
-   * VIEWS.THREE_D), which a date write carries in Terrain. Spelt here
+   * VIEWS.THREE_D), which a date write carries in either mode. Spelt here
    * rather than read from that core: map_shared.js calls withDate from
    * pages that do not load it.
    */
@@ -129,8 +129,8 @@
    * map_shared.js's `writeUrlDateParam` has always written `?d=` alone; the
    * mode is the one parameter a date write must carry through, because a
    * reader in Terrain who moves the day is still in Terrain. SNOW-1449: and
-   * the view with it (`?view=3d`, map_view_core.js), which exists only in
-   * Terrain, so a reader in 3-D who moves the day is still in 3-D.
+   * the view with it (`?view=3d`, map_view_core.js), in either mode since
+   * SNOW-1452, so a reader in 3-D who moves the day is still in 3-D.
    *
    * @param {string} search `location.search`.
    * @param {string} dateKey `YYYY-MM-DD`.
@@ -140,10 +140,8 @@
     const current = new URLSearchParams(search || '');
     const params = new URLSearchParams();
     params.set('d', dateKey);
-    if (parseMode(current.get(URL_PARAM)) === MODES.TERRAIN) {
-      params.set(URL_PARAM, MODES.TERRAIN);
-      if (current.get(VIEW_PARAM) === VIEW_3D) params.set(VIEW_PARAM, VIEW_3D);
-    }
+    if (parseMode(current.get(URL_PARAM)) === MODES.TERRAIN) params.set(URL_PARAM, MODES.TERRAIN);
+    if (current.get(VIEW_PARAM) === VIEW_3D) params.set(VIEW_PARAM, VIEW_3D);
     return '?' + params.toString();
   }
 

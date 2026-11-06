@@ -31,10 +31,13 @@
  *   - the frame-time probe (`?probe=1`, SNOW-1448): the camera passes it
  *     flies and the summary of the frame intervals it records, measured
  *     against the proposed budget of a median frame under 33 ms;
- *   - /map/'s frame watchdog (SNOW-1455): the agreed budget for one window
- *     of about two seconds of moving time (a median under 33 ms and a 95th
- *     percentile of 66 ms or less), judged by frameWindowFails, and the
- *     watch that trips on two failing windows in a row. The probe's own
+ *   - /map/'s frame watchdog (SNOW-1455): the budget for one window of
+ *     about two seconds of moving time (a median under 33 ms), judged by
+ *     frameWindowFails, and the watch that trips on three failing windows
+ *     in a row. Loosened on 6 Nov 2026: the first cut also failed a p95
+ *     over 66 ms after two windows, and laid flat the very phone whose
+ *     probe run had passed (Hugo), because tiles arriving mid-gesture
+ *     stall a frame without the map being slow. The probe's own
  *     verdict (frameStats().withinBudget) is not what the watch reads;
  *   - the main thread's half of the Steep terrain worker's protocol
  *     (map_3d_steep_worker.js): each tile request gets an id, the reply
@@ -60,7 +63,7 @@
  *   pageUrl(origin, pathname, tokens, query)
  *   routeShare3dUrl(shareUrl, query)
  *   FRAME_BUDGET_MS / PROBE_PASSES / frameStats(intervals, budgetMs?)
- *   FRAME_P95_BUDGET_MS / FRAME_WINDOW_MS / FRAME_WINDOWS_TO_TRIP
+ *   FRAME_WINDOW_MS / FRAME_WINDOWS_TO_TRIP
  *   frameWindowFails(stats) / createFrameWatch()
  */
 (function () {
@@ -593,29 +596,29 @@
     };
   }
 
-  /**
-   * The agreed ceiling on a window's 95th-percentile frame (SNOW-1455): two
-   * budget frames, so a good median cannot hide a stutter a reader feels.
-   */
-  const FRAME_P95_BUDGET_MS = 66;
-
   /** How much moving time one watchdog window holds, in milliseconds. */
   const FRAME_WINDOW_MS = 2000;
 
-  /** How many failing windows in a row lay /map/'s 3-D flat. */
-  const FRAME_WINDOWS_TO_TRIP = 2;
+  /**
+   * How many failing windows in a row lay /map/'s 3-D flat: about six
+   * seconds of moving time under 30 fps.
+   */
+  const FRAME_WINDOWS_TO_TRIP = 3;
 
   /**
-   * Whether one window of frames is over the agreed budget: a median of
-   * FRAME_BUDGET_MS or more, or a 95th percentile over FRAME_P95_BUDGET_MS.
-   * Reads frameStats' output; no frames is not a failure.
+   * Whether one window of frames is over the budget: a median of
+   * FRAME_BUDGET_MS or more. The p95 is not judged: a stall while tiles
+   * arrive and drape lifts it on a phone that draws 3-D well (Hugo's
+   * Mali-G715 run: median 16.7 ms, p95 50 ms over Saas-Fee), and only a
+   * map that is slow throughout lifts the median. Reads frameStats'
+   * output; no frames is not a failure.
    *
-   * @param {{medianMs: number, p95Ms: number}|null|undefined} stats
+   * @param {{medianMs: number}|null|undefined} stats
    * @returns {boolean}
    */
   function frameWindowFails(stats) {
     if (!stats) return false;
-    return stats.medianMs >= FRAME_BUDGET_MS || stats.p95Ms > FRAME_P95_BUDGET_MS;
+    return stats.medianMs >= FRAME_BUDGET_MS;
   }
 
   /**
@@ -659,7 +662,6 @@
 
   self.pwaMap3dCore = Object.freeze({
     FRAME_BUDGET_MS: FRAME_BUDGET_MS,
-    FRAME_P95_BUDGET_MS: FRAME_P95_BUDGET_MS,
     FRAME_WINDOW_MS: FRAME_WINDOW_MS,
     FRAME_WINDOWS_TO_TRIP: FRAME_WINDOWS_TO_TRIP,
     frameWindowFails: frameWindowFails,

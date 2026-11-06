@@ -1,15 +1,15 @@
 /*
- * tests/js/test_map_view_core.js — the map's flat and 3-D views' pure rules
- * (SNOW-1449, SNOW-1455).
+ * tests/js/test_map_view_core.js — the map's flat and 3D views' pure rules
+ * (SNOW-1449, SNOW-1455, SNOW-1452).
  *
  * What is pinned:
- *   - the URL: 3-D only from ?view=3d in Terrain, flat spelt by leaving the
+ *   - the URL: 3D from ?view=3d in either mode, flat spelt by leaving the
  *     parameter out, every other parameter kept;
  *   - every availability reason, in order, with the coverage box passed in
  *     and each of its four edges inside, and the device's three reasons
- *     asked straight after the mode;
+ *     asked first; the mode is never a reason (SNOW-1452);
  *   - the device gate: no WebGL, or 2 GB or less on Android;
- *   - the basemap: swisstopo winter in 3-D, the reader's own otherwise, and
+ *   - the basemap: swisstopo winter in 3D, the reader's own otherwise, and
  *     the preference never written;
  *   - the camera: a stored pitch boots flat, the bearing kept.
  */
@@ -26,11 +26,10 @@ const BOUNDS = window.pwaTerrainFilterCore.COVERAGE_BOUNDS;
 const [WEST, SOUTH, EAST, NORTH] = BOUNDS;
 const ZERMATT = { lng: 7.75, lat: 46.02 };
 
-/** An input where 3-D is available, with `over` changed. */
+/** An input where 3D is available, with `over` changed. */
 const input = (over = {}) => ({
   online: true,
   zoom: 12,
-  mode: 'terrain',
   editing: false,
   centre: ZERMATT,
   bounds: BOUNDS,
@@ -38,13 +37,13 @@ const input = (over = {}) => ({
 });
 
 describe('the view in the URL', () => {
-  it('reads 3-D only from ?view=3d in Terrain', () => {
-    expect(core.readView('?view=3d&mode=terrain', 'terrain')).toBe(THREE_D);
-    expect(core.readView('view=3d', 'terrain')).toBe(THREE_D);
-    expect(core.readView('?view=3d', 'dated')).toBe(FLAT);
-    expect(core.readView('?mode=terrain', 'terrain')).toBe(FLAT);
-    expect(core.readView('?view=tilted', 'terrain')).toBe(FLAT);
-    expect(core.readView('', 'terrain')).toBe(FLAT);
+  it('reads 3D from ?view=3d in either mode', () => {
+    expect(core.readView('?view=3d&mode=terrain')).toBe(THREE_D);
+    expect(core.readView('view=3d')).toBe(THREE_D);
+    expect(core.readView('?view=3d&d=2026-02-10')).toBe(THREE_D);
+    expect(core.readView('?mode=terrain')).toBe(FLAT);
+    expect(core.readView('?view=tilted')).toBe(FLAT);
+    expect(core.readView('')).toBe(FLAT);
   });
 
   it('reads an unknown value as flat', () => {
@@ -53,7 +52,7 @@ describe('the view in the URL', () => {
     expect(core.parseView(null)).toBe(FLAT);
   });
 
-  it('writes 3-D beside the other parameters, and flat by leaving it out', () => {
+  it('writes 3D beside the other parameters, and flat by leaving it out', () => {
     expect(core.withView('?mode=terrain&d=2026-02-10', THREE_D)).toBe('?mode=terrain&d=2026-02-10&view=3d');
     expect(core.withView('?mode=terrain&view=3d', FLAT)).toBe('?mode=terrain');
     expect(core.withView('?view=3d', FLAT)).toBe('');
@@ -62,13 +61,18 @@ describe('the view in the URL', () => {
 });
 
 describe('availability', () => {
-  it('is available in Terrain, online, in Switzerland, from z9', () => {
+  it('is available online, in Switzerland, from z9', () => {
     expect(core.availability(input())).toEqual({ enabled: true, reason: null });
     expect(core.availability(input({ zoom: core.MIN_ZOOM }))).toEqual({ enabled: true, reason: null });
   });
 
+  it('is available in Conditions as in Terrain: the mode is not a reason', () => {
+    expect(core.availability(input({ mode: 'dated' }))).toEqual({ enabled: true, reason: null });
+    expect(core.availability(input({ mode: 'terrain' }))).toEqual({ enabled: true, reason: null });
+    expect(Object.values(core.REASONS)).not.toContain('mode');
+  });
+
   it.each([
-    ['mode', { mode: 'dated' }],
     ['device', { gated: true }],
     ['slow', { tooSlow: true }],
     ['webgl', { contextLost: true }],
@@ -80,25 +84,23 @@ describe('availability', () => {
     expect(core.availability(input(over))).toEqual({ enabled: false, reason });
   });
 
-  it('asks the reasons in order: mode, offline, editing, coverage, zoom', () => {
-    const all = { mode: 'dated', online: false, editing: true, centre: { lng: 0, lat: 0 }, zoom: 4 };
-    expect(core.availability(input(all)).reason).toBe('mode');
-    expect(core.availability(input({ ...all, mode: 'terrain' })).reason).toBe('offline');
-    expect(core.availability(input({ ...all, mode: 'terrain', online: true })).reason).toBe('editing');
+  it('asks the reasons in order: offline, editing, coverage, zoom', () => {
+    const all = { online: false, editing: true, centre: { lng: 0, lat: 0 }, zoom: 4 };
+    expect(core.availability(input(all)).reason).toBe('offline');
+    expect(core.availability(input({ ...all, online: true })).reason).toBe('editing');
     expect(core.availability(input({ zoom: 4, centre: { lng: 0, lat: 0 } })).reason).toBe('coverage');
   });
 
-  it('asks the device straight after the mode: device, slow, webgl, then the rest', () => {
+  it('asks the device first: device, slow, webgl, then the rest', () => {
     const all = {
-      mode: 'dated', gated: true, tooSlow: true, contextLost: true,
+      gated: true, tooSlow: true, contextLost: true,
       online: false, editing: true, centre: { lng: 0, lat: 0 }, zoom: 4,
     };
-    expect(core.availability(input(all)).reason).toBe('mode');
-    expect(core.availability(input({ ...all, mode: 'terrain' })).reason).toBe('device');
-    expect(core.availability(input({ ...all, mode: 'terrain', gated: false })).reason).toBe('slow');
-    expect(core.availability(input({ ...all, mode: 'terrain', gated: false, tooSlow: false })).reason).toBe('webgl');
+    expect(core.availability(input(all)).reason).toBe('device');
+    expect(core.availability(input({ ...all, gated: false })).reason).toBe('slow');
+    expect(core.availability(input({ ...all, gated: false, tooSlow: false })).reason).toBe('webgl');
     expect(core.availability(input({
-      ...all, mode: 'terrain', gated: false, tooSlow: false, contextLost: false,
+      ...all, gated: false, tooSlow: false, contextLost: false,
     })).reason).toBe('offline');
   });
 
@@ -125,7 +127,7 @@ describe('availability', () => {
 });
 
 describe('the basemap', () => {
-  it('is swisstopo winter in 3-D and the reader\'s own when flat', () => {
+  it('is swisstopo winter in 3D and the reader\'s own when flat', () => {
     expect(core.basemapFor(THREE_D, 'openfreemap_liberty')).toBe('swisstopo_winter');
     expect(core.basemapFor(FLAT, 'openfreemap_liberty')).toBe('openfreemap_liberty');
     expect(core.basemapFor('bogus', 'ign_plan')).toBe('ign_plan');
@@ -149,7 +151,7 @@ describe('the boot camera', () => {
     expect(stored.pitch).toBe(55);
   });
 
-  it('keeps the stored camera in 3-D, and nothing stays nothing', () => {
+  it('keeps the stored camera in 3D, and nothing stays nothing', () => {
     expect(core.bootCamera(stored, THREE_D)).toBe(stored);
     expect(core.bootCamera(null, FLAT)).toBeNull();
   });

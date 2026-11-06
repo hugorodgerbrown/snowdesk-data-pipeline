@@ -313,7 +313,7 @@ interface Window {
     isTerrain: () => boolean;
     toConditionsToday: () => void;
   };
-  /** static/js/map_view_core.js — the flat / 3-D view's pure rules: VIEWS, MIN_ZOOM, BASEMAP_KEY, REASONS, readView, withView, covers, availability, deviceGate, basemapFor, bootCamera (SNOW-1449, SNOW-1455). */
+  /** static/js/map_view_core.js — the flat / 3-D view's pure rules: VIEWS, MIN_ZOOM, BASEMAP_KEY, REASONS, readView, withView, covers, availability, deviceGate, basemapFor, bootCamera (SNOW-1449, SNOW-1455; both modes since SNOW-1452). */
   pwaMapViewCore: any;
   /** static/js/map_3d_terrain.js — MapLibre terrain on a map: registerDemProtocol, installTerrain, removeTerrain, hasTerrain, createPrefetcher (SNOW-1449). */
   pwaMap3dTerrain: any;
