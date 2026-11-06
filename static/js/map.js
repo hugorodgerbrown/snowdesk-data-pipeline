@@ -1069,6 +1069,12 @@
   // ``isStyleLoaded()`` guard, filters out the benign case without
   // masking a real style failure.
   map.on('error', (e) => {
+    // SNOW-1457: a swisstopo edge tile that fails (WMTS down, or offline
+    // with the style cached) asks for no frame, and MapLibre 4.7.1 fires
+    // `load` only from a frame. If the last tile still loading is one that
+    // failed, `load` would wait for the reader to move the map, and every
+    // layer the page installs on it with it. One more frame lets it fire.
+    if (e && EDGE_CORE && e.sourceId === EDGE_CORE.SOURCE_ID) map.triggerRepaint();
     if (e && (e.sourceId || e.tile)) return;
     if (map.isStyleLoaded()) return;
     basemapFallbackActive = true;

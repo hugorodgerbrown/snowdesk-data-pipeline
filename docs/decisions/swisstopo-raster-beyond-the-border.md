@@ -62,6 +62,11 @@ on the roadmap because it improves the 2D map today.
   detail to draw also rejects if any request it depended on failed, its
   own or an ancestor's, and is never kept as an empty tile. A failed
   ancestor is dropped from the LRU, so the retry asks for it again.
+  MapLibre 4.7.1 asks for no frame when a tile errors, and fires `load`
+  only from a frame, so a failed edge tile left last would hold `load`, and
+  every layer the page installs on it, until the reader moved the map.
+  `map.js`'s `error` handler calls `triggerRepaint` for an edge-source
+  error (`tests/js/test_map_edge_tile_error.js`).
 - **128 px tiles.** MapLibre draws each 256 px tile at 128 CSS px, so it
   asks for the next zoom up. At 256 the raster's lettering was about twice
   the size of the vector map's across the border, and it was enlarged on
