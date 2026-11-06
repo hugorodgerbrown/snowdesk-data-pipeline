@@ -215,8 +215,17 @@ in addition to the shared map assets.
     {# module in development and tests. Runs after base.html's scripts,    #}
     {# as these always have.                                                #}
     {% js_bundle "map" %}
-    {% if map_3d_link %}
+    {# SNOW-1449: a reader in map_3d and map_modes gets the 3-D view on     #}
+    {# this page (map_view_3d.js); the route-share visitor and a map_3d-only #}
+    {# reader keep the link to /map/3d/. The terrain helper serves both: the #}
+    {# view installs its relief, the link its prefetch.                      #}
+    {% if map_3d_view %}
         <script defer src="{% static 'js/map_3d_core.js' %}"></script>
+        <script defer src="{% static 'js/map_3d_terrain.js' %}"></script>
+        <script defer src="{% static 'js/map_view_3d.js' %}"></script>
+    {% elif map_3d_link %}
+        <script defer src="{% static 'js/map_3d_core.js' %}"></script>
+        <script defer src="{% static 'js/map_3d_terrain.js' %}"></script>
         <script defer src="{% static 'js/map_3d_link.js' %}"></script>
     {% endif %}
     {% if request.GET.layers == 'exploded' %}

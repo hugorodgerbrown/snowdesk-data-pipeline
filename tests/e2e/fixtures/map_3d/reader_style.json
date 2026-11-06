@@ -1,0 +1,8 @@
+{
+  "version": 8,
+  "name": "e2e-reader",
+  "sources": {},
+  "layers": [
+    {"id": "background", "type": "background", "paint": {"background-color": "#f6f2ea"}}
+  ]
+}

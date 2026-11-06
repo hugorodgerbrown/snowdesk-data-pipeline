@@ -7129,3 +7129,93 @@ body.map-framing #map-legend {
         transition: none;
     }
 }
+
+/* ── SNOW-1449: the 3-D view ──────────────────────────────────────────────
+   The 3-D switch (#map-view-toggle) is Terrain's: hidden in Conditions, as
+   3-D is. It is a 3D | 2D segmented switch two cells tall: a sunken
+   track with the current view raised as a card, the Conditions | Terrain
+   switch's own look (.map-mode-tab). aria-pressed picks the raised face.
+   Unavailable (zoomed out, offline, outside Switzerland, drawing a route)
+   it is aria-disabled and dimmed, and a tap says why. */
+.map-utility-pill--view {
+    display: none;
+    width: var(--map-control-lg);
+    flex: 0 0 auto;
+    justify-content: center;
+}
+
+.map-control-group > .map-utility-pill--view {
+    height: calc(var(--map-control-lg) * 2);
+}
+
+.map-view-switch {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: calc(100% - 6px);
+    height: calc(100% - 6px);
+    margin: 3px;
+    padding: 2px;
+    /* card-hover, not tag: on the capsule's glass the tag colour is all but
+       invisible, and the raised face must read as switched on. */
+    background: var(--color-card-hover);
+    border: 0;
+    border-radius: 15px;
+    font: inherit;
+    cursor: pointer;
+}
+
+.map-view-switch:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: 1px;
+}
+
+.map-view-face {
+    display: flex;
+    flex: 1 1 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 13px;
+    color: var(--color-text-2);
+}
+
+#map-view-toggle[aria-pressed="false"] .map-view-face[data-view-face="flat"],
+#map-view-toggle[aria-pressed="true"] .map-view-face[data-view-face="3d"] {
+    background: var(--color-card);
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-1);
+}
+
+:root[data-map-mode="terrain"] .map-utility-pill--view {
+    display: inline-flex;
+}
+
+#map-view-toggle[aria-disabled="true"] {
+    color: var(--color-text-2);
+    opacity: 0.55;
+}
+
+/* The basemap page's line in 3-D, above its disabled rows. */
+.basemap-view-note {
+    padding: 0.5rem 0.75rem;
+    font-size: var(--text-meta);
+    line-height: 1.4;
+    color: var(--color-text-2);
+}
+
+/* The compass (#map-compass), under the zoom roundel for every reader. Its
+   author `display` would beat the UA's [hidden], so hidden is restated. The
+   needle turns about its centre against the map's bearing. */
+.map-compass[hidden] {
+    display: none;
+}
+
+.map-compass-needle {
+    transform-origin: 50% 50%;
+}
+
+/* The component library's compass demo: one roundel's slot, so a hidden
+   (north-up) variant keeps its height. */
+.map-compass-demo {
+    min-height: var(--map-control-sm);
+}

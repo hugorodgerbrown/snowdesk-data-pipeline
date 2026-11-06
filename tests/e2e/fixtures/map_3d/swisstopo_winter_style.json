@@ -1,0 +1,8 @@
+{
+  "version": 8,
+  "name": "e2e-swisstopo-winter",
+  "sources": {},
+  "layers": [
+    {"id": "background", "type": "background", "paint": {"background-color": "#eef2f6"}}
+  ]
+}

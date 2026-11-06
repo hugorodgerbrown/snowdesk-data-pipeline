@@ -117,6 +117,11 @@ const PARSE_TIME_CORES = [
   // reaches `pwaMapLegendCore` only once the card is open — but a bundle
   // booted without it would answer every open with an untouched card.
   'map_legend_core.js',
+  // SNOW-1449: `map.js`'s boot IIFE reads the view (flat or 3-D) through
+  // `pwaMapViewCore` for the boot basemap and camera. It tolerates the
+  // core's absence, but a bundle booted without it would boot every
+  // stored pitch tilted, which is not the page's behaviour.
+  'map_view_core.js',
 ];
 
 /** map.html's script order for the map bundle. */

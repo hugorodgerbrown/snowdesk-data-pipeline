@@ -55,6 +55,15 @@
   const URL_PARAM = 'mode';
 
   /**
+   * The view's parameter and its 3-D value (map_view_core.URL_PARAM and
+   * VIEWS.THREE_D), which a date write carries in Terrain. Spelt here
+   * rather than read from that core: map_shared.js calls withDate from
+   * pages that do not load it.
+   */
+  const VIEW_PARAM = 'view';
+  const VIEW_3D = '3d';
+
+  /**
    * The layers each mode has to itself — map.js's `overlayState` keys, plus
    * `l3`, the bulletin grouping outline, which has no row of its own. A key
    * in one list is held off the map in the other mode; a key in neither is
@@ -114,21 +123,27 @@
   }
 
   /**
-   * The query string a date commit writes: `?d=` and the mode, if any.
+   * The query string a date commit writes: `?d=`, the mode and the view,
+   * if any.
    *
    * map_shared.js's `writeUrlDateParam` has always written `?d=` alone; the
    * mode is the one parameter a date write must carry through, because a
-   * reader in Terrain who moves the day is still in Terrain.
+   * reader in Terrain who moves the day is still in Terrain. SNOW-1449: and
+   * the view with it (`?view=3d`, map_view_core.js), which exists only in
+   * Terrain, so a reader in 3-D who moves the day is still in 3-D.
    *
    * @param {string} search `location.search`.
    * @param {string} dateKey `YYYY-MM-DD`.
    * @returns {string}
    */
   function withDate(search, dateKey) {
-    const mode = new URLSearchParams(search || '').get(URL_PARAM);
+    const current = new URLSearchParams(search || '');
     const params = new URLSearchParams();
     params.set('d', dateKey);
-    if (parseMode(mode) === MODES.TERRAIN) params.set(URL_PARAM, MODES.TERRAIN);
+    if (parseMode(current.get(URL_PARAM)) === MODES.TERRAIN) {
+      params.set(URL_PARAM, MODES.TERRAIN);
+      if (current.get(VIEW_PARAM) === VIEW_3D) params.set(VIEW_PARAM, VIEW_3D);
+    }
     return '?' + params.toString();
   }
 

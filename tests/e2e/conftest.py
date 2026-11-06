@@ -48,6 +48,14 @@ Fixtures defined here:
     favourites map-surface tests don't drive the SW lifecycle) with a
     session cookie for a regular ``Account``.
 
+``map_3d_page`` (SNOW-1449)
+    A signed-in page whose every request off the live server is answered
+    from ``tests/e2e/fixtures/map_3d/``: the reader's default basemap and
+    the swisstopo winter map as two one-layer styles told apart by
+    ``name``, every elevation tile (Mapterhorn's and AWS's) as one
+    Terrarium PNG, and anything else refused. No service worker, so no
+    request slips past the routes.
+
 ``no_script_page`` (SNOW-616)
     The same, with ``java_script_enabled=False``. The project position is
     that JavaScript is progressive enhancement and core functionality must
@@ -60,8 +68,10 @@ Fixtures defined here:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -69,7 +79,7 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.test import Client
-from playwright.sync_api import Browser, BrowserContext, Page
+from playwright.sync_api import Browser, BrowserContext, Page, Route
 from pytest_django.live_server_helper import LiveServer
 
 from apps.accounts.models import Account
@@ -522,5 +532,76 @@ def no_script_page(
     page = context.new_page()
     try:
         yield NoScriptPage(page=page, live_server_url=live_server.url, account=account)
+    finally:
+        context.close()
+
+
+_MAP_3D_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "map_3d"
+
+
+@dataclass
+class Map3dPage:
+    """A signed-in ``Page`` whose off-server requests are all fixtures."""
+
+    page: Page
+    live_server_url: str
+    account: Account
+
+
+@pytest.fixture()
+def map_3d_page(
+    browser: Browser,
+    browser_context_args: dict[str, Any],
+    live_server: LiveServer,
+    django_db_blocker: Any,
+) -> Iterator[Map3dPage]:
+    """A signed-in page for the 3-D view's journey, with every tile intercepted.
+
+    Routes are matched last-registered first, so the catch-all refusal is
+    registered before the three fixtures it stands behind. The context
+    blocks service workers, whose own fetches ``page.route`` cannot see.
+
+    Args:
+        browser: The Playwright browser to open a fresh context on.
+        browser_context_args: The project's own context defaults.
+        live_server: The live Django server.
+        django_db_blocker: pytest-django's DB-access guard, unblocked here
+            to create the ``Account``.
+
+    Yields:
+        A ``Map3dPage`` bundling the page, server URL, and account.
+
+    """
+    context = browser.new_context(
+        **{**browser_context_args, "service_workers": "block"}
+    )
+    with django_db_blocker.unblock():
+        account = AccountFactory.create()
+    _session_login(context, live_server.url, account.user)
+    winter = settings.BASEMAP_STYLES["swisstopo_winter"]
+    reader = settings.BASEMAP_STYLES[settings.BASEMAP]
+    tile = (_MAP_3D_FIXTURES / "terrarium_tile.png").read_bytes()
+
+    def style(name: str) -> Any:
+        """Answer a style request with the named fixture."""
+        body = (_MAP_3D_FIXTURES / name).read_text(encoding="utf-8")
+        return lambda route: route.fulfill(body=body, content_type="application/json")
+
+    def elevation(route: Route) -> None:
+        """Answer an elevation tile, Mapterhorn's or AWS's, with the fixture."""
+        route.fulfill(body=tile, content_type="image/png")
+
+    server = re.escape(live_server.url)
+    context.route(re.compile(rf"^(?!{server})https?://"), lambda route: route.abort())
+    context.route(winter, style("swisstopo_winter_style.json"))
+    context.route(reader, style("reader_style.json"))
+    dem = settings.MAP_3D_DEM_TILE_URL.split("{z}")[0]
+    context.route(re.compile(rf"^{re.escape(dem)}\d+/\d+/\d+"), elevation)
+    context.route(
+        re.compile(r"^https://s3\.amazonaws\.com/elevation-tiles-prod/"), elevation
+    )
+    page = context.new_page()
+    try:
+        yield Map3dPage(page=page, live_server_url=live_server.url, account=account)
     finally:
         context.close()

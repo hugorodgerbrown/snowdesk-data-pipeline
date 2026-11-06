@@ -184,6 +184,9 @@ Optional context:
     {# SNOW-1394: the Dated / Terrain toggle, behind the map_modes flag.    #}
     {# map.js reads the boot mode before it installs a layer.              #}
     data-map-modes-enabled="{{ map_modes_enabled|yesno:'true,false' }}"
+    {# SNOW-1449: the 3-D view on this page, for a reader in map_3d and     #}
+    {# map_modes. map.js reads it for the boot view; map_view_3d.js draws it. #}
+    data-map-view-enabled="{{ map_3d_view|yesno:'true,false' }}"
     data-route-claim-url-template="{{ route_claim_url_template }}"
     data-routes-upload-eligible="{{ routes_upload_eligible|yesno:'true,false' }}"
     data-routes-signin-url="{{ routes_signin_url }}"
@@ -421,10 +424,32 @@ Optional context:
                     {% include "includes/_icon_layers.html" %}
                 </button>
             </div>
-            {# The 3-D map, an experiment behind the map_3d flag. static/js/map_3d_link.js #}
-            {# carries this view's camera and switches across on a click. A friend    #}
-            {# sent a route by a 3-D reader gets it too, carrying that route share.   #}
-            {% if map_3d_link %}
+            {# SNOW-1449: for a reader in map_3d and map_modes, the 3D roundel     #}
+            {# tilts THIS map into 3-D, in Terrain only (map.css shows it under     #}
+            {# :root[data-map-mode="terrain"]). It is a 3D | 2D segmented switch:   #}
+            {# both views always show and the raised one is current (aria-pressed   #}
+            {# picks it), so it never names the view you are not in. Unavailable,  #}
+            {# it is aria-disabled and a tap says why. map_view_3d.js drives it and warms #}
+            {# the elevation tiles when a pointer, a finger or focus reaches it.    #}
+            {% if map_3d_view %}
+                <div class="map-utility-pill map-utility-pill--view">
+                    <button
+                        id="map-view-toggle"
+                        type="button"
+                        data-dem-tile-url="{{ map_3d_dem_tile_url }}"
+                        class="map-view-switch text-chip font-semibold"
+                        aria-pressed="false"
+                        aria-label='{% trans "3-D view" %}'
+                    >
+                        <span class="map-view-face" data-view-face="3d" aria-hidden="true">{% trans "3D" %}</span>
+                        <span class="map-view-face" data-view-face="flat" aria-hidden="true">{% trans "2D" %}</span>
+                    </button>
+                </div>
+            {% elif map_3d_link %}
+                {# The 3-D map at /map/3d/, behind the map_3d flag, for a reader     #}
+                {# without map_modes. static/js/map_3d_link.js carries this view's   #}
+                {# camera and switches across on a click. A friend sent a route by a #}
+                {# 3-D reader gets it too, carrying that route share.                #}
                 <div class="map-utility-pill">
                     <a
                         id="map-3d-link"
@@ -1079,6 +1104,13 @@ Optional context:
                 hidden
             >
                 {% include "public/partials/_map_layers_page_header.html" with title=layer_basemap only %}
+                {# SNOW-1449: in 3-D the rows below are disabled and this says   #}
+                {# why (static/js/map_basemap_picker.js shows it).                #}
+                {% if map_3d_view %}
+                    <li role="none" id="basemap-view-note" class="basemap-view-note" hidden>
+                        {% trans "3-D uses the swisstopo winter map; yours comes back in 2D." %}
+                    </li>
+                {% endif %}
                 <li role="none">
                     <ul id="basemap-menu-group-basemap" class="basemap-menu-group" role="group">
                         {% for bm in basemaps %}
@@ -1636,6 +1668,10 @@ Optional context:
         {# the DEBUG-only zoom readout held; the help roundel the note below #}
         {# calls the top of the stack now sits second.                       #}
         {% include "public/partials/_map_zoom_control.html" with zoom_camera_visible=zoom_camera_visible %}
+        {# SNOW-1449: the compass, directly under the zoom roundel, for every   #}
+        {# reader. Shown while the map is not north-up, flat or in 3-D; a press #}
+        {# turns it back to north (static/js/map_compass.js).                   #}
+        {% include "public/partials/_map_compass.html" %}
         {# SNOW-794: the help roundel, moved here from the bottom-right stack — #}
         {# see the note at its old site for why. It TOPS this stack: both it and #}
         {# the legend describe the map rather than change it, and of the two the #}
@@ -1842,6 +1878,22 @@ Optional context:
                 </button>
                 <template id="map-mode-strings-template">
                     <span data-string="back-to-date">{% trans "Back to Conditions" %}</span>
+                </template>
+            {% endif %}
+            {# SNOW-1449: the 3-D view's words (static/js/map_view_3d.js).      #}
+            {% if map_3d_view %}
+                <template id="map-view-strings-template">
+                    <span
+                        data-string="basemap"
+                    >{% trans "3-D uses the swisstopo winter map; yours comes back in 2D." %}</span>
+                    <span data-string="why-zoom">{% trans "Zoom in to see 3-D" %}</span>
+                    <span data-string="why-offline">{% trans "3-D needs a connection" %}</span>
+                    <span data-string="why-coverage">{% trans "3-D covers Switzerland for now" %}</span>
+                    <span data-string="why-editing">{% trans "Finish drawing the route to see 3-D" %}</span>
+                    <span data-string="left-mode">{% trans "Back in 2D: 3-D is part of Terrain." %}</span>
+                    <span data-string="left-offline">{% trans "Back in 2D: 3-D needs a connection." %}</span>
+                    <span data-string="left-coverage">{% trans "Back in 2D: 3-D covers Switzerland for now." %}</span>
+                    <span data-string="zoom-floor">{% trans "3-D stops here. Switch to 2D to zoom out." %}</span>
                 </template>
             {% endif %}
             {% comment %}
@@ -2074,6 +2126,19 @@ Optional context:
                 {% trans "Search a region or resort by name. Locate centres the map on you. The number is your zoom: tap it to see what appears as you go closer." %}
             </p>
         </li>
+        {# SNOW-1449: the compass, shown only while the map is turned (a step  #}
+        {# whose target is hidden is dropped), and the 3D roundel, shown only  #}
+        {# in Terrain for a reader in map_3d and map_modes.                    #}
+        <li data-help-target="#map-compass" data-help-chapter="move" data-help-title='{% trans "North" %}'>
+            <p data-help-body>{% trans "The needle points north. Tap it to turn the map back to north." %}</p>
+        </li>
+        {% if map_3d_view %}
+            <li data-help-target="#map-view-toggle" data-help-chapter="move" data-help-title='{% trans "3-D" %}'>
+                <p data-help-body>
+                    {% trans "In Terrain, tap 3D or tilt with two fingers to see the mountains in relief. Tap 2D to lay the map flat again." %}
+                </p>
+            </li>
+        {% endif %}
         {# The bulletin-opacity control lives in this menu (it had its own    #}
         {# roundel until the two capsules), so this step names it.            #}
         <li data-help-target="#basemap-toggle" data-help-chapter="move" data-help-title='{% trans "Layers" %}'>

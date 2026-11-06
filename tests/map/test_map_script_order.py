@@ -236,6 +236,38 @@ def test_map_mode_toggle_loads_for_everyone_but_renders_only_behind_the_flag() -
     assert rendered.index("map_mode_core.js") < rendered.index(_map_bundle()[0])
 
 
+@pytest.mark.django_db
+def test_map_view_scripts_load_in_their_places() -> None:
+    """SNOW-1449: the view's core before the bundle, its runner after it.
+
+    ``map_view_core.js`` is read by ``map.js`` at parse time (the boot
+    basemap and camera) and reads nothing but the coverage box it is passed
+    from ``terrain_filter_core.js``, so it loads after that core and before
+    the bundle, for everyone. ``map_compass.js`` reads the map at parse
+    time, so it follows the bundle, for everyone. ``map_view_3d.js``, only
+    inside map_3d and map_modes, follows the bundle and the two 3-D helpers
+    it reads at parse time. None of them sits inside the contiguous run.
+    """
+    client = Client()
+    client.force_login(UserFactory.create())
+    with override_flag("map_3d", active=True), override_flag("map_modes", active=True):
+        content = client.get(reverse("public:map")).content.decode()
+    rendered = _SCRIPT_SRC_RE.findall(content)
+    bundle = _map_bundle()
+    core_at = rendered.index("map_view_core.js")
+    assert (
+        rendered.index("terrain_filter_core.js") < core_at < rendered.index(bundle[0])
+    )
+    runner_at = rendered.index("map_view_3d.js")
+    for before in (BOOT_FILE, "map_3d_core.js", "map_3d_terrain.js", "map_mode.js"):
+        assert rendered.index(before) < runner_at, before
+    assert rendered.index("map_zoom_control.js") < rendered.index("map_compass.js")
+    positions = [i for i, name in enumerate(rendered) if name in set(bundle)]
+    span = rendered[positions[0] : positions[-1] + 1]
+    for outside in ("map_view_core.js", "map_view_3d.js", "map_compass.js"):
+        assert outside not in span, outside
+
+
 # ---------------------------------------------------------------------------
 # SNOW-894 — the error reporter must register before any page's boot scripts
 # ---------------------------------------------------------------------------

@@ -112,5 +112,7 @@ the page adds no control and no icon for them.
     <script defer src="{% static 'js/terrain_filter_core.js' %}"></script>
     <script defer src="{% static 'js/share.js' %}"></script>
     <script defer src="{% static 'js/map_3d_core.js' %}"></script>
+    {# SNOW-1449: the elevation protocol and the terrain, shared with /map/. #}
+    <script defer src="{% static 'js/map_3d_terrain.js' %}"></script>
     <script defer src="{% static 'js/map_3d.js' %}"></script>
 {% endblock extra_js %}

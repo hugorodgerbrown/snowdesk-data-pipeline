@@ -312,6 +312,19 @@ interface Window {
     isTerrain: () => boolean;
     toConditionsToday: () => void;
   };
+  /** static/js/map_view_core.js — the flat / 3-D view's pure rules: VIEWS, MIN_ZOOM, BASEMAP_KEY, readView, withView, covers, availability, basemapFor, bootCamera (SNOW-1449). */
+  pwaMapViewCore: any;
+  /** static/js/map_3d_terrain.js — MapLibre terrain on a map: registerDemProtocol, installTerrain, removeTerrain, hasTerrain, createPrefetcher (SNOW-1449). */
+  pwaMap3dTerrain: any;
+  /**
+   * static/js/map_view_3d.js — /map/'s 3-D view (SNOW-1449). Absent outside
+   * the map_3d and map_modes flags. get() is the live view, `flat` or `3d`.
+   */
+  pwaMapView?: {
+    get: () => string;
+    enter: () => boolean;
+    exit: () => void;
+  };
   /** static/js/map.js — the weather symbols' Terrain-mode hook: setSuppressed(reason, active) / isSuppressed() (SNOW-1394). */
   pwaWeatherLayer: any;
   /** static/js/map.js — the Bulletins layer: setSuppressed(reason, active) / isVisible(). */

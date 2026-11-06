@@ -63,6 +63,7 @@ from apps.design_system._component_fixtures import (
     FORM_FIELD_VARIANTS,
     GLOSSARY_TERM_VARIANTS,
     HOURLY_CHART_VARIANTS,
+    MAP_COMPASS_VARIANTS,
     MAP_OVERLAY_TOGGLE_VARIANTS,
     MAP_ZOOM_CONTROL_VARIANTS,
     META_CELL_VARIANTS,
@@ -1619,6 +1620,25 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="public/partials/_map_zoom_control_demo.html",
         variants=MAP_ZOOM_CONTROL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="map-compass",
+        label="Map compass",
+        description=(
+            "The roundel directly under the zoom roundel in the map's "
+            "bottom-left stack (SNOW-1449), the help and zoom roundels' size, "
+            "for every reader, flat or in 3-D. Hidden while the map is "
+            "north-up; shown once it turns. Its glyph is a north needle — the "
+            "north half filled, the south half in outline, not the wind mark "
+            "— turned against the map's bearing so it always points north. A "
+            "press eases the map back to north and keeps the tilt. Its "
+            "accessible name is 'Point north'. Driven on /map/ by "
+            "static/js/map_compass.js. Static here."
+        ),
+        kind="components",
+        partial="public/partials/_map_compass_demo.html",
+        variants=MAP_COMPASS_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

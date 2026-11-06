@@ -96,6 +96,19 @@ def test_the_flag_renders_the_map() -> None:
     assert content.index("js/terrain_filter_core.js") < content.index("js/map_3d.js")
 
 
+def test_the_terrain_helper_loads_between_the_core_and_the_map() -> None:
+    """SNOW-1449: map_3d.js installs its relief through map_3d_terrain.js.
+
+    The helper reads map_3d_core.js at parse time and map_3d.js reads the
+    helper at parse time, so the order is core, helper, map.
+    """
+    with override_flag("map_3d", active=True):
+        content = _signed_in().get(URL).content.decode()
+    core = content.index("js/map_3d_core.js")
+    helper = content.index("js/map_3d_terrain.js")
+    assert core < helper < content.index("js/map_3d.js")
+
+
 def test_the_page_carries_every_url_the_script_reads() -> None:
     """The style, DEM, tours, routes and resorts URLs ride on #map-3d."""
     dem = "https://tiles.example.test/dem/2026-11/{z}/{x}/{y}.webp"
@@ -314,6 +327,9 @@ def test_a_friend_sent_a_3d_readers_route_gets_the_roundel() -> None:
     assert f'href="/map/3d/?route_share={share.token}"' in content
     assert f'data-route-share="{share.token}"' in content
     assert "js/map_3d_link.js" in content
+    # SNOW-1449: the 3-D view on /map/ is a flagged reader's, never theirs.
+    assert 'id="map-view-toggle"' not in content
+    assert "js/map_view_3d.js" not in content
 
 
 def test_the_newest_eligible_share_is_the_one_carried() -> None:
