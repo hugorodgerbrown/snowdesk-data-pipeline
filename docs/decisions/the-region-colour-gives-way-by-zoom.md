@@ -2,7 +2,7 @@
 name: the-region-colour-gives-way-by-zoom
 description: Region fill fades out over z8.5–10; from z10 an edge band and level label (regions-edge, region-labels); region chip removed
 status: current
-last-reviewed: 2026-11-05
+last-reviewed: 2026-11-06
 ---
 
 # The region colour gives way by zoom
@@ -84,3 +84,18 @@ stays where the reader put it.
   draws. `link_region_centroid_locations --commit` gives one to every region.
 - The level is text, not a coloured badge, for now. A badge needs an icon
   image per level and is a follow-up.
+
+## In the 3D view (SNOW-1452, 6 Nov 2026)
+
+The relief is the thing to read in 3D, so the fill gives way at every zoom,
+not only past z10. In 3D `regions-fill` is a light wash, the Bulletin
+opacity step × `FILL_WASH_RATIO_3D` (0.3; 0.15 at the default step), with no
+fade by zoom, so the swisstopo rock hachures read through it. The edge band
+is the outline the wash leans on: the step × `EDGE_OPACITY_RATIO_3D` (1.6,
+capped at 0.9; 0.8 at the default), from z9 (`EDGE_MIN_ZOOM_3D`), where 3D
+starts. The off step still turns both off, and painted slopes still drop
+both. The expressions are `regionFillOpacityExpr(…, {threeD})`,
+`regionEdgeOpacityExpr(…, {threeD})` and `regionEdgeMinZoom` in
+`choropleth_core.js`; `map.js` applies them in `applyBulletinsVisibility`
+and on install, reading the live view, and repaints on
+`snowdesk:map-view-changed`.

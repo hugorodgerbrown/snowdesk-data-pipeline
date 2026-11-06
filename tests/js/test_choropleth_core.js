@@ -320,6 +320,34 @@ describe('the fill gives way to the edge by zoom (SNOW-1375)', () => {
     expect(core.regionEdgeOpacityExpr(1)[3]).toBeLessThanOrEqual(0.9);
   });
 
+  it('is a light wash in 3D, with no fade by zoom (SNOW-1452)', () => {
+    const threeD = { threeD: true };
+    const expr = core.regionFillOpacityExpr(0.5, 0.85 / 0.55, threeD);
+    // One per-feature case, no zoom interpolate: the wash holds at every zoom.
+    expect(expr[0]).toBe('case');
+    expect(JSON.stringify(expr)).not.toContain('zoom');
+    // Painted slopes → 0, emphasised → stronger but capped, else the wash.
+    expect(expr[2]).toBe(0);
+    expect(expr.at(-1)).toBeCloseTo(0.15);
+    expect(expr[4]).toBeCloseTo(0.15 * (0.85 / 0.55));
+    expect(core.regionFillOpacityExpr(1, 10, threeD)[4]).toBe(1);
+    expect(core.regionFillOpacityExpr(1, 1, threeD).at(-1)).toBeCloseTo(core.FILL_WASH_RATIO_3D);
+    expect(core.regionFillOpacityExpr(0, 1.5, threeD)).toBe(0);
+  });
+
+  it('draws a stronger band from z9 in 3D, capped, and none at the off step (SNOW-1452)', () => {
+    const threeD = { threeD: true };
+    const expr = core.regionEdgeOpacityExpr(0.5, threeD);
+    expect(expr[0]).toBe('case');
+    expect(expr[2]).toBe(0);
+    expect(expr[3]).toBeCloseTo(0.8);
+    expect(core.regionEdgeOpacityExpr(1, threeD)[3]).toBe(0.9);
+    expect(core.regionEdgeOpacityExpr(0, threeD)).toBe(0);
+    expect(core.regionEdgeMinZoom(threeD)).toBe(9);
+    expect(core.regionEdgeMinZoom()).toBe(core.EDGE_MIN_ZOOM);
+    expect(core.regionEdgeMinZoom({ threeD: false })).toBe(10);
+  });
+
   it('builds one label point per positioned region, level first', () => {
     const features = [
       { id: 1, properties: { name: 'Martigny-Verbier', country: 'CH', covered: true, label: [7.2, 46.1] } },

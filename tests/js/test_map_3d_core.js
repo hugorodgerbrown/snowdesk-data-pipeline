@@ -1,5 +1,5 @@
 /*
- * tests/js/test_map_3d_core.js — the 3-D terrain map's pure parts (SNOW-1438).
+ * tests/js/test_map_3d_core.js — the 3D terrain map's pure parts (SNOW-1438).
  *
  * What is pinned, because each is the way this goes wrong:
  *   - the DEM source is Terrarium-encoded and the terrain spec names it;
@@ -473,7 +473,7 @@ describe('frameStats / PROBE_PASSES', () => {
     expect(core.frameStats([Number.NaN, 25]).frames).toBe(1);
   });
 
-  it('probes the opening view and the zoom where 3-D is proposed to stop', () => {
+  it('probes the opening view and the zoom where 3D is proposed to stop', () => {
     expect(core.PROBE_PASSES.map((p) => p.zoom)).toEqual([core.OPENING_CAMERA.zoom, 9]);
     for (const pass of core.PROBE_PASSES) {
       expect(pass.durationMs).toBeGreaterThanOrEqual(10000);
@@ -485,9 +485,11 @@ describe('frameStats / PROBE_PASSES', () => {
 describe('frameWindowFails', () => {
   const stats = (medianMs, p95Ms) => ({ medianMs, p95Ms });
 
-  it('pins the agreed budget', () => {
-    expect(core.FRAME_P95_BUDGET_MS).toBe(66);
+  it('pins the budget, loosened on 6 Nov 2026', () => {
+    expect(core.FRAME_BUDGET_MS).toBe(33);
     expect(core.FRAME_WINDOW_MS).toBe(2000);
+    expect(core.FRAME_WINDOWS_TO_TRIP).toBe(3);
+    expect(core.FRAME_P95_BUDGET_MS).toBeUndefined();
   });
 
   it('fails a median of 33 ms and passes 32.9', () => {
@@ -495,13 +497,16 @@ describe('frameWindowFails', () => {
     expect(core.frameWindowFails(stats(32.9, 40))).toBe(false);
   });
 
-  it('passes a p95 of 66 ms and fails 66.1', () => {
-    expect(core.frameWindowFails(stats(20, 66))).toBe(false);
-    expect(core.frameWindowFails(stats(20, 66.1))).toBe(true);
+  it('does not judge the p95, which a tile stall lifts on a phone that draws well', () => {
+    // Hugo's Mali-G715 probe over Saas-Fee: median 16.7 ms, p95 50.1 ms,
+    // worst 83.3 ms. A window with stalls far worse still passes.
+    expect(core.frameWindowFails(stats(16.7, 50.1))).toBe(false);
+    expect(core.frameWindowFails(stats(16.7, 250))).toBe(false);
   });
 
   it('reads frameStats\' own output, and no frames is not a failure', () => {
-    expect(core.frameWindowFails(core.frameStats([20, 20, 20, 20, 100]))).toBe(true);
+    expect(core.frameWindowFails(core.frameStats([20, 20, 20, 20, 100]))).toBe(false);
+    expect(core.frameWindowFails(core.frameStats([20, 40, 40, 40, 100]))).toBe(true);
     expect(core.frameWindowFails(core.frameStats([20, 20, 20, 20, 20]))).toBe(false);
     expect(core.frameWindowFails(null)).toBe(false);
   });
@@ -518,24 +523,24 @@ describe('createFrameWatch', () => {
   };
   const perWindow = (ms) => core.FRAME_WINDOW_MS / ms;
 
-  it('closes a window at about 2 s and trips on the second bad one in a row', () => {
+  it('closes a window at about 2 s and trips on the third bad one in a row', () => {
     const watch = core.createFrameWatch();
-    expect(pushAll(watch, SLOW, perWindow(SLOW))).toBe(false);
+    expect(pushAll(watch, SLOW, perWindow(SLOW) * 2)).toBe(false);
     expect(pushAll(watch, SLOW, perWindow(SLOW) - 1)).toBe(false);
     expect(watch.push(SLOW)).toBe(true);
     expect(watch.push(FAST)).toBe(true);
   });
 
-  it('does not trip on bad, good, bad', () => {
+  it('does not trip on bad, bad, good, bad, bad', () => {
     const watch = core.createFrameWatch();
-    pushAll(watch, SLOW, perWindow(SLOW));
+    pushAll(watch, SLOW, perWindow(SLOW) * 2);
     pushAll(watch, FAST, perWindow(FAST));
-    expect(pushAll(watch, SLOW, perWindow(SLOW))).toBe(false);
+    expect(pushAll(watch, SLOW, perWindow(SLOW) * 2)).toBe(false);
   });
 
   it('is cleared by reset, part-filled window and count included', () => {
     const watch = core.createFrameWatch();
-    pushAll(watch, SLOW, perWindow(SLOW) * 2);
+    pushAll(watch, SLOW, perWindow(SLOW) * 3);
     watch.reset();
     expect(watch.push(FAST)).toBe(false);
     pushAll(watch, SLOW, perWindow(SLOW) - 1);
@@ -546,6 +551,6 @@ describe('createFrameWatch', () => {
   it('ignores junk intervals', () => {
     const watch = core.createFrameWatch();
     for (const ms of [0, -5, Number.NaN, Infinity]) expect(watch.push(ms)).toBe(false);
-    expect(pushAll(watch, SLOW, perWindow(SLOW) * 2)).toBe(true);
+    expect(pushAll(watch, SLOW, perWindow(SLOW) * 3)).toBe(true);
   });
 });

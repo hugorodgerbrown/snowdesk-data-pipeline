@@ -114,11 +114,12 @@ describe('writing the URL', () => {
     );
   });
 
-  it('drops a ?view= outside Terrain, and any value but 3d', () => {
-    expect(core.withDate('?d=2026-02-10&view=3d', '2026-02-11')).toBe('?d=2026-02-11');
+  it('keeps ?view=3d in Conditions too (SNOW-1452), and drops any value but 3d', () => {
+    expect(core.withDate('?d=2026-02-10&view=3d', '2026-02-11')).toBe('?d=2026-02-11&view=3d');
     expect(core.withDate('?mode=terrain&view=tilted', '2026-02-11')).toBe(
       '?d=2026-02-11&mode=terrain',
     );
+    expect(core.withDate('?d=2026-02-10&view=tilted', '2026-02-11')).toBe('?d=2026-02-11');
   });
 
   it("writes ?d= alone in Dated, as the date write always has", () => {

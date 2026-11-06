@@ -154,7 +154,7 @@
     for (const key of MAP_MODE_CORE.suppressedIn(bootMode)) modeSuppressedKeys.add(key);
   }
   // SNOW-1449: the view, flat or 3-D (map_view_core.js), beside the mode.
-  // 3-D is Terrain's, and drawn by map_view_3d.js for a reader in both the
+  // Either mode can be drawn in 3-D (SNOW-1452), by map_view_3d.js for a reader in both the
   // map_3d and map_modes flags (#map[data-map-view-enabled]). Read here because
   // the view decides the boot basemap (swisstopo winter in 3-D) and the
   // boot camera (a flat boot is never tilted), both below; the coverage
@@ -164,7 +164,7 @@
   const MAP_VIEW_CORE = self.pwaMapViewCore || null;
   const MAP_VIEW_ENABLED = MAP_MODES_ENABLED && !!MAP_VIEW_CORE
     && mapEl.dataset.mapViewEnabled === 'true';
-  let bootView = MAP_VIEW_ENABLED ? MAP_VIEW_CORE.readView(location.search, bootMode) : 'flat';
+  let bootView = MAP_VIEW_ENABLED ? MAP_VIEW_CORE.readView(location.search) : 'flat';
   /**
    * Whether the mode is holding an overlay off the map.
    *
@@ -897,8 +897,7 @@
   );
   // SNOW-1449: the coverage half of the boot view. A ?view=3d whose camera
   // opens outside the elevation's coverage (terrain_filter_core's
-  // COVERAGE_BOUNDS, the one copy of it) boots flat, and so does one
-  // outside Terrain, which readView already said; either way a flagged
+  // COVERAGE_BOUNDS, the one copy of it) boots flat, and a flagged
   // reader's address bar loses the parameter, so a copied link says what
   // they see.
   if (bootView === '3d') {
@@ -1110,12 +1109,19 @@
   // else the reader's current choice, which the picker may have changed
   // since boot. Retrying the boot basemap would swap swisstopo winter out
   // from under 3-D, or bring back a choice the reader had left.
+  /**
+   * The view the map is drawn in now: map_view_3d.js publishes it once it
+   * has booted, and until then it is the boot view.
+   *
+   * @returns {string} ``flat`` or ``3d``.
+   */
+  const liveView = () => (window.pwaMapView ? window.pwaMapView.get() : bootView);
+
   const liveBasemapKey = () => {
     if (layerExplainerRequested) return initialBasemapKey;
     const stored = readStorage(BASEMAP_STORAGE_KEY);
     const preferred = stored && BASEMAP_OPTIONS[stored] ? stored : DEFAULT_BASEMAP_KEY;
-    const view = window.pwaMapView ? window.pwaMapView.get() : bootView;
-    return MAP_VIEW_CORE ? MAP_VIEW_CORE.basemapFor(view, preferred) : preferred;
+    return MAP_VIEW_CORE ? MAP_VIEW_CORE.basemapFor(liveView(), preferred) : preferred;
   };
   window.addEventListener('online', () => {
     if (!basemapFallbackActive) return;
@@ -1407,12 +1413,40 @@
    * nothing to emphasise, and a selected region must not be the one thing
    * still painted after the user switched the layer off.
    *
+   * In the 3-D view (SNOW-1452) it is a light wash with no fade by zoom,
+   * and the edge band below is the stronger outline; ``threeD`` defaults to
+   * the live view.
+   *
    * @param {number} resting The effective resting opacity, 0–1.
-   * @returns {Array|number} A MapLibre zoom ``interpolate``, or 0.
+   * @param {boolean} [threeD] Paint for the 3-D view.
+   * @returns {Array|number} A MapLibre zoom ``interpolate``, a ``case``, or 0.
    */
-  const regionFillOpacity = (resting) => (
-    self.pwaChoroplethCore.regionFillOpacityExpr(resting, EMPHASIS_RATIO)
+  const regionFillOpacity = (resting, threeD = liveView() === '3d') => (
+    self.pwaChoroplethCore.regionFillOpacityExpr(resting, EMPHASIS_RATIO, { threeD })
   );
+
+  /**
+   * The zoom regions-edge was last installed or set to start at; null until
+   * it is installed.
+   *
+   * @type {?number}
+   */
+  let edgeMinZoom = null;
+
+  /**
+   * The edge band's ``line-opacity`` and start zoom for the live view:
+   * stronger, and from z9 rather than z10, in 3-D (SNOW-1452).
+   *
+   * @param {number} resting The effective resting opacity, 0–1.
+   * @returns {{opacity: Array|number, minzoom: number}}
+   */
+  const regionEdgePaint = (resting) => {
+    const options = { threeD: liveView() === '3d' };
+    return {
+      opacity: self.pwaChoroplethCore.regionEdgeOpacityExpr(resting, options),
+      minzoom: self.pwaChoroplethCore.regionEdgeMinZoom(options),
+    };
+  };
 
   // ``compositeOverBackdrop`` was destructured here for the choropleth's
   // fill colours. The fill is translucent again (see the Bulletins step
@@ -1705,11 +1739,13 @@
     // painted. A positive offset on a polygon is an inset (MapLibre's
     // line-offset), and the regions payload serves one consistent winding
     // (RFC 7946) so every region's band lands on its own side.
+    const edgePaint = regionEdgePaint(fillLayout.opacity);
+    edgeMinZoom = edgePaint.minzoom;
     map.addLayer({
       id: 'regions-edge',
       type: 'line',
       source: 'regions',
-      minzoom: self.pwaChoroplethCore.EDGE_MIN_ZOOM,
+      minzoom: edgePaint.minzoom,
       layout: {
         visibility: fillLayout.opacity > 0 ? 'visible' : 'none',
         'line-join': 'round',
@@ -1718,7 +1754,7 @@
         'line-color': fillColours,
         'line-width': self.pwaChoroplethCore.EDGE_WIDTH_PX,
         'line-offset': self.pwaChoroplethCore.EDGE_OFFSET_PX,
-        'line-opacity': self.pwaChoroplethCore.regionEdgeOpacityExpr(fillLayout.opacity),
+        'line-opacity': edgePaint.opacity,
       },
     });
     BASE_LAYER_FILTERS['regions-edge'] = null;
@@ -6753,8 +6789,10 @@
         return {
           date: currentDisplayedDate,
           favouritesEligible: FAVOURITES_ELIGIBLE,
+          // The explainer's capture is always flat.
           fillOpacity: regionFillOpacity(
             BULLETINS_CORE.regionsFillLayout(true, bulletinsVisibility).opacity || 0.5,
+            false,
           ),
         };
       },
@@ -7104,11 +7142,15 @@
     // follows the Micro regions row, as regions-label does below z10.
     const namesOnly = modeSuppressed('bulletins') && overlayDrawn('l4');
     if (map.getLayer('regions-edge')) {
+      const edgePaint = regionEdgePaint(fill.opacity);
       map.setLayoutProperty('regions-edge', 'visibility', closeZoomShown);
-      map.setPaintProperty(
-        'regions-edge', 'line-opacity',
-        self.pwaChoroplethCore.regionEdgeOpacityExpr(fill.opacity),
-      );
+      map.setPaintProperty('regions-edge', 'line-opacity', edgePaint.opacity);
+      // SNOW-1452: z9 in 3-D, z10 flat; its maxzoom is MapLibre's default.
+      // Written only on a change of view, not on every repaint.
+      if (edgePaint.minzoom !== edgeMinZoom) {
+        map.setLayerZoomRange('regions-edge', edgePaint.minzoom, 24);
+        edgeMinZoom = edgePaint.minzoom;
+      }
     }
     if (map.getLayer('regions-level-label')) {
       map.setLayoutProperty(
@@ -7209,6 +7251,15 @@
   document.addEventListener('snowdesk:overlays-changed', (e) => {
     if (!e.detail || e.detail.key !== 'l4') return;
     overlayState.l4 = !!e.detail.visible;
+    applyBulletinsVisibility();
+  });
+
+  // SNOW-1452: the danger fill is a wash, and the edge band starts at z9,
+  // in 3-D. map_view_3d.js says when the view changes; nothing is saved
+  // across it, so going flat repaints the flat values. The boot view is
+  // kept in step for the moment before map_view_3d.js publishes its own.
+  document.addEventListener('snowdesk:map-view-changed', (e) => {
+    if (e.detail && e.detail.view) bootView = e.detail.view;
     applyBulletinsVisibility();
   });
 

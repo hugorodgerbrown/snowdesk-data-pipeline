@@ -291,7 +291,7 @@ def test_a_flagged_reader_can_share_their_routes() -> None:
     )
     assert f'data-route-share-url-template="{template}"' in content
     assert 'data-csrf-token=""' not in content
-    assert "Share this route in 3-D" in content
+    assert "Share this route in 3D" in content
 
 
 def test_route_share_for_3d_ignores_a_blank_token() -> None:

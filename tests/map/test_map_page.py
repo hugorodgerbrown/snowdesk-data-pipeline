@@ -3413,7 +3413,7 @@ def test_the_3d_roundel_shows_only_inside_the_map_3d_flag() -> None:
     """Inside map_3d alone the map carries the 3D link and its script; outside, neither.
 
     SNOW-1449: map_3d without map_modes keeps the link to /map/3d/, since
-    the 3-D view on /map/ is Terrain's and needs the modes.
+    the 3D view on /map/ is Terrain's and needs the modes.
     """
     flagged = _flagged_map(map_3d=True, map_modes=False)
     unflagged = _flagged_map(map_3d=False, map_modes=False)
@@ -3443,7 +3443,7 @@ def test_both_flags_turn_the_roundel_into_the_3d_view() -> None:
     assert 'aria-pressed="false"' in content
     assert 'data-view-face="flat"' in content
     assert 'data-view-face="3d"' in content
-    assert "aria-label='3-D view'" in content
+    assert "aria-label='3D view'" in content
     assert "Back to 2D" not in content
     assert 'id="map-view-strings-template"' in content
     assert 'id="basemap-view-note"' in content
@@ -3463,11 +3463,11 @@ def test_the_3d_view_renders_its_fallback_strings() -> None:
     template = content[content.index('id="map-view-strings-template"') :]
     template = template[: template.index("</template>")]
     for key, text in [
-        ("why-device", "3-D is not available on this device"),
-        ("why-slow", "3-D is too slow on this device"),
-        ("why-webgl", "3-D comes back once the map's graphics have reset"),
+        ("why-device", "3D is not available on this device"),
+        ("why-slow", "3D is too slow on this device"),
+        ("why-webgl", "3D comes back once the map's graphics have reset"),
         ("left-webgl", "The map's graphics reset, so it is flat again."),
-        ("left-slow", "Back in 2D: 3-D is too slow on this device."),
+        ("left-slow", "Back in 2D: 3D is too slow on this device."),
     ]:
         assert f'data-string="{key}">{text}</span>' in template
 
@@ -3485,7 +3485,7 @@ def test_map_modes_alone_has_no_3d_roundel() -> None:
 @pytest.mark.django_db
 @pytest.mark.parametrize("signed_in", [True, False])
 def test_the_compass_renders_for_every_reader(signed_in: bool) -> None:
-    """SNOW-1449: the compass is not behind the 3-D flag.
+    """SNOW-1449: the compass is not behind the 3D flag.
 
     It renders hidden (the map boots north-up), under the zoom roundel, with
     its script, and the tour has a step for it.
@@ -3506,14 +3506,23 @@ def test_the_compass_renders_for_every_reader(signed_in: bool) -> None:
 
 
 @pytest.mark.django_db
-def test_the_3d_view_css_shows_the_roundel_in_terrain_only() -> None:
-    """The roundel is hidden by default and shown under Terrain's root."""
+def test_the_3d_view_css_shows_the_roundel_in_both_modes() -> None:
+    """SNOW-1452: hidden until map_mode.js sets the mode, then shown in either."""
     css = (Path(settings.BASE_DIR) / "static" / "css" / "map.css").read_text()
     assert re.search(r"\.map-utility-pill--view \{\s*display:\s*none;", css)
     assert re.search(
-        r':root\[data-map-mode="terrain"\] \.map-utility-pill--view \{\s*display:\s*inline-flex;',
+        r":root\[data-map-mode\] \.map-utility-pill--view \{\s*display:\s*inline-flex;",
         css,
     )
+    assert 'data-map-mode="terrain"] .map-utility-pill--view' not in css
+
+
+@pytest.mark.django_db
+def test_the_3d_view_has_no_line_for_leaving_terrain() -> None:
+    """SNOW-1452: 3D is drawn in both modes, so no line says it is Terrain's."""
+    content = _flagged_map(map_3d=True, map_modes=True)
+    assert 'data-string="left-mode"' not in content
+    assert "3D is part of Terrain" not in content
 
 
 @pytest.mark.django_db
@@ -3521,7 +3530,7 @@ def test_the_3d_roundel_prefetches_from_the_dem_setting() -> None:
     """SNOW-1444: the roundel warms the tiles /map/3d/ will read.
 
     Both read ``MAP_3D_DEM_TILE_URL``, so moving it to our own copy moves
-    the prefetch too, and the warmed cache is the one the 3-D page uses.
+    the prefetch too, and the warmed cache is the one the 3D page uses.
     """
     dem = "https://tiles.example.test/dem/2026-11/{z}/{x}/{y}.webp"
     client = Client()

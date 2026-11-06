@@ -1,6 +1,7 @@
 // @ts-check
 /*
- * static/js/map_view_3d.js — /map/'s 3-D view (SNOW-1449, SNOW-1455).
+ * static/js/map_view_3d.js — /map/'s 3-D view (SNOW-1449, SNOW-1455,
+ * SNOW-1452).
  *
  * Loaded only for a reader in both the map_3d and map_modes flags
  * (public/map.html), after map.js and the two 3-D helpers it reuses:
@@ -10,7 +11,7 @@
  * The rules that need no map are map_view_core.js's; this applies them.
  * See docs/decisions/a-3d-map-is-maplibre-terrain.md.
  *
- * ENTERING, from the 3D roundel or a tilt gesture in Terrain:
+ * ENTERING, from the 3D roundel or a tilt gesture, in either mode:
  *   1. the elevation protocol is registered, once;
  *   2. the map changes to the swisstopo winter map if it is not on it,
  *      without touching the picker's stored choice;
@@ -30,17 +31,18 @@
  * 3-D it is put back on `styledata`, gated on the elevation source being
  * gone. map.js's own reinstall of the overlays is separate and untouched.
  *
- * The map leaves 3-D, with a line each, when it goes to Conditions (on
- * snowdesk:map-mode-changed, which map_mode.js dispatches synchronously, so
- * a region picked in Terrain lays the map flat before its sheet paints),
- * goes offline, or is panned out of Switzerland. Drawing a route
+ * Both modes are drawn in 3-D (SNOW-1452), so a mode change keeps the view
+ * and only re-reads the switch. map.js paints the danger fill as a light
+ * wash in 3-D on snowdesk:map-view-changed; nothing here touches it. The
+ * map leaves 3-D, with a line each, when it goes offline or is panned out
+ * of Switzerland. Drawing a route
  * (snowdesk:route-draw) takes the relief and the tilt away and locks
  * tilting, on swisstopo winter; when it ends, 3-D comes back if it still
  * can, and otherwise the map leaves it.
  *
  * In 3-D the zoom stops at z9; a zoom-out at the floor says so once per
  * attempt (a burst of wheel ticks or one pinch), not once per tick. While
- * flat in Terrain with 3-D available the pitch ceiling stays open, so a
+ * flat with 3-D available the pitch ceiling stays open, so a
  * reader's own tilt (it carries an originalEvent; an ease does not) is
  * what enters 3-D; anywhere else the ceiling is 0 and the map does not tilt.
  *
@@ -55,10 +57,14 @@
  *     webglcontextlost / webglcontextrestored as map events) goes flat
  *     with one line; until it is restored 3-D cannot be entered. The
  *     restore says nothing and turns the switch back on.
- *   - Frames over budget. A requestAnimationFrame loop runs only between
- *     movestart and moveend, in 3-D and not suspended for a drawing. Its
- *     intervals go to map_3d_core.createFrameWatch; two failing ~2 s
- *     windows in a row (frameWindowFails) go flat for the visit. Timing
+ *   - Frames over budget. A requestAnimationFrame loop runs between
+ *     movestart and moveend, and for as long as the timelapse plays
+ *     (snowdesk:timelapse-state, SNOW-1452), in 3-D and not suspended for
+ *     a drawing. Its intervals go to map_3d_core.createFrameWatch; two
+ *     failing ~2 s windows in a row (frameWindowFails) go flat for the
+ *     visit. During playback that exit's basemap swap also stops the
+ *     timelapse (SNOW-58), which is what a desktop that cannot keep up
+ *     needs. Timing
  *     starts after the first moveend that follows each tilt in, so the
  *     entering ease over a fresh style is not counted; the first interval
  *     of each run is dropped, and a hidden tab is never counted.
@@ -91,20 +97,19 @@
   const COVERAGE = terrainCore ? terrainCore.COVERAGE_BOUNDS : null;
 
   const STRINGS = self.pwaStrings.read('map-view-strings-template', {
-    basemap: '3-D uses the swisstopo winter map; yours comes back in 2D.',
-    'why-zoom': 'Zoom in to see 3-D',
-    'why-offline': '3-D needs a connection',
-    'why-coverage': '3-D covers Switzerland for now',
-    'why-editing': 'Finish drawing the route to see 3-D',
-    'left-mode': 'Back in 2D: 3-D is part of Terrain.',
-    'left-offline': 'Back in 2D: 3-D needs a connection.',
-    'left-coverage': 'Back in 2D: 3-D covers Switzerland for now.',
-    'why-device': '3-D is not available on this device',
-    'why-slow': '3-D is too slow on this device',
-    'why-webgl': '3-D comes back once the map\'s graphics have reset',
+    basemap: '3D uses the swisstopo winter map; yours comes back in 2D.',
+    'why-zoom': 'Zoom in to see 3D',
+    'why-offline': '3D needs a connection',
+    'why-coverage': '3D covers Switzerland for now',
+    'why-editing': 'Finish drawing the route to see 3D',
+    'left-offline': 'Back in 2D: 3D needs a connection.',
+    'left-coverage': 'Back in 2D: 3D covers Switzerland for now.',
+    'why-device': '3D is not available on this device',
+    'why-slow': '3D is too slow on this device',
+    'why-webgl': '3D comes back once the map\'s graphics have reset',
     'left-webgl': 'The map\'s graphics reset, so it is flat again.',
-    'left-slow': 'Back in 2D: 3-D is too slow on this device.',
-    'zoom-floor': '3-D stops here. Switch to 2D to zoom out.',
+    'left-slow': 'Back in 2D: 3D is too slow on this device.',
+    'zoom-floor': '3D stops here. Switch to 2D to zoom out.',
   });
 
   /** @type {string} */
@@ -113,6 +118,10 @@
   let drawing = false;
   /** In 3-D, with the relief and the tilt held off for the drawing. */
   let suspended = false;
+  /** The timelapse is playing (snowdesk:timelapse-state). */
+  let playing = false;
+  /** The camera is moving: between movestart and moveend. */
+  let moving = false;
   /** @type {?number} */
   let savedMinZoom = null;
   /** @type {?number} */
@@ -141,9 +150,6 @@
     if (win.MapSheet && typeof win.MapSheet.toast === 'function') win.MapSheet.toast(text);
   };
 
-  /** @returns {string} The map's mode, `dated` or `terrain`. */
-  const mode = () => (win.pwaMapMode ? win.pwaMapMode.get() : document.documentElement.dataset.mapMode || 'dated');
-
   /** @returns {boolean} */
   const online = () => {
     if (win.pwaConnectivity && typeof win.pwaConnectivity.isOnline === 'function') {
@@ -156,7 +162,6 @@
   const available = () => viewCore.availability({
     online: online(),
     zoom: map.getZoom(),
-    mode: mode(),
     gated: gated !== null,
     tooSlow,
     contextLost,
@@ -189,7 +194,7 @@
   /** The basemap the map is drawing (map.js booted it from the view). */
   let drawn = exploded
     ? viewCore.BASEMAP_KEY
-    : viewCore.basemapFor(viewCore.readView(location.search, mode()), preferredKey());
+    : viewCore.basemapFor(viewCore.readView(location.search), preferredKey());
   // The picker is the other thing that changes it.
   // Counts every swap, the picker's included, so a fetch that resolves after
   // a later swap has started cannot draw over it.
@@ -313,7 +318,7 @@
   /** @param {number} at The frame's timestamp. */
   const onFrame = (at) => {
     frameRequest = null;
-    if (!timing()) {
+    if (!timing() || !(moving || playing)) {
       stopFrames();
       return;
     }
@@ -330,7 +335,7 @@
     frameRequest = window.requestAnimationFrame(onFrame);
   };
 
-  /** Start timing a move, unless one is already being timed. */
+  /** Start timing a move or playback, unless a run is on already. */
   const startFrames = () => {
     if (frameRequest !== null || !timing()) return;
     lastFrameAt = null;
@@ -351,7 +356,6 @@
 
   /** @type {Record<string, string>} */
   const LEFT = {
-    mode: STRINGS['left-mode'],
     offline: STRINGS['left-offline'],
     coverage: STRINGS['left-coverage'],
     webgl: STRINGS['left-webgl'],
@@ -463,17 +467,15 @@
     }, { passive: true });
   }
 
-  // A reader's own tilt in Terrain enters 3-D. An ease (ours, or the
+  // A reader's own tilt enters 3-D, in either mode. An ease (ours, or the
   // exit's way back to flat) carries no originalEvent.
   map.on('pitch', (/** @type {any} */ e) => {
     if (view !== FLAT || !e || !e.originalEvent) return;
     if (map.getPitch() > 0) enter({ gesture: true });
   });
 
-  document.addEventListener('snowdesk:map-mode-changed', () => {
-    if (view === THREE_D && mode() !== 'terrain') exit({ reason: 'mode' });
-    else sync();
-  });
+  // Both modes are drawn in 3-D: a mode change keeps the view.
+  document.addEventListener('snowdesk:map-mode-changed', sync);
 
   const onConnectivity = () => {
     if (view === THREE_D && !online()) exit({ reason: 'offline' });
@@ -483,17 +485,32 @@
   window.addEventListener('offline', onConnectivity);
   window.addEventListener('online', onConnectivity);
 
-  map.on('movestart', startFrames);
+  map.on('movestart', () => {
+    moving = true;
+    startFrames();
+  });
 
   map.on('moveend', () => {
-    stopFrames();
+    moving = false;
+    if (!playing) stopFrames();
     // The first move to end after a tilt in is that ease; the next is timed.
     if (view === THREE_D && !suspended) timingArmed = true;
     if (view === THREE_D && !viewCore.covers(map.getCenter(), COVERAGE)) {
       exit({ reason: 'coverage' });
       return;
     }
+    // Playback started before the tilt-in ease ended is timed from now.
+    if (playing) startFrames();
     sync();
+  });
+
+  // The timelapse plays in 3-D (it plays only on a desktop, SNOW-1452), and
+  // the watchdog times it as it times a move.
+  document.addEventListener('snowdesk:timelapse-state', (e) => {
+    const detail = /** @type {CustomEvent} */ (e).detail;
+    playing = !!(detail && detail.playing);
+    if (playing) startFrames();
+    else if (!moving) stopFrames();
   });
 
   document.addEventListener('snowdesk:route-draw', (e) => {
@@ -602,11 +619,11 @@
   });
 
   document.documentElement.dataset.mapView = FLAT;
-  // map.js booted the view (swisstopo winter, the stored camera) and kept
-  // ?view=3d only in Terrain inside the coverage. A boot that still cannot
+  // map.js booted the view (swisstopo winter, the stored camera) from
+  // ?view=3d, in either mode, inside the coverage. A boot that still cannot
   // enter (offline, or a device the gate keeps out) lays the map flat on
   // the reader's basemap.
-  if (viewCore.readView(location.search, mode()) === THREE_D) {
+  if (viewCore.readView(location.search) === THREE_D) {
     if (!enter({ boot: true })) {
       map.jumpTo({ pitch: 0 });
       swapBasemap(preferredKey());

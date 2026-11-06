@@ -23,6 +23,10 @@
  * therefore dropped to `fill-opacity: 0` and left installed. A regression to
  * `visibility: none` is the thing this file exists to catch.
  *
+ * SNOW-1452: in the 3D view the fill is a light wash and the edge band
+ * starts at z9, repainted on snowdesk:map-view-changed and used by a
+ * reinstall in 3D.
+ *
  * Booting map.js in jsdom follows test_map_download_bytes.js's pattern — see
  * its header for the general rationale. The stub here tracks layout AND
  * paint per layer, since both halves of that assertion matter.
@@ -46,6 +50,7 @@ function stubMapLibre() {
   const handlers = {};
   const layers = new Map();
   const layouts = new Map();
+  const minZooms = new Map();
   const map = {
     on: (ev, a, b) => {
       (handlers[ev] ||= []).push(typeof a === 'function' ? a : b);
@@ -65,7 +70,10 @@ function stubMapLibre() {
     addLayer: (def) => {
       layers.set(def.id, { ...(def.paint || {}) });
       layouts.set(def.id, { ...(def.layout || {}) });
+      if ('minzoom' in def) minZooms.set(def.id, def.minzoom);
     },
+    setLayerZoomRange: (id, minzoom) => { minZooms.set(id, minzoom); },
+    getMinZoomOf: (id) => minZooms.get(id),
     removeLayer: (id) => {
       layers.delete(id);
       layouts.delete(id);
@@ -444,5 +452,76 @@ describe('the legacy l4 key seeds the step once', () => {
 
     expect(checkedStep()).toBe(0.5);
     expect(fillState(mapStub)).toEqual({ visibility: 'visible', opacity: 0.5 });
+  });
+});
+
+describe('the 3D view repaints the danger fill as a wash (SNOW-1452)', () => {
+  /** What map_view_3d.js would publish, with the view it reports. */
+  let liveView = 'flat';
+
+  /** @param {string} next */
+  const changeView = (next) => {
+    liveView = next;
+    document.dispatchEvent(new CustomEvent('snowdesk:map-view-changed', { detail: { view: next } }));
+  };
+
+  const edgeOpacity = () => {
+    const expr = mapStub.getPaintProperty('regions-edge', 'line-opacity');
+    return Array.isArray(expr) ? expr.at(-1) : expr;
+  };
+
+  /** Boot the bundle afresh, as a styledata reinstall would install. */
+  const reboot = async () => {
+    localStorage.clear();
+    buildFixture();
+    mapStub = stubMapLibre();
+    vi.resetModules();
+    await import('../../static/js/basemap_download_core.js');
+    await import('../../static/js/search_core.js');
+    await import('../../static/js/choropleth_core.js');
+    loadMapBundle();
+    for (const handler of mapStub.handlers.load || []) await handler();
+  };
+
+  beforeAll(() => {
+    window.pwaMapView = { get: () => liveView, enter: () => {}, exit: () => {} };
+  });
+
+  afterAll(() => {
+    delete window.pwaMapView;
+  });
+
+  it('paints the wash and the stronger band from z9, and the flat values back', async () => {
+    liveView = 'flat';
+    await reboot();
+    expect(fillState(mapStub).opacity).toBe(0.5);
+    expect(edgeOpacity()).toBeCloseTo(0.55);
+    expect(mapStub.getMinZoomOf('regions-edge')).toBe(10);
+
+    changeView('3d');
+    const wash = mapStub.getPaintProperty('regions-fill', 'fill-opacity');
+    expect(wash[0]).toBe('case');
+    expect(wash.at(-1)).toBeCloseTo(0.15);
+    expect(edgeOpacity()).toBeCloseTo(0.8);
+    expect(mapStub.getMinZoomOf('regions-edge')).toBe(9);
+
+    // The step control still drives it in 3D.
+    clickStep(1);
+    expect(mapStub.getPaintProperty('regions-fill', 'fill-opacity').at(-1)).toBeCloseTo(0.3);
+    clickStep(0.5);
+
+    changeView('flat');
+    expect(fillState(mapStub).opacity).toBe(0.5);
+    expect(mapStub.getPaintProperty('regions-fill', 'fill-opacity')[0]).toBe('interpolate');
+    expect(edgeOpacity()).toBeCloseTo(0.55);
+    expect(mapStub.getMinZoomOf('regions-edge')).toBe(10);
+  });
+
+  it('installs the region layers with the 3D values while in 3D', async () => {
+    liveView = '3d';
+    await reboot();
+    expect(mapStub.getPaintProperty('regions-fill', 'fill-opacity').at(-1)).toBeCloseTo(0.15);
+    expect(edgeOpacity()).toBeCloseTo(0.8);
+    expect(mapStub.getMinZoomOf('regions-edge')).toBe(9);
   });
 });

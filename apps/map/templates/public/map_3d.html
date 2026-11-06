@@ -26,8 +26,8 @@ the page adds no control and no icon for them.
 {# sharing=False and noindex: a flagged sandbox that 404s for everyone   #}
 {# outside the flag or a share link, so there is nothing to unfurl.     #}
 {% block page_meta %}
-    {% trans "3-D map · Snowdesk" as page_title %}
-    {% trans "The mountains in 3-D, with steep terrain and routes." as page_description %}
+    {% trans "3D map · Snowdesk" as page_title %}
+    {% trans "The mountains in 3D, with steep terrain and routes." as page_description %}
     {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False noindex=True %}
 {% endblock page_meta %}
 
@@ -85,7 +85,7 @@ the page adds no control and no icon for them.
                 <span data-string="copied">{% trans "Link copied" %}</span>
                 <span data-string="failed">{% trans "Could not copy the link" %}</span>
                 <span data-string="share_view">{% trans "Share this view" %}</span>
-                <span data-string="share_route">{% trans "Share this route in 3-D" %}</span>
+                <span data-string="share_route">{% trans "Share this route in 3D" %}</span>
                 {# The frame-time probe (?probe=1, SNOW-1448): a measuring tool, but readers of the flag may open it. #}
                 <span data-string="probe_waiting">{% trans "Frame-time probe: waiting for the map to load…" %}</span>
                 <span

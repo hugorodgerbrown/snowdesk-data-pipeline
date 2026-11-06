@@ -1,11 +1,12 @@
 // @ts-check
 /*
  * static/js/map_view_core.js — the map's two views, flat and 3-D (SNOW-1449,
- * SNOW-1455).
+ * SNOW-1455, SNOW-1452).
  *
- * The view sits beside the mode (map_mode_core.js), not inside it: Terrain
- * is what the map shows, the view is how it is drawn. 3-D is Terrain's
- * alone, and is MapLibre's own terrain on the swisstopo winter map
+ * The view sits beside the mode (map_mode_core.js), not inside it: the mode
+ * is what the map shows, the view is how it is drawn. Both Conditions and
+ * Terrain can be drawn in 3-D (SNOW-1452), which is MapLibre's own terrain
+ * on the swisstopo winter map
  * (docs/decisions/a-3d-map-is-maplibre-terrain.md). Every rule that can be
  * decided without a map is here, so Vitest can pin it; static/js/map.js
  * reads it at parse time (the boot basemap, the boot camera and every
@@ -13,15 +14,16 @@
  *
  *   - THE URL. `?view=3d`, beside `?mode=terrain`. Nothing is stored on
  *     the device, so a bare /map/ always opens flat, and a link opens 3-D
- *     only in Terrain. Flat is written by leaving the parameter out.
- *   - AVAILABILITY. 3-D needs Terrain, a device that can draw it, a
+ *     in either mode; the view never picks the mode. Flat is written by
+ *     leaving the parameter out.
+ *   - AVAILABILITY. 3-D needs a device that can draw it, a
  *     connection, no route being drawn, a centre inside the elevation's
  *     coverage and a zoom of at least MIN_ZOOM. The coverage box is passed
  *     in (terrain_filter_core's COVERAGE_BOUNDS), never copied here, so
  *     there is one source of it.
  *   - THE DEVICE (SNOW-1455). Three things turn 3-D off for the rest of a
- *     visit, asked straight after the mode so a device that cannot draw it
- *     is never told to zoom in: the gate at boot (deviceGate: no WebGL, or
+ *     visit, asked first so a device that cannot draw it is never told to
+ *     zoom in: the gate at boot (deviceGate: no WebGL, or
  *     2 GB of memory or less on Android Chrome), frames over budget, and a
  *     lost WebGL context until it is restored. Nothing about the device is
  *     stored.
@@ -34,7 +36,7 @@
  *
  *   VIEWS / URL_PARAM / MIN_ZOOM / BASEMAP_KEY / REASONS
  *   parseView(value)
- *   readView(search, mode)
+ *   readView(search)
  *   withView(search, view)
  *   covers(centre, bounds)
  *   availability(input)
@@ -51,9 +53,6 @@
   /** The query parameter a link carries the view in. */
   const URL_PARAM = 'view';
 
-  /** The mode 3-D belongs to (map_mode_core.MODES.TERRAIN). */
-  const TERRAIN_MODE = 'terrain';
-
   /**
    * The lowest zoom 3-D is drawn at. Below it the relief is too small to
    * read and the elevation tiles too many for a phone.
@@ -65,7 +64,6 @@
 
   /** Why 3-D is unavailable, in the order they are asked. */
   const REASONS = Object.freeze({
-    MODE: 'mode',
     DEVICE: 'device',
     SLOW: 'slow',
     WEBGL: 'webgl',
@@ -86,16 +84,14 @@
   }
 
   /**
-   * The view the map opens in: 3-D only when the link asks for it and the
-   * map is in Terrain. Nothing is stored, so there is no fallback to read.
+   * The view the map opens in: 3-D only when the link asks for it, in
+   * either mode. Nothing is stored, so there is no fallback to read.
    *
    * @param {string} search `location.search`, with or without the `?`.
-   * @param {string} mode The mode the map opens in.
    * @returns {string}
    */
-  function readView(search, mode) {
-    const linked = parseView(new URLSearchParams(search || '').get(URL_PARAM));
-    return linked === VIEWS.THREE_D && mode === TERRAIN_MODE ? VIEWS.THREE_D : VIEWS.FLAT;
+  function readView(search) {
+    return parseView(new URLSearchParams(search || '').get(URL_PARAM));
   }
 
   /**
@@ -132,7 +128,6 @@
    * @typedef {Object} AvailabilityInput
    * @property {boolean} online
    * @property {number} zoom The camera zoom.
-   * @property {string} mode
    * @property {boolean} [gated] deviceGate turned 3-D off at boot.
    * @property {boolean} [tooSlow] The frame watchdog tripped this visit.
    * @property {boolean} [contextLost] The map's WebGL context is lost.
@@ -150,7 +145,6 @@
   function availability(input) {
     /** @param {string} reason */
     const no = (reason) => ({ enabled: false, reason });
-    if (input.mode !== TERRAIN_MODE) return no(REASONS.MODE);
     if (input.gated) return no(REASONS.DEVICE);
     if (input.tooSlow) return no(REASONS.SLOW);
     if (input.contextLost) return no(REASONS.WEBGL);

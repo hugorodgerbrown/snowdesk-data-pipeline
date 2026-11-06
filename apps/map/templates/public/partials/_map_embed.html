@@ -425,8 +425,8 @@ Optional context:
                 </button>
             </div>
             {# SNOW-1449: for a reader in map_3d and map_modes, the 3D roundel     #}
-            {# tilts THIS map into 3-D, in Terrain only (map.css shows it under     #}
-            {# :root[data-map-mode="terrain"]). It is a 3D | 2D segmented switch:   #}
+            {# tilts THIS map into 3-D, in either mode since SNOW-1452 (map.css     #}
+            {# shows it once map_mode.js sets :root[data-map-mode]). It is a 3D | 2D segmented switch: #}
             {# both views always show and the raised one is current (aria-pressed   #}
             {# picks it), so it never names the view you are not in. Unavailable,  #}
             {# it is aria-disabled and a tap says why. map_view_3d.js drives it and warms #}
@@ -439,7 +439,7 @@ Optional context:
                         data-dem-tile-url="{{ map_3d_dem_tile_url }}"
                         class="map-view-switch text-chip font-semibold"
                         aria-pressed="false"
-                        aria-label='{% trans "3-D view" %}'
+                        aria-label='{% trans "3D view" %}'
                     >
                         <span class="map-view-face" data-view-face="3d" aria-hidden="true">{% trans "3D" %}</span>
                         <span class="map-view-face" data-view-face="flat" aria-hidden="true">{% trans "2D" %}</span>
@@ -457,7 +457,7 @@ Optional context:
                         data-dem-tile-url="{{ map_3d_dem_tile_url }}"
                         data-route-share="{{ map_3d_route_share }}"
                         class="map-utility-button hover-affordance text-chip font-semibold"
-                        aria-label='{% trans "Open in 3-D" %}'
+                        aria-label='{% trans "Open in 3D" %}'
                     >{% trans "3D" %}</a>
                 </div>
             {% endif %}
@@ -1108,7 +1108,7 @@ Optional context:
                 {# why (static/js/map_basemap_picker.js shows it).                #}
                 {% if map_3d_view %}
                     <li role="none" id="basemap-view-note" class="basemap-view-note" hidden>
-                        {% trans "3-D uses the swisstopo winter map; yours comes back in 2D." %}
+                        {% trans "3D uses the swisstopo winter map; yours comes back in 2D." %}
                     </li>
                 {% endif %}
                 <li role="none">
@@ -1885,20 +1885,19 @@ Optional context:
                 <template id="map-view-strings-template">
                     <span
                         data-string="basemap"
-                    >{% trans "3-D uses the swisstopo winter map; yours comes back in 2D." %}</span>
-                    <span data-string="why-zoom">{% trans "Zoom in to see 3-D" %}</span>
-                    <span data-string="why-offline">{% trans "3-D needs a connection" %}</span>
-                    <span data-string="why-coverage">{% trans "3-D covers Switzerland for now" %}</span>
-                    <span data-string="why-editing">{% trans "Finish drawing the route to see 3-D" %}</span>
-                    <span data-string="left-mode">{% trans "Back in 2D: 3-D is part of Terrain." %}</span>
-                    <span data-string="left-offline">{% trans "Back in 2D: 3-D needs a connection." %}</span>
-                    <span data-string="left-coverage">{% trans "Back in 2D: 3-D covers Switzerland for now." %}</span>
-                    <span data-string="why-device">{% trans "3-D is not available on this device" %}</span>
-                    <span data-string="why-slow">{% trans "3-D is too slow on this device" %}</span>
-                    <span data-string="why-webgl">{% trans "3-D comes back once the map's graphics have reset" %}</span>
+                    >{% trans "3D uses the swisstopo winter map; yours comes back in 2D." %}</span>
+                    <span data-string="why-zoom">{% trans "Zoom in to see 3D" %}</span>
+                    <span data-string="why-offline">{% trans "3D needs a connection" %}</span>
+                    <span data-string="why-coverage">{% trans "3D covers Switzerland for now" %}</span>
+                    <span data-string="why-editing">{% trans "Finish drawing the route to see 3D" %}</span>
+                    <span data-string="left-offline">{% trans "Back in 2D: 3D needs a connection." %}</span>
+                    <span data-string="left-coverage">{% trans "Back in 2D: 3D covers Switzerland for now." %}</span>
+                    <span data-string="why-device">{% trans "3D is not available on this device" %}</span>
+                    <span data-string="why-slow">{% trans "3D is too slow on this device" %}</span>
+                    <span data-string="why-webgl">{% trans "3D comes back once the map's graphics have reset" %}</span>
                     <span data-string="left-webgl">{% trans "The map's graphics reset, so it is flat again." %}</span>
-                    <span data-string="left-slow">{% trans "Back in 2D: 3-D is too slow on this device." %}</span>
-                    <span data-string="zoom-floor">{% trans "3-D stops here. Switch to 2D to zoom out." %}</span>
+                    <span data-string="left-slow">{% trans "Back in 2D: 3D is too slow on this device." %}</span>
+                    <span data-string="zoom-floor">{% trans "3D stops here. Switch to 2D to zoom out." %}</span>
                 </template>
             {% endif %}
             {% comment %}
@@ -2138,7 +2137,7 @@ Optional context:
             <p data-help-body>{% trans "The needle points north. Tap it to turn the map back to north." %}</p>
         </li>
         {% if map_3d_view %}
-            <li data-help-target="#map-view-toggle" data-help-chapter="move" data-help-title='{% trans "3-D" %}'>
+            <li data-help-target="#map-view-toggle" data-help-chapter="move" data-help-title='{% trans "3D" %}'>
                 <p data-help-body>
                     {% trans "In Terrain, tap 3D or tilt with two fingers to see the mountains in relief. Tap 2D to lay the map flat again." %}
                 </p>

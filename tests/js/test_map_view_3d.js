@@ -1,21 +1,24 @@
 /*
- * tests/js/test_map_view_3d.js — /map/'s 3-D view against a fake map
- * (SNOW-1449, SNOW-1455).
+ * tests/js/test_map_view_3d.js — /map/'s 3D view against a fake map
+ * (SNOW-1449, SNOW-1455, SNOW-1452).
  *
  * Pinned: entering (swisstopo winter, the relief, the tilt, the floor, the
  * URL, one line) and leaving (the reader's basemap back, ESRI awaited,
  * none at all for a reader on swisstopo winter; pitch 0, bearing kept);
- * the relief put back after a setStyle; a reader's tilt entering 3-D in
- * Terrain and nowhere else; leaving for Conditions, offline and outside
- * Switzerland; a route being drawn; why the roundel is disabled; the z9
- * line once per attempt; and the basemap picker's rows disabled in 3-D.
+ * the relief put back after a setStyle; a reader's tilt entering 3D in
+ * either mode; a mode change keeping 3D (SNOW-1452); leaving offline and
+ * outside Switzerland; a route being drawn; why the roundel is disabled; the z9
+ * line once per attempt; and the basemap picker's rows disabled in 3D.
  *
  * SNOW-1455, with a controllable requestAnimationFrame and visibility: a
- * lost WebGL context lays the map flat and its restore lets 3-D back in;
- * two slow frame windows lay it flat for the visit; frames are never timed
+ * lost WebGL context lays the map flat and its restore lets 3D back in;
+ * three slow frame windows lay it flat for the visit; frames are never timed
  * while flat, between moves, during the entering ease or in a hidden tab;
- * a bad window then a good one stays in 3-D; and the device gate keeps
- * 3-D off at boot.
+ * a bad window then a good one stays in 3D; and the device gate keeps
+ * 3D off at boot.
+ *
+ * SNOW-1452: the timelapse plays in 3D with no setStyle, and the watchdog
+ * times its frames with the camera still.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -197,7 +200,7 @@ const inThreeD = (map) => terrain.hasTerrain(map) && !!map.getLayer(terrain.SUNL
 const toasts = () => env.toast.mock.calls.map((c) => c[0]);
 const view = () => new URLSearchParams(window.location.search).get('view');
 
-describe('entering 3-D', () => {
+describe('entering 3D', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('swaps to swisstopo winter, lifts the relief and tilts in', async () => {
@@ -216,7 +219,7 @@ describe('entering 3-D', () => {
     expect(new URLSearchParams(window.location.search).get('mode')).toBe('terrain');
     expect(button.getAttribute('aria-pressed')).toBe('true');
     expect(window.pwaMapView.get()).toBe('3d');
-    expect(toasts()).toEqual(['3-D uses the swisstopo winter map; yours comes back in 2D.']);
+    expect(toasts()).toEqual(['3D uses the swisstopo winter map; yours comes back in 2D.']);
     expect(window.localStorage.getItem('snowdesk.map.basemap')).toBeNull();
   });
 
@@ -247,11 +250,11 @@ describe('entering 3-D', () => {
 describe('the 3D | 2D switch', () => {
   it('keeps one name and says the view by aria-pressed', async () => {
     const { button } = await boot();
-    button.setAttribute('aria-label', '3-D view');
+    button.setAttribute('aria-label', '3D view');
     button.click();
     await flush();
     expect(button.getAttribute('aria-pressed')).toBe('true');
-    expect(button.getAttribute('aria-label')).toBe('3-D view');
+    expect(button.getAttribute('aria-label')).toBe('3D view');
   });
 
   it('does nothing when the raised segment is tapped, and switches on the other', async () => {
@@ -271,7 +274,7 @@ describe('the 3D | 2D switch', () => {
   });
 });
 
-describe('leaving 3-D', () => {
+describe('leaving 3D', () => {
   it('lays the map flat, keeps the bearing and brings the reader\'s basemap back', async () => {
     const { map, button } = await boot({ stored: 'openfreemap_liberty' });
     button.click();
@@ -307,7 +310,7 @@ describe('leaving 3-D', () => {
     let release = () => {};
     env.resolveBasemapStyle.mockImplementationOnce(() => new Promise((r) => { release = r; }));
     button.click(); // 2D: the ESRI fetch hangs
-    button.click(); // back to 3-D before it lands
+    button.click(); // back to 3D before it lands
     await flush();
     release({ rewritten: URLS.basemap_at });
     await flush();
@@ -326,7 +329,7 @@ describe('leaving 3-D', () => {
 });
 
 describe('the relief survives a setStyle', () => {
-  it('is put back on the next styledata while in 3-D, and not when flat', async () => {
+  it('is put back on the next styledata while in 3D, and not when flat', async () => {
     const { map, button } = await boot();
     button.click();
     await flush();
@@ -351,11 +354,20 @@ describe('the tilt gesture', () => {
     expect(map.pitch).toBe(12);
   });
 
-  it('holds the flat map flat outside Terrain and below z9', async () => {
+  it('enters on a reader\'s own tilt in Conditions too', async () => {
+    const { map } = await boot({ mode: 'dated', search: '', stored: 'swisstopo_winter' });
+    expect(map.maxPitch).toBe(core3d.MAX_PITCH);
+    map.pitch = 12;
+    map.fire('pitch', { originalEvent: new Event('touchmove') });
+    expect(window.pwaMapView.get()).toBe('3d');
+  });
+
+  it('holds the flat map flat below z9, in either mode', async () => {
     const { map } = await boot({ mode: 'dated', search: '' });
+    map.zoom = 7;
+    map.fire('moveend');
     expect(map.maxPitch).toBe(0);
     env.mode = 'terrain';
-    map.zoom = 7;
     document.dispatchEvent(new CustomEvent('snowdesk:map-mode-changed', { detail: { mode: 'terrain' } }));
     expect(map.maxPitch).toBe(0);
     map.zoom = 10;
@@ -364,27 +376,41 @@ describe('the tilt gesture', () => {
   });
 });
 
-describe('what lays 3-D flat', () => {
-  it('a change to Conditions, at once and with a line', async () => {
+describe('both modes in 3D', () => {
+  it('opens ?view=3d in Conditions', async () => {
+    const { map } = await boot({ mode: 'dated', search: '?view=3d', stored: 'swisstopo_winter' });
+    expect(window.pwaMapView.get()).toBe('3d');
+    expect(inThreeD(map)).toBe(true);
+  });
+
+  it('keeps 3D, the URL and the tilt across a mode change, with no line', async () => {
     const { map, button } = await boot();
     button.click();
     await flush();
-    env.mode = 'dated';
-    document.dispatchEvent(new CustomEvent('snowdesk:map-mode-changed', { detail: { mode: 'dated' } }));
-    expect(window.pwaMapView.get()).toBe('flat');
-    expect(map.getTerrain()).toBeNull();
-    expect(map.pitch).toBe(0);
-    expect(map.maxPitch).toBe(0);
-    expect(toasts().at(-1)).toBe('Back in 2D: 3-D is part of Terrain.');
+    const pitch = map.pitch;
+    env.toast.mockClear();
+    for (const next of ['dated', 'terrain', 'dated']) {
+      env.mode = next;
+      document.dispatchEvent(new CustomEvent('snowdesk:map-mode-changed', { detail: { mode: next } }));
+      expect(window.pwaMapView.get()).toBe('3d');
+      expect(inThreeD(map)).toBe(true);
+      expect(map.pitch).toBe(pitch);
+      expect(map.maxPitch).toBe(core3d.MAX_PITCH);
+      expect(view()).toBe('3d');
+      expect(button.getAttribute('aria-pressed')).toBe('true');
+    }
+    expect(toasts()).toEqual([]);
   });
+});
 
+describe('what lays 3D flat', () => {
   it('going offline', async () => {
     const { button } = await boot();
     button.click();
     env.online = false;
     document.dispatchEvent(new CustomEvent('snowdesk:connectivity-changed', { detail: { online: false } }));
     expect(window.pwaMapView.get()).toBe('flat');
-    expect(toasts().at(-1)).toBe('Back in 2D: 3-D needs a connection.');
+    expect(toasts().at(-1)).toBe('Back in 2D: 3D needs a connection.');
   });
 
   it('a pan out of Switzerland', async () => {
@@ -394,7 +420,7 @@ describe('what lays 3-D flat', () => {
     map.fire('moveend');
     expect(window.pwaMapView.get()).toBe('flat');
     expect(view()).toBeNull();
-    expect(toasts().at(-1)).toBe('Back in 2D: 3-D covers Switzerland for now.');
+    expect(toasts().at(-1)).toBe('Back in 2D: 3D covers Switzerland for now.');
   });
 });
 
@@ -418,7 +444,7 @@ describe('drawing a route', () => {
     expect(map.setStyle).not.toHaveBeenCalled();
   });
 
-  it('lays the map flat at the end when 3-D can no longer be drawn', async () => {
+  it('lays the map flat at the end when 3D can no longer be drawn', async () => {
     const { map, button } = await boot();
     button.click();
     document.dispatchEvent(new CustomEvent('snowdesk:route-draw', { detail: { active: true } }));
@@ -430,9 +456,9 @@ describe('drawing a route', () => {
 
 describe('the disabled roundel', () => {
   it.each([
-    ['zoomed out', { zoom: 7 }, {}, 'Zoom in to see 3-D'],
-    ['outside Switzerland', { centre: PARIS }, {}, '3-D covers Switzerland for now'],
-    ['offline', {}, { online: false }, '3-D needs a connection'],
+    ['zoomed out', { zoom: 7 }, {}, 'Zoom in to see 3D'],
+    ['outside Switzerland', { centre: PARIS }, {}, '3D covers Switzerland for now'],
+    ['offline', {}, { online: false }, '3D needs a connection'],
   ])('says why when %s', async (_case, camera, options, line) => {
     const { map, button } = await boot(options);
     Object.assign(map, camera);
@@ -446,7 +472,7 @@ describe('the disabled roundel', () => {
 });
 
 describe('the zoom floor', () => {
-  it('says where 3-D stops once per attempt, not once per wheel tick', async () => {
+  it('says where 3D stops once per attempt, not once per wheel tick', async () => {
     const { map, button } = await boot();
     button.click();
     map.zoom = 9;
@@ -458,7 +484,7 @@ describe('the zoom floor', () => {
       now += 40;
       container.dispatchEvent(new WheelEvent('wheel', { deltaY: 100 }));
     }
-    expect(toasts()).toEqual(['3-D stops here. Switch to 2D to zoom out.']);
+    expect(toasts()).toEqual(['3D stops here. Switch to 2D to zoom out.']);
     now += 2000;
     container.dispatchEvent(new WheelEvent('wheel', { deltaY: 100 }));
     expect(toasts()).toHaveLength(2);
@@ -471,7 +497,7 @@ describe('the zoom floor', () => {
   });
 });
 
-describe('the basemap picker in 3-D', () => {
+describe('the basemap picker in 3D', () => {
   it('disables its rows and shows the line, and gives back only what it took', async () => {
     const { button } = await boot();
     const rows = () => Array.from(document.querySelectorAll('[data-basemap-key]'));
@@ -493,7 +519,13 @@ beforeEach(() => {
   document.documentElement.removeAttribute('data-map-view');
 });
 
-/** Enter 3-D from the switch and let the entering ease end. */
+// Each boot imports a fresh runner, and the earlier ones still listen on the
+// document; laid flat, they answer no timelapse or route event of a later test.
+afterEach(() => {
+  if (window.pwaMapView) window.pwaMapView.exit();
+});
+
+/** Enter 3D from the switch and let the entering ease end. */
 async function enterAndSettle() {
   const booted = await boot();
   booted.button.click();
@@ -513,9 +545,11 @@ const gesture = (map, ms, intervals) => {
 const SLOW_MS = 50;
 const FAST_MS = 20;
 const perWindow = (ms) => core3d.FRAME_WINDOW_MS / ms;
+/** Slow windows in a row that lay 3D flat. */
+const TRIP = core3d.FRAME_WINDOWS_TO_TRIP;
 
 describe('a lost WebGL context', () => {
-  it('lays the map flat with one line, and its restore lets 3-D back in', async () => {
+  it('lays the map flat with one line, and its restore lets 3D back in', async () => {
     const { map, button } = await enterAndSettle();
     env.toast.mockClear();
     map.fire('webglcontextlost');
@@ -527,7 +561,7 @@ describe('a lost WebGL context', () => {
     expect(map.maxPitch).toBe(0);
     button.click();
     expect(window.pwaMapView.get()).toBe('flat');
-    expect(toasts().at(-1)).toBe('3-D comes back once the map\'s graphics have reset');
+    expect(toasts().at(-1)).toBe('3D comes back once the map\'s graphics have reset');
     env.toast.mockClear();
     map.fire('webglcontextrestored');
     expect(toasts()).toEqual([]);
@@ -554,17 +588,19 @@ describe('a lost WebGL context', () => {
 });
 
 describe('the frame watchdog', () => {
-  it('lays the map flat after two slow windows, and keeps 3-D off', async () => {
+  it('lays the map flat after three slow windows, and keeps 3D off', async () => {
     const { map, button } = await enterAndSettle();
     env.toast.mockClear();
-    gesture(map, SLOW_MS, perWindow(SLOW_MS) * 2);
+    gesture(map, SLOW_MS, perWindow(SLOW_MS) * (TRIP - 1));
+    expect(window.pwaMapView.get()).toBe('3d');
+    gesture(map, SLOW_MS, perWindow(SLOW_MS));
     expect(window.pwaMapView.get()).toBe('flat');
-    expect(toasts()).toEqual(['Back in 2D: 3-D is too slow on this device.']);
+    expect(toasts()).toEqual(['Back in 2D: 3D is too slow on this device.']);
     expect(rafQueue.size).toBe(0);
     expect(button.getAttribute('aria-disabled')).toBe('true');
     button.click();
     expect(window.pwaMapView.get()).toBe('flat');
-    expect(toasts().at(-1)).toBe('3-D is too slow on this device');
+    expect(toasts().at(-1)).toBe('3D is too slow on this device');
     expect(map.maxPitch).toBe(0);
     map.fire('webglcontextrestored');
     expect(button.getAttribute('aria-disabled')).toBe('true');
@@ -572,25 +608,28 @@ describe('the frame watchdog', () => {
 
   it('counts failing windows across separate gestures', async () => {
     const { map } = await enterAndSettle();
-    gesture(map, SLOW_MS, perWindow(SLOW_MS));
-    expect(window.pwaMapView.get()).toBe('3d');
+    for (let i = 1; i < TRIP; i += 1) {
+      gesture(map, SLOW_MS, perWindow(SLOW_MS));
+      expect(window.pwaMapView.get()).toBe('3d');
+    }
     gesture(map, SLOW_MS, perWindow(SLOW_MS));
     expect(window.pwaMapView.get()).toBe('flat');
   });
 
-  it('stays in 3-D after one bad window and then a good one', async () => {
+  it('stays in 3D when a good window breaks the bad ones', async () => {
     const { map } = await enterAndSettle();
-    gesture(map, SLOW_MS, perWindow(SLOW_MS));
+    gesture(map, SLOW_MS, perWindow(SLOW_MS) * (TRIP - 1));
     gesture(map, FAST_MS, perWindow(FAST_MS));
-    gesture(map, SLOW_MS, perWindow(SLOW_MS));
+    gesture(map, SLOW_MS, perWindow(SLOW_MS) * (TRIP - 1));
     expect(window.pwaMapView.get()).toBe('3d');
     expect(rafQueue.size).toBe(0);
   });
 
   it('drops the first interval of each run', async () => {
     const { map } = await enterAndSettle();
-    // One slow window, then a run whose only slow interval is its first.
-    gesture(map, SLOW_MS, perWindow(SLOW_MS));
+    // One window short of a trip, then a run whose only slow interval is
+    // its first.
+    gesture(map, SLOW_MS, perWindow(SLOW_MS) * (TRIP - 1));
     map.fire('movestart');
     frames(FAST_MS, 1);
     frames(5000, 1);
@@ -636,7 +675,7 @@ describe('frames that are never timed', () => {
     expect(rafQueue.size).toBe(0);
     expect(window.pwaMapView.get()).toBe('3d');
     map.fire('moveend');
-    gesture(map, SLOW_MS, perWindow(SLOW_MS) * 2);
+    gesture(map, SLOW_MS, perWindow(SLOW_MS) * TRIP);
     expect(window.pwaMapView.get()).toBe('flat');
   });
 
@@ -671,13 +710,13 @@ describe('the device gate', () => {
   it.each([
     ['no WebGL on the canvas', { webgl: false }],
     ['2 GB on Android Chrome', { deviceMemory: 2, userAgent: ANDROID_UA }],
-  ])('keeps 3-D off at boot with %s: a tap says why and a tilt is ignored', async (_case, device) => {
+  ])('keeps 3D off at boot with %s: a tap says why and a tilt is ignored', async (_case, device) => {
     const { map, button } = await boot(device);
     expect(button.getAttribute('aria-disabled')).toBe('true');
     expect(map.maxPitch).toBe(0);
     button.click();
     expect(window.pwaMapView.get()).toBe('flat');
-    expect(toasts()).toEqual(['3-D is not available on this device']);
+    expect(toasts()).toEqual(['3D is not available on this device']);
     // With the ceiling at 0 a reader's tilt does not move the map.
     map.pitch = Math.min(12, map.maxPitch);
     map.fire('pitch', { originalEvent: new Event('touchmove') });
@@ -699,5 +738,81 @@ describe('the device gate', () => {
     expect(map.setStyle).toHaveBeenCalledWith(URLS.openfreemap_liberty, { diff: false });
     expect(view()).toBeNull();
     expect(toasts()).toEqual([]);
+  });
+});
+
+describe('the timelapse plays in 3D (SNOW-1452)', () => {
+  /** @param {boolean} playing */
+  const timelapse = (playing) => {
+    document.dispatchEvent(new CustomEvent('snowdesk:timelapse-state', { detail: { playing } }));
+  };
+
+  let stopCounting = () => {};
+
+  /** Count snowdesk:basemap-changing, which stops the timelapse (SNOW-58). */
+  const countSwaps = () => {
+    const seen = { n: 0 };
+    const count = () => { seen.n += 1; };
+    document.addEventListener('snowdesk:basemap-changing', count);
+    stopCounting = () => document.removeEventListener('snowdesk:basemap-changing', count);
+    return seen;
+  };
+
+  afterEach(() => {
+    stopCounting();
+    timelapse(false);
+  });
+
+  it('keeps the relief and the tilt, with no setStyle and no basemap swap', async () => {
+    const { map } = await enterAndSettle();
+    const pitch = map.pitch;
+    map.setStyle.mockClear();
+    const swaps = countSwaps();
+    timelapse(true);
+    expect(window.pwaMapView.get()).toBe('3d');
+    expect(inThreeD(map)).toBe(true);
+    expect(map.pitch).toBe(pitch);
+    expect(map.setStyle).not.toHaveBeenCalled();
+    expect(swaps.n).toBe(0);
+  });
+
+  it('times its frames with the camera still, and slow windows go flat', async () => {
+    const { map } = await enterAndSettle();
+    env.toast.mockClear();
+    const swaps = countSwaps();
+    timelapse(true);
+    expect(rafQueue.size).toBe(1);
+    frames(SLOW_MS, perWindow(SLOW_MS) * (TRIP - 1) + 2);
+    expect(window.pwaMapView.get()).toBe('3d');
+    frames(SLOW_MS, perWindow(SLOW_MS));
+    expect(window.pwaMapView.get()).toBe('flat');
+    expect(toasts()).toEqual(['Back in 2D: 3D is too slow on this device.']);
+    // The way back to the reader's basemap is what stops the timelapse.
+    expect(swaps.n).toBe(1);
+    expect(rafQueue.size).toBe(0);
+  });
+
+  it('stops timing when it stops, unless the camera is still moving', async () => {
+    const { map } = await enterAndSettle();
+    timelapse(true);
+    frames(FAST_MS, 3);
+    timelapse(false);
+    expect(rafQueue.size).toBe(0);
+    timelapse(true);
+    map.fire('movestart');
+    timelapse(false);
+    expect(rafQueue.size).toBe(1);
+    map.fire('moveend');
+    expect(rafQueue.size).toBe(0);
+  });
+
+  it('is timed from the end of the entering ease when it starts during it', async () => {
+    const { map, button } = await boot();
+    button.click();
+    await flush();
+    timelapse(true);
+    expect(rafQueue.size).toBe(0);
+    map.fire('moveend');
+    expect(rafQueue.size).toBe(1);
   });
 });
