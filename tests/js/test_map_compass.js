@@ -1,9 +1,9 @@
 /*
  * tests/js/test_map_compass.js — the map's compass (SNOW-1449).
  *
- * Pinned: hidden while the map is north-up, shown once it turns, the
- * needle turned against the bearing on every rotate, and a press easing
- * back to north without touching the pitch, flat and in 3-D alike.
+ * Pinned: shown at all times, north-up or turned, the needle turned
+ * against the bearing on every rotate, and a press easing back to north
+ * without touching the pitch, flat and in 3-D alike.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -31,7 +31,7 @@ function fakeMap(bearing = 0, pitch = 0) {
 
 async function boot(map) {
   document.body.innerHTML = `
-    <button id="map-compass" type="button" hidden>
+    <button id="map-compass" type="button">
       <svg data-compass-needle></svg>
     </button>`;
   window.snowdeskMapState = { map };
@@ -46,12 +46,13 @@ async function boot(map) {
 describe('map_compass', () => {
   beforeEach(() => { document.body.innerHTML = ''; });
 
-  it('is hidden while the map is north-up', async () => {
-    const { button } = await boot(fakeMap(0));
-    expect(button.hidden).toBe(true);
+  it('is shown while the map is north-up, its needle up', async () => {
+    const { button, needle } = await boot(fakeMap(0));
+    expect(button.hidden).toBe(false);
+    expect(needle.style.transform).toBe('rotate(0deg)');
   });
 
-  it('shows once the map turns, its needle against the bearing', async () => {
+  it('stays shown as the map turns, its needle against the bearing', async () => {
     const map = fakeMap(0);
     const { button, needle } = await boot(map);
     map.turn(40);
@@ -66,13 +67,13 @@ describe('map_compass', () => {
     expect(button.hidden).toBe(false);
   });
 
-  it('eases back to north on a press and hides again, flat', async () => {
+  it('eases back to north on a press and stays shown, flat', async () => {
     const map = fakeMap(30, 0);
     const { button } = await boot(map);
     button.click();
     expect(map.easeTo).toHaveBeenCalledWith(expect.objectContaining({ bearing: 0 }));
     expect(map.easeTo.mock.calls[0][0]).not.toHaveProperty('pitch');
-    expect(button.hidden).toBe(true);
+    expect(button.hidden).toBe(false);
   });
 
   it('keeps the tilt in 3-D', async () => {
@@ -82,12 +83,5 @@ describe('map_compass', () => {
     button.click();
     expect(map.bearing).toBe(0);
     expect(map.pitch).toBe(64);
-  });
-
-  it('counts a hair off north as north-up', async () => {
-    const map = fakeMap(0);
-    const { button } = await boot(map);
-    map.turn(0.2);
-    expect(button.hidden).toBe(true);
   });
 });

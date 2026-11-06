@@ -365,8 +365,7 @@ def test_help_tour_reads_the_map_in_four_chapters() -> None:
         ("#region-sheet | #search-pill", "read"),
         ("#map-calendar-toggle", "read"),
         ("#search-toggle, #locate-toggle, #map-zoom-toggle", "move"),
-        # SNOW-1449: the compass, dropped by the tour while the map is
-        # north-up, as it is hidden then.
+        # SNOW-1449: the compass, always shown.
         ("#map-compass", "move"),
         ("#basemap-toggle", "move"),
         ("#map-control-group-yours", "yours"),
@@ -3487,8 +3486,8 @@ def test_map_modes_alone_has_no_3d_roundel() -> None:
 def test_the_compass_renders_for_every_reader(signed_in: bool) -> None:
     """SNOW-1449: the compass is not behind the 3D flag.
 
-    It renders hidden (the map boots north-up), under the zoom roundel, with
-    its script, and the tour has a step for it.
+    It renders shown, north-up or not, under the zoom roundel, with its
+    script, and the tour has a step for it.
     """
     client = Client()
     if signed_in:
@@ -3500,7 +3499,7 @@ def test_the_compass_renders_for_every_reader(signed_in: bool) -> None:
         < compass
         < content.index('id="map-help-toggle"')
     )
-    assert "hidden" in content[compass : content.index(">", compass)]
+    assert "hidden" not in content[compass : content.index(">", compass)]
     assert "js/map_compass.js" in content
     assert 'data-help-target="#map-compass"' in content
 

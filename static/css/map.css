@@ -7203,19 +7203,9 @@ body.map-framing #map-legend {
     color: var(--color-text-2);
 }
 
-/* The compass (#map-compass), under the zoom roundel for every reader. Its
-   author `display` would beat the UA's [hidden], so hidden is restated. The
-   needle turns about its centre against the map's bearing. */
-.map-compass[hidden] {
-    display: none;
-}
-
+/* The compass (#map-compass), under the zoom roundel for every reader and
+   always shown. The needle turns about its centre against the map's
+   bearing. */
 .map-compass-needle {
     transform-origin: 50% 50%;
-}
-
-/* The component library's compass demo: one roundel's slot, so a hidden
-   (north-up) variant keeps its height. */
-.map-compass-demo {
-    min-height: var(--map-control-sm);
 }
