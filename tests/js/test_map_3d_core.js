@@ -368,6 +368,17 @@ describe('createDemLoader', () => {
     expect(dem.usingFallback()).toBe(false);
   });
 
+  it('treats a 204 outside our copy\'s area as missing: AWS for that tile, not counted', async () => {
+    const { fetchTile, enlarge, dem } = loader((url) => answer(url.startsWith('https://mt') ? 204 : 200));
+    for (let i = 0; i < core.DEM_FALLBACK_AFTER + 1; i += 1) {
+      expect((await dem.load(TILE, signal())).data).toBe('enlarged');
+    }
+    expect(fetchTile.mock.calls.at(-2)[0]).toBe('https://mt.example/12/2133/1458.webp');
+    expect(fetchTile.mock.calls.at(-1)[0]).toBe('https://aws.example/12/2133/1458.png');
+    expect(enlarge).toHaveBeenCalledTimes(core.DEM_FALLBACK_AFTER + 1);
+    expect(dem.usingFallback()).toBe(false);
+  });
+
   it('goes straight to AWS after Mapterhorn fails enough times in a row', async () => {
     const { fetchTile, dem } = loader((url) => {
       if (url.startsWith('https://mt')) throw new TypeError('Failed to fetch');

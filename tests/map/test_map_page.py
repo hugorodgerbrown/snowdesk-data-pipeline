@@ -3410,3 +3410,21 @@ def test_the_3d_roundel_shows_only_inside_the_map_3d_flag() -> None:
     )
     assert 'id="map-3d-link"' not in unflagged
     assert "js/map_3d_link.js" not in unflagged
+
+
+@pytest.mark.django_db
+def test_the_3d_roundel_prefetches_from_the_dem_setting() -> None:
+    """SNOW-1444: the roundel warms the tiles /map/3d/ will read.
+
+    Both read ``MAP_3D_DEM_TILE_URL``, so moving it to our own copy moves
+    the prefetch too, and the warmed cache is the one the 3-D page uses.
+    """
+    dem = "https://tiles.example.test/dem/2026-11/{z}/{x}/{y}.webp"
+    client = Client()
+    client.force_login(UserFactory.create())
+    with (
+        override_flag("map_3d", active=True),
+        override_settings(MAP_3D_DEM_TILE_URL=dem),
+    ):
+        content = client.get(reverse("public:map")).content.decode()
+    assert f'data-dem-tile-url="{dem}"' in content

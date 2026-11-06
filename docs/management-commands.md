@@ -596,6 +596,29 @@ uv run python manage.py compute_basemap_download --commit
 
 Read-only by default; `--commit` is the only flag.
 
+### `export_supported_area` — the 3-D elevation copy's coverage as GeoJSON
+
+SNOW-1444. Writes the supported area to `--output` (default
+`supported-area.geojson`): every z12 tile that touches a `MicroRegion.boundary`,
+plus a ring of one tile round each, merged into one Polygon or MultiPolygon
+(`apps.regions.services.basemap_tiles.supported_area_tiles` and
+`tiles_to_geometry`). snowdesk-tiles' `build-dem.sh` clips our copy of
+Mapterhorn's elevation tiles to this area. The seasonal refresh that uses it is
+in [`self-hosted-tiles`](runbooks/self-hosted-tiles.md#3-d-elevation-demversion).
+
+- Read-only. It writes a file and changes no data, so it has no `--commit`.
+- The GeoJSON never goes to stdout, which carries the `iterate_rows`
+  countdown and a summary instead (the `--output` case of the stdout
+  exemption above).
+- A region with no boundary is skipped and tallied as `regions_skipped`. If no
+  region has a boundary, it writes nothing and exits non-zero.
+- Tallies: `regions_read`, `regions_skipped`, `tiles`.
+
+```bash
+uv run python manage.py export_supported_area
+uv run python manage.py export_supported_area --output /tmp/area.geojson
+```
+
 ### `import_resorts` — reconcile Resort against the curated sheet
 
 `apps/regions/data/resorts.tsv` is **the** file that describes a resort

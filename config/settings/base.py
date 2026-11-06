@@ -866,6 +866,7 @@ def csp_defaults(
     tile_origin: str,
     *,
     terrain_class_origin: str | None = None,
+    dem_origin: str = "https://tiles.mapterhorn.com",
     analytics_origin: str | None = None,
 ) -> dict[str, list[str]]:
     """Return the baseline CSP directives, allowlisting ``tile_origin``.
@@ -889,6 +890,10 @@ def csp_defaults(
         tile_origin: ``scheme://host[:port]`` of the basemap tile origin.
         terrain_class_origin: ``scheme://host[:port]`` of the terrain-class
             tile origin, or None to leave it out of the policy.
+        dem_origin: ``scheme://host[:port]`` of the 3-D map's elevation
+            tiles (SNOW-1444), derived from ``MAP_3D_DEM_TILE_URL``. It
+            defaults to Mapterhorn's, the setting's own default, so the
+            direct callers in ``tests/test_csp.py`` need not pass it.
         analytics_origin: the fivebar origin (SNOW-1180), appended to
             ``script-src`` for its tag and ``connect-src`` for what the tag
             sends, or None — no FIVEBAR_DOMAIN — to leave it out.
@@ -962,10 +967,12 @@ def csp_defaults(
             # SNOW-1260: MapLibre fetches raster tiles with fetch(), so the
             # ski-routes overlay's origin is here as well as in img-src.
             SWISSTOPO_WMTS_ORIGIN,
-            # SNOW-1438: the 3-D map's elevation tiles (Mapterhorn's open
-            # Terrarium set), fetched by MapLibre's raster-dem source on
-            # /map/3d/, and prefetched by /map/'s 3D roundel.
-            "https://tiles.mapterhorn.com",
+            # SNOW-1438: the 3-D map's elevation tiles, fetched by
+            # MapLibre's raster-dem source on /map/3d/ and prefetched by
+            # /map/'s 3D roundel. SNOW-1444: derived from
+            # MAP_3D_DEM_TILE_URL, so the setting and the policy cannot
+            # drift when the URL moves to our own copy.
+            dem_origin,
             # SNOW-1445: AWS's open Terrarium tiles, which /map/3d/ falls
             # back to when Mapterhorn fails.
             "https://s3.amazonaws.com",
@@ -1024,9 +1031,25 @@ CSP_REPORT_ONLY = True
 TERRAIN_CLASS_TILE_URL = config("TERRAIN_CLASS_TILE_URL", default="")
 TERRAIN_CLASS_TILE_ORIGIN = optional_basemap_origin(TERRAIN_CLASS_TILE_URL)
 
+# SNOW-1444: the 3-D map's elevation tiles, an XYZ Terrarium WebP
+# template handed verbatim to the browser (static/js/map_3d_core.js's
+# createDemLoader fetches it, falling back to AWS per tile). Production
+# points it at our own versioned copy of Mapterhorn, clipped to the
+# supported area: https://tiles.snowdesk-data.info/dem/<version>/{z}/{x}/{y}.webp.
+# A seasonal refresh publishes a new <version> and changes this value; a
+# rollback changes it back (docs/runbooks/self-hosted-tiles.md). The
+# default stays Mapterhorn's public set so development and tests need no
+# tile origin.
+MAP_3D_DEM_TILE_URL = config(
+    "MAP_3D_DEM_TILE_URL",
+    default="https://tiles.mapterhorn.com/{z}/{x}/{y}.webp",
+)
+MAP_3D_DEM_TILE_ORIGIN = basemap_origin(MAP_3D_DEM_TILE_URL)
+
 CSP_DEFAULTS = csp_defaults(
     OPENFREEMAP_ORIGIN,
     terrain_class_origin=TERRAIN_CLASS_TILE_ORIGIN,
+    dem_origin=MAP_3D_DEM_TILE_ORIGIN,
     analytics_origin=FIVEBAR_ORIGIN if FIVEBAR_DOMAIN else None,
 )
 

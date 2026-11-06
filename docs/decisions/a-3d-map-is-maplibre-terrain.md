@@ -2,7 +2,7 @@
 name: a-3d-map-is-maplibre-terrain
 description: 3-D terrain map — /map/3d/ sandbox on MapLibre setTerrain (raster-dem, Terrarium DEM), not deck.gl, CesiumJS or three.js; map_3d flag
 status: current
-last-reviewed: 2026-11-05
+last-reviewed: 2026-11-06
 ---
 
 # A 3-D map is MapLibre's own terrain
@@ -15,16 +15,22 @@ behind the `map_3d` flag, separate from `/map/`. It shows Steep terrain, SAC's
 ski tours, the reader's own routes and the resorts, because Hugo found 3-D
 most useful "in terrain mode, when looking at routes".
 
-- **Elevation** comes from Mapterhorn's open Terrarium tiles
-  (`tiles.mapterhorn.com`, 512 px lossless WebP, swissALTI3D over
-  Switzerland), since SNOW-1442. When Mapterhorn fails, each tile falls back to
+- **Elevation** is Mapterhorn's open Terrarium tiles (512 px lossless WebP,
+  swissALTI3D over Switzerland), since SNOW-1442. Since SNOW-1444 production
+  reads our own copy, clipped to the supported area and served from
+  `tiles.snowdesk-data.info/dem/<version>/`, through the
+  `MAP_3D_DEM_TILE_URL` setting
+  ([runbook](../runbooks/self-hosted-tiles.md#3-d-elevation-demversion)).
+  Its default, used in development, is `tiles.mapterhorn.com`. When Mapterhorn fails, each tile falls back to
   AWS's Terrarium tiles (`s3.amazonaws.com/elevation-tiles-prod/terrarium`,
   256 px, global, z0–15, no token), enlarged nearest-neighbour so no height is
   invented. After three network failures or 5xx answers in a row, the rest of
   the visit goes straight to AWS (SNOW-1445,
-  `map_3d_core.createDemLoader`). Mapterhorn asks users to copy its
-  archives rather than hotlink them ([research](../research/mapterhorn/README.md)),
-  so before the 3-D map leaves Labs we serve our own copy (SNOW-1444).
+  `map_3d_core.createDemLoader`). A 204 from our copy, for a tile outside the
+  supported area, falls back the same way as a 404, and neither is counted.
+  Mapterhorn asks users to copy its archives rather than hotlink them
+  ([research](../research/mapterhorn/README.md)), which is why we serve our
+  own copy.
 - **Steep terrain** is our class tiles, painted on the device exactly as on
   `/map/` (`terrain_filter_core`'s slope classifier and palette, through a
   `terrainfilter://` protocol the page registers for itself).

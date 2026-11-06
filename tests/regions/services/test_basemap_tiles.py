@@ -20,6 +20,9 @@ Covers:
                       blob's own shape/arithmetic.
   blob_summary      — drops the "z" (and "band") keys.
   MICRO_BAND        — the single micro-region zoom-band constant.
+  supported_area_tiles / tiles_to_geometry — SNOW-1444's supported area for
+                      the self-hosted elevation extract: hit tiles plus a
+                      one-tile ring at z12, dissolved into one geometry.
 """
 
 from __future__ import annotations
@@ -29,11 +32,14 @@ import math
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from apps.regions.services.basemap_tiles import (
     DOWNLOAD_CEILING_MB,
     DOWNLOAD_DOCUMENTS_MB,
     MICRO_BAND,
     WORST_CASE_BYTES_PER_TILE,
+    _tile_bounds,
     bbox_from_boundary,
     blob_summary,
     build_blob,
@@ -42,8 +48,10 @@ from apps.regions.services.basemap_tiles import (
     clip_ranges,
     lon_lat_to_tile,
     row_tile_count,
+    supported_area_tiles,
     tile_count,
     tile_ranges,
+    tiles_to_geometry,
 )
 
 _FIXTURE_DIR = (
@@ -392,3 +400,91 @@ def test_blob_summary_drops_z_ranges_and_band() -> None:
 def test_micro_band_constant() -> None:
     """The micro-region download's zoom band matches the SNOW-521 final spec."""
     assert MICRO_BAND == (10, 14)
+
+
+# ---------------------------------------------------------------------------
+# supported_area_tiles / tiles_to_geometry (SNOW-1444)
+# ---------------------------------------------------------------------------
+
+_Z = 12
+# The z12 tile over Zermatt.
+_ZX, _ZY = lon_lat_to_tile(7.75, 46.02, _Z)
+
+
+def _square(west: float, south: float, east: float, north: float) -> dict[str, Any]:
+    """Return a GeoJSON Polygon for a lon/lat rectangle."""
+    return {
+        "type": "Polygon",
+        "coordinates": [
+            [[west, south], [east, south], [east, north], [west, north], [west, south]]
+        ],
+    }
+
+
+def _inside(x: int, y: int) -> dict[str, Any]:
+    """Return a small polygon well inside tile ``(x, y)`` at z12."""
+    west, south, east, north = _tile_bounds(x, y, _Z)
+    dx, dy = (east - west) / 4, (north - south) / 4
+    return _square(west + dx, south + dy, east - dx, north - dy)
+
+
+def _block(x0: int, x1: int, y0: int, y1: int) -> set[tuple[int, int]]:
+    """Return every tile in the inclusive ``x0..x1`` by ``y0..y1`` block."""
+    return {(x, y) for x in range(x0, x1 + 1) for y in range(y0, y1 + 1)}
+
+
+def test_supported_area_is_the_hit_tile_and_its_eight_neighbours() -> None:
+    """A polygon inside one tile gives a 3x3 block, and nothing two tiles away."""
+    tiles = supported_area_tiles([_inside(_ZX, _ZY)], _Z)
+    assert tiles == _block(_ZX - 1, _ZX + 1, _ZY - 1, _ZY + 1)
+    assert (_ZX + 2, _ZY) not in tiles
+    assert (_ZX, _ZY - 2) not in tiles
+
+
+def test_a_polygon_across_a_tile_edge_rings_both_tiles() -> None:
+    """Straddling the east edge hits two tiles, so the block is 4x3."""
+    west, south, east, north = _tile_bounds(_ZX, _ZY, _Z)
+    dy = (north - south) / 4
+    width = east - west
+    polygon = _square(east - width / 4, south + dy, east + width / 4, north - dy)
+    assert supported_area_tiles([polygon], _Z) == _block(
+        _ZX - 1, _ZX + 2, _ZY - 1, _ZY + 1
+    )
+
+
+def test_regions_far_apart_give_separate_clusters() -> None:
+    """Two regions ten tiles apart give two 3x3 blocks, with no tiles between."""
+    tiles = supported_area_tiles([_inside(_ZX, _ZY), _inside(_ZX + 10, _ZY)], _Z)
+    assert tiles == _block(_ZX - 1, _ZX + 1, _ZY - 1, _ZY + 1) | _block(
+        _ZX + 9, _ZX + 11, _ZY - 1, _ZY + 1
+    )
+
+
+def test_a_block_of_tiles_dissolves_into_one_polygon_at_its_outer_corners() -> None:
+    """A 3x3 block is one Polygon whose bounds are the outer tiles' corners."""
+    from shapely.geometry import shape
+
+    geometry = tiles_to_geometry(_block(_ZX - 1, _ZX + 1, _ZY - 1, _ZY + 1), _Z)
+    assert geometry["type"] == "Polygon"
+    west, _, _, north = _tile_bounds(_ZX - 1, _ZY - 1, _Z)
+    _, south, east, _ = _tile_bounds(_ZX + 1, _ZY + 1, _Z)
+    expected = (west, south, east, north)
+    assert shape(geometry).bounds == pytest.approx(expected)
+    # Dissolved: one exterior ring with no interior edges left behind.
+    assert len(geometry["coordinates"]) == 1
+
+
+def test_separate_clusters_dissolve_into_a_two_part_multipolygon() -> None:
+    """Clusters that do not touch stay apart, as a MultiPolygon's two parts."""
+    tiles = _block(_ZX - 1, _ZX + 1, _ZY - 1, _ZY + 1) | _block(
+        _ZX + 9, _ZX + 11, _ZY - 1, _ZY + 1
+    )
+    geometry = tiles_to_geometry(tiles, _Z)
+    assert geometry["type"] == "MultiPolygon"
+    assert len(geometry["coordinates"]) == 2
+
+
+def test_no_tiles_have_no_geometry() -> None:
+    """An empty tile set raises rather than writing an empty area."""
+    with pytest.raises(ValueError, match="empty"):
+        tiles_to_geometry(set(), _Z)

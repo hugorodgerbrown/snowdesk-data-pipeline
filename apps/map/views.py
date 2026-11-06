@@ -42,7 +42,6 @@ from apps.bulletins.models import (
 )
 from apps.map import resort_guide
 from apps.map.map_3d import (
-    MAP_3D_DEM_TILE_URL,
     map_3d_enabled,
     pending_route_share_for_3d,
 )
@@ -331,7 +330,7 @@ def map_page(request: HttpRequest) -> HttpResponse:
             "map_3d_link": map_3d_flagged or bool(map_3d_route_share),
             "map_3d_route_share": map_3d_route_share,
             # What the roundel prefetches, so the 3-D terrain is cached first.
-            "map_3d_dem_tile_url": MAP_3D_DEM_TILE_URL,
+            "map_3d_dem_tile_url": settings.MAP_3D_DEM_TILE_URL,
         },
     )
 
