@@ -3418,14 +3418,28 @@ _ZOOM_LEVELS = tuple(
 )
 
 
+# The default basemap's (OpenFreeMap) last tile zoom: map.js reads each
+# basemap's own off its style; the library shows the one /map/ opens on.
+_ZOOM_TILE_MAX = 14
+
+
 def _zoom_variant(
     caption: str,
     camera: float,
     *,
     is_open: bool = True,
     debug: bool = False,
+    tile_max: int | None = _ZOOM_TILE_MAX,
 ) -> dict[str, Any]:
-    """Return one zoom-control variant at a camera zoom."""
+    """Return one zoom-control variant at a camera zoom.
+
+    ``tile_max`` is the basemap's last tile zoom (14 on the default
+    OpenFreeMap style); past it the map only enlarges, and the control
+    says so. None stands for a style with no vector source.
+    """
+    enlarged_from = (
+        tile_max + 1 if tile_max is not None and tile_max + 1 <= _MAP_MAX_ZOOM else None
+    )
     ticks = [
         _zoom_tick("ski_routes", "SAC ski touring", 9, camera),
         _zoom_tick("region_select", "Region selector", 10, camera, up_to=True),
@@ -3451,6 +3465,11 @@ def _zoom_variant(
         "caption": caption,
         "context": {
             "zoom_face": int(camera),
+            # zoom_control_core.isEnlarged / enlargedFrom.
+            "zoom_enlarged": enlarged_from is not None and int(camera) >= enlarged_from,
+            "zoom_enlarged_pct": (
+                None if enlarged_from is None else _zoom_pct(enlarged_from)
+            ),
             "zoom_open": is_open,
             "zoom_marker_pct": _zoom_pct(camera),
             # zoom_control_core.markerZoom: one decimal, rounded down.
@@ -3471,6 +3490,7 @@ MAP_ZOOM_CONTROL_VARIANTS: tuple[dict[str, Any], ...] = (
     _zoom_variant("At z8 — only the region selector is available", 8.3),
     _zoom_variant("At z12 — the terrain overlay is available", 12.4),
     _zoom_variant("At z14 — the terrain overlay and route slope angle", 14.6),
+    _zoom_variant("At z15 — past the basemap's z14 tiles, enlarged", 15.6),
     _zoom_variant("At the maximum zoom (z18) — + disabled", 18),
     _zoom_variant("At the minimum zoom (z4) — − disabled", 4),
     _zoom_variant("DEBUG — with the camera zoom line", 12.47, debug=True),

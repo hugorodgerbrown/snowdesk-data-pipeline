@@ -37,13 +37,49 @@ describe('scalePosition', () => {
 });
 
 describe('faceZoom', () => {
-  it('shows the tile zoom, whole', () => {
-    expect(core.faceZoom(13, 13.99)).toBe(13);
+  it('shows the camera zoom, rounded down', () => {
+    expect(core.faceZoom(13.99)).toBe(13);
+    expect(core.faceZoom(10)).toBe(10);
   });
 
-  it('falls back to floor(camera) with no tile zoom', () => {
-    expect(core.faceZoom(null, 9.99)).toBe(9);
-    expect(core.faceZoom(null, 10)).toBe(10);
+  it('does not clamp to the basemap\'s tiles: camera 15.6 reads 15', () => {
+    expect(core.faceZoom(15.6)).toBe(15);
+  });
+
+  it('counts a camera a hair short of a level as at it', () => {
+    expect(core.faceZoom(9.9999)).toBe(10);
+  });
+
+  it('answers 0 for a non-number', () => {
+    expect(core.faceZoom(Number.NaN)).toBe(0);
+  });
+});
+
+describe('enlargedFrom', () => {
+  it('is the level after the tiles\' maximum', () => {
+    expect(core.enlargedFrom(14, MAX)).toBe(15);
+  });
+
+  it('is null with no tile maximum, or one the map cannot zoom past', () => {
+    expect(core.enlargedFrom(null, MAX)).toBeNull();
+    expect(core.enlargedFrom(18, MAX)).toBeNull();
+    expect(core.enlargedFrom(22, MAX)).toBeNull();
+  });
+});
+
+describe('isEnlarged', () => {
+  it('holds from the level after the tiles\' maximum', () => {
+    expect(core.isEnlarged(14.9, 14)).toBe(false);
+    expect(core.isEnlarged(15, 14)).toBe(true);
+    expect(core.isEnlarged(15.6, 14)).toBe(true);
+  });
+
+  it('treats a fractional camera over the last tiles as ordinary', () => {
+    expect(core.isEnlarged(14.6, 14)).toBe(false);
+  });
+
+  it('never holds without a tile maximum', () => {
+    expect(core.isEnlarged(18, null)).toBe(false);
   });
 });
 

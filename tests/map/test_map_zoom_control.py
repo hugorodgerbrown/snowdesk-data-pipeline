@@ -65,6 +65,37 @@ def test_strings_template_carries_one_label_per_gate() -> None:
     for key in ("region_select", "ski_routes", "terrain_filter", "route_slopes"):
         assert f'data-string="gate-{key}"' in html
     assert 'data-string="toggle-label"' in html
+    assert 'data-string="toggle-label-enlarged"' in html
+
+
+def test_the_enlarged_variant_dashes_the_roundel_and_dots_the_track() -> None:
+    """Past the basemap's z14 tiles the roundel says so and the track dots."""
+    context = _variant("At z15")["context"]
+    html = render_to_string(PARTIAL, context)
+    toggle = html[html.index('id="map-zoom-toggle"') :]
+    toggle = toggle[: toggle.index(">")]
+    assert 'aria-label="Zoom level 15, enlarged"' in toggle
+    assert "data-enlarged" in toggle
+    track = html[html.index("data-zoom-enlarged-track") :]
+    # z15 is 3/14 of the way down z18..z4.
+    assert f"height: {round(3 / 14 * 100, 2)}%" in track[: track.index(">")]
+    marker = html[html.index("data-zoom-marker") :]
+    assert "data-enlarged" in marker[: marker.index(">")]
+
+
+def test_below_the_tiles_maximum_nothing_reads_enlarged() -> None:
+    """At z14.6 the map still draws its own tiles: solid ring, dotted track only above."""
+    html = render_to_string(PARTIAL, _variant("At z14")["context"])
+    toggle = html[html.index('id="map-zoom-toggle"') :]
+    assert "data-enlarged" not in toggle[: toggle.index(">")]
+    assert 'aria-label="Zoom level 14"' in toggle[: toggle.index(">")]
+
+
+def test_an_empty_render_hides_the_dotted_track() -> None:
+    """With no tile maximum known there is no dotted stretch."""
+    html = render_to_string(PARTIAL, {})
+    track = html[html.index("data-zoom-enlarged-track") :]
+    assert "hidden" in track[: track.index(">")]
 
 
 def test_a_filled_variant_names_the_zoom_and_draws_its_ticks() -> None:

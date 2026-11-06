@@ -1604,9 +1604,12 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         label="Map zoom control",
         description=(
             "The roundel at the top of the map's bottom-left stack (SNOW-1077), "
-            "the help and (i) roundels' size. Its face is the whole tile zoom "
-            "the map is drawing and its accessible name says it ('Zoom level "
-            "13'). It opens a flyout into the crook the legend card uses: − "
+            "the help and (i) roundels' size. Its face is the whole camera zoom "
+            "and its accessible name says it ('Zoom level 13'). Past the "
+            "basemap's last tile zoom its ring goes dashed, and in the flyout "
+            "the track above that level goes dotted and the marker's reading "
+            "hollow: the map is only enlarging its tiles. It opens a flyout "
+            "into the crook the legend card uses: − "
             "and + as 44 px targets, disabled at the map's z4 and z18; a "
             "scale across that range with a marker at the camera; and a tick "
             "for each zoom-gated layer that is on — the terrain filter from "
