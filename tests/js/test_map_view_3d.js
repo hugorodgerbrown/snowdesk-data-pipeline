@@ -557,6 +557,30 @@ describe('offline, in a downloaded area', () => {
     }
   });
 
+  it('decides the offline boot once: the timer after an early read does nothing', async () => {
+    vi.useFakeTimers();
+    try {
+      const { map } = await boot({
+        search: '?mode=terrain&view=3d', online: false, areas: [{ ...AREA, bbox: [7.2, 46.05, 7.3, 46.12] }],
+        holdAreas: true,
+      });
+      env.releaseAreas();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(window.pwaMapView.get()).toBe('flat');
+      const swaps = map.setStyle.mock.calls.length;
+      // The reader pans into an area before the cap would have fired.
+      env.areas = [AREA];
+      document.dispatchEvent(new CustomEvent('snowdesk:downloads-changed'));
+      map.centre = { ...ZERMATT };
+      map.fire('moveend');
+      await vi.advanceTimersByTimeAsync(2500);
+      expect(window.pwaMapView.get()).toBe('flat');
+      expect(map.setStyle.mock.calls.length).toBe(swaps);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('reads the areas again on snowdesk:downloads-changed', async () => {
     const { button } = await boot({ online: false, areas: [] });
     await flush();
