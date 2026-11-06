@@ -31,6 +31,11 @@
  *   - the frame-time probe (`?probe=1`, SNOW-1448): the camera passes it
  *     flies and the summary of the frame intervals it records, measured
  *     against the proposed budget of a median frame under 33 ms;
+ *   - /map/'s frame watchdog (SNOW-1455): the agreed budget for one window
+ *     of about two seconds of moving time (a median under 33 ms and a 95th
+ *     percentile of 66 ms or less), judged by frameWindowFails, and the
+ *     watch that trips on two failing windows in a row. The probe's own
+ *     verdict (frameStats().withinBudget) is not what the watch reads;
  *   - the main thread's half of the Steep terrain worker's protocol
  *     (map_3d_steep_worker.js): each tile request gets an id, the reply
  *     with that id settles it, and an abort tells the worker and rejects.
@@ -55,6 +60,8 @@
  *   pageUrl(origin, pathname, tokens, query)
  *   routeShare3dUrl(shareUrl, query)
  *   FRAME_BUDGET_MS / PROBE_PASSES / frameStats(intervals, budgetMs?)
+ *   FRAME_P95_BUDGET_MS / FRAME_WINDOW_MS / FRAME_WINDOWS_TO_TRIP
+ *   frameWindowFails(stats) / createFrameWatch()
  */
 (function () {
   'use strict';
@@ -586,8 +593,77 @@
     };
   }
 
+  /**
+   * The agreed ceiling on a window's 95th-percentile frame (SNOW-1455): two
+   * budget frames, so a good median cannot hide a stutter a reader feels.
+   */
+  const FRAME_P95_BUDGET_MS = 66;
+
+  /** How much moving time one watchdog window holds, in milliseconds. */
+  const FRAME_WINDOW_MS = 2000;
+
+  /** How many failing windows in a row lay /map/'s 3-D flat. */
+  const FRAME_WINDOWS_TO_TRIP = 2;
+
+  /**
+   * Whether one window of frames is over the agreed budget: a median of
+   * FRAME_BUDGET_MS or more, or a 95th percentile over FRAME_P95_BUDGET_MS.
+   * Reads frameStats' output; no frames is not a failure.
+   *
+   * @param {{medianMs: number, p95Ms: number}|null|undefined} stats
+   * @returns {boolean}
+   */
+  function frameWindowFails(stats) {
+    if (!stats) return false;
+    return stats.medianMs >= FRAME_BUDGET_MS || stats.p95Ms > FRAME_P95_BUDGET_MS;
+  }
+
+  /**
+   * The frame watchdog's state. Intervals are pushed one at a time; once
+   * they add up to FRAME_WINDOW_MS the window closes and is judged by
+   * frameWindowFails. FRAME_WINDOWS_TO_TRIP failing windows in a row trip
+   * it, and a passing window starts the count again. A window carries over
+   * from one gesture to the next, and so does the count; only `reset`
+   * clears them. Once tripped, it stays tripped until `reset`.
+   *
+   * @returns {{push: (intervalMs: number) => boolean, reset: () => void}}
+   *   `push` answers whether the watch has tripped.
+   */
+  function createFrameWatch() {
+    /** @type {number[]} */
+    let frames = [];
+    let elapsed = 0;
+    let failing = 0;
+    let tripped = false;
+    return {
+      push(intervalMs) {
+        if (tripped) return true;
+        if (!Number.isFinite(intervalMs) || intervalMs <= 0) return false;
+        frames.push(intervalMs);
+        elapsed += intervalMs;
+        if (elapsed < FRAME_WINDOW_MS) return false;
+        failing = frameWindowFails(frameStats(frames)) ? failing + 1 : 0;
+        frames = [];
+        elapsed = 0;
+        if (failing >= FRAME_WINDOWS_TO_TRIP) tripped = true;
+        return tripped;
+      },
+      reset() {
+        frames = [];
+        elapsed = 0;
+        failing = 0;
+        tripped = false;
+      },
+    };
+  }
+
   self.pwaMap3dCore = Object.freeze({
     FRAME_BUDGET_MS: FRAME_BUDGET_MS,
+    FRAME_P95_BUDGET_MS: FRAME_P95_BUDGET_MS,
+    FRAME_WINDOW_MS: FRAME_WINDOW_MS,
+    FRAME_WINDOWS_TO_TRIP: FRAME_WINDOWS_TO_TRIP,
+    frameWindowFails: frameWindowFails,
+    createFrameWatch: createFrameWatch,
     PROBE_PASSES: PROBE_PASSES,
     frameStats: frameStats,
     DEM_SOURCE_ID: DEM_SOURCE_ID,
