@@ -39,6 +39,13 @@
  *     probe run had passed (Hugo), because tiles arriving mid-gesture
  *     stall a frame without the map being slow. The probe's own
  *     verdict (frameStats().withinBudget) is not what the watch reads;
+ *   - the 3D test's verdict (SNOW-1456): each pass's intervals go
+ *     through a fresh createFrameWatch, the watchdog's own rule, so the
+ *     test and the fallback cannot disagree. judgePass says whether a
+ *     pass was measured (one full FRAME_WINDOW_MS of frames at least),
+ *     whether it kept up and how many of its windows were slow;
+ *     testVerdict turns the passes into smooth, stutter, slow or
+ *     unmeasured. The p95 is never read;
  *   - the main thread's half of the Steep terrain worker's protocol
  *     (map_3d_steep_worker.js): each tile request gets an id, the reply
  *     with that id settles it, and an abort tells the worker and rejects.
@@ -65,6 +72,7 @@
  *   FRAME_BUDGET_MS / PROBE_PASSES / frameStats(intervals, budgetMs?)
  *   FRAME_WINDOW_MS / FRAME_WINDOWS_TO_TRIP
  *   frameWindowFails(stats) / createFrameWatch()
+ *   TEST_VERDICTS / judgePass(intervals) / testVerdict(passes)
  */
 (function () {
   'use strict';
@@ -679,7 +687,70 @@
     };
   }
 
+  /**
+   * The verdicts a measured 3D test gives (SNOW-1456), as POST
+   * /api/map-3d-test/ accepts them (apps/map/models.py Map3dDeviceTest).
+   * `unmeasured` is not one: an unmeasured run is never sent.
+   */
+  const TEST_VERDICTS = Object.freeze(['smooth', 'stutter', 'slow']);
+
+  /**
+   * Judge one pass of the 3D test by the watchdog's own rule.
+   *
+   * A pass whose usable intervals add up to less than one FRAME_WINDOW_MS
+   * was not measured: the watch never closed a window on it. A measured
+   * pass keeps up unless a fresh createFrameWatch, fed every interval,
+   * trips; `windows` and `slowWindows` count the closed windows and those
+   * frameWindowFails, for the Details.
+   *
+   * @param {number[]} intervals Milliseconds between consecutive frames.
+   * @returns {{measured: boolean, keptUp: boolean, windows: number, slowWindows: number}}
+   */
+  function judgePass(intervals) {
+    const usable = (intervals || []).filter((ms) => Number.isFinite(ms) && ms > 0);
+    const watch = createFrameWatch();
+    let tripped = false;
+    let windows = 0;
+    let slowWindows = 0;
+    /** @type {number[]} */
+    let frames = [];
+    let elapsed = 0;
+    for (const ms of usable) {
+      if (watch.push(ms)) tripped = true;
+      frames.push(ms);
+      elapsed += ms;
+      if (elapsed < FRAME_WINDOW_MS) continue;
+      windows += 1;
+      if (frameWindowFails(frameStats(frames))) slowWindows += 1;
+      frames = [];
+      elapsed = 0;
+    }
+    const measured = windows > 0;
+    return { measured, keptUp: measured && !tripped, windows, slowWindows };
+  }
+
+  /**
+   * The 3D test's verdict over its passes, in PROBE_PASSES' order: every
+   * pass keeps up, `smooth`; only the last (the z9 pass, the most ground a
+   * tilted view draws) falls behind, `stutter`; otherwise `slow`. Any pass
+   * not measured, or no passes at all, makes the run `unmeasured`.
+   *
+   * @param {Array<{intervals: number[]}>} passes
+   * @returns {'smooth'|'stutter'|'slow'|'unmeasured'}
+   */
+  function testVerdict(passes) {
+    const judged = (passes || []).map((pass) => judgePass(pass && pass.intervals));
+    if (!judged.length || judged.some((pass) => !pass.measured)) return 'unmeasured';
+    if (judged.every((pass) => pass.keptUp)) return 'smooth';
+    const last = judged.length - 1;
+    if (last > 0 && judged.slice(0, last).every((pass) => pass.keptUp)) return 'stutter';
+    return 'slow';
+  }
+
   self.pwaMap3dCore = Object.freeze({
+    TEST_VERDICTS: TEST_VERDICTS,
+    judgePass: judgePass,
+    testVerdict: testVerdict,
     FRAME_BUDGET_MS: FRAME_BUDGET_MS,
     FRAME_WINDOW_MS: FRAME_WINDOW_MS,
     FRAME_WINDOWS_TO_TRIP: FRAME_WINDOWS_TO_TRIP,

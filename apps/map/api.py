@@ -28,6 +28,8 @@ Plain Django ``JsonResponse`` views (no DRF) consumed by ``static/js/map*.js``:
   wildlife layers, one rectangle at a time.
 * ``/api/weather/<short_id>/detail/``      — one location's weather detail
   (``/api/weather/<int:location_id>/detail/`` survives as a legacy alias).
+* ``POST /api/map-3d-test/``               — SNOW-1456: one 3D test result a
+  reader chose to send, stored anonymously as a ``Map3dDeviceTest``.
 
 Moved out of ``apps/public/api.py`` by SNOW-1428
 (docs/decisions/public-splits-by-surface.md). The URL names stay ``api:…``:
@@ -38,6 +40,7 @@ endpoints are in ``editor.py``.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import math
 import re
@@ -62,8 +65,9 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.cache import patch_cache_control, patch_vary_headers
 from django.views.decorators.cache import cache_control
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.vary import vary_on_headers
+from django_ratelimit.decorators import ratelimit
 from waffle import flag_is_active
 
 from apps.accounts.identity import attest_principal
@@ -76,6 +80,11 @@ from apps.bulletins.services.settled import earliest_mutable_date
 from apps.core.freshness import apply_freshness_headers
 from apps.locations.models import Location
 from apps.map.area_items import area_items as build_area_items
+from apps.map.models import (
+    MAP_3D_TEST_OVERLAYS,
+    MAP_3D_TEST_VERDICTS,
+    Map3dDeviceTest,
+)
 from apps.observations.models import FieldObservation, leading_family
 from apps.observations.services.ground import report_window
 from apps.public.bulletin_panels import (
@@ -2322,3 +2331,199 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
         unsafe_after=None,
     )
     return response
+
+
+# ── The 3D test's results (SNOW-1456) ───────────────────────────────────────
+
+# The largest body /api/map-3d-test/ reads. A real result is about 1 KiB.
+MAP_3D_TEST_MAX_BYTES = 16 * 1024
+
+# At most this many camera passes in one result (PROBE_PASSES has two).
+_MAP_3D_TEST_MAX_PASSES = 4
+
+# Each pass's figures: the key, and the largest value it may take.
+_MAP_3D_TEST_PASS_NUMBERS: dict[str, float] = {
+    "median_ms": 60_000,
+    "p95_ms": 60_000,
+    "worst_ms": 60_000,
+    "over_budget": 1,
+}
+_MAP_3D_TEST_PASS_COUNTS: dict[str, int] = {
+    "frames": 100_000,
+    "slow_windows": 10_000,
+    "settle_ms": 600_000,
+}
+
+
+class _BadResult(ValueError):
+    """A posted 3D test result whose shape the endpoint refuses."""
+
+
+def _number(value: Any, top: float) -> float:
+    """Return ``value`` as a float between 0 and ``top``, or raise.
+
+    Args:
+        value: A decoded JSON value.
+        top: The largest value allowed.
+
+    Returns:
+        The number.
+
+    Raises:
+        _BadResult: For a non-number (a bool included), or one out of range.
+
+    """
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise _BadResult("not a number")
+    if not math.isfinite(value) or not 0 <= value <= top:
+        raise _BadResult("out of range")
+    return float(value)
+
+
+def _count(value: Any, top: int) -> int:
+    """Return ``value`` as an int between 0 and ``top``, or raise.
+
+    Args:
+        value: A decoded JSON value.
+        top: The largest value allowed.
+
+    Returns:
+        The count.
+
+    Raises:
+        _BadResult: For a non-integer (a bool included), or one out of range.
+
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise _BadResult("not a count")
+    if not 0 <= value <= top:
+        raise _BadResult("out of range")
+    return value
+
+
+def _text(value: Any, longest: int) -> str:
+    """Return ``value`` as a string of at most ``longest`` characters, or raise.
+
+    Args:
+        value: A decoded JSON value.
+        longest: The most characters allowed.
+
+    Returns:
+        The string.
+
+    Raises:
+        _BadResult: For a non-string or one too long.
+
+    """
+    if not isinstance(value, str) or len(value) > longest:
+        raise _BadResult("not a short string")
+    return value
+
+
+def _map_3d_test_fields(payload: Any) -> dict[str, Any]:
+    """Validate a posted 3D test result into ``Map3dDeviceTest`` fields.
+
+    Args:
+        payload: The decoded JSON body.
+
+    Returns:
+        The model's field values.
+
+    Raises:
+        _BadResult: For any shape, type, range, verdict or overlay the
+            endpoint does not accept.
+
+    """
+    if not isinstance(payload, dict):
+        raise _BadResult("not an object")
+    verdict = payload.get("verdict")
+    if verdict not in MAP_3D_TEST_VERDICTS:
+        raise _BadResult("unknown verdict")
+    overlays = payload.get("overlays", [])
+    if not isinstance(overlays, list) or any(
+        key not in MAP_3D_TEST_OVERLAYS for key in overlays
+    ):
+        raise _BadResult("unknown overlay")
+    passes = payload.get("passes")
+    if not isinstance(passes, list) or not 1 <= len(passes) <= _MAP_3D_TEST_MAX_PASSES:
+        raise _BadResult("no passes")
+    probe = payload.get("probe", False)
+    if not isinstance(probe, bool):
+        raise _BadResult("probe is not a bool")
+    return {
+        "verdict": verdict.upper(),
+        "gpu": _text(payload.get("gpu", ""), 255),
+        "device_pixel_ratio": _number(payload.get("device_pixel_ratio"), 16),
+        "pixel_ratio": _number(payload.get("pixel_ratio"), 16),
+        "canvas_width": _count(payload.get("canvas_width"), 20_000),
+        "canvas_height": _count(payload.get("canvas_height"), 20_000),
+        "user_agent": _text(payload.get("user_agent", ""), 512),
+        "client_version": _text(payload.get("client_version", ""), 64),
+        "probe": probe,
+        # Each key once, in the allowlist's order.
+        "overlays": [key for key in MAP_3D_TEST_OVERLAYS if key in overlays],
+        "passes": [_map_3d_test_pass(item) for item in passes],
+    }
+
+
+def _map_3d_test_pass(item: Any) -> dict[str, Any]:
+    """Validate one camera pass's figures from a posted 3D test result.
+
+    Args:
+        item: One entry of the result's ``passes``.
+
+    Returns:
+        The pass, with only the known keys.
+
+    Raises:
+        _BadResult: For a non-object, or any figure missing or out of range.
+
+    """
+    if not isinstance(item, dict):
+        raise _BadResult("a pass is not an object")
+    clean: dict[str, Any] = {"label": _text(item.get("label"), 64)}
+    for key, top in _MAP_3D_TEST_PASS_NUMBERS.items():
+        clean[key] = _number(item.get(key), top)
+    for key, count_top in _MAP_3D_TEST_PASS_COUNTS.items():
+        clean[key] = _count(item.get(key), count_top)
+    return clean
+
+
+@require_POST
+@ratelimit(key="ip", rate="10/h", block=False)
+def map_3d_test_receive(request: HttpRequest) -> HttpResponse:
+    """Store one 3D test result a reader chose to send (SNOW-1456).
+
+    Open to signed-in and anonymous readers alike, and CSRF-protected (the
+    panel, static/js/map_3d_test.js, posts with the page's token in
+    ``X-CSRFToken``). The row holds no user, no session and no IP.
+
+    Answers 204 when the row is written, and 204 too when the per-IP rate
+    limit (10 an hour) drops it, with nothing written: the panel has
+    nothing better to tell the reader. 400 for a bad shape, an unknown
+    verdict or an unknown overlay; 413 over ``MAP_3D_TEST_MAX_BYTES``. The
+    CSRF middleware answers 403 and ``require_POST`` 405.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        An empty response with the status above.
+
+    """
+    if getattr(request, "limited", False):
+        logger.info("map_3d_test: dropped a result over the rate limit")
+        return HttpResponse(status=204)
+    try:
+        declared = int(request.META.get("CONTENT_LENGTH") or 0)
+    except ValueError:
+        declared = 0
+    if declared > MAP_3D_TEST_MAX_BYTES or len(request.body) > MAP_3D_TEST_MAX_BYTES:
+        return HttpResponse(status=413)
+    try:
+        fields = _map_3d_test_fields(json.loads(request.body))
+    except (ValueError, _BadResult) as exc:
+        logger.info("map_3d_test: refused a result: %s", exc)
+        return HttpResponse(status=400)
+    Map3dDeviceTest.objects.create(**fields)
+    return HttpResponse(status=204)

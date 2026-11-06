@@ -31,7 +31,7 @@ import waffle
 from django.conf import settings
 from django.db import models
 from django.http import Http404, HttpRequest, HttpResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.urls import reverse
 from django_ratelimit.core import is_ratelimited
 
@@ -196,8 +196,14 @@ def map_3d_page(request: HttpRequest) -> HttpResponse:
     A route share that would seat its token past the follows' rate-limit
     budget answers 429, as the share links do.
 
+    SNOW-1456: the frame-time probe moved onto /map/, so a flagged
+    reader's ``?probe=1`` here redirects to ``/map/?probe=1&view=3d``,
+    keeping the probe URL working until SNOW-1450 retires this page.
+
     """
     flagged = map_3d_enabled(request)
+    if flagged and request.GET.get("probe") == "1":
+        return redirect(f"{reverse('public:map')}?probe=1&view=3d")
     route_share = route_share_for_3d(request.GET.get("route_share", ""))
     token = request.GET.get("share", "")
     if flagged:

@@ -17,6 +17,10 @@ run it again:
                                 2026 — it shows how the map works, not
                                 what is on it; map.js keeps its ?d= in
                                 step with the map's day, syncExplainerLink)
+  Test 3D on this device        the 3D test's panel
+                                ('snowdesk:map-3d-test-requested',
+                                map_3d_test.js; SNOW-1456), only for a
+                                reader with the 3D view (map_3d_view)
   Help pages                    /help/
 
 While help mode is on the "?" still ends it, as before. Built from the
@@ -91,6 +95,22 @@ first item to show, and the "?" keeps going straight to help mode.
                     </span>
                 </a>
             </li>
+            {% if map_3d_view %}
+                <li>
+                    <button type="button" class="map-tour-offer-option" data-help-menu="test-3d">
+                        <span
+                            class="map-tour-offer-option-icon"
+                            aria-hidden="true"
+                        >{% include "includes/_icon_mountain.html" with size=20 %}</span>
+                        <span class="map-tour-offer-option-text">
+                            <span class="map-tour-offer-option-title">{% trans "Test 3D on this device" %}</span>
+                            <span
+                                class="map-tour-offer-option-sub"
+                            >{% trans "See how well this phone draws the mountains in relief. About 30 seconds." %}</span>
+                        </span>
+                    </button>
+                </li>
+            {% endif %}
             <li>
                 <a href="{% url 'public:help' %}" class="map-tour-offer-option" data-help-menu="pages">
                     <span

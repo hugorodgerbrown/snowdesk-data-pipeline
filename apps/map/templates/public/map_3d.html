@@ -86,19 +86,6 @@ the page adds no control and no icon for them.
                 <span data-string="failed">{% trans "Could not copy the link" %}</span>
                 <span data-string="share_view">{% trans "Share this view" %}</span>
                 <span data-string="share_route">{% trans "Share this route in 3D" %}</span>
-                {# The frame-time probe (?probe=1, SNOW-1448): a measuring tool, but readers of the flag may open it. #}
-                <span data-string="probe_waiting">{% trans "Frame-time probe: waiting for the map to load…" %}</span>
-                <span
-                    data-string="probe_pass"
-                >{% trans "Frame-time probe: pass %(n)s of %(total)s, %(label)s. Keep the phone still." %}</span>
-                <span
-                    data-string="probe_line"
-                >{% trans "%(label)s: median %(median)s ms (%(fps)s fps), p95 %(p95)s ms, %(over)s% over %(budget)s ms" %}</span>
-                <span data-string="probe_no_frames">{% trans "%(label)s: no frames timed" %}</span>
-                <span
-                    data-string="probe_done"
-                >{% trans "Frame-time probe done. First idle %(idle)s ms. GPU: %(gpu)s" %}</span>
-                <span data-string="probe_share">{% trans "Share the result" %}</span>
             </template>
         </div>
     </div>

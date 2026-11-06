@@ -45,6 +45,7 @@ from apps.map.map_3d import (
     map_3d_enabled,
     pending_route_share_for_3d,
 )
+from apps.map.models import MAP_3D_TEST_OVERLAYS
 from apps.map.problem_terrain import problem_terrain_key
 from apps.observations.models import FieldObservation
 from apps.public.map_shared import (
@@ -291,6 +292,7 @@ def map_page(request: HttpRequest) -> HttpResponse:
     # A flagged reader's roundel opens the plain 3-D map, which draws their
     # routes and their followed shares anyway.
     map_3d_route_share = "" if map_3d_flagged else pending_route_share_for_3d(request)
+    map_3d_view = map_3d_view_enabled(request)
 
     return render(
         request,
@@ -338,9 +340,15 @@ def map_page(request: HttpRequest) -> HttpResponse:
             # 3-D, in Terrain, instead of opening /map/3d/; the 3-D view is
             # Terrain's, so it needs the modes as well. SNOW-1453: the one
             # gate, shared with /offline/'s elevation template.
-            "map_3d_view": map_3d_view_enabled(request),
+            "map_3d_view": map_3d_view,
             # What the roundel prefetches, so the 3-D terrain is cached first.
             "map_3d_dem_tile_url": settings.MAP_3D_DEM_TILE_URL,
+            # SNOW-1456: the 3D test's panel, which renders with the view:
+            # where Send posts, and the switches a result may record as on.
+            "map_3d_test_url": reverse("api:map_3d_test") if map_3d_view else "",
+            "map_3d_test_overlays": (
+                " ".join(MAP_3D_TEST_OVERLAYS) if map_3d_view else ""
+            ),
         },
     )
 

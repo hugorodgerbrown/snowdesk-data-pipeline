@@ -63,6 +63,7 @@ from apps.design_system._component_fixtures import (
     FORM_FIELD_VARIANTS,
     GLOSSARY_TERM_VARIANTS,
     HOURLY_CHART_VARIANTS,
+    MAP_3D_TEST_PANEL_VARIANTS,
     MAP_COMPASS_VARIANTS,
     MAP_OVERLAY_TOGGLE_VARIANTS,
     MAP_ZOOM_CONTROL_VARIANTS,
@@ -1644,6 +1645,28 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         partial="public/partials/_map_compass_demo.html",
         variants=MAP_COMPASS_VARIANTS,
         panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="map-3d-test-panel",
+        label="3D test panel",
+        description=(
+            "Test 3D on this device (SNOW-1456): a form panel on the overlay "
+            "sheet, opened from the map's '?' menu or the 'Test this device' "
+            "link on the line the 3D switch shows once the frame watchdog has "
+            "laid the map flat. Docked on the left on a desktop, sliding up "
+            "on a phone; no detents. While the test runs it says 'Keep the "
+            "phone still', with a progress bar and the three steps; its × "
+            "stops the test. Then one of three verdicts, each with a status "
+            "chip, each pass as 'keeps up' or 'falls behind', a Details "
+            "disclosure, the opt-in 'Send anonymously' and Done; Share and "
+            "Test again sit in a '…' menu. An unmeasured run says so and "
+            "offers Test again. Filled on /map/ by static/js/map_3d_test.js "
+            "from the body's <template>. Static here."
+        ),
+        kind="components",
+        partial="public/partials/_map_3d_test_panel.html",
+        variants=MAP_3D_TEST_PANEL_VARIANTS,
+        panel_layout="two-col",
     ),
     FoundationCategory(
         slug="button",

@@ -1904,6 +1904,8 @@ Optional context:
                     <span data-string="left-webgl">{% trans "The map's graphics reset, so it is flat again." %}</span>
                     <span data-string="left-slow">{% trans "Back in 2D: 3D is too slow on this device." %}</span>
                     <span data-string="zoom-floor">{% trans "3D stops here. Switch to 2D to zoom out." %}</span>
+                    {# SNOW-1456: the link on the why-slow line, to the 3D test. #}
+                    <span data-string="test-device">{% trans "Test this device" %}</span>
                 </template>
             {% endif %}
             {% comment %}
@@ -2137,15 +2139,15 @@ Optional context:
             </p>
         </li>
         {# SNOW-1449: the compass, always shown, and the 3D roundel, shown     #}
-        {# only in Terrain for a reader in map_3d and map_modes (a step whose  #}
-        {# target is hidden is dropped).                                       #}
+        {# for a reader in map_3d and map_modes, in either mode since        #}
+        {# SNOW-1452 (a step whose target is hidden is dropped).              #}
         <li data-help-target="#map-compass" data-help-chapter="move" data-help-title='{% trans "North" %}'>
             <p data-help-body>{% trans "The needle points north. Tap it to turn the map back to north." %}</p>
         </li>
         {% if map_3d_view %}
             <li data-help-target="#map-view-toggle" data-help-chapter="move" data-help-title='{% trans "3D" %}'>
                 <p data-help-body>
-                    {% trans "In Terrain, tap 3D or tilt with two fingers to see the mountains in relief. Tap 2D to lay the map flat again." %}
+                    {% trans "Tap 3D or tilt with two fingers to see the mountains in relief. Tap 2D to lay the map flat again." %}
                 </p>
             </li>
         {% endif %}
@@ -2403,6 +2405,11 @@ Optional context:
         {% include "public/partials/_map_example_guide.html" %}
         {% include "public/partials/_map_resort_guide.html" %}
         {% include "public/partials/_map_help_menu.html" %}
+    {% endif %}
+    {# SNOW-1456: "Test 3D on this device", a form panel opened from the   #}
+    {# "?" menu and the why-slow line; static/js/map_3d_test.js runs it.    #}
+    {% if map_3d_view %}
+        {% include "public/partials/_map_3d_test_panel.html" %}
     {% endif %}
     {% if terrain_filter_eligible %}
         {# SNOW-1378: "Now showing the bulletin's slopes". Since SNOW-1377   #}

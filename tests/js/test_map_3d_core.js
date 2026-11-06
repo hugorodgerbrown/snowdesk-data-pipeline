@@ -15,6 +15,9 @@
  *   - /map/'s frame watchdog (SNOW-1455): a window fails at a median of 33 ms
  *     or a p95 over 66 ms, closes at about 2 s, and two bad ones in a row trip
  *     the watch;
+ *   - the 3D test's verdict (SNOW-1456): smooth, stutter and slow by the
+ *     watchdog's own rule over each pass, and unmeasured for a pass with
+ *     no frames or less than one window of them;
  *   - the Steep terrain worker bridge settles each request on the reply
  *     with its own id, and an abort tells the worker, rejects, and closes
  *     a bitmap that arrives too late.
@@ -575,5 +578,56 @@ describe('createFrameWatch', () => {
     const watch = core.createFrameWatch();
     for (const ms of [0, -5, Number.NaN, Infinity]) expect(watch.push(ms)).toBe(false);
     expect(pushAll(watch, SLOW, perWindow(SLOW) * 3)).toBe(true);
+  });
+});
+
+describe('judgePass / testVerdict (SNOW-1456)', () => {
+  const SLOW = 50;
+  const FAST = 20;
+  /** `windows` full watchdog windows of `ms` intervals. */
+  const run = (ms, windows) => Array(Math.round((core.FRAME_WINDOW_MS / ms) * windows)).fill(ms);
+  const KEEPS_UP = run(FAST, 6);
+  const FALLS_BEHIND = run(SLOW, 6);
+
+  it('says smooth when both passes keep up', () => {
+    expect(core.testVerdict([{ intervals: KEEPS_UP }, { intervals: KEEPS_UP }])).toBe('smooth');
+  });
+
+  it('says stutter when only the z9 pass falls behind', () => {
+    expect(core.testVerdict([{ intervals: KEEPS_UP }, { intervals: FALLS_BEHIND }])).toBe('stutter');
+  });
+
+  it('says slow when the close-up pass falls behind, whatever the other does', () => {
+    expect(core.testVerdict([{ intervals: FALLS_BEHIND }, { intervals: FALLS_BEHIND }])).toBe('slow');
+    expect(core.testVerdict([{ intervals: FALLS_BEHIND }, { intervals: KEEPS_UP }])).toBe('slow');
+  });
+
+  it('judges by the watch: two slow windows in a row are not enough', () => {
+    const twoBad = [...run(SLOW, 2), ...run(FAST, 1), ...run(SLOW, 2)];
+    expect(core.judgePass(twoBad)).toEqual({ measured: true, keptUp: true, windows: 5, slowWindows: 4 });
+    expect(core.testVerdict([{ intervals: twoBad }, { intervals: twoBad }])).toBe('smooth');
+  });
+
+  it('never reads the p95: a stall in every window still keeps up', () => {
+    const spiky = Array.from({ length: 6 * 100 }, (_v, i) => (i % 10 === 0 ? 120 : 16));
+    expect(core.frameStats(spiky).p95Ms).toBeGreaterThan(66);
+    expect(core.judgePass(spiky).keptUp).toBe(true);
+  });
+
+  it('says unmeasured for a pass with no frames', () => {
+    expect(core.judgePass([])).toEqual({ measured: false, keptUp: false, windows: 0, slowWindows: 0 });
+    expect(core.testVerdict([{ intervals: KEEPS_UP }, { intervals: [] }])).toBe('unmeasured');
+    expect(core.testVerdict([{ intervals: [] }, { intervals: FALLS_BEHIND }])).toBe('unmeasured');
+  });
+
+  it('says unmeasured for a pass shorter than one window', () => {
+    const short = Array(Math.floor(core.FRAME_WINDOW_MS / FAST) - 1).fill(FAST);
+    expect(core.judgePass(short).measured).toBe(false);
+    expect(core.testVerdict([{ intervals: KEEPS_UP }, { intervals: short }])).toBe('unmeasured');
+    expect(core.testVerdict([])).toBe('unmeasured');
+  });
+
+  it('lists the verdicts a result may be sent with', () => {
+    expect(core.TEST_VERDICTS).toEqual(['smooth', 'stutter', 'slow']);
   });
 });

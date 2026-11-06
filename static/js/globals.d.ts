@@ -324,11 +324,17 @@ interface Window {
   /**
    * static/js/map_view_3d.js — /map/'s 3-D view (SNOW-1449). Absent outside
    * the map_3d and map_modes flags. get() is the live view, `flat` or `3d`.
+   * SNOW-1456: the 3D test's hooks (static/js/map_3d_test.js) — canTest()
+   * says whether it may run here, beginTest() enters 3-D with the watchdog
+   * resting, endTest({verdict}) puts the view and camera back.
    */
   pwaMapView?: {
     get: () => string;
     enter: () => boolean;
     exit: () => void;
+    canTest: () => { ok: boolean; reason: string | null };
+    beginTest: () => boolean;
+    endTest: (result?: { verdict?: string }) => void;
   };
   /** static/js/map.js — the weather symbols' Terrain-mode hook: setSuppressed(reason, active) / isSuppressed() (SNOW-1394). */
   pwaWeatherLayer: any;

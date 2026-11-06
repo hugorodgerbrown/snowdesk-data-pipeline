@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-06 14:33+0000\n"
+"POT-Creation-Date: 2026-11-06 16:05+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1700,32 +1700,6 @@ msgstr ""
 msgid "Share this route in 3D"
 msgstr ""
 
-msgid "Frame-time probe: waiting for the map to load…"
-msgstr ""
-
-#, python-format
-msgid ""
-"Frame-time probe: pass %%(n)s of %%(total)s, %%(label)s. Keep the phone "
-"still."
-msgstr ""
-
-#, python-format
-msgid ""
-"%%(label)s: median %%(median)s ms (%%(fps)s fps), p95 %%(p95)s ms, "
-"%%(over)s%% over %%(budget)s ms"
-msgstr ""
-
-#, python-format
-msgid "%%(label)s: no frames timed"
-msgstr ""
-
-#, python-format
-msgid "Frame-time probe done. First idle %%(idle)s ms. GPU: %%(gpu)s"
-msgstr ""
-
-msgid "Share the result"
-msgstr ""
-
 msgid "Editors"
 msgstr ""
 
@@ -1790,6 +1764,180 @@ msgid "Copied."
 msgstr ""
 
 msgid "That couldn't be shared. Try again."
+msgstr ""
+
+msgid "Share the result"
+msgstr ""
+
+msgid "Test again"
+msgstr ""
+
+msgid "Testing 3D"
+msgstr ""
+
+msgid "3D test"
+msgstr ""
+
+msgid "More: share the result, test again"
+msgstr ""
+
+msgid "Stop the test"
+msgstr ""
+
+msgid "Keep the phone still"
+msgstr ""
+
+msgid ""
+"The map turns by itself while each frame is timed. Your place on the map "
+"comes back when the test ends."
+msgstr ""
+
+msgid "Test progress"
+msgstr ""
+
+msgid "Loading the map"
+msgstr ""
+
+msgid "Close up, over Saas-Fee"
+msgstr ""
+
+msgid "Zoomed out, over Valais"
+msgstr ""
+
+msgid "Smooth"
+msgstr ""
+
+msgid "Mostly smooth"
+msgstr ""
+
+msgid "Too slow"
+msgstr ""
+
+msgid "3D runs smoothly on this phone"
+msgstr ""
+
+msgid "It kept up close in and zoomed out."
+msgstr ""
+
+msgid "3D may stutter when zoomed out"
+msgstr ""
+
+msgid ""
+"Close in, it kept up. Zoomed out it fell behind, and the map may go back to "
+"2D on its own there."
+msgstr ""
+
+msgid "3D is too slow on this phone"
+msgstr ""
+
+msgid ""
+"It fell behind close in and zoomed out. The map stays in 2D, which shows the "
+"same bulletin and terrain."
+msgstr ""
+
+msgid "keeps up"
+msgstr ""
+
+msgid "falls behind"
+msgstr ""
+
+msgid "Details"
+msgstr ""
+
+msgid ""
+"Send this result to Snowdesk? It holds the graphics chip, screen size and "
+"frame times. Nothing about you or your account."
+msgstr ""
+
+msgid "Could not send the result"
+msgstr ""
+
+msgid "Send anonymously"
+msgstr ""
+
+msgid "Sent to Snowdesk, anonymously."
+msgstr ""
+
+msgid "Done"
+msgstr ""
+
+msgid "The test could not time this device"
+msgstr ""
+
+msgid ""
+"The map did not draw enough frames to judge. Keep this tab open and try "
+"again."
+msgstr ""
+
+msgid "3D is not available on this device"
+msgstr ""
+
+msgid "The map stays in 2D, which shows the same bulletin and terrain."
+msgstr ""
+
+msgid "The 3D test needs a connection"
+msgstr ""
+
+msgid "It loads the map's tiles as it turns. Try again once you are online."
+msgstr ""
+
+msgid "Finish drawing the route to see 3D"
+msgstr ""
+
+#, python-format
+msgid "%%(s)s s left"
+msgstr ""
+
+#, python-format
+msgid "median %%(ms)s ms"
+msgstr ""
+
+#, python-format
+msgid "%%(fps)s fps"
+msgstr ""
+
+#, python-format
+msgid "p95 %%(ms)s ms"
+msgstr ""
+
+#, python-format
+msgid "%%(pct)s over %%(budget)s ms"
+msgstr ""
+
+#, python-format
+msgid "%%(slow)s of %%(windows)s windows slow"
+msgstr ""
+
+#, python-format
+msgid "tiles in %%(s)s s"
+msgstr ""
+
+#, python-format
+msgid "GPU · %%(gpu)s"
+msgstr ""
+
+msgid "not given"
+msgstr ""
+
+#, python-format
+msgid "screen · %%(width)s × %%(height)s at %%(dpr)s×, drawn at %%(ratio)s×"
+msgstr ""
+
+#, python-format
+msgid "rule · median ≥ %%(budget)s ms in %%(n)s windows of %%(s)s s in a row"
+msgstr ""
+
+#, python-format
+msgid "%%(label)s: %%(status)s, median %%(median)s ms"
+msgstr ""
+
+msgid "Snowdesk 3D test"
+msgstr ""
+
+msgid "Result copied"
+msgstr ""
+
+msgid "Could not copy the result"
 msgstr ""
 
 msgid "Previous month"
@@ -2379,16 +2527,10 @@ msgstr ""
 msgid "3D covers Switzerland for now"
 msgstr ""
 
-msgid "Finish drawing the route to see 3D"
-msgstr ""
-
 msgid "Back in 2D: offline, 3D works only in a downloaded area."
 msgstr ""
 
 msgid "Back in 2D: 3D covers Switzerland for now."
-msgstr ""
-
-msgid "3D is not available on this device"
 msgstr ""
 
 msgid "3D is too slow on this device"
@@ -2404,6 +2546,9 @@ msgid "Back in 2D: 3D is too slow on this device."
 msgstr ""
 
 msgid "3D stops here. Switch to 2D to zoom out."
+msgstr ""
+
+msgid "Test this device"
 msgstr ""
 
 msgid "Your places today"
@@ -2483,8 +2628,8 @@ msgid "The needle points north. Tap it to turn the map back to north."
 msgstr ""
 
 msgid ""
-"In Terrain, tap 3D or tilt with two fingers to see the mountains in relief. "
-"Tap 2D to lay the map flat again."
+"Tap 3D or tilt with two fingers to see the mountains in relief. Tap 2D to "
+"lay the map flat again."
 msgstr ""
 
 msgid "Layers"
@@ -2536,9 +2681,6 @@ msgid "Back"
 msgstr ""
 
 msgid "Next"
-msgstr ""
-
-msgid "Done"
 msgstr ""
 
 msgid "Dismiss"
@@ -2767,11 +2909,11 @@ msgid "Up to %%(mb)s MB"
 msgstr ""
 
 #, python-format
-msgid "Terrain and 3D data: up to %%(mb)s MB more"
+msgid "Terrain data: up to %%(mb)s MB more"
 msgstr ""
 
 #, python-format
-msgid "Terrain data: up to %%(mb)s MB more"
+msgid "Terrain and 3D data: up to %%(mb)s MB more"
 msgstr ""
 
 #, python-format
@@ -2849,13 +2991,13 @@ msgstr ""
 #, python-format
 msgid ""
 "Download this region's basemap — up to %%(mb)s MB, plus up to %%(terrain)s "
-"MB of terrain and 3D data"
+"MB of terrain data"
 msgstr ""
 
 #, python-format
 msgid ""
 "Download this region's basemap — up to %%(mb)s MB, plus up to %%(terrain)s "
-"MB of terrain data"
+"MB of terrain and 3D data"
 msgstr ""
 
 #, python-format
@@ -3049,6 +3191,13 @@ msgid "Show map demo"
 msgstr ""
 
 msgid "Pull the map apart into its layers."
+msgstr ""
+
+msgid "Test 3D on this device"
+msgstr ""
+
+msgid ""
+"See how well this phone draws the mountains in relief. About 30 seconds."
 msgstr ""
 
 msgid "Help pages"
@@ -3636,11 +3785,11 @@ msgid "Below %%(max)s m"
 msgstr ""
 
 #, python-format
-msgid "Zoom level %(zoom)s"
+msgid "Zoom level %(zoom)s, enlarged"
 msgstr ""
 
 #, python-format
-msgid "Zoom level %(zoom)s, enlarged"
+msgid "Zoom level %(zoom)s"
 msgstr ""
 
 msgid "Zoom level"
@@ -9280,9 +9429,6 @@ msgid "When"
 msgstr ""
 
 msgid "Where you meet"
-msgstr ""
-
-msgid "Details"
 msgstr ""
 
 msgid "Trip name"
