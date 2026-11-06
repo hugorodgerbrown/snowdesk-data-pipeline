@@ -108,6 +108,19 @@ describe('writing the URL', () => {
     );
   });
 
+  it('keeps ?view=3d with the mode in Terrain (SNOW-1449)', () => {
+    expect(core.withDate('?d=2026-02-10&mode=terrain&view=3d', '2026-02-11')).toBe(
+      '?d=2026-02-11&mode=terrain&view=3d',
+    );
+  });
+
+  it('drops a ?view= outside Terrain, and any value but 3d', () => {
+    expect(core.withDate('?d=2026-02-10&view=3d', '2026-02-11')).toBe('?d=2026-02-11');
+    expect(core.withDate('?mode=terrain&view=tilted', '2026-02-11')).toBe(
+      '?d=2026-02-11&mode=terrain',
+    );
+  });
+
   it("writes ?d= alone in Dated, as the date write always has", () => {
     expect(core.withDate('?d=2026-02-10', '2026-02-11')).toBe('?d=2026-02-11');
     expect(core.withDate('?d=2026-02-10&mode=bogus', '2026-02-11')).toBe('?d=2026-02-11');
