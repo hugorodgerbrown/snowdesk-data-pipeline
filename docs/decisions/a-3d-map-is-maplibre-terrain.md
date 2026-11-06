@@ -1,6 +1,6 @@
 ---
 name: a-3d-map-is-maplibre-terrain
-description: 3-D map on MapLibre setTerrain — /map/3d/ sandbox, /map/ ?view=3d (map_view_3d, map_3d_terrain), compass; not deck.gl or CesiumJS
+description: 3-D map on MapLibre setTerrain — /map/3d/ sandbox, /map/ ?view=3d (map_view_3d, map_3d_terrain), compass, 3-D fallbacks (frame budget watchdog, WebGL context loss, device gate); not deck.gl or CesiumJS
 status: current
 last-reviewed: 2026-11-06
 ---
@@ -135,4 +135,40 @@ reader, keep the "3D" link to `/map/3d/`.
 - **The compass** (`public/partials/_map_compass.html`,
   `static/js/map_compass.js`) sits under the zoom roundel for every reader,
   in both views, shown whenever the map is not north-up.
-- WebGL context loss and a frame-budget watchdog are SNOW-1455.
+
+## When the device cannot keep up (SNOW-1455, 6 Nov 2026)
+
+**The agreed budget.** A window of about two seconds of moving time
+(`map_3d_core.FRAME_WINDOW_MS`, 2000) passes when its median frame interval
+is under 33 ms (`FRAME_BUDGET_MS`) and its 95th percentile is 66 ms or less
+(`FRAME_P95_BUDGET_MS`), as judged by `frameWindowFails` on `frameStats`'
+output. The `/map/3d/?probe=1` probe and its own verdict
+(`frameStats().withinBudget`, `PROBE_PASSES`) are unchanged; the watchdog
+does not read that verdict.
+
+Three things lay `/map/`'s 3-D flat, each through the runner's
+`exit({reason})`, with the switch then disabled through `availability`. A
+fallback lasts for this visit only, and nothing about the device is stored
+(Hugo, 6 Nov 2026). `map_view_core.REASONS` gained `device`, `slow` and
+`webgl`, asked straight after `mode`, so a device that can never draw 3-D
+is not told "Zoom in".
+
+1. **The gate at boot** (`map_view_core.deviceGate`): no WebGL on the map's
+   canvas, or `navigator.deviceMemory` of 2 GB or less on Android Chrome
+   (`LOW_MEMORY_GB`). On `/map/` no WebGL already means no map at all
+   (SNOW-893's `#map-unavailable`), so the memory test is the one that does
+   the work. A `?view=3d` boot on such a device opens flat.
+2. **WebGL lost.** MapLibre 4.7.1 re-fires the canvas's `webglcontextlost`
+   and `webglcontextrestored` as map events. A loss goes flat with one line
+   and blocks 3-D (`webgl`) until the restore, which says nothing and turns
+   the switch back on.
+3. **Frames over budget.** A `requestAnimationFrame` loop runs only between
+   `movestart` and `moveend`, in 3-D and not while a route is drawn. Its
+   intervals go to `map_3d_core.createFrameWatch`: two failing windows in a
+   row trip it, a passing window resets the count, and windows count across
+   gestures. Timing starts after the first `moveend` that follows each tilt
+   in, so the entering ease over a fresh style is not counted (`easeTo`
+   stops an ease still running and fires its `moveend` synchronously, so
+   the runner disarms again after the call). The first interval of each run
+   is dropped and a hidden tab is never counted. A trip blocks 3-D (`slow`)
+   for the rest of the visit.
