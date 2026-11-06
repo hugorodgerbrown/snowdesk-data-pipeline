@@ -171,8 +171,11 @@
     document.dispatchEvent(new CustomEvent('snowdesk:basemap-changing', { detail: { key, url } }));
     drawn = key;
     const resolve = win.resolveBasemapStyle;
+    // No diff: MapLibre 4.7.1 cannot diff a style that carries terrain (it
+    // warns, aborts tile requests and rebuilds anyway), and the swap
+    // replaces every source the basemap has.
     Promise.resolve(typeof resolve === 'function' ? resolve(key, url) : url)
-      .then((style) => map.setStyle(style))
+      .then((style) => map.setStyle(style, { diff: false }))
       .catch((/** @type {unknown} */ err) => console.warn('map_view_3d: could not change the basemap', err));
     return true;
   };
@@ -285,6 +288,13 @@
     if (!swapped) installNow();
     if (options.gesture) map.setMaxPitch(core.MAX_PITCH);
     else tiltIn();
+    // A setStyle stops a camera ease where it stands (measured in
+    // Chromium), so the tilt runs again once the new style is in.
+    if (swapped && !options.gesture) {
+      map.once('style.load', () => {
+        if (view === THREE_D && !suspended) tiltIn();
+      });
+    }
     announce(THREE_D);
     sync();
     if (swapped && !options.boot) say(STRINGS.basemap);
@@ -294,7 +304,7 @@
   /**
    * Leave 3-D: flat, on the reader's basemap.
    *
-   * @param {{reason?: string, immediate?: boolean}} [options]
+   * @param {{reason?: string}} [options]
    * @returns {void}
    */
   const exit = (options = {}) => {
@@ -305,8 +315,9 @@
     map.setMinZoom(savedMinZoom === null ? 0 : savedMinZoom);
     if (savedPixelRatio !== null && typeof map.setPixelRatio === 'function') map.setPixelRatio(savedPixelRatio);
     savedPixelRatio = null;
-    if (options.immediate) map.jumpTo({ pitch: 0 });
-    else map.easeTo({ pitch: 0, duration: EASE_MS });
+    // Flat at once, not eased: the setStyle below would stop an ease part
+    // way, leaving the flat map tilted.
+    map.jumpTo({ pitch: 0 });
     swapBasemap(preferredKey());
     announce(FLAT);
     sync();
@@ -340,12 +351,12 @@
   });
 
   document.addEventListener('snowdesk:map-mode-changed', () => {
-    if (view === THREE_D && mode() !== 'terrain') exit({ reason: 'mode', immediate: true });
+    if (view === THREE_D && mode() !== 'terrain') exit({ reason: 'mode' });
     else sync();
   });
 
   const onConnectivity = () => {
-    if (view === THREE_D && !online()) exit({ reason: 'offline', immediate: true });
+    if (view === THREE_D && !online()) exit({ reason: 'offline' });
     else sync();
   };
   document.addEventListener('snowdesk:connectivity-changed', onConnectivity);

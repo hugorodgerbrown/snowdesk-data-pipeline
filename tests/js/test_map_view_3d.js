@@ -47,6 +47,13 @@ function fakeMap() {
     maxPitch: 0,
     pixelRatio: 3,
     on: (type, fn) => { (handlers[type] = handlers[type] || []).push(fn); },
+    once: (type, fn) => {
+      const wrapped = (e) => {
+        handlers[type] = handlers[type].filter((h) => h !== wrapped);
+        fn(e);
+      };
+      map.on(type, wrapped);
+    },
     fire: (type, event = {}) => { for (const fn of handlers[type] || []) fn(event); },
     getZoom: () => map.zoom,
     getCenter: () => map.centre,
@@ -64,7 +71,10 @@ function fakeMap() {
       sources = {};
       layers = [{ id: 'labels', type: 'symbol' }];
       terrainSpec = null;
+      // A setStyle stops a camera ease where it stands, as in Chromium.
+      map.pitch = Math.min(map.pitch, 20);
       map.fire('styledata');
+      map.fire('style.load');
     }),
     addSource: (id, s) => { sources[id] = s; },
     getSource: (id) => sources[id],
@@ -140,7 +150,7 @@ describe('entering 3-D', () => {
     const { map, button } = await boot();
     button.click();
     await flush();
-    expect(map.setStyle).toHaveBeenCalledWith(URLS.swisstopo_winter);
+    expect(map.setStyle).toHaveBeenCalledWith(URLS.swisstopo_winter, { diff: false });
     expect(inThreeD(map)).toBe(true);
     expect(map.setSky).toHaveBeenCalledWith(core3d.skySpec());
     expect(env.addProtocol).toHaveBeenCalledTimes(1);
@@ -175,7 +185,7 @@ describe('entering 3-D', () => {
     const { map } = await boot({ search: '?mode=terrain&view=3d', online: false });
     await flush();
     expect(window.pwaMapView.get()).toBe('flat');
-    expect(map.setStyle).toHaveBeenCalledWith(URLS.openfreemap_liberty);
+    expect(map.setStyle).toHaveBeenCalledWith(URLS.openfreemap_liberty, { diff: false });
     expect(view()).toBeNull();
   });
 });
@@ -193,7 +203,7 @@ describe('leaving 3-D', () => {
     expect(map.bearing).toBe(30);
     expect(map.minZoom).toBe(4);
     expect(map.pixelRatio).toBe(3);
-    expect(map.setStyle).toHaveBeenCalledWith(URLS.openfreemap_liberty);
+    expect(map.setStyle).toHaveBeenCalledWith(URLS.openfreemap_liberty, { diff: false });
     expect(view()).toBeNull();
     expect(button.getAttribute('aria-pressed')).toBe('false');
   });
@@ -205,7 +215,7 @@ describe('leaving 3-D', () => {
     button.click();
     await flush();
     expect(env.resolveBasemapStyle).toHaveBeenLastCalledWith('basemap_at', URLS.basemap_at);
-    expect(map.setStyle).toHaveBeenLastCalledWith({ rewritten: URLS.basemap_at });
+    expect(map.setStyle).toHaveBeenLastCalledWith({ rewritten: URLS.basemap_at }, { diff: false });
   });
 
   it('keeps the elevation source and swaps nothing for a reader on swisstopo winter', async () => {
