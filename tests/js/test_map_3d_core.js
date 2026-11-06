@@ -12,6 +12,9 @@
  *     the clipped fragment MapLibre hands back;
  *   - the frame-time probe's summary (SNOW-1448) uses intervals that
  *     happened, ignores junk, and holds the median to the 33 ms budget;
+ *   - /map/'s frame watchdog (SNOW-1455): a window fails at a median of 33 ms
+ *     or a p95 over 66 ms, closes at about 2 s, and two bad ones in a row trip
+ *     the watch;
  *   - the Steep terrain worker bridge settles each request on the reply
  *     with its own id, and an abort tells the worker, rejects, and closes
  *     a bitmap that arrives too late.
@@ -476,5 +479,73 @@ describe('frameStats / PROBE_PASSES', () => {
       expect(pass.durationMs).toBeGreaterThanOrEqual(10000);
       expect(pass.turnDeg).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('frameWindowFails', () => {
+  const stats = (medianMs, p95Ms) => ({ medianMs, p95Ms });
+
+  it('pins the agreed budget', () => {
+    expect(core.FRAME_P95_BUDGET_MS).toBe(66);
+    expect(core.FRAME_WINDOW_MS).toBe(2000);
+  });
+
+  it('fails a median of 33 ms and passes 32.9', () => {
+    expect(core.frameWindowFails(stats(33, 40))).toBe(true);
+    expect(core.frameWindowFails(stats(32.9, 40))).toBe(false);
+  });
+
+  it('passes a p95 of 66 ms and fails 66.1', () => {
+    expect(core.frameWindowFails(stats(20, 66))).toBe(false);
+    expect(core.frameWindowFails(stats(20, 66.1))).toBe(true);
+  });
+
+  it('reads frameStats\' own output, and no frames is not a failure', () => {
+    expect(core.frameWindowFails(core.frameStats([20, 20, 20, 20, 100]))).toBe(true);
+    expect(core.frameWindowFails(core.frameStats([20, 20, 20, 20, 20]))).toBe(false);
+    expect(core.frameWindowFails(null)).toBe(false);
+  });
+});
+
+describe('createFrameWatch', () => {
+  const SLOW = 50;
+  const FAST = 20;
+  /** Push `n` intervals of `ms`, answering what the last push said. */
+  const pushAll = (watch, ms, n) => {
+    let tripped = false;
+    for (let i = 0; i < n; i += 1) tripped = watch.push(ms);
+    return tripped;
+  };
+  const perWindow = (ms) => core.FRAME_WINDOW_MS / ms;
+
+  it('closes a window at about 2 s and trips on the second bad one in a row', () => {
+    const watch = core.createFrameWatch();
+    expect(pushAll(watch, SLOW, perWindow(SLOW))).toBe(false);
+    expect(pushAll(watch, SLOW, perWindow(SLOW) - 1)).toBe(false);
+    expect(watch.push(SLOW)).toBe(true);
+    expect(watch.push(FAST)).toBe(true);
+  });
+
+  it('does not trip on bad, good, bad', () => {
+    const watch = core.createFrameWatch();
+    pushAll(watch, SLOW, perWindow(SLOW));
+    pushAll(watch, FAST, perWindow(FAST));
+    expect(pushAll(watch, SLOW, perWindow(SLOW))).toBe(false);
+  });
+
+  it('is cleared by reset, part-filled window and count included', () => {
+    const watch = core.createFrameWatch();
+    pushAll(watch, SLOW, perWindow(SLOW) * 2);
+    watch.reset();
+    expect(watch.push(FAST)).toBe(false);
+    pushAll(watch, SLOW, perWindow(SLOW) - 1);
+    // The fast frame and these close one bad window; one is not enough.
+    expect(pushAll(watch, SLOW, 1)).toBe(false);
+  });
+
+  it('ignores junk intervals', () => {
+    const watch = core.createFrameWatch();
+    for (const ms of [0, -5, Number.NaN, Infinity]) expect(watch.push(ms)).toBe(false);
+    expect(pushAll(watch, SLOW, perWindow(SLOW) * 2)).toBe(true);
   });
 });

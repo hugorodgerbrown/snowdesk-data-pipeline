@@ -3457,6 +3457,22 @@ def test_both_flags_turn_the_roundel_into_the_3d_view() -> None:
 
 
 @pytest.mark.django_db
+def test_the_3d_view_renders_its_fallback_strings() -> None:
+    """SNOW-1455: the device, slow-frame and WebGL lines are in the strings template."""
+    content = _flagged_map(map_3d=True, map_modes=True)
+    template = content[content.index('id="map-view-strings-template"') :]
+    template = template[: template.index("</template>")]
+    for key, text in [
+        ("why-device", "3-D is not available on this device"),
+        ("why-slow", "3-D is too slow on this device"),
+        ("why-webgl", "3-D comes back once the map's graphics have reset"),
+        ("left-webgl", "The map's graphics reset, so it is flat again."),
+        ("left-slow", "Back in 2D: 3-D is too slow on this device."),
+    ]:
+        assert f'data-string="{key}">{text}</span>' in template
+
+
+@pytest.mark.django_db
 def test_map_modes_alone_has_no_3d_roundel() -> None:
     """The modes without map_3d draw neither roundel nor the view's strings."""
     content = _flagged_map(map_3d=False, map_modes=True)

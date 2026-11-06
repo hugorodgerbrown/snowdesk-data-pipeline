@@ -1,6 +1,6 @@
 // @ts-check
 /*
- * static/js/map_view_3d.js — /map/'s 3-D view (SNOW-1449).
+ * static/js/map_view_3d.js — /map/'s 3-D view (SNOW-1449, SNOW-1455).
  *
  * Loaded only for a reader in both the map_3d and map_modes flags
  * (public/map.html), after map.js and the two 3-D helpers it reuses:
@@ -44,6 +44,25 @@
  * reader's own tilt (it carries an originalEvent; an ease does not) is
  * what enters 3-D; anywhere else the ceiling is 0 and the map does not tilt.
  *
+ * THE DEVICE (SNOW-1455). Three things lay 3-D flat and keep it off for
+ * this visit only; nothing about the device is stored. Each goes through
+ * exit({reason}), and the switch then reads the reason from available(),
+ * so it is aria-disabled, a tap says why and the tilt stays locked.
+ *   - The gate, worked out once at boot (map_view_core.deviceGate): no
+ *     WebGL on the map's canvas, or 2 GB of memory or less on Android
+ *     Chrome. A ?view=3d boot on such a device opens flat.
+ *   - A lost WebGL context (MapLibre re-fires the canvas's
+ *     webglcontextlost / webglcontextrestored as map events) goes flat
+ *     with one line; until it is restored 3-D cannot be entered. The
+ *     restore says nothing and turns the switch back on.
+ *   - Frames over budget. A requestAnimationFrame loop runs only between
+ *     movestart and moveend, in 3-D and not suspended for a drawing. Its
+ *     intervals go to map_3d_core.createFrameWatch; two failing ~2 s
+ *     windows in a row (frameWindowFails) go flat for the visit. Timing
+ *     starts after the first moveend that follows each tilt in, so the
+ *     entering ease over a fresh style is not counted; the first interval
+ *     of each run is dropped, and a hidden tab is never counted.
+ *
  * Publishes `window.pwaMapView` (get / enter / exit): map.js reads the live
  * view to retry the right basemap on a reconnect, and the basemap picker
  * hears `snowdesk:map-view-changed` to disable its rows in 3-D.
@@ -80,6 +99,11 @@
     'left-mode': 'Back in 2D: 3-D is part of Terrain.',
     'left-offline': 'Back in 2D: 3-D needs a connection.',
     'left-coverage': 'Back in 2D: 3-D covers Switzerland for now.',
+    'why-device': '3-D is not available on this device',
+    'why-slow': '3-D is too slow on this device',
+    'why-webgl': '3-D comes back once the map\'s graphics have reset',
+    'left-webgl': 'The map\'s graphics reset, so it is flat again.',
+    'left-slow': 'Back in 2D: 3-D is too slow on this device.',
     'zoom-floor': '3-D stops here. Switch to 2D to zoom out.',
   });
 
@@ -93,7 +117,22 @@
   let savedMinZoom = null;
   /** @type {?number} */
   let savedPixelRatio = null;
+  /**
+   * The reader's pixel ratio, held back while the WebGL context is lost:
+   * setPixelRatio resizes, and MapLibre takes a lost context's 0x0 drawing
+   * buffer for a hardware limit (_maxCanvasSize), so it waits for the
+   * restore.
+   *
+   * @type {?number}
+   */
+  let pendingPixelRatio = null;
   let lastZoomOutAt = -Infinity;
+  /** The frame watchdog tripped: no more 3-D this visit. */
+  let tooSlow = false;
+  /** The map's WebGL context is lost and not yet restored. */
+  let contextLost = false;
+  /** deviceGate's answer, worked out once at boot; null lets 3-D in. */
+  let gated = /** @type {?string} */ (null);
 
   // ---- What the page knows ----------------------------------------------
 
@@ -118,6 +157,9 @@
     online: online(),
     zoom: map.getZoom(),
     mode: mode(),
+    gated: gated !== null,
+    tooSlow,
+    contextLost,
     editing: drawing,
     centre: map.getCenter(),
     bounds: COVERAGE,
@@ -245,12 +287,66 @@
     document.dispatchEvent(new CustomEvent('snowdesk:map-view-changed', { detail: { view: next } }));
   };
 
+  // ---- The frame watchdog ----------------------------------------------
+
+  const watch = core.createFrameWatch();
+  /** A move has ended since the last tilt in, so moves are timed now. */
+  let timingArmed = false;
+  /** @type {?number} */
+  let frameRequest = null;
+  /** The last frame's timestamp in this run; null at the start of one. */
+  let lastFrameAt = /** @type {?number} */ (null);
+  /** The run's first interval has been dropped. */
+  let firstDropped = false;
+
+  /** @returns {boolean} Whether a move now is one the watchdog times. */
+  const timing = () => view === THREE_D && !suspended && timingArmed && !document.hidden;
+
+  /** Stop the loop; the next run starts afresh. */
+  const stopFrames = () => {
+    if (frameRequest !== null) window.cancelAnimationFrame(frameRequest);
+    frameRequest = null;
+    lastFrameAt = null;
+    firstDropped = false;
+  };
+
+  /** @param {number} at The frame's timestamp. */
+  const onFrame = (at) => {
+    frameRequest = null;
+    if (!timing()) {
+      stopFrames();
+      return;
+    }
+    if (lastFrameAt !== null) {
+      // The first interval of a run carries the gesture's own start-up.
+      if (!firstDropped) firstDropped = true;
+      else if (watch.push(at - lastFrameAt)) {
+        tooSlow = true;
+        exit({ reason: viewCore.REASONS.SLOW });
+        return;
+      }
+    }
+    lastFrameAt = at;
+    frameRequest = window.requestAnimationFrame(onFrame);
+  };
+
+  /** Start timing a move, unless one is already being timed. */
+  const startFrames = () => {
+    if (frameRequest !== null || !timing()) return;
+    lastFrameAt = null;
+    firstDropped = false;
+    frameRequest = window.requestAnimationFrame(onFrame);
+  };
+
   /** @type {Record<string, string>} */
   const WHY = {
     zoom: STRINGS['why-zoom'],
     offline: STRINGS['why-offline'],
     coverage: STRINGS['why-coverage'],
     editing: STRINGS['why-editing'],
+    device: STRINGS['why-device'],
+    slow: STRINGS['why-slow'],
+    webgl: STRINGS['why-webgl'],
   };
 
   /** @type {Record<string, string>} */
@@ -258,12 +354,18 @@
     mode: STRINGS['left-mode'],
     offline: STRINGS['left-offline'],
     coverage: STRINGS['left-coverage'],
+    webgl: STRINGS['left-webgl'],
+    slow: STRINGS['left-slow'],
   };
 
-  /** Tilt the relief in, with the ceiling open. */
+  /** Tilt the relief in, with the ceiling open. Its ease is not timed. */
   const tiltIn = () => {
+    timingArmed = false;
     map.setMaxPitch(core.MAX_PITCH);
     map.easeTo({ pitch: core.OPENING_CAMERA.pitch, duration: EASE_MS });
+    // easeTo stops an ease still running, and that fires its moveend here;
+    // the move this starts is the one whose end arms the timing.
+    timingArmed = false;
   };
 
   /**
@@ -283,6 +385,7 @@
     terrain.registerDemProtocol(win.maplibregl, button.dataset.demTileUrl || '');
     view = THREE_D;
     suspended = false;
+    timingArmed = false;
     savedMinZoom = map.getMinZoom();
     map.setMinZoom(viewCore.MIN_ZOOM);
     if (typeof map.setPixelRatio === 'function') {
@@ -318,9 +421,15 @@
     if (view !== THREE_D) return;
     view = FLAT;
     suspended = false;
+    stopFrames();
+    watch.reset();
+    timingArmed = false;
     removeNow();
     map.setMinZoom(savedMinZoom === null ? 0 : savedMinZoom);
-    if (savedPixelRatio !== null && typeof map.setPixelRatio === 'function') map.setPixelRatio(savedPixelRatio);
+    if (savedPixelRatio !== null && typeof map.setPixelRatio === 'function') {
+      if (contextLost) pendingPixelRatio = savedPixelRatio;
+      else map.setPixelRatio(savedPixelRatio);
+    }
     savedPixelRatio = null;
     // Flat at once, not eased: the setStyle below would stop an ease part
     // way, leaving the flat map tilted.
@@ -374,7 +483,12 @@
   window.addEventListener('offline', onConnectivity);
   window.addEventListener('online', onConnectivity);
 
+  map.on('movestart', startFrames);
+
   map.on('moveend', () => {
+    stopFrames();
+    // The first move to end after a tilt in is that ease; the next is timed.
+    if (view === THREE_D && !suspended) timingArmed = true;
     if (view === THREE_D && !viewCore.covers(map.getCenter(), COVERAGE)) {
       exit({ reason: 'coverage' });
       return;
@@ -392,6 +506,7 @@
     if (drawing && !suspended) {
       // Flat for the drawing, still on swisstopo winter: no setStyle.
       suspended = true;
+      stopFrames();
       removeNow();
       map.jumpTo({ pitch: 0 });
       sync();
@@ -406,6 +521,29 @@
       tiltIn();
       sync();
     }
+  });
+
+  // A hidden tab draws nothing, and its gap is not a slow frame.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopFrames();
+  });
+
+  // ---- WebGL lost and restored ------------------------------------------
+
+  map.on('webglcontextlost', () => {
+    contextLost = true;
+    if (view === THREE_D) exit({ reason: viewCore.REASONS.WEBGL });
+    else sync();
+  });
+
+  map.on('webglcontextrestored', () => {
+    contextLost = false;
+    // Flat already (the loss laid it flat); make sure, and say nothing.
+    if (view === THREE_D) exit();
+    if (map.getPitch() > 0) map.jumpTo({ pitch: 0 });
+    if (pendingPixelRatio !== null && typeof map.setPixelRatio === 'function') map.setPixelRatio(pendingPixelRatio);
+    pendingPixelRatio = null;
+    sync();
   });
 
   // ---- The zoom floor ---------------------------------------------------
@@ -446,12 +584,31 @@
 
   // ---- Boot -------------------------------------------------------------
 
+  /** @returns {boolean} Whether WebGL can be read from the map's canvas. */
+  const canvasHasWebgl = () => {
+    try {
+      const canvas = map.getCanvas();
+      // The context MapLibre made: asking for its own type hands it back.
+      return !!(canvas && (canvas.getContext('webgl2') || canvas.getContext('webgl')));
+    } catch (_err) {
+      return false;
+    }
+  };
+  // Only Chromium reports deviceMemory, so Android here means Android Chrome.
+  gated = viewCore.deviceGate({
+    webgl: canvasHasWebgl(),
+    deviceMemory: /** @type {any} */ (navigator).deviceMemory,
+    android: /Android/i.test(navigator.userAgent || ''),
+  });
+
   document.documentElement.dataset.mapView = FLAT;
   // map.js booted the view (swisstopo winter, the stored camera) and kept
   // ?view=3d only in Terrain inside the coverage. A boot that still cannot
-  // enter (offline) lays the map flat on the reader's basemap.
+  // enter (offline, or a device the gate keeps out) lays the map flat on
+  // the reader's basemap.
   if (viewCore.readView(location.search, mode()) === THREE_D) {
     if (!enter({ boot: true })) {
+      map.jumpTo({ pitch: 0 });
       swapBasemap(preferredKey());
       announce(FLAT);
     }
