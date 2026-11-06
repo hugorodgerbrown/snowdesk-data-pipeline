@@ -428,6 +428,29 @@ describe('createDemLoader', () => {
     expect(dem.usingFallback()).toBe(false);
   });
 
+  // SNOW-1453: offline, the service worker answers a tile it does not hold
+  // with its own 504 (`_synthesizedGatewayTimeout`). Counting those would
+  // latch the loader off the pinned tiles after three misses off the area.
+  it('does not latch on the service worker\'s offline miss, so pinned tiles are still asked for', async () => {
+    const miss = () => ({ ...answer(504), headers: new Headers({ 'X-SW-Cache': 'miss' }) });
+    const { fetchTile, dem } = loader(miss);
+    for (let i = 0; i < core.DEM_FALLBACK_AFTER + 1; i += 1) {
+      await expect(dem.load(TILE, signal())).rejects.toThrow('(504)');
+    }
+    expect(dem.usingFallback()).toBe(false);
+    fetchTile.mockClear();
+    await expect(dem.load(TILE, signal())).rejects.toThrow('(504)');
+    expect(fetchTile.mock.calls[0][0]).toBe('https://mt.example/12/2133/1458.webp');
+  });
+
+  it('still counts a 504 the service worker did not make', async () => {
+    const { dem } = loader((url) => (url.startsWith('https://mt')
+      ? { ...answer(504), headers: new Headers() }
+      : answer(200)));
+    for (let i = 0; i < core.DEM_FALLBACK_AFTER; i += 1) await dem.load(TILE, signal());
+    expect(dem.usingFallback()).toBe(true);
+  });
+
   it('rejects when both fail, and passes an abort straight through', async () => {
     const { dem } = loader(() => answer(500));
     await expect(dem.load(TILE, signal())).rejects.toThrow('no elevation tile 12/2133/1458 (500)');
