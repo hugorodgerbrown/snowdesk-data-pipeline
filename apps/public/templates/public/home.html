@@ -70,11 +70,36 @@ parameters never reaches this template — views.home 301s it to /map/.
             aria-labelledby="home-heading"
             data-testid="home-hero"
         >
-            {% trans "Stay avi-savvy" as eyebrow_text %}
-            {% include "includes/_eyebrow.html" with text=eyebrow_text tag="p" class_extra="mb-3" %}
+            {% if show_3d %}
+                {# Temporary 3-D branding, only for readers of the map_3d flag #}
+                {# (the 3-D map 404s for everyone else): the wordmark wearing  #}
+                {# specs in place of the eyebrow, and the 3-D map tilted back  #}
+                {# under the headline, both linking to /map/3d/.               #}
+                <a href="{% url 'public:map_3d' %}" class="inline-block mb-5 hover:opacity-80">
+                    {% include "includes/_wordmark_3d.html" with class_extra="h-20 md:h-28" %}
+                </a>
+            {% else %}
+                {% trans "Stay avi-savvy" as eyebrow_text %}
+                {% include "includes/_eyebrow.html" with text=eyebrow_text tag="p" class_extra="mb-3" %}
+            {% endif %}
             <h1 id="home-heading" class="text-3xl md:text-4xl font-semibold tracking-tight text-text-1">
                 {% trans "Know your line before you leave." %}
             </h1>
+            {% if show_3d %}
+                <a
+                    href="{% url 'public:map_3d' %}"
+                    class="block -mt-2 md:-mt-8 md:w-4/5 mx-auto [perspective:900px]"
+                    data-testid="home-3d-image"
+                >
+                    <img
+                        src="{% static 'img/home/3d-desktop.jpg' %}"
+                        width="1400"
+                        height="700"
+                        class="block w-full h-auto rounded-card border border-border origin-bottom [transform:rotateX(24deg)] shadow-2xl"
+                        alt="{% trans 'The Snowdesk 3-D map: the mountains around Zermatt in relief, steep terrain painted on the slopes.' %}"
+                    >
+                </a>
+            {% endif %}
         </section>
 
         {# The daily read (SNOW-1357): what moved since yesterday. Absent  #}

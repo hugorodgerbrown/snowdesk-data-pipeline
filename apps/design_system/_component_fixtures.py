@@ -1031,6 +1031,10 @@ DANGER_TILE_EMPTY_VARIANTS: tuple[dict[str, Any], ...] = (
     {"caption": "No rating", "context": {}},
 )
 
+WORDMARK_3D_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Homepage hero size", "context": {"class_extra": "h-28"}},
+)
+
 DATED_EYEBROW_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Today — a quiet day at the right",

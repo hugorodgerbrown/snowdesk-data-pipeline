@@ -122,6 +122,12 @@ const PARSE_TIME_CORES = [
   // core's absence, but a bundle booted without it would boot every
   // stored pitch tilted, which is not the page's behaviour.
   'map_view_core.js',
+  // SNOW-1457: `map.js`'s boot IIFE reads the 3D gate and the WMTS origin
+  // from `pwaSwisstopoEdgeCore`, and `resolveBasemapStyle` splices with it.
+  // It tolerates the core's absence, but would then boot swisstopo winter
+  // without the raster beyond the border, which is not the page's
+  // behaviour.
+  'swisstopo_edge_core.js',
 ];
 
 /** map.html's script order for the map bundle. */

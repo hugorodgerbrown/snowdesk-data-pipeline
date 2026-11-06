@@ -7,7 +7,8 @@
  * none at all for a reader on swisstopo winter; pitch 0, bearing kept);
  * the relief put back after a setStyle; a reader's tilt entering 3D in
  * either mode; a mode change keeping 3D (SNOW-1452); leaving offline and
- * outside Switzerland; a route being drawn; why the roundel is disabled; the z9
+ * outside Switzerland and its border areas (SNOW-1457); a route being
+ * drawn; why the roundel is disabled; the z9
  * line once per attempt; and the basemap picker's rows disabled in 3D.
  *
  * SNOW-1455, with a controllable requestAnimationFrame and visibility: a
@@ -32,6 +33,7 @@ import '../../static/js/i18n_strings.js';
 import '../../static/js/slope_classes_core.js';
 import '../../static/js/terrain_filter_core.js';
 import '../../static/js/map_view_core.js';
+import '../../static/js/swisstopo_edge_core.js';
 import '../../static/js/map_3d_core.js';
 import '../../static/js/map_3d_terrain.js';
 import '../../static/js/basemap_download_core.js';
@@ -41,6 +43,8 @@ const core3d = window.pwaMap3dCore;
 const terrain = window.pwaMap3dTerrain;
 const ZERMATT = { lng: 7.75, lat: 46.02 };
 const PARIS = { lng: 2.35, lat: 48.86 };
+// SNOW-1457: inside the raster's z13 detail, outside the swissALTI3D box.
+const SOLDEN = { lng: 11.01, lat: 46.97 };
 const URLS = {
   openfreemap_liberty: 'https://tiles.example/liberty.json',
   swisstopo_winter: 'https://tiles.example/winter.json',
@@ -442,6 +446,14 @@ describe('what lays 3D flat', () => {
     expect(toasts().at(-1)).toBe('Back in 2D: offline, 3D works only in a downloaded area.');
   });
 
+  it('not a pan into the border areas swisstopo still draws (SNOW-1457)', async () => {
+    const { map, button } = await boot();
+    button.click();
+    map.centre = { ...SOLDEN };
+    map.fire('moveend');
+    expect(window.pwaMapView.get()).toBe('3d');
+  });
+
   it('a pan out of Switzerland', async () => {
     const { map, button } = await boot();
     button.click();
@@ -449,7 +461,7 @@ describe('what lays 3D flat', () => {
     map.fire('moveend');
     expect(window.pwaMapView.get()).toBe('flat');
     expect(view()).toBeNull();
-    expect(toasts().at(-1)).toBe('Back in 2D: 3D covers Switzerland for now.');
+    expect(toasts().at(-1)).toBe('Back in 2D: 3D covers Switzerland and its border areas for now.');
   });
 });
 
@@ -657,7 +669,7 @@ describe('drawing a route', () => {
 describe('the disabled roundel', () => {
   it.each([
     ['zoomed out', { zoom: 7 }, {}, 'Zoom in to see 3D'],
-    ['outside Switzerland', { centre: PARIS }, {}, '3D covers Switzerland for now'],
+    ['outside Switzerland', { centre: PARIS }, {}, '3D covers Switzerland and its border areas for now'],
     ['offline', {}, { online: false }, '3D needs a connection or a downloaded area'],
   ])('says why when %s', async (_case, camera, options, line) => {
     const { map, button } = await boot(options);

@@ -17,10 +17,10 @@
  *     in either mode; the view never picks the mode. Flat is written by
  *     leaving the parameter out.
  *   - AVAILABILITY. 3-D needs a device that can draw it, a
- *     connection, no route being drawn, a centre inside the elevation's
- *     coverage and a zoom of at least MIN_ZOOM. The coverage box is passed
- *     in (terrain_filter_core's COVERAGE_BOUNDS), never copied here, so
- *     there is one source of it. Offline (SNOW-1453), a downloaded area
+ *     connection, no route being drawn, a centre inside 3D's coverage
+ *     and a zoom of at least MIN_ZOOM. The coverage is passed in
+ *     (swisstopo_edge_core's GATE_OUTLINE since SNOW-1457), never copied
+ *     here, so there is one source of it. Offline (SNOW-1453), a downloaded area
  *     whose elevation tiles are pinned stands in for the connection: the
  *     boxes are passed in (basemap_download_core's elevationAreaBoxes),
  *     and the rule checks them, never the cache.
@@ -113,17 +113,29 @@
   }
 
   /**
-   * Whether a point is inside a `[west, south, east, north]` box, edges
-   * included. No box means no limit.
+   * Whether a point is inside the coverage: a `[west, south, east, north]`
+   * box, edges included, or a ring of `[lng, lat]` points (SNOW-1457,
+   * swisstopo_edge_core's GATE_OUTLINE). No coverage means no limit.
    *
    * @param {{lng: number, lat: number}|null|undefined} centre
-   * @param {ReadonlyArray<number>|null|undefined} bounds
+   * @param {ReadonlyArray<number>|ReadonlyArray<ReadonlyArray<number>>|null|undefined} bounds
    * @returns {boolean}
    */
   function covers(centre, bounds) {
     if (!bounds) return true;
     if (!centre || !Number.isFinite(centre.lng) || !Number.isFinite(centre.lat)) return false;
-    const [west, south, east, north] = bounds;
+    if (Array.isArray(bounds[0])) {
+      const ring = /** @type {ReadonlyArray<ReadonlyArray<number>>} */ (bounds);
+      let inside = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+        const [xi, yi] = ring[i];
+        const [xj, yj] = ring[j];
+        if (yi > centre.lat !== yj > centre.lat
+          && centre.lng < ((xj - xi) * (centre.lat - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside;
+    }
+    const [west, south, east, north] = /** @type {ReadonlyArray<number>} */ (bounds);
     return centre.lng >= west && centre.lng <= east && centre.lat >= south && centre.lat <= north;
   }
 
@@ -136,7 +148,8 @@
    * @property {boolean} [contextLost] The map's WebGL context is lost.
    * @property {boolean} [editing] A route is being drawn.
    * @property {{lng: number, lat: number}} centre
-   * @property {ReadonlyArray<number>|null} [bounds] The coverage box.
+   * @property {ReadonlyArray<number>|ReadonlyArray<ReadonlyArray<number>>|null} [bounds]
+   *   The coverage: a box or a ring.
    * @property {ReadonlyArray<ReadonlyArray<number>>|null} [offlineAreas]
    *   SNOW-1453: `[west, south, east, north]` boxes of the downloaded areas
    *   whose elevation tiles are pinned. Offline, 3-D is available only with
