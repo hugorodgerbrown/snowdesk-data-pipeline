@@ -21,6 +21,9 @@ Covers:
     is the thing this file now pins the removal of.
   - The SNOW-921 additions to that menu: the traffic arrows beside the
     symbol, and the flag-gated "Debug log" row.
+  - The temporary 3D wordmark: a reader who can open the map in 3D sees
+    the wordmark wearing specs, opening /map/?view=3d; anyone else, signed
+    out included, sees the text wordmark. No Labs entry in the account menu.
 
 That last group is not decoration. ``docs/decisions/
 account-area-navigation-lives-in-the-nav-menu.md`` makes this menu the
@@ -891,26 +894,56 @@ class TestNavDebugLogEntry:
 
 
 @pytest.mark.django_db
-class TestNavLabsEntry:
-    """The account menu's 3D map entry, shown only inside the map_3d flag."""
+class TestNav3dWordmark:
+    """The wordmark wears 3D specs for a reader who can open the map in 3D.
 
-    def test_flagged_user_sees_the_3d_map_with_a_labs_mark(
+    That is the map_3d and map_modes flags together, as
+    ``map_shared.map_3d_view_enabled`` reads them. The account menu has no
+    Labs entry: 3D is a mode of the map, reached from the map itself.
+    """
+
+    def test_3d_reader_sees_the_specs_opening_the_3d_map(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """Inside the flag the entry opens /map/?view=3d and carries the Labs tag.
-
-        SNOW-1450: the map's own 3D view, never the retired /map/3d/.
-        """
-        with override_flag("map_3d", active=True):
+        """Inside both flags the wordmark wears specs and opens /map/?view=3d."""
+        with (
+            override_flag("map_3d", active=True),
+            override_flag("map_modes", active=True),
+        ):
             html = _render_nav_for(rf, regular_user)
+        assert 'data-testid="wordmark-3d"' in html
         assert f'href="{reverse("public:map")}?view=3d"' in html
-        assert reverse("public:map_3d") not in html
-        assert "Labs" in html
 
-    def test_unflagged_user_sees_no_entry(
+    @pytest.mark.parametrize(("map_3d", "map_modes"), [(True, False), (False, True)])
+    def test_without_both_flags_the_wordmark_is_text(
+        self, rf: RequestFactory, regular_user: User, map_3d: bool, map_modes: bool
+    ) -> None:
+        """Missing either flag the wordmark is plain text linking to /map/."""
+        with (
+            override_flag("map_3d", active=map_3d),
+            override_flag("map_modes", active=map_modes),
+        ):
+            html = _render_nav_for(rf, regular_user)
+        assert 'data-testid="wordmark-3d"' not in html
+        assert "?view=3d" not in html
+
+    def test_anonymous_viewer_sees_the_text_wordmark(self, rf: RequestFactory) -> None:
+        """A signed-out viewer gets the text wordmark even with both flags on."""
+        with (
+            override_flag("map_3d", active=True),
+            override_flag("map_modes", active=True),
+        ):
+            html = _render_nav_for(rf, AnonymousUser())
+        assert 'data-testid="wordmark-3d"' not in html
+
+    def test_the_account_menu_has_no_labs_entry(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """Outside the flag the 3D map, flat for them, is not offered."""
-        with override_flag("map_3d", active=False):
+        """3D is a map mode now, so the menu offers no "3D map" Labs row."""
+        with (
+            override_flag("map_3d", active=True),
+            override_flag("map_modes", active=True),
+        ):
             html = _render_nav_for(rf, regular_user)
-        assert "?view=3d" not in html
+        assert "Labs" not in html
+        assert reverse("public:map_3d") not in html

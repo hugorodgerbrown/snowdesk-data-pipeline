@@ -14,8 +14,9 @@ Covers:
   - The daily read (SNOW-1357): under the hero on a rated day, linking the
     biggest swing to its dated bulletin; absent off season; cached; never
     built for a map-state 301.
-  - The temporary 3D branding: the wordmark wearing specs and the tilted
-    3D map, both linking to /map/?view=3d, only inside the map_3d flag.
+  - The temporary 3D branding, only inside the map_3d flag: the nav
+    wordmark wearing specs, and the tilted 3D map under the hero linking to
+    /map/?view=3d.
 """
 
 from __future__ import annotations
@@ -88,19 +89,20 @@ class TestHomepage:
 
 
 class TestHomepage3dBranding:
-    """The 3D branding shows only to readers of the map_3d flag."""
+    """The 3D branding shows only to readers who can open the map in 3D."""
 
     @override_flag("map_3d", active=True)
+    @override_flag("map_modes", active=True)
     def test_flag_on_shows_the_specs_wordmark_and_3d_map(self, client: Client) -> None:
-        """Inside the flag the hero wears the specs and links to /map/?view=3d."""
+        """With map_3d and map_modes the nav wears the specs and the hero shows 3D."""
         client.force_login(UserFactory.create())
         body = client.get("/").content.decode()
 
         assert 'data-testid="wordmark-3d"' in body
         assert 'data-testid="home-3d-image"' in body
-        assert body.count(f'href="{reverse("public:map")}?view=3d"') >= 2
+        assert f'href="{reverse("public:map")}?view=3d"' in body
         assert reverse("public:map_3d") not in body
-        assert "Stay avi-savvy" not in body
+        assert "Stay avi-savvy" in body
 
     @override_flag("map_3d", active=False)
     def test_flag_off_keeps_the_plain_hero(self, client: Client) -> None:

@@ -1031,6 +1031,16 @@ DANGER_TILE_EMPTY_VARIANTS: tuple[dict[str, Any], ...] = (
     {"caption": "No rating", "context": {}},
 )
 
+NAV_WORDMARK_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Text wordmark", "context": {}},
+    {"caption": "Beside a back link", "context": {"back_url": "/"}},
+    {"caption": "Wearing 3D specs", "context": {"wears_specs": True}},
+    {
+        "caption": "Wearing 3D specs, beside a back link",
+        "context": {"wears_specs": True, "back_url": "/"},
+    },
+)
+
 WORDMARK_3D_VARIANTS: tuple[dict[str, Any], ...] = (
     {"caption": "Homepage hero size", "context": {"class_extra": "h-28"}},
 )

@@ -116,12 +116,27 @@ Usage
             </a>
             <div class="h-4 w-px bg-border" aria-hidden="true"></div>
         {% endif %}
-        <a
-            href="{% url 'public:map' %}"
-            class="text-text-1 leading-none font-semibold tracking-tight hover:opacity-80 {% if back_url %}text-label{% else %}text-lg{% endif %}"
-        >
-            Snowdesk
-        </a>
+        {% comment %}
+        Temporary 3D branding: a reader who can open the map in 3D (the
+        map_3d and map_modes flags, as map_shared.map_3d_view_enabled reads
+        them) sees the wordmark wearing red/cyan specs, drawn at the text
+        wordmark's size (the SVG sets 64px type in 80 units of height), and
+        it opens the map in its 3D mode. The authentication check comes first
+        so an anonymous page pays no waffle query.
+        {% endcomment %}
+        {% if user.is_authenticated %}
+            {% flag "map_3d" %}
+            {% flag "map_modes" %}
+            {% include "includes/_nav_wordmark.html" with wears_specs=True %}
+        {% else %}
+            {% include "includes/_nav_wordmark.html" %}
+            {% endflag %}
+        {% else %}
+            {% include "includes/_nav_wordmark.html" %}
+            {% endflag %}
+        {% else %}
+            {% include "includes/_nav_wordmark.html" %}
+        {% endif %}
         {% if season_trigger %}
             <button
                 type="button"
@@ -419,21 +434,6 @@ Usage
                         >
                             {% trans "Settings" %}
                         </a>
-                        {% flag "map_3d" %}
-                        {# The 3D map, an experiment behind the map_3d flag: only its readers see the entry. #}
-                        {# SNOW-1450: /map/'s own 3D view; SNOW-1451 removes the entry.                   #}
-                        <a
-                            role="menuitem"
-                            href="{% url 'public:map' %}?view=3d"
-                            class="flex items-center gap-2 px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
-                        >
-                            {% include "includes/_icon_labs.html" with size=14 only %}
-                            {% trans "3D map" %}
-                            <span
-                                class="ml-auto rounded-pill bg-tag px-1.5 text-chip text-text-3"
-                            >{% trans "Labs" %}</span>
-                        </a>
-                        {% endflag %}
                         <div class="my-1 border-t border-border" aria-hidden="true"></div>
                         <form method="post" action="{% url 'accounts:sign_out' %}" class="contents">
                             {% csrf_token %}
