@@ -2515,6 +2515,140 @@ describe('terrainScaledBytesPerTile', () => {
     );
     expect(withTerrain).toBeLessThan(without);
   });
+
+  // SNOW-1453: elevation rides on terrain data where the page pins it.
+  it('adds the elevation tile’s share of the band when elevation is pinned too', () => {
+    const per = core.terrainScaledBytesPerTile(96 * 1024, 2, true, true);
+    expect(per * 2).toBeCloseTo(
+      96 * 1024 * 2 + core.TERRAIN_CLASS_BYTES_PER_TILE + core.ELEVATION_BYTES_PER_TILE / 3,
+    );
+    // Without terrain data there is no elevation to charge.
+    expect(core.terrainScaledBytesPerTile(96 * 1024, 2, false, true)).toBe(96 * 1024);
+  });
+
+  it('keeps a frame drawn up to the ceiling under it with elevation on', () => {
+    // The charge is per frame tile; what the elevation really costs is its
+    // own tile count. At the ceiling the first must cover the second.
+    const bbox = [7.0, 46.0, 7.4, 46.3];
+    const blob = core.buildBlob(bbox, 10, 14);
+    const charged = core.tileCount(blob.z) * core.ELEVATION_BYTES_PER_TILE / 3;
+    const real = core.elevationTileCount(blob, null) * core.ELEVATION_BYTES_PER_TILE;
+    expect(charged).toBeGreaterThan(real);
+  });
+});
+
+/* -------------------------------------------------------------------- *
+ * SNOW-1453: the elevation tiles the 3D map draws its terrain from,
+ * pinned with terrain data so 3D works offline in a downloaded area.
+ * -------------------------------------------------------------------- */
+
+describe('elevationTileURLs / elevationTileCount / elevationMb (SNOW-1453)', () => {
+  const DEM = 'https://tiles.snowdesk-data.info/dem/2026-11/{z}/{x}/{y}.webp';
+  // terrain_filter_core.js's COVERAGE_BOUNDS, restated as the class tests do.
+  const COVERAGE = [5.9503666, 45.7213375, 10.4998461, 47.8216742];
+  // Verbier, inside the coverage.
+  const BBOX = [7.2, 46.05, 7.3, 46.12];
+  const zoomOf = (url) => Number(url.split('/').slice(-3)[0]);
+
+  it('pins the z10-13 band out of a z10-14 download, and its z7-9 parents', () => {
+    const urls = core.elevationTileURLs(DEM, core.buildBlob(BBOX, 10, 14), COVERAGE);
+    const zooms = [...new Set(urls.map(zoomOf))].sort((a, b) => a - b);
+    expect(zooms).toEqual([7, 8, 9, 10, 11, 12, 13]);
+    expect(core.ELEVATION_BAND).toEqual([10, 13]);
+    expect(core.ELEVATION_PARENT_MIN_ZOOM).toBe(7);
+  });
+
+  it('adds each z10 tile’s parents once, shallowest first', () => {
+    // Two z10 tiles side by side share every parent above z10 here.
+    const blob = { z: { 10: { 360: [532, 533] } } };
+    expect(core.elevationTileURLs('d/{z}/{x}/{y}', blob, COVERAGE)).toEqual([
+      'd/7/66/45',
+      'd/8/133/90',
+      'd/9/266/180',
+      'd/10/532/360',
+      'd/10/533/360',
+    ]);
+  });
+
+  it('builds the URL the 3D loader asks for (map_3d_core.tileUrl)', async () => {
+    await import('../../static/js/map_3d_core.js');
+    const blob = { z: { 13: { 2885: [4262, 4262] } } };
+    const tile = { z: 13, x: 4262, y: 2885 };
+    expect(core.elevationTileURLs(DEM, blob, COVERAGE)).toContain(
+      self.pwaMap3dCore.tileUrl(DEM, tile),
+    );
+  });
+
+  it('drops tiles outside the elevation coverage, parents included', () => {
+    // x=550 at z10 is ~13.4°E, east of the coverage's 10.5°E edge.
+    const outside = { z: { 10: { 360: [550, 550] } } };
+    expect(core.elevationTileURLs(DEM, outside, COVERAGE)).toEqual([]);
+    expect(core.elevationTileCount(outside, COVERAGE)).toBe(0);
+  });
+
+  it('counts what elevationTileURLs lists', () => {
+    const blob = core.buildBlob(BBOX, 10, 14);
+    expect(core.elevationTileCount(blob, COVERAGE)).toBe(
+      core.elevationTileURLs(DEM, blob, COVERAGE).length,
+    );
+  });
+
+  it('answers [] without a template or ground', () => {
+    expect(core.elevationTileURLs('', core.buildBlob(BBOX, 10, 14), COVERAGE)).toEqual([]);
+    expect(core.elevationTileURLs(DEM, null, COVERAGE)).toEqual([]);
+    expect(core.elevationTileCount({}, COVERAGE)).toBe(0);
+  });
+
+  it('prices a tile at 192 KiB, above the 125-195 KB sample, rounded up to the MB', () => {
+    expect(core.ELEVATION_BYTES_PER_TILE).toBe(192 * 1024);
+    // A median Swiss region's ~60 tiles are ~11.5 MB charged.
+    expect(core.elevationMb(60)).toBe(12);
+    expect(core.elevationMb(1)).toBe(1);
+    expect(core.elevationMb(0)).toBe(0);
+    expect(core.elevationMb(NaN)).toBe(0);
+  });
+
+  it('derives an area’s elevation tiles from its z, or its bbox and band, on its terrain flag', () => {
+    const z = { 10: { 360: [532, 533] } };
+    expect(core.areaElevationTileURLs({ terrain: true, z }, DEM, COVERAGE)).toEqual(
+      core.elevationTileURLs(DEM, { z }, COVERAGE),
+    );
+    expect(
+      core.areaElevationTileURLs({ terrain: true, bbox: BBOX, band: [10, 14] }, DEM, COVERAGE),
+    ).toEqual(core.elevationTileURLs(DEM, core.buildBlob(BBOX, 10, 14), COVERAGE));
+    // Gated on terrain data, a template and some ground.
+    expect(core.areaElevationTileURLs({ z }, DEM, COVERAGE)).toEqual([]);
+    expect(core.areaElevationTileURLs({ terrain: true, z }, '', COVERAGE)).toEqual([]);
+    expect(core.areaElevationTileURLs({ terrain: true }, DEM, COVERAGE)).toEqual([]);
+    expect(core.areaElevationTileURLs(null, DEM, COVERAGE)).toEqual([]);
+  });
+});
+
+describe('elevationAreaBoxes (SNOW-1453)', () => {
+  const DEM = 'https://tiles.snowdesk-data.info/dem/2026-11/{z}/{x}/{y}.webp';
+  const OLD = 'https://tiles.snowdesk-data.info/dem/2025-11/{z}/{x}/{y}.webp';
+  const BBOX = [7.2, 46.05, 7.3, 46.12];
+
+  it('answers the box of each area stamped with today’s template', () => {
+    const region = { terrain: true, elevation: DEM, z: { 10: { 360: [532, 532] } } };
+    const custom = { terrain: true, elevation: DEM, bbox: BBOX, band: [10, 14] };
+    expect(core.elevationAreaBoxes([region, custom], DEM)).toEqual([
+      core.areaBBox(region),
+      BBOX,
+    ]);
+  });
+
+  it('leaves out an area with no stamp, or one from an older template', () => {
+    const unstamped = { terrain: true, bbox: BBOX, band: [10, 14] };
+    const stale = { terrain: true, elevation: OLD, bbox: BBOX, band: [10, 14] };
+    expect(core.elevationAreaBoxes([unstamped, stale, null], DEM)).toEqual([]);
+  });
+
+  it('answers [] without a template or records', () => {
+    const custom = { terrain: true, elevation: DEM, bbox: BBOX, band: [10, 14] };
+    expect(core.elevationAreaBoxes([custom], '')).toEqual([]);
+    expect(core.elevationAreaBoxes(null, DEM)).toEqual([]);
+  });
 });
 
 describe('SAC tours and community reports in an area (SNOW-1417)', () => {
