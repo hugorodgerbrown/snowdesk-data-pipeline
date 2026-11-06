@@ -1,6 +1,6 @@
 ---
 name: a-3d-map-is-maplibre-terrain
-description: 3D map on MapLibre setTerrain: /map/3d/ sandbox, /map/ ?view=3d in both modes, 3D wash, fallbacks (frame watchdog, WebGL, gate)
+description: 3D map on MapLibre setTerrain: /map/3d/ sandbox, /map/ ?view=3d, 3D wash, fallbacks, offline 3D via elevation tiles in downloads
 status: current
 last-reviewed: 2026-11-06
 ---
@@ -63,8 +63,9 @@ work, not app JS, so a different engine buys no speed either.
   Saas-Fee at z12.6 and over the Valais at z9, with Steep terrain and SAC
   tours on, and reports the median, 95th-percentile and over-budget share
   of the frame intervals against the proposed budget, a median under 33 ms.
-- Offline: Terrarium tiles are not in an area download. Bringing 3-D to
-  `/map/` offline means adding the DEM to downloads.
+- Offline: see [3D offline in a downloaded area](#3d-offline-in-a-downloaded-area-snow-1453-6-nov-2026)
+  below. Since SNOW-1453 an area download pins the elevation tiles with its
+  terrain data, and `/map/`'s 3-D works offline inside it.
 
 **Sharing (5 Nov 2026).** Two links open the sandbox past the flag, for
 anyone, signed in or not, and both stop when the sharer's `Map3dShare` row
@@ -119,8 +120,8 @@ reader, keep the "3D" link to `/map/3d/`.
   `originalEvent` even at `maxPitch` 0, but the map does not move; with the
   ceiling open the same drag tilts it, so the gesture that enters 3-D also
   carries the reader's tilt into it.
-- **Leaving.** The map goes flat, with a line, when it goes offline or is
-  panned out of Switzerland. Until SNOW-1452 it also went flat on a change
+- **Leaving.** The map goes flat, with a line, when it goes offline (outside
+  a downloaded area, since SNOW-1453) or is panned out of Switzerland. Until SNOW-1452 it also went flat on a change
   to Conditions. Drawing a route takes the relief and the tilt away on
   swisstopo winter and gives them back when it ends.
 - **Two MapLibre 4.7.1 behaviours** shaped it. A `setStyle` stops a camera
@@ -215,3 +216,68 @@ re-reads the switch, and the 3D | 2D switch shows under
   keyed on the camera zoom, so at a steep pitch distant ground beyond the
   problem-terrain tiles may show neither. It is a manual check in MS10, and
   a ticket only if it reads as missing data.
+
+## 3D offline in a downloaded area (SNOW-1453, 6 Nov 2026)
+
+**Decision.** The elevation tiles join an area's terrain data. Every
+download with the `terrain` flag (`DownloadArea.terrain` and the local
+record) pins them too, wherever the page has the 3-D view
+(`#map-view-toggle[data-dem-tile-url]`; nothing is pinned with `map_3d_view`
+off). There is no switch for them (Hugo, 6 Nov 2026). Offline, 3-D is
+available with the centre inside a downloaded area whose elevation tiles
+are pinned, and nowhere else.
+
+- **Which tiles.** `basemap_download_core.elevationTileURLs` walks the
+  blob's z10–13 rows (`ELEVATION_BAND`), clipped to the coverage
+  rectangle, and adds each tile's parents up to z7
+  (`ELEVATION_PARENT_MIN_ZOOM`). The terrain mesh reads the elevation about
+  two zooms below the map (`prefetchDemTiles`) and the hillshade one below,
+  so z13 serves the mesh to map z15 and the shading to z14, the basemap
+  download's own ceiling; MapLibre overzooms z13 above that, about 6.6 m a
+  pixel at 46°N. The z7–9 parents cost 3–4 tiles and draw coarse relief
+  past the area's edge rather than flat ground. The URL is the loader's
+  (`map_3d_core.tileUrl`), so a pinned entry is what MapLibre asks for.
+- **What it weighs.** Five Alpine points sampled at each of z10–14 on
+  `tiles.snowdesk-data.info/dem/2026-11/` on 6 Nov 2026 came out at
+  125–195 KB, a mean of about 155 KB, so `ELEVATION_BYTES_PER_TILE` is
+  192 KiB. A median Swiss region (181 basemap tiles, SNOW-868's per-zoom
+  split) needs 1 + 2 + 2 parents at z7–9 and about 2 + 5 + 12 + 37 tiles at
+  z10–13, **about 60 tiles: ~11.5 MB charged, ~9 MB real**, beside the
+  basemap's ~34 MB charged (~22 MB real) and the class tiles' ~11 MB. A
+  typical download grows by about a quarter. z14 would add about 145 tiles,
+  ~22 MB more, for detail past what the mesh draws at touring zooms.
+- **The estimate.** The elevation figure is folded into the one terrain
+  figure (`terrainClassMbForBlob`, `terrainClassMbForGround`), and the
+  label names "terrain and 3D data" for a reader with the 3-D view.
+  `terrainScaledBytesPerTile` charges a third of an elevation tile against
+  every frame tile: the band is about a quarter of a z10–14 frame's tiles
+  (0.27 at the ceiling, parents included), so a frame drawn to the ceiling
+  stays under it.
+- **The stamp.** A run that pinned them, or a sync that left every one in
+  the bucket, stamps the record `elevation: <template>`. Local only, for
+  the reason `deps` is: it says what this device's bucket holds.
+  `elevationAreaBoxes(records, template)` is the `areaBBox` of every record
+  stamped with today's template, and `map_view_core.availability` takes
+  them as `offlineAreas`. The rule checks boxes and never probes the cache.
+- **The verdict.** `areaElevationTileURLs` joins the incomplete check on the
+  Manage downloads sheet, the region roundel and `/offline/` (whose panel
+  carries `data-dem-tile-url` on the same gate). An area downloaded before
+  this, or before a seasonal `<version>` bump of the template, reads
+  `incomplete` until it is synced (~9 MB each), following
+  [the rule that an area is verified by what it renders](a-downloaded-area-is-verified-by-what-it-renders.md);
+  Sync fetches the tiles and writes the stamp.
+- **The runner.** `map_view_3d.js` reads the boxes from
+  `pwaBasemapAreas.downloadedAreas({deviceOnly: true})` at boot, on every
+  connectivity change and on `snowdesk:downloads-changed`; `deviceOnly`
+  skips the account's areas, which cost a request online and are never
+  stamped. Going offline inside a box keeps 3-D; a `moveend` offline outside
+  every box leaves it with a line, and panning back in makes it available
+  without entering it. The read is IndexedDB, so asynchronous: an online
+  boot is unchanged, and an offline `?view=3d` boot waits for the first read,
+  entering inside a box and lying flat on the reader's basemap outside,
+  with the switch disabled for `offline` until then.
+- **The loader.** `createDemLoader` does not count a 504 with
+  `X-SW-Cache: miss`, the service worker's offline miss
+  (`_synthesizedGatewayTimeout`), as a failure. Three misses past the
+  area's edge would otherwise latch it to AWS, and the pinned tiles would
+  never be asked for again.
