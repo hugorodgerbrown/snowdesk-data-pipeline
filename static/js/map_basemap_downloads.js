@@ -4651,6 +4651,12 @@ async function syncArea(areaId, onStage) {
  * written for an area without terrain data, on a page that pins no
  * elevation tiles, or when the stamp is already today's.
  *
+ * A stamp naming an older template (a seasonal `<version>` bump) has its
+ * tiles pruned from the bucket first, sparing today's: once the stamp is
+ * rewritten, nothing could derive those URLs again, so
+ * `_pruneSupersededTerrain` would never find them and they would sit in
+ * the bucket uncounted.
+ *
  * @param {string} areaId
  * @param {{record: Object, regionId: string}} found `_areaRecordById`'s answer.
  * @returns {Promise<void>} Best-effort, like the other stamps.
@@ -4658,7 +4664,17 @@ async function syncArea(areaId, onStage) {
 async function _stampAreaElevation(areaId, found) {
   const template = elevationTileTemplate();
   if (!template || found.record.elevation === template) return;
-  if (areaElevationTileUrls(found.record).length === 0) return;
+  const current = areaElevationTileUrls(found.record);
+  if (current.length === 0) return;
+  const previous = found.record.elevation;
+  if (typeof previous === 'string' && previous) {
+    const keep = new Set(current);
+    const stale = areaElevationTileUrls(found.record, previous).filter((url) => !keep.has(url));
+    if (stale.length) {
+      forgetPinnedBucketMeasurement(areaId);
+      await prunePinnedBasemapURLs(areaId, stale, null);
+    }
+  }
   await _rewriteAreaRecord(areaId, found.regionId, (entry) => ({ ...entry, elevation: template }));
   notifyDownloadsChanged();
 }

@@ -216,6 +216,7 @@ function installCachesStub() {
           const url = typeof request === 'string' ? request : request.url;
           return store.has(url) ? { headers: { get: () => null } } : undefined;
         },
+        delete: async (request) => store.delete(typeof request === 'string' ? request : request.url),
       };
     }),
     delete: vi.fn(async (name) => buckets.delete(name)),
@@ -845,6 +846,38 @@ describe('elevation tiles (SNOW-1453)', () => {
       const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
 
       expect(result.tiles).toBe('none');
+      expect((await storedArea()).elevation).toBe(DEM);
+    } finally {
+      toggle.remove();
+    }
+  });
+
+  it('prunes the older template\'s tiles before restamping, sparing today\'s', async () => {
+    const OLD = 'https://dem.example.invalid/dem/2025-11/{z}/{x}/{y}.webp';
+    const toggle = addToggle();
+    try {
+      await seedArea({ terrain: true, elevation: OLD });
+      const core = self.pwaBasemapDownloadCore;
+      const terrain = self.pwaTerrainFilterCore;
+      const blob = core.buildBlob([7.0, 46.0, 7.2, 46.2], 10, 14);
+      const classTiles = core.terrainClassTileURLs(
+        TERRAIN_TEMPLATE,
+        blob,
+        terrain.COVERAGE_BOUNDS,
+        terrain.MIN_ZOOM,
+        terrain.MAX_ZOOM,
+      );
+      const oldTiles = core.elevationTileURLs(OLD, blob, terrain.COVERAGE_BOUNDS);
+      expect(oldTiles.length).toBeGreaterThan(0);
+      holdDependencies([...DEPS, ...classTiles, ...expectedElevationTiles(), ...oldTiles]);
+
+      const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+      expect(result.tiles).toBe('none');
+      const bucket = cachesStub.openBucket(PINNED_PREFIX + AREA_ID);
+      expect(oldTiles.some((url) => bucket.has(url))).toBe(false);
+      expect(expectedElevationTiles().every((url) => bucket.has(url))).toBe(true);
+      expect(classTiles.every((url) => bucket.has(url))).toBe(true);
       expect((await storedArea()).elevation).toBe(DEM);
     } finally {
       toggle.remove();
