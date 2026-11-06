@@ -287,7 +287,12 @@
   // over a transient IndexedDB error.
   //
   // @param {{strings?: Object<string, string>,
-  //   measureBytes?: function(string): Promise<number>}} [options]
+  //   measureBytes?: function(string): Promise<number>,
+  //   deviceOnly?: boolean}} [options]
+  //   SNOW-1453: `deviceOnly` leaves out the areas on the ACCOUNT, which
+  //   cost a request whenever the app is online. The 3D view reads this
+  //   list at every boot, connectivity change and downloads change, and
+  //   needs only what this device holds.
   //   `strings` carries the two translated names this reader fills in
   //   (see `FALLBACK_STRINGS`). `measureBytes` measures an ORPHANED
   //   bucket — one with no record to read a byte total off. Both callers
@@ -567,9 +572,10 @@
     // a network it cannot reach and never turns a read of local storage
     // into a rejection. With `[]` the reconciliation output is what it was
     // before this ticket, which is the path every existing caller takes.
-    var accountAreas = window.pwaDownloadsSync
-      ? await window.pwaDownloadsSync.accountAreas()
-      : [];
+    var accountAreas =
+      window.pwaDownloadsSync && !opts.deviceOnly
+        ? await window.pwaDownloadsSync.accountAreas()
+        : [];
     return manage.reconcileAreas(areas, storedIds, bytesById, accountAreas);
   }
 

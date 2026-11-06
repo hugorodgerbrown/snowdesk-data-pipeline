@@ -91,6 +91,38 @@ describe('availability', () => {
     expect(core.availability(input({ zoom: 4, centre: { lng: 0, lat: 0 } })).reason).toBe('coverage');
   });
 
+  // SNOW-1453: a downloaded area with its elevation tiles pinned stands in
+  // for the connection.
+  describe('offline, in a downloaded area', () => {
+    const AREA = [7.6, 45.95, 7.9, 46.1];
+    const ELSEWHERE = [7.2, 46.05, 7.3, 46.12];
+
+    it('is available with the centre inside a downloaded area', () => {
+      expect(core.availability(input({ online: false, offlineAreas: [ELSEWHERE, AREA] })))
+        .toEqual({ enabled: true, reason: null });
+    });
+
+    it('says offline with the centre outside every downloaded area', () => {
+      expect(core.availability(input({ online: false, offlineAreas: [ELSEWHERE] })))
+        .toEqual({ enabled: false, reason: 'offline' });
+      expect(core.availability(input({ online: false, offlineAreas: [] })).reason).toBe('offline');
+      expect(core.availability(input({ online: false, offlineAreas: null })).reason).toBe('offline');
+    });
+
+    it('still asks every other reason inside one', () => {
+      expect(core.availability(input({ online: false, offlineAreas: [AREA], zoom: 8 })).reason)
+        .toBe('zoom');
+      expect(core.availability(input({ online: false, offlineAreas: [AREA], editing: true })).reason)
+        .toBe('editing');
+    });
+
+    it('changes nothing online', () => {
+      expect(core.availability(input({ offlineAreas: [] }))).toEqual({ enabled: true, reason: null });
+      expect(core.availability(input({ offlineAreas: [ELSEWHERE] })))
+        .toEqual({ enabled: true, reason: null });
+    });
+  });
+
   it('asks the device first: device, slow, webgl, then the rest', () => {
     const all = {
       gated: true, tooSlow: true, contextLost: true,

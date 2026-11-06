@@ -473,9 +473,10 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'download-no-region-unavailable': "Basemap download isn't available for this region",
   'download-no-region-select': 'Select a region to download its basemap',
   'download-idle': "Download this region's basemap — up to %(mb)s MB",
-  // SNOW-1072: the same, on a device that includes terrain data.
+  // SNOW-1072: the same, on a device that includes terrain data. SNOW-1453:
+  // the figure carries the 3D view's elevation tiles too.
   'download-idle-terrain':
-    "Download this region's basemap — up to %(mb)s MB, plus up to %(terrain)s MB of terrain data",
+    "Download this region's basemap — up to %(mb)s MB, plus up to %(terrain)s MB of terrain and 3D data",
   'download-busy': "Downloading this region's basemap — %(pct)s",
   // SNOW-924: a downloaded area now carries the bulletins and weather
   // inside its boundary, and those go stale where the tiles never do — so

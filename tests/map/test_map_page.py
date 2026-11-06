@@ -3541,3 +3541,42 @@ def test_the_3d_roundel_prefetches_from_the_dem_setting() -> None:
     ):
         content = client.get(reverse("public:map")).content.decode()
     assert f'data-dem-tile-url="{dem}"' in content
+
+
+def _string(content: str, key: str) -> str:
+    """Return the text of the first ``data-string="<key>"`` span in ``content``."""
+    match = re.search(rf'data-string="{key}"\s*>([^<]*)</span>', content)
+    assert match, key
+    return match.group(1)
+
+
+@pytest.mark.django_db
+def test_the_3d_view_says_offline_3d_works_in_a_downloaded_area() -> None:
+    """SNOW-1453: offline, 3D is drawn inside a downloaded area, and the lines say so."""
+    content = _flagged_map(map_3d=True, map_modes=True)
+    template = content[content.index('id="map-view-strings-template"') :]
+    template = template[: template.index("</template>")]
+    assert (
+        _string(template, "why-offline") == "3D needs a connection or a downloaded area"
+    )
+    assert (
+        _string(template, "left-offline")
+        == "Back in 2D: offline, 3D works only in a downloaded area."
+    )
+
+
+@pytest.mark.django_db
+def test_the_download_label_names_3d_data_only_with_the_3d_view() -> None:
+    """SNOW-1453: the terrain figure carries the elevation tiles where 3D is drawn.
+
+    Without the 3D view the map pins no elevation tiles, so the label keeps
+    naming terrain data alone.
+    """
+    with_view = _string(
+        _flagged_map(map_3d=True, map_modes=True), "download-idle-terrain"
+    )
+    without = _string(
+        _flagged_map(map_3d=False, map_modes=True), "download-idle-terrain"
+    )
+    assert with_view.endswith("plus up to %(terrain)s MB of terrain and 3D data")
+    assert without.endswith("plus up to %(terrain)s MB of terrain data")

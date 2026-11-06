@@ -69,6 +69,20 @@
  *     entering ease over a fresh style is not counted; the first interval
  *     of each run is dropped, and a hidden tab is never counted.
  *
+ * OFFLINE (SNOW-1453). A download with terrain data pins the elevation
+ * tiles too, and stamps its record with their template, so offline 3-D
+ * stays available inside a downloaded area: the boxes of the areas
+ * stamped with today's template (basemap_download_core.elevationAreaBoxes
+ * over pwaBasemapAreas.downloadedAreas()) go to availability as
+ * `offlineAreas`. They are read at boot and again on every connectivity
+ * change and snowdesk:downloads-changed; nothing probes the cache. Going
+ * offline inside one keeps 3-D; a moveend offline with the centre outside
+ * every box leaves it with a line, and panning back in makes it available
+ * again without entering it. The read is asynchronous (IndexedDB), so an
+ * offline ?view=3d boot waits for the first one before it decides, with
+ * the switch disabled for `offline` until then; an online boot is
+ * unchanged.
+ *
  * Publishes `window.pwaMapView` (get / enter / exit): map.js reads the live
  * view to retry the right basemap on a reconnect, and the basemap picker
  * hears `snowdesk:map-view-changed` to disable its rows in 3-D.
@@ -99,10 +113,10 @@
   const STRINGS = self.pwaStrings.read('map-view-strings-template', {
     basemap: '3D uses the swisstopo winter map; yours comes back in 2D.',
     'why-zoom': 'Zoom in to see 3D',
-    'why-offline': '3D needs a connection',
+    'why-offline': '3D needs a connection or a downloaded area',
     'why-coverage': '3D covers Switzerland for now',
     'why-editing': 'Finish drawing the route to see 3D',
-    'left-offline': 'Back in 2D: 3D needs a connection.',
+    'left-offline': 'Back in 2D: offline, 3D works only in a downloaded area.',
     'left-coverage': 'Back in 2D: 3D covers Switzerland for now.',
     'why-device': '3D is not available on this device',
     'why-slow': '3D is too slow on this device',
@@ -142,6 +156,19 @@
   let contextLost = false;
   /** deviceGate's answer, worked out once at boot; null lets 3-D in. */
   let gated = /** @type {?string} */ (null);
+  /** The elevation tiles' template, which an area's stamp must match. */
+  const DEM_TEMPLATE = button.dataset.demTileUrl || '';
+  /**
+   * SNOW-1453: the boxes of the downloaded areas holding today's elevation
+   * tiles, where 3-D is available offline. Empty until the first read lands.
+   *
+   * @type {Array<ReadonlyArray<number>>}
+   */
+  let offlineAreas = [];
+  /** The read of the boxes now running, the latest one started. */
+  let boxesRead = /** @type {Promise<void>} */ (Promise.resolve());
+  /** Counts the reads, so an earlier one landing late is dropped. */
+  let boxesGeneration = 0;
 
   // ---- What the page knows ----------------------------------------------
 
@@ -168,7 +195,59 @@
     editing: drawing,
     centre: map.getCenter(),
     bounds: COVERAGE,
+    offlineAreas,
   });
+
+  /**
+   * Offline, with the centre outside every downloaded area that holds the
+   * elevation tiles: what lays 3-D flat once the map has gone offline.
+   *
+   * @returns {boolean}
+   */
+  const offlineOutside = () =>
+    !online() && !offlineAreas.some((box) => viewCore.covers(map.getCenter(), box));
+
+  /** @returns {Promise<Array<ReadonlyArray<number>>>} The boxes, read afresh. */
+  const readBoxes = async () => {
+    const areas = win.pwaBasemapAreas;
+    const downloads = win.pwaBasemapDownloadCore;
+    if (!DEM_TEMPLATE || !areas || typeof areas.downloadedAreas !== 'function') return [];
+    if (!downloads || typeof downloads.elevationAreaBoxes !== 'function') return [];
+    try {
+      // The device's own areas only: the account's would cost a request.
+      const held = await areas.downloadedAreas({ deviceOnly: true });
+      return downloads.elevationAreaBoxes(held, DEM_TEMPLATE);
+    } catch (_err) {
+      return [];
+    }
+  };
+
+  /**
+   * Read the boxes again; when the read lands, 3-D in use offline outside
+   * them is laid flat and the switch is brought up to date.
+   *
+   * @returns {Promise<void>}
+   */
+  const refreshBoxes = () => {
+    boxesGeneration += 1;
+    const generation = boxesGeneration;
+    boxesRead = readBoxes().then((boxes) => {
+      if (generation !== boxesGeneration) return;
+      offlineAreas = boxes;
+      if (view === THREE_D && offlineOutside()) exit({ reason: viewCore.REASONS.OFFLINE });
+      else sync();
+    });
+    return boxesRead;
+  };
+
+  /** @returns {Promise<void>} Once the latest read of the boxes has landed. */
+  const boxesSettled = async () => {
+    let read;
+    do {
+      read = boxesRead;
+      await read;
+    } while (read !== boxesRead);
+  };
 
   /**
    * A basemap row's style URL.
@@ -484,13 +563,20 @@
   // Both modes are drawn in 3-D: a mode change keeps the view.
   document.addEventListener('snowdesk:map-mode-changed', sync);
 
+  // Offline, 3-D stays inside a downloaded area that holds the elevation
+  // tiles; the boxes are decided on now and read again after.
   const onConnectivity = () => {
-    if (view === THREE_D && !online()) exit({ reason: 'offline' });
+    if (view === THREE_D && offlineOutside()) exit({ reason: viewCore.REASONS.OFFLINE });
     else sync();
+    refreshBoxes();
   };
   document.addEventListener('snowdesk:connectivity-changed', onConnectivity);
   window.addEventListener('offline', onConnectivity);
   window.addEventListener('online', onConnectivity);
+  // Every area-record write fires it: a download, a sync's stamp, a removal.
+  document.addEventListener('snowdesk:downloads-changed', () => {
+    refreshBoxes();
+  });
 
   map.on('movestart', () => {
     moving = true;
@@ -504,6 +590,12 @@
     if (view === THREE_D && !suspended) timingArmed = true;
     if (view === THREE_D && !viewCore.covers(map.getCenter(), COVERAGE)) {
       exit({ reason: 'coverage' });
+      return;
+    }
+    // Offline, panned off every downloaded area: there is no elevation to
+    // draw. Panning back in makes 3-D available again, but does not enter.
+    if (view === THREE_D && offlineOutside()) {
+      exit({ reason: viewCore.REASONS.OFFLINE });
       return;
     }
     // Playback started before the tilt-in ease ended is timed from now.
@@ -631,14 +723,23 @@
   document.documentElement.dataset.mapView = FLAT;
   // map.js booted the view (swisstopo winter, the stored camera) from
   // ?view=3d, in either mode, inside the coverage. A boot that still cannot
-  // enter (offline, or a device the gate keeps out) lays the map flat on
-  // the reader's basemap.
-  if (viewCore.readView(location.search) === THREE_D) {
+  // enter (offline outside a downloaded area, or a device the gate keeps
+  // out) lays the map flat on the reader's basemap.
+  const bootInto3d = () => {
+    if (view === THREE_D) return;
     if (!enter({ boot: true })) {
       map.jumpTo({ pitch: 0 });
       swapBasemap(preferredKey());
       announce(FLAT);
     }
+  };
+  refreshBoxes();
+  if (viewCore.readView(location.search) === THREE_D) {
+    // Online the boot is synchronous, as it always was. Offline it waits for
+    // the first read of the boxes, with the switch disabled until then, so
+    // nobody tilts in before the downloaded areas are known.
+    if (online()) bootInto3d();
+    else boxesSettled().then(bootInto3d);
   }
   sync();
 
