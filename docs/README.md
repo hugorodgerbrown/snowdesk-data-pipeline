@@ -169,7 +169,7 @@ Read these when working in the relevant area:
 | Linear workflow (full lifecycle) | [`docs/linear-workflow.md`](linear-workflow.md) |
 | Why AGENTS.md holds the shared rules and CLAUDE.md imports it (@AGENTS.md, the 32 KiB Codex limit, `## Code Review Rules`, this index as the docs-lint router) | [`docs/decisions/agents-md-is-the-rulebook.md`](decisions/agents-md-is-the-rulebook.md) |
 | DRAFT target: Claude and Codex working without Hugo except on design decisions, and the human gates still in place (scope, implement, merge-prs, release) | [`docs/autonomy-roadmap.md`](autonomy-roadmap.md) |
-| Repo map: what each directory and app owns | [`docs/architecture.md`](architecture.md) |
+| Architecture diagrams (Render services, Postgres, the tiles origin, app layers and boundaries) and the repo map: what each directory and app owns | [`docs/architecture.md`](architecture.md) |
 | Why every scope of size S and above gets one Codex review before Ready for dev (AGENTS.md "Scope review", the @Codex review request and why not delegation, ## Codex scope review, resolve-scope-review, one scope edited in place, Requires input, the legacy Codex environment, the scheduled sweep) | [`docs/decisions/codex-reviews-every-scope-once.md`](decisions/codex-reviews-every-scope-once.md) |
 | Code review cycles | [`docs/code-reviews/README.md`](code-reviews/README.md) |
 | Page audits (what each public page says, does and promises) | [`docs/page-audits/README.md`](page-audits/README.md) |

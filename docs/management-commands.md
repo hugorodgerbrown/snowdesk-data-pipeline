@@ -1591,9 +1591,10 @@ a **read-only** production role. `regions_microregion` primary keys must match
 across the two databases; the script re-checks that on every run, because a
 mismatch would mis-attribute every bulletin silently.
 
-**The nightly cron is currently off.** `snowdesk-staging-data-sync` ran at
-07:20 UTC until 2026-08-27; its `render.yaml` block is commented out and the
-refresh is run by hand. Full setup and triage:
+**There is no scheduled run.** `snowdesk-staging-data-sync` ran it at
+07:20 UTC until 2026-08-27 and has since been deleted; staging's daily
+refresh is the `snowdesk-staging-data-pull` cron job
+(`pull_reference_data`), and this script is the manual wholesale reset. Full setup and triage:
 [`runbooks/refresh-staging-from-production.md`](runbooks/refresh-staging-from-production.md).
 
 ### One-off operational commands

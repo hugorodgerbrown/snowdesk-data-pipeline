@@ -18,9 +18,11 @@
 # independent: Blueprint reads this file from `main`, and each service's
 # `branch:` field governs which branch it deploys from.
 #
-# Staging and production use SEPARATE Postgres databases. This matters
-# because build.sh runs `migrate` on every deploy — a staging deploy must
-# never touch the production schema. Full flow: docs/deployment.md.
+# Staging and production use SEPARATE Postgres databases (snowdesk_staging and
+# snowdeskdb, both on the one snowdesk-database instance). This matters because
+# build.sh runs `migrate` on every deploy — a staging deploy must never touch
+# the production schema. Full flow: docs/deployment.md. Diagram:
+# docs/img/architecture-runtime.svg.
 #
 # ONE MIGRATOR: only the web service migrates. Both workers build with
 # build_headless.sh, which installs dependencies and writes nothing to the
@@ -30,7 +32,8 @@
 # `snowdesk-scheduler` (SNOW-238) is a single long-running APScheduler
 # worker that replaces the older per-schedule Render cron jobs.
 # `snowdesk-background-tasks` (SNOW-229) consumes the django-tasks-db
-# queue used by subscription emails.
+# queue: email, push, the bulk commands' row tasks and ops MCP run_command
+# (docs/async-operations.md).
 #
 # Env vars marked `sync: false` must be set manually in the Render
 # dashboard — they are not auto-populated from a Blueprint import.
@@ -104,15 +107,15 @@ projects:
       - name: Staging
         # Single web dyno, auto-deploys from `main`, plus one nightly cron
         # job. No scheduler and no background-tasks worker — staging does not
-        # ingest bulletins on its own, so the cron job below copies the
-        # provider-derived tables out of production instead (SNOW-729).
+        # ingest bulletins on its own, so the cron job below pulls them from
+        # production's data feed instead (SNOW-1200).
         # Because there is no db_worker, staging runs the
         # `config.settings.staging` module, which overrides the task backend
         # to ImmediateBackend so subscription email is sent inline on the
         # request instead of being queued to a worker that never runs. Wired
-        # to its own Postgres and its own env group (separate SECRET_KEY,
-        # DATABASE_URL, ALLOWED_HOSTS, email target) — never the production
-        # database.
+        # to its own database (snowdesk_staging, on the shared instance) and
+        # its own env group (separate SECRET_KEY, DATABASE_URL, ALLOWED_HOSTS,
+        # email target) — never the production database.
         services:
           - type: web
             name: snowdesk-staging
@@ -138,9 +141,11 @@ projects:
               # are empty on staging as a result. See bin/fetch-geoip-data.
               - key: GEOIP_DOWNLOAD
                 value: "off"
-              # The production data feed client (SNOW-1197): staging pulls
-              # bulletins, weather and resorts with `pull_production_data`.
-              # The URL is production's https://…/api/data/v1/; the id and
+              # The production data feed client (SNOW-1197): the cron job
+              # below pulls with `pull_reference_data` (v2), and
+              # `pull_production_data` (v1) is there for a manual top-up.
+              # The URL is production's https://…/api/data/v1/; pull_reference_data
+              # swaps in v2/ on the same host; the id and
               # secret are the service client created in production's admin
               # (docs/data-feed.md). Dashboard-set, never committed.
               - key: DATA_FEED_URL
@@ -184,63 +189,3 @@ projects:
               - key: DATA_FEED_CLIENT_SECRET
                 sync: false
               - fromGroup: Staging
-
-          # DISABLED 2026-08-27 — the refresh is run by hand for now. The service
-          # definition is commented out rather than deleted; the rationale below it
-          # still holds and is worth keeping for whenever it goes back on a
-          # schedule. Re-enable by uncommenting the block at the end.
-          #
-          # NOTE: this stops Blueprint *managing* the service. It does not
-          # necessarily remove a cron job Render has already created — suspend or
-          # delete `snowdesk-staging-data-sync` in the dashboard too, or it keeps
-          # firing at 07:20 UTC against whatever is on main.
-          #
-          # Nightly refresh of staging's bulletin and weather tables from the
-          # production database (SNOW-729). Staging has no scheduler, so
-          # without this its data is whatever the last manual `fetch_bulletins`
-          # left behind — usually empty or months stale.
-          #
-          # Copies bulletins, weather, and the curated resort estate (Resort +
-          # its village/mid/peak Locations). Copies NO user data: no auth_user,
-          # no Account, no passkeys, no push subscriptions, no routes, no
-          # observations, no favourites, no request logs. That is what makes it
-          # safe to run unattended with no anonymisation step, and it matters
-          # because staging sends email inline (ImmediateBackend above) — a
-          # copied subscriber list would be a copied mailing list.
-          #
-          # locations_location is the one MIXED table: it holds a resort's
-          # village/mid/peak alongside a row per saved favourite and per field
-          # report. The copy restricts it to rows a ResortLocation references,
-          # so a user's saved position is never even read. The table lists and
-          # the reason for each exclusion live in the script's own header.
-          #
-          # SNOW-736 replaced the original row-by-row ORM copy with pg_dump /
-          # psql. The ORM version pushed ~230 INSERT ... ON CONFLICT statements
-          # for a single table and put the staging database into crash
-          # recovery; COPY moves the same rows in one statement per table.
-          #
-          # PRODUCTION_DATABASE_URL is dashboard-set (`sync: false`) and must
-          # hold a READ-ONLY production role. The command never issues a write
-          # against it and a router blocks migrations on it, but the role is
-          # the actual guarantee — see
-          # docs/runbooks/refresh-staging-from-production.md for creating it.
-          #
-          # 07:20 UTC: after production's 06:00 fetch_weather pass and the
-          # hourly fetch_bulletins run that picks up the morning issue
-          # (schedule.py), so staging opens the working day already current.
-          # - type: cron
-          #   name: snowdesk-staging-data-sync
-          #   runtime: python
-          #   repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
-          #   plan: starter
-          #   region: frankfurt
-          #   branch: main
-          #   schedule: "20 7 * * *"
-          #   buildCommand: ./bin/build_headless.sh
-          #   startCommand: ./bin/sync-staging-data --commit
-          #   envVars:
-          #     - key: DJANGO_SETTINGS_MODULE
-          #       value: config.settings.staging
-          #     - key: PRODUCTION_DATABASE_URL
-          #       sync: false
-          #     - fromGroup: Staging

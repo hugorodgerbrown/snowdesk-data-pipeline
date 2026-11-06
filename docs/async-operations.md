@@ -1,8 +1,8 @@
 ---
 name: async-operations
-description: Catalogue of async callsites — django-tasks email backends, db_worker on Render
+description: Async callsites — django-tasks email, alerts, push, enqueue_each row tasks, render rebuilds, run_command; db_worker
 status: current
-last-reviewed: 2026-10-26
+last-reviewed: 2026-11-06
 ---
 
 # Async operations
@@ -13,15 +13,33 @@ Snowdesk codebase, the failure mode for each, and the on/off toggle if one exist
 
 ## Catalogue
 
-| Callsite | Trigger | Work | Persistence | Failure mode | Log channel | Toggle |
-|----------|---------|------|-------------|--------------|-------------|--------|
-| `apps.accounts.services.email` — `_worker_send_account_access_email`, `_worker_send_verification_email`, `_worker_send_password_reset_email`, `_worker_send_email_change_confirmation`, `_worker_send_email_change_notice` | The matching `send_*` public function on the account flow | SMTP send via Django's configured backend | `django_tasks_db.DatabaseBackend` in production (DB row); `ImmediateBackend` in dev/test (in-process, no persistence) | `django-tasks` captures unhandled exceptions and marks the task failed; failed tasks are visible in the admin under the `DbTaskResult` model; no silent loss | `apps.accounts.services.email` | Backend setting: `TASKS["default"]["BACKEND"]` — `ImmediateBackend` for dev/test; `DatabaseBackend` for production |
-| `apps.accounts.push_service._worker_dispatch_push` | `enqueue_push` called from `push_test` (staff `/account/push/test/`) | Single Web Push delivery via pywebpush | `django_tasks_db.DatabaseBackend` in production (DB row); `ImmediateBackend` in dev/test (in-process, no persistence) | `django-tasks` captures unhandled exceptions and marks the task failed, visible in admin under `DbTaskResult`; `dispatch_push` handles 404/410 row-deletion and 5xx survival internally | `apps.accounts.push_service` | Same backend setting as email — `TASKS["default"]["BACKEND"]` |
+Every background callsite is a `django_tasks` task. In production
+`snowdesk-background-tasks` runs them with `db_worker`
+([diagram](img/architecture-runtime.svg)); in dev, test and staging
+`ImmediateBackend` runs each one inline the moment `.enqueue()` is called.
+A failed task is marked failed with its traceback, visible in the admin under
+`DBTaskResult`; nothing is lost silently. `task_queue_health`
+(`apps/core/task_queue.py`, also an ops MCP tool) reports the backlog and the
+past day's failures.
+
+| Group | Tasks (module) | Enqueued by | Priority |
+|-------|----------------|-------------|----------|
+| Account email | `_worker_send_account_access_email`, `_worker_send_verification_email`, `_worker_send_password_reset_email`, `_worker_send_email_change_confirmation`, `_worker_send_email_change_notice` (`apps.accounts.services.email`) | the matching public `send_*` function in the account flow | default |
+| Bulletin alerts | `_worker_deliver_alert` (`apps.bulletins.services.alerts`), `_worker_send_alert_email` (`apps.accounts.services.alert_email`) | `send_bulletin_alerts`, scheduled at :10 | default |
+| Web Push | `_worker_dispatch_push` (`apps.accounts.push_service`); `dispatch_push` deletes a row on 404/410 and survives 5xx | `enqueue_push` | default |
+| On-save work | `_worker_prime_location` (`apps.locations.services.prime`, after commit); `_worker_sample_route_slopes` (`apps.routes.services.slope_segments`); `_worker_sample_trip_slopes` (`apps.trips.services.slope`) | saving a location, route or trip | default |
+| Bulk commands, one task per row | the row tasks in `apps.locations.services` (`elevation`, `what3words`, `orphans`), `apps.weather.services.station_tasks`, `apps.routes.services.render_tasks` and `slope_segments`, `apps.trips.services` (`render_tasks`, `slope`) | a command through `apps.core.command_tasks.enqueue_each`, paced by `run_after` and `wait_for_slot` ([why](decisions/bulk-commands-enqueue-each-row.md)) | `BULK_TASK_PRIORITY` (−50) |
+| Render rebuilds | `rebuild_bulletin_task`, `rebuild_source_bulletin_task`, `refresh_source_day_rating_task`, `recompute_day_rating_task` (`apps.bulletins.services.render_rebuild`); `render_tour_task` (`apps.routes.services.ski_tour_render`) | the rebuild commands and `render_ski_tours` | `RENDER_TASK_PRIORITY`, equal to the bulk priority |
+| Remote commands | `run_command_task` (`apps.core.remote_commands`) | the ops MCP `run_command` tool; refused where tasks run inline ([why](decisions/a-remote-command-runs-on-the-task-worker.md)) | default |
+
+A task that calls an outside service registers with `calls_outside` and
+backs off on a 429 or outage (`back_off`), so one rate limit stops the rest
+of its queue instead of burning it.
 
 ## django-tasks backend split
 
 Snowdesk uses the third-party `django-tasks` package (PyPI: `django-tasks`,
-`django-tasks-db`) to enqueue subscription emails off the request cycle.
+`django-tasks-db`) for all work done off the request cycle.
 
 ### Development and tests
 
@@ -72,8 +90,8 @@ synchronously rather than silently dropped — but production always sets
 ### Task retention
 
 `django_tasks_db` accumulates completed task results indefinitely unless
-`prune_db_task_results` is run. This is a candidate for a future scheduled
-management command. It is not in scope for SNOW-229.
+`prune_db_task_results` is run. Nothing schedules it yet, so the table
+grows with every task, including each bulk command's row tasks.
 
 ## Daemon-thread operations
 
