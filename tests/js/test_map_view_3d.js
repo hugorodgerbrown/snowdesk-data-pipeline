@@ -19,6 +19,11 @@
  *
  * SNOW-1452: the timelapse plays in 3D with no setStyle, and the watchdog
  * times its frames with the camera still.
+ *
+ * SNOW-1456: the 3D test's hooks. beginTest enters 3D even after the
+ * watchdog laid it flat, with the watchdog resting; endTest puts the camera
+ * and the view back, and a smooth verdict lifts the latch where a slow one
+ * keeps it; the why-slow line carries the "Test this device" link.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -79,7 +84,12 @@ function fakeMap({ webgl = true } = {}) {
     getPixelRatio: () => map.pixelRatio,
     setPixelRatio: vi.fn((r) => { map.pixelRatio = r; }),
     easeTo: vi.fn((o) => { if ('pitch' in o) map.pitch = Math.min(o.pitch, map.maxPitch); }),
-    jumpTo: vi.fn((o) => { if ('pitch' in o) map.pitch = Math.min(o.pitch, map.maxPitch); }),
+    jumpTo: vi.fn((o) => {
+      if (o.center) map.centre = { lng: o.center[0], lat: o.center[1] };
+      if ('zoom' in o) map.zoom = Math.max(o.zoom, map.minZoom);
+      if ('bearing' in o) map.bearing = o.bearing;
+      if ('pitch' in o) map.pitch = Math.min(o.pitch, map.maxPitch);
+    }),
     setStyle: vi.fn(() => {
       sources = {};
       layers = [{ id: 'labels', type: 'symbol' }];
@@ -1033,5 +1043,116 @@ describe('the timelapse plays in 3D (SNOW-1452)', () => {
     expect(rafQueue.size).toBe(0);
     map.fire('moveend');
     expect(rafQueue.size).toBe(1);
+  });
+});
+
+describe('the 3D test hooks (SNOW-1456)', () => {
+  /** Enter, then trip the watchdog: flat for the visit. */
+  const tooSlow = async (options = {}) => {
+    const booted = await enterAndSettle(options);
+    gesture(booted.map, SLOW_MS, perWindow(SLOW_MS) * TRIP);
+    expect(window.pwaMapView.get()).toBe('flat');
+    return booted;
+  };
+
+  it('beginTest enters 3D despite the latch, with the watchdog off', async () => {
+    const { map } = await tooSlow();
+    expect(window.pwaMapView.canTest()).toEqual({ ok: true, reason: null });
+    expect(window.pwaMapView.beginTest()).toBe(true);
+    await flush();
+    expect(window.pwaMapView.get()).toBe('3d');
+    expect(inThreeD(map)).toBe(true);
+    map.fire('moveend');
+    gesture(map, SLOW_MS, perWindow(SLOW_MS) * TRIP * 2);
+    expect(window.pwaMapView.get()).toBe('3d');
+    expect(rafQueue.size).toBe(0);
+  });
+
+  it('endTest with smooth lifts the latch and puts the flat view and camera back', async () => {
+    const { map, button } = await tooSlow();
+    map.centre = { lng: 7.6, lat: 46.1 };
+    map.zoom = 10.5;
+    map.bearing = 12;
+    window.pwaMapView.beginTest();
+    await flush();
+    map.jumpTo({ center: [7.87, 46.07], zoom: 9, bearing: 200 });
+    env.toast.mockClear();
+    window.pwaMapView.endTest({ verdict: 'smooth' });
+    expect(window.pwaMapView.get()).toBe('flat');
+    expect(map.centre).toEqual({ lng: 7.6, lat: 46.1 });
+    expect(map.zoom).toBe(10.5);
+    expect(map.bearing).toBe(12);
+    expect(map.pitch).toBe(0);
+    expect(toasts()).toEqual([]);
+    expect(button.hasAttribute('aria-disabled')).toBe(false);
+    button.click();
+    expect(window.pwaMapView.get()).toBe('3d');
+  });
+
+  it('endTest with stutter lifts the latch too', async () => {
+    const { button } = await tooSlow();
+    window.pwaMapView.beginTest();
+    window.pwaMapView.endTest({ verdict: 'stutter' });
+    expect(button.hasAttribute('aria-disabled')).toBe(false);
+  });
+
+  it('endTest with slow, or with no verdict, keeps the latch', async () => {
+    const { map, button } = await tooSlow();
+    for (const result of [{ verdict: 'slow' }, {}]) {
+      window.pwaMapView.beginTest();
+      await flush();
+      window.pwaMapView.endTest(result);
+      expect(window.pwaMapView.get()).toBe('flat');
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(map.maxPitch).toBe(0);
+    }
+    button.click();
+    expect(window.pwaMapView.get()).toBe('flat');
+  });
+
+  it('keeps a reader who was in 3D in 3D, on their own camera', async () => {
+    const { map } = await enterAndSettle();
+    map.bearing = 77;
+    const pitch = map.pitch;
+    window.pwaMapView.beginTest();
+    map.jumpTo({ center: [7.87, 46.07], zoom: 9, bearing: 215 });
+    window.pwaMapView.endTest({ verdict: 'slow' });
+    expect(window.pwaMapView.get()).toBe('3d');
+    expect(map.centre).toEqual(ZERMATT);
+    expect(map.bearing).toBe(77);
+    expect(map.pitch).toBe(pitch);
+  });
+
+  it('says where the test cannot run, and beginTest refuses there', async () => {
+    const offline = await boot({ online: false });
+    expect(window.pwaMapView.canTest()).toEqual({ ok: false, reason: 'offline' });
+    expect(window.pwaMapView.beginTest()).toBe(false);
+    expect(offline.map.getTerrain()).toBeNull();
+    await boot({ webgl: false });
+    expect(window.pwaMapView.canTest()).toEqual({ ok: false, reason: 'device' });
+    const lost = await boot();
+    lost.map.fire('webglcontextlost');
+    expect(window.pwaMapView.canTest()).toEqual({ ok: false, reason: 'webgl' });
+  });
+
+  it('puts a "Test this device" link on the why-slow line', async () => {
+    const { button } = await tooSlow();
+    document.body.insertAdjacentHTML('beforeend',
+      '<div id="map-sheet-toast" class="hidden"><span data-toast-body></span></div>');
+    const toastEl = document.getElementById('map-sheet-toast');
+    env.toast.mockImplementation((text) => {
+      toastEl.querySelector('[data-toast-body]').textContent = text;
+      toastEl.classList.remove('hidden');
+    });
+    const asked = vi.fn();
+    document.addEventListener('snowdesk:map-3d-test-requested', asked);
+    button.click();
+    const link = toastEl.querySelector('[data-map-3d-test-open]');
+    expect(toastEl.textContent).toContain('3D is too slow on this device');
+    expect(link.textContent).toBe('Test this device');
+    link.click();
+    document.removeEventListener('snowdesk:map-3d-test-requested', asked);
+    expect(asked).toHaveBeenCalledTimes(1);
+    expect(toastEl.classList.contains('hidden')).toBe(true);
   });
 });

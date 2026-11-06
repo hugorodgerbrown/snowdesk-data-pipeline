@@ -83,9 +83,22 @@
  * the switch disabled for `offline` until then; an online boot is
  * unchanged.
  *
- * Publishes `window.pwaMapView` (get / enter / exit): map.js reads the live
- * view to retry the right basemap on a reconnect, and the basemap picker
- * hears `snowdesk:map-view-changed` to disable its rows in 3-D.
+ * THE 3D TEST (SNOW-1456). map_3d_test.js drives this map through three
+ * more hooks. `canTest()` says whether the test may run here at all: not
+ * offline (it needs tiles), not on a device the gate keeps out or with
+ * the WebGL context lost, not while a route is drawn. `beginTest()` saves
+ * the camera and the view, enters 3-D even when the watchdog has laid it
+ * flat for the visit (every other gate still holds), and suspends the
+ * watchdog until `endTest({verdict})`, which puts the camera and the view
+ * back. A `smooth` or `stutter` verdict lifts the watchdog's latch, so
+ * 3-D can be turned on again this visit; any other ending keeps it. The
+ * `why-slow` line a tap on the disabled switch shows carries a "Test this
+ * device" link that asks for the test (snowdesk:map-3d-test-requested).
+ *
+ * Publishes `window.pwaMapView` (get / enter / exit / canTest / beginTest /
+ * endTest): map.js reads the live view to retry the right basemap on a
+ * reconnect, and the basemap picker hears `snowdesk:map-view-changed` to
+ * disable its rows in 3-D.
  */
 (function mapView3dInit() {
   'use strict';
@@ -126,6 +139,7 @@
     'left-webgl': 'The map\'s graphics reset, so it is flat again.',
     'left-slow': 'Back in 2D: 3D is too slow on this device.',
     'zoom-floor': '3D stops here. Switch to 2D to zoom out.',
+    'test-device': 'Test this device',
   });
 
   /** @type {string} */
@@ -156,6 +170,14 @@
   let tooSlow = false;
   /** The map's WebGL context is lost and not yet restored. */
   let contextLost = false;
+  /** The 3D test is running (beginTest to endTest): the watchdog rests. */
+  let testing = false;
+  /**
+   * The view and camera beginTest found, which endTest puts back.
+   *
+   * @type {?{view: string, camera: {center: [number, number], zoom: number, pitch: number, bearing: number}}}
+   */
+  let beforeTest = null;
   /** deviceGate's answer, worked out once at boot; null lets 3-D in. */
   let gated = /** @type {?string} */ (null);
   /** The elevation tiles' template, which an area's stamp must match. */
@@ -192,7 +214,8 @@
     online: online(),
     zoom: map.getZoom(),
     gated: gated !== null,
-    tooSlow,
+    // The test measures the device the watchdog judged; its latch waits.
+    tooSlow: tooSlow && !testing,
     contextLost,
     editing: drawing,
     centre: map.getCenter(),
@@ -390,7 +413,7 @@
   let firstDropped = false;
 
   /** @returns {boolean} Whether a move now is one the watchdog times. */
-  const timing = () => view === THREE_D && !suspended && timingArmed && !document.hidden;
+  const timing = () => view === THREE_D && !suspended && timingArmed && !testing && !document.hidden;
 
   /** Stop the loop; the next run starts afresh. */
   const stopFrames = () => {
@@ -469,6 +492,7 @@
     // A boot below z9 is lifted to it by the floor, rather than refused.
     if (!why.enabled && !(options.boot && why.reason === viewCore.REASONS.ZOOM)) {
       if (!options.boot && why.reason) say(WHY[why.reason] || '');
+      if (!options.boot && why.reason === viewCore.REASONS.SLOW) offerTest();
       return false;
     }
     terrain.registerDemProtocol(win.maplibregl, button.dataset.demTileUrl || '');
@@ -704,6 +728,100 @@
     spread = now;
   }, { passive: true });
 
+  // ---- The 3D test (SNOW-1456) -------------------------------------------
+
+  /**
+   * Whether the 3D test may run here, and if not, why. The camera gates
+   * (zoom, coverage) do not count: the test flies its own camera over
+   * Saas-Fee.
+   *
+   * @returns {{ok: boolean, reason: ?string}}
+   */
+  const canTest = () => {
+    /** @param {string} reason */
+    const no = (reason) => ({ ok: false, reason });
+    if (gated !== null) return no(viewCore.REASONS.DEVICE);
+    if (contextLost) return no(viewCore.REASONS.WEBGL);
+    if (!online()) return no(viewCore.REASONS.OFFLINE);
+    if (drawing) return no(viewCore.REASONS.EDITING);
+    return { ok: true, reason: null };
+  };
+
+  /**
+   * Save the camera and the view, and enter 3-D for the test with the
+   * watchdog resting.
+   *
+   * @returns {boolean} Whether the map is in 3-D for the test.
+   */
+  const beginTest = () => {
+    if (testing) return view === THREE_D;
+    if (!canTest().ok) return false;
+    const centre = map.getCenter();
+    beforeTest = {
+      view,
+      camera: {
+        center: [centre.lng, centre.lat],
+        zoom: map.getZoom(),
+        pitch: map.getPitch(),
+        bearing: map.getBearing(),
+      },
+    };
+    testing = true;
+    stopFrames();
+    if (view === THREE_D) return true;
+    // Over Saas-Fee first, where the camera gates are met.
+    map.jumpTo({ center: core.OPENING_CAMERA.center.slice(), zoom: core.OPENING_CAMERA.zoom });
+    if (enter()) return true;
+    const saved = beforeTest;
+    testing = false;
+    beforeTest = null;
+    map.jumpTo({ ...saved.camera });
+    sync();
+    return false;
+  };
+
+  /**
+   * End the test: the watchdog wakes, a passing verdict lifts its latch,
+   * and the view and camera beginTest found come back.
+   *
+   * @param {{verdict?: string}} [result]
+   * @returns {void}
+   */
+  const endTest = (result = {}) => {
+    if (!testing) return;
+    testing = false;
+    const verdict = result && result.verdict;
+    if (verdict === 'smooth' || verdict === 'stutter') tooSlow = false;
+    watch.reset();
+    const saved = beforeTest;
+    beforeTest = null;
+    // Flat before the test: flat again, with no line (exit has no reason).
+    if (saved && saved.view !== THREE_D && view === THREE_D) exit();
+    if (saved) map.jumpTo({ ...saved.camera });
+    sync();
+  };
+
+  /**
+   * Put a "Test this device" link on the line the toast is showing (the
+   * `why-slow` line), which asks for the 3D test.
+   */
+  const offerTest = () => {
+    if (!canTest().ok) return;
+    const toast = document.getElementById('map-sheet-toast');
+    const body = toast ? toast.querySelector('[data-toast-body]') : null;
+    if (!toast || !body) return;
+    const link = document.createElement('button');
+    link.type = 'button';
+    link.className = 'ml-2 font-semibold underline underline-offset-2';
+    link.setAttribute('data-map-3d-test-open', '');
+    link.textContent = STRINGS['test-device'];
+    link.addEventListener('click', () => {
+      toast.classList.add('hidden');
+      document.dispatchEvent(new CustomEvent('snowdesk:map-3d-test-requested'));
+    });
+    body.append(' ', link);
+  };
+
   // ---- Boot -------------------------------------------------------------
 
   /** @returns {boolean} Whether WebGL can be read from the map's canvas. */
@@ -757,5 +875,8 @@
     get: () => view,
     enter: () => enter(),
     exit: () => exit(),
+    canTest,
+    beginTest,
+    endTest,
   });
 })();
