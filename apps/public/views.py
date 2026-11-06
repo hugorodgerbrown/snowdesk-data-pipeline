@@ -416,7 +416,18 @@ def home(request: HttpRequest) -> HttpResponseBase:
     # SNOW-1357: the daily read under the hero, built only once the request
     # is known to be the homepage's (a map-state 301 never reads it).
     daily_read = present_daily_read(cached_daily_read(timezone.localdate()))
-    return render(request, "public/home.html", {"daily_read": daily_read})
+    # The temporary 3-D hero, for readers of the map_3d flag only (the 3-D
+    # map 404s for everyone else). Short-circuited for an anonymous request,
+    # as apps.map.map_3d.map_3d_enabled is, so most visitors pay no waffle
+    # query for it.
+    show_3d = bool(
+        request.user.is_authenticated and waffle.flag_is_active(request, "map_3d")
+    )
+    return render(
+        request,
+        "public/home.html",
+        {"daily_read": daily_read, "show_3d": show_3d},
+    )
 
 
 def colophon(request: HttpRequest) -> HttpResponse:

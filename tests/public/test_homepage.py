@@ -36,7 +36,7 @@ from waffle.testutils import override_flag
 
 from apps.bulletins.models import RegionDayRating
 from apps.regions.models import MicroRegion
-from tests.factories import MicroRegionFactory, RegionDayRatingFactory
+from tests.factories import MicroRegionFactory, RegionDayRatingFactory, UserFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -93,6 +93,7 @@ class TestHomepage3dBranding:
     @override_flag("map_3d", active=True)
     def test_flag_on_shows_the_specs_wordmark_and_3d_map(self, client: Client) -> None:
         """Inside the flag the hero wears the specs and links to /map/3d/."""
+        client.force_login(UserFactory.create())
         body = client.get("/").content.decode()
 
         assert 'data-testid="wordmark-3d"' in body
@@ -108,6 +109,14 @@ class TestHomepage3dBranding:
         assert 'data-testid="wordmark-3d"' not in body
         assert 'data-testid="home-3d-image"' not in body
         assert reverse("public:map_3d") not in body
+        assert "Stay avi-savvy" in body
+
+    @override_flag("map_3d", active=True)
+    def test_anonymous_reader_never_sees_it(self, client: Client) -> None:
+        """A signed-out visitor gets the plain hero even with the flag on."""
+        body = client.get("/").content.decode()
+
+        assert 'data-testid="wordmark-3d"' not in body
         assert "Stay avi-savvy" in body
 
     @pytest.mark.parametrize(
