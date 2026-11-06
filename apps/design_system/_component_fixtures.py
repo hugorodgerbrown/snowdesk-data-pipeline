@@ -3512,6 +3512,38 @@ def _compass_variant(caption: str, bearing: float) -> dict[str, Any]:
     }
 
 
+# ── 3D test panel (SNOW-1456) ───────────────────────────────────────────────
+# The panel's states, rendered static: the partial shows the one ``state``
+# names, and each pass's status from ``pass_0`` / ``pass_1``.
+
+
+def _map_3d_test_variant(
+    caption: str, state: str, pass_0: str = "", pass_1: str = ""
+) -> dict[str, Any]:
+    """Return one 3D test panel variant in ``state``."""
+    return {
+        "caption": caption,
+        "context": {
+            "static": True,
+            "state": state,
+            "pass_0": pass_0,
+            "pass_1": pass_1,
+        },
+    }
+
+
+MAP_3D_TEST_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
+    _map_3d_test_variant("Running — the × stops the test", "running"),
+    _map_3d_test_variant("Smooth — both passes keep up", "smooth", "keeps", "keeps"),
+    _map_3d_test_variant(
+        "May stutter — only zoomed out falls behind", "stutter", "keeps", "behind"
+    ),
+    _map_3d_test_variant("Too slow", "slow", "behind", "behind"),
+    _map_3d_test_variant("Unmeasured — never sent", "unmeasured"),
+    _map_3d_test_variant("Not available on this device", "unavailable"),
+)
+
+
 MAP_COMPASS_VARIANTS: tuple[dict[str, Any], ...] = (
     _compass_variant("North-up, as the map boots", 0),
     _compass_variant("Turned 40° east — the needle swings back west", 40),
