@@ -205,8 +205,20 @@ function buildFixture(eligible, signinUrl = '') {
 const RESTORER = 'u-restorer';
 
 /** Boot the bundle against a fresh DOM, store and sync spy. */
-async function boot({ eligible = true, records = {}, signinUrl = '' } = {}) {
+async function boot({ eligible = true, records = {}, signinUrl = '', dem = '', basemapKey = '' } = {}) {
   buildFixture(eligible, signinUrl);
+  // SNOW-1453 review: the picker's checked basemap, which the run records.
+  if (basemapKey) {
+    document.querySelector('#basemap-menu [data-basemap-key]').dataset.basemapKey = basemapKey;
+    document.getElementById('map').dataset.defaultBasemapKey = basemapKey;
+  }
+  // SNOW-1453: the 3D view's switch, which carries the elevation template.
+  if (dem) {
+    const toggle = document.createElement('button');
+    toggle.id = 'map-view-toggle';
+    toggle.dataset.demTileUrl = dem;
+    document.body.appendChild(toggle);
+  }
   stubMapLibre();
   const cachesStub = installCachesStub();
   const rows = installDbStub(records);
@@ -250,6 +262,9 @@ async function boot({ eligible = true, records = {}, signinUrl = '' } = {}) {
   await import('../../static/js/basemap_download_core.js');
   await import('../../static/js/basemap_download_runner.js');
   await import('../../static/js/basemap_manage_core.js');
+  // SNOW-1453: the coverage the elevation tiles are clipped to.
+  await import('../../static/js/slope_classes_core.js');
+  await import('../../static/js/terrain_filter_core.js');
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
   // SNOW-1416: so the background sync gets past its first guard and only
@@ -559,6 +574,59 @@ describe('restoring a custom area (SNOW-1136)', () => {
       reason: 'invalid',
     });
     expect(window.pwaWarmCache).not.toHaveBeenCalled();
+  });
+});
+
+// SNOW-1453: a run that pinned the elevation tiles stamps the record with
+// their template, for a custom area and a drop zone alike.
+describe('the elevation stamp on a restored area (SNOW-1453)', () => {
+  const DEM = 'https://dem.example.invalid/dem/2026-11/{z}/{x}/{y}.webp';
+  const isElevationTile = (url) => url.startsWith('https://dem.example.invalid/');
+  const warmed = () => window.pwaWarmCache.mock.calls.flatMap((call) => call[0]);
+
+  it.each([
+    ['a custom area', 'custom'],
+    ['a drop zone', 'dropzone'],
+  ])('stamps %s carrying terrain data with the template', async (_label, type) => {
+    await boot({ dem: DEM, basemapKey: 'swisstopo_winter' });
+    await window.pwaCustomAreaDownload.restoreArea({ areaId: AREA_ID, bbox: BBOX, type, terrain: true });
+
+    expect(warmed().some(isElevationTile)).toBe(true);
+    const record = window.pwaDb.rows.get('basemap.customAreas')[0];
+    expect(record.terrain).toBe(true);
+    expect(record.elevation).toBe(DEM);
+  });
+
+  it('pins and stamps nothing for an area on a basemap 3D is not drawn on (SNOW-1453 review)', async () => {
+    await boot({ dem: DEM });
+    await window.pwaCustomAreaDownload.restoreArea({ areaId: AREA_ID, bbox: BBOX, terrain: true });
+
+    expect(warmed().some(isElevationTile)).toBe(false);
+    const record = window.pwaDb.rows.get('basemap.customAreas')[0];
+    expect(record.basemapKey).toBe('openfreemap_liberty');
+    expect('elevation' in record).toBe(false);
+  });
+
+  it('stamps nothing where the page has no 3D view', async () => {
+    await boot({ basemapKey: 'swisstopo_winter' });
+    await window.pwaCustomAreaDownload.restoreArea({ areaId: AREA_ID, bbox: BBOX, terrain: true });
+
+    expect(warmed().some(isElevationTile)).toBe(false);
+    expect('elevation' in window.pwaDb.rows.get('basemap.customAreas')[0]).toBe(false);
+  });
+
+  it('stamps nothing for a download that fell short', async () => {
+    await boot({ dem: DEM, basemapKey: 'swisstopo_winter' });
+    window.pwaWarmCache.mockImplementation(async (urls) => ({
+      ok: urls.length - 1,
+      failed: 1,
+      bytes: 2048,
+      cancelled: false,
+    }));
+    await window.pwaCustomAreaDownload.restoreArea({ areaId: AREA_ID, bbox: BBOX, terrain: true });
+
+    const records = window.pwaDb.rows.get('basemap.customAreas') || [];
+    expect(records.every((entry) => !entry.elevation)).toBe(true);
   });
 });
 

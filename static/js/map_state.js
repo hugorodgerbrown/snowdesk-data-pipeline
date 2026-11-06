@@ -421,8 +421,10 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // so there is nothing here for a translation to get wrong.
   'frame-up-to': 'Up to %(mb)s MB',
   // SNOW-1072: the readout's second line, shown when the download includes
-  // terrain data.
+  // terrain data. SNOW-1453: the '-3d' line where the frame pins the 3D
+  // view's elevation tiles too (the 3D basemap), as 'download-idle-terrain'.
   'frame-terrain-up-to': 'Terrain data: up to %(mb)s MB more',
+  'frame-terrain-up-to-3d': 'Terrain and 3D data: up to %(mb)s MB more',
   'frame-over-ceiling': 'Area too large to download (over %(mb)s MB)',
   'frame-readout-busy': '%(pct)s · %(mb)s',
   'frame-readout-done': '%(mb)s downloaded',
@@ -473,9 +475,13 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'download-no-region-unavailable': "Basemap download isn't available for this region",
   'download-no-region-select': 'Select a region to download its basemap',
   'download-idle': "Download this region's basemap — up to %(mb)s MB",
-  // SNOW-1072: the same, on a device that includes terrain data.
+  // SNOW-1072: the same, on a device that includes terrain data. SNOW-1453:
+  // the '-3d' label where the figure carries the 3D view's elevation tiles
+  // too, which a download on the 3D basemap pins.
   'download-idle-terrain':
     "Download this region's basemap — up to %(mb)s MB, plus up to %(terrain)s MB of terrain data",
+  'download-idle-terrain-3d':
+    "Download this region's basemap — up to %(mb)s MB, plus up to %(terrain)s MB of terrain and 3D data",
   'download-busy': "Downloading this region's basemap — %(pct)s",
   // SNOW-924: a downloaded area now carries the bulletins and weather
   // inside its boundary, and those go stale where the tiles never do — so

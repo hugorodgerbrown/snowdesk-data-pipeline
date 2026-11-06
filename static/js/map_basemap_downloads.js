@@ -434,9 +434,15 @@ function terrainClassMbForBlob(blob) {
   const core = self.pwaBasemapDownloadCore;
   const terrain = self.pwaTerrainFilterCore;
   if (!core || !terrain || !terrainClassTileTemplate()) return 0;
-  return core.terrainClassMb(
+  const classMb = core.terrainClassMb(
     core.terrainClassTileCount(blob, terrain.COVERAGE_BOUNDS, terrain.MIN_ZOOM, terrain.MAX_ZOOM),
   );
+  // SNOW-1453: and the elevation tiles, folded into the one terrain figure,
+  // where the run would pin them (the 3D basemap).
+  const elevationMb = elevationPinnedOn(activeBasemapKey())
+    ? core.elevationMb(core.elevationTileCount(blob, terrain.COVERAGE_BOUNDS))
+    : 0;
+  return classMb + elevationMb;
 }
 
 /**
@@ -464,7 +470,101 @@ function terrainClassMbForGround(bbox, maxTiles) {
     core.tileRangesForBBox(clipped, terrain.MIN_ZOOM, terrain.MAX_ZOOM),
   );
   if (Number.isFinite(maxTiles) && maxTiles >= 0) count = Math.min(count, maxTiles);
-  return core.terrainClassMb(count);
+  return core.terrainClassMb(count) + elevationMbForGround(clipped, maxTiles);
+}
+
+/**
+ * SNOW-1453: what the elevation tiles over a piece of ground cost, in MB,
+ * before its blob is known — `terrainClassMbForGround`'s half for them.
+ *
+ * The same two upper bounds: the z10-13 tiles over the box (no more than
+ * the download's own tile count, since each is one of its cells), plus
+ * the z7-9 tiles over the box, which hold every parent.
+ *
+ * @param {number[]} clipped The ground's box, clipped to the coverage.
+ * @param {number} [maxTiles] The download's own tile count, when known.
+ * @returns {number} 0 where the page pins no elevation tiles, or the
+ *   active basemap is not the 3D one.
+ */
+function elevationMbForGround(clipped, maxTiles) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !elevationPinnedOn(activeBasemapKey())) return 0;
+  const [bandMin, bandMax] = core.ELEVATION_BAND;
+  let band = core.tileCount(core.tileRangesForBBox(clipped, bandMin, bandMax));
+  if (Number.isFinite(maxTiles) && maxTiles >= 0) band = Math.min(band, maxTiles);
+  const parents = core.tileCount(
+    core.tileRangesForBBox(clipped, core.ELEVATION_PARENT_MIN_ZOOM, bandMin - 1),
+  );
+  return core.elevationMb(band + parents);
+}
+
+/**
+ * SNOW-1453: the elevation tiles' `{z}/{x}/{y}` template, or `''` where
+ * the page has no 3D view (`map_3d_view` off renders no
+ * `#map-view-toggle`), so nothing is pinned there. The same attribute the
+ * 3D view's loader reads its template from, so a pinned URL is the URL it
+ * asks for.
+ *
+ * @returns {string}
+ */
+function elevationTileTemplate() {
+  const toggle = document.getElementById('map-view-toggle');
+  return (toggle && toggle.dataset.demTileUrl) || '';
+}
+
+/**
+ * SNOW-1453 review: whether a download on `basemapKey` pins elevation
+ * tiles here — the page has the 3D view, and the basemap is the one 3D is
+ * drawn on (`pwaBasemapDownloadCore.elevationBasemap`). An area on any
+ * other basemap could not draw 3D offline, as entering it swaps basemap.
+ * The size estimates and the "terrain and 3D data" wording ask the same.
+ *
+ * @param {string|null|undefined} basemapKey
+ * @returns {boolean}
+ */
+function elevationPinnedOn(basemapKey) {
+  const core = self.pwaBasemapDownloadCore;
+  return !!elevationTileTemplate() && !!core && typeof core.elevationBasemap === 'function' &&
+    core.elevationBasemap(basemapKey);
+}
+
+/**
+ * SNOW-1453: the elevation tile URLs one download blob implies — the run's
+ * list. Empty where the page pins none, or for a run on a basemap other
+ * than the 3D one.
+ *
+ * @param {Object|null} blob The download blob, for its `z` row spans.
+ * @param {string|null} [basemapKey] The run's basemap; the active one when
+ *   omitted.
+ * @returns {string[]}
+ */
+function activeElevationTileURLs(blob, basemapKey) {
+  const core = self.pwaBasemapDownloadCore;
+  const terrain = self.pwaTerrainFilterCore;
+  const template = elevationTileTemplate();
+  if (!core || !terrain || !template) return [];
+  if (!elevationPinnedOn(basemapKey === undefined ? activeBasemapKey() : basemapKey)) return [];
+  return core.elevationTileURLs(template, blob, terrain.COVERAGE_BOUNDS);
+}
+
+/**
+ * SNOW-1453: the elevation tiles ONE recorded area should hold, on its
+ * `terrain` flag — `areaTerrainClassTileUrls`'s twin, through the core's
+ * `areaElevationTileURLs`.
+ *
+ * @param {Object|null} record A `basemap.regions` / `basemap.customAreas`
+ *   entry, or a Manage downloads row carrying the same fields.
+ * @param {string} [template] The template to derive under; today's when
+ *   omitted. The prune passes a superseded record's own stamp.
+ * @returns {string[]} Empty for an area without terrain data, or a page
+ *   that pins no elevation tiles.
+ */
+function areaElevationTileUrls(record, template) {
+  const core = self.pwaBasemapDownloadCore;
+  const terrain = self.pwaTerrainFilterCore;
+  const dem = template || elevationTileTemplate();
+  if (!core || !terrain || !dem) return [];
+  return core.areaElevationTileURLs(record, dem, terrain.COVERAGE_BOUNDS);
 }
 
 /**
@@ -2363,9 +2463,11 @@ async function evictBasemapAreas(areaIds) {
  * writer; the region roundel re-probes on it. Carries no detail: the
  * listener reads the records for itself, so the two cannot disagree.
  *
- * Never dispatched from a record HEAL (`_healRegionRecord`): the roundel's
- * own probe heals, and an event there would make every probe schedule
- * the next one.
+ * Never dispatched from an ordinary record HEAL (`_healRegionRecord`): the
+ * roundel's own probe heals, and an event there would make every probe
+ * schedule the next one. SNOW-1453's one exception is a heal that writes
+ * the `elevation` stamp, which the 3D view must hear; the next probe finds
+ * the stamp and writes nothing, so it schedules one probe, not a loop.
  *
  * @returns {void}
  */
@@ -2514,6 +2616,47 @@ async function pinnedAreaCacheHasPrefix(areaId, prefix) {
   } catch (_e) {
     return false;
   }
+}
+
+/**
+ * SNOW-1453 review: every URL ONE area's pinned bucket holds, or null when
+ * the bucket cannot be read.
+ *
+ * Area-scoped for the reason `pinnedAreaCacheHasPrefix` above is: the
+ * elevation stamp is a fact about THIS area's bucket. Judged against the
+ * union of every bucket, an area overlapping another would be stamped on
+ * the other's tiles, and removing that other area would leave the stamp
+ * standing over tiles that have gone.
+ *
+ * @param {string} areaId
+ * @returns {Promise<Set<string>|null>}
+ */
+async function pinnedAreaCacheURLs(areaId) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !areaId || !('caches' in window)) return null;
+  try {
+    const cache = await caches.open(core.pinnedCacheName(areaId));
+    const requests = await cache.keys();
+    return new Set(requests.map((request) => request.url));
+  } catch (_e) {
+    return null;
+  }
+}
+
+/**
+ * SNOW-1453 review: which of `urls` ONE area's own bucket lacks — how the
+ * elevation tiles are judged, since the stamp they earn is the area's own.
+ *
+ * @param {string} areaId
+ * @param {string[]} urls
+ * @returns {Promise<string[]|null>} Null when the bucket cannot be read;
+ *   an empty list for no `urls`, without reading it.
+ */
+async function missingFromAreaBucket(areaId, urls) {
+  if (!urls.length) return [];
+  const own = await pinnedAreaCacheURLs(areaId);
+  if (!own) return null;
+  return urls.filter((url) => !own.has(url));
 }
 
 // SNOW-588: `basemapDownloadedAreas` and `evictBasemapAreas` above, for
@@ -2723,6 +2866,17 @@ window.pwaBasemapDownloads = Object.freeze({
    * @returns {string[]}
    */
   areaTerrainClassTileUrls: (record) => areaTerrainClassTileUrls(record),
+
+  /**
+   * SNOW-1453: the elevation tiles one recorded area should hold — see
+   * `areaElevationTileUrls`. Empty unless the record carries `terrain`
+   * and the page has a 3D view; judged on every basemap, as the class
+   * tiles are.
+   *
+   * @param {Object|null} record
+   * @returns {string[]}
+   */
+  areaElevationTileUrls: (record) => areaElevationTileUrls(record),
 
   /**
    * SNOW-1072: whether this page can include terrain data at all, and so
@@ -3667,6 +3821,10 @@ const PINNED_DOWNLOAD_DEPS = {
   // blob, because they cover the same ground and band as the area's own
   // tiles. Read by the runner only for a run carrying `terrain: true`.
   terrainClassUrls: (blob) => activeTerrainClassTileURLs(blob),
+  // SNOW-1453: the elevation tiles over the same ground, and the template
+  // a run that pinned them all stamps on its record.
+  elevationUrls: (blob, basemapKey) => activeElevationTileURLs(blob, basemapKey),
+  elevationTemplate: () => elevationTileTemplate(),
   // SNOW-924: the bulletins and weather inside the area's boundary, and
   // the four overlay feeds cached whole on the way past. Async, alone
   // among these — see `assembleAreaContentURLs`.
@@ -4323,7 +4481,12 @@ async function refreshAreaContent(areaId, onStage) {
  * `_areaRecordById` resolves only `basemap.regions` and
  * `basemap.customAreas`, and a base layer lives in neither.
  *
+ * SNOW-1453 review: the elevation tiles are judged against `areaId`'s own
+ * bucket (`missingFromAreaBucket`), so the repair fetches into it what it
+ * lacks, however many overlapping areas hold them.
+ *
  * @param {Object} record A `basemap.regions` or `basemap.customAreas` entry.
+ * @param {string} areaId The area's pinned bucket.
  * @returns {Promise<string[]|null>} The URLs to fetch — empty when nothing
  *   is missing. `null` when the question could not be ASKED: no download
  *   core, Cache Storage that will not answer, or a dependency list neither
@@ -4331,7 +4494,7 @@ async function refreshAreaContent(areaId, onStage) {
  *   the disk declines the tile half rather than refetching a list it has
  *   no evidence for, and says which of the two it is doing.
  */
-async function _missingAreaRenderDependencies(record) {
+async function _missingAreaRenderDependencies(record, areaId) {
   const core = self.pwaBasemapDownloadCore;
   if (!core || typeof core.missingRenderDependencies !== 'function') return null;
   let cached;
@@ -4344,14 +4507,21 @@ async function _missingAreaRenderDependencies(record) {
   const isActive = !!activeKey && record.basemapKey === activeKey;
   const recorded = areaRenderDependencyURLs(record.deps, isActive);
   const terrain = areaTerrainClassTileUrls(record);
+  // SNOW-1453: and the elevation tiles, derived on the same terms, which
+  // is how a sync brings an area downloaded before them up to date. Judged
+  // against the area's OWN bucket, not the union: they earn its stamp, and
+  // an overlapping area's copy would vanish with that area.
+  const elevation = areaElevationTileUrls(record);
   // The three-row rule's UNKNOWN branch, and the only one that reaches
   // here as an empty list: a record written before SNOW-844 stored its
   // deps, on a basemap that is not the loaded one. The terrain-class tiles
   // are derived from the record rather than the style, so an opted-in area
   // is still judgeable on them — the same distinction the sheet's own
   // `markIncompleteRows` draws.
-  if (recorded.length === 0 && terrain.length === 0) return null;
-  return core.missingRenderDependencies([...recorded, ...terrain], cached);
+  if (recorded.length === 0 && terrain.length === 0 && elevation.length === 0) return null;
+  const missingElevation = await missingFromAreaBucket(areaId, elevation);
+  if (missingElevation === null) return null;
+  return [...core.missingRenderDependencies([...recorded, ...terrain], cached), ...missingElevation];
 }
 
 /**
@@ -4510,7 +4680,7 @@ async function syncArea(areaId, onStage) {
   }
 
   tell('map');
-  const missing = await _missingAreaRenderDependencies(found.record);
+  const missing = await _missingAreaRenderDependencies(found.record, areaId);
   let tiles = missing === null ? 'unknown' : 'none';
   if (missing && missing.length > 0) {
     const repaired = await new Promise((resolve) => {
@@ -4529,6 +4699,11 @@ async function syncArea(areaId, onStage) {
     });
     tiles = repaired ? 'ok' : 'failed';
   }
+  // SNOW-1453: every elevation tile the area should hold is in its bucket
+  // now (nothing was missing, or the repair fetched it all), so the record
+  // takes today's template as its stamp, and 3D may be drawn there
+  // offline.
+  if (tiles === 'ok' || tiles === 'none') await _stampAreaElevation(areaId, found);
   // SNOW-1415 review: the dependencies being here is not the map being
   // here. Only a full tile grid lets the stamp say Yes; a short grid is a
   // No this press cannot mend (the remedy is a re-download).
@@ -4542,6 +4717,41 @@ async function syncArea(areaId, onStage) {
   const result = { tiles: tiles, tilesHeld: tilesHeld, content: content };
   await _stampAreaVerified(areaId, result);
   return result;
+}
+
+/**
+ * SNOW-1453: stamp an area's record `elevation: <template>` once its bucket
+ * holds every elevation tile today's template implies — the stamp a
+ * download writes with its record, written here by a sync. Nothing is
+ * written for an area without terrain data, on a page that pins no
+ * elevation tiles, or when the stamp is already today's.
+ *
+ * A stamp naming an older template (a seasonal `<version>` bump) has its
+ * tiles pruned from the bucket first, sparing today's: once the stamp is
+ * rewritten, nothing could derive those URLs again, so
+ * `_pruneSupersededTerrain` would never find them and they would sit in
+ * the bucket uncounted.
+ *
+ * @param {string} areaId
+ * @param {{record: Object, regionId: string}} found `_areaRecordById`'s answer.
+ * @returns {Promise<void>} Best-effort, like the other stamps.
+ */
+async function _stampAreaElevation(areaId, found) {
+  const template = elevationTileTemplate();
+  if (!template || found.record.elevation === template) return;
+  const current = areaElevationTileUrls(found.record);
+  if (current.length === 0) return;
+  const previous = found.record.elevation;
+  if (typeof previous === 'string' && previous) {
+    const keep = new Set(current);
+    const stale = areaElevationTileUrls(found.record, previous).filter((url) => !keep.has(url));
+    if (stale.length) {
+      forgetPinnedBucketMeasurement(areaId);
+      await prunePinnedBasemapURLs(areaId, stale, null);
+    }
+  }
+  await _rewriteAreaRecord(areaId, found.regionId, (entry) => ({ ...entry, elevation: template }));
+  notifyDownloadsChanged();
 }
 
 /**

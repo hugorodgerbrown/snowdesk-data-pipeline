@@ -218,6 +218,13 @@
    * Mapterhorn success before then resets the count; one that lands after
    * (a request already in flight) does not lift the latch.
    *
+   * SNOW-1453: a 504 carrying `X-SW-Cache: miss` is the service worker's
+   * own answer offline for a tile it does not hold
+   * (`_synthesizedGatewayTimeout`), not Mapterhorn being down. It falls
+   * back for that tile without counting, like a 404: otherwise three
+   * misses past a downloaded area's edge would latch the loader to AWS,
+   * and the area's pinned tiles would never be asked for again.
+   *
    * @param {{primary: string, fallback: string, fetchTile: (url: string, signal: AbortSignal) => Promise<Response>, enlarge: (blob: Blob) => Promise<any>}} options
    * @returns {{load: (tile: {z: number, x: number, y: number}, signal: AbortSignal) => Promise<{data: any}>, usingFallback: () => boolean}}
    */
@@ -243,7 +250,7 @@
               if (!latched) failures = 0;
               return { data: await response.arrayBuffer() };
             }
-            if (response.status !== 404 && response.status !== 204) fail();
+            if (response.status !== 404 && response.status !== 204 && !isOfflineMiss(response)) fail();
           } catch (err) {
             if (signal.aborted) throw err;
             fail();
@@ -257,6 +264,18 @@
       },
       usingFallback: () => latched,
     };
+  }
+
+  /**
+   * Whether a response is the service worker's offline miss: a 504 it
+   * made up because it holds no copy and may not use the network
+   * (static/js/sw.js `_synthesizedGatewayTimeout`, `X-SW-Cache: miss`).
+   *
+   * @param {Response} response
+   * @returns {boolean}
+   */
+  function isOfflineMiss(response) {
+    return response.status === 504 && !!response.headers && response.headers.get('X-SW-Cache') === 'miss';
   }
 
   /**

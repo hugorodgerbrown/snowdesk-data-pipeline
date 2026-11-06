@@ -347,13 +347,24 @@
  *   areaTerrainClassTileURLs(record, template, bounds, minZ, maxZ) /
  *   terrainClassTileCount(blob, bounds, minZ, maxZ) /
  *   terrainClassMb(count) / terrainScaledBytesPerTile(bytesPerTile,
- *   sourceCount, terrain)
+ *   sourceCount, terrain, elevation)
  *     SNOW-1072: the terrain-class tiles the terrain filter paints from,
  *     over the same ground, clipped to the class tileset's own coverage
  *     rectangle and z12-14 band, and what they cost. An OPT-IN tile
  *     family: a download pins them only when its area carries the
  *     ``terrain`` flag. ``TERRAIN_CLASS_BYTES_PER_TILE`` is the per-tile
  *     figure the estimate charges.
+ *   elevationTileURLs(template, blob, bounds) / elevationTileCount(blob,
+ *   bounds) / elevationMb(count) / areaElevationTileURLs(record, template,
+ *   bounds) / elevationAreaBoxes(records, template)
+ *     SNOW-1453: the elevation tiles the 3D map draws its terrain from,
+ *     pinned with terrain data: the blob's z10-13 rows clipped to the
+ *     elevation coverage, plus their z7-9 parents, and what they cost
+ *     (``ELEVATION_BYTES_PER_TILE``). ``elevationAreaBoxes`` is the list
+ *     of downloaded areas 3D may be drawn in offline: those whose record
+ *     carries today's template as its ``elevation`` stamp. Only an area
+ *     on ``ELEVATION_BASEMAP_KEY`` (``elevationBasemap``), the basemap 3D
+ *     is drawn on, carries them.
  *   missingRenderDependencies(depURLs, cached)
  *     SNOW-844: which of an area's RENDER dependencies — its style JSON,
  *     each vector source's TileJSON, its sprite JSON+PNG at 1x and 2x —
@@ -481,6 +492,41 @@
   // (no data, or outside z12-14) is a few hundred bytes of headers and is
   // charged the same — an estimate that over-reads, never under.
   var TERRAIN_CLASS_BYTES_PER_TILE = 88 * 1024;
+
+  // SNOW-1453: what one elevation tile costs (the 512 px Terrarium tiles
+  // the 3D map's terrain is drawn from — tiles.snowdesk-data.info/dem/).
+  // Sampled on 6 Nov 2026: five Alpine points at each of z10-14 came out
+  // at 125-195 KB, a mean of about 155 KB. Charged at 192 KiB, above the
+  // whole sample, so the "up to" figure stays an upper bound. A median
+  // Swiss region (181 basemap tiles) needs ~60 of them: ~11.5 MB charged,
+  // ~9 MB real.
+  var ELEVATION_BYTES_PER_TILE = 192 * 1024;
+
+  // SNOW-1453: the zoom band an area's elevation tiles are pinned over,
+  // and the shallowest of the parents added above it. The mesh reads the
+  // elevation about two zooms below the map (map_3d_core.prefetchDemTiles)
+  // and the hillshade one below, so z13 serves the mesh to map z15 and the
+  // shading to z14, the basemap download's own ceiling. The z7-9 parents
+  // are 3-4 tiles, and let MapLibre draw coarse relief past the area's
+  // edge rather than flat ground.
+  var ELEVATION_BAND = [10, 13];
+  var ELEVATION_PARENT_MIN_ZOOM = 7;
+
+  // SNOW-1453 review: the basemap 3D is drawn on. Mirrors
+  // map_view_core.js's BASEMAP_KEY (a test holds the two together): entering
+  // 3D swaps to it, so offline 3D can draw only where an area's download
+  // pinned THAT basemap's tiles and documents. Elevation tiles are pinned,
+  // stamped, priced and expected only for an area downloaded on it.
+  var ELEVATION_BASEMAP_KEY = 'swisstopo_winter';
+
+  // SNOW-1453: how much of a frame's band ``terrainScaledBytesPerTile``
+  // charges an elevation tile against. The elevation band stops one zoom
+  // short of the basemap's z14, and each zoom has about a quarter of the
+  // next one's tiles, so z10-13 is about a quarter of a z10-14 frame's
+  // tiles. Measured on a frame at the ceiling (~1,000 tiles) it is 0.27
+  // with the parents; a third keeps the charge above that, the safe
+  // direction for a ceiling.
+  var ELEVATION_BAND_SHARE = 1 / 3;
 
   // The FALLBACK ceiling, used only when the device cannot say what it can
   // hold. The real ceiling is ``deviceCeilingMb`` below: how large one
@@ -1012,17 +1058,189 @@
    * ``budgetScaleForBBox`` multiplies the figure back by it, and a class
    * tile is fetched once per cell whatever the basemap.
    *
+   * SNOW-1453: terrain data carries the elevation tiles too, where the page
+   * pins them (``elevation``). Their share is ``ELEVATION_BAND_SHARE`` of
+   * an elevation tile per frame tile, since the elevation band covers
+   * about a quarter of the frame's tiles; see that constant.
+   *
    * @param {number} bytesPerTile The basemap's own per-source figure.
    * @param {number} [sourceCount] Vector sources in the active style.
    * @param {boolean} [terrain] Whether terrain data is included.
+   * @param {boolean} [elevation] Whether that terrain data includes the
+   *   elevation tiles (the 3D map's DEM template is on the page).
    * @returns {number}
    */
-  function terrainScaledBytesPerTile(bytesPerTile, sourceCount, terrain) {
+  function terrainScaledBytesPerTile(bytesPerTile, sourceCount, terrain, elevation) {
     var base =
       Number.isFinite(bytesPerTile) && bytesPerTile > 0 ? bytesPerTile : WORST_CASE_BYTES_PER_TILE;
     if (!terrain) return base;
     var sources = Number.isFinite(sourceCount) && sourceCount > 1 ? sourceCount : 1;
-    return base + TERRAIN_CLASS_BYTES_PER_TILE / sources;
+    var perCell =
+      TERRAIN_CLASS_BYTES_PER_TILE + (elevation ? ELEVATION_BYTES_PER_TILE * ELEVATION_BAND_SHARE : 0);
+    return base + perCell / sources;
+  }
+
+  /**
+   * Call ``visit(z, x, y)`` for every elevation tile an area's blob implies.
+   *
+   * SNOW-1453. The blob's own z10-13 rows (``ELEVATION_BAND``), clipped to
+   * ``bounds`` as the class tiles are, and then every one of their parents
+   * from z9 up to ``ELEVATION_PARENT_MIN_ZOOM``, each once. The parents
+   * come first, shallowest zoom first, so a run cut short still holds the
+   * coarse relief. A parent of a tile inside ``bounds`` is inside it too,
+   * so it needs no clip of its own.
+   *
+   * @param {Object | null | undefined} blob
+   * @param {number[] | null | undefined} bounds Omitted means no clip.
+   * @param {function(number, number, number): void} visit
+   * @returns {void}
+   */
+  function _eachElevationTile(blob, bounds, visit) {
+    var band = [];
+    var parents = [];
+    var seen = new Set();
+    _eachOverlayTile(blob, bounds, ELEVATION_BAND[0], ELEVATION_BAND[1], function (z, x, y) {
+      band.push([z, x, y]);
+      for (var pz = ELEVATION_BAND[0] - 1; pz >= ELEVATION_PARENT_MIN_ZOOM; pz -= 1) {
+        var shift = z - pz;
+        var px = Math.floor(x / Math.pow(2, shift));
+        var py = Math.floor(y / Math.pow(2, shift));
+        var key = pz + '/' + px + '/' + py;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        parents.push([pz, px, py]);
+      }
+    });
+    parents.sort(function (a, b) {
+      return a[0] - b[0];
+    });
+    var all = parents.concat(band);
+    for (var i = 0; i < all.length; i += 1) visit(all[i][0], all[i][1], all[i][2]);
+  }
+
+  /**
+   * The elevation tile URLs one download blob implies (SNOW-1453).
+   *
+   * Built exactly as the 3D map's loader builds the URL it asks for
+   * (``map_3d_core.tileUrl``: three ``replace`` calls on the same
+   * template, which ``_overlayTileURL`` repeats character for character),
+   * because a pinned entry is found by its URL.
+   *
+   * @param {string} template The elevation tiles' ``{z}/{x}/{y}`` template —
+   *   ``#map-view-toggle[data-dem-tile-url]``.
+   * @param {Object | null | undefined} blob The download blob, for its rows.
+   * @param {number[] | null | undefined} bounds The elevation coverage
+   *   (terrain_filter_core's ``COVERAGE_BOUNDS``). Omitted means no clip.
+   * @returns {string[]} Empty without a template or rows.
+   */
+  function elevationTileURLs(template, blob, bounds) {
+    var urls = [];
+    if (!template) return urls;
+    _eachElevationTile(blob, bounds, function (z, x, y) {
+      urls.push(_overlayTileURL(template, z, x, y));
+    });
+    return urls;
+  }
+
+  /**
+   * How many elevation tiles ``elevationTileURLs`` would list (SNOW-1453),
+   * for the size readouts, which recompute on every frame of a pan.
+   *
+   * @param {Object | null | undefined} blob
+   * @param {number[] | null | undefined} bounds
+   * @returns {number}
+   */
+  function elevationTileCount(blob, bounds) {
+    var count = 0;
+    _eachElevationTile(blob, bounds, function () {
+      count += 1;
+    });
+    return count;
+  }
+
+  /**
+   * What ``count`` elevation tiles cost, in megabytes, rounded up
+   * (SNOW-1453). The readouts fold it into the one terrain figure.
+   *
+   * @param {number} count
+   * @returns {number} 0 for no tiles.
+   */
+  function elevationMb(count) {
+    var n = Number(count);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return Math.ceil((n * ELEVATION_BYTES_PER_TILE) / (1024 * 1024));
+  }
+
+  /**
+   * Whether an area on ``basemapKey`` carries elevation tiles: only one
+   * downloaded on the basemap 3D is drawn on (SNOW-1453 review).
+   *
+   * @param {string | null | undefined} basemapKey
+   * @returns {boolean}
+   */
+  function elevationBasemap(basemapKey) {
+    return basemapKey === ELEVATION_BASEMAP_KEY;
+  }
+
+  /**
+   * The elevation tiles ONE recorded area should hold (SNOW-1453).
+   *
+   * The twin of ``areaTerrainClassTileURLs``, on the same gate: elevation
+   * rides on the area's ``terrain`` flag, so an area downloaded without
+   * terrain data is never judged on it. Derived from today's template, so
+   * an area downloaded before elevation joined terrain data, or before a
+   * seasonal ``<version>`` bump of the template, reads incomplete until a
+   * sync fetches the tiles.
+   *
+   * @param {Object | null | undefined} record A ``basemap.regions`` /
+   *   ``basemap.customAreas`` entry, or a row carrying the same fields.
+   * @param {string} template The elevation tiles' ``{z}/{x}/{y}`` template.
+   * @param {number[] | null | undefined} bounds The elevation coverage.
+   * Only an area downloaded on the 3D basemap (``ELEVATION_BASEMAP_KEY``)
+   * holds them: 3D cannot draw offline on any other area's tiles, so none
+   * is pinned there, and none is expected.
+   *
+   * @returns {string[]} Empty for an area without terrain data, one on
+   *   another basemap, a missing template, or a record with no ground to
+   *   rebuild.
+   */
+  function areaElevationTileURLs(record, template, bounds) {
+    if (!record || !record.terrain || !template) return [];
+    if (!elevationBasemap(record.basemapKey)) return [];
+    if (record.z) return elevationTileURLs(template, { z: record.z }, bounds);
+    var band = Array.isArray(record.band) ? record.band : null;
+    if (!record.bbox || !band) return [];
+    return elevationTileURLs(template, buildBlob(record.bbox, band[0], band[1]), bounds);
+  }
+
+  /**
+   * The boxes 3D may be drawn in offline: one per downloaded area whose
+   * elevation tiles were fetched under today's template (SNOW-1453).
+   *
+   * A download or a sync that pinned every elevation tile stamps the
+   * record ``elevation: <template>``. Only a stamp equal to ``template``
+   * counts, so a seasonal ``<version>`` bump takes every area out until it
+   * is synced, as its tiles would be missing. The box is ``areaBBox``'s,
+   * from the record alone; nothing here reads the cache.
+   *
+   * @param {Array<Object> | null | undefined} records Downloaded areas
+   *   (``pwaBasemapAreas.downloadedAreas()`` rows, or stored records).
+   * @param {string} template Today's elevation template.
+   * @returns {Array<[number, number, number, number]>}
+   */
+  function elevationAreaBoxes(records, template) {
+    var boxes = [];
+    if (!template || !Array.isArray(records)) return boxes;
+    for (var i = 0; i < records.length; i += 1) {
+      var record = records[i];
+      if (!record || record.elevation !== template) continue;
+      // The 3D view draws on the 3D basemap: an area on another basemap
+      // holds none of its tiles, whatever its stamp says.
+      if (!elevationBasemap(record.basemapKey)) continue;
+      var box = areaBBox(record);
+      if (box) boxes.push(box);
+    }
+    return boxes;
   }
 
   /**
@@ -3925,6 +4143,11 @@
     terrainClassTileCount: terrainClassTileCount,
     terrainClassMb: terrainClassMb,
     terrainScaledBytesPerTile: terrainScaledBytesPerTile,
+    elevationTileURLs: elevationTileURLs,
+    elevationTileCount: elevationTileCount,
+    elevationMb: elevationMb,
+    areaElevationTileURLs: areaElevationTileURLs,
+    elevationAreaBoxes: elevationAreaBoxes,
     areaIdForRegion: areaIdForRegion,
     generateCustomAreaId: generateCustomAreaId,
     isCustomAreaId: isCustomAreaId,
@@ -3948,6 +4171,11 @@
     DOWNLOAD_CEILING_MB: DOWNLOAD_CEILING_MB,
     DOWNLOAD_DOCUMENTS_MB: DOWNLOAD_DOCUMENTS_MB,
     TERRAIN_CLASS_BYTES_PER_TILE: TERRAIN_CLASS_BYTES_PER_TILE,
+    ELEVATION_BYTES_PER_TILE: ELEVATION_BYTES_PER_TILE,
+    ELEVATION_BAND: ELEVATION_BAND,
+    ELEVATION_PARENT_MIN_ZOOM: ELEVATION_PARENT_MIN_ZOOM,
+    ELEVATION_BASEMAP_KEY: ELEVATION_BASEMAP_KEY,
+    elevationBasemap: elevationBasemap,
     STORAGE_HEADROOM_FACTOR: STORAGE_HEADROOM_FACTOR,
     DOWNLOAD_BUDGET_MB: DOWNLOAD_BUDGET_MB,
     PINNED_CACHE_PREFIX: PINNED_CACHE_PREFIX,
