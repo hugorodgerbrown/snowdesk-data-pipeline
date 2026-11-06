@@ -28,6 +28,9 @@
  *     so a copied link opens on the same view for whoever follows it, and
  *     the link itself: the page's address with the token that opens it, or
  *     a route share link into 3-D (`/routes/s/<token>/3d/?…`);
+ *   - the frame-time probe (`?probe=1`, SNOW-1448): the camera passes it
+ *     flies and the summary of the frame intervals it records, measured
+ *     against the proposed budget of a median frame under 33 ms;
  *   - the main thread's half of the Steep terrain worker's protocol
  *     (map_3d_steep_worker.js): each tile request gets an id, the reply
  *     with that id settles it, and an abort tells the worker and rejects.
@@ -51,6 +54,7 @@
  *   parseView(search)
  *   pageUrl(origin, pathname, tokens, query)
  *   routeShare3dUrl(shareUrl, query)
+ *   FRAME_BUDGET_MS / PROBE_PASSES / frameStats(intervals, budgetMs?)
  */
 (function () {
   'use strict';
@@ -528,7 +532,64 @@
     return url.toString();
   }
 
+  /**
+   * The proposed frame budget (SNOW-1448): a median frame under 33 ms, which
+   * is 30 frames a second, on a mid-range phone.
+   */
+  const FRAME_BUDGET_MS = 33;
+
+  /**
+   * The probe's camera passes. Each opens over Saas-Fee at OPENING_CAMERA's
+   * tilt and heading, waits for every tile to arrive, then turns the camera
+   * through a quarter circle at a steady rate while the frames are timed.
+   * The turn brings new ground into view, so the pass pays for tiles and
+   * draping as a reader's own panning does. The z9 pass is where the 3-D
+   * control is proposed to switch off: the most ground a tilted view draws.
+   */
+  const PROBE_PASSES = Object.freeze([
+    Object.freeze({ label: 'Saas-Fee z12.6', zoom: OPENING_CAMERA.zoom, turnDeg: 90, durationMs: 12000 }),
+    Object.freeze({ label: 'Valais z9', zoom: 9, turnDeg: 90, durationMs: 12000 }),
+  ]);
+
+  /**
+   * Summarise the intervals between animation frames, in milliseconds.
+   *
+   * The median is the budget's measure. The 95th percentile and the share of
+   * frames over budget say whether a good median hides stutter. Percentiles
+   * are nearest-rank, so every figure is an interval that happened.
+   *
+   * @param {number[]} intervals Milliseconds between consecutive frames.
+   * @param {number} [budgetMs] The budget the frames are held to.
+   * @returns {{frames: number, medianMs: number, p95Ms: number, worstMs: number,
+   *   overBudget: number, fps: number, withinBudget: boolean}|null}
+   *   Null when there are no usable intervals.
+   */
+  function frameStats(intervals, budgetMs) {
+    const budget = budgetMs || FRAME_BUDGET_MS;
+    const sorted = (intervals || [])
+      .filter((ms) => Number.isFinite(ms) && ms > 0)
+      .sort((a, b) => a - b);
+    if (!sorted.length) return null;
+    /** @param {number} p */
+    const rank = (p) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(p * sorted.length) - 1))];
+    const round = (/** @type {number} */ ms) => Math.round(ms * 10) / 10;
+    const medianMs = rank(0.5);
+    const over = sorted.filter((ms) => ms > budget).length;
+    return {
+      frames: sorted.length,
+      medianMs: round(medianMs),
+      p95Ms: round(rank(0.95)),
+      worstMs: round(sorted[sorted.length - 1]),
+      overBudget: Math.round((over / sorted.length) * 100) / 100,
+      fps: Math.round(1000 / medianMs),
+      withinBudget: medianMs < budget,
+    };
+  }
+
   self.pwaMap3dCore = Object.freeze({
+    FRAME_BUDGET_MS: FRAME_BUDGET_MS,
+    PROBE_PASSES: PROBE_PASSES,
+    frameStats: frameStats,
     DEM_SOURCE_ID: DEM_SOURCE_ID,
     TERRAIN_EXAGGERATION: TERRAIN_EXAGGERATION,
     OPENING_CAMERA: OPENING_CAMERA,

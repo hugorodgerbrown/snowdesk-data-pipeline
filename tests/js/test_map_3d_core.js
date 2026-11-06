@@ -10,6 +10,8 @@
  *     anything else is null rather than a camera move to nowhere;
  *   - a tap frames the whole route or tour (every leg with its uuid), not
  *     the clipped fragment MapLibre hands back;
+ *   - the frame-time probe's summary (SNOW-1448) uses intervals that
+ *     happened, ignores junk, and holds the median to the 33 ms budget;
  *   - the Steep terrain worker bridge settles each request on the reply
  *     with its own id, and an abort tells the worker, rejects, and closes
  *     a bitmap that arrives too late.
@@ -434,5 +436,45 @@ describe('createDemLoader', () => {
     });
     await expect(aborting.dem.load(TILE, controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
     expect(aborting.fetchTile).toHaveBeenCalledOnce();
+  });
+});
+
+describe('frameStats / PROBE_PASSES', () => {
+  it('summarises frame intervals by nearest rank', () => {
+    const intervals = [16, 17, 16, 18, 50, 16, 17, 16, 17, 100];
+    expect(core.frameStats(intervals)).toEqual({
+      frames: 10,
+      medianMs: 17,
+      p95Ms: 100,
+      worstMs: 100,
+      overBudget: 0.2,
+      fps: 59,
+      withinBudget: true,
+    });
+  });
+
+  it('fails the budget when the median frame reaches it', () => {
+    const stats = core.frameStats([33, 33, 40, 20, 34]);
+    expect(stats.medianMs).toBe(33);
+    expect(stats.withinBudget).toBe(false);
+    expect(core.FRAME_BUDGET_MS).toBe(33);
+  });
+
+  it('holds frames to the budget it is given', () => {
+    expect(core.frameStats([20, 20, 20], 16).overBudget).toBe(1);
+  });
+
+  it('ignores junk and returns null when nothing is left', () => {
+    expect(core.frameStats([0, -5, Number.NaN, Infinity])).toBeNull();
+    expect(core.frameStats([])).toBeNull();
+    expect(core.frameStats([Number.NaN, 25]).frames).toBe(1);
+  });
+
+  it('probes the opening view and the zoom where 3-D is proposed to stop', () => {
+    expect(core.PROBE_PASSES.map((p) => p.zoom)).toEqual([core.OPENING_CAMERA.zoom, 9]);
+    for (const pass of core.PROBE_PASSES) {
+      expect(pass.durationMs).toBeGreaterThanOrEqual(10000);
+      expect(pass.turnDeg).toBeGreaterThan(0);
+    }
   });
 });
