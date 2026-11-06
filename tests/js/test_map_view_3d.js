@@ -538,6 +538,19 @@ describe('a lost WebGL context', () => {
     expect(window.pwaMapView.get()).toBe('3d');
     expect(inThreeD(map)).toBe(true);
   });
+
+  it('holds the pixel ratio back until the context returns', async () => {
+    const { map } = await enterAndSettle();
+    expect(map.pixelRatio).toBe(core3d.MAX_PIXEL_RATIO);
+    map.setPixelRatio.mockClear();
+    // A resize on a lost context would read its 0x0 drawing buffer as the
+    // canvas limit, so nothing resizes until the restore.
+    map.fire('webglcontextlost');
+    expect(map.setPixelRatio).not.toHaveBeenCalled();
+    map.fire('webglcontextrestored');
+    expect(map.setPixelRatio).toHaveBeenCalledTimes(1);
+    expect(map.pixelRatio).toBe(3);
+  });
 });
 
 describe('the frame watchdog', () => {

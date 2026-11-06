@@ -117,6 +117,15 @@
   let savedMinZoom = null;
   /** @type {?number} */
   let savedPixelRatio = null;
+  /**
+   * The reader's pixel ratio, held back while the WebGL context is lost:
+   * setPixelRatio resizes, and MapLibre takes a lost context's 0x0 drawing
+   * buffer for a hardware limit (_maxCanvasSize), so it waits for the
+   * restore.
+   *
+   * @type {?number}
+   */
+  let pendingPixelRatio = null;
   let lastZoomOutAt = -Infinity;
   /** The frame watchdog tripped: no more 3-D this visit. */
   let tooSlow = false;
@@ -417,7 +426,10 @@
     timingArmed = false;
     removeNow();
     map.setMinZoom(savedMinZoom === null ? 0 : savedMinZoom);
-    if (savedPixelRatio !== null && typeof map.setPixelRatio === 'function') map.setPixelRatio(savedPixelRatio);
+    if (savedPixelRatio !== null && typeof map.setPixelRatio === 'function') {
+      if (contextLost) pendingPixelRatio = savedPixelRatio;
+      else map.setPixelRatio(savedPixelRatio);
+    }
     savedPixelRatio = null;
     // Flat at once, not eased: the setStyle below would stop an ease part
     // way, leaving the flat map tilted.
@@ -529,6 +541,8 @@
     // Flat already (the loss laid it flat); make sure, and say nothing.
     if (view === THREE_D) exit();
     if (map.getPitch() > 0) map.jumpTo({ pitch: 0 });
+    if (pendingPixelRatio !== null && typeof map.setPixelRatio === 'function') map.setPixelRatio(pendingPixelRatio);
+    pendingPixelRatio = null;
     sync();
   });
 
