@@ -98,7 +98,10 @@ or a start-up gate that waits on `showmigrations` — not relying on timing.
 
 ## Separate databases (important)
 
-Staging and production use **separate Postgres databases**. This is not
+Staging and production use **separate Postgres databases**: `snowdeskdb`
+and `snowdesk_staging`, both on the one Render Postgres instance,
+`snowdesk-database`. (The `snowdesk-staging-db` instance in the dashboard is
+suspended and holds nothing staging uses.) Separate databases are not
 optional: [`build.sh`](../bin/build.sh) runs `migrate` on every deploy, so a
 staging deploy applies migrations to whatever database the staging service
 is wired to. If staging pointed at the production database,
@@ -107,18 +110,16 @@ has its own `DATABASE_URL`, `SECRET_KEY`, `ALLOWED_HOSTS`, and email target
 (its own env group in Render).
 
 Staging has **no scheduler and no task worker**, so its database does not
-ingest bulletins on its own. [`bin/sync-staging-data`](../bin/sync-staging-data)
-(SNOW-729/736) copies the provider-derived tables out of production instead —
-bulletins, region ratings, weather and the curated resort estate, and no user
-data whatsoever. It is run by hand: the `snowdesk-staging-data-sync` cron job
-that ran it nightly at 07:20 UTC was disabled on 2026-08-27 and its
-`render.yaml` block is commented out. Setup, the first full load, and skipped-row triage:
-[`runbooks/refresh-staging-from-production.md`](runbooks/refresh-staging-from-production.md).
-Day to day, the `snowdesk-staging-data-pull` cron job runs
-`pull_production_data --commit` at 07:20 UTC (SNOW-1200), pulling what
-changed from production's HTTPS data feed, idempotently and without
-clearing anything ([`data-feed.md`](data-feed.md), SNOW-1197); the script
-stays as the wholesale reset. A manual `fetch_bulletins` run against
+ingest bulletins on its own. Day to day, the `snowdesk-staging-data-pull`
+cron job runs `pull_reference_data --commit` at 07:20 UTC (SNOW-1200,
+SNOW-1272). It reads production's HTTPS data feed at `/api/data/v2/`: the
+curated estate whole, with its tombstones, and the last 14 days of
+bulletins, day ratings and weather. Every apply is idempotent and nothing is
+cleared ([`data-feed.md`](data-feed.md)). No user data crosses.
+[`bin/sync-staging-data`](../bin/sync-staging-data) (SNOW-729/736) stays as
+the manual wholesale reset, a `pg_dump`/`psql` copy of the provider-derived
+tables; it no longer runs on a schedule. Setup and triage:
+[`runbooks/refresh-staging-from-production.md`](runbooks/refresh-staging-from-production.md). A manual `fetch_bulletins` run against
 staging still works, but is no longer the way staging gets its data. Because there is no `db_worker` to consume the
 django-tasks-db queue, staging runs `config.settings.staging`
 (`DJANGO_SETTINGS_MODULE` pinned in [`render.yaml`](../render.yaml)), which
@@ -532,7 +533,7 @@ to `main`, or that merge deploys to production.
    from `main` to `release` (`snowdesk-website`, `snowdesk-scheduler`,
    `snowdesk-background-tasks`).
 3. Render dashboard: create the staging web service tracking `main`, wired
-   to its own Postgres and env group.
+   to its own database and env group.
 4. GitHub: protect `release` with the "Release branch" ruleset — require
    status checks, block force-pushes (`non_fast_forward`) and deletion, and
    do **not** require a pull request (a fast-forward advance is a direct

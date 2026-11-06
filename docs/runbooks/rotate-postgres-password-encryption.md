@@ -47,10 +47,9 @@ application role, read through its own env group.
 | Staging | `snowdesk-staging-data-pull` | cron, 07:20 UTC (`pull_reference_data --commit`) | its next run after the env-group save |
 
 All three production services read `fromGroup: Production`; both staging
-consumers read `fromGroup: Staging`. The commented-out
-`snowdesk-staging-data-sync` cron is disabled in the Blueprint — **confirm in
-the dashboard that it is suspended or deleted** rather than assume so. If it
-still exists, it is a third staging consumer.
+consumers read `fromGroup: Staging`. The old `snowdesk-staging-data-sync`
+cron is gone from the Blueprint and from Render (checked 2026-11-06), so
+there is no third staging consumer.
 
 `PRODUCTION_DATABASE_URL` (the `staging_sync` DSN on the Staging env group) is
 a different role and is **not** touched by this runbook.

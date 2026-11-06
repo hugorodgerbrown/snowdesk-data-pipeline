@@ -1,0 +1,220 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 990" width="1600" height="990" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <!-- docs/img/architecture-runtime.svg — how Snowdesk runs (docs/architecture.md → Runtime). Hand-written; edit the text in place. -->
+  <style>
+    .title { font-size: 26px; font-weight: 700; fill: #0f172a; }
+    .sub { font-size: 14px; fill: #475569; }
+    .zone { font-size: 15px; font-weight: 700; fill: #0f172a; }
+    .zsub { font-size: 12.5px; fill: #475569; }
+    .h { font-size: 15px; font-weight: 700; fill: #0f172a; }
+    .t { font-size: 12.5px; fill: #334155; }
+    .b { font-size: 12.5px; font-weight: 600; fill: #0f172a; }
+    .m { white-space: pre; font-size: 12px; fill: #334155; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+    .note { font-size: 12px; fill: #64748b; font-style: italic; }
+    .lab { font-size: 12px; fill: #1e293b; font-weight: 600; }
+    .wire { stroke: #334155; stroke-width: 1.8; fill: none; }
+    .task { stroke: #7c3aed; stroke-width: 1.8; fill: none; stroke-dasharray: 6 4; }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#334155"/></marker>
+    <marker id="p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker>
+  </defs>
+
+  <rect width="1600" height="990" fill="#ffffff"/>
+  <text x="30" y="44" class="title">How Snowdesk runs</text>
+  <text x="30" y="68" class="sub">Render hosts the Django app; Cloudflare hosts the map tiles. Checked against render.yaml, schedule.py and the Render dashboard on 6 Nov 2026.</text>
+
+  <!-- ===================== Column A: outside sources ===================== -->
+  <rect x="30" y="90" width="280" height="450" rx="12" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="46" y="116" class="zone">Data sources</text>
+  <text x="46" y="134" class="zsub">fetched on the scheduler's timetable</text>
+  <text x="46" y="166" class="b">Avalanche bulletins (CAAML)</text>
+  <text x="46" y="185" class="t">SLF — Switzerland</text>
+  <text x="46" y="203" class="t">ALBINA — the EUREGIO regions</text>
+  <text x="46" y="221" class="t">Météo-France — French massifs</text>
+  <text x="46" y="256" class="b">Weather</text>
+  <text x="46" y="275" class="t">Open-Meteo — forecast, history,</text>
+  <text x="46" y="293" class="t">elevation</text>
+  <text x="46" y="328" class="b">Reference data (weekly)</text>
+  <text x="46" y="347" class="t">swisstopo ski-touring network</text>
+  <text x="46" y="365" class="t">SAC ski tours</text>
+  <text x="46" y="383" class="t">FOEN wildlife rest zones</text>
+  <text x="46" y="418" class="b">On demand</text>
+  <text x="46" y="437" class="t">what3words — addresses for pins</text>
+  <text x="46" y="455" class="t">Open-Meteo — one location's fetch</text>
+  <text x="46" y="490" class="note">HTTP and translators: apps/ingest/sources/</text>
+  <text x="46" y="508" class="note">Provider details: apps/bulletins/CLAUDE.md</text>
+
+  <rect x="30" y="570" width="280" height="380" rx="12" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="46" y="596" class="zone">Other outside services</text>
+  <text x="46" y="628" class="b">Resend</text>
+  <text x="46" y="646" class="t">SMTP for all email, sent by the worker</text>
+  <text x="46" y="676" class="b">Web Push services</text>
+  <text x="46" y="694" class="t">notifications, via pywebpush</text>
+  <text x="46" y="724" class="b">Sentry</text>
+  <text x="46" y="742" class="t">errors from every service</text>
+  <text x="46" y="772" class="b">fivebar</text>
+  <text x="46" y="790" class="t">page analytics and goals</text>
+  <text x="46" y="820" class="b">MaxMind GeoLite2</text>
+  <text x="46" y="838" class="t">downloaded at production build</text>
+  <text x="46" y="868" class="b">Other basemaps (browser)</text>
+  <text x="46" y="886" class="t">swisstopo, basemap.at, IGN</text>
+  <text x="46" y="916" class="b">Mapterhorn / AWS Terrarium</text>
+  <text x="46" y="934" class="t">3-D relief outside our own copy</text>
+
+  <!-- ===================== Column B: Render ===================== -->
+  <rect x="340" y="90" width="660" height="450" rx="12" fill="#eff6ff" stroke="#60a5fa" stroke-width="1.5"/>
+  <text x="356" y="116" class="zone">Render · Production · Frankfurt</text>
+  <text x="356" y="134" class="zsub">deploys the release branch when its checks pass · env group "Production"</text>
+
+  <rect x="360" y="148" width="300" height="212" rx="10" fill="#ffffff" stroke="#93c5fd"/>
+  <text x="376" y="172" class="h">snowdesk-scheduler</text>
+  <text x="376" y="190" class="t">worker · run_scheduler (APScheduler)</text>
+  <text x="376" y="216" class="m">hourly  fetch_bulletins :02 :07</text>
+  <text x="376" y="233" class="m">        send_bulletin_alerts :10</text>
+  <text x="376" y="250" class="m">        backfill_weather :20</text>
+  <text x="376" y="267" class="m">        mirror_reference_data :40</text>
+  <text x="376" y="284" class="m">        check_ingest :50</text>
+  <text x="376" y="301" class="m">6-hourly fetch_weather</text>
+  <text x="376" y="318" class="m">nightly purges, renders, w3w</text>
+  <text x="376" y="335" class="m">weekly  ski tours, rest zones</text>
+  <text x="376" y="352" class="note">Full timetable: schedule.py</text>
+
+  <rect x="680" y="148" width="300" height="214" rx="10" fill="#ffffff" stroke="#93c5fd"/>
+  <text x="696" y="172" class="h">snowdesk-background-tasks</text>
+  <text x="696" y="190" class="t">worker · db_worker (django-tasks-db)</text>
+  <text x="696" y="216" class="t">Runs each task queued in the database:</text>
+  <text x="696" y="238" class="t">• account and bulletin-alert email</text>
+  <text x="696" y="258" class="t">• Web Push</text>
+  <text x="696" y="278" class="t">• bulk commands, one task per row</text>
+  <text x="696" y="296" class="t">   (enqueue_each, paced, low priority)</text>
+  <text x="696" y="316" class="t">• render-model and track rebuilds</text>
+  <text x="696" y="336" class="t">• ops MCP run_command</text>
+  <text x="696" y="354" class="note">Email leaves via Resend, push via pywebpush.</text>
+
+  <rect x="360" y="378" width="620" height="146" rx="10" fill="#ffffff" stroke="#93c5fd"/>
+  <text x="376" y="402" class="h">snowdesk-website</text>
+  <text x="526" y="402" class="t">web · gunicorn · snowdesk.info · the only service that migrates</text>
+  <text x="376" y="428" class="m">/  /map/  /account/  /trips/</text>
+  <text x="376" y="446" class="m">/api/</text>
+  <text x="430" y="446" class="t">JSON for the map and PWA</text>
+  <text x="376" y="464" class="m">/_components/</text>
+  <text x="484" y="464" class="t">staff component library</text>
+  <text x="376" y="482" class="m">/livez</text>
+  <text x="430" y="482" class="t">Render's probe ·</text>
+  <text x="530" y="482" class="m">/healthz</text>
+  <text x="594" y="482" class="t">monitor</text>
+  <text x="680" y="428" class="m">/api/mcp/</text>
+  <text x="770" y="428" class="t">public MCP tools</text>
+  <text x="680" y="446" class="m">/api/ops/mcp/</text>
+  <text x="790" y="446" class="t">staff ops MCP tools</text>
+  <text x="680" y="464" class="m">/oauth/</text>
+  <text x="742" y="464" class="t">MCP OAuth (mcp-auth)</text>
+  <text x="680" y="482" class="m">/api/data/v2/</text>
+  <text x="790" y="482" class="t">data feed, for staging</text>
+  <text x="376" y="510" class="note">Queues email and push on the task table instead of sending them in the request.</text>
+
+  <!-- Postgres -->
+  <rect x="340" y="570" width="660" height="120" rx="12" fill="#ecfdf5" stroke="#34d399" stroke-width="1.5"/>
+  <text x="356" y="596" class="zone">Render Postgres 18 · snowdesk-database</text>
+  <text x="356" y="614" class="zsub">one instance holding two databases</text>
+  <rect x="360" y="626" width="300" height="52" rx="8" fill="#ffffff" stroke="#6ee7b7"/>
+  <text x="376" y="648" class="b">snowdeskdb · production</text>
+  <text x="376" y="666" class="t">data, task queue, cache table</text>
+  <rect x="680" y="626" width="300" height="52" rx="8" fill="#ffffff" stroke="#6ee7b7"/>
+  <text x="696" y="648" class="b">snowdesk_staging · staging</text>
+  <text x="696" y="666" class="t">own DATABASE_URL, own migrations</text>
+
+  <!-- Staging -->
+  <rect x="340" y="720" width="660" height="230" rx="12" fill="#fffbeb" stroke="#fbbf24" stroke-width="1.5"/>
+  <text x="356" y="746" class="zone">Render · Staging · Frankfurt</text>
+  <text x="356" y="764" class="zsub">deploys main when its checks pass · env group "Staging" · no scheduler, no worker</text>
+
+  <rect x="360" y="780" width="300" height="152" rx="10" fill="#ffffff" stroke="#fcd34d"/>
+  <text x="376" y="804" class="h">snowdesk-staging-data-pull</text>
+  <text x="376" y="822" class="t">cron · 07:20 UTC daily</text>
+  <text x="376" y="846" class="m">pull_reference_data --commit</text>
+  <text x="376" y="870" class="t">Reads the estate whole and the last</text>
+  <text x="376" y="888" class="t">14 days of bulletins, ratings and</text>
+  <text x="376" y="906" class="t">weather from production's data feed.</text>
+  <text x="376" y="924" class="note">No user data crosses.</text>
+
+  <rect x="680" y="780" width="300" height="152" rx="10" fill="#ffffff" stroke="#fcd34d"/>
+  <text x="696" y="804" class="h">snowdesk-staging</text>
+  <text x="696" y="822" class="t">web · staging.snowdesk.info</text>
+  <text x="696" y="846" class="m">config.settings.staging</text>
+  <text x="696" y="870" class="t">ImmediateBackend: tasks run inline,</text>
+  <text x="696" y="888" class="t">in the request, because nothing</text>
+  <text x="696" y="906" class="t">would consume a queue.</text>
+  <text x="696" y="924" class="note">Never downloads GeoLite2.</text>
+
+  <!-- ===================== Column C: people, tiles ===================== -->
+  <rect x="1040" y="90" width="530" height="170" rx="12" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="1056" y="116" class="zone">People and agents</text>
+  <text x="1056" y="146" class="b">Browser and installed PWA</text>
+  <text x="1056" y="165" class="t">HTMX pages, the MapLibre map, a service worker that keeps</text>
+  <text x="1056" y="183" class="t">downloaded areas for offline use</text>
+  <text x="1056" y="214" class="b">MCP clients, such as Claude</text>
+  <text x="1056" y="233" class="t">public tools for anyone signed in; ops tools for staff</text>
+
+  <rect x="1040" y="300" width="530" height="350" rx="12" fill="#fff7ed" stroke="#fb923c" stroke-width="1.5"/>
+  <text x="1056" y="326" class="zone">Cloudflare · tiles.snowdesk-data.info</text>
+  <text x="1056" y="344" class="zsub">a Worker in front of the snowdesk-tiles R2 bucket · its own domain,</text>
+  <text x="1056" y="361" class="zsub">so no snowdesk.info cookie rides on tile requests</text>
+  <text x="1056" y="392" class="m">/styles/liberty</text>
+  <text x="1056" y="410" class="t">basemap style, sprites, glyphs · browser</text>
+  <text x="1056" y="438" class="m">/tiles/&lt;v&gt;/{z}/{x}/{y}.mvt</text>
+  <text x="1056" y="456" class="t">vector tiles to z14, read from snowdesk.pmtiles · browser</text>
+  <text x="1056" y="484" class="m">/terrain/v1/</text>
+  <text x="1056" y="502" class="t">Int16 heights on a 5 m grid, Switzerland · Django (track.terrain)</text>
+  <text x="1056" y="530" class="m">/terrain-class/v1/{z}/{x}/{y}.png</text>
+  <text x="1056" y="548" class="t">height, slope band, aspect · browser terrain filter and slope layer</text>
+  <text x="1056" y="576" class="m">/dem/&lt;v&gt;/{z}/{x}/{y}.webp</text>
+  <text x="1056" y="594" class="t">copy of Mapterhorn relief, supported area only · 3-D map</text>
+  <text x="1056" y="626" class="note">An absent tile answers 204, never 404. Each version is cached as immutable.</text>
+
+  <rect x="1040" y="690" width="530" height="260" rx="12" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="1056" y="716" class="zone">snowdesk-tiles repo</text>
+  <text x="1056" y="734" class="zsub">builds on a throwaway VM, then publishes to R2 · no Django</text>
+  <text x="1056" y="766" class="b">Basemap</text>
+  <text x="1056" y="784" class="t">planetiler over OpenStreetMap → snowdesk.pmtiles; Liberty style</text>
+  <text x="1056" y="802" class="t">rewritten to our origin (rewrite_style.py)</text>
+  <text x="1056" y="830" class="b">Terrain</text>
+  <text x="1056" y="848" class="t">swissALTI3D → the height grid and the terrain-class tiles</text>
+  <text x="1056" y="876" class="b">3-D relief</text>
+  <text x="1056" y="894" class="t">Mapterhorn archives clipped to the area that this repo's</text>
+  <text x="1056" y="912" class="m">export_supported_area</text>
+  <text x="1222" y="912" class="t">writes</text>
+  <text x="1056" y="936" class="note">Also owns the Worker and its CORS allowlist (worker/wrangler.toml).</text>
+
+  <!-- ===================== Wires ===================== -->
+  <!-- sources -> scheduler -->
+  <path class="wire" d="M310,250 L358,250" marker-end="url(#a)"/>
+  <!-- scheduler -> worker (enqueue) -->
+  <path class="task" d="M660,200 L678,200" marker-end="url(#p)"/>
+  <!-- web -> worker (enqueue) -->
+  <path class="task" d="M830,378 L830,362" marker-end="url(#p)"/>
+  <!-- production services -> snowdeskdb -->
+  <path class="wire" d="M510,541 L510,568" marker-end="url(#a)" marker-start="url(#a)"/>
+  <text x="520" y="559" class="lab">all three use snowdeskdb</text>
+  <!-- staging web -> snowdesk_staging -->
+  <path class="wire" d="M830,719 L830,692" marker-end="url(#a)" marker-start="url(#a)"/>
+  <text x="840" y="710" class="lab">uses snowdesk_staging</text>
+  <!-- staging cron -> production data feed -->
+  <path class="wire" d="M360,856 L329,856 L329,500 L358,500" marker-end="url(#a)"/>
+  <text x="323" y="840" class="lab" transform="rotate(-90 323 840)">HTTPS /api/data/v2/ · OAuth client credentials</text>
+  <!-- browsers -> website -->
+  <path class="wire" d="M1040,175 L1015,175 L1015,430 L982,430" marker-end="url(#a)"/>
+  <!-- browsers -> tiles -->
+  <path class="wire" d="M1305,260 L1305,298" marker-end="url(#a)"/>
+  <text x="1315" y="284" class="lab">map tiles, straight from the browser</text>
+  <!-- website (Django) -> terrain grid -->
+  <path class="wire" d="M980,494 L1038,494" marker-end="url(#a)"/>
+  <!-- tiles build -> bucket -->
+  <path class="wire" d="M1305,690 L1305,652" marker-end="url(#a)"/>
+  <text x="1315" y="676" class="lab">publish</text>
+  <!-- Legend -->
+  <line x1="30" y1="972" x2="62" y2="972" class="wire" marker-end="url(#a)"/>
+  <text x="70" y="976" class="t">request or data flow</text>
+  <line x1="220" y1="972" x2="252" y2="972" class="task" marker-end="url(#p)"/>
+  <text x="260" y="976" class="t">task queued on the database, run by db_worker</text>
+</svg>
