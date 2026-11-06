@@ -499,6 +499,8 @@ function declineReplace() {
 let mapStub;
 let cachesStub;
 let dbRows;
+/** SNOW-1453: the blob the tiles endpoint answers with; the elevation block swaps it. */
+let regionBlob = REGION_BLOB;
 /** The report `pwaWarmCache`'s stub hands back for the NEXT run. */
 let nextResult;
 
@@ -522,7 +524,7 @@ beforeAll(async () => {
       // but it has to BE an answer: an endpoint that cannot be read makes
       // the plan short, which is a failed run rather than a quiet one.
       if (href.includes('area-content')) body = { regions: [], weather: [], resorts: [] };
-      if (href.includes('region-basemap-tiles')) body = REGION_BLOB;
+      if (href.includes('region-basemap-tiles')) body = regionBlob;
       return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
     }),
   );
@@ -543,6 +545,9 @@ beforeAll(async () => {
   await import('../../static/js/basemap_download_runner.js');
   // The confirm's size figure goes through this module's `formatMegabytes`.
   await import('../../static/js/basemap_manage_core.js');
+  // SNOW-1453: the terrain coverage the elevation tiles are clipped to.
+  await import('../../static/js/slope_classes_core.js');
+  await import('../../static/js/terrain_filter_core.js');
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
   loadMapBundle();
@@ -885,5 +890,61 @@ describe('the replaced basemap\'s glyphs (SNOW-871)', () => {
     await selectRegion('done');
 
     expect(recordedRegion().glyphPrefix).toBeUndefined();
+  });
+});
+
+// SNOW-1453: a re-download after a seasonal `<version>` bump takes the old
+// version's elevation tiles out of the bucket, derived under the superseded
+// record's own stamp, and spares this run's.
+describe('the superseded elevation tiles (SNOW-1453)', () => {
+  const DEM_OLD = 'https://dem.example.invalid/dem/2025-11/{z}/{x}/{y}.webp';
+  const DEM_NEW = 'https://dem.example.invalid/dem/2026-11/{z}/{x}/{y}.webp';
+  const TERRAIN_TEMPLATE = 'https://terrain.example.invalid/terrain-class/v2/{z}/{x}/{y}.png';
+  // A z13 row as well as the z14 tile: elevation derives from z10-13.
+  const BLOB = { ...REGION_BLOB, count: 2, z: { 13: [4288, 4288, 2905, 2905], ...REGION_BLOB.z } };
+  let toggle;
+
+  const elevationURLs = (template) =>
+    self.pwaBasemapDownloadCore.elevationTileURLs(
+      template,
+      BLOB,
+      self.pwaTerrainFilterCore.COVERAGE_BOUNDS,
+    );
+
+  beforeAll(() => {
+    regionBlob = BLOB;
+    document.getElementById('map').dataset.terrainClassTileUrl = TERRAIN_TEMPLATE;
+    toggle = document.createElement('button');
+    toggle.id = 'map-view-toggle';
+    toggle.dataset.demTileUrl = DEM_NEW;
+    document.body.appendChild(toggle);
+  });
+
+  afterAll(() => {
+    regionBlob = REGION_BLOB;
+    delete document.getElementById('map').dataset.terrainClassTileUrl;
+    toggle.remove();
+  });
+
+  it("prunes the old template's elevation tiles once the re-download lands", async () => {
+    const stale = elevationURLs(DEM_OLD);
+    expect(stale.length).toBeGreaterThan(0);
+    seedPriorDownload({
+      template: [[TEMPLATE_A]],
+      basemapKey: 'openfreemap_liberty',
+      deps: [STYLE_A, ...SPRITE_URLS, TILEJSON],
+      tiles: stale,
+    });
+    Object.assign(recordedRegion(), { z: BLOB.z, terrain: true, elevation: DEM_OLD });
+    switchBasemap('openfreemap_liberty', TEMPLATE_A);
+    await selectRegion('idle');
+
+    btn().click();
+    await waitFor(() => btn().dataset.downloadState === 'done', 5000);
+
+    const urls = bucketURLs();
+    for (const url of stale) expect(urls).not.toContain(url);
+    for (const url of elevationURLs(DEM_NEW)) expect(urls).toContain(url);
+    expect(recordedRegion().elevation).toBe(DEM_NEW);
   });
 });
