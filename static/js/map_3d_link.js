@@ -22,9 +22,13 @@
  *
  * PREFETCH. The moment a pointer, a finger or focus reaches the roundel,
  * the elevation tiles the 3-D view asks for first are fetched into the
- * browser's cache (map_3d_core.prefetchDemTiles; Mapterhorn caches them
- * for 7 days), so the terrain is there when the page opens. Once per
- * view: moving the map arms it again.
+ * browser's cache (map_3d_terrain.createPrefetcher, over
+ * map_3d_core.prefetchDemTiles; Mapterhorn caches them for 7 days), so the
+ * terrain is there when the page opens. Once per view: moving the map arms
+ * it again.
+ *
+ * A reader in both map_3d and map_modes gets /map/'s own 3-D view instead
+ * (map_view_3d.js, SNOW-1449), and this link is not rendered for them.
  */
 (function () {
   'use strict';
@@ -52,23 +56,18 @@
     }
   }
 
-  const demTemplate = link.dataset.demTileUrl || '';
-  let prefetched = '';
+  // map_3d_terrain.js's prefetch (SNOW-1449), shared with the 3D roundel
+  // that /map/'s own 3-D view puts in this link's place.
+  const prefetchAround = self.pwaMap3dTerrain
+    ? self.pwaMap3dTerrain.createPrefetcher(link.dataset.demTileUrl || '')
+    : null;
 
   /** Warm the cache with the elevation tiles around the 2-D view. */
   function prefetch() {
     const state = /** @type {any} */ (window).snowdeskMapState;
     const map = state && state.map;
-    if (!map || !demTemplate) return;
-    const centre = map.getCenter();
-    const zoom = map.getZoom();
-    const tiles = core.prefetchDemTiles(centre, zoom);
-    const key = tiles.map((/** @type {{z: number, x: number, y: number}} */ t) => `${t.z}/${t.x}/${t.y}`).join(' ');
-    if (key === prefetched) return;
-    prefetched = key;
-    for (const tile of tiles) {
-      fetch(core.tileUrl(demTemplate, tile), { credentials: 'omit' }).catch(() => {});
-    }
+    if (!map || !prefetchAround) return;
+    prefetchAround(map.getCenter(), map.getZoom());
   }
 
   for (const type of ['pointerenter', 'focus', 'touchstart']) {

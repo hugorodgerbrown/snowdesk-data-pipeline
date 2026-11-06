@@ -48,7 +48,9 @@
  * measuring tool for the 3-D budget, not a reader-facing feature.
  *
  * Every URL comes from a data attribute on #map-3d (apps/map/map_3d.py).
- * The pure parts are in map_3d_core.js.
+ * The pure parts are in map_3d_core.js; the elevation protocol and the
+ * terrain install, shared with /map/'s 3-D view (SNOW-1449), are in
+ * map_3d_terrain.js.
  */
 (function () {
   'use strict';
@@ -56,14 +58,14 @@
   const el = document.getElementById('map-3d');
   const core = self.pwaMap3dCore;
   const terrainCore = self.pwaTerrainFilterCore;
+  const terrain = self.pwaMap3dTerrain;
   const maplibre = /** @type {any} */ (self).maplibregl;
-  if (!el || !core || !maplibre) return;
+  if (!el || !core || !terrain || !maplibre) return;
 
   const data = el.dataset;
   const COLOURS = core.COLOURS;
   const STEEP_SOURCE = 'map-3d-steep';
   const STEEP_LAYER = 'map-3d-steep-raster';
-  const SUNLIGHT_LAYER = 'map-3d-sunlight';
   const TOURS_SOURCE = 'map-3d-tours';
   const ROUTES_SOURCE = 'map-3d-routes';
   const RESORTS_SOURCE = 'map-3d-resorts';
@@ -151,39 +153,9 @@
 
   // ---- Elevation ----------------------------------------------------------
 
-  // Mapterhorn first, AWS when it fails (map_3d_core.createDemLoader). Both
-  // are fetched without credentials, as /map/'s 3D roundel prefetches them,
-  // so a prefetched tile is answered from the browser's cache.
-  const demLoader = core.createDemLoader({
-    primary: data.demTileUrl || '',
-    fallback: core.DEM_FALLBACK_TILE_URL,
-    fetchTile: (/** @type {string} */ url, /** @type {AbortSignal} */ signal) =>
-      fetch(url, { signal, credentials: 'omit' }),
-    enlarge: async (/** @type {Blob} */ blob) => {
-      const size = core.DEM_TILE_SIZE;
-      const image = await createImageBitmap(blob);
-      const canvas = document.createElement('canvas');
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(image, 0, 0, size, size);
-      image.close();
-      return createImageBitmap(canvas);
-    },
-  });
-  maplibre.addProtocol(
-    core.DEM_PROTOCOL,
-    /**
-     * @param {{url: string}} params
-     * @param {AbortController} abortController
-     */
-    (params, abortController) => {
-      const tile = core.parseDemUrl(params.url);
-      if (!tile) return Promise.reject(new Error(`map_3d: not an elevation url: ${params.url}`));
-      return demLoader.load(tile, abortController.signal);
-    },
-  );
+  // Mapterhorn first, AWS when it fails, through the protocol /map/'s 3-D
+  // view registers too (map_3d_terrain.js).
+  terrain.registerDemProtocol(maplibre, data.demTileUrl || '');
 
   // ---- Steep terrain ------------------------------------------------------
 
@@ -278,17 +250,8 @@
   // ---- Layers -------------------------------------------------------------
 
   map.on('load', async () => {
-    map.addSource(core.DEM_SOURCE_ID, core.demSource());
-    map.setTerrain(core.terrainSpec());
-    map.setSky(core.skySpec());
-    // Modelled sunlight from the north-west, under the basemap's labels and
-    // over its hachures, so the relief reads as form. It shades from the
-    // terrain's own elevation source, so it downloads nothing more.
-    const firstLabel = map.getStyle().layers.find((/** @type {any} */ l) => l.type === 'symbol');
-    map.addLayer(
-      { id: SUNLIGHT_LAYER, type: 'hillshade', source: core.DEM_SOURCE_ID, paint: core.sunlightPaint() },
-      firstLabel ? firstLabel.id : undefined,
-    );
+    // The relief, the sky and the north-west sunlight (map_3d_terrain.js).
+    terrain.installTerrain(map);
 
     if (steepEnabled) {
       map.addSource(STEEP_SOURCE, {

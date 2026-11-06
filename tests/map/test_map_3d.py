@@ -96,6 +96,19 @@ def test_the_flag_renders_the_map() -> None:
     assert content.index("js/terrain_filter_core.js") < content.index("js/map_3d.js")
 
 
+def test_the_terrain_helper_loads_between_the_core_and_the_map() -> None:
+    """SNOW-1449: map_3d.js installs its relief through map_3d_terrain.js.
+
+    The helper reads map_3d_core.js at parse time and map_3d.js reads the
+    helper at parse time, so the order is core, helper, map.
+    """
+    with override_flag("map_3d", active=True):
+        content = _signed_in().get(URL).content.decode()
+    core = content.index("js/map_3d_core.js")
+    helper = content.index("js/map_3d_terrain.js")
+    assert core < helper < content.index("js/map_3d.js")
+
+
 def test_the_page_carries_every_url_the_script_reads() -> None:
     """The style, DEM, tours, routes and resorts URLs ride on #map-3d."""
     dem = "https://tiles.example.test/dem/2026-11/{z}/{x}/{y}.webp"

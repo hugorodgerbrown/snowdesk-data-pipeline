@@ -9,6 +9,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/map_3d_core.js';
+import '../../static/js/map_3d_terrain.js';
 
 function fakeMap(pitch) {
   return {
