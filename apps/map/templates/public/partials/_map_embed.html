@@ -1669,8 +1669,8 @@ Optional context:
         {# calls the top of the stack now sits second.                       #}
         {% include "public/partials/_map_zoom_control.html" with zoom_camera_visible=zoom_camera_visible %}
         {# SNOW-1449: the compass, directly under the zoom roundel, for every   #}
-        {# reader. Shown while the map is not north-up, flat or in 3-D; a press #}
-        {# turns it back to north (static/js/map_compass.js).                   #}
+        {# reader, always shown, flat or in 3-D; a press turns the map back to  #}
+        {# north (static/js/map_compass.js).                                    #}
         {% include "public/partials/_map_compass.html" %}
         {# SNOW-794: the help roundel, moved here from the bottom-right stack — #}
         {# see the note at its old site for why. It TOPS this stack: both it and #}
@@ -2130,9 +2130,9 @@ Optional context:
                 {% trans "Search a region or resort by name. Locate centres the map on you. The number is your zoom: tap it to see what appears as you go closer." %}
             </p>
         </li>
-        {# SNOW-1449: the compass, shown only while the map is turned (a step  #}
-        {# whose target is hidden is dropped), and the 3D roundel, shown only  #}
-        {# in Terrain for a reader in map_3d and map_modes.                    #}
+        {# SNOW-1449: the compass, always shown, and the 3D roundel, shown     #}
+        {# only in Terrain for a reader in map_3d and map_modes (a step whose  #}
+        {# target is hidden is dropped).                                       #}
         <li data-help-target="#map-compass" data-help-chapter="move" data-help-title='{% trans "North" %}'>
             <p data-help-body>{% trans "The needle points north. Tap it to turn the map back to north." %}</p>
         </li>

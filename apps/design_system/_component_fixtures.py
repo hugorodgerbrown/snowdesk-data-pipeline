@@ -3478,10 +3478,8 @@ MAP_ZOOM_CONTROL_VARIANTS: tuple[dict[str, Any], ...] = (
 
 # ── Map compass (SNOW-1449) ─────────────────────────────────────────────────
 # The roundel under the zoom roundel at the top of the map's bottom-left
-# stack. On /map/ static/js/map_compass.js shows it whenever the map is not
-# north-up and turns the needle against the bearing; here each variant sets
-# both. North-up renders it hidden, as /map/ boots, so that variant shows
-# an empty slot.
+# stack, always shown. On /map/ static/js/map_compass.js turns the needle
+# against the bearing; here each variant sets it.
 
 
 def _compass_variant(caption: str, bearing: float) -> dict[str, Any]:
@@ -3489,14 +3487,13 @@ def _compass_variant(caption: str, bearing: float) -> dict[str, Any]:
     return {
         "caption": caption,
         "context": {
-            "compass_shown": abs(bearing) >= 0.5,
             "compass_needle": -bearing,
         },
     }
 
 
 MAP_COMPASS_VARIANTS: tuple[dict[str, Any], ...] = (
-    _compass_variant("North-up — hidden, as the map boots", 0),
+    _compass_variant("North-up, as the map boots", 0),
     _compass_variant("Turned 40° east — the needle swings back west", 40),
     _compass_variant("The 3-D view's opening heading (215°)", 215),
     _compass_variant("Turned 90° west", -90),

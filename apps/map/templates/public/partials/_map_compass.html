@@ -6,26 +6,23 @@ Included by _map_embed.html directly under the zoom roundel at the top of
 the bottom-left stack, and by the component library at
 /_components/?slug=map-compass.
 
-A small roundel, the zoom and help roundels' size, shown whenever the map
-is not north-up — flat or in 3-D, for every reader — and hidden when it
-is. The needle points at north, so it turns against the map's bearing; a
+A small roundel, the zoom and help roundels' size, always shown — north-up
+or turned, flat or in 3-D, for every reader. The needle points at north, so it turns against the map's bearing; a
 press turns the map back to north (static/js/map_compass.js, which keeps
 the pitch). The glyph is a north needle: its north half filled, its south
 half drawn in outline. It is not includes/_icon_compass.html, which is
 the wind mark.
 
-Context (all optional; on /map/ the script sets both from the map):
-* compass_shown  — bool; render the roundel shown. Unset, it renders
-                   hidden, as /map/ boots north-up.
+Context (optional; on /map/ the script sets it from the map):
 * compass_needle — number; the needle's turn in degrees, the map's bearing
-                   negated.
+                   negated. Unset, the needle points up, as /map/ boots
+                   north-up.
 {% endcomment %}
 <button
     id="map-compass"
     type="button"
     class="map-legend-toggle map-compass hover-affordance"
     aria-label='{% trans "Point north" %}'
-    {% if not compass_shown %}hidden{% endif %}
 >
     <svg
         width="18"

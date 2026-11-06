@@ -1628,8 +1628,8 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         description=(
             "The roundel directly under the zoom roundel in the map's "
             "bottom-left stack (SNOW-1449), the help and zoom roundels' size, "
-            "for every reader, flat or in 3-D. Hidden while the map is "
-            "north-up; shown once it turns. Its glyph is a north needle — the "
+            "for every reader, flat or in 3-D, always shown, north-up or "
+            "not. Its glyph is a north needle — the "
             "north half filled, the south half in outline, not the wind mark "
             "— turned against the map's bearing so it always points north. A "
             "press eases the map back to north and keeps the tilt. Its "

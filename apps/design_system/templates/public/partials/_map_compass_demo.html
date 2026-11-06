@@ -3,10 +3,6 @@ public/partials/_map_compass_demo.html — component-library wrapper for the
 map's compass (SNOW-1449), /_components/?slug=map-compass.
 
 Renders the same partial /map/ includes, on its own: each variant's context
-says whether it is shown and how far the needle is turned. No JS is wired on
-this page. The north-up variant renders the roundel hidden, as /map/ boots,
-so its slot is empty.
+says how far the needle is turned. No JS is wired on this page.
 {% endcomment %}
-<div class="map-compass-demo">
-    {% include "public/partials/_map_compass.html" %}
-</div>
+{% include "public/partials/_map_compass.html" %}

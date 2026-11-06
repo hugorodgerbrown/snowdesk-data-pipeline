@@ -134,7 +134,9 @@ reader, keep the "3D" link to `/map/3d/`.
   `aria-pressed` says whether it is on.
 - **The compass** (`public/partials/_map_compass.html`,
   `static/js/map_compass.js`) sits under the zoom roundel for every reader,
-  in both views, shown whenever the map is not north-up.
+  in both views, always shown. It first showed only while the map was not
+  north-up; Hugo asked for it at all times (6 Nov 2026), so the reader
+  always knows which way the map faces.
 
 ## When the device cannot keep up (SNOW-1455, 6 Nov 2026)
 
