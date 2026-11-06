@@ -794,7 +794,8 @@ def test_map_view_passes_basemap_countries_in_context() -> None:
     response = client.get(reverse("public:map"))
     by_key = {bm["key"]: bm for bm in response.context["basemaps"]}
     assert by_key["openfreemap_liberty"]["countries"] == "ch fr at it"
-    assert by_key["swisstopo_winter"]["countries"] == "ch"
+    # SNOW-1457: swisstopo winter draws its raster into all three neighbours.
+    assert by_key["swisstopo_winter"]["countries"] == "ch fr at it"
     assert by_key["ign_plan"]["countries"] == "fr"
     assert by_key["basemap_at"]["countries"] == "at"
 
@@ -3540,3 +3541,18 @@ def test_the_3d_roundel_prefetches_from_the_dem_setting() -> None:
     ):
         content = client.get(reverse("public:map")).content.decode()
     assert f'data-dem-tile-url="{dem}"' in content
+
+
+@pytest.mark.django_db
+def test_map_page_says_3d_covers_the_border_areas() -> None:
+    """
+    SNOW-1457: 3D opens wherever swisstopo's raster winter map has detail,
+    so the two lines that explain a closed 3D name the border areas too.
+    """
+    client = Client()
+    client.force_login(UserFactory.create())
+    with override_flag("map_3d", active=True), override_flag("map_modes", active=True):
+        content = client.get(reverse("public:map")).content.decode()
+    assert "3D covers Switzerland and its border areas for now" in content
+    assert "Back in 2D: 3D covers Switzerland and its border areas for now." in content
+    assert "3D covers Switzerland for now" not in content

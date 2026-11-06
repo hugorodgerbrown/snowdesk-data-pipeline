@@ -94,16 +94,22 @@
   const EASE_MS = 600;
   /** Zoom-out input closer together than this is one attempt. */
   const ATTEMPT_GAP_MS = 700;
-  const COVERAGE = terrainCore ? terrainCore.COVERAGE_BOUNDS : null;
+  // SNOW-1457: where 3D opens is where swisstopo's raster winter map has
+  // detail (swisstopo_edge_core.js GATE_OUTLINE), not the swissALTI3D box,
+  // which Terrain mode's slope tiles keep.
+  const edgeCore = self.pwaSwisstopoEdgeCore;
+  const COVERAGE = edgeCore
+    ? edgeCore.GATE_OUTLINE
+    : (terrainCore ? terrainCore.COVERAGE_BOUNDS : null);
 
   const STRINGS = self.pwaStrings.read('map-view-strings-template', {
     basemap: '3D uses the swisstopo winter map; yours comes back in 2D.',
     'why-zoom': 'Zoom in to see 3D',
     'why-offline': '3D needs a connection',
-    'why-coverage': '3D covers Switzerland for now',
+    'why-coverage': '3D covers Switzerland and its border areas for now',
     'why-editing': 'Finish drawing the route to see 3D',
     'left-offline': 'Back in 2D: 3D needs a connection.',
-    'left-coverage': 'Back in 2D: 3D covers Switzerland for now.',
+    'left-coverage': 'Back in 2D: 3D covers Switzerland and its border areas for now.',
     'why-device': '3D is not available on this device',
     'why-slow': '3D is too slow on this device',
     'why-webgl': '3D comes back once the map\'s graphics have reset',
@@ -207,8 +213,9 @@
 
   /**
    * Draw `key`, unless the map already is. The picker's stored choice is
-   * not touched. An ESRI basemap is fetched and rewritten first
-   * (map_state.js resolveBasemapStyle), so the swap is awaited.
+   * not touched. An ESRI basemap, and swisstopo winter (SNOW-1457), is
+   * fetched and rewritten first (map_state.js resolveBasemapStyle), so the
+   * swap is awaited.
    *
    * @param {string} key
    * @returns {boolean} Whether a swap started.

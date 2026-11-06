@@ -95,14 +95,17 @@ reader, keep the "3D" link to `/map/3d/`.
 - **The rules** are `static/js/map_view_core.js` (`self.pwaMapViewCore`):
   the `?view=3d` parameter beside `?mode=terrain` (read only in Terrain
   until SNOW-1452); `availability` (online, no route being drawn, the centre inside
-  `terrain_filter_core.COVERAGE_BOUNDS`, which is passed in rather than
-  copied, and zoom 9 or more); the basemap (swisstopo winter in 3-D, the
+  the coverage, which is passed in rather than copied, and zoom 9 or more);
+  since SNOW-1457 the coverage is `swisstopo_edge_core.GATE_OUTLINE`,
+  where swisstopo's raster winter map has detail, in place of
+  `terrain_filter_core.COVERAGE_BOUNDS`
+  ([swisstopo-raster-beyond-the-border](swisstopo-raster-beyond-the-border.md)); the basemap (swisstopo winter in 3-D, the
   reader's own flat, the stored choice never written); and the boot camera
   (a flat boot zeroes a stored pitch). `map.js` reads it at parse time for
   the boot basemap and camera and for its reconnect `setStyle`, so a
   reconnect in 3-D cannot swap swisstopo winter away.
 - **Nothing about the view is stored.** A bare `/map/` always opens flat;
-  `?view=3d` outside Switzerland is stripped at boot. A
+  `?view=3d` outside that coverage is stripped at boot. A
   date write keeps it (`map_mode_core.withDate`).
 - **The runner** is `static/js/map_view_3d.js` (`window.pwaMapView`). It
   reuses `map_3d_core` and the shared `static/js/map_3d_terrain.js`
@@ -120,7 +123,7 @@ reader, keep the "3D" link to `/map/3d/`.
   ceiling open the same drag tilts it, so the gesture that enters 3-D also
   carries the reader's tilt into it.
 - **Leaving.** The map goes flat, with a line, when it goes offline or is
-  panned out of Switzerland. Until SNOW-1452 it also went flat on a change
+  panned out of Switzerland and its border areas (SNOW-1457). Until SNOW-1452 it also went flat on a change
   to Conditions. Drawing a route takes the relief and the tilt away on
   swisstopo winter and gives them back when it ends.
 - **Two MapLibre 4.7.1 behaviours** shaped it. A `setStyle` stops a camera

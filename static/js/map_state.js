@@ -548,17 +548,38 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
 // uses a relative ``tile/{z}/{y}/{x}.pbf`` path that MapLibre cannot resolve
 // (it throws "Failed to construct 'Request': Failed to parse URL from tile/…"),
 // so nothing paints. Such styles must be fetched and their sources rewritten to
-// absolute tile URLs before ``setStyle`` sees them. IGN and swisstopo publish
-// MapLibre-native styles that load straight from their URL, so this only kicks
-// in for the keys listed here.
+// absolute tile URLs before ``setStyle`` sees them. IGN publishes a
+// MapLibre-native style that loads straight from its URL.
+//
+// SNOW-1457: swisstopo winter is fetched too, and swisstopo's raster winter
+// map spliced on top of it to draw beyond the Swiss border
+// (swisstopo_edge_core.js). Its light twin is left as it is. It is not in
+// this set: map.js boots it from its URL with `transformStyle` instead of
+// on an empty style.
 const ESRI_BASEMAP_KEYS = new Set(['basemap_at']);
 
 // Resolve a basemap (key, url) to a value ``setStyle``/the Map constructor
 // accepts. Native basemaps pass through as the URL string. ESRI basemaps are
 // fetched and each vector source's relative ``url`` is swapped for an absolute
 // ``tiles`` template following the ArcGIS VectorTileServer convention
-// (``<service>/tile/{z}/{y}/{x}.pbf``). Returns a Promise in the ESRI case.
+// (``<service>/tile/{z}/{y}/{x}.pbf``). swisstopo winter is fetched and gets
+// the raster beyond the border. Returns a Promise in every case.
+//
+// SNOW-1457: when swisstopo winter's style cannot be fetched (offline: the
+// service worker treats style documents as network-only) the URL itself is
+// returned, so ``setStyle`` fails the way a native basemap does and the
+// SNOW-483 fallback in map.js takes over, exactly as before this ticket.
 async function resolveBasemapStyle(key, url) {
+  const edge = self.pwaSwisstopoEdgeCore;
+  if (edge && key === edge.BASEMAP_KEY) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return url;
+      return edge.spliceStyle(await response.json());
+    } catch (_err) {
+      return url;
+    }
+  }
   if (!ESRI_BASEMAP_KEYS.has(key)) return url;
   const style = await (await fetch(url)).json();
   for (const src of Object.values(style.sources || {})) {

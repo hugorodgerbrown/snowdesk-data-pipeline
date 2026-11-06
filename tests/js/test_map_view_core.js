@@ -11,7 +11,9 @@
  *   - the device gate: no WebGL, or 2 GB or less on Android;
  *   - the basemap: swisstopo winter in 3D, the reader's own otherwise, and
  *     the preference never written;
- *   - the camera: a stored pitch boots flat, the bearing kept.
+ *   - the camera: a stored pitch boots flat, the bearing kept;
+ *   - covers() with a ring as well as a box: the 3D gate, swisstopo's
+ *     raster outline (SNOW-1457).
  */
 
 import { describe, expect, it } from 'vitest';
@@ -19,6 +21,7 @@ import { describe, expect, it } from 'vitest';
 import '../../static/js/map_view_core.js';
 import '../../static/js/slope_classes_core.js';
 import '../../static/js/terrain_filter_core.js';
+import '../../static/js/swisstopo_edge_core.js';
 
 const core = window.pwaMapViewCore;
 const { FLAT, THREE_D } = core.VIEWS;
@@ -123,6 +126,38 @@ describe('availability', () => {
 
   it('counts a centre it cannot read as outside', () => {
     expect(core.availability(input({ centre: { lng: NaN, lat: 46 } })).reason).toBe('coverage');
+  });
+});
+
+describe('covers, with the 3D gate outline (SNOW-1457)', () => {
+  const GATE = window.pwaSwisstopoEdgeCore.GATE_OUTLINE;
+
+  it.each([
+    ['Zermatt', { lng: 7.75, lat: 46.02 }],
+    ['the Arlberg', { lng: 10.21, lat: 47.13 }],
+    ['Aosta', { lng: 7.32, lat: 45.74 }],
+    ['Sölden', { lng: 11.01, lat: 46.97 }],
+    ['Chamonix', { lng: 6.87, lat: 45.92 }],
+  ])('counts %s inside', (_place, centre) => {
+    expect(core.covers(centre, GATE)).toBe(true);
+  });
+
+  it.each([
+    ['Innsbruck', { lng: 11.39, lat: 47.27 }],
+    ['Vienna', { lng: 16.37, lat: 48.21 }],
+    ['Grenoble', { lng: 5.72, lat: 45.19 }],
+  ])('counts %s outside', (_place, centre) => {
+    expect(core.covers(centre, GATE)).toBe(false);
+  });
+
+  it('opens 3D through availability with the ring passed in', () => {
+    expect(core.availability(input({ bounds: GATE, centre: { lng: 11.01, lat: 46.97 } })).enabled).toBe(true);
+    expect(core.availability(input({ bounds: GATE, centre: { lng: 16.37, lat: 48.21 } })).reason).toBe('coverage');
+  });
+
+  it('still reads a box as a box', () => {
+    expect(core.covers({ lng: 0.5, lat: 0.5 }, [0, 0, 1, 1])).toBe(true);
+    expect(core.covers({ lng: 1.5, lat: 0.5 }, [0, 0, 1, 1])).toBe(false);
   });
 });
 
