@@ -27,11 +27,15 @@ Usage:
     data-testid="wordmark-3d"
 >
     <text x="0" y="100" font-size="64" letter-spacing="-1.6" fill="currentColor">Snowdesk</text>
-    <g transform="rotate(-7 159.4 59)">
+    <g transform="rotate(-7 159.4 59)" stroke="currentColor" stroke-width="5.5">
         {# ds-lint-allow: SVG fill — the anaglyph red lens; red and cyan are the joke and stay the same in both themes, like the EAWS palette. #}
-        <rect x="93.1" y="36.9" width="28.6" height="22.1" rx="7" fill="#ff2a2a" fill-opacity=".9" stroke="currentColor" stroke-width="5.5" />
+        <g fill="#ff2a2a" fill-opacity=".9">
+            <rect x="93.1" y="36.9" width="28.6" height="22.1" rx="7" />
+        </g>
         {# ds-lint-allow: SVG fill — the anaglyph cyan lens, as above. #}
-        <rect x="130.8" y="36.9" width="28.6" height="22.1" rx="7" fill="#00b4ff" fill-opacity=".9" stroke="currentColor" stroke-width="5.5" />
-        <path d="M121.7 46.2 q4.55 -6.63 9.1 0" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round" />
+        <g fill="#00b4ff" fill-opacity=".9">
+            <rect x="130.8" y="36.9" width="28.6" height="22.1" rx="7" />
+        </g>
+        <path d="M121.7 46.2 q4.55 -6.63 9.1 0" fill="none" stroke-linecap="round" />
     </g>
 </svg>
