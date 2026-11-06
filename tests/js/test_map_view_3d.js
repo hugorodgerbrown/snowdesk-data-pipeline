@@ -218,6 +218,22 @@ describe('leaving 3-D', () => {
     expect(map.setStyle).toHaveBeenLastCalledWith({ rewritten: URLS.basemap_at }, { diff: false });
   });
 
+  it('lets a later swap win over an ESRI fetch still in flight', async () => {
+    const { map, button } = await boot({ stored: 'basemap_at' });
+    button.click();
+    await flush();
+    /** @type {(value: unknown) => void} */
+    let release = () => {};
+    env.resolveBasemapStyle.mockImplementationOnce(() => new Promise((r) => { release = r; }));
+    button.click(); // 2D: the ESRI fetch hangs
+    button.click(); // back to 3-D before it lands
+    await flush();
+    release({ rewritten: URLS.basemap_at });
+    await flush();
+    expect(map.setStyle).toHaveBeenLastCalledWith(URLS.swisstopo_winter, { diff: false });
+    expect(window.pwaMapView.get()).toBe('3d');
+  });
+
   it('keeps the elevation source and swaps nothing for a reader on swisstopo winter', async () => {
     const { map, button } = await boot({ stored: 'swisstopo_winter' });
     button.click();

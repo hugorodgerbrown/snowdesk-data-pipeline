@@ -151,8 +151,12 @@
     ? viewCore.BASEMAP_KEY
     : viewCore.basemapFor(viewCore.readView(location.search, mode()), preferredKey());
   // The picker is the other thing that changes it.
+  // Counts every swap, the picker's included, so a fetch that resolves after
+  // a later swap has started cannot draw over it.
+  let swapGeneration = 0;
   document.addEventListener('snowdesk:basemap-changing', (e) => {
     const detail = /** @type {CustomEvent} */ (e).detail;
+    swapGeneration += 1;
     if (detail && detail.key) drawn = detail.key;
   });
 
@@ -170,12 +174,17 @@
     if (!url) return false;
     document.dispatchEvent(new CustomEvent('snowdesk:basemap-changing', { detail: { key, url } }));
     drawn = key;
+    const generation = swapGeneration;
     const resolve = win.resolveBasemapStyle;
     // No diff: MapLibre 4.7.1 cannot diff a style that carries terrain (it
     // warns, aborts tile requests and rebuilds anyway), and the swap
     // replaces every source the basemap has.
     Promise.resolve(typeof resolve === 'function' ? resolve(key, url) : url)
-      .then((style) => map.setStyle(style, { diff: false }))
+      .then((style) => {
+        // A later swap started while this one was fetching; it wins.
+        if (generation !== swapGeneration) return;
+        map.setStyle(style, { diff: false });
+      })
       .catch((/** @type {unknown} */ err) => console.warn('map_view_3d: could not change the basemap', err));
     return true;
   };
