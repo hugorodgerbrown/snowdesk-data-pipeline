@@ -333,11 +333,7 @@
           TERRAIN_FILTER_ELIGIBLE
             ? [new URL(TERRAIN_CLASS_TILE_URL, window.location.href).origin]
             : [],
-        )
-        // SNOW-1457: swisstopo's raster beyond the border is fetched by the
-        // swisstopoedge:// protocol, whose own URLs have no origin, so the
-        // WMTS host it calls is seeded here for the same reason.
-        .concat(self.pwaSwisstopoEdgeCore ? [self.pwaSwisstopoEdgeCore.WMTS_ORIGIN] : []),
+        ),
     );
     const registerBasemapOrigins = (registration) => {
       const origins = [...basemapOrigins];
@@ -900,18 +896,15 @@
     { minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM, maxBounds: MAX_BOUNDS },
   );
   // SNOW-1449: the coverage half of the boot view. A ?view=3d whose camera
-  // opens outside 3D's coverage boots flat, and a flagged reader's address
-  // bar loses the parameter, so a copied link says what they see.
-  // SNOW-1457: that coverage is swisstopo_edge_core's GATE_OUTLINE, where
-  // the raster winter map has detail; terrain_filter_core's box is the
-  // fallback only if that core failed to load.
+  // opens outside the elevation's coverage (terrain_filter_core's
+  // COVERAGE_BOUNDS, the one copy of it) boots flat, and a flagged
+  // reader's address bar loses the parameter, so a copied link says what
+  // they see.
   if (bootView === '3d') {
     const centre = storedViewport
       ? { lng: storedViewport.center[0], lat: storedViewport.center[1] }
       : { lng: (DEFAULT_BOUNDS[0][0] + DEFAULT_BOUNDS[1][0]) / 2, lat: (DEFAULT_BOUNDS[0][1] + DEFAULT_BOUNDS[1][1]) / 2 };
-    const coverage = self.pwaSwisstopoEdgeCore
-      ? self.pwaSwisstopoEdgeCore.GATE_OUTLINE
-      : (self.pwaTerrainFilterCore ? self.pwaTerrainFilterCore.COVERAGE_BOUNDS : null);
+    const coverage = self.pwaTerrainFilterCore ? self.pwaTerrainFilterCore.COVERAGE_BOUNDS : null;
     if (!MAP_VIEW_CORE.covers(centre, coverage)) bootView = 'flat';
   }
   if (MAP_VIEW_ENABLED) {
@@ -953,11 +946,6 @@
   //
   // `let`, not `const`: it has to be assignable from inside the try. Every
   // read below is after the early return, so it is never null there.
-  // SNOW-1457: whether the boot basemap is swisstopo winter with the raster
-  // beyond the border spliced in (see the setStyle straight after the
-  // constructor).
-  const EDGE_CORE = self.pwaSwisstopoEdgeCore;
-  const bootsSpliced = !!EDGE_CORE && initialBasemapKey === EDGE_CORE.BASEMAP_KEY;
   let map = null;
   try {
     map = new maplibregl.Map({
@@ -966,9 +954,8 @@
       // ESRI basemaps (see resolveBasemapStyle) can't be handed to the
       // constructor synchronously — boot them with an empty style and swap
       // the fetched+rewritten style in once it resolves (below). Native
-      // basemaps load directly from their URL. SNOW-1457: swisstopo winter
-      // boots on the empty style too, replaced at once below.
-      style: ESRI_BASEMAP_KEYS.has(initialBasemapKey) || bootsSpliced
+      // basemaps load directly from their URL.
+      style: ESRI_BASEMAP_KEYS.has(initialBasemapKey)
         ? { version: 8, sources: {}, layers: [] }
         : initialBasemapUrl,
       minZoom: MIN_ZOOM,
@@ -1000,24 +987,6 @@
     console.error('[map] MapLibre could not start — the map is unavailable', err);
     return;
   }
-  // SNOW-1457: swisstopo winter boots with swisstopo's raster spliced on
-  // top for the ground beyond the border (swisstopo_edge_core.js). Not
-  // through the ESRI path's swap: the empty style finishes loading at
-  // once, `load` fires on it, and a style swapped in after that lands
-  // under the load handler's installs, which then throw on layers the swap
-  // has just removed. Setting the URL with `transformStyle` here,
-  // synchronously, replaces the empty style before it has loaded (an
-  // object style loads on the next frame, and has no request to abort),
-  // so `load` fires once, for the spliced style. The swaps after boot (the
-  // picker, 3D, the online retry) go through resolveBasemapStyle, which
-  // splices the same way.
-  if (bootsSpliced) {
-    map.setStyle(initialBasemapUrl, {
-      diff: false,
-      transformStyle: (_previous, next) => EDGE_CORE.spliceStyle(next),
-    });
-  }
-
   // Expose for sibling IIFEs (timelapse, season scrubber). FEATURE_BY_ID
   // and FEATURE_BY_REGION_ID are at module scope and get populated below.
   MAP = map;
@@ -1069,12 +1038,6 @@
   // ``isStyleLoaded()`` guard, filters out the benign case without
   // masking a real style failure.
   map.on('error', (e) => {
-    // SNOW-1457: a swisstopo edge tile that fails (WMTS down, or offline
-    // with the style cached) asks for no frame, and MapLibre 4.7.1 fires
-    // `load` only from a frame. If the last tile still loading is one that
-    // failed, `load` would wait for the reader to move the map, and every
-    // layer the page installs on it with it. One more frame lets it fire.
-    if (e && EDGE_CORE && e.sourceId === EDGE_CORE.SOURCE_ID) map.triggerRepaint();
     if (e && (e.sourceId || e.tile)) return;
     if (map.isStyleLoaded()) return;
     basemapFallbackActive = true;
