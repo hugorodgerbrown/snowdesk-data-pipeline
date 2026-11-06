@@ -43,3 +43,44 @@ describe('downloadedAreas (SNOW-1417)', () => {
     ]);
   });
 });
+
+describe('downloadedAreas (SNOW-1453)', () => {
+  const DEM = 'https://tiles.example/dem/{z}/{x}/{y}.webp';
+
+  beforeAll(async () => {
+    await import('../../static/js/basemap_manage_core.js');
+  });
+
+  it("carries each area's elevation stamp through the reconciliation, '' for none", async () => {
+    installDb({
+      'basemap.regions': [{ region_id: 'CH-4115', name: 'Martigny', terrain: true, elevation: DEM }],
+      'basemap.customAreas': [{ id: 'custom-a1', name: 'Mine', bbox: [7, 46, 7.2, 46.2] }],
+    });
+    window.pwaDownloadsSync = { accountAreas: async () => [] };
+
+    const areas = await window.pwaBasemapAreas.downloadedAreas();
+
+    expect(areas.map((a) => [a.id, a.elevation])).toEqual([
+      [window.pwaBasemapDownloadCore.areaIdForRegion('CH-4115'), DEM],
+      ['custom-a1', ''],
+    ]);
+  });
+
+  it('asks the account for nothing with deviceOnly', async () => {
+    installDb({ 'basemap.regions': [], 'basemap.customAreas': [] });
+    let asked = 0;
+    window.pwaDownloadsSync = {
+      accountAreas: async () => {
+        asked += 1;
+        return [{ area_id: 'custom-elsewhere', name: 'Elsewhere' }];
+      },
+    };
+
+    const held = await window.pwaBasemapAreas.downloadedAreas({ deviceOnly: true });
+    expect(asked).toBe(0);
+    expect(held.map((a) => a.id)).not.toContain('custom-elsewhere');
+
+    await window.pwaBasemapAreas.downloadedAreas();
+    expect(asked).toBe(1);
+  });
+});

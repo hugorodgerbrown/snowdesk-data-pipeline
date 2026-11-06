@@ -786,6 +786,93 @@ describe('terrain data (SNOW-1072)', () => {
   });
 });
 
+// SNOW-1453: the elevation tiles ride on the terrain flag where the page has
+// the 3D view, and a sync that leaves them all in the bucket stamps the
+// record with their template, which is what the 3D view reads offline.
+describe('elevation tiles (SNOW-1453)', () => {
+  const DEM = 'https://dem.example.invalid/dem/2026-11/{z}/{x}/{y}.webp';
+  const isElevationTile = (url) => url.startsWith('https://dem.example.invalid/');
+
+  /** The 3D toggle, which carries the template; absent, nothing is pinned. */
+  function addToggle() {
+    const toggle = document.createElement('button');
+    toggle.id = 'map-view-toggle';
+    toggle.dataset.demTileUrl = DEM;
+    document.body.appendChild(toggle);
+    return toggle;
+  }
+
+  function expectedElevationTiles() {
+    const core = self.pwaBasemapDownloadCore;
+    return core.elevationTileURLs(
+      DEM,
+      core.buildBlob([7.0, 46.0, 7.2, 46.2], 10, 14),
+      self.pwaTerrainFilterCore.COVERAGE_BOUNDS,
+    );
+  }
+
+  it('refetches the missing elevation tiles of an opted-in area, and stamps it', async () => {
+    const toggle = addToggle();
+    try {
+      await seedArea({ terrain: true });
+
+      const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+      expect(result.tiles).toBe('ok');
+      const elevation = warmedUrls(0).filter(isElevationTile);
+      expect(elevation).toEqual(expectedElevationTiles());
+      expect(elevation.length).toBeGreaterThan(0);
+      expect((await storedArea()).elevation).toBe(DEM);
+    } finally {
+      toggle.remove();
+    }
+  });
+
+  it('replaces a stamp from an older template once today\'s tiles are all there', async () => {
+    const toggle = addToggle();
+    try {
+      await seedArea({ terrain: true, elevation: 'https://dem.example.invalid/dem/2025-11/{z}/{x}/{y}.webp' });
+      const terrain = self.pwaTerrainFilterCore;
+      const classTiles = self.pwaBasemapDownloadCore.terrainClassTileURLs(
+        TERRAIN_TEMPLATE,
+        self.pwaBasemapDownloadCore.buildBlob([7.0, 46.0, 7.2, 46.2], 10, 14),
+        terrain.COVERAGE_BOUNDS,
+        terrain.MIN_ZOOM,
+        terrain.MAX_ZOOM,
+      );
+      holdDependencies([...DEPS, ...classTiles, ...expectedElevationTiles()]);
+
+      const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+      expect(result.tiles).toBe('none');
+      expect((await storedArea()).elevation).toBe(DEM);
+    } finally {
+      toggle.remove();
+    }
+  });
+
+  it('pins and stamps nothing where the page has no 3D view', async () => {
+    await seedArea({ terrain: true });
+
+    await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect(warmedUrls(0).some(isElevationTile)).toBe(false);
+    expect((await storedArea()).elevation).toBeUndefined();
+  });
+
+  it('never judges an area without the terrain flag on elevation tiles', async () => {
+    const toggle = addToggle();
+    try {
+      const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+      expect(result.tiles).toBe('none');
+      expect((await storedArea()).elevation).toBeUndefined();
+    } finally {
+      toggle.remove();
+    }
+  });
+});
+
 describe('terrain data in every download (SNOW-1072)', () => {
   it('is available here, and on', () => {
     expect(window.pwaBasemapDownloads.terrainDataAvailable()).toBe(true);
