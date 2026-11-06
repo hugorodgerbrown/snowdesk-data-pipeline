@@ -1,12 +1,14 @@
 /*
  * tests/js/test_map_view_core.js — the map's flat and 3-D views' pure rules
- * (SNOW-1449).
+ * (SNOW-1449, SNOW-1455).
  *
  * What is pinned:
  *   - the URL: 3-D only from ?view=3d in Terrain, flat spelt by leaving the
  *     parameter out, every other parameter kept;
  *   - every availability reason, in order, with the coverage box passed in
- *     and each of its four edges inside;
+ *     and each of its four edges inside, and the device's three reasons
+ *     asked straight after the mode;
+ *   - the device gate: no WebGL, or 2 GB or less on Android;
  *   - the basemap: swisstopo winter in 3-D, the reader's own otherwise, and
  *     the preference never written;
  *   - the camera: a stored pitch boots flat, the bearing kept.
@@ -67,6 +69,9 @@ describe('availability', () => {
 
   it.each([
     ['mode', { mode: 'dated' }],
+    ['device', { gated: true }],
+    ['slow', { tooSlow: true }],
+    ['webgl', { contextLost: true }],
     ['offline', { online: false }],
     ['editing', { editing: true }],
     ['coverage', { centre: { lng: 2.35, lat: 48.86 } }],
@@ -81,6 +86,20 @@ describe('availability', () => {
     expect(core.availability(input({ ...all, mode: 'terrain' })).reason).toBe('offline');
     expect(core.availability(input({ ...all, mode: 'terrain', online: true })).reason).toBe('editing');
     expect(core.availability(input({ zoom: 4, centre: { lng: 0, lat: 0 } })).reason).toBe('coverage');
+  });
+
+  it('asks the device straight after the mode: device, slow, webgl, then the rest', () => {
+    const all = {
+      mode: 'dated', gated: true, tooSlow: true, contextLost: true,
+      online: false, editing: true, centre: { lng: 0, lat: 0 }, zoom: 4,
+    };
+    expect(core.availability(input(all)).reason).toBe('mode');
+    expect(core.availability(input({ ...all, mode: 'terrain' })).reason).toBe('device');
+    expect(core.availability(input({ ...all, mode: 'terrain', gated: false })).reason).toBe('slow');
+    expect(core.availability(input({ ...all, mode: 'terrain', gated: false, tooSlow: false })).reason).toBe('webgl');
+    expect(core.availability(input({
+      ...all, mode: 'terrain', gated: false, tooSlow: false, contextLost: false,
+    })).reason).toBe('offline');
   });
 
   it.each([
@@ -133,5 +152,23 @@ describe('the boot camera', () => {
   it('keeps the stored camera in 3-D, and nothing stays nothing', () => {
     expect(core.bootCamera(stored, THREE_D)).toBe(stored);
     expect(core.bootCamera(null, FLAT)).toBeNull();
+  });
+});
+
+describe('deviceGate', () => {
+  it.each([
+    ['no WebGL', { webgl: false, deviceMemory: 8, android: false }, 'device'],
+    ['2 GB on Android', { webgl: true, deviceMemory: 2, android: true }, 'device'],
+    ['1 GB on Android', { webgl: true, deviceMemory: 1, android: true }, 'device'],
+    ['2 GB on a desktop', { webgl: true, deviceMemory: 2, android: false }, null],
+    ['4 GB on Android', { webgl: true, deviceMemory: 4, android: true }, null],
+    ['no deviceMemory on Android', { webgl: true, deviceMemory: undefined, android: true }, null],
+  ])('%s', (_case, gateInput, reason) => {
+    expect(core.deviceGate(gateInput)).toBe(reason);
+  });
+
+  it('answers the availability reason it gates on', () => {
+    expect(core.deviceGate({ webgl: false })).toBe(core.REASONS.DEVICE);
+    expect(core.LOW_MEMORY_GB).toBe(2);
   });
 });

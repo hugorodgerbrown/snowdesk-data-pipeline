@@ -1,6 +1,7 @@
 // @ts-check
 /*
- * static/js/map_view_core.js — the map's two views, flat and 3-D (SNOW-1449).
+ * static/js/map_view_core.js — the map's two views, flat and 3-D (SNOW-1449,
+ * SNOW-1455).
  *
  * The view sits beside the mode (map_mode_core.js), not inside it: Terrain
  * is what the map shows, the view is how it is drawn. 3-D is Terrain's
@@ -13,10 +14,17 @@
  *   - THE URL. `?view=3d`, beside `?mode=terrain`. Nothing is stored on
  *     the device, so a bare /map/ always opens flat, and a link opens 3-D
  *     only in Terrain. Flat is written by leaving the parameter out.
- *   - AVAILABILITY. 3-D needs Terrain, a connection, no route being drawn,
- *     a centre inside the elevation's coverage and a zoom of at least
- *     MIN_ZOOM. The coverage box is passed in (terrain_filter_core's
- *     COVERAGE_BOUNDS), never copied here, so there is one source of it.
+ *   - AVAILABILITY. 3-D needs Terrain, a device that can draw it, a
+ *     connection, no route being drawn, a centre inside the elevation's
+ *     coverage and a zoom of at least MIN_ZOOM. The coverage box is passed
+ *     in (terrain_filter_core's COVERAGE_BOUNDS), never copied here, so
+ *     there is one source of it.
+ *   - THE DEVICE (SNOW-1455). Three things turn 3-D off for the rest of a
+ *     visit, asked straight after the mode so a device that cannot draw it
+ *     is never told to zoom in: the gate at boot (deviceGate: no WebGL, or
+ *     2 GB of memory or less on Android Chrome), frames over budget, and a
+ *     lost WebGL context until it is restored. Nothing about the device is
+ *     stored.
  *   - THE BASEMAP. 3-D is drawn on the swisstopo winter map; flat on the
  *     reader's own choice. The choice is read, never written.
  *   - THE CAMERA. A flat boot zeroes a stored pitch, so a tilt is never
@@ -30,6 +38,7 @@
  *   withView(search, view)
  *   covers(centre, bounds)
  *   availability(input)
+ *   LOW_MEMORY_GB / deviceGate(input)
  *   basemapFor(view, preferredKey)
  *   bootCamera(stored, view)
  */
@@ -57,6 +66,9 @@
   /** Why 3-D is unavailable, in the order they are asked. */
   const REASONS = Object.freeze({
     MODE: 'mode',
+    DEVICE: 'device',
+    SLOW: 'slow',
+    WEBGL: 'webgl',
     OFFLINE: 'offline',
     EDITING: 'editing',
     COVERAGE: 'coverage',
@@ -121,6 +133,9 @@
    * @property {boolean} online
    * @property {number} zoom The camera zoom.
    * @property {string} mode
+   * @property {boolean} [gated] deviceGate turned 3-D off at boot.
+   * @property {boolean} [tooSlow] The frame watchdog tripped this visit.
+   * @property {boolean} [contextLost] The map's WebGL context is lost.
    * @property {boolean} [editing] A route is being drawn.
    * @property {{lng: number, lat: number}} centre
    * @property {ReadonlyArray<number>|null} [bounds] The coverage box.
@@ -136,11 +151,44 @@
     /** @param {string} reason */
     const no = (reason) => ({ enabled: false, reason });
     if (input.mode !== TERRAIN_MODE) return no(REASONS.MODE);
+    if (input.gated) return no(REASONS.DEVICE);
+    if (input.tooSlow) return no(REASONS.SLOW);
+    if (input.contextLost) return no(REASONS.WEBGL);
     if (!input.online) return no(REASONS.OFFLINE);
     if (input.editing) return no(REASONS.EDITING);
     if (!covers(input.centre, input.bounds)) return no(REASONS.COVERAGE);
     if (!(input.zoom >= MIN_ZOOM)) return no(REASONS.ZOOM);
     return { enabled: true, reason: null };
+  }
+
+  /**
+   * The most memory, in GB, at which an Android phone is not offered 3-D.
+   * `navigator.deviceMemory` rounds down to a power of two and is capped at
+   * 8, so 2 is the 2 GB class and below.
+   */
+  const LOW_MEMORY_GB = 2;
+
+  /**
+   * @typedef {Object} DeviceGateInput
+   * @property {boolean} webgl WebGL can be read from the map's canvas.
+   * @property {number|undefined|null} [deviceMemory] `navigator.deviceMemory`,
+   *   which only Chromium reports.
+   * @property {boolean} [android] The browser is on Android.
+   */
+
+  /**
+   * Whether this device is kept out of 3-D, worked out once, at boot: no
+   * WebGL, or LOW_MEMORY_GB or less on Android Chrome. A desktop's memory
+   * is never held against it, and a browser that does not report it passes.
+   *
+   * @param {DeviceGateInput} input
+   * @returns {?string} `REASONS.DEVICE`, or null when 3-D may be offered.
+   */
+  function deviceGate(input) {
+    if (!input.webgl) return REASONS.DEVICE;
+    const memory = input.deviceMemory;
+    if (input.android && typeof memory === 'number' && memory <= LOW_MEMORY_GB) return REASONS.DEVICE;
+    return null;
   }
 
   /**
@@ -181,6 +229,8 @@
     withView,
     covers,
     availability,
+    LOW_MEMORY_GB,
+    deviceGate,
     basemapFor,
     bootCamera,
   });
