@@ -2451,7 +2451,7 @@ def _map_3d_test_fields(payload: Any) -> dict[str, Any]:
     if not isinstance(probe, bool):
         raise _BadResult("probe is not a bool")
     return {
-        "verdict": verdict,
+        "verdict": verdict.upper(),
         "gpu": _text(payload.get("gpu", ""), 255),
         "device_pixel_ratio": _number(payload.get("device_pixel_ratio"), 16),
         "pixel_ratio": _number(payload.get("pixel_ratio"), 16),

@@ -99,8 +99,9 @@ class Map3dShare(BaseModel):
         return f"3-D map share {self.token} ({self.created_by_id})"
 
 
-# The verdicts a sent 3D test carries (static/js/map_3d_core.js
-# TEST_VERDICTS). An unmeasured run is never sent.
+# The verdicts a sent 3D test carries on the wire (static/js/map_3d_core.js
+# TEST_VERDICTS), stored upper case as Map3dDeviceTest.Verdict (SNOW-582).
+# An unmeasured run is never sent.
 MAP_3D_TEST_VERDICTS = ("smooth", "stutter", "slow")
 
 # The layers-menu switches a 3D test records as on (each row's
@@ -147,14 +148,14 @@ class Map3dDeviceTest(BaseModel):
     class Verdict(models.TextChoices):
         """The test's verdict, by the watchdog's own rule."""
 
-        SMOOTH = "smooth", "Smooth"
-        STUTTER = "stutter", "May stutter zoomed out"
-        SLOW = "slow", "Too slow"
+        SMOOTH = "SMOOTH", "Smooth"
+        STUTTER = "STUTTER", "May stutter zoomed out"
+        SLOW = "SLOW", "Too slow"
 
     verdict = models.CharField(
         max_length=16,
         choices=Verdict.choices,
-        help_text="smooth: both passes kept up; stutter: only z9 fell behind; slow.",
+        help_text="SMOOTH: both passes kept up; STUTTER: only z9 fell behind; SLOW.",
     )
     gpu = models.CharField(
         max_length=255,
@@ -206,4 +207,6 @@ class Map3dDeviceTest(BaseModel):
             The label.
 
         """
-        return f"3D device test {self.verdict} ({self.gpu or 'unknown GPU'})"
+        return (
+            f"3D device test {self.get_verdict_display()} ({self.gpu or 'unknown GPU'})"
+        )

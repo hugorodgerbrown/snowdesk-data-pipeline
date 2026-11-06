@@ -3077,7 +3077,7 @@ class TestMap3dTestReceive:
         response = _post_result(client, _test_result())
         assert response.status_code == 204
         row = Map3dDeviceTest.objects.get()
-        assert row.verdict == "stutter"
+        assert row.verdict == Map3dDeviceTest.Verdict.STUTTER
         assert row.gpu == "Mali-G715"
         assert row.pixel_ratio == 2.0
         assert (row.canvas_width, row.canvas_height) == (824, 1830)

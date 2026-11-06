@@ -25,11 +25,11 @@ class Migration(migrations.Migration):
                     "verdict",
                     models.CharField(
                         choices=[
-                            ("smooth", "Smooth"),
-                            ("stutter", "May stutter zoomed out"),
-                            ("slow", "Too slow"),
+                            ("SMOOTH", "Smooth"),
+                            ("STUTTER", "May stutter zoomed out"),
+                            ("SLOW", "Too slow"),
                         ],
-                        help_text="smooth: both passes kept up; stutter: only z9 fell behind; slow.",
+                        help_text="SMOOTH: both passes kept up; STUTTER: only z9 fell behind; SLOW.",
                         max_length=16,
                     ),
                 ),

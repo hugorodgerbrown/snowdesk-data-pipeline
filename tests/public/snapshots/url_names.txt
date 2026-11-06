@@ -4,6 +4,7 @@ api:share_create  api/bulletins/share/  apps.public.api.share_create
 api:bulletin_render_model  api/bulletins/<str:bulletin_id>/  apps.public.api.bulletin_render_model
 api:bulletin_caaml  api/bulletins/<str:bulletin_id>.caaml.json  apps.public.api.bulletin_caaml
 api:ratings  api/ratings/  apps.map.api.ratings
+api:map_3d_test  api/map-3d-test/  apps.map.api.map_3d_test_receive
 api:problem_terrain  api/problem-terrain/  apps.map.problem_terrain.problem_terrain
 api:resorts_by_region  api/resorts-by-region/  apps.map.api.resorts_by_region
 api:resorts_geojson  api/resorts.geojson  apps.map.api.resorts_geojson

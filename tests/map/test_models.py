@@ -65,8 +65,10 @@ def test_device_tests_list_newest_first_and_from_readers_drops_probes() -> None:
 
 def test_device_test_str_delegates_to_to_string() -> None:
     """__str__ is to_string(), naming the verdict and the GPU."""
-    row = Map3dDeviceTestFactory.create(verdict="slow", gpu="Adreno 610")
-    assert str(row) == row.to_string() == "3D device test slow (Adreno 610)"
+    row = Map3dDeviceTestFactory.create(
+        verdict=Map3dDeviceTest.Verdict.SLOW, gpu="Adreno 610"
+    )
+    assert str(row) == row.to_string() == "3D device test Too slow (Adreno 610)"
     assert "unknown GPU" in Map3dDeviceTestFactory.create(gpu="").to_string()
 
 
