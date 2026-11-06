@@ -579,7 +579,14 @@
         resolve(intervals);
       });
       requestAnimationFrame(tick);
-      map.rotateTo(map.getBearing() + turnDeg, { duration: durationMs, easing: (/** @type {number} */ t) => t });
+      // essential: MapLibre skips the animation under prefers-reduced-motion
+      // otherwise, and the pass would end before a single frame was timed.
+      // The reader asked for this run by opening ?probe=1.
+      map.rotateTo(map.getBearing() + turnDeg, {
+        duration: durationMs,
+        easing: (/** @type {number} */ t) => t,
+        essential: true,
+      });
     });
   }
 
@@ -654,10 +661,16 @@
     const done = fill(STRINGS.probe_done, { idle: firstIdleMs, gpu: result.gpu || '?' });
     say([done, ...lines].join('\n'));
 
+    // The panel's one action is a bare icon (AGENTS.md design rule 5): the
+    // page's own Share glyph, cloned, with the words as its accessible name.
     const send = document.createElement('button');
     send.type = 'button';
-    send.className = 'mt-2 rounded-pill border border-border px-3 py-1 text-chip';
-    send.textContent = STRINGS.probe_share;
+    send.className = 'mt-2 text-text-2 hover:text-text-1';
+    send.setAttribute('aria-label', STRINGS.probe_share);
+    send.setAttribute('title', STRINGS.probe_share);
+    const glyph = shareButton && shareButton.querySelector('svg');
+    if (glyph) send.appendChild(glyph.cloneNode(true));
+    else send.textContent = STRINGS.probe_share;
     send.addEventListener('click', () => {
       if (share) share.shareOrCopy(report, document.title, 'text');
       else console.info(report);
