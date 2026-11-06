@@ -469,6 +469,12 @@
       failed: 'Could not copy the link',
       share_view: 'Share this view',
       share_route: 'Share this route in 3-D',
+      probe_waiting: 'Frame-time probe: waiting for the map to load…',
+      probe_pass: 'Frame-time probe: pass %(n)s of %(total)s, %(label)s. Keep the phone still.',
+      probe_line: '%(label)s: median %(median)s ms (%(fps)s fps), p95 %(p95)s ms, %(over)s% over %(budget)s ms',
+      probe_no_frames: '%(label)s: no frames timed',
+      probe_done: 'Frame-time probe done. First idle %(idle)s ms. GPU: %(gpu)s',
+      probe_share: 'Share the result',
     })
     : null;
 
@@ -596,18 +602,18 @@
     text.className = 'whitespace-pre-wrap';
     panel.appendChild(text);
     document.body.appendChild(panel);
+    if (!STRINGS || !self.pwaStrings) return;
+    const fill = self.pwaStrings.interpolate;
     /** @param {string} line */
     const say = (line) => { text.textContent = line; };
 
-    // i18n-allow: SNOW-1448 measuring tool behind ?probe=1, read by staff, not readers.
-    say('Frame-time probe: waiting for the map to load…');
+    say(STRINGS.probe_waiting);
     await nextIdle(60000);
     const firstIdleMs = Math.round(performance.now());
     /** @type {any[]} */
     const passes = [];
     for (const [i, pass] of core.PROBE_PASSES.entries()) {
-      // i18n-allow: SNOW-1448 measuring tool behind ?probe=1, read by staff, not readers.
-      say(`Frame-time probe: pass ${i + 1} of ${core.PROBE_PASSES.length}, ${pass.label}. Leave the phone still.`);
+      say(fill(STRINGS.probe_pass, { n: i + 1, total: core.PROBE_PASSES.length, label: pass.label }));
       map.jumpTo({
         center: core.OPENING_CAMERA.center.slice(),
         zoom: pass.zoom,
@@ -636,17 +642,22 @@
     const report = JSON.stringify(result, null, 1);
     console.info('map_3d probe', result);
     const lines = passes.map((p) => (p.frames
-      ? `${p.label}: median ${p.medianMs} ms (${p.fps} fps), p95 ${p.p95Ms} ms, `
-        + `${Math.round(p.overBudget * 100)}% over ${core.FRAME_BUDGET_MS} ms`
-      : `${p.label}: no frames timed`));
-    // i18n-allow: SNOW-1448 measuring tool behind ?probe=1, read by staff, not readers.
-    say(`Frame-time probe done.\n${lines.join('\n')}\nFirst idle ${firstIdleMs} ms. GPU: ${result.gpu || 'unknown'}`);
+      ? fill(STRINGS.probe_line, {
+        label: p.label,
+        median: p.medianMs,
+        fps: p.fps,
+        p95: p.p95Ms,
+        over: Math.round(p.overBudget * 100),
+        budget: core.FRAME_BUDGET_MS,
+      })
+      : fill(STRINGS.probe_no_frames, { label: p.label })));
+    const done = fill(STRINGS.probe_done, { idle: firstIdleMs, gpu: result.gpu || '?' });
+    say([done, ...lines].join('\n'));
 
     const send = document.createElement('button');
     send.type = 'button';
     send.className = 'mt-2 rounded-pill border border-border px-3 py-1 text-chip';
-    // i18n-allow: SNOW-1448 measuring tool behind ?probe=1, read by staff, not readers.
-    send.textContent = 'Share the result';
+    send.textContent = STRINGS.probe_share;
     send.addEventListener('click', () => {
       if (share) share.shareOrCopy(report, document.title, 'text');
       else console.info(report);
