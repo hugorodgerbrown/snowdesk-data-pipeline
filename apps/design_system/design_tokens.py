@@ -1917,7 +1917,7 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         description=(
             "Temporary homepage branding for the 3-D map: the Snowdesk "
             "wordmark wearing red/cyan 3-D specs pushed up on its head. "
-            "Hero size only; the titlebar keeps the text wordmark. "
+            "Drawn in the nav for map_3d readers. "
             "Shown inside the map_3d flag."
         ),
         kind="components",

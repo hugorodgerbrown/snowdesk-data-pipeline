@@ -120,7 +120,25 @@ Usage
             href="{% url 'public:map' %}"
             class="text-text-1 leading-none font-semibold tracking-tight hover:opacity-80 {% if back_url %}text-label{% else %}text-lg{% endif %}"
         >
-            Snowdesk
+            {% comment %}
+            Temporary 3D branding: readers of the map_3d flag see the wordmark
+            wearing red/cyan specs, drawn at the text wordmark's size (the SVG
+            sets 64px type in 80 units of height). The authentication check
+            comes first so an anonymous page pays no waffle query.
+            {% endcomment %}
+            {% if user.is_authenticated %}
+                {% flag "map_3d" %}
+                {% if back_url %}
+                    {% include "includes/_wordmark_3d.html" with class_extra="h-[19px] relative -top-[3px]" %}
+                {% else %}
+                    {% include "includes/_wordmark_3d.html" with class_extra="h-[23px] relative -top-[4px]" %}
+                {% endif %}
+            {% else %}
+                Snowdesk
+                {% endflag %}
+            {% else %}
+                Snowdesk
+            {% endif %}
         </a>
         {% if season_trigger %}
             <button

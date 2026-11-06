@@ -21,6 +21,9 @@ Covers:
     is the thing this file now pins the removal of.
   - The SNOW-921 additions to that menu: the traffic arrows beside the
     symbol, and the flag-gated "Debug log" row.
+  - The temporary 3D wordmark: a map_3d reader sees the wordmark wearing
+    specs in place of the text one; anyone else, signed out included, sees
+    the text wordmark.
 
 That last group is not decoration. ``docs/decisions/
 account-area-navigation-lives-in-the-nav-menu.md`` makes this menu the
@@ -914,3 +917,31 @@ class TestNavLabsEntry:
         with override_flag("map_3d", active=False):
             html = _render_nav_for(rf, regular_user)
         assert "?view=3d" not in html
+
+
+@pytest.mark.django_db
+class TestNav3dWordmark:
+    """The wordmark wears 3D specs only for readers of the map_3d flag."""
+
+    def test_flagged_user_sees_the_specs(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """Inside the flag the nav draws the wordmark wearing specs."""
+        with override_flag("map_3d", active=True):
+            html = _render_nav_for(rf, regular_user)
+        assert 'data-testid="wordmark-3d"' in html
+
+    def test_unflagged_user_sees_the_text_wordmark(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """Outside the flag the wordmark is the plain text."""
+        with override_flag("map_3d", active=False):
+            html = _render_nav_for(rf, regular_user)
+        assert 'data-testid="wordmark-3d"' not in html
+        assert "Snowdesk" in html
+
+    def test_anonymous_viewer_sees_the_text_wordmark(self, rf: RequestFactory) -> None:
+        """A signed-out viewer gets the text wordmark even with the flag on."""
+        with override_flag("map_3d", active=True):
+            html = _render_nav_for(rf, AnonymousUser())
+        assert 'data-testid="wordmark-3d"' not in html

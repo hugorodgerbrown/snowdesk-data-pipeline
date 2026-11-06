@@ -70,26 +70,20 @@ parameters never reaches this template — views.home 301s it to /map/.
             aria-labelledby="home-heading"
             data-testid="home-hero"
         >
-            {% if show_3d %}
-                {# Temporary 3D branding, only for readers of the map_3d flag  #}
-                {# (/map/ opens flat for everyone else): the wordmark wearing  #}
-                {# specs in place of the eyebrow, and the 3D map tilted back   #}
-                {# under the headline, both linking to /map/?view=3d.          #}
-                {# SNOW-1454's card replaces it.                               #}
-                <a href="{% url 'public:map' %}?view=3d" class="inline-block mb-5 hover:opacity-80">
-                    {% include "includes/_wordmark_3d.html" with class_extra="h-20 md:h-28" %}
-                </a>
-            {% else %}
-                {% trans "Stay avi-savvy" as eyebrow_text %}
-                {% include "includes/_eyebrow.html" with text=eyebrow_text tag="p" class_extra="mb-3" %}
-            {% endif %}
+            {% trans "Stay avi-savvy" as eyebrow_text %}
+            {% include "includes/_eyebrow.html" with text=eyebrow_text tag="p" class_extra="mb-3" %}
             <h1 id="home-heading" class="text-3xl md:text-4xl font-semibold tracking-tight text-text-1">
                 {% trans "Know your line before you leave." %}
             </h1>
             {% if show_3d %}
+                {# Temporary 3D branding, only for readers of the map_3d flag  #}
+                {# (/map/ opens flat for everyone else): the 3D map tilted     #}
+                {# back under the headline, linking to /map/?view=3d. The      #}
+                {# wordmark wearing specs is in the nav (includes/nav.html).   #}
+                {# SNOW-1454's card replaces it.                               #}
                 <a
                     href="{% url 'public:map' %}?view=3d"
-                    class="block -mt-2 md:-mt-8 md:w-4/5 mx-auto [perspective:900px]"
+                    class="block mt-4 md:mt-2 md:w-4/5 mx-auto [perspective:900px]"
                     data-testid="home-3d-image"
                 >
                     <img

@@ -1,10 +1,10 @@
 {% comment %}
 templates/includes/_wordmark_3d.html — the Snowdesk wordmark wearing 3-D specs.
 
-Temporary homepage branding for the 3D map (/map/?view=3d, behind the
-map_3d flag): the wordmark wears a pair of red/cyan 3-D specs pushed up on its
-head, resting on "ow" and tipped back against the d. Drawn for hero size
-only; the titlebar keeps the plain text wordmark.
+Temporary nav branding for the 3D map (behind the map_3d flag): the
+wordmark wears a pair of red/cyan 3-D specs pushed up on its head, resting
+on "ow" and tipped back against the d. includes/nav.html draws it in place
+of the text wordmark, at that wordmark's size; it holds down to 16px type.
 
 The ink is currentColor, so it follows text-text-1 in both themes. The lens
 fills are the anaglyph red and cyan, the same in light and dark. The letters
@@ -13,10 +13,10 @@ self-hosted and loaded by public/base.html.
 
 Context:
     class_extra   classes for the svg element, for its height and margin
-                  (e.g. "h-16 md:h-24").
+                  (e.g. "h-[23px]" for 18px type).
 
 Usage:
-    {% include "includes/_wordmark_3d.html" with class_extra="h-16" %}
+    {% include "includes/_wordmark_3d.html" with class_extra="h-[23px]" %}
 {% endcomment %}
 {% load i18n %}
 <svg
