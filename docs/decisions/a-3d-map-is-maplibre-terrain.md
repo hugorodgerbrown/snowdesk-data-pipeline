@@ -1,6 +1,6 @@
 ---
 name: a-3d-map-is-maplibre-terrain
-description: 3-D map on MapLibre setTerrain — /map/3d/ sandbox, /map/ ?view=3d (map_view_3d, map_3d_terrain), compass, 3-D fallbacks (frame budget watchdog, WebGL context loss, device gate); not deck.gl or CesiumJS
+description: 3-D map on MapLibre setTerrain: /map/3d/ sandbox, /map/ ?view=3d (map_view_3d), 3-D fallbacks (frame watchdog, WebGL loss, device gate)
 status: current
 last-reviewed: 2026-11-06
 ---
