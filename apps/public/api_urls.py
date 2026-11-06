@@ -45,6 +45,9 @@ urlpatterns = [
     # SNOW-239: unified ratings endpoint. Replaces today-summaries + season-ratings.
     # Accepts optional ?d=YYYY-MM-DD and ?country=ch|fr|at|it filters.
     path("ratings/", map_api.ratings, name="ratings"),
+    # SNOW-1456: a 3D test result a reader chose to send. POST only, CSRF
+    # protected, rate limited per IP, stored with no user, session or IP.
+    path("map-3d-test/", map_api.map_3d_test_receive, name="map_3d_test"),
     # SNOW-1194: every region's problem-terrain rules for a day — the
     # "Sync with map terrain" layer paints the whole map from it.
     path("problem-terrain/", problem_terrain.problem_terrain, name="problem_terrain"),

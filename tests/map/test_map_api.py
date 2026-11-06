@@ -27,6 +27,11 @@ SNOW-419:
 * ``api:community_reports_geojson`` — anonymised, day-windowed
   ``FieldObservation`` overlay.
 
+SNOW-1456:
+* ``api:map_3d_test`` — POST one anonymous 3D test result: 204 written,
+  204 dropped over the rate limit, 400 for a bad shape, verdict or overlay,
+  403 without CSRF, 405 for a GET, 413 over 16 KiB.
+
 """
 
 from __future__ import annotations
@@ -34,12 +39,13 @@ from __future__ import annotations
 import datetime as dt
 import json
 from collections.abc import Callable
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 from django.core.cache import cache
 from django.db import connection
-from django.test import Client
+from django.test import Client, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
@@ -48,6 +54,7 @@ from freezegun import freeze_time
 from apps.bulletins.models import RegionDayRating
 from apps.bulletins.services.slf_fetcher import BulletinSource
 from apps.map import api as map_api
+from apps.map.models import Map3dDeviceTest
 from apps.observations.models import FieldObservation
 from apps.regions.models import Resort
 from apps.regions.services.basemap_tiles import MICRO_BAND, blob_summary, build_blob
@@ -60,6 +67,7 @@ from tests.factories import (
     RegionDayRatingFactory,
     ResortFactory,
     SubRegionFactory,
+    UserFactory,
 )
 
 # ---------------------------------------------------------------------------
@@ -2999,3 +3007,153 @@ def test_region_basemap_tiles_is_revalidatable() -> None:
     assert (
         client.get(url, headers={"if-none-match": response["ETag"]}).status_code == 304
     )
+
+
+# ---------------------------------------------------------------------------
+# map_3d_test (SNOW-1456)
+# ---------------------------------------------------------------------------
+
+_CSRF_SECRET = "a" * 32
+
+
+def _test_result(**overrides: object) -> dict[str, object]:
+    """Return a valid 3D test result body, with ``overrides`` applied."""
+    body: dict[str, object] = {
+        "verdict": "stutter",
+        "gpu": "Mali-G715",
+        "device_pixel_ratio": 2.625,
+        "pixel_ratio": 2,
+        "canvas_width": 824,
+        "canvas_height": 1830,
+        "user_agent": "Mozilla/5.0 (Linux; Android 14) Chrome/131.0",
+        "client_version": "2026.11.06",
+        "probe": False,
+        "overlays": ["ski_tours", "terrain"],
+        "passes": [
+            {
+                "label": "Saas-Fee z12.6",
+                "frames": 720,
+                "median_ms": 16.7,
+                "p95_ms": 28,
+                "worst_ms": 61.2,
+                "over_budget": 0.04,
+                "slow_windows": 0,
+                "settle_ms": 3100,
+            },
+            {
+                "label": "Valais z9",
+                "frames": 330,
+                "median_ms": 36.4,
+                "p95_ms": 58.2,
+                "worst_ms": 120,
+                "over_budget": 0.61,
+                "slow_windows": 4,
+                "settle_ms": 6800,
+            },
+        ],
+    }
+    body.update(overrides)
+    return body
+
+
+def _post_result(client: Client, body: object, **extra: Any) -> Any:
+    """POST ``body`` as JSON to the 3D test endpoint."""
+    return client.post(
+        reverse("api:map_3d_test"),
+        data=json.dumps(body),
+        content_type="application/json",
+        **extra,
+    )
+
+
+@pytest.mark.django_db
+class TestMap3dTestReceive:
+    """POST /api/map-3d-test/ stores one anonymous result."""
+
+    def test_an_anonymous_post_writes_a_row_overlays_included(
+        self, client: Client
+    ) -> None:
+        """A valid post answers 204 and writes one row as sent."""
+        response = _post_result(client, _test_result())
+        assert response.status_code == 204
+        row = Map3dDeviceTest.objects.get()
+        assert row.verdict == "stutter"
+        assert row.gpu == "Mali-G715"
+        assert row.pixel_ratio == 2.0
+        assert (row.canvas_width, row.canvas_height) == (824, 1830)
+        assert row.client_version == "2026.11.06"
+        assert row.probe is False
+        # In the allowlist's order, each once.
+        assert row.overlays == ["terrain", "ski_tours"]
+        assert [p["label"] for p in row.passes] == ["Saas-Fee z12.6", "Valais z9"]
+        assert row.passes[1]["slow_windows"] == 4
+
+    def test_a_signed_in_readers_post_stores_no_user(self, client: Client) -> None:
+        """Signed in or not, nothing in the row says who sent it."""
+        user = UserFactory.create(email="reader@example.com")
+        client.force_login(user)
+        assert _post_result(client, _test_result()).status_code == 204
+        row = Map3dDeviceTest.objects.values().get()
+        assert "reader@example.com" not in json.dumps(row, default=str)
+        assert not {"user_id", "created_by_id", "session_key", "ip"} & set(row)
+
+    def test_csrf_is_enforced(self) -> None:
+        """No token gets a 403 and writes nothing; a valid token gets a 204."""
+        client = Client(enforce_csrf_checks=True)
+        assert _post_result(client, _test_result()).status_code == 403
+        assert not Map3dDeviceTest.objects.exists()
+        client.cookies["csrftoken"] = _CSRF_SECRET
+        response = _post_result(client, _test_result(), HTTP_X_CSRFTOKEN=_CSRF_SECRET)
+        assert response.status_code == 204
+        assert Map3dDeviceTest.objects.count() == 1
+
+    @pytest.mark.parametrize(
+        ("label", "body"),
+        [
+            ("not an object", ["smooth"]),
+            ("no passes", _test_result(passes=[])),
+            ("a pass with a string figure", _test_result(passes=[{"label": "x"}])),
+            ("a bool for a number", _test_result(pixel_ratio=True)),
+            ("a negative canvas", _test_result(canvas_width=-1)),
+            ("probe not a bool", _test_result(probe="yes")),
+            ("an unknown verdict", _test_result(verdict="unmeasured")),
+            ("an unknown overlay", _test_result(overlays=["terrain", "everything"])),
+        ],
+    )
+    def test_a_bad_result_gets_a_400(
+        self, client: Client, label: str, body: object
+    ) -> None:
+        """A bad shape, an unknown verdict or an unknown overlay is refused."""
+        assert _post_result(client, body).status_code == 400, label
+        assert not Map3dDeviceTest.objects.exists()
+
+    def test_a_body_that_is_not_json_gets_a_400(self, client: Client) -> None:
+        """Malformed JSON is a bad shape too."""
+        response = client.post(
+            reverse("api:map_3d_test"), data="{", content_type="application/json"
+        )
+        assert response.status_code == 400
+
+    def test_an_oversized_body_gets_a_413(self, client: Client) -> None:
+        """Over 16 KiB is refused before it is read as JSON."""
+        body = _test_result(gpu="x" * (map_api.MAP_3D_TEST_MAX_BYTES + 1))
+        assert _post_result(client, body).status_code == 413
+        assert not Map3dDeviceTest.objects.exists()
+
+    def test_a_get_gets_a_405(self, client: Client) -> None:
+        """POST only."""
+        assert client.get(reverse("api:map_3d_test")).status_code == 405
+
+    @override_settings(RATELIMIT_ENABLE=True)
+    def test_the_eleventh_post_in_an_hour_answers_204_and_writes_nothing(
+        self, client: Client
+    ) -> None:
+        """The per-IP limit drops the result quietly."""
+        cache.clear()
+        with freeze_time("2026-11-06 10:00:00"):
+            codes = [
+                _post_result(client, _test_result()).status_code for _ in range(11)
+            ]
+        assert codes == [204] * 11
+        assert Map3dDeviceTest.objects.count() == 10
+        cache.clear()

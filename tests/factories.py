@@ -63,7 +63,7 @@ from apps.ingest.models import (
     content_hash,
 )
 from apps.locations.models import Location, ResortLocation
-from apps.map.models import Map3dShare
+from apps.map.models import Map3dDeviceTest, Map3dShare
 from apps.observations.models import FieldObservation
 from apps.regions.models import (
     MajorRegion,
@@ -1582,3 +1582,47 @@ class Map3dShareFactory(factory.django.DjangoModelFactory[Map3dShare]):
         model = Map3dShare
 
     created_by = factory.SubFactory(UserFactory)
+
+
+class Map3dDeviceTestFactory(factory.django.DjangoModelFactory[Map3dDeviceTest]):
+    """Factory for Map3dDeviceTest instances: one anonymous 3D test result."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = Map3dDeviceTest
+
+    verdict = Map3dDeviceTest.Verdict.SMOOTH
+    gpu = "Mali-G715"
+    device_pixel_ratio = 2.625
+    pixel_ratio = 2.0
+    canvas_width = 824
+    canvas_height = 1830
+    user_agent = "Mozilla/5.0 (Linux; Android 14) Chrome/131.0 Mobile Safari/537.36"
+    client_version = "test"
+    probe = False
+    overlays = factory.LazyFunction(lambda: ["terrain", "ski_tours"])
+    passes = factory.LazyFunction(
+        lambda: [
+            {
+                "label": "Saas-Fee z12.6",
+                "frames": 720,
+                "median_ms": 16.7,
+                "p95_ms": 28.0,
+                "worst_ms": 61.2,
+                "over_budget": 0.04,
+                "slow_windows": 0,
+                "settle_ms": 3100,
+            },
+            {
+                "label": "Valais z9",
+                "frames": 700,
+                "median_ms": 17.1,
+                "p95_ms": 33.4,
+                "worst_ms": 80.0,
+                "over_budget": 0.06,
+                "slow_windows": 0,
+                "settle_ms": 6800,
+            },
+        ]
+    )
