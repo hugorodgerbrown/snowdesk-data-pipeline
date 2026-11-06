@@ -1049,3 +1049,66 @@ describe('terrain data (SNOW-1072)', () => {
     expect(d.warmCache.mock.calls[0][0]).toEqual(['/api/feed', '/tile/1', '/tile/2']);
   });
 });
+
+describe('elevation tiles (SNOW-1453)', () => {
+  const CLASS = ['https://tiles/terrain-class/v2/12/1/1.png'];
+  const DEM = 'https://tiles/dem/2026-11/{z}/{x}/{y}.webp';
+  const ELEVATION = ['https://tiles/dem/2026-11/7/66/45.webp', 'https://tiles/dem/2026-11/10/532/360.webp'];
+
+  it('appends the elevation tiles after the class tiles, on the terrain opt-in', async () => {
+    const d = deps({
+      terrainClassUrls: vi.fn(() => CLASS),
+      elevationUrls: vi.fn(() => ELEVATION),
+      elevationTemplate: vi.fn(() => DEM),
+    });
+
+    await runAndSettle(d, options({ terrain: true }));
+
+    expect(d.elevationUrls).toHaveBeenCalledWith({ z: 12, band: 'micro', mb: 12 });
+    expect(d.warmCache.mock.calls[0][0]).toEqual([
+      '/api/feed',
+      '/tile/1',
+      '/tile/2',
+      ...CLASS,
+      ...ELEVATION,
+    ]);
+    // The grid's offset still counts only what precedes the tiles.
+    expect(d.progressGrid).toHaveBeenCalledWith(expect.anything(), 1);
+  });
+
+  it('hands finish the template as the stamp, never the URLs', async () => {
+    const d = deps({ elevationUrls: vi.fn(() => ELEVATION), elevationTemplate: vi.fn(() => DEM) });
+    const o = options({ terrain: true });
+
+    await runAndSettle(d, o);
+
+    const extras = o.finish.mock.calls[0][2];
+    expect(extras.elevation).toBe(DEM);
+    expect(JSON.stringify(extras.renderDeps || [])).not.toContain('/dem/');
+  });
+
+  it('pins and stamps nothing without the opt-in, or where the page has no elevation tiles', async () => {
+    const off = deps({ elevationUrls: vi.fn(() => ELEVATION), elevationTemplate: vi.fn(() => DEM) });
+    const o = options();
+    await runAndSettle(off, o);
+    expect(off.elevationUrls).not.toHaveBeenCalled();
+    expect(off.warmCache.mock.calls[0][0]).not.toContain(ELEVATION[0]);
+    expect(o.finish.mock.calls[0][2].elevation).toBe('');
+
+    calls = [];
+    const none = deps({ elevationUrls: vi.fn(() => []), elevationTemplate: vi.fn(() => DEM) });
+    const p = options({ terrain: true });
+    await runAndSettle(none, p);
+    expect(p.finish.mock.calls[0][2].elevation).toBe('');
+  });
+
+  it('tolerates a deps bundle with no elevation members', async () => {
+    const d = deps();
+    const o = options({ terrain: true });
+
+    await runAndSettle(d, o);
+
+    expect(d.warmCache.mock.calls[0][0]).toEqual(['/api/feed', '/tile/1', '/tile/2']);
+    expect(o.finish.mock.calls[0][2].elevation).toBe('');
+  });
+});

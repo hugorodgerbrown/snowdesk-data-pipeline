@@ -320,6 +320,11 @@
    *   with a complete content run.
    * @param {Object|null} [verified] What the run learned about the area
    *   (`downloadVerified`), stamped so a new row reads as checked.
+   * @param {string} [elevation] SNOW-1453: the template the run's elevation
+   *   tiles were built from (`finish`'s `extras.elevation`), stored as the
+   *   record's `elevation` stamp, or not at all for a run that pinned none.
+   *   Local only, like `deps`: it is what this device's bucket holds, not
+   *   something the account can know.
    * @returns {Promise<void>}
    */
   async function _recordRegionDownload(
@@ -336,6 +341,7 @@
     terrain,
     items,
     verified,
+    elevation,
   ) {
     if (!z || !window.pwaDb) return;
     try {
@@ -387,6 +393,10 @@
         // SNOW-1072: the terrain-data opt-in this run carried. The class
         // tiles it implies are derived from `z`, never stored here.
         ...(terrain ? { terrain: true } : {}),
+        // SNOW-1453: the template this run's elevation tiles came from. The
+        // 3D view reads it to know it may be drawn here offline
+        // (`elevationAreaBoxes`); the tiles themselves are derived.
+        ...(terrain && elevation ? { elevation: elevation } : {}),
         // SNOW-1308: what the reader's own things in this region are, by
         // name with their urls — written with a complete content run only,
         // the rule `stampContentRecord` applies to every later sync.
@@ -572,6 +582,11 @@
    * them. When both opted in, this run's own class tiles are spared, so
    * only ground the new blob no longer covers is removed.
    *
+   * SNOW-1453: the elevation tiles too. The superseded record's are
+   * derived under its own `elevation` stamp where it has one, so a
+   * re-download after a seasonal `<version>` bump takes the old version's
+   * tiles out; this run's own are spared.
+   *
    * @param {string} areaId The area's pinned bucket.
    * @param {Object | null} previous The superseded record, when it carried
    *   `terrain`; null prunes nothing.
@@ -581,9 +596,13 @@
    */
   async function _pruneSupersededTerrain(areaId, previous, blob, terrain) {
     if (!areaId || !previous || !previous.terrain) return;
-    const stale = new Set(areaTerrainClassTileUrls(previous));
+    const stale = new Set([
+      ...areaTerrainClassTileUrls(previous),
+      ...areaElevationTileUrls(previous, previous.elevation || ''),
+    ]);
     if (terrain) {
       for (const url of activeTerrainClassTileURLs(blob)) stale.delete(url);
+      for (const url of activeElevationTileURLs(blob)) stale.delete(url);
     }
     if (!stale.size) return;
     await prunePinnedBasemapURLs(areaId, [...stale], null);
@@ -1019,7 +1038,12 @@
         // class tile leaves the area 'incomplete', and the tap's repair
         // fetches it. (SNOW-1073 removed SNOW-692's swisstopo slope tiles,
         // which this list also carried; the class tiles replace them.)
-        const depURLs = [...renderDeps, ...areaTerrainClassTileUrls(stored)];
+        // SNOW-1453: and the elevation tiles, on the same flag.
+        const depURLs = [
+          ...renderDeps,
+          ...areaTerrainClassTileUrls(stored),
+          ...areaElevationTileUrls(stored),
+        ];
         // Only asked once the tiles are all present. An area still missing
         // tiles is not downloaded at all, and 'idle' — download it — is
         // the right thing to offer; 'incomplete' would send the user to a
@@ -1056,6 +1080,21 @@
           // SNOW-1072: healed WITHOUT the class tiles, which the record
           // must never carry — the flag is what names them.
           if (missingDeps.length === 0) fields.deps = renderDeps;
+          // SNOW-1453: every elevation tile today's template implies is
+          // here too (they are in `depURLs`), so the record takes the
+          // stamp the 3D view reads; a tap's repair is how an area
+          // downloaded before elevation joined terrain data gets it. The
+          // heal fills a missing field only, so a stamp from an older
+          // template is replaced by a sync (`syncArea`), not here.
+          const dem = elevationTileTemplate();
+          if (
+            missingDeps.length === 0 &&
+            dem &&
+            stored.elevation !== dem &&
+            areaElevationTileUrls(stored).length > 0
+          ) {
+            fields.elevation = dem;
+          }
           if (!stored.glyphPrefix) {
             const prefix = activeBasemapGlyphPrefix(MAP);
             const areaId = core.areaIdForRegion(data.regionId);
@@ -2154,7 +2193,16 @@
       finish: async (
         result,
         blob,
-        { core: runCore, progressFill, tileSources, basemapKey, renderDeps, glyphPrefix, content },
+        {
+          core: runCore,
+          progressFill,
+          tileSources,
+          basemapKey,
+          renderDeps,
+          glyphPrefix,
+          content,
+          elevation,
+        },
       ) => {
         // "done" (the green offline circle) requires at least one success
         // and no failures; a partial, vacuous, or absent result must not
@@ -2222,6 +2270,7 @@
             terrain,
             content && content.items,
             verified,
+            elevation,
           );
           // SNOW-871: and only NOW is the copy this run replaced safe to
           // take. A failed or cancelled run reaches neither line, so the

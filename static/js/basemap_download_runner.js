@@ -68,6 +68,8 @@
    *   evict: function(string[]): Promise<void>,
    *   feedUrls: function(): string[],
    *   terrainClassUrls?: function(Object): string[],
+   *   elevationUrls?: function(Object): string[],
+   *   elevationTemplate?: function(): string,
    *   contentUrls?: function(Object, {terrain: boolean}): Promise<string[]|{urls: string[],
    *     short?: boolean}>,
    *   renderDeps?: function(): string[],
@@ -93,6 +95,10 @@
    *   that still carries it is simply not asked.
    *   SNOW-1072: `terrainClassUrls` is the terrain-class tiles over the
    *   blob's ground — read only when `options.terrain` is set.
+   *   SNOW-1453: `elevationUrls` is the elevation tiles over the same
+   *   ground, read on the same gate, and `elevationTemplate` the template
+   *   they were built from, which `finish` is handed as the record's
+   *   `elevation` stamp.
    *   SNOW-1379: `contentUrls` is handed the run's `terrain` too, which
    *   decides whether the problem-terrain feed is in the content plan.
    * @param {{
@@ -332,6 +338,19 @@
     const terrainUrls =
       terrain && typeof deps.terrainClassUrls === 'function' ? deps.terrainClassUrls(blob) : [];
 
+    // SNOW-1453: the elevation tiles the 3D map draws its terrain from,
+    // after the class tiles and on the same opt-in. Never stored in the
+    // record either; what is stored is the template they came from
+    // (`elevation`, below), which is how the 3D view knows, without
+    // probing the cache, that it may be drawn here offline. Empty where
+    // the page has no 3D view, and then nothing is stamped.
+    const elevationUrls =
+      terrain && typeof deps.elevationUrls === 'function' ? deps.elevationUrls(blob) : [];
+    const elevation =
+      elevationUrls.length > 0 && typeof deps.elevationTemplate === 'function'
+        ? deps.elevationTemplate() || ''
+        : '';
+
     // SNOW-924: the bulletin pages and weather sheets inside the area's
     // boundary — the perishable half of a download, where everything above
     // is the permanent half. Takes the blob for the same reason
@@ -379,6 +398,7 @@
       ...feedUrls,
       ...(gridPlan ? gridPlan.urls : []),
       ...terrainUrls,
+      ...elevationUrls,
     ];
 
     // SNOW-569: the area's tiles are drawn as an empty grid that fills in
@@ -455,6 +475,11 @@
         // SNOW-1072: whether this run included terrain data — the flag a
         // caller records, never the URLs it implied.
         terrain,
+        // SNOW-1453: the template this run's elevation tiles were built
+        // from, `''` when it pinned none. A caller stamps it on the record
+        // of a run that succeeded, and only then: a success means every
+        // url in the list landed, the elevation tiles among them.
+        elevation,
         // SNOW-924: `{ok, total}` for the content half alone. `total === 0`
         // means this run had no content to fetch — an older deps bundle, or
         // an area whose boundary contains nothing — which a caller must read

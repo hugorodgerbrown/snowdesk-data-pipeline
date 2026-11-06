@@ -360,6 +360,10 @@
           // tiles it implies are derived from `z`/`bbox` above, never
           // recorded; the flag is the choice, which nothing can derive.
           terrain: !!entry.terrain,
+          // SNOW-1453: the template the area's elevation tiles were fetched
+          // under, '' when it holds none. The 3D view draws offline only
+          // inside an area stamped with today's (`elevationAreaBoxes`).
+          elevation: typeof entry.elevation === 'string' ? entry.elevation : '',
           // SNOW-1142: the account the download was made under — '' for an
           // anonymous one, null for a record written before the field
           // existed. `downloads_sync.js`'s `ownership()` decides from this
@@ -430,6 +434,8 @@
           contentAt: custom.contentAt || '',
           // SNOW-1072: see the region branch above.
           terrain: !!custom.terrain,
+          // SNOW-1453: see the region branch above.
+          elevation: typeof custom.elevation === 'string' ? custom.elevation : '',
           // SNOW-1142: see the region branch above.
           principal: principalOf(custom),
           // SNOW-1417: see the region branch above.

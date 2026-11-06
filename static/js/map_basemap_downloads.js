@@ -434,9 +434,14 @@ function terrainClassMbForBlob(blob) {
   const core = self.pwaBasemapDownloadCore;
   const terrain = self.pwaTerrainFilterCore;
   if (!core || !terrain || !terrainClassTileTemplate()) return 0;
-  return core.terrainClassMb(
+  const classMb = core.terrainClassMb(
     core.terrainClassTileCount(blob, terrain.COVERAGE_BOUNDS, terrain.MIN_ZOOM, terrain.MAX_ZOOM),
   );
+  // SNOW-1453: and the elevation tiles, folded into the one terrain figure.
+  const elevationMb = elevationTileTemplate()
+    ? core.elevationMb(core.elevationTileCount(blob, terrain.COVERAGE_BOUNDS))
+    : 0;
+  return classMb + elevationMb;
 }
 
 /**
@@ -464,7 +469,80 @@ function terrainClassMbForGround(bbox, maxTiles) {
     core.tileRangesForBBox(clipped, terrain.MIN_ZOOM, terrain.MAX_ZOOM),
   );
   if (Number.isFinite(maxTiles) && maxTiles >= 0) count = Math.min(count, maxTiles);
-  return core.terrainClassMb(count);
+  return core.terrainClassMb(count) + elevationMbForGround(clipped, maxTiles);
+}
+
+/**
+ * SNOW-1453: what the elevation tiles over a piece of ground cost, in MB,
+ * before its blob is known — `terrainClassMbForGround`'s half for them.
+ *
+ * The same two upper bounds: the z10-13 tiles over the box (no more than
+ * the download's own tile count, since each is one of its cells), plus
+ * the z7-9 tiles over the box, which hold every parent.
+ *
+ * @param {number[]} clipped The ground's box, clipped to the coverage.
+ * @param {number} [maxTiles] The download's own tile count, when known.
+ * @returns {number} 0 where the page pins no elevation tiles.
+ */
+function elevationMbForGround(clipped, maxTiles) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !elevationTileTemplate()) return 0;
+  const [bandMin, bandMax] = core.ELEVATION_BAND;
+  let band = core.tileCount(core.tileRangesForBBox(clipped, bandMin, bandMax));
+  if (Number.isFinite(maxTiles) && maxTiles >= 0) band = Math.min(band, maxTiles);
+  const parents = core.tileCount(
+    core.tileRangesForBBox(clipped, core.ELEVATION_PARENT_MIN_ZOOM, bandMin - 1),
+  );
+  return core.elevationMb(band + parents);
+}
+
+/**
+ * SNOW-1453: the elevation tiles' `{z}/{x}/{y}` template, or `''` where
+ * the page has no 3D view (`map_3d_view` off renders no
+ * `#map-view-toggle`), so nothing is pinned there. The same attribute the
+ * 3D view's loader reads its template from, so a pinned URL is the URL it
+ * asks for.
+ *
+ * @returns {string}
+ */
+function elevationTileTemplate() {
+  const toggle = document.getElementById('map-view-toggle');
+  return (toggle && toggle.dataset.demTileUrl) || '';
+}
+
+/**
+ * SNOW-1453: the elevation tile URLs one download blob implies — the run's
+ * list. Empty where the page pins none.
+ *
+ * @param {Object|null} blob The download blob, for its `z` row spans.
+ * @returns {string[]}
+ */
+function activeElevationTileURLs(blob) {
+  const core = self.pwaBasemapDownloadCore;
+  const terrain = self.pwaTerrainFilterCore;
+  const template = elevationTileTemplate();
+  if (!core || !terrain || !template) return [];
+  return core.elevationTileURLs(template, blob, terrain.COVERAGE_BOUNDS);
+}
+
+/**
+ * SNOW-1453: the elevation tiles ONE recorded area should hold, on its
+ * `terrain` flag — `areaTerrainClassTileUrls`'s twin, through the core's
+ * `areaElevationTileURLs`.
+ *
+ * @param {Object|null} record A `basemap.regions` / `basemap.customAreas`
+ *   entry, or a Manage downloads row carrying the same fields.
+ * @param {string} [template] The template to derive under; today's when
+ *   omitted. The prune passes a superseded record's own stamp.
+ * @returns {string[]} Empty for an area without terrain data, or a page
+ *   that pins no elevation tiles.
+ */
+function areaElevationTileUrls(record, template) {
+  const core = self.pwaBasemapDownloadCore;
+  const terrain = self.pwaTerrainFilterCore;
+  const dem = template || elevationTileTemplate();
+  if (!core || !terrain || !dem) return [];
+  return core.areaElevationTileURLs(record, dem, terrain.COVERAGE_BOUNDS);
 }
 
 /**
@@ -2725,6 +2803,17 @@ window.pwaBasemapDownloads = Object.freeze({
   areaTerrainClassTileUrls: (record) => areaTerrainClassTileUrls(record),
 
   /**
+   * SNOW-1453: the elevation tiles one recorded area should hold — see
+   * `areaElevationTileUrls`. Empty unless the record carries `terrain`
+   * and the page has a 3D view; judged on every basemap, as the class
+   * tiles are.
+   *
+   * @param {Object|null} record
+   * @returns {string[]}
+   */
+  areaElevationTileUrls: (record) => areaElevationTileUrls(record),
+
+  /**
    * SNOW-1072: whether this page can include terrain data at all, and so
    * whether a new download does (`terrainDataPreferred`).
    */
@@ -3667,6 +3756,10 @@ const PINNED_DOWNLOAD_DEPS = {
   // blob, because they cover the same ground and band as the area's own
   // tiles. Read by the runner only for a run carrying `terrain: true`.
   terrainClassUrls: (blob) => activeTerrainClassTileURLs(blob),
+  // SNOW-1453: the elevation tiles over the same ground, and the template
+  // a run that pinned them all stamps on its record.
+  elevationUrls: (blob) => activeElevationTileURLs(blob),
+  elevationTemplate: () => elevationTileTemplate(),
   // SNOW-924: the bulletins and weather inside the area's boundary, and
   // the four overlay feeds cached whole on the way past. Async, alone
   // among these — see `assembleAreaContentURLs`.
@@ -4343,7 +4436,9 @@ async function _missingAreaRenderDependencies(record) {
   const activeKey = activeBasemapKey();
   const isActive = !!activeKey && record.basemapKey === activeKey;
   const recorded = areaRenderDependencyURLs(record.deps, isActive);
-  const terrain = areaTerrainClassTileUrls(record);
+  // SNOW-1453: and the elevation tiles, derived on the same terms, which
+  // is how a sync brings an area downloaded before them up to date.
+  const terrain = [...areaTerrainClassTileUrls(record), ...areaElevationTileUrls(record)];
   // The three-row rule's UNKNOWN branch, and the only one that reaches
   // here as an empty list: a record written before SNOW-844 stored its
   // deps, on a basemap that is not the loaded one. The terrain-class tiles
@@ -4529,6 +4624,11 @@ async function syncArea(areaId, onStage) {
     });
     tiles = repaired ? 'ok' : 'failed';
   }
+  // SNOW-1453: every elevation tile the area should hold is in its bucket
+  // now (nothing was missing, or the repair fetched it all), so the record
+  // takes today's template as its stamp, and 3D may be drawn there
+  // offline.
+  if (tiles === 'ok' || tiles === 'none') await _stampAreaElevation(areaId, found);
   // SNOW-1415 review: the dependencies being here is not the map being
   // here. Only a full tile grid lets the stamp say Yes; a short grid is a
   // No this press cannot mend (the remedy is a re-download).
@@ -4542,6 +4642,25 @@ async function syncArea(areaId, onStage) {
   const result = { tiles: tiles, tilesHeld: tilesHeld, content: content };
   await _stampAreaVerified(areaId, result);
   return result;
+}
+
+/**
+ * SNOW-1453: stamp an area's record `elevation: <template>` once its bucket
+ * holds every elevation tile today's template implies — the stamp a
+ * download writes with its record, written here by a sync. Nothing is
+ * written for an area without terrain data, on a page that pins no
+ * elevation tiles, or when the stamp is already today's.
+ *
+ * @param {string} areaId
+ * @param {{record: Object, regionId: string}} found `_areaRecordById`'s answer.
+ * @returns {Promise<void>} Best-effort, like the other stamps.
+ */
+async function _stampAreaElevation(areaId, found) {
+  const template = elevationTileTemplate();
+  if (!template || found.record.elevation === template) return;
+  if (areaElevationTileUrls(found.record).length === 0) return;
+  await _rewriteAreaRecord(areaId, found.regionId, (entry) => ({ ...entry, elevation: template }));
+  notifyDownloadsChanged();
 }
 
 /**
