@@ -473,6 +473,8 @@ layers menu.
 | 19 | SNOW-1456: online, open the Help menu and choose "Test 3D on this device"; keep the phone still | A panel opens (on the left on a desktop) and ticks through "Loading the map", "Close up, over Saas-Fee" and "Zoomed out, over Valais" with seconds left; the map turns by itself. It ends on one of "3D runs smoothly on this phone", "3D may stutter when zoomed out" or "3D is too slow on this phone", and the map comes back to where it was, flat if it was flat |
 | 20 | Open Details, then tap "Send anonymously" | Details lists each pass's median, fps, p95, share over budget and slow windows, the GPU and the screen. Send shows "Sent to Snowdesk, anonymously."; the admin's 3D device tests list has the row, with no user |
 | 21 | Open http://localhost:8000/map/3d/?probe=1 | It lands on `/map/?probe=1&view=3d`, the test starts by itself with Details open and Steep terrain and SAC tours on; after it ends they are off again if they were off before |
+| 22 | SNOW-1450: open an old link, http://localhost:8000/map/3d/?share=abc&at=7.87,46.07,12.6,64,215&layers=steep | It lands on `/map/?view=3d` in 3D over Saas-Fee, tilted; `at` then leaves the address bar, which keeps `view=3d`. Signed out, the same link opens the flat map over Saas-Fee |
+| 23 | SNOW-1450: from your routes, open one, switch to 3D and choose Share in the route panel; open the copied link | The link ends `/routes/s/<token>/3d/`. It opens `/map/` in 3D framed on the route. In a private window, signed out, it opens the flat map framed on the same route and shows none of your other routes |
 
 ---
 

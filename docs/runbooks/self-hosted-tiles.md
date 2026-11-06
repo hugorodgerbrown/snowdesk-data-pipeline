@@ -144,8 +144,8 @@ Once a season, or sooner if Mapterhorn improves a source we use:
    added since the last refresh is covered.
 2. In snowdesk-tiles, run `build-dem.sh <new-version>` with that file. Publish
    it, then run its `verify.sh`.
-3. Set `MAP_3D_DEM_TILE_URL` to the new version, then open `/map/3d/` and
-   check the relief.
+3. Set `MAP_3D_DEM_TILE_URL` to the new version, then open `/map/?view=3d`
+   and check the relief.
 4. Leave the previous version in R2 until the next refresh.
 
 **Rollback** is step 3 in reverse: set `MAP_3D_DEM_TILE_URL` back to the

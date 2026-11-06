@@ -1,6 +1,6 @@
 ---
 name: a-3d-map-is-maplibre-terrain
-description: 3D map on MapLibre setTerrain: /map/3d/ sandbox, /map/ ?view=3d, 3D wash, fallbacks, offline 3D via elevation tiles in downloads
+description: 3D map on MapLibre setTerrain: /map/ ?view=3d and ?at=, /map/3d/ redirect, route 3D links, 3D wash, fallbacks, offline 3D elevation tiles
 status: current
 last-reviewed: 2026-11-06
 ---
@@ -69,21 +69,38 @@ work, not app JS, so a different engine buys no speed either.
   elevation tiles with its terrain data, and `/map/`'s 3-D works offline
   inside it.
 
-**Sharing (5 Nov 2026).** Two links open the sandbox past the flag, for
-anyone, signed in or not, and both stop when the sharer's `Map3dShare` row
-is deleted in the admin:
+**Sharing (5 Nov 2026; the token went on 6 Nov 2026, SNOW-1450).** The
+sandbox first had two links past the flag, both revoked by deleting the
+sharer's `Map3dShare` row: `?share=<token>`, which opened the page with no
+routes, and a route share's `3d/` link, which opened it on that one route.
 
-- `?share=<token>` (`Map3dShare`, one per reader) opens the page with no
-  routes at all: a reader's routes are private.
-- A route share, `/routes/s/<token>/3d/` (`routes:share_redirect_3d`): the
-  ordinary route share link with `3d/` on the end. It opens
-  `/map/3d/?route_share=<token>` on that one route, drawn through the
-  session's pending shares in `routes.geojson`, so the visitor sees the
-  shared route and none of the sharer's others. Only a live, non-example
-  share by a reader holding a `Map3dShare` qualifies
-  (`map_3d.route_share_for_3d`). Inside the flag, Share on the 3-D map sends
-  this link for the route that is open; a friend who followed the 2-D link
-  gets /map/'s "3D" roundel carrying it (`pending_route_share_for_3d`).
+SNOW-1450 retired the sandbox and removed `Map3dShare` with it (migration
+`map.0003`). Hugo decided not to keep a way past the flag: the token opened
+a page that no longer exists, and `/map/`'s 3D view is the flag's to give
+until SNOW-1451 opens 3D to everyone. Meanwhile a signed-out visitor, or
+anyone outside the flag, who follows a 3D link sees the flat `/map/`.
+
+- **`/map/3d/` is a redirect** (`map_3d.map_3d_redirect`): a 302 with
+  `Cache-Control: no-store`, the same for anyone, writing nothing to the
+  session. `?route_share=<token>` goes to `/routes/s/<token>/3d/`, carrying
+  `at`; anything else goes to `/map/`, carrying `probe` and `at`, then
+  `view=3d`. `share` and the old `layers` switches are dropped: `/map/` has
+  no URL for its switches, and its own `?layers=` is the layer explainer.
+- **A route's 3D link**, `/routes/s/<token>/3d/` (`routes:share_redirect_3d`),
+  sends any live share to `/map/?route_share=<token>&at=…&view=3d`, with the
+  same 404/410/429, budget and seating as the flat follow. The visitor still
+  sees only the routes their own session followed, through `routes.geojson`,
+  never the sharer's others. Inside the flag it opens in 3D; outside, flat,
+  framed on the route.
+- **`/map/` reads `?at=lng,lat,zoom,pitch,bearing`**
+  (`map_view_core.readCamera`, the old page's validation): the linked camera
+  beats the stored one, a flat boot zeroes its pitch, the coverage check
+  uses its centre, and `at` leaves the address bar at boot. A route share
+  still frames its route after boot.
+- **Share.** `/map/` has no share for the view itself: the address bar is
+  the link. In 3D the two route Shares (the routes panel's row and the
+  route rail) copy the `3d/` link through `map_3d_core.routeShare3dUrl`;
+  flat, the plain one.
 
 ## The 3-D view on /map/ (SNOW-1449, 6 Nov 2026)
 
@@ -93,7 +110,8 @@ the mode says what the map shows, the view how it is drawn
 ([the modes](the-map-has-a-dated-mode-and-a-terrain-mode.md)). SNOW-1449 made
 it Terrain's alone; SNOW-1452 brought it to Conditions (below).
 A `map_3d` reader without the modes, and a friend sent a route by a 3-D
-reader, keep the "3D" link to `/map/3d/`.
+reader, kept the "3D" link to `/map/3d/` until SNOW-1450 retired it; both
+now see the flat map.
 
 - **The rules** are `static/js/map_view_core.js` (`self.pwaMapViewCore`):
   the `?view=3d` parameter beside `?mode=terrain` (read only in Terrain
@@ -110,7 +128,7 @@ reader, keep the "3D" link to `/map/3d/`.
 - **The runner** is `static/js/map_view_3d.js` (`window.pwaMapView`). It
   reuses `map_3d_core` and the shared `static/js/map_3d_terrain.js`
   (`self.pwaMap3dTerrain`: the elevation protocol, registered once, and an
-  idempotent terrain install), which the sandbox now uses too. Entering
+  idempotent terrain install), which the sandbox used too until SNOW-1450. Entering
   swaps to swisstopo winter, adds the relief, sky and sunlight, caps the
   pixel ratio, opens the pitch ceiling, floors the zoom at 9 and eases to
   the opening tilt. Leaving reverses it and keeps the elevation source. The
@@ -348,5 +366,5 @@ told "smooth" by one rule and sent back to 2D by another.
 - **Staff re-measure.** `/map/?probe=1` starts the test on load with Details
   open, turning on Steep terrain and SAC tours for that run only (the
   layers SNOW-1448's budget was measured on); Share sends the full JSON. The
-  probe left `map_3d.js`, and `/map/3d/?probe=1` redirects a flagged reader
-  there until SNOW-1450 retires the sandbox.
+  probe left `map_3d.js`, and `/map/3d/?probe=1` redirects there; since
+  SNOW-1450 it does so for anyone, as the whole of `/map/3d/` does.
