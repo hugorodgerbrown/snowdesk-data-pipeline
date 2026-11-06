@@ -113,9 +113,11 @@ reader, keep the "3D" link to `/map/3d/`.
   relief is put back on `styledata` after every `setStyle`.
 - **The flat map does not tilt.** `maxPitch` is 0 except in 3-D, and while
   flat in Terrain with 3-D available, where a reader's own tilt (it carries
-  an `originalEvent`) enters 3-D. In vendored MapLibre 4.7.1 a ctrl-drag
-  on a flat map with the ceiling open fires `pitch` with an
-  `originalEvent`; the runner enters on that.
+  an `originalEvent`) enters 3-D. Measured in Chromium on the vendored
+  MapLibre 4.7.1: a ctrl-drag fires `pitchstart` and `pitch` with an
+  `originalEvent` even at `maxPitch` 0, but the map does not move; with the
+  ceiling open the same drag tilts it, so the gesture that enters 3-D also
+  carries the reader's tilt into it.
 - **Leaving.** The map goes flat, with a line, when it changes to
   Conditions (before a sheet paints, since `map_mode.js` dispatches
   `snowdesk:map-mode-changed` synchronously), goes offline or is panned
