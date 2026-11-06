@@ -58,8 +58,9 @@ work, not app JS, so a different engine buys no speed either.
   z12–14, so a lower-zoom DEM would still be needed. The sandbox uses
   Terrarium alone, which keeps it simple.
 - Terrain costs GPU time, which matters most on a phone. That is the first
-  thing to measure before 3-D reaches `/map/`. `/map/3d/?probe=1` measures
-  it on the device that opens it (SNOW-1448): it turns the camera over
+  thing to measure before 3-D reaches `/map/`. `/map/3d/?probe=1` measured
+  it on the device that opened it (SNOW-1448; since SNOW-1456 it redirects
+  to `/map/?probe=1&view=3d`, [the 3D test](#the-3d-test-snow-1456-6-nov-2026)): it turns the camera over
   Saas-Fee at z12.6 and over the Valais at z9, with Steep terrain and SAC
   tours on, and reports the median, 95th-percentile and over-budget share
   of the frame intervals against the proposed budget, a median under 33 ms.
@@ -155,9 +156,9 @@ limits"). That run's opening view had a median of 16.7 ms but a p95 of
 stall single frames on a phone that draws 3D well, so a p95 limit trips on
 a good phone in ordinary use. Only a map that is slow throughout lifts the
 median, so the p95 limit was dropped and the count raised to three
-(SNOW-1452). The `/map/3d/?probe=1` probe and its own verdict
-(`frameStats().withinBudget`, `PROBE_PASSES`) are unchanged; the watchdog
-does not read that verdict.
+(SNOW-1452). The probe's own verdict (`frameStats().withinBudget`) was
+never read by the watchdog; since SNOW-1456 the probe lives on `/map/` and
+is judged by the watchdog's rule ([below](#the-3d-test-snow-1456-6-nov-2026)).
 
 Three things lay `/map/`'s 3-D flat, each through the runner's
 `exit({reason})`, with the switch then disabled through `availability`. A
@@ -305,3 +306,47 @@ on swisstopo winter.**
   (`_synthesizedGatewayTimeout`), as a failure. Three misses past the
   area's edge would otherwise latch it to AWS, and the pinned tiles would
   never be asked for again.
+
+## The 3D test (SNOW-1456, 6 Nov 2026)
+
+**Decision.** Any reader with `/map/`'s 3D view can test it on their own
+device: "Test 3D on this device" in the Help menu, or "Test this device" on
+the line that says the watchdog laid the map flat. The test is judged by
+**the same rule as the fallback**, so a device that passes the test is one
+the watchdog would not lay flat on the same ground, and a reader is never
+told "smooth" by one rule and sent back to 2D by another.
+
+- **The rule.** Each pass's frame intervals go through a fresh
+  `map_3d_core.createFrameWatch()` (`judgePass`): a pass that trips falls
+  behind, one that does not keeps up. `testVerdict(passes)` gives `smooth`
+  when both keep up, `stutter` when only the second (z9, over the Valais)
+  falls behind, and `slow` otherwise. A pass shorter than one watchdog
+  window (`FRAME_WINDOW_MS`) was not measured, and the run is `unmeasured`:
+  the panel says so and offers Test again, and nothing can be sent.
+  `frameStats` still gives the Details figures (median, fps, p95, share over
+  budget, slow windows); the verdict never reads the p95.
+- **The run** is `static/js/map_3d_test.js`, ported from the sandbox's probe
+  (`nextIdle`, `timeTurn`, `gpuName`, `PROBE_PASSES`), on the live map as the
+  reader has it: their basemap and overlays, which the result records as
+  layer keys (`MAP_3D_TEST_OVERLAYS`). It drives the view through
+  `pwaMapView.canTest` / `beginTest` / `endTest`. `beginTest` saves the view
+  and camera, enters 3D even after a trip, and holds the runner's own
+  watchdog off for the run; `endTest({verdict})` puts both back, and a
+  `smooth` or `stutter` verdict lifts the visit's `slow` latch. Stop, Escape,
+  a hidden tab or a lost WebGL context ends the run with no verdict. It is
+  not offered offline (it loads tiles), while a route is drawn, or where the
+  device gate refuses.
+- **The panel** (`public/partials/_map_3d_test_panel.html`) is a form panel
+  on `_overlay_sheet.html`, on the left on a desktop. Share and Test again
+  sit in its "…" menu (design rule 5); Done closes it.
+- **Sending is opt-in and anonymous.** "Send anonymously" posts the result
+  to `POST /api/map-3d-test/` (`apps.map.api.map_3d_test_receive`, CSRF
+  protected, 16 KiB at most, 10 an hour per IP with `block=False`, so a
+  dropped post still answers 204), which writes one `Map3dDeviceTest` row
+  holding no user, session or IP. The admin lists the rows by verdict and
+  probe, so the budget can be read across real devices before it is retuned.
+- **Staff re-measure.** `/map/?probe=1` starts the test on load with Details
+  open, turning on Steep terrain and SAC tours for that run only (the
+  layers SNOW-1448's budget was measured on); Share sends the full JSON. The
+  probe left `map_3d.js`, and `/map/3d/?probe=1` redirects a flagged reader
+  there until SNOW-1450 retires the sandbox.

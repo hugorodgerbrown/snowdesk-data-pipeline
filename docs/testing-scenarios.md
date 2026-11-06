@@ -445,7 +445,8 @@ the "?" only replayed the tour).
 swisstopo winter map, the compass appears once the map turns, a sheet
 stays open in 3D, and 2D brings the reader's own basemap back. SNOW-1452:
 Conditions in 3D, with the danger fill as a light wash, problem terrain on
-the slopes and the timelapse playing in 3D.
+the slopes and the timelapse playing in 3D. SNOW-1456: the 3D test, judged
+on a real GPU by the watchdog's rule, and the staff probe on /map/.
 Prerequisite: sign in as `admin@snowdesk.dev`; choose OpenFreeMap in the
 layers menu.
 
@@ -469,6 +470,9 @@ layers menu.
 | 16 | Reload a bare http://localhost:8000/map/ | It opens flat, in either stored mode |
 | 17 | SNOW-1453: with a Zermatt region downloaded on **swisstopo winter** (D1; its label reads "…of terrain and 3D data") and DevTools → Network → **Offline**, zoom to Zermatt and tap "3D"; then pan to Verbier | Inside the downloaded area the map tilts into relief offline. Past its edge one line reads "Back in 2D: offline, 3D works only in a downloaded area."; tapping "3D" there says "3D needs a connection or a downloaded area" |
 | 18 | SNOW-1453: a region downloaded on OpenFreeMap instead (its label reads "…of terrain data", with no 3D), offline, zoom into it | "3D" stays disabled with "3D needs a connection or a downloaded area": 3D draws on swisstopo winter, which that download does not hold. The Manage downloads sheet does not call the area Incomplete for it |
+| 19 | SNOW-1456: online, open the Help menu and choose "Test 3D on this device"; keep the phone still | A panel opens (on the left on a desktop) and ticks through "Loading the map", "Close up, over Saas-Fee" and "Zoomed out, over Valais" with seconds left; the map turns by itself. It ends on one of "3D runs smoothly on this phone", "3D may stutter when zoomed out" or "3D is too slow on this phone", and the map comes back to where it was, flat if it was flat |
+| 20 | Open Details, then tap "Send anonymously" | Details lists each pass's median, fps, p95, share over budget and slow windows, the GPU and the screen. Send shows "Sent to Snowdesk, anonymously."; the admin's 3D device tests list has the row, with no user |
+| 21 | Open http://localhost:8000/map/3d/?probe=1 | It lands on `/map/?probe=1&view=3d`, the test starts by itself with Details open and Steep terrain and SAC tours on; after it ends they are off again if they were off before |
 
 ---
 
