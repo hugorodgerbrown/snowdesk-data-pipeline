@@ -9,6 +9,9 @@
  *                                    which map_tour_offer.js answers.
  *   What is everything on the map?  → 'snowdesk:map-help-mode-requested',
  *                                    which map_help_mode.js answers.
+ *   Test 3D on this device         → 'snowdesk:map-3d-test-requested',
+ *                                    which map_3d_test.js answers
+ *                                    (SNOW-1456; only with the 3D view).
  *   Help pages                     → a link to /help/.
  *
  * HELP MODE KEEPS THE ROUNDEL'S PRESS. map_help_mode.js takes every click
@@ -72,6 +75,8 @@
       document.dispatchEvent(new CustomEvent('snowdesk:map-welcome-requested'));
     } else if (choice === 'help-mode') {
       document.dispatchEvent(new CustomEvent('snowdesk:map-help-mode-requested'));
+    } else if (choice === 'test-3d') {
+      document.dispatchEvent(new CustomEvent('snowdesk:map-3d-test-requested'));
     }
   });
 

@@ -39,13 +39,9 @@
  * it, for anyone. A tap on a tour puts Share back to the plain view. The
  * button's label says which it will send.
  *
- * FRAME-TIME PROBE. `?probe=1` (SNOW-1448) times the page's frames on the
- * device it opens on: after the opening view settles it turns the camera
- * through each of map_3d_core.PROBE_PASSES, records the interval between
- * animation frames and shows the summary in a panel, with a button that
- * shares it as text. Steep terrain and SAC tours are on and Wildlife off,
- * whatever the link says, so every run measures the same map. It is a
- * measuring tool for the 3-D budget, not a reader-facing feature.
+ * FRAME-TIME PROBE. The `?probe=1` this page carried (SNOW-1448) moved
+ * onto /map/ as "Test 3D on this device" (SNOW-1456, map_3d_test.js);
+ * apps/map/map_3d.py redirects a flagged reader's /map/3d/?probe=1 there.
  *
  * Every URL comes from a data attribute on #map-3d (apps/map/map_3d.py).
  * The pure parts are in map_3d_core.js; the elevation protocol and the
@@ -79,7 +75,6 @@
   // Read before writeViewUrl rewrites the query string, which drops it.
   const opening = new URLSearchParams(window.location.search);
   const wantedRoute = opening.get('route');
-  const probing = opening.get('probe') === '1';
   // Framed only when the link has no camera: a shared view keeps its own.
   const wantedShare = view.camera ? '' : data.routeShareToken;
   /**
@@ -92,8 +87,6 @@
   const camera = view.camera || core.OPENING_CAMERA;
   /** @type {Record<string, boolean>} */
   const layerState = { ...view.layers };
-  // The probe measures one map: the budget's Steep terrain and SAC tours.
-  if (probing) Object.assign(layerState, { steep: true, tours: true, wildlife: false });
 
   const map = new maplibre.Map({
     container: el,
@@ -432,12 +425,6 @@
       failed: 'Could not copy the link',
       share_view: 'Share this view',
       share_route: 'Share this route in 3D',
-      probe_waiting: 'Frame-time probe: waiting for the map to load…',
-      probe_pass: 'Frame-time probe: pass %(n)s of %(total)s, %(label)s. Keep the phone still.',
-      probe_line: '%(label)s: median %(median)s ms (%(fps)s fps), p95 %(p95)s ms, %(over)s% over %(budget)s ms',
-      probe_no_frames: '%(label)s: no frames timed',
-      probe_done: 'Frame-time probe done. First idle %(idle)s ms. GPU: %(gpu)s',
-      probe_share: 'Share the result',
     })
     : null;
 
@@ -497,149 +484,4 @@
       say(STRINGS[outcome]);
     });
   }
-
-  // ---- Frame-time probe ---------------------------------------------------
-
-  /**
-   * Resolve on the map's next idle (every tile in view loaded and drawn), or
-   * false after a cap, so a tile that never arrives cannot stall the probe.
-   *
-   * @param {number} capMs
-   * @returns {Promise<boolean>}
-   */
-  function nextIdle(capMs) {
-    return new Promise((resolve) => {
-      const timer = window.setTimeout(() => resolve(false), capMs);
-      map.once('idle', () => {
-        clearTimeout(timer);
-        resolve(true);
-      });
-      map.triggerRepaint();
-    });
-  }
-
-  /**
-   * Turn the camera at a steady rate and time every animation frame.
-   *
-   * @param {number} turnDeg
-   * @param {number} durationMs
-   * @returns {Promise<number[]>} The intervals between frames, in ms.
-   */
-  function timeTurn(turnDeg, durationMs) {
-    return new Promise((resolve) => {
-      /** @type {number[]} */
-      const intervals = [];
-      let last = 0;
-      let turning = true;
-      /** @param {number} now */
-      const tick = (now) => {
-        if (last) intervals.push(now - last);
-        last = now;
-        if (turning) requestAnimationFrame(tick);
-      };
-      map.once('moveend', () => {
-        turning = false;
-        resolve(intervals);
-      });
-      requestAnimationFrame(tick);
-      // essential: MapLibre skips the animation under prefers-reduced-motion
-      // otherwise, and the pass would end before a single frame was timed.
-      // The reader asked for this run by opening ?probe=1.
-      map.rotateTo(map.getBearing() + turnDeg, {
-        duration: durationMs,
-        easing: (/** @type {number} */ t) => t,
-        essential: true,
-      });
-    });
-  }
-
-  /** @returns {string} The GPU's name, where the browser gives it. */
-  function gpuName() {
-    try {
-      const gl = /** @type {any} */ (map).painter.context.gl;
-      const ext = gl.getExtension('WEBGL_debug_renderer_info');
-      return String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
-    } catch (err) {
-      return '';
-    }
-  }
-
-  /** Run every probe pass and show the summary. */
-  async function runProbe() {
-    const panel = document.createElement('div');
-    panel.className = 'fixed left-2 top-2 z-50 max-w-xs bg-card text-text-1 border border-border rounded-card p-3 text-meta';
-    const text = document.createElement('pre');
-    text.className = 'whitespace-pre-wrap';
-    panel.appendChild(text);
-    document.body.appendChild(panel);
-    if (!STRINGS || !self.pwaStrings) return;
-    const fill = self.pwaStrings.interpolate;
-    /** @param {string} line */
-    const say = (line) => { text.textContent = line; };
-
-    say(STRINGS.probe_waiting);
-    await nextIdle(60000);
-    const firstIdleMs = Math.round(performance.now());
-    /** @type {any[]} */
-    const passes = [];
-    for (const [i, pass] of core.PROBE_PASSES.entries()) {
-      say(fill(STRINGS.probe_pass, { n: i + 1, total: core.PROBE_PASSES.length, label: pass.label }));
-      map.jumpTo({
-        center: core.OPENING_CAMERA.center.slice(),
-        zoom: pass.zoom,
-        pitch: core.OPENING_CAMERA.pitch,
-        bearing: core.OPENING_CAMERA.bearing,
-      });
-      const settledAt = performance.now();
-      const settled = await nextIdle(30000);
-      const settleMs = Math.round(performance.now() - settledAt);
-      const stats = core.frameStats(await timeTurn(pass.turnDeg, pass.durationMs));
-      passes.push({ label: pass.label, settled, settleMs, ...stats });
-    }
-    const canvas = map.getCanvas();
-    const result = {
-      probe: 'map_3d SNOW-1448',
-      at: new Date().toISOString(),
-      userAgent: navigator.userAgent,
-      gpu: gpuName(),
-      devicePixelRatio: window.devicePixelRatio || 1,
-      pixelRatio: map.getPixelRatio(),
-      canvas: [canvas.width, canvas.height],
-      budgetMs: core.FRAME_BUDGET_MS,
-      firstIdleMs,
-      passes,
-    };
-    const report = JSON.stringify(result, null, 1);
-    console.info('map_3d probe', result);
-    const lines = passes.map((p) => (p.frames
-      ? fill(STRINGS.probe_line, {
-        label: p.label,
-        median: p.medianMs,
-        fps: p.fps,
-        p95: p.p95Ms,
-        over: Math.round(p.overBudget * 100),
-        budget: core.FRAME_BUDGET_MS,
-      })
-      : fill(STRINGS.probe_no_frames, { label: p.label })));
-    const done = fill(STRINGS.probe_done, { idle: firstIdleMs, gpu: result.gpu || '?' });
-    say([done, ...lines].join('\n'));
-
-    // The panel's one action is a bare icon (AGENTS.md design rule 5): the
-    // page's own Share glyph, cloned, with the words as its accessible name.
-    const send = document.createElement('button');
-    send.type = 'button';
-    send.className = 'mt-2 text-text-2 hover:text-text-1';
-    send.setAttribute('aria-label', STRINGS.probe_share);
-    send.setAttribute('title', STRINGS.probe_share);
-    const glyph = shareButton && shareButton.querySelector('svg');
-    if (glyph) send.appendChild(glyph.cloneNode(true));
-    else send.textContent = STRINGS.probe_share;
-    send.addEventListener('click', () => {
-      if (share) share.shareOrCopy(report, document.title, 'text');
-      else console.info(report);
-    });
-    panel.appendChild(send);
-  }
-
-  if (probing) map.once('load', () => { runProbe(); });
 })();

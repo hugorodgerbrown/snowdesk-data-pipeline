@@ -3472,6 +3472,40 @@ def test_the_3d_view_renders_its_fallback_strings() -> None:
 
 
 @pytest.mark.django_db
+def test_the_3d_test_renders_only_with_the_3d_view() -> None:
+    """SNOW-1456: the "?" menu's item, the panel, its strings and its script.
+
+    Only behind map_3d_view_enabled() (map_3d and map_modes): the panel
+    carries where Send posts and the switches a result may record, and the
+    why-slow line's link has its string.
+    """
+    content = _flagged_map(map_3d=True, map_modes=True)
+    assert 'data-help-menu="test-3d"' in content
+    assert "Test 3D on this device" in content
+    assert 'id="map-3d-test-sheet"' in content
+    assert (
+        'data-sheet-side="left"' in content[content.index('id="map-3d-test-sheet"') :]
+    )
+    assert 'id="map-3d-test-template"' in content
+    assert 'id="map-3d-test-strings-template"' in content
+    assert f'data-url="{reverse("api:map_3d_test")}"' in content
+    assert 'data-overlay-keys="terrain ski_tours ' in content
+    assert 'data-string="test-device">Test this device</span>' in content
+    assert "Send this result to Snowdesk?" in content
+    assert content.index("js/map_view_3d.js") < content.index("js/map_3d_test.js")
+    assert "In Terrain, tap 3D" not in content
+    for flags in (
+        {"map_3d": True, "map_modes": False},
+        {"map_3d": False, "map_modes": True},
+    ):
+        other = _flagged_map(**flags)
+        assert 'data-help-menu="test-3d"' not in other
+        assert 'id="map-3d-test-sheet"' not in other
+        assert 'id="map-3d-test-strings-template"' not in other
+        assert "js/map_3d_test.js" not in other
+
+
+@pytest.mark.django_db
 def test_map_modes_alone_has_no_3d_roundel() -> None:
     """The modes without map_3d draw neither roundel nor the view's strings."""
     content = _flagged_map(map_3d=False, map_modes=True)

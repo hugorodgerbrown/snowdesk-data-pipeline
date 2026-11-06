@@ -1,0 +1,384 @@
+{% load i18n components %}
+{% comment %}
+public/partials/_map_3d_test_panel.html — the 3D test's panel (SNOW-1456).
+
+"Test 3D on this device", from the "?" menu (_map_help_menu.html) or the
+"Test this device" link on the line the 3D switch shows once the frame
+watchdog has laid the map flat for the visit (map_view_3d.js). The test
+turns the reader's own map through map_3d_core.PROBE_PASSES — close up over
+Saas-Fee, then zoomed out over Valais — times every frame, and judges each
+pass by the watchdog's own rule (map_3d_core.testVerdict). See
+docs/decisions/a-3d-map-is-maplibre-terrain.md.
+
+A FORM PANEL (AGENTS.md design rule 6): includes/_overlay_sheet.html with
+no detents and so no drag-to-close, docked on the left on a desktop
+(``side="left"``, where a selection opens) and sliding up on a phone.
+MapSheet.attach empties the sheet on every close, so the body below is a
+<template> that static/js/map_3d_test.js clones on every open, the shape
+the terrain filter's sheet uses.
+
+THE BODY'S STATES. Every section carries ``data-test-show``, the states it
+shows in, space-separated; the script shows one state at a time:
+
+  running     "Keep the phone still", a progress bar and the three steps
+              (loading the map, then each pass with the seconds left);
+  smooth /    the verdict: its chip, title and line, each pass as "keeps
+  stutter /   up" or "falls behind", the Details disclosure (per pass the
+  slow        median, fps, p95, share over budget, slow windows and how
+              long the tiles took, then the GPU, the screen and the rule),
+              the opt-in "Send anonymously" and Done;
+  unmeasured  "The test could not time this device", with Test again —
+              never sent;
+  unavailable "3D is not available on this device" (the device gate, or
+              the WebGL context lost);
+  offline     the test needs tiles, so it does not run offline;
+  editing     a route is being drawn.
+
+Share and Test again sit in a "…" menu (design rule 5), on a result only.
+The × is "Stop the test" while it runs. Every copy a reader sees is here;
+the strings <template> holds only what the script builds with numbers in
+it. ``data-url`` and ``data-overlay-keys`` (apps/map/models.py
+MAP_3D_TEST_OVERLAYS, the switches a result records as on) come from the
+view, behind map_3d_view_enabled().
+
+Rendered three ways, by ``part``: the panel (the empty sheet plus both
+templates), ``part="body"`` (this file including itself for the body), and
+``part="menu-items"`` (the "…" menu's two rows, includes/_overflow_menu.html's
+``items_template``). ``static`` renders the body inline in a static card
+for the component library, in the state ``state`` names, with each pass's
+status from ``pass_0`` / ``pass_1`` ("keeps" or "behind").
+
+Included by public/partials/_map_embed.html behind ``map_3d_view``.
+{% endcomment %}
+{% if part == "menu-items" %}
+    <li role="none">
+        <button
+            type="button"
+            role="menuitem"
+            data-test-share
+            class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+        >
+            {% trans "Share the result" %}
+        </button>
+    </li>
+    <li role="none">
+        <button
+            type="button"
+            role="menuitem"
+            data-test-again
+            class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+        >
+            {% trans "Test again" %}
+        </button>
+    </li>
+{% elif part == "body" %}
+    <div
+        data-map-3d-test
+        data-url="{{ map_3d_test_url }}"
+        data-overlay-keys="{{ map_3d_test_overlays }}"
+        class="flex flex-col gap-4"
+    >
+        <div class="flex items-center justify-between gap-4 px-2 pt-1">
+            <p
+                class="text-xs font-mono uppercase tracking-widest text-text-3"
+                data-test-show="running"
+                {% if not static or state != "running" %}hidden{% endif %}
+            >
+                {% trans "Testing 3D" %}
+            </p>
+            <p
+                class="text-xs font-mono uppercase tracking-widest text-text-3"
+                data-test-show="smooth stutter slow unmeasured unavailable offline editing"
+                {% if not static or state == "running" %}hidden{% endif %}
+            >
+                {% trans "3D test" %}
+            </p>
+            <div class="-mt-3 -mr-3 flex items-center">
+                <span
+                    data-test-show="smooth stutter slow unmeasured"
+                    {% if not static or state == "running" or state == "unavailable" or state == "offline" or state == "editing" %}
+                        hidden
+                    {% endif %}
+                >
+                    {% trans "More: share the result, test again" as more_label %}
+                    {% include "includes/_overflow_menu.html" with trigger_id="map-3d-test-more" menu_id="map-3d-test-more-menu" trigger_label=more_label items_template="public/partials/_map_3d_test_panel.html" part="menu-items" %}
+                </span>
+                <button
+                    type="button"
+                    data-action="dismiss"
+                    data-test-show="running"
+                    aria-label="{% trans 'Stop the test' %}"
+                    class="{% icon_button_classes %}"
+                    {% if not static or state != "running" %}hidden{% endif %}
+                >
+                    {% include "includes/_icon_close.html" only %}
+                </button>
+                <button
+                    type="button"
+                    data-action="dismiss"
+                    data-test-show="smooth stutter slow unmeasured unavailable offline editing"
+                    aria-label="{% trans 'Close' %}"
+                    class="{% icon_button_classes %}"
+                    {% if not static or state == "running" %}hidden{% endif %}
+                >
+                    {% include "includes/_icon_close.html" only %}
+                </button>
+            </div>
+        </div>
+
+        {# ---- Running ---- #}
+        <section
+            class="flex flex-col gap-3 px-2"
+            data-test-show="running"
+            {% if not static or state != "running" %}hidden{% endif %}
+        >
+            <div>
+                <h2 class="text-lg font-semibold text-text-1">{% trans "Keep the phone still" %}</h2>
+                <p class="mt-1 text-sm leading-prose text-text-2">
+                    {% trans "The map turns by itself while each frame is timed. Your place on the map comes back when the test ends." %}
+                </p>
+            </div>
+            <div
+                role="progressbar"
+                aria-label="{% trans 'Test progress' %}"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0"
+                data-test-progress
+                class="h-1.5 overflow-hidden rounded-pill bg-tag"
+            >
+                <div class="h-full w-0 rounded-pill bg-text-1" data-test-progress-bar></div>
+            </div>
+            <ol class="flex flex-col gap-2.5 text-sm text-text-1">
+                {% with step="flex items-center gap-2.5 data-[step-state=current]:font-semibold data-[step-state=pending]:text-text-3" %}
+                    <li class="{{ step }}" data-test-step="load" data-step-state="current">
+                        <span>{% trans "Loading the map" %}</span>
+                    </li>
+                    <li class="{{ step }}" data-test-step="0" data-step-state="pending">
+                        <span>{% trans "Close up, over Saas-Fee" %}</span>
+                        <span class="ml-auto font-mono text-caption font-normal text-text-3" data-test-left></span>
+                    </li>
+                    <li class="{{ step }}" data-test-step="1" data-step-state="pending">
+                        <span>{% trans "Zoomed out, over Valais" %}</span>
+                        <span class="ml-auto font-mono text-caption font-normal text-text-3" data-test-left></span>
+                    </li>
+                {% endwith %}
+            </ol>
+        </section>
+
+        {# ---- A verdict ---- #}
+        <section
+            class="flex flex-col gap-4 px-2"
+            data-test-show="smooth stutter slow"
+            {% if not static or state != "smooth" and state != "stutter" and state != "slow" %}hidden{% endif %}
+        >
+            <div>
+                <span
+                    class="inline-block rounded-tag bg-status-success-bg px-2 py-0.5 font-mono text-meta uppercase tracking-wide text-status-success-text"
+                    data-test-show="smooth"
+                    {% if not static or state != "smooth" %}hidden{% endif %}
+                >{% trans "Smooth" %}</span>
+                <span
+                    class="inline-block rounded-tag bg-status-warning-bg px-2 py-0.5 font-mono text-meta uppercase tracking-wide text-status-warning-text"
+                    data-test-show="stutter"
+                    {% if not static or state != "stutter" %}hidden{% endif %}
+                >{% trans "Mostly smooth" %}</span>
+                <span
+                    class="inline-block rounded-tag bg-status-error-bg px-2 py-0.5 font-mono text-meta uppercase tracking-wide text-status-error-text"
+                    data-test-show="slow"
+                    {% if not static or state != "slow" %}hidden{% endif %}
+                >{% trans "Too slow" %}</span>
+                <div data-test-show="smooth" {% if not static or state != "smooth" %}hidden{% endif %}>
+                    <h2 class="mt-2 text-lg font-semibold text-text-1">{% trans "3D runs smoothly on this phone" %}</h2>
+                    <p class="mt-1 text-sm leading-prose text-text-2">
+                        {% trans "It kept up close in and zoomed out." %}
+                    </p>
+                </div>
+                <div data-test-show="stutter" {% if not static or state != "stutter" %}hidden{% endif %}>
+                    <h2 class="mt-2 text-lg font-semibold text-text-1">{% trans "3D may stutter when zoomed out" %}</h2>
+                    <p class="mt-1 text-sm leading-prose text-text-2">
+                        {% trans "Close in, it kept up. Zoomed out it fell behind, and the map may go back to 2D on its own there." %}
+                    </p>
+                </div>
+                <div data-test-show="slow" {% if not static or state != "slow" %}hidden{% endif %}>
+                    <h2 class="mt-2 text-lg font-semibold text-text-1">{% trans "3D is too slow on this phone" %}</h2>
+                    <p class="mt-1 text-sm leading-prose text-text-2">
+                        {% trans "It fell behind close in and zoomed out. The map stays in 2D, which shows the same bulletin and terrain." %}
+                    </p>
+                </div>
+            </div>
+            <ul class="border-t border-border text-sm text-text-1">
+                <li class="flex items-center gap-2.5 border-b border-border py-2.5" data-test-pass="0">
+                    <span>{% trans "Close up, over Saas-Fee" %}</span>
+                    <span
+                        class="ml-auto font-mono text-caption text-status-success-text"
+                        data-pass-status="keeps"
+                        {% if not static or pass_0 != "keeps" %}hidden{% endif %}
+                    >{% trans "keeps up" %}</span>
+                    <span
+                        class="ml-auto font-mono text-caption text-status-warning-text"
+                        data-pass-status="behind"
+                        {% if not static or pass_0 != "behind" %}hidden{% endif %}
+                    >{% trans "falls behind" %}</span>
+                </li>
+                <li class="flex items-center gap-2.5 border-b border-border py-2.5" data-test-pass="1">
+                    <span>{% trans "Zoomed out, over Valais" %}</span>
+                    <span
+                        class="ml-auto font-mono text-caption text-status-success-text"
+                        data-pass-status="keeps"
+                        {% if not static or pass_1 != "keeps" %}hidden{% endif %}
+                    >{% trans "keeps up" %}</span>
+                    <span
+                        class="ml-auto font-mono text-caption text-status-warning-text"
+                        data-pass-status="behind"
+                        {% if not static or pass_1 != "behind" %}hidden{% endif %}
+                    >{% trans "falls behind" %}</span>
+                </li>
+            </ul>
+            <details class="group" data-test-details>
+                <summary class="flex cursor-pointer list-none items-center justify-between py-1 text-sm font-semibold text-text-1">
+                    {% trans "Details" %}
+                    <span
+                        class="text-text-3 group-open:rotate-180"
+                        aria-hidden="true"
+                    >{% include "includes/_icon_chevron.html" with size=16 only %}</span>
+                </summary>
+                <div class="mt-3 flex flex-col gap-3">
+                    <div class="rounded-sm bg-tag p-3" data-test-figures="0">
+                        <p class="mb-2 text-sm font-semibold text-text-1">{% trans "Close up, over Saas-Fee" %}</p>
+                        <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 font-mono text-caption text-text-2">
+                            <span data-figure="median"></span><span data-figure="fps"></span>
+                            <span data-figure="p95"></span><span data-figure="over"></span>
+                            <span data-figure="windows"></span><span data-figure="settle"></span>
+                        </div>
+                    </div>
+                    <div class="rounded-sm bg-tag p-3" data-test-figures="1">
+                        <p class="mb-2 text-sm font-semibold text-text-1">{% trans "Zoomed out, over Valais" %}</p>
+                        <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 font-mono text-caption text-text-2">
+                            <span data-figure="median"></span><span data-figure="fps"></span>
+                            <span data-figure="p95"></span><span data-figure="over"></span>
+                            <span data-figure="windows"></span><span data-figure="settle"></span>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-1 font-mono text-caption text-text-3">
+                        <span data-test-gpu></span>
+                        <span data-test-screen></span>
+                        <span data-test-rule></span>
+                    </div>
+                </div>
+            </details>
+            <div class="flex flex-col gap-2.5 rounded-sm border border-border bg-tag p-3" data-test-send-box>
+                <p class="text-sm leading-prose text-text-2">
+                    {% trans "Send this result to Snowdesk? It holds the graphics chip, screen size and frame times. Nothing about you or your account." %}
+                </p>
+                <p class="text-sm text-status-error-text" data-test-send-failed hidden>
+                    {% trans "Could not send the result" %}
+                </p>
+                <div>
+                    {% trans "Send anonymously" as send_label %}
+                    {% include "includes/_button.html" with label=send_label variant="secondary" size="compact" button_type="button" data_action="map-3d-test-send" %}
+                </div>
+            </div>
+            <p class="rounded-sm border border-border bg-tag p-3 text-sm text-text-2" data-test-sent hidden>
+                {% trans "Sent to Snowdesk, anonymously." %}
+            </p>
+            <p class="text-sm text-text-2 empty:hidden" role="status" data-test-share-status></p>
+            {% trans "Done" as done_label %}
+            {% include "includes/_button.html" with label=done_label button_type="button" full_width=True data_action="dismiss" %}
+        </section>
+
+        {# ---- Not measured ---- #}
+        <section
+            class="flex flex-col gap-3 px-2"
+            data-test-show="unmeasured"
+            {% if not static or state != "unmeasured" %}hidden{% endif %}
+        >
+            <h2 class="text-lg font-semibold text-text-1">{% trans "The test could not time this device" %}</h2>
+            <p class="text-sm leading-prose text-text-2">
+                {% trans "The map did not draw enough frames to judge. Keep this tab open and try again." %}
+            </p>
+            <div>
+                {% trans "Test again" as again_label %}
+                {% include "includes/_button.html" with label=again_label variant="secondary" button_type="button" data_action="map-3d-test-again" %}
+            </div>
+        </section>
+
+        {# ---- Where it does not run ---- #}
+        <section
+            class="flex flex-col gap-1 px-2"
+            data-test-show="unavailable"
+            {% if not static or state != "unavailable" %}hidden{% endif %}
+        >
+            <h2 class="text-lg font-semibold text-text-1">{% trans "3D is not available on this device" %}</h2>
+            <p class="text-sm leading-prose text-text-2">
+                {% trans "The map stays in 2D, which shows the same bulletin and terrain." %}
+            </p>
+        </section>
+        <section
+            class="flex flex-col gap-1 px-2"
+            data-test-show="offline"
+            {% if not static or state != "offline" %}hidden{% endif %}
+        >
+            <h2 class="text-lg font-semibold text-text-1">{% trans "The 3D test needs a connection" %}</h2>
+            <p class="text-sm leading-prose text-text-2">
+                {% trans "It loads the map's tiles as it turns. Try again once you are online." %}
+            </p>
+        </section>
+        <section
+            class="flex flex-col gap-1 px-2"
+            data-test-show="editing"
+            {% if not static or state != "editing" %}hidden{% endif %}
+        >
+            <h2 class="text-lg font-semibold text-text-1">{% trans "Finish drawing the route to see 3D" %}</h2>
+        </section>
+    </div>
+{% else %}
+    {% trans "3D test" as map_3d_test_title %}
+    {% if static %}
+        <div
+            class="relative rounded-card border border-border bg-card px-4 pb-8 pt-4 shadow-glass"
+            aria-label="{{ map_3d_test_title }}"
+        >
+            {% include "public/partials/_map_3d_test_panel.html" with part="body" %}
+        </div>
+    {% else %}
+        {% include "includes/_overlay_sheet.html" with id="map-3d-test-sheet" aria_label=map_3d_test_title side="left" %}
+        <template id="map-3d-test-template">
+            {% include "public/partials/_map_3d_test_panel.html" with part="body" %}
+        </template>
+        {# What map_3d_test.js builds with numbers in it, and what Share sends. #}
+        <template id="map-3d-test-strings-template">
+            <span data-string="seconds-left">{% blocktrans %}%(s)s s left{% endblocktrans %}</span>
+            <span data-string="figure-median">{% blocktrans %}median %(ms)s ms{% endblocktrans %}</span>
+            <span data-string="figure-fps">{% blocktrans %}%(fps)s fps{% endblocktrans %}</span>
+            <span data-string="figure-p95">{% blocktrans %}p95 %(ms)s ms{% endblocktrans %}</span>
+            {# No literal '%' in the msgid: the caller appends it to pct. #}
+            <span data-string="figure-over">{% blocktrans %}%(pct)s over %(budget)s ms{% endblocktrans %}</span>
+            <span
+                data-string="figure-windows"
+            >{% blocktrans %}%(slow)s of %(windows)s windows slow{% endblocktrans %}</span>
+            <span data-string="figure-settle">{% blocktrans %}tiles in %(s)s s{% endblocktrans %}</span>
+            <span data-string="figure-gpu">{% blocktrans %}GPU · %(gpu)s{% endblocktrans %}</span>
+            <span data-string="gpu-unknown">{% trans "not given" %}</span>
+            <span
+                data-string="figure-screen"
+            >{% blocktrans %}screen · %(width)s × %(height)s at %(dpr)s×, drawn at %(ratio)s×{% endblocktrans %}</span>
+            <span
+                data-string="figure-rule"
+            >{% blocktrans %}rule · median ≥ %(budget)s ms in %(n)s windows of %(s)s s in a row{% endblocktrans %}</span>
+            <span data-string="keeps-up">{% trans "keeps up" %}</span>
+            <span data-string="falls-behind">{% trans "falls behind" %}</span>
+            <span data-string="pass-0">{% trans "Close up, over Saas-Fee" %}</span>
+            <span data-string="pass-1">{% trans "Zoomed out, over Valais" %}</span>
+            <span data-string="verdict-smooth">{% trans "3D runs smoothly on this phone" %}</span>
+            <span data-string="verdict-stutter">{% trans "3D may stutter when zoomed out" %}</span>
+            <span data-string="verdict-slow">{% trans "3D is too slow on this phone" %}</span>
+            <span
+                data-string="share-line"
+            >{% blocktrans %}%(label)s: %(status)s, median %(median)s ms{% endblocktrans %}</span>
+            <span data-string="share-title">{% trans "Snowdesk 3D test" %}</span>
+            <span data-string="copied">{% trans "Result copied" %}</span>
+            <span data-string="copy-failed">{% trans "Could not copy the result" %}</span>
+        </template>
+    {% endif %}
+{% endif %}

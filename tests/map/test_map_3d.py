@@ -382,3 +382,29 @@ def test_the_page_and_the_link_share_one_bucket() -> None:
     request = limited.call_args.args[0]
     key = limited.call_args.kwargs["key"]
     assert key(SHARE_FOLLOW_GROUP, request) == f"{share.token}|203.0.113.9"
+
+
+def test_the_probe_redirects_a_flagged_reader_to_the_map() -> None:
+    """SNOW-1456: /map/3d/?probe=1 goes to /map/?probe=1&view=3d.
+
+    The probe moved onto /map/ as the 3D test; the URL Hugo kept goes on
+    working until SNOW-1450 retires the page.
+    """
+    with override_flag("map_3d", active=True):
+        response = _signed_in().get(URL, {"probe": "1"})
+    assert response.status_code == 302
+    assert response["Location"] == f"{reverse('public:map')}?probe=1&view=3d"
+
+
+def test_the_probe_url_keeps_the_flag_gate() -> None:
+    """Outside the flag ?probe=1 is the same 404 as the page."""
+    with override_flag("map_3d", active=False):
+        response = _signed_in().get(URL, {"probe": "1"})
+    assert response.status_code == 404
+
+
+def test_the_page_no_longer_carries_the_probe_strings() -> None:
+    """The probe's words left with it."""
+    with override_flag("map_3d", active=True):
+        content = _signed_in().get(URL).content.decode()
+    assert "probe_" not in content

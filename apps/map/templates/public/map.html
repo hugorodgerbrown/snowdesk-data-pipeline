@@ -223,6 +223,8 @@ in addition to the shared map assets.
         <script defer src="{% static 'js/map_3d_core.js' %}"></script>
         <script defer src="{% static 'js/map_3d_terrain.js' %}"></script>
         <script defer src="{% static 'js/map_view_3d.js' %}"></script>
+        {# SNOW-1456: "Test 3D on this device", which drives map_view_3d.js. #}
+        <script defer src="{% static 'js/map_3d_test.js' %}"></script>
     {% elif map_3d_link %}
         <script defer src="{% static 'js/map_3d_core.js' %}"></script>
         <script defer src="{% static 'js/map_3d_terrain.js' %}"></script>

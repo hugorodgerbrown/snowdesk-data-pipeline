@@ -3,7 +3,7 @@
  * static/js/map_help_menu.js (SNOW-1230).
  *
  * The "?" roundel opens a small menu now: show the welcome again, turn help
- * mode on, or go to the help pages. help mode hands the roundel's press to
+ * mode on, test 3D on this device (SNOW-1456), or go to the help pages. help mode hands the roundel's press to
  * this module as 'snowdesk:map-help-menu-requested'; these cases dispatch
  * that event directly and pin what each item asks for.
  */
@@ -17,6 +17,7 @@ function buildFixture() {
       <button type="button" data-help-menu-close>×</button>
       <button type="button" data-help-menu="welcome">Show me around again</button>
       <button type="button" data-help-menu="help-mode">What is everything?</button>
+      <button type="button" data-help-menu="test-3d">Test 3D on this device</button>
       <a href="#help" data-help-menu="pages">Help pages</a>
     </div>
     <button id="basemap-toggle" type="button">Layers</button>
@@ -105,6 +106,19 @@ describe('the items', () => {
 
     expect(helpMode).toHaveBeenCalledTimes(1);
     document.removeEventListener('snowdesk:map-help-mode-requested', helpMode);
+  });
+
+  it('"Test 3D on this device" asks for the 3D test\'s panel', () => {
+    const test3d = vi.fn();
+    document.addEventListener('snowdesk:map-3d-test-requested', test3d);
+    request();
+
+    menu().querySelector('[data-help-menu="test-3d"]').click();
+
+    expect(test3d).toHaveBeenCalledTimes(1);
+    expect(menu().hidden).toBe(true);
+    expect(window.pwaTelemetry.emit).toHaveBeenCalledWith('map.help_menu.chosen', { choice: 'test-3d' });
+    document.removeEventListener('snowdesk:map-3d-test-requested', test3d);
   });
 
   it('the help pages link is recorded and closes the menu', () => {
