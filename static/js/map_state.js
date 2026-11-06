@@ -638,6 +638,13 @@ let IS_PLAYING = false;
 let resolveMapReady = null;
 const MAP_READY_PROMISE = new Promise((r) => { resolveMapReady = r; });
 
+// SNOW-1450: the pitch a link's own camera (`?at=`) asked for, when it
+// asked for a tilt; null otherwise. map.js sets it at boot, before it
+// strips `at` from the address bar, so map_view_3d.js can still tell a
+// linked tilt (kept as it boots into 3-D) from a stored or default one
+// (eased to the opening tilt).
+let LINKED_PITCH = null;
+
 // SNOW-610: the one explicit channel to this file's shared state.
 //
 // Every declaration above is a top-level `let`/`const` in a CLASSIC script.
@@ -725,5 +732,20 @@ window.snowdeskMapState = Object.freeze({
    */
   get overlayStorageKey() {
     return OVERLAY_STORAGE_KEY;
+  },
+
+  /**
+   * SNOW-1450: the pitch the boot camera's `?at=` asked for, when above 0.
+   *
+   * Read by map_view_3d.js's boot, which keeps it rather than easing to
+   * the opening tilt; `at` has left the address bar by then.
+   *
+   * @returns {number|null}
+   */
+  get linkedPitch() {
+    return LINKED_PITCH;
+  },
+  set linkedPitch(value) {
+    LINKED_PITCH = value;
   },
 });

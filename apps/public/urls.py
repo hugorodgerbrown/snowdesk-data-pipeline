@@ -80,8 +80,9 @@ urlpatterns = [
     # The interactive map — the app. This reverses SNOW-344, which had made
     # /map/ a redirect to /.
     path("map/", map_views.map_page, name="map"),
-    # SNOW-1438: the 3-D terrain map, a sandbox behind the map_3d flag.
-    path("map/3d/", map_3d.map_3d_page, name="map_3d"),
+    # SNOW-1438's 3D sandbox, retired by SNOW-1450: old links redirect to
+    # /map/?view=3d, or to a route share's 3D follow.
+    path("map/3d/", map_3d.map_3d_redirect, name="map_3d"),
     # SNOW-770 merged the old /terms/ page into /terms-of-service/. The URL
     # stays registered — and stays HERE, ahead of the generic
     # <str:region_id>/ patterns, or "terms" starts resolving as a region_id

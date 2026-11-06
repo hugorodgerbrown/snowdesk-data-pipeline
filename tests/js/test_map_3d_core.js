@@ -4,12 +4,7 @@
  * What is pinned, because each is the way this goes wrong:
  *   - the DEM source is Terrarium-encoded and the terrain spec names it;
  *   - the exaggeration stays modest, so 30° does not read as 40°;
- *   - the tours box never spans more than /api/ski-tours.geojson answers
- *     (0.5°), whatever half-span is asked for;
- *   - a tapped line's bounds cover LineString and MultiLineString, and
- *     anything else is null rather than a camera move to nowhere;
- *   - a tap frames the whole route or tour (every leg with its uuid), not
- *     the clipped fragment MapLibre hands back;
+ *   - a route share link into 3D is the share link plus `3d/`;
  *   - the frame-time probe's summary (SNOW-1448) uses intervals that
  *     happened, ignores junk, and holds the median to the 33 ms budget;
  *   - /map/'s frame watchdog (SNOW-1455): a window fails at a median of 33 ms
@@ -17,10 +12,11 @@
  *     the watch;
  *   - the 3D test's verdict (SNOW-1456): smooth, stutter and slow by the
  *     watchdog's own rule over each pass, and unmeasured for a pass with
- *     no frames or less than one window of them;
- *   - the Steep terrain worker bridge settles each request on the reply
- *     with its own id, and an abort tells the worker, rejects, and closes
- *     a bitmap that arrives too late.
+ *     no frames or less than one window of them.
+ *
+ * SNOW-1450 removed the retired /map/3d/ page's own parts (the tours box,
+ * line bounds, the shared view, the wildlife layers, the page's link and
+ * the Steep terrain worker bridge) and their tests.
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -57,110 +53,16 @@ describe('demSource / terrainSpec', () => {
   });
 });
 
-describe('toursBbox', () => {
-  /** @param {string} box */
-  const spans = (box) => {
-    const [w, s, e, n] = box.split(',').map(Number);
-    return [e - w, n - s];
-  };
-
-  it('is the centre plus the default half-span, west,south,east,north', () => {
-    expect(core.toursBbox({ lng: 7.87, lat: 46.07 })).toBe('7.63,45.83,8.11,46.31');
-  });
-
-  it('never asks for more than the endpoint answers', () => {
-    for (const box of [core.toursBbox({ lng: 7, lat: 46 }, 1), core.toursBbox({ lng: 7, lat: 46 })]) {
-      const [width, height] = spans(box);
-      expect(width).toBeLessThanOrEqual(0.5);
-      expect(height).toBeLessThanOrEqual(0.5);
-    }
-  });
-
-  it('keeps latitude on the globe', () => {
-    const [, s, , n] = core.toursBbox({ lng: 0, lat: 89.9 }).split(',').map(Number);
-    expect(n).toBe(90);
-    expect(s).toBeCloseTo(89.66, 5);
-  });
-});
-
-describe('lineBounds', () => {
-  it('bounds a LineString', () => {
-    expect(core.lineBounds({
-      type: 'LineString',
-      coordinates: [[7.9, 46.1, 3000], [7.8, 46.0, 2000], [7.85, 46.2]],
-    })).toEqual([[7.8, 46.0], [7.9, 46.2]]);
-  });
-
-  it('bounds every part of a MultiLineString', () => {
-    expect(core.lineBounds({
-      type: 'MultiLineString',
-      coordinates: [[[7, 46], [7.1, 46.1]], [[6.9, 46.3], [7.2, 45.9]]],
-    })).toEqual([[6.9, 45.9], [7.2, 46.3]]);
-  });
-
-  it.each([
-    [null],
-    [undefined],
-    [{ type: 'Point', coordinates: [7, 46] }],
-    [{ type: 'LineString', coordinates: [] }],
-  ])('is null for %j', (geometry) => {
-    expect(core.lineBounds(geometry)).toBeNull();
-  });
-});
-
-describe('boundsFor', () => {
-  const legs = {
-    type: 'FeatureCollection',
-    features: [
-      { properties: { uuid: 'a' }, geometry: { type: 'LineString', coordinates: [[7, 46], [7.1, 46.1]] } },
-      { properties: { uuid: 'b' }, geometry: { type: 'LineString', coordinates: [[9, 47], [9.1, 47.1]] } },
-      { properties: { uuid: 'a' }, geometry: { type: 'LineString', coordinates: [[7.1, 46.1], [7.3, 45.9]] } },
-      { properties: { uuid: 'a', kind: 'summit' }, geometry: { type: 'Point', coordinates: [8, 48] } },
-    ],
-  };
-
-  it('unions every leg with the uuid, and skips other uuids and points', () => {
-    expect(core.boundsFor(legs, 'uuid', 'a')).toEqual([[7, 45.9], [7.3, 46.1]]);
-  });
-
-  it.each([
-    [legs, 'missing'],
-    [legs, ''],
-    [null, 'a'],
-    [{}, 'a'],
-  ])('is null when nothing matches (%#)', (collection, uuid) => {
-    expect(core.boundsFor(collection, 'uuid', uuid)).toBeNull();
-  });
-
-  it('matches a shared route by its token, which carries no uuid', () => {
-    const shared = {
-      features: [
-        { properties: { token: 't1', pending: true }, geometry: { type: 'LineString', coordinates: [[8, 46], [8.2, 46.3]] } },
-        { properties: { uuid: 't1' }, geometry: { type: 'LineString', coordinates: [[9, 47], [9.1, 47.1]] } },
-      ],
-    };
-    expect(core.boundsFor(shared, 'token', 't1')).toEqual([[8, 46], [8.2, 46.3]]);
-  });
-});
-
-describe('pageUrl', () => {
-  it('carries the Map3dShare token, then the route share, then the view', () => {
-    expect(core.pageUrl('https://s.example', '/map/3d/', { share: 'a b', routeShare: 'r1' }, 'at=1&layers=')).toBe(
-      'https://s.example/map/3d/?share=a%20b&route_share=r1&at=1&layers=',
-    );
-  });
-
-  it('leaves out an empty token', () => {
-    expect(core.pageUrl('https://s.example', '/map/3d/', { share: '', routeShare: '' }, 'at=1')).toBe(
-      'https://s.example/map/3d/?at=1',
-    );
-  });
-});
-
 describe('routeShare3dUrl', () => {
-  it('hangs 3d/ and the view off the route share link', () => {
-    expect(core.routeShare3dUrl('https://s.example/routes/s/tok/', 'at=7,46,12,60,0&layers=tours')).toBe(
-      'https://s.example/routes/s/tok/3d/?at=7,46,12,60,0&layers=tours',
+  it('hangs 3d/ and the query off the route share link', () => {
+    expect(core.routeShare3dUrl('https://s.example/routes/s/tok/', 'at=7,46,12,60,0')).toBe(
+      'https://s.example/routes/s/tok/3d/?at=7,46,12,60,0',
+    );
+  });
+
+  it('adds no query when none is given, as the route Shares call it', () => {
+    expect(core.routeShare3dUrl('https://s.example/routes/s/tok/', '')).toBe(
+      'https://s.example/routes/s/tok/3d/',
     );
   });
 
@@ -168,61 +70,6 @@ describe('routeShare3dUrl', () => {
     expect(core.routeShare3dUrl('https://s.example/routes/s/tok', 'at=1')).toBe(
       'https://s.example/routes/s/tok/3d/?at=1',
     );
-  });
-});
-
-describe('wildlifeTileUrl', () => {
-  it('builds a swisstopo WMTS Web Mercator template for each wildlife layer', () => {
-    for (const layer of core.WILDLIFE_LAYERS) {
-      expect(core.wildlifeTileUrl(layer)).toBe(
-        `https://wmts.geo.admin.ch/1.0.0/${layer}/default/current/3857/{z}/{x}/{y}.png`,
-      );
-    }
-  });
-});
-
-describe('viewQuery / parseView', () => {
-  const camera = { center: { lng: 7.871234567, lat: 46.0712345 }, zoom: 12.6789, pitch: 64.04, bearing: -145.26 };
-
-  it('writes the camera, rounded, and the switches that are on', () => {
-    expect(core.viewQuery(camera, { steep: true, tours: false, wildlife: true })).toBe(
-      'at=7.87123,46.07123,12.68,64,-145.3&layers=steep,wildlife',
-    );
-  });
-
-  it('round-trips a view', () => {
-    const query = core.viewQuery(camera, { steep: false, tours: true, wildlife: true });
-    expect(core.parseView(`?${query}`)).toEqual({
-      camera: { center: [7.87123, 46.07123], zoom: 12.68, pitch: 64, bearing: -145.3 },
-      layers: { steep: false, tours: true, wildlife: true },
-    });
-  });
-
-  it('keeps an empty layers list as every switch off', () => {
-    expect(core.parseView('?layers=').layers).toEqual({ steep: false, tours: false, wildlife: false });
-  });
-
-  it('falls back to the defaults with no query', () => {
-    expect(core.parseView('')).toEqual({ camera: null, layers: { ...core.DEFAULT_LAYERS } });
-  });
-
-  it.each([
-    'at=7,46,12',
-    'at=a,46,12,60,0',
-    'at=200,46,12,60,0',
-    'at=7,46,12,89,0',
-  ])('drops a malformed camera (%s)', (query) => {
-    expect(core.parseView(`?${query}`).camera).toBeNull();
-  });
-});
-
-describe('viewQuery longitude', () => {
-  it('wraps a centre from another world copy back into [-180, 180]', () => {
-    const query = core.viewQuery(
-      { center: { lng: 367.87, lat: 46.07 }, zoom: 12, pitch: 60, bearing: 0 },
-      core.DEFAULT_LAYERS,
-    );
-    expect(core.parseView(`?${query}`).camera.center).toEqual([7.87, 46.07]);
   });
 });
 
@@ -271,65 +118,6 @@ describe('skySpec / sunlightPaint', () => {
     expect(paint['hillshade-illumination-direction']).toBe(315);
     expect(paint['hillshade-illumination-anchor']).toBe('map');
     expect(paint['hillshade-exaggeration']).toBeLessThanOrEqual(0.35);
-  });
-});
-
-describe('workerTileBridge', () => {
-  /** A worker stand-in: records what is posted and lets a test reply. */
-  function fakeWorker() {
-    let listener = null;
-    return {
-      posted: [],
-      postMessage(msg) {
-        this.posted.push(msg);
-      },
-      addEventListener(type, fn) {
-        if (type === 'message') listener = fn;
-      },
-      reply(data) {
-        listener({ data });
-      },
-    };
-  }
-
-  it('posts one tile request per call and settles each on its own id', async () => {
-    const worker = fakeWorker();
-    const bridge = core.workerTileBridge(worker);
-    const a = bridge.request({ z: 12, x: 1, y: 2 }, new AbortController().signal);
-    const b = bridge.request({ z: 12, x: 3, y: 4 }, new AbortController().signal);
-    expect(worker.posted).toEqual([
-      { type: 'tile', id: 1, z: 12, x: 1, y: 2 },
-      { type: 'tile', id: 2, z: 12, x: 3, y: 4 },
-    ]);
-    const second = { close: vi.fn() };
-    const first = { close: vi.fn() };
-    worker.reply({ id: 2, bitmap: second });
-    worker.reply({ id: 1, bitmap: first });
-    await expect(a).resolves.toEqual({ data: first });
-    await expect(b).resolves.toEqual({ data: second });
-    expect(bridge.pendingCount()).toBe(0);
-  });
-
-  it('rejects on a worker error', async () => {
-    const worker = fakeWorker();
-    const bridge = core.workerTileBridge(worker);
-    const answer = bridge.request({ z: 12, x: 1, y: 2 }, new AbortController().signal);
-    worker.reply({ id: 1, error: 'TypeError: boom' });
-    await expect(answer).rejects.toThrow('steep tile failed: TypeError: boom');
-  });
-
-  it('on abort tells the worker, rejects, and closes a late bitmap', async () => {
-    const worker = fakeWorker();
-    const bridge = core.workerTileBridge(worker);
-    const controller = new AbortController();
-    const answer = bridge.request({ z: 12, x: 1, y: 2 }, controller.signal);
-    controller.abort();
-    expect(worker.posted.at(-1)).toEqual({ type: 'abort', id: 1 });
-    await expect(answer).rejects.toMatchObject({ name: 'AbortError' });
-    const late = { close: vi.fn() };
-    worker.reply({ id: 1, bitmap: late });
-    expect(late.close).toHaveBeenCalledOnce();
-    expect(bridge.pendingCount()).toBe(0);
   });
 });
 

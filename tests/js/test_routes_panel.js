@@ -77,6 +77,8 @@ import '../../static/js/row_focus.js';
 import '../../static/js/row_removed.js';
 import '../../static/js/map_sheet.js';
 import '../../static/js/share.js';
+// SNOW-1450: routeShare3dUrl, for a Share in the 3D view.
+import '../../static/js/map_3d_core.js';
 
 // As apps.map.views._routes_context builds it — the map sheet asks for the
 // lean row variant.
@@ -1251,6 +1253,43 @@ describe('sharing a row (SNOW-764)', () => {
     await vi.waitFor(() => expect(share).toHaveBeenCalled());
 
     expect(window.pwaTelemetry.emit).toHaveBeenCalledWith('map.route.shared', {});
+  });
+
+  describe('in the 3D view (SNOW-1450)', () => {
+    afterEach(() => {
+      delete window.pwaMapView;
+    });
+
+    /** Publish the map's view as map_view_3d.js does. */
+    function viewIs(view) {
+      window.pwaMapView = { get: () => view };
+    }
+
+    it('hands on the 3d/ link while the map is in 3D', async () => {
+      mintSucceeds();
+      viewIs('3d');
+      const share = vi.fn(() => Promise.resolve());
+      stubNavigator({ share: share });
+      btn.click();
+
+      renderShareRow('abc-123').click();
+      await vi.waitFor(() => expect(share).toHaveBeenCalled());
+
+      expect(share.mock.calls[0][0].url).toBe('https://snowdesk.app/routes/s/tok/3d/');
+    });
+
+    it('hands on the plain link while the map is flat', async () => {
+      mintSucceeds();
+      viewIs('flat');
+      const share = vi.fn(() => Promise.resolve());
+      stubNavigator({ share: share });
+      btn.click();
+
+      renderShareRow('abc-123').click();
+      await vi.waitFor(() => expect(share).toHaveBeenCalled());
+
+      expect(share.mock.calls[0][0].url).toBe('https://snowdesk.app/routes/s/tok/');
+    });
   });
 });
 

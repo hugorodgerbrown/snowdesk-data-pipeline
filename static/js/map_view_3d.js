@@ -18,7 +18,10 @@
  *   3. the elevation source, the terrain, the sky and the north-west
  *      sunlight go on, the sunlight under the first label;
  *   4. the pixel ratio is capped and the camera eases to the opening tilt,
- *      with the pitch ceiling opened and the zoom floored at z9;
+ *      with the pitch ceiling opened and the zoom floored at z9. A
+ *      ?view=3d boot whose link named a tilt (`?at=` with a pitch above 0,
+ *      published by map.js as snowdeskMapState.linkedPitch) keeps that
+ *      pitch instead, including after the basemap swap (SNOW-1450);
  *   5. `?view=3d` is written and, if the basemap changed, one line says so.
  * LEAVING reverses all of it: the relief and the sunlight go (the
  * elevation source stays, so a return re-reads nothing), the camera ends
@@ -470,14 +473,30 @@
     slow: STRINGS['left-slow'],
   };
 
-  /** Tilt the relief in, with the ceiling open. Its ease is not timed. */
-  const tiltIn = () => {
+  /**
+   * Tilt the relief in, with the ceiling open. Its ease is not timed.
+   *
+   * @param {number} [pitch] Where to tilt to: the opening tilt unless a
+   *   boot keeps a linked one.
+   */
+  const tiltIn = (pitch = core.OPENING_CAMERA.pitch) => {
     timingArmed = false;
     map.setMaxPitch(core.MAX_PITCH);
-    map.easeTo({ pitch: core.OPENING_CAMERA.pitch, duration: EASE_MS });
+    map.easeTo({ pitch, duration: EASE_MS });
     // easeTo stops an ease still running, and that fires its moveend here;
     // the move this starts is the one whose end arms the timing.
     timingArmed = false;
+  };
+
+  /**
+   * The tilt the boot camera's own link asked for (map.js publishes it on
+   * snowdeskMapState before it strips `?at=`), or null for none or 0.
+   *
+   * @returns {number|null}
+   */
+  const linkedPitch = () => {
+    const value = state ? state.linkedPitch : null;
+    return typeof value === 'number' && value > 0 ? Math.min(value, core.MAX_PITCH) : null;
   };
 
   /**
@@ -509,13 +528,17 @@
     const swapped = swapBasemap(viewCore.BASEMAP_KEY);
     // A swap brings a new style; its styledata installs the relief.
     if (!swapped) installNow();
+    // SNOW-1450: a boot from a link that asked for a tilt keeps it; every
+    // other entry tilts to the opening pitch.
+    const pitch = options.boot ? linkedPitch() : null;
+    const tilt = () => (pitch === null ? tiltIn() : tiltIn(pitch));
     if (options.gesture) map.setMaxPitch(core.MAX_PITCH);
-    else tiltIn();
+    else tilt();
     // A setStyle stops a camera ease where it stands (measured in
     // Chromium), so the tilt runs again once the new style is in.
     if (swapped && !options.gesture) {
       map.once('style.load', () => {
-        if (view === THREE_D && !suspended) tiltIn();
+        if (view === THREE_D && !suspended) tilt();
       });
     }
     announce(THREE_D);

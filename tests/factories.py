@@ -63,7 +63,7 @@ from apps.ingest.models import (
     content_hash,
 )
 from apps.locations.models import Location, ResortLocation
-from apps.map.models import Map3dDeviceTest, Map3dShare
+from apps.map.models import Map3dDeviceTest
 from apps.observations.models import FieldObservation
 from apps.regions.models import (
     MajorRegion,
@@ -1571,17 +1571,6 @@ class RestZoneFactory(factory.django.DjangoModelFactory[RestZone]):
     south = factory.LazyAttribute(lambda o: _ring_edge(o.geometry, 1, min))
     east = factory.LazyAttribute(lambda o: _ring_edge(o.geometry, 0, max))
     north = factory.LazyAttribute(lambda o: _ring_edge(o.geometry, 1, max))
-
-
-class Map3dShareFactory(factory.django.DjangoModelFactory[Map3dShare]):
-    """Factory for Map3dShare instances: one reader's 3-D map share token."""
-
-    class Meta:
-        """Factory metadata."""
-
-        model = Map3dShare
-
-    created_by = factory.SubFactory(UserFactory)
 
 
 class Map3dDeviceTestFactory(factory.django.DjangoModelFactory[Map3dDeviceTest]):

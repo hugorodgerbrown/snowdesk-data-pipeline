@@ -228,9 +228,9 @@ def test_csp_allows_every_swisstopo_tile_shard() -> None:
 
 @pytest.mark.django_db
 def test_csp_allows_both_3d_elevation_origins() -> None:
-    """SNOW-1445: /map/3d/ reads Mapterhorn's tiles and falls back to AWS's.
+    """SNOW-1445: /map/'s 3D view reads Mapterhorn's tiles and falls back to AWS's.
 
-    Both are fetched by the page's ``map3ddem://`` protocol handler, so both
+    Both are fetched by the map's ``map3ddem://`` protocol handler, so both
     belong in connect-src; a missing fallback would only show during a
     Mapterhorn outage, as a flat map.
     """
@@ -245,7 +245,7 @@ def test_csp_allows_both_3d_elevation_origins() -> None:
 def test_csp_dem_origin_is_derived_from_the_setting_and_moves_with_it() -> None:
     """SNOW-1444: connect-src names the origin of ``MAP_3D_DEM_TILE_URL``.
 
-    The 3-D map moves to our own copy of the elevation tiles by changing
+    The 3D map moves to our own copy of the elevation tiles by changing
     the setting, so the policy has to follow it rather than name Mapterhorn
     itself; otherwise the switch blanks the terrain once CSP enforces.
     """

@@ -14,8 +14,8 @@ Covers:
   - The daily read (SNOW-1357): under the hero on a rated day, linking the
     biggest swing to its dated bulletin; absent off season; cached; never
     built for a map-state 301.
-  - The temporary 3-D branding: the wordmark wearing specs and the tilted
-    3-D map, both linking to /map/3d/, only inside the map_3d flag.
+  - The temporary 3D branding: the wordmark wearing specs and the tilted
+    3D map, both linking to /map/?view=3d, only inside the map_3d flag.
 """
 
 from __future__ import annotations
@@ -88,27 +88,28 @@ class TestHomepage:
 
 
 class TestHomepage3dBranding:
-    """The 3-D branding shows only to readers of the map_3d flag."""
+    """The 3D branding shows only to readers of the map_3d flag."""
 
     @override_flag("map_3d", active=True)
     def test_flag_on_shows_the_specs_wordmark_and_3d_map(self, client: Client) -> None:
-        """Inside the flag the hero wears the specs and links to /map/3d/."""
+        """Inside the flag the hero wears the specs and links to /map/?view=3d."""
         client.force_login(UserFactory.create())
         body = client.get("/").content.decode()
 
         assert 'data-testid="wordmark-3d"' in body
         assert 'data-testid="home-3d-image"' in body
-        assert body.count(f'href="{reverse("public:map_3d")}"') >= 2
+        assert body.count(f'href="{reverse("public:map")}?view=3d"') >= 2
+        assert reverse("public:map_3d") not in body
         assert "Stay avi-savvy" not in body
 
     @override_flag("map_3d", active=False)
     def test_flag_off_keeps_the_plain_hero(self, client: Client) -> None:
-        """Outside the flag the hero is unchanged and never names /map/3d/."""
+        """Outside the flag the hero is unchanged and never links to 3D."""
         body = client.get("/").content.decode()
 
         assert 'data-testid="wordmark-3d"' not in body
         assert 'data-testid="home-3d-image"' not in body
-        assert reverse("public:map_3d") not in body
+        assert "?view=3d" not in body
         assert "Stay avi-savvy" in body
 
     @override_flag("map_3d", active=True)

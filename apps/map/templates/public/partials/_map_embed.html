@@ -445,21 +445,6 @@ Optional context:
                         <span class="map-view-face" data-view-face="flat" aria-hidden="true">{% trans "2D" %}</span>
                     </button>
                 </div>
-            {% elif map_3d_link %}
-                {# The 3-D map at /map/3d/, behind the map_3d flag, for a reader     #}
-                {# without map_modes. static/js/map_3d_link.js carries this view's   #}
-                {# camera and switches across on a click. A friend sent a route by a #}
-                {# 3-D reader gets it too, carrying that route share.                #}
-                <div class="map-utility-pill">
-                    <a
-                        id="map-3d-link"
-                        href="{% url 'public:map_3d' %}{% if map_3d_route_share %}?route_share={{ map_3d_route_share|urlencode }}{% endif %}"
-                        data-dem-tile-url="{{ map_3d_dem_tile_url }}"
-                        data-route-share="{{ map_3d_route_share }}"
-                        class="map-utility-button hover-affordance text-chip font-semibold"
-                        aria-label='{% trans "Open in 3D" %}'
-                    >{% trans "3D" %}</a>
-                </div>
             {% endif %}
         </div>
         {# Group 2, "yours", in the collapsible wrapper. The chevron at the     #}

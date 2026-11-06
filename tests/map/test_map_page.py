@@ -35,6 +35,7 @@ from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
+    RouteShareFactory,
     UserFactory,
 )
 
@@ -3408,24 +3409,42 @@ def _flagged_map(*, map_3d: bool, map_modes: bool) -> str:
 
 
 @pytest.mark.django_db
-def test_the_3d_roundel_shows_only_inside_the_map_3d_flag() -> None:
-    """Inside map_3d alone the map carries the 3D link and its script; outside, neither.
+def test_map_3d_alone_draws_no_3d_roundel() -> None:
+    """Inside map_3d without map_modes the map is flat, with no 3D at all.
 
-    SNOW-1449: map_3d without map_modes keeps the link to /map/3d/, since
-    the 3D view on /map/ is Terrain's and needs the modes.
+    SNOW-1450: the link to /map/3d/ this reader used to get is gone with the
+    page; the 3D view needs the modes as well.
     """
-    flagged = _flagged_map(map_3d=True, map_modes=False)
-    unflagged = _flagged_map(map_3d=False, map_modes=False)
-    assert 'id="map-3d-link"' in flagged
-    assert "js/map_3d_link.js" in flagged
-    assert (
-        'data-dem-tile-url="https://tiles.mapterhorn.com/{z}/{x}/{y}.webp"' in flagged
-    )
-    assert 'id="map-view-toggle"' not in flagged
-    assert "js/map_view_3d.js" not in flagged
-    assert 'data-map-view-enabled="false"' in flagged
-    assert 'id="map-3d-link"' not in unflagged
-    assert "js/map_3d_link.js" not in unflagged
+    content = _flagged_map(map_3d=True, map_modes=False)
+    assert 'id="map-view-toggle"' not in content
+    assert "js/map_view_3d.js" not in content
+    assert "js/map_3d_core.js" not in content
+    assert 'data-map-view-enabled="false"' in content
+
+
+@pytest.mark.django_db
+def test_a_signed_out_3d_link_gets_the_flat_map() -> None:
+    """SNOW-1450: /map/?view=3d signed out draws no 3D toggle or script."""
+    response = Client().get(reverse("public:map"), {"view": "3d"})
+    content = response.content.decode()
+    assert response.status_code == 200
+    assert 'id="map-view-toggle"' not in content
+    assert "js/map_view_3d.js" not in content
+    assert 'data-map-view-enabled="false"' in content
+
+
+@pytest.mark.django_db
+def test_a_route_share_visitor_outside_the_flag_gets_no_3d_link() -> None:
+    """SNOW-1450: a followed share no longer brings the old 3D roundel."""
+    share = RouteShareFactory.create()
+    client = Client()
+    client.get(reverse("routes:share_redirect_3d", args=[share.token]))
+    content = client.get(
+        reverse("public:map"), {"route_share": share.token, "view": "3d"}
+    ).content.decode()
+    assert 'id="map-3d-link"' not in content
+    assert "js/map_3d_link.js" not in content
+    assert 'id="map-view-toggle"' not in content
 
 
 @pytest.mark.django_db
@@ -3448,8 +3467,6 @@ def test_both_flags_turn_the_roundel_into_the_3d_view() -> None:
     assert 'id="basemap-view-note"' in content
     assert 'data-help-target="#map-view-toggle"' in content
     assert 'data-map-view-enabled="true"' in content
-    assert 'id="map-3d-link"' not in content
-    assert "js/map_3d_link.js" not in content
     core = content.index("js/map_3d_core.js")
     helper = content.index("js/map_3d_terrain.js")
     assert core < helper < content.index("js/map_view_3d.js")
@@ -3510,7 +3527,6 @@ def test_map_modes_alone_has_no_3d_roundel() -> None:
     """The modes without map_3d draw neither roundel nor the view's strings."""
     content = _flagged_map(map_3d=False, map_modes=True)
     assert 'id="map-view-toggle"' not in content
-    assert 'id="map-3d-link"' not in content
     assert 'id="map-view-strings-template"' not in content
     assert 'data-map-view-enabled="false"' in content
 
@@ -3560,16 +3576,17 @@ def test_the_3d_view_has_no_line_for_leaving_terrain() -> None:
 
 @pytest.mark.django_db
 def test_the_3d_roundel_prefetches_from_the_dem_setting() -> None:
-    """SNOW-1444: the roundel warms the tiles /map/3d/ will read.
+    """SNOW-1444: the roundel warms the tiles the 3D view will read.
 
     Both read ``MAP_3D_DEM_TILE_URL``, so moving it to our own copy moves
-    the prefetch too, and the warmed cache is the one the 3D page uses.
+    the prefetch too, and the warmed cache is the one the 3D view uses.
     """
     dem = "https://tiles.example.test/dem/2026-11/{z}/{x}/{y}.webp"
     client = Client()
     client.force_login(UserFactory.create())
     with (
         override_flag("map_3d", active=True),
+        override_flag("map_modes", active=True),
         override_settings(MAP_3D_DEM_TILE_URL=dem),
     ):
         content = client.get(reverse("public:map")).content.decode()

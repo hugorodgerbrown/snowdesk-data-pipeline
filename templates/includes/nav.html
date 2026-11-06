@@ -420,10 +420,11 @@ Usage
                             {% trans "Settings" %}
                         </a>
                         {% flag "map_3d" %}
-                        {# The 3-D map, an experiment behind the map_3d flag: only its readers see the entry. #}
+                        {# The 3D map, an experiment behind the map_3d flag: only its readers see the entry. #}
+                        {# SNOW-1450: /map/'s own 3D view; SNOW-1451 removes the entry.                   #}
                         <a
                             role="menuitem"
-                            href="{% url 'public:map_3d' %}"
+                            href="{% url 'public:map' %}?view=3d"
                             class="flex items-center gap-2 px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
                         >
                             {% include "includes/_icon_labs.html" with size=14 only %}

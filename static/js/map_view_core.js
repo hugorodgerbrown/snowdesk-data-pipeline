@@ -33,7 +33,10 @@
  *   - THE BASEMAP. 3-D is drawn on the swisstopo winter map; flat on the
  *     reader's own choice. The choice is read, never written.
  *   - THE CAMERA. A flat boot zeroes a stored pitch, so a tilt is never
- *     remembered on the device; the bearing is kept.
+ *     remembered on the device; the bearing is kept. A link can name the
+ *     camera (`?at=lng,lat,zoom,pitch,bearing`, SNOW-1450: what the retired
+ *     /map/3d/ wrote), which beats the stored one; readCamera validates it
+ *     and drops anything malformed or out of range rather than guess.
  *
  * Exports (frozen `self.pwaMapViewCore`):
  *
@@ -46,6 +49,7 @@
  *   LOW_MEMORY_GB / deviceGate(input)
  *   basemapFor(view, preferredKey)
  *   bootCamera(stored, view)
+ *   CAMERA_PARAM / MAX_LINKED_PITCH / readCamera(search)
  */
 (function () {
   'use strict';
@@ -221,6 +225,36 @@
     return { ...stored, pitch: 0 };
   }
 
+  /** The query parameter a link carries a camera in. */
+  const CAMERA_PARAM = 'at';
+
+  /**
+   * The steepest linked pitch accepted: map_3d_core.js's MAX_PITCH, which
+   * is not loaded for every reader, so it is spelled here too.
+   */
+  const MAX_LINKED_PITCH = 80;
+
+  /**
+   * Read the camera a link names: `?at=lng,lat,zoom,pitch,bearing`, in the
+   * shape the stored viewport has. Five finite numbers, a longitude within
+   * ±180, a latitude within ±90, a zoom from 0 to 22 and a pitch from 0 to
+   * MAX_LINKED_PITCH; anything else is null, so a mangled link still opens
+   * the map.
+   *
+   * @param {string} search `location.search`, with or without the `?`.
+   * @returns {{center: [number, number], zoom: number, pitch: number, bearing: number}|null}
+   */
+  function readCamera(search) {
+    const at = new URLSearchParams(search || '').get(CAMERA_PARAM);
+    if (!at) return null;
+    const n = at.split(',').map(Number);
+    const ok = n.length === 5 && n.every(Number.isFinite)
+      && Math.abs(n[0]) <= 180 && Math.abs(n[1]) <= 90
+      && n[2] >= 0 && n[2] <= 22 && n[3] >= 0 && n[3] <= MAX_LINKED_PITCH;
+    if (!ok) return null;
+    return { center: [n[0], n[1]], zoom: n[2], pitch: n[3], bearing: n[4] };
+  }
+
   self.pwaMapViewCore = Object.freeze({
     VIEWS,
     URL_PARAM,
@@ -236,5 +270,8 @@
     deviceGate,
     basemapFor,
     bootCamera,
+    CAMERA_PARAM,
+    MAX_LINKED_PITCH,
+    readCamera,
   });
 })();

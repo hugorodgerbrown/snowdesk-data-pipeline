@@ -11,7 +11,11 @@
  *     — passing both is how a restore silently does nothing);
  *   - a `#REGION-ID` deep link suppresses the restore AND survives the boot
  *     with the stored camera untouched;
- *   - the `moveend` writer is bound WITHOUT the `load` handler having run.
+ *   - the `moveend` writer is bound WITHOUT the `load` handler having run;
+ *   - SNOW-1450: a linked camera (`?at=`) beats the stored one, a flat boot
+ *     zeroes its pitch, one outside the elevation's coverage boots a
+ *     `?view=3d` flat, `at` leaves the address bar, and a linked tilt is
+ *     published as `snowdeskMapState.linkedPitch` for the 3D boot to keep.
  *
  * That last one is not hypothetical. The first cut of this ticket bound the
  * writer inside `map.on('load')`, reasoning that the constructor's own
@@ -117,9 +121,12 @@ function stubMapLibre() {
   return map;
 }
 
-function buildFixture() {
+function buildFixture({ view = false } = {}) {
+  // SNOW-1450: `view` is a reader in map_3d and map_modes, whose #map says
+  // the modes and the 3D view are on.
+  const flags = view ? 'data-map-modes-enabled="true" data-map-view-enabled="true"' : '';
   document.body.innerHTML = `
-    <div id="map"
+    <div id="map" ${flags}
          data-regions-url="/api/regions.geojson"
          data-ratings-url="/api/ratings/"
          data-resorts-url="/api/resorts.json"
@@ -139,13 +146,15 @@ function buildFixture() {
  *
  * @param {string} url - the address to boot at.
  * @param {?string} stored - the raw viewport value, or null for none.
+ * @param {{view?: boolean}} [options] - `view` boots a reader in the 3D view's
+ *     flags, with the mode and coverage cores loaded.
  * @returns {Promise<Object>} The MapLibre stub.
  */
-async function bootWith(url, stored) {
+async function bootWith(url, stored, { view = false } = {}) {
   localStorage.clear();
   if (stored !== null) localStorage.setItem(STORAGE_KEY, stored);
   window.history.replaceState({}, '', url);
-  buildFixture();
+  buildFixture({ view });
   const mapStub = stubMapLibre();
   vi.stubGlobal('fetch', vi.fn((input) => {
     const body = String(input).includes('regions.geojson') ? REGIONS_GEOJSON : {};
@@ -153,6 +162,11 @@ async function bootWith(url, stored) {
   }));
 
   vi.resetModules();
+  if (view) {
+    await import('../../static/js/map_mode_core.js');
+    await import('../../static/js/slope_classes_core.js');
+    await import('../../static/js/terrain_filter_core.js');
+  }
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
   loadMapBundle();
@@ -168,6 +182,7 @@ function cameraOptions(mapStub) {
     bearing: options.bearing,
     pitch: options.pitch,
     bounds: options.bounds,
+    maxPitch: options.maxPitch,
   };
 }
 
@@ -276,5 +291,89 @@ describe('the moveend writer', () => {
     for (const handler of mapStub.handlers.moveend || []) handler();
 
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY))).toEqual(ECRINS);
+  });
+});
+
+describe('a linked camera (SNOW-1450)', () => {
+  // Over Saas-Fee, tilted, inside the elevation's coverage; the Écrins sit
+  // outside it (south of 45.72°).
+  const SAAS_FEE_AT = '7.87,46.07,12.6,64,215';
+  const ECRINS_AT = `${ECRINS.lng},${ECRINS.lat},11.5,60,0`;
+
+  it('beats the stored camera', async () => {
+    const options = cameraOptions(await bootWith(`/?at=${SAAS_FEE_AT}`, JSON.stringify(ECRINS)));
+
+    expect(options.center).toEqual([7.87, 46.07]);
+    expect(options.zoom).toBe(12.6);
+    expect(options.bearing).toBe(215);
+    expect(options.bounds).toBeUndefined();
+  });
+
+  it('beats the default frame too', async () => {
+    const options = cameraOptions(await bootWith(`/?at=${SAAS_FEE_AT}`, null));
+
+    expect(options.center).toEqual([7.87, 46.07]);
+    expect(options.bounds).toBeUndefined();
+  });
+
+  it('is ignored when malformed, and the stored camera stands', async () => {
+    const options = cameraOptions(await bootWith('/?at=7.87,46.07,12.6,89,0', JSON.stringify(ECRINS)));
+
+    expect(options.center).toEqual([ECRINS.lng, ECRINS.lat]);
+  });
+
+  it('boots flat with its pitch zeroed outside the 3D view', async () => {
+    // Signed out, or outside the flags: ?view=3d means nothing here.
+    const options = cameraOptions(await bootWith(`/?at=${SAAS_FEE_AT}&view=3d`, null));
+
+    expect(options.pitch).toBe(0);
+    expect(options.bearing).toBe(215);
+    expect(options.maxPitch).toBe(0);
+  });
+
+  it('keeps its pitch in the 3D view, inside the coverage', async () => {
+    const options = cameraOptions(await bootWith(`/?at=${SAAS_FEE_AT}&view=3d`, null, { view: true }));
+
+    expect(options.pitch).toBe(64);
+    expect(options.maxPitch).toBe(85);
+  });
+
+  it('boots a ?view=3d flat when it lies outside the coverage', async () => {
+    // The stored camera is inside it, so only the link's centre can say no.
+    const stored = JSON.stringify({ lng: 7.87, lat: 46.07, zoom: 12, bearing: 0, pitch: 0 });
+    const options = cameraOptions(await bootWith(`/?at=${ECRINS_AT}&view=3d`, stored, { view: true }));
+
+    expect(options.center).toEqual([ECRINS.lng, ECRINS.lat]);
+    expect(options.pitch).toBe(0);
+    expect(options.maxPitch).toBe(0);
+    expect(new URLSearchParams(location.search).has('view')).toBe(false);
+  });
+
+  it('leaves the address bar, every other parameter kept', async () => {
+    await bootWith(`/?at=${SAAS_FEE_AT}`, null);
+    expect(location.search).toBe('');
+
+    await bootWith(`/?at=${SAAS_FEE_AT}&view=3d`, null, { view: true });
+    expect(location.search).toBe('?view=3d');
+  });
+
+  it('publishes a linked tilt for the 3D boot to keep', async () => {
+    await bootWith('/?at=7.87,46.07,12.6,30,215&view=3d', null, { view: true });
+    expect(window.snowdeskMapState.linkedPitch).toBe(30);
+  });
+
+  it.each([
+    ['a linked pitch of 0', '/?at=7.87,46.07,12.6,0,0&view=3d'],
+    ['no linked camera', '/?view=3d'],
+  ])('publishes no linked tilt for %s', async (_label, url) => {
+    await bootWith(url, null, { view: true });
+    expect(window.snowdeskMapState.linkedPitch).toBeNull();
+  });
+
+  it('leaves the stored camera untouched until the reader moves', async () => {
+    const raw = JSON.stringify(ECRINS);
+    await bootWith(`/?at=${SAAS_FEE_AT}`, raw);
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBe(raw);
   });
 });

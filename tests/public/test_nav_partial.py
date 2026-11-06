@@ -892,21 +892,25 @@ class TestNavDebugLogEntry:
 
 @pytest.mark.django_db
 class TestNavLabsEntry:
-    """The account menu's 3-D map entry, shown only inside the map_3d flag."""
+    """The account menu's 3D map entry, shown only inside the map_3d flag."""
 
     def test_flagged_user_sees_the_3d_map_with_a_labs_mark(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """Inside the flag the entry links to /map/3d/ and carries the Labs tag."""
+        """Inside the flag the entry opens /map/?view=3d and carries the Labs tag.
+
+        SNOW-1450: the map's own 3D view, never the retired /map/3d/.
+        """
         with override_flag("map_3d", active=True):
             html = _render_nav_for(rf, regular_user)
-        assert f'href="{reverse("public:map_3d")}"' in html
+        assert f'href="{reverse("public:map")}?view=3d"' in html
+        assert reverse("public:map_3d") not in html
         assert "Labs" in html
 
     def test_unflagged_user_sees_no_entry(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """Outside the flag the 3-D map, a 404 for them, is not offered."""
+        """Outside the flag the 3D map, flat for them, is not offered."""
         with override_flag("map_3d", active=False):
             html = _render_nav_for(rf, regular_user)
-        assert reverse("public:map_3d") not in html
+        assert "?view=3d" not in html
