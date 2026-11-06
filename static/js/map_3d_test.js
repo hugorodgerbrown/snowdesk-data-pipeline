@@ -13,7 +13,8 @@
  * why-slow line (map_view_3d.js) and Test again. `/map/?probe=1` starts it
  * on load with Details open, and for that run only turns on Steep terrain
  * and SAC tours, the layers the SNOW-1448 budget was measured with,
- * turning them off again after.
+ * turning them off again after. Conditions holds both off the map, so a
+ * probe run in Conditions switches to Terrain and back again after.
  *
  * THE RUN. window.pwaMapView.canTest() says whether it may run at all
  * (offline, a device the gate keeps out, a lost WebGL context, a route
@@ -46,8 +47,11 @@
  * Send left to try again. An unmeasured run says so, offers Test again and
  * cannot be sent. The "…" menu holds Share (the full JSON on a probe run,
  * as /map/3d/'s probe shared it; a few readable lines otherwise) and Test
- * again. The result records the layers-menu switches that were on, from
- * the keys the panel lists (apps/map/models.py MAP_3D_TEST_OVERLAYS).
+ * again; Test again starts after its click is done, so MapSheet's
+ * click-outside never sees the replaced button as a tap outside. The
+ * result records the layers-menu switches that were on and drawn (not
+ * held off by the mode, pwaMapModeState), from the keys the panel lists
+ * (apps/map/models.py MAP_3D_TEST_OVERLAYS).
  *
  * Every word is in the panel's markup or its strings <template>
  * (#map-3d-test-strings-template), read through window.pwaStrings.
@@ -275,6 +279,10 @@
     }
   };
 
+  /** A result's overlay key → map.js's overlayState key, where they differ. */
+  /** @type {Record<string, string>} */
+  const MODE_KEYS = { terrain: 'terrain_filter' };
+
   /** The budget's two layers' switches, as map.js publishes them. */
   const budgetLayers = () => [
     { key: 'terrain', bridge: win.pwaTerrainFilter },
@@ -289,12 +297,33 @@
   const switchOnBudgetLayers = () => {
     /** @type {Array<() => void>} */
     const undo = [];
+    // Conditions holds both off the map whatever their switches say
+    // (map_mode_core.ONLY_IN), so the probe runs in Terrain and puts the
+    // reader's mode back after.
+    const modes = win.pwaMapMode;
+    const before = modes ? modes.get() : '';
+    if (modes && !modes.isTerrain()) {
+      modes.set('terrain');
+      undo.push(() => modes.set(before));
+    }
     for (const { bridge } of budgetLayers()) {
       if (!bridge || typeof bridge.isEnabled !== 'function' || bridge.isEnabled()) continue;
       bridge.show();
       undo.push(() => bridge.hide());
     }
-    return () => { for (const fn of undo.splice(0)) fn(); };
+    return () => { for (const fn of undo.splice(0).reverse()) fn(); };
+  };
+
+  /**
+   * Whether the map mode holds an overlay off the map.
+   *
+   * @param {string} key An OVERLAY_KEYS key.
+   * @returns {boolean}
+   */
+  const heldOff = (key) => {
+    const state = win.pwaMapModeState;
+    if (!state || typeof state.isSuppressed !== 'function') return false;
+    return state.isSuppressed(MODE_KEYS[key] || key);
   };
 
   /** @returns {string[]} The known switches that are on, in the server's order. */
@@ -306,7 +335,9 @@
     for (const { key, bridge } of budgetLayers()) {
       if (bridge && typeof bridge.isEnabled === 'function' && bridge.isEnabled()) on.add(key);
     }
-    return OVERLAY_KEYS.filter((key) => on.has(key));
+    // What is drawn, not what is switched on: a switch the mode holds off
+    // draws nothing.
+    return OVERLAY_KEYS.filter((key) => on.has(key) && !heldOff(key));
   };
 
   /** End the run now going, if one is: no verdict, nothing to send. */
@@ -616,7 +647,13 @@
     if (!target) return;
     if (target.closest('[data-action="map-3d-test-send"]')) send();
     else if (target.closest('[data-test-share]')) share();
-    else if (target.closest('[data-test-again], [data-action="map-3d-test-again"]')) start({ probe: probeRun });
+    else if (target.closest('[data-test-again], [data-action="map-3d-test-again"]')) {
+      // After this click is done: start() replaces the panel's body, and the
+      // detached button would read as a tap outside to MapSheet's own
+      // click-outside, which would close the panel and end the new run.
+      const probe = probeRun;
+      setTimeout(() => { start({ probe }); }, 0);
+    }
   });
 
   // ---- What asks for it, and what ends it -------------------------------

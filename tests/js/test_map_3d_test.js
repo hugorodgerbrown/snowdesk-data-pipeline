@@ -155,9 +155,13 @@ function stubMapSheet() {
 /**
  * Load a fresh copy of the module.
  *
- * @param {{search?: string, can?: object, fetchImpl?: Function, loaded?: boolean}} [options]
+ * @param {{search?: string, can?: object, fetchImpl?: Function, loaded?: boolean,
+ *   mode?: string, realSheet?: boolean}} [options] `mode` stands up map_mode.js
+ *   and map.js's held set in that mode; `realSheet` loads the real MapSheet.
  */
-async function load({ search = '', can = { ok: true, reason: null }, fetchImpl, loaded = true } = {}) {
+async function load({
+  search = '', can = { ok: true, reason: null }, fetchImpl, loaded = true, mode, realSheet = false,
+} = {}) {
   document.body.innerHTML = MARKUP;
   document.cookie = 'csrftoken=tok-123';
   window.history.replaceState(null, '', `/map/${search}`);
@@ -180,12 +184,29 @@ async function load({ search = '', can = { ok: true, reason: null }, fetchImpl, 
   window.pwaSkiRoutes = { tours: { on: true, isEnabled() { return this.on; }, show: vi.fn(), hide: vi.fn() } };
   window.pwaShare = { shareOrCopy: vi.fn(() => Promise.resolve('copied')) };
   globalThis.fetch = vi.fn(fetchImpl || (() => Promise.resolve({ status: 204 })));
-  stubMapSheet();
+  if (mode) {
+    const modes = { current: mode };
+    window.pwaMapMode = {
+      get: () => modes.current,
+      set: vi.fn((next) => { modes.current = next; }),
+      isTerrain: () => modes.current === 'terrain',
+      toConditionsToday: vi.fn(),
+    };
+    // map_mode_core's ONLY_IN: each mode holds the other's own keys off.
+    const terrainOnly = ['terrain_filter', 'ski_tours', 'ski_summits', 'rest_zones'];
+    const conditionsOnly = ['bulletins', 'l3', 'problem_terrain', 'weather'];
+    window.pwaMapModeState = {
+      isSuppressed: (key) => (modes.current === 'terrain' ? conditionsOnly : terrainOnly).includes(key),
+      hold: vi.fn(),
+    };
+  }
+  if (!realSheet) stubMapSheet();
   document.addEventListener = (...args) => {
     added.push(args);
     realAdd(...args);
   };
   vi.resetModules();
+  if (realSheet) await import('../../static/js/map_sheet.js');
   await import('../../static/js/map_3d_test.js');
   document.addEventListener = realAdd;
 }
@@ -226,6 +247,8 @@ afterEach(() => {
   added = [];
   vi.restoreAllMocks();
   delete window.pwaMapView;
+  delete window.pwaMapMode;
+  delete window.pwaMapModeState;
 });
 
 describe('a run', () => {
@@ -396,9 +419,74 @@ describe('an unmeasured run', () => {
     expect(visible('[data-verdict]')).toBe(false);
     expect(panel().querySelector('[data-action="map-3d-test-send"]').closest('[hidden]')).not.toBeNull();
     visibleClick('[data-action="map-3d-test-send"], [data-action="map-3d-test-again"]');
+    await flush();
     expect(globalThis.fetch).not.toHaveBeenCalled();
     expect(state()).toBe('running');
     expect(window.pwaMapView.beginTest).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('Test again, with the real MapSheet', () => {
+  it.each([
+    ['the unmeasured state\'s button', [FAST, 0], '[data-action="map-3d-test-again"]'],
+    ['the "…" menu', [FAST, FAST], '[data-test-again]'],
+  ])('from %s starts a new run that stays open', async (_label, passes, selector) => {
+    await load({ realSheet: true });
+    request();
+    await runPasses(passes);
+    expect(window.pwaMapView.endTest).toHaveBeenCalledTimes(1);
+    visibleClick(selector);
+    await flush();
+    // MapSheet's click-outside did not read the replaced button as a tap
+    // outside: the panel is open on a new run, and nothing ended it.
+    expect(panel().hidden).toBe(false);
+    expect(state()).toBe('running');
+    expect(window.pwaMapView.beginTest).toHaveBeenCalledTimes(2);
+    expect(window.pwaMapView.endTest).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the map mode', () => {
+  it('runs ?probe=1 in Terrain from Conditions, records what it drew, and goes back', async () => {
+    await load({ search: '?probe=1', mode: 'dated' });
+    expect(window.pwaMapMode.set).toHaveBeenCalledWith('terrain');
+    expect(window.pwaMapMode.get()).toBe('terrain');
+    await runPasses([FAST, FAST]);
+    expect(window.pwaMapMode.set).toHaveBeenLastCalledWith('dated');
+    expect(window.pwaMapMode.get()).toBe('dated');
+    visibleClick('[data-action="map-3d-test-send"]');
+    await flush();
+    const body = JSON.parse(globalThis.fetch.mock.calls[0][1].body);
+    // Weather's switch is on, but Terrain holds it off the map.
+    expect(body.overlays).toEqual(['terrain', 'ski_tours']);
+  });
+
+  it('puts Conditions back when a probe run is cancelled', async () => {
+    await load({ search: '?probe=1', mode: 'dated' });
+    await flush();
+    env.map.fire('idle');
+    visibleClick('[data-action="dismiss"]');
+    expect(window.pwaMapView.endTest).toHaveBeenCalledWith({});
+    expect(window.pwaMapMode.get()).toBe('dated');
+    expect(window.pwaTerrainFilter.hide).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the mode alone for a probe run already in Terrain', async () => {
+    await load({ search: '?probe=1', mode: 'terrain' });
+    await runPasses([FAST, FAST]);
+    expect(window.pwaMapMode.set).not.toHaveBeenCalled();
+  });
+
+  it('does not record a switch the mode holds off the map', async () => {
+    await load({ mode: 'dated' });
+    request();
+    await runPasses([FAST, FAST]);
+    expect(window.pwaMapMode.set).not.toHaveBeenCalled();
+    visibleClick('[data-action="map-3d-test-send"]');
+    await flush();
+    const body = JSON.parse(globalThis.fetch.mock.calls[0][1].body);
+    // SAC tours are switched on, but Conditions draws none of them.
+    expect(body.overlays).toEqual(['weather']);
   });
 });
 
