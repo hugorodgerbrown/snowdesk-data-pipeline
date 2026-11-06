@@ -1,19 +1,56 @@
 ---
 name: architecture
-description: Repo map — config, the seventeen apps under apps/, track/, templates, src, static; what each app owns
+description: Architecture diagrams and repo map — Render services, Postgres, snowdesk-tiles origin, the nineteen apps, track/, boundaries
 status: current
-last-reviewed: 2026-11-03
+last-reviewed: 2026-11-06
 ---
 
 # Architecture
 
-What each directory and app owns. The rules that bind them are in
-[`AGENTS.md`](../AGENTS.md).
+How Snowdesk runs, how its code is layered, and what each directory and app
+owns. The rules that bind them are in [`AGENTS.md`](../AGENTS.md).
+
+## How it runs
+
+![Runtime: Render production and staging, Postgres, the tiles origin and the outside services](img/architecture-runtime.svg)
+
+- **Production** is three Render services on the `release` branch, all on the
+  one `snowdeskdb` database: `snowdesk-website` (gunicorn, and the only
+  service that migrates), `snowdesk-scheduler` (`run_scheduler`, the
+  timetable in [`schedule.py`](../schedule.py)) and
+  `snowdesk-background-tasks` (`db_worker`, which runs every task queued in
+  the database — [`async-operations.md`](async-operations.md)).
+- **Staging** is one web service on `main` plus a 07:20 UTC cron job that
+  pulls production's data feed (`pull_reference_data`). It has no scheduler
+  and no worker, so its tasks run inline. Its database, `snowdesk_staging`,
+  sits on the same Postgres instance as production's.
+- **Map tiles** never touch Render. The browser fetches the basemap, the
+  terrain-class tiles and the 3-D relief from `tiles.snowdesk-data.info`, a
+  Cloudflare Worker over an R2 bucket. Django reads only the height grid
+  there (`track.terrain`). The separate
+  [snowdesk-tiles](https://github.com/hugorodgerbrown/snowdesk-tiles) repo
+  builds and publishes all of it; this repo holds only the URLs
+  ([`runbooks/self-hosted-tiles.md`](runbooks/self-hosted-tiles.md),
+  [`runbooks/terrain-tileset.md`](runbooks/terrain-tileset.md)).
+
+Deploys and the release flow: [`deployment.md`](deployment.md). Service
+definitions: [`render.yaml`](../render.yaml).
+
+## How the code is layered
+
+![Layers: surface apps, domain apps, and the core, ingest and track foundations, with the enforced boundaries](img/architecture-apps.svg)
+
+Imports mostly run from surfaces down to foundations, but only the four
+boundaries in red are enforced, each by a `test_boundary.py`. The diagrams
+are hand-written SVG: edit the text in `docs/img/` when a service, a
+schedule or a boundary changes.
+
+## Repo map
 
 ```
 config/          Django project settings (base + development/staging/
                  production/perf overlays — see "Conventions → Code")
-apps/            Parent package for the seventeen Django apps (SNOW-557 — moved
+apps/            Parent package for the nineteen Django apps (SNOW-557 — moved
                  here without changing any app label; see
                  docs/decisions/ for the why)
   core/          Shared abstractions (BaseModel), HTTP-layer middleware, the

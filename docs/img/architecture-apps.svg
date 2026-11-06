@@ -1,0 +1,202 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 860" width="1600" height="860" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <!-- docs/img/architecture-apps.svg — how the code is layered (docs/architecture.md → Layers). Hand-written; edit the text in place. -->
+  <style>
+    .title { font-size: 26px; font-weight: 700; fill: #0f172a; }
+    .sub { font-size: 14px; fill: #475569; }
+    .zone { font-size: 15px; font-weight: 700; fill: #0f172a; }
+    .zsub { font-size: 12.5px; fill: #475569; }
+    .h { font-size: 14px; font-weight: 700; fill: #0f172a; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+    .t { font-size: 12.5px; fill: #334155; }
+    .b { font-size: 12.5px; font-weight: 600; fill: #0f172a; }
+    .m { font-size: 12px; fill: #334155; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+    .rule { font-size: 12px; fill: #b91c1c; font-weight: 600; }
+    .note { font-size: 12px; fill: #64748b; font-style: italic; }
+    .app { fill: #ffffff; stroke: #94a3b8; }
+    .fence { fill: #ffffff; stroke: #dc2626; stroke-width: 1.8; stroke-dasharray: 7 4; }
+    .down { stroke: #334155; stroke-width: 2; fill: none; }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#334155"/></marker>
+  </defs>
+
+  <rect width="1600" height="860" fill="#ffffff"/>
+  <text x="30" y="44" class="title">How the code is layered</text>
+  <text x="30" y="68" class="sub">Nineteen apps under apps/ and one plain package, track/. Imports mostly run down the page; only the red dashed boundaries are enforced by tests.</text>
+
+  <!-- ===================== Surfaces ===================== -->
+  <rect x="30" y="90" width="1170" height="200" rx="12" fill="#eff6ff" stroke="#60a5fa" stroke-width="1.5"/>
+  <text x="46" y="116" class="zone">Surfaces</text>
+  <text x="128" y="116" class="zsub">own URLs and templates; hold few or no models</text>
+
+  <rect x="46" y="132" width="250" height="142" rx="10" class="app"/>
+  <text x="62" y="156" class="h">public</text>
+  <text x="62" y="176" class="t">The bulletin site and help pages.</text>
+  <text x="62" y="194" class="t">urls.py and api_urls.py are the</text>
+  <text x="62" y="212" class="t">routing hub for public, map and</text>
+  <text x="62" y="230" class="t">design_system.</text>
+  <text x="62" y="258" class="note">Route map: docs/site-structure.md</text>
+
+  <rect x="310" y="132" width="210" height="142" rx="10" class="fence"/>
+  <text x="326" y="156" class="h">map</text>
+  <text x="326" y="176" class="t">/map/, its JSON feeds, the</text>
+  <text x="326" y="194" class="t">region and place sheets, the</text>
+  <text x="326" y="212" class="t">in-map editor. No models.</text>
+  <text x="326" y="238" class="rule">Reads six public modules.</text>
+  <text x="326" y="256" class="rule">Only URL modules import it.</text>
+
+  <rect x="534" y="132" width="200" height="142" rx="10" class="fence"/>
+  <text x="550" y="156" class="h">design_system</text>
+  <text x="550" y="176" class="t">/_components/, tokens,</text>
+  <text x="550" y="194" class="t">fixtures, icon sets. Staff</text>
+  <text x="550" y="212" class="t">only. No models.</text>
+  <text x="550" y="238" class="rule">Only public/urls.py</text>
+  <text x="550" y="256" class="rule">imports it.</text>
+
+  <rect x="748" y="132" width="150" height="142" rx="10" class="app"/>
+  <text x="764" y="156" class="h">mcp_server</text>
+  <text x="764" y="176" class="t">/api/mcp/ and</text>
+  <text x="764" y="194" class="t">/api/ops/mcp/</text>
+  <text x="764" y="212" class="t">tools, docs</text>
+  <text x="764" y="230" class="t">search</text>
+
+  <rect x="912" y="132" width="130" height="142" rx="10" class="app"/>
+  <text x="928" y="156" class="h">oauth</text>
+  <text x="928" y="176" class="t">MCP OAuth</text>
+  <text x="928" y="194" class="t">on mcp-auth:</text>
+  <text x="928" y="212" class="t">consent and</text>
+  <text x="928" y="230" class="t">policy</text>
+
+  <rect x="1056" y="132" width="130" height="142" rx="10" class="app"/>
+  <text x="1072" y="156" class="h">data_feed</text>
+  <text x="1072" y="176" class="t">/api/data/v1/</text>
+  <text x="1072" y="194" class="t">and v2/, plus</text>
+  <text x="1072" y="212" class="t">the pull</text>
+  <text x="1072" y="230" class="t">commands</text>
+
+  <!-- ===================== Domain ===================== -->
+  <path class="down" d="M615,292 L615,318" marker-end="url(#a)"/>
+  <rect x="30" y="320" width="1170" height="250" rx="12" fill="#f0fdf4" stroke="#4ade80" stroke-width="1.5"/>
+  <text x="46" y="346" class="zone">Domain</text>
+  <text x="118" y="346" class="zsub">the models, their services and their commands</text>
+
+  <text x="46" y="374" class="b">What people own</text>
+  <rect x="46" y="384" width="150" height="74" rx="10" class="app"/>
+  <text x="60" y="406" class="h">accounts</text>
+  <text x="60" y="424" class="t">Account, passkeys,</text>
+  <text x="60" y="442" class="t">push, sign-in email</text>
+  <rect x="206" y="384" width="150" height="74" rx="10" class="app"/>
+  <text x="220" y="406" class="h">favourites</text>
+  <text x="220" y="424" class="t">pins, saved resorts,</text>
+  <text x="220" y="442" class="t">region pins</text>
+  <rect x="366" y="384" width="150" height="74" rx="10" class="app"/>
+  <text x="380" y="406" class="h">routes</text>
+  <text x="380" y="424" class="t">GPX, drawn routes,</text>
+  <text x="380" y="442" class="t">ski network and tours</text>
+  <rect x="526" y="384" width="150" height="74" rx="10" class="app"/>
+  <text x="540" y="406" class="h">trips</text>
+  <text x="540" y="424" class="t">a route on a day,</text>
+  <text x="540" y="442" class="t">shared by link</text>
+  <rect x="46" y="468" width="150" height="74" rx="10" class="app"/>
+  <text x="60" y="490" class="h">observations</text>
+  <text x="60" y="508" class="t">field reports</text>
+  <rect x="206" y="468" width="150" height="74" rx="10" class="app"/>
+  <text x="220" y="490" class="h">downloads</text>
+  <text x="220" y="508" class="t">offline areas (the</text>
+  <text x="220" y="526" class="t">definition only)</text>
+  <rect x="366" y="468" width="150" height="74" rx="10" class="app"/>
+  <text x="380" y="490" class="h">analytics</text>
+  <text x="380" y="508" class="t">fivebar goals,</text>
+  <text x="380" y="526" class="t">/api/telemetry</text>
+
+  <text x="716" y="374" class="b">Reference data, rebuilt from the providers</text>
+  <rect x="716" y="384" width="230" height="74" rx="10" class="app"/>
+  <text x="730" y="406" class="h">bulletins</text>
+  <text x="730" y="424" class="t">Bulletin, RegionDayRating;</text>
+  <text x="730" y="442" class="t">applied from SourceBulletin</text>
+  <rect x="956" y="384" width="230" height="74" rx="10" class="app"/>
+  <text x="970" y="406" class="h">regions</text>
+  <text x="970" y="424" class="t">micro, sub, major regions;</text>
+  <text x="970" y="442" class="t">Resort (retired, not deleted)</text>
+  <rect x="716" y="468" width="230" height="74" rx="10" class="app"/>
+  <text x="730" y="490" class="h">locations</text>
+  <text x="730" y="508" class="t">Location, the place every</text>
+  <text x="730" y="526" class="t">other app points at</text>
+  <rect x="956" y="468" width="230" height="74" rx="10" class="app"/>
+  <text x="970" y="490" class="h">weather</text>
+  <text x="970" y="508" class="t">Weather: one row per place</text>
+  <text x="970" y="526" class="t">and day, from Open-Meteo</text>
+
+  <!-- ===================== Foundations ===================== -->
+  <path class="down" d="M615,572 L615,598" marker-end="url(#a)"/>
+  <rect x="30" y="600" width="1170" height="230" rx="12" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="46" y="626" class="zone">Foundations</text>
+  <text x="146" y="626" class="zsub">imported from everywhere; ingest and track/ import nothing above them</text>
+
+  <rect x="46" y="642" width="370" height="172" rx="10" class="app"/>
+  <text x="62" y="666" class="h">core</text>
+  <text x="62" y="688" class="t">BaseModel, middleware, health checks</text>
+  <text x="62" y="708" class="t">RegisteredCommand and the CommandRun register</text>
+  <text x="62" y="728" class="t">command_iteration: iterate_rows, countdown</text>
+  <text x="62" y="748" class="t">command_tasks: enqueue_each, wait_for_slot</text>
+  <text x="62" y="768" class="t">remote_commands: run_command on db_worker</text>
+  <text x="62" y="788" class="t">task_queue: the queue's health</text>
+
+  <rect x="430" y="642" width="440" height="172" rx="10" class="fence"/>
+  <text x="446" y="666" class="h">ingest</text>
+  <text x="446" y="688" class="t">The providers' fetch and normalisation, built to be rehosted.</text>
+  <text x="446" y="708" class="t">sources/ does the HTTP; normalise/ holds pure functions.</text>
+  <text x="446" y="728" class="t">Source* tables keep what each provider published; the</text>
+  <text x="446" y="748" class="t">domain apps apply them and data_feed serves them.</text>
+  <text x="446" y="776" class="rule">Imports no other apps.* package.</text>
+  <text x="446" y="796" class="rule">Everything else imports it only through apps/ingest/public.py.</text>
+
+  <rect x="884" y="642" width="302" height="172" rx="10" class="fence"/>
+  <text x="900" y="666" class="h">track/</text>
+  <text x="980" y="666" class="zsub">a root package, not an app</text>
+  <text x="900" y="688" class="t">Pure track maths: geo helpers, the</text>
+  <text x="900" y="708" class="t">terrain reader, slope samples, legs,</text>
+  <text x="900" y="728" class="t">fall line, the track render, SAC tour</text>
+  <text x="900" y="748" class="t">ordering.</text>
+  <text x="900" y="776" class="rule">Imports no Django and</text>
+  <text x="900" y="796" class="rule">no apps.* package.</text>
+
+  <!-- ===================== Boundary key ===================== -->
+  <rect x="1230" y="90" width="340" height="740" rx="12" fill="#fef2f2" stroke="#fca5a5"/>
+  <text x="1246" y="116" class="zone">Enforced boundaries</text>
+  <text x="1246" y="134" class="zsub">each fails the build when crossed</text>
+
+  <text x="1246" y="170" class="b">ingest is rehostable</text>
+  <text x="1246" y="189" class="m">tests/ingest/test_boundary.py</text>
+  <text x="1246" y="207" class="note">decisions/ingestion-is-a-rehostable-unit</text>
+
+  <text x="1246" y="245" class="b">track/ is pure maths</text>
+  <text x="1246" y="264" class="m">tests/track/test_boundary.py</text>
+  <text x="1246" y="282" class="note">decisions/pure-track-maths-is-a-package</text>
+
+  <text x="1246" y="320" class="b">map reads six public modules</text>
+  <text x="1246" y="339" class="t">bulletin_panels, weather_points,</text>
+  <text x="1246" y="357" class="t">decorators, errors, season_calendar,</text>
+  <text x="1246" y="375" class="t">map_shared</text>
+  <text x="1246" y="394" class="m">tests/map/test_boundary.py</text>
+  <text x="1246" y="412" class="note">decisions/public-splits-by-surface</text>
+
+  <text x="1246" y="450" class="b">design_system is routed, not imported</text>
+  <text x="1246" y="469" class="m">tests/design_system/test_boundary.py</text>
+
+  <text x="1246" y="514" class="b">Held by review, not by a test</text>
+  <text x="1246" y="536" class="t">bulletins and regions split by data</text>
+  <text x="1246" y="554" class="t">lifecycle</text>
+  <text x="1246" y="572" class="note">decisions/bulletins-regions-split</text>
+  <text x="1246" y="600" class="t">No Django signals for side effects:</text>
+  <text x="1246" y="618" class="t">service functions call them inline</text>
+  <text x="1246" y="636" class="note">decisions/no-signals-for-side-effects</text>
+
+  <text x="1246" y="680" class="b">Outside this repo</text>
+  <text x="1246" y="700" class="t">snowdesk-tiles builds and serves the</text>
+  <text x="1246" y="718" class="t">basemap, terrain and 3-D relief tiles.</text>
+  <text x="1246" y="736" class="t">Here only env vars point at it:</text>
+  <text x="1246" y="756" class="m">OPENFREEMAP_STYLE_URL</text>
+  <text x="1246" y="774" class="m">TERRAIN_TILE_BASE_URL</text>
+  <text x="1246" y="792" class="m">TERRAIN_CLASS_TILE_URL</text>
+  <text x="1246" y="810" class="m">MAP_3D_DEM_TILE_URL</text>
+</svg>

@@ -8,13 +8,14 @@ under 32 KiB: Codex stops reading there by default
 Django pipeline that fetches avalanche bulletins from SLF, ALBINA (EUREGIO)
 and Météo-France, normalises them to CAAML v6 JSON, stores them and renders
 them on a public site. The frontend uses HTMX and no JavaScript framework.
-Python 3.14 / Django 6.0, pinned in `pyproject.toml`.
+Python 3.14 / Django 6.1, pinned in `pyproject.toml`.
 
 **Finding things:**
 
 - [`docs/README.md`](docs/README.md) — every doc and decision record, by topic
   and code symbol. Search it before changing an area, and read what it names.
-- [`docs/architecture.md`](docs/architecture.md) — what each app owns.
+- [`docs/architecture.md`](docs/architecture.md) — diagrams of how it runs and
+  how the code is layered, then what each app owns.
 - [`docs/glossary.md`](docs/glossary.md) — domain term → code symbol.
 - [`docs/decisions/`](docs/decisions/) — accepted decisions, the "why".
 - [`apps/bulletins/CLAUDE.md`](apps/bulletins/CLAUDE.md) — per-provider APIs,

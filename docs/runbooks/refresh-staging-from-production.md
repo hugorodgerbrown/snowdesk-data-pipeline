@@ -17,10 +17,12 @@ last-reviewed: 2026-10-23
 Staging runs one web dyno with no scheduler and no task worker
 ([`render.yaml`](../../render.yaml)), so its database never ingests a
 bulletin of its own. [`bin/sync-staging-data`](../../bin/sync-staging-data)
-copies the provider-derived tables out of production instead. It is run **by
-hand**: the `snowdesk-staging-data-sync` Render cron job that ran it nightly
-at 07:20 UTC was disabled on 2026-08-27 and its `render.yaml` block is
-commented out.
+copies the provider-derived tables out of production as a wholesale reset.
+It is run **by hand**. The `snowdesk-staging-data-sync` Render cron job that
+ran it nightly was disabled on 2026-08-27 and later deleted, from the
+Blueprint and from Render. Staging's daily refresh is now the
+`snowdesk-staging-data-pull` cron job, which runs `pull_reference_data`
+against production's data feed ([`data-feed.md`](../data-feed.md)).
 
 It is a `pg_dump`/`psql` replace, not an incremental merge: every run clears
 the target tables and reloads them, preserving production's primary keys.
@@ -266,16 +268,12 @@ Region centroids are released before the clear
 (`regions_microregion.centroid_location_id`) and copied back from
 production at the end, as described above — the script does this for you.
 
-## The nightly job — currently disabled
+## Running it
 
-`snowdesk-staging-data-sync` (see [`render.yaml`](../../render.yaml)) ran
-at 07:20 UTC — after the hourly
-`fetch_bulletins` run that picks up the morning issue
-([`schedule.py`](../../schedule.py)) — so staging opened the working day
-already current. It was **disabled on 2026-08-27**; the service definition is
-commented out rather than deleted, and re-enabling it means uncommenting that
-block *and* confirming Render has not kept a previously-created cron job
-firing against `main`. Until then the command below is a manual step.
+There is no scheduled run. `snowdesk-staging-data-sync` ran this script at
+07:20 UTC until it was disabled on 2026-08-27, and it has since been removed
+from `render.yaml` and from Render. The daily refresh is the data feed's
+`snowdesk-staging-data-pull` job; this script is the manual reset:
 
 ```
 ./bin/sync-staging-data --commit
