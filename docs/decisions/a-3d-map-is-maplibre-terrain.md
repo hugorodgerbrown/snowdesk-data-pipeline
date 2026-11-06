@@ -203,9 +203,12 @@ re-reads the switch, and the 3D | 2D switch shows under
 - **The timelapse plays in 3D.** It plays only on a desktop, so its cost is
   not a reason to go flat (Hugo, 6 Nov 2026). The runner hears
   `snowdesk:timelapse-state` and runs the frame loop for as long as it
-  plays, whether the camera moves or not. A trip during playback goes flat
-  through `exit()`, and that basemap swap stops the timelapse (SNOW-58),
-  which is what a desktop that cannot keep up needs.
+  plays, whether the camera moves or not, and picks it up again when a
+  hidden tab comes back. A trip during playback goes flat through `exit()`,
+  whose `snowdesk:map-view-changed` carries `reason: 'slow'`, and
+  `map_timelapse.js` stops on that, which is what a desktop that cannot
+  keep up needs. The basemap swap (SNOW-58) is not relied on: a reader
+  whose basemap is swisstopo winter gets no swap.
 - **One budget for both modes.** A trip in either keeps 3D off for the visit
   in both.
 - **Not done.** From z12 the danger fill drops for every painted region,

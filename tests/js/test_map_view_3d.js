@@ -526,8 +526,8 @@ afterEach(() => {
 });
 
 /** Enter 3D from the switch and let the entering ease end. */
-async function enterAndSettle() {
-  const booted = await boot();
+async function enterAndSettle(options = {}) {
+  const booted = await boot(options);
   booted.button.click();
   await flush();
   booted.map.fire('moveend');
@@ -804,6 +804,35 @@ describe('the timelapse plays in 3D (SNOW-1452)', () => {
     expect(rafQueue.size).toBe(1);
     map.fire('moveend');
     expect(rafQueue.size).toBe(0);
+  });
+
+  it('goes flat with the reason when slow on swisstopo winter, where no swap fires', async () => {
+    const { map } = await enterAndSettle({ stored: 'swisstopo_winter' });
+    const swaps = countSwaps();
+    const changes = [];
+    const record = (e) => changes.push(e.detail);
+    document.addEventListener('snowdesk:map-view-changed', record);
+    timelapse(true);
+    frames(SLOW_MS, perWindow(SLOW_MS) * TRIP + 2);
+    document.removeEventListener('snowdesk:map-view-changed', record);
+    expect(window.pwaMapView.get()).toBe('flat');
+    expect(swaps.n).toBe(0);
+    // map_timelapse.js stops on this, swap or no swap.
+    expect(changes).toEqual([{ view: 'flat', reason: 'slow' }]);
+    expect(map.getTerrain()).toBeNull();
+  });
+
+  it('resumes timing when a hidden tab comes back mid-playback', async () => {
+    await enterAndSettle();
+    timelapse(true);
+    setHidden(true);
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(rafQueue.size).toBe(0);
+    setHidden(false);
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(rafQueue.size).toBe(1);
+    frames(SLOW_MS, perWindow(SLOW_MS) * TRIP + 2);
+    expect(window.pwaMapView.get()).toBe('flat');
   });
 
   it('is timed from the end of the entering ease when it starts during it', async () => {

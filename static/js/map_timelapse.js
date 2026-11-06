@@ -259,6 +259,14 @@
     if (timer !== null) stop();
   });
 
+  // SNOW-1452: the timelapse plays in 3-D, and a 3-D map too slow to keep
+  // up goes flat (map_view_3d.js); playback stops with it, whether or not
+  // that exit swapped the basemap.
+  document.addEventListener('snowdesk:map-view-changed', (e) => {
+    const detail = e.detail;
+    if (timer !== null && detail && detail.view === 'flat' && detail.reason === 'slow') stop();
+  });
+
   // Play-forward button: running forward → stop; else → start(1).
   // Pressing while reverse is playing flips direction from the current frame.
   playButton.addEventListener('click', () => {

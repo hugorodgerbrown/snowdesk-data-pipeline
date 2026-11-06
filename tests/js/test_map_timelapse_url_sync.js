@@ -214,3 +214,32 @@ describe('playback stays on the track', () => {
     expect(urlWrites).toEqual([DATES[DATES.length - 1]]);
   });
 });
+
+describe('a slow 3D map stops playback (SNOW-1452)', () => {
+  /** @param {object} detail */
+  const viewChanged = (detail) => {
+    document.dispatchEvent(new CustomEvent('snowdesk:map-view-changed', { detail }));
+  };
+
+  /** Press play and let playback arm its timer. */
+  const startPlaying = async () => {
+    document.getElementById('scrubber-play').click();
+    await vi.advanceTimersByTimeAsync(0);
+  };
+
+  it('stops when the map goes flat for being too slow', async () => {
+    await loadTimelapse();
+    await startPlaying();
+    expect(document.getElementById('scrubber-play').dataset.state).not.toBe('stopped');
+    viewChanged({ view: 'flat', reason: 'slow' });
+    expect(document.getElementById('scrubber-play').dataset.state).toBe('stopped');
+  });
+
+  it('plays on when the reader goes flat or into 3D', async () => {
+    await loadTimelapse();
+    await startPlaying();
+    viewChanged({ view: 'flat' });
+    viewChanged({ view: '3d' });
+    expect(document.getElementById('scrubber-play').dataset.state).not.toBe('stopped');
+  });
+});

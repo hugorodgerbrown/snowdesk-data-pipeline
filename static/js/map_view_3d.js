@@ -281,15 +281,19 @@
     if (map.getMaxPitch() !== ceiling) map.setMaxPitch(ceiling);
   };
 
-  /** @param {string} next */
-  const announce = (next) => {
+  /**
+   * @param {string} next
+   * @param {string} [reason] Why the map left 3-D on its own (REASONS), if it did.
+   */
+  const announce = (next, reason) => {
     document.documentElement.dataset.mapView = next;
     try {
       history.replaceState(history.state, '', location.pathname + viewCore.withView(location.search, next) + location.hash);
     } catch (err) {
       console.warn('map_view_3d: could not update the address bar', err);
     }
-    document.dispatchEvent(new CustomEvent('snowdesk:map-view-changed', { detail: { view: next } }));
+    const detail = reason ? { view: next, reason } : { view: next };
+    document.dispatchEvent(new CustomEvent('snowdesk:map-view-changed', { detail }));
   };
 
   // ---- The frame watchdog ----------------------------------------------
@@ -439,7 +443,10 @@
     // way, leaving the flat map tilted.
     map.jumpTo({ pitch: 0 });
     swapBasemap(preferredKey());
-    announce(FLAT);
+    // The reason travels with the change: a slow-frame trip stops the
+    // timelapse (map_timelapse.js), even when the reader's basemap is
+    // swisstopo winter and so no swap fires snowdesk:basemap-changing.
+    announce(FLAT, options.reason);
     sync();
     if (options.reason && LEFT[options.reason]) say(LEFT[options.reason]);
   };
@@ -541,8 +548,11 @@
   });
 
   // A hidden tab draws nothing, and its gap is not a slow frame.
+  // Playback carries on behind a hidden tab, so timing it resumes when the
+  // tab comes back; a move has ended by then and starts its own run.
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) stopFrames();
+    else if (playing) startFrames();
   });
 
   // ---- WebGL lost and restored ------------------------------------------
