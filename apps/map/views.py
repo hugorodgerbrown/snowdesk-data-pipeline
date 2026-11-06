@@ -47,7 +47,11 @@ from apps.map.map_3d import (
 )
 from apps.map.problem_terrain import problem_terrain_key
 from apps.observations.models import FieldObservation
-from apps.public.map_shared import map_modes_enabled, trip_url_templates
+from apps.public.map_shared import (
+    map_3d_view_enabled,
+    map_modes_enabled,
+    trip_url_templates,
+)
 from apps.public.season_calendar import (
     SeasonRibbon,
     build_season_ribbon,
@@ -332,8 +336,9 @@ def map_page(request: HttpRequest) -> HttpResponse:
             "map_3d_route_share": map_3d_route_share,
             # SNOW-1449: inside both flags the roundel tilts this map into
             # 3-D, in Terrain, instead of opening /map/3d/; the 3-D view is
-            # Terrain's, so it needs the modes as well.
-            "map_3d_view": map_3d_flagged and modes_enabled,
+            # Terrain's, so it needs the modes as well. SNOW-1453: the one
+            # gate, shared with /offline/'s elevation template.
+            "map_3d_view": map_3d_view_enabled(request),
             # What the roundel prefetches, so the 3-D terrain is cached first.
             "map_3d_dem_tile_url": settings.MAP_3D_DEM_TILE_URL,
         },
