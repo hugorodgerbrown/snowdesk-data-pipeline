@@ -1,7 +1,7 @@
 """tests/map/test_models.py — the map app's models.
 
-Map3dShare, the 3-D map's share token, and Map3dDeviceTest, an anonymous 3D
-test result (SNOW-1456).
+Map3dDeviceTest, an anonymous 3D test result (SNOW-1456). SNOW-1450 removed
+Map3dShare, the retired /map/3d/'s share token.
 """
 
 from __future__ import annotations
@@ -11,32 +11,10 @@ from django.contrib.admin.sites import site
 from django.test import RequestFactory
 
 from apps.map.admin import Map3dDeviceTestAdmin
-from apps.map.models import Map3dDeviceTest, Map3dShare
-from tests.factories import Map3dDeviceTestFactory, Map3dShareFactory
+from apps.map.models import Map3dDeviceTest
+from tests.factories import Map3dDeviceTestFactory
 
 pytestmark = pytest.mark.django_db
-
-
-def test_a_share_mints_a_url_safe_token() -> None:
-    """The default token is 11 URL-safe characters, distinct per row."""
-    a = Map3dShareFactory.create()
-    b = Map3dShareFactory.create()
-    assert len(a.token) == 11
-    assert a.token != b.token
-
-
-def test_for_token_finds_the_row_and_ignores_a_blank() -> None:
-    """for_token matches exactly and never matches an empty token."""
-    share = Map3dShareFactory.create()
-    assert list(Map3dShare.objects.for_token(share.token)) == [share]
-    assert not Map3dShare.objects.for_token("").exists()
-
-
-def test_str_delegates_to_to_string() -> None:
-    """__str__ is to_string()."""
-    share = Map3dShareFactory.create()
-    assert str(share) == share.to_string()
-    assert share.token in str(share)
 
 
 def test_a_device_test_keeps_its_overlays_and_passes() -> None:

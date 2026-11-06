@@ -967,14 +967,14 @@ def csp_defaults(
             # SNOW-1260: MapLibre fetches raster tiles with fetch(), so the
             # ski-routes overlay's origin is here as well as in img-src.
             SWISSTOPO_WMTS_ORIGIN,
-            # SNOW-1438: the 3-D map's elevation tiles, fetched by
-            # MapLibre's raster-dem source on /map/3d/ and prefetched by
-            # /map/'s 3D roundel. SNOW-1444: derived from
+            # SNOW-1438: the 3D map's elevation tiles, fetched by
+            # MapLibre's raster-dem source in /map/'s 3D view and
+            # prefetched by its 3D roundel. SNOW-1444: derived from
             # MAP_3D_DEM_TILE_URL, so the setting and the policy cannot
             # drift when the URL moves to our own copy.
             dem_origin,
-            # SNOW-1445: AWS's open Terrarium tiles, which /map/3d/ falls
-            # back to when Mapterhorn fails.
+            # SNOW-1445: AWS's open Terrarium tiles, which the 3D view
+            # falls back to when Mapterhorn fails.
             "https://s3.amazonaws.com",
             *([analytics_origin] if analytics_origin else []),
         ],
@@ -1031,7 +1031,7 @@ CSP_REPORT_ONLY = True
 TERRAIN_CLASS_TILE_URL = config("TERRAIN_CLASS_TILE_URL", default="")
 TERRAIN_CLASS_TILE_ORIGIN = optional_basemap_origin(TERRAIN_CLASS_TILE_URL)
 
-# SNOW-1444: the 3-D map's elevation tiles, an XYZ Terrarium WebP
+# SNOW-1444: the 3D map's elevation tiles, an XYZ Terrarium WebP
 # template handed verbatim to the browser (static/js/map_3d_core.js's
 # createDemLoader fetches it, falling back to AWS per tile). Production
 # points it at our own versioned copy of Mapterhorn, clipped to the

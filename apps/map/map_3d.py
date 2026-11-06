@@ -1,250 +1,88 @@
 """
-apps/map/map_3d.py — the 3-D terrain map at /map/3d/ (SNOW-1438).
+apps/map/map_3d.py — the retired /map/3d/ address, kept as a redirect (SNOW-1450).
 
-A sandbox, separate from /map/: the relief drawn in 3-D with MapLibre's own
-terrain, and Steep terrain, SAC's ski tours, the reader's own routes and the
-resorts draped over it. It exists so the 3-D view can be tried on real data
-before anything about /map/ changes
+/map/3d/ was the 3D terrain map's sandbox (SNOW-1438), a page of its own
+beside /map/. SNOW-1449 brought the 3D view onto /map/ itself (``?view=3d``,
+behind ``map_3d_view_enabled``), and SNOW-1450 retired the page. Links to it
+are still out there, in chats and bookmarks, so the address answers a 302:
+
+* ``?route_share=<token>`` goes to the route share's own 3D follow,
+  ``/routes/s/<token>/3d/`` (``routes:share_redirect_3d``), which keeps its
+  404/410/429 checks, its budget and its seating;
+* anything else goes to ``/map/?…&view=3d``, carrying ``probe`` and ``at``.
+
+The old page's ``share`` token and its ``layers`` switches are dropped: the
+token's model is gone, and /map/ has no URL for its switches (its own
+``?layers=`` means the layer explainer). Outside the ``map_3d`` flag /map/
+ignores ``view=3d`` and opens flat
 (docs/decisions/a-3d-map-is-maplibre-terrain.md).
-
-Behind the ``map_3d`` waffle flag. Outside it the page is a 404, not a
-redirect or a teaser: there is nothing here for anyone else yet. The one
-way past the flag is a share link: ``?share=<token>`` naming a live
-``Map3dShare`` opens the page for anyone, signed in or not, and deleting
-that row in the admin stops it.
-
-A ROUTE share opens it too. ``?route_share=<token>`` naming a live
-``RouteShare`` whose sharer holds a ``Map3dShare`` opens the page on that
-route, for anyone. The visitor sees the shared route and no one else's: the
-routes layer is ``routes.geojson``, which serves a request its own routes
-and the shares its session has followed, and nothing more. The link people
-are sent is ``/routes/s/<token>/3d/`` (``routes:share_redirect_3d``), the
-route share URL with ``3d/`` on the end. Deleting the sharer's
-``Map3dShare`` stops their route links opening in 3-D as well.
 """
 
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlencode
 
-import waffle
-from django.conf import settings
-from django.db import models
-from django.http import Http404, HttpRequest, HttpResponse
-from django.shortcuts import redirect, render
-from django.urls import reverse
-from django_ratelimit.core import is_ratelimited
-
-from apps.core.http import is_top_level_navigation
-from apps.routes.models import RouteShare
-from apps.routes.services.shares import (
-    SHARE_FOLLOW_GROUP,
-    SHARE_FOLLOW_RATE,
-    add_pending_token,
-    pending_tokens,
-    share_follow_bucket,
-)
-
-from .models import Map3dShare
+from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
+from django.urls import NoReverseMatch, reverse
+from django.views.decorators.http import require_http_methods
 
 logger = logging.getLogger(__name__)
 
-# The basemap the page draws on. swisstopo's winter style is the one whose
-# rock and glacier shading reads best tilted, and the class tiles that paint
-# Steep terrain only cover Switzerland anyway.
-MAP_3D_BASEMAP = "swisstopo_winter"
-
-# The placeholder the page's script swaps for a route's uuid in the
-# share-create URL template, as apps/map/views.py's route templates spell it.
-_UUID_PLACEHOLDER = "__UUID__"
-_DUMMY_UUID = "00000000-0000-0000-0000-000000000000"
+# The old page's parameters /map/ still reads, in the order they are
+# carried. ``view=3d`` always follows them.
+_CARRIED_PARAMS = ("probe", "at")
 
 
-def _shares_for_3d() -> models.QuerySet[RouteShare]:
-    """Return the route shares that may open the 3-D map.
+def _route_share_follow(token: str) -> str:
+    """Return the 3D follow of the route share ``token`` names, or "".
 
-    Live (``RouteShare.objects.active``), not the example route (every
-    visitor is offered that one, and it must not become a way past the
-    flag), and made by someone who holds a ``Map3dShare`` — a reader of
-    the 3-D map, whose row is what revokes it.
-
-    Returns:
-        The queryset.
-
-    """
-    return RouteShare.objects.active().filter(
-        is_example=False, created_by__map_3d_share__isnull=False
-    )
-
-
-def route_share_for_3d(token: str) -> RouteShare | None:
-    """Return the route share ``token`` names, if it may open the 3-D map.
+    Whether the share is live is the follow's question, not this one's.
 
     Args:
-        token: The ``?route_share=`` value from a link.
+        token: The ``?route_share=`` value from an old link.
 
     Returns:
-        The share, or None for a blank, unknown, dead or ineligible token.
+        ``/routes/s/<token>/3d/``, or "" for a blank token or one no share
+        URL could carry (a ``/`` in it).
 
     """
     if not token:
-        return None
-    return _shares_for_3d().filter(token=token).first()
-
-
-def pending_route_share_for_3d(request: HttpRequest) -> str:
-    """Return the newest followed route share that may open in 3-D.
-
-    For /map/'s "3D" roundel: a friend sent a route by a 3-D reader gets
-    the roundel, carrying this token, even outside the flag. Free for a
-    session that has followed no share link: the session is read and no
-    query runs.
-
-    Args:
-        request: The incoming HTTP request.
-
-    Returns:
-        The token, or "" when there is none.
-
-    """
-    tokens = pending_tokens(request.session)
-    if not tokens:
         return ""
-    eligible = set(
-        _shares_for_3d().filter(token__in=tokens).values_list("token", flat=True)
-    )
-    for token in reversed(tokens):
-        if token in eligible:
-            return token
-    return ""
+    try:
+        return reverse("routes:share_redirect_3d", args=[token])
+    except NoReverseMatch:
+        return ""
 
 
-def _over_follow_budget(request: HttpRequest, token: str) -> bool:
-    """Count one follow of ``token`` and say whether the budget is spent.
+@require_http_methods(["GET", "HEAD"])
+def map_3d_redirect(request: HttpRequest) -> HttpResponse:
+    """Send an old /map/3d/ link to where its view now lives.
 
-    The budget the share follows in apps/routes/views.py spend: one group,
-    one (token, IP) bucket, so this page and the two links share it.
-
-    Args:
-        request: The incoming HTTP request.
-        token: The route share token being followed.
-
-    Returns:
-        True when this follow is over the budget.
-
-    """
-    return bool(
-        is_ratelimited(
-            request,
-            group=SHARE_FOLLOW_GROUP,
-            key=lambda group, req: share_follow_bucket(token, req),
-            rate=SHARE_FOLLOW_RATE,
-            increment=True,
-        )
-    )
-
-
-def map_3d_enabled(request: HttpRequest) -> bool:
-    """Whether this request may open the 3-D map.
-
-    Short-circuited for an anonymous request, as ``map_modes_enabled`` is,
-    so a signed-out visitor pays no waffle query for a page that 404s for
-    them anyway.
+    The same answer for anyone, flagged or not, signed in or out, and it
+    writes nothing to the session: a route share's token is seated by the
+    follow this sends it to, not here. ``Cache-Control: no-store`` and a
+    302, never a 301, so a browser that cached the answer cannot skip the
+    route share follow's checks the next time.
 
     Args:
-        request: The incoming HTTP request.
+        request: The incoming GET or HEAD request.
 
     Returns:
-        True when the ``map_3d`` flag is active for the requesting user.
+        A 302 to ``/routes/s/<token>/3d/`` for a route share, otherwise to
+        ``/map/`` with ``probe`` and ``at`` carried and ``view=3d`` last.
+        A route share no URL could carry is treated as absent.
 
     """
-    return bool(
-        request.user.is_authenticated and waffle.flag_is_active(request, "map_3d")
-    )
-
-
-def map_3d_page(request: HttpRequest) -> HttpResponse:
-    """Render the 3-D terrain map, or 404 outside the ``map_3d`` flag.
-
-    Every URL the page's script fetches travels as a data attribute on
-    ``#map-3d``, so ``static/js/map_3d.js`` builds none of them itself. The
-    class-tile template is empty where the environment has not configured
-    it, and the script then leaves Steep terrain out.
-
-    Three ways in, checked in this order:
-
-    * the ``map_3d`` flag: the reader's own routes are drawn, and Share
-      can send one of them (``route_share_url_template``);
-    * ``?route_share=<token>`` (``route_share_for_3d``): the shared route
-      is drawn, through the session's pending shares, and framed;
-    * ``?share=<token>`` naming a ``Map3dShare``: no routes at all.
-
-    A route share's token is seated in the session here as well as by
-    ``routes:share_redirect_3d``, so a copied ``/map/3d/?route_share=…``
-    address works as well as the link it came from.
-
-    Args:
-        request: The incoming HTTP request.
-
-    Returns:
-        The full page.
-
-    Raises:
-        Http404: When the flag is not active for this request and the
-            request carries no live share token.
-
-    A route share that would seat its token past the follows' rate-limit
-    budget answers 429, as the share links do.
-
-    SNOW-1456: the frame-time probe moved onto /map/, so a flagged
-    reader's ``?probe=1`` here redirects to ``/map/?probe=1&view=3d``,
-    keeping the probe URL working until SNOW-1450 retires this page.
-
-    """
-    flagged = map_3d_enabled(request)
-    if flagged and request.GET.get("probe") == "1":
-        return redirect(f"{reverse('public:map')}?probe=1&view=3d")
-    route_share = route_share_for_3d(request.GET.get("route_share", ""))
-    token = request.GET.get("share", "")
-    if flagged:
-        # The reader's own token, minted the first time they open the page,
-        # so Share always has one to put in the link.
-        share, _ = Map3dShare.objects.get_or_create(created_by_id=request.user.pk)
-        token = share.token
-    elif route_share is not None:
-        # The sharer's Map3dShare token stays theirs: a route link opens
-        # the page on its own, and a visitor's Share hands on the route.
-        token = ""
-    elif not Map3dShare.objects.for_token(token).exists():
-        raise Http404
-    if route_share is not None and is_top_level_navigation(request):
-        # The share follows' own budget, so a copied address cannot seat
-        # tokens (and grow the session table) faster than the link can.
-        if _over_follow_budget(request, route_share.token):
-            return HttpResponse(status=429)
-        add_pending_token(request.session, route_share.token)
-    context = {
-        "share_token": token,
-        "route_share_token": route_share.token if route_share else "",
-        # Only a reader inside the flag shares their own routes from here.
-        "route_share_url_template": (
-            reverse("routes:share_create", args=[_DUMMY_UUID]).replace(
-                _DUMMY_UUID, _UUID_PLACEHOLDER
-            )
-            if flagged
-            else ""
-        ),
-        # A visitor through a Map3dShare link sees no one's routes: they
-        # are private to the account that drew them. A route share shows
-        # its one route, which routes.geojson serves from the session.
-        "show_routes": flagged or route_share is not None,
-        "style_url": settings.BASEMAP_STYLES[MAP_3D_BASEMAP],
-        # SNOW-1444: a setting, so a seasonal refresh of our own copy
-        # is an env change (config/settings/base.py).
-        "dem_tile_url": settings.MAP_3D_DEM_TILE_URL,
-        "terrain_class_tile_url": settings.TERRAIN_CLASS_TILE_URL or "",
-        "ski_tours_url": reverse("api:ski_tours_geojson"),
-        "routes_url": reverse("routes:geojson"),
-        "resorts_url": reverse("api:resorts_geojson"),
-    }
-    return render(request, "public/map_3d.html", context)
+    destination = _route_share_follow(request.GET.get("route_share", ""))
+    if destination:
+        query = {"at": request.GET["at"]} if "at" in request.GET else {}
+    else:
+        destination = reverse("public:map")
+        query = {key: request.GET[key] for key in _CARRIED_PARAMS if key in request.GET}
+        query["view"] = "3d"
+    if query:
+        destination = f"{destination}?{urlencode(query, safe=',')}"
+    response = HttpResponseRedirect(destination)
+    response["Cache-Control"] = "no-store"
+    return response

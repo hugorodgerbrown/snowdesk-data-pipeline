@@ -34,7 +34,7 @@
     },
     {
       "name": "map_3d",
-      "note": "Gates the SNOW-1438 3-D terrain map at /map/3d/ (apps/map/map_3d.py): MapLibre terrain with Steep terrain, SAC tours, the reader's own routes and the resorts draped over it. A sandbox: superusers while it is tried out. Outside the flag the page is a 404.",
+      "note": "Gates /map/'s 3D view (SNOW-1449; apps/public/map_shared.py map_3d_view_enabled, with map_modes): MapLibre terrain on the swisstopo winter map, tilted by the 3D roundel or opened by ?view=3d. Superusers while it is tried out. Outside the flag /map/ ignores ?view=3d and opens flat. The old /map/3d/ page is a redirect to it since SNOW-1450.",
       "superusers": true
     }
   ]

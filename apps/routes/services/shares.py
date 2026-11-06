@@ -78,9 +78,10 @@ PENDING_SESSION_KEY = "route_shares"
 # ``apps.public.views.SHARE_CLICK_RATE`` and its reasoning: a real visitor
 # re-following their own link never approaches it, while a scanner walking
 # the token space cannot grow the session table without bound. ONE budget
-# for every way in that seats a pending token — the 2-D and 3-D follows in
-# apps/routes/views.py and /map/3d/?route_share= (apps/map/map_3d.py) — so
-# the same link reached three ways is one link to a scanner.
+# for every way in that seats a pending token — the flat and 3D follows in
+# apps/routes/views.py — so the same link reached two ways is one link to a
+# scanner. (SNOW-1450: /map/3d/?route_share= no longer seats one; it
+# redirects to the 3D follow.)
 SHARE_FOLLOW_RATE = "30/h"
 SHARE_FOLLOW_GROUP = "routes.share_follow"
 

@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-06 16:05+0000\n"
+"POT-Creation-Date: 2026-11-06 18:00+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1670,36 +1670,6 @@ msgstr ""
 msgid "Playback in progress"
 msgstr ""
 
-msgid "3D map · Snowdesk"
-msgstr ""
-
-msgid "The mountains in 3D, with steep terrain and routes."
-msgstr ""
-
-msgid "Map"
-msgstr ""
-
-msgid "Steep terrain"
-msgstr ""
-
-msgid "SAC tours"
-msgstr ""
-
-msgid "Wildlife"
-msgstr ""
-
-msgid "Share this view"
-msgstr ""
-
-msgid "Link copied"
-msgstr ""
-
-msgid "Could not copy the link"
-msgstr ""
-
-msgid "Share this route in 3D"
-msgstr ""
-
 msgid "Editors"
 msgstr ""
 
@@ -2019,6 +1989,9 @@ msgstr ""
 msgid "What's in %%(name)s"
 msgstr ""
 
+msgid "Map"
+msgstr ""
+
 msgid "Terrain"
 msgstr ""
 
@@ -2032,6 +2005,9 @@ msgid "Your routes"
 msgstr ""
 
 msgid "Trips"
+msgstr ""
+
+msgid "SAC tours"
 msgstr ""
 
 msgid "Ski resorts"
@@ -2283,9 +2259,6 @@ msgstr ""
 msgid "2D"
 msgstr ""
 
-msgid "Open in 3D"
-msgstr ""
-
 msgid "Your favourites"
 msgstr ""
 
@@ -2466,6 +2439,9 @@ msgid "On"
 msgstr ""
 
 msgid "Any day"
+msgstr ""
+
+msgid "Steep terrain"
 msgstr ""
 
 msgid "Resorts and pins"
@@ -7544,6 +7520,11 @@ msgid "Know your line before you leave."
 msgstr ""
 
 msgid ""
+"The Snowdesk 3D map: the mountains around Zermatt in relief, steep terrain "
+"painted on the slopes."
+msgstr ""
+
+msgid ""
 "The Snowdesk map: Swiss warning regions coloured by danger level, with the "
 "Martigny–Verbier bulletin open on its wind slab problem."
 msgstr ""
@@ -10758,6 +10739,9 @@ msgstr ""
 
 #, python-format
 msgid "Open-Meteo &middot; updated %(updated)s"
+msgstr ""
+
+msgid "Snowdesk, now in 3D"
 msgstr ""
 
 msgid "Share bulletin"

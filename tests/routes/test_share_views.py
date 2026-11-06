@@ -302,32 +302,41 @@ class TestRouteShareRedirect:
 
 @pytest.mark.django_db
 class TestRouteShareRedirect3d:
-    """Following a share link into the 3-D map: /routes/s/<token>/3d/."""
+    """Following a share link into the map's 3D view: /routes/s/<token>/3d/."""
 
     def test_the_url_is_the_share_link_plus_3d(self) -> None:
         """The link hangs off the route share URL."""
         assert reverse("routes:share_redirect_3d", args=["abc"]) == "/routes/s/abc/3d/"
 
-    def test_a_live_token_redirects_to_the_3d_map(self, client: Client) -> None:
-        """302, not stored, to /map/3d/ carrying the token."""
+    def test_a_live_token_redirects_to_the_3d_view(self, client: Client) -> None:
+        """302, not stored, to /map/?view=3d carrying the token (SNOW-1450)."""
         share = RouteShareFactory.create()
 
         response = client.get(f"/routes/s/{share.token}/3d/")
 
         assert response.status_code == 302
-        assert response["Location"] == f"/map/3d/?route_share={share.token}"
+        assert response["Location"] == f"/map/?route_share={share.token}&view=3d"
         assert response["Cache-Control"] == "no-store"
 
+    def test_any_live_share_opens_in_3d(self, client: Client) -> None:
+        """Even the example route's: the retired Map3dShare no longer gates it."""
+        share = RouteShareFactory.create(is_example=True)
+
+        response = client.get(f"/routes/s/{share.token}/3d/")
+
+        assert response.status_code == 302
+        assert response["Location"].endswith("&view=3d")
+
     def test_the_token_lands_in_the_session(self, client: Client) -> None:
-        """The same pending token the 2-D follow seats."""
+        """The same pending token the flat follow seats."""
         share = RouteShareFactory.create()
 
         client.get(f"/routes/s/{share.token}/3d/")
 
         assert client.session[PENDING_SESSION_KEY] == [share.token]
 
-    def test_the_view_is_carried_and_nothing_else(self, client: Client) -> None:
-        """``at`` and ``layers`` go across; any other parameter is dropped."""
+    def test_the_camera_is_carried_and_nothing_else(self, client: Client) -> None:
+        """``at`` goes across; ``layers`` and any other parameter are dropped."""
         share = RouteShareFactory.create()
 
         response = client.get(
@@ -336,18 +345,17 @@ class TestRouteShareRedirect3d:
         )
 
         assert response["Location"] == (
-            f"/map/3d/?route_share={share.token}"
-            "&at=7.8,46.1,12,60,-20&layers=steep,tours"
+            f"/map/?route_share={share.token}&at=7.8,46.1,12,60,-20&view=3d"
         )
 
     def test_an_unknown_token_returns_404(self, client: Client) -> None:
-        """As the 2-D follow."""
+        """As the flat follow."""
         assert client.get("/routes/s/nope/3d/").status_code == 404
 
     def test_an_expired_share_returns_410_and_writes_nothing(
         self, client: Client
     ) -> None:
-        """As the 2-D follow."""
+        """As the flat follow."""
         share = RouteShareFactory.create(expires_at=timezone.now() - timedelta(days=1))
 
         response = client.get(f"/routes/s/{share.token}/3d/")
@@ -356,7 +364,7 @@ class TestRouteShareRedirect3d:
         assert PENDING_SESSION_KEY not in client.session
 
     def test_a_prefetch_redirects_without_writing(self, client: Client) -> None:
-        """As the 2-D follow."""
+        """As the flat follow."""
         share = RouteShareFactory.create()
 
         response = client.get(

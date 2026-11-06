@@ -56,8 +56,8 @@ def map_3d_view_enabled(request: HttpRequest) -> bool:
     """Whether the map shows this request its 3D view (SNOW-1453).
 
     The gate ``apps/map/views.py`` renders ``#map-view-toggle`` on
-    (``map_3d_view``): the ``map_3d`` flag, as ``apps.map.map_3d.
-    map_3d_enabled`` reads it, and the modes. Here so that ``/offline/``
+    (``map_3d_view``): the ``map_3d`` flag, short-circuited for an
+    anonymous request, and the modes. Here so that ``/offline/``
     can ask it without importing apps/map, which only the URL modules may
     (tests/map/test_boundary.py).
 

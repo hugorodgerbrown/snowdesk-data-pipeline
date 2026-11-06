@@ -24,8 +24,8 @@ plus three navigation/JSON endpoints outside the ``partials/`` prefix:
 - ``route_share_redirect`` (GET/HEAD) — SNOW-764: follows a share link,
   records the token in the session and 302s to the map. A navigation, not
   a fragment, which is why it sits outside ``partials/``.
-- ``route_share_redirect_3d`` (GET/HEAD) — the same follow into the 3-D
-  map (``/routes/s/<token>/3d/``).
+- ``route_share_redirect_3d`` (GET/HEAD) — the same follow into the map's
+  3D view (``/routes/s/<token>/3d/``).
 
 plus one JSON endpoint the owner's Share button calls:
 
@@ -203,9 +203,11 @@ _GPX_REJECTED_MESSAGE = (
 _SHARE_FOLLOW_RATE = SHARE_FOLLOW_RATE
 _SHARE_FOLLOW_GROUP = SHARE_FOLLOW_GROUP
 
-# The 3-D map's view parameters (static/js/map_3d_core.js viewQuery), the
-# only query a 3-D share follow carries on to /map/3d/.
-_SHARE_3D_VIEW_PARAMS = ("at", "layers")
+# The camera (``?at=lng,lat,zoom,pitch,bearing``, static/js/map_view_core.js
+# readCamera), the only query a 3D share follow carries on to /map/. The
+# retired /map/3d/'s ``layers`` is dropped: /map/'s own ``?layers=`` means
+# the layer explainer (SNOW-1450).
+_SHARE_3D_VIEW_PARAMS = ("at",)
 
 # The owner's Share button's budget. Keyed on ``user`` because the endpoint
 # is auth-only, matching ``route_create``'s own limiter. Each call mints a
@@ -1057,25 +1059,25 @@ def route_share_redirect(request: HttpRequest, token: str) -> HttpResponse:
     block=False,
 )
 def route_share_redirect_3d(request: HttpRequest, token: str) -> HttpResponse:
-    """Follow a share link into the 3-D map: ``/routes/s/<token>/3d/``.
+    """Follow a share link into the map's 3D view: ``/routes/s/<token>/3d/``.
 
     The same follow as ``route_share_redirect`` — the same 404/410/429, the
     same rate-limit bucket and the same pending token seated in the session
-    — with the 3-D map as the destination: ``/map/3d/?route_share=<token>``.
-    Whether that share may open the 3-D map at all is the map's question,
-    not this view's (``apps.map.map_3d.route_share_for_3d``): apps/routes
-    does not import apps/map (``tests/map/test_boundary.py``).
+    — with the 3D view as the destination:
+    ``/map/?route_share=<token>&at=…&view=3d``, for any live share. The
+    visitor still sees only the routes their own session followed, through
+    ``routes.geojson``, never the sharer's others. Inside the ``map_3d`` flag
+    the map opens in 3D; outside it, flat, framed on the route (SNOW-1450).
 
-    The 3-D map's own Share appends its view (``?at=…&layers=…``) to this
-    link, so the recipient opens on the sharer's camera and switches. Those
-    two parameters are carried across and nothing else.
+    The map's route Shares copy this link while it is in 3D. An old
+    ``/map/3d/`` link's ``at`` is carried across, and nothing else.
 
     Args:
         request: The incoming GET or HEAD request.
         token: The share token, from the URL.
 
     Returns:
-        A 302 to the 3-D map, or a 404/410/429.
+        A 302 to the map's 3D view, or a 404/410/429.
 
     """
     query = {"route_share": token}
@@ -1083,8 +1085,9 @@ def route_share_redirect_3d(request: HttpRequest, token: str) -> HttpResponse:
         value = request.GET.get(key)
         if value is not None:
             query[key] = value
+    query["view"] = "3d"
     return _follow_route_share(
-        request, token, f"{reverse('public:map_3d')}?{urlencode(query, safe=',')}"
+        request, token, f"{reverse('public:map')}?{urlencode(query, safe=',')}"
     )
 
 
@@ -1093,7 +1096,7 @@ def _follow_route_share(
 ) -> HttpResponse:
     """Check a followed share, seat its token in the session and redirect.
 
-    The body the two share follows (2-D and 3-D) have in common; see
+    The body the two share follows (flat and 3D) have in common; see
     ``route_share_redirect`` for why each step is the way it is.
 
     Args:
