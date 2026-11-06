@@ -1,8 +1,8 @@
 ---
 name: the-map-has-a-dated-mode-and-a-terrain-mode
-description: Conditions / Terrain map modes (ONLY_IN, SUPPRESSION.MAP_MODE) that suppress, never rewrite; no Terrain region taps, Today row
+description: Conditions / Terrain map modes (ONLY_IN, SUPPRESSION.MAP_MODE) suppress, never rewrite; no Terrain region taps; Today row; ?view=3d
 status: current
-last-reviewed: 2026-11-05
+last-reviewed: 2026-11-06
 ---
 
 # The map has a Dated mode and a Terrain mode
@@ -280,3 +280,14 @@ choose.
 - **Closing the place sheet on entering Terrain.** It is the one sheet that
   has something to say in both modes.
 
+
+## 3-D is a view of Terrain (SNOW-1449)
+
+The mode says what the map shows; the view says how it is drawn. 3-D
+(`?view=3d`, `map_view_core.js`) is offered only in Terrain, so the 3D
+roundel shows only under `:root[data-map-mode="terrain"]`, and a change to
+Conditions lays the map flat. The view never writes the mode or any layer
+preference, and it is never stored on the device: a bare `/map/` opens
+flat even when the stored mode is Terrain. A date write carries `view` with
+`mode` (`withDate`). Details in
+[a-3d-map-is-maplibre-terrain.md](a-3d-map-is-maplibre-terrain.md).

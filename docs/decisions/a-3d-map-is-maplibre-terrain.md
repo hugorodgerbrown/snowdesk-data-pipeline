@@ -1,6 +1,6 @@
 ---
 name: a-3d-map-is-maplibre-terrain
-description: 3-D terrain map — /map/3d/ sandbox on MapLibre setTerrain (raster-dem, Terrarium DEM), not deck.gl, CesiumJS or three.js; map_3d flag
+description: 3-D map on MapLibre setTerrain — /map/3d/ sandbox, /map/ ?view=3d (map_view_3d, map_3d_terrain), compass; not deck.gl or CesiumJS
 status: current
 last-reviewed: 2026-11-06
 ---
@@ -81,3 +81,51 @@ is deleted in the admin:
   (`map_3d.route_share_for_3d`). Inside the flag, Share on the 3-D map sends
   this link for the route that is open; a friend who followed the 2-D link
   gets /map/'s "3D" roundel carrying it (`pending_route_share_for_3d`).
+
+## The 3-D view on /map/ (SNOW-1449, 6 Nov 2026)
+
+For a reader in both `map_3d` and `map_modes`, 3-D is a view of `/map/`
+itself rather than a separate page. It sits beside the mode, not inside it:
+the mode says what the map shows, the view how it is drawn, and 3-D is
+Terrain's alone ([the modes](the-map-has-a-dated-mode-and-a-terrain-mode.md)).
+A `map_3d` reader without the modes, and a friend sent a route by a 3-D
+reader, keep the "3D" link to `/map/3d/`.
+
+- **The rules** are `static/js/map_view_core.js` (`self.pwaMapViewCore`):
+  the `?view=3d` parameter beside `?mode=terrain`, read only in Terrain;
+  `availability` (Terrain, online, no route being drawn, the centre inside
+  `terrain_filter_core.COVERAGE_BOUNDS`, which is passed in rather than
+  copied, and zoom 9 or more); the basemap (swisstopo winter in 3-D, the
+  reader's own flat, the stored choice never written); and the boot camera
+  (a flat boot zeroes a stored pitch). `map.js` reads it at parse time for
+  the boot basemap and camera and for its reconnect `setStyle`, so a
+  reconnect in 3-D cannot swap swisstopo winter away.
+- **Nothing about the view is stored.** A bare `/map/` always opens flat;
+  `?view=3d` outside Terrain or outside Switzerland is stripped at boot. A
+  date write keeps it (`map_mode_core.withDate`).
+- **The runner** is `static/js/map_view_3d.js` (`window.pwaMapView`). It
+  reuses `map_3d_core` and the shared `static/js/map_3d_terrain.js`
+  (`self.pwaMap3dTerrain`: the elevation protocol, registered once, and an
+  idempotent terrain install), which the sandbox now uses too. Entering
+  swaps to swisstopo winter, adds the relief, sky and sunlight, caps the
+  pixel ratio, opens the pitch ceiling, floors the zoom at 9 and eases to
+  the opening tilt. Leaving reverses it and keeps the elevation source. The
+  relief is put back on `styledata` after every `setStyle`.
+- **The flat map does not tilt.** `maxPitch` is 0 except in 3-D, and while
+  flat in Terrain with 3-D available, where a reader's own tilt (it carries
+  an `originalEvent`) enters 3-D. In vendored MapLibre 4.7.1 a ctrl-drag
+  on a flat map with the ceiling open fires `pitch` with an
+  `originalEvent`; the runner enters on that.
+- **Leaving.** The map goes flat, with a line, when it changes to
+  Conditions (before a sheet paints, since `map_mode.js` dispatches
+  `snowdesk:map-mode-changed` synchronously), goes offline or is panned
+  out of Switzerland. Drawing a route takes the relief and the tilt away on
+  swisstopo winter and gives them back when it ends.
+- **Two MapLibre 4.7.1 behaviours** shaped it. A `setStyle` stops a camera
+  ease where it stands, so the tilt runs again on the new style's
+  `style.load` and leaving jumps to pitch 0. And a style diff fails on a
+  style carrying terrain, so the runner's swaps pass `{diff: false}`.
+- **The compass** (`public/partials/_map_compass.html`,
+  `static/js/map_compass.js`) sits under the zoom roundel for every reader,
+  in both views, shown whenever the map is not north-up.
+- WebGL context loss and a frame-budget watchdog are SNOW-1455.

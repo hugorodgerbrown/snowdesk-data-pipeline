@@ -2,7 +2,7 @@
 name: testing-scenarios
 description: Manual test scenarios — bulletin, map, search, accounts, PWA install/update/kill-switch, offline downloads, coverage, end-user offline run
 status: current
-last-reviewed: 2026-11-05
+last-reviewed: 2026-11-06
 ---
 
 # User Testing Scenarios -- Snowdesk
@@ -437,6 +437,29 @@ the "?" only replayed the tour).
 | 8 | Press Escape three times with a card open over a keyed sheet | The card closes, then the key, then help mode |
 | 9 | Enter help mode and click "Tour" | Help mode ends and the tour opens on step 1 |
 | 10 | At desktop width, enter help mode | No two names overlap; each sits beside its control, above or below it where the side is taken |
+
+### Scenario MS10: Tilt the Terrain map into 3-D
+
+**Goal**: Verify /map/'s 3-D view (SNOW-1449, behind the `map_3d` and
+`map_modes` flags): the 3D roundel lifts the Terrain map into relief on the
+swisstopo winter map, the compass appears once the map turns, a sheet
+stays open in 3-D, and 2D brings the reader's own basemap back.
+Prerequisite: sign in as `admin@snowdesk.dev`; choose OpenFreeMap in the
+layers menu.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Open http://localhost:8000/map/?mode=terrain and zoom to Zermatt (z11+) | Under the layers roundel a "3D" roundel; in Conditions it is not there |
+| 2 | Zoom out to z8 and tap "3D" | Nothing tilts; a line reads "Zoom in to see 3-D" |
+| 3 | Zoom back to z11 and tap "3D" | The map changes to swisstopo winter, tilts into relief with shading from the north-west, and a line reads "3-D uses the swisstopo winter map; yours comes back in 2D." The roundel reads "2D"; the address bar has `view=3d` |
+| 4 | Turn the map with two fingers or a right-drag | A compass appears under the zoom roundel, its needle pointing north; tapping it turns the map back to north and keeps the tilt |
+| 5 | Open the layers menu's Basemap page | Its rows are dimmed and say 3-D uses the swisstopo winter map |
+| 6 | Tap a resort pin | Its sheet opens and stays open over the relief |
+| 7 | Zoom out to z9 and keep scrolling out | The zoom stops, and one line reads "3-D stops here. Switch to 2D to zoom out." |
+| 8 | Tap "2D" | The relief and the tilt go, the bearing stays, OpenFreeMap comes back and `view=3d` leaves the address bar |
+| 9 | Tilt the flat map with two fingers (or ctrl-drag) | The map enters 3-D again |
+| 10 | Switch to Conditions | The map lays flat at once, with a line saying 3-D is part of Terrain |
+| 11 | Reload a bare http://localhost:8000/map/ | It opens flat, even in a stored Terrain |
 
 ---
 
