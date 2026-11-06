@@ -69,6 +69,7 @@ from apps.design_system._component_fixtures import (
     MAP_ZOOM_CONTROL_VARIANTS,
     META_CELL_VARIANTS,
     NAV_VARIANTS,
+    NAV_WORDMARK_VARIANTS,
     NO_DATA_SUPPLIED_VARIANTS,
     OVERFLOW_MENU_VARIANTS,
     OVERLAY_BANNER_VARIANTS,
@@ -1909,6 +1910,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_danger_tile_empty.html",
         variants=DANGER_TILE_EMPTY_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="nav-wordmark",
+        label="Nav wordmark",
+        description=(
+            "The Snowdesk wordmark link at the left of the nav, opening the "
+            "map. Smaller beside a back link. With wears_specs it is the "
+            "temporary 3D wordmark, opening the map in its 3D mode; nav.html "
+            "gives it to readers who can open the map in 3D."
+        ),
+        kind="components",
+        partial="includes/_nav_wordmark.html",
+        variants=NAV_WORDMARK_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

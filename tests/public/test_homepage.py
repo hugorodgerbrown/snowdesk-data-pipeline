@@ -89,11 +89,12 @@ class TestHomepage:
 
 
 class TestHomepage3dBranding:
-    """The 3D branding shows only to readers of the map_3d flag."""
+    """The 3D branding shows only to readers who can open the map in 3D."""
 
     @override_flag("map_3d", active=True)
+    @override_flag("map_modes", active=True)
     def test_flag_on_shows_the_specs_wordmark_and_3d_map(self, client: Client) -> None:
-        """Inside the flag the nav wears the specs and the hero shows 3D."""
+        """With map_3d and map_modes the nav wears the specs and the hero shows 3D."""
         client.force_login(UserFactory.create())
         body = client.get("/").content.decode()
 

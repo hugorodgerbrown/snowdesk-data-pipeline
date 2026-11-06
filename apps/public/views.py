@@ -416,13 +416,11 @@ def home(request: HttpRequest) -> HttpResponseBase:
     # SNOW-1357: the daily read under the hero, built only once the request
     # is known to be the homepage's (a map-state 301 never reads it).
     daily_read = present_daily_read(cached_daily_read(timezone.localdate()))
-    # The temporary 3D hero, for readers of the map_3d flag only: it links
-    # to /map/?view=3d, which opens flat for everyone else (SNOW-1450).
-    # Short-circuited for an anonymous request, as map_3d_view_enabled is,
-    # so most visitors pay no waffle query for it.
-    show_3d = bool(
-        request.user.is_authenticated and waffle.flag_is_active(request, "map_3d")
-    )
+    # The temporary 3D hero, for readers who can open the map in 3D: it
+    # links to the map's 3D mode (/map/?view=3d), which opens flat for
+    # everyone else (SNOW-1450). map_3d_view_enabled short-circuits an
+    # anonymous request, so most visitors pay no waffle query for it.
+    show_3d = map_3d_view_enabled(request)
     return render(
         request,
         "public/home.html",

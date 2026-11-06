@@ -1,0 +1,26 @@
+{% comment %}
+templates/includes/_nav_wordmark.html — the nav's Snowdesk wordmark link.
+
+The text wordmark, linking to the map. With wears_specs it is the temporary
+3D wordmark (includes/_wordmark_3d.html) at the same size, linking to the
+map in its 3D mode; includes/nav.html decides who gets it.
+
+Context:
+    back_url      from nav.html: set, the wordmark takes the smaller size
+                  that sits beside the back link.
+    wears_specs   True for the 3D wordmark.
+{% endcomment %}
+<a
+    href="{% url 'public:map' %}{% if wears_specs %}?view=3d{% endif %}"
+    class="text-text-1 leading-none font-semibold tracking-tight hover:opacity-80 {% if back_url %}text-label{% else %}text-lg{% endif %}"
+>
+    {% if wears_specs %}
+        {% if back_url %}
+            {% include "includes/_wordmark_3d.html" with class_extra="h-[19px] relative -top-[3px]" %}
+        {% else %}
+            {% include "includes/_wordmark_3d.html" with class_extra="h-[23px] relative -top-[4px]" %}
+        {% endif %}
+    {% else %}
+        Snowdesk
+    {% endif %}
+</a>
