@@ -1440,7 +1440,7 @@ describe('terrain data on a region download (SNOW-1072)', () => {
     );
     await waitFor(() => btn.dataset.downloadState === 'idle');
 
-    expect(btn.getAttribute('aria-label')).toMatch(/terrain data/);
+    expect(btn.getAttribute('aria-label')).toMatch(/terrain (and 3D )?data/);
   });
 });
 
