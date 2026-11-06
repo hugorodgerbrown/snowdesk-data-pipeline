@@ -426,9 +426,10 @@ Optional context:
             </div>
             {# SNOW-1449: for a reader in map_3d and map_modes, the 3D roundel     #}
             {# tilts THIS map into 3-D, in Terrain only (map.css shows it under     #}
-            {# :root[data-map-mode="terrain"]). It reads 3D when flat and 2D in     #}
-            {# 3-D (aria-pressed picks the face); unavailable, it is aria-disabled  #}
-            {# and a tap says why. static/js/map_view_3d.js drives it, and warms    #}
+            {# :root[data-map-mode="terrain"]). It is a 3D | 2D segmented switch:   #}
+            {# both views always show and the raised one is current (aria-pressed   #}
+            {# picks it), so it never names the view you are not in. Unavailable,  #}
+            {# it is aria-disabled and a tap says why. map_view_3d.js drives it and warms #}
             {# the elevation tiles when a pointer, a finger or focus reaches it.    #}
             {% if map_3d_view %}
                 <div class="map-utility-pill map-utility-pill--view">
@@ -436,12 +437,12 @@ Optional context:
                         id="map-view-toggle"
                         type="button"
                         data-dem-tile-url="{{ map_3d_dem_tile_url }}"
-                        class="map-utility-button hover-affordance text-chip font-semibold"
+                        class="map-view-switch text-chip font-semibold"
                         aria-pressed="false"
-                        aria-label='{% trans "Show in 3-D" %}'
+                        aria-label='{% trans "3-D view" %}'
                     >
-                        <span class="map-view-face" data-view-face="flat">{% trans "3D" %}</span>
-                        <span class="map-view-face" data-view-face="3d">{% trans "2D" %}</span>
+                        <span class="map-view-face" data-view-face="3d" aria-hidden="true">{% trans "3D" %}</span>
+                        <span class="map-view-face" data-view-face="flat" aria-hidden="true">{% trans "2D" %}</span>
                     </button>
                 </div>
             {% elif map_3d_link %}
@@ -1882,8 +1883,6 @@ Optional context:
             {# SNOW-1449: the 3-D view's words (static/js/map_view_3d.js).      #}
             {% if map_3d_view %}
                 <template id="map-view-strings-template">
-                    <span data-string="show-3d">{% trans "Show in 3-D" %}</span>
-                    <span data-string="show-2d">{% trans "Back to 2D" %}</span>
                     <span
                         data-string="basemap"
                     >{% trans "3-D uses the swisstopo winter map; yours comes back in 2D." %}</span>

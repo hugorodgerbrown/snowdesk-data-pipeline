@@ -72,8 +72,6 @@
   const COVERAGE = terrainCore ? terrainCore.COVERAGE_BOUNDS : null;
 
   const STRINGS = self.pwaStrings.read('map-view-strings-template', {
-    'show-3d': 'Show in 3-D',
-    'show-2d': 'Back to 2D',
     basemap: '3-D uses the swisstopo winter map; yours comes back in 2D.',
     'why-zoom': 'Zoom in to see 3-D',
     'why-offline': '3-D needs a connection',
@@ -227,8 +225,8 @@
   /** The roundel's face and state, and the pitch ceiling. */
   const sync = () => {
     const pressed = view === THREE_D;
+    // A toggle's name stays put ("3-D view"); aria-pressed says whether it is on.
     button.setAttribute('aria-pressed', pressed ? 'true' : 'false');
-    button.setAttribute('aria-label', pressed ? STRINGS['show-2d'] : STRINGS['show-3d']);
     const blocked = !pressed && !available().enabled;
     if (blocked) button.setAttribute('aria-disabled', 'true');
     else button.removeAttribute('aria-disabled');
@@ -335,7 +333,11 @@
 
   // ---- What moves the view ----------------------------------------------
 
-  button.addEventListener('click', () => {
+  button.addEventListener('click', (e) => {
+    // A tap on the segment already raised changes nothing; a tap on the
+    // other one, or Enter / Space on the switch, toggles.
+    const face = e.target instanceof Element ? e.target.closest('[data-view-face]') : null;
+    if (face && /** @type {HTMLElement} */ (face).dataset.viewFace === view) return;
     if (view === THREE_D) {
       exit();
       return;

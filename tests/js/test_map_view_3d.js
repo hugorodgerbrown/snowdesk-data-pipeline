@@ -109,7 +109,7 @@ async function boot({ search = '?mode=terrain', mode = 'terrain', stored = null,
       <ul><li id="basemap-view-note" hidden>note</li>${rows}</ul>
     </div>
     <button id="map-view-toggle" data-dem-tile-url="https://dem.example/{z}/{x}/{y}.webp" aria-pressed="false">
-      <span data-view-face="flat">3D</span><span data-view-face="3d">2D</span>
+      <span data-view-face="3d">3D</span><span data-view-face="flat">2D</span>
     </button>`;
   window.history.replaceState(null, '', `/map/${search}`);
   window.localStorage.clear();
@@ -187,6 +187,33 @@ describe('entering 3-D', () => {
     expect(window.pwaMapView.get()).toBe('flat');
     expect(map.setStyle).toHaveBeenCalledWith(URLS.openfreemap_liberty, { diff: false });
     expect(view()).toBeNull();
+  });
+});
+
+describe('the 3D | 2D switch', () => {
+  it('keeps one name and says the view by aria-pressed', async () => {
+    const { button } = await boot();
+    button.setAttribute('aria-label', '3-D view');
+    button.click();
+    await flush();
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    expect(button.getAttribute('aria-label')).toBe('3-D view');
+  });
+
+  it('does nothing when the raised segment is tapped, and switches on the other', async () => {
+    const { button } = await boot();
+    button.querySelector('[data-view-face="flat"]').click();
+    await flush();
+    expect(window.pwaMapView.get()).toBe('flat');
+    button.querySelector('[data-view-face="3d"]').click();
+    await flush();
+    expect(window.pwaMapView.get()).toBe('3d');
+    button.querySelector('[data-view-face="3d"]').click();
+    await flush();
+    expect(window.pwaMapView.get()).toBe('3d');
+    button.querySelector('[data-view-face="flat"]').click();
+    await flush();
+    expect(window.pwaMapView.get()).toBe('flat');
   });
 });
 

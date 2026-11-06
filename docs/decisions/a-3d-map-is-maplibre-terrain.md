@@ -127,6 +127,11 @@ reader, keep the "3D" link to `/map/3d/`.
   ease where it stands, so the tilt runs again on the new style's
   `style.load` and leaving jumps to pitch 0. And a style diff fails on a
   style carrying terrain, so the runner's swaps pass `{diff: false}`.
+- **The switch** (`#map-view-toggle`) is a 3D / 2D segmented switch, the
+  current view raised, like the Conditions / Terrain switch. A single
+  button that named the other view ("2D" while in 3-D) read as the wrong
+  state and looked inactive (Hugo, 6 Nov 2026). Its name stays "3-D view";
+  `aria-pressed` says whether it is on.
 - **The compass** (`public/partials/_map_compass.html`,
   `static/js/map_compass.js`) sits under the zoom roundel for every reader,
   in both views, shown whenever the map is not north-up.

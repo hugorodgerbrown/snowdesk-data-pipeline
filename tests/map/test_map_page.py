@@ -3443,6 +3443,8 @@ def test_both_flags_turn_the_roundel_into_the_3d_view() -> None:
     assert 'aria-pressed="false"' in content
     assert 'data-view-face="flat"' in content
     assert 'data-view-face="3d"' in content
+    assert "aria-label='3-D view'" in content
+    assert "Back to 2D" not in content
     assert 'id="map-view-strings-template"' in content
     assert 'id="basemap-view-note"' in content
     assert 'data-help-target="#map-view-toggle"' in content

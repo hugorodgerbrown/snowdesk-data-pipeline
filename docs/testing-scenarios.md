@@ -441,7 +441,7 @@ the "?" only replayed the tour).
 ### Scenario MS10: Tilt the Terrain map into 3-D
 
 **Goal**: Verify /map/'s 3-D view (SNOW-1449, behind the `map_3d` and
-`map_modes` flags): the 3D roundel lifts the Terrain map into relief on the
+`map_modes` flags): the 3D | 2D switch lifts the Terrain map into relief on the
 swisstopo winter map, the compass appears once the map turns, a sheet
 stays open in 3-D, and 2D brings the reader's own basemap back.
 Prerequisite: sign in as `admin@snowdesk.dev`; choose OpenFreeMap in the
@@ -449,9 +449,9 @@ layers menu.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Open http://localhost:8000/map/?mode=terrain and zoom to Zermatt (z11+) | Under the layers roundel a "3D" roundel; in Conditions it is not there |
+| 1 | Open http://localhost:8000/map/?mode=terrain and zoom to Zermatt (z11+) | Under the layers roundel a 3D / 2D switch with 2D raised; in Conditions it is not there |
 | 2 | Zoom out to z8 and tap "3D" | Nothing tilts; a line reads "Zoom in to see 3-D" |
-| 3 | Zoom back to z11 and tap "3D" | The map changes to swisstopo winter, tilts into relief with shading from the north-west, and a line reads "3-D uses the swisstopo winter map; yours comes back in 2D." The roundel reads "2D"; the address bar has `view=3d` |
+| 3 | Zoom back to z11 and tap "3D" | The map changes to swisstopo winter, tilts into relief with shading from the north-west, and a line reads "3-D uses the swisstopo winter map; yours comes back in 2D." The switch now has 3D raised; the address bar has `view=3d` |
 | 4 | Turn the map with two fingers or a right-drag | A compass appears under the zoom roundel, its needle pointing north; tapping it turns the map back to north and keeps the tilt |
 | 5 | Open the layers menu's Basemap page | Its rows are dimmed and say 3-D uses the swisstopo winter map |
 | 6 | Tap a resort pin | Its sheet opens and stays open over the relief |

@@ -33,7 +33,7 @@ def test_tilt_the_terrain_map_into_3d(map_3d_page: Map3dPage) -> None:
     with override_flag("map_3d", active=True), override_flag("map_modes", active=True):
         page.goto(f"{map_3d_page.live_server_url}/map/?mode=terrain")
         page.wait_for_function("() => window.pwaMapView && MAP && MAP.loaded()")
-        page.click("#map-view-toggle")
+        page.click('#map-view-toggle [data-view-face="3d"]')
         page.wait_for_function("() => (MAP.getTerrain() || {}).source === 'map-3d-dem'")
         assert "view=3d" in page.url
         assert page.evaluate("MAP.getStyle().name") == "e2e-swisstopo-winter"
@@ -43,7 +43,7 @@ def test_tilt_the_terrain_map_into_3d(map_3d_page: Map3dPage) -> None:
         expect(page.locator("#today-sheet")).to_be_visible()
         page.wait_for_timeout(500)
         expect(page.locator("#today-sheet")).to_be_visible()
-        page.click("#map-view-toggle")
+        page.click('#map-view-toggle [data-view-face="flat"]')
         page.wait_for_function(
             "() => !MAP.getTerrain() && MAP.getStyle().name === 'e2e-reader'"
         )
