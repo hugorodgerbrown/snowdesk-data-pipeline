@@ -25,7 +25,8 @@ plus three navigation/JSON endpoints outside the ``partials/`` prefix:
   records the token in the session and 302s to the map. A navigation, not
   a fragment, which is why it sits outside ``partials/``.
 - ``route_share_redirect_3d`` (GET/HEAD) — the same follow into the map's
-  3D view (``/routes/s/<token>/3d/``).
+  3D view (``/routes/s/<token>/3d/``), framed on the shared route when the
+  link names no camera of its own.
 
 plus one JSON endpoint the owner's Share button calls:
 
@@ -89,6 +90,8 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 from urllib.parse import urlencode
@@ -203,11 +206,26 @@ _GPX_REJECTED_MESSAGE = (
 _SHARE_FOLLOW_RATE = SHARE_FOLLOW_RATE
 _SHARE_FOLLOW_GROUP = SHARE_FOLLOW_GROUP
 
-# The camera (``?at=lng,lat,zoom,pitch,bearing``, static/js/map_view_core.js
-# readCamera), the only query a 3D share follow carries on to /map/. The
-# retired /map/3d/'s ``layers`` is dropped: /map/'s own ``?layers=`` means
-# the layer explainer (SNOW-1450).
-_SHARE_3D_VIEW_PARAMS = ("at",)
+# A 3D share follow carries one query on to /map/: the camera
+# (``?at=lng,lat,zoom,pitch,bearing``, static/js/map_view_core.js
+# readCamera), the link's own when it names a readable one and otherwise
+# one framed on the route. The retired /map/3d/'s ``layers`` is dropped:
+# /map/'s own ``?layers=`` means the layer explainer (SNOW-1450).
+#
+# The zooms a 3D follow's derived camera is clamped to. The floor is the
+# lowest zoom 3D is drawn at (map_view_core.js MIN_ZOOM); the ceiling keeps
+# a tiny or single-point route from opening on a few metres of terrain.
+_SHARE_3D_MIN_ZOOM = 9.0
+_SHARE_3D_MAX_ZOOM = 15.0
+# The steepest linked pitch /map/ accepts (map_view_core.js MAX_LINKED_PITCH).
+_SHARE_3D_MAX_LINKED_PITCH = 80.0
+# A nominal reader viewport, in CSS pixels, that the derived zoom fits the
+# route's span into, with a margin either side. A phone's width: a desktop
+# shows more round the route, never less of it.
+_SHARE_3D_VIEWPORT_PX = 400.0
+_SHARE_3D_FIT_MARGIN = 1.2
+# MapLibre's world width at zoom 0, in pixels.
+_MAPLIBRE_TILE_PX = 512.0
 
 # The owner's Share button's budget. Keyed on ``user`` because the endpoint
 # is auth-only, matching ``route_create``'s own limiter. Each call mints a
@@ -1046,9 +1064,8 @@ def route_share_redirect(request: HttpRequest, token: str) -> HttpResponse:
         A 302 to the map, or a 404/410/429.
 
     """
-    return _follow_route_share(
-        request, token, f"{reverse('public:map')}?route_share={token}"
-    )
+    url = f"{reverse('public:map')}?route_share={token}"
+    return _follow_route_share(request, token, lambda _share: url)
 
 
 @require_http_methods(["GET", "HEAD"])
@@ -1069,8 +1086,13 @@ def route_share_redirect_3d(request: HttpRequest, token: str) -> HttpResponse:
     ``routes.geojson``, never the sharer's others. Inside the ``map_3d`` flag
     the map opens in 3D; outside it, flat, framed on the route (SNOW-1450).
 
-    The map's route Shares copy this link while it is in 3D. An old
-    ``/map/3d/`` link's ``at`` is carried across, and nothing else.
+    The map's route Shares copy this link while it is in 3D, with no camera.
+    An old ``/map/3d/`` link's ``at`` is carried across, and nothing else.
+    With no readable ``at`` the destination is framed on the shared route
+    (``_route_camera``, pitch 0, so the map still tilts in), because the map
+    judges 3D's coverage on the boot camera's centre: without one it would
+    judge a Swiss route on wherever the reader last left the map, and a
+    reader last in the Écrins would open it flat.
 
     Args:
         request: The incoming GET or HEAD request.
@@ -1080,19 +1102,110 @@ def route_share_redirect_3d(request: HttpRequest, token: str) -> HttpResponse:
         A 302 to the map's 3D view, or a 404/410/429.
 
     """
-    query = {"route_share": token}
-    for key in _SHARE_3D_VIEW_PARAMS:
-        value = request.GET.get(key)
-        if value is not None:
-            query[key] = value
-    query["view"] = "3d"
-    return _follow_route_share(
-        request, token, f"{reverse('public:map')}?{urlencode(query, safe=',')}"
+    incoming_at = request.GET.get("at")
+
+    def destination(share: RouteShare) -> str:
+        """Build the 3D map URL for a live share.
+
+        Args:
+            share: The followed share, its route loaded.
+
+        Returns:
+            ``/map/?route_share=…&at=…&view=3d``.
+
+        """
+        query = {"route_share": token}
+        # The map decides 3D's coverage on the boot camera's centre, so a
+        # link with no camera of its own would be judged on wherever the
+        # reader last left the map. The route's own frame decides it.
+        at = (
+            incoming_at
+            if _is_linked_camera(incoming_at)
+            # A live share always has its route; is_live checked it.
+            else _route_camera(share.route.bounds if share.route else None)
+        )
+        if at is not None:
+            query["at"] = at
+        query["view"] = "3d"
+        return f"{reverse('public:map')}?{urlencode(query, safe=',')}"
+
+    return _follow_route_share(request, token, destination)
+
+
+def _is_linked_camera(value: str | None) -> bool:
+    """Say whether ``value`` is a camera /map/ would read from ``?at=``.
+
+    The server's copy of ``static/js/map_view_core.js`` ``readCamera``'s
+    test: five finite numbers, a longitude within ±180, a latitude within
+    ±90, a zoom from 0 to 22 and a pitch from 0 to the linked ceiling.
+
+    Args:
+        value: The ``at`` query value, or None when absent.
+
+    Returns:
+        True when the map would boot on it.
+
+    """
+    if not value:
+        return False
+    try:
+        lng, lat, zoom, pitch, bearing = (float(part) for part in value.split(","))
+    except ValueError:
+        return False
+    if not all(math.isfinite(n) for n in (lng, lat, zoom, pitch, bearing)):
+        return False
+    return (
+        abs(lng) <= 180
+        and abs(lat) <= 90
+        and 0 <= zoom <= 22
+        and 0 <= pitch <= _SHARE_3D_MAX_LINKED_PITCH
     )
 
 
+def _route_camera(bounds: Any) -> str | None:
+    """Frame a route's bbox as an ``?at=`` camera, flat and north-up.
+
+    The centre of the bbox, at the zoom that fits its larger side (the
+    latitude span stretched by Web Mercator's ``1 / cos(lat)``) into a
+    phone-wide viewport with a margin, clamped to
+    ``_SHARE_3D_MIN_ZOOM``–``_SHARE_3D_MAX_ZOOM``. A zero-span bbox (one
+    point, or a straight north–south or east–west line's other axis) takes
+    the ceiling. Pitch 0 means "no tilt asked for", so the map still eases
+    to its opening tilt when it boots into 3D.
+
+    Args:
+        bounds: ``Route.bounds``, ``[min_lon, min_lat, max_lon, max_lat]``.
+
+    Returns:
+        ``"lng,lat,zoom,0,0"``, or None for a bbox that is not four finite
+        numbers.
+
+    """
+    if not isinstance(bounds, list | tuple) or len(bounds) != 4:
+        return None
+    try:
+        min_lon, min_lat, max_lon, max_lat = (float(n) for n in bounds)
+    except TypeError, ValueError:
+        return None
+    if not all(math.isfinite(n) for n in (min_lon, min_lat, max_lon, max_lat)):
+        return None
+    lng = (min_lon + max_lon) / 2
+    lat = (min_lat + max_lat) / 2
+    lat_stretch = 1 / max(math.cos(math.radians(lat)), 0.01)
+    span = max(abs(max_lon - min_lon), abs(max_lat - min_lat) * lat_stretch)
+    if span > 0:
+        framed_px = _MAPLIBRE_TILE_PX * span * _SHARE_3D_FIT_MARGIN
+        fitted = math.log2(360 * _SHARE_3D_VIEWPORT_PX / framed_px)
+        zoom = min(max(fitted, _SHARE_3D_MIN_ZOOM), _SHARE_3D_MAX_ZOOM)
+    else:
+        zoom = _SHARE_3D_MAX_ZOOM
+    return f"{lng:.5f},{lat:.5f},{zoom:.2f},0,0"
+
+
 def _follow_route_share(
-    request: HttpRequest, token: str, destination: str
+    request: HttpRequest,
+    token: str,
+    destination: Callable[[RouteShare], str],
 ) -> HttpResponse:
     """Check a followed share, seat its token in the session and redirect.
 
@@ -1102,10 +1215,11 @@ def _follow_route_share(
     Args:
         request: The incoming GET or HEAD request.
         token: The share token, from the URL.
-        destination: Where a live share sends the visitor.
+        destination: Builds where a live share sends the visitor, from the
+            share (its route loaded), so the 3D follow can frame the route.
 
     Returns:
-        A 302 to ``destination``, or a 404/410/429.
+        A 302 to ``destination(share)``, or a 404/410/429.
 
     """
     if getattr(request, "limited", False):
@@ -1129,7 +1243,7 @@ def _follow_route_share(
     if is_top_level_navigation(request):
         add_pending_token(request.session, token)
 
-    redir = HttpResponseRedirect(destination)
+    redir = HttpResponseRedirect(destination(share))
     redir["Cache-Control"] = "no-store"
     return redir
 

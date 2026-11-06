@@ -91,12 +91,17 @@ anyone outside the flag, who follows a 3D link sees the flat `/map/`.
   same 404/410/429, budget and seating as the flat follow. The visitor still
   sees only the routes their own session followed, through `routes.geojson`,
   never the sharer's others. Inside the flag it opens in 3D; outside, flat,
-  framed on the route.
+  framed on the route. A link with no readable `at` (the route Shares in 3D
+  copy none) gets one framed on the route's `bounds`, pitch 0, zoom 9–15,
+  so 3D's coverage is judged on the route rather than on wherever the
+  reader last left the map.
 - **`/map/` reads `?at=lng,lat,zoom,pitch,bearing`**
   (`map_view_core.readCamera`, the old page's validation): the linked camera
   beats the stored one, a flat boot zeroes its pitch, the coverage check
-  uses its centre, and `at` leaves the address bar at boot. A route share
-  still frames its route after boot.
+  uses its centre, and `at` leaves the address bar at boot. A pitch above 0
+  is kept when the map boots into 3D (`snowdeskMapState.linkedPitch`)
+  rather than eased to the opening tilt; a pitch of 0 still tilts in. A
+  route share still frames its route after boot.
 - **Share.** `/map/` has no share for the view itself: the address bar is
   the link. In 3D the two route Shares (the routes panel's row and the
   route rail) copy the `3d/` link through `map_3d_core.routeShare3dUrl`;

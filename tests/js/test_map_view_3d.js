@@ -24,6 +24,10 @@
  * watchdog laid it flat, with the watchdog resting; endTest puts the camera
  * and the view back, and a smooth verdict lifts the latch where a slow one
  * keeps it; the why-slow line carries the "Test this device" link.
+ *
+ * SNOW-1450: a ?view=3d boot keeps the tilt a link's `?at=` asked for
+ * (snowdeskMapState.linkedPitch); a pitch of 0, none, and every later
+ * toggle tilt to the opening pitch.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -154,7 +158,7 @@ let env;
 async function boot({
   search = '?mode=terrain', mode = 'terrain', stored = null, online = true,
   webgl = true, deviceMemory = 8, userAgent = DESKTOP_UA, pitch = 0,
-  areas = [], holdAreas = false,
+  areas = [], holdAreas = false, linkedPitch = null,
 } = {}) {
   const rows = Object.entries(URLS).map(([key, url]) => `
     <button class="basemap-menu-item" role="menuitemradio" data-basemap-key="${key}"
@@ -208,7 +212,7 @@ async function boot({
   // The picker reads its globals from map_state.js and map_shared.js.
   loadMapBundle(['map_state.js', 'map_shared.js', 'map_basemap_picker.js']);
   // After map_state.js, which publishes its own (empty) one.
-  window.snowdeskMapState = { map };
+  window.snowdeskMapState = { map, linkedPitch };
   // After the bundle too, which loads the real reader.
   let held = holdAreas;
   window.pwaBasemapAreas = {
@@ -263,6 +267,37 @@ describe('entering 3D', () => {
     expect(map.setStyle).not.toHaveBeenCalled();
     expect(inThreeD(map)).toBe(true);
     expect(toasts()).toEqual([]);
+  });
+
+  // SNOW-1450: map.js publishes the pitch a link's `?at=` asked for.
+  it('keeps a linked pitch on a ?view=3d boot, with the ceiling open', async () => {
+    const { map } = await boot({ search: '?mode=terrain&view=3d', pitch: 30, linkedPitch: 30 });
+    await flush();
+    expect(window.pwaMapView.get()).toBe('3d');
+    expect(map.maxPitch).toBe(core3d.MAX_PITCH);
+    expect(map.pitch).toBe(30);
+    expect(map.easeTo).not.toHaveBeenCalledWith(expect.objectContaining({ pitch: core3d.OPENING_CAMERA.pitch }));
+  });
+
+  it.each([
+    ['a linked pitch of 0', 0],
+    ['no linked pitch', null],
+  ])('tilts a ?view=3d boot to the opening pitch with %s', async (_label, linkedPitch) => {
+    const { map } = await boot({ search: '?mode=terrain&view=3d', linkedPitch });
+    await flush();
+    expect(window.pwaMapView.get()).toBe('3d');
+    expect(map.pitch).toBe(core3d.OPENING_CAMERA.pitch);
+  });
+
+  it('tilts a later toggle to the opening pitch, whatever the link asked for', async () => {
+    const { map, button } = await boot({ search: '?mode=terrain&view=3d', pitch: 30, linkedPitch: 30 });
+    await flush();
+    button.click();
+    expect(window.pwaMapView.get()).toBe('flat');
+    button.click();
+    await flush();
+    expect(window.pwaMapView.get()).toBe('3d');
+    expect(map.pitch).toBe(core3d.OPENING_CAMERA.pitch);
   });
 
   it('lays a ?view=3d boot flat on the reader\'s basemap when offline', async () => {

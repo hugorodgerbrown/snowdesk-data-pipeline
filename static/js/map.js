@@ -903,6 +903,11 @@
   // moved to rather than back where the link began.
   const linkedViewport = MAP_VIEW_CORE ? MAP_VIEW_CORE.readCamera(location.search) : null;
   const bootSource = linkedViewport || storedViewport;
+  // A linked tilt is kept when the map boots into 3-D; map_view_3d.js reads
+  // it from snowdeskMapState.linkedPitch, since `at` is gone by then. A
+  // pitch of 0 (a route link's own framing among them) is not a tilt asked
+  // for, and gets the opening one.
+  LINKED_PITCH = linkedViewport && linkedViewport.pitch > 0 ? linkedViewport.pitch : null;
   // SNOW-1449: the coverage half of the boot view. A ?view=3d whose camera
   // opens outside the elevation's coverage (terrain_filter_core's
   // COVERAGE_BOUNDS, the one copy of it) boots flat, and a flagged

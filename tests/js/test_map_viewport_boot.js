@@ -14,7 +14,8 @@
  *   - the `moveend` writer is bound WITHOUT the `load` handler having run;
  *   - SNOW-1450: a linked camera (`?at=`) beats the stored one, a flat boot
  *     zeroes its pitch, one outside the elevation's coverage boots a
- *     `?view=3d` flat, and `at` leaves the address bar.
+ *     `?view=3d` flat, `at` leaves the address bar, and a linked tilt is
+ *     published as `snowdeskMapState.linkedPitch` for the 3D boot to keep.
  *
  * That last one is not hypothetical. The first cut of this ticket bound the
  * writer inside `map.on('load')`, reasoning that the constructor's own
@@ -354,6 +355,19 @@ describe('a linked camera (SNOW-1450)', () => {
 
     await bootWith(`/?at=${SAAS_FEE_AT}&view=3d`, null, { view: true });
     expect(location.search).toBe('?view=3d');
+  });
+
+  it('publishes a linked tilt for the 3D boot to keep', async () => {
+    await bootWith('/?at=7.87,46.07,12.6,30,215&view=3d', null, { view: true });
+    expect(window.snowdeskMapState.linkedPitch).toBe(30);
+  });
+
+  it.each([
+    ['a linked pitch of 0', '/?at=7.87,46.07,12.6,0,0&view=3d'],
+    ['no linked camera', '/?view=3d'],
+  ])('publishes no linked tilt for %s', async (_label, url) => {
+    await bootWith(url, null, { view: true });
+    expect(window.snowdeskMapState.linkedPitch).toBeNull();
   });
 
   it('leaves the stored camera untouched until the reader moves', async () => {

@@ -315,8 +315,75 @@ class TestRouteShareRedirect3d:
         response = client.get(f"/routes/s/{share.token}/3d/")
 
         assert response.status_code == 302
-        assert response["Location"] == f"/map/?route_share={share.token}&view=3d"
+        assert response["Location"].startswith(f"/map/?route_share={share.token}&")
+        assert response["Location"].endswith("&view=3d")
         assert response["Cache-Control"] == "no-store"
+
+    def test_a_link_with_no_camera_is_framed_on_the_route(self, client: Client) -> None:
+        """The route's bbox centre, a zoom fitted to its span, flat, north-up.
+
+        The map judges 3D's coverage on the boot camera's centre, so without
+        this a reader last in the Écrins would open a Swiss route flat.
+        """
+        share = RouteShareFactory.create()  # bounds [7.4, 46.1, 7.42, 46.12]
+
+        response = client.get(f"/routes/s/{share.token}/3d/")
+
+        assert response["Location"] == (
+            f"/map/?route_share={share.token}&at=7.41000,46.11000,12.99,0,0&view=3d"
+        )
+
+    @pytest.mark.parametrize(
+        "at",
+        ["7.8,46.1,12,89,0", "7.8,46.1,12,60", "7.8,46.1,twelve,60,0", "nan,46,12,0,0"],
+    )
+    def test_a_malformed_camera_is_replaced_by_the_route_frame(
+        self, client: Client, at: str
+    ) -> None:
+        """An ``at`` the map would drop is no camera at all."""
+        share = RouteShareFactory.create()
+
+        response = client.get(f"/routes/s/{share.token}/3d/", {"at": at})
+
+        assert "&at=7.41000,46.11000,12.99,0,0&" in response["Location"]
+
+    def test_a_wide_route_is_clamped_to_the_3d_floor(self, client: Client) -> None:
+        """A span that would fit below z9 opens at z9, where 3D is drawn."""
+        share = RouteShareFactory.create(
+            route=RouteFactory.create(bounds=[5.0, 44.0, 12.0, 48.0])
+        )
+
+        response = client.get(f"/routes/s/{share.token}/3d/")
+
+        assert "&at=8.50000,46.00000,9.00,0,0&" in response["Location"]
+
+    def test_a_one_point_route_is_clamped_to_the_ceiling(self, client: Client) -> None:
+        """A zero-span bbox takes z15 rather than dividing by nothing."""
+        share = RouteShareFactory.create(
+            route=RouteFactory.create(bounds=[7.4, 46.1, 7.4, 46.1])
+        )
+
+        response = client.get(f"/routes/s/{share.token}/3d/")
+
+        assert "&at=7.40000,46.10000,15.00,0,0&" in response["Location"]
+
+    def test_a_tiny_route_is_clamped_to_the_ceiling(self, client: Client) -> None:
+        """A few metres across would fit far past z15."""
+        share = RouteShareFactory.create(
+            route=RouteFactory.create(bounds=[7.4, 46.1, 7.40001, 46.10001])
+        )
+
+        response = client.get(f"/routes/s/{share.token}/3d/")
+
+        assert ",15.00,0,0&" in response["Location"]
+
+    def test_an_unreadable_bbox_carries_no_camera(self, client: Client) -> None:
+        """Nothing to frame: the map falls back to its own boot camera."""
+        share = RouteShareFactory.create(route=RouteFactory.create(bounds=[]))
+
+        response = client.get(f"/routes/s/{share.token}/3d/")
+
+        assert response["Location"] == f"/map/?route_share={share.token}&view=3d"
 
     def test_any_live_share_opens_in_3d(self, client: Client) -> None:
         """Even the example route's: the retired Map3dShare no longer gates it."""
