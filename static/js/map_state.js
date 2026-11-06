@@ -421,8 +421,9 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // so there is nothing here for a translation to get wrong.
   'frame-up-to': 'Up to %(mb)s MB',
   // SNOW-1072: the readout's second line, shown when the download includes
-  // terrain data.
-  'frame-terrain-up-to': 'Terrain data: up to %(mb)s MB more',
+  // terrain data. SNOW-1453: the figure carries the 3D view's elevation
+  // tiles too, as 'download-idle-terrain' below.
+  'frame-terrain-up-to': 'Terrain and 3D data: up to %(mb)s MB more',
   'frame-over-ceiling': 'Area too large to download (over %(mb)s MB)',
   'frame-readout-busy': '%(pct)s · %(mb)s',
   'frame-readout-done': '%(mb)s downloaded',

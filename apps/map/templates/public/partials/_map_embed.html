@@ -2830,8 +2830,17 @@ Optional context:
     {# _updateReadout. "frame-readout-busy" carries no literal '%' in its   #}
     {# msgid; the caller appends it to the interpolated pct value itself.  #}
     <span data-string="frame-up-to">{% blocktrans %}Up to %(mb)s MB{% endblocktrans %}</span>
-    {# SNOW-1072: the framing readout's terrain-data line. #}
-    <span data-string="frame-terrain-up-to">{% blocktrans %}Terrain data: up to %(mb)s MB more{% endblocktrans %}</span>
+    {# SNOW-1072: the framing readout's terrain-data line. SNOW-1453: with  #}
+    {# the 3D view its figure carries the elevation tiles, so it names 3D. #}
+    {% if map_3d_view %}
+        <span
+            data-string="frame-terrain-up-to"
+        >{% blocktrans %}Terrain and 3D data: up to %(mb)s MB more{% endblocktrans %}</span>
+    {% else %}
+        <span
+            data-string="frame-terrain-up-to"
+        >{% blocktrans %}Terrain data: up to %(mb)s MB more{% endblocktrans %}</span>
+    {% endif %}
     <span data-string="frame-over-ceiling">{% blocktrans %}Area too large to download (over %(mb)s
             MB){% endblocktrans %}</span>
     <span data-string="frame-readout-busy">{% blocktrans %}%(pct)s · %(mb)s{% endblocktrans %}</span>

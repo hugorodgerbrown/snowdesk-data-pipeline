@@ -3580,3 +3580,18 @@ def test_the_download_label_names_3d_data_only_with_the_3d_view() -> None:
     )
     assert with_view.endswith("plus up to %(terrain)s MB of terrain and 3D data")
     assert without.endswith("plus up to %(terrain)s MB of terrain data")
+
+
+@pytest.mark.django_db
+def test_the_frame_terrain_line_names_3d_data_only_with_the_3d_view() -> None:
+    """SNOW-1453: the framed-area readout's terrain line follows the label.
+
+    Its figure carries the elevation tiles where 3D is drawn, gated the same
+    way as ``download-idle-terrain``.
+    """
+    with_view = _string(
+        _flagged_map(map_3d=True, map_modes=True), "frame-terrain-up-to"
+    )
+    without = _string(_flagged_map(map_3d=False, map_modes=True), "frame-terrain-up-to")
+    assert with_view == "Terrain and 3D data: up to %(mb)s MB more"
+    assert without == "Terrain data: up to %(mb)s MB more"
