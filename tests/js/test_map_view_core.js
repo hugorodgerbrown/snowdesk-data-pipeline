@@ -11,7 +11,9 @@
  *   - the device gate: no WebGL, or 2 GB or less on Android;
  *   - the basemap: swisstopo winter in 3D, the reader's own otherwise, and
  *     the preference never written;
- *   - the camera: a stored pitch boots flat, the bearing kept.
+ *   - the camera: a stored pitch boots flat, the bearing kept;
+ *   - a linked camera (?at=, SNOW-1450): five numbers in range, anything
+ *     malformed or out of range dropped, and nothing for no parameter.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -195,6 +197,47 @@ describe('the boot camera', () => {
   it('keeps the stored camera in 3D, and nothing stays nothing', () => {
     expect(core.bootCamera(stored, THREE_D)).toBe(stored);
     expect(core.bootCamera(null, FLAT)).toBeNull();
+  });
+});
+
+describe('readCamera (SNOW-1450)', () => {
+  it('reads a good camera in the stored viewport\'s shape', () => {
+    expect(core.readCamera('?at=7.87,46.07,12.6,64,215&view=3d')).toEqual({
+      center: [7.87, 46.07], zoom: 12.6, pitch: 64, bearing: 215,
+    });
+  });
+
+  it('reads one without the leading ?, and at its edges', () => {
+    expect(core.readCamera('at=-180,-90,0,0,-30')).toEqual({
+      center: [-180, -90], zoom: 0, pitch: 0, bearing: -30,
+    });
+    expect(core.readCamera('at=180,90,22,80,0').pitch).toBe(core.MAX_LINKED_PITCH);
+  });
+
+  it.each([
+    'at=7,46,12',
+    'at=7,46,12,60,0,1',
+    'at=a,46,12,60,0',
+    'at=7,46,12,Infinity,0',
+    'at=200,46,12,60,0',
+    'at=7,91,12,60,0',
+    'at=7,46,-1,60,0',
+    'at=7,46,23,60,0',
+    'at=7,46,12,-5,0',
+    'at=7,46,12,89,0',
+  ])('drops a malformed or out-of-range camera (%s)', (query) => {
+    expect(core.readCamera(`?${query}`)).toBeNull();
+  });
+
+  it('is null when the link names no camera', () => {
+    expect(core.readCamera('')).toBeNull();
+    expect(core.readCamera('?view=3d')).toBeNull();
+    expect(core.readCamera('?at=')).toBeNull();
+    expect(core.readCamera(undefined)).toBeNull();
+  });
+
+  it('names its parameter at', () => {
+    expect(core.CAMERA_PARAM).toBe('at');
   });
 });
 

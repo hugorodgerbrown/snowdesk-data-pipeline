@@ -895,20 +895,33 @@
     readStorage(VIEWPORT_STORAGE_KEY),
     { minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM, maxBounds: MAX_BOUNDS },
   );
+  // SNOW-1450: a link's own camera (`?at=lng,lat,zoom,pitch,bearing`, as
+  // the retired /map/3d/ and its route links wrote it) beats the stored
+  // one, for every reader; map_view_core.readCamera drops a malformed one.
+  // It is read once and leaves the address bar below, as ?route_share=
+  // does, so a reload or a copied link opens where the reader has since
+  // moved to rather than back where the link began.
+  const linkedViewport = MAP_VIEW_CORE ? MAP_VIEW_CORE.readCamera(location.search) : null;
+  const bootSource = linkedViewport || storedViewport;
   // SNOW-1449: the coverage half of the boot view. A ?view=3d whose camera
   // opens outside the elevation's coverage (terrain_filter_core's
   // COVERAGE_BOUNDS, the one copy of it) boots flat, and a flagged
   // reader's address bar loses the parameter, so a copied link says what
   // they see.
   if (bootView === '3d') {
-    const centre = storedViewport
-      ? { lng: storedViewport.center[0], lat: storedViewport.center[1] }
+    const centre = bootSource
+      ? { lng: bootSource.center[0], lat: bootSource.center[1] }
       : { lng: (DEFAULT_BOUNDS[0][0] + DEFAULT_BOUNDS[1][0]) / 2, lat: (DEFAULT_BOUNDS[0][1] + DEFAULT_BOUNDS[1][1]) / 2 };
     const coverage = self.pwaTerrainFilterCore ? self.pwaTerrainFilterCore.COVERAGE_BOUNDS : null;
     if (!MAP_VIEW_CORE.covers(centre, coverage)) bootView = 'flat';
   }
-  if (MAP_VIEW_ENABLED) {
-    const bootSearch = MAP_VIEW_CORE.withView(location.search, bootView);
+  const bootParams = new URLSearchParams(location.search);
+  const linkCarriesCamera = !!MAP_VIEW_CORE && bootParams.has(MAP_VIEW_CORE.CAMERA_PARAM);
+  if (MAP_VIEW_ENABLED || linkCarriesCamera) {
+    if (linkCarriesCamera) bootParams.delete(MAP_VIEW_CORE.CAMERA_PARAM);
+    const stripped = bootParams.toString();
+    let bootSearch = stripped ? '?' + stripped : '';
+    if (MAP_VIEW_ENABLED) bootSearch = MAP_VIEW_CORE.withView(bootSearch, bootView);
     if (bootSearch !== location.search) {
       history.replaceState(history.state, '', location.pathname + bootSearch + location.hash);
     }
@@ -922,8 +935,9 @@
   // `bounds` and `center`/`zoom` are alternatives, not a pair, so exactly one
   // of the two shapes is spread into the constructor below. SNOW-1449: a
   // flat boot zeroes a stored pitch (map_view_core.bootCamera), so a tilt
-  // is never remembered on the device; the bearing is kept.
-  const bootViewport = MAP_VIEW_CORE ? MAP_VIEW_CORE.bootCamera(storedViewport, bootView) : storedViewport;
+  // is never remembered on the device; the bearing is kept. SNOW-1450: a
+  // linked camera's pitch too, outside the 3D view.
+  const bootViewport = MAP_VIEW_CORE ? MAP_VIEW_CORE.bootCamera(bootSource, bootView) : storedViewport;
   const initialCamera = bootViewport || {
     bounds: DEFAULT_BOUNDS,
     fitBoundsOptions: { padding: 20 },

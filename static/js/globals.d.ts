@@ -43,7 +43,7 @@ interface Window {
   /** static/js/day_nav_core.js — the date row's day steps and empty-day lookup (SNOW-1195). */
   pwaDayNavCore: any;
   pwaStaleDayCore: any;
-  /** static/js/map_3d_core.js — the 3-D map's pure parts, the probe's frameStats and /map/'s frame watchdog (frameWindowFails, createFrameWatch; SNOW-1455). */
+  /** static/js/map_3d_core.js — the 3D map's pure parts (terrain, routeShare3dUrl), the probe's frameStats and /map/'s frame watchdog (frameWindowFails, createFrameWatch; SNOW-1455). */
   pwaMap3dCore: any;
   /** static/js/sheet_playback_core.js — an object sheet pauses while the timeline plays (SNOW-1239). */
   pwaSheetPlayback: {
@@ -313,7 +313,7 @@ interface Window {
     isTerrain: () => boolean;
     toConditionsToday: () => void;
   };
-  /** static/js/map_view_core.js — the flat / 3-D view's pure rules: VIEWS, MIN_ZOOM, BASEMAP_KEY, REASONS, readView, withView, covers, availability, deviceGate, basemapFor, bootCamera (SNOW-1449, SNOW-1455; both modes since SNOW-1452). */
+  /** static/js/map_view_core.js — the flat / 3D view's pure rules: VIEWS, MIN_ZOOM, BASEMAP_KEY, REASONS, readView, withView, covers, availability, deviceGate, basemapFor, bootCamera, readCamera (SNOW-1449, SNOW-1455; both modes since SNOW-1452; ?at= since SNOW-1450). */
   pwaMapViewCore: any;
   /** static/js/map_3d_terrain.js — MapLibre terrain on a map: registerDemProtocol, installTerrain, removeTerrain, hasTerrain, createPrefetcher (SNOW-1449). */
   pwaMap3dTerrain: any;

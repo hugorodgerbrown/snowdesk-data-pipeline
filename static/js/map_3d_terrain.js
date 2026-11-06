@@ -3,8 +3,8 @@
  * static/js/map_3d_terrain.js — MapLibre terrain, installed on a map
  * (SNOW-1449).
  *
- * Shared by the 3-D sandbox at /map/3d/ (map_3d.js) and /map/'s 3-D view
- * (map_view_3d.js), so the two draw the same relief from the same tiles
+ * Installed by /map/'s 3D view (map_view_3d.js); SNOW-1450 retired the
+ * /map/3d/ sandbox that shared it, so one map now draws the relief
  * (docs/decisions/a-3d-map-is-maplibre-terrain.md). What it owns:
  *
  *   - THE ELEVATION PROTOCOL. `map3ddem://` answered by map_3d_core's
@@ -17,9 +17,9 @@
  *     installTerrain is idempotent, so a caller can run it after every
  *     setStyle without counting; removeTerrain takes the relief and the
  *     sunlight away and keeps the source, so a return costs nothing.
- *   - THE PREFETCH. The elevation tiles a 3-D view around a camera asks
+ *   - THE PREFETCH. The elevation tiles a 3D view around a camera asks
  *     for first, fetched into the browser's cache once per view, so the
- *     relief is there when 3-D opens (map_3d_link.js and the 3D roundel).
+ *     relief is there when 3D opens (the 3D roundel).
  *
  * Exports (frozen `self.pwaMap3dTerrain`):
  *

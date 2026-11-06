@@ -971,14 +971,31 @@
 
   // ---- actions ----------------------------------------------------------
 
-  /** Mint a share link for the open route and hand it to the platform. */
+  /**
+   * The link Share hands on: the plain share link, or in the 3D view its
+   * `3d/` follow (map_3d_core.routeShare3dUrl), so the friend opens in 3D
+   * too (SNOW-1450). map_3d_core.js is loaded wherever the view is.
+   *
+   * @param {string} url The absolute share link routes:share_create answers.
+   * @returns {string}
+   */
+  function sharedUrl(url) {
+    var core = window.pwaMap3dCore;
+    var in3d = !!window.pwaMapView && window.pwaMapView.get() === '3d';
+    return in3d && core ? core.routeShare3dUrl(url, '') : url;
+  }
+
+  /**
+   * Mint a share link for the open route and hand it to the platform: the
+   * 3D link while the map is in 3D (sharedUrl).
+   */
   function share() {
     if (!current.uuid || !SHARE_URL_TEMPLATE || !window.pwaShare) return;
     window.pwaShare
       .createShare(SHARE_URL_TEMPLATE.replace('__UUID__', current.uuid), csrfToken())
       .then(function (url) {
         window.pwaTelemetry?.emit('map.route.shared', {});
-        return window.pwaShare.shareOrCopy(url);
+        return window.pwaShare.shareOrCopy(sharedUrl(url));
       })
       .then(function (outcome) {
         if (outcome === 'copied') toast(STRINGS['share-copied']);

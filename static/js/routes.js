@@ -549,6 +549,20 @@
     });
   }
 
+  /**
+   * The link a Share hands on: the plain share link, or in the 3D view its
+   * `3d/` follow (map_3d_core.routeShare3dUrl), so the friend opens in 3D
+   * too (SNOW-1450). map_3d_core.js is loaded wherever the view is.
+   *
+   * @param {string} url The absolute share link routes:share_create answers.
+   * @returns {string}
+   */
+  function sharedUrl(url) {
+    const core = window.pwaMap3dCore;
+    const in3d = !!window.pwaMapView && window.pwaMapView.get() === '3d';
+    return in3d && core ? core.routeShare3dUrl(url, '') : url;
+  }
+
   /** Handle a click on a row's Share control (SNOW-764).
    *
    * Two steps, both window.pwaShare's: mint the link, then hand it to the
@@ -589,7 +603,7 @@
       .createShare(SHARE_URL_TEMPLATE.replace('__UUID__', uuid), getCsrfToken())
       .then(function (url) {
         window.pwaTelemetry?.emit('map.route.shared', {});
-        return window.pwaShare.shareOrCopy(url);
+        return window.pwaShare.shareOrCopy(sharedUrl(url));
       })
       .then(function (outcome) {
         if (outcome === 'copied') showToast(STRINGS['share-copied']);

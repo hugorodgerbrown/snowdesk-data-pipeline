@@ -12,8 +12,8 @@
  * would not fit. The × always closes the route. Around it: one path per
  * leg with its direction, an unsampled route still cut into legs, a
  * pending share without its menu (SNOW-1095: it has no item it could
- * use), the rail outliving a sheet opened over it, and Delete confirming
- * before it posts.
+ * use), the rail outliving a sheet opened over it, Delete confirming
+ * before it posts, and Share handing on the 3d/ link in 3D (SNOW-1450).
  *
  * The markup below is the hooks of templates/includes/_route_rail.html;
  * tests/public/test_route_rail.py holds the partial itself to them.
@@ -28,6 +28,8 @@ import '../../static/js/slope_classes_core.js';
 import '../../static/js/route_slope_core.js';
 import '../../static/js/route_rail_core.js';
 import '../../static/js/route_profile.js';
+// SNOW-1450: routeShare3dUrl, for a Share in the 3D view.
+import '../../static/js/map_3d_core.js';
 
 const UUID = '11111111-2222-3333-4444-555555555555';
 
@@ -1037,5 +1039,53 @@ describe('Delete', () => {
     expect(init.headers['X-CSRFToken']).toBe('tok');
     expect(rail.hidden).toBe(true);
     document.removeEventListener('snowdesk:routes-changed', changed);
+  });
+});
+
+describe('Share (SNOW-1450)', () => {
+  const LINK = 'https://snowdesk.app/routes/s/tok/';
+
+  /**
+   * Stub the share helper and the map's view, then press Share.
+   *
+   * @param {string} view What window.pwaMapView.get() answers.
+   * @returns {Promise<import('vitest').Mock>} shareOrCopy, once called.
+   */
+  async function shareIn(view) {
+    const shareOrCopy = vi.fn(() => Promise.resolve('shared'));
+    vi.stubGlobal('pwaShare', {
+      createShare: vi.fn(() => Promise.resolve(LINK)),
+      shareOrCopy,
+    });
+    vi.stubGlobal('pwaMapView', { get: () => view });
+    window.pwaRouteRail.open(feature());
+    rail.querySelector('[data-route-rail-share]').click();
+    await vi.waitFor(() => expect(shareOrCopy).toHaveBeenCalled());
+    return shareOrCopy;
+  }
+
+  it('hands on the 3d/ link while the map is in 3D', async () => {
+    const shareOrCopy = await shareIn('3d');
+
+    expect(shareOrCopy).toHaveBeenCalledWith(`${LINK}3d/`);
+  });
+
+  it('hands on the plain link while the map is flat', async () => {
+    const shareOrCopy = await shareIn('flat');
+
+    expect(shareOrCopy).toHaveBeenCalledWith(LINK);
+  });
+
+  it('hands on the plain link where there is no 3D view at all', async () => {
+    const shareOrCopy = vi.fn(() => Promise.resolve('shared'));
+    vi.stubGlobal('pwaShare', {
+      createShare: vi.fn(() => Promise.resolve(LINK)),
+      shareOrCopy,
+    });
+    window.pwaRouteRail.open(feature());
+    rail.querySelector('[data-route-rail-share]').click();
+    await vi.waitFor(() => expect(shareOrCopy).toHaveBeenCalled());
+
+    expect(shareOrCopy).toHaveBeenCalledWith(LINK);
   });
 });
