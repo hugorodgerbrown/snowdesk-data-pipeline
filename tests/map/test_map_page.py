@@ -3398,7 +3398,10 @@ def _flagged_map(*, map_3d: bool, map_modes: bool) -> str:
     """Return /map/'s HTML for a signed-in reader with the two flags as given."""
     client = Client()
     client.force_login(UserFactory.create())
-    with override_flag("map_3d", active=map_3d), override_flag("map_modes", active=map_modes):
+    with (
+        override_flag("map_3d", active=map_3d),
+        override_flag("map_modes", active=map_modes),
+    ):
         return client.get(reverse("public:map")).content.decode()
 
 
@@ -3471,7 +3474,11 @@ def test_the_compass_renders_for_every_reader(signed_in: bool) -> None:
         client.force_login(UserFactory.create())
     content = client.get(reverse("public:map")).content.decode()
     compass = content.index('id="map-compass"')
-    assert content.index('id="map-zoom-toggle"') < compass < content.index('id="map-help-toggle"')
+    assert (
+        content.index('id="map-zoom-toggle"')
+        < compass
+        < content.index('id="map-help-toggle"')
+    )
     assert "hidden" in content[compass : content.index(">", compass)]
     assert "js/map_compass.js" in content
     assert 'data-help-target="#map-compass"' in content

@@ -572,7 +572,9 @@ def map_3d_page(
         A ``Map3dPage`` bundling the page, server URL, and account.
 
     """
-    context = browser.new_context(**{**browser_context_args, "service_workers": "block"})
+    context = browser.new_context(
+        **{**browser_context_args, "service_workers": "block"}
+    )
     with django_db_blocker.unblock():
         account = AccountFactory.create()
     _session_login(context, live_server.url, account.user)
@@ -595,7 +597,9 @@ def map_3d_page(
     context.route(reader, style("reader_style.json"))
     dem = settings.MAP_3D_DEM_TILE_URL.split("{z}")[0]
     context.route(re.compile(rf"^{re.escape(dem)}\d+/\d+/\d+"), elevation)
-    context.route(re.compile(r"^https://s3\.amazonaws\.com/elevation-tiles-prod/"), elevation)
+    context.route(
+        re.compile(r"^https://s3\.amazonaws\.com/elevation-tiles-prod/"), elevation
+    )
     page = context.new_page()
     try:
         yield Map3dPage(page=page, live_server_url=live_server.url, account=account)

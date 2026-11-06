@@ -44,6 +44,8 @@ def test_tilt_the_terrain_map_into_3d(map_3d_page: Map3dPage) -> None:
         page.wait_for_timeout(500)
         expect(page.locator("#today-sheet")).to_be_visible()
         page.click("#map-view-toggle")
-        page.wait_for_function("() => !MAP.getTerrain() && MAP.getStyle().name === 'e2e-reader'")
+        page.wait_for_function(
+            "() => !MAP.getTerrain() && MAP.getStyle().name === 'e2e-reader'"
+        )
         assert "view=3d" not in page.url
         assert page.evaluate("MAP.getPitch()") == 0

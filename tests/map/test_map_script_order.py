@@ -255,7 +255,9 @@ def test_map_view_scripts_load_in_their_places() -> None:
     rendered = _SCRIPT_SRC_RE.findall(content)
     bundle = _map_bundle()
     core_at = rendered.index("map_view_core.js")
-    assert rendered.index("terrain_filter_core.js") < core_at < rendered.index(bundle[0])
+    assert (
+        rendered.index("terrain_filter_core.js") < core_at < rendered.index(bundle[0])
+    )
     runner_at = rendered.index("map_view_3d.js")
     for before in (BOOT_FILE, "map_3d_core.js", "map_3d_terrain.js", "map_mode.js"):
         assert rendered.index(before) < runner_at, before
