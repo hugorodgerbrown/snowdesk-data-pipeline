@@ -23,6 +23,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SELECT_TESTS = REPO_ROOT / "bin" / "select-tests"
@@ -247,9 +248,10 @@ class TestPathRules:
             ("README.md", False),
             (".claude/settings.json", False),
             ("tests/weather/test_models.py", False),
-            ("templates/includes/_card.html", True),
+            ("templates/includes/_card.html", False),
             ("uv.lock", True),
-            ("static/js/map.js", True),
+            ("static/js/map.js", False),
+            ("static/icons/star.svg", True),
             ("config/settings/base.py", True),
             ("apps/weather/migrations/0008_x.py", True),
             ("tests/conftest.py", True),
@@ -299,10 +301,29 @@ class TestDecide:
         base = _commit(repo, "tests/test_service.py", "X = 2\n")
         assert select.decide(base).mode == "affected"
 
-    def test_a_template_change_is_full(self, repo: Path) -> None:
-        """testmon never sees a template."""
-        base = _commit(repo, "templates/page.html", "<p>hi</p>\n")
-        assert select.decide(base).reasons == ["templates/page.html: not Python"]
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "templates/page.html",
+            "apps/map/templates/public/partials/_map_embed.html",
+            "static/js/map_view_3d.js",
+            "tests/js/test_map_view_3d.js",
+            "src/css/main.css",
+            "locale/en/LC_MESSAGES/django.po",
+        ],
+    )
+    def test_a_frontend_change_is_affected(self, repo: Path, path: str) -> None:
+        """SNOW-1465: frontend files trust main's full run, not the PR's."""
+        base = _commit(repo, path, "x\n")
+        assert select.decide(base).mode == "affected"
+
+    @pytest.mark.parametrize(
+        "path", ["pyproject.toml", "uv.lock", "apps/map/data/peaks.json"]
+    )
+    def test_a_data_or_config_change_is_full(self, repo: Path, path: str) -> None:
+        """Data and build inputs still run everything."""
+        base = _commit(repo, path, "x\n")
+        assert select.decide(base).reasons == [f"{path}: not Python"]
 
     def test_an_unresolvable_map_commit_is_full(self, repo: Path) -> None:
         """A map whose commit is not in this clone cannot be trusted."""
@@ -341,12 +362,12 @@ class TestMain:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """``--github-output`` appends the same ``mode=`` line CI reads."""
-        base = _commit(repo, "templates/page.html", "<p>hi</p>\n")
+        base = _commit(repo, "pyproject.toml", "[project]\n")
         output = tmp_path_factory.mktemp("gh") / "output"
         monkeypatch.setenv("GITHUB_OUTPUT", str(output))
         assert select.main(["--since", base, "--github-output"]) == 0
         assert output.read_text() == "mode=full\n"
-        assert "full suite: templates/page.html: not Python" in capsys.readouterr().out
+        assert "full suite: pyproject.toml: not Python" in capsys.readouterr().out
 
     def test_never_fails_the_build(
         self, repo: Path, monkeypatch: pytest.MonkeyPatch
@@ -360,3 +381,33 @@ class TestMain:
         monkeypatch.setattr(select, "decide", explode)
         monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
         assert select.main(["--github-output"]) == 0
+
+
+# The workflow has to give the selector history back to the map's commit.
+# `cond && 0 || 1` in an Actions expression is always 1, because a bare 0 is
+# falsy, so the PR clone held one commit and every PR fell back to the full
+# suite with "cannot resolve <sha>".
+FALSY_LITERALS = {"0", "false", "null", "''", '""'}
+
+
+def _test_job_fetch_depth() -> str:
+    """Return the ``fetch-depth`` the ``Run tests`` job checks out with."""
+    workflow = yaml.safe_load((REPO_ROOT / ".github/workflows/ci.yml").read_text())
+    steps = workflow["jobs"]["test"]["steps"]
+    checkout = next(
+        s for s in steps if s.get("uses", "").startswith("actions/checkout")
+    )
+    return str(checkout["with"]["fetch-depth"])
+
+
+def test_pr_checkout_fetches_full_history() -> None:
+    """A PR's checkout is deep enough for select-tests to resolve the map's sha."""
+    depth = _test_job_fetch_depth()
+    inner = depth.removeprefix("${{").removesuffix("}}").strip()
+    assert "github.event_name == 'pull_request'" in inner
+    when_pr = inner.split("&&", 1)[1].split("||", 1)[0].strip()
+    assert when_pr not in FALSY_LITERALS, (
+        f"fetch-depth {depth!r}: {when_pr} is falsy, so `&&` falls through "
+        "to the `||` branch on every PR"
+    )
+    assert when_pr.strip("'\"") == "0"

@@ -2,7 +2,7 @@
 name: a-pr-runs-the-tests-its-diff-can-affect
 description: Why a PR runs pytest-testmon's selection from main's cached map (bin/select-tests, COVERAGE_CORE=ctrace) or the full suite
 status: current
-last-reviewed: 2026-10-25
+last-reviewed: 2026-11-07
 ---
 
 # A PR runs the tests its diff can affect
@@ -33,9 +33,9 @@ them.
 testmon only sees Python that runs *inside a test*, so `bin/select-tests`
 sends a diff to the full suite when it touches anything else:
 
-* any non-Python file, other than Markdown and `.claude/`: templates,
-  fixtures, static, data (including data under `docs/`), `pyproject.toml`,
-  `uv.lock`, `tox.ini`, workflows;
+* any non-Python file, other than Markdown, `.claude/` and frontend files
+  (below): fixtures, data (including data under `docs/`), icons and other
+  static assets, `pyproject.toml`, `uv.lock`, `tox.ini`, workflows;
 * `config/`, `manage.py`, any `conftest.py`, any migration;
 * a new or deleted module;
 * a changed line of Python outside a function body, other than a docstring,
@@ -52,6 +52,17 @@ sends a diff to the full suite when it touches anything else:
 
 Test modules (`test_*.py`) are safe anywhere, because testmon fingerprints a
 test's own file as a whole.
+
+**Frontend files trust main (SNOW-1465).** Templates, `static/js/`,
+`static/css/`, `src/css/`, `tests/js/` and `locale/*.po` do not force the
+full suite. testmon cannot see them, so a PR that changes only a template
+runs only testmon's pick for the rest of its diff, and a test that renders
+that template is not rerun on the PR. That is a deliberate 80:20 trade:
+sending every frontend change to the full suite meant nearly every PR ran
+all ~12,500 tests, and the full run on `main` catches what a PR run
+misses. Mapping each file to the tests that read it (template-render
+signals, an `open` audit hook) was scoped and dropped as too much
+machinery for the gain.
 
 **A stale map is safe.** testmon compares the files it recorded with the
 files in the checkout. `bin/select-tests` diffs against the map's own
@@ -100,6 +111,11 @@ another PR's map.
   import), a selective run can miss it, and the full run on `main` catches
   it after merge. When that happens, add the input to the selector's
   full-suite rules rather than working around it in the test.
+* Until 2026-11-07 no PR ever ran the selection. The checkout's
+  `fetch-depth: ${{ … && 0 || 1 }}` is always 1, because a bare 0 is falsy
+  in an Actions expression, so the clone held one commit, the selector
+  logged `cannot resolve <sha>` and fell back to the full suite. The 0 is
+  now quoted, and `tests/bin/test_select_tests.py` pins it.
 * Test the selector and the shims with `tests/bin/test_select_tests.py` and
   `tests/test_testmon_support.py`. Run it locally with
   `uv run python bin/select-tests --since origin/main`.
