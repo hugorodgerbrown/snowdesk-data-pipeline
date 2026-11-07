@@ -1,0 +1,54 @@
+{% comment %}
+apps/public/templates/public/partials/_home_3d_card.html — the homepage's 3D card
+(SNOW-1454).
+
+Full width under the hero and above the daily read (option A, Hugo, 6 Nov
+2026): a picture of the 3D map over Saas-Fee, then "New · 3D", the heading,
+one line, the coverage line and a primary CTA into the map in 3D. The copy
+promises nothing Terrain-only, because most readers who see the card do not
+have Terrain mode (SNOW-1451). The coverage line is the map's own msgid, so
+the copy change when 3D widens past Switzerland edits one string.
+
+Rendered only for a reader who can open the map in 3D (home.html, behind
+show_3d). The picture sits above the fold, so it is not lazy-loaded; its box
+holds 3:4 on a phone and 2:1 from md, so a recapture at those ratios drops in.
+
+Context:
+  map_3d_url — the map URL framed on HOME_3D_CAMERA (apps/public/views.py).
+{% endcomment %}
+{% load i18n static components %}
+<section
+    class="{% card_classes padding='p-4 md:p-5' extra='mb-12 flex flex-col gap-5' %}"
+    aria-labelledby="home-3d-heading"
+    data-testid="home-3d-card"
+>
+    <a
+        href="{{ map_3d_url }}"
+        class="block rounded-card overflow-hidden border border-border"
+        data-testid="home-3d-card-image"
+    >
+        <picture>
+            <source media="(min-width: 768px)" srcset="{% static 'img/home/3d-desktop.jpg' %}">
+            <img
+                src="{% static 'img/home/3d-mobile.jpg' %}"
+                width="780"
+                height="1040"
+                class="block w-full h-auto aspect-[3/4] md:aspect-[2/1] object-cover object-top"
+                alt="{% trans 'The Snowdesk map in 3D: Saas-Fee and the Allalin in relief, with the Mischabel and Zermatt beyond.' %}"
+            >
+        </picture>
+    </a>
+    <div>
+        {% trans "New · 3D" as card_eyebrow %}
+        {% include "includes/_eyebrow.html" with text=card_eyebrow tag="p" class_extra="mb-2" %}
+        <h2 id="home-3d-heading" class="text-xl font-semibold text-text-1 mb-3">
+            {% trans "See the mountain before you go" %}
+        </h2>
+        <p class="text-text-2 leading-prose mb-2">
+            {% trans "Tilt the map and the relief stands up: the bowls, ridges and couloirs your line crosses, with your own routes draped over the ground." %}
+        </p>
+        <p class="text-sm text-text-3 mb-4">{% trans "3D covers Switzerland for now" %}</p>
+        {% trans "Open the map in 3D" as open_3d_label %}
+        {% include "includes/_button.html" with label=open_3d_label href=map_3d_url variant="primary" button_id="home-open-3d" %}
+    </div>
+</section>

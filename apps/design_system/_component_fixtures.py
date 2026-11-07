@@ -745,6 +745,20 @@ TODAY_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# SNOW-1454: the homepage's 3D card, as views.home hands it the map URL. It
+# ships dark (only readers in map_3d see it), so this is where it can be
+# seen before the flag turns on.
+HOME_3D_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Under the hero, for a reader who can open the map in 3D",
+        "solo": True,
+        "context": {
+            "map_3d_url": "/map/?mode=terrain&view=3d&at=7.87,46.07,12.6,64,215",
+        },
+    },
+)
+
+
 # SNOW-1357: the homepage's daily read, as present_daily_read() hands it to
 # public/partials/_daily_read.html. Off season there is no read and the
 # homepage leaves the section out, so there is no empty variant to show.

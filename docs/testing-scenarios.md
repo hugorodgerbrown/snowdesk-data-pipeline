@@ -44,7 +44,8 @@ SNOW-314 until the marketing page took the root — see
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/ | A static page loads: the "Avalanche bulletins across the Alps, on one map." heading, an "Open the map" primary button and a "How it works" secondary button, a still image of the map, and short sections on bulletins, the season, weather, routes, offline use and field reports. No MapLibre canvas, no map JavaScript |
+| 1 | Navigate to http://localhost:8000/ signed out | A static page loads: the "Stay avi-savvy" eyebrow and the "Know your line before you leave." heading, the daily read on a rated day ("Across the Alps today"), four cards (current conditions, route planning, weather, trips), each with a still of the app, then the offline line, the authority caveat and an "Open the map" primary button. No 3D card, no MapLibre canvas, no map JavaScript |
+| 1a | SNOW-1454: sign in as `admin@snowdesk.dev` (in `map_3d`) and reload | A full-width card sits between the heading and the daily read: a picture of the 3D map, "New · 3D", "See the mountain before you go", one line, "3D covers Switzerland for now" and an "Open the map in 3D" button. Pressing it opens /map/ tilted over Saas-Fee, looking up the Allalin, with `view=3d` in the address bar |
 | 2 | Look at the page chrome | A thin top nav bar with a "Snowdesk" wordmark (no back link) sits above the page |
 | 3 | Clear `localStorage` for the site, then click "Open the map" | http://localhost:8000/map/ loads: the full-frame map, with no card or panel over it |
 | 4 | Wait for the danger colours to paint, then a moment more | The welcome card (`#map-tour-offer`) slides in at the bottom left (full width at the bottom on a phone): "Explore Snowdesk", with three rows — "Find a resort", "Explore an example route" (only once `set_example_route --commit` has run) and "Explore the map" — and a "×" (Scenario MS7) |

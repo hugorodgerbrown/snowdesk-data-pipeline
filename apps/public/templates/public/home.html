@@ -2,8 +2,10 @@
 {% comment %}
 apps/public/templates/public/home.html — the marketing homepage at /.
 
-The headline, then the daily read (SNOW-1357, public/partials/_daily_read.html
-— the page's one dynamic section, absent off season), then four cards — current conditions, route
+The headline, then, for a reader who can open the map in 3D, the 3D card
+(SNOW-1454, public/partials/_home_3d_card.html), then the daily read
+(SNOW-1357, public/partials/_daily_read.html — the page's one dynamic
+section, absent off season), then four cards — current conditions, route
 planning, weather, trips — each a screenshot of the app above a short
 description, then a supporting line (offline), the authority caveat and one
 button into the app at /map/. The Help, Compare apps and build-blog panels that
@@ -12,8 +14,9 @@ footnote, not the lead: a reader is in one place.
 
 It loads no map JavaScript and no MapLibre CSS. The screenshots are JPEGs
 under static/img/home/, one per card per viewport: a 4:3 desktop capture
-and a 3:4 phone capture, swapped by <picture> at the md breakpoint, so a
-phone never shows a desktop screenshot. They are stills and go stale as
+(2:1 for the 3D card's) and a 3:4 phone capture, swapped by <picture> at the
+md breakpoint, so a phone never shows a desktop screenshot. Five cards'
+images in all. They are stills and go stale as
 the UI moves; recapture at the same ratios and they drop in unchanged.
 
 The copy argues from what a reader gets, never from how it is built, and
@@ -75,27 +78,13 @@ parameters never reaches this template — views.home 301s it to /map/.
             <h1 id="home-heading" class="text-3xl md:text-4xl font-semibold tracking-tight text-text-1">
                 {% trans "Know your line before you leave." %}
             </h1>
-            {% if show_3d %}
-                {# Temporary 3D branding, only for readers of the map_3d flag  #}
-                {# (/map/ opens flat for everyone else): the 3D map tilted     #}
-                {# back under the headline, linking to /map/?view=3d. The      #}
-                {# wordmark wearing specs is in the nav (includes/nav.html).   #}
-                {# SNOW-1454's card replaces it.                               #}
-                <a
-                    href="{% url 'public:map' %}?view=3d"
-                    class="block mt-4 md:mt-2 md:w-4/5 mx-auto [perspective:900px]"
-                    data-testid="home-3d-image"
-                >
-                    <img
-                        src="{% static 'img/home/3d-desktop.jpg' %}"
-                        width="1400"
-                        height="700"
-                        class="block w-full h-auto rounded-card border border-border origin-bottom [transform:rotateX(24deg)] shadow-2xl"
-                        alt="{% trans 'The Snowdesk 3D map: the mountains around Zermatt in relief, steep terrain painted on the slopes.' %}"
-                    >
-                </a>
-            {% endif %}
         </section>
+
+        {# SNOW-1454: the 3D card, for readers who can open the map in 3D  #}
+        {# (map_3d, SNOW-1451); /map/?view=3d opens flat for everyone else. #}
+        {% if show_3d %}
+            {% include "public/partials/_home_3d_card.html" %}
+        {% endif %}
 
         {# The daily read (SNOW-1357): what moved since yesterday. Absent  #}
         {# on a day no region is rated, so the page reads as it did.       #}
