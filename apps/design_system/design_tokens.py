@@ -62,6 +62,7 @@ from apps.design_system._component_fixtures import (
     FORECAST_SOURCE_VARIANTS,
     FORM_FIELD_VARIANTS,
     GLOSSARY_TERM_VARIANTS,
+    HOME_3D_CARD_VARIANTS,
     HOURLY_CHART_VARIANTS,
     MAP_3D_TEST_PANEL_VARIANTS,
     MAP_COMPASS_VARIANTS,
@@ -1706,6 +1707,19 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="public/partials/_daily_read.html",
         variants=DAILY_READ_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="home-3d-card",
+        label="Home 3D card",
+        description=(
+            "The homepage's 3D card (SNOW-1454): a picture of the 3D map over "
+            "Saas-Fee, the coverage line and a primary CTA into /map/ in 3D, "
+            "framed on HOME_3D_CAMERA. Only for readers in map_3d."
+        ),
+        kind="components",
+        partial="public/partials/_home_3d_card.html",
+        variants=HOME_3D_CARD_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

@@ -25,7 +25,7 @@
  *
  *   SUNLIGHT_LAYER
  *   registerDemProtocol(maplibre, demTileUrl)
- *   installTerrain(map) -> whether it stopped a camera ease to do so
+ *   installTerrain(map)
  *   removeTerrain(map)
  *   hasTerrain(map)
  *   createPrefetcher(template)
@@ -115,24 +115,11 @@
    * gone.
    *
    * @param {any} map
-   * @returns {boolean} Whether it stopped a camera ease to put the terrain on.
+   * @returns {void}
    */
   function installTerrain(map) {
     if (!map.getSource(core.DEM_SOURCE_ID)) map.addSource(core.DEM_SOURCE_ID, core.demSource());
-    let stopped = false;
-    if (!hasTerrain(map)) {
-      // MapLibre 4.7 reads an ease's elevation centre on every frame once
-      // terrain is on, but sets it only when an ease starts with terrain
-      // already there. An ease begun flat (the tilt into 3D, before the
-      // style had loaded) would throw on its next frame and wedge the
-      // render loop, leaving the map blank (SNOW-1466). So it stops here,
-      // and the caller restarts it.
-      if (typeof map.isEasing === 'function' && map.isEasing()) {
-        map.stop();
-        stopped = true;
-      }
-      map.setTerrain(core.terrainSpec());
-    }
+    if (!hasTerrain(map)) map.setTerrain(core.terrainSpec());
     map.setSky(core.skySpec());
     if (!map.getLayer(SUNLIGHT_LAYER)) {
       // Under the basemap's labels and over its hachures, so the relief
@@ -146,7 +133,6 @@
         firstLabel ? firstLabel.id : undefined,
       );
     }
-    return stopped;
   }
 
   /**

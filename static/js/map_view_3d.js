@@ -174,8 +174,6 @@
   let moving = false;
   /** @type {?number} */
   let savedMinZoom = null;
-  /** @type {?number} The pitch the last tilt into 3D eased to. */
-  let tiltTarget = null;
   /** @type {?number} */
   let savedPixelRatio = null;
   /**
@@ -369,27 +367,19 @@
 
   // ---- The relief -------------------------------------------------------
 
-  /**
-   * Put the relief on; a style still loading is retried on its styledata.
-   *
-   * @returns {boolean} Whether a camera ease was stopped to put it on.
-   */
+  /** Put the relief on; a style still loading is retried on its styledata. */
   const installNow = () => {
     try {
-      return terrain.installTerrain(map);
+      terrain.installTerrain(map);
     } catch (_err) {
       // The style is not done loading; styledata comes again when it is.
-      return false;
     }
   };
 
   const reinstall = () => {
     if (view !== THREE_D || suspended) return;
     if (map.getSource(core.DEM_SOURCE_ID) && terrain.hasTerrain(map)) return;
-    // The relief cannot go on under a moving camera (installTerrain), so
-    // a tilt into 3D still running when the style lands was stopped part
-    // way; it runs again from there, now over the relief (SNOW-1466).
-    if (installNow() && tiltTarget !== null && map.getPitch() < tiltTarget) tiltIn(tiltTarget);
+    installNow();
   };
   map.on('styledata', reinstall);
   map.on('style.load', reinstall);
@@ -554,10 +544,16 @@
    *   boot keeps a linked one.
    */
   const tiltIn = (pitch = core.OPENING_CAMERA.pitch) => {
-    tiltTarget = pitch;
     timingArmed = false;
     map.setMaxPitch(core.MAX_PITCH);
-    map.easeTo({ pitch, duration: EASE_MS });
+    // freezeElevation: a boot tilts in before the style's styledata has
+    // installed the terrain, and MapLibre (4.7) tracks the ground's height
+    // on each ease frame only when terrain was on as the ease began
+    // (_prepareElevation). Terrain arriving mid-ease left the frame reading
+    // an unset centre, which threw inside the render queue and froze the
+    // map blank for good. A tilt keeps its centre, so there is no height to
+    // follow.
+    map.easeTo({ pitch, duration: EASE_MS, freezeElevation: true });
     // easeTo stops an ease still running, and that fires its moveend here;
     // the move this starts is the one whose end arms the timing.
     timingArmed = false;
@@ -642,7 +638,6 @@
   const exit = (options = {}) => {
     if (view !== THREE_D) return;
     view = FLAT;
-    tiltTarget = null;
     suspended = false;
     hideSlowPrompt();
     stopFrames();

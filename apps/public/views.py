@@ -382,6 +382,31 @@ def _carries_map_state(request: HttpRequest) -> bool:
     )
 
 
+# SNOW-1454: the camera the homepage's 3D card opens the map on, as
+# ``?at=lng,lat,zoom,pitch,bearing`` (map_view_core.readCamera): over
+# Saas-Fee, looking up the Allalin toward Zermatt, the view its picture
+# shows and the 3D view's own opening camera (OPENING_CAMERA in
+# static/js/map_3d_core.js). A bare ?view=3d would boot from the reader's
+# stored viewport, which may lie outside Switzerland (then flat) or be
+# nowhere at all (then z9 over the middle of the country).
+HOME_3D_CAMERA = (7.87, 46.07, 12.6, 64, 215)
+
+
+def _home_3d_url() -> str:
+    """Build the map URL the homepage's 3D card opens (SNOW-1454).
+
+    ``mode=terrain`` gives a reader in ``map_modes`` the Terrain layers and is
+    ignored for everyone else; ``at=`` leaves the address bar once the map
+    boots, so a copied link carries only ``mode`` and ``view``.
+
+    Returns:
+        ``/map/?mode=terrain&view=3d&at=…`` framed on ``HOME_3D_CAMERA``.
+
+    """
+    at = ",".join(f"{value:g}" for value in HOME_3D_CAMERA)
+    return f"{reverse('public:map')}?mode=terrain&view=3d&at={at}"
+
+
 # The same shape as the /observations/ redirect in urls.py: Django appends
 # the incoming query string unchanged to a target it resolves itself.
 _MAP_REDIRECT = RedirectView.as_view(
@@ -397,7 +422,8 @@ def home(request: HttpRequest) -> HttpResponseBase:
     gives a reader, with a link into the app at ``/map/``. It loads no map
     JavaScript. Under the hero sits the one dynamic section, the daily read
     (SNOW-1357, ``apps/public/daily_read.py``), cached for 15 minutes and
-    absent on a day no region is rated.
+    absent on a day no region is rated. Above it, for a reader who can open
+    the map in 3D, the 3D card (SNOW-1454) links to ``map_3d_url``.
 
     The map was served here until the homepage took ``/``, so bookmarks and
     shared links carry map state on ``/`` (``/?d=…``, ``/?panel=reports``).
@@ -416,15 +442,19 @@ def home(request: HttpRequest) -> HttpResponseBase:
     # SNOW-1357: the daily read under the hero, built only once the request
     # is known to be the homepage's (a map-state 301 never reads it).
     daily_read = present_daily_read(cached_daily_read(timezone.localdate()))
-    # The temporary 3D hero, for readers who can open the map in 3D: it
-    # links to the map's 3D mode (/map/?view=3d), which opens flat for
-    # everyone else (SNOW-1450). map_3d_view_enabled short-circuits an
-    # anonymous request, so most visitors pay no waffle query for it.
+    # SNOW-1454: the 3D card under the hero, for readers who can open the
+    # map in 3D (map_3d, SNOW-1451); /map/?view=3d opens flat for everyone
+    # else (SNOW-1450). map_3d_view_enabled short-circuits an anonymous
+    # request, so most visitors pay no waffle query for it.
     show_3d = map_3d_view_enabled(request)
     return render(
         request,
         "public/home.html",
-        {"daily_read": daily_read, "show_3d": show_3d},
+        {
+            "daily_read": daily_read,
+            "show_3d": show_3d,
+            "map_3d_url": _home_3d_url() if show_3d else "",
+        },
     )
 
 

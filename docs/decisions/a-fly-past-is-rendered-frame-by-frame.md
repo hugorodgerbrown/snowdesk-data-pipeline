@@ -39,11 +39,15 @@ this route" control (a reader's own route, played live) the same camera path:
   The core stays free of the map and fully testable in Vitest.
 - The swisstopo credit is laid over every frame at encode time, not drawn by
   the page, so a recording shows no page chrome (`body.map-recording`).
-- Recording found that entering 3D before the style had loaded left the
-  map blank in MapLibre 4.7: terrain put on under an ease begun flat throws on
-  that ease's next frame and wedges the render loop. `installTerrain` stops a
-  running ease first, and `map_view_3d.js` runs the tilt again. Readers hit
-  the same race on a slow `?view=3d` boot, so the fix is in the view, not the
-  recorder.
+- MapLibre 4.7 lowers the pitch and zoom of a jump that would put the camera
+  under the ground, judged by the centre's height at the jump. After a long
+  jump that height is stale, and an ease not asked to freeze its elevation
+  leaves `_elevationFreeze` set, so the height is never read again until a
+  gesture. The driver clears that flag before each jump and, once the frame
+  has settled with the heights in, jumps again if the camera did not land
+  where it was sent. A reader's drag does the same for them.
+- Software rendering is slow enough that a close-up frame can take over a
+  minute, so `load` takes a `capMs` and the recorder raises the cap to ten
+  minutes with `--software-gl`.
 
 How to run it: [`../map-3d-flyby.md`](../map-3d-flyby.md).

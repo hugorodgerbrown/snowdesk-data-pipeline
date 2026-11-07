@@ -169,10 +169,11 @@
    *
    * MapLibre 4.7 sets `_elevationFreeze` when a camera ease starts over
    * terrain and clears it only at the end of an ease asked to freeze, or of a
-   * gesture. After the plain tilt into 3D it stays set, so the centre keeps
-   * the height it had when the tilt ended, and a jump to the route draws the
-   * camera at that height: under the mountain, the ground streaked and the
-   * sky missing. A reader's first drag clears it; a recording makes none.
+   * gesture. After any other ease over terrain (the page's own camera
+   * moves) it stays set, so the centre keeps the height it had then, and a
+   * jump to the route draws the camera at that height: under the mountain,
+   * the ground streaked and the sky missing. A reader's first drag clears
+   * it; a recording makes none.
    * The property is MapLibre's own, so this is checked against the vendored
    * version (static/js/maplibre-gl.min.js) and does nothing if it is gone.
    */

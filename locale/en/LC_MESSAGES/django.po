@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-07 10:05+0000\n"
+"POT-Creation-Date: 2026-11-07 11:09+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -7533,11 +7533,6 @@ msgid "Know your line before you leave."
 msgstr ""
 
 msgid ""
-"The Snowdesk 3D map: the mountains around Zermatt in relief, steep terrain "
-"painted on the slopes."
-msgstr ""
-
-msgid ""
 "The Snowdesk map: Swiss warning regions coloured by danger level, with the "
 "Martigny–Verbier bulletin open on its wind slab problem."
 msgstr ""
@@ -8166,6 +8161,25 @@ msgid "Every level is the provider's own. Read the bulletin before you go."
 msgstr ""
 
 msgid "Open today's map"
+msgstr ""
+
+msgid ""
+"The Snowdesk map in 3D: Saas-Fee and the Allalin in relief, with the "
+"Mischabel and Zermatt beyond."
+msgstr ""
+
+msgid "New · 3D"
+msgstr ""
+
+msgid "See the mountain before you go"
+msgstr ""
+
+msgid ""
+"Tilt the map and the relief stands up: the bowls, ridges and couloirs your "
+"line crosses, with your own routes draped over the ground."
+msgstr ""
+
+msgid "Open the map in 3D"
 msgstr ""
 
 msgid "Download here"

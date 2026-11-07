@@ -97,30 +97,6 @@ describe('installTerrain', () => {
   });
 });
 
-describe('installTerrain under a moving camera', () => {
-  it('stops an ease before the terrain goes on, and says so', () => {
-    // MapLibre 4.7 throws on the next frame of an ease begun flat once
-    // terrain is on, and the render loop stays wedged (SNOW-1466).
-    const map = fakeMap();
-    map.isEasing = vi.fn(() => true);
-    map.stop = vi.fn();
-    expect(terrain.installTerrain(map)).toBe(true);
-    expect(map.stop).toHaveBeenCalledTimes(1);
-    expect(map.stop.mock.invocationCallOrder[0]).toBeLessThan(map.setTerrain.mock.invocationCallOrder[0]);
-    // With the terrain on already, nothing is stopped.
-    expect(terrain.installTerrain(map)).toBe(false);
-    expect(map.stop).toHaveBeenCalledTimes(1);
-  });
-
-  it('stops nothing when the camera is still', () => {
-    const map = fakeMap();
-    map.isEasing = vi.fn(() => false);
-    map.stop = vi.fn();
-    expect(terrain.installTerrain(map)).toBe(false);
-    expect(map.stop).not.toHaveBeenCalled();
-  });
-});
-
 describe('removeTerrain', () => {
   it('lays the map flat and keeps the source for a cheap return', () => {
     const map = fakeMap();
