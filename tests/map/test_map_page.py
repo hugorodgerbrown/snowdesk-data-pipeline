@@ -390,6 +390,11 @@ def test_help_mode_names_only_controls_the_page_draws() -> None:
     its card, with nothing failing. This holds the list to the page. The
     region chip and its download control live in the season ribbon, which
     renders only once the region has a rated day.
+
+    SNOW-1471: some named controls render only signed in or behind a flag
+    (the Terrain switch, the 3D switch, the header menus), so the controls
+    are checked across both renders in tests/map/test_map_help_mode.py;
+    this test holds the sheets.
     """
     region = MicroRegionFactory.create(region_id="CH-4115", name="Martigny Verbier")
     _rated(region, datetime.date(2026, 2, 17))
@@ -398,8 +403,8 @@ def test_help_mode_names_only_controls_the_page_draws() -> None:
 
     assert 'id="map-help-mode"' in content
     assert "js/map_help_mode.js" in content
-    selectors = re.findall(r'data-(?:control|sheet)="#([\w-]+)"', content)
-    assert len(selectors) == 19
+    selectors = re.findall(r'data-sheet="#([\w-]+)"', content)
+    assert len(selectors) == 4
     missing = [s for s in selectors if f'id="{s}"' not in content]
     assert missing == []
 
@@ -410,11 +415,15 @@ def test_help_mode_links_each_card_to_a_help_topic() -> None:
     SNOW-1119: each card's "More in Help" lands on a topic that exists.
 
     The cards and sheet guides link to ``/help/#<topic>``; the topic ids
-    are the ``anchor_id`` each collapsible panel on /help/ renders.
+    are the ``anchor_id`` each collapsible panel on /help/ renders. The
+    Terrain card's topic (SNOW-1471) shows, as the switch does, only to a
+    signed-in reader with map_modes on.
     """
     client = Client()
-    content = client.get(reverse("public:map")).content.decode()
-    help_page = client.get(reverse("public:help")).content.decode()
+    client.force_login(UserFactory.create())
+    with override_flag("map_modes", active=True):
+        content = client.get(reverse("public:map")).content.decode()
+        help_page = client.get(reverse("public:help")).content.decode()
 
     topics = set(re.findall(r'data-topic="([\w-]+)"', content))
     assert topics

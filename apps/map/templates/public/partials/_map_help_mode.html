@@ -23,6 +23,12 @@ What the JS reads:
                       of the card's button that leaves help mode and
                       presses the control. The <li>'s text is the card's
                       copy. A control not on screen gets no label.
+                      data-also (optional, SNOW-1471) lists more
+                      selectors, comma-separated, whose taps open the
+                      same card but get no name of their own: the day
+                      arrows beside the date, the search pill's text.
+                      tests/map/test_map_help_mode.py fails when a control
+                      on the map surface is named by none of these.
   [data-sheet-guide]  one guide per sheet: data-sheet is the sheet's
                       selector (open when it is not hidden), data-topic and
                       data-more the /help/ link under the key. Each key
@@ -97,6 +103,39 @@ What the JS reads:
 </div>
 {# ---- The controls, in the order a reader meets them. ---- #}
 <ul id="map-help-controls" hidden>
+    {# The header's controls come first: names are placed in this order,  #}
+    {# and on a phone the header row is the only room theirs have.        #}
+    <li
+        data-control="#network-indicator-toggle"
+        data-label='{% trans "Connection" %}'
+        data-topic="help-topic-downloads"
+        data-open='{% trans "Open it" %}'
+    >
+        {% trans "Green when you are online. Tap it to go offline on purpose, or to reconnect." %}
+    </li>
+    <li
+        data-control="#subscriber-menu-toggle"
+        data-label='{% trans "Account" %}'
+        data-topic="help-topic-accounts"
+        data-open='{% trans "Open it" %}'
+    >
+        {% trans "Your trips and settings, and sign out." %}
+    </li>
+    <li
+        data-control="#admin-menu-toggle"
+        data-label='{% trans "Admin" %}'
+        data-open='{% trans "Open it" %}'
+    >
+        {% trans "Staff tools: the admin, the component library and the resort and location editors." %}
+    </li>
+    <li
+        data-control="#nav-sign-in"
+        data-label='{% trans "Sign in" %}'
+        data-topic="help-topic-accounts"
+        data-open='{% trans "Sign in" %}'
+    >
+        {% trans "Sign in to keep your pins, routes and observations." %}
+    </li>
     <li
         data-control="#region-readout"
         data-label='{% trans "Region" %}'
@@ -123,11 +162,36 @@ What the JS reads:
     </li>
     <li
         data-control="#map-calendar-toggle"
+        data-also="#map-day-prev, #map-day-next"
         data-label='{% trans "Day shown" %}'
         data-topic="help-topic-calendar"
         data-open='{% trans "Open the calendar" %}'
     >
-        {% trans "The map shows one day at a time. Tap the date for a calendar, coloured by the selected region’s danger." %}
+        {% trans "The map shows one day at a time. The arrows step a day; tap the date for a calendar, coloured by the selected region’s danger." %}
+    </li>
+    <li
+        data-control="#map-today-control"
+        data-label='{% trans "Today" %}'
+        data-topic="help-topic-calendar"
+        data-open='{% trans "Back to today" %}'
+    >
+        {% trans "Bring the map back to today." %}
+    </li>
+    <li
+        data-control="#map-mode-terrain"
+        data-label='{% trans "Terrain" %}'
+        data-topic="help-topic-map-modes"
+        data-open='{% trans "Switch" %}'
+    >
+        {% trans "Take the day’s danger and weather off the map, to read the ground itself. Tap the date to come back to the day’s conditions." %}
+    </li>
+    <li
+        data-control="#map-today-panel-toggle"
+        data-label='{% trans "Today" %}'
+        data-topic="help-topic-favourites"
+        data-open='{% trans "Open today" %}'
+    >
+        {% trans "Your pinned regions and resorts, and their danger today." %}
     </li>
     <li
         data-control="#season-scrubber"
@@ -139,6 +203,7 @@ What the JS reads:
     </li>
     <li
         data-control="#search-toggle"
+        data-also="#search-region-label, #search-input"
         data-label='{% trans "Search" %}'
         data-topic="help-topic-map"
         data-open='{% trans "Search" %}'
@@ -160,6 +225,14 @@ What the JS reads:
         data-open='{% trans "Open layers" %}'
     >
         {% trans "Pick the base map, choose what is drawn over it (resorts, pins, routes, weather, slope) and set how strongly the danger colours show." %}
+    </li>
+    <li
+        data-control="#map-view-toggle"
+        data-label='{% trans "3D" %}'
+        data-topic="help-topic-map"
+        data-open='{% trans "Switch" %}'
+    >
+        {% trans "Tap 3D or tilt with two fingers to see the mountains in relief. Tap 2D to lay the map flat again." %}
     </li>
     <li
         data-control="#favourite-add-btn"
@@ -216,6 +289,14 @@ What the JS reads:
         data-open='{% trans "Open the key" %}'
     >
         {% trans "The danger scale, what each pin means, and where the map data comes from." %}
+    </li>
+    <li
+        data-control="#map-compass"
+        data-label='{% trans "North" %}'
+        data-topic="help-topic-map"
+        data-open='{% trans "Point north" %}'
+    >
+        {% trans "The needle points north. Tap it to turn the map back to north." %}
     </li>
 </ul>
 {# ---- The sheet guides: five parts each, in reading order. ---- #}

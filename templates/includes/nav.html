@@ -148,7 +148,9 @@ Usage
         {# ── Right-side auth + admin area ── #}
         {# SNOW-445: Help lives in the footer (public/templates/public/_site_footer.html) #}
         {# only — it was removed from the header to declutter the nav bar.         #}
-        <div class="flex items-center gap-2 {% if not season_trigger %}ml-auto{% endif %}">
+        {# SNOW-1471: #nav-controls is where tests/map/test_map_help_mode.py #}
+        {# looks for the header controls help mode on the map must name.    #}
+        <div id="nav-controls" class="flex items-center gap-2 {% if not season_trigger %}ml-auto{% endif %}">
             {# SNOW-376: mutation-queue sync badge. Hidden by default;             #}
             {# static/js/mutation_queue.js reveals it with the live non-"failed"   #}
             {# queue:mutations count, and swaps the colour to the status-error     #}
@@ -450,7 +452,8 @@ Usage
                 {% endcomment %}
                 {% trans "Sign in" as sign_in_label %}
                 {% sign_in_href as nav_sign_in_href %}
-                {% include "includes/_button.html" with label=sign_in_label href=nav_sign_in_href variant="primary" size="compact" %}
+                {# SNOW-1471: the id is what map help mode names it by. #}
+                {% include "includes/_button.html" with label=sign_in_label href=nav_sign_in_href variant="primary" size="compact" button_id="nav-sign-in" %}
             {% endif %}
 
             {% if request.user.is_staff %}
