@@ -16,7 +16,8 @@ from django.template import Context, Template
 from django.test import RequestFactory
 from waffle.testutils import override_flag
 
-from tests.factories import UserFactory
+from apps.routes.services.map_3d_grant import GRANT_SESSION_KEY
+from tests.factories import RouteShareFactory, UserFactory
 
 TEMPLATE = Template(
     "{% load map_flags %}{% map_3d_view_enabled as on %}{% if on %}yes{% else %}no{% endif %}"
@@ -65,3 +66,15 @@ def test_the_tag_is_off_for_a_signed_out_visitor(rf: RequestFactory) -> None:
 def test_the_tag_is_off_without_a_request() -> None:
     """A context with no request (an email, a bare render) gets no specs."""
     assert _render(None) == "no"
+
+
+@pytest.mark.django_db
+def test_the_tag_is_true_for_a_granted_signed_out_visitor(rf: RequestFactory) -> None:
+    """A route share's 3D grant reaches the nav too (SNOW-1469)."""
+    share = RouteShareFactory.create()
+    request = rf.get("/")
+    request.user = AnonymousUser()
+    SessionMiddleware(lambda _req: HttpResponse()).process_request(request)
+    request.session[GRANT_SESSION_KEY] = share.token
+    with override_flag("map_3d", active=True):
+        assert TEMPLATE.render(Context({"request": request})) == "yes"

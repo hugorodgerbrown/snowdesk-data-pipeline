@@ -26,7 +26,8 @@ plus three navigation/JSON endpoints outside the ``partials/`` prefix:
   a fragment, which is why it sits outside ``partials/``.
 - ``route_share_redirect_3d`` (GET/HEAD) — the same follow into the map's
   3D view (``/routes/s/<token>/3d/``), framed on the shared route when the
-  link names no camera of its own.
+  link names no camera of its own. It also seats the session's 3D grant
+  (SNOW-1469), so the visitor gets 3D whether or not they are signed in.
 
 plus one JSON endpoint the owner's Share button calls:
 
@@ -128,6 +129,7 @@ from apps.routes.services.estimate import estimate_duration_s
 from apps.routes.services.example import example_share
 from apps.routes.services.gpx import GPXParseError
 from apps.routes.services.gpx_export import build_gpx, gpx_filename
+from apps.routes.services.map_3d_grant import seat_map_3d_grant
 from apps.routes.services.routes import (
     RouteLimitReached,
     create_drawn_route,
@@ -1083,8 +1085,10 @@ def route_share_redirect_3d(request: HttpRequest, token: str) -> HttpResponse:
     — with the 3D view as the destination:
     ``/map/?route_share=<token>&at=…&view=3d``, for any live share. The
     visitor still sees only the routes their own session followed, through
-    ``routes.geojson``, never the sharer's others. Inside the ``map_3d`` flag
-    the map opens in 3D; outside it, flat, framed on the route (SNOW-1450).
+    ``routes.geojson``, never the sharer's others. A real navigation also
+    seats the session's 3D grant (SNOW-1469), so while the sharer is inside
+    ``map_3d`` and the share stays claimable the map opens in 3D for anyone,
+    signed in or not; otherwise it opens flat, framed on the route.
 
     The map's route Shares copy this link while it is in 3D, with no camera.
     An old ``/map/3d/`` link's ``at`` is carried across, and nothing else.
@@ -1129,7 +1133,7 @@ def route_share_redirect_3d(request: HttpRequest, token: str) -> HttpResponse:
         query["view"] = "3d"
         return f"{reverse('public:map')}?{urlencode(query, safe=',')}"
 
-    return _follow_route_share(request, token, destination)
+    return _follow_route_share(request, token, destination, grant_3d=True)
 
 
 def _is_linked_camera(value: str | None) -> bool:
@@ -1206,6 +1210,8 @@ def _follow_route_share(
     request: HttpRequest,
     token: str,
     destination: Callable[[RouteShare], str],
+    *,
+    grant_3d: bool = False,
 ) -> HttpResponse:
     """Check a followed share, seat its token in the session and redirect.
 
@@ -1217,6 +1223,9 @@ def _follow_route_share(
         token: The share token, from the URL.
         destination: Builds where a live share sends the visitor, from the
             share (its route loaded), so the 3D follow can frame the route.
+        grant_3d: Also seat the session's 3D grant (SNOW-1469), so the map
+            opens in 3D for a visitor outside ``map_3d``. Only the 3D
+            follow passes it.
 
     Returns:
         A 302 to ``destination(share)``, or a 404/410/429.
@@ -1242,6 +1251,8 @@ def _follow_route_share(
 
     if is_top_level_navigation(request):
         add_pending_token(request.session, token)
+        if grant_3d:
+            seat_map_3d_grant(request.session, token)
 
     redir = HttpResponseRedirect(destination(share))
     redir["Cache-Control"] = "no-store"

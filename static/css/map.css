@@ -7240,3 +7240,17 @@ body.map-framing #map-legend {
 .map-compass-needle {
     transform-origin: 50% 50%;
 }
+
+/* SNOW-1470: "3D is experimental" (#map-3d-notice), the floating top banner
+   from includes/_overlay_banner.html. From 640px its own top-20 sits clear of
+   the chrome, centred between the search pill and the utility cluster. On a
+   phone the date row runs across the top of the map, and a banner that stays
+   up for as long as the map is in 3D must not cover it, so it drops to just
+   under that row: the row's top inset, its lg height and the 8px gap the
+   map's chrome uses, measured inside #map. */
+@media (max-width: 639.98px) {
+    #map-3d-notice {
+        position: absolute;
+        top: calc(env(safe-area-inset-top, 0px) + 12px + var(--map-control-lg) + 8px);
+    }
+}

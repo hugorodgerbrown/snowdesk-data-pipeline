@@ -7,7 +7,8 @@ description: >
   discussion into tickets" — and whenever creating a follow-up ticket mid-task.
   Covers the two creation modes (one ticket vs many from one discussion), the
   decomposition rule (one ticket per independently-shippable unit), the
-  four-section scoping comment contract, the hand to Codex for its one scope
+  two-part scope contract (user scope in the description for Hugo, technical
+  scope in the first comment for Codex), the hand to Codex for its one scope
   review (a scoped ticket goes to `Todo`, never straight to `Ready for dev`),
   and the Linear MCP parameter
   traps (priority/estimate enums, exact state names, how to set blocks /
@@ -34,7 +35,7 @@ window — if it matters, it goes on the ticket.
 
 - Creating a new ticket (from a planning conversation, a bug just noticed,
   a discussion that decomposed into work).
-- Posting a scoping comment on an existing ticket and handing it to Codex.
+- Writing the scope on a ticket being created and handing it to Codex.
 - Updating a ticket's description, labels, priority, or estimate.
 
 Posting a **project** status update is a different job — that's the
@@ -47,11 +48,12 @@ stop — that's the `implement` skill's job.
 
 ### Mode 1 — Single ticket, scoped in one pass
 
-Conversation has produced a single, clear piece of work. Create the issue
-*and* post the scoping comment *and* ask Codex to review it, in that order:
-create the issue in `Backlog`, post the scoping comment, move it to `Todo`,
-and only then post **the review request** from `docs/linear-workflow.md` →
-"The review request", verbatim, as a new comment. Requesting the review
+Conversation has produced a single, clear piece of work. Show Hugo the user
+scope to sign off. Then, in this order: create the issue in `Backlog` with
+the user scope as its description, post the technical scope as its first
+comment, move it to `Todo`, and only then post **the review request** from
+`docs/linear-workflow.md` → "The review request", verbatim, as a new
+comment. Requesting the review
 first would start Codex on a ticket with no scope to review. **Never set a
 delegate**: delegating an issue tells Codex to implement it. Every scoped
 ticket of size S and above, or unsized, goes through Codex's one review. An XS
@@ -69,8 +71,8 @@ piece:
 
 - Create the issue with title, label, priority, and a one-paragraph
   description.
-- If the approach is settled in the discussion → post the scoping comment,
-  move to `Todo` and post the review request, as in Mode 1.
+- If the approach is settled in the discussion → write both parts of the
+  scope, move to `Todo` and post the review request, as in Mode 1.
 - If the approach is still fuzzy → leave at `Backlog` and add a note naming
   the open question. `scope` picks it up from there.
 
@@ -88,8 +90,8 @@ After creation, report back a summary like:
   adjacent tickets are ready. Underspecified tickets leaking into
   implementation is the failure mode this rule prevents.
 - **Title, Type + Area labels, priority, one-paragraph description are
-  mandatory** at creation time. The scoping comment is in addition to the description,
-  not instead of it.
+  mandatory** at creation time. Scoping turns the description into the user
+  scope.
 
 ## Labelling
 
@@ -138,15 +140,15 @@ implementation), `Accessibility`. Zero or more, never instead of an Area.
 team, so it sits outside the `Non-functional` group in Linear's picker
 while meaning the same thing.
 
-## Scoping comment contract
+## Scope contract
 
-This is the handoff artefact. The implementer reads it on pickup and
-inherits full context. Every scoping comment has these four sections:
+The handoff artefact, in two parts (full contract: `docs/linear-workflow.md`
+→ "Scope contract"):
 
-- **Approach** — 2–4 sentences on the chosen solution.
-- **Touch list** — files/modules expected to change.
-- **Tests** — what will be covered.
-- **Open questions** — anything still undecided.
+- **User scope — the description.** Hugo signs it off. Summary, Before,
+  After, Not changing, Open questions. Plain words: no files, no tests.
+- **Technical scope — the first comment.** Codex reviews it. Approach, Touch
+  list, Tests.
 
 **Promotion rule:** a scoped ticket goes to `Todo` and to Codex, whatever
 its Open questions say — Codex may answer some from the code. Only
@@ -165,7 +167,7 @@ integration (see docs/linear-workflow.md).
 | Status          | When this skill sets it                                     |
 |-----------------|-------------------------------------------------------------|
 | `Backlog`       | Ticket created, not yet scoped (or approach still fuzzy)    |
-| `Todo`          | Scoping comment posted, Codex's review requested            |
+| `Todo`          | Scope written, Codex's review requested                     |
 
 ## Linear MCP tool gotchas
 

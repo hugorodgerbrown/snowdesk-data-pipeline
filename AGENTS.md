@@ -271,15 +271,22 @@ contract and PR body template:
 - **Status.** `Backlog` → `Todo` (scoped) → `Ready for dev` → `In Progress`
   (branch created, moved by hand) → `In Review` (PR opened) → `Done` (merged).
   `Requires input` holds a question only Hugo can answer.
+- **Scope.** Two parts
+  ([contract](docs/linear-workflow.md#scope-contract),
+  [why](docs/decisions/hugo-signs-off-the-user-scope.md)). The **user scope**
+  is the ticket description: what changes for the user, before and after, in
+  plain words. Hugo signs it off. The **technical scope** is the scoping
+  comment, the first comment Claude posts: Approach, Touch list, Tests. Codex
+  reviews both.
 - **Scope review.** Codex reviews every scope of size S and above once.
   An XS scope with no open questions goes straight to `Ready for dev`. An
   unsized ticket counts as S
   ([why](docs/decisions/codex-reviews-every-scope-once.md)). If Codex's review
-  changes the scope, Claude decides whether to refer back to Hugo; a change
-  that alters what is built or why goes back, a clarification does not.
-- **Implementation plan.** Hugo reviews the scope, not the plan. Once the scope
-  is signed off and Codex has reviewed it, Claude writes the plan and builds from
-  it with no approval stop.
+  changes the user scope beyond wording, it goes back to Hugo; a change to the
+  technical scope alone does not.
+- **Implementation plan.** Hugo reviews the user scope, not the technical scope
+  or the plan. Once he has signed it off and Codex has reviewed both parts,
+  Claude writes the plan and builds from it with no approval stop.
 - **When a ticket may be skipped.** A change that touches no model, migration,
   URL, command, dependency or stored data shape needs no ticket, scope or
   `SNOW-` prefix, whatever its line count. Copy, styling, map paint, docs and
@@ -296,7 +303,7 @@ contract and PR body template:
   check is green and Codex's one PR review has arrived and is resolved: a 👍, or
   each comment verified, fixed or answered, and resolved. Do not use
   `gh pr merge --auto`, which merges before Codex has reported.
-- **Stop and ask** when the scoping comment is missing, a test failure has no
+- **Stop and ask** when either part of the scope is missing, a test failure has no
   obvious fix, or the work shows the scope was wrong (comment on the ticket first).
 
 ## Path to live
@@ -342,13 +349,13 @@ These hold at all times. Any violation blocks a PR.
 For Codex, reviewing a pull request.
 
 **Review against the agreed scope.** A PR that implements a Linear ticket
-carries its scope, copied verbatim into the description under `## Agreed scope`,
+carries both parts of its scope, copied verbatim into the description under `## Agreed scope`,
 and a `## Deviations from scope` section. You reviewed that scope unless the
 ticket is XS. Read both before the diff, and treat the agreed scope as the
 specification:
 
-- Everything the scope's Approach and Tests promise is in the diff. A promised
-  test that is missing is a finding.
+- Everything the user scope's After lines and the technical scope's Approach
+  and Tests promise is in the diff. A promised test that is missing is a finding.
 - Nothing in the diff falls outside the touch list unless Deviations lists it
   with a reason. An unlisted deviation is a finding, and so is a listed one whose
   reason does not hold. A defect fixed under "Fix what you find" is a valid reason.
@@ -384,13 +391,20 @@ stop. If the ticket has no scoping comment, say so and stop.
 ### What to read
 
 1. The ticket's title and description.
-2. **The scope**: the scoping comment, or the same sections written into the
-   description. There is only one. Its sections are Approach, Touch list, Tests,
-   Open questions (`docs/linear-workflow.md` → "Scoping comment contract").
+2. **The scope**, in two parts (`docs/linear-workflow.md` → "Scope contract"):
+   the **user scope** in the description (Summary, Before, After, Not changing,
+   Open questions), which Hugo has signed off, and the **technical scope** in the
+   scoping comment (Approach, Touch list, Tests). A ticket scoped before
+   7 November 2026 has one comment holding Approach, Touch list, Tests and Open
+   questions.
 3. The code the touch list names, and whatever it would reach.
 
 ### What to check
 
+- **The two parts agree.** The technical scope builds and tests every After line,
+  and nothing the user scope does not promise. Each After line is something a
+  user could check. Say when a suggestion changes the user scope: it goes back
+  to Hugo.
 - **Touch list is real and complete.** Every path exists or is plainly new; nothing
   the approach needs is missing: templates, migrations, admin, factories, docs,
   `docs/glossary.md`, `docs/README.md`.

@@ -223,11 +223,12 @@ Then, if there is at least one new finding:
 2. Create one **child** per finding, parented to it. Apply the trivial /
    spin-off / watching rule from the README — not every finding earns a
    ticket, and saying why in the doc is part of the job.
-3. **Scope each child**: post the four-section comment (Approach, Touch list,
-   Tests, Open questions) from the `create-ticket` skill, then move it to
+3. **Scope each child** in two parts (`create-ticket` → "Scope contract"):
+   the user scope as its description, the technical scope as its first
+   comment. Then move it to
    `Todo` and post the review request for Codex, as `create-ticket`
    does — never straight to `Ready for dev`, and never as a delegation. Name any real open question in
-   the comment. Do not manufacture "None" to tidy a scope.
+   the user scope. Do not manufacture "None" to tidy a scope.
 
 If there are **no** new findings, create no parent ticket. Write the cycle doc
 recording the re-verifications and say so. A cycle that finds nothing is a

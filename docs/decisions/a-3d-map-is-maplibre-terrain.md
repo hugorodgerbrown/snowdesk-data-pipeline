@@ -78,7 +78,8 @@ SNOW-1450 retired the sandbox and removed `Map3dShare` with it (migration
 `map.0003`). Hugo decided not to keep a way past the flag: the token opened
 a page that no longer exists, and `/map/`'s 3D view is the flag's to give
 until SNOW-1451 opens 3D to everyone. Meanwhile a signed-out visitor, or
-anyone outside the flag, who follows a 3D link sees the flat `/map/`.
+anyone outside the flag, who follows a 3D link sees the flat `/map/`;
+SNOW-1469 later let a route share's 3D link grant 3D (below).
 
 - **`/map/3d/` is a redirect** (`map_3d.map_3d_redirect`): a 302 with
   `Cache-Control: no-store`, the same for anyone, writing nothing to the
@@ -478,8 +479,8 @@ stays with superusers.
   as in Conditions.
 - **Signed-in readers only.** Hugo chose on 7 Nov 2026 that signed-out
   visitors stay flat when `map_3d` goes on for everyone. The anonymous guard
-  keeps those pages free of waffle queries. 3D for signed-out visitors would
-  be its own ticket, which accepts that query.
+  keeps those pages free of waffle queries. The one way past it is a route
+  share's 3D link (SNOW-1469, below).
 
 ## A boot tilts with the elevation frozen (SNOW-1467, 7 Nov 2026)
 
@@ -494,6 +495,56 @@ good: no tile was ever requested. `tiltIn` now passes
 `freezeElevation: true`. A tilt keeps its centre, so there is no height to
 follow. The e2e suite missed it because its fixture style loads before the
 first ease frame; the Vitest suite pins the option.
+
+## A route share's 3D link grants 3D (SNOW-1469, 7 Nov 2026)
+
+Once SNOW-1450 removed `Map3dShare`, a signed-out visitor had no way to see
+3D: a route's `/routes/s/<token>/3d/` opened the route flat. Hugo chose
+(7 Nov 2026) that a shared route is the way past the signed-in rule, and
+only a route: no "share this view" link, no per-user token.
+
+- **The grant is a session key**, `map_3d_grant`
+  (`apps/routes/services/map_3d_grant.py`): the token of the route share
+  whose 3D link this browser followed last. `route_share_redirect_3d` seats
+  it on a real top-level navigation only, beside the pending token, as the
+  flat follow seats that. The flat follow seats no grant. It lasts the
+  session and ends at sign-out.
+- **It is checked on every read.** `map_3d_view_enabled` is true for a
+  signed-in reader inside `map_3d`, or for anyone whose grant still holds:
+  the share is claimable (live, and not the example route, which every
+  visitor is offered and would otherwise open 3D to everyone), and its
+  sharer is inside `map_3d`, asked with waffle's cached `Flag.get` and
+  `is_active_for_user`, which covers superusers, users and groups. Revoking
+  the share, letting it expire or taking the sharer out of the flag ends
+  the grant on the visitor's next page. No grant costs no query; the answer
+  is kept on the request, which `/map/` asks twice.
+- **Its own key, not the pending list.** Claiming or dismissing the route
+  drops its token from `route_shares`; the 3D the visitor was given should
+  not go with it.
+- **It shows nothing the share did not.** The visitor sees only the routes
+  their own session followed (`routes.geojson`). A granted visitor gets the
+  3D test too, which already accepts anonymous posts.
+- **The worker passes the follow through.** `SESSION_REDIRECT_PATTERNS` in
+  `static/js/sw.js` lacked `/routes/s/<token>/3d/` and `/map/3d/`, so with
+  the app installed the 3D follow reached the server as
+  `Sec-Fetch-Dest: empty` and seated nothing: SNOW-1235's bug for the 3D
+  link. Both now go to the browser.
+- A signed-out shell the worker caches during a granted visit can show the
+  3D switch offline later. That is harmless: offline 3D needs a downloaded
+  area, and downloading needs an account.
+
+## "3D is experimental" (SNOW-1470, 7 Nov 2026)
+
+Before 3D went to every reader, Hugo asked that the view say it is still
+experimental. A floating top banner (`#map-3d-notice`, the off-map banner's
+primitive and slot) shows whenever the map is in 3D and goes when it is
+flat, whether the reader switched or the map dropped out by itself.
+`static/js/map_3d_notice.js` reads `:root[data-map-view]` at load and then
+`snowdesk:map-view-changed`. On a phone the date row runs across the top of
+the map, and a banner that stays up through a 3D visit must not cover it, so
+below 640px `static/css/map.css` drops it under that row. Closing it hides it for the visit and stores
+nothing, so the next load shows it again: the point is that nobody meets the
+rough edges unwarned, and the cost of a repeat is one tap.
 
 ## The fly-past (SNOW-1466, 7 Nov 2026)
 

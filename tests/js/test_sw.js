@@ -3865,12 +3865,22 @@ describe('route share navigations (SNOW-1235)', () => {
     return responded;
   }
 
-  it.each(['/routes/s/abc123/', '/routes/example/'])('recognises %s', (path) => {
-    const sw = loadSw();
-    expect(sw._isSessionRedirect(new URL(ORIGIN + path))).toBe(true);
-  });
+  it.each(['/routes/s/abc123/', '/routes/s/abc123/3d/', '/routes/example/', '/map/3d/'])(
+    'recognises %s',
+    (path) => {
+      const sw = loadSw();
+      expect(sw._isSessionRedirect(new URL(ORIGIN + path))).toBe(true);
+    },
+  );
 
-  it.each(['/routes/s/abc123/terrain.json', '/routes/s/abc123/dismiss/', '/routes/', '/map/'])(
+  it.each([
+    '/routes/s/abc123/terrain.json',
+    '/routes/s/abc123/dismiss/',
+    '/routes/s/abc123/3d/x/',
+    '/routes/',
+    '/map/',
+    '/map/3d/share/',
+  ])(
     'leaves %s to the worker',
     (path) => {
       const sw = loadSw();

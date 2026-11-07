@@ -7,8 +7,9 @@ Three answers the map and an apps/public page must give identically:
   toggle. The /help/ page reads it too, so the topic describing the toggle
   shows exactly where the toggle does.
 - ``map_3d_view_enabled`` — whether a request gets the map's 3D view: the
-  ``map_3d`` flag alone (SNOW-1451), for signed-in readers. The home page,
-  ``/offline/`` and the nav's wordmark read it too.
+  ``map_3d`` flag alone (SNOW-1451) for signed-in readers, or a route
+  share's 3D grant for anyone (SNOW-1469). The home page, ``/offline/`` and
+  the nav's wordmark read it too.
 - ``trip_url_templates`` — the ``__UUID__`` / ``__TOKEN__`` URL templates a
   trip's geometry and page are composed from. The map renders them onto
   ``#map``, and the /offline/ page's Update composes an area's trips from
@@ -29,6 +30,8 @@ from django.http import (
     HttpRequest,
 )
 from django.urls import reverse
+
+from apps.routes.services.map_3d_grant import map_3d_granted
 
 logger = logging.getLogger(__name__)
 
@@ -55,17 +58,32 @@ def map_modes_enabled(request: HttpRequest) -> bool:
     )
 
 
+# Where ``map_3d_view_enabled`` keeps its answer on the request: /map/ asks
+# twice (the view, then the nav's tag), and a granted visitor's answer costs
+# queries.
+_MAP_3D_VIEW_ATTR = "_snowdesk_map_3d_view"
+
+
 def map_3d_view_enabled(request: HttpRequest) -> bool:
     """Whether the map shows this request its 3D view (SNOW-1453).
 
     The gate ``apps/map/views.py`` renders ``#map-view-toggle`` on
-    (``map_3d_view``): the ``map_3d`` flag alone since SNOW-1451, so a
-    reader without ``map_modes`` gets 3D on the map's one dated view.
-    Short-circuited for an anonymous request, so a signed-out visitor pays
-    no waffle query and stays flat; Hugo chose signed-in readers only for
-    the launch (7 Nov 2026). Here so that ``/offline/`` and the nav's
-    ``{% map_3d_view_enabled %}`` tag can ask it without importing apps/map,
-    which only the URL modules may (tests/map/test_boundary.py).
+    (``map_3d_view``). Two ways in:
+
+    - a signed-in reader inside the ``map_3d`` flag (SNOW-1451: the flag
+      alone, so a reader without ``map_modes`` gets 3D on the map's one
+      dated view);
+    - anyone, signed in or not, whose session holds a route share's 3D
+      grant that still holds (SNOW-1469,
+      ``apps.routes.services.map_3d_grant``): the share is claimable and
+      its sharer is inside ``map_3d``.
+
+    A signed-out visitor with no grant pays no query and stays flat; Hugo
+    chose signed-in readers only for the launch (7 Nov 2026), with a shared
+    route as the one way past it. The answer is kept on the request. Here so
+    that ``/offline/`` and the nav's ``{% map_3d_view_enabled %}`` tag can
+    ask it without importing apps/map, which only the URL modules may
+    (tests/map/test_boundary.py).
 
     Args:
         request: The incoming HTTP request.
@@ -74,9 +92,17 @@ def map_3d_view_enabled(request: HttpRequest) -> bool:
         True when the map would pin elevation tiles for this reader.
 
     """
-    return bool(
+    cached = getattr(request, _MAP_3D_VIEW_ATTR, None)
+    if cached is not None:
+        return bool(cached)
+    enabled = bool(
         request.user.is_authenticated and waffle.flag_is_active(request, "map_3d")
     )
+    if not enabled:
+        session = getattr(request, "session", None)
+        enabled = session is not None and map_3d_granted(session)
+    setattr(request, _MAP_3D_VIEW_ATTR, enabled)
+    return enabled
 
 
 def trip_url_templates() -> dict[str, Any]:

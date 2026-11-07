@@ -2,7 +2,7 @@
 name: autonomy-roadmap
 description: Target state for Claude and Codex working without Hugo except on design decisions; human gates in scope, implement, merge-prs, release
 status: draft
-last-reviewed: 2026-11-05
+last-reviewed: 2026-11-07
 ---
 
 # Autonomy roadmap
@@ -36,7 +36,7 @@ Hugo's answers of 3 November 2026 on the end state:
 
 | Gate | Where | End state |
 |---|---|---|
-| Scope approval in the sidebar | `scope` Step 3; `resolve-scope-review` Steps 4 and 6; `work-on` Steps 2 and 2b | Removed, unless the ticket holds a design decision |
+| User-scope approval in the sidebar (what changes, not how) | `scope` Step 3; `resolve-scope-review` Steps 4 and 6; `work-on` Steps 2 and 2b | Removed, unless the ticket holds a design decision |
 | Batch confirmation; only Hugo can start it | `merge-prs` | Unsettled |
 | Nothing picks up `Ready for dev` | Missing routine | A routine that takes one ticket per run |
 
