@@ -1,7 +1,7 @@
 // @ts-check
 /*
  * static/js/map_view_3d.js — /map/'s 3-D view (SNOW-1449, SNOW-1455,
- * SNOW-1452).
+ * SNOW-1452, SNOW-1463).
  *
  * Loaded only for a reader in both the map_3d and map_modes flags
  * (public/map.html), after map.js and the two 3-D helpers it reuses:
@@ -63,14 +63,26 @@
  *   - Frames over budget. A requestAnimationFrame loop runs between
  *     movestart and moveend, and for as long as the timelapse plays
  *     (snowdesk:timelapse-state, SNOW-1452), in 3-D and not suspended for
- *     a drawing. Its intervals go to map_3d_core.createFrameWatch; two
- *     failing ~2 s windows in a row (frameWindowFails) go flat for the
- *     visit. During playback that exit's basemap swap also stops the
- *     timelapse (SNOW-58), which is what a desktop that cannot keep up
- *     needs. Timing
- *     starts after the first moveend that follows each tilt in, so the
- *     entering ease over a fresh style is not counted; the first interval
- *     of each run is dropped, and a hidden tab is never counted.
+ *     a drawing. Its intervals go to map_3d_core.createFrameWatch, which
+ *     trips on five failing ~2 s windows in a row (frameWindowFails). An
+ *     interval either of whose frames saw tiles loading
+ *     (!map.areTilesLoaded()) is not timed: close in, every pan fetches
+ *     and drapes new tiles, and those frames run long on a phone that
+ *     draws well (SNOW-1463). Timing starts after the first moveend that
+ *     follows each tilt in, so the entering ease over a fresh style is
+ *     not counted; the first interval of each run is dropped, and a
+ *     hidden tab is never counted. Each closed window goes to the debug
+ *     trace as `map 3d.window` while it records.
+ *     A trip asks rather than drops (SNOW-1463): the map stays in 3-D,
+ *     timing stops, and the toast says "3D is running slowly here" with
+ *     "Switch to 2D" and "Keep 3D", and no timer. Switch to 2D goes flat
+ *     for the visit (`left-slow`, then `why-slow` on the switch). Keep 3D,
+ *     the ×, or another line taking the toast's place all leave the
+ *     watchdog silenced for the visit, playback included; nothing is
+ *     stored. Leaving 3-D by any route takes the prompt away. During
+ *     timelapse playback a trip still goes flat at once with no prompt,
+ *     because playback cannot wait for a tap; that exit's basemap swap
+ *     also stops the timelapse (SNOW-58).
  *
  * OFFLINE (SNOW-1453). A download with terrain data pins the elevation
  * tiles too, and stamps its record with their template, so offline 3-D
@@ -143,6 +155,9 @@
     'left-slow': 'Back in 2D: 3D is too slow on this device.',
     'zoom-floor': '3D stops here. Switch to 2D to zoom out.',
     'test-device': 'Test this device',
+    'slow-prompt': '3D is running slowly here',
+    'switch-2d': 'Switch to 2D',
+    'keep-3d': 'Keep 3D',
   });
 
   /** @type {string} */
@@ -171,6 +186,13 @@
   let lastZoomOutAt = -Infinity;
   /** The frame watchdog tripped: no more 3-D this visit. */
   let tooSlow = false;
+  /**
+   * The reader was asked whether to keep 3-D on a slow device (SNOW-1463):
+   * the watchdog does not time anything again this visit. Never stored.
+   */
+  let silenced = false;
+  /** The slow prompt's buttons, while they are on the toast. */
+  let slowPrompt = /** @type {?HTMLElement} */ (null);
   /** The map's WebGL context is lost and not yet restored. */
   let contextLost = false;
   /** The 3D test is running (beginTest to endTest): the watchdog rests. */
@@ -405,7 +427,18 @@
 
   // ---- The frame watchdog ----------------------------------------------
 
-  const watch = core.createFrameWatch();
+  /**
+   * One closed watchdog window, onto the debug trace while it records.
+   *
+   * @param {object} closed What createFrameWatch's onWindow hears.
+   */
+  const traceWindow = (closed) => {
+    const log = win.pwaDebugLog;
+    if (!log || !log.on || typeof log.record !== 'function') return;
+    log.record('map', '3d.window', closed);
+  };
+
+  const watch = core.createFrameWatch({ onWindow: traceWindow });
   /** A move has ended since the last tilt in, so moves are timed now. */
   let timingArmed = false;
   /** @type {?number} */
@@ -414,9 +447,15 @@
   let lastFrameAt = /** @type {?number} */ (null);
   /** The run's first interval has been dropped. */
   let firstDropped = false;
+  /** The last frame saw tiles still loading. */
+  let lastFrameLoading = false;
 
   /** @returns {boolean} Whether a move now is one the watchdog times. */
-  const timing = () => view === THREE_D && !suspended && timingArmed && !testing && !document.hidden;
+  const timing = () =>
+    view === THREE_D && !suspended && timingArmed && !testing && !silenced && !document.hidden;
+
+  /** @returns {boolean} Whether the map is still fetching or draping tiles. */
+  const tilesLoading = () => typeof map.areTilesLoaded === 'function' && !map.areTilesLoaded();
 
   /** Stop the loop; the next run starts afresh. */
   const stopFrames = () => {
@@ -424,6 +463,27 @@
     frameRequest = null;
     lastFrameAt = null;
     firstDropped = false;
+    lastFrameLoading = false;
+  };
+
+  /** Go flat for the visit: the watchdog's own exit, or Switch to 2D. */
+  const dropForSlow = () => {
+    tooSlow = true;
+    exit({ reason: viewCore.REASONS.SLOW });
+  };
+
+  /**
+   * The watch tripped. During playback, flat at once; otherwise ask, and
+   * time nothing more whatever the answer.
+   */
+  const tripped = () => {
+    if (playing) {
+      dropForSlow();
+      return;
+    }
+    silenced = true;
+    stopFrames();
+    askSlow();
   };
 
   /** @param {number} at The frame's timestamp. */
@@ -433,16 +493,18 @@
       stopFrames();
       return;
     }
+    const loading = tilesLoading();
     if (lastFrameAt !== null) {
       // The first interval of a run carries the gesture's own start-up.
+      // An interval either end of which saw tiles loading is skipped.
       if (!firstDropped) firstDropped = true;
-      else if (watch.push(at - lastFrameAt)) {
-        tooSlow = true;
-        exit({ reason: viewCore.REASONS.SLOW });
+      else if (watch.push(at - lastFrameAt, loading || lastFrameLoading)) {
+        tripped();
         return;
       }
     }
     lastFrameAt = at;
+    lastFrameLoading = loading;
     frameRequest = window.requestAnimationFrame(onFrame);
   };
 
@@ -557,6 +619,7 @@
     if (view !== THREE_D) return;
     view = FLAT;
     suspended = false;
+    hideSlowPrompt();
     stopFrames();
     watch.reset();
     timingArmed = false;
@@ -824,26 +887,79 @@
     sync();
   };
 
+  /** @returns {{toast: HTMLElement, body: Element}|null} The map toast's parts. */
+  const toastParts = () => {
+    const toast = document.getElementById('map-sheet-toast');
+    const body = toast ? toast.querySelector('[data-toast-body]') : null;
+    return toast && body ? { toast, body } : null;
+  };
+
+  /**
+   * A text button for the line the toast is showing.
+   *
+   * @param {string} label
+   * @param {string} hook The data attribute that names it.
+   * @param {() => void} onClick
+   * @returns {HTMLButtonElement}
+   */
+  const toastAction = (label, hook, onClick) => {
+    const action = document.createElement('button');
+    action.type = 'button';
+    action.className = 'ml-2 font-semibold underline underline-offset-2';
+    action.setAttribute(hook, '');
+    action.textContent = label;
+    action.addEventListener('click', onClick);
+    return action;
+  };
+
   /**
    * Put a "Test this device" link on the line the toast is showing (the
    * `why-slow` line), which asks for the 3D test.
    */
   const offerTest = () => {
     if (!canTest().ok) return;
-    const toast = document.getElementById('map-sheet-toast');
-    const body = toast ? toast.querySelector('[data-toast-body]') : null;
-    if (!toast || !body) return;
-    const link = document.createElement('button');
-    link.type = 'button';
-    link.className = 'ml-2 font-semibold underline underline-offset-2';
-    link.setAttribute('data-map-3d-test-open', '');
-    link.textContent = STRINGS['test-device'];
-    link.addEventListener('click', () => {
-      toast.classList.add('hidden');
+    const parts = toastParts();
+    if (!parts) return;
+    parts.body.append(' ', toastAction(STRINGS['test-device'], 'data-map-3d-test-open', () => {
+      parts.toast.classList.add('hidden');
       document.dispatchEvent(new CustomEvent('snowdesk:map-3d-test-requested'));
-    });
-    body.append(' ', link);
+    }));
   };
+
+  /**
+   * Ask whether to keep 3-D (SNOW-1463): the line and its two buttons, on
+   * a toast with no timer. The watchdog is silenced before this is asked,
+   * so a prompt that goes unanswered is Keep 3D.
+   */
+  function askSlow() {
+    if (win.MapSheet && typeof win.MapSheet.toast === 'function') {
+      win.MapSheet.toast(STRINGS['slow-prompt'], { sticky: true });
+    }
+    const parts = toastParts();
+    if (!parts) return;
+    const group = document.createElement('span');
+    group.setAttribute('data-map-3d-slow-prompt', '');
+    group.className = 'whitespace-nowrap';
+    group.append(
+      toastAction(STRINGS['switch-2d'], 'data-map-3d-switch-2d', () => {
+        hideSlowPrompt();
+        dropForSlow();
+      }),
+      toastAction(STRINGS['keep-3d'], 'data-map-3d-keep', hideSlowPrompt),
+    );
+    parts.body.append(' ', group);
+    slowPrompt = group;
+  }
+
+  /** Take the prompt away, if it is still the line the toast shows. */
+  function hideSlowPrompt() {
+    const group = slowPrompt;
+    slowPrompt = null;
+    if (!group || !group.isConnected) return;
+    const parts = toastParts();
+    if (parts) parts.toast.classList.add('hidden');
+    group.remove();
+  }
 
   // ---- Boot -------------------------------------------------------------
 

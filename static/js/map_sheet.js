@@ -15,7 +15,8 @@
  * Three exports on ``window.MapSheet``:
  *
  *   attach(el, options)   → a controller for one sheet element.
- *   toast(message)        → reveal the shared failure toast.
+ *   toast(message, opts?) → reveal the shared failure toast; `{sticky: true}`
+ *                           keeps it up until dismissed or replaced.
  *   canQueueMutations()   → false when this device cannot persist a
  *                           queued mutation.
  *
@@ -140,9 +141,15 @@
    * includes it, and a missing toast must not break the caller's flow (the
    * callers are all failure paths already).
    *
+   * ``options.sticky`` arms no timer, for a line that asks something
+   * (map_view_3d.js's slow prompt, SNOW-1463): it stays until the "×", a
+   * choice, or the next message replaces it. Any timer still running for
+   * an earlier message is dropped either way.
+   *
    * @param {string} message
+   * @param {{sticky?: boolean}} [options]
    */
-  function toast(message) {
+  function toast(message, options) {
     var el = document.getElementById(TOAST_ID);
     if (!el) return;
 
@@ -150,7 +157,9 @@
     if (body) body.textContent = message;
 
     if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = undefined;
     el.classList.remove('hidden');
+    if (options && options.sticky) return;
     toastTimer = setTimeout(function () {
       el.classList.add('hidden');
       toastTimer = undefined;

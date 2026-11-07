@@ -2,7 +2,7 @@
 name: testing-scenarios
 description: Manual test scenarios — bulletin, map, search, accounts, PWA install/update/kill-switch, offline downloads, coverage, end-user offline run
 status: current
-last-reviewed: 2026-11-06
+last-reviewed: 2026-11-07
 ---
 
 # User Testing Scenarios -- Snowdesk
@@ -447,6 +447,7 @@ stays open in 3D, and 2D brings the reader's own basemap back. SNOW-1452:
 Conditions in 3D, with the danger fill as a light wash, problem terrain on
 the slopes and the timelapse playing in 3D. SNOW-1456: the 3D test, judged
 on a real GPU by the watchdog's rule, and the staff probe on /map/.
+SNOW-1463: the watchdog asks before it drops to 2D (steps 24–26).
 Prerequisite: sign in as `admin@snowdesk.dev`; choose OpenFreeMap in the
 layers menu.
 
@@ -466,7 +467,7 @@ layers menu.
 | 12 | Tap a region on the tilted map | Its sheet opens; weather symbols stand upright over the relief |
 | 13 | Step a day forward | The colours change, the map stays in 3D and the address bar keeps `view=3d` |
 | 14 | On a desktop, play the timelapse | It plays in 3D without stopping or going flat |
-| 15 | Pan and zoom for a minute on a phone that passed the probe | It stays in 3D: tiles arriving mid-gesture do not trip the slow-frame check |
+| 15 | SNOW-1463: pan and zoom for a minute close in (z13–14) on a phone that passed the test, and on an iPad, including while the relief is still sharpening | It stays in 3D with no line: frames while tiles load are not timed, and a steady 30 fps is under the bar |
 | 16 | Reload a bare http://localhost:8000/map/ | It opens flat, in either stored mode |
 | 17 | SNOW-1453: with a Zermatt region downloaded on **swisstopo winter** (D1; its label reads "…of terrain and 3D data") and DevTools → Network → **Offline**, zoom to Zermatt and tap "3D"; then pan to Verbier | Inside the downloaded area the map tilts into relief offline. Past its edge one line reads "Back in 2D: offline, 3D works only in a downloaded area."; tapping "3D" there says "3D needs a connection or a downloaded area" |
 | 18 | SNOW-1453: a region downloaded on OpenFreeMap instead (its label reads "…of terrain data", with no 3D), offline, zoom into it | "3D" stays disabled with "3D needs a connection or a downloaded area": 3D draws on swisstopo winter, which that download does not hold. The Manage downloads sheet does not call the area Incomplete for it |
@@ -475,6 +476,9 @@ layers menu.
 | 21 | Open http://localhost:8000/map/3d/?probe=1 | It lands on `/map/?probe=1&view=3d`, the test starts by itself with Details open and Steep terrain and SAC tours on; after it ends they are off again if they were off before |
 | 22 | SNOW-1450: open an old link, http://localhost:8000/map/3d/?share=abc&at=7.87,46.07,12.6,64,215&layers=steep | It lands on `/map/?view=3d` in 3D over Saas-Fee, tilted; `at` then leaves the address bar, which keeps `view=3d`. Signed out, the same link opens the flat map over Saas-Fee |
 | 23 | SNOW-1450: from your routes, open one, switch to 3D and choose Share in the route panel; open the copied link | The link ends `/routes/s/<token>/3d/`. It opens `/map/` in 3D framed on the route. In a private window, signed out, it opens the flat map framed on the same route and shows none of your other routes |
+| 24 | SNOW-1463: on a desktop, in 3D, open DevTools → Performance and set CPU to 20× slowdown; pan and turn the map continuously for about 15 s | The map stays in 3D and a line at the bottom reads "3D is running slowly here", with "Switch to 2D" and "Keep 3D"; it does not go away by itself |
+| 25 | Tap "Keep 3D", then keep panning for another 15 s | The line goes; the map stays in 3D and is not asked again on this visit (reload to be asked again) |
+| 26 | Reload, return to 3D and repeat step 24, then tap "Switch to 2D"; then tap "3D" | The map goes flat with "Back in 2D: 3D is too slow on this device."; tapping "3D" says "3D is too slow on this device" with "Test this device". Set CPU back to no throttling |
 
 ---
 
