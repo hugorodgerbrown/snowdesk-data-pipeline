@@ -1713,8 +1713,8 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="home-3d-card",
         label="Home 3D card",
         description=(
-            "The homepage's 3D card (SNOW-1454): a picture of a ski tour on the "
-            "3D map, the coverage line and a primary CTA into /map/ in 3D, "
+            "The homepage's 3D card (SNOW-1454): a picture of the 3D map up "
+            "the Mattertal, the coverage line and a primary CTA into /map/ in 3D, "
             "framed on HOME_3D_CAMERA. Only for readers in map_3d."
         ),
         kind="components",
