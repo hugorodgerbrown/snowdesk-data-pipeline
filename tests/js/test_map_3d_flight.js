@@ -10,7 +10,9 @@
  *   - load(geojson) leaves the page alone; {chrome: false} sets
  *     body.map-recording and unload clears it;
  *   - frame sets the data and the camera and resolves once idle with every
- *     tile loaded, waits through an idle with tiles still loading, jumps
+ *     tile loaded, waits through an idle with tiles still loading, settles
+ *     without an idle once the map has kept drawing with every tile in for
+ *     QUIET_MS (label placement that never rests), jumps
  *     again when MapLibre lowered the camera before the heights were in,
  *     and rejects when the cap passes first;
  *   - a reveal frame blends towards cameraForBounds by the fit's weight;
@@ -50,6 +52,7 @@ function fakeMap() {
       };
       map.on(type, wrapped);
     },
+    off: (type, fn) => { handlers[type] = (handlers[type] || []).filter((h) => h !== fn); },
     fire: (type, event = {}) => { for (const fn of [...(handlers[type] || [])]) fn(event); },
     listeners: (type) => (handlers[type] || []).length,
     addSource: vi.fn((id, spec) => { sources[id] = { spec, setData: vi.fn() }; }),
@@ -66,6 +69,10 @@ function fakeMap() {
     triggerRepaint: vi.fn(),
     resize: vi.fn(),
     areTilesLoaded: vi.fn(() => map.tilesLoaded),
+    loaded: () => map.tilesLoaded,
+    getStyle: () => ({ sources: { base: {}, dem: {} } }),
+    isSourceLoaded: (id) => map.tilesLoaded || id !== 'dem',
+    isMoving: () => false,
     cameraForBounds: vi.fn(() => ({ center: { lng: 7.74, lat: 45.94 }, zoom: 13, bearing: 0 })),
   };
   return map;
@@ -203,6 +210,46 @@ describe('frame', () => {
     expect(done).toBe(true);
   });
 
+  it('settles without an idle when the map keeps drawing with every tile in', async () => {
+    // At some cameras over terrain MapLibre's label placement never rests,
+    // so the map keeps rendering and idle never fires.
+    const flight = await load();
+    flight.load(ROUTE);
+    vi.useFakeTimers();
+    let done = false;
+    const pending = flight.frame(0.58).then(() => { done = true; });
+    env.map.fire('render');
+    env.map.fire('render');
+    vi.advanceTimersByTime(flight.QUIET_MS);
+    await Promise.resolve();
+    expect(done).toBe(false);
+    env.map.fire('render');
+    await pending;
+    expect(done).toBe(true);
+    expect(env.map.listeners('render')).toBe(0);
+    expect(env.map.listeners('idle')).toBe(0);
+  });
+
+  it('counts no quiet renders while tiles are still loading', async () => {
+    const flight = await load();
+    flight.load(ROUTE);
+    vi.useFakeTimers();
+    env.map.tilesLoaded = false;
+    let done = false;
+    flight.frame(0.58).then(() => { done = true; });
+    for (let i = 0; i < 5; i += 1) {
+      vi.advanceTimersByTime(flight.QUIET_MS);
+      env.map.fire('render');
+    }
+    await Promise.resolve();
+    expect(done).toBe(false);
+    env.map.tilesLoaded = true;
+    env.map.fire('render');
+    env.map.fire('render');
+    await Promise.resolve();
+    expect(done).toBe(false);
+  });
+
   it('jumps again once settled if MapLibre lowered the camera out of the ground', async () => {
     // Before the centre's elevation tile is in, MapLibre reads its height
     // as 0 and drops the pitch and zoom to keep the camera above ground.
@@ -235,7 +282,20 @@ describe('frame', () => {
     flight.load(ROUTE);
     vi.useFakeTimers();
     const pending = flight.frame(0.5);
-    const assertion = expect(pending).rejects.toThrow('frame t=0.5 not settled after 60 s');
+    const assertion = expect(pending).rejects.toThrow(
+      'frame t=0.5 not settled after 60 s (every tile loaded, the map still drawing)',
+    );
+    vi.advanceTimersByTime(flight.FRAME_CAP_MS);
+    await assertion;
+  });
+
+  it('names the sources still loading when the cap passes', async () => {
+    const flight = await load();
+    flight.load(ROUTE);
+    vi.useFakeTimers();
+    env.map.tilesLoaded = false;
+    const pending = flight.frame(0.5);
+    const assertion = expect(pending).rejects.toThrow('(tiles still loading: dem)');
     vi.advanceTimersByTime(flight.FRAME_CAP_MS);
     await assertion;
   });
