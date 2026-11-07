@@ -14,9 +14,9 @@ Covers:
   - The daily read (SNOW-1357): under the hero on a rated day, linking the
     biggest swing to its dated bulletin; absent off season; cached; never
     built for a map-state 301.
-  - The temporary 3D branding, only inside the map_3d flag: the nav
-    wordmark wearing specs, and the tilted 3D map under the hero linking to
-    /map/?view=3d.
+  - The 3D branding, only for a reader who can open the map in 3D (map_3d,
+    SNOW-1451): the nav wordmark wearing specs, and the 3D card under the
+    hero (SNOW-1454) linking to the map in 3D over Saas-Fee.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ import re
 from pathlib import Path
 
 import pytest
+from django.conf import settings
 from django.core.cache import cache
 from django.db import connection
 from django.test import Client
@@ -89,38 +90,125 @@ class TestHomepage:
 
 
 class TestHomepage3dBranding:
-    """The 3D branding shows only to readers who can open the map in 3D."""
+    """SNOW-1454: the 3D card shows only to readers who can open the map in 3D."""
+
+    MAP_3D_URL = "/map/?mode=terrain&view=3d&at=7.87,46.07,12.6,64,215"
+    # As the template renders it, autoescaped.
+    MAP_3D_HREF = MAP_3D_URL.replace("&", "&amp;")
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self) -> None:
+        """Each test builds its own daily read."""
+        cache.clear()
+
+    def _rated_day(self) -> None:
+        """Rate one region today, so the daily read renders."""
+        place = MicroRegionFactory.create(region_id="CH-4115")
+        RegionDayRatingFactory.create(
+            region=place,
+            date=timezone.localdate() - datetime.timedelta(days=1),
+            max_rating=RegionDayRating.Rating.MODERATE,
+        )
+        RegionDayRatingFactory.create(
+            region=place,
+            date=timezone.localdate(),
+            max_rating=RegionDayRating.Rating.HIGH,
+        )
+
+    @staticmethod
+    def _card(body: str) -> str:
+        """Return the card's own HTML, up to its closing section."""
+        start = body.index('data-testid="home-3d-card"')
+        return body[start : body.index("</section>", start)]
 
     @override_flag("map_3d", active=True)
     @override_flag("map_modes", active=False)
-    def test_flag_on_shows_the_specs_wordmark_and_3d_map(self, client: Client) -> None:
-        """With map_3d alone (SNOW-1451) the nav wears the specs and the hero shows 3D."""
+    def test_the_card_renders_between_the_hero_and_the_daily_read(
+        self, client: Client
+    ) -> None:
+        """With map_3d alone, signed in: the card, in place, with its copy and CTA."""
+        self._rated_day()
         client.force_login(UserFactory.create())
         body = client.get("/").content.decode()
 
         assert 'data-testid="wordmark-3d"' in body
-        assert 'data-testid="home-3d-image"' in body
-        assert f'href="{reverse("public:map")}?view=3d"' in body
-        assert reverse("public:map_3d") not in body
-        assert "Stay avi-savvy" in body
+        assert (
+            body.index('id="home-heading"')
+            < body.index('data-testid="home-3d-card"')
+            < body.index('data-testid="home-daily-read"')
+            < body.index('data-testid="home-features"')
+        )
+        card = self._card(body)
+        assert "New · 3D" in card
+        assert "See the mountain before you go" in card
+        assert (
+            "Tilt the map and the relief stands up: the bowls, ridges and couloirs "
+            "your line crosses, with your own routes draped over the ground."
+        ) in card
+        assert "3D covers Switzerland for now" in card
+        assert f'href="{self.MAP_3D_HREF}"' in card
+        assert 'id="home-open-3d"' in card
+        assert "3-D" not in card
+
+    @override_flag("map_3d", active=True)
+    def test_the_picture_is_eager_with_both_captures(self, client: Client) -> None:
+        """A <picture> naming both captures, sized and described, not lazy."""
+        client.force_login(UserFactory.create())
+        card = self._card(client.get("/").content.decode())
+
+        assert "img/home/3d-mobile.jpg" in card
+        assert "img/home/3d-desktop.jpg" in card
+        assert 'width="780"' in card
+        assert 'height="1040"' in card
+        assert 'alt="The Snowdesk map in 3D: Saas-Fee' in card
+        assert 'loading="lazy"' not in card
+
+    @pytest.mark.parametrize("flag", [True, False])
+    def test_the_old_tilted_hero_image_is_gone(
+        self, client: Client, flag: bool
+    ) -> None:
+        """The temporary hero image (#1504) is gone whatever the flag."""
+        client.force_login(UserFactory.create())
+        with override_flag("map_3d", active=flag):
+            body = client.get("/").content.decode()
+
+        assert 'data-testid="home-3d-image"' not in body
 
     @override_flag("map_3d", active=False)
     def test_flag_off_keeps_the_plain_hero(self, client: Client) -> None:
-        """Outside the flag the hero is unchanged and never links to 3D."""
+        """Outside the flag there is no card and no link to 3D."""
+        client.force_login(UserFactory.create())
         body = client.get("/").content.decode()
 
         assert 'data-testid="wordmark-3d"' not in body
-        assert 'data-testid="home-3d-image"' not in body
-        assert "?view=3d" not in body
+        assert 'data-testid="home-3d-card"' not in body
+        assert "view=3d" not in body
         assert "Stay avi-savvy" in body
 
     @override_flag("map_3d", active=True)
     def test_anonymous_reader_never_sees_it(self, client: Client) -> None:
-        """A signed-out visitor gets the plain hero even with the flag on."""
+        """A signed-out visitor gets no card even with the flag on."""
         body = client.get("/").content.decode()
 
         assert 'data-testid="wordmark-3d"' not in body
+        assert 'data-testid="home-3d-card"' not in body
+        assert "view=3d" not in body
         assert "Stay avi-savvy" in body
+
+    def test_the_card_follows_the_gate_not_the_flags(
+        self, client: Client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The card asks map_3d_view_enabled, so patching it shows the card."""
+        monkeypatch.setattr("apps.public.views.map_3d_view_enabled", lambda _r: True)
+        body = client.get("/").content.decode()
+
+        assert 'data-testid="home-3d-card"' in body
+        assert f'href="{self.MAP_3D_HREF}"' in body
+
+    @pytest.mark.parametrize("name", ["3d-mobile.jpg", "3d-desktop.jpg"])
+    def test_both_captures_exist(self, name: str) -> None:
+        """The two pictures the card names are in static/img/home/."""
+        assert (Path(settings.BASE_DIR) / "static" / "img" / "home" / name).is_file()
 
     @pytest.mark.parametrize(
         "query", ["utm_source=newsletter&utm_medium=email", "ref=producthunt"]
