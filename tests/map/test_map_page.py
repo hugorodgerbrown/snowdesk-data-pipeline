@@ -3442,7 +3442,11 @@ def test_a_signed_out_3d_link_gets_the_flat_map() -> None:
 
 @pytest.mark.django_db
 def test_a_route_share_visitor_outside_the_flag_gets_no_3d_link() -> None:
-    """SNOW-1450: a followed share no longer brings the old 3D roundel."""
+    """SNOW-1450: a followed share no longer brings the old 3D roundel.
+
+    And with its sharer outside ``map_3d`` the share's 3D grant (SNOW-1469)
+    opens nothing either, so the map stays flat.
+    """
     share = RouteShareFactory.create()
     client = Client()
     client.get(reverse("routes:share_redirect_3d", args=[share.token]))

@@ -8,7 +8,8 @@ are still out there, in chats and bookmarks, so the address answers a 302:
 
 * ``?route_share=<token>`` goes to the route share's own 3D follow,
   ``/routes/s/<token>/3d/`` (``routes:share_redirect_3d``), which keeps its
-  404/410/429 checks, its budget and its seating;
+  404/410/429 checks, its budget and its seating, the session's 3D grant
+  included (SNOW-1469), so an old route link still opens 3D signed out;
 * anything else goes to ``/map/?…&view=3d``, carrying ``probe`` and ``at``.
 
 The old page's ``share`` token and its ``layers`` switches are dropped: the

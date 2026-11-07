@@ -49,8 +49,10 @@ import pytest
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
+from waffle.testutils import override_flag
 
 from apps.routes.models import Route
+from apps.routes.services.map_3d_grant import GRANT_SESSION_KEY
 from apps.routes.services.shares import PENDING_SESSION_KEY
 from tests.factories import RouteFactory, RouteShareFactory, UserFactory
 
@@ -385,14 +387,71 @@ class TestRouteShareRedirect3d:
 
         assert response["Location"] == f"/map/?route_share={share.token}&view=3d"
 
-    def test_any_live_share_opens_in_3d(self, client: Client) -> None:
-        """Even the example route's: the retired Map3dShare no longer gates it."""
+    def test_any_live_share_redirects_to_the_3d_view(self, client: Client) -> None:
+        """Even the example route's, though its grant opens no 3D (SNOW-1469)."""
         share = RouteShareFactory.create(is_example=True)
 
         response = client.get(f"/routes/s/{share.token}/3d/")
 
         assert response.status_code == 302
         assert response["Location"].endswith("&view=3d")
+
+    def test_the_follow_seats_the_3d_grant(self, client: Client) -> None:
+        """A real navigation records the token as the session's 3D grant."""
+        share = RouteShareFactory.create()
+
+        client.get(f"/routes/s/{share.token}/3d/", HTTP_SEC_FETCH_DEST="document")
+
+        assert client.session[GRANT_SESSION_KEY] == share.token
+
+    @pytest.mark.parametrize(
+        "headers",
+        [{"sec-fetch-dest": "image"}, {"sec-purpose": "prefetch"}],
+    )
+    def test_a_passive_load_seats_no_grant(
+        self, client: Client, headers: dict[str, str]
+    ) -> None:
+        """An <img> or a prefetch pointed at the link grants nothing."""
+        share = RouteShareFactory.create()
+
+        client.get(f"/routes/s/{share.token}/3d/", headers=headers)
+
+        assert GRANT_SESSION_KEY not in client.session
+
+    def test_head_seats_no_grant(self, client: Client) -> None:
+        """A link checker's HEAD grants nothing."""
+        share = RouteShareFactory.create()
+
+        client.head(f"/routes/s/{share.token}/3d/")
+
+        assert GRANT_SESSION_KEY not in client.session
+
+    def test_the_flat_follow_seats_no_grant(self, client: Client) -> None:
+        """Only the 3D link grants 3D."""
+        share = RouteShareFactory.create()
+
+        client.get(_redirect_url(share.token), HTTP_SEC_FETCH_DEST="document")
+
+        assert GRANT_SESSION_KEY not in client.session
+
+    def test_an_expired_share_seats_no_grant(self, client: Client) -> None:
+        """410, and nothing written."""
+        share = RouteShareFactory.create(expires_at=timezone.now() - timedelta(days=1))
+
+        response = client.get(f"/routes/s/{share.token}/3d/")
+
+        assert response.status_code == 410
+        assert GRANT_SESSION_KEY not in client.session
+
+    def test_a_signed_out_visitor_then_gets_the_3d_map(self, client: Client) -> None:
+        """After the follow, /map/ renders the 3D switch for a signed-out visitor."""
+        share = RouteShareFactory.create()
+        with override_flag("map_3d", active=True):
+            client.get(f"/routes/s/{share.token}/3d/", HTTP_SEC_FETCH_DEST="document")
+            page = client.get("/map/").content.decode()
+
+        assert 'id="map-view-toggle"' in page
+        assert 'data-map-view-enabled="true"' in page
 
     def test_the_token_lands_in_the_session(self, client: Client) -> None:
         """The same pending token the flat follow seats."""
