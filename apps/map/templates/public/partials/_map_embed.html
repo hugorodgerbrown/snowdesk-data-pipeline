@@ -184,8 +184,9 @@ Optional context:
     {# SNOW-1394: the Dated / Terrain toggle, behind the map_modes flag.    #}
     {# map.js reads the boot mode before it installs a layer.              #}
     data-map-modes-enabled="{{ map_modes_enabled|yesno:'true,false' }}"
-    {# SNOW-1449: the 3-D view on this page, for a reader in map_3d and     #}
-    {# map_modes. map.js reads it for the boot view; map_view_3d.js draws it. #}
+    {# SNOW-1449: the 3-D view on this page, for a reader in map_3d, with   #}
+    {# or without map_modes (SNOW-1451). map.js reads it for the boot view; #}
+    {# map_view_3d.js draws it.                                             #}
     data-map-view-enabled="{{ map_3d_view|yesno:'true,false' }}"
     data-route-claim-url-template="{{ route_claim_url_template }}"
     data-routes-upload-eligible="{{ routes_upload_eligible|yesno:'true,false' }}"
@@ -424,9 +425,9 @@ Optional context:
                     {% include "includes/_icon_layers.html" %}
                 </button>
             </div>
-            {# SNOW-1449: for a reader in map_3d and map_modes, the 3D roundel     #}
+            {# SNOW-1449: for a reader in map_3d (SNOW-1451), the 3D roundel        #}
             {# tilts THIS map into 3-D, in either mode since SNOW-1452 (map.css     #}
-            {# shows it once map_mode.js sets :root[data-map-mode]). It is a 3D | 2D segmented switch: #}
+            {# shows it once map_view_3d.js sets :root[data-map-view]). It is a 3D | 2D segmented switch: #}
             {# both views always show and the raised one is current (aria-pressed   #}
             {# picks it), so it never names the view you are not in. Unavailable,  #}
             {# it is aria-disabled and a tap says why. map_view_3d.js drives it and warms #}
@@ -2124,7 +2125,7 @@ Optional context:
             </p>
         </li>
         {# SNOW-1449: the compass, always shown, and the 3D roundel, shown     #}
-        {# for a reader in map_3d and map_modes, in either mode since        #}
+        {# for a reader in map_3d (SNOW-1451), in either mode since          #}
         {# SNOW-1452 (a step whose target is hidden is dropped).              #}
         <li data-help-target="#map-compass" data-help-chapter="move" data-help-title='{% trans "North" %}'>
             <p data-help-body>{% trans "The needle points north. Tap it to turn the map back to north." %}</p>

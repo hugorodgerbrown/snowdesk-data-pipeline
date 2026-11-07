@@ -440,16 +440,18 @@ the "?" only replayed the tour).
 
 ### Scenario MS10: Tilt the map into 3D, in Terrain and in Conditions
 
-**Goal**: Verify /map/'s 3D view (SNOW-1449, behind the `map_3d` and
-`map_modes` flags): the 3D | 2D switch lifts the map into relief on the
+**Goal**: Verify /map/'s 3D view (SNOW-1449, behind the `map_3d` flag; since
+SNOW-1451 it no longer needs `map_modes`): the 3D | 2D switch lifts the map into relief on the
 swisstopo winter map, the compass appears once the map turns, a sheet
 stays open in 3D, and 2D brings the reader's own basemap back. SNOW-1452:
 Conditions in 3D, with the danger fill as a light wash, problem terrain on
 the slopes and the timelapse playing in 3D. SNOW-1456: the 3D test, judged
 on a real GPU by the watchdog's rule, and the staff probe on /map/.
 SNOW-1463: the watchdog asks before it drops to 2D (steps 24–26).
-Prerequisite: sign in as `admin@snowdesk.dev`; choose OpenFreeMap in the
-layers menu.
+Prerequisite for steps 1–9: sign in as `admin@snowdesk.dev` (a superuser,
+so in both `map_3d` and `map_modes`); choose OpenFreeMap in the layers menu.
+Step 9a needs a second, non-superuser account with `map_3d` on for it and
+`map_modes` off.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
@@ -462,6 +464,7 @@ layers menu.
 | 7 | Zoom out to z9 and keep scrolling out | The zoom stops, and one line reads "3D stops here. Switch to 2D to zoom out." |
 | 8 | Tap "2D" | The relief and the tilt go, the bearing stays, OpenFreeMap comes back and `view=3d` leaves the address bar |
 | 9 | Tilt the flat map with two fingers (or ctrl-drag) | The map enters 3-D again |
+| 9a | SNOW-1451: signed in as a non-superuser with `map_3d` on and `map_modes` off, open http://localhost:8000/map/?view=3d at Verbier | The map tilts into relief in Conditions; there is no Terrain toggle, and the 3D \| 2D switch shows under the layers roundel. The nav's wordmark wears the 3D specs |
 | 10 | In 3D, switch to Conditions | The map stays in 3D with no line; the danger colour is a light wash with a stronger coloured edge, from z9, and the rock hachures show through it |
 | 11 | Turn on "Sync with map terrain" and zoom to Saas-Fee (z12.6) | Problem terrain is painted on the slopes of the relief; at a steep pitch, check whether distant ground shows neither fill nor slopes |
 | 12 | Tap a region on the tilted map | Its sheet opens; weather symbols stand upright over the relief |

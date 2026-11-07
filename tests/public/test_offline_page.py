@@ -364,9 +364,10 @@ class TestElevationTiles:
     ) -> None:
         """The template the map's 3D toggle carries, on the toggle's own gate."""
         settings.MAP_3D_DEM_TILE_URL = "https://tiles.example/dem/{z}/{x}/{y}.webp"
+        # SNOW-1451: map_3d alone, without map_modes.
         with (
             override_flag("map_3d", active=True),
-            override_flag("map_modes", active=True),
+            override_flag("map_modes", active=False),
         ):
             html = (
                 _signed_in_client().get(reverse("public:offline_page")).content.decode()
@@ -374,9 +375,7 @@ class TestElevationTiles:
 
         assert 'data-dem-tile-url="https://tiles.example/dem/{z}/{x}/{y}.webp"' in html
 
-    @pytest.mark.parametrize(
-        ("map_3d", "map_modes"), [(False, True), (True, False), (False, False)]
-    )
+    @pytest.mark.parametrize(("map_3d", "map_modes"), [(False, True), (False, False)])
     def test_it_renders_none_without_the_3d_view(
         self, settings: Any, map_3d: bool, map_modes: bool
     ) -> None:

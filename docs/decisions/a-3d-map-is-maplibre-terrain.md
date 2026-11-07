@@ -454,3 +454,29 @@ told "smooth" by one rule and sent back to 2D by another.
   layers SNOW-1448's budget was measured on); Share sends the full JSON. The
   probe left `map_3d.js`, and `/map/3d/?probe=1` redirects there; since
   SNOW-1450 it does so for anyone, as the whole of `/map/3d/` does.
+
+## 3D needs only map_3d (SNOW-1451, 7 Nov 2026)
+
+Until SNOW-1451, 3D was for readers in both `map_3d` and `map_modes`, since
+it began as part of Terrain. SNOW-1452 put it in both modes, so nothing in
+the 3D view still needs the modes. Hugo decided to unpair the flags so that
+3D can open to every signed-in reader while the Conditions | Terrain toggle
+stays with superusers.
+
+- **One rule.** `map_shared.map_3d_view_enabled` is the `map_3d` flag alone,
+  still short-circuited for an anonymous request. `/map/`, the home page's
+  3D card and `/offline/`'s elevation template already read it. The nav's
+  wordmark nested `{% flag "map_3d" %}{% flag "map_modes" %}` and now reads
+  it through `{% map_3d_view_enabled %}` (`apps/public/templatetags/map_flags.py`).
+  A tag, not a context value, because every view that renders the nav would
+  otherwise pass it.
+- **Two places assumed the modes.** `map.css` showed the switch only under
+  `:root[data-map-mode]`, which only `map_mode.js` sets. It now keys on
+  `:root[data-map-view]`, which `map_view_3d.js` sets at boot. `map.js` boot
+  required `MAP_MODES_ENABLED` before reading `?view=3d`; it no longer does.
+  Without the modes a reader's map is the one dated view, and 3D drapes it
+  as in Conditions.
+- **Signed-in readers only.** Hugo chose on 7 Nov 2026 that signed-out
+  visitors stay flat when `map_3d` goes on for everyone. The anonymous guard
+  keeps those pages free of waffle queries. 3D for signed-out visitors would
+  be its own ticket, which accepts that query.

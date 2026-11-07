@@ -215,7 +215,7 @@ in addition to the shared map assets.
     {# module in development and tests. Runs after base.html's scripts,    #}
     {# as these always have.                                                #}
     {% js_bundle "map" %}
-    {# SNOW-1449: a reader in map_3d and map_modes gets the 3D view on this #}
+    {# SNOW-1449: a reader in map_3d (SNOW-1451) gets the 3D view on this   #}
     {# page (map_view_3d.js), which the terrain helper installs its relief  #}
     {# for. SNOW-1450: the only 3D there is; /map/3d/ redirects here.       #}
     {% if map_3d_view %}

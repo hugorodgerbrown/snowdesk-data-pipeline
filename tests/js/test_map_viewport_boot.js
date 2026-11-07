@@ -121,10 +121,11 @@ function stubMapLibre() {
   return map;
 }
 
-function buildFixture({ view = false } = {}) {
-  // SNOW-1450: `view` is a reader in map_3d and map_modes, whose #map says
-  // the modes and the 3D view are on.
-  const flags = view ? 'data-map-modes-enabled="true" data-map-view-enabled="true"' : '';
+function buildFixture({ view = false, modes = true } = {}) {
+  // SNOW-1450: `view` is a reader in map_3d, whose #map says the 3D view is
+  // on; `modes` adds map_modes (SNOW-1451: 3D no longer needs it).
+  const viewFlag = view ? 'data-map-view-enabled="true"' : '';
+  const flags = view && modes ? `data-map-modes-enabled="true" ${viewFlag}` : viewFlag;
   document.body.innerHTML = `
     <div id="map" ${flags}
          data-regions-url="/api/regions.geojson"
@@ -146,15 +147,16 @@ function buildFixture({ view = false } = {}) {
  *
  * @param {string} url - the address to boot at.
  * @param {?string} stored - the raw viewport value, or null for none.
- * @param {{view?: boolean}} [options] - `view` boots a reader in the 3D view's
- *     flags, with the mode and coverage cores loaded.
+ * @param {{view?: boolean, modes?: boolean}} [options] - `view` boots a reader
+ *     in the 3D view's flag, with the mode and coverage cores loaded; `modes`
+ *     false leaves map_modes off (SNOW-1451).
  * @returns {Promise<Object>} The MapLibre stub.
  */
-async function bootWith(url, stored, { view = false } = {}) {
+async function bootWith(url, stored, { view = false, modes = true } = {}) {
   localStorage.clear();
   if (stored !== null) localStorage.setItem(STORAGE_KEY, stored);
   window.history.replaceState({}, '', url);
-  buildFixture({ view });
+  buildFixture({ view, modes });
   const mapStub = stubMapLibre();
   vi.stubGlobal('fetch', vi.fn((input) => {
     const body = String(input).includes('regions.geojson') ? REGIONS_GEOJSON : {};
@@ -336,6 +338,16 @@ describe('a linked camera (SNOW-1450)', () => {
 
     expect(options.pitch).toBe(64);
     expect(options.maxPitch).toBe(85);
+  });
+
+  it('boots in 3D with map_3d alone, without the modes (SNOW-1451)', async () => {
+    const options = cameraOptions(await bootWith(
+      `/?at=${SAAS_FEE_AT}&view=3d`, null, { view: true, modes: false },
+    ));
+
+    expect(options.pitch).toBe(64);
+    expect(options.maxPitch).toBe(85);
+    expect(location.search).toBe('?view=3d');
   });
 
   it('boots a ?view=3d flat when it lies outside the coverage', async () => {

@@ -1,11 +1,14 @@
 """
 apps/public/map_shared.py — What the map shares with the help and offline pages.
 
-Two answers the map and an apps/public page must give identically:
+Three answers the map and an apps/public page must give identically:
 
 - ``map_modes_enabled`` — whether a request gets the map's Dated / Terrain
   toggle. The /help/ page reads it too, so the topic describing the toggle
   shows exactly where the toggle does.
+- ``map_3d_view_enabled`` — whether a request gets the map's 3D view: the
+  ``map_3d`` flag alone (SNOW-1451), for signed-in readers. The home page,
+  ``/offline/`` and the nav's wordmark read it too.
 - ``trip_url_templates`` — the ``__UUID__`` / ``__TOKEN__`` URL templates a
   trip's geometry and page are composed from. The map renders them onto
   ``#map``, and the /offline/ page's Update composes an area's trips from
@@ -56,10 +59,13 @@ def map_3d_view_enabled(request: HttpRequest) -> bool:
     """Whether the map shows this request its 3D view (SNOW-1453).
 
     The gate ``apps/map/views.py`` renders ``#map-view-toggle`` on
-    (``map_3d_view``): the ``map_3d`` flag, short-circuited for an
-    anonymous request, and the modes. Here so that ``/offline/``
-    can ask it without importing apps/map, which only the URL modules may
-    (tests/map/test_boundary.py).
+    (``map_3d_view``): the ``map_3d`` flag alone since SNOW-1451, so a
+    reader without ``map_modes`` gets 3D on the map's one dated view.
+    Short-circuited for an anonymous request, so a signed-out visitor pays
+    no waffle query and stays flat; Hugo chose signed-in readers only for
+    the launch (7 Nov 2026). Here so that ``/offline/`` and the nav's
+    ``{% map_3d_view_enabled %}`` tag can ask it without importing apps/map,
+    which only the URL modules may (tests/map/test_boundary.py).
 
     Args:
         request: The incoming HTTP request.
@@ -69,9 +75,7 @@ def map_3d_view_enabled(request: HttpRequest) -> bool:
 
     """
     return bool(
-        request.user.is_authenticated
-        and waffle.flag_is_active(request, "map_3d")
-        and map_modes_enabled(request)
+        request.user.is_authenticated and waffle.flag_is_active(request, "map_3d")
     )
 
 

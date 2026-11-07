@@ -2,8 +2,8 @@
 /*
  * static/js/map_3d_test.js — "Test 3D on this device" on /map/ (SNOW-1456).
  *
- * Loaded after map_view_3d.js, for a reader in the map_3d and map_modes
- * flags (public/map.html). It runs the frame-time probe that /map/3d/
+ * Loaded after map_view_3d.js, for a signed-in reader in the map_3d flag
+ * (public/map.html). It runs the frame-time probe that /map/3d/
  * carried (SNOW-1448) on the reader's own map, as it is — their basemap's
  * overlays and switches — and tells them, in one line, how well this
  * device draws 3D (docs/decisions/a-3d-map-is-maplibre-terrain.md).

@@ -8,7 +8,7 @@ Here for what jsdom cannot answer: that MapLibre's own terrain goes on and
 comes off a real WebGL map through the 3D roundel, the swisstopo winter
 swap and the reader's basemap coming back; and (SNOW-1452) that in
 Conditions the danger fill drapes on the relief and a real tap on the
-tilted map still hits it. Every rule (availability, the URL, the zoom
+tilted map still hits it, for a reader in map_3d alone (SNOW-1451). Every rule (availability, the URL, the zoom
 floor, both modes, offline or outside Switzerland, route drawing, the
 timelapse) is in tests/js/test_map_view_core.js and
 tests/js/test_map_view_3d.js, and the 3-D paint in
@@ -63,16 +63,21 @@ _VERBIER = '{"lng": 7.10, "lat": 46.10, "zoom": 10.5, "bearing": 0, "pitch": 0}'
 def test_conditions_drapes_in_3d_and_a_tilted_tap_picks_the_region(
     map_3d_page: Map3dPage, _load_test_data: None
 ) -> None:
-    """SNOW-1452: Conditions opens in 3-D, the fill drapes, and a real tap hits it."""
+    """SNOW-1452: Conditions opens in 3-D, the fill drapes, and a real tap hits it.
+
+    SNOW-1451: under map_3d alone, with no modes on the page, so the switch's
+    visibility (map.css keys it on :root[data-map-view]) is checked here too.
+    """
     page = map_3d_page.page
     page.add_init_script(f"localStorage.setItem('snowdesk.map.viewport', '{_VERBIER}')")
-    with override_flag("map_3d", active=True), override_flag("map_modes", active=True):
+    with override_flag("map_3d", active=True), override_flag("map_modes", active=False):
         page.goto(f"{map_3d_page.live_server_url}/map/?view=3d")
         page.wait_for_function(
             "() => window.pwaMapView && MAP && MAP.loaded()"
             " && (MAP.getTerrain() || {}).source === 'map-3d-dem' && MAP.getPitch() > 30"
         )
-        assert page.evaluate("window.pwaMapMode.get()") == "dated"
+        assert page.evaluate("typeof window.pwaMapMode") == "undefined"
+        expect(page.locator("#map-view-toggle")).to_be_visible()
         # The wash: one per-feature case, no zoom fade, drawn over the relief.
         page.wait_for_function(
             "() => !!MAP.getLayer('regions-fill')"

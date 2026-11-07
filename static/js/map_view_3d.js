@@ -3,7 +3,7 @@
  * static/js/map_view_3d.js — /map/'s 3-D view (SNOW-1449, SNOW-1455,
  * SNOW-1452, SNOW-1463).
  *
- * Loaded only for a reader in both the map_3d and map_modes flags
+ * Loaded only for a signed-in reader in the map_3d flag (SNOW-1451)
  * (public/map.html), after map.js and the two 3-D helpers it reuses:
  * map_3d_core.js (the elevation source, the terrain, sky and sunlight
  * specs, the opening tilt and the pitch and pixel-ratio ceilings) and

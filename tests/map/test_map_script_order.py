@@ -245,8 +245,8 @@ def test_map_view_scripts_load_in_their_places() -> None:
     from ``terrain_filter_core.js``, so it loads after that core and before
     the bundle, for everyone. ``map_compass.js`` reads the map at parse
     time, so it follows the bundle, for everyone. ``map_view_3d.js``, only
-    inside map_3d and map_modes, follows the bundle and the two 3-D helpers
-    it reads at parse time. None of them sits inside the contiguous run.
+    inside map_3d, follows the bundle and the two 3-D helpers it reads at
+    parse time. None of them sits inside the contiguous run.
     """
     client = Client()
     client.force_login(UserFactory.create())
@@ -266,6 +266,23 @@ def test_map_view_scripts_load_in_their_places() -> None:
     span = rendered[positions[0] : positions[-1] + 1]
     for outside in ("map_view_core.js", "map_view_3d.js", "map_compass.js"):
         assert outside not in span, outside
+
+
+@pytest.mark.django_db
+def test_map_view_scripts_load_with_map_3d_alone() -> None:
+    """SNOW-1451: without map_modes the runner still follows the bundle and helpers.
+
+    The 3D test follows the runner.
+    """
+    client = Client()
+    client.force_login(UserFactory.create())
+    with override_flag("map_3d", active=True), override_flag("map_modes", active=False):
+        content = client.get(reverse("public:map")).content.decode()
+    rendered = _SCRIPT_SRC_RE.findall(content)
+    runner_at = rendered.index("map_view_3d.js")
+    for before in (BOOT_FILE, "map_3d_core.js", "map_3d_terrain.js"):
+        assert rendered.index(before) < runner_at, before
+    assert runner_at < rendered.index("map_3d_test.js")
 
 
 # ---------------------------------------------------------------------------
