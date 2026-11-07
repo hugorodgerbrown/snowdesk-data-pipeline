@@ -8,6 +8,8 @@
  * behaviour a reader depends on — that a control tapped in help mode does
  * NOT act, that "Open" leaves help mode and then does act, that a tap on
  * the map still goes through, and that a guide follows its sheet.
+ * SNOW-1471 added data-also (a tap on a day arrow opens the Day shown
+ * card) and keeps a name from being placed off the screen.
  *
  * Positions are re-read every animation frame; fake timers drive the
  * frames. jsdom has no layout, so the geometry is not asserted — what is
@@ -21,6 +23,8 @@ function buildFixture({ sheetOpen = false } = {}) {
     <div id="map">
       <button id="basemap-toggle" type="button">Layers</button>
       <button id="route-add-btn" type="button" hidden>Routes</button>
+      <button id="map-day-prev" type="button">‹</button>
+      <button id="map-calendar-toggle" type="button">Today</button>
       <div id="map-canvas"></div>
     </div>
     <button id="map-help-toggle" type="button">?</button>
@@ -61,6 +65,10 @@ function buildFixture({ sheetOpen = false } = {}) {
       </li>
       <li data-control="#route-add-btn" data-label="Routes" data-topic="help-topic-routes" data-open="Open routes">
         Upload a GPX track.
+      </li>
+      <li data-control="#map-calendar-toggle" data-also="#map-day-prev" data-label="Day shown"
+          data-topic="help-topic-calendar" data-open="Open the calendar">
+        One day at a time.
       </li>
     </ul>
     <div id="map-help-guides" hidden>
@@ -187,7 +195,82 @@ describe('the controls', () => {
     $('map-help-toggle').click();
     frame();
 
-    expect(labels().map((n) => n.textContent)).toEqual(['Layers']);
+    expect(labels().map((n) => n.textContent)).toEqual(['Layers', 'Day shown']);
+  });
+
+  it('a tap on a data-also element opens its control\'s card, and gets no name (SNOW-1471)', async () => {
+    await setUp();
+    const stepped = vi.fn();
+    $('map-day-prev').addEventListener('click', stepped);
+    $('map-help-toggle').click();
+    frame();
+
+    $('map-day-prev').click();
+
+    expect(stepped).not.toHaveBeenCalled();
+    expect($('map-help-mode-card-title').textContent).toBe('Day shown');
+    expect(labels().filter((n) => n.textContent === 'Day shown')).toHaveLength(1);
+  });
+
+  it('never places a name off the top of the screen (SNOW-1471)', async () => {
+    await setUp();
+    // jsdom has no layout: a control in the top right corner whose left
+    // side is taken by its neighbour, so the old first free place was
+    // above it, off the screen. Names are 0×0 here.
+    const rect = (left, top, width, height) => () => ({
+      left, top, width, height, right: left + width, bottom: top + height, x: left, y: top,
+    });
+    $('basemap-toggle').getBoundingClientRect = rect(900, 2, 30, 20);
+    $('map-calendar-toggle').getBoundingClientRect = rect(860, 0, 36, 30);
+    $('map-help-toggle').click();
+    frame();
+
+    const layers = labels().find((n) => n.textContent === 'Layers');
+    expect(layers.style.top).toBe('30px');
+  });
+
+  it('draws no name for a control with no free place, but its card still opens (SNOW-1471)', async () => {
+    await setUp();
+    // Hemmed in on every side by its neighbour and the screen's top edge.
+    const rect = (left, top, width, height) => () => ({
+      left, top, width, height, right: left + width, bottom: top + height, x: left, y: top,
+    });
+    $('basemap-toggle').getBoundingClientRect = rect(900, 2, 30, 20);
+    $('map-calendar-toggle').getBoundingClientRect = rect(800, 0, 200, 80);
+    $('map-help-toggle').click();
+    frame();
+
+    expect(labels().map((n) => n.textContent)).not.toContain('Layers');
+    $('basemap-toggle').click();
+    expect($('map-help-mode-card-title').textContent).toBe('Layers');
+  });
+
+  it('moves the bar down clear of a control under it (SNOW-1471)', async () => {
+    await setUp();
+    const rect = (left, top, width, height) => () => ({
+      left, top, width, height, right: left + width, bottom: top + height, x: left, y: top,
+    });
+    // jsdom's window is 1024 wide; the bar (0 wide here) sits at 512.
+    $('basemap-toggle').getBoundingClientRect = rect(480, 60, 40, 40);
+    $('map-help-toggle').click();
+    frame();
+
+    expect($('map-help-mode-bar').style.top).toBe('108px');
+  });
+
+  it('clears a control further down that the bar moves onto (SNOW-1471)', async () => {
+    await setUp();
+    const rect = (left, top, width, height) => () => ({
+      left, top, width, height, right: left + width, bottom: top + height, x: left, y: top,
+    });
+    // Listed first but lower: the bar moves below the date control (108),
+    // which lands it on Layers; it must go on below that too.
+    $('map-calendar-toggle').getBoundingClientRect = rect(480, 60, 40, 40);
+    $('basemap-toggle').getBoundingClientRect = rect(480, 100, 40, 40);
+    $('map-help-toggle').click();
+    frame();
+
+    expect($('map-help-mode-bar').style.top).toBe('148px');
   });
 
   it('a tap shows what the control does instead of doing it', async () => {

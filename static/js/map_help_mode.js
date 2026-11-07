@@ -81,8 +81,8 @@
   const LINE_SLOP = 6;
 
   /**
-   * @typedef {{selector: string, label: string, topic: string, open: string,
-   *   body: string}} Control
+   * @typedef {{selector: string, also: string, label: string, topic: string,
+   *   open: string, body: string}} Control
    * @typedef {{key: string, sheet: string, eyebrow: string,
    *   topic: string, more: string, rows: Array<{anchor: string, html: Element}>}} Guide
    */
@@ -92,6 +92,8 @@
     const el = /** @type {HTMLElement} */ (li);
     return {
       selector: el.dataset.control || '',
+      // SNOW-1471: more selectors whose taps open this card, unnamed.
+      also: el.dataset.also || '',
       label: el.dataset.label || '',
       topic: el.dataset.topic || '',
       open: el.dataset.open || '',
@@ -157,7 +159,8 @@
     }
     return controls.find((c) => {
       const el = document.querySelector(c.selector);
-      return !!el && el.contains(target);
+      if (el && el.contains(target)) return true;
+      return !!c.also && !!target.closest(c.also);
     }) || null;
   };
 
@@ -184,11 +187,22 @@
    * name lands over the map rather than off its edge. Controls sit close
    * together on a desktop (the region chip with its pin and save roundels,
    * the date beside the season scrubber), so a name that would cover a
-   * neighbour tries above, then below, then the other side, and keeps the
-   * first choice only if every place is taken.
+   * neighbour tries above, then below, then the other side.
+   *
+   * SNOW-1471: a name never covers another name and is never placed off
+   * the screen. Where every place is taken (three header icons side by
+   * side on a phone) the control keeps its card, so a tap still says what
+   * it does, but draws no name. Controls listed first win the room: the
+   * header's come first, as the header row is the only room they have on
+   * a phone. The bar then moves down clear of every
+   * name and control at the top (placeBar).
+   *
+   * @returns {Array<{left: number, top: number, right: number, bottom: number}>}
+   *   every control and name drawn, for placeBar.
    */
   const placeLabels = () => {
     const vw = window.innerWidth;
+    const vh = window.innerHeight;
     /** @type {Array<{c: Control, el: Element, r: DOMRect}>} */
     const shown = [];
     controls.forEach((c) => {
@@ -226,15 +240,49 @@
         { x: midX, y: r.top - LABEL_GAP - h },
         { x: midX, y: r.bottom + LABEL_GAP },
         facing[1],
+        // SNOW-1471: a row further down, for a control whose neighbour's
+        // name took the place below it (the header's icons side by side).
+        { x: midX, y: r.bottom + LABEL_GAP * 2 + h },
       ].map((at) => {
         const x = Math.max(4, Math.min(at.x, vw - w - 4));
         return { left: x, top: at.y, right: x + w, bottom: at.y + h };
       });
-      const free = places.find((box) => !taken.some((t) => overlaps(box, t))) || places[0];
+      const onScreen = (/** @type {{top: number, bottom: number}} */ box) =>
+        box.top >= 4 && box.bottom <= vh - 4;
+      const free = places.find((box) => onScreen(box) && !taken.some((t) => overlaps(box, t)));
+      if (!free) {
+        node.hidden = true;
+        return;
+      }
       taken.push(free);
       node.style.left = `${free.left}px`;
       node.style.top = `${free.top}px`;
     });
+    return taken;
+  };
+
+  /**
+   * Hang the bar from the top of the map, below anything drawn in its way.
+   *
+   * SNOW-1471: on a phone the date row and its names fill the top of the
+   * map, so the bar's usual place would cover them; it moves down until it
+   * clears every box whose top is above where it would end.
+   *
+   * @param {number} mapTop
+   * @param {Array<{left: number, top: number, right: number, bottom: number}>} boxes
+   */
+  const placeBar = (mapTop, boxes) => {
+    const vw = window.innerWidth;
+    const w = bar.offsetWidth;
+    const h = bar.offsetHeight;
+    const left = (vw - w) / 2;
+    let top = mapTop + BAR_OFFSET;
+    // Top to bottom, so a box the bar moves onto is still ahead of it.
+    [...boxes].sort((a, b) => a.top - b.top).forEach((b) => {
+      const across = b.left < left + w && left < b.right;
+      if (across && b.top < top + h && b.bottom > top - LABEL_GAP) top = b.bottom + LABEL_GAP;
+    });
+    bar.style.top = `${top}px`;
   };
 
   // ---- The control card ----
@@ -463,7 +511,7 @@
     if (guided) placeBadges(guided);
 
     labelsEl.hidden = !!guided;
-    if (!guided) placeLabels();
+    if (!guided) placeBar(mapTop, placeLabels());
     if (selected) {
       const el = document.querySelector(selected.selector);
       if (el && isDrawn(el)) {
