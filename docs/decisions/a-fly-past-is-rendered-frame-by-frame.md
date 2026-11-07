@@ -36,12 +36,14 @@ this route" control (a reader's own route, played live) the same camera path:
   half-drawn, and the recorder stops with exit 1 (`--resume` picks up again).
   The error names the sources whose tiles were still loading.
 - Settled means every tile loaded, not that MapLibre went idle. At some
-  cameras over terrain its label placement never rests, so the map keeps
-  drawing with every tile in and `idle` never fires: frame 349 of the
-  Breithorn failed every time this way (7 Nov 2026). A frame therefore also
-  settles once every tile has stayed loaded through three renders and 1.5 s
-  (`QUIET_MS`). A label may still be fading in such a frame; a missing tile
-  never is.
+  cameras over terrain it never goes idle: frame 349 of the Breithorn failed
+  every time this way (7 Nov 2026), under SwiftShader with its label
+  placement never resting and on a Mac GPU with every source loaded. A
+  frame therefore also settles once every tile has stayed loaded for 1.5 s
+  (`QUIET_MS`), polled on a timer so it does not depend on the map drawing.
+  A first version counted renders with `map.loaded()` true, and still hung
+  on the Mac (#1516). A label may still be fading in such a frame; a missing
+  tile never is. The error on a timeout gives the map's state.
 - The reveal's framing needs the map (`map.cameraForBounds`), so the core
   returns bounds and a weight, and the driver blends towards the fitted camera.
   The core stays free of the map and fully testable in Vitest.

@@ -79,6 +79,18 @@ carries on from the first one missing. The error says what the frame was
 waiting for: `tiles still loading: map-3d-dem` points at the network or the
 tile server; a frame that fails the same way twice is worth reporting.
 
+**To skip a frame that will not draw**, copy the one before it into its place
+and resume; `--resume` skips any frame already on disk. Files count from
+zero, so frame 349 is `f00348.png`:
+
+```bash
+cp build/flyby/frames/f00347.png build/flyby/frames/f00348.png
+uv run python bin/record-3d-flyby --resume
+```
+
+A repeated frame is a 1/30 s hold. Delete the copy and resume again to draw
+the real one later.
+
 ### Flags
 
 | Flag | Default | What it does |

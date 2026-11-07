@@ -11,8 +11,8 @@
  *     body.map-recording and unload clears it;
  *   - frame sets the data and the camera and resolves once idle with every
  *     tile loaded, waits through an idle with tiles still loading, settles
- *     without an idle once the map has kept drawing with every tile in for
- *     QUIET_MS (label placement that never rests), jumps
+ *     without an idle once every tile has stayed in for QUIET_MS (a map
+ *     that never goes idle), jumps
  *     again when MapLibre lowered the camera before the heights were in,
  *     and rejects when the cap passes first;
  *   - a reveal frame blends towards cameraForBounds by the fit's weight;
@@ -210,44 +210,46 @@ describe('frame', () => {
     expect(done).toBe(true);
   });
 
-  it('settles without an idle when the map keeps drawing with every tile in', async () => {
-    // At some cameras over terrain MapLibre's label placement never rests,
-    // so the map keeps rendering and idle never fires.
+  it('settles without an idle once every tile has stayed in for QUIET_MS after a render', async () => {
+    // At some cameras over terrain MapLibre never goes idle; the frame
+    // settles on its tiles alone, counted from the first render after the
+    // jump, which is when the new camera's tiles are asked for.
     const flight = await load();
     flight.load(ROUTE);
     vi.useFakeTimers();
     let done = false;
     const pending = flight.frame(0.58).then(() => { done = true; });
-    env.map.fire('render');
+    vi.advanceTimersByTime(flight.QUIET_MS * 2);
+    await Promise.resolve();
+    expect(done).toBe(false);
     env.map.fire('render');
     vi.advanceTimersByTime(flight.QUIET_MS);
     await Promise.resolve();
     expect(done).toBe(false);
-    env.map.fire('render');
+    vi.advanceTimersByTime(500);
     await pending;
     expect(done).toBe(true);
     expect(env.map.listeners('render')).toBe(0);
     expect(env.map.listeners('idle')).toBe(0);
   });
 
-  it('counts no quiet renders while tiles are still loading', async () => {
+  it('starts the quiet wait again when a tile goes back to loading', async () => {
     const flight = await load();
     flight.load(ROUTE);
     vi.useFakeTimers();
-    env.map.tilesLoaded = false;
     let done = false;
     flight.frame(0.58).then(() => { done = true; });
-    for (let i = 0; i < 5; i += 1) {
-      vi.advanceTimersByTime(flight.QUIET_MS);
-      env.map.fire('render');
-    }
-    await Promise.resolve();
-    expect(done).toBe(false);
+    env.map.fire('render');
+    vi.advanceTimersByTime(1000);
+    env.map.tilesLoaded = false;
+    vi.advanceTimersByTime(500);
     env.map.tilesLoaded = true;
-    env.map.fire('render');
-    env.map.fire('render');
+    vi.advanceTimersByTime(1000);
     await Promise.resolve();
     expect(done).toBe(false);
+    vi.advanceTimersByTime(1000);
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    expect(done).toBe(true);
   });
 
   it('jumps again once settled if MapLibre lowered the camera out of the ground', async () => {
@@ -281,10 +283,9 @@ describe('frame', () => {
     const flight = await load();
     flight.load(ROUTE);
     vi.useFakeTimers();
+    env.map.tilesLoaded = false;
     const pending = flight.frame(0.5);
-    const assertion = expect(pending).rejects.toThrow(
-      'frame t=0.5 not settled after 60 s (every tile loaded, the map still drawing)',
-    );
+    const assertion = expect(pending).rejects.toThrow('frame t=0.5 not settled after 60 s');
     vi.advanceTimersByTime(flight.FRAME_CAP_MS);
     await assertion;
   });
@@ -295,7 +296,10 @@ describe('frame', () => {
     vi.useFakeTimers();
     env.map.tilesLoaded = false;
     const pending = flight.frame(0.5);
-    const assertion = expect(pending).rejects.toThrow('(tiles still loading: dem)');
+    env.map.fire('render');
+    const assertion = expect(pending).rejects.toThrow(
+      '(tiles still loading: dem; loaded=false moving=false tiles=false renders=1 idles=0)',
+    );
     vi.advanceTimersByTime(flight.FRAME_CAP_MS);
     await assertion;
   });
@@ -304,6 +308,7 @@ describe('frame', () => {
     const flight = await load();
     flight.load(ROUTE, { capMs: 300000 });
     vi.useFakeTimers();
+    env.map.tilesLoaded = false;
     let failed = null;
     flight.frame(0.5).catch((e) => { failed = e; });
     vi.advanceTimersByTime(flight.FRAME_CAP_MS);
