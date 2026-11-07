@@ -14,6 +14,7 @@ import importlib.machinery
 import importlib.util
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from types import ModuleType
 
@@ -200,3 +201,32 @@ def test_a_failed_frame_exits_non_zero(
     monkeypatch.setattr(rec, "record_frames", fail)
     assert rec.main([]) == 1
     assert "frame 3/600 failed" in capsys.readouterr().err
+
+
+def test_a_duration_reads_in_seconds_minutes_or_hours() -> None:
+    """Under a minute in seconds, under an hour to the second, then to the minute."""
+    assert rec.duration(42.4) == "42s"
+    assert rec.duration(370) == "6m 10s"
+    assert rec.duration(3900) == "1h 05m"
+    assert rec.duration(-3) == "0s"
+
+
+def test_a_frame_line_gives_the_time_taken_and_the_time_left() -> None:
+    """Hugo, 7 Nov 2026: a long run says how long it has taken and has left."""
+    line = rec.frame_progress(212, 600, "follow", 212, 388, 370.0)
+    assert line == "frame 212/600 follow · 6m 10s elapsed · ~11m 17s left"
+
+
+def test_a_resumed_run_estimates_from_the_frames_it_drew() -> None:
+    """Frames skipped by --resume do not count towards the average."""
+    # Resumed at 500: 10 drawn in 50 s, 90 to go, so 450 s at 5 s each.
+    line = rec.frame_progress(510, 600, "reveal", 10, 90, 50.0)
+    assert line.endswith("· 50s elapsed · ~7m 30s left")
+
+
+def test_every_progress_line_carries_the_time(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Each line starts with the local time as HH:MM:SS."""
+    rec.log("encoding the MP4", now=datetime(2026, 11, 7, 13, 39, 18))
+    assert capsys.readouterr().out == "13:39:18 encoding the MP4\n"

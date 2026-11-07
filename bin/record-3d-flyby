@@ -55,7 +55,9 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -437,6 +439,66 @@ def dev_session_cookie(url: str) -> dict[str, str]:
     return {"name": name, "value": key, "url": url}
 
 
+def duration(seconds: float) -> str:
+    """Return a span as ``1h 05m``, ``6m 10s`` or ``42s``.
+
+    Args:
+        seconds: The span.
+
+    Returns:
+        The span, to the second below an hour and the minute above.
+
+    """
+    whole = max(0, round(seconds))
+    hours, rest = divmod(whole, 3600)
+    minutes, secs = divmod(rest, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m"
+    if minutes:
+        return f"{minutes}m {secs:02d}s"
+    return f"{secs}s"
+
+
+def log(message: str, now: datetime | None = None) -> None:
+    """Print one progress line, stamped with the local time.
+
+    Args:
+        message: The line.
+        now: The time to stamp; the current time if omitted.
+
+    """
+    stamp = (now or datetime.now()).strftime("%H:%M:%S")
+    print(f"{stamp} {message}", flush=True)
+
+
+def frame_progress(
+    number: int, total: int, phase: str, done: int, left: int, elapsed: float
+) -> str:
+    """Return a frame's progress line, with the time taken and the time left.
+
+    The time left is the frames still to draw at the average so far, counting
+    only frames drawn in this run, so a resumed run is not thrown by the
+    frames it skipped.
+
+    Args:
+        number: The frame just drawn, from 1.
+        total: The frames in the clip.
+        phase: The flight phase the frame is in.
+        done: Frames drawn in this run, this one included.
+        left: Frames still to draw in this run.
+        elapsed: Seconds since this run's first frame began.
+
+    Returns:
+        Such as ``frame 212/600 follow · 6m 10s elapsed · ~11m 17s left``.
+
+    """
+    per = elapsed / done if done else 0.0
+    return (
+        f"frame {number}/{total} {phase} · {duration(elapsed)} elapsed"
+        f" · ~{duration(per * left)} left"
+    )
+
+
 def record_frames(settings: Settings, route: dict[str, Any]) -> tuple[Path, Path]:
     """Fly the route and screenshot every frame, then the credit and end card.
 
@@ -504,11 +566,20 @@ def record_frames(settings: Settings, route: dict[str, Any]) -> tuple[Path, Path
         length = page.evaluate(LOAD_FLIGHT, [route, options])
         n = settings.frame_count
         size = f"{settings.width}×{settings.height}"
-        print(f"flying {length / 1000:.1f} km in {n} frames at {size}", flush=True)
-        for i in range(n):
+        todo = [
+            i
+            for i in range(n)
+            if not (
+                settings.resume and (settings.frames_dir / f"f{i:05d}.png").exists()
+            )
+        ]
+        log(
+            f"flying {length / 1000:.1f} km in {n} frames at {size}"
+            f" ({len(todo)} to draw)"
+        )
+        started = time.monotonic()
+        for done, i in enumerate(todo, start=1):
             path = settings.frames_dir / f"f{i:05d}.png"
-            if settings.resume and path.exists():
-                continue
             t = i / (n - 1)
             try:
                 phase = page.evaluate(STEP_FRAME, t)
@@ -518,7 +589,8 @@ def record_frames(settings: Settings, route: dict[str, Any]) -> tuple[Path, Path
                     f"frame {i + 1}/{n} failed: {why} (re-run with --resume)"
                 ) from exc
             page.screenshot(path=str(path))
-            print(f"frame {i + 1}/{n} {phase}", flush=True)
+            elapsed = time.monotonic() - started
+            log(frame_progress(i + 1, n, phase, done, len(todo) - done, elapsed))
         page.evaluate("() => window.pwaMap3dFlight.unload()")
         browser.close()
     return credit, card
@@ -548,7 +620,7 @@ def encode(settings: Settings, credit: Path, card: Path) -> list[Path]:
         ("WebM", webm_command(ffmpeg, mp4, webm)),
         ("poster", poster_command(ffmpeg, settings, mp4, poster)),
     ):
-        print(f"encoding the {name}", flush=True)
+        log(f"encoding the {name}")
         # S603: argv built here from our own paths and numbers.
         result = subprocess.run(argv, capture_output=True, text=True, check=False)  # noqa: S603
         if result.returncode:

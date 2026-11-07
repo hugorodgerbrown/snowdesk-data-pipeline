@@ -52,11 +52,19 @@ On your Mac, in the repo, with the dev server set up as in
    ```
 
    With no arguments it records the bundled Breithorn tour at 1920×1080,
-   30 fps, 20 s, into `build/flyby/`. It prints each frame's number and phase
-   as it goes (`frame 212/600 follow`), then `encoding the MP4`, and the size
-   of each file it wrote. On a Mac with a GPU it should take 10 to 20
-   minutes, most of it waiting for tiles. That is an estimate: only software
-   rendering has been timed.
+   30 fps, 20 s, into `build/flyby/`. Each line is stamped with the time and
+   says how long the run has taken and has left, counting only the frames
+   drawn in this run:
+
+   ```
+   13:39:18 frame 212/600 follow · 23m 19s elapsed · ~42m 41s left
+   ```
+
+   Then come `encoding the MP4` and the other files, and the size of each
+   file it wrote. Hugo's Mac took about 6.6 s a frame (7 Nov 2026), so the
+   full clip takes a little over an hour, most of it waiting for tiles.
+   The frames take about 2 GB at 1080p; delete `build/flyby/frames/` once
+   the video is right, unless you want to re-encode without recording.
 
 **Try a short, small cut first** to check the camera before the full run:
 
