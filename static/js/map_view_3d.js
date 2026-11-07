@@ -546,7 +546,14 @@
   const tiltIn = (pitch = core.OPENING_CAMERA.pitch) => {
     timingArmed = false;
     map.setMaxPitch(core.MAX_PITCH);
-    map.easeTo({ pitch, duration: EASE_MS });
+    // freezeElevation: a boot tilts in before the style's styledata has
+    // installed the terrain, and MapLibre (4.7) tracks the ground's height
+    // on each ease frame only when terrain was on as the ease began
+    // (_prepareElevation). Terrain arriving mid-ease left the frame reading
+    // an unset centre, which threw inside the render queue and froze the
+    // map blank for good. A tilt keeps its centre, so there is no height to
+    // follow.
+    map.easeTo({ pitch, duration: EASE_MS, freezeElevation: true });
     // easeTo stops an ease still running, and that fires its moveend here;
     // the move this starts is the one whose end arms the timing.
     timingArmed = false;

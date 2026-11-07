@@ -290,6 +290,25 @@ describe('entering 3D', () => {
     expect(toasts()).toEqual([]);
   });
 
+  // SNOW-1467: a boot tilts in before the style's styledata installs the
+  // terrain. MapLibre follows the ground's height on each ease frame only
+  // when terrain was on as the ease began, so terrain arriving mid-ease
+  // threw in the render queue and froze the map blank. The tilt freezes it.
+  it('tilts in with the elevation frozen, on a boot and on a tap', async () => {
+    const { map, button } = await boot({ search: '?mode=terrain&view=3d' });
+    expect(map.easeTo).toHaveBeenCalledWith(expect.objectContaining({
+      pitch: core3d.OPENING_CAMERA.pitch, freezeElevation: true,
+    }));
+    button.click();
+    map.easeTo.mockClear();
+    button.click();
+    await flush();
+    expect(map.easeTo).toHaveBeenCalled();
+    for (const [options] of map.easeTo.mock.calls) {
+      if ('pitch' in options && options.pitch > 0) expect(options.freezeElevation).toBe(true);
+    }
+  });
+
   // SNOW-1450: map.js publishes the pitch a link's `?at=` asked for.
   it('keeps a linked pitch on a ?view=3d boot, with the ceiling open', async () => {
     const { map } = await boot({ search: '?mode=terrain&view=3d', pitch: 30, linkedPitch: 30 });
