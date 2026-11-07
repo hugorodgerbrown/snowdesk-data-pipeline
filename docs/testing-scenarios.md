@@ -484,6 +484,7 @@ Step 9a needs a second, non-superuser account with `map_3d` on for it and
 | 24 | SNOW-1463: on a desktop, in 3D, open DevTools → Performance and set CPU to 20× slowdown; pan and turn the map continuously for about 15 s | The map stays in 3D and a line at the bottom reads "3D is running slowly here", with "Switch to 2D" and "Keep 3D"; it does not go away by itself |
 | 25 | Tap "Keep 3D", then keep panning for another 15 s | The line goes; the map stays in 3D and is not asked again on this visit (reload to be asked again) |
 | 26 | Reload, return to 3D and repeat step 24, then tap "Switch to 2D"; then tap "3D" | The map goes flat with "Back in 2D: 3D is too slow on this device."; tapping "3D" says "3D is too slow on this device" with "Test this device". Set CPU back to no throttling |
+| 27 | SNOW-1470: reload `/map/?view=3d`; switch to 2D, then back to 3D; close the banner with its ×, then switch 2D and 3D again; reload | "3D is experimental" shows at the top in 3D and goes in 2D. Once closed it stays away for the visit, in either view; the reload brings it back |
 
 ---
 
