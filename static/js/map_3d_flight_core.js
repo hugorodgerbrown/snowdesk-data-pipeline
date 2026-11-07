@@ -229,7 +229,9 @@
       const p1 = plane[i];
       const p2 = plane[i + 1];
       // Mirror the ends so the first and last spans have a neighbour.
+      /** @type {LngLat} */
       const p0 = i > 0 ? plane[i - 1] : [2 * p1[0] - p2[0], 2 * p1[1] - p2[1]];
+      /** @type {LngLat} */
       const p3 = i + 2 < plane.length ? plane[i + 2] : [2 * p2[0] - p1[0], 2 * p2[1] - p1[1]];
       const t0 = 0;
       const t1 = t0 + knot(p0, p1);
