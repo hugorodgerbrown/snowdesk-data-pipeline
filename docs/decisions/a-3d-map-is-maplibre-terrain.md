@@ -480,3 +480,17 @@ stays with superusers.
   visitors stay flat when `map_3d` goes on for everyone. The anonymous guard
   keeps those pages free of waffle queries. 3D for signed-out visitors would
   be its own ticket, which accepts that query.
+
+## A boot tilts with the elevation frozen (SNOW-1467, 7 Nov 2026)
+
+Every `?view=3d` page load on production drew a blank map, though tapping
+3D on a loaded map worked, so MS10 passed. A boot tilts in with `easeTo`
+before the swisstopo winter style's `styledata` installs the terrain.
+MapLibre 4.7 follows the ground's height on each ease frame only when
+terrain was on as the ease began (`_prepareElevation` sets its centre).
+Terrain arriving mid-ease left the frame reading an unset centre, which
+threw inside the render task queue and left it "already running" for
+good: no tile was ever requested. `tiltIn` now passes
+`freezeElevation: true`. A tilt keeps its centre, so there is no height to
+follow. The e2e suite missed it because its fixture style loads before the
+first ease frame; the Vitest suite pins the option.
