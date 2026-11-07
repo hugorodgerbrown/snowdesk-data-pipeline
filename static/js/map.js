@@ -154,16 +154,16 @@
     for (const key of MAP_MODE_CORE.suppressedIn(bootMode)) modeSuppressedKeys.add(key);
   }
   // SNOW-1449: the view, flat or 3-D (map_view_core.js), beside the mode.
-  // Either mode can be drawn in 3-D (SNOW-1452), by map_view_3d.js for a reader in both the
-  // map_3d and map_modes flags (#map[data-map-view-enabled]). Read here because
+  // Either mode can be drawn in 3-D (SNOW-1452), by map_view_3d.js for a reader in the
+  // map_3d flag (#map[data-map-view-enabled]), with or without map_modes since
+  // SNOW-1451: without it, the map's one dated view. Read here because
   // the view decides the boot basemap (swisstopo winter in 3-D) and the
   // boot camera (a flat boot is never tilted), both below; the coverage
   // half of the boot rule waits for the camera. Nothing about the view is
   // stored, so a bare /map/ always opens flat. Without the core every
   // reader is flat, as before.
   const MAP_VIEW_CORE = self.pwaMapViewCore || null;
-  const MAP_VIEW_ENABLED = MAP_MODES_ENABLED && !!MAP_VIEW_CORE
-    && mapEl.dataset.mapViewEnabled === 'true';
+  const MAP_VIEW_ENABLED = !!MAP_VIEW_CORE && mapEl.dataset.mapViewEnabled === 'true';
   let bootView = MAP_VIEW_ENABLED ? MAP_VIEW_CORE.readView(location.search) : 'flat';
   /**
    * Whether the mode is holding an overlay off the map.

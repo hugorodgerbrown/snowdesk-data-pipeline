@@ -161,7 +161,7 @@ let env;
 async function boot({
   search = '?mode=terrain', mode = 'terrain', stored = null, online = true,
   webgl = true, deviceMemory = 8, userAgent = DESKTOP_UA, pitch = 0,
-  areas = [], holdAreas = false, linkedPitch = null,
+  areas = [], holdAreas = false, linkedPitch = null, modes = true,
 } = {}) {
   const rows = Object.entries(URLS).map(([key, url]) => `
     <button class="basemap-menu-item" role="menuitemradio" data-basemap-key="${key}"
@@ -213,7 +213,9 @@ async function boot({
   };
 
   window.MapSheet = { toast: env.toast };
-  window.pwaMapMode = { get: () => env.mode };
+  // SNOW-1451: a reader without map_modes has no map_mode.js on the page.
+  if (modes) window.pwaMapMode = { get: () => env.mode };
+  else delete window.pwaMapMode;
   window.pwaConnectivity = { isOnline: () => env.online };
   window.maplibregl = { addProtocol: env.addProtocol };
   window.resolveBasemapStyle = env.resolveBasemapStyle;
@@ -242,6 +244,16 @@ const view = () => new URLSearchParams(window.location.search).get('view');
 
 describe('entering 3D', () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it('runs without the modes, setting the view on :root (SNOW-1451)', async () => {
+    const { map, button } = await boot({ modes: false, search: '' });
+    expect(window.pwaMapMode).toBeUndefined();
+    expect(document.documentElement.dataset.mapView).toBe('flat');
+    button.click();
+    await flush();
+    expect(inThreeD(map)).toBe(true);
+    expect(document.documentElement.dataset.mapView).toBe('3d');
+  });
 
   it('swaps to swisstopo winter, lifts the relief and tilts in', async () => {
     const { map, button } = await boot();

@@ -120,7 +120,7 @@ bulletin_terrain_core.js
 # on the view), so it loads before the bundle, like map_mode_core.js; it
 # reads the coverage box from terrain_filter_core.js, passed in, so it
 # comes after it. It does nothing until #map carries data-map-view-enabled,
-# which only a reader in map_3d and map_modes gets.
+# which only a signed-in reader in map_3d gets (SNOW-1451).
 map_view_core.js
 
 # SNOW-761: the weather overlay's pure transforms

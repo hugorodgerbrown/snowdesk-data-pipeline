@@ -3409,17 +3409,21 @@ def _flagged_map(*, map_3d: bool, map_modes: bool) -> str:
 
 
 @pytest.mark.django_db
-def test_map_3d_alone_draws_no_3d_roundel() -> None:
-    """Inside map_3d without map_modes the map is flat, with no 3D at all.
+def test_map_3d_alone_draws_the_3d_view() -> None:
+    """SNOW-1451: map_3d without map_modes gets 3D on the map's dated view.
 
-    SNOW-1450: the link to /map/3d/ this reader used to get is gone with the
-    page; the 3D view needs the modes as well.
+    The switch, the 3D scripts, ``#map``'s flag and the test panel all render,
+    and the Terrain toggle does not.
     """
     content = _flagged_map(map_3d=True, map_modes=False)
-    assert 'id="map-view-toggle"' not in content
-    assert "js/map_view_3d.js" not in content
-    assert "js/map_3d_core.js" not in content
-    assert 'data-map-view-enabled="false"' in content
+    assert 'id="map-view-toggle"' in content
+    assert "js/map_view_3d.js" in content
+    assert "js/map_3d_core.js" in content
+    assert "js/map_3d_test.js" in content
+    assert 'data-map-view-enabled="true"' in content
+    assert 'id="map-3d-test-sheet"' in content
+    assert 'id="map-mode-terrain"' not in content
+    assert 'data-map-modes-enabled="false"' in content
 
 
 @pytest.mark.django_db
@@ -3514,7 +3518,7 @@ def test_the_3d_test_panel_renders_the_skipped_figure() -> None:
 def test_the_3d_test_renders_only_with_the_3d_view() -> None:
     """SNOW-1456: the "?" menu's item, the panel, its strings and its script.
 
-    Only behind map_3d_view_enabled() (map_3d and map_modes): the panel
+    Only behind map_3d_view_enabled() (map_3d, SNOW-1451): the panel
     carries where Send posts and the switches a result may record, and the
     why-slow line's link has its string.
     """
@@ -3533,10 +3537,7 @@ def test_the_3d_test_renders_only_with_the_3d_view() -> None:
     assert "Send this result to Snowdesk?" in content
     assert content.index("js/map_view_3d.js") < content.index("js/map_3d_test.js")
     assert "In Terrain, tap 3D" not in content
-    for flags in (
-        {"map_3d": True, "map_modes": False},
-        {"map_3d": False, "map_modes": True},
-    ):
+    for flags in ({"map_3d": False, "map_modes": True},):
         other = _flagged_map(**flags)
         assert 'data-help-menu="test-3d"' not in other
         assert 'id="map-3d-test-sheet"' not in other
@@ -3578,13 +3579,18 @@ def test_the_compass_renders_for_every_reader(signed_in: bool) -> None:
 
 @pytest.mark.django_db
 def test_the_3d_view_css_shows_the_roundel_in_both_modes() -> None:
-    """SNOW-1452: hidden until map_mode.js sets the mode, then shown in either."""
+    """SNOW-1452: hidden until map_view_3d.js sets the view, then shown in either.
+
+    SNOW-1451: keyed on :root[data-map-view], not the mode, so a reader
+    without map_modes (no map_mode.js) sees it too.
+    """
     css = (Path(settings.BASE_DIR) / "static" / "css" / "map.css").read_text()
     assert re.search(r"\.map-utility-pill--view \{\s*display:\s*none;", css)
     assert re.search(
-        r":root\[data-map-mode\] \.map-utility-pill--view \{\s*display:\s*inline-flex;",
+        r":root\[data-map-view\] \.map-utility-pill--view \{\s*display:\s*inline-flex;",
         css,
     )
+    assert ":root[data-map-mode] .map-utility-pill--view" not in css
     assert 'data-map-mode="terrain"] .map-utility-pill--view' not in css
 
 

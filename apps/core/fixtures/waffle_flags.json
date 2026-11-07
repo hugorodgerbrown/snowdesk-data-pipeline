@@ -34,7 +34,7 @@
     },
     {
       "name": "map_3d",
-      "note": "Gates /map/'s 3D view (SNOW-1449; apps/public/map_shared.py map_3d_view_enabled, with map_modes): MapLibre terrain on the swisstopo winter map, tilted by the 3D roundel or opened by ?view=3d. Superusers while it is tried out. Outside the flag /map/ ignores ?view=3d and opens flat. The old /map/3d/ page is a redirect to it since SNOW-1450.",
+      "note": "Gates /map/'s 3D view (SNOW-1449; apps/public/map_shared.py map_3d_view_enabled): MapLibre terrain on the swisstopo winter map, tilted by the 3D roundel or opened by ?view=3d. map_3d alone since SNOW-1451, signed-in readers only (anonymous requests short-circuit). Superusers while it is tried out; production opens it to every signed-in reader after release. Outside the flag /map/ ignores ?view=3d and opens flat. The old /map/3d/ page is a redirect to it since SNOW-1450.",
       "superusers": true
     }
   ]

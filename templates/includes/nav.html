@@ -84,7 +84,7 @@ Usage
 {% endcomment %}
 {% load i18n %}
 {% load accounts_tags %}
-{% load waffle_tags %}
+{% load map_flags %}
 <nav class="border-b border-border">
     {# SNOW-445: the nav row spans the full viewport width (only the px-4      #}
     {# gutter constrains it) so the wordmark pins to the left gutter and the   #}
@@ -118,22 +118,16 @@ Usage
         {% endif %}
         {% comment %}
         Temporary 3D branding: a reader who can open the map in 3D (the
-        map_3d and map_modes flags, as map_shared.map_3d_view_enabled reads
-        them) sees the wordmark wearing red/cyan specs, drawn at the text
-        wordmark's size (the SVG sets 64px type in 80 units of height), and
-        it opens the map in its 3D mode. The authentication check comes first
-        so an anonymous page pays no waffle query.
+        map_3d flag, as map_shared.map_3d_view_enabled reads it, through the
+        map_flags tag; SNOW-1451) sees the wordmark wearing red/cyan specs,
+        drawn at the text wordmark's size (the SVG sets 64px type in 80 units
+        of height), and it opens the map in its 3D mode. The gate
+        short-circuits a signed-out request, so an anonymous page pays no
+        waffle query.
         {% endcomment %}
-        {% if user.is_authenticated %}
-            {% flag "map_3d" %}
-            {% flag "map_modes" %}
+        {% map_3d_view_enabled as wears_specs %}
+        {% if wears_specs %}
             {% include "includes/_nav_wordmark.html" with wears_specs=True %}
-        {% else %}
-            {% include "includes/_nav_wordmark.html" %}
-            {% endflag %}
-        {% else %}
-            {% include "includes/_nav_wordmark.html" %}
-            {% endflag %}
         {% else %}
             {% include "includes/_nav_wordmark.html" %}
         {% endif %}

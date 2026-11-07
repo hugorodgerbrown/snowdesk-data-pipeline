@@ -2,7 +2,7 @@
 /*
  * static/js/map_3d_core.js — the 3D terrain map's pure parts (SNOW-1438).
  *
- * /map/'s 3D view (map_view_3d.js, behind the map_3d and map_modes flags)
+ * /map/'s 3D view (map_view_3d.js, behind the map_3d flag)
  * draws the relief with MapLibre's own terrain on the swisstopo winter map
  * (docs/decisions/a-3d-map-is-maplibre-terrain.md). SNOW-1450 retired the
  * /map/3d/ sandbox this file was first written for, and its own parts went

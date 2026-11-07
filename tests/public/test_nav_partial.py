@@ -897,41 +897,45 @@ class TestNavDebugLogEntry:
 class TestNav3dWordmark:
     """The wordmark wears 3D specs for a reader who can open the map in 3D.
 
-    That is the map_3d and map_modes flags together, as
-    ``map_shared.map_3d_view_enabled`` reads them. The account menu has no
-    Labs entry: 3D is a mode of the map, reached from the map itself.
+    That is the map_3d flag alone since SNOW-1451, as
+    ``map_shared.map_3d_view_enabled`` reads it through the
+    ``{% map_3d_view_enabled %}`` tag. The account menu has no Labs entry:
+    3D is a mode of the map, reached from the map itself.
     """
 
+    @pytest.mark.parametrize("map_modes", [True, False])
     def test_3d_reader_sees_the_specs_opening_the_3d_map(
-        self, rf: RequestFactory, regular_user: User
+        self, rf: RequestFactory, regular_user: User, map_modes: bool
     ) -> None:
-        """Inside both flags the wordmark wears specs and opens /map/?view=3d."""
+        """Inside map_3d, with or without map_modes, the specs open /map/?view=3d."""
         with (
             override_flag("map_3d", active=True),
-            override_flag("map_modes", active=True),
+            override_flag("map_modes", active=map_modes),
         ):
             html = _render_nav_for(rf, regular_user)
         assert 'data-testid="wordmark-3d"' in html
         assert f'href="{reverse("public:map")}?view=3d"' in html
 
-    @pytest.mark.parametrize(("map_3d", "map_modes"), [(True, False), (False, True)])
-    def test_without_both_flags_the_wordmark_is_text(
-        self, rf: RequestFactory, regular_user: User, map_3d: bool, map_modes: bool
+    def test_outside_map_3d_the_wordmark_is_text(
+        self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """Missing either flag the wordmark is plain text linking to /map/."""
+        """map_modes alone leaves the wordmark plain text linking to /map/."""
         with (
-            override_flag("map_3d", active=map_3d),
-            override_flag("map_modes", active=map_modes),
+            override_flag("map_3d", active=False),
+            override_flag("map_modes", active=True),
         ):
             html = _render_nav_for(rf, regular_user)
         assert 'data-testid="wordmark-3d"' not in html
         assert "?view=3d" not in html
 
-    def test_anonymous_viewer_sees_the_text_wordmark(self, rf: RequestFactory) -> None:
-        """A signed-out viewer gets the text wordmark even with both flags on."""
+    def test_anonymous_viewer_sees_the_text_wordmark(
+        self, rf: RequestFactory, django_assert_num_queries: Any
+    ) -> None:
+        """A signed-out viewer gets the text wordmark, and pays no query for it."""
         with (
             override_flag("map_3d", active=True),
             override_flag("map_modes", active=True),
+            django_assert_num_queries(0),
         ):
             html = _render_nav_for(rf, AnonymousUser())
         assert 'data-testid="wordmark-3d"' not in html
