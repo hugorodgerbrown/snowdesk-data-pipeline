@@ -277,7 +277,8 @@
     const h = bar.offsetHeight;
     const left = (vw - w) / 2;
     let top = mapTop + BAR_OFFSET;
-    boxes.forEach((b) => {
+    // Top to bottom, so a box the bar moves onto is still ahead of it.
+    [...boxes].sort((a, b) => a.top - b.top).forEach((b) => {
       const across = b.left < left + w && left < b.right;
       if (across && b.top < top + h && b.bottom > top - LABEL_GAP) top = b.bottom + LABEL_GAP;
     });

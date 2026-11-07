@@ -258,6 +258,21 @@ describe('the controls', () => {
     expect($('map-help-mode-bar').style.top).toBe('108px');
   });
 
+  it('clears a control further down that the bar moves onto (SNOW-1471)', async () => {
+    await setUp();
+    const rect = (left, top, width, height) => () => ({
+      left, top, width, height, right: left + width, bottom: top + height, x: left, y: top,
+    });
+    // Listed first but lower: the bar moves below the date control (108),
+    // which lands it on Layers; it must go on below that too.
+    $('map-calendar-toggle').getBoundingClientRect = rect(480, 60, 40, 40);
+    $('basemap-toggle').getBoundingClientRect = rect(480, 100, 40, 40);
+    $('map-help-toggle').click();
+    frame();
+
+    expect($('map-help-mode-bar').style.top).toBe('148px');
+  });
+
   it('a tap shows what the control does instead of doing it', async () => {
     await setUp();
     $('map-help-toggle').click();
