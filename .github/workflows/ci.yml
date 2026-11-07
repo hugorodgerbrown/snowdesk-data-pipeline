@@ -197,11 +197,15 @@ jobs:
 
     steps:
       # A PR needs history back to the map's commit to diff against it;
-      # pushes run everything and need none.
+      # pushes run everything and need none. The 0 is quoted on purpose:
+      # `cond && 0 || 1` is always 1, because a bare 0 is falsy in an
+      # Actions expression. Unquoted, every PR fetched one commit, the
+      # selector could not resolve the map's sha, and every PR ran the full
+      # suite. tests/bin/test_select_tests.py guards it.
       - name: Check out the repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
 
       - name: Set up Python (3.14)
         uses: actions/setup-python@v7

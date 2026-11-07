@@ -2,7 +2,7 @@
 name: a-pr-runs-the-tests-its-diff-can-affect
 description: Why a PR runs pytest-testmon's selection from main's cached map (bin/select-tests, COVERAGE_CORE=ctrace) or the full suite
 status: current
-last-reviewed: 2026-10-25
+last-reviewed: 2026-11-07
 ---
 
 # A PR runs the tests its diff can affect
@@ -100,6 +100,11 @@ another PR's map.
   import), a selective run can miss it, and the full run on `main` catches
   it after merge. When that happens, add the input to the selector's
   full-suite rules rather than working around it in the test.
+* Until 2026-11-07 no PR ever ran the selection. The checkout's
+  `fetch-depth: ${{ … && 0 || 1 }}` is always 1, because a bare 0 is falsy
+  in an Actions expression, so the clone held one commit, the selector
+  logged `cannot resolve <sha>` and fell back to the full suite. The 0 is
+  now quoted, and `tests/bin/test_select_tests.py` pins it.
 * Test the selector and the shims with `tests/bin/test_select_tests.py` and
   `tests/test_testmon_support.py`. Run it locally with
   `uv run python bin/select-tests --since origin/main`.

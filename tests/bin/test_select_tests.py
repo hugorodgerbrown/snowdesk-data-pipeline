@@ -23,6 +23,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SELECT_TESTS = REPO_ROOT / "bin" / "select-tests"
@@ -360,3 +361,33 @@ class TestMain:
         monkeypatch.setattr(select, "decide", explode)
         monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
         assert select.main(["--github-output"]) == 0
+
+
+# The workflow has to give the selector history back to the map's commit.
+# `cond && 0 || 1` in an Actions expression is always 1, because a bare 0 is
+# falsy, so the PR clone held one commit and every PR fell back to the full
+# suite with "cannot resolve <sha>".
+FALSY_LITERALS = {"0", "false", "null", "''", '""'}
+
+
+def _test_job_fetch_depth() -> str:
+    """Return the ``fetch-depth`` the ``Run tests`` job checks out with."""
+    workflow = yaml.safe_load((REPO_ROOT / ".github/workflows/ci.yml").read_text())
+    steps = workflow["jobs"]["test"]["steps"]
+    checkout = next(
+        s for s in steps if s.get("uses", "").startswith("actions/checkout")
+    )
+    return str(checkout["with"]["fetch-depth"])
+
+
+def test_pr_checkout_fetches_full_history() -> None:
+    """A PR's checkout is deep enough for select-tests to resolve the map's sha."""
+    depth = _test_job_fetch_depth()
+    inner = depth.removeprefix("${{").removesuffix("}}").strip()
+    assert "github.event_name == 'pull_request'" in inner
+    when_pr = inner.split("&&", 1)[1].split("||", 1)[0].strip()
+    assert when_pr not in FALSY_LITERALS, (
+        f"fetch-depth {depth!r}: {when_pr} is falsy, so `&&` falls through "
+        "to the `||` branch on every PR"
+    )
+    assert when_pr.strip("'\"") == "0"
