@@ -39,7 +39,7 @@ this route" control (a reader's own route, played live) the same camera path:
   cameras over terrain it never goes idle: frame 349 of the Breithorn failed
   every time this way (7 Nov 2026), under SwiftShader with its label
   placement never resting and on a Mac GPU with every source loaded. A
-  frame therefore also settles once every tile has stayed loaded for 1.5 s
+  frame therefore also settles once every tile has stayed loaded for 0.5 s
   (`QUIET_MS`), polled on a timer so it does not depend on the map drawing.
   A first version counted renders with `map.loaded()` true, and still hung
   on the Mac (#1516). A label may still be fading in such a frame; a missing

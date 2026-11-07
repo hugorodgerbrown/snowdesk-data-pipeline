@@ -55,7 +55,7 @@
    * A frame whose tiles have all stayed in this long has settled, though
    * the map never goes idle (settled()); checked this often.
    */
-  const QUIET_MS = 1500;
+  const QUIET_MS = 500;
   const QUIET_POLL_MS = 250;
   /** Room left round the route when the reveal fits it, in CSS pixels. */
   const REVEAL_PADDING = 120;

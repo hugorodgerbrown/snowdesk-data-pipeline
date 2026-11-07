@@ -82,6 +82,9 @@ MAP_READY_MS = 120_000
 # How long one frame may take to settle: the page's own 60 s with a GPU;
 # SwiftShader draws terrain so slowly that a close-up frame can need more.
 SOFTWARE_GL_FRAME_CAP_MS = 600_000
+# The browser's disk cache, kept in --out/browser between runs: room for
+# every tile a 1080p fly-past asks for, a few hundred MB.
+DISK_CACHE_BYTES = 2 * 1024**3
 
 # Prints a signed-in session key for the seeded dev user (NORMAL_USER_EMAIL
 # in seed_test_data), as ``manage.py shell`` runs it. The same snippet as
@@ -165,6 +168,11 @@ class Settings:
     def frames_dir(self) -> Path:
         """Where the frames are written, one PNG each."""
         return self.out / "frames"
+
+    @property
+    def browser_dir(self) -> Path:
+        """The browser profile kept between runs, so its tile cache is too."""
+        return self.out / "browser"
 
 
 def parse_size(value: str) -> tuple[int, int]:
@@ -401,6 +409,8 @@ def poster_command(ffmpeg: str, settings: Settings, mp4: Path, out: Path) -> lis
 def chromium_args(settings: Settings) -> list[str]:
     """Return Chromium's switches: the GPU if there is one, else SwiftShader.
 
+    Both keep a disk cache big enough for every tile of a run.
+
     Args:
         settings: The run.
 
@@ -408,13 +418,15 @@ def chromium_args(settings: Settings) -> list[str]:
         The switches.
 
     """
+    cache = [f"--disk-cache-size={DISK_CACHE_BYTES}"]
     if settings.software_gl:
         return [
             "--use-gl=angle",
             "--use-angle=swiftshader",
             "--enable-unsafe-swiftshader",
+            *cache,
         ]
-    return ["--ignore-gpu-blocklist", "--enable-gpu-rasterization"]
+    return ["--ignore-gpu-blocklist", "--enable-gpu-rasterization", *cache]
 
 
 def dev_session_cookie(url: str) -> dict[str, str]:
@@ -527,11 +539,16 @@ def record_frames(settings: Settings, route: dict[str, Any]) -> tuple[Path, Path
     card = settings.out / "end-card.png"
     viewport = {"width": settings.width, "height": settings.height}
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(
+        # A profile kept in --out keeps the browser's HTTP cache, so a second
+        # run or a --resume reads its tiles from disk rather than the network.
+        context = playwright.chromium.launch_persistent_context(
+            str(settings.browser_dir),
             executable_path=settings.chromium,
             args=chromium_args(settings),
+            viewport=viewport,
+            device_scale_factor=1,
         )
-        overlay = browser.new_page(viewport=viewport, device_scale_factor=1)
+        overlay = context.new_page()
         font = (REPO_ROOT / "static" / "fonts" / "dm-sans-latin.woff2").as_uri()
         overlay.set_content(CREDIT_HTML.format(font=font, credit=CREDIT))
         overlay.wait_for_timeout(300)
@@ -541,7 +558,6 @@ def record_frames(settings: Settings, route: dict[str, Any]) -> tuple[Path, Path
         overlay.screenshot(path=str(card))
         overlay.close()
 
-        context = browser.new_context(viewport=viewport, device_scale_factor=1)
         context.add_init_script(DISMISS_INTRO)
         context.add_cookies([dev_session_cookie(settings.url)])  # type: ignore[list-item]
         page = context.new_page()
@@ -592,7 +608,7 @@ def record_frames(settings: Settings, route: dict[str, Any]) -> tuple[Path, Path
             elapsed = time.monotonic() - started
             log(frame_progress(i + 1, n, phase, done, len(todo) - done, elapsed))
         page.evaluate("() => window.pwaMap3dFlight.unload()")
-        browser.close()
+        context.close()
     return credit, card
 
 
