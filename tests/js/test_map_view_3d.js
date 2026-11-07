@@ -843,6 +843,42 @@ describe('a lost WebGL context', () => {
   });
 });
 
+describe('the pixel ratio on a large canvas (SNOW-1464)', () => {
+  /** Give the map's container a CSS size. */
+  const sizeTo = (map, width, height) => {
+    const container = map.getContainer();
+    Object.defineProperty(container, 'clientWidth', { value: width, configurable: true });
+    Object.defineProperty(container, 'clientHeight', { value: height, configurable: true });
+  };
+
+  it('draws a large canvas at 1.5x and gives the ratio back on leaving', async () => {
+    const { map, button } = await boot();
+    sizeTo(map, 744, 1011);
+    button.click();
+    await flush();
+    expect(map.pixelRatio).toBe(core3d.LARGE_CANVAS_PIXEL_RATIO);
+    button.click();
+    expect(map.pixelRatio).toBe(3);
+  });
+
+  it('goes back to 2x when a resize in 3D makes the canvas small', async () => {
+    const { map, button } = await boot();
+    sizeTo(map, 744, 1011);
+    button.click();
+    await flush();
+    sizeTo(map, 390, 844);
+    map.fire('resize');
+    expect(map.pixelRatio).toBe(core3d.MAX_PIXEL_RATIO);
+  });
+
+  it('leaves the ratio alone on a resize while flat', async () => {
+    const { map } = await boot();
+    sizeTo(map, 744, 1011);
+    map.fire('resize');
+    expect(map.setPixelRatio).not.toHaveBeenCalled();
+  });
+});
+
 describe('the frame watchdog', () => {
   it('asks after five slow windows, staying in 3D with timing stopped', async () => {
     const { map } = await enterAndSettle();

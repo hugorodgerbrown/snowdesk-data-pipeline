@@ -263,7 +263,32 @@ draws what it already has well.
    whether its slow windows lined up with tile loads.
 
 Left out: a lower pixel-ratio cap for large canvases (`MAX_PIXEL_RATIO` is
-already 2, what the iPad ran at), to be measured first.
+already 2, what the iPad ran at), to be measured first. SNOW-1464 added it
+(below).
+
+## 1.5x on a large canvas (SNOW-1464, 7 Nov 2026)
+
+Every 3D frame shades every device pixel through the terrain mesh, so the
+cost of a frame grows with the canvas, not the scene. An iPad at 2x
+(744 x 1011 CSS pixels) fills three million pixels a frame, more than twice
+a 2x phone. `pixelRatioFor(devicePixelRatio, cssWidth, cssHeight)` in
+`map_3d_core.js` caps the ratio at `MAX_PIXEL_RATIO` (2) as before, then at
+`LARGE_CANVAS_PIXEL_RATIO` (1.5) when the canvas would draw more than
+`LARGE_CANVAS_PIXELS` (2.5 million) device pixels at the capped ratio. At
+1.5x the iPad fills 1.7 million, about 44% fewer. It never raises a ratio,
+so a 1x desktop stays at 1x and phones keep 2x.
+
+The runner applies it on entering 3D and again on each map `resize` while
+in 3D, so a rotated iPad or a resized window crosses the line both ways.
+Leaving 3D gives the reader's own ratio back, held until the restore if the
+WebGL context is lost, as before.
+
+Rejected: capping the elevation tiles' zoom. MapLibre's terrain fetches
+elevation two zooms below the map (`deltaZoom` 1 on 1024-pixel tiles), so a
+cap at z15 bites only at map z17, and a lower cap would soften the relief
+where it is looked at. Rejected also: turning off tappable layers in 3D.
+They cost nothing per frame on touch devices; only a desktop's mouse moves
+query them.
 
 ## 3D in Conditions (SNOW-1452, 6 Nov 2026)
 
