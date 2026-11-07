@@ -16,20 +16,26 @@
  *     route Shares copy while the map is in 3D;
  *   - the frame-time probe (`?probe=1`, SNOW-1448): the camera passes it
  *     flies and the summary of the frame intervals it records, measured
- *     against the proposed budget of a median frame under 33 ms;
+ *     against the budget of a median frame under FRAME_BUDGET_MS;
  *   - /map/'s frame watchdog (SNOW-1455): the budget for one window of
- *     about two seconds of moving time (a median under 33 ms), judged by
- *     frameWindowFails, and the watch that trips on three failing windows
+ *     about two seconds of moving time (a median under 45 ms), judged by
+ *     frameWindowFails, and the watch that trips on five failing windows
  *     in a row. Loosened on 6 Nov 2026: the first cut also failed a p95
  *     over 66 ms after two windows, and laid flat the very phone whose
  *     probe run had passed (Hugo), because tiles arriving mid-gesture
- *     stall a frame without the map being slow. The probe's own
- *     verdict (frameStats().withinBudget) is not what the watch reads;
+ *     stall a frame without the map being slow. Loosened again on 7 Nov
+ *     (SNOW-1463): a 33 ms bar sat exactly on 30 fps (33.3 ms), so an
+ *     iPad drawing a steady 30 fps failed on noise, and a Pixel 9 that
+ *     drew at 16.7 ms tripped close in while tiles loaded. The bar is now
+ *     45 ms over five windows, and an interval either of whose frames saw
+ *     tiles loading is not timed at all. The probe's own verdict
+ *     (frameStats().withinBudget) is not what the watch reads;
  *   - the 3D test's verdict (SNOW-1456): each pass's intervals go
  *     through a fresh createFrameWatch, the watchdog's own rule, so the
  *     test and the fallback cannot disagree. judgePass says whether a
- *     pass was measured (one full FRAME_WINDOW_MS of frames at least),
- *     whether it kept up and how many of its windows were slow;
+ *     pass was measured (FRAME_WINDOWS_TO_TRIP full windows at least, so
+ *     a slow pass could trip), whether it kept up, how many of its
+ *     windows were slow and how much time was skipped for tiles loading;
  *     testVerdict turns the passes into smooth, stutter, slow or
  *     unmeasured. The p95 is never read.
  *
@@ -44,8 +50,8 @@
  *   routeShare3dUrl(shareUrl, query)
  *   FRAME_BUDGET_MS / PROBE_PASSES / frameStats(intervals, budgetMs?)
  *   FRAME_WINDOW_MS / FRAME_WINDOWS_TO_TRIP
- *   frameWindowFails(stats) / createFrameWatch()
- *   TEST_VERDICTS / judgePass(intervals) / testVerdict(passes)
+ *   frameWindowFails(stats) / createFrameWatch({onWindow}?)
+ *   TEST_VERDICTS / judgePass(intervals, loading?) / testVerdict(passes)
  */
 (function () {
   'use strict';
@@ -301,10 +307,14 @@
   }
 
   /**
-   * The proposed frame budget (SNOW-1448): a median frame under 33 ms, which
-   * is 30 frames a second, on a mid-range phone.
+   * The frame budget: a median frame under 45 ms. SNOW-1448 proposed 33 ms,
+   * but frame intervals come in display-refresh steps (16.7, 33.3 and 50 ms
+   * at 60 Hz, 41.7 ms at 120 Hz), and 33 ms sat on 30 fps, so a device
+   * drawing a steady 30 fps failed on noise (SNOW-1463). 45 ms passes 30
+   * and 24 fps cleanly and fails 20 fps cleanly; 50 ms would put a steady
+   * 20 fps on the edge, the same mistake again.
    */
-  const FRAME_BUDGET_MS = 33;
+  const FRAME_BUDGET_MS = 45;
 
   /**
    * The probe's camera passes. Each opens over Saas-Fee at OPENING_CAMERA's
@@ -313,10 +323,13 @@
    * The turn brings new ground into view, so the pass pays for tiles and
    * draping as a reader's own panning does. The z9 pass is where the 3-D
    * control is proposed to switch off: the most ground a tilted view draws.
+   * Each pass lasts 18 s (12 s until SNOW-1463), so that with some of its
+   * time skipped for tiles loading it still holds the FRAME_WINDOWS_TO_TRIP
+   * windows judgePass needs to call it measured.
    */
   const PROBE_PASSES = Object.freeze([
-    Object.freeze({ label: 'Saas-Fee z12.6', zoom: OPENING_CAMERA.zoom, turnDeg: 90, durationMs: 12000 }),
-    Object.freeze({ label: 'Valais z9', zoom: 9, turnDeg: 90, durationMs: 12000 }),
+    Object.freeze({ label: 'Saas-Fee z12.6', zoom: OPENING_CAMERA.zoom, turnDeg: 90, durationMs: 18000 }),
+    Object.freeze({ label: 'Valais z9', zoom: 9, turnDeg: 90, durationMs: 18000 }),
   ]);
 
   /**
@@ -358,10 +371,10 @@
   const FRAME_WINDOW_MS = 2000;
 
   /**
-   * How many failing windows in a row lay /map/'s 3-D flat: about six
-   * seconds of moving time under 30 fps.
+   * How many failing windows in a row trip /map/'s watchdog: about ten
+   * seconds of moving time under about 22 fps (three until SNOW-1463).
    */
-  const FRAME_WINDOWS_TO_TRIP = 3;
+  const FRAME_WINDOWS_TO_TRIP = 5;
 
   /**
    * Whether one window of frames is over the budget: a median of
@@ -381,37 +394,66 @@
 
   /**
    * The frame watchdog's state. Intervals are pushed one at a time; once
-   * they add up to FRAME_WINDOW_MS the window closes and is judged by
-   * frameWindowFails. FRAME_WINDOWS_TO_TRIP failing windows in a row trip
-   * it, and a passing window starts the count again. A window carries over
-   * from one gesture to the next, and so does the count; only `reset`
-   * clears them. Once tripped, it stays tripped until `reset`.
+   * the timed ones add up to FRAME_WINDOW_MS the window closes and is
+   * judged by frameWindowFails. FRAME_WINDOWS_TO_TRIP failing windows in a
+   * row trip it, and a passing window starts the count again. A window
+   * carries over from one gesture to the next, and so does the count; only
+   * `reset` clears them. Once tripped, it stays tripped until `reset`.
    *
-   * @returns {{push: (intervalMs: number) => boolean, reset: () => void}}
+   * An interval pushed with `loading` set is skipped (SNOW-1463): tiles
+   * arriving and draping stall frames on a device that draws what it
+   * already has well, so it neither counts towards the window's time nor
+   * joins its median. The window is kept, and its skipped time is reported.
+   *
+   * `onWindow`, if given, hears every closed window, for the debug trace.
+   *
+   * @param {{onWindow?: (window: {medianMs: number, frames: number,
+   *   skippedMs: number, slow: boolean, failing: number, tripped: boolean}) => void}} [options]
+   * @returns {{push: (intervalMs: number, loading?: boolean) => boolean, reset: () => void}}
    *   `push` answers whether the watch has tripped.
    */
-  function createFrameWatch() {
+  function createFrameWatch(options) {
+    const onWindow = options && typeof options.onWindow === 'function' ? options.onWindow : null;
     /** @type {number[]} */
     let frames = [];
     let elapsed = 0;
+    let skipped = 0;
     let failing = 0;
     let tripped = false;
     return {
-      push(intervalMs) {
+      push(intervalMs, loading) {
         if (tripped) return true;
         if (!Number.isFinite(intervalMs) || intervalMs <= 0) return false;
+        if (loading) {
+          skipped += intervalMs;
+          return false;
+        }
         frames.push(intervalMs);
         elapsed += intervalMs;
         if (elapsed < FRAME_WINDOW_MS) return false;
-        failing = frameWindowFails(frameStats(frames)) ? failing + 1 : 0;
+        const stats = frameStats(frames);
+        const slow = frameWindowFails(stats);
+        failing = slow ? failing + 1 : 0;
+        if (failing >= FRAME_WINDOWS_TO_TRIP) tripped = true;
+        if (onWindow && stats) {
+          onWindow({
+            medianMs: stats.medianMs,
+            frames: stats.frames,
+            skippedMs: Math.round(skipped),
+            slow,
+            failing,
+            tripped,
+          });
+        }
         frames = [];
         elapsed = 0;
-        if (failing >= FRAME_WINDOWS_TO_TRIP) tripped = true;
+        skipped = 0;
         return tripped;
       },
       reset() {
         frames = [];
         elapsed = 0;
+        skipped = 0;
         failing = 0;
         tripped = false;
       },
@@ -428,36 +470,42 @@
   /**
    * Judge one pass of the 3D test by the watchdog's own rule.
    *
-   * A pass whose usable intervals add up to less than one FRAME_WINDOW_MS
-   * was not measured: the watch never closed a window on it. A measured
-   * pass keeps up unless a fresh createFrameWatch, fed every interval,
-   * trips; `windows` and `slowWindows` count the closed windows and those
-   * frameWindowFails, for the Details.
+   * The pass is fed through a fresh createFrameWatch, loading flags and
+   * all, so the test skips what the watchdog skips. A pass with fewer than
+   * FRAME_WINDOWS_TO_TRIP closed windows was not measured: a slow device
+   * could not have tripped on it. A measured pass keeps up unless the
+   * watch trips; `windows` and `slowWindows` count the closed windows and
+   * those frameWindowFails, and `skippedMs` the time skipped for tiles
+   * loading, for the Details.
    *
    * @param {number[]} intervals Milliseconds between consecutive frames.
-   * @returns {{measured: boolean, keptUp: boolean, windows: number, slowWindows: number}}
+   * @param {boolean[]} [loading] Per interval, whether tiles were loading.
+   * @returns {{measured: boolean, keptUp: boolean, windows: number, slowWindows: number, skippedMs: number}}
    */
-  function judgePass(intervals) {
-    const usable = (intervals || []).filter((ms) => Number.isFinite(ms) && ms > 0);
-    const watch = createFrameWatch();
-    let tripped = false;
+  function judgePass(intervals, loading) {
     let windows = 0;
     let slowWindows = 0;
-    /** @type {number[]} */
-    let frames = [];
-    let elapsed = 0;
-    for (const ms of usable) {
-      if (watch.push(ms)) tripped = true;
-      frames.push(ms);
-      elapsed += ms;
-      if (elapsed < FRAME_WINDOW_MS) continue;
-      windows += 1;
-      if (frameWindowFails(frameStats(frames))) slowWindows += 1;
-      frames = [];
-      elapsed = 0;
-    }
-    const measured = windows > 0;
-    return { measured, keptUp: measured && !tripped, windows, slowWindows };
+    let tripped = false;
+    let skippedMs = 0;
+    const watch = createFrameWatch({
+      onWindow(closed) {
+        windows += 1;
+        if (closed.slow) slowWindows += 1;
+      },
+    });
+    (intervals || []).forEach((ms, i) => {
+      if (!Number.isFinite(ms) || ms <= 0) return;
+      const isLoading = !!(loading && loading[i]);
+      if (isLoading) skippedMs += ms;
+      if (watch.push(ms, isLoading)) {
+        // Latched here; the watch starts afresh so the Details count every
+        // window of the pass, not just those up to the trip.
+        tripped = true;
+        watch.reset();
+      }
+    });
+    const measured = windows >= FRAME_WINDOWS_TO_TRIP;
+    return { measured, keptUp: measured && !tripped, windows, slowWindows, skippedMs: Math.round(skippedMs) };
   }
 
   /**
@@ -466,11 +514,11 @@
    * tilted view draws) falls behind, `stutter`; otherwise `slow`. Any pass
    * not measured, or no passes at all, makes the run `unmeasured`.
    *
-   * @param {Array<{intervals: number[]}>} passes
+   * @param {Array<{intervals: number[], loading?: boolean[]}>} passes
    * @returns {'smooth'|'stutter'|'slow'|'unmeasured'}
    */
   function testVerdict(passes) {
-    const judged = (passes || []).map((pass) => judgePass(pass && pass.intervals));
+    const judged = (passes || []).map((pass) => judgePass(pass && pass.intervals, pass && pass.loading));
     if (!judged.length || judged.some((pass) => !pass.measured)) return 'unmeasured';
     if (judged.every((pass) => pass.keptUp)) return 'smooth';
     const last = judged.length - 1;

@@ -250,6 +250,7 @@ Included by public/partials/_map_embed.html behind ``map_3d_view``.
                             <span data-figure="median"></span><span data-figure="fps"></span>
                             <span data-figure="p95"></span><span data-figure="over"></span>
                             <span data-figure="windows"></span><span data-figure="settle"></span>
+                            <span data-figure="skipped" class="col-span-2"></span>
                         </div>
                     </div>
                     <div class="rounded-sm bg-tag p-3" data-test-figures="1">
@@ -258,6 +259,7 @@ Included by public/partials/_map_embed.html behind ``map_3d_view``.
                             <span data-figure="median"></span><span data-figure="fps"></span>
                             <span data-figure="p95"></span><span data-figure="over"></span>
                             <span data-figure="windows"></span><span data-figure="settle"></span>
+                            <span data-figure="skipped" class="col-span-2"></span>
                         </div>
                     </div>
                     <div class="flex flex-col gap-1 font-mono text-caption text-text-3">
@@ -358,6 +360,9 @@ Included by public/partials/_map_embed.html behind ``map_3d_view``.
                 data-string="figure-windows"
             >{% blocktrans %}%(slow)s of %(windows)s windows slow{% endblocktrans %}</span>
             <span data-string="figure-settle">{% blocktrans %}tiles in %(s)s s{% endblocktrans %}</span>
+            <span
+                data-string="figure-skipped"
+            >{% blocktrans %}%(s)s s skipped while tiles loaded{% endblocktrans %}</span>
             <span data-string="figure-gpu">{% blocktrans %}GPU · %(gpu)s{% endblocktrans %}</span>
             <span data-string="gpu-unknown">{% trans "not given" %}</span>
             <span

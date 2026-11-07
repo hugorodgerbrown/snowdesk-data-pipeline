@@ -2,7 +2,7 @@
 name: a-3d-map-is-maplibre-terrain
 description: 3D map on MapLibre setTerrain: /map/ ?view=3d and ?at=, /map/3d/ redirect, route 3D links, 3D wash, fallbacks, offline 3D elevation tiles
 status: current
-last-reviewed: 2026-11-06
+last-reviewed: 2026-11-07
 ---
 
 # A 3-D map is MapLibre's own terrain
@@ -208,7 +208,62 @@ is not told "Zoom in".
    stops an ease still running and fires its `moveend` synchronously, so
    the runner disarms again after the call). The first interval of each run
    is dropped and a hidden tab is never counted. A trip blocks 3-D (`slow`)
-   for the rest of the visit.
+   for the rest of the visit. Since SNOW-1463 a trip outside playback asks
+   first ([below](#a-lower-bar-and-ask-first-snow-1463-7-nov-2026)).
+
+## A lower bar, and ask first (SNOW-1463, 7 Nov 2026)
+
+**What went wrong.** On 6 Nov 2026 Hugo's iPad dropped out of 3D with "3D
+is too slow on this device" while it was still drawing well, and the 3D
+test then passed on the same iPad. Its three test runs in production
+(`Map3dDeviceTest` 1–3) went Smooth, Slow, Smooth within two minutes, at
+medians of 26–35 ms. The bar was 33 ms, and a steady 30 fps is 33.3 ms a
+frame, so the bar sat exactly on 30 fps: any iPad, any phone in Low Power
+Mode (iOS caps frames at 30) and any large screen failed on noise. On 7 Nov
+Hugo's Pixel 9 (Mali-G715) dropped out at z13–14 while its relief was still
+sharpening. That phone's test median is 16.7 ms: close in, every pan
+fetches and drapes new tiles, and those frames run long on a phone that
+draws what it already has well.
+
+**Decision** (Hugo, "lower bar and ask first", 7 Nov 2026):
+
+1. **The bar.** `FRAME_BUDGET_MS` is 45 ms and `FRAME_WINDOWS_TO_TRIP` is
+   5, about ten seconds of moving time. Frame intervals come in
+   display-refresh steps (16.7, 33.3 and 50 ms at 60 Hz, 41.7 ms at 120 Hz),
+   so 45 ms passes 30 and 24 fps cleanly and fails 20 fps cleanly. A bar of
+   exactly 50 ms would put a steady 20 fps on the edge, the mistake 33 ms
+   made at 30 fps.
+2. **Tiles loading are not timed.** Each frame reads `map.areTilesLoaded()`;
+   an interval either of whose frames saw tiles loading is pushed to
+   `createFrameWatch().push(ms, loading)` as loading and skipped: it neither
+   counts towards the window's two seconds nor joins its median, and the
+   window is kept. MapLibre 4.7.1's `idle` never fires while the camera
+   moves, so a `dataloading`→`idle` span would have covered every gesture.
+3. **Ask, do not drop.** A trip outside timelapse playback keeps the map in
+   3D, stops timing, and shows "3D is running slowly here" on the map toast
+   with "Switch to 2D" and "Keep 3D", with no timer
+   (`MapSheet.toast(text, {sticky: true})`). Switch to 2D is the old trip:
+   flat for the visit, `left-slow`, then `why-slow` with "Test this device".
+   Keep 3D, the toast's ×, or another line taking its place all leave the
+   watchdog silenced for the visit, playback included; nothing is stored.
+   Leaving 3D by any route takes the prompt away. During playback a trip
+   still goes flat at once, because playback cannot wait for a tap. The two
+   text buttons on one toast line are a recorded exception to design rule 5
+   ([`design-system.md`](../design-system.md#interaction-principles)).
+4. **The test agrees.** `judgePass(intervals, loading)` skips what the
+   watchdog skips, and counts a pass as measured only with at least
+   `FRAME_WINDOWS_TO_TRIP` windows, so a slow device could have tripped on
+   it; each `PROBE_PASSES` pass lasts 18 s (was 12 s) so that a pass with
+   some tile time still holds five. The Details show each pass's skipped
+   time, and their figures are over the timed intervals. Results sent
+   before and after the change are told apart by `client_version`.
+5. **The trace.** `createFrameWatch({onWindow})` hears every closed window;
+   the runner puts each on the debug trace as `map 3d.window`
+   ([`debug-log.md`](../debug-log.md)), so a phone that drops out can show
+   whether its slow windows lined up with tile loads.
+
+Left out: a lower pixel-ratio cap for large canvases (`MAX_PIXEL_RATIO` is
+already 2, what the iPad ran at), to be measured first.
 
 ## 3D in Conditions (SNOW-1452, 6 Nov 2026)
 
@@ -343,8 +398,9 @@ told "smooth" by one rule and sent back to 2D by another.
   `map_3d_core.createFrameWatch()` (`judgePass`): a pass that trips falls
   behind, one that does not keeps up. `testVerdict(passes)` gives `smooth`
   when both keep up, `stutter` when only the second (z9, over the Valais)
-  falls behind, and `slow` otherwise. A pass shorter than one watchdog
-  window (`FRAME_WINDOW_MS`) was not measured, and the run is `unmeasured`:
+  falls behind, and `slow` otherwise. A pass of fewer than
+  `FRAME_WINDOWS_TO_TRIP` watchdog windows (one window until SNOW-1463) was
+  not measured, and the run is `unmeasured`:
   the panel says so and offers Test again, and nothing can be sent.
   `frameStats` still gives the Details figures (median, fps, p95, share over
   budget, slow windows); the verdict never reads the p95.

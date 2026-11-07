@@ -2,7 +2,7 @@
 name: debug-log
 description: On-device debug trace — window.pwaDebugLog, log:debug store, debug_log flag (GRP_DEBUG), sw classify/pinned.search, req serve request ledger
 status: current
-last-reviewed: 2026-11-01
+last-reviewed: 2026-11-07
 ---
 
 # Debug log (SNOW-812)
@@ -132,6 +132,18 @@ branch — `url` (malformed), `threw` (the fetch rejected), `status` (not ok),
 `no-store`, `principal` (no attested principal) or `write` (`cache.put`
 threw, quota included). `failed` still counts every failure; the sample is
 what to paste into the bug report.
+
+### 3D dropping out names its windows
+
+The 3D frame watchdog writes `map 3d.window` once for every window it
+closes, about every two seconds of moving time in 3D (SNOW-1463):
+`{medianMs, frames, skippedMs, slow, failing, tripped}`. `skippedMs` is the
+moving time not timed because tiles were loading, `failing` the run of slow
+windows so far, and `tripped` whether this window tripped the watchdog. A
+trace that shows the slow windows each carrying a large `skippedMs` says the
+device was waiting on tiles, not failing to draw. The runner checks
+`window.pwaDebugLog.on` before it records, so a page not recording pays one
+property read per window.
 
 ## Cost, stated exactly
 

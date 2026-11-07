@@ -2,7 +2,7 @@
 name: design-system
 description: Design handover — editorial and interaction principles, icon vs ellipsis rule, design tokens, the component layer, field guidance
 status: current
-last-reviewed: 2026-11-05
+last-reviewed: 2026-11-07
 ---
 
 
@@ -267,6 +267,16 @@ its actions, and identity matters more. It was first written down in
 The consequence worth stating plainly: **a row that gains a second action
 changes shape.** That is not scope creep in the ticket that adds the
 action — it is the rule being applied at the moment it starts to bite.
+
+**One exception: a toast that asks something.** A toast is a single line
+of text, not a row: it has no name for its actions to crowd out, which is
+the reason the rule exists. So when a toast asks the reader to choose, the
+choices sit on its line as text buttons, as many as the question has (two
+at most so far), rather than behind a "…" menu that would hide the
+question's own answers. The map's slow prompt, "3D is running slowly here ·
+Switch to 2D · Keep 3D" (SNOW-1463, Hugo's wording), is the first; the
+"Test this device" link on the `why-slow` line is the one-action case of
+the same shape.
 
 ### Map panels: what opened it decides its shape
 

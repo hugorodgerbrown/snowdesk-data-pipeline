@@ -25,10 +25,14 @@
  * map_3d_core.PROBE_PASSES jump to it over Saas-Fee, wait for its tiles
  * (nextIdle, capped) and turn the camera through a quarter circle at a
  * steady rate (timeTurn, `essential` so reduced motion does not skip it),
- * recording the interval between animation frames. map_3d_core.testVerdict
- * judges the passes by the watchdog's own rule — smooth, stutter, slow or
- * unmeasured — and endTest({verdict}) puts the camera and the view back; a
- * smooth or stutter verdict lifts the watchdog's latch.
+ * recording the interval between animation frames and, per interval,
+ * whether either of its frames saw tiles loading (!map.areTilesLoaded(),
+ * SNOW-1463). map_3d_core.testVerdict judges the passes by the watchdog's
+ * own rule, loading intervals skipped as the watchdog skips them — smooth,
+ * stutter, slow or unmeasured — and endTest({verdict}) puts the camera
+ * and the view back; a smooth or stutter verdict lifts the watchdog's
+ * latch. Details' figures are over the timed intervals, and each pass says
+ * how much of it was skipped for tiles loading.
  *
  * ENDED EARLY by the panel's × ("Stop the test"), Escape, a hidden tab, a
  * lost WebGL context or the map leaving 3D (snowdesk:map-view-changed to
@@ -85,6 +89,7 @@
     'figure-over': '%(pct)s over %(budget)s ms',
     'figure-windows': '%(slow)s of %(windows)s windows slow',
     'figure-settle': 'tiles in %(s)s s',
+    'figure-skipped': '%(s)s s skipped while tiles loaded',
     'figure-gpu': 'GPU · %(gpu)s',
     'gpu-unknown': 'not given',
     'figure-screen': 'screen · %(width)s × %(height)s at %(dpr)s×, drawn at %(ratio)s×',
@@ -233,25 +238,34 @@
    * @param {{turnDeg: number, durationMs: number}} pass
    * @param {Run} token
    * @param {(elapsedMs: number) => void} onFrame
-   * @returns {Promise<number[]>} The intervals between frames, in ms.
+   * @returns {Promise<{intervals: number[], loading: boolean[]}>} The
+   *   intervals between frames, in ms, and per interval whether tiles were
+   *   loading at either of its frames.
    */
   const timeTurn = (pass, token, onFrame) => new Promise((resolve) => {
     /** @type {number[]} */
     const intervals = [];
+    /** @type {boolean[]} */
+    const loading = [];
     let last = 0;
+    let lastLoading = false;
     let started = 0;
     let turning = true;
     const end = () => {
       if (!turning) return;
       turning = false;
-      resolve(intervals);
+      resolve({ intervals, loading });
     };
     /** @param {number} now */
     const tick = (now) => {
       if (!turning) return;
-      if (last) intervals.push(now - last);
-      else started = now;
+      const nowLoading = typeof map.areTilesLoaded === 'function' && !map.areTilesLoaded();
+      if (last) {
+        intervals.push(now - last);
+        loading.push(lastLoading || nowLoading);
+      } else started = now;
       last = now;
+      lastLoading = nowLoading;
       onFrame(now - started);
       window.requestAnimationFrame(tick);
     };
@@ -414,7 +428,7 @@
     if (token.cancelled) return;
     const firstIdleMs = Math.round(performance.now());
     const total = core.PROBE_PASSES.length;
-    /** @type {Array<{label: string, intervals: number[], settled: boolean, settleMs: number}>} */
+    /** @type {Array<{label: string, intervals: number[], loading: boolean[], settled: boolean, settleMs: number}>} */
     const timed = [];
     for (const [i, pass] of core.PROBE_PASSES.entries()) {
       progress(String(i), i / total);
@@ -430,7 +444,7 @@
       if (token.cancelled) return;
       const settleMs = Math.round(performance.now() - settleFrom);
       let shown = -1;
-      const intervals = await timeTurn(pass, token, (elapsed) => {
+      const { intervals, loading } = await timeTurn(pass, token, (elapsed) => {
         const left = Math.max(0, Math.ceil((pass.durationMs - elapsed) / 1000));
         if (left !== shown) {
           shown = left;
@@ -438,7 +452,7 @@
         }
       });
       if (token.cancelled) return;
-      timed.push({ label: pass.label, intervals, settled, settleMs });
+      timed.push({ label: pass.label, intervals, loading, settled, settleMs });
     }
     finish(token, timed, overlays, firstIdleMs);
   };
@@ -447,20 +461,21 @@
    * Judge the passes, put the map back and show the verdict.
    *
    * @param {Run} token
-   * @param {Array<{label: string, intervals: number[], settled: boolean, settleMs: number}>} timed
+   * @param {Array<{label: string, intervals: number[], loading: boolean[], settled: boolean, settleMs: number}>} timed
    * @param {string[]} overlays
    * @param {number} firstIdleMs
    */
   const finish = (token, timed, overlays, firstIdleMs) => {
-    const verdict = core.testVerdict(timed.map((pass) => ({ intervals: pass.intervals })));
+    const verdict = core.testVerdict(timed.map((pass) => ({ intervals: pass.intervals, loading: pass.loading })));
     // Read while still in 3D: leaving puts the uncapped pixel ratio back,
     // and the canvas grows with it.
     const canvasEl = map.getCanvas();
     const screen = { width: canvasEl.width, height: canvasEl.height, ratio: map.getPixelRatio() };
     const gpu = gpuName();
     const passes = timed.map((pass) => {
-      const stats = core.frameStats(pass.intervals);
-      const judged = core.judgePass(pass.intervals);
+      // The figures are over what the rule timed: not the loading intervals.
+      const stats = core.frameStats(pass.intervals.filter((_ms, i) => !pass.loading[i]));
+      const judged = core.judgePass(pass.intervals, pass.loading);
       return { pass, stats, judged };
     });
     run = null;
@@ -506,6 +521,7 @@
         keptUp: judged.keptUp,
         windows: judged.windows,
         slowWindows: judged.slowWindows,
+        skippedMs: judged.skippedMs,
         ...stats,
       })),
     };
@@ -542,6 +558,7 @@
         over: fill(STRINGS['figure-over'], { pct: `${Math.round(stats.overBudget * 100)}%`, budget: core.FRAME_BUDGET_MS }),
         windows: fill(STRINGS['figure-windows'], { slow: judged.slowWindows, windows: judged.windows }),
         settle: fill(STRINGS['figure-settle'], { s: (passes[i].pass.settleMs / 1000).toFixed(1) }),
+        skipped: fill(STRINGS['figure-skipped'], { s: (judged.skippedMs / 1000).toFixed(1) }),
       };
       for (const [key, text] of Object.entries(lines)) {
         const cell = figures.querySelector(`[data-figure="${key}"]`);

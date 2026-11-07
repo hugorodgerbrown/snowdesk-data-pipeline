@@ -58,8 +58,8 @@ const MARKUP = `
         <li data-test-pass="0"><span data-pass-status="keeps" hidden>keeps up</span><span data-pass-status="behind" hidden>falls behind</span></li>
         <li data-test-pass="1"><span data-pass-status="keeps" hidden>keeps up</span><span data-pass-status="behind" hidden>falls behind</span></li>
         <details data-test-details>
-          <div data-test-figures="0"><span data-figure="median"></span><span data-figure="windows"></span></div>
-          <div data-test-figures="1"><span data-figure="median"></span><span data-figure="windows"></span></div>
+          <div data-test-figures="0"><span data-figure="median"></span><span data-figure="windows"></span><span data-figure="skipped"></span></div>
+          <div data-test-figures="1"><span data-figure="median"></span><span data-figure="windows"></span><span data-figure="skipped"></span></div>
           <span data-test-gpu></span><span data-test-screen></span><span data-test-rule></span>
         </details>
         <div data-test-send-box>
@@ -221,8 +221,8 @@ const request = () => document.dispatchEvent(new CustomEvent('snowdesk:map-3d-te
 
 const FAST = 16;
 const SLOW = 50;
-/** One pass's frames: about 12 s of them. */
-const perPass = (ms) => Math.ceil(12000 / ms) + 1;
+/** One pass's frames: about 18 s of them. */
+const perPass = (ms) => Math.ceil(18000 / ms) + 1;
 
 /** Let the map go idle, then run each pass at its frame time. */
 async function runPasses(msPerPass) {
@@ -262,7 +262,7 @@ describe('a run', () => {
     expect(env.map.jumpTo.mock.calls.map((c) => c[0].zoom)).toEqual(core.PROBE_PASSES.map((p) => p.zoom));
     expect(env.map.jumpTo.mock.calls[0][0].center).toEqual([...core.OPENING_CAMERA.center]);
     expect(env.map.rotateTo).toHaveBeenCalledTimes(2);
-    expect(env.map.rotateTo.mock.calls[0][1]).toMatchObject({ duration: 12000, essential: true });
+    expect(env.map.rotateTo.mock.calls[0][1]).toMatchObject({ duration: 18000, essential: true });
     expect(window.pwaMapView.endTest).toHaveBeenCalledWith({ verdict: 'smooth' });
     expect(state()).toBe('smooth');
     expect(visible('[data-verdict] h2[data-test-show="smooth"]')).toBe(true);
@@ -271,6 +271,37 @@ describe('a run', () => {
     expect(panel().querySelector('[data-test-figures="0"] [data-figure="median"]').textContent).toBe('median 16.0 ms');
     expect(panel().querySelector('[data-test-details]').open).toBe(false);
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('skips the frames that saw tiles loading, and says how much in Details (SNOW-1463)', async () => {
+    await load();
+    request();
+    await flush();
+    env.map.fire('idle');
+    // The close-up pass: 6 s of slow frames while tiles load, then fast.
+    await flush();
+    env.map.fire('idle');
+    await flush();
+    let loaded = false;
+    env.map.areTilesLoaded = () => loaded;
+    frames(SLOW, 121);
+    loaded = true;
+    frames(FAST, perPass(FAST));
+    env.map.fire('moveend');
+    await flush();
+    env.map.fire('idle');
+    await flush();
+    frames(FAST, perPass(FAST));
+    env.map.fire('moveend');
+    await flush();
+    expect(window.pwaMapView.endTest).toHaveBeenCalledWith({ verdict: 'smooth' });
+    const figures = panel().querySelector('[data-test-figures="0"]');
+    // 120 slow intervals loading at both ends, and the 16 ms one that
+    // began on the last loading frame: 6,016 ms.
+    expect(figures.querySelector('[data-figure="skipped"]').textContent).toBe('6.0 s skipped while tiles loaded');
+    expect(figures.querySelector('[data-figure="median"]').textContent).toBe('median 16.0 ms');
+    expect(panel().querySelector('[data-test-figures="1"] [data-figure="skipped"]').textContent)
+      .toBe('0.0 s skipped while tiles loaded');
   });
 
   it('says stutter when only the zoomed-out pass falls behind', async () => {

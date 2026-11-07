@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-06 18:00+0000\n"
+"POT-Creation-Date: 2026-11-07 10:05+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1883,6 +1883,10 @@ msgid "tiles in %%(s)s s"
 msgstr ""
 
 #, python-format
+msgid "%%(s)s s skipped while tiles loaded"
+msgstr ""
+
+#, python-format
 msgid "GPU · %%(gpu)s"
 msgstr ""
 
@@ -2525,6 +2529,15 @@ msgid "3D stops here. Switch to 2D to zoom out."
 msgstr ""
 
 msgid "Test this device"
+msgstr ""
+
+msgid "3D is running slowly here"
+msgstr ""
+
+msgid "Switch to 2D"
+msgstr ""
+
+msgid "Keep 3D"
 msgstr ""
 
 msgid "Your places today"
@@ -10763,12 +10776,6 @@ msgid "Network menu: offline"
 msgstr ""
 
 msgid "Account menu"
-msgstr ""
-
-msgid "3D map"
-msgstr ""
-
-msgid "Labs"
 msgstr ""
 
 msgid "Admin menu"

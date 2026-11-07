@@ -3489,6 +3489,28 @@ def test_the_3d_view_renders_its_fallback_strings() -> None:
 
 
 @pytest.mark.django_db
+def test_the_3d_view_renders_the_slow_prompt_strings() -> None:
+    """SNOW-1463: the line and the two buttons the watchdog asks with."""
+    content = _flagged_map(map_3d=True, map_modes=True)
+    template = content[content.index('id="map-view-strings-template"') :]
+    template = template[: template.index("</template>")]
+    for key, text in [
+        ("slow-prompt", "3D is running slowly here"),
+        ("switch-2d", "Switch to 2D"),
+        ("keep-3d", "Keep 3D"),
+    ]:
+        assert f'data-string="{key}">{text}</span>' in template
+
+
+@pytest.mark.django_db
+def test_the_3d_test_panel_renders_the_skipped_figure() -> None:
+    """SNOW-1463: each pass's Details say how long was skipped for tiles."""
+    content = _flagged_map(map_3d=True, map_modes=True)
+    assert content.count('data-figure="skipped"') == 2
+    assert "%(s)s s skipped while tiles loaded" in content
+
+
+@pytest.mark.django_db
 def test_the_3d_test_renders_only_with_the_3d_view() -> None:
     """SNOW-1456: the "?" menu's item, the panel, its strings and its script.
 

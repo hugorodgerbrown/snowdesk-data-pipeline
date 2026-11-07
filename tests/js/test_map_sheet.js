@@ -313,6 +313,25 @@ describe('toast', () => {
     expect(toast.classList.contains('hidden')).toBe(false);
   });
 
+  it('keeps a sticky message up with no timer, dropping an earlier one\'s (SNOW-1463)', () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = TOAST_HTML;
+    const toast = document.getElementById('map-sheet-toast');
+
+    window.MapSheet.toast('first');
+    vi.advanceTimersByTime(3000);
+    window.MapSheet.toast('3D is running slowly here', { sticky: true });
+
+    vi.advanceTimersByTime(60000);
+    expect(toast.classList.contains('hidden')).toBe(false);
+    expect(toast.querySelector('[data-toast-body]').textContent).toBe('3D is running slowly here');
+
+    // The next ordinary message is timed as usual.
+    window.MapSheet.toast('second');
+    vi.advanceTimersByTime(6000);
+    expect(toast.classList.contains('hidden')).toBe(true);
+  });
+
   it('is a no-op when the partial is absent', () => {
     document.body.innerHTML = '<div id="test-sheet"></div>';
 

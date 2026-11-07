@@ -271,10 +271,10 @@ describe('frameStats / PROBE_PASSES', () => {
   });
 
   it('fails the budget when the median frame reaches it', () => {
-    const stats = core.frameStats([33, 33, 40, 20, 34]);
-    expect(stats.medianMs).toBe(33);
+    const stats = core.frameStats([45, 45, 50, 20, 46]);
+    expect(stats.medianMs).toBe(45);
     expect(stats.withinBudget).toBe(false);
-    expect(core.FRAME_BUDGET_MS).toBe(33);
+    expect(core.FRAME_BUDGET_MS).toBe(45);
   });
 
   it('holds frames to the budget it is given', () => {
@@ -290,7 +290,7 @@ describe('frameStats / PROBE_PASSES', () => {
   it('probes the opening view and the zoom where 3D is proposed to stop', () => {
     expect(core.PROBE_PASSES.map((p) => p.zoom)).toEqual([core.OPENING_CAMERA.zoom, 9]);
     for (const pass of core.PROBE_PASSES) {
-      expect(pass.durationMs).toBeGreaterThanOrEqual(10000);
+      expect(pass.durationMs).toBe(18000);
       expect(pass.turnDeg).toBeGreaterThan(0);
     }
   });
@@ -299,16 +299,22 @@ describe('frameStats / PROBE_PASSES', () => {
 describe('frameWindowFails', () => {
   const stats = (medianMs, p95Ms) => ({ medianMs, p95Ms });
 
-  it('pins the budget, loosened on 6 Nov 2026', () => {
-    expect(core.FRAME_BUDGET_MS).toBe(33);
+  it('pins the budget, loosened again on 7 Nov 2026 (SNOW-1463)', () => {
+    expect(core.FRAME_BUDGET_MS).toBe(45);
     expect(core.FRAME_WINDOW_MS).toBe(2000);
-    expect(core.FRAME_WINDOWS_TO_TRIP).toBe(3);
+    expect(core.FRAME_WINDOWS_TO_TRIP).toBe(5);
     expect(core.FRAME_P95_BUDGET_MS).toBeUndefined();
   });
 
-  it('fails a median of 33 ms and passes 32.9', () => {
-    expect(core.frameWindowFails(stats(33, 40))).toBe(true);
-    expect(core.frameWindowFails(stats(32.9, 40))).toBe(false);
+  it('fails a median of 45 ms and passes 44.9', () => {
+    expect(core.frameWindowFails(stats(45, 60))).toBe(true);
+    expect(core.frameWindowFails(stats(44.9, 60))).toBe(false);
+  });
+
+  it('passes 30 fps and 24 fps, and fails 20 fps, each a refresh step clear of the bar', () => {
+    expect(core.frameWindowFails(stats(33.3, 40))).toBe(false);
+    expect(core.frameWindowFails(stats(41.7, 50))).toBe(false);
+    expect(core.frameWindowFails(stats(50, 60))).toBe(true);
   });
 
   it('does not judge the p95, which a tile stall lifts on a phone that draws well', () => {
@@ -320,41 +326,87 @@ describe('frameWindowFails', () => {
 
   it('reads frameStats\' own output, and no frames is not a failure', () => {
     expect(core.frameWindowFails(core.frameStats([20, 20, 20, 20, 100]))).toBe(false);
-    expect(core.frameWindowFails(core.frameStats([20, 40, 40, 40, 100]))).toBe(true);
+    expect(core.frameWindowFails(core.frameStats([20, 50, 50, 50, 100]))).toBe(true);
     expect(core.frameWindowFails(core.frameStats([20, 20, 20, 20, 20]))).toBe(false);
     expect(core.frameWindowFails(null)).toBe(false);
   });
 });
 
 describe('createFrameWatch', () => {
-  const SLOW = 50;
+  const SLOW = 55;
   const FAST = 20;
   /** Push `n` intervals of `ms`, answering what the last push said. */
-  const pushAll = (watch, ms, n) => {
+  const pushAll = (watch, ms, n, loading = false) => {
     let tripped = false;
-    for (let i = 0; i < n; i += 1) tripped = watch.push(ms);
+    for (let i = 0; i < n; i += 1) tripped = watch.push(ms, loading);
     return tripped;
   };
-  const perWindow = (ms) => core.FRAME_WINDOW_MS / ms;
+  /** Intervals of `ms` that fill one window (the last one closes it). */
+  const perWindow = (ms) => Math.ceil(core.FRAME_WINDOW_MS / ms);
 
-  it('closes a window at about 2 s and trips on the third bad one in a row', () => {
+  it('never trips on a steady 30 fps (33.3 ms), the iPad that dropped out', () => {
     const watch = core.createFrameWatch();
-    expect(pushAll(watch, SLOW, perWindow(SLOW) * 2)).toBe(false);
+    expect(pushAll(watch, 1000 / 30, perWindow(1000 / 30) * 20)).toBe(false);
+  });
+
+  it('never trips on a steady 24 fps (41.7 ms, a 120 Hz display\'s step)', () => {
+    const watch = core.createFrameWatch();
+    expect(pushAll(watch, 1000 / 24, perWindow(1000 / 24) * 20)).toBe(false);
+  });
+
+  it('closes a window at about 2 s and trips on the fifth bad one in a row, not the fourth', () => {
+    const watch = core.createFrameWatch();
+    expect(pushAll(watch, SLOW, perWindow(SLOW) * 4)).toBe(false);
     expect(pushAll(watch, SLOW, perWindow(SLOW) - 1)).toBe(false);
     expect(watch.push(SLOW)).toBe(true);
     expect(watch.push(FAST)).toBe(true);
   });
 
-  it('does not trip on bad, bad, good, bad, bad', () => {
+  it('starts the count again after a good window', () => {
     const watch = core.createFrameWatch();
-    pushAll(watch, SLOW, perWindow(SLOW) * 2);
+    pushAll(watch, SLOW, perWindow(SLOW) * 4);
     pushAll(watch, FAST, perWindow(FAST));
-    expect(pushAll(watch, SLOW, perWindow(SLOW) * 2)).toBe(false);
+    expect(pushAll(watch, SLOW, perWindow(SLOW) * 4)).toBe(false);
+    expect(pushAll(watch, SLOW, perWindow(SLOW))).toBe(true);
+  });
+
+  it('skips intervals while tiles load: they neither close a window nor count in it', () => {
+    const watch = core.createFrameWatch();
+    // A minute of slow frames, all while tiles were loading.
+    expect(pushAll(watch, 200, 300, true)).toBe(false);
+    // One timed slow window less one frame: still open, so no window closed.
+    const windows = [];
+    const traced = core.createFrameWatch({ onWindow: (w) => windows.push(w) });
+    pushAll(traced, 200, 50, true);
+    pushAll(traced, SLOW, perWindow(SLOW) - 1);
+    expect(windows).toEqual([]);
+    traced.push(SLOW);
+    expect(windows).toHaveLength(1);
+    expect(windows[0]).toMatchObject({ medianMs: SLOW, frames: perWindow(SLOW), skippedMs: 10000, slow: true });
+  });
+
+  it('keeps a window that was partly loading, judged on its timed frames only', () => {
+    const watch = core.createFrameWatch();
+    for (let w = 0; w < 5; w += 1) {
+      pushAll(watch, 150, 10, true);
+      pushAll(watch, FAST, perWindow(FAST));
+    }
+    expect(watch.push(FAST)).toBe(false);
+  });
+
+  it('tells onWindow about every closed window, with the run of failures', () => {
+    const windows = [];
+    const watch = core.createFrameWatch({ onWindow: (w) => windows.push(w) });
+    pushAll(watch, FAST, perWindow(FAST));
+    pushAll(watch, SLOW, perWindow(SLOW) * 5);
+    expect(windows.map((w) => w.failing)).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(windows.map((w) => w.tripped)).toEqual([false, false, false, false, false, true]);
+    expect(windows[0]).toEqual({ medianMs: FAST, frames: perWindow(FAST), skippedMs: 0, slow: false, failing: 0, tripped: false });
   });
 
   it('is cleared by reset, part-filled window and count included', () => {
     const watch = core.createFrameWatch();
-    pushAll(watch, SLOW, perWindow(SLOW) * 3);
+    pushAll(watch, SLOW, perWindow(SLOW) * 5);
     watch.reset();
     expect(watch.push(FAST)).toBe(false);
     pushAll(watch, SLOW, perWindow(SLOW) - 1);
@@ -365,17 +417,17 @@ describe('createFrameWatch', () => {
   it('ignores junk intervals', () => {
     const watch = core.createFrameWatch();
     for (const ms of [0, -5, Number.NaN, Infinity]) expect(watch.push(ms)).toBe(false);
-    expect(pushAll(watch, SLOW, perWindow(SLOW) * 3)).toBe(true);
+    expect(pushAll(watch, SLOW, perWindow(SLOW) * 5)).toBe(true);
   });
 });
 
 describe('judgePass / testVerdict (SNOW-1456)', () => {
-  const SLOW = 50;
+  const SLOW = 55;
   const FAST = 20;
   /** `windows` full watchdog windows of `ms` intervals. */
-  const run = (ms, windows) => Array(Math.round((core.FRAME_WINDOW_MS / ms) * windows)).fill(ms);
-  const KEEPS_UP = run(FAST, 6);
-  const FALLS_BEHIND = run(SLOW, 6);
+  const run = (ms, windows) => Array(Math.ceil(core.FRAME_WINDOW_MS / ms) * windows).fill(ms);
+  const KEEPS_UP = run(FAST, 8);
+  const FALLS_BEHIND = run(SLOW, 8);
 
   it('says smooth when both passes keep up', () => {
     expect(core.testVerdict([{ intervals: KEEPS_UP }, { intervals: KEEPS_UP }])).toBe('smooth');
@@ -390,27 +442,44 @@ describe('judgePass / testVerdict (SNOW-1456)', () => {
     expect(core.testVerdict([{ intervals: FALLS_BEHIND }, { intervals: KEEPS_UP }])).toBe('slow');
   });
 
-  it('judges by the watch: two slow windows in a row are not enough', () => {
-    const twoBad = [...run(SLOW, 2), ...run(FAST, 1), ...run(SLOW, 2)];
-    expect(core.judgePass(twoBad)).toEqual({ measured: true, keptUp: true, windows: 5, slowWindows: 4 });
-    expect(core.testVerdict([{ intervals: twoBad }, { intervals: twoBad }])).toBe('smooth');
+  it('judges by the watch: four slow windows in a row are not enough', () => {
+    const fourBad = [...run(SLOW, 4), ...run(FAST, 1), ...run(SLOW, 4)];
+    expect(core.judgePass(fourBad)).toEqual({ measured: true, keptUp: true, windows: 9, slowWindows: 8, skippedMs: 0 });
+    expect(core.testVerdict([{ intervals: fourBad }, { intervals: fourBad }])).toBe('smooth');
+  });
+
+  it('counts every window of a pass that trips, not just those up to the trip', () => {
+    expect(core.judgePass(FALLS_BEHIND)).toEqual({ measured: true, keptUp: false, windows: 8, slowWindows: 8, skippedMs: 0 });
   });
 
   it('never reads the p95: a stall in every window still keeps up', () => {
-    const spiky = Array.from({ length: 6 * 100 }, (_v, i) => (i % 10 === 0 ? 120 : 16));
+    const spiky = Array.from({ length: 8 * 100 }, (_v, i) => (i % 10 === 0 ? 120 : 16));
     expect(core.frameStats(spiky).p95Ms).toBeGreaterThan(66);
     expect(core.judgePass(spiky).keptUp).toBe(true);
   });
 
+  it('skips the frames that saw tiles loading, as the watchdog does', () => {
+    // Slow only while loading: the Pixel 9 close in.
+    const intervals = [...run(150, 6), ...run(FAST, 6)];
+    const loading = intervals.map((_ms, i) => i < run(150, 6).length);
+    const judged = core.judgePass(intervals, loading);
+    expect(judged).toMatchObject({ measured: true, keptUp: true, windows: 6, slowWindows: 0 });
+    expect(judged.skippedMs).toBe(run(150, 6).length * 150);
+    expect(core.judgePass(intervals).keptUp).toBe(false);
+    expect(core.testVerdict([{ intervals, loading }, { intervals, loading }])).toBe('smooth');
+  });
+
   it('says unmeasured for a pass with no frames', () => {
-    expect(core.judgePass([])).toEqual({ measured: false, keptUp: false, windows: 0, slowWindows: 0 });
+    expect(core.judgePass([])).toEqual({ measured: false, keptUp: false, windows: 0, slowWindows: 0, skippedMs: 0 });
     expect(core.testVerdict([{ intervals: KEEPS_UP }, { intervals: [] }])).toBe('unmeasured');
     expect(core.testVerdict([{ intervals: [] }, { intervals: FALLS_BEHIND }])).toBe('unmeasured');
   });
 
-  it('says unmeasured for a pass shorter than one window', () => {
-    const short = Array(Math.floor(core.FRAME_WINDOW_MS / FAST) - 1).fill(FAST);
-    expect(core.judgePass(short).measured).toBe(false);
+  it('says unmeasured for a pass of fewer than five windows, which could not trip', () => {
+    const short = run(FAST, core.FRAME_WINDOWS_TO_TRIP - 1);
+    expect(core.judgePass(short)).toMatchObject({ measured: false, windows: 4 });
+    expect(core.judgePass(run(SLOW, 4)).measured).toBe(false);
+    expect(core.judgePass(run(FAST, 5)).measured).toBe(true);
     expect(core.testVerdict([{ intervals: KEEPS_UP }, { intervals: short }])).toBe('unmeasured');
     expect(core.testVerdict([])).toBe('unmeasured');
   });

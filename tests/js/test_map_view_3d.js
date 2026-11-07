@@ -12,13 +12,16 @@
  *
  * SNOW-1455, with a controllable requestAnimationFrame and visibility: a
  * lost WebGL context lays the map flat and its restore lets 3D back in;
- * three slow frame windows lay it flat for the visit; frames are never timed
- * while flat, between moves, during the entering ease or in a hidden tab;
- * a bad window then a good one stays in 3D; and the device gate keeps
- * 3D off at boot.
+ * five slow frame windows ask whether to keep 3D (SNOW-1463: Switch to 2D
+ * lays it flat for the visit; Keep 3D, the ×, or another line silence the
+ * watchdog); frames are never timed while flat, between moves, during the
+ * entering ease, in a hidden tab or while tiles load; a bad window then a
+ * good one stays in 3D; each closed window reaches the debug trace while it
+ * records; and the device gate keeps 3D off at boot.
  *
  * SNOW-1452: the timelapse plays in 3D with no setStyle, and the watchdog
- * times its frames with the camera still.
+ * times its frames with the camera still; a trip during playback still
+ * goes flat at once, with no prompt.
  *
  * SNOW-1456: the 3D test's hooks. beginTest enters 3D even after the
  * watchdog laid it flat, with the watchdog resting; endTest puts the camera
@@ -171,7 +174,8 @@ async function boot({
     </div>
     <button id="map-view-toggle" data-dem-tile-url="https://dem.example/{z}/{x}/{y}.webp" aria-pressed="false">
       <span data-view-face="3d">3D</span><span data-view-face="flat">2D</span>
-    </button>`;
+    </button>
+    <div id="map-sheet-toast" class="hidden"><span data-toast-body></span><button data-action="dismiss">×</button></div>`;
   window.history.replaceState(null, '', `/map/${search}`);
   window.localStorage.clear();
   if (stored) window.localStorage.setItem('snowdesk.map.basemap', stored);
@@ -193,7 +197,12 @@ async function boot({
     map,
     mode,
     online,
-    toast: vi.fn(),
+    // MapSheet.toast as the page has it: the line goes on the toast's body.
+    toast: vi.fn((text) => {
+      const el = document.getElementById('map-sheet-toast');
+      el.querySelector('[data-toast-body]').textContent = text;
+      el.classList.remove('hidden');
+    }),
     addProtocol: vi.fn(),
     resolveBasemapStyle: vi.fn((key, url) => Promise.resolve(key === 'basemap_at' ? { rewritten: url } : url)),
     // SNOW-1453: the device's downloaded areas, read from IndexedDB in the
@@ -777,11 +786,23 @@ const gesture = (map, ms, intervals) => {
   map.fire('moveend');
 };
 
-const SLOW_MS = 50;
+const SLOW_MS = 55;
 const FAST_MS = 20;
-const perWindow = (ms) => core3d.FRAME_WINDOW_MS / ms;
-/** Slow windows in a row that lay 3D flat. */
+/** Intervals of `ms` that fill one watchdog window exactly. */
+const perWindow = (ms) => Math.ceil(core3d.FRAME_WINDOW_MS / ms);
+/** Slow windows in a row that trip the watchdog. */
 const TRIP = core3d.FRAME_WINDOWS_TO_TRIP;
+
+const toastEl = () => document.getElementById('map-sheet-toast');
+const promptShown = () => !toastEl().classList.contains('hidden')
+  && !!toastEl().querySelector('[data-map-3d-slow-prompt]');
+/** Trip the watchdog in one gesture: the prompt asks. */
+const tripWatchdog = (map) => gesture(map, SLOW_MS, perWindow(SLOW_MS) * TRIP);
+/** Trip it and answer Switch to 2D: flat for the visit. */
+const switchTo2d = (map) => {
+  tripWatchdog(map);
+  toastEl().querySelector('[data-map-3d-switch-2d]').click();
+};
 
 describe('a lost WebGL context', () => {
   it('lays the map flat with one line, and its restore lets 3D back in', async () => {
@@ -823,41 +844,121 @@ describe('a lost WebGL context', () => {
 });
 
 describe('the frame watchdog', () => {
-  it('lays the map flat after three slow windows, and keeps 3D off', async () => {
-    const { map, button } = await enterAndSettle();
+  it('asks after five slow windows, staying in 3D with timing stopped', async () => {
+    const { map } = await enterAndSettle();
     env.toast.mockClear();
     gesture(map, SLOW_MS, perWindow(SLOW_MS) * (TRIP - 1));
+    expect(promptShown()).toBe(false);
+    map.fire('movestart');
+    frames(SLOW_MS, perWindow(SLOW_MS) + 2);
     expect(window.pwaMapView.get()).toBe('3d');
-    gesture(map, SLOW_MS, perWindow(SLOW_MS));
+    expect(inThreeD(map)).toBe(true);
+    expect(promptShown()).toBe(true);
+    expect(rafQueue.size).toBe(0);
+    expect(env.toast).toHaveBeenCalledWith('3D is running slowly here', { sticky: true });
+    const prompt = toastEl().querySelector('[data-map-3d-slow-prompt]');
+    expect([...prompt.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Switch to 2D', 'Keep 3D']);
+    map.fire('moveend');
+  });
+
+  it('Switch to 2D lays the map flat and keeps 3D off for the visit', async () => {
+    const { map, button } = await enterAndSettle();
+    env.toast.mockClear();
+    switchTo2d(map);
     expect(window.pwaMapView.get()).toBe('flat');
-    expect(toasts()).toEqual(['Back in 2D: 3D is too slow on this device.']);
+    expect(toasts().at(-1)).toBe('Back in 2D: 3D is too slow on this device.');
+    expect(toastEl().querySelector('[data-map-3d-slow-prompt]')).toBeNull();
     expect(rafQueue.size).toBe(0);
     expect(button.getAttribute('aria-disabled')).toBe('true');
     button.click();
     expect(window.pwaMapView.get()).toBe('flat');
     expect(toasts().at(-1)).toBe('3D is too slow on this device');
+    expect(toastEl().querySelector('[data-map-3d-test-open]').textContent).toBe('Test this device');
     expect(map.maxPitch).toBe(0);
     map.fire('webglcontextrestored');
     expect(button.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('Keep 3D hides the prompt and times nothing more this visit', async () => {
+    const { map, button } = await enterAndSettle();
+    tripWatchdog(map);
+    toastEl().querySelector('[data-map-3d-keep]').click();
+    expect(toastEl().classList.contains('hidden')).toBe(true);
+    expect(window.pwaMapView.get()).toBe('3d');
+    map.fire('movestart');
+    expect(rafQueue.size).toBe(0);
+    map.fire('moveend');
+    // Out and back in: still silenced, and the switch is not disabled.
+    button.click();
+    button.click();
+    await flush();
+    map.fire('moveend');
+    expect(window.pwaMapView.get()).toBe('3d');
+    map.fire('movestart');
+    expect(rafQueue.size).toBe(0);
+    map.fire('moveend');
+  });
+
+  it('counts the × as Keep 3D', async () => {
+    const { map } = await enterAndSettle();
+    tripWatchdog(map);
+    // overlays.js hides the toast on its ×.
+    toastEl().classList.add('hidden');
+    map.fire('movestart');
+    expect(rafQueue.size).toBe(0);
+    expect(window.pwaMapView.get()).toBe('3d');
+  });
+
+  it('counts another line taking the toast\'s place as Keep 3D', async () => {
+    const { map } = await enterAndSettle();
+    tripWatchdog(map);
+    window.MapSheet.toast('Could not load the regions.');
+    expect(toastEl().querySelector('[data-map-3d-slow-prompt]')).toBeNull();
+    map.fire('movestart');
+    expect(rafQueue.size).toBe(0);
+    map.fire('moveend');
+    // Leaving 3D now leaves the other line where it is.
+    window.pwaMapView.exit();
+    expect(toastEl().classList.contains('hidden')).toBe(false);
+    expect(toastEl().textContent).toContain('Could not load the regions.');
+  });
+
+  it.each([
+    ['the switch', ({ button }) => button.click()],
+    ['a coverage exit', ({ map }) => { map.centre = { ...PARIS }; map.fire('moveend'); }],
+    ['a lost WebGL context', ({ map }) => map.fire('webglcontextlost')],
+  ])('takes the prompt away when 3D is left by %s', async (_case, leave) => {
+    const booted = await enterAndSettle();
+    tripWatchdog(booted.map);
+    expect(promptShown()).toBe(true);
+    leave(booted);
+    expect(window.pwaMapView.get()).toBe('flat');
+    expect(toastEl().querySelector('[data-map-3d-slow-prompt]')).toBeNull();
   });
 
   it('counts failing windows across separate gestures', async () => {
     const { map } = await enterAndSettle();
     for (let i = 1; i < TRIP; i += 1) {
       gesture(map, SLOW_MS, perWindow(SLOW_MS));
-      expect(window.pwaMapView.get()).toBe('3d');
+      expect(promptShown()).toBe(false);
     }
     gesture(map, SLOW_MS, perWindow(SLOW_MS));
-    expect(window.pwaMapView.get()).toBe('flat');
+    expect(promptShown()).toBe(true);
   });
 
-  it('stays in 3D when a good window breaks the bad ones', async () => {
+  it('stays quiet when a good window breaks the bad ones', async () => {
     const { map } = await enterAndSettle();
     gesture(map, SLOW_MS, perWindow(SLOW_MS) * (TRIP - 1));
     gesture(map, FAST_MS, perWindow(FAST_MS));
     gesture(map, SLOW_MS, perWindow(SLOW_MS) * (TRIP - 1));
-    expect(window.pwaMapView.get()).toBe('3d');
+    expect(promptShown()).toBe(false);
     expect(rafQueue.size).toBe(0);
+  });
+
+  it('never trips on a steady 30 fps', async () => {
+    const { map } = await enterAndSettle();
+    gesture(map, 1000 / 30, perWindow(1000 / 30) * TRIP * 4);
+    expect(promptShown()).toBe(false);
   });
 
   it('drops the first interval of each run', async () => {
@@ -870,7 +971,43 @@ describe('the frame watchdog', () => {
     frames(5000, 1);
     frames(SLOW_MS, perWindow(SLOW_MS) - 1);
     map.fire('moveend');
-    expect(window.pwaMapView.get()).toBe('3d');
+    expect(promptShown()).toBe(false);
+  });
+
+  it('does not time frames while tiles load, nor the interval after', async () => {
+    const { map } = await enterAndSettle();
+    let loaded = false;
+    map.areTilesLoaded = () => loaded;
+    gesture(map, 200, perWindow(SLOW_MS) * TRIP * 3);
+    expect(promptShown()).toBe(false);
+    // The interval that ends on the first loaded frame began on a loading
+    // one, so a stall there is not counted either.
+    map.fire('movestart');
+    frames(FAST_MS, 2);
+    loaded = true;
+    frames(5000, 1);
+    frames(SLOW_MS, perWindow(SLOW_MS) * (TRIP - 1));
+    map.fire('moveend');
+    expect(promptShown()).toBe(false);
+    gesture(map, SLOW_MS, perWindow(SLOW_MS));
+    expect(promptShown()).toBe(true);
+  });
+
+  it('records each closed window on the debug trace while it records, and nothing otherwise', async () => {
+    const record = vi.fn();
+    window.pwaDebugLog = { on: true, record };
+    const { map } = await enterAndSettle();
+    gesture(map, FAST_MS, perWindow(FAST_MS) * 2);
+    expect(record).toHaveBeenCalledTimes(2);
+    expect(record).toHaveBeenCalledWith('map', '3d.window', {
+      medianMs: FAST_MS, frames: perWindow(FAST_MS), skippedMs: 0, slow: false, failing: 0, tripped: false,
+    });
+    record.mockClear();
+    window.pwaDebugLog.on = false;
+    gesture(map, FAST_MS, perWindow(FAST_MS) * 2);
+    expect(record).not.toHaveBeenCalled();
+    delete window.pwaDebugLog;
+    expect(() => gesture(map, FAST_MS, perWindow(FAST_MS) * 2)).not.toThrow();
   });
 });
 
@@ -910,8 +1047,8 @@ describe('frames that are never timed', () => {
     expect(rafQueue.size).toBe(0);
     expect(window.pwaMapView.get()).toBe('3d');
     map.fire('moveend');
-    gesture(map, SLOW_MS, perWindow(SLOW_MS) * TRIP);
-    expect(window.pwaMapView.get()).toBe('flat');
+    tripWatchdog(map);
+    expect(promptShown()).toBe(true);
   });
 
   it('in a hidden tab', async () => {
@@ -1011,7 +1148,7 @@ describe('the timelapse plays in 3D (SNOW-1452)', () => {
     expect(swaps.n).toBe(0);
   });
 
-  it('times its frames with the camera still, and slow windows go flat', async () => {
+  it('times its frames with the camera still, and slow windows go flat with no prompt', async () => {
     const { map } = await enterAndSettle();
     env.toast.mockClear();
     const swaps = countSwaps();
@@ -1022,9 +1159,20 @@ describe('the timelapse plays in 3D (SNOW-1452)', () => {
     frames(SLOW_MS, perWindow(SLOW_MS));
     expect(window.pwaMapView.get()).toBe('flat');
     expect(toasts()).toEqual(['Back in 2D: 3D is too slow on this device.']);
+    expect(toastEl().querySelector('[data-map-3d-slow-prompt]')).toBeNull();
     // The way back to the reader's basemap is what stops the timelapse.
     expect(swaps.n).toBe(1);
     expect(rafQueue.size).toBe(0);
+  });
+
+  it('is not timed after Keep 3D', async () => {
+    const { map } = await enterAndSettle();
+    tripWatchdog(map);
+    toastEl().querySelector('[data-map-3d-keep]').click();
+    timelapse(true);
+    expect(rafQueue.size).toBe(0);
+    frames(SLOW_MS, perWindow(SLOW_MS) * TRIP * 2);
+    expect(window.pwaMapView.get()).toBe('3d');
   });
 
   it('stops timing when it stops, unless the camera is still moving', async () => {
@@ -1085,7 +1233,7 @@ describe('the 3D test hooks (SNOW-1456)', () => {
   /** Enter, then trip the watchdog: flat for the visit. */
   const tooSlow = async (options = {}) => {
     const booted = await enterAndSettle(options);
-    gesture(booted.map, SLOW_MS, perWindow(SLOW_MS) * TRIP);
+    switchTo2d(booted.map);
     expect(window.pwaMapView.get()).toBe('flat');
     return booted;
   };
@@ -1172,22 +1320,26 @@ describe('the 3D test hooks (SNOW-1456)', () => {
 
   it('puts a "Test this device" link on the why-slow line', async () => {
     const { button } = await tooSlow();
-    document.body.insertAdjacentHTML('beforeend',
-      '<div id="map-sheet-toast" class="hidden"><span data-toast-body></span></div>');
-    const toastEl = document.getElementById('map-sheet-toast');
-    env.toast.mockImplementation((text) => {
-      toastEl.querySelector('[data-toast-body]').textContent = text;
-      toastEl.classList.remove('hidden');
-    });
     const asked = vi.fn();
     document.addEventListener('snowdesk:map-3d-test-requested', asked);
     button.click();
-    const link = toastEl.querySelector('[data-map-3d-test-open]');
-    expect(toastEl.textContent).toContain('3D is too slow on this device');
+    const link = toastEl().querySelector('[data-map-3d-test-open]');
+    expect(toastEl().textContent).toContain('3D is too slow on this device');
     expect(link.textContent).toBe('Test this device');
     link.click();
     document.removeEventListener('snowdesk:map-3d-test-requested', asked);
     expect(asked).toHaveBeenCalledTimes(1);
-    expect(toastEl.classList.contains('hidden')).toBe(true);
+    expect(toastEl().classList.contains('hidden')).toBe(true);
+  });
+
+  it('leaves Keep 3D\'s silence alone across a test', async () => {
+    const { map } = await enterAndSettle();
+    tripWatchdog(map);
+    toastEl().querySelector('[data-map-3d-keep]').click();
+    window.pwaMapView.beginTest();
+    window.pwaMapView.endTest({ verdict: 'smooth' });
+    map.fire('movestart');
+    expect(rafQueue.size).toBe(0);
+    map.fire('moveend');
   });
 });
