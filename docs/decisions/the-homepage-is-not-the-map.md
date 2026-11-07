@@ -66,8 +66,7 @@ every existing install a different app, so only `start_url` moves.
   app changes. Re-capture them at the same ratios when the app's appearance
   changes. The 3D card's pair is taken at `HOME_3D_CAMERA`
   (`apps/public/views.py`), the camera its link opens: up the Mattertal past
-  Zermatt to the Matterhorn, framed on a screenshot Hugo sent (7 Nov 2026).
-  The brief: plain relief, with no resorts, weather or danger wash, so every
-  overlay is hidden, along with the basemap's lifts, POIs and borders. The
-  phone capture uses the same camera at zoom 10.75. Headless Chromium draws
-  it against the dev server.
+  Zermatt to the Matterhorn. Hugo took both himself (7 Nov 2026) after the
+  headless captures fell short: 2800×1400 for desktop and 1350×1800 for the
+  phone, used as supplied (no crop or resize) and saved as JPEG quality 88.
+  A full-width card on a retina screen needs about 2800 px across.
