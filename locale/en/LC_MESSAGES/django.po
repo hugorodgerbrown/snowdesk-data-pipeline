@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-07 13:24+0000\n"
+"POT-Creation-Date: 2026-11-07 16:21+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -2702,6 +2702,12 @@ msgid "Explore the map"
 msgstr ""
 
 msgid "Browse without guidance."
+msgstr ""
+
+msgid "3D is experimental"
+msgstr ""
+
+msgid "It may be slow or draw oddly in places. Switch to 2D at any time."
 msgstr ""
 
 msgid "Now showing the bulletin's slopes"
