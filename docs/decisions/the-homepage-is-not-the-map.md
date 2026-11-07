@@ -65,9 +65,8 @@ every existing install a different app, so only `start_url` moves.
   phone capture for the 3D card, SNOW-1454) are stills and go stale as the
   app changes. Re-capture them at the same ratios when the app's appearance
   changes. The 3D card's pair is taken at `HOME_3D_CAMERA`
-  (`apps/public/views.py`), the camera its link opens, in Conditions with
-  no Terrain layers, because that is what most readers get. The phone
-  capture is pulled back to zoom 11.3 so a narrow frame still holds the
-  Allalin, the Matterhorn and Zermatt. The danger wash comes from a real
-  Moderate day (15 May 2026); headless Chromium can draw it, against the
-  dev server with the ratings API pointed at production.
+  (`apps/public/views.py`), the camera its link opens: up the Mattertal past
+  Zermatt to the Matterhorn. Hugo took both himself (7 Nov 2026) after the
+  headless captures fell short: 2800×1400 for desktop and 1350×1800 for the
+  phone, used as supplied (no crop or resize) and saved as JPEG quality 88.
+  A full-width card on a retina screen needs about 2800 px across.
