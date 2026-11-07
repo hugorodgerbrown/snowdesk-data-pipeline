@@ -75,6 +75,14 @@ def test_the_flags_override_the_defaults() -> None:
     assert rec.parse_args([]).frame_cap_ms is None
 
 
+def test_the_browser_keeps_its_tile_cache_in_out_between_runs() -> None:
+    """The profile lives in --out/browser, with a disk cache big enough for a run."""
+    settings = rec.parse_args(["--out", "build/fly"])
+    assert settings.browser_dir == Path("build/fly/browser")
+    for each in (settings, rec.parse_args(["--software-gl"])):
+        assert f"--disk-cache-size={rec.DISK_CACHE_BYTES}" in rec.chromium_args(each)
+
+
 @pytest.mark.parametrize("size", ["1920", "1920x", "axb", "1921x1080", "0x0"])
 def test_a_bad_size_is_refused(size: str) -> None:
     """--size wants two even numbers: H.264 at yuv420p needs them."""

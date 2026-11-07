@@ -72,6 +72,11 @@ On your Mac, in the repo, with the dev server set up as in
 uv run python bin/record-3d-flyby --seconds 5 --size 960x540
 ```
 
+**To change only the end card or the encode** (its words are in
+`bin/flyby/end-card.html`), run `--resume` with every frame on disk: it
+retakes the card and the credit and encodes again without drawing a frame.
+Upload the result as a new version.
+
 **If a run stops part way** (a frame that has not settled after 60 s fails
 the run, so a half-loaded frame never reaches the video), run the same
 command again with `--resume`. It keeps the frames already on disk and
@@ -130,6 +135,7 @@ In `--out`:
 | `flyby-poster.jpg` | The frame just before the end card starts to fade in: the whole route in view |
 | `frames/f00000.png` … | Every frame, kept for `--resume` |
 | `credit.png`, `end-card.png` | The two stills the encode lays over the frames |
+| `browser/` | The browser profile, kept so a second run or a `--resume` reads tiles from its cache (a few hundred MB; safe to delete) |
 
 "Map © swisstopo" is burned into the bottom right of every frame, the end
 card included, so a crop or a re-encode cannot lose it (Hugo, 7 Nov 2026).
