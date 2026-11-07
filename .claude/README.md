@@ -9,7 +9,7 @@ updates).
 ```
 .claude/
 ├── skills/
-│   ├── scope/                  ← Todo → Ready for dev
+│   ├── scope/                  ← Backlog → Todo, with Codex
 │   ├── implement/              ← Ready for dev → In Progress → PR open
 │   ├── work-on/                ← scope + implement chained in one session
 │   ├── merge-prs/              ← land a batch of PRs, one at a time
@@ -166,13 +166,13 @@ Each workflow skill enforces a hard precondition on Linear ticket state:
 | Skill         | Required state         | Transitions to              |
 |---------------|------------------------|-----------------------------|
 | create-ticket | — (creates the ticket) | Backlog, Todo, or Ready for dev |
-| scope         | Todo                   | Ready for dev               |
+| scope         | Backlog                | Todo (XS: Ready for dev)    |
 | implement     | Ready for dev          | In Progress, then In Review |
 | work-on       | Todo or Ready for dev  | In Review                   |
 
 `create-ticket` is the only one with no required starting state — it makes the
-ticket. It lands in `Ready for dev` only when it can post a scoping comment
-with no open questions; otherwise `Todo`, or `Backlog` if untriaged.
+ticket. A scoped ticket lands in `Todo` with Codex (an XS one with no open
+questions in `Ready for dev`), or in `Backlog` if its approach is unsettled.
 
 Tickets in the wrong state cause the skill to stop and explain why.
 

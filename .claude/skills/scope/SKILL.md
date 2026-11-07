@@ -1,9 +1,10 @@
 ---
 name: scope
 description: |
-  Scope a Linear ticket: read the description, explore the codebase, produce a
-  written scope, post it as a Linear comment (or update the scope the ticket
-  already carries), move the ticket from Backlog to Todo and ask Codex for its
+  Scope a Linear ticket: read the description, explore the codebase, write a
+  two-part scope (the user scope Hugo signs off goes in the description, the
+  technical scope in the first comment), or update the scope the ticket
+  already carries, move the ticket from Backlog to Todo and ask Codex for its
   one scope review with an @Codex review request (the `resolve-scope-review`
   skill takes it on from there). Parks a ticket that is redundant, out of date
   or low value in Deferred instead of scoping it. Use when the user asks to "scope SNOW-NN", "let's
@@ -57,29 +58,30 @@ Invoke the `scoper` subagent via the Agent tool. Pass it:
 - The Linear ticket ID (`SNOW-$1`)
 - The Linear ticket git branch name as fetched
 - The ticket title and description as fetched
-- A clear instruction to produce a scope document and return it as the final
-  message
-- **Any scope the ticket already carries**, whether a scoping comment or an
-  Approach / Touch list / Tests section in the description, as the starting
+- A clear instruction to return both parts of the scope
+  (`docs/linear-workflow.md` → "Scope contract") as the final message
+- **Any scope the ticket already carries**, in either shape, as the starting
   point to verify and update rather than to replace
 
 The scoper runs in an isolated context. It will explore the codebase to ground
 the scope in what actually exists. Its working tokens stay in its own context —
 you only see the final scope document.
 
-## Step 3 — Present the scope via plan mode for approval
+## Step 3 — Present the user scope via plan mode for approval
 
-Once the scoper returns, present the scope through plan mode so it renders
+Hugo signs off the **user scope only**. He does not need the files or the
+tests; Codex reviews those. Once the scoper returns, present the user scope
+through plan mode so it renders
 in the sidebar UI with a proper approve / reject control — not as inline
 conversational text the user has to reply to:
 
 1. Call `EnterPlanMode` to enter plan mode. No research needed here — the
    scoper already did it. Edits and writes are blocked in plan mode, which
    keeps this step strictly read-only.
-2. Immediately call `ExitPlanMode` with the **full scope document verbatim**
-   as the `plan` argument. Do not summarise, reformat, or wrap it in extra
-   commentary — the sidebar should show exactly what would be posted to
-   Linear.
+2. Immediately call `ExitPlanMode` with the **user scope verbatim** as the
+   `plan` argument. Do not summarise, reformat, or wrap it in extra
+   commentary — the sidebar should show exactly what will become the
+   description. Leave the technical scope out.
 
 `ExitPlanMode` renders the scope in the sidebar with an approve / reject
 control. The user reviews and acts via the UI.
@@ -89,20 +91,25 @@ again — each revision goes through the sidebar, not as inline text. Do not
 invoke the scoper again unless the user explicitly asks for a fresh take —
 refinements are usually small and you can handle them in the main thread.
 
+If Hugo's edits change what is built, update the technical scope to match
+before posting it.
+
 **Hard gate:** do not post to Linear or transition the ticket until the
-user has approved the scope via the sidebar.
+user has approved the user scope via the sidebar.
 
 ## Step 4 — On approval, post and transition
 
 When the sidebar approval comes through:
 
-1. **One scope per ticket.** If the ticket has no scope yet, post it as a
-   comment with `save_comment` (the comment's `issueId` is the internal `id`
-   from `get_issue`, NOT the `SNOW-NN` identifier). If it already has a scope,
-   **update that one and post no second**:
-   - a scoping comment → `save_comment` with that comment's `id`;
-   - a scope written into the description → rewrite those sections in place
-     with `save_issue` (`patch`), leaving the rest of the description alone.
+1. **One scope per ticket.**
+   - **User scope** → the description, with `save_issue`. It replaces the
+     one-paragraph description; keep any links or images below it.
+   - **Technical scope** → the scoping comment. If the ticket has none yet,
+     post it with `save_comment` (the comment's `issueId` is the internal
+     `id` from `get_issue`, NOT the `SNOW-NN` identifier). If it has one,
+     `save_comment` with that comment's `id`, and **post no second**. An
+     old-shape comment (with Open questions) is rewritten to the new shape,
+     its Open questions moving to the description.
 2. Check the ticket carries exactly one `Type` and one `Area` label. If either
    is missing or wrong now the scope has settled what the work actually is, fix
    it with `addLabels` / `removeLabels` in the same `save_issue` call. The

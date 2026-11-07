@@ -117,10 +117,12 @@ stop. If it is
 they should switch branches manually, not run this skill). If `In Review`
 or `Done`, stop.
 
-Read the ticket description AND comments — the scope lives in a comment
-posted by the `scope` skill. There is only ever one scope:
-`resolve-scope-review` revises that comment in place after Codex's review
-and Hugo's answers, so build from it as it stands. Read the Notes in Codex's
+Read the ticket description AND comments. The scope has two parts
+(`docs/linear-workflow.md` → "Scope contract"): the user scope in the
+description and the technical scope in the scoping comment. There is only
+ever one of each: `resolve-scope-review` revises them in place after Codex's
+review and Hugo's answers, so build from them as they stand. A ticket scoped
+before 2026-11-07 has one old-shape comment holding the whole scope. Read the Notes in Codex's
 `## Codex scope review`, and Claude's `### Response to Codex's review`
 beneath it, as context. If there
 is no scoping comment, stop and tell the user to scope first. Store the Linear-supplied git branch name.
@@ -150,7 +152,7 @@ works out how to build what that scope promises. Do not use plan mode, which
 exists to gate on approval.
 
 Read the relevant parts of the codebase to ground the plan, and take acceptance
-criteria from the scope (the Linear comment). Print the plan to the transcript
+criteria from the user scope's After lines. Print the plan to the transcript
 for the record, covering:
 
 - **Files to touch** — concrete paths in the Snowdesk repo
@@ -175,8 +177,8 @@ message. Otherwise continue to step 4.
 Use the Agent tool to invoke the `implementer` subagent. Pass it:
 
 - The Linear ticket number & branch name
-- A reminder to consult the Linear ticket scope (in comments) and the
-  plan from this session's context
+- A reminder to consult both parts of the Linear ticket scope (description
+  and scoping comment) and the plan from this session's context
 - An instruction to commit incrementally with conventional commit messages
   and `--author="Claude <noreply@anthropic.com>"` (the PreToolUse hook
   refuses a commit without it), run tests as it goes, and report back when
@@ -308,11 +310,10 @@ Produce:
   - **Testing** — what tests cover this, anything to verify manually
   - **Agreed scope** — the ticket's scope, so Codex's PR review can check
     the diff against it without reaching Linear (`AGENTS.md` → "Code Review
-    Rules"). Copy the scoping comment as it now stands **verbatim** —
-    Approach, Touch
-    list, Tests, Open questions — under a `## Agreed scope` heading. Under
-    it, link the Linear comment it came from, and copy the Notes from
-    Codex's `## Codex scope review`.
+    Rules"). Under a `## Agreed scope` heading, copy both parts as they now
+    stand **verbatim**: the description under `### User scope`, the scoping
+    comment under `### Technical scope`. Under them, link the ticket, and
+    copy the Notes from Codex's `## Codex scope review`.
   - **Deviations from scope** — every way the diff departs from the agreed
     scope (a file outside the touch list, a promised test not written, a
     changed approach) and why. Write `None.` when there are none. An

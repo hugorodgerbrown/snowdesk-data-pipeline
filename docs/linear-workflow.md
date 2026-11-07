@@ -1,8 +1,8 @@
 ---
 name: linear-workflow
-description: Linear ticket lifecycle — states incl. Requires input, scoping comment, Codex scope review, branch naming, Closes SNOW-xxx
+description: Linear ticket lifecycle — states, Requires input, scope contract (user + technical), Codex scope review, branches, Closes SNOW-xxx
 status: current
-last-reviewed: 2026-10-29
+last-reviewed: 2026-11-07
 ---
 
 # Linear workflow
@@ -24,7 +24,7 @@ status reflects reality without manual nudging:
 | Status          | Transition trigger                                            | Who moves it |
 |-----------------|---------------------------------------------------------------|--------------|
 | `Backlog`       | Issue created, not yet scoped                                 | Human / Claude (MCP) |
-| `Todo`          | Scoping comment posted; Codex's review requested               | Claude — `scope` / `create-ticket` |
+| `Todo`          | Scope written (both parts); Codex's review requested          | Claude — `scope` / `create-ticket` |
 | `Requires input`| Codex's review left a question only Hugo can answer           | Claude — `resolve-scope-review` |
 | `Ready for dev` | Codex approved, or Claude answered every point in its review  | Claude — `resolve-scope-review` |
 | `In Progress`   | Local branch created at start of implementation               | Code (MCP)   |
@@ -68,11 +68,12 @@ Discuss the approach — data model changes, edge cases, the Django view
 vs HTMX partial split, service boundaries, test shape. When the
 approach is settled:
 
-> "Post the scope as a comment on SNOW-42."
+> "Scope SNOW-42."
 
-Claude appends the scoping comment via MCP (see **Scoping comment
-contract** below), moves the ticket to `Todo` and posts the review
-request for Codex. The `scope` skill does this. If the ticket already
+Claude shows Hugo the user scope to sign off. Then it writes it into the
+description, posts the technical scope as the scoping comment (see **Scope
+contract** below), moves the ticket to `Todo` and posts the review request
+for Codex. The `scope` skill does this. If the ticket already
 carries a scope, `scope` updates that one instead of posting a second,
 and if the ticket is redundant, out of date or low value it proposes
 parking it in `Deferred` instead of scoping it.
@@ -94,8 +95,9 @@ Two sub-patterns:
    > "Create a Linear ticket for this — title: 'Add region search
    > autocomplete'. Scope it using what we've just discussed."
 
-   Claude creates the issue *and* posts the scoping comment in one go,
-   then moves it to `Todo` and posts the review request. No `Backlog` stop.
+   Claude creates the issue with the user scope as its description and
+   the technical scope as its first comment, then moves it to `Todo` and
+   posts the review request. No `Backlog` stop.
 
 2. **Multiple tickets from one discussion.** When the conversation
    decomposes into several pieces of work:
@@ -106,7 +108,7 @@ Two sub-patterns:
    > fuzzy stays in Backlog with a note on what's missing."
 
    Claude creates each issue via MCP, assigns labels and priority,
-   writes the scoping comment on the ones with settled approach, hands
+   writes both parts of the scope on the ones with settled approach, hands
    those to Codex, and reports back a summary:
 
    > Created SNOW-102 (Todo, with Codex), SNOW-103 (Todo, with Codex),
@@ -118,8 +120,8 @@ Two sub-patterns:
   "add feature + refactor the surrounding module" into one ticket —
   that's two.
 - Title, label, priority, and a one-paragraph description are
-  mandatory at creation time. The scoping comment goes on top, not
-  instead.
+  mandatory at creation time. Scoping turns the description into the
+  user scope.
 - If the approach for a given ticket isn't settled in the discussion,
   create it at `Backlog` with a note naming the open question. Don't
   scope it just because the adjacent tickets are ready — that's how
@@ -128,19 +130,40 @@ Two sub-patterns:
   that they look right before handing any of them to Code. The chat
   window is not the source of truth; Linear is.
 
-## Scoping comment contract
+## Scope contract
 
-Whichever entry point produced the ticket, the scoping comment Chat
-writes to Linear has the same shape. This is the handoff artefact —
-Code reads it on pickup and inherits full context without re-scoping.
+Every scope has two parts, for two readers. Hugo signs off what changes;
+Codex reviews how it is built.
+
+**The user scope is the ticket description.** It says what changes for the
+person using Snowdesk, in plain words: no file names, no tests.
+
+- **Summary** — one sentence on the change.
+- **Before** — what a user sees or does today, or what is broken.
+- **After** — what they see or do once it ships, one line per change. Each
+  line passes or fails.
+- **Not changing** — what the ticket deliberately leaves alone.
+- **Open questions** — product decisions for Hugo, or `None.` Only a scope
+  with none left after the review reaches `Ready for dev`; anything still
+  open sends it to `Requires input`.
+
+A ticket no user would notice (CI, tooling, data) names who would notice:
+Hugo, an operator, the next developer. Links and images the description
+already had stay below the scope.
+
+**The technical scope is the scoping comment**, the first comment Claude
+posts on the ticket. Hugo need not read it.
 
 - **Approach** — 2–4 sentences on the chosen solution.
-- **Touch list** — files/modules expected to change.
-- **Tests** — what will be covered.
-- **Open questions** — anything still undecided. The ticket goes to
-  Codex either way, and Codex may answer some from the code. Only a
-  scope with no open questions left after the review reaches
-  `Ready for dev`; anything still open sends it to `Requires input`.
+- **Touch list** — files and modules expected to change.
+- **Tests** — what will be covered, and in which layer.
+
+It has no open questions. Claude settles a technical question from the code,
+or states its assumption under Approach for Codex to check.
+
+A ticket scoped before 7 November 2026 has the old shape: a plain
+description and one comment holding Approach, Touch list, Tests and Open
+questions. Read that comment as both parts.
 
 ## Scope review
 
@@ -151,7 +174,7 @@ questions goes straight to `Ready for dev`; with an open question it goes to
 `Requires input` — never back with Codex for a second round.
 
 ```
- Backlog ──scope──▶ Todo + "@Codex This is a scope review only…"
+ Backlog ──scope (Hugo signs off the user scope)──▶ Todo + "@Codex This is a scope review only…"
                       │
                       ▼
             ## Codex scope review   (AGENTS.md → "Scope review")
@@ -160,7 +183,7 @@ questions goes straight to `Ready for dev`; with an open question it goes to
    Approved                     Changes requested
        │                              │
        │                  resolve-scope-review: answer every point,
-       │                  revise the scoping comment IN PLACE,
+       │                  revise the scope IN PLACE,
        │                  reply "### Response to Codex's review"
        │                              │
        │               ┌──────────────┴──────────────┐
@@ -171,9 +194,11 @@ questions goes straight to `Ready for dev`; with an open question it goes to
                                        ticket, then /resolve-scope-review)
 ```
 
-1. **Claude scopes.** `scope` (or `create-ticket`) posts the four-section
-   comment, moves the ticket to `Todo`, and posts **the review request**
-   below as a new comment. The `@Codex` mention starts a Codex task, and
+1. **Claude scopes; Hugo signs off the user scope.** `scope` (or
+   `create-ticket`) shows Hugo the user scope. Once he approves, it writes
+   the description, posts the technical scope as the scoping comment, moves
+   the ticket to `Todo`, and posts **the review request** below as a new
+   comment. The `@Codex` mention starts a Codex task, and
    the comment is that task's prompt.
 2. **Codex reviews.** Codex runs a cloud task on the repo, reads
    `AGENTS.md`, and replies under the request with one `## Codex scope
@@ -184,19 +209,23 @@ questions goes straight to `Ready for dev`; with an open question it goes to
    - On Approved, it moves the ticket to `Ready for dev`.
    - On Changes requested, it accepts or declines each suggestion with a
      reason, and answers each question from the code or marks it for Hugo.
-     It then **edits the scoping comment in place**, so the ticket keeps
-     exactly one scope and `implement` builds from it. It replies under the
+     It then **edits the part each point touches in place**: the
+     description for the user scope, the scoping comment for the technical
+     scope. The ticket keeps exactly one scope and `implement` builds from
+     it. A change to the user scope beyond wording goes back to Hugo as an
+     open question, because that is the part he signed off. It replies under the
      review with `### Response to Codex's review`, one line per point.
    - If no questions are left, the ticket goes to `Ready for dev`.
      Otherwise it goes to `Requires input`, assigned to Hugo.
 4. **Hugo answers** (`Requires input` only) in a comment on the ticket,
    then runs `/resolve-scope-review NN`. That folds the answers into the
-   same scoping comment, replies `### Answers folded in`, and moves the
+   same scope, replies `### Answers folded in`, and moves the
    ticket to `Ready for dev`. Codex is not asked again.
 
-**There is one scope per ticket.** Nothing posts a second scoping
-comment. Every revision, whether after Codex's review or after Hugo's
-answers, edits the original in place and says so in its first line.
+**There is one scope per ticket**: one description, one scoping comment.
+Nothing posts a second scoping comment. Every revision, whether after
+Codex's review or after Hugo's answers, edits the original in place and says
+so in its first line.
 
 ### The review request
 
@@ -206,7 +235,7 @@ top-level comment, once the scope is on the ticket:
 ```markdown
 @Codex This is a **scope review only — do not implement this ticket.** Do not edit any file, commit, create a branch or open a pull request.
 
-Follow the "Scope review (Linear)" section of `AGENTS.md` in the repo: review this ticket's scope (the scoping comment, or the Approach / Touch list / Tests / Open questions sections of the description) against the code, then reply with a single comment in exactly the shape that section gives, starting with the heading `## Codex scope review` and a `**Verdict:**` line. Leave the product questions you cannot answer from the code as Questions — do not decide them. Your reply is the whole deliverable.
+Follow the "Scope review (Linear)" section of `AGENTS.md` in the repo: review both parts of this ticket's scope, the user scope in the description and the technical scope in the scoping comment, against the code and each other, then reply with a single comment in exactly the shape that section gives, starting with the heading `## Codex scope review` and a `**Verdict:**` line. Leave the product questions you cannot answer from the code as Questions — do not decide them. Your reply is the whole deliverable.
 ```
 
 **Write `@Codex` only where you mean to start a task.** A mention starts
@@ -266,8 +295,9 @@ In the Snowdesk repo, open Claude Code and say:
 Code's expected sequence:
 
 1. **Fetch** the issue and all comments via the Linear MCP server —
-   including the scoping comment (revised in place after Codex's review,
-   when it asked for changes). Do not start work without reading
+   the user scope in the description and the technical scope in the
+   scoping comment, both revised in place after Codex's review when it
+   asked for changes. Do not start work without reading
    the scope; if it's missing, stop and ask the user to scope first.
 2. **Create a branch** named `feature/SNOW-42-short-kebab-description`
    off the latest `main`. Keep the slug under ~40 chars; it appears in
@@ -316,9 +346,9 @@ For any change touching a public page: before/after screenshots and a
 note on the latest `npm run lh` scores.
 
 ## Agreed scope
-The scoping comment as it stands, verbatim — Approach, Touch list,
-Tests, Open questions. A link to the Linear comment, and the Notes from Codex's scope
-review.
+Both parts as they stand, verbatim: the user scope from the description
+under `### User scope`, the technical scope under `### Technical scope`.
+A link to the ticket, and the Notes from Codex's scope review.
 
 ## Deviations from scope
 Every way the diff departs from the agreed scope, and why. `None.` if
@@ -370,8 +400,8 @@ into `main`. No manual action required.
 
 ## When Code should stop and ask
 
-- Scoping comment missing on the ticket → ask the user to scope in Chat
-  first. Propose the scope if possible, and ask the user to confirm or
+- Scope missing on the ticket (no user scope or no scoping comment) →
+  ask the user to scope in Chat first. Propose the scope if possible, and ask the user to confirm or
   amend.
 - Tests fail after implementation and the fix isn't obvious → report
   the failure and stop, don't paper over it.
