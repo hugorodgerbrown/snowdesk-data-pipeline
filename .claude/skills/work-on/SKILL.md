@@ -64,7 +64,7 @@ rather than a failure two steps in.
 ## Step 2 — Scope phase
 
 Invoke the Skill tool with `skill: scope` and the ticket number as args,
-and follow the scope skill in full — including presenting the scope via
+and follow the scope skill in full — including presenting the user scope via
 plan mode and waiting for sidebar approval.
 
 - If the user approves: the scope is posted to Linear and the ticket is in
@@ -97,7 +97,7 @@ without an approval stop), implementer/reviewer loop, query-count check, push, P
 to In Review.
 
 The implement skill re-fetches the ticket and its comments, so it will
-find the scoping comment, which step 2b revised in place if Codex asked
+find both parts of the scope, which step 2b revised in place if Codex asked
 for changes. If it cannot find a scoping comment on a `Ready for dev`
 ticket, stop and surface that — something went wrong with the Linear
 write; do not improvise a scope.

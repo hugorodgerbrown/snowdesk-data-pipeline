@@ -2,7 +2,7 @@
 name: codex-reviews-every-scope-once
 description: Why every scope gets one Codex review before Ready for dev — AGENTS.md, @Codex review request, resolve-scope-review, Requires input
 status: current
-last-reviewed: 2026-10-29
+last-reviewed: 2026-11-07
 ---
 
 # Codex reviews every scope, once
@@ -57,6 +57,13 @@ when a question needs Hugo. There is one round.
 The review now covers scopes of size S and above. An XS scope with no open
 questions goes straight to `Ready for dev`, and an unsized ticket counts as S
 (Hugo). Elsewhere this record says "every scope"; read that with this limit.
+
+## Amended 7 November 2026
+
+The scope now has two parts: the user scope in the description, which Hugo
+signs off, and the technical scope in the scoping comment. Codex reviews
+both. Where this record says "the scoping comment", read "the scope"
+([why](hugo-signs-off-the-user-scope.md)).
 
 ## Consequences
 

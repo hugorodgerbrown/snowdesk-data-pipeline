@@ -2,8 +2,9 @@
 name: resolve-scope-review
 description: |
   Claude's second and last round on a Linear ticket's scope: read Codex's
-  scope review, answer every suggestion and question, revise the scoping
-  comment in place, reply under Codex's review, and move the ticket from Todo
+  scope review, answer every suggestion and question, revise the user scope
+  (description) and technical scope (scoping comment) in place, reply under
+  Codex's review, and move the ticket from Todo
   to Ready for dev — or to Requires input when a question needs Hugo. Also
   takes a Requires input ticket the rest of the way once Hugo has answered on
   it. Use when the user says "resolve the review on SNOW-NN", "Codex has
@@ -23,7 +24,8 @@ allowed-tools: Agent, Bash, Read, Grep, Glob, EnterPlanMode, ExitPlanMode, mcp__
 
 The scope loop is **Claude → Codex → Claude, once** (see
 `docs/linear-workflow.md` → "Scope review"). `scope` was the first Claude
-turn: it posted the scoping comment, asked Codex for a review with the
+turn: it wrote the user scope into the description, posted the technical
+scope as the scoping comment, asked Codex for a review with the
 `@Codex` review request, and left the ticket in `Todo`. Codex replied under
 that request with a `## Codex scope review` comment. This skill is the last
 turn: it ends with the ticket in `Ready for dev` or `Requires input`, never
@@ -50,7 +52,8 @@ marker instead:
 
 | Comment | Author | Opens with |
 |---|---|---|
-| **The scope** | Hugo's account | the four sections: Approach, Touch list, Tests, Open questions. Occasionally they are written into the description instead of a comment |
+| **The user scope** | the ticket description | Summary, Before, After, Not changing, Open questions |
+| **The technical scope** (the scoping comment) | Hugo's account | Approach, Touch list, Tests. A ticket scoped before 2026-11-07 has the old shape: this comment also holds Open questions, and the description is plain |
 | **The review request** | Hugo's account | `@Codex This is a **scope review only` |
 | **The review** | **Codex** | `## Codex scope review` |
 | **Claude's response** | Hugo's account, a reply in the review's thread | `### Response to Codex's review` |
@@ -131,22 +134,24 @@ files directly.
   call, anything the code cannot settle. Do not guess a product decision to
   avoid `Requires input`.
 - Carry forward the scope's own Open questions the same way.
-- **A change to what is built or why goes back to Hugo.** Hugo signed off the
-  scope before Codex saw it, so an accepted suggestion that materially changes
-  it (behaviour added or dropped, a different approach to the problem, a ticket
-  split in two) is not folded in silently. State it as a question for Hugo in
-  the revised scope's Open questions, naming the change and asking him to
-  confirm, so Step 5 moves the ticket to `Requires input`. A clarification, a
-  missing touch-list path or a better test does not go back. The call is
-  Claude's (`AGENTS.md` → Workflow), in routine mode too.
+- **A change to the user scope goes back to Hugo.** Hugo signed off the user
+  scope before Codex saw it, so an accepted suggestion that changes it beyond
+  wording (an After line added or dropped, something moved into or out of Not
+  changing, a ticket split in two) is not folded in silently. State it as a
+  question for Hugo in Open questions, naming the change and asking him to
+  confirm, so Step 5 moves the ticket to `Requires input`. A change to the
+  technical scope alone (a missing touch-list path, a better test, a different
+  way to build the same After lines) does not go back. The call is Claude's
+  (`AGENTS.md` → Workflow), in routine mode too.
 
 Then write two things:
 
-1. **The revised scope.** This is the full scoping comment with the accepted
-   changes folded in, so `implement` reads one complete scope rather than a
-   diff. It opens with the line
-   `_Revised after Codex's review, <YYYY-MM-DD>._`, and its Open questions
-   holds only the questions for Hugo (`None.` if there are none).
+1. **The revised scope.** Each part a change touches, rewritten whole with the
+   accepted changes folded in, so `implement` reads one complete scope rather
+   than a diff. Each revised part opens with the line
+   `_Revised after Codex's review, <YYYY-MM-DD>._` Open questions, in the user
+   scope, holds only the questions for Hugo (`None.` if there are none). An
+   old-shape ticket is revised in its own shape.
 2. **The response.** This is a reply in the review's thread:
 
    ```markdown
@@ -166,9 +171,9 @@ again.
 
 ## Step 5 — Write and move
 
-1. Edit the scope in place: `save_comment` with **the scoping comment's
-   `id`** and the revised body. If the scope lives in the description, use
-   `save_issue` with a `patch` over those sections instead. Then post the response with `save_comment`,
+1. Edit the scope in place: the user scope with `save_issue` on the
+   description, the technical scope with `save_comment` and **the scoping
+   comment's `id`**. Then post the response with `save_comment`,
    using `parentId` = the review's `id`. Write the scope first: the response
    is the guard, so it must not exist before the scope it describes.
 2. `save_issue`, in one call:
@@ -194,7 +199,7 @@ are newer than Claude's response and carry no marker from the table.
   in or ruling it out, so re-check the touch list and tests against the code
   rather than only deleting the question. Then:
   1. Show the revised scope through plan mode for approval, as in Step 4.
-  2. Edit the scoping comment in place. Its first line becomes
+  2. Edit each part the answers change in place. Its first line becomes
      `_Revised after Codex's review and Hugo's answers, <YYYY-MM-DD>._`
   3. Reply under Hugo's answer with
      `### Answers folded in`, plus one line per answer naming what it changed.
