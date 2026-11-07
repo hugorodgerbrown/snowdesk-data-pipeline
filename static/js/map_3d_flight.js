@@ -23,9 +23,9 @@
  *     body.map-recording, which lays the map over the whole page with no
  *     controls (src/css/main.css); the default leaves the page alone.
  *   frame(t) — draws the frame t of the way through (0..1) and resolves
- *     with its phase once the map is idle with every tile loaded (or has
- *     kept drawing with every tile loaded for QUIET_MS, for a camera where
- *     MapLibre's label placement never rests), jumping
+ *     with its phase once the map is idle with every tile loaded (or every
+ *     tile has stayed loaded for QUIET_MS, for a camera where MapLibre
+ *     never goes idle), jumping
  *     a second time if MapLibre moved the camera to keep it out of ground
  *     whose height had not loaded yet. If that
  *     has not happened within FRAME_CAP_MS (or load's options.capMs, which
@@ -52,11 +52,11 @@
   /** How long a frame may take to settle before it fails. */
   const FRAME_CAP_MS = 60000;
   /**
-   * A map that keeps drawing with every tile in has settled after this
-   * long and this many renders, though it never goes idle (settled()).
+   * A frame whose tiles have all stayed in this long has settled, though
+   * the map never goes idle (settled()); checked this often.
    */
   const QUIET_MS = 1500;
-  const QUIET_RENDERS = 3;
+  const QUIET_POLL_MS = 250;
   /** Room left round the route when the reveal fits it, in CSS pixels. */
   const REVEAL_PADDING = 120;
   /** The body class a recording sets. */
@@ -222,29 +222,46 @@
   }
 
   /**
-   * What a frame that has not settled is still waiting for, for its error:
-   * the sources with tiles still loading, or the labels if every tile is in.
+   * Whether every source in the style has all its tiles in.
    *
+   * @returns {boolean}
+   */
+  function tilesIn() {
+    const style = map.getStyle();
+    const ids = Object.keys((style && style.sources) || {});
+    return ids.every((id) => map.isSourceLoaded(id)) && map.areTilesLoaded();
+  }
+
+  /**
+   * What a frame that has not settled is still waiting for, for its error:
+   * the sources with tiles still loading, then the map's own state.
+   *
+   * @param {{renders: number, idles: number}} seen Events since the jump.
    * @returns {string}
    */
-  function waitingOn() {
+  function waitingOn(seen) {
     const style = map.getStyle();
     const loading = Object.keys((style && style.sources) || {}).filter((id) => !map.isSourceLoaded(id));
-    if (loading.length) return `tiles still loading: ${loading.join(', ')}`;
-    return 'every tile loaded, the map still drawing';
+    const state = `loaded=${map.loaded()} moving=${map.isMoving()} tiles=${map.areTilesLoaded()}`
+      + ` renders=${seen.renders} idles=${seen.idles}`;
+    if (loading.length) return `tiles still loading: ${loading.join(', ')}; ${state}`;
+    return `every source loaded; ${state}`;
   }
 
   /**
    * Resolve once the map has drawn the frame with every tile loaded; reject
    * after the cap.
    *
-   * Settled means an idle with every tile loaded, or, when the map never
-   * goes idle, every tile loaded through QUIET_RENDERS renders spanning
-   * QUIET_MS. MapLibre fires idle only once a render leaves nothing to do,
-   * and at some cameras over terrain its symbol placement never comes to
-   * rest, so the map keeps drawing with every tile in and idle never comes
-   * (frame 349 of the Breithorn, 7 Nov 2026). The tiles are what a frame
-   * waits for; a label still fading is not worth failing the run.
+   * Settled means an idle with every tile loaded, or every tile staying
+   * loaded for QUIET_MS, checked every QUIET_POLL_MS whatever the map is
+   * doing. MapLibre fires idle only once a render leaves nothing to do, and
+   * at some cameras over terrain it never gets there, so idle never comes
+   * (frame 349 of the Breithorn, 7 Nov 2026, on a Mac GPU and under
+   * SwiftShader alike). The tiles are what a frame waits for; a label still
+   * fading is not worth failing the run. The wait starts only after a
+   * render since the jump, the one that asks for the new camera's tiles,
+   * and every tile load asks for another, so a frame whose tiles have been
+   * in for QUIET_MS has been drawn with them.
    *
    * @param {number} t For the error.
    * @returns {Promise<void>}
@@ -253,32 +270,37 @@
     return new Promise((resolve, reject) => {
       let done = false;
       let quietSince = 0;
-      let quietRenders = 0;
+      const seen = { renders: 0, idles: 0 };
       /** @param {Error} [error] */
       const finish = (error) => {
         if (done) return;
         done = true;
         clearTimeout(timer);
+        clearInterval(poll);
         map.off('idle', onIdle);
         map.off('render', onRender);
         if (error) reject(error);
         else resolve();
       };
       const timer = setTimeout(() => {
-        finish(new Error(`frame t=${t} not settled after ${capMs / 1000} s (${waitingOn()})`));
+        finish(new Error(`frame t=${t} not settled after ${capMs / 1000} s (${waitingOn(seen)})`));
       }, capMs);
-      const onIdle = () => {
-        if (map.areTilesLoaded()) finish();
-      };
-      const onRender = () => {
-        if (map.isMoving() || !map.loaded() || !map.areTilesLoaded()) {
+      const poll = setInterval(() => {
+        // Until the map has drawn once since the jump it has not asked for
+        // the new camera's tiles, so the old ones would count as in.
+        if (!seen.renders || !tilesIn()) {
           quietSince = 0;
-          quietRenders = 0;
           return;
         }
         if (!quietSince) quietSince = Date.now();
-        quietRenders += 1;
-        if (quietRenders >= QUIET_RENDERS && Date.now() - quietSince >= QUIET_MS) finish();
+        else if (Date.now() - quietSince >= QUIET_MS) finish();
+      }, QUIET_POLL_MS);
+      const onIdle = () => {
+        seen.idles += 1;
+        if (map.areTilesLoaded()) finish();
+      };
+      const onRender = () => {
+        seen.renders += 1;
       };
       map.on('idle', onIdle);
       map.on('render', onRender);
