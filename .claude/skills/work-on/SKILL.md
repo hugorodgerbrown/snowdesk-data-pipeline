@@ -80,8 +80,8 @@ plan mode and waiting for sidebar approval.
 ## Step 2b — Resolve-review phase
 
 Invoke the Skill tool with `skill: resolve-scope-review` and the ticket
-number, and follow it in full, including its plan-mode approval of the
-revised scope.
+number, and follow it in full, including its plan-mode approval of a
+revised user scope.
 
 - Ticket ends in `Ready for dev` → continue to step 3 **without asking
   whether to continue** — proceeding is the whole point of this skill. A

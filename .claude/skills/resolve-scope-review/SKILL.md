@@ -37,8 +37,9 @@ scope and `implement` always reads that one.
 
 ## Modes
 
-- **Interactive** (default) — a ticket number was given. The revised scope is
-  shown through plan mode for approval before anything is written.
+- **Interactive** (default) — a ticket number was given. A revised user scope
+  is shown through plan mode for approval before anything is written. A
+  revision to the technical scope alone needs no approval.
 - **Routine** — args contain `routine`, `sweep` or `--no-approval`. With no
   ticket number, sweep (Step 0). No plan mode, no approval gate: write, move,
   and report. A routine never touches a `Requires input` ticket — those wait
@@ -164,10 +165,16 @@ Then write two things:
 
 ## Step 4 — Approve (interactive only)
 
-`EnterPlanMode`, then at once `ExitPlanMode` with the revised scope and the
-response verbatim. Do not write anything until they are approved. If they
-are rejected with edits, revise and re-present them. Do not consult Codex
-again.
+Hugo signs off the user scope only, so only a change to it needs approval.
+
+- **The user scope changed** (wording included) → `EnterPlanMode`, then at once
+  `ExitPlanMode` with the revised user scope verbatim. Leave out the technical
+  scope and the response. Do not write anything until it is approved. If it is
+  rejected with edits, revise it, update the technical scope to match, and
+  re-present it.
+- **Only the technical scope changed** → no approval; go straight to Step 5.
+
+Do not consult Codex again.
 
 ## Step 5 — Write and move
 
@@ -198,7 +205,8 @@ are newer than Claude's response and carry no marker from the table.
   point. An answer can change the scope's shape, for example by bringing work
   in or ruling it out, so re-check the touch list and tests against the code
   rather than only deleting the question. Then:
-  1. Show the revised scope through plan mode for approval, as in Step 4.
+  1. If the user scope changed, show it through plan mode for approval, as in
+     Step 4. A technical-only change needs no approval.
   2. Edit each part the answers change in place. Its first line becomes
      `_Revised after Codex's review and Hugo's answers, <YYYY-MM-DD>._`
   3. Reply under Hugo's answer with
