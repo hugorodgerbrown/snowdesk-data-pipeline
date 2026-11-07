@@ -79,6 +79,32 @@ describe('MAX_PIXEL_RATIO', () => {
   });
 });
 
+describe('pixelRatioFor', () => {
+  it('draws a large iPad at 1.5x', () => {
+    expect(core.pixelRatioFor(2, 744, 1011)).toBe(core.LARGE_CANVAS_PIXEL_RATIO);
+  });
+
+  it('keeps a 3x phone at the 2x cap', () => {
+    expect(core.pixelRatioFor(3, 390, 844)).toBe(2);
+  });
+
+  it('keeps a 1x full-HD desktop at 1x', () => {
+    expect(core.pixelRatioFor(1, 1920, 1080)).toBe(1);
+  });
+
+  it('draws a 2x laptop at 1.5x', () => {
+    expect(core.pixelRatioFor(2, 1440, 900)).toBe(1.5);
+  });
+
+  it('never raises a ratio under 1.5', () => {
+    expect(core.pixelRatioFor(1.25, 2560, 1440)).toBe(1.25);
+  });
+
+  it('treats a missing ratio or size as 1x and small', () => {
+    expect(core.pixelRatioFor(0, 0, 0)).toBe(1);
+  });
+});
+
 describe('prefetchDemTiles / tileUrl', () => {
   it('returns the 3x3 block two zooms below the map, around the centre', () => {
     const tiles = core.prefetchDemTiles({ lng: 7.87, lat: 46.07 }, 12.6);

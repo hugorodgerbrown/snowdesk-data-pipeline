@@ -17,7 +17,9 @@
  *      without touching the picker's stored choice;
  *   3. the elevation source, the terrain, the sky and the north-west
  *      sunlight go on, the sunlight under the first label;
- *   4. the pixel ratio is capped and the camera eases to the opening tilt,
+ *   4. the pixel ratio is capped (2x, or 1.5x on a canvas over 2.5 million
+ *      device pixels, fitted again on each resize; SNOW-1464) and the
+ *      camera eases to the opening tilt,
  *      with the pitch ceiling opened and the zoom floored at z9. A
  *      ?view=3d boot whose link named a tilt (`?at=` with a pitch above 0,
  *      published by map.js as snowdeskMapState.linkedPitch) keeps that
@@ -562,6 +564,18 @@
   };
 
   /**
+   * Draw 3D at the ratio this canvas's size calls for (SNOW-1464): the
+   * device's, capped at 2x, and 1.5x on a large canvas.
+   *
+   * @returns {void}
+   */
+  const fitPixelRatio = () => {
+    const container = map.getContainer();
+    const ratio = core.pixelRatioFor(window.devicePixelRatio || 1, container.clientWidth, container.clientHeight);
+    if (ratio !== map.getPixelRatio()) map.setPixelRatio(ratio);
+  };
+
+  /**
    * Enter 3-D, if it is available.
    *
    * @param {{gesture?: boolean, boot?: boolean}} [options]
@@ -584,8 +598,7 @@
     map.setMinZoom(viewCore.MIN_ZOOM);
     if (typeof map.setPixelRatio === 'function') {
       savedPixelRatio = map.getPixelRatio();
-      const capped = Math.min(window.devicePixelRatio || 1, core.MAX_PIXEL_RATIO);
-      if (capped !== savedPixelRatio) map.setPixelRatio(capped);
+      fitPixelRatio();
     }
     const swapped = swapBasemap(viewCore.BASEMAP_KEY);
     // A swap brings a new style; its styledata installs the relief.
@@ -758,6 +771,13 @@
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) stopFrames();
     else if (playing) startFrames();
+  });
+
+  // A rotated iPad or a resized window can cross the large-canvas line. A
+  // setPixelRatio resizes too, and the second pass finds nothing to change.
+  map.on('resize', () => {
+    if (view !== THREE_D || contextLost || typeof map.setPixelRatio !== 'function') return;
+    fitPixelRatio();
   });
 
   // ---- WebGL lost and restored ------------------------------------------

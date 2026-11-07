@@ -42,6 +42,7 @@
  * Exports (frozen `self.pwaMap3dCore`):
  *
  *   DEM_SOURCE_ID / TERRAIN_EXAGGERATION / OPENING_CAMERA / MAX_PITCH / MAX_PIXEL_RATIO
+ *   LARGE_CANVAS_PIXEL_RATIO / LARGE_CANVAS_PIXELS / pixelRatioFor(dpr, w, h)
  *   prefetchDemTiles(centre, mapZoom) / tileUrl(template, tile)
  *   skySpec() / sunlightPaint()
  *   DEM_TILE_SIZE / DEM_PROTOCOL / DEM_FALLBACK_TILE_URL / DEM_FALLBACK_AFTER
@@ -92,6 +93,36 @@
    * 2x for detail nobody sees on a tilted map, and every frame pays for it.
    */
   const MAX_PIXEL_RATIO = 2;
+
+  /**
+   * The ratio a large canvas draws at in 3D (SNOW-1464). An iPad at 2x
+   * fills three million pixels a frame; at 1.5x it fills 1.7 million, and a
+   * tilted map at arm's length looks the same.
+   */
+  const LARGE_CANVAS_PIXEL_RATIO = 1.5;
+
+  /**
+   * A canvas that would draw more device pixels than this at the capped
+   * ratio is large. A phone at 2x (390 x 844, 1.3 million) stays under; an
+   * iPad (744 x 1011, 3.0 million) and a 2x laptop go over.
+   */
+  const LARGE_CANVAS_PIXELS = 2500000;
+
+  /**
+   * The pixel ratio 3D draws at: the device's, capped at MAX_PIXEL_RATIO,
+   * and at LARGE_CANVAS_PIXEL_RATIO on a large canvas. Never raises a
+   * device's own ratio.
+   *
+   * @param {number} devicePixelRatio
+   * @param {number} cssWidth
+   * @param {number} cssHeight
+   * @returns {number}
+   */
+  function pixelRatioFor(devicePixelRatio, cssWidth, cssHeight) {
+    const capped = Math.min(devicePixelRatio || 1, MAX_PIXEL_RATIO);
+    const drawn = (cssWidth || 0) * (cssHeight || 0) * capped * capped;
+    return drawn > LARGE_CANVAS_PIXELS ? Math.min(capped, LARGE_CANVAS_PIXEL_RATIO) : capped;
+  }
 
   /** MapLibre's ceiling is 85; past this the horizon eats the screen. */
   const MAX_PITCH = 80;
@@ -542,6 +573,9 @@
     OPENING_CAMERA: OPENING_CAMERA,
     MAX_PITCH: MAX_PITCH,
     MAX_PIXEL_RATIO: MAX_PIXEL_RATIO,
+    LARGE_CANVAS_PIXEL_RATIO: LARGE_CANVAS_PIXEL_RATIO,
+    LARGE_CANVAS_PIXELS: LARGE_CANVAS_PIXELS,
+    pixelRatioFor: pixelRatioFor,
     prefetchDemTiles: prefetchDemTiles,
     skySpec: skySpec,
     sunlightPaint: sunlightPaint,
