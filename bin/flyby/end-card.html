@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<!--
+  bin/flyby/end-card.html — the 3D fly-past's closing card (SNOW-1466).
+
+  bin/record-3d-flyby opens this file at the video's size, screenshots it
+  once and cross-fades into it over the clip's last 2.5 s. It carries no
+  "Map © swisstopo": the recorder burns that credit into every frame, the
+  card included, at the bottom right, so the card leaves that corner empty.
+
+  The colours and font are the site's light tokens from src/css/main.css
+  (@theme: --color-bg, --color-text-1, --color-text-2, --font-sans), copied
+  here because this page is opened from disk, without the built CSS. The
+  icon is static/icons/app-icon.svg. Sizes are in vh so the card scales
+  with --size.
+-->
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>Snowdesk</title>
+        <style>
+            @font-face {
+                font-weight: 100 1000;
+                src: url('../../static/fonts/dm-sans-latin.woff2') format('woff2');
+                font-family: 'DM Sans';
+            }
+            :root {
+                --color-bg: #f2f0ec;
+                --color-text-1: #1a1916;
+                --color-text-2: #6b6860;
+                --font-sans: 'DM Sans', system-ui, sans-serif;
+            }
+            html, body {
+                height: 100%;
+                margin: 0;
+                background: var(--color-bg);
+                color: var(--color-text-1);
+                font-family: var(--font-sans);
+            }
+            main {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 100%;
+                gap: 2.2vh;
+            }
+            img {
+                width: 16vh;
+                height: 16vh;
+            }
+            h1 {
+                margin: 1vh 0 0;
+                font-weight: 600;
+                font-size: 9vh;
+                letter-spacing: -0.02em;
+            }
+            p {
+                margin: 0;
+                color: var(--color-text-2);
+                font-size: 3.6vh;
+            }
+            .address {
+                margin-top: 1.2vh;
+                color: var(--color-text-1);
+                font-weight: 500;
+                font-size: 3.2vh;
+            }
+        </style>
+    </head>
+    <body>
+        <main>
+            <img src="../../static/icons/app-icon.svg" alt="">
+            <h1>Snowdesk</h1>
+            <p>Avalanche conditions and terrain, in 3D</p>
+            <p class="address">snowdesk.info</p>
+        </main>
+    </body>
+</html>

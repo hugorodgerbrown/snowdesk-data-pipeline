@@ -494,3 +494,9 @@ good: no tile was ever requested. `tiltIn` now passes
 `freezeElevation: true`. A tilt keeps its centre, so there is no height to
 follow. The e2e suite missed it because its fixture style loads before the
 first ease frame; the Vitest suite pins the option.
+
+## The fly-past (SNOW-1466, 7 Nov 2026)
+
+The promo video's fly-past is drawn by this view, one frame at a time
+(`map_3d_flight_core.js`, `map_3d_flight.js`, `bin/record-3d-flyby`); why:
+[`a-fly-past-is-rendered-frame-by-frame.md`](a-fly-past-is-rendered-frame-by-frame.md).
