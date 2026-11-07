@@ -753,7 +753,7 @@ HOME_3D_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
         "caption": "Under the hero, for a reader who can open the map in 3D",
         "solo": True,
         "context": {
-            "map_3d_url": "/map/?mode=terrain&view=3d&at=7.87,46.07,12.6,64,215",
+            "map_3d_url": "/map/?mode=terrain&view=3d&at=7.748,46.012,10.9,72,197",
         },
     },
 )

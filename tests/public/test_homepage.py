@@ -16,7 +16,7 @@ Covers:
     built for a map-state 301.
   - The 3D branding, only for a reader who can open the map in 3D (map_3d,
     SNOW-1451): the nav wordmark wearing specs, and the 3D card under the
-    hero (SNOW-1454) linking to the map in 3D over Saas-Fee.
+    hero (SNOW-1454) linking to the map in 3D up the Mattertal.
 """
 
 from __future__ import annotations
@@ -92,7 +92,7 @@ class TestHomepage:
 class TestHomepage3dBranding:
     """SNOW-1454: the 3D card shows only to readers who can open the map in 3D."""
 
-    MAP_3D_URL = "/map/?mode=terrain&view=3d&at=7.87,46.07,12.6,64,215"
+    MAP_3D_URL = "/map/?mode=terrain&view=3d&at=7.748,46.012,10.9,72,197"
     # As the template renders it, autoescaped.
     MAP_3D_HREF = MAP_3D_URL.replace("&", "&amp;")
 
@@ -160,7 +160,7 @@ class TestHomepage3dBranding:
         assert "img/home/3d-desktop.jpg" in card
         assert 'width="780"' in card
         assert 'height="1040"' in card
-        assert 'alt="The Snowdesk map in 3D: Saas-Fee' in card
+        assert 'alt="The Snowdesk map in 3D: the Mattertal' in card
         assert 'loading="lazy"' not in card
 
     @pytest.mark.parametrize("flag", [True, False])
