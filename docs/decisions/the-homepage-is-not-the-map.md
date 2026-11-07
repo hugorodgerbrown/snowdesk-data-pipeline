@@ -65,9 +65,11 @@ every existing install a different app, so only `start_url` moves.
   phone capture for the 3D card, SNOW-1454) are stills and go stale as the
   app changes. Re-capture them at the same ratios when the app's appearance
   changes. The 3D card's pair is taken at `HOME_3D_CAMERA`
-  (`apps/public/views.py`), the camera its link opens, in Conditions with
-  no Terrain layers, because that is what most readers get. The phone
-  capture is pulled back to zoom 11.3 so a narrow frame still holds the
-  Allalin, the Matterhorn and Zermatt. The danger wash comes from a real
-  Moderate day (15 May 2026); headless Chromium can draw it, against the
-  dev server with the ratings API pointed at production.
+  (`apps/public/views.py`), the camera its link opens. Hugo's brief (7 Nov
+  2026): plain relief with a route on it, and no resorts, weather or danger
+  wash. The route is swisstopo's Breithorn ski tour from the Klein
+  Matterhorn (the one the fly-by video uses), saved as a drawn route for the
+  dev superuser; every overlay but the routes is hidden, along with the
+  basemap's lifts, POIs and borders. The phone capture is centred a little
+  further east (7.7295, 45.9462, z12.7, pitch 60) so its narrow frame holds
+  the whole route. Headless Chromium draws it against the dev server.

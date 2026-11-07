@@ -383,13 +383,13 @@ def _carries_map_state(request: HttpRequest) -> bool:
 
 
 # SNOW-1454: the camera the homepage's 3D card opens the map on, as
-# ``?at=lng,lat,zoom,pitch,bearing`` (map_view_core.readCamera): over
-# Saas-Fee, looking up the Allalin toward Zermatt, the view its picture
-# shows and the 3D view's own opening camera (OPENING_CAMERA in
-# static/js/map_3d_core.js). A bare ?view=3d would boot from the reader's
+# ``?at=lng,lat,zoom,pitch,bearing`` (map_view_core.readCamera): looking
+# north-west over the Breithorn and the Klein Matterhorn, the view its
+# desktop picture shows with swisstopo's Breithorn ski tour draped on it
+# (Hugo, 7 Nov 2026). A bare ?view=3d would boot from the reader's
 # stored viewport, which may lie outside Switzerland (then flat) or be
 # nowhere at all (then z9 over the middle of the country).
-HOME_3D_CAMERA = (7.87, 46.07, 12.6, 64, 215)
+HOME_3D_CAMERA = (7.725, 45.947, 12.55, 62, 315)
 
 
 def _home_3d_url() -> str:
