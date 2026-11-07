@@ -14,6 +14,7 @@
  *     again when MapLibre lowered the camera before the heights were in,
  *     and rejects when the cap passes first;
  *   - a reveal frame blends towards cameraForBounds by the fit's weight;
+ *   - the line is drawn again on the style a basemap swap brings;
  *   - unload removes the layers and source and hands back to endTest.
  */
 
@@ -142,7 +143,7 @@ describe('load', () => {
     expect(() => flight.load({ type: 'Point', coordinates: [7.7, 45.9] })).toThrow(/No LineString/);
   });
 
-  it('takes the core options from options.flight, else the feature’s properties', async () => {
+  it('takes the core options from options.flight over the feature’s properties', async () => {
     const spy = vi.fn(core.buildFlight);
     window.pwaMap3dFlightCore = { ...core, buildFlight: spy };
     try {
@@ -151,6 +152,11 @@ describe('load', () => {
       expect(spy.mock.calls.at(-1)[1]).toEqual({ seconds: 12 });
       flight.load(ROUTE, { flight: { seconds: 8 } });
       expect(spy.mock.calls.at(-1)[1]).toEqual({ seconds: 8 });
+      // The caller's options go over the route's, keeping the rest of them,
+      // and a FeatureCollection's line feature carries its own.
+      const breithorn = { ...ROUTE, properties: { flight: { seconds: 12, reveal: { bearingDeg: 15 } } } };
+      flight.load({ type: 'FeatureCollection', features: [breithorn] }, { flight: { seconds: 20 } });
+      expect(spy.mock.calls.at(-1)[1]).toEqual({ seconds: 20, reveal: { bearingDeg: 15 } });
     } finally {
       window.pwaMap3dFlightCore = core;
     }
@@ -270,6 +276,39 @@ describe('frame', () => {
     expect(camera.bearing).toBe(expected.camera.bearing);
     env.map.fire('idle');
     await expect(pending).resolves.toEqual({ phase: 'reveal' });
+  });
+
+  it('draws the line again on the style a basemap swap brings', async () => {
+    // Entering 3D from another basemap swaps the style after load().
+    const flight = await load();
+    flight.load(ROUTE);
+    const first = flight.frame(0.6);
+    env.map.fire('idle');
+    await first;
+    for (const id of ['map-3d-flight-head', 'map-3d-flight-line', 'map-3d-flight-casing']) env.map.removeLayer(id);
+    env.map.removeSource('map-3d-flight');
+    env.map.fire('style.load');
+    expect(env.map.layers.map((l) => l.id)).toEqual([
+      'map-3d-flight-casing', 'map-3d-flight-line', 'map-3d-flight-head',
+    ]);
+    const data = env.map.sources['map-3d-flight'].setData.mock.calls[0][0];
+    expect(data.features.map((f) => f.geometry.type)).toEqual(['LineString', 'Point']);
+  });
+
+  it('draws again before resolving when a swap lands while a frame settles', async () => {
+    const flight = await load();
+    flight.load(ROUTE);
+    let done = false;
+    const pending = flight.frame(0.6).then(() => { done = true; });
+    env.map.removeSource('map-3d-flight');
+    env.map.fire('idle');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(done).toBe(false);
+    expect(env.map.sources['map-3d-flight']).toBeTruthy();
+    env.map.fire('idle');
+    await pending;
+    expect(done).toBe(true);
   });
 
   it('refuses a frame with no flight loaded', async () => {

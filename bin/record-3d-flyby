@@ -495,10 +495,10 @@ def record_frames(settings: Settings, route: dict[str, Any]) -> tuple[Path, Path
         can = page.evaluate("() => window.pwaMapView.canTest()")
         if not can.get("ok"):
             raise RecordError(f"3D cannot be entered here: {can.get('reason')}")
-        flight = (route.get("properties") or {}).get("flight") or {}
         options = {
             "chrome": False,
-            "flight": {**flight, "seconds": settings.seconds},
+            # Merged over the route's own properties.flight by the page.
+            "flight": {"seconds": settings.seconds},
             "capMs": settings.frame_cap_ms,
         }
         length = page.evaluate(LOAD_FLIGHT, [route, options])

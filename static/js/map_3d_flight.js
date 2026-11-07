@@ -13,8 +13,8 @@
  *
  *   load(geojson, options = {}) — builds the flight from the first
  *     LineString or MultiLineString in a Feature, FeatureCollection or
- *     bare geometry, with options.flight (or the feature's
- *     properties.flight) as the core's options. Enters 3D through
+ *     bare geometry, with options.flight merged over the feature's
+ *     properties.flight as the core's options. Enters 3D through
  *     window.pwaMapView.beginTest(), which saves the camera and the view and
  *     rests the watchdog, and throws if 3D cannot be entered here, naming
  *     canTest()'s reason. Adds the `map-3d-flight` source and its casing,
@@ -56,6 +56,8 @@
 
   /** @type {any} The flight loaded now, if one is. */
   let flight = null;
+  /** @type {any} The source's data for the last frame drawn. */
+  let lastData = null;
   /** How long a frame may take to settle for this flight. */
   let capMs = FRAME_CAP_MS;
 
@@ -123,6 +125,25 @@
         'circle-pitch-alignment': 'map',
       },
     });
+  }
+
+  /**
+   * Put the layers back if a setStyle took them, and draw the last frame's
+   * data. Entering 3D from another basemap swaps the style after load()
+   * has added the layers, and the swap wipes them (SNOW-1466).
+   */
+  function draw() {
+    if (!flight) return;
+    if (!map.getSource(SOURCE_ID)) {
+      try {
+        addLayers();
+      } catch (_err) {
+        // The new style is still loading; its style.load draws again.
+        return;
+      }
+    }
+    const source = map.getSource(SOURCE_ID);
+    if (source && lastData) source.setData(lastData);
   }
 
   /**
@@ -230,7 +251,9 @@
   function load(geojson, options = {}) {
     const line = firstLine(geojson);
     if (!line) throw new Error('No LineString or MultiLineString to fly');
-    const built = core.buildFlight(line.coords, options.flight || line.properties.flight || {});
+    // The caller's options go over the route's own, so a recorder's
+    // seconds do not drop the route's camera settings.
+    const built = core.buildFlight(line.coords, { ...(line.properties.flight || {}), ...(options.flight || {}) });
     const view = /** @type {any} */ (window).pwaMapView;
     if (!view) throw new Error('3D is not available here: no 3D view on this page');
     if (!flight && !view.beginTest()) {
@@ -259,12 +282,18 @@
   async function frame(t) {
     if (!flight) throw new Error('No flight loaded');
     const f = core.flightFrame(flight, t);
-    const source = map.getSource(SOURCE_ID);
-    if (source) source.setData(frameData(f));
+    lastData = frameData(f);
+    draw();
     const camera = cameraFor(f);
     thawElevation();
     map.jumpTo(camera);
     await settled(t);
+    // A basemap swap that landed while this frame settled took the line
+    // with it; draw it again on the new style before the screenshot.
+    if (!map.getSource(SOURCE_ID)) {
+      draw();
+      await settled(t);
+    }
     // MapLibre keeps the camera out of the ground by lowering its pitch and
     // zoom, judged against the centre's height at the jump. After a long
     // jump that height is the old centre's, or 0 before its tile is in, so
@@ -286,10 +315,13 @@
     }
     if (flight) {
       flight = null;
+      lastData = null;
       const view = /** @type {any} */ (window).pwaMapView;
       if (view) view.endTest({});
     }
   }
+
+  map.on('style.load', draw);
 
   window.pwaMap3dFlight = Object.freeze({ load, frame, unload, FRAME_CAP_MS });
 })();
