@@ -248,9 +248,10 @@ class TestPathRules:
             ("README.md", False),
             (".claude/settings.json", False),
             ("tests/weather/test_models.py", False),
-            ("templates/includes/_card.html", True),
+            ("templates/includes/_card.html", False),
             ("uv.lock", True),
-            ("static/js/map.js", True),
+            ("static/js/map.js", False),
+            ("static/icons/star.svg", True),
             ("config/settings/base.py", True),
             ("apps/weather/migrations/0008_x.py", True),
             ("tests/conftest.py", True),
@@ -300,10 +301,29 @@ class TestDecide:
         base = _commit(repo, "tests/test_service.py", "X = 2\n")
         assert select.decide(base).mode == "affected"
 
-    def test_a_template_change_is_full(self, repo: Path) -> None:
-        """testmon never sees a template."""
-        base = _commit(repo, "templates/page.html", "<p>hi</p>\n")
-        assert select.decide(base).reasons == ["templates/page.html: not Python"]
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "templates/page.html",
+            "apps/map/templates/public/partials/_map_embed.html",
+            "static/js/map_view_3d.js",
+            "tests/js/test_map_view_3d.js",
+            "src/css/main.css",
+            "locale/en/LC_MESSAGES/django.po",
+        ],
+    )
+    def test_a_frontend_change_is_affected(self, repo: Path, path: str) -> None:
+        """SNOW-1465: frontend files trust main's full run, not the PR's."""
+        base = _commit(repo, path, "x\n")
+        assert select.decide(base).mode == "affected"
+
+    @pytest.mark.parametrize(
+        "path", ["pyproject.toml", "uv.lock", "apps/map/data/peaks.json"]
+    )
+    def test_a_data_or_config_change_is_full(self, repo: Path, path: str) -> None:
+        """Data and build inputs still run everything."""
+        base = _commit(repo, path, "x\n")
+        assert select.decide(base).reasons == [f"{path}: not Python"]
 
     def test_an_unresolvable_map_commit_is_full(self, repo: Path) -> None:
         """A map whose commit is not in this clone cannot be trusted."""
@@ -342,12 +362,12 @@ class TestMain:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """``--github-output`` appends the same ``mode=`` line CI reads."""
-        base = _commit(repo, "templates/page.html", "<p>hi</p>\n")
+        base = _commit(repo, "pyproject.toml", "[project]\n")
         output = tmp_path_factory.mktemp("gh") / "output"
         monkeypatch.setenv("GITHUB_OUTPUT", str(output))
         assert select.main(["--since", base, "--github-output"]) == 0
         assert output.read_text() == "mode=full\n"
-        assert "full suite: templates/page.html: not Python" in capsys.readouterr().out
+        assert "full suite: pyproject.toml: not Python" in capsys.readouterr().out
 
     def test_never_fails_the_build(
         self, repo: Path, monkeypatch: pytest.MonkeyPatch

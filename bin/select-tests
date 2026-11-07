@@ -38,8 +38,12 @@
 # modules (``test_*.py``) are the one exception: testmon fingerprints a
 # test's own file whole, so a change anywhere in one reruns the tests in it.
 # Markdown and ``.claude/`` are ignored, as ci.yml's docs-only gate ignores
-# them; any other file under ``docs/`` (a JSON a module reads at import, say)
-# is data, and runs the full suite like any other non-Python file.
+# them. So are FRONTEND files (templates, JS, CSS, ``.po``): testmon cannot
+# see them either, but sending every frontend PR to the full suite meant
+# nearly every PR ran everything, so a template or JS change now trusts
+# main's full run to catch what the PR run misses (SNOW-1465). Any other
+# file under ``docs/`` (a JSON a module reads at import, say) is data, and
+# runs the full suite like any other non-Python file.
 #
 # A FUNCTION THAT RUNS AT IMPORT is not "inside a test" either.
 # ``SLUG_TO_CODE = _build_slug_to_code()`` runs its builder once, while the
@@ -91,6 +95,22 @@ from pathlib import PurePosixPath
 
 # Paths that cannot affect a Python test: prose, and Claude's own config.
 IGNORED = ("*.md", ".claude/*")
+
+# Frontend files testmon cannot see, but which an 80:20 PR run lets through
+# (SNOW-1465): a change to one runs testmon's pick for the rest of the diff,
+# not the full suite. A test that renders the template or reads the file is
+# not rerun for it; main's full run is the backstop that catches it. Data,
+# config and build inputs (JSON, pyproject.toml, uv.lock, tox.ini,
+# workflows) still run the full suite.
+FRONTEND = (
+    "templates/*",
+    "*/templates/*",
+    "static/js/*",
+    "static/css/*",
+    "src/css/*",
+    "tests/js/*",
+    "locale/*.po",
+)
 
 # Methods Python or Django call while a class or the app registry is built.
 IMPORT_TIME_HOOKS = frozenset({"ready", "__init_subclass__", "__set_name__"})
@@ -377,7 +397,7 @@ def path_reason(
     elsewhere: frozenset[str] = frozenset(),
 ) -> str:
     """Return why one changed path forces the full suite, or ``""``."""
-    if any(fnmatch(path, pattern) for pattern in IGNORED):
+    if any(fnmatch(path, pattern) for pattern in IGNORED + FRONTEND):
         return ""
     if not path.endswith(".py"):
         return f"{path}: not Python"
