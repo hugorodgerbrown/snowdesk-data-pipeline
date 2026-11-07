@@ -1,0 +1,584 @@
+#!/usr/bin/env python3
+# bin/record-3d-flyby — record the 3D fly-past promo video from the real map.
+#
+# SNOW-1466. Flies the camera along a route in /map/'s 3D view, one frame at
+# a time, screenshots each frame once its tiles are in, and encodes the
+# frames to an MP4, a WebM and a poster JPG. Nothing runs in real time, so a
+# slow machine gives the same video, only later
+# (docs/decisions/a-fly-past-is-rendered-frame-by-frame.md). The camera
+# path is static/js/map_3d_flight_core.js; the page side is
+# static/js/map_3d_flight.js (window.pwaMap3dFlight).
+#
+# With no arguments it flies bin/flyby/breithorn.geojson (swisstopo's ski
+# tour "Breithorn from the Klein Matterhorn summit station") at 1920×1080,
+# 30 fps, for 20 s, against the local dev server, and writes to build/flyby/:
+#
+#     flyby.mp4         H.264, yuv420p, CRF 20, +faststart
+#     flyby.webm        VP9, CRF 32
+#     flyby-poster.jpg  the whole route, just before the end card
+#
+# Every frame carries "Map © swisstopo" at the bottom right, and the last
+# END_CARD_SECONDS cross-fade into bin/flyby/end-card.html. Both are
+# rendered by the browser and overlaid by ffmpeg, so the credit is in our
+# font and needs no ffmpeg built with drawtext.
+#
+# The map comes from the dev server signed in as the seeded dev user
+# (dev@snowdesk.dev), whose session the script mints through
+# ``manage.py shell``, as bin/capture-pwa-screenshots does. 3D needs the
+# ``map_3d`` flag for that user (map_3d_view_enabled in
+# apps/public/map_shared.py); the script never sets it. Steps, with the
+# upload to R2, are in docs/map-3d-flyby.md:
+#
+#     uv run python manage.py runserver        # in another terminal
+#     uv run python bin/record-3d-flyby
+#     uv run python bin/record-3d-flyby --seconds 5 --size 960x540   # a quick look
+#     uv run python bin/record-3d-flyby --resume                     # after a failure
+#     uv run python bin/record-3d-flyby --software-gl                # no GPU (slow)
+#
+# A frame that has not settled within window.pwaMap3dFlight.FRAME_CAP_MS
+# (ten minutes with --software-gl) fails the run (exit 1); --resume keeps
+# the frames on disk and goes on from the first missing one. Needs ffmpeg
+# on PATH, and Chromium for Playwright (``uv run playwright install
+# chromium`` once, or --chromium). A machine with a GPU draws a frame in
+# a second or two; without one Chromium falls back to software and takes
+# a minute or more a frame.
+#
+# ruff: noqa: T201
+# T201 — CLI script; print() is the intended output channel.
+
+"""Record the 3D fly-past promo video — see the header block above."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+FLYBY_DIR = REPO_ROOT / "bin" / "flyby"
+DEFAULT_ROUTE = FLYBY_DIR / "breithorn.geojson"
+END_CARD = FLYBY_DIR / "end-card.html"
+DEFAULT_OUT = REPO_ROOT / "build" / "flyby"
+DEFAULT_URL = "http://127.0.0.1:8000"
+DEFAULT_SIZE = "1920x1080"
+DEFAULT_FPS = 30
+DEFAULT_SECONDS = 20.0
+
+# How long the end card takes to fade in, ending on the last frame.
+END_CARD_SECONDS = 2.5
+
+# The credit swisstopo's open data asks for, on every frame (Hugo, 7 Nov 2026).
+CREDIT = "Map © swisstopo"
+
+# How long the page may take to load the map before the run gives up.
+MAP_READY_MS = 120_000
+# How long one frame may take to settle: the page's own 60 s with a GPU;
+# SwiftShader draws terrain so slowly that a close-up frame can need more.
+SOFTWARE_GL_FRAME_CAP_MS = 600_000
+
+# Prints a signed-in session key for the seeded dev user (NORMAL_USER_EMAIL
+# in seed_test_data), as ``manage.py shell`` runs it. The same snippet as
+# bin/capture-pwa-screenshots.
+MINT_DEV_SESSION = """
+from importlib import import_module
+from django.conf import settings
+from django.contrib.auth import BACKEND_SESSION_KEY, HASH_SESSION_KEY, SESSION_KEY
+from django.contrib.auth import get_user_model
+from apps.bulletins.management.commands.seed_test_data import NORMAL_USER_EMAIL
+user = get_user_model().objects.get(email=NORMAL_USER_EMAIL)
+session = import_module(settings.SESSION_ENGINE).SessionStore()
+session[SESSION_KEY] = str(user.pk)
+session[BACKEND_SESSION_KEY] = "django.contrib.auth.backends.ModelBackend"
+session[HASH_SESSION_KEY] = user.get_session_auth_hash()
+session.create()
+print(settings.SESSION_COOKIE_NAME, session.session_key)
+"""
+
+# Before any page script runs: the map tour and its offer marked as seen, so
+# neither covers the map.
+DISMISS_INTRO = (
+    "try {"
+    " localStorage.setItem('snowdesk.map.tour-offer', 'dismissed');"
+    " localStorage.setItem('snowdesk.map.help', 'seen');"
+    " } catch (e) {}"
+)
+
+# The page is ready once the map has loaded and the fly-past driver is there.
+MAP_READY = (
+    "() => !!(window.snowdeskMapState && window.snowdeskMapState.map"
+    " && window.snowdeskMapState.map.loaded() && window.pwaMapView)"
+)
+
+# What the page is asked to do: load the route, and draw one frame.
+LOAD_FLIGHT = "([route, options]) => window.pwaMap3dFlight.load(route, options).length"
+STEP_FRAME = "(t) => window.pwaMap3dFlight.frame(t).then((f) => f.phase)"
+
+# The credit, white on a soft shadow, at the bottom right of a transparent
+# frame the size of the video.
+CREDIT_HTML = """<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face {{ font-family: 'DM Sans'; src: url('{font}') format('woff2'); }}
+html, body {{ margin: 0; height: 100%; background: transparent; }}
+span {{ position: fixed; right: 2.2vh; bottom: 1.8vh;
+  font: 500 2.2vh 'DM Sans', system-ui, sans-serif;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 0 0.4vh rgba(0, 0, 0, 0.55); }}
+</style></head><body><span>{credit}</span></body></html>"""
+
+
+class RecordError(Exception):
+    """A failure the run reports in one line and exits non-zero on."""
+
+
+@dataclass(frozen=True)
+class Settings:
+    """What one run records, and where."""
+
+    route: Path
+    url: str
+    width: int
+    height: int
+    fps: int
+    seconds: float
+    out: Path
+    chromium: str | None
+    resume: bool
+    software_gl: bool = False
+
+    @property
+    def frame_count(self) -> int:
+        """The frames the flight is cut into: one per 1/fps of the clip."""
+        return max(2, round(self.fps * self.seconds))
+
+    @property
+    def frame_cap_ms(self) -> int | None:
+        """How long a frame may take to settle; None keeps the page's own cap."""
+        return SOFTWARE_GL_FRAME_CAP_MS if self.software_gl else None
+
+    @property
+    def frames_dir(self) -> Path:
+        """Where the frames are written, one PNG each."""
+        return self.out / "frames"
+
+
+def parse_size(value: str) -> tuple[int, int]:
+    """Read ``WIDTHxHEIGHT``.
+
+    Args:
+        value: Such as ``1920x1080``.
+
+    Returns:
+        ``(width, height)``, both even (H.264 at yuv420p needs that).
+
+    Raises:
+        argparse.ArgumentTypeError: On anything else.
+
+    """
+    try:
+        width, height = (int(part) for part in value.lower().split("x"))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"--size wants WIDTHxHEIGHT, not {value!r}"
+        ) from exc
+    if width < 2 or height < 2 or width % 2 or height % 2:
+        raise argparse.ArgumentTypeError(
+            f"--size wants two even numbers, not {value!r}"
+        )
+    return width, height
+
+
+def parse_args(argv: list[str] | None = None) -> Settings:
+    """Parse the command line.
+
+    Args:
+        argv: The arguments, or None for ``sys.argv[1:]``.
+
+    Returns:
+        The run's settings.
+
+    """
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--route", type=Path, default=DEFAULT_ROUTE, help="GeoJSON or GPX"
+    )
+    parser.add_argument("--url", default=DEFAULT_URL, help="the dev server")
+    parser.add_argument("--size", type=parse_size, default=parse_size(DEFAULT_SIZE))
+    parser.add_argument("--fps", type=int, default=DEFAULT_FPS)
+    parser.add_argument("--seconds", type=float, default=DEFAULT_SECONDS)
+    parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    parser.add_argument(
+        "--chromium", default=None, help="a Chromium to use instead of Playwright's"
+    )
+    parser.add_argument("--resume", action="store_true", help="keep the frames on disk")
+    parser.add_argument(
+        "--software-gl",
+        action="store_true",
+        help="draw with SwiftShader, for a machine with no GPU (slow)",
+    )
+    args = parser.parse_args(argv)
+    if args.fps < 1:
+        parser.error("--fps must be at least 1")
+    if args.seconds <= END_CARD_SECONDS:
+        parser.error(f"--seconds must be longer than the {END_CARD_SECONDS} s end card")
+    width, height = args.size
+    return Settings(
+        route=args.route,
+        url=args.url.rstrip("/"),
+        width=width,
+        height=height,
+        fps=args.fps,
+        seconds=args.seconds,
+        out=args.out,
+        chromium=args.chromium,
+        resume=args.resume,
+        software_gl=args.software_gl,
+    )
+
+
+def load_route(path: Path) -> dict[str, Any]:
+    """Read a route as GeoJSON the page can fly.
+
+    A ``.gpx`` goes through the app's own parser
+    (apps/routes/services/gpx.py), so it is read exactly as an upload is.
+    Anything else is read as GeoJSON.
+
+    Args:
+        path: A GeoJSON or GPX file.
+
+    Returns:
+        A GeoJSON Feature, FeatureCollection or geometry.
+
+    Raises:
+        RecordError: If the file cannot be read.
+
+    """
+    if not path.is_file():
+        raise RecordError(f"no route at {path}")
+    if path.suffix.lower() == ".gpx":
+        sys.path.insert(0, str(REPO_ROOT))
+        # PLC0415: only a GPX needs the app on the path.
+        from apps.routes.services.gpx import GPXParseError, parse_gpx  # noqa: PLC0415
+
+        try:
+            parsed = parse_gpx(path.read_bytes())
+        except GPXParseError as exc:
+            raise RecordError(f"{path}: {exc}") from exc
+        return {
+            "type": "Feature",
+            "properties": {"name": parsed.name},
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[p[0], p[1]] for p in parsed.points],
+            },
+        }
+    try:
+        route = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RecordError(f"{path}: not readable GeoJSON ({exc})") from exc
+    if not isinstance(route, dict) or "type" not in route:
+        raise RecordError(f"{path}: not GeoJSON")
+    return route
+
+
+def require_ffmpeg() -> str:
+    """Find ffmpeg.
+
+    Returns:
+        Its path.
+
+    Raises:
+        RecordError: If it is not on PATH.
+
+    """
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise RecordError(
+            "ffmpeg is not on PATH: install it first (brew install ffmpeg)"
+        )
+    return ffmpeg
+
+
+def mp4_command(
+    ffmpeg: str, settings: Settings, credit: Path, card: Path, out: Path
+) -> list[str]:
+    """Build the ffmpeg command that makes the MP4.
+
+    The frames, with the credit over every one and the end card fading in
+    over the last END_CARD_SECONDS.
+
+    Args:
+        ffmpeg: The ffmpeg executable.
+        settings: The run.
+        credit: The transparent credit PNG, the video's size.
+        card: The end card PNG, the video's size.
+        out: The MP4 to write.
+
+    Returns:
+        The argv.
+
+    """
+    duration = settings.frame_count / settings.fps
+    fps = str(settings.fps)
+
+    def still(path: Path) -> list[str]:
+        """Loop one PNG for the clip's length, as an ffmpeg input."""
+        return [
+            "-loop",
+            "1",
+            "-framerate",
+            fps,
+            "-t",
+            f"{duration:.3f}",
+            "-i",
+            str(path),
+        ]
+
+    fade_start = max(0.0, duration - END_CARD_SECONDS)
+    graph = (
+        f"[2:v]format=rgba,fade=t=in:st={fade_start:.3f}:d={END_CARD_SECONDS}:alpha=1[card];"
+        "[0:v][card]overlay=0:0:shortest=1[flown];"
+        "[flown][1:v]overlay=0:0:shortest=1,format=yuv420p[v]"
+    )
+    return [
+        ffmpeg, "-y", "-loglevel", "error",
+        "-framerate", fps, "-i", str(settings.frames_dir / "f%05d.png"),
+        *still(credit), *still(card),
+        "-filter_complex", graph, "-map", "[v]",
+        "-c:v", "libx264", "-preset", "slow", "-crf", "20", "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart", "-an", str(out),
+    ]  # fmt: skip
+
+
+def webm_command(ffmpeg: str, mp4: Path, out: Path) -> list[str]:
+    """Build the ffmpeg command that makes the WebM from the MP4.
+
+    Args:
+        ffmpeg: The ffmpeg executable.
+        mp4: The MP4 already made.
+        out: The WebM to write.
+
+    Returns:
+        The argv.
+
+    """
+    return [
+        ffmpeg, "-y", "-loglevel", "error", "-i", str(mp4),
+        "-c:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-row-mt", "1",
+        "-an", str(out),
+    ]  # fmt: skip
+
+
+def poster_command(ffmpeg: str, settings: Settings, mp4: Path, out: Path) -> list[str]:
+    """Build the ffmpeg command that takes the poster from the MP4.
+
+    The frame just before the end card starts to fade in: the whole route,
+    revealed.
+
+    Args:
+        ffmpeg: The ffmpeg executable.
+        settings: The run.
+        mp4: The MP4 already made.
+        out: The JPG to write.
+
+    Returns:
+        The argv.
+
+    """
+    duration = settings.frame_count / settings.fps
+    at = max(0.0, duration - END_CARD_SECONDS - 1 / settings.fps)
+    return [
+        ffmpeg, "-y", "-loglevel", "error", "-ss", f"{at:.3f}", "-i", str(mp4),
+        "-frames:v", "1", "-q:v", "3", str(out),
+    ]  # fmt: skip
+
+
+def chromium_args(settings: Settings) -> list[str]:
+    """Return Chromium's switches: the GPU if there is one, else SwiftShader.
+
+    Args:
+        settings: The run.
+
+    Returns:
+        The switches.
+
+    """
+    if settings.software_gl:
+        return [
+            "--use-gl=angle",
+            "--use-angle=swiftshader",
+            "--enable-unsafe-swiftshader",
+        ]
+    return ["--ignore-gpu-blocklist", "--enable-gpu-rasterization"]
+
+
+def dev_session_cookie(url: str) -> dict[str, str]:
+    """Sign the seeded dev user in on the local dev server.
+
+    Args:
+        url: The dev server the session cookie is for.
+
+    Returns:
+        A Playwright cookie carrying the new session.
+
+    """
+    # S603/S607: a fixed argv naming uv from PATH, with no outside input.
+    result = subprocess.run(  # noqa: S603
+        ["uv", "run", "python", "manage.py", "shell", "-c", MINT_DEV_SESSION],  # noqa: S607
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    name, key = result.stdout.strip().splitlines()[-1].split()
+    return {"name": name, "value": key, "url": url}
+
+
+def record_frames(settings: Settings, route: dict[str, Any]) -> tuple[Path, Path]:
+    """Fly the route and screenshot every frame, then the credit and end card.
+
+    Args:
+        settings: The run.
+        route: The GeoJSON to fly.
+
+    Returns:
+        The credit PNG and the end card PNG.
+
+    Raises:
+        RecordError: If 3D cannot be entered or a frame fails.
+
+    """
+    # PLC0415: imported here so --help and the unit tests need no browser.
+    from playwright.sync_api import (
+        Error as PlaywrightError,  # noqa: PLC0415
+        sync_playwright,  # noqa: PLC0415
+    )
+
+    settings.frames_dir.mkdir(parents=True, exist_ok=True)
+    if not settings.resume:
+        for stale in settings.frames_dir.glob("f*.png"):
+            stale.unlink()
+    credit = settings.out / "credit.png"
+    card = settings.out / "end-card.png"
+    viewport = {"width": settings.width, "height": settings.height}
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(
+            executable_path=settings.chromium,
+            args=chromium_args(settings),
+        )
+        overlay = browser.new_page(viewport=viewport, device_scale_factor=1)
+        font = (REPO_ROOT / "static" / "fonts" / "dm-sans-latin.woff2").as_uri()
+        overlay.set_content(CREDIT_HTML.format(font=font, credit=CREDIT))
+        overlay.wait_for_timeout(300)
+        overlay.screenshot(path=str(credit), omit_background=True)
+        overlay.goto(END_CARD.as_uri())
+        overlay.wait_for_load_state("load")
+        overlay.screenshot(path=str(card))
+        overlay.close()
+
+        context = browser.new_context(viewport=viewport, device_scale_factor=1)
+        context.add_init_script(DISMISS_INTRO)
+        context.add_cookies([dev_session_cookie(settings.url)])  # type: ignore[list-item]
+        page = context.new_page()
+        page.goto(f"{settings.url}/map/?view=3d")
+        try:
+            page.wait_for_function(MAP_READY, timeout=MAP_READY_MS)
+        except PlaywrightError as exc:
+            raise RecordError(
+                "the map has no 3D view: is the dev user in the map_3d flag?"
+                " (uv run python manage.py waffle_flag map_3d --everyone --create)"
+            ) from exc
+        page.wait_for_function("() => !!window.pwaMap3dFlight", timeout=MAP_READY_MS)
+        can = page.evaluate("() => window.pwaMapView.canTest()")
+        if not can.get("ok"):
+            raise RecordError(f"3D cannot be entered here: {can.get('reason')}")
+        flight = (route.get("properties") or {}).get("flight") or {}
+        options = {
+            "chrome": False,
+            "flight": {**flight, "seconds": settings.seconds},
+            "capMs": settings.frame_cap_ms,
+        }
+        length = page.evaluate(LOAD_FLIGHT, [route, options])
+        n = settings.frame_count
+        size = f"{settings.width}×{settings.height}"
+        print(f"flying {length / 1000:.1f} km in {n} frames at {size}", flush=True)
+        for i in range(n):
+            path = settings.frames_dir / f"f{i:05d}.png"
+            if settings.resume and path.exists():
+                continue
+            t = i / (n - 1)
+            try:
+                phase = page.evaluate(STEP_FRAME, t)
+            except PlaywrightError as exc:
+                why = exc.message.splitlines()[0]
+                raise RecordError(
+                    f"frame {i + 1}/{n} failed: {why} (re-run with --resume)"
+                ) from exc
+            page.screenshot(path=str(path))
+            print(f"frame {i + 1}/{n} {phase}", flush=True)
+        page.evaluate("() => window.pwaMap3dFlight.unload()")
+        browser.close()
+    return credit, card
+
+
+def encode(settings: Settings, credit: Path, card: Path) -> list[Path]:
+    """Encode the frames to the MP4, the WebM and the poster.
+
+    Args:
+        settings: The run.
+        credit: The credit PNG.
+        card: The end card PNG.
+
+    Returns:
+        The files written.
+
+    Raises:
+        RecordError: If ffmpeg fails.
+
+    """
+    ffmpeg = require_ffmpeg()
+    mp4 = settings.out / "flyby.mp4"
+    webm = settings.out / "flyby.webm"
+    poster = settings.out / "flyby-poster.jpg"
+    for name, argv in (
+        ("MP4", mp4_command(ffmpeg, settings, credit, card, mp4)),
+        ("WebM", webm_command(ffmpeg, mp4, webm)),
+        ("poster", poster_command(ffmpeg, settings, mp4, poster)),
+    ):
+        print(f"encoding the {name}", flush=True)
+        # S603: argv built here from our own paths and numbers.
+        result = subprocess.run(argv, capture_output=True, text=True, check=False)  # noqa: S603
+        if result.returncode:
+            raise RecordError(f"ffmpeg failed on the {name}: {result.stderr.strip()}")
+    return [mp4, webm, poster]
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Record and encode the fly-past.
+
+    Args:
+        argv: The arguments, or None for ``sys.argv[1:]``.
+
+    Returns:
+        The exit code.
+
+    """
+    settings = parse_args(argv)
+    try:
+        require_ffmpeg()
+        route = load_route(settings.route)
+        credit, card = record_frames(settings, route)
+        written = encode(settings, credit, card)
+    except RecordError as exc:
+        print(f"record-3d-flyby: {exc}", file=sys.stderr)
+        return 1
+    for path in written:
+        print(f"wrote {path} ({path.stat().st_size / 1e6:.1f} MB)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -2934,3 +2934,19 @@ a.season-day:focus-visible {
 [data-reader="signed-out"] [data-reader-cta="signed-in"] {
   display: none;
 }
+
+/* SNOW-1466: a 3D fly-past being recorded (bin/record-3d-flyby). The map
+   (#map) is laid over the whole viewport, above the page's nav, panels and
+   toasts, and MapLibre's own controls and anything else inside its
+   container hide, so a frame is the map alone. Set by
+   window.pwaMap3dFlight.load(geojson, {chrome: false}) and cleared by
+   unload(); a reader never sees it. */
+.map-recording #map {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+}
+
+.map-recording #map > :not(.maplibregl-canvas-container) {
+  display: none;
+}

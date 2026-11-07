@@ -3420,6 +3420,9 @@ def test_map_3d_alone_draws_the_3d_view() -> None:
     assert "js/map_view_3d.js" in content
     assert "js/map_3d_core.js" in content
     assert "js/map_3d_test.js" in content
+    # SNOW-1466: the fly-past, after the 3D view it drives.
+    assert "js/map_3d_flight_core.js" in content
+    assert content.index("js/map_view_3d.js") < content.index("js/map_3d_flight.js")
     assert 'data-map-view-enabled="true"' in content
     assert 'id="map-3d-test-sheet"' in content
     assert 'id="map-mode-terrain"' not in content
@@ -3543,6 +3546,8 @@ def test_the_3d_test_renders_only_with_the_3d_view() -> None:
         assert 'id="map-3d-test-sheet"' not in other
         assert 'id="map-3d-test-strings-template"' not in other
         assert "js/map_3d_test.js" not in other
+        assert "js/map_3d_flight_core.js" not in other
+        assert "js/map_3d_flight.js" not in other
 
 
 @pytest.mark.django_db

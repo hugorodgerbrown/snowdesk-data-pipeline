@@ -224,6 +224,10 @@ in addition to the shared map assets.
         <script defer src="{% static 'js/map_view_3d.js' %}"></script>
         {# SNOW-1456: "Test 3D on this device", which drives map_view_3d.js. #}
         <script defer src="{% static 'js/map_3d_test.js' %}"></script>
+        {# SNOW-1466: a 3D fly-past, stepped frame by frame by              #}
+        {# bin/record-3d-flyby for the promo video. Shows nothing by itself. #}
+        <script defer src="{% static 'js/map_3d_flight_core.js' %}"></script>
+        <script defer src="{% static 'js/map_3d_flight.js' %}"></script>
     {% endif %}
     {% if request.GET.layers == 'exploded' %}
         {# Loaded after map.js publishes snowdeskLayerExplainer; omitted from #}

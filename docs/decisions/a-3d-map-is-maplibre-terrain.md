@@ -480,3 +480,12 @@ stays with superusers.
   visitors stay flat when `map_3d` goes on for everyone. The anonymous guard
   keeps those pages free of waffle queries. 3D for signed-out visitors would
   be its own ticket, which accepts that query.
+
+## The fly-past (SNOW-1466, 7 Nov 2026)
+
+The promo video's fly-past is drawn by this view, one frame at a time
+(`map_3d_flight_core.js`, `map_3d_flight.js`, `bin/record-3d-flyby`); why:
+[`a-fly-past-is-rendered-frame-by-frame.md`](a-fly-past-is-rendered-frame-by-frame.md).
+It also found that terrain put on under an ease begun flat wedges MapLibre
+4.7's render loop, so `installTerrain` now stops a running ease first and the
+view tilts again.

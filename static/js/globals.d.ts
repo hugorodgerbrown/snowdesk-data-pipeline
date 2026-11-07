@@ -332,6 +332,18 @@ interface Window {
     beginTest: () => boolean;
     endTest: (result?: { verdict?: string }) => void;
   };
+  /** static/js/map_3d_flight_core.js — a 3D fly-past's camera path: buildFlight / flightFrame (SNOW-1466). */
+  pwaMap3dFlightCore: any;
+  /**
+   * static/js/map_3d_flight.js — a 3D fly-past on /map/ (SNOW-1466), driven
+   * by bin/record-3d-flyby: load(geojson, options) / frame(t) / unload().
+   */
+  pwaMap3dFlight?: {
+    load: (geojson: any, options?: { chrome?: boolean; flight?: any; capMs?: number }) => { length: number; phases: readonly string[] };
+    frame: (t: number) => Promise<{ phase: string }>;
+    unload: () => void;
+    FRAME_CAP_MS: number;
+  };
   /** static/js/map.js — the weather symbols' Terrain-mode hook: setSuppressed(reason, active) / isSuppressed() (SNOW-1394). */
   pwaWeatherLayer: any;
   /** static/js/map.js — the Bulletins layer: setSuppressed(reason, active) / isVisible(). */

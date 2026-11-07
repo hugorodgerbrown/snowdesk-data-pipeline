@@ -425,6 +425,31 @@ describe('the relief survives a setStyle', () => {
   });
 });
 
+describe('a tilt still running when the style lands', () => {
+  it('is stopped before the relief goes on, then runs again over it', async () => {
+    // SNOW-1466: a ?view=3d boot tilts before the style has loaded; the
+    // relief goes on at its styledata, under the moving camera.
+    const { map, button } = await boot({ stored: 'swisstopo_winter' });
+    let easing = false;
+    map.isEasing = () => easing;
+    map.stop = vi.fn(() => { easing = false; });
+    const addSource = map.addSource;
+    map.addSource = () => { throw new Error('Style is not done loading'); };
+    const ease = map.easeTo.getMockImplementation();
+    map.easeTo.mockImplementation(() => { easing = true; });
+    button.click();
+    expect(map.getTerrain()).toBeNull();
+    expect(easing).toBe(true);
+    map.addSource = addSource;
+    map.easeTo.mockImplementation(ease);
+    map.fire('styledata');
+    expect(map.stop).toHaveBeenCalledTimes(1);
+    expect(inThreeD(map)).toBe(true);
+    expect(map.easeTo).toHaveBeenLastCalledWith(expect.objectContaining({ pitch: core3d.OPENING_CAMERA.pitch }));
+    expect(map.pitch).toBe(core3d.OPENING_CAMERA.pitch);
+  });
+});
+
 describe('the tilt gesture', () => {
   it('keeps the ceiling open in Terrain and enters on a reader\'s own tilt', async () => {
     const { map } = await boot({ stored: 'swisstopo_winter' });

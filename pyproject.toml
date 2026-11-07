@@ -291,6 +291,7 @@ extend-include = [
     "bin/measure-slf-sentinels",
     "bin/migrations-lint",
     "bin/select-tests",
+    "bin/record-3d-flyby",
     "bin/record-rail-fixtures",
     "bin/record-slope-fixtures",
     "bin/render-churn",
