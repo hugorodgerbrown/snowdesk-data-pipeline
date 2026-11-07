@@ -3555,6 +3555,28 @@ def test_the_3d_test_renders_only_with_the_3d_view() -> None:
 
 
 @pytest.mark.django_db
+def test_the_3d_notice_renders_only_with_the_3d_view() -> None:
+    """SNOW-1470: "3D is experimental", hidden, dismissible, and its script.
+
+    Rendered for a reader with the 3D view, after map_view_3d.js, and absent
+    without map_3d.
+    """
+    content = _flagged_map(map_3d=True, map_modes=False)
+    banner = _one(r'(<div\s+id="map-3d-notice"[^>]*>)', content, "the 3D notice")
+    assert "hidden" in banner
+    assert 'data-overlay-hide="class"' in banner
+    assert "3D is experimental" in content
+    assert (
+        "It may be slow or draw oddly in places. Switch to 2D at any time." in content
+    )
+    assert content.index("js/map_view_3d.js") < content.index("js/map_3d_notice.js")
+    other = _flagged_map(map_3d=False, map_modes=True)
+    assert 'id="map-3d-notice"' not in other
+    assert "3D is experimental" not in other
+    assert "js/map_3d_notice.js" not in other
+
+
+@pytest.mark.django_db
 def test_map_modes_alone_has_no_3d_roundel() -> None:
     """The modes without map_3d draw neither roundel nor the view's strings."""
     content = _flagged_map(map_3d=False, map_modes=True)

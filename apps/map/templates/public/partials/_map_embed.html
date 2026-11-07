@@ -2396,6 +2396,14 @@ Optional context:
     {# "?" menu and the why-slow line; static/js/map_3d_test.js runs it.    #}
     {% if map_3d_view %}
         {% include "public/partials/_map_3d_test_panel.html" %}
+        {# SNOW-1470: "3D is experimental". The 3D view still has rough edges, #}
+        {# so a reader in it is told so (Hugo, 7 Nov 2026). Rendered hidden;  #}
+        {# static/js/map_3d_notice.js shows it whenever the map is in 3D and  #}
+        {# hides it when the map goes flat. The x hides it for the rest of    #}
+        {# the visit; a reload brings it back. The off-map banner's slot.     #}
+        {% trans "3D is experimental" as map_3d_notice_title %}
+        {% trans "It may be slow or draw oddly in places. Switch to 2D at any time." as map_3d_notice_body %}
+        {% include "includes/_overlay_banner.html" with variant="floating" id="map-3d-notice" position="top" title=map_3d_notice_title title_id="map-3d-notice-title" body=map_3d_notice_body aria_live="polite" dismissible=True %}
     {% endif %}
     {% if terrain_filter_eligible %}
         {# SNOW-1378: "Now showing the bulletin's slopes". Since SNOW-1377   #}
