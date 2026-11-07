@@ -1064,7 +1064,15 @@ const ATTRIBUTION_PARAMS = new Set(['ref', 'fbclid', 'gclid', 'mc_cid', 'mc_eid'
 // route never drew for anyone with the app installed. Both are bare
 // redirects with nothing to serve offline, so passing them through costs
 // nothing. Online only: offline, they still get the shell fallback.
-const SESSION_REDIRECT_PATTERNS = [/^\/routes\/s\/[^/]+\/$/, /^\/routes\/example\/$/];
+// SNOW-1469: a route share's 3D follow (`/routes/s/<token>/3d/`) seats the
+// share token and the session's 3D grant the same way, and the retired
+// `/map/3d/` 302s an old `?route_share=` link on to it, so both pass too.
+const SESSION_REDIRECT_PATTERNS = [
+  /^\/routes\/s\/[^/]+\/$/,
+  /^\/routes\/s\/[^/]+\/3d\/$/,
+  /^\/routes\/example\/$/,
+  /^\/map\/3d\/$/,
+];
 
 /**
  * True for a navigation the browser must make itself (SNOW-1235).

@@ -8,8 +8,9 @@ the home page's 3D card, ``/map/`` and ``/offline/`` share one rule rather
 than the nav nesting its own ``{% flag %}`` blocks.
 
 A tag and not a context value, because every view that renders the nav
-would otherwise have to pass it. The gate short-circuits a signed-out
-request, so an anonymous page pays no waffle query for it.
+would otherwise have to pass it. A signed-out request with no route share
+3D grant (SNOW-1469) pays no query for it, and a granted one is answered
+once per request.
 """
 
 from __future__ import annotations
