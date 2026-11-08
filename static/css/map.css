@@ -7234,9 +7234,12 @@ body.map-framing #map-legend {
     transform-origin: 50% 50%;
 }
 
-/* SNOW-1470: "3D is experimental" (#map-3d-notice), the floating top banner
-   from includes/_overlay_banner.html. It stays up for as long as the map is
-   in 3D, so it must never cover a control. Placed inside #map, at every
+/* The map's top banners, from includes/_overlay_banner.html: SNOW-1470's
+   "3D is experimental" (#map-3d-notice) and the two answers to a locate tap,
+   "Off the map" (#offmap-banner) and "Can't find your location"
+   (#locate-failed-banner). The notice stays up for as long as the map is
+   in 3D, so it must never cover a control; the locate banners share its
+   slot and, coming after it in #map, cover it for their few seconds. Placed inside #map, at every
    width, rather than at the primitive's viewport top-20, which landed on
    the search pill from 640px.
 
@@ -7249,7 +7252,9 @@ body.map-framing #map-legend {
    8px gap the map's chrome uses. On a short phone the right-hand roundels
    reach that high, so the banner stops one lg roundel and a gap short of
    the right edge rather than being centred across them. */
-#map-3d-notice {
+#map-3d-notice,
+#offmap-banner,
+#locate-failed-banner {
     position: absolute;
     z-index: 3;
     top: calc(env(safe-area-inset-top, 0px) + 12px + var(--map-control-lg) + 8px);
@@ -7266,7 +7271,9 @@ body.map-framing #map-legend {
    Its width leaves room for the pill at its widest (320px) plus the edge
    insets and the 8px gap, so the two never meet, even at 640px. */
 @media (min-width: 640px) {
-    #map-3d-notice {
+    #map-3d-notice,
+    #offmap-banner,
+    #locate-failed-banner {
         top: calc(env(safe-area-inset-top, 0px) + 12px);
         right: var(--map-edge-inset-right);
         left: auto;

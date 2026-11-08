@@ -548,7 +548,9 @@ than in the primitive's top-centre slot, which sat on the search pill from
 short of the right-hand roundels; from 640px it takes the top-right corner,
 level with the search pill and never wider than the room the pill leaves. It
 sits under the map's controls and panels, so an open panel covers it, not
-the other way round. Closing it hides it for the visit and stores
+the other way round. The two answers to a locate tap, "Off the map" and "Can't find your
+location", moved into `#map` with it and share its slot, covering it for
+their few seconds. Closing it hides it for the visit and stores
 nothing, so the next load shows it again: the point is that nobody meets the
 rough edges unwarned, and the cost of a repeat is one tap.
 
