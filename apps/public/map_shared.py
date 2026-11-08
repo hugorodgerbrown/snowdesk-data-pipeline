@@ -1,7 +1,7 @@
 """
 apps/public/map_shared.py — What the map shares with the help and offline pages.
 
-Three answers the map and an apps/public page must give identically:
+The answers the map and an apps/public page must give identically:
 
 - ``map_modes_enabled`` — whether a request gets the map's Dated / Terrain
   toggle. The /help/ page reads it too, so the topic describing the toggle
@@ -10,6 +10,9 @@ Three answers the map and an apps/public page must give identically:
   ``map_3d`` flag alone (SNOW-1451) for signed-in readers, or a route
   share's 3D grant for anyone (SNOW-1469). The home page, ``/offline/`` and
   the nav's wordmark read it too.
+- ``map_beyond_switzerland_enabled`` — whether a request gets the winter
+  map past the Swiss border (SNOW-1460): restyled OpenStreetMap, our relief
+  and, with the 3D view, a 3D gate across the Alps.
 - ``trip_url_templates`` — the ``__UUID__`` / ``__TOKEN__`` URL templates a
   trip's geometry and page are composed from. The map renders them onto
   ``#map``, and the /offline/ page's Update composes an area's trips from
@@ -103,6 +106,27 @@ def map_3d_view_enabled(request: HttpRequest) -> bool:
         enabled = session is not None and map_3d_granted(session)
     setattr(request, _MAP_3D_VIEW_ATTR, enabled)
     return enabled
+
+
+def map_beyond_switzerland_enabled(request: HttpRequest) -> bool:
+    """Whether the winter map is drawn past the Swiss border (SNOW-1460).
+
+    Behind the ``map_beyond_switzerland`` waffle flag, superusers first,
+    released separately from ``map_3d``. Short-circuited for an anonymous
+    request, the shape ``map_3d_view_enabled`` has, so a signed-out visitor
+    pays no waffle query for it.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        True when the map should load the beyond-Switzerland scripts.
+
+    """
+    return bool(
+        request.user.is_authenticated
+        and waffle.flag_is_active(request, "map_beyond_switzerland")
+    )
 
 
 def trip_url_templates() -> dict[str, Any]:

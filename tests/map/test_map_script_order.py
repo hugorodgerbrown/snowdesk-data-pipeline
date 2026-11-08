@@ -316,3 +316,52 @@ def test_error_reporter_loads_before_the_map_bundle() -> None:
         "error_reporting.js must load before the map bundle — deferred "
         "scripts run in document order, so a later tag misses the boot."
     )
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1460 — the winter map beyond Switzerland, after the bundle
+# ---------------------------------------------------------------------------
+
+_BEYOND_ORDER = [
+    "swisstopo_extent.js",
+    "beyond_switzerland_core.js",
+    "osm_clip_core.js",
+    "alpine_relief_core.js",
+    "map_beyond_switzerland.js",
+]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("bundles", [False, True])
+def test_beyond_switzerland_scripts_load_after_the_map_bundle_in_order(
+    bundles: bool, settings: object
+) -> None:
+    """SNOW-1460: the five load after the map bundle and the 3D view, in order.
+
+    ``map_beyond_switzerland.js`` takes ``window.snowdeskMap`` and hands the
+    3D view its coverage, so it follows both; the extent and the three cores
+    it reads come first. The same in development (one tag per member) and
+    production (the built bundle).
+    """
+    settings.JS_BUNDLES = bundles  # type: ignore[attr-defined]
+    client = Client()
+    client.force_login(UserFactory.create())
+    with (
+        override_flag("map_beyond_switzerland", active=True),
+        override_flag("map_3d", active=True),
+    ):
+        content = client.get(reverse("public:map")).content.decode()
+    rendered = _SCRIPT_SRC_RE.findall(content)
+    positions = [rendered.index(name) for name in _BEYOND_ORDER]
+    assert positions == sorted(positions)
+    first = positions[0]
+    if bundles:
+        assert not set(_map_bundle()) & set(rendered)
+        # The built bundle is the one ``/static/bundles/`` tag; everything in
+        # ``rendered`` (``/static/js/``) after it is what follows it.
+        bundle_at = content.index("/static/bundles/map.bundle.js")
+        assert bundle_at < content.index("/static/js/swisstopo_extent.js")
+    else:
+        for before in (BOOT_FILE, *_map_bundle()):
+            assert rendered.index(before) < first, before
+    assert rendered.index("map_view_3d.js") < first

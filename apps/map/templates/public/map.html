@@ -231,6 +231,19 @@ in addition to the shared map assets.
         <script defer src="{% static 'js/map_3d_flight_core.js' %}"></script>
         <script defer src="{% static 'js/map_3d_flight.js' %}"></script>
     {% endif %}
+    {# SNOW-1460: the winter map past the Swiss border, in 2D and 3D, for a #}
+    {# reader in map_beyond_switzerland. Outside the map bundle, so a reader #}
+    {# without the flag downloads none of it. The extent first, the three   #}
+    {# cores, then the script that registers the protocols and splices the  #}
+    {# style on every style.load; after the 3D view, which it hands the     #}
+    {# Alpine coverage to.                                                  #}
+    {% if map_beyond_switzerland %}
+        <script defer src="{% static 'js/swisstopo_extent.js' %}"></script>
+        <script defer src="{% static 'js/beyond_switzerland_core.js' %}"></script>
+        <script defer src="{% static 'js/osm_clip_core.js' %}"></script>
+        <script defer src="{% static 'js/alpine_relief_core.js' %}"></script>
+        <script defer src="{% static 'js/map_beyond_switzerland.js' %}"></script>
+    {% endif %}
     {% if request.GET.layers == 'exploded' %}
         {# Loaded after map.js publishes snowdeskLayerExplainer; omitted from #}
         {# ordinary map visits so the feature has no JS cost until opened.  #}
