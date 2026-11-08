@@ -311,7 +311,8 @@ group of basemaps. The catalogue is `settings.BASEMAP_STYLES` ×
 `basemap_at`), four labels, because `swisstopo_light` is kept as a
 `BASEMAP=` env override and deliberately left out of the picker; the view
 passes `basemaps` (ordered list of `{key, label, url, countries}`) and
-`default_basemap_key` (the env-resolved fallback) to the template. The user's choice is persisted in
+`default_basemap_key` (the env-resolved fallback, `swisstopo_winter` since
+8 Nov 2026) to the template. The user's choice is persisted in
 `localStorage["snowdesk.map.basemap"]`; on boot, the JS uses the stored
 key when it matches a current catalogue entry and otherwise falls back
 to `default_basemap_key`. Selecting a new basemap calls
