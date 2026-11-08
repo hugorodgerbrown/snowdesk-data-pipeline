@@ -202,6 +202,9 @@ Optional context:
         data-alpine-relief-core-url="{% static 'js/alpine_relief_core.js' %}"
         data-osm-style-url="{{ osm_style_url }}"
         data-dem-tile-url="{{ map_3d_dem_tile_url }}"
+        {# A staff reader may tune the relief (map_relief_tuning.js); only #}
+        {# then does map_beyond_switzerland.js read a saved tuning back.   #}
+        {% if relief_tuning %}data-relief-tuning{% endif %}
     {% endif %}
     data-route-claim-url-template="{{ route_claim_url_template }}"
     data-routes-upload-eligible="{{ routes_upload_eligible|yesno:'true,false' }}"
@@ -2420,6 +2423,11 @@ Optional context:
     {% endif %}
     {# SNOW-1456: "Test 3D on this device", a form panel opened from the   #}
     {# "?" menu and the why-slow line; static/js/map_3d_test.js runs it.    #}
+    {# The staff panel that tunes the relief past the border, opened from #}
+    {# the "?" menu; static/js/map_relief_tuning.js runs it.             #}
+    {% if relief_tuning %}
+        {% include "public/partials/_map_relief_tuning_panel.html" %}
+    {% endif %}
     {% if map_3d_view %}
         {% include "public/partials/_map_3d_test_panel.html" %}
         {# SNOW-1470: "3D is experimental". The 3D view still has rough edges, #}

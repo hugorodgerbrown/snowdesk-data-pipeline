@@ -338,7 +338,9 @@ class TestShippedTree:
         The list grows only for a surface that is genuinely superuser-gated
         at the view, the template and every endpoint it calls, which is the
         documented legitimate use. SNOW-755 added the third: the in-map
-        location editor, a sibling of the resort editor already here.
+        location editor, a sibling of the resort editor already here. The
+        fourth is the relief tuning panel on /map/, rendered and loaded only
+        for staff (``relief_tuning``) and calling no endpoint.
         """
         result = _run("--show-allows")
         suppressed = {
@@ -350,5 +352,6 @@ class TestShippedTree:
         assert suppressed == {
             "static/js/map_edit_locations.js",
             "static/js/map_edit_resorts.js",
+            "static/js/map_relief_tuning.js",
             "static/js/push_demo.js",
         }

@@ -1,0 +1,144 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_relief_tuning_panel.html — tune the relief past the border (staff only).
+
+The winter map past the Swiss border paints its own relief, a hillshade and
+a grey rock tone on steep ground (static/js/alpine_relief_core.js). This
+panel lets a staff reader try other strengths on their own map: where the
+rock starts (the slope, 25–60°), how strong the rock tone, the shadow and
+the highlight are (0–100 % of full). Moving a slider repaints the relief
+(window.pwaBeyondSwitzerland.tune) and keeps the values on this device
+(localStorage); Reset goes back to TUNING_DEFAULTS. Every other reader
+always gets the defaults. See
+docs/decisions/the-winter-map-beyond-switzerland-is-restyled-osm.md
+("Tuning (staff)").
+
+A FORM PANEL (AGENTS.md design rule 6): includes/_overlay_sheet.html with
+no detents and so no drag-to-close, docked on the left on a desktop
+(``side="left"``) and sliding up on a phone. Opened from the "?" menu's
+"Tune the relief" (_map_help_menu.html, ``relief_tuning``). MapSheet.attach
+empties the sheet on every close, so the body is a <template> that
+static/js/map_relief_tuning.js clones on every open and fills with the
+tuning in use; the values below are TUNING_DEFAULTS, which the component
+library shows.
+
+Rendered two ways, by ``part``: the panel (the empty sheet plus the
+template), and ``part="body"``. ``static`` renders the body inline in a
+static card for the component library.
+
+Included by public/partials/_map_embed.html behind ``relief_tuning``
+(map_beyond_switzerland and a staff reader, apps/map/views.py).
+{% endcomment %}
+{% trans "Relief past the border" as relief_tuning_title %}
+{% if part == "body" %}
+    {% with label_class="text-sm font-semibold text-text-1" readout_class="text-sm tabular-nums text-text-2" range_class="mt-2 w-full accent-accent" %}
+        <div data-map-relief-tuning class="flex flex-col">
+            {% include "includes/_sheet_header.html" with title=relief_tuning_title close_action="dismiss" title_class="text-lg font-semibold" %}
+            <div class="flex flex-col gap-4 px-2">
+                <div>
+                    <div class="flex items-baseline justify-between gap-3">
+                        <label
+                            for="map-relief-tuning-rock-slope"
+                            class="{{ label_class }}"
+                        >{% trans "Rock from" %}</label>
+                        <output
+                            for="map-relief-tuning-rock-slope"
+                            class="{{ readout_class }}"
+                            data-relief-readout="rockSlope"
+                        >40°</output>
+                    </div>
+                    <input
+                        id="map-relief-tuning-rock-slope"
+                        class="{{ range_class }}"
+                        type="range"
+                        min="25"
+                        max="60"
+                        step="1"
+                        value="40"
+                        data-relief-input="rockSlope"
+                    >
+                </div>
+                <div>
+                    <div class="flex items-baseline justify-between gap-3">
+                        <label for="map-relief-tuning-rock" class="{{ label_class }}">{% trans "Rock tone" %}</label>
+                        <output
+                            for="map-relief-tuning-rock"
+                            class="{{ readout_class }}"
+                            data-relief-readout="rockStrength"
+                        >42 %</output>
+                    </div>
+                    <input
+                        id="map-relief-tuning-rock"
+                        class="{{ range_class }}"
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value="42"
+                        data-relief-input="rockStrength"
+                    >
+                </div>
+                <div>
+                    <div class="flex items-baseline justify-between gap-3">
+                        <label for="map-relief-tuning-shadow" class="{{ label_class }}">{% trans "Shadow" %}</label>
+                        <output
+                            for="map-relief-tuning-shadow"
+                            class="{{ readout_class }}"
+                            data-relief-readout="shadowStrength"
+                        >36 %</output>
+                    </div>
+                    <input
+                        id="map-relief-tuning-shadow"
+                        class="{{ range_class }}"
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value="36"
+                        data-relief-input="shadowStrength"
+                    >
+                </div>
+                <div>
+                    <div class="flex items-baseline justify-between gap-3">
+                        <label
+                            for="map-relief-tuning-highlight"
+                            class="{{ label_class }}"
+                        >{% trans "Highlight" %}</label>
+                        <output
+                            for="map-relief-tuning-highlight"
+                            class="{{ readout_class }}"
+                            data-relief-readout="highlightStrength"
+                        >24 %</output>
+                    </div>
+                    <input
+                        id="map-relief-tuning-highlight"
+                        class="{{ range_class }}"
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value="24"
+                        data-relief-input="highlightStrength"
+                    >
+                </div>
+                <p class="text-summary text-text-3">{% trans "Staff only. Saved on this device." %}</p>
+                <div>
+                    {% trans "Reset" as reset_label %}
+                    {% include "includes/_button.html" with label=reset_label button_type="button" variant="secondary" size="compact" data_action="relief-tuning-reset" %}
+                </div>
+            </div>
+        </div>
+    {% endwith %}
+{% elif static %}
+    <div
+        class="relative rounded-card border border-border bg-card px-4 pb-8 pt-4 shadow-glass"
+        aria-label="{{ relief_tuning_title }}"
+    >
+        {% include "public/partials/_map_relief_tuning_panel.html" with part="body" %}
+    </div>
+{% else %}
+    {% include "includes/_overlay_sheet.html" with id="map-relief-tuning-sheet" aria_label=relief_tuning_title side="left" %}
+    <template id="map-relief-tuning-template">
+        {% include "public/partials/_map_relief_tuning_panel.html" with part="body" %}
+    </template>
+{% endif %}

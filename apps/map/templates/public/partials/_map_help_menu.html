@@ -21,6 +21,12 @@ run it again:
                                 ('snowdesk:map-3d-test-requested',
                                 map_3d_test.js; SNOW-1456), only for a
                                 reader with the 3D view (map_3d_view)
+  Tune the relief               the staff panel that tunes the relief past
+                                the border
+                                ('snowdesk:map-relief-tuning-requested',
+                                map_relief_tuning.js), only for a staff
+                                reader in map_beyond_switzerland
+                                (relief_tuning)
   Help pages                    /help/
 
 While help mode is on the "?" still ends it, as before. Built from the
@@ -107,6 +113,22 @@ first item to show, and the "?" keeps going straight to help mode.
                             <span
                                 class="map-tour-offer-option-sub"
                             >{% trans "See how well this phone draws the mountains in relief. About 30 seconds." %}</span>
+                        </span>
+                    </button>
+                </li>
+            {% endif %}
+            {% if relief_tuning %}
+                <li>
+                    <button type="button" class="map-tour-offer-option" data-help-menu="relief-tuning">
+                        <span
+                            class="map-tour-offer-option-icon"
+                            aria-hidden="true"
+                        >{% include "includes/_icon_sun.html" with size=20 %}</span>
+                        <span class="map-tour-offer-option-text">
+                            <span class="map-tour-offer-option-title">{% trans "Tune the relief" %}</span>
+                            <span
+                                class="map-tour-offer-option-sub"
+                            >{% trans "Staff only: rock and shadow past the border." %}</span>
                         </span>
                     </button>
                 </li>

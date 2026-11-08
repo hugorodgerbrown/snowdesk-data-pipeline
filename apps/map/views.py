@@ -342,6 +342,10 @@ def map_page(request: HttpRequest) -> HttpResponse:
             # SNOW-1460: the winter map past the Swiss border, in 2D and 3D,
             # behind its own flag; with the 3D view, 3D opens across the Alps.
             "map_beyond_switzerland": beyond_switzerland,
+            # Staff may tune the relief past the border on their own device
+            # ("?" menu → Tune the relief); every other reader gets the
+            # defaults (alpine_relief_core.TUNING_DEFAULTS).
+            "relief_tuning": beyond_switzerland and request.user.is_staff,
             # The configured OpenFreeMap style, whose vector source the clip
             # worker resolves to a tile template: a self-hosted deployment
             # (docs/runbooks/self-hosted-tiles.md) lays its tiles out

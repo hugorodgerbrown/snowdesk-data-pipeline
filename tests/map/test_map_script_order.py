@@ -365,3 +365,27 @@ def test_beyond_switzerland_scripts_load_after_the_map_bundle_in_order(
         for before in (BOOT_FILE, *_map_bundle()):
             assert rendered.index(before) < first, before
     assert rendered.index("map_view_3d.js") < first
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("bundles", [False, True])
+def test_relief_tuning_loads_after_map_beyond_switzerland_for_staff_only(
+    bundles: bool, settings: object
+) -> None:
+    """The staff tuning panel's script follows the runtime it tunes, and only
+    a staff reader in the flag gets it.
+    """
+    settings.JS_BUNDLES = bundles  # type: ignore[attr-defined]
+    rendered = {}
+    for staff in (True, False):
+        client = Client()
+        client.force_login(UserFactory.create(is_staff=staff, is_superuser=staff))
+        with override_flag("map_beyond_switzerland", active=True):
+            content = client.get(reverse("public:map")).content.decode()
+        rendered[staff] = _SCRIPT_SRC_RE.findall(content)
+    staff_scripts = rendered[True]
+    assert staff_scripts.count("map_relief_tuning.js") == 1
+    assert staff_scripts.index("map_beyond_switzerland.js") < staff_scripts.index(
+        "map_relief_tuning.js"
+    )
+    assert "map_relief_tuning.js" not in rendered[False]

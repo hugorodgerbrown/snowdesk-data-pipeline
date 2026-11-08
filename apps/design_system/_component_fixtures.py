@@ -3572,6 +3572,16 @@ MAP_3D_TEST_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# The staff panel that tunes the relief past the border: one state, the
+# defaults (alpine_relief_core.TUNING_DEFAULTS), as a panel opens unsaved.
+MAP_RELIEF_TUNING_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "The defaults every reader sees — staff only",
+        "context": {"static": True},
+    },
+)
+
+
 MAP_COMPASS_VARIANTS: tuple[dict[str, Any], ...] = (
     _compass_variant("North-up, as the map boots", 0),
     _compass_variant("Turned 40° east — the needle swings back west", 40),
