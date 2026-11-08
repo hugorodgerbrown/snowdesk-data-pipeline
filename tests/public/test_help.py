@@ -352,9 +352,10 @@ class TestHelpPageFlagGating:
         assert "a tap on a region does nothing" in topic
         assert "one Today row" in topic
         assert "panel in a region's sheet" not in topic
-        # 5 Nov 2026: the calendar's Today and the Today panel's Show today.
+        # 5 Nov 2026: the calendar's Today. The Today panel's Show today
+        # went on 8 Nov 2026.
         assert "open the calendar and press Today" in topic
-        assert "Show today" in topic
+        assert "Show today" not in topic
 
     def test_downloads_account_paragraphs_are_always_present(
         self, client: Client

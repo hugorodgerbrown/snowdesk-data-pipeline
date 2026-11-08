@@ -44,13 +44,12 @@ that is always on screen replaced it.
       Like the button it stands in for, it is always shown and disabled
       on today. A press calls `pwaMapMode.toConditionsToday()` and the
       card closes (`map_calendar.js`).
-    - The Today panel, always today, says when the map is not: on another
-      day or in Terrain a notice at its top reads "Map shows 2 Nov 2026"
-      (the date ribbon's `formatDatePopup`) or "Map shows Terrain", with a
-      "Show today" that calls `toConditionsToday()` and leaves the panel
-      open (`today_panel.js`). A row followed from the panel does the same
-      first, in Terrain too, so the sheet it opens shows the level the row
-      showed.
+    - A row followed from the Today panel, which is always today, calls
+      `toConditionsToday()` first, in Terrain too, so the sheet it opens
+      shows the level the row showed (`today_panel.js`). Until 8 Nov 2026
+      the panel also opened with a "Map shows 2 Nov 2026" (or "Map shows
+      Terrain") notice and a "Show today"; Hugo removed it, as a "Show
+      today" on a panel, and a tab, named Today makes no sense.
   - A tap on the date opens the calendar. In Terrain, a tap on the
     calendar icon comes back to the dated map on the day the reader left.
 - **Terrain is the map with the dated overlays off, and nothing more.**
