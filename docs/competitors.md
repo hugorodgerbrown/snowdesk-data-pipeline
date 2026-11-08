@@ -2,15 +2,15 @@
 name: competitors
 description: Competitor list — WhiteRisk, SnowSafe, Whympr, OpenSnow — with feature profiles and the feature ideas each one suggests for Snowdesk
 status: current
-last-reviewed: 2026-11-02
+last-reviewed: 2026-11-08
 ---
 
 # Competitor list
 
-**Last automated competitor scan: 2026-11-01.** News, product-update and
-new-entrant findings from that pass are marked inline as "2026-11-01 scan";
-the full source list is in the PR description for that change.
-Findings from the prior 2026-10-25, 2026-10-18, 2026-10-11, 2026-10-04, 2026-09-27, 2026-09-20, 2026-09-13, 2026-09-06, 2026-08-30,
+**Last updated: 2026-11-08 (automated competitor scan complete).** News,
+product-update and new-entrant findings from that pass are marked inline as
+"2026-11-08 scan"; the full source list is in the PR description for that
+change. Findings from the prior 2026-11-01, 2026-10-25, 2026-10-18, 2026-10-11, 2026-10-04, 2026-09-27, 2026-09-20, 2026-09-13, 2026-09-06, 2026-08-30,
 2026-08-23 and 2026-08-19 passes remain marked as such below.
 
 Apps and sites that overlap Snowdesk's job — *"tell me what the avalanche
@@ -139,6 +139,12 @@ other app in this list is measured against, including ours.
   Austria can now also open the CAT and ATH terrain maps** (the avalanche-
   terrain layers previously Swiss-only), i.e. WhiteRisk's terrain layer is
   spreading beyond CH alongside the French bulletin.
+  **Re-scanned again 2026-11-08** (routine competitor scan) — web search only:
+  no new feature or business news. A third-party aggregator lists the iOS app
+  at v8.7.3 (updated 23 Aug 2026; no changelog, so not primary-verified). SLF
+  Q&A coverage (Netzwoche, Dec 2025) states two stated goals: automatic
+  detection and georeferencing of avalanches in user photos, and attention to
+  offline availability. No funding, team or partnership news.
 - **Shape:** a web portal plus a companion iOS/Android app, four
   languages, organised into four modules:
   - **EXPLORE** — the avalanche knowledge base: text, images and
@@ -261,6 +267,12 @@ other app in this list is measured against, including ours.
   `snowsafe.at` reconfirms 12 countries / 25 services / 529 regions / 15
   languages, "SnowSafe 6" with no changelog, new services added without an app
   update, MetGIS Premium price shown only in the stores. No material change.
+  **Re-scanned again 2026-11-08** (routine competitor scan) — direct fetch of
+  `snowsafe.at` reconfirms 12 countries / 25 services / 529 regions / 15
+  languages and "Neu: SnowSafe 6" with no changelog; the page now itemises a
+  clinometer with camera mode and live aspect rose, age indicators on cached
+  data, and ~1,000 stations. The Android build is still the 25 Jun 2026
+  listing. No newer version, pricing or business news. No material change.
 - **Overlap with Snowdesk:** the closest in scope of anything here. Same
   job, same editorial instinct, overlapping regions — its Austrian, South
   Tyrolean, Trentino and Veneto coverage is the same EAWS/ALBINA family
@@ -397,6 +409,10 @@ other app in this list is measured against, including ours.
   1 Oct 2024), not a Whympr feature; 3.0 (9 Oct) remains the latest product
   news. No team, funding or partnership news; Caplight/VCBacked/CB Insights
   figures still disagree and none is dated 2026.
+  **Re-scanned again 2026-11-08** (routine competitor scan) — direct fetch of
+  `get.whympr.com/en/blog`: no post newer than 27 Oct (FATMAP shutdown
+  editorial); search returned only the stale funding aggregators. No product,
+  team or partnership news.
 - **Overlap with Snowdesk:** the avalanche bulletin is *one tab* of a
   planning app. Geolocated bulletins for FR, CH, IT, AT, AD, ES, US, CA
   and Scotland — broader country coverage than our three providers, but
@@ -511,6 +527,19 @@ other app in this list is measured against, including ours.
   and **historical weather** on the My Location screen — a model-transparency
   and history move relevant to [Feature inspiration](#feature-inspiration)
   item 9. App version remains 7.4.0; no funding, team or acquisition news.
+  **Re-scanned again 2026-11-08** (routine competitor scan) — **genuine
+  product news.** OpenSnow's "2026-2027 winter release" post (dated 30 Oct
+  2026; a search snippet showed 27 Oct) announces: **PEAKS 2.0** (the
+  in-house forecast engine, now driving all forecasts for the next 15 days,
+  Base + Premium); a **Webcam Map with live YouTube streams**; **shareable
+  custom favourite lists**; a free **Slope Angle + Aspect** map overlay
+  (terrain steepness and facing, pitched at avalanche and sun-exposure
+  planning); a **Powder Finder map** comparing forecast, report or history
+  snow totals across ski areas (Base + Premium); and **starred, reorderable
+  favourite map overlays** (41 overlays). iOS and web only for now; Android
+  "in development". No price change. The post's author is listed as COO, with
+  features "created in-house by a small team". Feeds
+  [Feature inspiration](#feature-inspiration) items 5, 6 and 14.
 - **Overlap with Snowdesk:** adjacent rather than direct. Its avalanche
   forecasts cover the US and Canada only, so it does not compete in the
   Alps today — but its *shape* is the most commercially proven in this
@@ -680,6 +709,10 @@ competitor, not a watch item.
   eight languages, push and revision alerts and embeddable widgets all
   unchanged; no pricing, roadmap or new-source announcement. No material
   change.
+  **Re-scanned again 2026-11-08** (routine competitor scan) — search only:
+  the App Store listing, appshunter.io and PlanetSKI/SnowBrains coverage are
+  unchanged (v1.2.6, 14 countries, push on new bulletins, offline caching,
+  no ads or account). No new release, pricing or team news.
 - **Read:** the clearest evidence yet that cross-provider consolidation is
   a race, not a moat — a single guidebook author shipped a rough version
   of our core differentiator before we did. Our answer has to be depth (a
@@ -744,6 +777,10 @@ the way the four originally-profiled products were; three scans
   **Re-scanned again 2026-11-01** (routine competitor scan) — search only:
   nothing newer than the 2020 Petzl announcement surfaced; the CC BY-ND 4.0
   flip is still unconfirmed. No funding, team or product news.
+  **Re-scanned again 2026-11-08** (routine competitor scan) — search only:
+  only the Petzl/UIAA tutorial and 2020 launch items surfaced (13,000 tours,
+  4,600 French Alps, 500 Pyrenees planned); the licence flip remains
+  unconfirmed. No funding, team or product news.
 - **2026-08-19 finding:** Petzl Foundation funding made both **free to
   all users** (previously gated). The combined route database is now
   ~13,000 tours across the Alps (~4,600 in the French Alps alone), with
@@ -837,6 +874,11 @@ its own promotion.
   **Re-scanned again 2026-11-01** (routine competitor scan) — `www.skida.app`
   fetched again: no dated news, no new feature labelled as new, Skida PRO
   still unpriced, no bulletin sources named. No material change.
+  **Re-scanned again 2026-11-08** (routine competitor scan) — `www.skida.app`
+  fetched again: still "more than 50.000 skiers", now also mentions "safe
+  route suggestions and planning"; no dated news, no pricing, no bulletin
+  sources named. Latest store version found is still v2.1.16 (29 Aug).
+  No material change.
 - **Shape:** like [AvalancheClarity](#avalancheclarity), it **pulls
   together official bulletins from multiple national providers in one app
   without altering their content** — Varsom (Norway), WhiteRisk
@@ -908,6 +950,8 @@ Ordered by how much a profile would probably change our thinking.
 | **Avycast** | Independent developer — new find, 2026-10-25 scan | iPhone-only aggregator of official bulletins from **21 countries on four continents** (EAWS members, SAIS, Avalanche Canada, US centres, Japan, NZ, Argentina, Georgia), text translated into 11 languages. Free with in-app purchases; Premium unlocks unlimited region switching and saved favourite zones. Two points of interest: a **Slope Risk Evaluator** combining the danger rating with terrain exposure into a caution level, and a stated principle of being "faithful to the source — we never rewrite or improve danger ratings" (the same fidelity stance as ours). Tiny Product Hunt launch (4 upvotes). Found via search; Product Hunt, App Store listing and mergeek surfaced, `hunted.space` failed DNS (not a policy block); not primary-verified. Another cross-provider consolidator alongside AvalancheClarity and Skida, but breadth-first and pass-through. First scan pass. **2026-11-01 scan:** a PeerPush listing now describes it as 30+ regional avalanche centres worldwide, on iOS, Android **and a public website** (the iOS listing still says 21 countries) — the coverage figures disagree across sources and it is no longer iPhone-only; still not primary-verified. Second scan pass. |
 | **Diedamskopf geofenced avalanche alerts** | Diedamskopf ski area (Vorarlberg, AT) — new find, 2026-11-01 scan | Not a competitor product but a distribution idea: per Unofficial Networks (2 Oct 2026, as surfaced in search; the page itself failed DNS — `unofficialnetworks.com`, see [environment-network-allowlist.md](environment-network-allowlist.md)), the resort sends location-based avalanche warnings to phones inside high-risk zones **without an app**, via online ad placements rather than a native push; an opt-in version with earlier alerts is in development. Relevant to [Feature inspiration](#feature-inspiration) item 1 (alerts on the web, no install) and a signal that resorts, not only app makers, are entering the alerting space. First scan pass; not primary-verified. |
 | **Utah Avalanche Center app** | UAC (US) — new find, 2026-11-01 scan | US-only provider app (daily forecasts for all Utah regions, real-time observation submission). Not an Alps competitor; another example of the provider-side app trend already logged under **Avy**. First scan pass; found via KSL coverage in search. |
+| **Tirol LWD digital tools (Lawine Tirol / Land Tirol app)** | Land Tirol (AT) — new find, 2026-11-08 scan | Provider-side tooling on our ALBINA territory: the Land Tirol app sends a **push on large or very large danger** when enabled; the **SNOBS** form takes snow and avalanche observations straight to the LWD; and a **WhatsApp broadcast** channel (WhatsBroadcast) notifies subscribers of hazards. Another instance of [Feature inspiration](#feature-inspiration) item 1 (alerts) and item 4 (observations) coming from a provider rather than an app maker. Found via search (tirol.gv.at press pages, mobiflip; the WhatsApp piece is undated); not primary-verified. First scan pass. |
+| **DWD WarnWetter** | Deutscher Wetterdienst (DE) — new find, 2026-11-08 scan | German national weather-warning app now reported to carry avalanche warnings from the Bavarian service alongside its other hazard warnings (mobiflip, undated, so timing unconfirmed). A mass-market channel for the Bavarian slice of ALBINA-adjacent data. First scan pass; not primary-verified. |
 | **AspectAvy** | Colorado (US) — new find, 2026-10-25 scan | US-only backcountry avalanche-avoidance app raising on Wefunder ($4M valuation cap; page undated, URL references 2025). No Alps coverage; logged only as a funding signal in the category. First scan pass; found via search snippet. |
 | **Trail Connect (Trace de Trail) / Visorando** | FR | New finds, 2026-10-11 scan. French route-planning apps that surface the Météo-France BERA, in two different presentations. **Trail Connect (map overlay):** Trace de Trail announced on 2 Feb 2026 an "Avalanche Risks – France" overlay (daily-updated bulletin per massif across Alps, Pyrenees and Corsica; tap an area for the smartphone-formatted bulletin, also as PDF; sits alongside slope-angle and IGN winter-route layers). **Visorando (route detail, not a map layer):** per its support page (as surfaced in search; the page itself did not fetch), the BERA is a Premium item in a French route's details. Pass-through of one provider, France only, no normalisation — another instance of [Feature inspiration](#feature-inspiration) item 2's "bulletin where the route is", and a sign the Météo-France bulletin is being embedded by French route apps generally. First scan pass; found via search (`tracedetrail.fr` fetch failed with a DNS error, not a policy block). |
 
@@ -976,6 +1020,11 @@ now delivers location-based avalanche warnings with no app installed, via ad
 placements, with an opt-in earlier-alert version in development — a reminder
 that a web-only product can reach users at the point of risk, and that the
 opt-in path is where the reliable alert lives.
+**2026-11-08 scan update:** the Land Tirol app pushes on large or very large
+danger and offers a WhatsApp broadcast channel (see
+[Not yet profiled](#not-yet-profiled)) — the "danger-threshold" half of the
+design question, run by a provider, and WhatsApp as a no-install delivery
+route to weigh against web push.
 
 **2. Route ↔ bulletin coupling** *(WhiteRisk's crux analysis; Whympr, inverted)*
 WhiteRisk already analyses a drawn route and flags its critical cruxes
@@ -1056,6 +1105,10 @@ showing them — worth folding into the join above so a French- or
 German-language report doesn't need a reader fluent in it.
 
 **5. Resort comparison view** *(OpenSnow)*
+**2026-11-08 scan update:** OpenSnow's 2026-27 release adds a **Powder Finder
+map** (snow totals compared across areas, colour-banded) and **shareable
+favourite lists** — the comparison now has a map form and a social form, both
+over the same favourites data we already hold.
 OpenSnow lets a user compare several mountains side by side; it is one of
 the most-praised parts of the product. We have `Resort`, `Favourite` and
 per-region danger ratings already — a compact "your saved places today"
@@ -1101,6 +1154,11 @@ dangerous. Worth reading before designing our editorial line.
 rather than an implied safe zone. If we ever add a formal terrain-hazard
 tier on top of the slope-angle wash, naming the safe end explicitly — not
 just shading the dangerous end — is the part worth carrying over.
+**2026-11-08 scan update:** OpenSnow now gives **Slope Angle + Aspect** overlays
+to free users, pitched explicitly at avalanche planning — a fifth example of
+the layer, and a sign it is becoming table stakes even for forecast-led apps.
+Aspect as a map overlay, not only a slope band, is the part we do not have
+outside the terrain filter.
 
 **7. Weather-station observations** *(WhiteRisk, SnowSafe)*
 We render *forecast* weather from Open-Meteo; neither our map nor our
@@ -1188,6 +1246,10 @@ Genuinely useful, genuinely cheap to embed, and genuinely a distraction:
 it makes us a worse version of a planning app rather than a better
 bulletin. Revisit only if it turns out users open the map to check
 conditions rather than to read the forecast.
+**2026-11-08 scan update:** OpenSnow shipped a webcam map with live YouTube
+streams in its 2026-27 release, so webcams are now a stated bet of the
+category's strongest commercial player; the verdict above stands, but it is
+the signal to watch for the "revisit" condition.
 
 **15. Professional / instructor tooling** *(WhiteRisk PRO)*
 Presentation decks and student licences serve avalanche educators, a
