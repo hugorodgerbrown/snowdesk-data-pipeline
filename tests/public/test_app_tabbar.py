@@ -27,7 +27,12 @@ from django.template import Context, Template
 from django.test import Client, RequestFactory
 from django.urls import reverse
 
-from tests.factories import UserFactory
+from tests.factories import (
+    MicroRegionFactory,
+    ResortFactory,
+    TripFactory,
+    UserFactory,
+)
 
 GATE = "@media (display-mode: standalone) and (max-width: 639.98px)"
 TABS = ("map", "today", "saved", "you")
@@ -62,6 +67,58 @@ def _gated_blocks(css: str) -> str:
             i += 1
         out.append(css[match.end() : i - 1])
     return "\n".join(out)
+
+
+def _representative_urls(user: object) -> dict[str, str]:
+    """Return the pages the bar must reach, one of each kind."""
+    region = MicroRegionFactory.create()
+    return {
+        "home": reverse("public:home"),
+        "map": reverse("public:map"),
+        "bulletin": region.get_absolute_url(),
+        "resort": ResortFactory.create(region=region).get_absolute_url(),
+        "trip": reverse(
+            "trips:detail", kwargs={"uuid": TripFactory.create(created_by=user).uuid}
+        ),
+        "settings": reverse("accounts:settings"),
+        "help": reverse("public:help"),
+        "privacy": reverse("public:privacy"),
+        "resorts": reverse("public:resorts"),
+    }
+
+
+EXPECTED_LIT = {
+    "home": "map",
+    "map": "map",
+    "bulletin": "map",
+    "resort": "map",
+    "trip": "map",
+    "settings": "you",
+    "help": "you",
+    "privacy": "you",
+    "resorts": "map",
+}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("signed_in", [True, False], ids=["signed-in", "signed-out"])
+def test_every_kind_of_page_carries_the_bar(client: Client, signed_in: bool) -> None:
+    """A page that stops extending public/base.html loses the bar and fails."""
+    user = UserFactory.create()
+    if signed_in:
+        client.force_login(user)
+    for kind, url in _representative_urls(user).items():
+        response = client.get(url, follow=True)
+        if response.status_code != 200:
+            # Signed out, the settings and trip pages send a visitor to sign
+            # in, which is a page of its own and carries the bar too.
+            assert not signed_in and kind in {"settings", "trip"}, (kind, url)
+            continue
+        bar = _bar(response.content.decode())
+        for tab in TABS:
+            assert f'data-app-tab="{tab}"' in bar, kind
+        if signed_in or kind not in {"settings", "trip"}:
+            assert _lit(bar) == [EXPECTED_LIT[kind]], kind
 
 
 @pytest.mark.django_db
@@ -187,6 +244,19 @@ class TestTheGate:
         assert ".app-saved-chips" in gated
         assert 'footer[data-testid="site-footer"]' in gated
         assert "[data-subscriber-menu]" in gated
+
+    def test_nothing_outside_the_gate_hides_what_the_bar_replaces(self) -> None:
+        for css in (self.main, self.map_css):
+            gated = _gated_blocks(css)
+            rest = css
+            for block in gated.split("\n"):
+                if block.strip():
+                    rest = rest.replace(block, "")
+            for selector in (
+                'body > footer[data-testid="site-footer"]',
+                "#map-today-panel-toggle,",
+            ):
+                assert selector not in rest, selector
 
     def test_the_map_hides_its_roundels_only_under_the_gate(self) -> None:
         gated = _gated_blocks(self.map_css)
