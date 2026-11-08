@@ -467,6 +467,7 @@ def favourites_page(
             the SW lifecycle either way).
         django_db_blocker: pytest-django's DB-access guard, unblocked here
             to create the ``Account``.
+        settings: pytest-django's settings fixture, to pin ``BASEMAP``.
 
     Returns:
         A ``FavouritesPage`` bundling the page, server URL, and account.
@@ -554,8 +555,14 @@ def map_3d_page(
     browser_context_args: dict[str, Any],
     live_server: LiveServer,
     django_db_blocker: Any,
+    settings: Any,
 ) -> Iterator[Map3dPage]:
     """A signed-in page for the 3-D view's journey, with every tile intercepted.
+
+    The reader's default basemap is pinned to OpenFreeMap. The deployed
+    default is the swisstopo winter map, the one 3-D draws on, and with it
+    the journey's swap to the winter map and back would have nothing to
+    swap, so the test could not tell 2-D's basemap from 3-D's.
 
     Routes are matched last-registered first, so the catch-all refusal is
     registered before the three fixtures it stands behind. The context
@@ -572,6 +579,7 @@ def map_3d_page(
         A ``Map3dPage`` bundling the page, server URL, and account.
 
     """
+    settings.BASEMAP = "openfreemap_liberty"
     context = browser.new_context(
         **{**browser_context_args, "service_workers": "block"}
     )

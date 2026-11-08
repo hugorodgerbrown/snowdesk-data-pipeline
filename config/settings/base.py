@@ -1446,7 +1446,7 @@ if _unknown_basemap_countries:
         f"countries the map carries. Valid codes: {list(MAP_COUNTRY_CODES)}"
     )
 
-BASEMAP = config("BASEMAP", default="openfreemap_liberty")
+BASEMAP = config("BASEMAP", default="swisstopo_winter")
 
 # SNOW-791: which drawing of the weather icons to serve. Snowdesk draws its
 # own (bin/build-weather-icons) and that is the default; the other sets are
