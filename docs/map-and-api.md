@@ -2,7 +2,7 @@
 name: map-and-api
 description: /map/ (public:map) MapLibre choropleth, scrubber, calendar, overlay registry, /api/ endpoints (ratings, geojson, groupings), routes.geojson
 status: current
-last-reviewed: 2026-11-05
+last-reviewed: 2026-11-08
 ---
 
 # Map page and JSON API
@@ -644,8 +644,9 @@ share and JSON alternates, [`site-structure.md`](site-structure.md));
 `api:weather_detail` and its
 `<int>` legacy redirect ([`weather-surfaces.md`](weather-surfaces.md)); the
 five `api:edit_location_*` endpoints (the location editor, below); and
-`api:mcp:endpoint` ([`mcp-server.md`](mcp-server.md)). `apps/public/api.py`'s
-module docstring is the one-line map of all of them.
+`api:mcp:endpoint` ([`mcp-server.md`](mcp-server.md)). `apps/map/api.py`'s
+module docstring is the one-line map of all of them (moved from
+`apps/public/api.py` by SNOW-1428).
 
 **Per-region offline-basemap sizing (SNOW-521)**: `properties.download` on
 `regions.geojson` (L4 only — MajorRegion/SubRegion never carry it) is a
@@ -837,7 +838,8 @@ bookmark.
 the `edit_locations_panel.html` partial, and five endpoints under
 `/api/edit/locations/` (`queue`, `create`, `<short_id>/save/`,
 `<short_id>/link/`, `links/<uuid>/unlink/`), gated the same way. The
-`apps/public/api.py` module docstring documents each.
+`apps/map/editor.py` module docstring documents each (moved from
+`apps/public/api.py` by SNOW-1428).
 
 Coordinate-ordering pitfall (called out in `static/js/map_edit_resorts.js`):
 
