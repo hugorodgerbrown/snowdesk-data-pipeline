@@ -2,8 +2,8 @@
  * tests/js/test_app_tabbar.js — the installed phone app's tab bar on the map
  * (SNOW-1476).
  *
- * static/js/app_tabbar.js against a reduced copy of the bar, the You sheet
- * and its template, with ``window.MapSheet`` and the four panel controllers
+ * static/js/app_tabbar.js against a reduced copy of the bar and the "?" menu,
+ * with ``window.MapSheet`` and the four panel controllers
  * stubbed — the sheets' own behaviour is tested beside each one. What is
  * pinned here is the bar's:
  *   - a tab opens its panel and lights; tapping it again, or Map, closes it;
@@ -12,8 +12,8 @@
  *   - the Saved chips close one sheet as they open its sibling, with no
  *     entrance mark, and Saved reopens on the chip last chosen;
  *   - a panel closed from elsewhere lights Map again;
- *   - the You sheet clones its template on open, and Offline areas hands
- *     off to the downloads manager;
+ *   - Help opens and closes the map's own "?" menu (window.pwaMapHelpMenu),
+ *     rising rather than swapping, since it is a card of its own;
  *   - ?panel= opens its panel at boot and leaves the URL, other
  *     parameters kept;
  *   - the Today tab mirrors the sun roundel's alert dot.
@@ -27,17 +27,13 @@ const MARKUP = `
     <button data-app-tab="map" aria-current="page">Map</button>
     <button data-app-tab="today"><span data-app-tab-dot hidden></span>Today</button>
     <button data-app-tab="saved">Saved</button>
-    <button data-app-tab="you">You</button>
+    <button data-app-tab="help">Help</button>
   </div>
   <div id="today-sheet" hidden></div>
   <div id="favourite-sheet" hidden></div>
   <div id="route-sheet" hidden></div>
   <div id="report-sheet" hidden></div>
-  <div id="you-sheet" hidden></div>
-  <template id="you-sheet-template">
-    <p data-you-body>You</p>
-    <button data-you-offline-areas>Offline areas</button>
-  </template>`;
+  <div id="map-help-menu" hidden></div>`;
 
 const $ = (id) => document.getElementById(id);
 const tab = (name) => document.querySelector(`[data-app-tab="${name}"]`);
@@ -74,7 +70,7 @@ async function load({ signedIn = true, url = '/map/' } = {}) {
   window.pwaFavouritesSheet = panel('favourite-sheet');
   window.pwaRoutesSheet = panel('route-sheet');
   window.pwaReportSheet = panel('report-sheet');
-  window.pwaDownloadsManager = { open: vi.fn() };
+  window.pwaMapHelpMenu = panel('map-help-menu');
   vi.resetModules();
   await import('../../static/js/app_tabbar.js');
   await tick();
@@ -95,7 +91,7 @@ afterEach(() => {
   added = [];
   for (const key of [
     'MapSheet', 'pwaTodayPanel', 'pwaFavouritesSheet', 'pwaRoutesSheet',
-    'pwaReportSheet', 'pwaDownloadsManager', 'pwaYouSheet', 'pwaAppTabbar',
+    'pwaReportSheet', 'pwaAppTabbar', 'pwaMapHelpMenu',
   ]) delete window[key];
   vi.restoreAllMocks();
 });
@@ -119,9 +115,9 @@ describe('a tab', () => {
 
   it('closes whatever is open when Map is tapped', async () => {
     await load();
-    tab('you').click();
+    tab('help').click();
     tab('map').click();
-    expect($('you-sheet').hidden).toBe(true);
+    expect($('map-help-menu').hidden).toBe(true);
     expect(lit()).toEqual(['map']);
   });
 
@@ -201,30 +197,62 @@ describe('the lit tab', () => {
   });
 });
 
-describe('the You sheet', () => {
-  it('clones its template on open', async () => {
+describe('Help', () => {
+  it("opens the map's own help menu and lights", async () => {
     await load();
-    tab('you').click();
-    expect($('you-sheet').querySelector('[data-you-body]')).not.toBeNull();
-    expect(window.pwaYouSheet.isOpen()).toBe(true);
+    tab('help').click();
+    expect(window.pwaMapHelpMenu.open).toHaveBeenCalled();
+    expect(lit()).toEqual(['help']);
   });
 
-  it('hands Offline areas to the downloads manager', async () => {
+  it('rises in over another panel rather than swapping', async () => {
     await load();
-    tab('you').click();
-    $('you-sheet').querySelector('[data-you-offline-areas]').click();
-    expect(window.pwaDownloadsManager.open).toHaveBeenCalled();
-    expect($('you-sheet').hidden).toBe(true);
+    tab('today').click();
+    tab('help').click();
+    expect($('today-sheet').hidden).toBe(true);
+    expect($('map-help-menu').hasAttribute('data-tab-open')).toBe(true);
+    expect($('map-help-menu').hasAttribute('data-tab-swap')).toBe(false);
+  });
+
+  it('closes on a second tap', async () => {
+    await load();
+    tab('help').click();
+    tab('help').click();
+    expect($('map-help-menu').hidden).toBe(true);
+    expect(lit()).toEqual(['map']);
   });
 });
 
 describe('?panel=', () => {
   it('opens its panel at boot and leaves the URL, other parameters kept', async () => {
     const replace = vi.spyOn(window.history, 'replaceState');
-    await load({ url: '/map/?panel=you&d=2026-11-07' });
-    expect($('you-sheet').hidden).toBe(false);
-    expect(lit()).toEqual(['you']);
+    await load({ url: '/map/?panel=help&d=2026-11-07' });
+    expect($('map-help-menu').hidden).toBe(false);
+    expect(lit()).toEqual(['help']);
     expect(replace).toHaveBeenLastCalledWith(null, '', '/map/?d=2026-11-07');
+  });
+
+  it('waits for the scripts after it before opening Help', async () => {
+    // A deferred script runs at readyState 'interactive', before the map
+    // bundle that publishes window.pwaMapHelpMenu.
+    const ready = vi.spyOn(document, 'readyState', 'get').mockReturnValue('interactive');
+    window.history.replaceState(null, '', '/map/?panel=help');
+    window.MapSheet = { attach: vi.fn((el) => panel(el.id)) };
+    window.pwaTodayPanel = panel('today-sheet');
+    window.pwaFavouritesSheet = panel('favourite-sheet');
+    window.pwaRoutesSheet = panel('route-sheet');
+    window.pwaReportSheet = panel('report-sheet');
+    vi.resetModules();
+    await import('../../static/js/app_tabbar.js');
+    // Taken at once, before map.js's own deep-link reader can strip it.
+    expect(window.location.search).toBe('');
+    expect($('map-help-menu').hidden).toBe(true);
+
+    window.pwaMapHelpMenu = panel('map-help-menu');
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    ready.mockRestore();
+    expect($('map-help-menu').hidden).toBe(false);
+    expect(lit()).toEqual(['help']);
   });
 
   it("leaves map.js's own panel names in the URL for it to open", async () => {

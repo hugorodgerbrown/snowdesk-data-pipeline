@@ -19,6 +19,7 @@ function buildFixture() {
       <button type="button" data-help-menu="help-mode">What is everything?</button>
       <button type="button" data-help-menu="test-3d">Test 3D on this device</button>
       <button type="button" data-help-menu="relief-tuning">Tune the relief</button>
+      <button type="button" data-help-menu="key">Map key</button>
       <a href="#help" data-help-menu="pages">Help pages</a>
     </div>
     <button id="basemap-toggle" type="button">Layers</button>
@@ -143,3 +144,26 @@ describe('the items', () => {
     expect(menu().hidden).toBe(true);
   });
 });
+
+describe("the phone app's Help tab", () => {
+  it('"Map key" opens the (i) card once the press has finished', async () => {
+    window.pwaMapLegend = { open: vi.fn() };
+    request();
+
+    menu().querySelector('[data-help-menu="key"]').click();
+
+    expect(menu().hidden).toBe(true);
+    expect(window.pwaMapLegend.open).not.toHaveBeenCalled();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(window.pwaMapLegend.open).toHaveBeenCalledTimes(1);
+    delete window.pwaMapLegend;
+  });
+
+  it('opens and closes the menu through pwaMapHelpMenu', () => {
+    window.pwaMapHelpMenu.open();
+    expect(window.pwaMapHelpMenu.isOpen()).toBe(true);
+    window.pwaMapHelpMenu.close();
+    expect(menu().hidden).toBe(true);
+  });
+});
+

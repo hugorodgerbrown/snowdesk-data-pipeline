@@ -27,7 +27,14 @@ run it again:
                                 map_relief_tuning.js), only for a staff
                                 reader in map_beyond_switzerland
                                 (relief_tuning)
+  Map key                       the (i) card (window.pwaMapLegend.open),
+                                only in the installed phone app, which
+                                hides that roundel (`app-only`)
   Help pages                    /help/
+
+In that app the Help tab opens this menu (static/js/app_tabbar.js), and
+the footer it hides is replaced by the legal line under the list, also
+`app-only`.
 
 While help mode is on the "?" still ends it, as before. Built from the
 welcome card's own pieces (.map-tour-offer, .map-tour-offer-option), in
@@ -81,6 +88,23 @@ first item to show, and the "?" keeps going straight to help mode.
                         <span
                             class="map-tour-offer-option-sub"
                         >{% trans "Name every control, then tap one to see what it does." %}</span>
+                    </span>
+                </button>
+            </li>
+            <li class="app-only">
+                <button
+                    type="button"
+                    class="map-tour-offer-option"
+                    data-help-menu="key"
+                    data-testid="map-help-menu-key"
+                >
+                    <span
+                        class="map-tour-offer-option-icon"
+                        aria-hidden="true"
+                    >{% include "includes/_icon_info.html" with size=20 %}</span>
+                    <span class="map-tour-offer-option-text">
+                        <span class="map-tour-offer-option-title">{% trans "Map key" %}</span>
+                        <span class="map-tour-offer-option-sub">{% trans "What the colours and marks mean." %}</span>
                     </span>
                 </button>
             </li>
@@ -148,5 +172,8 @@ first item to show, and the "?" keeps going straight to help mode.
                 </a>
             </li>
         </ul>
+        <div class="app-only pt-3 text-center text-xs leading-prose text-text-3" data-testid="map-help-menu-legal">
+            {% include "public/_site_footer_links.html" with testid="map-help-menu" without_help=True %}
+        </div>
     </div>
 </div>

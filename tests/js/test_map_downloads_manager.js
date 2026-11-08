@@ -859,6 +859,21 @@ describe('opening the sheet', () => {
     );
   });
 
+  it("opens from the layers menu's Downloaded areas row", async () => {
+    seed({ 'basemap.regions': REGIONS });
+    await loadModule();
+    const opener = document.createElement('button');
+    opener.setAttribute('data-downloads-open', '');
+    opener.innerHTML = '<span>Downloaded areas</span>';
+    document.body.append(opener);
+
+    opener.querySelector('span').click();
+    await settle();
+
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(false);
+    opener.remove();
+  });
+
   it('toggles shut when the roundel is tapped a second time', async () => {
     // The roundel's own handler is one line — `pwaDownloadsManager.toggle()`
     // — in map_custom_download.js, which this suite does not load; the

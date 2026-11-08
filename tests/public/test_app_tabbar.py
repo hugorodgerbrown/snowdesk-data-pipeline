@@ -6,11 +6,14 @@ Covers:
     signed out, with all four tabs.
   - On the map the tabs are buttons; elsewhere they are links to
     /map/?panel=….
-  - The tab lit on load: You on account, help and legal pages, Map
-    everywhere else.
-  - The You tab carries the signed-in reader's initial.
-  - The map renders the You panel (account entries signed in, Sign in
-    signed out) and the Saved chips under each Saved sheet's header.
+  - The tab lit on load: Help on the help and legal pages, none on an
+    account page (the header's avatar menu leads there), Map everywhere
+    else.
+  - The header keeps its avatar menu, as on the web (Hugo, 8 Nov 2026).
+  - On the map the Help tab's "?" menu carries the Map key and the legal
+    line, only in the installed app (`app-only`); the layers menu's
+    Downloaded areas row opens the downloads sheet; and the Saved chips sit under each Saved
+    sheet's header.
   - The CSS gate: the bar, the chips and the hidden chrome are drawn only
     under ``(display-mode: standalone) and (max-width: 639.98px)``. No
     browser here runs standalone, so the stylesheets are read as text.
@@ -35,7 +38,7 @@ from tests.factories import (
 )
 
 GATE = "@media (display-mode: standalone) and (max-width: 639.98px)"
-TABS = ("map", "today", "saved", "you")
+TABS = ("map", "today", "saved", "help")
 
 
 def _bar(content: str) -> str:
@@ -93,9 +96,9 @@ EXPECTED_LIT = {
     "bulletin": "map",
     "resort": "map",
     "trip": "map",
-    "settings": "you",
-    "help": "you",
-    "privacy": "you",
+    "settings": "",
+    "help": "help",
+    "privacy": "help",
     "resorts": "map",
 }
 
@@ -118,7 +121,8 @@ def test_every_kind_of_page_carries_the_bar(client: Client, signed_in: bool) -> 
         for tab in TABS:
             assert f'data-app-tab="{tab}"' in bar, kind
         if signed_in or kind not in {"settings", "trip"}:
-            assert _lit(bar) == [EXPECTED_LIT[kind]], kind
+            expected = [EXPECTED_LIT[kind]] if EXPECTED_LIT[kind] else []
+            assert _lit(bar) == expected, kind
 
 
 @pytest.mark.django_db
@@ -133,26 +137,31 @@ class TestOnEveryPage:
         assert "<button" not in bar
         assert 'href="/map/?panel=today"' in bar
         assert 'href="/map/?panel=saved"' in bar
-        assert 'href="/map/?panel=you"' in bar
+        assert 'href="/map/?panel=help"' in bar
         assert _lit(bar) == ["map"]
 
     @pytest.mark.parametrize(
         "name", ["public:help", "public:privacy", "public:colophon"]
     )
-    def test_you_is_lit_on_help_and_legal_pages(
+    def test_help_is_lit_on_help_and_legal_pages(
         self, client: Client, name: str
     ) -> None:
-        assert _lit(_bar(client.get(reverse(name)).content.decode())) == ["you"]
+        assert _lit(_bar(client.get(reverse(name)).content.decode())) == ["help"]
 
-    def test_you_is_lit_on_account_pages_and_carries_the_initial(
-        self, client: Client
-    ) -> None:
-        client.force_login(UserFactory.create(email="dana@example.com"))
+    def test_nothing_is_lit_on_an_account_page(self, client: Client) -> None:
+        client.force_login(UserFactory.create())
 
         bar = _bar(client.get(reverse("accounts:settings")).content.decode())
 
-        assert _lit(bar) == ["you"]
-        assert re.search(r'class="app-tab-avatar"[^>]*>D<', bar)
+        assert _lit(bar) == []
+
+    def test_the_header_keeps_the_avatar_menu(self, client: Client) -> None:
+        client.force_login(UserFactory.create())
+
+        content = client.get(reverse("public:resorts")).content.decode()
+
+        assert "data-subscriber-menu" in content
+        assert "account-menu-offline-areas" not in content
 
 
 @pytest.mark.django_db
@@ -167,26 +176,48 @@ class TestOnTheMap:
         assert len(re.findall(r'<button\s+type="button"\s+class="app-tab"', bar)) == 4
         assert _lit(bar) == ["map"]
 
-    def test_the_you_panel_lists_the_account_signed_in(self, client: Client) -> None:
-        client.force_login(UserFactory.create(email="dana@example.com"))
-
+    def test_the_help_menu_gains_the_map_key_and_legal_line_for_the_app(
+        self, client: Client
+    ) -> None:
         content = client.get(reverse("public:map")).content.decode()
 
-        assert 'id="you-sheet"' in content
-        template = content[content.index('id="you-sheet-template"') :]
-        assert "dana@example.com" in template
-        assert 'data-testid="account-menu-trips"' in template
-        assert 'data-testid="account-menu-settings"' in template
-        assert 'data-testid="account-menu-sign-out"' in template
-        assert 'data-testid="you-offline-areas"' in template
-        assert 'data-testid="you-sheet-footer"' in template
+        menu = content[content.index('id="map-help-menu"') :]
+        key = re.search(
+            r'<li class="app-only">\s*<button[^>]*data-help-menu="key"', menu
+        )
+        assert key, "no app-only Map key item in the help menu"
+        legal = re.search(
+            r'<div class="app-only[^"]*"[^>]*data-testid="map-help-menu-legal"', menu
+        )
+        assert legal, "no app-only legal line in the help menu"
+        line = menu[legal.end() :]
+        line = line[: line.index("</div>")]
+        assert reverse("public:help") not in line
+        assert reverse("public:terms_of_service") in line
 
-    def test_the_you_panel_offers_sign_in_signed_out(self, client: Client) -> None:
+    def test_downloaded_areas_is_one_row_that_opens_the_sheet(
+        self, client: Client
+    ) -> None:
+        """One row: its left half opens the downloads sheet, its switch shows them."""
         content = client.get(reverse("public:map")).content.decode()
 
-        template = content[content.index('id="you-sheet-template"') :]
-        assert 'id="you-sign-in"' in template
-        assert "account-menu-sign-out" not in template
+        rows = re.findall(
+            r'<li role="none" class="basemap-menu-layer">\s*<button[^>]*'
+            r"data-downloads-open.*?</li>",
+            content,
+            re.S,
+        )
+        assert rows
+        for row in rows:
+            assert 'data-overlay-key="downloads"' in row
+        assert content.count('data-overlay-key="downloads"') == len(rows)
+        assert "Offline areas" not in content
+
+    def test_the_site_footer_keeps_help(self, client: Client) -> None:
+        content = client.get(reverse("public:help")).content.decode()
+
+        footer = content[content.index('data-testid="site-footer"') :]
+        assert f'href="{reverse("public:help")}"' in footer
 
     def test_each_saved_sheet_carries_the_chips_on_its_own(
         self, client: Client
@@ -243,7 +274,16 @@ class TestTheGate:
         assert ".app-tabbar" in gated
         assert ".app-saved-chips" in gated
         assert 'footer[data-testid="site-footer"]' in gated
-        assert "[data-subscriber-menu]" in gated
+        # The header's avatar menu and Sign in stay in the app.
+        assert "[data-subscriber-menu]" not in gated
+        assert "#nav-sign-in" not in gated
+
+    def test_app_only_is_hidden_by_the_negated_gate(self) -> None:
+        negated = "@media not (" + GATE.removeprefix("@media ") + ")"
+        start = self.main.index(negated)
+        block = self.main[start : self.main.index("}", start)]
+        assert ".app-only" in block
+        assert "display: none !important" in self.main[start : start + 200]
 
     def test_nothing_outside_the_gate_hides_what_the_bar_replaces(self) -> None:
         for css in (self.main, self.map_css):
@@ -262,4 +302,8 @@ class TestTheGate:
         gated = _gated_blocks(self.map_css)
         assert "#map-today-panel-toggle" in gated
         assert "#map-controls-collapsible" in gated
+        assert "#map-help-toggle" in gated
+        assert "#map-legend-toggle" in gated
+        assert "#map-help-menu" in gated
+        assert ".map-legend > #map-legend-card" in gated
         assert "--app-tabbar-h" in gated

@@ -2955,8 +2955,8 @@ a.season-day:focus-visible {
    THE INSTALLED PHONE APP'S TAB BAR (SNOW-1476)
    includes/_app_tabbar.html renders on every page; it is drawn only in
    the installed app on a phone — `display-mode: standalone` below the
-   `sm` breakpoint — and there it takes over from the footer and the
-   avatar menu (and, for a visitor, the header's Sign in). Nothing here
+   `sm` breakpoint — and there it takes over from the footer. The
+   header's avatar menu (or Sign in) stays, as on every screen. Nothing here
    applies to a phone browser, a tablet or a desktop: every rule that
    shows the bar or hides what it replaces sits inside the one block
    below, which tests/public/test_app_tabbar.py holds to. The map page's
@@ -3020,26 +3020,6 @@ a.season-day:focus-visible {
   border-radius: var(--radius-sm);
 }
 
-/* You: the avatar letter the header's menu wears; empty for a visitor. */
-.app-tab-avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 999px;
-  border: 1.5px solid currentColor;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-}
-
-.app-tab[aria-current="page"] .app-tab-avatar {
-  background: var(--color-text-1);
-  border-color: var(--color-text-1);
-  color: var(--color-card);
-}
-
 /* Today's alert dot, mirrored from the sun roundel's (static/js/app_tabbar.js). */
 .app-tab-dot {
   position: absolute;
@@ -3059,6 +3039,16 @@ a.season-day:focus-visible {
 /* The Saved chip row is the tab bar's, so it is drawn only where the bar is. */
 .app-saved-chips {
   display: none;
+}
+
+/* Shown only in the installed app on a phone: the "?" menu's Map key and
+   legal line, which stand in for the (i) roundel and the footer the bar
+   hides. Hidden by the negated gate, so each
+   keeps its own display inside it. */
+@media not ((display-mode: standalone) and (max-width: 639.98px)) {
+  .app-only {
+    display: none !important;
+  }
 }
 
 .app-saved-chips.app-saved-chips--preview {
@@ -3087,9 +3077,7 @@ a.season-day:focus-visible {
     padding-bottom: var(--app-tabbar-h);
   }
 
-  body > footer[data-testid="site-footer"],
-  [data-subscriber-menu],
-  #nav-sign-in {
+  body > footer[data-testid="site-footer"] {
     display: none;
   }
 

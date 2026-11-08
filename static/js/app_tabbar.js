@@ -8,21 +8,26 @@
  * and does nothing a visitor can see when the bar is not drawn — every
  * panel it opens is one the map already has.
  *
- *   - FOUR TABS, THREE PANELS. Today is the Today panel
+ *   - FOUR TABS. Today is the Today panel
  *     (window.pwaTodayPanel). Saved is the favourites, routes and report
  *     sheets (window.pwaFavouritesSheet / pwaRoutesSheet / pwaReportSheet),
  *     one at a time, switched by the chip row each renders under its
- *     header (includes/_saved_chips.html). You is the #you-sheet this
- *     module attaches (window.pwaYouSheet). Map closes whichever is open.
+ *     header (includes/_saved_chips.html). Help is the map's own "?" menu
+ *     (window.pwaMapHelpMenu, public/partials/_map_help_menu.html), whose
+ *     roundel this app hides; it gains a Map key item there. Map closes
+ *     whichever is open.
+ *   - The downloads sheet, whose roundel this app hides, opens from the
+ *     layers menu's Downloaded areas row (map_downloads_manager.js).
  *   - A TAB TOGGLES. Tapping the lit tab closes its panel; tapping another
- *     swaps it for the next in place. All four panels share one box, and
- *     the old one is hidden and the new one shown in the same task, so no
- *     frame is painted between them: the card stays put and only its
- *     content changes. A tab swap marks the new panel `data-tab-swap`,
+ *     swaps it for the next in place. Today's and the Saved panels share
+ *     one box, and the old one is hidden and the new one shown in the same
+ *     task, so no frame is painted between them: the card stays put and
+ *     only its content changes. A tab swap marks the new panel `data-tab-swap`,
  *     whose content (never the card, which would let the map show
  *     through) fades in; a Saved chip swaps with no mark at all, because
  *     the three sheets' headers sit in the same place (Hugo, 8 Nov 2026:
- *     "If a panel exists it should just replace the content").
+ *     "If a panel exists it should just replace the content"). The "?"
+ *     menu is a card of its own, so it rises in and out instead.
  *   - THE LIT TAB FOLLOWS THE PANELS. A panel closed by something else —
  *     a Today or Saved row handing off to the region or place sheet, the
  *     ×, Escape — lights Map again; one reopened by map_panel_trail.js's
@@ -32,7 +37,7 @@
  *     them (public/partials/_today_surface.html).
  *   - SAVED REMEMBERS its chip for the session (sessionStorage), so the tab
  *     reopens the list last shown; places by default.
- *   - ?panel=today|saved|you, which the bar's links carry off the map,
+ *   - ?panel=today|saved|help, which the bar's links carry off the map,
  *     opens that panel once at boot. Any other value is left in the URL
  *     for static/js/map.js's own ?panel= handler (favourites, routes,
  *     reports, downloads), which runs after this module. The parameter is then removed with
@@ -51,10 +56,10 @@
   const bar = found;
 
   /** @typedef {{ open(): void, close(): void, isOpen(): boolean }} Panel */
-  /** @typedef {'map'|'today'|'saved'|'you'} Tab */
+  /** @typedef {'map'|'today'|'saved'|'help'} Tab */
   /** @typedef {'places'|'routes'|'observations'} SavedChoice */
 
-  var TABS = /** @type {Array<Tab>} */ (['map', 'today', 'saved', 'you']);
+  var TABS = /** @type {Array<Tab>} */ (['map', 'today', 'saved', 'help']);
   var PANEL_PARAM = 'panel';
   var SAVED_KEY = 'snowdesk:app-tab-saved';
   var SWAP_MS = 200;
@@ -101,33 +106,27 @@
   }
 
   // ---------------------------------------------------------------------
-  // The You sheet.
+  // Help: the map's own "?" menu.
   // ---------------------------------------------------------------------
 
-  var youSheet = document.getElementById('you-sheet');
-  var youTemplate = document.getElementById('you-sheet-template');
-  /** @type {Panel|null} */
-  var youPanel = null;
-  if (youSheet && youTemplate instanceof HTMLTemplateElement) {
-    var youController = window.MapSheet.attach(youSheet, { triggerSelector: '[data-app-tab]' });
-    var sheetEl = youSheet;
-    var templateEl = youTemplate;
-    youPanel = {
-      open: function () {
-        youController.open();
-        sheetEl.replaceChildren(templateEl.content.cloneNode(true));
-      },
-      close: youController.close,
-      isOpen: youController.isOpen,
-    };
-    youSheet.addEventListener('click', function (event) {
-      var target = /** @type {Element|null} */ (event.target instanceof Element ? event.target : null);
-      if (!target || !target.closest('[data-you-offline-areas]')) return;
-      youController.close();
-      window.pwaDownloadsManager?.open();
-    });
-    window.pwaYouSheet = Object.freeze(youPanel);
-  }
+  var helpMenu = document.getElementById('map-help-menu');
+  /**
+   * The "?" menu as a tab's panel, read when used: map_help_menu.js may
+   * load after this module.
+   *
+   * @type {Panel}
+   */
+  var helpPanel = {
+    open: function () {
+      window.pwaMapHelpMenu?.open();
+    },
+    close: function () {
+      window.pwaMapHelpMenu?.close();
+    },
+    isOpen: function () {
+      return !!window.pwaMapHelpMenu?.isOpen();
+    },
+  };
 
   // ---------------------------------------------------------------------
   // Tabs → panels.
@@ -151,7 +150,7 @@
     if (tab === 'saved') {
       return signedIn() ? savedController(savedChoice()) : savedController('places');
     }
-    if (tab === 'you') return youPanel;
+    if (tab === 'help') return helpMenu ? helpPanel : null;
     return null;
   }
 
@@ -168,7 +167,7 @@
     if (tab === 'saved') {
       return document.getElementById(SAVED_SHEET_IDS[signedIn() ? savedChoice() : 'places']);
     }
-    if (tab === 'you') return youSheet;
+    if (tab === 'help') return helpMenu;
     return null;
   }
 
@@ -189,7 +188,7 @@
       if (mine && mine.isOpen()) return openedBy;
     }
     if (signedIn() && window.pwaTodayPanel.isOpen()) return 'today';
-    if (youPanel && youPanel.isOpen()) return 'you';
+    if (helpPanel.isOpen()) return 'help';
     var choices = /** @type {Array<SavedChoice>} */ (['places', 'routes', 'observations']);
     for (var i = 0; i < choices.length; i++) {
       var controller = savedController(choices[i]);
@@ -251,7 +250,10 @@
     var swap = !!(currentPanel && currentPanel.isOpen());
     if (currentPanel && currentPanel !== next) currentPanel.close();
     openedBy = tab;
-    if (!next.isOpen()) openPanel(next, elementFor(tab), swap ? 'swap' : 'open');
+    // The "?" menu is its own card, not the panels' box: it rises.
+    /** @type {'open' | 'swap'} */
+    var kind = swap && tab !== 'help' && current !== 'help' ? 'swap' : 'open';
+    if (!next.isOpen()) openPanel(next, elementFor(tab), kind);
     light();
   }
 
@@ -300,7 +302,7 @@
   // Keep the lit tab true to the panels, however they open or close.
   // ---------------------------------------------------------------------
 
-  var watched = ['today-sheet', 'you-sheet']
+  var watched = ['today-sheet', 'map-help-menu']
     .concat(Object.keys(SAVED_SHEET_IDS).map(function (key) {
       return SAVED_SHEET_IDS[/** @type {SavedChoice} */ (key)];
     }))
@@ -347,12 +349,19 @@
     // Only the bar's own names. The rest (favourites, routes, reports,
     // downloads) belong to map.js's openPanelDeepLink, which runs after
     // this and must still find the parameter.
-    if (asked !== 'today' && asked !== 'saved' && asked !== 'you') return;
+    if (asked !== 'today' && asked !== 'saved' && asked !== 'help') return;
     url.searchParams.delete(PANEL_PARAM);
     try {
       window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
     } catch (_err) {
       // A sandboxed frame refuses it; the panel still opens.
+    }
+    // The parameter is taken now, before map.js's own deep-link reader
+    // strips it, but Help's controller comes from the map bundle, which
+    // runs after this one: open it once every deferred script has run.
+    if (asked === 'help' && !window.pwaMapHelpMenu && document.readyState !== 'complete') {
+      document.addEventListener('DOMContentLoaded', function () { select('help'); }, { once: true });
+      return;
     }
     select(asked);
   }

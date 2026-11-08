@@ -546,6 +546,8 @@ ICON_PARTIALS: tuple[IconPartial, ...] = (
             {"caption": "18 · filled", "context": {"filled": True}},
         ),
     ),
+    _icon("help", "Help — a question mark, the phone app's Help tab", 18),
+    _icon("info", "Map key — an i in a circle, the (i) roundel", 18),
     _icon("labs", "Labs — an experimental feature behind a flag", 17),
     _icon(
         "layers",
@@ -1795,8 +1797,9 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         label="App tab bar",
         description=(
             "The installed phone app's bottom tab bar (SNOW-1476): Map, "
-            "Today, Saved, You. Drawn only in standalone display mode under "
-            "640px, where it replaces the footer and the avatar menu. On the "
+            "Today, Saved, Help. Drawn only in standalone display mode under "
+            "640px, where it replaces the footer; the avatar menu stays in "
+            "the header. On the "
             "map the tabs are buttons that open tab panels over it; elsewhere "
             "they link to /map/?panel=…. Previewed here outside that mode."
         ),
@@ -1809,9 +1812,9 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="account-menu-items",
         label="Account menu items",
         description=(
-            "The account destinations — Trips, Settings, Sign out — shared "
-            "by the avatar dropdown and the phone app's You panel so the two "
-            "cannot drift (SNOW-1476)."
+            "The avatar dropdown's account destinations — Trips, Settings, "
+            "Sign out — shared by the dropdown and the account pages "
+            "(SNOW-1476)."
         ),
         kind="components",
         partial="includes/_account_menu_items.html",

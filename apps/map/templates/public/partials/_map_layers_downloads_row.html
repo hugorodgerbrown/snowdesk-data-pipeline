@@ -1,0 +1,46 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_layers_downloads_row.html — the layers menu's
+Downloaded areas row (SNOW-904's switch; the opener, Hugo, 8 Nov 2026).
+
+Two controls on one line, as on Steep terrain's row
+(public/partials/_map_layers_steep_terrain_row.html). The left half opens
+the downloads sheet, where areas are added and removed
+(data-downloads-open, answered by static/js/map_downloads_manager.js); it
+is the way in for the installed phone app, which hides the capsule's
+downloads roundel. The switch is the `.basemap-menu-item--overlay` row
+keyed `downloads` that shows the areas on the map; map.js seeds it from
+window.pwaDownloadedOverlay and never writes it back (SNOW-857's
+tri-state).
+
+Included in both of the menu's level-one lists in _map_embed.html.
+{% endcomment %}
+{% trans "Downloaded areas" as layer_downloads %}
+<li role="none" class="basemap-menu-layer">
+    <button
+        type="button"
+        role="menuitem"
+        class="basemap-menu-layer-options hover-affordance"
+        data-downloads-open
+        data-testid="map-layers-downloads-open"
+        aria-haspopup="dialog"
+        aria-controls="map-downloads-sheet"
+    >
+        <span class="basemap-menu-layer-icon">{% include "includes/_icon_downloads.html" with size=18 only %}</span>
+        <span class="basemap-menu-item-text">
+            <span data-row-label>{{ layer_downloads }}</span>
+        </span>
+        {% include "includes/_icon_chevron_right.html" with size=16 svg_class="basemap-menu-layer-chevron" only %}
+    </button>
+    <button
+        type="button"
+        role="menuitemcheckbox"
+        class="basemap-menu-item basemap-menu-item--overlay basemap-menu-switch group hover-affordance"
+        data-overlay-key="downloads"
+        data-layer-switch
+        aria-checked="false"
+        aria-label="{{ layer_downloads }}"
+    >
+        {% include "includes/_switch_track.html" only %}
+    </button>
+</li>

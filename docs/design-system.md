@@ -292,7 +292,7 @@ differ in side (below).
 | **Object sheet** | Tapping a thing on the map | Full width, slides up from the foot, covers the map controls at half and full | `peek,half,full`, narrowed by content | Its ×, a drag below peek | Region, route, place (resort, saved pin), weather |
 | **Roundel panel** | A map-control roundel | Docked full width at the foot, over the roundel column (SNOW-1106) | None | Its ×, or the roundel that opened it (a toggle) | Pins, observations, routes, downloads, terrain filter |
 | **Form panel** | An action that starts a task | Docked at the foot | None | Submit, cancel, or the shared dismissals (×, Escape, a tap outside, another overlay opening); never a drag | Report, add or rename favourite, sign in |
-| **Tab panel** | A tab of the installed phone app's bar (SNOW-1476) | Full height between the header and the bar | None | Its ×, its tab (a toggle), the Map tab, another tab | Today, Saved (pins, routes, observations), You |
+| **Tab panel** | A tab of the installed phone app's bar (SNOW-1476) | Full height between the header and the bar | None | Its ×, its tab (a toggle), the Map tab, another tab | Today, Saved (pins, routes, observations); Help opens the "?" menu instead |
 
 **Object sheet.** The reader asked "what is this?" about a place on the
 ground, so the sheet answers in stages and gives the ground back: peek is a
