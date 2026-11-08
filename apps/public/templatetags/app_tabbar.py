@@ -4,11 +4,11 @@ apps/public/templatetags/app_tabbar.py — which tab the phone app's bar lights.
 SNOW-1476. ``{% app_tabbar_state as tabbar %}`` answers, for the request
 being rendered, the two facts ``includes/_app_tabbar.html`` needs:
 
-- ``active`` — the tab lit on page load. "you" on the pages the You panel
-  links to (anything under /account/, Help and the three legal pages),
-  "map" everywhere else, the map and the bulletin, weather, resort and trip
-  pages included. On the map the bar's script then follows whichever tab
-  panel is open.
+- ``active`` — the tab lit on page load. "help" on the pages the Help
+  panel links to (Help and the three legal pages), "" (none) on an account
+  page, which the header's avatar menu leads to, and "map" everywhere
+  else, the map and the bulletin, weather, resort and trip pages included.
+  On the map the bar's script then follows whichever tab panel is open.
 - ``on_map`` — whether this is the map page. There the tabs are buttons
   that open panels in place; elsewhere they are links to
   ``/map/?panel=…``.
@@ -28,8 +28,8 @@ logger = logging.getLogger(__name__)
 
 register = template.Library()
 
-# The public URL names whose pages the You panel links to.
-YOU_URL_NAMES: frozenset[str] = frozenset(
+# The public URL names whose pages the Help tab's "?" menu links to.
+HELP_URL_NAMES: frozenset[str] = frozenset(
     {"help", "privacy", "terms_of_service", "colophon"}
 )
 
@@ -46,7 +46,7 @@ def app_tabbar_state(context: Any) -> dict[str, Any]:
         context: The template context; its ``request`` is read.
 
     Returns:
-        A dict with ``active`` ("map" or "you") and ``on_map`` (bool).
+        A dict with ``active`` ("map", "help" or "") and ``on_map`` (bool).
         Without a request (a bare ``render_to_string``, the component
         library's fixtures) the answer is Map, off the map.
 
@@ -59,10 +59,10 @@ def app_tabbar_state(context: Any) -> dict[str, Any]:
     url_name = getattr(match, "url_name", "") or ""
     on_map = namespace == "public" and url_name == "map"
     path = getattr(request, "path", "") or ""
-    if path.startswith(ACCOUNT_PATH_PREFIX) or (
-        namespace == "public" and url_name in YOU_URL_NAMES
-    ):
-        active = "you"
+    if namespace == "public" and url_name in HELP_URL_NAMES:
+        active = "help"
+    elif path.startswith(ACCOUNT_PATH_PREFIX):
+        active = ""
     else:
         active = "map"
     return {"active": active, "on_map": on_map}

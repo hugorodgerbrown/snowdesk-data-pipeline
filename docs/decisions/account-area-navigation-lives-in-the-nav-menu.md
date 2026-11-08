@@ -18,10 +18,9 @@ exception — because the lists it once reached
 ruling stands unchanged: the menu *is* the navigation. Adding a destination
 is adding one `<a>` to it, plus an assertion in
 `tests/public/test_nav_partial.py`. Since SNOW-1476 the entries live in
-`templates/includes/_account_menu_items.html`, which the dropdown and the
-installed phone app's You panel both include
-([`the-installed-phone-app-has-a-tab-bar`](the-installed-phone-app-has-a-tab-bar.md)),
-so the `<a>` still goes in one place.
+`templates/includes/_account_menu_items.html`. The installed phone app keeps
+this menu in its header too, unchanged
+([`the-installed-phone-app-has-a-tab-bar`](the-installed-phone-app-has-a-tab-bar.md)).
 
 Every account page carries a visible `<h1>` naming itself. The hub's was
 `sr-only` between SNOW-705 and SNOW-668 for a reason that has since gone:

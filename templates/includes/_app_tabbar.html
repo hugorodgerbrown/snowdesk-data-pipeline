@@ -2,21 +2,23 @@
 templates/includes/_app_tabbar.html — the installed phone app's bottom tab bar
 (SNOW-1476).
 
-Four tabs: Map, Today, Saved, You. Rendered on every page that extends
+Four tabs: Map, Today, Saved, Help. Rendered on every page that extends
 public/base.html, but drawn ONLY in the installed app on a phone: the bar
 is `display: none` until the `(display-mode: standalone) and
 (max-width: 639.98px)` block in src/css/main.css shows it, and that same
-block hides the footer and the avatar menu the bar replaces. A phone
+block hides the footer the bar replaces. The avatar menu stays in the
+header (Hugo, 8 Nov 2026), where it is on every other screen. A phone
 browser, a tablet and a desktop never see it
 (docs/decisions/the-installed-phone-app-has-a-tab-bar.md).
 
 ON THE MAP the tabs are buttons: static/js/app_tabbar.js opens each tab's
-panel over the map (Today, the Saved sheets, the You sheet) and lights the
+panel over the map (Today, the Saved sheets, the Help sheet) and lights the
 tab whose panel is open. OFF THE MAP they are links to /map/?panel=…,
 which opens the map as it was left with that panel open.
 
 `{% app_tabbar_state %}` (apps/public/templatetags/app_tabbar.py) decides
-the tab lit on load: You on account, help and legal pages, Map elsewhere.
+the tab lit on load: Help on the help and legal pages, none on account
+pages (the avatar is where they live), Map elsewhere.
 
 A <div role="navigation">, not a <nav>: the map page styles
 `body.map-fullscreen > nav` (the header) sticky, and a second <nav> under
@@ -33,7 +35,7 @@ Parameters (passed via {% include … with … %}):
 {% trans "Map" as tab_map %}
 {% trans "Today" as tab_today %}
 {% trans "Saved" as tab_saved %}
-{% trans "You" as tab_you %}
+{% trans "Help" as tab_help %}
 <div
     role="navigation"
     class="app-tabbar{% if preview %} app-tabbar--preview{% endif %} border-t border-border bg-card"
@@ -61,12 +63,9 @@ Parameters (passed via {% include … with … %}):
             {% include "includes/_icon_favourite.html" with size=24 only %}
             <span>{{ tab_saved }}</span>
         </button>
-        <button type="button" class="app-tab" data-app-tab="you">
-            <span
-                class="app-tab-avatar"
-                aria-hidden="true"
-            >{% if request.user.is_authenticated %}{{ request.user.email|first|upper }}{% endif %}</span>
-            <span>{{ tab_you }}</span>
+        <button type="button" class="app-tab" data-app-tab="help">
+            {% include "includes/_icon_help.html" with size=24 only %}
+            <span>{{ tab_help }}</span>
         </button>
     {% else %}
         <a
@@ -87,16 +86,13 @@ Parameters (passed via {% include … with … %}):
             <span>{{ tab_saved }}</span>
         </a>
         <a
-            href="{{ map_url }}?panel=you"
+            href="{{ map_url }}?panel=help"
             class="app-tab"
-            data-app-tab="you"
-            {% if tabbar.active == "you" %}aria-current="page"{% endif %}
+            data-app-tab="help"
+            {% if tabbar.active == "help" %}aria-current="page"{% endif %}
         >
-            <span
-                class="app-tab-avatar"
-                aria-hidden="true"
-            >{% if request.user.is_authenticated %}{{ request.user.email|first|upper }}{% endif %}</span>
-            <span>{{ tab_you }}</span>
+            {% include "includes/_icon_help.html" with size=24 only %}
+            <span>{{ tab_help }}</span>
         </a>
     {% endif %}
 </div>

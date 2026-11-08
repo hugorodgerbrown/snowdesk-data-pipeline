@@ -15,6 +15,9 @@
  *   Tune the relief                → 'snowdesk:map-relief-tuning-requested',
  *                                    which map_relief_tuning.js answers
  *                                    (staff only, past the border).
+ *   Map key                        → the (i) card (window.pwaMapLegend),
+ *                                    in the installed phone app only,
+ *                                    which hides that roundel.
  *   Help pages                     → a link to /help/.
  *
  * HELP MODE KEEPS THE ROUNDEL'S PRESS. map_help_mode.js takes every click
@@ -82,8 +85,16 @@
       document.dispatchEvent(new CustomEvent('snowdesk:map-3d-test-requested'));
     } else if (choice === 'relief-tuning') {
       document.dispatchEvent(new CustomEvent('snowdesk:map-relief-tuning-requested'));
+    } else if (choice === 'key') {
+      // After this click has finished bubbling: the card's own outside-tap
+      // dismiss would read it as a tap away and close what just opened.
+      window.setTimeout(() => window.pwaMapLegend?.open(), 0);
     }
   });
+
+  // The installed phone app's Help tab opens this same menu
+  // (static/js/app_tabbar.js), where the "?" roundel is hidden.
+  window.pwaMapHelpMenu = Object.freeze({ open: open, close: close, isOpen: isOpen });
 
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || !isOpen()) return;

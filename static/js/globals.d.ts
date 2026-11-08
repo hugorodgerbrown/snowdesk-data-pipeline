@@ -224,6 +224,10 @@ interface Window {
   pwaRestZonesCore: any;
   /** static/js/map_legend_core.js — the legend's first tier: legendState(view), shortSources(list). */
   pwaMapLegendCore: any;
+  /** static/js/map_legend.js — open() the (i) card, for the phone app's Help menu. */
+  pwaMapLegend?: { open(): void };
+  /** static/js/map_help_menu.js — the "?" menu, which the phone app's Help tab opens. */
+  pwaMapHelpMenu?: { open(): void; close(): void; isOpen(): boolean };
   /** SNOW-1384: static/js/rest_zones.js — tap(point), show(), hide(), isEnabled(). */
   pwaRestZones: any;
   /** SNOW-1278: map.js — open(feature, {claim, frame}), openUuid(): the SAC tour in the route panel. */
@@ -280,10 +284,8 @@ interface Window {
   pwaReportSheet: { open(): void; close(): void; isOpen(): boolean };
   /** static/js/map_downloads_manager.js — the downloads sheet. */
   pwaDownloadsManager: { open(): void; toggle(): void; refresh(): void };
-  /** SNOW-1476: the You panel (static/js/app_tabbar.js). */
-  pwaYouSheet: { open(): void; close(): void; isOpen(): boolean };
   /** SNOW-1476: the installed phone app's tab bar (static/js/app_tabbar.js). */
-  pwaAppTabbar: { select(tab: 'map' | 'today' | 'saved' | 'you'): void; light(): void };
+  pwaAppTabbar: { select(tab: 'map' | 'today' | 'saved' | 'help'): void; light(): void };
   /** static/js/map_sheet.js — the sheet controller; attach/bindDetents/handOff/toast. */
   MapSheet: any;
   /** static/js/route_rail.js — rail one below the map; open/close/cursor. */

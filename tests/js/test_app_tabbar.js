@@ -2,8 +2,8 @@
  * tests/js/test_app_tabbar.js — the installed phone app's tab bar on the map
  * (SNOW-1476).
  *
- * static/js/app_tabbar.js against a reduced copy of the bar, the You sheet
- * and its template, with ``window.MapSheet`` and the four panel controllers
+ * static/js/app_tabbar.js against a reduced copy of the bar, the "?" menu,
+ * the layers menu's Offline areas, with ``window.MapSheet`` and the four panel controllers
  * stubbed — the sheets' own behaviour is tested beside each one. What is
  * pinned here is the bar's:
  *   - a tab opens its panel and lights; tapping it again, or Map, closes it;
@@ -12,8 +12,9 @@
  *   - the Saved chips close one sheet as they open its sibling, with no
  *     entrance mark, and Saved reopens on the chip last chosen;
  *   - a panel closed from elsewhere lights Map again;
- *   - the You sheet clones its template on open, and Offline areas hands
- *     off to the downloads manager;
+ *   - Help opens and closes the map's own "?" menu (window.pwaMapHelpMenu),
+ *     rising rather than swapping, since it is a card of its own;
+ *   - the layers menu's Offline areas opens the downloads sheet;
  *   - ?panel= opens its panel at boot and leaves the URL, other
  *     parameters kept;
  *   - the Today tab mirrors the sun roundel's alert dot.
@@ -27,17 +28,14 @@ const MARKUP = `
     <button data-app-tab="map" aria-current="page">Map</button>
     <button data-app-tab="today"><span data-app-tab-dot hidden></span>Today</button>
     <button data-app-tab="saved">Saved</button>
-    <button data-app-tab="you">You</button>
+    <button data-app-tab="help">Help</button>
   </div>
   <div id="today-sheet" hidden></div>
   <div id="favourite-sheet" hidden></div>
   <div id="route-sheet" hidden></div>
   <div id="report-sheet" hidden></div>
-  <div id="you-sheet" hidden></div>
-  <template id="you-sheet-template">
-    <p data-you-body>You</p>
-    <button data-you-offline-areas>Offline areas</button>
-  </template>`;
+  <div id="map-help-menu" hidden></div>
+  <button data-layers-offline-areas>Offline areas</button>`;
 
 const $ = (id) => document.getElementById(id);
 const tab = (name) => document.querySelector(`[data-app-tab="${name}"]`);
@@ -75,6 +73,7 @@ async function load({ signedIn = true, url = '/map/' } = {}) {
   window.pwaRoutesSheet = panel('route-sheet');
   window.pwaReportSheet = panel('report-sheet');
   window.pwaDownloadsManager = { open: vi.fn() };
+  window.pwaMapHelpMenu = panel('map-help-menu');
   vi.resetModules();
   await import('../../static/js/app_tabbar.js');
   await tick();
@@ -95,7 +94,7 @@ afterEach(() => {
   added = [];
   for (const key of [
     'MapSheet', 'pwaTodayPanel', 'pwaFavouritesSheet', 'pwaRoutesSheet',
-    'pwaReportSheet', 'pwaDownloadsManager', 'pwaYouSheet', 'pwaAppTabbar',
+    'pwaReportSheet', 'pwaDownloadsManager', 'pwaAppTabbar', 'pwaMapHelpMenu',
   ]) delete window[key];
   vi.restoreAllMocks();
 });
@@ -119,9 +118,9 @@ describe('a tab', () => {
 
   it('closes whatever is open when Map is tapped', async () => {
     await load();
-    tab('you').click();
+    tab('help').click();
     tab('map').click();
-    expect($('you-sheet').hidden).toBe(true);
+    expect($('map-help-menu').hidden).toBe(true);
     expect(lit()).toEqual(['map']);
   });
 
@@ -201,29 +200,46 @@ describe('the lit tab', () => {
   });
 });
 
-describe('the You sheet', () => {
-  it('clones its template on open', async () => {
+describe('Help', () => {
+  it("opens the map's own help menu and lights", async () => {
     await load();
-    tab('you').click();
-    expect($('you-sheet').querySelector('[data-you-body]')).not.toBeNull();
-    expect(window.pwaYouSheet.isOpen()).toBe(true);
+    tab('help').click();
+    expect(window.pwaMapHelpMenu.open).toHaveBeenCalled();
+    expect(lit()).toEqual(['help']);
   });
 
-  it('hands Offline areas to the downloads manager', async () => {
+  it('rises in over another panel rather than swapping', async () => {
     await load();
-    tab('you').click();
-    $('you-sheet').querySelector('[data-you-offline-areas]').click();
+    tab('today').click();
+    tab('help').click();
+    expect($('today-sheet').hidden).toBe(true);
+    expect($('map-help-menu').hasAttribute('data-tab-open')).toBe(true);
+    expect($('map-help-menu').hasAttribute('data-tab-swap')).toBe(false);
+  });
+
+  it('closes on a second tap', async () => {
+    await load();
+    tab('help').click();
+    tab('help').click();
+    expect($('map-help-menu').hidden).toBe(true);
+    expect(lit()).toEqual(['map']);
+  });
+});
+
+describe("the layers menu's Offline areas", () => {
+  it('opens the downloads sheet', async () => {
+    await load();
+    document.querySelector('[data-layers-offline-areas]').click();
     expect(window.pwaDownloadsManager.open).toHaveBeenCalled();
-    expect($('you-sheet').hidden).toBe(true);
   });
 });
 
 describe('?panel=', () => {
   it('opens its panel at boot and leaves the URL, other parameters kept', async () => {
     const replace = vi.spyOn(window.history, 'replaceState');
-    await load({ url: '/map/?panel=you&d=2026-11-07' });
-    expect($('you-sheet').hidden).toBe(false);
-    expect(lit()).toEqual(['you']);
+    await load({ url: '/map/?panel=help&d=2026-11-07' });
+    expect($('map-help-menu').hidden).toBe(false);
+    expect(lit()).toEqual(['help']);
     expect(replace).toHaveBeenLastCalledWith(null, '', '/map/?d=2026-11-07');
   });
 

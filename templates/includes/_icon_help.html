@@ -1,0 +1,28 @@
+{% comment %}
+templates/includes/_icon_help.html — the Help glyph: a question mark in a circle.
+
+The installed phone app's Help tab (includes/_app_tabbar.html), the mark the
+map's "How to use the map" roundel has drawn inline since help mode began;
+the same 24-grid 2px stroke as the rest of the house set
+(docs/decisions/ui-icons-are-house-stroke-partials.md).
+
+Parameters (passed via {% include … with … %}):
+  size (int, optional) — rendered px, both axes. Default 18.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:18 }}"
+    height="{{ size|default:18 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <circle cx="12" cy="12" r="10" />
+    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 2.5-3 4" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
+</svg>

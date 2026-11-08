@@ -7296,8 +7296,10 @@ body.map-framing #map-legend {
      sheets (region, place, weather, route) through their own bottom and
      max-height.
    - The roundels the bar replaces go: the sun (Today), the "yours" capsule
-     and its collapse toggle (Saved, and Offline areas under You).
-   - The tab panels — Today, the three Saved sheets, You — stand at full
+     and its collapse toggle (Saved; Offline areas is in the layers menu),
+     and the "?" and (i) roundels: the Help tab opens the "?" menu, which
+     gains a Map key item for the (i) card.
+   - The tab panels — Today and the Saved sheets — stand at full
      height, from under the nav to above the bar. A first open rises; a
      swap from one tab's panel to another keeps the card in place and fades
      only its content in, so the map never shows through mid-swap
@@ -7315,8 +7317,25 @@ body.map-framing #map-legend {
 
     #map-today-panel-toggle,
     #map-controls-collapsible,
-    #map-controls-toggle {
+    #map-controls-toggle,
+    #map-help-toggle,
+    #map-legend-toggle {
         display: none;
+    }
+
+    /* The "?" menu opens from the Help tab, so it stands above that tab
+       (a surface opens beside its trigger, docs/design-system.md rule 7). */
+    #map-help-menu {
+        left: auto;
+        right: calc(env(safe-area-inset-right, 0px) + var(--map-edge-gap));
+        bottom: var(--map-edge-gap);
+    }
+
+    /* So does the map key it opens: on the right, beside the roundels. */
+    .map-legend > #map-legend-card {
+        left: auto;
+        right: 0;
+        transform-origin: bottom right;
     }
 
     [data-detents][data-detent] {
@@ -7325,7 +7344,7 @@ body.map-framing #map-legend {
         padding-bottom: 1rem;
     }
 
-    :is(#today-sheet, #favourite-sheet, #route-sheet, #report-sheet, #you-sheet) {
+    :is(#today-sheet, #favourite-sheet, #route-sheet, #report-sheet) {
         top: calc(env(safe-area-inset-top, 0px) + 56px);
         max-height: none;
     }

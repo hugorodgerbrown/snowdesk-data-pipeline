@@ -248,3 +248,16 @@ describe('each map mode (SNOW-1421)', () => {
     expect(outOfView(key('terrain_filter'))).toBe(false);
   });
 });
+
+describe("open(), for the phone app's Help menu", () => {
+  it('opens the card on its first page and works the view out', () => {
+    features['regions-fill'] = [{ properties: {} }];
+    document.querySelector('[data-legend-go="all"]').click();
+
+    window.pwaMapLegend.open();
+
+    expect(document.getElementById('map-legend').dataset.state).toBe('expanded');
+    expect(card().dataset.legendPage).toBe('now');
+    expect(document.querySelector('[data-legend-sources]').textContent).toContain('SLF');
+  });
+});

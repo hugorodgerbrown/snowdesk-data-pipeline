@@ -1,0 +1,32 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_layers_offline_row.html — the layers menu's Offline
+areas row, in the installed phone app only (Hugo, 8 Nov 2026).
+
+Everywhere else the "yours" capsule's downloads roundel opens the downloads
+sheet. That app hides the capsule (its lists are the Saved tab), so the
+sheet opens from here instead, beside the Downloaded areas switch whose
+maps it manages. static/js/app_tabbar.js answers the press through
+window.pwaDownloadsManager.open(). `app-only` (src/css/main.css) keeps it
+out of every other display mode.
+
+Laid out as an options row with no switch (public/partials/
+_map_layers_options_row.html), so its chevron lines up with the rows above.
+Included in both of the menu's level-one lists in _map_embed.html.
+{% endcomment %}
+<li role="none" class="basemap-menu-layer app-only">
+    <button
+        type="button"
+        role="menuitem"
+        class="basemap-menu-layer-options hover-affordance"
+        data-layers-offline-areas
+        data-testid="map-layers-offline-areas"
+    >
+        <span class="basemap-menu-layer-icon">{% include "includes/_icon_downloads.html" with size=18 only %}</span>
+        <span class="basemap-menu-item-text">
+            <span data-row-label>{% trans "Offline areas" %}</span>
+        </span>
+        {% include "includes/_icon_chevron_right.html" with size=16 svg_class="basemap-menu-layer-chevron" only %}
+    </button>
+    <span class="basemap-menu-switch" aria-hidden="true"></span>
+</li>

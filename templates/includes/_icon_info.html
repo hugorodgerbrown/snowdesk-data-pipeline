@@ -1,0 +1,29 @@
+{% comment %}
+templates/includes/_icon_info.html — the map key glyph: an "i" in a circle.
+
+The map's (i) roundel that opens the key card, and the "Map key" item of the
+"?" menu that opens the same card in the installed phone app, which hides
+the roundel (public/partials/_map_help_menu.html). The same 24-grid 2px
+stroke as the rest of the house set
+(docs/decisions/ui-icons-are-house-stroke-partials.md).
+
+Parameters (passed via {% include … with … %}):
+  size (int, optional) — rendered px, both axes. Default 18.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:18 }}"
+    height="{{ size|default:18 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <circle cx="12" cy="12" r="10" />
+    <line x1="12" y1="16" x2="12" y2="12" />
+    <line x1="12" y1="8" x2="12.01" y2="8" />
+</svg>

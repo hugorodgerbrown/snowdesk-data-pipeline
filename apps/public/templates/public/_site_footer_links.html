@@ -2,8 +2,8 @@
 apps/public/templates/public/_site_footer_links.html — the footer's one line:
 Help, the legal links and the running release (SNOW-1476).
 
-Extracted from public/_site_footer.html so the installed phone app's You
-panel (apps/map/templates/public/partials/_you_surface.html), where the
+Extracted from public/_site_footer.html so the installed phone app's "?"
+menu (apps/map/templates/public/partials/_map_help_menu.html), where the
 bar hides the footer, shows the same line. The rules for the line are in
 the footer's own comment.
 
@@ -11,8 +11,8 @@ Parameters (passed via {% include … with … %}):
   testid (string, optional) — the prefix of the release's data-testid;
                               "site-footer" by default, so a second copy
                               on the page does not repeat the footer's.
-  without_help (bool, optional) — leave Help out: the You panel lists it as
-                              a row of its own, so the line keeps only the
+  without_help (bool, optional) — leave Help out: the "?" menu is help
+                              already, so the line keeps only the
                               legal links and the release.
 {% endcomment %}
 {% load i18n %}

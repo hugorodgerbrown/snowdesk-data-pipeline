@@ -337,6 +337,19 @@
     }
   });
 
+  // The installed phone app hides the (i) roundel; its Help tab's menu opens
+  // the card instead (the "Map key" item, static/js/map_help_menu.js).
+  window.pwaMapLegend = Object.freeze({
+    open() {
+      if (isExpanded()) return;
+      window.pwaMapOverlays?.opening(OVERLAY_NAME, { spareObjectSheets: 'wide' });
+      showPage('now');
+      setState('expanded');
+      bindMap();
+      refresh();
+    },
+  });
+
   // SNOW-658: the card closes whenever any other map overlay opens, and
   // closes every other one when it opens.
   //
