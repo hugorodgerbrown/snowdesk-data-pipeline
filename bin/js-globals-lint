@@ -135,6 +135,9 @@ KNOWN_EXTERNALS: frozenset[str] = frozenset(
         # Third-party, loaded from their own <script> tags
         "htmx",
         "maplibregl",
+        # SNOW-1460: static/js/vector_tile_kit.min.js, vendored and generated
+        # (VENDORED above), which osm_clip_worker.js imports.
+        "VectorTileKit",
         # WebAuthn, feature-detected by passkey.js
         "PublicKeyCredential",
     }
