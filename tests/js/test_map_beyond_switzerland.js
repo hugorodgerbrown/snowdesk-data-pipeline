@@ -17,6 +17,9 @@
  *   - an error reply, or the worker failing, rejects;
  *   - an abort posts a cancel and rejects with an AbortError;
  *   - the 3D view is handed the Alpine gate;
+ *   - the relief tuning: tune keys the relief tiles (setTiles), posts to a
+ *     started worker or rides in an unstarted one's init, survives a
+ *     basemap swap, and a saved tuning is read only with data-relief-tuning;
  *   - with the map bundle booted, the attribution panel names
  *     OpenStreetMap once the splice has added its source (map.js's id cache
  *     is cleared by a sourcedata for an id it does not hold).
@@ -98,7 +101,7 @@ class StubWorker {
 }
 
 /** The #map element map_beyond_switzerland.js reads its URLs from. */
-function mapElement(flagged = true) {
+function mapElement(flagged = true, tuning = false) {
   const attrs = flagged
     ? `data-map-beyond-switzerland="true"
        data-osm-clip-worker-url="/static/js/osm_clip_worker.js"
@@ -107,7 +110,8 @@ function mapElement(flagged = true) {
        data-osm-clip-core-url="/static/js/osm_clip_core.js"
        data-alpine-relief-core-url="/static/js/alpine_relief_core.js"
        data-osm-style-url="https://tiles.openfreemap.org/styles/liberty"
-       data-dem-tile-url="https://tiles.mapterhorn.com/{z}/{x}/{y}.webp"`
+       data-dem-tile-url="https://tiles.mapterhorn.com/{z}/{x}/{y}.webp"
+       ${tuning ? 'data-relief-tuning' : ''}`
     : '';
   return `<div id="map" ${attrs}></div>`;
 }
@@ -124,7 +128,11 @@ function stubMap() {
   const layers = [];
   const map = {
     handlers,
-    addSource: vi.fn((id, def) => { sources.set(id, def); }),
+    addSource: vi.fn((id, def) => {
+      // MapLibre's raster and vector sources take new tiles in place.
+      const source = { ...def, setTiles: vi.fn((tiles) => { source.tiles = tiles; }) };
+      sources.set(id, source);
+    }),
     addLayer: vi.fn((layer, beforeId) => {
       const at = beforeId ? layers.findIndex((l) => l.id === beforeId) : -1;
       if (at >= 0) layers.splice(at, 0, layer);
@@ -153,11 +161,11 @@ function stubMap() {
 /**
  * Load the runtime over a stub map.
  *
- * @param {{flagged?: boolean}} [options]
+ * @param {{flagged?: boolean, tuning?: boolean}} [options]
  * @returns {Promise<{map: object, maplibre: object, setCoverage: Function}>}
  */
-async function boot({ flagged = true } = {}) {
-  document.body.innerHTML = mapElement(flagged);
+async function boot({ flagged = true, tuning = false } = {}) {
+  document.body.innerHTML = mapElement(flagged, tuning);
   const map = stubMap();
   const maplibre = { addProtocol: vi.fn() };
   const setCoverage = vi.fn();
@@ -183,6 +191,7 @@ afterEach(() => {
   delete window.maplibregl;
   delete window.pwaMapView;
   delete window.pwaBeyondSwitzerland;
+  window.localStorage.clear();
 });
 
 describe('the protocols', () => {
@@ -459,5 +468,65 @@ describe('the attribution, with the map bundle', () => {
     expect(text()).toContain('OpenStreetMap');
     expect(text()).toContain(SWISSTOPO_CREDIT);
     delete window.pwaDb;
+  });
+});
+
+describe('the relief tuning', () => {
+  const reliefCore = window.pwaAlpineReliefCore;
+  const STORAGE_KEY = 'snowdesk.map.reliefTuning';
+  const LIGHT = { rockSlope: 45, rockStrength: 0.2, shadowStrength: 0.2, highlightStrength: 0.1 };
+  const keyed = (tuning) => [`alpinerelief://{z}/{x}/{y}?v=${reliefCore.tuningKey(tuning)}`];
+
+  it('boots on the defaults, the relief tiles unkeyed', async () => {
+    const { map } = await boot();
+    expect(window.pwaBeyondSwitzerland.tuning()).toEqual(reliefCore.TUNING_DEFAULTS);
+    expect(window.pwaBeyondSwitzerland.TUNING_STORAGE_KEY).toBe(STORAGE_KEY);
+    expect(map.getSource(core.RELIEF_SOURCE_ID).tiles).toEqual(['alpinerelief://{z}/{x}/{y}']);
+  });
+
+  it('keys the tiles, and hands an unstarted worker the tuning in its init', async () => {
+    const { map, maplibre } = await boot();
+    const source = map.getSource(core.RELIEF_SOURCE_ID);
+    const tuning = window.pwaBeyondSwitzerland.tune(LIGHT);
+    expect(tuning).toEqual(LIGHT);
+    expect(source.setTiles).toHaveBeenCalledWith(keyed(LIGHT));
+    expect(workers).toHaveLength(0);
+    handlerFor(maplibre, 'alpinerelief')({ url: 'alpinerelief://10/533/358?v=x' }, new AbortController());
+    expect(workers[0].posted[0]).toMatchObject({ type: 'init', tuning: LIGHT });
+    expect(workers[0].posted.filter((m) => m.type === 'tune')).toEqual([]);
+  });
+
+  it('posts a tune to a started worker, normalised', async () => {
+    const { map, maplibre } = await boot();
+    handlerFor(maplibre, 'alpinerelief')({ url: 'alpinerelief://10/533/358' }, new AbortController());
+    window.pwaBeyondSwitzerland.tune({ rockStrength: 3 });
+    const expected = { ...reliefCore.TUNING_DEFAULTS, rockStrength: 1 };
+    expect(workers[0].posted.at(-1)).toEqual({ type: 'tune', tuning: expected });
+    expect(map.getSource(core.RELIEF_SOURCE_ID).setTiles).toHaveBeenLastCalledWith(keyed(expected));
+  });
+
+  it('keeps the key across a basemap swap', async () => {
+    const { map } = await boot();
+    window.pwaBeyondSwitzerland.tune(LIGHT);
+    map.swapStyle();
+    map.fire('style.load');
+    expect(map.getSource(core.RELIEF_SOURCE_ID).tiles).toEqual(keyed(LIGHT));
+  });
+
+  it('reads a saved tuning back only with data-relief-tuning', async () => {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(LIGHT));
+    const reader = await boot();
+    expect(window.pwaBeyondSwitzerland.tuning()).toEqual(reliefCore.TUNING_DEFAULTS);
+    expect(reader.map.getSource(core.RELIEF_SOURCE_ID).tiles).toEqual(['alpinerelief://{z}/{x}/{y}']);
+
+    const staff = await boot({ tuning: true });
+    expect(window.pwaBeyondSwitzerland.tuning()).toEqual(LIGHT);
+    expect(staff.map.getSource(core.RELIEF_SOURCE_ID).tiles).toEqual(keyed(LIGHT));
+  });
+
+  it('falls back to the defaults on junk in storage', async () => {
+    window.localStorage.setItem(STORAGE_KEY, '{not json');
+    await boot({ tuning: true });
+    expect(window.pwaBeyondSwitzerland.tuning()).toEqual(reliefCore.TUNING_DEFAULTS);
   });
 });

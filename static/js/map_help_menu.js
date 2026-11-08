@@ -12,6 +12,9 @@
  *   Test 3D on this device         → 'snowdesk:map-3d-test-requested',
  *                                    which map_3d_test.js answers
  *                                    (SNOW-1456; only with the 3D view).
+ *   Tune the relief                → 'snowdesk:map-relief-tuning-requested',
+ *                                    which map_relief_tuning.js answers
+ *                                    (staff only, past the border).
  *   Help pages                     → a link to /help/.
  *
  * HELP MODE KEEPS THE ROUNDEL'S PRESS. map_help_mode.js takes every click
@@ -77,6 +80,8 @@
       document.dispatchEvent(new CustomEvent('snowdesk:map-help-mode-requested'));
     } else if (choice === 'test-3d') {
       document.dispatchEvent(new CustomEvent('snowdesk:map-3d-test-requested'));
+    } else if (choice === 'relief-tuning') {
+      document.dispatchEvent(new CustomEvent('snowdesk:map-relief-tuning-requested'));
     }
   });
 

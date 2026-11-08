@@ -3852,3 +3852,69 @@ def test_map_beyond_switzerland_asks_nothing_for_an_anonymous_reader(
         content = Client().get(reverse("public:map")).content.decode()
     assert "map_beyond_switzerland" not in asked
     assert "js/map_beyond_switzerland.js" not in content
+
+
+# ---------------------------------------------------------------------------
+# The staff panel that tunes the relief past the border
+# ---------------------------------------------------------------------------
+
+_RELIEF_TUNING_MARKS = (
+    'data-help-menu="relief-tuning"',
+    'id="map-relief-tuning-sheet"',
+    'id="map-relief-tuning-template"',
+    "js/map_relief_tuning.js",
+)
+
+
+def _relief_tuning_map(*, staff: bool, beyond: bool = True) -> str:
+    """Return /map/'s HTML for a signed-in reader, staff or not."""
+    client = Client()
+    client.force_login(UserFactory.create(is_staff=staff, is_superuser=staff))
+    with override_flag("map_beyond_switzerland", active=beyond):
+        return client.get(reverse("public:map")).content.decode()
+
+
+@pytest.mark.django_db
+def test_relief_tuning_is_offered_to_staff_in_the_flag() -> None:
+    """A staff reader in the flag gets the menu item, the attribute, the
+    panel and its script, once each.
+    """
+    content = _relief_tuning_map(staff=True)
+    assert "data-relief-tuning" in _map_div(content)
+    for mark in _RELIEF_TUNING_MARKS:
+        assert content.count(mark) == 1, mark
+    assert "Tune the relief" in content
+    assert "Staff only: rock and shadow past the border." in content
+    assert "Relief past the border" in content
+    assert "Staff only. Saved on this device." in content
+    assert (
+        'data-sheet-side="left"'
+        in content[content.index('id="map-relief-tuning-sheet"') :]
+    )
+    for name in ("rockSlope", "rockStrength", "shadowStrength", "highlightStrength"):
+        assert f'data-relief-input="{name}"' in content, name
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("staff", "beyond"),
+    [(False, True), (True, False)],
+    ids=["non-staff-in-the-flag", "staff-without-the-flag"],
+)
+def test_relief_tuning_is_hidden_from_everyone_else(staff: bool, beyond: bool) -> None:
+    """A reader who is not staff, or staff without the flag, sees none of it."""
+    content = _relief_tuning_map(staff=staff, beyond=beyond)
+    assert "data-relief-tuning" not in _map_div(content)
+    for mark in _RELIEF_TUNING_MARKS:
+        assert mark not in content, mark
+    assert "Tune the relief" not in content
+
+
+@pytest.mark.django_db
+def test_relief_tuning_is_hidden_from_an_anonymous_reader() -> None:
+    """An anonymous /map/ renders none of it, flag or not."""
+    with override_flag("map_beyond_switzerland", active=True):
+        content = Client().get(reverse("public:map")).content.decode()
+    for mark in _RELIEF_TUNING_MARKS:
+        assert mark not in content, mark
+    assert "data-relief-tuning" not in _map_div(content)

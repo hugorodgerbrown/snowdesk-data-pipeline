@@ -243,6 +243,10 @@ in addition to the shared map assets.
         <script defer src="{% static 'js/osm_clip_core.js' %}"></script>
         <script defer src="{% static 'js/alpine_relief_core.js' %}"></script>
         <script defer src="{% static 'js/map_beyond_switzerland.js' %}"></script>
+        {# A staff reader's panel that tunes the relief past the border. #}
+        {% if relief_tuning %}
+            <script defer src="{% static 'js/map_relief_tuning.js' %}"></script>
+        {% endif %}
     {% endif %}
     {% if request.GET.layers == 'exploded' %}
         {# Loaded after map.js publishes snowdeskLayerExplainer; omitted from #}

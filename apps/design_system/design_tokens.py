@@ -67,6 +67,7 @@ from apps.design_system._component_fixtures import (
     MAP_3D_TEST_PANEL_VARIANTS,
     MAP_COMPASS_VARIANTS,
     MAP_OVERLAY_TOGGLE_VARIANTS,
+    MAP_RELIEF_TUNING_PANEL_VARIANTS,
     MAP_ZOOM_CONTROL_VARIANTS,
     META_CELL_VARIANTS,
     NAV_VARIANTS,
@@ -1669,6 +1670,26 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         partial="public/partials/_map_3d_test_panel.html",
         variants=MAP_3D_TEST_PANEL_VARIANTS,
         panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="map-relief-tuning-panel",
+        label="Relief tuning panel",
+        description=(
+            "Tune the relief past the border (staff only): a form panel on "
+            "the overlay sheet, opened from the map's '?' menu for a staff "
+            "reader in map_beyond_switzerland. Docked on the left on a "
+            "desktop, sliding up on a phone; no detents. Four sliders — where "
+            "the rock starts (25–60°), the rock tone, the shadow and the "
+            "highlight (0–100 %) — repaint the relief as they move and are "
+            "saved on this device; Reset goes back to the defaults every "
+            "other reader sees. Filled on /map/ by "
+            "static/js/map_relief_tuning.js from the body's <template>. "
+            "Static here."
+        ),
+        kind="components",
+        partial="public/partials/_map_relief_tuning_panel.html",
+        variants=MAP_RELIEF_TUNING_PANEL_VARIANTS,
+        panel_layout="stack",
     ),
     FoundationCategory(
         slug="button",

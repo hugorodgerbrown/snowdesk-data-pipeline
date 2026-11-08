@@ -18,6 +18,7 @@ function buildFixture() {
       <button type="button" data-help-menu="welcome">Show me around again</button>
       <button type="button" data-help-menu="help-mode">What is everything?</button>
       <button type="button" data-help-menu="test-3d">Test 3D on this device</button>
+      <button type="button" data-help-menu="relief-tuning">Tune the relief</button>
       <a href="#help" data-help-menu="pages">Help pages</a>
     </div>
     <button id="basemap-toggle" type="button">Layers</button>
@@ -119,6 +120,18 @@ describe('the items', () => {
     expect(menu().hidden).toBe(true);
     expect(window.pwaTelemetry.emit).toHaveBeenCalledWith('map.help_menu.chosen', { choice: 'test-3d' });
     document.removeEventListener('snowdesk:map-3d-test-requested', test3d);
+  });
+
+  it('"Tune the relief" asks for the staff tuning panel', () => {
+    const tune = vi.fn();
+    document.addEventListener('snowdesk:map-relief-tuning-requested', tune);
+    request();
+
+    menu().querySelector('[data-help-menu="relief-tuning"]').click();
+
+    expect(tune).toHaveBeenCalledTimes(1);
+    expect(menu().hidden).toBe(true);
+    document.removeEventListener('snowdesk:map-relief-tuning-requested', tune);
   });
 
   it('the help pages link is recorded and closes the menu', () => {

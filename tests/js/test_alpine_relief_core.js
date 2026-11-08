@@ -5,8 +5,9 @@
  * What is pinned: Terrarium decoding; slope and aspect from the heights;
  * the rock tone only above 40°, darker on the shadow side; the hillshade
  * shadowing a slope facing away from the light and nothing on the flat;
- * the erase mask over the detailed-relief outline, holes honoured; and a
- * painted tile erased inside it.
+ * the erase mask over the detailed-relief outline, holes honoured; a
+ * painted tile erased inside it; and the tuning: its defaults, its
+ * clamping and key, and each strength and the rock slope changing the paint.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -171,5 +172,69 @@ describe('paint', () => {
     const cell = core.metresPerPixel(tile, 16);
     const steep = core.paint(dem(16, (col) => 2000 + col * cell * 2), 16, tile, DETAILED_RELIEF);
     expect(steep.every((v) => v === 0)).toBe(true);
+  });
+});
+
+describe('the tuning', () => {
+  it('defaults to a lighter relief than SNOW-1460 shipped', () => {
+    expect(core.TUNING_DEFAULTS).toEqual({
+      rockSlope: 40, rockStrength: 0.42, shadowStrength: 0.36, highlightStrength: 0.24,
+    });
+    expect(Object.isFrozen(core.TUNING_DEFAULTS)).toBe(true);
+    expect(core.TUNING_DEFAULTS.rockSlope).toBe(core.ROCK_SLOPE_DEGREES);
+  });
+
+  it('fills the defaults, clamps each value and ignores junk', () => {
+    expect(core.normaliseTuning()).toEqual(core.TUNING_DEFAULTS);
+    expect(core.normaliseTuning('junk')).toEqual(core.TUNING_DEFAULTS);
+    expect(core.normaliseTuning({ rockSlope: 10, rockStrength: 2, shadowStrength: -1, highlightStrength: 'x' }))
+      .toEqual({ rockSlope: 25, rockStrength: 1, shadowStrength: 0, highlightStrength: 0.24 });
+    expect(core.normaliseTuning({ rockSlope: 90, shadowStrength: NaN, highlightStrength: '0.5' }))
+      .toEqual({ rockSlope: 60, rockStrength: 0.42, shadowStrength: 0.36, highlightStrength: 0.5 });
+  });
+
+  it('names a tuning the same way for the same values, and differently for others', () => {
+    expect(core.tuningKey()).toBe('40-42-36-24');
+    expect(core.tuningKey(core.TUNING_DEFAULTS)).toBe(core.tuningKey({}));
+    expect(core.tuningKey({ rockStrength: 0.3 })).toBe('40-30-36-24');
+    expect(core.tuningKey({ rockSlope: 35 })).not.toBe(core.tuningKey());
+  });
+
+  it('paints a weaker rock tone for a lower rockStrength', () => {
+    const lit = core.rockPixel(50, 300);
+    const weaker = core.rockPixel(50, 300, core.normaliseTuning({ rockStrength: 0.2 }));
+    expect(lit.alpha).toBe(Math.round(0.42 * 255));
+    expect(weaker.alpha).toBe(Math.round(0.2 * 255));
+    expect(core.rockPixel(50, 300, core.normaliseTuning({ rockStrength: 0 }))).toBeNull();
+  });
+
+  it('starts the rock at the tuning\'s slope', () => {
+    expect(core.rockPixel(38, 300)).toBeNull();
+    expect(core.rockPixel(38, 300, core.normaliseTuning({ rockSlope: 30 }))).not.toBeNull();
+    expect(core.rockPixel(45, 300, core.normaliseTuning({ rockSlope: 50 }))).toBeNull();
+  });
+
+  it('scales the shadow and the highlight', () => {
+    const shadow = core.hillshadePixel(30, 135);
+    const softer = core.hillshadePixel(30, 135, core.normaliseTuning({ shadowStrength: 0.18 }));
+    expect(softer.alpha).toBeLessThan(shadow.alpha);
+    const highlight = core.hillshadePixel(30, 315);
+    expect(core.hillshadePixel(30, 315, core.normaliseTuning({ highlightStrength: 0 }))).toBeNull();
+    expect(highlight.alpha).toBeGreaterThan(0);
+  });
+
+  it('paints a whole tile with the tuning it is given', () => {
+    const tile = tileAt(11.39, 47.27, 13);
+    const cell = core.metresPerPixel(tile, 16);
+    const steep = dem(16, (col) => 2000 + col * cell * Math.tan(Math.PI / 3));
+    const centre = (8 * 16 + 8) * 4 + 3;
+    const plain = core.paint(steep, 16, tile, DETAILED_RELIEF);
+    const light = core.paint(steep, 16, tile, DETAILED_RELIEF, { rockStrength: 0.1, highlightStrength: 0.05 });
+    expect(light[centre]).toBeLessThan(plain[centre]);
+    // A 50° face is rock from 40°, not from 55°: then only its highlight
+    // is left, and with none, nothing.
+    const fifty = dem(16, (col) => 2000 + col * cell * Math.tan((50 * Math.PI) / 180));
+    expect(core.paint(fifty, 16, tile, DETAILED_RELIEF, { highlightStrength: 0 })[centre]).toBeGreaterThan(0);
+    expect(core.paint(fifty, 16, tile, DETAILED_RELIEF, { rockSlope: 55, highlightStrength: 0 })[centre]).toBe(0);
   });
 });

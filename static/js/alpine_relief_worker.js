@@ -6,8 +6,9 @@
  * first relief tile the map asks for. Its first message is `init`, carrying
  * the core's URL (static/js/alpine_relief_core.js), the elevation tiles'
  * XYZ template (MAP_3D_DEM_TILE_URL, Terrarium-encoded) and swisstopo's
- * detailed-relief polygons (static/js/swisstopo_extent.js, cloned across).
- * Every message after that is one tile:
+ * detailed-relief polygons (static/js/swisstopo_extent.js, cloned across),
+ * and the relief's `tuning` if a staff reader has set one
+ * (alpine_relief_core.normaliseTuning; the defaults otherwise). After that:
  *
  *   {id, url}        url is `alpinerelief://{z}/{x}/{y}`. The worker fetches
  *                    the elevation tile, draws it on an OffscreenCanvas to
@@ -18,6 +19,9 @@
  *   {type: 'cancel', id}
  *                    MapLibre aborted the tile: its fetch is aborted and no
  *                    reply is sent for it.
+ *   {type: 'tune', tuning}
+ *                    The staff tuning panel (map_relief_tuning.js) moved:
+ *                    every tile painted after this uses the new tuning.
  *
  * Any failure replies {id, error} with the message, so the page's handler
  * rejects and MapLibre retries the tile later.
@@ -33,6 +37,8 @@
   let demTemplate = '';
   /** @type {any} */
   let relief = null;
+  /** @type {unknown} The tuning tiles are painted with; null for the defaults. */
+  let tuning = null;
   /** Requests in flight, by id. */
   const pending = new Map();
 
@@ -64,7 +70,7 @@
     ctx.drawImage(bitmap, 0, 0, size, size);
     if (typeof bitmap.close === 'function') bitmap.close();
     const dem = ctx.getImageData(0, 0, size, size).data;
-    const rgba = core.paint(dem, size, tile, relief);
+    const rgba = core.paint(dem, size, tile, relief, tuning || undefined);
     ctx.clearRect(0, 0, size, size);
     ctx.putImageData(new ImageData(rgba, size, size), 0, 0);
     const png = await canvas.convertToBlob({ type: 'image/png' });
@@ -145,6 +151,11 @@
       core = self.pwaAlpineReliefCore;
       demTemplate = message.demTileUrl;
       relief = message.relief;
+      tuning = message.tuning || null;
+      return;
+    }
+    if (message.type === 'tune') {
+      tuning = message.tuning || null;
       return;
     }
     if (message.type === 'cancel') {

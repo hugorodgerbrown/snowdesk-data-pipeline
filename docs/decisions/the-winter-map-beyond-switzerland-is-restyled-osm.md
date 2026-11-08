@@ -111,3 +111,18 @@ line or draw twice. The winter style's own layers are left unfiltered:
   on the worker, off the main thread. A tile wholly outside the extent is
   passed on undecoded, and one wholly inside is never fetched, so a reader
   looking at Switzerland asks OpenFreeMap for nothing past low zooms.
+
+**Tuning (staff).** Hugo asked on 8 Nov 2026 for Ötztal to be "a touch"
+lighter, and for a way to try other shading. The relief's strengths now live
+in `alpine_relief_core.TUNING_DEFAULTS`: rock from 40°, rock tone 0.42, shadow
+0.36 and highlight 0.24 of full alpha (from 0.55, 0.45 and 0.24), with the rock
+greys lifted to 170 and 126. A staff reader in the flag gets "Tune the relief"
+in the map's "?" menu, which opens a form panel
+(`public/partials/_map_relief_tuning_panel.html`,
+`static/js/map_relief_tuning.js`) with four sliders. Each move repaints the
+relief through `pwaBeyondSwitzerland.tune`, which posts a `tune` message to the
+relief worker and gives the relief tiles a `?v=` key so MapLibre fetches them
+again. The values are saved on that device under the localStorage key
+`snowdesk.map.reliefTuning`, and are read back only when `#map` carries
+`data-relief-tuning` (staff). Every other reader always gets the defaults. A
+tuning worth keeping is made the default by changing `TUNING_DEFAULTS`.

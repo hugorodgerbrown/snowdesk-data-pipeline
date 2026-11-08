@@ -29,9 +29,18 @@
  *     at once.
  *   - THE 3-D COVERAGE. With the 3-D view on the page, it is handed the
  *     Alpine ring (window.pwaMapView.setCoverage).
+ *   - THE RELIEF'S TUNING. Every reader gets alpine_relief_core's
+ *     TUNING_DEFAULTS. `tune(values)` normalises a new one, posts it to the
+ *     relief worker as {type: 'tune'} if the worker has started (its init
+ *     carries the current one otherwise), and gives the relief source's
+ *     tiles a `?v=` of alpine_relief_core.tuningKey so MapLibre fetches
+ *     them again; a later splice adds the source with the same key, so a
+ *     basemap swap keeps the tuning. Only with data-relief-tuning on `#map`
+ *     (a staff reader; map_relief_tuning.js is the panel) is a tuning saved
+ *     on this device under TUNING_STORAGE_KEY read back at boot.
  *
- * Publishes `window.pwaBeyondSwitzerland` (splice) for the debugger and the
- * tests.
+ * Publishes `window.pwaBeyondSwitzerland` (splice, tune, tuning,
+ * TUNING_STORAGE_KEY) for the tuning panel, the debugger and the tests.
  */
 (function mapBeyondSwitzerlandInit() {
   'use strict';
@@ -48,13 +57,21 @@
 
   const data = mapEl.dataset;
 
+  /** Where the staff tuning panel keeps a tuning on this device. */
+  const TUNING_STORAGE_KEY = 'snowdesk.map.reliefTuning';
+
+  /** The relief's tuning now; the defaults until a staff reader sets one. */
+  let tuning = reliefCore.TUNING_DEFAULTS;
+  /** Whether `tuning` was set, so the relief tiles carry its key. */
+  let tuned = false;
+
   /**
    * One worker, started on the first request, answering {id, url} with
    * {id, data} or {id, error}.
    *
    * @param {string} workerUrl
    * @param {() => object} init The `init` message, built when it starts.
-   * @returns {{request: (url: string, abortController?: AbortController) => Promise<ArrayBuffer>}}
+   * @returns {{request: (url: string, abortController?: AbortController) => Promise<ArrayBuffer>, post: (message: object) => boolean}}
    */
   function workerChannel(workerUrl, init) {
     /** @type {?Worker} */
@@ -93,6 +110,12 @@
     };
 
     return {
+      /** Post to the worker if it has started; an unstarted one's init carries it. */
+      post(message) {
+        if (!worker) return false;
+        worker.postMessage(message);
+        return true;
+      },
       request(url, abortController) {
         const signal = abortController ? abortController.signal : null;
         if (signal && signal.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
@@ -127,7 +150,39 @@
     coreUrl: data.alpineReliefCoreUrl || '',
     demTileUrl: data.demTileUrl || '',
     relief: extent.DETAILED_RELIEF,
+    tuning,
   }));
+
+  /**
+   * The relief source's tiles with the current tuning's key.
+   *
+   * @returns {string[]}
+   */
+  function reliefTiles() {
+    const key = reliefCore.tuningKey(tuning);
+    return core.reliefSource().tiles.map((/** @type {string} */ url) => `${url}?v=${key}`);
+  }
+
+  /** Point the relief source on the map at the current tuning's tiles. */
+  function applyTuning() {
+    const source = map.getSource(core.RELIEF_SOURCE_ID);
+    if (source && typeof source.setTiles === 'function') source.setTiles(reliefTiles());
+  }
+
+  /**
+   * Change the relief's tuning: what the worker paints with, and the tiles'
+   * key, so MapLibre paints them again.
+   *
+   * @param {unknown} values Anything normaliseTuning reads.
+   * @returns {Readonly<Record<string, number>>} The tuning now in use.
+   */
+  function tune(values) {
+    tuning = reliefCore.normaliseTuning(values);
+    tuned = true;
+    relief.post({ type: 'tune', tuning });
+    applyTuning();
+    return tuning;
+  }
 
   /** @type {WeakSet<object>} The MapLibre namespaces the protocols are on. */
   const registered = new WeakSet();
@@ -178,6 +233,9 @@
     delete sources[core.OSM_SOURCE_ID];
     const plan = core.plan(Object.assign({}, style, { sources }));
     if (!plan) return false;
+    // A tuned relief keeps its key across a basemap swap.
+    const reliefDef = plan.sources[core.RELIEF_SOURCE_ID];
+    if (tuned && reliefDef) plan.sources[core.RELIEF_SOURCE_ID] = Object.assign({}, reliefDef, { tiles: reliefTiles() });
     const last = plan.layers.length ? plan.layers[plan.layers.length - 1].layer.id : null;
     // Done once the last planned layer is in, not once the source is: an
     // add that threw partway leaves the source but not the rest.
@@ -197,6 +255,19 @@
     return true;
   }
 
+  // A staff reader's saved tuning, before the first splice adds the source.
+  if (data.reliefTuning !== undefined) {
+    try {
+      const saved = window.localStorage.getItem(TUNING_STORAGE_KEY);
+      if (saved) {
+        tuning = reliefCore.normaliseTuning(JSON.parse(saved));
+        tuned = true;
+      }
+    } catch (_err) {
+      // No storage, or junk in it: the defaults.
+    }
+  }
+
   registerProtocols(win.maplibregl);
   map.on('style.load', splice);
   map.on('styledata', splice);
@@ -206,5 +277,10 @@
     win.pwaMapView.setCoverage(core.ALPINE_GATE);
   }
 
-  win.pwaBeyondSwitzerland = Object.freeze({ splice });
+  window.pwaBeyondSwitzerland = Object.freeze({
+    splice,
+    tune,
+    tuning: () => tuning,
+    TUNING_STORAGE_KEY,
+  });
 })();
