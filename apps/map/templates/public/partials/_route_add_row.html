@@ -1,13 +1,18 @@
-{% load i18n %}
+{% load components %}
 {% comment %}
 public/partials/_route_add_row.html — one of the routes panel's ways to add
 a route (SNOW-1278).
 
-Included only by public/partials/_route_add_rows.html, three times. A
-button, so the whole row is the target: an icon in a round tile, the title,
-one line saying what it starts from, and a chevron. The emphasised row (the
-first, the least work) has an ink border and an ink tile; the others a
-hairline and a muted tile.
+Included only by public/partials/_route_add_rows.html, three times, as the
+three cells of one row. A button with a stroke icon beside a one-word label,
+the same 46px height and chrome as the panel's own add button
+(includes/_panel_add_button.html). The first, the least work, is the ink
+primary; the other two are outlined secondaries.
+
+Each button's accessible name is the full phrase ("Find a route"), which
+starts with the word it shows, so a screen reader and a voice command agree
+with what is on screen. The row was three full-width cards with a line of
+description each until Hugo asked for them "fit into a row" (8 Nov 2026).
 
 Parameters:
   hook       — which way in: "find" (data-ski-tour-find, ski_tours.js),
@@ -15,10 +20,10 @@ Parameters:
                "upload" (data-panel-add, the UGC panel). A fixed choice
                rather than an attribute passed in, so no template value is
                ever written into the tag unquoted.
-  title      — the row's title.
-  subtitle   — one line under it.
-  icon       — template path of the tile's stroke icon.
-  emphasised — bool: the row to start from.
+  label      — the visible one-word label.
+  name       — the accessible name, the full phrase.
+  icon       — template path of the stroke icon.
+  emphasised — bool: the button to start from.
 {% endcomment %}
 <button
     type="button"
@@ -29,17 +34,9 @@ Parameters:
     {% else %}
         data-panel-add
     {% endif %}
-    class="hover-affordance flex w-full items-center gap-3 rounded-card border {% if emphasised %}border-text-1{% else %}border-border{% endif %} px-3 py-2.5 text-left"
+    aria-label="{{ name }}"
+    class='{% if emphasised %}{% button_classes variant="primary" size="compact" full_width=True %}{% else %}{% button_classes variant="secondary" size="compact" full_width=True %}{% endif %} hover-affordance inline-flex h-11.5 min-w-0 flex-1 basis-0 items-center justify-center gap-1.5'
 >
-    <span
-        class="inline-flex h-9 w-9 flex-none items-center justify-center rounded-full {% if emphasised %}bg-text-1 text-card{% else %}bg-card-hover text-text-2{% endif %}"
-        aria-hidden="true"
-    >
-        {% include icon with size=16 only %}
-    </span>
-    <span class="flex min-w-0 flex-1 flex-col">
-        <span class="text-label font-semibold text-text-1">{{ title }}</span>
-        <span class="text-sm text-text-3">{{ subtitle }}</span>
-    </span>
-    {% include "includes/_icon_chevron_right.html" with size=16 %}
+    {% include icon with size=16 only %}
+    <span class="truncate">{{ label }}</span>
 </button>

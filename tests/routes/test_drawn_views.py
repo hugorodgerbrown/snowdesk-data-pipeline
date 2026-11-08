@@ -419,6 +419,13 @@ class TestMapPageDrawSurface:
         assert "data-ski-tour-find" in body
         assert "Find a route" in body
         assert "Create a route" in body
+        # One row of three one-word buttons, each named in full for a
+        # screen reader, with no line of description under them.
+        assert 'aria-label="Find a route"' in body
+        assert 'aria-label="Create a route"' in body
+        assert 'aria-label="Upload a GPX"' in body
+        assert "Start from a swisstopo / SAC ski tour" not in body
+        assert "A track from a watch or another app" not in body
         assert 'id="ski-tours-config"' in body
         # SNOW-1306: a tap opens a tour; there is no list sheet.
         assert 'id="ski-tours-sheet"' not in body
