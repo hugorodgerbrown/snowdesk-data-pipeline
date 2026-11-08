@@ -38,8 +38,10 @@
 (function appTabbarInit() {
   'use strict';
 
-  var bar = document.querySelector('[data-app-tabbar][data-app-tabbar-on-map]');
-  if (!bar || !window.MapSheet) return;
+  var found = document.querySelector('[data-app-tabbar][data-app-tabbar-on-map]');
+  if (!found || !window.MapSheet) return;
+  // A const, so the null check above holds inside the closures below.
+  const bar = found;
 
   /** @typedef {{ open(): void, close(): void, isOpen(): boolean }} Panel */
   /** @typedef {'map'|'today'|'saved'|'you'} Tab */
@@ -260,7 +262,7 @@
     if (!(input instanceof HTMLInputElement) || input.name !== 'saved-tab') return;
     var choice = /** @type {SavedChoice} */ (input.value);
     if (!(choice in SAVED_SHEET_IDS)) return;
-    var next = savedController(choice);
+    const next = savedController(choice);
     if (!next) return;
     var from = /** @type {SavedChoice|null} */ (null);
     Object.keys(SAVED_SHEET_IDS).forEach(function (key) {
