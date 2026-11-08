@@ -1,0 +1,411 @@
+<title>Snowdesk page audit — 8 November 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&amp;family=DM+Mono:wght@400;500&amp;display=swap">
+<style>
+:root {
+  --ground:      #F4F6F8;
+  --card:        #FFFFFF;
+  --card-sunk:   #EDF1F4;
+  --text-1:      #0F1519;
+  --text-2:      #48545E;
+  --text-3:      #7A8792;
+  --border:      #DDE3E8;
+  --border-soft: #E9EEF1;
+  --accent:      #0B6273;
+  --accent-soft: #E2F0F3;
+  --sev-broken:  #A32E27;
+  --sev-broken-bg: #F8EAE9;
+  --sev-orphan:  #8A6210;
+  --sev-orphan-bg: #F8F0DF;
+  --sev-thin:    #0B6273;
+  --sev-thin-bg: #E2F0F3;
+  --ok:          #2E6B4F;
+  --ok-bg:       #E4F0EA;
+  --new:         #5B4B9E;
+  --new-bg:      #ECE9F6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #0C1013;
+    --card:        #141A1F;
+    --card-sunk:   #10161A;
+    --text-1:      #E7EDF1;
+    --text-2:      #A0ABB5;
+    --text-3:      #6B7781;
+    --border:      #222A31;
+    --border-soft: #1B2229;
+    --accent:      #4FC6DC;
+    --accent-soft: #0E2A31;
+    --sev-broken:  #EC7B72;
+    --sev-broken-bg: #2A1614;
+    --sev-orphan:  #DDA544;
+    --sev-orphan-bg: #271D0D;
+    --sev-thin:    #4FC6DC;
+    --sev-thin-bg: #0E2A31;
+    --ok:          #6FBF95;
+    --ok-bg:       #12241B;
+    --new:         #A99AE0;
+    --new-bg:      #1C1830;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:      #0C1013;
+  --card:        #141A1F;
+  --card-sunk:   #10161A;
+  --text-1:      #E7EDF1;
+  --text-2:      #A0ABB5;
+  --text-3:      #6B7781;
+  --border:      #222A31;
+  --border-soft: #1B2229;
+  --accent:      #4FC6DC;
+  --accent-soft: #0E2A31;
+  --sev-broken:  #EC7B72;
+  --sev-broken-bg: #2A1614;
+  --sev-orphan:  #DDA544;
+  --sev-orphan-bg: #271D0D;
+  --sev-thin:    #4FC6DC;
+  --sev-thin-bg: #0E2A31;
+  --ok:          #6FBF95;
+  --ok-bg:       #12241B;
+  --new:         #A99AE0;
+  --new-bg:      #1C1830;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--text-1);
+  font-family: 'DM Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 61rem; margin: 0 auto; padding: 0 1.5rem 6rem; }
+.col { max-width: 43rem; }
+
+.eyebrow {
+  font-family: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+  margin: 0;
+}
+
+.masthead { padding: 4.5rem 0 2.5rem; border-bottom: 1px solid var(--border); }
+.masthead h1 {
+  font-size: clamp(2rem, 5vw, 2.9rem);
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  font-weight: 600;
+  text-wrap: balance;
+  margin: 0.75rem 0 0;
+  max-width: 20ch;
+}
+.standfirst {
+  font-size: 1.125rem;
+  line-height: 1.55;
+  color: var(--text-2);
+  margin: 1.25rem 0 0;
+  max-width: 52ch;
+}
+.masthead-meta { display: flex; flex-wrap: wrap; gap: 0.4rem 1.5rem; margin-top: 2rem; }
+.masthead-meta p { margin: 0; }
+
+section { padding-top: 3.5rem; }
+section > .eyebrow { margin-bottom: 0.6rem; }
+
+h2 {
+  font-size: 1.5rem;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  font-weight: 600;
+  margin: 0 0 1rem;
+  text-wrap: balance;
+}
+h3 { font-size: 1.0625rem; line-height: 1.35; font-weight: 600; margin: 0; text-wrap: balance; }
+p { margin: 0 0 1rem; }
+p:last-child { margin-bottom: 0; }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+code, .mono { font-family: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.875em; }
+code {
+  background: var(--card-sunk);
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  padding: 0.08em 0.34em;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+strong { font-weight: 600; color: var(--text-1); }
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 2rem 0 0;
+}
+.metric { background: var(--card); padding: 1.05rem 1.15rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.metric .figure {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 1.6rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+}
+.metric .label { font-size: 0.8125rem; line-height: 1.35; color: var(--text-3); }
+
+.table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+table { border-collapse: collapse; width: 100%; min-width: 46rem; font-size: 0.875rem; }
+thead th {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+  text-align: left;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+tbody td { padding: 0.8rem 1rem; border-bottom: 1px solid var(--border-soft); vertical-align: top; color: var(--text-2); }
+tbody tr:last-child td { border-bottom: 0; }
+tbody td:first-child {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.8125rem;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+td.num { font-family: 'DM Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+
+.pill {
+  display: inline-block;
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.pill-broken { background: var(--sev-broken-bg); color: var(--sev-broken); }
+.pill-orphan { background: var(--sev-orphan-bg); color: var(--sev-orphan); }
+.pill-thin   { background: var(--sev-thin-bg);   color: var(--sev-thin); }
+.pill-ok     { background: var(--ok-bg);         color: var(--ok); }
+.pill-gone   { background: var(--card-sunk);     color: var(--text-3); }
+.pill-new    { background: var(--new-bg);        color: var(--new); }
+
+.findings { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.75rem; }
+.finding {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--stripe, var(--text-3));
+  border-radius: 0 10px 10px 0;
+  padding: 1.25rem 1.4rem;
+}
+.finding.broken { --stripe: var(--sev-broken); }
+.finding.orphan { --stripe: var(--sev-orphan); }
+.finding.thin   { --stripe: var(--sev-thin); }
+.finding.done   { --stripe: var(--ok); }
+.finding.newwork { --stripe: var(--new); }
+
+.finding-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 0.75rem; margin-bottom: 0.7rem; }
+.finding-head .ref { font-family: 'DM Mono', ui-monospace, monospace; font-size: 0.75rem; color: var(--text-3); letter-spacing: 0.02em; }
+.finding p { font-size: 0.9375rem; color: var(--text-2); }
+
+.evidence {
+  margin: 0.9rem 0 0;
+  padding: 0.75rem 0.95rem;
+  background: var(--card-sunk);
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--text-2);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.evidence li { padding-left: 1.1rem; position: relative; }
+.evidence li::before { content: ''; position: absolute; left: 0; top: 0.6em; width: 5px; height: 1px; background: var(--text-3); }
+.evidence .k { font-family: 'DM Mono', ui-monospace, monospace; font-size: 0.9em; color: var(--text-1); }
+
+.statement {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 10px 10px 0;
+  padding: 1.5rem 1.6rem;
+  margin-top: 1.75rem;
+}
+.statement p { font-size: 1.0625rem; line-height: 1.55; color: var(--text-1); }
+.statement p + p { color: var(--text-2); font-size: 0.9375rem; }
+
+.qgroups { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.75rem; }
+.qgroup { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.35rem 1.5rem; }
+.qgroup h3 { margin-bottom: 0.65rem; }
+.qgroup p { font-size: 0.9375rem; color: var(--text-2); }
+
+.note { border-left: 2px solid var(--border); padding-left: 1rem; color: var(--text-3); font-size: 0.875rem; margin-top: 1.5rem; }
+
+@media (prefers-reduced-motion: no-preference) { a { transition: color 120ms ease; } }
+</style>
+
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Page audit · 1 – 8 November · 8 November 2026</p>
+    <h1>Seven days of map work, no change to any tracked page finding, and a Help page that still says Snowdesk sends no bulletin alerts</h1>
+    <p class="standfirst">
+      141 commits, 1,032 files since the 1 November audit, almost all in the map (3D, offline downloads, Terrain mode) and
+      the installed phone app. The public pages this series tracks barely moved. Every open finding is re-verified as unchanged.
+    </p>
+    <div class="masthead-meta">
+      <p class="eyebrow">Baseline <span class="mono">0b9ed87</span> (1 Nov) → now <span class="mono">ababe1f</span></p>
+      <p class="eyebrow">141 commits · 1,032 files</p>
+    </div>
+  </header>
+
+  <section>
+    <p class="eyebrow">The short version</p>
+    <h2>No closures. Four orphaned surfaces unchanged, and one contradiction sharpened.</h2>
+    <div class="col">
+      <p>
+        Nothing tracked by the previous audit closed. The public explainers, the Claude connector, <code>/compare/</code>,
+        <code>/examples/</code> and a regions index are still linked from no page. The one change to the footer is that the
+        line now lives in <code>_site_footer_links.html</code> and is shared with the installed phone app's "?" menu (SNOW-1476).
+      </p>
+      <p>
+        The new finding is a contradiction between two public pages. The privacy policy (<code>privacy.html:166-168</code>)
+        says alerts are consent-based, off until switched on, with a one-click unsubscribe. The Help accounts topic
+        (<code>_topic_accounts.html:26</code>) says "Snowdesk sends no bulletin alerts". Both were true-ish while alerts were
+        only code; the first is now ahead of the product and the second will be false the day the <code>bulletin_alerts</code> flag widens.
+      </p>
+    </div>
+    <div class="metrics">
+      <div class="metric"><span class="figure">0</span><span class="label">tracked findings closed</span></div>
+      <div class="metric"><span class="figure">0</span><span class="label">inbound links to the public explainers (6 pages)</span></div>
+      <div class="metric"><span class="figure">4</span><span class="label">links in the footer line, plus the release label</span></div>
+      <div class="metric"><span class="figure">0</span><span class="label">Help topics on 3D or alerts</span></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">New</p>
+    <h2>What the audit didn't anticipate</h2>
+    <div class="findings">
+      <article class="finding broken">
+        <div class="finding-head"><span class="ref">N13</span><h3>Help says no alerts; the privacy policy says alerts, with consent</h3><span class="pill pill-broken">No ticket found</span></div>
+        <p>
+          Help is the page a reader checks to learn what Snowdesk emails them. It states the only emails are sign-in links, password
+          resets and address-change confirmations. The code says otherwise for anyone the flag admits.
+        </p>
+        <ul class="evidence">
+          <li><span class="k">_topic_accounts.html:26-27</span>: "Snowdesk sends no bulletin alerts — the only email it will send you is a sign-in link…". The sentence dates from an earlier commit (ae717cd5), not from this week.</li>
+          <li><span class="k">privacy.html:166-168</span> describes alert emails and a one-click unsubscribe, unchanged since last audit.</li>
+          <li><span class="k">apps/core/fixtures/waffle_flags.json</span>: <code>bulletin_alerts</code> still <code>superusers: true</code>; <code>schedule_send_bulletin_alerts</code> switch exists in <code>waffle_switches.json</code>. Public behaviour today matches Help.</li>
+          <li>Last week's audit recorded only that Help had no alerts topic; the stronger fact is that it has a sentence that will be wrong.</li>
+        </ul>
+      </article>
+      <article class="finding newwork">
+        <div class="finding-head"><span class="ref">N14</span><h3>The installed phone app has a bottom tab bar</h3><span class="pill pill-new">SNOW-1476</span></div>
+        <p>
+          <code>_app_tabbar.html</code>: Map, Today, Saved, Help, drawn only in the installed app on a phone. It replaces the footer there,
+          and the footer line moved into a shared partial that the map's "?" menu reuses (<code>without_help</code> leaves Help out of it).
+          The footer's own comment still says "Five links is the ceiling" while four are rendered. This run read the templates, not the rendered app.
+        </p>
+      </article>
+      <article class="finding newwork">
+        <div class="finding-head"><span class="ref">N15</span><h3>3D map and homepage 3D card, flagged to signed-in or superuser readers</h3><span class="pill pill-new">SNOW-1438 … 1471</span></div>
+        <p>
+          <code>/map/3d/</code> was retired into <code>/map/?view=3d</code>. The homepage 3D card renders only when
+          <code>map_3d_view_enabled</code> (<code>views.py:449</code>); <code>map_3d</code> is a superuser flag whose note says production opens it to signed-in readers after release.
+          Help has no 3D topic, and the terrain topics still say terrain data stops at the Swiss border while the winter basemap now draws beyond it (SNOW-1460) — those are different layers, but a reader may not tell.
+        </p>
+      </article>
+      <article class="finding newwork">
+        <div class="finding-head"><span class="ref">N16</span><h3>Map surfaces grew; the public pages did not</h3><span class="pill pill-new">SNOW-1394 … 1431</span></div>
+        <p>
+          Dated and Terrain modes (flagged <code>map_modes</code>), a Downloads sheet that is the home for offline, the Swisstopo winter map as default basemap (#1535),
+          and a "Help" tab that opens the map's "?" menu (#1536). Offline copy lives in the map's own panels; <code>/help/</code> was not extended this week beyond filter and anchors (#1395).
+          <code>/compare/</code> gained a line saying Snowdesk shows SAC's grade for tours rather than a day rating (SNOW-948).
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Unchanged</p>
+    <h2>Re-verified against <span class="mono">ababe1f</span></h2>
+    <div class="table-scroll" style="margin-top:1.75rem">
+      <table>
+        <thead><tr><th>Finding</th><th>Re-verified state</th><th>Ticket</th></tr></thead>
+        <tbody>
+          <tr><td>Public explainers unreachable</td><td>Six pages in <code>docs/explainers/</code>. Grep for <code>explainers</code> over <code>apps/*/templates</code>, <code>templates</code> and <code>static/js</code> finds nothing; the only hits are in <code>apps/mcp_server</code> and <code>views.py</code> (<code>llms.txt</code> text).</td><td>SNOW-977 (Duplicate, carried forward)</td></tr>
+          <tr><td>OAuth/MCP / Claude connector not named</td><td>Only <code>privacy.html</code> among public templates, plus the OAuth consent screens.</td><td><span class="pill pill-orphan">No ticket</span></td></tr>
+          <tr><td><code>/compare/</code> orphan</td><td>No <code>href</code> or <code>{% url %}</code> to it in any template; page exists, still in the sitemap (<code>sitemaps.py:419</code>). Page last touched by SNOW-948.</td><td><span class="pill pill-orphan">No ticket</span></td></tr>
+          <tr><td>C2 · <code>/examples/</code> orphaned</td><td>No link in any template.</td><td>SNOW-678 (Canceled)</td></tr>
+          <tr><td>C3 · no regions index</td><td>No template links one.</td><td>SNOW-674 (Canceled)</td></tr>
+          <tr><td>Bulletin guide worked examples SLF-only</td><td><code>bulletin-guide.md:10</code> still says the examples are drawn from SLF bulletins; <code>last-reviewed</code> still 2026-11-01.</td><td><span class="pill pill-orphan">No ticket</span></td></tr>
+          <tr><td>Alerts dark launch</td><td>Still superusers-only; send switch still a separate switch row. No sign of widening.</td><td>SNOW-937 family</td></tr>
+          <tr><td>Example-route onboarding in production</td><td>Not checkable from code.</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">The Linear tools were not loaded in this run, so the ticket column carries forward the previous audit's states. Nothing in it was checked against Linear.</p>
+  </section>
+
+  <section>
+    <p class="eyebrow">Consequences</p>
+    <h2>What this week changes</h2>
+    <div class="qgroups">
+      <div class="qgroup">
+        <h3>Widening the alerts flag needs three copy edits, not one</h3>
+        <p>Last week's advice was to add an alerts topic to Help. The Help accounts topic must also lose its "sends no bulletin alerts" sentence, and the privacy policy's wording is already live. All three change together or the pages disagree.</p>
+      </div>
+      <div class="qgroup">
+        <h3>The tab bar gives Help a second front door and Compare none</h3>
+        <p>In the installed app, Help is a top-level tab and also reachable from the "?" menu. A surface the app now treats as primary still has no route from the homepage to the explainers, so the unlinked pages are further from users in the app than on the web.</p>
+      </div>
+      <div class="qgroup">
+        <h3>A flagged feature is promoted on the homepage</h3>
+        <p>The 3D card and 3D-branded hero show to flag holders only, so nothing public is wrong, but when <code>map_3d</code> opens to every signed-in reader the homepage, Help and the offline copy all need a 3D explanation that does not exist.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Recommendation</p>
+    <h2>What I'd do next</h2>
+    <div class="col">
+      <p><strong>1. Reconcile alert copy before the flag widens</strong>: Help accounts topic, a new alerts topic, and the privacy wording.</p>
+      <p><strong>2. Link the explainers and the Claude connector</strong> from the homepage, footer or Help. Unchanged for two audits.</p>
+      <p><strong>3. Decide the fate of <code>/compare/</code></strong>: relink or drop from the sitemap.</p>
+      <p><strong>4. Give 3D a Help topic</strong> ahead of <code>map_3d</code> opening to signed-in readers.</p>
+      <p><strong>5. Replace the SLF-only worked examples</strong> in the bulletin guide.</p>
+    </div>
+    <p class="note">
+      Re-verified against <span class="mono">ababe1f</span> on 8 November 2026. Nothing was changed and no tickets were created or edited.
+      Not rendered or read in full: the homepage, the 3D card, the tab bar in a running app, and the Help topics other than accounts.
+    </p>
+  </section>
+
+</div>
