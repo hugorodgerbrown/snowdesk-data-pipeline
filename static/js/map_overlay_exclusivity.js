@@ -96,7 +96,7 @@
 
   // SNOW-1196: the width at which a right-hand flyout fits BESIDE a
   // left-column object sheet. The sheet docks from 640px (map.css) but is
-  // 25rem wide, and the legend card steps aside past it to a right edge of
+  // 25rem wide, and the legend card opens beside it, to a right edge of
   // about 720px; the layers menu needs about as much from the right. Below
   // this the two would overlap or clip, so the flyout closes the sheet.
   var WIDE_QUERY = '(min-width: 768px)';
