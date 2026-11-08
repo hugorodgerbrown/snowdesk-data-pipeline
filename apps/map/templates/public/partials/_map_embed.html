@@ -772,8 +772,7 @@ Optional context:
                     {% include "public/partials/_map_layers_switch_row.html" with key="community_reports" label=_("Field observations") icon="observation" sync=True only %}
                     {% include "public/partials/_map_layers_switch_row.html" with key="favourites" label=_("Favourites") icon="favourite" sync=True only %}
                     {% include "public/partials/_map_layers_switch_row.html" with key="routes" label=_("Routes") icon="route" sync=True only %}
-                    {% include "public/partials/_map_layers_switch_row.html" with key="downloads" label=_("Downloaded areas") icon="downloads" only %}
-                    {% include "public/partials/_map_layers_offline_row.html" only %}
+                    {% include "public/partials/_map_layers_downloads_row.html" only %}
                 </ul>
             {% else %}
                 {% trans "Boundaries" as layer_boundaries %}
@@ -827,8 +826,8 @@ Optional context:
                     {# Downloaded areas: no sync dot (the list is local-only), and  #}
                     {# aria-checked is NOT server-renderable — SNOW-857's tri-state #}
                     {# preference is seeded by map.js from pwaDownloadedOverlay.    #}
-                    {% include "public/partials/_map_layers_switch_row.html" with key="downloads" label=_("Downloaded areas") icon="downloads" only %}
-                    {% include "public/partials/_map_layers_offline_row.html" only %}
+                    {# Its left half opens the downloads sheet.                     #}
+                    {% include "public/partials/_map_layers_downloads_row.html" only %}
                 </ul>
             {% endif %}
             {# ---- Options pages. One shown at a time, in place of level one. ---- #}

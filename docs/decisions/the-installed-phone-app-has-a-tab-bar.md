@@ -22,8 +22,10 @@ browser, a tablet, a desktop) nothing changes: the bar is rendered but
   `window.pwaMapHelpMenu`), the same card as on the web, anchored above the
   bar on the right. In this app only it gains **Map key**, which opens the
   (i) legend card (`window.pwaMapLegend`), and the footer's legal line.
-- **Offline areas** moves from the hidden roundel column into the layers
-  menu (`_map_layers_offline_row.html`), in this app only.
+- The downloads sheet, whose roundel this app hides, opens from the layers
+  menu's **Downloaded areas** row (`_map_layers_downloads_row.html`): its
+  left half opens the sheet, its switch shows the areas on the map, as on
+  Steep terrain's row. The row is the same on the web.
 
 Items shown only in this app carry `.app-only`, which a negated copy of the
 gate hides everywhere else. The account stays in the header's avatar menu,
@@ -52,8 +54,9 @@ Help and the legal links. On staging Hugo found it an odd selection of
 You — and moved the avatar back to the header and Help into the bar, with
 the map key in it (8 Nov 2026). A first Help panel of its own was rejected
 the same day for the existing "?" menu: one help surface, not two. Trips
-becomes a Saved chip in its own change; Offline areas went to the layers
-menu.
+becomes a Saved chip in its own change. A separate "Offline areas" row
+under Downloaded areas named the same thing twice, so the two became one
+row.
 
 Installed-only, because a browser tab already has its own bottom chrome
 and the site's header and footer, and because the change can be judged by

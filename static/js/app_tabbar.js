@@ -16,8 +16,8 @@
  *     (window.pwaMapHelpMenu, public/partials/_map_help_menu.html), whose
  *     roundel this app hides; it gains a Map key item there. Map closes
  *     whichever is open.
- *   - OFFLINE AREAS is a row of the layers menu in this app
- *     (public/partials/_map_layers_offline_row.html), answered here.
+ *   - The downloads sheet, whose roundel this app hides, opens from the
+ *     layers menu's Downloaded areas row (map_downloads_manager.js).
  *   - A TAB TOGGLES. Tapping the lit tab closes its panel; tapping another
  *     swaps it for the next in place. Today's and the Saved panels share
  *     one box, and the old one is hidden and the new one shown in the same
@@ -127,14 +127,6 @@
       return !!window.pwaMapHelpMenu?.isOpen();
     },
   };
-
-  // The layers menu's Offline areas (the app hides the capsule that opens
-  // the downloads sheet everywhere else).
-  document.addEventListener('click', function (event) {
-    var target = /** @type {Element|null} */ (event.target instanceof Element ? event.target : null);
-    if (!target || !target.closest('[data-layers-offline-areas]')) return;
-    window.pwaDownloadsManager?.open();
-  });
 
   // ---------------------------------------------------------------------
   // Tabs → panels.

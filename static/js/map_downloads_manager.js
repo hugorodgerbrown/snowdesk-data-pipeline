@@ -13,7 +13,9 @@
  * Opened from ``#map-custom-download-control`` (the bottom-right roundel —
  * public/partials/_map_custom_download_control.html), driven by that
  * button's own click handler in map.js calling ``window.pwaDownloadsManager
- * .open()`` (this module's own bridge — see the bridges section below).
+ * .open()`` (this module's own bridge — see the bridges section below),
+ * and from the layers menu's Downloaded areas row
+ * (``[data-downloads-open]``, public/partials/_map_layers_downloads_row.html).
  * SNOW-588 through SNOW-632 reached this sheet only via a
  * ``[data-menu-action="manage-downloads"]`` row buried in the layers menu,
  * while the roundel opened a DIFFERENT surface directly (the "Download a
@@ -3336,6 +3338,15 @@
   function hideRestoreNotice() {
     document.getElementById(NOTICE_ID)?.classList.add('hidden');
   }
+
+  // The layers menu's Downloaded areas row: its left half opens the sheet
+  // (public/partials/_map_layers_downloads_row.html). The installed phone
+  // app hides the roundel, so this is its way in.
+  document.addEventListener('click', function (event) {
+    var target = event.target instanceof Element ? event.target : null;
+    if (!target || !target.closest('[data-downloads-open]')) return;
+    open();
+  });
 
   // The CTA opens the sheet; the × is overlays.js's shared dismiss.
   document.getElementById(NOTICE_ID + '-open')?.addEventListener('click', function () {

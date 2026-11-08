@@ -2,8 +2,8 @@
  * tests/js/test_app_tabbar.js — the installed phone app's tab bar on the map
  * (SNOW-1476).
  *
- * static/js/app_tabbar.js against a reduced copy of the bar, the "?" menu,
- * the layers menu's Offline areas, with ``window.MapSheet`` and the four panel controllers
+ * static/js/app_tabbar.js against a reduced copy of the bar and the "?" menu,
+ * with ``window.MapSheet`` and the four panel controllers
  * stubbed — the sheets' own behaviour is tested beside each one. What is
  * pinned here is the bar's:
  *   - a tab opens its panel and lights; tapping it again, or Map, closes it;
@@ -14,7 +14,6 @@
  *   - a panel closed from elsewhere lights Map again;
  *   - Help opens and closes the map's own "?" menu (window.pwaMapHelpMenu),
  *     rising rather than swapping, since it is a card of its own;
- *   - the layers menu's Offline areas opens the downloads sheet;
  *   - ?panel= opens its panel at boot and leaves the URL, other
  *     parameters kept;
  *   - the Today tab mirrors the sun roundel's alert dot.
@@ -34,8 +33,7 @@ const MARKUP = `
   <div id="favourite-sheet" hidden></div>
   <div id="route-sheet" hidden></div>
   <div id="report-sheet" hidden></div>
-  <div id="map-help-menu" hidden></div>
-  <button data-layers-offline-areas>Offline areas</button>`;
+  <div id="map-help-menu" hidden></div>`;
 
 const $ = (id) => document.getElementById(id);
 const tab = (name) => document.querySelector(`[data-app-tab="${name}"]`);
@@ -72,7 +70,6 @@ async function load({ signedIn = true, url = '/map/' } = {}) {
   window.pwaFavouritesSheet = panel('favourite-sheet');
   window.pwaRoutesSheet = panel('route-sheet');
   window.pwaReportSheet = panel('report-sheet');
-  window.pwaDownloadsManager = { open: vi.fn() };
   window.pwaMapHelpMenu = panel('map-help-menu');
   vi.resetModules();
   await import('../../static/js/app_tabbar.js');
@@ -94,7 +91,7 @@ afterEach(() => {
   added = [];
   for (const key of [
     'MapSheet', 'pwaTodayPanel', 'pwaFavouritesSheet', 'pwaRoutesSheet',
-    'pwaReportSheet', 'pwaDownloadsManager', 'pwaAppTabbar', 'pwaMapHelpMenu',
+    'pwaReportSheet', 'pwaAppTabbar', 'pwaMapHelpMenu',
   ]) delete window[key];
   vi.restoreAllMocks();
 });
@@ -223,14 +220,6 @@ describe('Help', () => {
     tab('help').click();
     expect($('map-help-menu').hidden).toBe(true);
     expect(lit()).toEqual(['map']);
-  });
-});
-
-describe("the layers menu's Offline areas", () => {
-  it('opens the downloads sheet', async () => {
-    await load();
-    document.querySelector('[data-layers-offline-areas]').click();
-    expect(window.pwaDownloadsManager.open).toHaveBeenCalled();
   });
 });
 

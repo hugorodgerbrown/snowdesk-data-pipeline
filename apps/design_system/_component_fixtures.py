@@ -2880,8 +2880,7 @@ APP_TABBAR_VARIANTS: tuple[dict[str, Any], ...] = (
 
 
 # ── Account menu items (SNOW-1476) ──────────────────────────────────────────
-# The avatar dropdown's entries; Offline areas shows only in the installed
-# phone app, so the library (never that app) shows the other three.
+# The avatar dropdown's entries: Trips, Settings, Sign out.
 ACCOUNT_MENU_ITEMS_VARIANTS: tuple[dict[str, Any], ...] = (
     {"caption": "Dropdown", "context": {}},
 )

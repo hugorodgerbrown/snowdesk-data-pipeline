@@ -3042,8 +3042,8 @@ a.season-day:focus-visible {
 }
 
 /* Shown only in the installed app on a phone: the "?" menu's Map key and
-   legal line and the layers menu's Offline areas, which stand in for the
-   roundels and footer the bar hides. Hidden by the negated gate, so each
+   legal line, which stand in for the (i) roundel and the footer the bar
+   hides. Hidden by the negated gate, so each
    keeps its own display inside it. */
 @media not ((display-mode: standalone) and (max-width: 639.98px)) {
   .app-only {

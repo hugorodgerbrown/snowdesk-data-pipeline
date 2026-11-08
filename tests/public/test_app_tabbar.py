@@ -11,8 +11,8 @@ Covers:
     else.
   - The header keeps its avatar menu, as on the web (Hugo, 8 Nov 2026).
   - On the map the Help tab's "?" menu carries the Map key and the legal
-    line, and the layers menu carries Offline areas, all three only in the
-    installed app (`app-only`); and the Saved chips sit under each Saved
+    line, only in the installed app (`app-only`); the layers menu's
+    Downloaded areas row opens the downloads sheet; and the Saved chips sit under each Saved
     sheet's header.
   - The CSS gate: the bar, the chips and the hidden chrome are drawn only
     under ``(display-mode: standalone) and (max-width: 639.98px)``. No
@@ -195,17 +195,23 @@ class TestOnTheMap:
         assert reverse("public:help") not in line
         assert reverse("public:terms_of_service") in line
 
-    def test_the_layers_menu_gains_offline_areas_for_the_app(
+    def test_downloaded_areas_is_one_row_that_opens_the_sheet(
         self, client: Client
     ) -> None:
+        """One row: its left half opens the downloads sheet, its switch shows them."""
         content = client.get(reverse("public:map")).content.decode()
 
         rows = re.findall(
-            r'<li role="none" class="basemap-menu-layer app-only">\s*<button[^>]*'
-            r"data-layers-offline-areas",
+            r'<li role="none" class="basemap-menu-layer">\s*<button[^>]*'
+            r"data-downloads-open.*?</li>",
             content,
+            re.S,
         )
         assert rows
+        for row in rows:
+            assert 'data-overlay-key="downloads"' in row
+        assert content.count('data-overlay-key="downloads"') == len(rows)
+        assert "Offline areas" not in content
 
     def test_the_site_footer_keeps_help(self, client: Client) -> None:
         content = client.get(reverse("public:help")).content.decode()
