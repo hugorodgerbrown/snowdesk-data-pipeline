@@ -2,7 +2,7 @@
 name: boundaries-follow-the-basemap
 description: EAWS boundary outlines follow the active basemap, not the Bulletins rows (BASEMAP_COUNTRIES, data-basemap-countries, boundaryCountryCodes)
 status: current
-last-reviewed: 2026-11-05
+last-reviewed: 2026-11-08
 ---
 
 # The boundary outlines follow the basemap, not the Bulletins rows
@@ -116,3 +116,15 @@ so both follow the basemap's filter rather than the providers'. A region whose
 outline is drawn is then named and tappable, whichever bulletin providers are
 on. The edge band stays bulletin data. Leaving Terrain puts the provider
 filter back (`applyCountryFilters` in `static/js/map.js`).
+
+## Past the border on the winter map (SNOW-1460)
+
+With `map_beyond_switzerland` on, the swisstopo winter map no longer stops at
+the border: OpenStreetMap, restyled in the winter style, carries it on across
+the Alps ([why](the-winter-map-beyond-switzerland-is-restyled-osm.md)). Its
+`BASEMAP_COUNTRIES` entry still says CH. The flag is per reader and
+`BASEMAP_COUNTRIES` is a setting, so the outlines on the winter map stay Swiss
+for everyone, and past the border they are still drawn only on OpenFreeMap.
+The bulletin fill is unaffected, as it is never scoped by the basemap. When the
+flag ships to everyone, the winter map's coverage should become all four
+countries, which is a change to this ruling's table, not to its logic.

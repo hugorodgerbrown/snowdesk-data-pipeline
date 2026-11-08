@@ -1,8 +1,8 @@
 ---
 name: a-3d-map-is-maplibre-terrain
-description: 3D map on MapLibre setTerrain: /map/ ?view=3d and ?at=, /map/3d/ redirect, route 3D links, 3D wash, fallbacks, offline 3D elevation tiles
+description: 3D map on MapLibre setTerrain: ?view=3d, ?at=, /map/3d/ redirect, route 3D links, 3D wash, fallbacks, offline elevation, Alpine gate
 status: current
-last-reviewed: 2026-11-07
+last-reviewed: 2026-11-08
 ---
 
 # A 3-D map is MapLibre's own terrain
@@ -123,13 +123,14 @@ now see the flat map.
   the `?view=3d` parameter beside `?mode=terrain` (read only in Terrain
   until SNOW-1452); `availability` (online, no route being drawn, the centre inside
   `terrain_filter_core.COVERAGE_BOUNDS`, which is passed in rather than
-  copied, and zoom 9 or more); the basemap (swisstopo winter in 3-D, the
+  copied, and zoom 9 or more; since SNOW-1460 the coverage may be a ring); the basemap (swisstopo winter in 3-D, the
   reader's own flat, the stored choice never written); and the boot camera
   (a flat boot zeroes a stored pitch). `map.js` reads it at parse time for
   the boot basemap and camera and for its reconnect `setStyle`, so a
   reconnect in 3-D cannot swap swisstopo winter away.
 - **Nothing about the view is stored.** A bare `/map/` always opens flat;
-  `?view=3d` outside Switzerland is stripped at boot. A
+  `?view=3d` outside Switzerland is stripped at boot (outside the Alps with
+  `map_beyond_switzerland`, below). A
   date write keeps it (`map_mode_core.withDate`).
 - **The runner** is `static/js/map_view_3d.js` (`window.pwaMapView`). It
   reuses `map_3d_core` and the shared `static/js/map_3d_terrain.js`
@@ -551,3 +552,27 @@ rough edges unwarned, and the cost of a repeat is one tap.
 The promo video's fly-past is drawn by this view, one frame at a time
 (`map_3d_flight_core.js`, `map_3d_flight.js`, `bin/record-3d-flyby`); why:
 [`a-fly-past-is-rendered-frame-by-frame.md`](a-fly-past-is-rendered-frame-by-frame.md).
+
+## Past Switzerland (SNOW-1460)
+
+With `map_beyond_switzerland` on as well as `map_3d`, 3D opens anywhere in the
+Alps, not only over Switzerland. The winter map carries on past the border as
+OpenStreetMap in the winter style, over our own relief
+([why](the-winter-map-beyond-switzerland-is-restyled-osm.md)). The coverage
+is then the **Alpine gate**, `beyond_switzerland_core.ALPINE_GATE`: a ring
+about 5.0–16.6°E by 43.7–48.3°N, which leaves out the Pyrenees and Corsica.
+`map_view_core.covers` reads a ring (even-odd) as well as a box.
+
+- **The ring is handed over.** `map_view_3d.js` starts on the Swiss box.
+  `map_beyond_switzerland.js`, which loads after it, calls
+  `pwaMapView.setCoverage(ALPINE_GATE)`. A flagged `?view=3d` boot waits for
+  that call under the same two-second cap as the offline wait, then enters
+  or lays the map flat. `map.js` skips its own boot coverage downgrade when
+  `#map` carries `data-map-beyond-switzerland`, so an Arlberg link is not
+  stripped before the ring arrives.
+- **The copy follows.** Behind the flag, the strings template says "3D covers
+  the Alps for now" and "Back in 2D: 3D covers the Alps for now.". Off the
+  flag nothing changes: the Swiss box and "3D covers Switzerland for now".
+- **What stays Swiss.** The terrain class tiles, and so Terrain mode's slope
+  layer (SNOW-1459). Offline 3D is still only inside a downloaded area, and
+  Alpine area downloads are not part of SNOW-1460.
