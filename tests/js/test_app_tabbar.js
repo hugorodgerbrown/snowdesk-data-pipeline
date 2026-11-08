@@ -232,6 +232,29 @@ describe('?panel=', () => {
     expect(replace).toHaveBeenLastCalledWith(null, '', '/map/?d=2026-11-07');
   });
 
+  it('waits for the scripts after it before opening Help', async () => {
+    // A deferred script runs at readyState 'interactive', before the map
+    // bundle that publishes window.pwaMapHelpMenu.
+    const ready = vi.spyOn(document, 'readyState', 'get').mockReturnValue('interactive');
+    window.history.replaceState(null, '', '/map/?panel=help');
+    window.MapSheet = { attach: vi.fn((el) => panel(el.id)) };
+    window.pwaTodayPanel = panel('today-sheet');
+    window.pwaFavouritesSheet = panel('favourite-sheet');
+    window.pwaRoutesSheet = panel('route-sheet');
+    window.pwaReportSheet = panel('report-sheet');
+    vi.resetModules();
+    await import('../../static/js/app_tabbar.js');
+    // Taken at once, before map.js's own deep-link reader can strip it.
+    expect(window.location.search).toBe('');
+    expect($('map-help-menu').hidden).toBe(true);
+
+    window.pwaMapHelpMenu = panel('map-help-menu');
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    ready.mockRestore();
+    expect($('map-help-menu').hidden).toBe(false);
+    expect(lit()).toEqual(['help']);
+  });
+
   it("leaves map.js's own panel names in the URL for it to open", async () => {
     const replace = vi.spyOn(window.history, 'replaceState');
     await load({ url: '/map/?panel=routes&d=2026-11-07' });

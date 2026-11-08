@@ -356,6 +356,13 @@
     } catch (_err) {
       // A sandboxed frame refuses it; the panel still opens.
     }
+    // The parameter is taken now, before map.js's own deep-link reader
+    // strips it, but Help's controller comes from the map bundle, which
+    // runs after this one: open it once every deferred script has run.
+    if (asked === 'help' && !window.pwaMapHelpMenu && document.readyState !== 'complete') {
+      document.addEventListener('DOMContentLoaded', function () { select('help'); }, { once: true });
+      return;
+    }
     select(asked);
   }
 
