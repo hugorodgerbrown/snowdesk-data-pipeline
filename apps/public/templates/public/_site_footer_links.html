@@ -28,8 +28,9 @@ Parameters (passed via {% include … with … %}):
         <a class="underline hover:text-text-2" href="{{ colophon_url }}">Colophon</a>
     {% endblocktrans %}
     {% if APP_RELEASE_LABEL %}
+        {% firstof testid "site-footer" as testid_prefix %}
         &middot;
-        <span data-testid="{{ testid|default:"site-footer" }}-version">
+        <span data-testid="{{ testid_prefix }}-version">
             <span class="sr-only">{% trans "Version" %}</span>
             {{ APP_RELEASE_LABEL }}
         </span>
