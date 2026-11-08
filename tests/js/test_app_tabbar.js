@@ -218,9 +218,12 @@ describe('?panel=', () => {
     expect(replace).toHaveBeenLastCalledWith(null, '', '/map/?d=2026-11-07');
   });
 
-  it('ignores a panel it does not know', async () => {
-    await load({ url: '/map/?panel=nope' });
+  it("leaves map.js's own panel names in the URL for it to open", async () => {
+    const replace = vi.spyOn(window.history, 'replaceState');
+    await load({ url: '/map/?panel=routes&d=2026-11-07' });
     expect(lit()).toEqual(['map']);
+    expect(replace).not.toHaveBeenCalledWith(null, '', '/map/?d=2026-11-07');
+    expect(window.location.search).toBe('?panel=routes&d=2026-11-07');
   });
 });
 

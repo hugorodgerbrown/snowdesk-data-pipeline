@@ -28,7 +28,9 @@
  *   - SAVED REMEMBERS its chip for the session (sessionStorage), so the tab
  *     reopens the list last shown; places by default.
  *   - ?panel=today|saved|you, which the bar's links carry off the map,
- *     opens that panel once at boot. The parameter is then removed with
+ *     opens that panel once at boot. Any other value is left in the URL
+ *     for static/js/map.js's own ?panel= handler (favourites, routes,
+ *     reports, downloads), which runs after this module. The parameter is then removed with
  *     history.replaceState and every other parameter kept (the day in
  *     `d`, a camera in `at`), so a reload, Back or Forward never reopens
  *     it, and opening a panel adds no history entry, as no sheet does.
@@ -333,14 +335,17 @@
       return;
     }
     var asked = url.searchParams.get(PANEL_PARAM);
-    if (asked === null) return;
+    // Only the bar's own names. The rest (favourites, routes, reports,
+    // downloads) belong to map.js's openPanelDeepLink, which runs after
+    // this and must still find the parameter.
+    if (asked !== 'today' && asked !== 'saved' && asked !== 'you') return;
     url.searchParams.delete(PANEL_PARAM);
     try {
       window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
     } catch (_err) {
       // A sandboxed frame refuses it; the panel still opens.
     }
-    if (asked === 'today' || asked === 'saved' || asked === 'you') select(asked);
+    select(asked);
   }
 
   light();
