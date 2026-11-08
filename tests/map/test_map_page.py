@@ -3755,7 +3755,9 @@ def _map_div(content: str) -> str:
 
 @pytest.mark.django_db
 def test_map_beyond_switzerland_carries_its_attributes_behind_the_flag() -> None:
-    """``#map`` names both workers, the kit, the TileJSON and the DEM tiles."""
+    """``#map`` names both workers, the kit and cores they import, the
+    TileJSON and the DEM tiles.
+    """
     tag = _map_div(_beyond_map(beyond=True))
     assert 'data-map-beyond-switzerland="true"' in tag
     assert re.search(r'data-osm-clip-worker-url="[^"]*/js/osm_clip_worker\.js"', tag)
@@ -3764,6 +3766,10 @@ def test_map_beyond_switzerland_carries_its_attributes_behind_the_flag() -> None
     )
     assert re.search(
         r'data-vector-tile-kit-url="[^"]*/js/vector_tile_kit\.min\.js"', tag
+    )
+    assert re.search(r'data-osm-clip-core-url="[^"]*/js/osm_clip_core\.js"', tag)
+    assert re.search(
+        r'data-alpine-relief-core-url="[^"]*/js/alpine_relief_core\.js"', tag
     )
     assert f'data-osm-tilejson-url="{settings.OPENFREEMAP_ORIGIN}/planet"' in tag
     assert f'data-dem-tile-url="{settings.MAP_3D_DEM_TILE_URL}"' in tag
@@ -3779,6 +3785,8 @@ def test_map_beyond_switzerland_off_renders_none_of_it() -> None:
         "data-osm-clip-worker-url",
         "data-alpine-relief-worker-url",
         "data-vector-tile-kit-url",
+        "data-osm-clip-core-url",
+        "data-alpine-relief-core-url",
         "data-osm-tilejson-url",
     ):
         assert attribute not in tag, attribute
@@ -3794,8 +3802,9 @@ def test_map_beyond_switzerland_off_renders_none_of_it() -> None:
 def test_map_beyond_switzerland_loads_its_five_scripts_behind_the_flag() -> None:
     """On, the five scripts render, once each."""
     content = _beyond_map(beyond=True)
+    tags = re.findall(r'<script[^>]+src="[^"]*/static/(js/[^"]+)"', content)
     for script in _BEYOND_SCRIPTS:
-        assert content.count(script) == 1, script
+        assert tags.count(script) == 1, script
 
 
 @pytest.mark.django_db

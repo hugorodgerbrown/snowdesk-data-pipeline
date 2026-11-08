@@ -112,8 +112,14 @@
  * `why-slow` line a tap on the disabled switch shows carries a "Test this
  * device" link that asks for the test (snowdesk:map-3d-test-requested).
  *
+ * THE COVERAGE (SNOW-1460). 3-D opens over terrain_filter_core's Swiss box,
+ * unless the map_beyond_switzerland flag is on: then
+ * map_beyond_switzerland.js hands over the Alpine ring through
+ * setCoverage, and a ?view=3d boot waits for it (capped, as the offline
+ * wait is).
+ *
  * Publishes `window.pwaMapView` (get / enter / exit / canTest / beginTest /
- * endTest): map.js reads the live view to retry the right basemap on a
+ * endTest / setCoverage): map.js reads the live view to retry the right basemap on a
  * reconnect, and the basemap picker hears `snowdesk:map-view-changed` to
  * disable its rows in 3-D.
  */
@@ -140,7 +146,21 @@
   const ATTEMPT_GAP_MS = 700;
   /** How long an offline ?view=3d boot waits for the downloaded areas. */
   const BOOT_BOXES_WAIT_MS = 2000;
-  const COVERAGE = terrainCore ? terrainCore.COVERAGE_BOUNDS : null;
+  /**
+   * Where 3-D opens: terrain_filter_core's Swiss box, until
+   * map_beyond_switzerland.js hands over the Alpine ring (SNOW-1460,
+   * setCoverage). Terrain mode's class tiles stay Swiss either way.
+   *
+   * @type {ReadonlyArray<number>|ReadonlyArray<ReadonlyArray<number>>|null}
+   */
+  let coverage = terrainCore ? terrainCore.COVERAGE_BOUNDS : null;
+  /** The map_beyond_switzerland flag is on: the coverage is handed over. */
+  const beyondSwitzerland = mapEl.dataset.mapBeyondSwitzerland === 'true';
+  /** Settles once the coverage has been handed over (or at once, unflagged). */
+  let coverageHanded = /** @type {(value?: unknown) => void} */ (() => {});
+  const coverageReady = beyondSwitzerland
+    ? new Promise((resolve) => { coverageHanded = resolve; })
+    : Promise.resolve();
 
   const STRINGS = self.pwaStrings.read('map-view-strings-template', {
     basemap: '3D uses the swisstopo winter map; yours comes back in 2D.',
@@ -246,7 +266,7 @@
     contextLost,
     editing: drawing,
     centre: map.getCenter(),
-    bounds: COVERAGE,
+    bounds: coverage,
     offlineAreas,
   });
 
@@ -721,7 +741,7 @@
     if (!playing) stopFrames();
     // The first move to end after a tilt in is that ease; the next is timed.
     if (view === THREE_D && !suspended) timingArmed = true;
-    if (view === THREE_D && !viewCore.covers(map.getCenter(), COVERAGE)) {
+    if (view === THREE_D && !viewCore.covers(map.getCenter(), coverage)) {
       exit({ reason: 'coverage' });
       return;
     }
@@ -1027,15 +1047,28 @@
     // nobody tilts in before the downloaded areas are known.
     // The wait is capped: a read that never lands lays the map flat
     // through the same path, rather than leaving the switch disabled.
-    if (online()) bootInto3d();
-    else {
-      Promise.race([
-        boxesSettled(),
-        new Promise((resolve) => setTimeout(resolve, BOOT_BOXES_WAIT_MS)),
-      ]).then(bootInto3d);
-    }
+    // SNOW-1460: with map_beyond_switzerland the boot also waits for the
+    // Alpine coverage, which map_beyond_switzerland.js hands over as it
+    // loads, just after this script; under the same cap.
+    const cap = () => new Promise((resolve) => setTimeout(resolve, BOOT_BOXES_WAIT_MS));
+    if (online() && !beyondSwitzerland) bootInto3d();
+    else if (online()) Promise.race([coverageReady, cap()]).then(bootInto3d);
+    else Promise.race([Promise.all([boxesSettled(), coverageReady]), cap()]).then(bootInto3d);
   }
   sync();
+
+  /**
+   * SNOW-1460: the coverage 3-D opens over, handed over by
+   * map_beyond_switzerland.js (the Alpine ring). The switch is read again,
+   * and a waiting ?view=3d boot goes ahead.
+   *
+   * @param {ReadonlyArray<number>|ReadonlyArray<ReadonlyArray<number>>|null} next
+   */
+  const setCoverage = (next) => {
+    coverage = next;
+    coverageHanded();
+    sync();
+  };
 
   window.pwaMapView = Object.freeze({
     get: () => view,
@@ -1044,5 +1077,6 @@
     canTest,
     beginTest,
     endTest,
+    setCoverage,
   });
 })();

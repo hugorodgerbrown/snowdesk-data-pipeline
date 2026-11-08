@@ -913,7 +913,12 @@
   // COVERAGE_BOUNDS, the one copy of it) boots flat, and a flagged
   // reader's address bar loses the parameter, so a copied link says what
   // they see.
-  if (bootView === '3d') {
+  // SNOW-1460: with map_beyond_switzerland, 3-D opens over the Alps, a ring
+  // that arrives after this script (map_beyond_switzerland.js hands it to
+  // map_view_3d.js), so the boot is left to the 3-D view, which lays a
+  // camera outside it flat on the reader's basemap.
+  const bootCoverageDeferred = !!mapEl && mapEl.dataset.mapBeyondSwitzerland === 'true';
+  if (bootView === '3d' && !bootCoverageDeferred) {
     const centre = bootSource
       ? { lng: bootSource.center[0], lat: bootSource.center[1] }
       : { lng: (DEFAULT_BOUNDS[0][0] + DEFAULT_BOUNDS[1][0]) / 2, lat: (DEFAULT_BOUNDS[0][1] + DEFAULT_BOUNDS[1][1]) / 2 };
@@ -1154,7 +1159,8 @@
   // Expose the live camera on the console instead — window.snowdeskMap is the
   // MapLibre instance, with a convenience read-only `zoom_level` getter so a
   // developer can just read `snowdeskMap.zoom_level` (equivalent to
-  // `snowdeskMap.getZoom()`). Not used by any user-facing code.
+  // `snowdeskMap.getZoom()`). SNOW-1460: map_beyond_switzerland.js, loaded
+  // after the bundle for readers in its flag, reads the instance from here.
   Object.defineProperty(map, 'zoom_level', {
     get() {
       return map.getZoom();
@@ -1252,7 +1258,17 @@
       );
     }
   };
-  map.on('sourcedata', updateMapAttribution);
+  // SNOW-1460: a source added after `style.load` (the OpenStreetMap and
+  // relief sources map_beyond_switzerland.js splices in) is not in the
+  // cached ids, so its credit would never show. A `sourcedata` for an id
+  // the cache does not hold clears it; the check is a lookup in a short
+  // list, so the per-tile events stay cheap.
+  map.on('sourcedata', (e) => {
+    if (attributionSourceIds && e && e.sourceId && !attributionSourceIds.includes(e.sourceId)) {
+      attributionSourceIds = null;
+    }
+    updateMapAttribution();
+  });
   map.on('style.load', () => {
     // A new style means a new source set and, usually, a new provider —
     // both caches have to go, or the panel would keep naming the basemap

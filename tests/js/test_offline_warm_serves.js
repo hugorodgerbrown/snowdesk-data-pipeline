@@ -439,6 +439,49 @@ const MAP_DATA_URLS = {
     sample: 'https://tiles.snowdesk-data.info/terrain-class/v1/14/8529/5800.png',
     swClass: null,
   },
+  // SNOW-1460: the winter map past the border (map_beyond_switzerland).
+  // The workers and the scripts they import are same-origin static files,
+  // cached by the static rule like the map's own scripts.
+  'data-osm-clip-worker-url': {
+    kind: 'worker-cache',
+    sample: '/static/js/osm_clip_worker.js',
+    swClass: 'static',
+  },
+  'data-osm-clip-core-url': {
+    kind: 'worker-cache',
+    sample: '/static/js/osm_clip_core.js',
+    swClass: 'static',
+  },
+  'data-vector-tile-kit-url': {
+    kind: 'worker-cache',
+    sample: '/static/js/vector_tile_kit.min.js',
+    swClass: 'static',
+  },
+  'data-alpine-relief-worker-url': {
+    kind: 'worker-cache',
+    sample: '/static/js/alpine_relief_worker.js',
+    swClass: 'static',
+  },
+  'data-alpine-relief-core-url': {
+    kind: 'worker-cache',
+    sample: '/static/js/alpine_relief_core.js',
+    swClass: 'static',
+  },
+  'data-osm-tilejson-url': {
+    // Cross-origin, fetched by the osmclip:// worker with its tiles; the
+    // origin is seeded into the basemap allowlist (map.js), so both take
+    // the passive basemap cache.
+    kind: 'worker-cache',
+    sample: 'https://tiles.openfreemap.org/planet',
+    swClass: null,
+  },
+  'data-dem-tile-url': {
+    // The elevation tiles the 2D relief paints from: the 3D view's, pinned
+    // by a download with terrain data (SNOW-1453).
+    kind: 'worker-cache',
+    sample: 'https://tiles.mapterhorn.com/12/2130/1455.webp',
+    swClass: null,
+  },
   'data-favourites-url': {
     kind: 'indexeddb',
     sample: '/favourites/favourites.geojson',

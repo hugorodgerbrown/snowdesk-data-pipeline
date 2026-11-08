@@ -31,6 +31,11 @@
  * SNOW-1450: a ?view=3d boot keeps the tilt a link's `?at=` asked for
  * (snowdeskMapState.linkedPitch); a pitch of 0, none, and every later
  * toggle tilt to the opening pitch.
+ *
+ * SNOW-1460: with the map_beyond_switzerland flag the coverage is handed
+ * over (setCoverage, the Alpine gate): a ?view=3d boot waits for it under
+ * the two-second cap, and a pan to Innsbruck stays in 3D where off the flag
+ * it lays the map flat.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -42,12 +47,14 @@ import '../../static/js/map_view_core.js';
 import '../../static/js/map_3d_core.js';
 import '../../static/js/map_3d_terrain.js';
 import '../../static/js/basemap_download_core.js';
+import '../../static/js/beyond_switzerland_core.js';
 import { loadMapBundle } from './_load_map_bundle.js';
 
 const core3d = window.pwaMap3dCore;
 const terrain = window.pwaMap3dTerrain;
 const ZERMATT = { lng: 7.75, lat: 46.02 };
 const PARIS = { lng: 2.35, lat: 48.86 };
+const INNSBRUCK = { lng: 11.39, lat: 47.26 };
 const URLS = {
   openfreemap_liberty: 'https://tiles.example/liberty.json',
   swisstopo_winter: 'https://tiles.example/winter.json',
@@ -161,13 +168,13 @@ let env;
 async function boot({
   search = '?mode=terrain', mode = 'terrain', stored = null, online = true,
   webgl = true, deviceMemory = 8, userAgent = DESKTOP_UA, pitch = 0,
-  areas = [], holdAreas = false, linkedPitch = null, modes = true,
+  areas = [], holdAreas = false, linkedPitch = null, modes = true, beyond = false,
 } = {}) {
   const rows = Object.entries(URLS).map(([key, url]) => `
     <button class="basemap-menu-item" role="menuitemradio" data-basemap-key="${key}"
       data-basemap-url="${url}" aria-checked="false">${key}</button>`).join('');
   document.body.innerHTML = `
-    <div id="map" data-map-view-enabled="true" data-default-basemap-key="openfreemap_liberty"></div>
+    <div id="map" data-map-view-enabled="true" data-default-basemap-key="openfreemap_liberty"${beyond ? ' data-map-beyond-switzerland="true"' : ''}></div>
     <div id="basemap-pill"><button id="basemap-toggle"></button></div>
     <div id="basemap-menu" hidden>
       <ul><li id="basemap-view-note" hidden>note</li>${rows}</ul>
@@ -1408,5 +1415,56 @@ describe('the 3D test hooks (SNOW-1456)', () => {
     map.fire('movestart');
     expect(rafQueue.size).toBe(0);
     map.fire('moveend');
+  });
+});
+
+describe('the coverage beyond Switzerland (SNOW-1460)', () => {
+  const GATE = window.pwaBeyondSwitzerlandCore.ALPINE_GATE;
+
+  it('off the flag, a pan to Innsbruck lays 3D flat', async () => {
+    const { map, button } = await boot();
+    button.click();
+    map.centre = { ...INNSBRUCK };
+    map.fire('moveend');
+    expect(window.pwaMapView.get()).toBe('flat');
+  });
+
+  it('with the flag, a pan to Innsbruck stays in 3D once the Alpine gate is handed over, and Paris still lays it flat', async () => {
+    const { map, button } = await boot({ beyond: true });
+    window.pwaMapView.setCoverage(GATE);
+    button.click();
+    map.centre = { ...INNSBRUCK };
+    map.fire('moveend');
+    expect(window.pwaMapView.get()).toBe('3d');
+    map.centre = { ...PARIS };
+    map.fire('moveend');
+    expect(window.pwaMapView.get()).toBe('flat');
+  });
+
+  it('with the flag, a ?view=3d boot at Innsbruck waits for the gate, then enters', async () => {
+    const { map } = await boot({ beyond: true, search: '?mode=terrain&view=3d' });
+    map.centre = { ...INNSBRUCK };
+    await flush();
+    expect(inThreeD(map)).toBe(false);
+    window.pwaMapView.setCoverage(GATE);
+    await flush();
+    expect(window.pwaMapView.get()).toBe('3d');
+    expect(inThreeD(map)).toBe(true);
+    expect(view()).toBe('3d');
+  });
+
+  it('with the flag, a ?view=3d boot at Innsbruck lays flat after two seconds when no gate comes', async () => {
+    vi.useFakeTimers();
+    try {
+      const { map } = await boot({ beyond: true, search: '?mode=terrain&view=3d' });
+      map.centre = { ...INNSBRUCK };
+      await vi.advanceTimersByTimeAsync(1900);
+      expect(view()).toBe('3d');
+      await vi.advanceTimersByTimeAsync(200);
+      expect(window.pwaMapView.get()).toBe('flat');
+      expect(view()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

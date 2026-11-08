@@ -13,7 +13,10 @@
  *     the preference never written;
  *   - the camera: a stored pitch boots flat, the bearing kept;
  *   - a linked camera (?at=, SNOW-1450): five numbers in range, anything
- *     malformed or out of range dropped, and nothing for no parameter.
+ *     malformed or out of range dropped, and nothing for no parameter;
+ *   - the coverage as a ring (SNOW-1460): with the map_beyond_switzerland
+ *     flag the 3D view is handed the Alpine gate, which opens Innsbruck and
+ *     Val d'Isère; off the flag the Swiss box still turns them away.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -22,6 +25,7 @@ import '../../static/js/map_view_core.js';
 import '../../static/js/basemap_download_core.js';
 import '../../static/js/slope_classes_core.js';
 import '../../static/js/terrain_filter_core.js';
+import '../../static/js/beyond_switzerland_core.js';
 
 const core = window.pwaMapViewCore;
 const { FLAT, THREE_D } = core.VIEWS;
@@ -256,5 +260,40 @@ describe('deviceGate', () => {
   it('answers the availability reason it gates on', () => {
     expect(core.deviceGate({ webgl: false })).toBe(core.REASONS.DEVICE);
     expect(core.LOW_MEMORY_GB).toBe(2);
+  });
+});
+
+describe('the coverage gate (SNOW-1460)', () => {
+  const GATE = window.pwaBeyondSwitzerlandCore.ALPINE_GATE;
+  // Outside the Swiss box (which already reaches St Anton and Chamonix).
+  const INNSBRUCK = { lng: 11.39, lat: 47.26 };
+  const VAL_DISERE = { lng: 6.98, lat: 45.45 };
+  const PYRENEES = { lng: 0.5, lat: 42.7 };
+  const CORSICA = { lng: 9.0, lat: 42.2 };
+
+  it('with the flag on, the Alpine gate opens the Alps past the border', () => {
+    for (const centre of [ZERMATT, INNSBRUCK, VAL_DISERE]) {
+      expect(core.availability(input({ centre, bounds: GATE }))).toEqual({ enabled: true, reason: null });
+    }
+  });
+
+  it('with the flag on, the Pyrenees and Corsica stay outside it', () => {
+    for (const centre of [PYRENEES, CORSICA]) {
+      expect(core.availability(input({ centre, bounds: GATE })).reason).toBe('coverage');
+    }
+  });
+
+  it('with the flag off, the Swiss box turns Innsbruck and Val d\'Isère away', () => {
+    expect(core.availability(input({ centre: INNSBRUCK })).reason).toBe('coverage');
+    expect(core.availability(input({ centre: VAL_DISERE })).reason).toBe('coverage');
+    expect(core.availability(input()).enabled).toBe(true);
+  });
+
+  it('reads a ring even-odd, and a missing centre as outside', () => {
+    const square = [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]];
+    expect(core.covers({ lng: 5, lat: 5 }, square)).toBe(true);
+    expect(core.covers({ lng: 15, lat: 5 }, square)).toBe(false);
+    expect(core.covers(null, square)).toBe(false);
+    expect(core.covers({ lng: 5, lat: 5 }, null)).toBe(true);
   });
 });
