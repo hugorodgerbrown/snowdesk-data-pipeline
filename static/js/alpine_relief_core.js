@@ -32,6 +32,12 @@
  * Terrarium decoding, slope and aspect, the shade, the rock tone, the erase
  * mask and the whole tile's paint into RGBA.
  *
+ * THE PAINT LOOP runs once a pixel on the worker's only thread, so it
+ * allocates nothing per pixel (SNOW-1475): it repeats the helpers' maths in
+ * primitives, and Vitest holds the two byte for byte. Slope uses
+ * Math.sqrt, not Math.hypot, which V8 does not inline and so boxes its
+ * arguments.
+ *
  * Exports (frozen `self.pwaAlpineReliefCore`):
  *
  *   PROTOCOL / TILE_SIZE / MIN_ZOOM / MAX_ZOOM / ROCK_SLOPE_DEGREES
@@ -221,7 +227,7 @@
     const east = (at(right, row) - at(left, row)) / dx;
     // Rows run south, so north is up a row.
     const north = (at(col, up) - at(col, down)) / dy;
-    const slope = Math.atan(Math.hypot(east, north)) / RAD;
+    const slope = Math.atan(Math.sqrt(east * east + north * north)) / RAD;
     const aspect = east === 0 && north === 0
       ? 0
       : ((Math.atan2(-east, -north) / RAD) + 360) % 360;
@@ -347,25 +353,34 @@
   }
 
   /**
-   * Lay one pixel over another (source over), in place.
+   * Lay one colour over the pixel at `at` (source over), in place. It takes
+   * primitives, so the paint loop allocates nothing per pixel (SNOW-1475).
    *
    * @param {Uint8ClampedArray} out
    * @param {number} at Byte offset.
-   * @param {Pixel} pixel
+   * @param {ReadonlyArray<number>} rgb
+   * @param {number} alpha 0..255.
    */
-  function over(out, at, pixel) {
-    const a = pixel.alpha / 255;
+  function overRgb(out, at, rgb, alpha) {
+    const a = alpha / 255;
     const below = out[at + 3] / 255;
-    const alpha = a + below * (1 - a);
-    if (!alpha) return;
-    for (let c = 0; c < 3; c += 1) {
-      out[at + c] = Math.round((pixel.rgb[c] * a + out[at + c] * below * (1 - a)) / alpha);
-    }
-    out[at + 3] = Math.round(alpha * 255);
+    const total = a + below * (1 - a);
+    if (!total) return;
+    out[at] = Math.round((rgb[0] * a + out[at] * below * (1 - a)) / total);
+    out[at + 1] = Math.round((rgb[1] * a + out[at + 1] * below * (1 - a)) / total);
+    out[at + 2] = Math.round((rgb[2] * a + out[at + 2] * below * (1 - a)) / total);
+    out[at + 3] = Math.round(total * 255);
   }
 
   /**
    * Paint one relief tile from one Terrarium tile.
+   *
+   * The loop runs once a pixel (262,144 times for a 512 px tile) on the
+   * worker's only thread, so it repeats `slopeAspect`, `shade`,
+   * `hillshadePixel` and `rockPixel` in primitives rather than calling
+   * them: no object or closure per pixel (SNOW-1475). Those helpers stay
+   * as the readable statement of the maths, and the tests hold the two
+   * byte for byte.
    *
    * @param {Uint8ClampedArray|Uint8Array} dem The DEM tile's RGBA, `size` square.
    * @param {number} size
@@ -384,16 +399,44 @@
     const mask = eraseMask(polygons, tile, size);
     const cell = metresPerPixel(tile, size);
     const out = new Uint8ClampedArray(size * size * 4);
+    const zenith = (90 - LIGHT_ALTITUDE) * RAD;
+    const cosZenith = Math.cos(zenith);
+    const sinZenith = Math.sin(zenith);
+    const flat = Math.cos((90 - LIGHT_ALTITUDE) * RAD);
+    const rockAlpha = Math.round(tuned.rockStrength * 255);
+    const last = size - 1;
     for (let row = 0; row < size; row += 1) {
+      const up = row > 0 ? row - 1 : row;
+      const down = row < last ? row + 1 : row;
+      const dy = (down - up) * cell || cell;
       for (let col = 0; col < size; col += 1) {
         const index = row * size + col;
         if (mask[index]) continue;
-        const { slope, aspect } = slopeAspect(heights, size, col, row, cell);
+        const left = col > 0 ? col - 1 : col;
+        const right = col < last ? col + 1 : col;
+        const dx = (right - left) * cell || cell;
+        const east = (heights[row * size + right] - heights[row * size + left]) / dx;
+        // Rows run south, so north is up a row.
+        const north = (heights[up * size + col] - heights[down * size + col]) / dy;
+        const slope = Math.atan(Math.sqrt(east * east + north * north)) / RAD;
+        // `% 360` without the fmod: the bearing lies in [180, 540), where
+        // subtracting 360 is exact, so the result matches slopeAspect's.
+        const bearing = east === 0 && north === 0 ? 360 : (Math.atan2(-east, -north) / RAD) + 360;
+        const aspect = bearing >= 360 ? bearing - 360 : bearing;
         const at = index * 4;
-        const hill = hillshadePixel(slope, aspect, tuned);
-        if (hill) over(out, at, hill);
-        const rock = rockPixel(slope, aspect, tuned);
-        if (rock) over(out, at, rock);
+        const s = slope * RAD;
+        const facing = Math.cos((LIGHT_AZIMUTH - aspect) * RAD);
+        const lit = Math.max(0, Math.min(1, cosZenith * Math.cos(s) + sinZenith * Math.sin(s) * facing));
+        if (lit < flat) {
+          const alpha = Math.round(((flat - lit) / flat) * tuned.shadowStrength * 255);
+          if (alpha) overRgb(out, at, SHADOW_RGB, alpha);
+        } else {
+          const alpha = Math.round(((lit - flat) / (1 - flat)) * tuned.highlightStrength * 255);
+          if (alpha) overRgb(out, at, HIGHLIGHT_RGB, alpha);
+        }
+        if (slope > tuned.rockSlope && rockAlpha) {
+          overRgb(out, at, facing >= 0 ? ROCK_LIT_RGB : ROCK_SHADOW_RGB, rockAlpha);
+        }
       }
     }
     return out;
