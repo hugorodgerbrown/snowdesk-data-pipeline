@@ -106,7 +106,7 @@ function mapElement(flagged = true) {
        data-vector-tile-kit-url="/static/js/vector_tile_kit.min.js"
        data-osm-clip-core-url="/static/js/osm_clip_core.js"
        data-alpine-relief-core-url="/static/js/alpine_relief_core.js"
-       data-osm-tilejson-url="https://tiles.openfreemap.org/planet"
+       data-osm-style-url="https://tiles.openfreemap.org/styles/liberty"
        data-dem-tile-url="https://tiles.mapterhorn.com/{z}/{x}/{y}.webp"`
     : '';
   return `<div id="map" ${attrs}></div>`;
@@ -291,7 +291,7 @@ describe('a protocol handler', () => {
       type: 'init',
       kitUrl: '/static/js/vector_tile_kit.min.js',
       coreUrl: '/static/js/osm_clip_core.js',
-      tilejsonUrl: 'https://tiles.openfreemap.org/planet',
+      styleUrl: 'https://tiles.openfreemap.org/styles/liberty',
       extent: window.pwaSwisstopoExtent.EXTENT,
     });
     const [request] = worker.requests();

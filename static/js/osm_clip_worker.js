@@ -38,33 +38,57 @@
   let kit = null;
   /** @type {any} */
   let extent = null;
-  let tilejsonUrl = '';
+  let styleUrl = '';
   /** @type {?Promise<string>} */
   let template = null;
   /** Requests in flight, by id. */
   const pending = new Map();
 
   /**
-   * The tile template, read from the TileJSON once. A failed read is not
-   * kept, so the next tile asks again.
+   * Fetch JSON, failing on a non-2xx answer.
    *
-   * It is fetched with no abort signal: the read is shared by every tile
-   * waiting on it, so one tile's cancel must not fail the others.
+   * @param {string} url
+   * @returns {Promise<any>}
+   */
+  async function fetchJson(url) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`osm_clip: ${url} ${response.status}`);
+    return response.json();
+  }
+
+  /**
+   * The tile template, resolved once from the configured OpenFreeMap style:
+   * its OpenMapTiles vector source names its tiles directly or through a
+   * TileJSON `url`. Read from the style, not assumed, because a
+   * self-hosted deployment lays its tiles out differently from the public
+   * /planet TileJSON. A failed read is not kept, so the next tile asks
+   * again. It is fetched with no abort signal: the read is shared by every
+   * tile waiting on it, so one tile's cancel must not fail the others.
    *
    * @returns {Promise<string>}
    */
   function tileTemplate() {
     if (!template) {
-      template = fetch(tilejsonUrl)
-        .then((response) => {
-          if (!response.ok) throw new Error(`osm_clip: TileJSON ${response.status}`);
-          return response.json();
-        })
-        .then((json) => {
-          const tiles = json && Array.isArray(json.tiles) ? json.tiles : [];
-          if (!tiles.length) throw new Error('osm_clip: TileJSON has no tiles');
-          return String(tiles[0]);
-        });
+      template = (async () => {
+        const style = await fetchJson(styleUrl);
+        const sources = (style && style.sources) || {};
+        const source =
+          (sources.openmaptiles && sources.openmaptiles.type === 'vector' && sources.openmaptiles) ||
+          Object.values(sources).find((s) => s && s.type === 'vector');
+        if (!source) throw new Error('osm_clip: the style has no vector source');
+        let tiles = Array.isArray(source.tiles) ? source.tiles : [];
+        let base = styleUrl;
+        if (!tiles.length && source.url) {
+          base = new URL(source.url, styleUrl).href;
+          const tilejson = await fetchJson(base);
+          tiles = tilejson && Array.isArray(tilejson.tiles) ? tilejson.tiles : [];
+        }
+        if (!tiles.length) throw new Error('osm_clip: the vector source has no tiles');
+        // Kept as written: the {z}/{x}/{y} braces must survive, so the
+        // template is resolved only when it is not already absolute.
+        const first = String(tiles[0]);
+        return /^https?:\/\//.test(first) ? first : decodeURI(new URL(first, base).href);
+      })();
       template.catch(() => { template = null; });
     }
     return template;
@@ -180,7 +204,7 @@
       kit = self.VectorTileKit;
       core = self.pwaOsmClipCore;
       extent = message.extent;
-      tilejsonUrl = message.tilejsonUrl;
+      styleUrl = message.styleUrl;
       return;
     }
     if (message.type === 'cancel') {

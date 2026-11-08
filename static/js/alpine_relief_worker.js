@@ -72,6 +72,33 @@
   }
 
   /**
+   * One elevation tile: from our copy, or from AWS when ours has none. Our
+   * copy answers 204 outside its supported area and 404 for a missing
+   * tile (map_3d_core.createDemLoader treats both as "not here"); a
+   * network failure falls back too. Only an abort is not retried.
+   *
+   * @param {{z: number, x: number, y: number}} tile
+   * @param {AbortSignal} signal
+   * @returns {Promise<Blob>}
+   */
+  async function elevation(tile, signal) {
+    const init = { signal, credentials: /** @type {RequestCredentials} */ ('omit') };
+    if (demTemplate) {
+      try {
+        const response = await fetch(core.tileUrl(demTemplate, tile), init);
+        if (response.ok && response.status !== 204) return response.blob();
+      } catch (err) {
+        if (signal.aborted) throw err;
+      }
+    }
+    const response = await fetch(core.tileUrl(core.DEM_FALLBACK_TILE_URL, tile), init);
+    if (!response.ok || response.status === 204) {
+      throw new Error(`alpine_relief: no elevation tile ${tile.z}/${tile.x}/${tile.y} (${response.status})`);
+    }
+    return response.blob();
+  }
+
+  /**
    * @param {number} id
    * @param {string} url
    */
@@ -81,12 +108,7 @@
     try {
       const tile = core.parseUrl(url);
       if (!tile) throw new Error(`alpine_relief: not a tile url: ${url}`);
-      const response = await fetch(core.tileUrl(demTemplate, tile), {
-        signal: controller.signal,
-        credentials: 'omit',
-      });
-      if (!response.ok) throw new Error(`alpine_relief: elevation tile ${response.status}`);
-      const data = await paintTile(await response.blob(), tile);
+      const data = await paintTile(await elevation(tile, controller.signal), tile);
       reply(id, { data });
     } catch (err) {
       reply(id, { error: String((err && /** @type {any} */ (err).message) || err) });

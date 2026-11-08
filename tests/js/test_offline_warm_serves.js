@@ -467,12 +467,13 @@ const MAP_DATA_URLS = {
     sample: '/static/js/alpine_relief_core.js',
     swClass: 'static',
   },
-  'data-osm-tilejson-url': {
-    // Cross-origin, fetched by the osmclip:// worker with its tiles; the
+  'data-osm-style-url': {
+    // Cross-origin: the OpenFreeMap style, which the osmclip:// worker
+    // fetches to resolve its tile template, then the tiles. The
     // origin is seeded into the basemap allowlist (map.js), so both take
     // the passive basemap cache.
     kind: 'worker-cache',
-    sample: 'https://tiles.openfreemap.org/planet',
+    sample: 'https://tiles.openfreemap.org/styles/liberty',
     swClass: null,
   },
   'data-dem-tile-url': {

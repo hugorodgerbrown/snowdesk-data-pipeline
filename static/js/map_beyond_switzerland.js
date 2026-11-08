@@ -119,7 +119,7 @@
     type: 'init',
     kitUrl: data.vectorTileKitUrl || '',
     coreUrl: data.osmClipCoreUrl || '',
-    tilejsonUrl: data.osmTilejsonUrl || '',
+    styleUrl: data.osmStyleUrl || '',
     extent: extent.EXTENT,
   }));
   const relief = workerChannel(data.alpineReliefWorkerUrl || '', () => ({

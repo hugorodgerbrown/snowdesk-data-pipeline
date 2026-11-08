@@ -114,11 +114,35 @@ describe('the alpinerelief worker', () => {
     expect(expected.some((v) => v > 0)).toBe(true);
   });
 
-  it('replies with an error when the fetch fails', async () => {
+  it.each([
+    ['204 outside our copy\'s area', () => new Response(null, { status: 204 })],
+    ['404 for a missing tile', () => new Response('', { status: 404 })],
+    ['a network failure', () => { throw new TypeError('Failed to fetch'); }],
+  ])('falls back to AWS elevation on %s', async (_label, primary) => {
+    fetchMock.mockClear();
+    demResponse = (url) => (url.startsWith('https://dem.example.test/')
+      ? Promise.resolve().then(primary)
+      : Promise.resolve(new Response('dem')));
+    send({ id: 4, url: 'alpinerelief://13/4355/2869' });
+    await settle();
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/13/4355/2869.png',
+      expect.objectContaining({ credentials: 'omit' }),
+    );
+    expect(replies).toHaveLength(1);
+    expect(replies[0].error).toBeUndefined();
+  });
+
+  it('replies with an error when neither copy has the tile', async () => {
     demResponse = () => Promise.resolve(new Response('', { status: 404 }));
     send({ id: 2, url: 'alpinerelief://13/4355/2869' });
     await settle();
-    expect(replies).toEqual([{ id: 2, error: 'alpine_relief: elevation tile 404' }]);
+    expect(replies).toEqual([{ id: 2, error: 'alpine_relief: no elevation tile 13/4355/2869 (404)' }]);
+  });
+
+  it('falls back to the same AWS elevation as the 3D view', async () => {
+    await import('../../static/js/map_3d_core.js');
+    expect(core.DEM_FALLBACK_TILE_URL).toBe(window.pwaMap3dCore.DEM_FALLBACK_TILE_URL);
   });
 
   it('drops a cancelled id and aborts its fetch', async () => {

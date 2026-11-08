@@ -342,10 +342,12 @@ def map_page(request: HttpRequest) -> HttpResponse:
             # SNOW-1460: the winter map past the Swiss border, in 2D and 3D,
             # behind its own flag; with the 3D view, 3D opens across the Alps.
             "map_beyond_switzerland": beyond_switzerland,
-            # Where the OSM vector tiles' TileJSON lives: the OpenFreeMap
-            # origin the CSP already allows, so the two cannot drift.
-            "osm_tilejson_url": (
-                f"{settings.OPENFREEMAP_ORIGIN}/planet" if beyond_switzerland else ""
+            # The configured OpenFreeMap style, whose vector source the clip
+            # worker resolves to a tile template: a self-hosted deployment
+            # (docs/runbooks/self-hosted-tiles.md) lays its tiles out
+            # differently from the public /planet TileJSON.
+            "osm_style_url": (
+                settings.OPENFREEMAP_STYLE_URL if beyond_switzerland else ""
             ),
         },
     )

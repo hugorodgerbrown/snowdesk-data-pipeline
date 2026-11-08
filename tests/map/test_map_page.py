@@ -3771,7 +3771,7 @@ def test_map_beyond_switzerland_carries_its_attributes_behind_the_flag() -> None
     assert re.search(
         r'data-alpine-relief-core-url="[^"]*/js/alpine_relief_core\.js"', tag
     )
-    assert f'data-osm-tilejson-url="{settings.OPENFREEMAP_ORIGIN}/planet"' in tag
+    assert f'data-osm-style-url="{settings.OPENFREEMAP_STYLE_URL}"' in tag
     assert f'data-dem-tile-url="{settings.MAP_3D_DEM_TILE_URL}"' in tag
 
 
@@ -3787,7 +3787,7 @@ def test_map_beyond_switzerland_off_renders_none_of_it() -> None:
         "data-vector-tile-kit-url",
         "data-osm-clip-core-url",
         "data-alpine-relief-core-url",
-        "data-osm-tilejson-url",
+        "data-osm-style-url",
     ):
         assert attribute not in tag, attribute
     for script in _BEYOND_SCRIPTS:

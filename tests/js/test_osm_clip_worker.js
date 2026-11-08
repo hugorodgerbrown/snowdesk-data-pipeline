@@ -20,6 +20,7 @@ import '../../static/js/osm_clip_core.js';
 const { Pbf, VectorTile, vtpbf, polygonClipping } = window.VectorTileKit;
 const core = window.pwaOsmClipCore;
 
+const STYLE = 'https://tiles.example.test/styles/liberty';
 const TILEJSON = 'https://tiles.example.test/planet';
 const TEMPLATE = 'https://tiles.example.test/planet/v1/{z}/{x}/{y}.pbf';
 // The western hemisphere: tile 1/0/0 is inside, 1/1/0 outside, 0/0/0 on
@@ -57,6 +58,9 @@ function decode(bytes) {
 const replies = [];
 let tileResponse = () => Promise.resolve(new Response(TILE_BYTES.slice(0)));
 const fetchMock = vi.fn((url, init) => {
+  if (url === STYLE) {
+    return Promise.resolve(new Response(JSON.stringify({ sources: { openmaptiles: { type: 'vector', url: TILEJSON } } })));
+  }
   if (url === TILEJSON) return Promise.resolve(new Response(JSON.stringify({ tiles: [TEMPLATE] })));
   return tileResponse(url, init);
 });
@@ -69,7 +73,7 @@ beforeAll(async () => {
   self.importScripts = vi.fn();
   self.postMessage = (message) => replies.push(message);
   await import('../../static/js/osm_clip_worker.js');
-  send({ type: 'init', kitUrl: '/static/js/vector_tile_kit.min.js', coreUrl: '/static/js/osm_clip_core.js', tilejsonUrl: TILEJSON, extent: WEST });
+  send({ type: 'init', kitUrl: '/static/js/vector_tile_kit.min.js', coreUrl: '/static/js/osm_clip_core.js', styleUrl: STYLE, extent: WEST });
 });
 
 afterAll(() => {
@@ -100,6 +104,10 @@ describe('the osmclip worker', () => {
     send({ id: 1, url: 'osmclip://0/0/0' });
     await settle();
     expect(fetchMock).toHaveBeenCalledWith('https://tiles.example.test/planet/v1/0/0/0.pbf', expect.anything());
+    // The template came from the configured style's vector source, not an
+    // assumed /planet path.
+    expect(fetchMock).toHaveBeenCalledWith(STYLE);
+    expect(fetchMock).toHaveBeenCalledWith(TILEJSON);
     expect(replies).toHaveLength(1);
     const [{ id, data, error }] = replies;
     expect(id).toBe(1);

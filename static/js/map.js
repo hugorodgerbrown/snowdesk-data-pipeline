@@ -341,8 +341,8 @@
         // an OpenFreeMap row is on the picker. Seeded from the TileJSON the
         // worker reads, which serves its tiles from the same origin.
         .concat(
-          mapEl.dataset.osmTilejsonUrl
-            ? [new URL(mapEl.dataset.osmTilejsonUrl, window.location.href).origin]
+          mapEl.dataset.osmStyleUrl
+            ? [new URL(mapEl.dataset.osmStyleUrl, window.location.href).origin]
             : [],
         ),
     );

@@ -424,7 +424,7 @@ describe('seeding the terrain filter’s class-tile origin (SNOW-978)', () => {
 // worker their host. The picker in this fixture has no OpenFreeMap row, so
 // only the seed can put it on the list.
 describe('seeding the winter map’s OpenStreetMap origin (SNOW-1460)', () => {
-  const OSM_ATTRS = 'data-map-beyond-switzerland="true" data-osm-tilejson-url="https://tiles.openfreemap.org/planet"';
+  const OSM_ATTRS = 'data-map-beyond-switzerland="true" data-osm-style-url="https://tiles.openfreemap.org/styles/liberty"';
 
   it('registers the OpenFreeMap origin with the flag on', async () => {
     const { registeredOrigins } = await boot(OSM_ATTRS);

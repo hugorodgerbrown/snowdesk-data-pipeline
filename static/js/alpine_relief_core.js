@@ -45,6 +45,15 @@
   /** The MapLibre protocol the relief tiles come through. */
   const PROTOCOL = 'alpinerelief';
 
+  /**
+   * Where an elevation tile comes from when our copy has none: AWS's
+   * Terrarium tiles, the same fallback map_3d_core's DEM loader uses
+   * (DEM_FALLBACK_TILE_URL there; a Vitest pins the two together). Our
+   * copy answers 204 outside its supported area and 404 for a missing
+   * tile, and without this the relief would have holes where 3D has none.
+   */
+  const DEM_FALLBACK_TILE_URL = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
+
   /** Our DEM tiles are 512 px; one relief tile is painted from one. */
   const TILE_SIZE = 512;
 
@@ -327,6 +336,7 @@
 
   self.pwaAlpineReliefCore = Object.freeze({
     PROTOCOL,
+    DEM_FALLBACK_TILE_URL,
     TILE_SIZE,
     MIN_ZOOM,
     MAX_ZOOM,

@@ -100,7 +100,7 @@ line or draw twice. The winter style's own layers are left unfiltered:
 - **The service worker caches it like any basemap.** The `osmclip://` source
   names only its protocol, so the live style cannot teach the worker
   OpenFreeMap's host. `map.js` seeds the allowlist with the origin of
-  `data-osm-tilejson-url`, whose tiles share it. The elevation tiles are
+  `data-osm-style-url`, whose tiles share it. The elevation tiles are
   pinned only by an area download, as for 3D. Alpine area downloads are not
   part of this decision.
 - **The boundary outlines are unchanged.** `BASEMAP_COUNTRIES` still declares

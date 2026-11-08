@@ -200,7 +200,7 @@ Optional context:
         {# in production, so a worker cannot work out its siblings' URLs.   #}
         data-osm-clip-core-url="{% static 'js/osm_clip_core.js' %}"
         data-alpine-relief-core-url="{% static 'js/alpine_relief_core.js' %}"
-        data-osm-tilejson-url="{{ osm_tilejson_url }}"
+        data-osm-style-url="{{ osm_style_url }}"
         data-dem-tile-url="{{ map_3d_dem_tile_url }}"
     {% endif %}
     data-route-claim-url-template="{{ route_claim_url_template }}"
