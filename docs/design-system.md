@@ -292,6 +292,7 @@ differ in side (below).
 | **Object sheet** | Tapping a thing on the map | Full width, slides up from the foot, covers the map controls at half and full | `peek,half,full`, narrowed by content | Its ×, a drag below peek | Region, route, place (resort, saved pin), weather |
 | **Roundel panel** | A map-control roundel | Docked full width at the foot, over the roundel column (SNOW-1106) | None | Its ×, or the roundel that opened it (a toggle) | Pins, observations, routes, downloads, terrain filter |
 | **Form panel** | An action that starts a task | Docked at the foot | None | Submit, cancel, or the shared dismissals (×, Escape, a tap outside, another overlay opening); never a drag | Report, add or rename favourite, sign in |
+| **Tab panel** | A tab of the installed phone app's bar (SNOW-1476) | Full height between the header and the bar | None | Its ×, its tab (a toggle), the Map tab, another tab | Today, Saved (pins, routes, observations), You |
 
 **Object sheet.** The reader asked "what is this?" about a place on the
 ground, so the sheet answers in stages and gives the ground back: peek is a
@@ -330,6 +331,13 @@ time, at every width (the route panel shares the column); on a desktop a
 side panel covers the roundels under it and moves nothing (8 Nov 2026); and a sheet takes focus without drawing a ring round itself.
 Why, and the option declined:
 [`docs/decisions/a-panel-opens-beside-what-opened-it.md`](decisions/a-panel-opens-beside-what-opened-it.md).
+
+**Tab panel.** Only in the installed app on a phone, where the bar
+replaces the roundels that would otherwise open these lists. The tab stays
+in charge, as a roundel does: its tab closes it and another tab swaps it,
+the outgoing panel fading as the next rises. Object sheets still open over
+the map above the bar. Why:
+[`docs/decisions/the-installed-phone-app-has-a-tab-bar.md`](decisions/the-installed-phone-app-has-a-tab-bar.md).
 
 A new map panel picks its kind from the "Opened by" column before anything
 else. When a row in a roundel panel leads to one thing on the map, that

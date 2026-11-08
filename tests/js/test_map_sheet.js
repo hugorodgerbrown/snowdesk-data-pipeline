@@ -249,6 +249,21 @@ describe('attach — click-outside', () => {
     clickOn('back');
     expect(sheet.hasAttribute('hidden')).toBe(false);
   });
+
+  it('leaves the tab bar and the Saved chips to app_tabbar.js', () => {
+    // SNOW-1476: a tab or a chip opens or swaps panels itself; read as an
+    // outside click, it would close the panel it was about to swap from.
+    const { sheet, controller } = attachSheet();
+    document.getElementById('outside').innerHTML = `
+      <button id="tab" type="button" data-app-tab="today">Today</button>
+      <fieldset data-saved-chips><input id="chip" type="radio"></fieldset>`;
+    controller.open();
+
+    clickOn('tab');
+    expect(sheet.hasAttribute('hidden')).toBe(false);
+    clickOn('chip');
+    expect(sheet.hasAttribute('hidden')).toBe(false);
+  });
 });
 
 describe('toast', () => {

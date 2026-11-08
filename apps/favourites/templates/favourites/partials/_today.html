@@ -134,4 +134,41 @@ Context:
             {% trans "Pin a region from its bulletin, or a resort with the star on its sheet, to see its danger and weather here every day." %}
         </p>
     {% endif %}
+    {% if today_trips %}
+        {% comment %}
+        SNOW-1476: the reader's next trips, soonest first, under their places.
+        A trip is indexed by WHEN, which is what this panel is about; a row
+        is a link to the trip's page.
+        {% endcomment %}
+        {% trans "Trips" as today_trips_label %}
+        <div class="mt-4 flex flex-col gap-1" data-testid="today-trips">
+            {% include "includes/_eyebrow.html" with tag="p" text=today_trips_label class_extra="pb-1 font-medium" %}
+            <ul class="flex flex-col gap-2">
+                {% for trip in today_trips %}
+                    <li class="overflow-hidden rounded-card bg-tag" data-testid="today-trip">
+                        <a
+                            href="{% url 'trips:detail' uuid=trip.uuid %}"
+                            class="flex min-w-0 items-center gap-3 px-3 py-2.5 hover:bg-card-hover"
+                        >
+                            <span
+                                class="flex-none text-text-2"
+                            >{% include "includes/_icon_trip.html" with size=18 only %}</span>
+                            <span class="flex min-w-0 flex-1 flex-col">
+                                <span
+                                    class="truncate text-label font-semibold text-text-1"
+                                >{{ trip.display_name }}</span>
+                                <span
+                                    class="font-mono text-meta text-text-3"
+                                >{{ trip.date|date:"D j M" }}{% if trip.start_time %}
+                                        · {{ trip.start_time|time:"H:i" }}{% endif %}</span>
+                            </span>
+                            <span
+                                class="flex-none text-text-3 opacity-50"
+                            >{% include "includes/_icon_chevron.html" with svg_class="-rotate-90 h-3.5 w-3.5" only %}</span>
+                        </a>
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
+    {% endif %}
 </div>

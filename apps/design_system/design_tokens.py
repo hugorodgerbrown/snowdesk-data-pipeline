@@ -40,7 +40,9 @@ from typing import Any
 from django.conf import settings
 
 from apps.design_system._component_fixtures import (
+    ACCOUNT_MENU_ITEMS_VARIANTS,
     ANOTHER_DAY_STRIP_VARIANTS,
+    APP_TABBAR_VARIANTS,
     ASPECT_WHEEL_VARIANTS,
     BULLETIN_HEADLINE_VARIANTS,
     BUTTON_VARIANTS,
@@ -95,6 +97,7 @@ from apps.design_system._component_fixtures import (
     ROUTE_RAIL_VARIANTS,
     ROW_DISCLOSURE_VARIANTS,
     RUN_STRIP_VARIANTS,
+    SAVED_CHIPS_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
     SEASON_CELL_VARIANTS,
     SEASON_SCRUBBER_VARIANTS,
@@ -1788,6 +1791,34 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         panel_layout="stack",
     ),
     FoundationCategory(
+        slug="app-tabbar",
+        label="App tab bar",
+        description=(
+            "The installed phone app's bottom tab bar (SNOW-1476): Map, "
+            "Today, Saved, You. Drawn only in standalone display mode under "
+            "640px, where it replaces the footer and the avatar menu. On the "
+            "map the tabs are buttons that open tab panels over it; elsewhere "
+            "they link to /map/?panel=…. Previewed here outside that mode."
+        ),
+        kind="components",
+        partial="includes/_app_tabbar.html",
+        variants=APP_TABBAR_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="account-menu-items",
+        label="Account menu items",
+        description=(
+            "The account destinations — Trips, Settings, Sign out — shared "
+            "by the avatar dropdown and the phone app's You panel so the two "
+            "cannot drift (SNOW-1476)."
+        ),
+        kind="components",
+        partial="includes/_account_menu_items.html",
+        variants=ACCOUNT_MENU_ITEMS_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
         slug="site-footer",
         label="Site footer",
         description=(
@@ -2257,6 +2288,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_segmented_option.html",
         variants=SEGMENTED_OPTION_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="saved-chips",
+        label="Saved chips",
+        description=(
+            "The phone app's Saved panel switch — Places, Routes, "
+            "Observations — under each of the three sheets' headers "
+            "(SNOW-1476). A segmented control; drawn only in the installed "
+            "phone app, previewed here."
+        ),
+        kind="components",
+        partial="includes/_saved_chips.html",
+        variants=SAVED_CHIPS_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

@@ -1,0 +1,102 @@
+{% comment %}
+templates/includes/_app_tabbar.html — the installed phone app's bottom tab bar
+(SNOW-1476).
+
+Four tabs: Map, Today, Saved, You. Rendered on every page that extends
+public/base.html, but drawn ONLY in the installed app on a phone: the bar
+is `display: none` until the `(display-mode: standalone) and
+(max-width: 639.98px)` block in src/css/main.css shows it, and that same
+block hides the footer and the avatar menu the bar replaces. A phone
+browser, a tablet and a desktop never see it
+(docs/decisions/the-installed-phone-app-has-a-tab-bar.md).
+
+ON THE MAP the tabs are buttons: static/js/app_tabbar.js opens each tab's
+panel over the map (Today, the Saved sheets, the You sheet) and lights the
+tab whose panel is open. OFF THE MAP they are links to /map/?panel=…,
+which opens the map as it was left with that panel open.
+
+`{% app_tabbar_state %}` (apps/public/templatetags/app_tabbar.py) decides
+the tab lit on load: You on account, help and legal pages, Map elsewhere.
+
+A <div role="navigation">, not a <nav>: the map page styles
+`body.map-fullscreen > nav` (the header) sticky, and a second <nav> under
+<body> would be caught by it.
+
+Parameters (passed via {% include … with … %}):
+  preview (bool, optional) — draw the bar whatever the display mode. For
+                             the component library only, which is never
+                             the installed app.
+{% endcomment %}
+{% load i18n app_tabbar %}
+{% app_tabbar_state as tabbar %}
+{% url 'public:map' as map_url %}
+{% trans "Map" as tab_map %}
+{% trans "Today" as tab_today %}
+{% trans "Saved" as tab_saved %}
+{% trans "You" as tab_you %}
+<div
+    role="navigation"
+    class="app-tabbar{% if preview %} app-tabbar--preview{% endif %} border-t border-border bg-card"
+    aria-label='{% trans "App" %}'
+    data-app-tabbar
+    {% if tabbar.on_map %}data-app-tabbar-on-map{% endif %}
+    data-testid="app-tabbar"
+>
+    {% if tabbar.on_map %}
+        <button
+            type="button"
+            class="app-tab"
+            data-app-tab="map"
+            {% if tabbar.active == "map" %}aria-current="page"{% endif %}
+        >
+            {% include "includes/_icon_map.html" with size=24 only %}
+            <span>{{ tab_map }}</span>
+        </button>
+        <button type="button" class="app-tab" data-app-tab="today">
+            {% include "includes/_icon_sun.html" with size=24 only %}
+            <span class="app-tab-dot" data-app-tab-dot hidden></span>
+            <span>{{ tab_today }}</span>
+        </button>
+        <button type="button" class="app-tab" data-app-tab="saved">
+            {% include "includes/_icon_favourite.html" with size=24 only %}
+            <span>{{ tab_saved }}</span>
+        </button>
+        <button type="button" class="app-tab" data-app-tab="you">
+            <span
+                class="app-tab-avatar"
+                aria-hidden="true"
+            >{% if request.user.is_authenticated %}{{ request.user.email|first|upper }}{% endif %}</span>
+            <span>{{ tab_you }}</span>
+        </button>
+    {% else %}
+        <a
+            href="{{ map_url }}"
+            class="app-tab"
+            data-app-tab="map"
+            {% if tabbar.active == "map" %}aria-current="page"{% endif %}
+        >
+            {% include "includes/_icon_map.html" with size=24 only %}
+            <span>{{ tab_map }}</span>
+        </a>
+        <a href="{{ map_url }}?panel=today" class="app-tab" data-app-tab="today">
+            {% include "includes/_icon_sun.html" with size=24 only %}
+            <span>{{ tab_today }}</span>
+        </a>
+        <a href="{{ map_url }}?panel=saved" class="app-tab" data-app-tab="saved">
+            {% include "includes/_icon_favourite.html" with size=24 only %}
+            <span>{{ tab_saved }}</span>
+        </a>
+        <a
+            href="{{ map_url }}?panel=you"
+            class="app-tab"
+            data-app-tab="you"
+            {% if tabbar.active == "you" %}aria-current="page"{% endif %}
+        >
+            <span
+                class="app-tab-avatar"
+                aria-hidden="true"
+            >{% if request.user.is_authenticated %}{{ request.user.email|first|upper }}{% endif %}</span>
+            <span>{{ tab_you }}</span>
+        </a>
+    {% endif %}
+</div>

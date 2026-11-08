@@ -1,0 +1,66 @@
+{% comment %}
+apps/map/templates/public/partials/_you_surface.html — the installed phone
+app's You panel (SNOW-1476).
+
+Opened by the bar's You tab (includes/_app_tabbar.html), over the map, at
+full height. It holds what the avatar menu and the footer hold everywhere
+else — the bar hides both in that app:
+
+  - the account: Trips and Settings (includes/_account_menu_items.html, the
+    same entries the avatar dropdown lists, so the two cannot drift);
+  - Offline areas, which opens the existing downloads sheet through
+    window.pwaDownloadsManager.open();
+  - Resorts;
+  - the footer's line: Help, the legal links and the running release
+    (public/_site_footer_links.html, not the <footer> itself);
+  - Sign out, last.
+
+Signed out the account block is Sign in instead; everything else is the
+same.
+
+static/js/app_tabbar.js attaches the sheet through MapSheet.attach and
+clones #you-sheet-template into it on every open, as the other map panels
+do (MapSheet empties a sheet on close). A tab panel: no detents, no drag to
+close (docs/design-system.md, rule 6).
+{% endcomment %}
+{% load i18n accounts_tags %}
+{% trans "You" as you_title %}
+{% include "includes/_overlay_sheet.html" with id="you-sheet" aria_label=you_title scroll_body=True %}
+<template id="you-sheet-template">
+    {% if request.user.is_authenticated %}
+        {% include "includes/_sheet_header.html" with title=request.user.email close_action="dismiss" title_class="text-lg font-semibold truncate" %}
+    {% else %}
+        {% include "includes/_sheet_header.html" with title=you_title close_action="dismiss" title_class="text-lg font-semibold" %}
+    {% endif %}
+    <div class="-mx-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pt-2" data-testid="you-sheet-body">
+        {% if request.user.is_authenticated %}
+            <nav class="flex flex-col rounded-card border border-border" aria-label='{% trans "Account" %}'>
+                {% include "includes/_account_menu_items.html" with variant="sheet" %}
+            </nav>
+        {% else %}
+            {% trans "Sign in" as sign_in_label %}
+            {% sign_in_href as you_sign_in_href %}
+            {% include "includes/_button.html" with label=sign_in_label href=you_sign_in_href variant="primary" button_id="you-sign-in" %}
+        {% endif %}
+        <div class="flex flex-col rounded-card border border-border">
+            <button
+                type="button"
+                class="block w-full rounded-sm px-3 py-3 text-left text-label text-text-1 hover:bg-tag"
+                data-you-offline-areas
+                data-testid="you-offline-areas"
+            >
+                {% trans "Offline areas" %}
+            </button>
+            <a
+                href="{% url 'public:resorts' %}"
+                class="block rounded-sm px-3 py-3 text-label text-text-1 hover:bg-tag"
+            >{% trans "Resorts" %}</a>
+        </div>
+        <div class="px-2 text-center text-xs text-text-3" data-testid="you-sheet-footer">
+            {% include "public/_site_footer_links.html" with testid="you-sheet" %}
+        </div>
+        {% if request.user.is_authenticated %}
+            {% include "includes/_account_menu_items.html" with variant="sheet-sign-out" %}
+        {% endif %}
+    </div>
+</template>

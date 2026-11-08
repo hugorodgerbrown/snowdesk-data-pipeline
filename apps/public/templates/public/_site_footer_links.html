@@ -1,0 +1,37 @@
+{% comment %}
+apps/public/templates/public/_site_footer_links.html — the footer's one line:
+Help, the legal links and the running release (SNOW-1476).
+
+Extracted from public/_site_footer.html so the installed phone app's You
+panel (apps/map/templates/public/partials/_you_surface.html), where the
+bar hides the footer, shows the same line. The rules for the line are in
+the footer's own comment.
+
+Parameters (passed via {% include … with … %}):
+  testid (string, optional) — the prefix of the release's data-testid;
+                              "site-footer" by default, so a second copy
+                              on the page does not repeat the footer's.
+{% endcomment %}
+{% load i18n %}
+<p>
+    {% url 'public:help' as help_url %}
+    {% url 'public:terms_of_service' as terms_url %}
+    {% url 'public:privacy' as privacy_url %}
+    {% url 'public:colophon' as colophon_url %}
+    {% blocktrans trimmed %}
+        <a class="underline hover:text-text-2" href="{{ help_url }}">Help</a>
+        &middot;
+        <a class="underline hover:text-text-2" href="{{ terms_url }}">Terms of Service</a>
+        &middot;
+        <a class="underline hover:text-text-2" href="{{ privacy_url }}">Privacy Policy</a>
+        &middot;
+        <a class="underline hover:text-text-2" href="{{ colophon_url }}">Colophon</a>
+    {% endblocktrans %}
+    {% if APP_RELEASE_LABEL %}
+        &middot;
+        <span data-testid="{{ testid|default:"site-footer" }}-version">
+            <span class="sr-only">{% trans "Version" %}</span>
+            {{ APP_RELEASE_LABEL }}
+        </span>
+    {% endif %}
+</p>

@@ -2950,3 +2950,150 @@ a.season-day:focus-visible {
 .map-recording #map > :not(.maplibregl-canvas-container) {
   display: none;
 }
+
+/* ———————————————————————————————————————————
+   THE INSTALLED PHONE APP'S TAB BAR (SNOW-1476)
+   includes/_app_tabbar.html renders on every page; it is drawn only in
+   the installed app on a phone — `display-mode: standalone` below the
+   `sm` breakpoint — and there it takes over from the footer and the
+   avatar menu (and, for a visitor, the header's Sign in). Nothing here
+   applies to a phone browser, a tablet or a desktop: every rule that
+   shows the bar or hides what it replaces sits inside the one block
+   below, which tests/public/test_app_tabbar.py holds to. The map page's
+   half — its controls and sheets — is in static/css/map.css.
+   docs/decisions/the-installed-phone-app-has-a-tab-bar.md
+   ——————————————————————————————————————————— */
+
+.app-tabbar {
+  display: none;
+}
+
+/* The component library's preview, which is never the installed app. */
+.app-tabbar.app-tabbar--preview {
+  display: flex;
+}
+
+.app-tabbar {
+  /* The bar's own height, without the home indicator's inset. */
+  --app-tabbar-row: 56px;
+  justify-content: space-around;
+  align-items: stretch;
+  padding: 0 4px env(safe-area-inset-bottom, 0px);
+}
+
+.app-tab {
+  position: relative;
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: var(--app-tabbar-row);
+  color: var(--color-text-3);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  line-height: 1.2;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app-tab[aria-current="page"] {
+  color: var(--color-text-1);
+}
+
+/* The lit tab's mark: a short bar on the top edge, over its glyph. */
+.app-tab[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 32px;
+  height: 3px;
+  margin-left: -16px;
+  border-radius: 0 0 3px 3px;
+  background: var(--color-text-1);
+}
+
+.app-tab:focus-visible {
+  outline: 2px solid var(--color-ring-selected);
+  outline-offset: -4px;
+  border-radius: var(--radius-sm);
+}
+
+/* You: the avatar letter the header's menu wears; empty for a visitor. */
+.app-tab-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1.5px solid currentColor;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.app-tab[aria-current="page"] .app-tab-avatar {
+  background: var(--color-text-1);
+  border-color: var(--color-text-1);
+  color: var(--color-card);
+}
+
+/* Today's alert dot, mirrored from the sun roundel's (static/js/app_tabbar.js). */
+.app-tab-dot {
+  position: absolute;
+  top: 8px;
+  left: calc(50% + 6px);
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-eaws-high);
+  box-shadow: 0 0 0 2px var(--color-card);
+}
+
+.app-tab-dot[hidden] {
+  display: none;
+}
+
+/* The Saved chip row is the tab bar's, so it is drawn only where the bar is. */
+.app-saved-chips {
+  display: none;
+}
+
+.app-saved-chips.app-saved-chips--preview {
+  display: block;
+}
+
+@media (display-mode: standalone) and (max-width: 639.98px) {
+  :root {
+    /* Everything that must clear the bar reserves this: the row and the
+       home indicator's inset together. */
+    --app-tabbar-h: calc(56px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-tabbar {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    /* Above the map's overlay band and with the nav (z 9, map.css), below
+       every shell surface (--z-banner and up), which may cover it. */
+    z-index: 9;
+  }
+
+  body {
+    padding-bottom: var(--app-tabbar-h);
+  }
+
+  body > footer[data-testid="site-footer"],
+  [data-subscriber-menu],
+  #nav-sign-in {
+    display: none;
+  }
+
+  .app-saved-chips {
+    display: block;
+  }
+}

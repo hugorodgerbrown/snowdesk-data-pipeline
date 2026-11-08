@@ -416,31 +416,9 @@ Usage
                             states — adding a section is adding one <a> —
                             is what makes this a one-line change.
                         {% endcomment %}
-                        <a
-                            role="menuitem"
-                            href="{% url 'trips:list' %}"
-                            class="block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
-                        >
-                            {% trans "Trips" %}
-                        </a>
-                        <a
-                            role="menuitem"
-                            href="{% url 'accounts:settings' %}"
-                            class="block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
-                        >
-                            {% trans "Settings" %}
-                        </a>
-                        <div class="my-1 border-t border-border" aria-hidden="true"></div>
-                        <form method="post" action="{% url 'accounts:sign_out' %}" class="contents">
-                            {% csrf_token %}
-                            <button
-                                type="submit"
-                                role="menuitem"
-                                class="w-full text-left block px-3 py-1.5 text-sm text-text-3 hover:bg-tag hover:text-text-1"
-                            >
-                                {% trans "Sign out" %}
-                            </button>
-                        </form>
+                        {# SNOW-1476: the entries live in one partial, shared with  #}
+                        {# the installed phone app's You panel.                      #}
+                        {% include "includes/_account_menu_items.html" %}
                     </div>
                 </details>
             {% else %}

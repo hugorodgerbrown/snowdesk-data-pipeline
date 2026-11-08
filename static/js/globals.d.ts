@@ -274,6 +274,16 @@ interface Window {
   pwaWeatherDetail: any;
   /** SNOW-1366: the Today panel (static/js/today_panel.js). */
   pwaTodayPanel: { open(): void; close(): void; isOpen(): boolean };
+  /** SNOW-1476: the favourites, routes and report sheets' controllers. */
+  pwaFavouritesSheet: { open(): void; close(): void; isOpen(): boolean };
+  pwaRoutesSheet: { open(): void; close(): void; isOpen(): boolean };
+  pwaReportSheet: { open(): void; close(): void; isOpen(): boolean };
+  /** static/js/map_downloads_manager.js — the downloads sheet. */
+  pwaDownloadsManager: { open(): void; toggle(): void; refresh(): void };
+  /** SNOW-1476: the You panel (static/js/app_tabbar.js). */
+  pwaYouSheet: { open(): void; close(): void; isOpen(): boolean };
+  /** SNOW-1476: the installed phone app's tab bar (static/js/app_tabbar.js). */
+  pwaAppTabbar: { select(tab: 'map' | 'today' | 'saved' | 'you'): void; light(): void };
   /** static/js/map_sheet.js — the sheet controller; attach/bindDetents/handOff/toast. */
   MapSheet: any;
   /** static/js/route_rail.js — rail one below the map; open/close/cursor. */
