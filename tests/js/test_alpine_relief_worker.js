@@ -87,7 +87,15 @@ beforeEach(() => {
 
 describe('the alpinerelief worker', () => {
   it('loads the core on init', () => {
-    expect(self.importScripts).toHaveBeenCalledWith('/static/js/alpine_relief_core.js');
+    expect(self.importScripts).toHaveBeenCalledWith(
+      new URL('/static/js/alpine_relief_core.js', self.location.href).href,
+    );
+  });
+
+  it('refuses to import a script from another origin', () => {
+    self.importScripts.mockClear();
+    send({ type: 'init', coreUrl: 'https://evil.example/core.js' });
+    expect(self.importScripts).not.toHaveBeenCalled();
   });
 
   it('answers a tile with the PNG bytes of the core\'s paint', async () => {

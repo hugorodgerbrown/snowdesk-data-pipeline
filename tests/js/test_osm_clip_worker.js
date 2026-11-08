@@ -83,7 +83,17 @@ beforeEach(() => {
 
 describe('the osmclip worker', () => {
   it('loads the kit and the core on init', () => {
-    expect(self.importScripts).toHaveBeenCalledWith('/static/js/vector_tile_kit.min.js', '/static/js/osm_clip_core.js');
+    expect(self.importScripts).toHaveBeenCalledWith(
+      new URL('/static/js/vector_tile_kit.min.js', self.location.href).href,
+      new URL('/static/js/osm_clip_core.js', self.location.href).href,
+    );
+  });
+
+  it('refuses to import a script from another origin', () => {
+    self.importScripts.mockClear();
+    expect(() => send({ type: 'init', kitUrl: 'https://evil.example/kit.js', coreUrl: '/static/js/osm_clip_core.js' }))
+      .not.toThrow();
+    expect(self.importScripts).not.toHaveBeenCalled();
   });
 
   it('answers a border tile with re-encoded bytes whose features are the core\'s output', async () => {

@@ -93,10 +93,33 @@
     }
   }
 
+  /**
+   * The URL, if it is on this worker's own origin. The page hands the
+   * worker its script URLs; only same-origin scripts are imported, so a
+   * message can never load code from elsewhere.
+   *
+   * @param {unknown} url
+   * @returns {string}
+   */
+  function ownScript(url) {
+    const resolved = new URL(String(url), self.location.href);
+    if (resolved.origin !== self.location.origin) {
+      throw new Error(`refusing a script from another origin: ${resolved.origin}`);
+    }
+    return resolved.href;
+  }
+
   self.addEventListener('message', (event) => {
     const message = /** @type {any} */ (event).data || {};
     if (message.type === 'init') {
-      self.importScripts(message.coreUrl);
+      try {
+        self.importScripts(ownScript(message.coreUrl));
+      } catch (err) {
+        // A refused or failed import leaves the worker without its core,
+        // so every tile it is asked for is answered with an error.
+        console.error('[map] SNOW-1460: worker init failed', err);
+        return;
+      }
       core = self.pwaAlpineReliefCore;
       demTemplate = message.demTileUrl;
       relief = message.relief;
