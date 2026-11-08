@@ -237,6 +237,10 @@ extra_js        : scripts loaded at end of <body>. Used by
         {% block site_footer %}
             {% include "public/_site_footer.html" %}
         {% endblock %}
+        {# SNOW-1476: the installed phone app's tab bar. Outside the       #}
+        {# site_footer block so a page that moves its footer keeps the bar; #}
+        {# drawn only in that app (the standalone block in main.css).       #}
+        {% include "includes/_app_tabbar.html" %}
         {# SNOW-79 follow-up: SW-update banner. Hidden by default; revealed by   #}
         {# sw_register.js when a new service worker has installed and the page  #}
         {# is still controlled by the old one, and by pwa_version_check.js on   #}

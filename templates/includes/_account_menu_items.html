@@ -1,0 +1,71 @@
+{% comment %}
+templates/includes/_account_menu_items.html — the account menu's entries:
+Trips, Settings, then Sign out below a rule (SNOW-1476).
+
+Extracted from includes/nav.html so the avatar dropdown and the installed
+phone app's You panel (apps/map/templates/public/partials/_you_surface.html)
+list the same destinations and cannot drift. The ruling the dropdown carries
+still holds (docs/decisions/account-area-navigation-lives-in-the-nav-menu.md):
+adding an account section is adding one <a> here, asserted in
+tests/public/test_nav_partial.py.
+
+Signed-in only: the caller renders it inside its own is_authenticated
+branch.
+
+Parameters (passed via {% include … with … %}):
+  variant (string, optional) — "menu" (default): the dropdown's compact
+                               menuitems. "sheet": full-width rows for the
+                               You panel, with no menu roles.
+                               "sheet-sign-out": the You panel's Sign out,
+                               which it places last, below its own links.
+{% endcomment %}
+{% load i18n %}
+{% if variant == "sheet" %}
+    <a
+        href="{% url 'trips:list' %}"
+        class="block rounded-sm px-3 py-3 text-label text-text-1 hover:bg-tag"
+        data-testid="account-menu-trips"
+    >{% trans "Trips" %}</a>
+    <a
+        href="{% url 'accounts:settings' %}"
+        class="block rounded-sm px-3 py-3 text-label text-text-1 hover:bg-tag"
+        data-testid="account-menu-settings"
+    >{% trans "Settings" %}</a>
+{% elif variant == "sheet-sign-out" %}
+    <form method="post" action="{% url 'accounts:sign_out' %}">
+        {% csrf_token %}
+        <button
+            type="submit"
+            class="w-full rounded-sm px-3 py-3 text-left text-label text-text-2 hover:bg-tag hover:text-text-1"
+            data-testid="account-menu-sign-out"
+        >
+            {% trans "Sign out" %}
+        </button>
+    </form>
+{% else %}
+    <a
+        role="menuitem"
+        href="{% url 'trips:list' %}"
+        class="block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
+    >
+        {% trans "Trips" %}
+    </a>
+    <a
+        role="menuitem"
+        href="{% url 'accounts:settings' %}"
+        class="block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
+    >
+        {% trans "Settings" %}
+    </a>
+    <div class="my-1 border-t border-border" aria-hidden="true"></div>
+    <form method="post" action="{% url 'accounts:sign_out' %}" class="contents">
+        {% csrf_token %}
+        <button
+            type="submit"
+            role="menuitem"
+            class="w-full text-left block px-3 py-1.5 text-sm text-text-3 hover:bg-tag hover:text-text-1"
+        >
+            {% trans "Sign out" %}
+        </button>
+    </form>
+{% endif %}

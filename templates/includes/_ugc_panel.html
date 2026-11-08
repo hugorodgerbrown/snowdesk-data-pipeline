@@ -103,6 +103,11 @@ Parameters (passed via {% include … with … %}):
                   is the only user: it is the one legitimate per-panel
                   extra, since neither of the other two costs the device
                   anything to hold.
+  saved_tab       (string, optional) — "places", "routes" or
+                  "observations": this panel's place in the installed phone
+                  app's Saved tab. Renders includes/_saved_chips.html under
+                  the title block (SNOW-1476); the chips are drawn only in
+                  that app. Downloads passes none: it is not a Saved list.
   cta_label       (string) — the add-CTA's visible, translated label.
                   Required.
   foot_template   (string, optional) — template path rendered in the CTA's
@@ -145,6 +150,7 @@ state should not have to remember to bring its own.
         {# 6px, the same trim the budget block used to make for itself.     #}
         <p class="-mt-1.5 px-2 text-summary text-text-3">{{ context_line }}</p>
         {% if header_template %}{% include header_template %}{% endif %}
+        {% if saved_tab %}{% include "includes/_saved_chips.html" with current=saved_tab %}{% endif %}
     </div>
     {# `-mx-1.5 px-1.5` is the row label's clipping fix (SNOW-658), not     #}
     {# spacing: it moves 6px of this box from its content edge to its      #}

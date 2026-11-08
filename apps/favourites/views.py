@@ -93,12 +93,16 @@ from apps.locations.services.what3words import what3words_map_url
 from apps.public.bulletin_panels import problem_cards_for_bulletin
 from apps.public.templatetags.snowdesk_time import danger_level_digit
 from apps.regions.models import MicroRegion, Resort
+from apps.trips.models import Trip
 from apps.weather.services.nearest import nearest_forecast
 from apps.weather.services.weather_display import (
     build_weather_display,
 )
 
 logger = logging.getLogger(__name__)
+
+# SNOW-1476: how many upcoming trips the Today panel lists.
+TODAY_UPCOMING_TRIPS = 3
 
 # Must match Favourite.name's max_length. Checked here so an over-length
 # submission is turned into a handled 400 instead of a DB DataError (500).
@@ -1095,7 +1099,8 @@ def today(request: HttpRequest) -> HttpResponse:
 
     A fixed number of queries however many places there are: the user's
     region pins and resorts in one, today's ratings for their regions in
-    one, then ``build_today``'s own (the borrowed forecasts). The freshness
+    one, then ``build_today``'s own (the borrowed forecasts), and one for
+    the reader's next trips (SNOW-1476). The freshness
     headers (SNOW-418) are stamped from the oldest rating shown, as the
     favourites list's are.
 
@@ -1131,10 +1136,22 @@ def today(request: HttpRequest) -> HttpResponse:
     generated_at = (
         min(rating.updated_at for rating in present) if present else timezone.now()
     )
+    # SNOW-1476: the installed phone app's Today tab lists the reader's next
+    # trips under their places, soonest first (TripQuerySet.upcoming counts
+    # a trip dated today as upcoming). One query, capped.
+    upcoming_trips = list(
+        Trip.objects.for_user(request.user)
+        .upcoming(day)
+        .only("uuid", "name", "route_name", "date", "start_time")[:TODAY_UPCOMING_TRIPS]
+    )
     response = render(
         request,
         "favourites/partials/_today.html",
-        {"today_regions": regions, "today_date": day},
+        {
+            "today_regions": regions,
+            "today_date": day,
+            "today_trips": upcoming_trips,
+        },
     )
     return apply_freshness_headers(
         response,

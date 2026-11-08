@@ -107,6 +107,7 @@ from tests.factories import (
     RegionDayRatingFactory,
     ResortFactory,
     ResortLocationFactory,
+    TripFactory,
     UserFactory,
     WeatherFactory,
 )
@@ -2862,6 +2863,44 @@ class TestTodayView:
         assert response.status_code == 200
         assert response.content.decode().count('data-testid="today-resort"') == 4
         assert len(large.captured_queries) == len(small.captured_queries)
+
+    def test_the_next_trips_follow_soonest_first(self, client: Client) -> None:
+        """SNOW-1476: up to three upcoming trips, past ones left out."""
+        user = UserFactory.create()
+        today = django_timezone.localdate()
+        TripFactory.create(
+            created_by=user, name="Gone", date=today - datetime.timedelta(days=1)
+        )
+        for offset, name in ((9, "Later"), (2, "Soon"), (0, "Dawn patrol")):
+            TripFactory.create(
+                created_by=user,
+                name=name,
+                date=today + datetime.timedelta(days=offset),
+            )
+        TripFactory.create(
+            created_by=user, name="Too far", date=today + datetime.timedelta(days=20)
+        )
+        TripFactory.create(name="Someone else's", date=today)
+        client.force_login(user)
+
+        content = client.get(TODAY_URL, **HTMX_HEADERS).content.decode()
+
+        assert content.count('data-testid="today-trip"') == 3
+        assert "Gone" not in content
+        assert "Too far" not in content
+        assert "Someone else" not in content
+        assert (
+            content.index("Dawn patrol")
+            < content.index("Soon")
+            < content.index("Later")
+        )
+
+    def test_no_trips_no_trips_section(self, client: Client) -> None:
+        client.force_login(UserFactory.create())
+
+        content = client.get(TODAY_URL, **HTMX_HEADERS).content.decode()
+
+        assert 'data-testid="today-trips"' not in content
 
 
 @pytest.mark.django_db

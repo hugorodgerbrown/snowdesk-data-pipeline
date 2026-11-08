@@ -1689,6 +1689,15 @@ SEGMENTED_OPTION_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# Saved chips -----------------------------------------------------------------
+# SNOW-1476: the Saved panel's Places / Routes / Observations switch. Drawn
+# only in the installed phone app, so the fixture forces it visible.
+SAVED_CHIPS_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Places", "context": {"current": "places", "preview": True}},
+    {"caption": "Routes", "context": {"current": "routes", "preview": True}},
+)
+
+
 # Since strip -----------------------------------------------------------------
 # SNOW-1328: what moved in a region's bulletin since the day before.
 SINCE_STRIP_VARIANTS: tuple[dict[str, Any], ...] = (
@@ -2811,6 +2820,73 @@ NAV_VARIANTS: tuple[dict[str, Any], ...] = (
 # ── Site footer (SNOW-201) ──────────────────────────────────────────────────
 # The footer reverses URLs internally and reads no context variables, so a
 # single empty-context variant covers all states.
+
+# ── App tab bar (SNOW-1476) ─────────────────────────────────────────────────
+# The installed phone app's bottom bar. ``preview`` draws it outside the
+# standalone display mode, which the component library never runs in.
+
+
+def _tabbar_request(
+    *, signed_in: bool, url_name: str, path: str = "/"
+) -> SimpleNamespace:
+    """Build the slim request the tab bar and its state tag read.
+
+    Args:
+        signed_in: Whether the visitor is signed in.
+        url_name: The ``public`` URL name the page resolves to.
+        path: The request path.
+
+    Returns:
+        A stand-in request carrying a user and a resolver match.
+
+    """
+    return SimpleNamespace(
+        user=SimpleNamespace(
+            is_authenticated=signed_in,
+            is_staff=False,
+            email="dev@snowdesk.dev" if signed_in else "",
+        ),
+        resolver_match=SimpleNamespace(namespace="public", url_name=url_name),
+        path=path,
+        csp_nonce="",
+    )
+
+
+APP_TABBAR_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "On the map, signed in — tabs are buttons",
+        "context": {
+            "preview": True,
+            "request": _tabbar_request(signed_in=True, url_name="map", path="/map/"),
+        },
+    },
+    {
+        "caption": "Off the map, signed out — tabs are links",
+        "context": {
+            "preview": True,
+            "request": _tabbar_request(signed_in=False, url_name="resorts"),
+        },
+    },
+    {
+        "caption": "On a legal page — You lit",
+        "context": {
+            "preview": True,
+            "request": _tabbar_request(
+                signed_in=True, url_name="privacy", path="/privacy/"
+            ),
+        },
+    },
+)
+
+
+# ── Account menu items (SNOW-1476) ──────────────────────────────────────────
+# The avatar dropdown's entries, shared with the You panel.
+ACCOUNT_MENU_ITEMS_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Dropdown", "context": {}},
+    {"caption": "You panel rows", "context": {"variant": "sheet"}},
+    {"caption": "You panel sign out", "context": {"variant": "sheet-sign-out"}},
+)
+
 
 SITE_FOOTER_VARIANTS: tuple[dict[str, Any], ...] = (
     {
