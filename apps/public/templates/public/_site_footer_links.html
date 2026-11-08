@@ -11,6 +11,9 @@ Parameters (passed via {% include … with … %}):
   testid (string, optional) — the prefix of the release's data-testid;
                               "site-footer" by default, so a second copy
                               on the page does not repeat the footer's.
+  without_help (bool, optional) — leave Help out: the You panel lists it as
+                              a row of its own, so the line keeps only the
+                              legal links and the release.
 {% endcomment %}
 {% load i18n %}
 <p>
@@ -18,15 +21,25 @@ Parameters (passed via {% include … with … %}):
     {% url 'public:terms_of_service' as terms_url %}
     {% url 'public:privacy' as privacy_url %}
     {% url 'public:colophon' as colophon_url %}
-    {% blocktrans trimmed %}
-        <a class="underline hover:text-text-2" href="{{ help_url }}">Help</a>
-        &middot;
-        <a class="underline hover:text-text-2" href="{{ terms_url }}">Terms of Service</a>
-        &middot;
-        <a class="underline hover:text-text-2" href="{{ privacy_url }}">Privacy Policy</a>
-        &middot;
-        <a class="underline hover:text-text-2" href="{{ colophon_url }}">Colophon</a>
-    {% endblocktrans %}
+    {% if without_help %}
+        {% blocktrans trimmed %}
+            <a class="underline hover:text-text-2" href="{{ terms_url }}">Terms of Service</a>
+            &middot;
+            <a class="underline hover:text-text-2" href="{{ privacy_url }}">Privacy Policy</a>
+            &middot;
+            <a class="underline hover:text-text-2" href="{{ colophon_url }}">Colophon</a>
+        {% endblocktrans %}
+    {% else %}
+        {% blocktrans trimmed %}
+            <a class="underline hover:text-text-2" href="{{ help_url }}">Help</a>
+            &middot;
+            <a class="underline hover:text-text-2" href="{{ terms_url }}">Terms of Service</a>
+            &middot;
+            <a class="underline hover:text-text-2" href="{{ privacy_url }}">Privacy Policy</a>
+            &middot;
+            <a class="underline hover:text-text-2" href="{{ colophon_url }}">Colophon</a>
+        {% endblocktrans %}
+    {% endif %}
     {% if APP_RELEASE_LABEL %}
         {% firstof testid "site-footer" as testid_prefix %}
         &middot;

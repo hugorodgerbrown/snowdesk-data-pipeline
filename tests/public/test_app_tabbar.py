@@ -181,6 +181,37 @@ class TestOnTheMap:
         assert 'data-testid="you-offline-areas"' in template
         assert 'data-testid="you-sheet-footer"' in template
 
+    def test_the_you_panel_is_one_list_in_order(self, client: Client) -> None:
+        """Hugo, 8 Nov 2026: one list, no cards; Sign out pinned last."""
+        client.force_login(UserFactory.create())
+
+        content = client.get(reverse("public:map")).content.decode()
+
+        template = content[content.index('id="you-sheet-template"') :]
+        template = template[: template.index("</template>")]
+        order = [
+            "account-menu-trips",
+            "you-offline-areas",
+            "you-resorts",
+            "account-menu-settings",
+            "you-help",
+            "you-sheet-footer",
+            "account-menu-sign-out",
+        ]
+        positions = [template.index(f'data-testid="{name}"') for name in order]
+        assert positions == sorted(positions)
+        assert "rounded-card" not in template
+        footer = template[template.index('data-testid="you-sheet-footer"') :]
+        footer = footer[: footer.index("</div>")]
+        assert reverse("public:help") not in footer
+        assert reverse("public:terms_of_service") in footer
+
+    def test_the_site_footer_keeps_help(self, client: Client) -> None:
+        content = client.get(reverse("public:help")).content.decode()
+
+        footer = content[content.index('data-testid="site-footer"') :]
+        assert f'href="{reverse("public:help")}"' in footer
+
     def test_the_you_panel_offers_sign_in_signed_out(self, client: Client) -> None:
         content = client.get(reverse("public:map")).content.decode()
 

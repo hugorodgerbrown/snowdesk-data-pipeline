@@ -4,19 +4,18 @@ app's You panel (SNOW-1476).
 
 Opened by the bar's You tab (includes/_app_tabbar.html), over the map, at
 full height. It holds what the avatar menu and the footer hold everywhere
-else — the bar hides both in that app:
+else — the bar hides both in that app — as ONE list, no cards (Hugo,
+8 Nov 2026: two boxed pairs grouped nothing):
 
-  - the account: Trips and Settings (includes/_account_menu_items.html, the
-    same entries the avatar dropdown lists, so the two cannot drift);
-  - Offline areas, which opens the existing downloads sheet through
-    window.pwaDownloadsManager.open();
-  - Resorts;
-  - the footer's line: Help, the legal links and the running release
-    (public/_site_footer_links.html, not the <footer> itself);
-  - Sign out, last.
+  Trips · Offline areas · Resorts · Settings · Help
 
-Signed out the account block is Sign in instead; everything else is the
-same.
+Trips and Settings come from includes/_account_menu_items.html, the entries
+the avatar dropdown lists, so the two cannot drift. Offline areas opens the
+existing downloads sheet through window.pwaDownloadsManager.open(). Below
+the list, the footer's line without Help (public/_site_footer_links.html),
+and Sign out pinned to the foot of the panel, destructive last (rule 4).
+
+Signed out: Sign in above the list, and no Trips, Settings or Sign out.
 
 static/js/app_tabbar.js attaches the sheet through MapSheet.attach and
 clones #you-sheet-template into it on every open, as the other map panels
@@ -28,39 +27,62 @@ close (docs/design-system.md, rule 6).
 {% include "includes/_overlay_sheet.html" with id="you-sheet" aria_label=you_title scroll_body=True %}
 <template id="you-sheet-template">
     {% if request.user.is_authenticated %}
-        {% include "includes/_sheet_header.html" with title=request.user.email close_action="dismiss" title_class="text-lg font-semibold truncate" %}
+        {% include "includes/_sheet_header.html" with title=request.user.email close_action="dismiss" title_class="text-label font-medium" %}
     {% else %}
         {% include "includes/_sheet_header.html" with title=you_title close_action="dismiss" title_class="text-lg font-semibold" %}
     {% endif %}
-    <div class="-mx-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pt-2" data-testid="you-sheet-body">
-        {% if request.user.is_authenticated %}
-            <nav class="flex flex-col rounded-card border border-border" aria-label='{% trans "Account" %}'>
-                {% include "includes/_account_menu_items.html" with variant="sheet" %}
-            </nav>
-        {% else %}
-            {% trans "Sign in" as sign_in_label %}
-            {% sign_in_href as you_sign_in_href %}
-            {% include "includes/_button.html" with label=sign_in_label href=you_sign_in_href variant="primary" button_id="you-sign-in" %}
+    <div class="-mx-4 flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pt-2" data-testid="you-sheet-body">
+        {% if not request.user.is_authenticated %}
+            <div class="pb-4">
+                {% trans "Sign in" as sign_in_label %}
+                {% sign_in_href as you_sign_in_href %}
+                {% include "includes/_button.html" with label=sign_in_label href=you_sign_in_href variant="primary" button_id="you-sign-in" %}
+            </div>
         {% endif %}
-        <div class="flex flex-col rounded-card border border-border">
+        <nav
+            class="flex flex-col divide-y divide-border border-y border-border"
+            aria-label="{{ you_title }}"
+            data-testid="you-sheet-list"
+        >
+            {% if request.user.is_authenticated %}
+                {% include "includes/_account_menu_items.html" with variant="sheet" entry="trips" %}
+            {% endif %}
             <button
                 type="button"
-                class="block w-full rounded-sm px-3 py-3 text-left text-label text-text-1 hover:bg-tag"
+                class="flex w-full items-center justify-between gap-3 py-3.5 text-left text-label text-text-1 hover:text-text-2"
                 data-you-offline-areas
                 data-testid="you-offline-areas"
             >
                 {% trans "Offline areas" %}
+                {% include "includes/_icon_chevron_right.html" with size=18 svg_class="shrink-0 text-text-3" only %}
             </button>
             <a
                 href="{% url 'public:resorts' %}"
-                class="block rounded-sm px-3 py-3 text-label text-text-1 hover:bg-tag"
-            >{% trans "Resorts" %}</a>
-        </div>
-        <div class="px-2 text-center text-xs text-text-3" data-testid="you-sheet-footer">
-            {% include "public/_site_footer_links.html" with testid="you-sheet" %}
+                class="flex items-center justify-between gap-3 py-3.5 text-label text-text-1 hover:text-text-2"
+                data-testid="you-resorts"
+            >
+                {% trans "Resorts" %}
+                {% include "includes/_icon_chevron_right.html" with size=18 svg_class="shrink-0 text-text-3" only %}
+            </a>
+            {% if request.user.is_authenticated %}
+                {% include "includes/_account_menu_items.html" with variant="sheet" entry="settings" %}
+            {% endif %}
+            <a
+                href="{% url 'public:help' %}"
+                class="flex items-center justify-between gap-3 py-3.5 text-label text-text-1 hover:text-text-2"
+                data-testid="you-help"
+            >
+                {% trans "Help" %}
+                {% include "includes/_icon_chevron_right.html" with size=18 svg_class="shrink-0 text-text-3" only %}
+            </a>
+        </nav>
+        <div class="px-2 pt-4 text-center text-xs leading-prose text-text-3" data-testid="you-sheet-footer">
+            {% include "public/_site_footer_links.html" with testid="you-sheet" without_help=True %}
         </div>
         {% if request.user.is_authenticated %}
-            {% include "includes/_account_menu_items.html" with variant="sheet-sign-out" %}
+            <div class="mt-auto border-t border-border pt-1">
+                {% include "includes/_account_menu_items.html" with variant="sheet-sign-out" %}
+            </div>
         {% endif %}
     </div>
 </template>

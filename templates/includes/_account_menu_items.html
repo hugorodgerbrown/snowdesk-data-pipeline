@@ -6,7 +6,8 @@ Extracted from includes/nav.html so the avatar dropdown and the installed
 phone app's You panel (apps/map/templates/public/partials/_you_surface.html)
 list the same destinations and cannot drift. The ruling the dropdown carries
 still holds (docs/decisions/account-area-navigation-lives-in-the-nav-menu.md):
-adding an account section is adding one <a> here, asserted in
+adding an account section is adding its <a> here (and an `entry` for the
+You panel's list), asserted in
 tests/public/test_nav_partial.py.
 
 Signed-in only: the caller renders it inside its own is_authenticated
@@ -14,29 +15,41 @@ branch.
 
 Parameters (passed via {% include … with … %}):
   variant (string, optional) — "menu" (default): the dropdown's compact
-                               menuitems. "sheet": full-width rows for the
-                               You panel, with no menu roles.
+                               menuitems. "sheet": one full-width row of the
+                               You panel's list, with no menu roles.
                                "sheet-sign-out": the You panel's Sign out,
-                               which it places last, below its own links.
+                               which it pins last, below its own links.
+  entry   (string)           — "trips" or "settings", with variant "sheet":
+                               which row. The You panel interleaves its own
+                               rows between the two, so it asks for each.
 {% endcomment %}
 {% load i18n %}
 {% if variant == "sheet" %}
-    <a
-        href="{% url 'trips:list' %}"
-        class="block rounded-sm px-3 py-3 text-label text-text-1 hover:bg-tag"
-        data-testid="account-menu-trips"
-    >{% trans "Trips" %}</a>
-    <a
-        href="{% url 'accounts:settings' %}"
-        class="block rounded-sm px-3 py-3 text-label text-text-1 hover:bg-tag"
-        data-testid="account-menu-settings"
-    >{% trans "Settings" %}</a>
+    {% if entry == "trips" %}
+        <a
+            href="{% url 'trips:list' %}"
+            class="flex items-center justify-between gap-3 py-3.5 text-label text-text-1 hover:text-text-2"
+            data-testid="account-menu-trips"
+        >
+            {% trans "Trips" %}
+            {% include "includes/_icon_chevron_right.html" with size=18 svg_class="shrink-0 text-text-3" only %}
+        </a>
+    {% elif entry == "settings" %}
+        <a
+            href="{% url 'accounts:settings' %}"
+            class="flex items-center justify-between gap-3 py-3.5 text-label text-text-1 hover:text-text-2"
+            data-testid="account-menu-settings"
+        >
+            {% trans "Settings" %}
+            {% include "includes/_icon_chevron_right.html" with size=18 svg_class="shrink-0 text-text-3" only %}
+        </a>
+    {% endif %}
 {% elif variant == "sheet-sign-out" %}
     <form method="post" action="{% url 'accounts:sign_out' %}">
         {% csrf_token %}
         <button
             type="submit"
-            class="w-full rounded-sm px-3 py-3 text-left text-label text-text-2 hover:bg-tag hover:text-text-1"
+            class="w-full py-3.5 text-left text-label text-text-2 hover:text-text-1"
             data-testid="account-menu-sign-out"
         >
             {% trans "Sign out" %}

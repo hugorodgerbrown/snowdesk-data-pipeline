@@ -18,9 +18,10 @@ browser, a tablet, a desktop) nothing changes: the bar is rendered but
 - **Saved** opens the favourites, routes or report sheet, whichever was last
   used; a chip row under each header (`_saved_chips.html`) swaps between
   them in place: the card stays put and only its content changes.
-- **You** opens a new panel (`_you_surface.html`): the account entries
-  (shared with the avatar menu through `_account_menu_items.html`), Offline
-  areas, Resorts, the footer and Sign out.
+- **You** opens a new panel (`_you_surface.html`): one list, no cards
+  (Trips · Offline areas · Resorts · Settings · Help), the footer's legal
+  line without Help, and Sign out pinned to the foot. Trips and Settings
+  are shared with the avatar menu through `_account_menu_items.html`.
 
 The four panels are **tab panels**: full height between the header and the
 bar, no detents, opened and closed by their tab. On the map the tabs are
@@ -53,6 +54,7 @@ existing sheets already hold the lists.
   [`docs/design-system.md`](../design-system.md#map-panels-what-opened-it-decides-its-shape).
 - [`account-area-navigation-lives-in-the-nav-menu`](account-area-navigation-lives-in-the-nav-menu.md)
   still holds: the You panel lists the same entries from the same partial,
-  so a new account page still adds one `<a>` in one place.
+  so a new account page is added in one file (an `<a>` for the menu and an
+  `entry` for the panel's list).
 - Widening the bar to phone browsers is a CSS change to one media query,
   plus a check that the browser's own chrome and the bar do not stack.
