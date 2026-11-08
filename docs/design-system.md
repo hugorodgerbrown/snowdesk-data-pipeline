@@ -334,8 +334,10 @@ Why, and the option declined:
 
 **Tab panel.** Only in the installed app on a phone, where the bar
 replaces the roundels that would otherwise open these lists. The tab stays
-in charge, as a roundel does: its tab closes it and another tab swaps it,
-the outgoing panel fading as the next rises. Object sheets still open over
+in charge, as a roundel does: its tab closes it and another tab swaps it.
+A swap never closes and reopens the card: every tab panel has the same
+box, so the card stays put and only its content changes, fading in on a
+tab and replaced outright on a Saved chip (Hugo, 8 Nov 2026). Object sheets still open over
 the map above the bar. Why:
 [`docs/decisions/the-installed-phone-app-has-a-tab-bar.md`](decisions/the-installed-phone-app-has-a-tab-bar.md).
 

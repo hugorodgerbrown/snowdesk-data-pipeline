@@ -9,8 +9,8 @@
  *   - a tab opens its panel and lights; tapping it again, or Map, closes it;
  *   - another tab swaps one panel for the next, marked for the cross-fade;
  *   - signed out, Today and Saved both open the favourites sheet;
- *   - the Saved chips close one sheet as they open its sibling, and Saved
- *     reopens on the chip last chosen;
+ *   - the Saved chips close one sheet as they open its sibling, with no
+ *     entrance mark, and Saved reopens on the chip last chosen;
  *   - a panel closed from elsewhere lights Map again;
  *   - the You sheet clones its template on open, and Offline areas hands
  *     off to the downloads manager;
@@ -168,6 +168,15 @@ describe('the Saved chips', () => {
     expect($('favourite-sheet').hidden).toBe(true);
     expect($('route-sheet').hidden).toBe(false);
     expect(lit()).toEqual(['saved']);
+  });
+
+  it('replace the content with no entrance at all', async () => {
+    await load();
+    tab('saved').click();
+    choose('favourite-sheet', 'routes');
+    await tick();
+    expect($('route-sheet').hasAttribute('data-tab-swap')).toBe(false);
+    expect($('route-sheet').hasAttribute('data-tab-open')).toBe(false);
   });
 
   it('are remembered: Saved reopens on the last chip', async () => {

@@ -7299,8 +7299,10 @@ body.map-framing #map-legend {
      and its collapse toggle (Saved, and Offline areas under You).
    - The tab panels — Today, the three Saved sheets, You — stand at full
      height, from under the nav to above the bar. A first open rises; a
-     swap from one tab's panel to another's cross-fades in place
-     (static/js/app_tabbar.js marks them `data-tab-open` / `data-tab-swap`).
+     swap from one tab's panel to another keeps the card in place and fades
+     only its content in, so the map never shows through mid-swap
+     (static/js/app_tabbar.js marks them `data-tab-open` / `data-tab-swap`;
+     a Saved chip swaps with no mark, the content simply replaced).
    Nothing here applies outside the installed app on a phone. */
 @media (display-mode: standalone) and (max-width: 639.98px) {
     :root {
@@ -7332,8 +7334,8 @@ body.map-framing #map-legend {
         animation: app-tab-panel-rise 200ms cubic-bezier(0.32, 0.72, 0, 1);
     }
 
-    [data-tab-swap] {
-        animation: app-tab-panel-swap 150ms ease-out;
+    [data-tab-swap] > * {
+        animation: app-tab-panel-swap 120ms ease-out;
     }
 }
 
@@ -7352,7 +7354,7 @@ body.map-framing #map-legend {
 
 @media (prefers-reduced-motion: reduce) {
     [data-tab-open],
-    [data-tab-swap] {
+    [data-tab-swap] > * {
         animation: none;
     }
 }

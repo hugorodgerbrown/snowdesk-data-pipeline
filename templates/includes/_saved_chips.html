@@ -6,7 +6,7 @@ The installed phone app's Saved tab is the three existing sheets — the
 favourites, routes and report sheets, each its own surface — and this row,
 rendered under each one's header by includes/_ugc_panel.html, moves between
 them. static/js/app_tabbar.js listens for the change and closes one sheet
-as it opens its sibling, cross-fading the swap. The row is drawn only in
+as it opens its sibling in the same box, so only the content changes. The row is drawn only in
 the installed app on a phone (the standalone block in src/css/main.css);
 elsewhere each sheet is reached from its own roundel, as before.
 
