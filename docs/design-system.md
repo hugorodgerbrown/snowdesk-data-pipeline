@@ -2,7 +2,7 @@
 name: design-system
 description: Design handover — editorial and interaction principles, icon vs ellipsis rule, design tokens, the component layer, field guidance
 status: current
-last-reviewed: 2026-11-07
+last-reviewed: 2026-11-08
 ---
 
 
@@ -326,9 +326,8 @@ search pill it was picked from; roundel and form panels inset on the right,
 beside the roundel column that opened them. The left side is what you have
 selected; the right is the map's controls and your own lists. Four rules
 come with it: a surface opens beside its trigger; one object sheet at a
-time, at every width (the route panel shares the column); on a desktop the
-roundels a side panel covers step aside while the date row, its floor,
-stays put; and a sheet takes focus without drawing a ring round itself.
+time, at every width (the route panel shares the column); on a desktop a
+side panel covers the roundels under it and moves nothing (8 Nov 2026); and a sheet takes focus without drawing a ring round itself.
 Why, and the option declined:
 [`docs/decisions/a-panel-opens-beside-what-opened-it.md`](decisions/a-panel-opens-beside-what-opened-it.md).
 

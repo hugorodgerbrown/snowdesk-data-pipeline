@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-11-06
+last-reviewed: 2026-11-08
 ---
 
 # Map page — functional specification
@@ -926,9 +926,10 @@ column as the route panel: picking a place in search and having it open on
 the far side of the map read as discordant, and the left column now means
 "what you have selected". Their top is the pill row's bottom plus 8px and
 their floor is the date row, like every panel. While one is open the
-bottom-left stack's upper members (zoom, help, legend) step aside to sit
-just beyond the column; the date row stays put beneath it, since it sets
-the day the panel shows. The tour offer withdraws for it, and search's
+bottom-left stack (zoom, compass, help, legend, date row) stays put and the
+panel covers it; a reader who wants those controls closes the panel. What
+the roundels open (the legend card, the zoom flyout, the calendar) still
+opens beside the column. The tour offer withdraws for it, and search's
 results drop over it. A region framed from search lands beside the column,
 not under it. The lists and forms — Downloads, Favourites, Field
 observations, Routes, the terrain filter and the layers sign-in — stay

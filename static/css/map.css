@@ -1946,25 +1946,24 @@ html[data-route-drawing] #map-slopes-notice {
    side, under the search pill they were picked from
    (includes/_overlay_sheet.html's `side`, placed by map_overlay_bounds.js),
    and stop on the date row like every sheet. That column runs over the
-   stack's upper members — the zoom control, help and the legend toggle —
-   so while one is open those members step aside to sit just beyond it.
-   The date row stays where it is, under the sheet whose day it sets: it is
-   the stack's bottom line and the sheets' floor, and moving it would move
-   the floor out from under the sheet.
+   stack's upper members — the zoom control, compass, help and the legend
+   toggle — and they stay where they are, under it (Hugo, 8 Nov 2026). They
+   used to step aside to sit just beyond the column, which moved four
+   controls every time a region was picked; a reader who wants them closes
+   the sheet. The date row stays put too: it is the sheets' floor.
+
+   What those roundels OPEN still clears the column. A short sheet leaves
+   them visible and pressable below it, and the legend card, the zoom
+   flyout and the calendar all open rightward from the stack at a z-index
+   under the sheet's, so without this they would open behind it. `translate`
+   rather than `transform`, so each card's own transform-based open
+   animation is left alone.
 
    `:has()` rather than a flag a script keeps: the sheet's own `hidden` is
-   the one thing that knows it is open, so nothing can fall out of step.
-   The legend card and the calendar open over the map from this stack, and
-   since SNOW-1195/1196 both leave the sheet open, so each opens beside it:
-   the legend card rides the step aside below, and the calendar hangs from
-   the date row, right of the column. */
+   the one thing that knows it is open, so nothing can fall out of step. */
 @media (min-width: 640px) {
-    .map-legend > :not(#map-date-row) {
-        transition: transform 150ms ease;
-    }
-
-    :root:has([data-sheet-side='left']:not([hidden])) .map-legend > :not(#map-date-row) {
-        transform: translateX(calc(25rem + 8px));
+    :root:has([data-sheet-side='left']:not([hidden])) .map-legend > :is(#map-legend-card, #map-zoom-flyout, #map-calendar) {
+        translate: calc(25rem + 8px) 0;
     }
 
     /* The tour offer floats over the same corner and is an offer, not a
@@ -1980,12 +1979,6 @@ html[data-route-drawing] #map-slopes-notice {
        The pill row and the column never overlap otherwise. */
     .map-utility-cluster {
         z-index: calc(var(--z-popup) + 1);
-    }
-}
-
-@media (min-width: 640px) and (prefers-reduced-motion: reduce) {
-    .map-legend > :not(#map-date-row) {
-        transition: none;
     }
 }
 

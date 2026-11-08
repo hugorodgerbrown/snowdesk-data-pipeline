@@ -2,7 +2,7 @@
 name: a-panel-opens-beside-what-opened-it
 description: Desktop map panels open beside their trigger — selections left under search, roundel panels right; one object sheet; no sheet focus ring
 status: current
-last-reviewed: 2026-10-21
+last-reviewed: 2026-11-08
 ---
 
 # A panel opens beside what opened it
@@ -45,16 +45,23 @@ split, with the place panel on the left and the map controls on the right.
    sheets share one column on a desktop as they share one foot on a phone,
    so opening one closes the others (`map_sheet.js`, `closeOtherSheets`).
    That includes the route panel: picking a region closes an open route.
-3. **On a desktop, what a side panel covers steps aside; the floor never
-   moves.** The zoom, help and legend roundels slide to sit beyond the
-   column while a selection sheet is open. The date row, which is every
-   sheet's floor and sets the day the sheet shows, stays put beneath it.
-   This is the desktop counterpart of the phone rule that a sheet covers
-   and moves nothing: a phone sheet is a temporary layer over the whole
-   width, while a desktop column is a standing region, so what sits under
-   it moves out rather than going dark. Option A, a shorter panel stopped
-   above the stack so nothing moved, was mocked and declined: it cost about
-   150px of reading height on a laptop.
+3. **On a desktop, a side panel covers what is under it and moves
+   nothing.** The zoom, compass, help and legend roundels stay where they
+   are while a selection sheet is open, under the column; a reader who
+   wants them closes the sheet. The date row, which is every sheet's floor
+   and sets the day the sheet shows, stays put beneath it. What those
+   roundels open (the legend card, the zoom flyout, the calendar) still
+   opens beside the column, so a roundel left visible below a short sheet
+   never opens its card behind it. This is the phone rule too: a sheet
+   covers and moves nothing. Option A, a shorter panel stopped above the
+   stack so nothing moved, was mocked and declined: it cost about 150px of
+   reading height on a laptop.
+
+   *Revised 8 Nov 2026 (Hugo).* Until then the roundels slid to sit beyond
+   the column whenever a sheet opened, on the view that a desktop column is
+   a standing region and what sits under it should move out rather than go
+   dark. In use, four controls jumping sideways on every pick read as
+   restless, and the controls were rarely wanted while reading a sheet.
 4. **What drops from the search pill draws over the column.** Search
    results are the next selection, so they sit above the current one.
 5. **A sheet is a focus target, not a control.** A sheet takes focus as it
