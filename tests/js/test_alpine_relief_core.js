@@ -7,7 +7,9 @@
  * shadowing a slope facing away from the light and nothing on the flat;
  * the erase mask over the detailed-relief outline, holes honoured; a
  * painted tile erased inside it; and the tuning: its defaults, its
- * clamping and key, and each strength and the rock slope changing the paint.
+ * clamping and key, and each strength and the rock slope changing the paint;
+ * and the paint loop matching the helpers byte for byte on 512 px flat,
+ * rolling, steep and part-erased tiles, with and without a tuning (SNOW-1475).
  */
 
 import { describe, expect, it } from 'vitest';
@@ -237,4 +239,80 @@ describe('the tuning', () => {
     expect(core.paint(fifty, 16, tile, DETAILED_RELIEF, { highlightStrength: 0 })[centre]).toBeGreaterThan(0);
     expect(core.paint(fifty, 16, tile, DETAILED_RELIEF, { rockSlope: 55, highlightStrength: 0 })[centre]).toBe(0);
   });
+});
+
+describe('the paint loop (SNOW-1475)', () => {
+  /**
+   * The relief painted the readable way, through the exported helpers and
+   * a compositor of their pixels: what paint() shipped as in SNOW-1460.
+   */
+  function referencePaint(rgba, size, tile, polygons, tuning) {
+    const tuned = core.normaliseTuning(tuning);
+    const heights = new Float32Array(size * size);
+    for (let i = 0; i < size * size; i += 1) {
+      heights[i] = core.terrarium(rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]);
+    }
+    const mask = core.eraseMask(polygons, tile, size);
+    const cell = core.metresPerPixel(tile, size);
+    const out = new Uint8ClampedArray(size * size * 4);
+    const over = (at, pixel) => {
+      const a = pixel.alpha / 255;
+      const below = out[at + 3] / 255;
+      const alpha = a + below * (1 - a);
+      if (!alpha) return;
+      for (let c = 0; c < 3; c += 1) {
+        out[at + c] = Math.round((pixel.rgb[c] * a + out[at + c] * below * (1 - a)) / alpha);
+      }
+      out[at + 3] = Math.round(alpha * 255);
+    };
+    for (let index = 0; index < size * size; index += 1) {
+      if (mask[index]) continue;
+      const { slope, aspect } = core.slopeAspect(heights, size, index % size, Math.floor(index / size), cell);
+      const hill = core.hillshadePixel(slope, aspect, tuned);
+      if (hill) over(index * 4, hill);
+      const rock = core.rockPixel(slope, aspect, tuned);
+      if (rock) over(index * 4, rock);
+    }
+    return out;
+  }
+
+  const size = 512;
+  // Outside Switzerland, in the Ötztal.
+  const otztal = tileAt(10.9, 46.85, 12);
+  const otztalCell = core.metresPerPixel(otztal, size);
+  // Straddling the border by the Lower Engadine, so part of it is erased.
+  const border = tileAt(10.47, 46.88, 10);
+  const fixtures = {
+    flat: [dem(size, () => 1200), otztal],
+    rolling: [dem(size, (col, row) => 1500 + 400 * Math.sin(col / 30) * Math.cos(row / 45)), otztal],
+    steep: [dem(size, (col, row) => 2000 + col * otztalCell * 1.8 + row * otztalCell * 0.6), otztal],
+    masked: [dem(size, (col, row) => 1800 + 600 * Math.sin(col / 20 + row / 35)), border],
+  };
+
+  it('erases part of the masked fixture and paints the rest', () => {
+    const mask = core.eraseMask(DETAILED_RELIEF, border, size);
+    const erased = mask.reduce((sum, v) => sum + v, 0);
+    expect(erased).toBeGreaterThan(0);
+    expect(erased).toBeLessThan(size * size);
+  });
+
+  /** The first byte two tiles differ at, or -1; toEqual is too slow at 1 MB. */
+  function firstDifference(a, b) {
+    if (a.length !== b.length) return 0;
+    for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return i;
+    return -1;
+  }
+
+  for (const [name, [rgba, tile]] of Object.entries(fixtures)) {
+    it(`paints the ${name} 512 px tile byte for byte as the helpers do`, () => {
+      const painted = core.paint(rgba, size, tile, DETAILED_RELIEF);
+      expect(firstDifference(painted, referencePaint(rgba, size, tile, DETAILED_RELIEF))).toBe(-1);
+      expect(name === 'flat' || painted.some(Boolean)).toBe(true);
+      const tuning = { rockSlope: 30, rockStrength: 0.7, shadowStrength: 0.5, highlightStrength: 0.1 };
+      expect(firstDifference(
+        core.paint(rgba, size, tile, DETAILED_RELIEF, tuning),
+        referencePaint(rgba, size, tile, DETAILED_RELIEF, tuning),
+      )).toBe(-1);
+    });
+  }
 });
