@@ -333,6 +333,17 @@
           TERRAIN_FILTER_ELIGIBLE
             ? [new URL(TERRAIN_CLASS_TILE_URL, window.location.href).origin]
             : [],
+        )
+        // SNOW-1460: the winter map past the border draws OpenFreeMap's
+        // tiles through `osmclip://`, whose worker fetches them; the source
+        // names only the protocol (origin "null"), so the live style cannot
+        // teach the worker this host, and the catalogue holds it only while
+        // an OpenFreeMap row is on the picker. Seeded from the TileJSON the
+        // worker reads, which serves its tiles from the same origin.
+        .concat(
+          mapEl.dataset.osmTilejsonUrl
+            ? [new URL(mapEl.dataset.osmTilejsonUrl, window.location.href).origin]
+            : [],
         ),
     );
     const registerBasemapOrigins = (registration) => {

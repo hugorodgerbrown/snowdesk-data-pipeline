@@ -418,3 +418,21 @@ describe('seeding the terrain filter’s class-tile origin (SNOW-978)', () => {
     expect(registeredOrigins()).not.toContain('https://tiles.example.test');
   });
 });
+
+// SNOW-1460: OpenFreeMap's tiles are fetched inside the osmclip:// worker,
+// and the source names only the protocol, so the style cannot teach the
+// worker their host. The picker in this fixture has no OpenFreeMap row, so
+// only the seed can put it on the list.
+describe('seeding the winter map’s OpenStreetMap origin (SNOW-1460)', () => {
+  const OSM_ATTRS = 'data-map-beyond-switzerland="true" data-osm-tilejson-url="https://tiles.openfreemap.org/planet"';
+
+  it('registers the OpenFreeMap origin with the flag on', async () => {
+    const { registeredOrigins } = await boot(OSM_ATTRS);
+    expect(registeredOrigins()).toContain('https://tiles.openfreemap.org');
+  });
+
+  it('registers no OpenFreeMap origin from the seed with the flag off', async () => {
+    const { registeredOrigins } = await boot();
+    expect(registeredOrigins()).not.toContain('https://tiles.openfreemap.org');
+  });
+});

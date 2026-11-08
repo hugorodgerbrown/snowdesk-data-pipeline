@@ -5211,3 +5211,24 @@ describe("a sheet's weather icons travel with the sheet", () => {
     },
   );
 });
+
+// SNOW-1460: the winter map past the border draws OpenFreeMap's tiles
+// through osmclip://, whose worker fetches the TileJSON and the tiles. Both
+// are cross-origin GETs on the origin map.js seeds, so they take the
+// existing basemap rule, and the tile counts towards the tile cap.
+describe('OpenFreeMap fetches from the osmclip:// worker (SNOW-1460)', () => {
+  const OFM = 'https://tiles.openfreemap.org';
+  const TILEJSON = `${OFM}/planet`;
+  const TILE = `${OFM}/planet/20261101_080013_pt/10/533/358.pbf`;
+
+  it('classifies the TileJSON and the tile as basemap once the origin is registered', async () => {
+    await resetDb();
+    const sw = loadSw();
+    expect(await sw._classifyCrossOriginGet(new URL(TILE))).toBe('network');
+    sw.__listeners.message({ data: { type: 'register-basemap-origins', origins: [OFM] } });
+    expect(await sw._classifyCrossOriginGet(new URL(TILEJSON))).toBe('basemap');
+    expect(await sw._classifyCrossOriginGet(new URL(TILE))).toBe('basemap');
+    expect(self.pwaBasemapCacheCore.isTileShapedURL(TILE)).toBe(true);
+    expect(self.pwaBasemapCacheCore.isTileShapedURL(TILEJSON)).toBe(false);
+  });
+});
