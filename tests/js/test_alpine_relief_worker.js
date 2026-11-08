@@ -11,7 +11,8 @@
  * What is pinned: a tile comes back as the PNG bytes of the core's paint,
  * fetched from the elevation template without credentials; a failed fetch
  * replies with an error; a cancelled id gets no reply and its fetch is
- * aborted.
+ * aborted; a tuning from the init or a `tune` message changes the next
+ * paint.
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -143,6 +144,33 @@ describe('the alpinerelief worker', () => {
   it('falls back to the same AWS elevation as the 3D view', async () => {
     await import('../../static/js/map_3d_core.js');
     expect(core.DEM_FALLBACK_TILE_URL).toBe(window.pwaMap3dCore.DEM_FALLBACK_TILE_URL);
+  });
+
+  it('paints with a tuning sent by tune, and with the defaults again after a tune to null', async () => {
+    const tile = { z: 13, x: 4355, y: 2869 };
+    const light = { rockSlope: 30, rockStrength: 0.1, shadowStrength: 0.1, highlightStrength: 0.1 };
+    send({ type: 'tune', tuning: light });
+    send({ id: 5, url: 'alpinerelief://13/4355/2869' });
+    await settle();
+    const tuned = new Uint8ClampedArray(replies[0].data);
+    expect(tuned).toEqual(core.paint(DEM, SIZE, tile, DETAILED_RELIEF, light));
+    expect(tuned).not.toEqual(core.paint(DEM, SIZE, tile, DETAILED_RELIEF));
+
+    replies.length = 0;
+    send({ type: 'tune', tuning: null });
+    send({ id: 6, url: 'alpinerelief://13/4355/2869' });
+    await settle();
+    expect(new Uint8ClampedArray(replies[0].data)).toEqual(core.paint(DEM, SIZE, tile, DETAILED_RELIEF));
+  });
+
+  it('takes its first tuning from the init', async () => {
+    const light = { rockStrength: 0.05 };
+    send({ type: 'init', coreUrl: '/static/js/alpine_relief_core.js', demTileUrl: TEMPLATE, relief: DETAILED_RELIEF, tuning: light });
+    send({ id: 7, url: 'alpinerelief://13/4355/2869' });
+    await settle();
+    expect(new Uint8ClampedArray(replies[0].data))
+      .toEqual(core.paint(DEM, SIZE, { z: 13, x: 4355, y: 2869 }, DETAILED_RELIEF, light));
+    send({ type: 'tune', tuning: null });
   });
 
   it('drops a cancelled id and aborts its fetch', async () => {

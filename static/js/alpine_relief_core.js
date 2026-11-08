@@ -17,6 +17,13 @@
  *     darker on the shadow side, where the ground is too steep to hold snow
  *     and swisstopo would draw rock.
  *
+ * THE TUNING. How strong each of the three is, and the slope the rock
+ * starts at, is a `tuning` ({rockSlope, rockStrength, shadowStrength,
+ * highlightStrength}; strengths 0..1 of full alpha). TUNING_DEFAULTS is
+ * what every reader sees; a staff panel on /map/
+ * (static/js/map_relief_tuning.js) hands the worker another, which
+ * normaliseTuning clamps and tuningKey names for the tile URLs.
+ *
  * Inside the detailed relief the tile is erased (alpha 0), so swisstopo's
  * hachures are never covered. The layer sits above swisstopo's flat edge
  * shading (beyond_switzerland_core.js places it).
@@ -29,15 +36,17 @@
  *
  *   PROTOCOL / TILE_SIZE / MIN_ZOOM / MAX_ZOOM / ROCK_SLOPE_DEGREES
  *   LIGHT_AZIMUTH / LIGHT_ALTITUDE
+ *   TUNING_DEFAULTS / ROCK_SLOPE_RANGE
+ *   normaliseTuning(tuning) / tuningKey(tuning)
  *   parseUrl(url) / tileUrl(template, tile)
  *   terrarium(r, g, b)
  *   metresPerPixel(tile, size)
  *   slopeAspect(heights, size, col, row, cell)
  *   shade(slope, aspect)
- *   hillshadePixel(slope, aspect)
- *   rockPixel(slope, aspect)
+ *   hillshadePixel(slope, aspect, tuning?)
+ *   rockPixel(slope, aspect, tuning?)
  *   eraseMask(polygons, tile, size)
- *   paint(dem, size, tile, polygons)
+ *   paint(dem, size, tile, polygons, tuning?)
  */
 (function () {
   'use strict';
@@ -61,23 +70,38 @@
   const MIN_ZOOM = 6;
   const MAX_ZOOM = 14;
 
-  /** Steeper than this, the ground is drawn as rock. */
+  /** Steeper than this, the ground is drawn as rock (the default). */
   const ROCK_SLOPE_DEGREES = 40;
 
   /** Where the light comes from: the north-west, 45° up. */
   const LIGHT_AZIMUTH = 315;
   const LIGHT_ALTITUDE = 45;
 
-  /** The shadow's grey and its strongest alpha (0..255). */
+  /** The shadow's grey. */
   const SHADOW_RGB = Object.freeze([64, 64, 64]);
-  const SHADOW_MAX_ALPHA = 115;
-  /** The highlight's white and its strongest alpha. */
+  /** The highlight's white. */
   const HIGHLIGHT_RGB = Object.freeze([255, 255, 255]);
-  const HIGHLIGHT_MAX_ALPHA = 60;
-  /** The rock tone: lit and shadow-side greys, and its alpha. */
-  const ROCK_LIT_RGB = Object.freeze([158, 158, 158]);
-  const ROCK_SHADOW_RGB = Object.freeze([112, 112, 112]);
-  const ROCK_ALPHA = 140;
+  /** The rock tone: lit and shadow-side greys. */
+  const ROCK_LIT_RGB = Object.freeze([170, 170, 170]);
+  const ROCK_SHADOW_RGB = Object.freeze([126, 126, 126]);
+
+  /**
+   * What every reader sees. Strengths are the strongest alpha, 0..1 of
+   * full; lightened from 0.55 rock and 0.45 shadow on 8 Nov 2026 (Hugo:
+   * "lighten Ötztal a touch").
+   *
+   * @typedef {{rockSlope: number, rockStrength: number, shadowStrength: number, highlightStrength: number}} Tuning
+   * @type {Readonly<Tuning>}
+   */
+  const TUNING_DEFAULTS = Object.freeze({
+    rockSlope: ROCK_SLOPE_DEGREES,
+    rockStrength: 0.42,
+    shadowStrength: 0.36,
+    highlightStrength: 0.24,
+  });
+
+  /** The slopes the rock may start at, in degrees. */
+  const ROCK_SLOPE_RANGE = Object.freeze([25, 60]);
 
   const EARTH_CIRCUMFERENCE = 40075016.686;
   const RAD = Math.PI / 180;
@@ -86,6 +110,41 @@
    * @typedef {{z: number, x: number, y: number}} Tile
    * @typedef {{rgb: ReadonlyArray<number>, alpha: number}} Pixel
    */
+
+  /**
+   * A whole tuning from whatever was given: each value a finite number
+   * clamped to its range, anything missing or junk the default.
+   *
+   * @param {unknown} [tuning]
+   * @returns {Readonly<Tuning>}
+   */
+  function normaliseTuning(tuning) {
+    const given = tuning && typeof tuning === 'object' ? /** @type {Record<string, unknown>} */ (tuning) : {};
+    const pick = (/** @type {keyof Tuning} */ name, /** @type {number} */ min, /** @type {number} */ max) => {
+      const value = given[name];
+      const n = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN;
+      return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : TUNING_DEFAULTS[name];
+    };
+    return Object.freeze({
+      rockSlope: pick('rockSlope', ROCK_SLOPE_RANGE[0], ROCK_SLOPE_RANGE[1]),
+      rockStrength: pick('rockStrength', 0, 1),
+      shadowStrength: pick('shadowStrength', 0, 1),
+      highlightStrength: pick('highlightStrength', 0, 1),
+    });
+  }
+
+  /**
+   * A short name for a tuning, the same for the same values: the relief
+   * tiles' `?v=`, so a new tuning is a new tile to MapLibre.
+   *
+   * @param {unknown} [tuning]
+   * @returns {string}
+   */
+  function tuningKey(tuning) {
+    const t = normaliseTuning(tuning);
+    const pct = (/** @type {number} */ n) => String(Math.round(n * 100));
+    return [Math.round(t.rockSlope), pct(t.rockStrength), pct(t.shadowStrength), pct(t.highlightStrength)].join('-');
+  }
 
   /**
    * Read `alpinerelief://{z}/{x}/{y}`.
@@ -191,31 +250,35 @@
    *
    * @param {number} slope
    * @param {number} aspect
+   * @param {Tuning} [tuning]
    * @returns {?Pixel}
    */
-  function hillshadePixel(slope, aspect) {
+  function hillshadePixel(slope, aspect, tuning = TUNING_DEFAULTS) {
     const flat = Math.cos((90 - LIGHT_ALTITUDE) * RAD);
     const lit = shade(slope, aspect);
     if (lit < flat) {
-      const alpha = Math.round(((flat - lit) / flat) * SHADOW_MAX_ALPHA);
+      const alpha = Math.round(((flat - lit) / flat) * tuning.shadowStrength * 255);
       return alpha ? { rgb: SHADOW_RGB, alpha } : null;
     }
-    const alpha = Math.round(((lit - flat) / (1 - flat)) * HIGHLIGHT_MAX_ALPHA);
+    const alpha = Math.round(((lit - flat) / (1 - flat)) * tuning.highlightStrength * 255);
     return alpha ? { rgb: HIGHLIGHT_RGB, alpha } : null;
   }
 
   /**
-   * The rock tone, on a slope steeper than ROCK_SLOPE_DEGREES: the darker
-   * grey on the side facing away from the light.
+   * The rock tone, on a slope steeper than the tuning's rockSlope: the
+   * darker grey on the side facing away from the light.
    *
    * @param {number} slope
    * @param {number} aspect
+   * @param {Tuning} [tuning]
    * @returns {?Pixel}
    */
-  function rockPixel(slope, aspect) {
-    if (!(slope > ROCK_SLOPE_DEGREES)) return null;
+  function rockPixel(slope, aspect, tuning = TUNING_DEFAULTS) {
+    if (!(slope > tuning.rockSlope)) return null;
+    const alpha = Math.round(tuning.rockStrength * 255);
+    if (!alpha) return null;
     const towardsLight = Math.cos((LIGHT_AZIMUTH - aspect) * RAD) >= 0;
-    return { rgb: towardsLight ? ROCK_LIT_RGB : ROCK_SHADOW_RGB, alpha: ROCK_ALPHA };
+    return { rgb: towardsLight ? ROCK_LIT_RGB : ROCK_SHADOW_RGB, alpha };
   }
 
   /**
@@ -309,9 +372,11 @@
    * @param {Tile} tile
    * @param {ReadonlyArray<ReadonlyArray<ReadonlyArray<ReadonlyArray<number>>>>} polygons
    *   Where to erase: swisstopo's detailed relief.
+   * @param {unknown} [tuning] Normalised here; the defaults if left out.
    * @returns {Uint8ClampedArray} RGBA.
    */
-  function paint(dem, size, tile, polygons) {
+  function paint(dem, size, tile, polygons, tuning) {
+    const tuned = normaliseTuning(tuning);
     const heights = new Float32Array(size * size);
     for (let i = 0; i < size * size; i += 1) {
       heights[i] = terrarium(dem[i * 4], dem[i * 4 + 1], dem[i * 4 + 2]);
@@ -325,9 +390,9 @@
         if (mask[index]) continue;
         const { slope, aspect } = slopeAspect(heights, size, col, row, cell);
         const at = index * 4;
-        const hill = hillshadePixel(slope, aspect);
+        const hill = hillshadePixel(slope, aspect, tuned);
         if (hill) over(out, at, hill);
-        const rock = rockPixel(slope, aspect);
+        const rock = rockPixel(slope, aspect, tuned);
         if (rock) over(out, at, rock);
       }
     }
@@ -343,6 +408,10 @@
     ROCK_SLOPE_DEGREES,
     LIGHT_AZIMUTH,
     LIGHT_ALTITUDE,
+    TUNING_DEFAULTS,
+    ROCK_SLOPE_RANGE,
+    normaliseTuning,
+    tuningKey,
     parseUrl,
     tileUrl,
     terrarium,
