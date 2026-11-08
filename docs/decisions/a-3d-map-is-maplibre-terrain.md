@@ -537,13 +537,18 @@ only a route: no "share this view" link, no per-user token.
 ## "3D is experimental" (SNOW-1470, 7 Nov 2026)
 
 Before 3D went to every reader, Hugo asked that the view say it is still
-experimental. A floating top banner (`#map-3d-notice`, the off-map banner's
-primitive and slot) shows whenever the map is in 3D and goes when it is
+experimental. A floating banner (`#map-3d-notice`, the off-map banner's
+primitive) shows whenever the map is in 3D and goes when it is
 flat, whether the reader switched or the map dropped out by itself.
 `static/js/map_3d_notice.js` reads `:root[data-map-view]` at load and then
-`snowdesk:map-view-changed`. On a phone the date row runs across the top of
-the map, and a banner that stays up through a 3D visit must not cover it, so
-below 640px `static/css/map.css` drops it under that row. Closing it hides it for the visit and stores
+`snowdesk:map-view-changed`. A banner that stays up through a 3D visit must
+not cover a control, so `static/css/map.css` places it inside `#map` rather
+than in the primitive's top-centre slot, which sat on the search pill from
+640px (Hugo, 8 Nov 2026). On a phone it drops under the date row and stops
+short of the right-hand roundels; from 640px it takes the top-right corner,
+level with the search pill and never wider than the room the pill leaves. It
+sits under the map's controls and panels, so an open panel covers it, not
+the other way round. Closing it hides it for the visit and stores
 nothing, so the next load shows it again: the point is that nobody meets the
 rough edges unwarned, and the cost of a repeat is one tap.
 
