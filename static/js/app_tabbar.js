@@ -15,9 +15,14 @@
  *     header (includes/_saved_chips.html). You is the #you-sheet this
  *     module attaches (window.pwaYouSheet). Map closes whichever is open.
  *   - A TAB TOGGLES. Tapping the lit tab closes its panel; tapping another
- *     closes the open one and opens the next with `data-tab-swap`, which
- *     the CSS cross-fades instead of the first open's rise — the panel
- *     swaps in place rather than dropping and rising again.
+ *     swaps it for the next in place. All four panels share one box, and
+ *     the old one is hidden and the new one shown in the same task, so no
+ *     frame is painted between them: the card stays put and only its
+ *     content changes. A tab swap marks the new panel `data-tab-swap`,
+ *     whose content (never the card, which would let the map show
+ *     through) fades in; a Saved chip swaps with no mark at all, because
+ *     the three sheets' headers sit in the same place (Hugo, 8 Nov 2026:
+ *     "If a panel exists it should just replace the content").
  *   - THE LIT TAB FOLLOWS THE PANELS. A panel closed by something else —
  *     a Today or Saved row handing off to the region or place sheet, the
  *     ×, Escape — lights Map again; one reopened by map_panel_trail.js's
@@ -205,22 +210,26 @@
   }
 
   /**
-   * Open `panel`, marking `el` so the CSS swaps it in place (`swap`) or
-   * lets it rise as a first open.
+   * Open `panel`, marking `el` for the CSS: `open` rises as a first open,
+   * `swap` fades the content in over a card already in place, and null
+   * shows it as it is.
    *
    * @param {Panel} panel
    * @param {HTMLElement|null} el
-   * @param {boolean} swap
+   * @param {'open'|'swap'|null} kind
    */
-  function openPanel(panel, el, swap) {
-    var mark = swap ? 'data-tab-swap' : 'data-tab-open';
-    if (el) el.setAttribute(mark, '');
-    panel.open();
-    if (el) {
-      window.setTimeout(function () {
-        el.removeAttribute(mark);
-      }, SWAP_MS);
+  function openPanel(panel, el, kind) {
+    if (!el || !kind) {
+      panel.open();
+      return;
     }
+    const target = el;
+    const mark = 'data-tab-' + kind;
+    target.setAttribute(mark, '');
+    panel.open();
+    window.setTimeout(function () {
+      target.removeAttribute(mark);
+    }, SWAP_MS);
   }
 
   /**
@@ -242,7 +251,7 @@
     var swap = !!(currentPanel && currentPanel.isOpen());
     if (currentPanel && currentPanel !== next) currentPanel.close();
     openedBy = tab;
-    if (!next.isOpen()) openPanel(next, elementFor(tab), swap);
+    if (!next.isOpen()) openPanel(next, elementFor(tab), swap ? 'swap' : 'open');
     light();
   }
 
@@ -282,7 +291,7 @@
         var previous = savedController(from);
         if (previous) previous.close();
       }
-      if (!next.isOpen()) openPanel(next, document.getElementById(SAVED_SHEET_IDS[choice]), true);
+      if (!next.isOpen()) openPanel(next, document.getElementById(SAVED_SHEET_IDS[choice]), null);
       light();
     }, 0);
   });

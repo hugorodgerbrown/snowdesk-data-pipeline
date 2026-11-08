@@ -1,4 +1,4 @@
-{% load components i18n static %}
+{% load i18n %}
 {% comment %}
 public/partials/_today_surface.html — the Today panel (SNOW-1366).
 
@@ -21,11 +21,9 @@ pill that reopens Today.
 Rendered only for a signed-in reader, the one who can have pinned anything
 (``favourites_eligible``); static/js/today_panel.js drives it.
 
-Behind map_modes the panel says when the map is somewhere else (Hugo,
-5 Nov 2026): on another day, or in Terrain, a notice at the top reads "Map
-shows 2 Nov 2026" (or "Map shows Terrain") with a "Show today" that moves
-the map to Conditions on today and leaves the panel open. Hidden until
-today_panel.js finds the map elsewhere; off the flag it never shows.
+The panel carries no "Map shows … / Show today" notice: Hugo removed it on
+8 Nov 2026, as a "Show today" on a panel and a tab named Today makes no
+sense. A followed row still moves the map to today first (today_panel.js).
 
 Context expected:
   favourites_eligible — bool: the reader is signed in.
@@ -35,26 +33,6 @@ Context expected:
     {% include "includes/_overlay_sheet.html" with id="today-sheet" aria_label=today_title scroll_body=True side="left" %}
     <template id="today-sheet-template">
         {% include "includes/_sheet_header.html" with title=today_title icon_template="includes/_icon_sun.html" close_action="dismiss" title_class="text-lg font-semibold" %}
-        {# The map is elsewhere: status-info by meaning, as             #}
-        {# includes/_another_day_strip.html is. Not that include: its   #}
-        {# day is the server's and its way back a link, where this one's #}
-        {# day moves under the open panel and its way back is a press.   #}
-        <div
-            class="mb-3 flex items-center gap-2 rounded-tag bg-status-info-bg px-3 py-2 text-sm text-status-info-text"
-            role="status"
-            data-today-elsewhere
-            data-testid="today-elsewhere"
-            hidden
-        >
-            <span class="min-w-0 flex-1 font-medium" data-today-elsewhere-label></span>
-            <button
-                type="button"
-                class='{% button_classes variant="primary" size="compact" %} hover-affordance shrink-0 whitespace-nowrap'
-                data-today-show
-            >
-                {% trans "Show today" %}
-            </button>
-        </div>
         {% comment %}
         The list's rows bleed to the panel's edges (-mx-4 on its <ul>), so
         the scroll box spans them too (-mx-4 px-4): a scroll box narrower
@@ -71,9 +49,6 @@ Context expected:
     </template>
     <template id="today-strings-template">
         <span data-string="error">{% trans "Today could not be loaded. Check your connection and try again." %}</span>
-        {# The day is the date ribbon's own formatting (formatDatePopup). #}
-        <span data-string="showing-day">{% blocktrans %}Map shows %(day)s{% endblocktrans %}</span>
-        <span data-string="showing-terrain">{% trans "Map shows Terrain" %}</span>
     </template>
 {% endif %}
 {# SNOW-1412: this surface's scripts are listed, with their ordering notes, in #}

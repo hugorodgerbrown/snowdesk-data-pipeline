@@ -14,9 +14,9 @@
  *   - the bell's dot, now the sun's: shown while the newest alert is newer
  *     than the last opening, cleared by opening, hidden on a failed read;
  *   - window.pwaTodayPanel, the back pill's way back in;
- *   - behind map_modes (window.pwaMapMode present): the "Map shows …"
- *     notice on another day or in Terrain, its "Show today", and a followed
- *     row moving the map to Conditions on today first.
+ *   - behind map_modes (window.pwaMapMode present): a followed row moving
+ *     the map to Conditions on today first, and no "Map shows …" notice
+ *     (removed on 8 Nov 2026).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -29,16 +29,10 @@ const MARKUP = `
   <div id="today-sheet" hidden></div>
   <div id="season-scrubber" data-today="2026-11-02"></div>
   <template id="today-sheet-template">
-    <div data-today-elsewhere hidden>
-      <span data-today-elsewhere-label></span>
-      <button type="button" data-today-show>Show today</button>
-    </div>
     <div data-today-rows data-today-url="/favourites/partials/today/"><p>Loading today…</p></div>
   </template>
   <template id="today-strings-template">
     <span data-string="error">Today could not be loaded.</span>
-    <span data-string="showing-day">Map shows %(day)s</span>
-    <span data-string="showing-terrain">Map shows Terrain</span>
   </template>`;
 
 const ALERT = { sent_at: '2026-11-02T07:05:00+01:00' };
@@ -209,9 +203,7 @@ describe('the dot', () => {
   });
 });
 
-describe('behind map_modes, the map elsewhere', () => {
-  const notice = () => document.querySelector('#today-sheet [data-today-elsewhere]');
-  const label = () => document.querySelector('#today-sheet [data-today-elsewhere-label]');
+describe('behind map_modes, a followed row', () => {
 
   /**
    * A stand-in for map_mode.js: a mode, and a toConditionsToday that
@@ -223,10 +215,6 @@ describe('behind map_modes, the map elsewhere', () => {
     let mode = initial;
     window.pwaMapMode = {
       isTerrain: () => mode === 'terrain',
-      setTerrain: () => {
-        mode = 'terrain';
-        document.dispatchEvent(new CustomEvent('snowdesk:map-mode-changed', { detail: { mode } }));
-      },
       toConditionsToday: vi.fn(() => {
         mode = 'dated';
         document.dispatchEvent(new CustomEvent('snowdesk:map-mode-changed', { detail: { mode } }));
@@ -240,54 +228,6 @@ describe('behind map_modes, the map elsewhere', () => {
   /** @param {string} date */
   const moveMapTo = (date) =>
     document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date } }));
-
-  it('is hidden while the map is on today in Conditions', async () => {
-    stubMapMode('dated');
-    await load({ alerts: [] });
-    $('map-today-panel-toggle').click();
-    expect(notice().hidden).toBe(true);
-  });
-
-  it('names the day the map is on, in the date ribbon\'s format', async () => {
-    stubMapMode('dated');
-    globalThis.formatDatePopup = (d) => 'popup:' + d;
-    await load({ alerts: [] });
-    moveMapTo('2026-11-01');
-    $('map-today-panel-toggle').click();
-    expect(notice().hidden).toBe(false);
-    expect(label().textContent).toBe('Map shows popup:2026-11-01');
-    delete globalThis.formatDatePopup;
-  });
-
-  it('says Terrain in Terrain, whatever the day', async () => {
-    stubMapMode('terrain');
-    await load({ alerts: [] });
-    $('map-today-panel-toggle').click();
-    expect(notice().hidden).toBe(false);
-    expect(label().textContent).toBe('Map shows Terrain');
-  });
-
-  it('follows the map while open', async () => {
-    stubMapMode('dated');
-    await load({ alerts: [] });
-    $('map-today-panel-toggle').click();
-    moveMapTo('2026-10-30');
-    expect(notice().hidden).toBe(false);
-    moveMapTo('2026-11-02');
-    expect(notice().hidden).toBe(true);
-    window.pwaMapMode.setTerrain();
-    expect(notice().hidden).toBe(false);
-  });
-
-  it('"Show today" brings the map to Conditions on today and stays open', async () => {
-    stubMapMode('terrain');
-    await load({ alerts: [] });
-    $('map-today-panel-toggle').click();
-    document.querySelector('#today-sheet [data-today-show]').click();
-    expect(window.pwaMapMode.toConditionsToday).toHaveBeenCalledTimes(1);
-    expect(notice().hidden).toBe(true);
-    expect($('today-sheet').hidden).toBe(false);
-  });
 
   it('a followed row moves the map to Conditions on today first', async () => {
     stubMapMode('terrain');
@@ -319,10 +259,13 @@ describe('behind map_modes, the map elsewhere', () => {
     expect(window.pwaMapMode.toConditionsToday).not.toHaveBeenCalled();
   });
 
-  it('never shows off the flag', async () => {
+  it('opens with no "Map shows …" notice, wherever the map is', async () => {
+    // Hugo, 8 Nov 2026: a "Show today" on a panel named Today makes no sense.
+    stubMapMode('terrain');
     await load({ alerts: [] });
     moveMapTo('2026-11-01');
     $('map-today-panel-toggle').click();
-    expect(notice().hidden).toBe(true);
+    expect(document.querySelector('#today-sheet [data-today-elsewhere]')).toBeNull();
+    expect($('today-sheet').textContent).not.toContain('Show today');
   });
 });

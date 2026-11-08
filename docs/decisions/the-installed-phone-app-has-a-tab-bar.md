@@ -17,7 +17,7 @@ browser, a tablet, a desktop) nothing changes: the bar is rendered but
 - **Today** opens the existing Today panel, with the next few trips added.
 - **Saved** opens the favourites, routes or report sheet, whichever was last
   used; a chip row under each header (`_saved_chips.html`) swaps between
-  them with a cross-fade.
+  them in place: the card stays put and only its content changes.
 - **You** opens a new panel (`_you_surface.html`): the account entries
   (shared with the avatar menu through `_account_menu_items.html`), Offline
   areas, Resorts, the footer and Sign out.

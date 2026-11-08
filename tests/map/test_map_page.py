@@ -3206,24 +3206,20 @@ def test_the_calendar_carries_today_in_its_footer_behind_the_flag() -> None:
 
 
 @pytest.mark.django_db
-def test_the_today_panel_carries_its_map_elsewhere_notice() -> None:
-    """The Today panel's body has the hidden "Map shows …" notice and its
-    "Show today", and its strings template the two labels today_panel.js
-    writes into it (static/js reads them, never a literal).
+def test_the_today_panel_has_no_map_elsewhere_notice() -> None:
+    """No "Map shows … / Show today" in the Today panel (Hugo, 8 Nov 2026):
+    a "Show today" on a panel, and a tab, named Today makes no sense.
     """
     content = _map_as(signed_in=True, flag=True)
     template = content[content.index('id="today-sheet-template"') :]
     template = template[: template.index("</template>")]
-    start = template.index("data-today-elsewhere")
-    tag = template[template.rindex("<div", 0, start) : template.index(">", start)]
-    assert "hidden" in tag
-    assert "data-today-elsewhere-label" in template
-    assert "data-today-show" in template
-    assert "Show today" in template
+    assert "data-today-elsewhere" not in template
+    assert "data-today-show" not in template
+    assert "Show today" not in template
     strings = content[content.index('id="today-strings-template"') :]
     strings = strings[: strings.index("</template>")]
-    assert '<span data-string="showing-day">Map shows %(day)s</span>' in strings
-    assert '<span data-string="showing-terrain">Map shows Terrain</span>' in strings
+    assert "showing-day" not in strings
+    assert "showing-terrain" not in strings
 
 
 # ---------------------------------------------------------------------------
