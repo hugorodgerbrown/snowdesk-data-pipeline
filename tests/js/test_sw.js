@@ -3684,9 +3684,11 @@ describe('answering whether the app would open offline (SNOW-922)', () => {
       ports: [{ postMessage: (data) => replies.push(data) }],
       waitUntil: () => {},
     });
-    await flush();
-
-    expect(replies).toEqual([{ type: 'can-open-offline', canOpen: false }]);
+    // Wait for the reply, not a fixed tick: the answer reads IndexedDB, and a
+    // busy CI runner can take longer than `flush()`'s 10ms to open it.
+    await vi.waitFor(() => {
+      expect(replies).toEqual([{ type: 'can-open-offline', canOpen: false }]);
+    });
   });
 
   it('does not throw when the asker transferred no port', async () => {
@@ -3785,10 +3787,9 @@ describe('_heldForOffline (SNOW-1416)', () => {
       ports: [{ postMessage: (data) => replies.push(data) }],
       waitUntil: () => {},
     });
-    await flush();
-    await flush();
-
-    expect(replies).toEqual([{ type: 'held-content', held: [abs(WEATHER)] }]);
+    await vi.waitFor(() => {
+      expect(replies).toEqual([{ type: 'held-content', held: [abs(WEATHER)] }]);
+    });
   });
 
   it('answers null when Cache Storage is unusable, so the page fetches everything', async () => {
@@ -3802,10 +3803,9 @@ describe('_heldForOffline (SNOW-1416)', () => {
       ports: [{ postMessage: (data) => replies.push(data) }],
       waitUntil: () => {},
     });
-    await flush();
-    await flush();
-
-    expect(replies).toEqual([{ type: 'held-content', held: null }]);
+    await vi.waitFor(() => {
+      expect(replies).toEqual([{ type: 'held-content', held: null }]);
+    });
   });
 });
 
