@@ -8,7 +8,7 @@
  *
  * What is pinned: a border tile comes back re-encoded, and its decoded
  * features are the core's output; an outside tile comes back as fetched
- * and an inside one empty; a failed fetch replies with an error; a
+ * and an inside one empty, without fetching it; a failed fetch replies with an error; a
  * cancelled id gets no reply and its fetch is aborted.
  */
 
@@ -109,13 +109,17 @@ describe('the osmclip worker', () => {
     expect(got.place[0].geometry).toEqual([[[3000, 3000]]]);
   });
 
-  it('answers an outside tile with the bytes as fetched, and an inside one empty', async () => {
+  it('answers an outside tile with the bytes as fetched, and an inside one empty without a fetch', async () => {
+    fetchMock.mockClear();
     send({ id: 2, url: 'osmclip://1/1/0' });
     send({ id: 3, url: 'osmclip://1/0/0' });
     await settle();
     const byId = Object.fromEntries(replies.map((r) => [r.id, r]));
     expect(new Uint8Array(byId[2].data)).toEqual(new Uint8Array(TILE_BYTES));
     expect(byId[3].data.byteLength).toBe(0);
+    const fetched = fetchMock.mock.calls.map(([url]) => url);
+    expect(fetched).toContain('https://tiles.example.test/planet/v1/1/1/0.pbf');
+    expect(fetched).not.toContain('https://tiles.example.test/planet/v1/1/0/0.pbf');
   });
 
   it('replies with an error when the fetch fails', async () => {

@@ -14,8 +14,9 @@
  *                    clips every feature to outside the extent
  *                    (static/js/osm_clip_core.js), encodes it again (vt-pbf)
  *                    and replies {id, data} with the bytes, transferred. A
- *                    tile wholly inside the extent is answered empty, one
- *                    wholly outside with the bytes as fetched.
+ *                    tile wholly inside the extent is answered empty without
+ *                    a fetch; one wholly outside with the bytes as fetched,
+ *                    never decoded.
  *   {type: 'cancel', id}
  *                    MapLibre aborted the tile: its fetch is aborted and no
  *                    reply is sent for it.
@@ -127,11 +128,21 @@
     try {
       const tile = core.parseUrl(url);
       if (!tile) throw new Error(`osm_clip: not a tile url: ${url}`);
+      // Classified before the fetch: over Switzerland every tile is wholly
+      // inside, and is answered empty without asking OpenFreeMap for it.
+      // OpenMapTiles' layers are all 4096 units across.
+      const status = core.classifyTile(extent, tile, 4096, kit.polygonClipping);
+      if (status === core.INSIDE) {
+        reply(id, { data: new ArrayBuffer(0) });
+        return;
+      }
       const source = core.tileUrl(await tileTemplate(controller.signal), tile);
       const response = await fetch(source, { signal: controller.signal });
       if (!response.ok) throw new Error(`osm_clip: tile ${response.status}`);
       const bytes = await response.arrayBuffer();
-      reply(id, { data: bytes.byteLength ? clipTile(bytes, tile) : new ArrayBuffer(0) });
+      // Wholly outside: passed on as fetched, never decoded.
+      if (status === core.OUTSIDE || !bytes.byteLength) reply(id, { data: bytes });
+      else reply(id, { data: clipTile(bytes, tile) });
     } catch (err) {
       reply(id, { error: String((err && /** @type {any} */ (err).message) || err) });
     }
