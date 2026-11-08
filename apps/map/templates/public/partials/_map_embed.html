@@ -188,6 +188,21 @@ Optional context:
     {# or without map_modes (SNOW-1451). map.js reads it for the boot view; #}
     {# map_view_3d.js draws it.                                             #}
     data-map-view-enabled="{{ map_3d_view|yesno:'true,false' }}"
+    {# SNOW-1460: the winter map past the Swiss border, behind its own flag. #}
+    {# map_beyond_switzerland.js reads the two workers, the kit and cores    #}
+    {# they import, the OSM TileJSON and the DEM tiles they read from.      #}
+    {% if map_beyond_switzerland %}
+        data-map-beyond-switzerland="true"
+        data-osm-clip-worker-url="{% static 'js/osm_clip_worker.js' %}"
+        data-alpine-relief-worker-url="{% static 'js/alpine_relief_worker.js' %}"
+        data-vector-tile-kit-url="{% static 'js/vector_tile_kit.min.js' %}"
+        {# The cores each worker imports beside it: static names are hashed #}
+        {# in production, so a worker cannot work out its siblings' URLs.   #}
+        data-osm-clip-core-url="{% static 'js/osm_clip_core.js' %}"
+        data-alpine-relief-core-url="{% static 'js/alpine_relief_core.js' %}"
+        data-osm-style-url="{{ osm_style_url }}"
+        data-dem-tile-url="{{ map_3d_dem_tile_url }}"
+    {% endif %}
     data-route-claim-url-template="{{ route_claim_url_template }}"
     data-routes-upload-eligible="{{ routes_upload_eligible|yesno:'true,false' }}"
     data-routes-signin-url="{{ routes_signin_url }}"
@@ -1874,12 +1889,23 @@ Optional context:
                     >{% trans "3D uses the swisstopo winter map; yours comes back in 2D." %}</span>
                     <span data-string="why-zoom">{% trans "Zoom in to see 3D" %}</span>
                     <span data-string="why-offline">{% trans "3D needs a connection or a downloaded area" %}</span>
-                    <span data-string="why-coverage">{% trans "3D covers Switzerland for now" %}</span>
+                    {# SNOW-1460: past the border, 3D covers the Alps. #}
+                    {% if map_beyond_switzerland %}
+                        <span data-string="why-coverage">{% trans "3D covers the Alps for now" %}</span>
+                    {% else %}
+                        <span data-string="why-coverage">{% trans "3D covers Switzerland for now" %}</span>
+                    {% endif %}
                     <span data-string="why-editing">{% trans "Finish drawing the route to see 3D" %}</span>
                     <span
                         data-string="left-offline"
                     >{% trans "Back in 2D: offline, 3D works only in a downloaded area." %}</span>
-                    <span data-string="left-coverage">{% trans "Back in 2D: 3D covers Switzerland for now." %}</span>
+                    {% if map_beyond_switzerland %}
+                        <span data-string="left-coverage">{% trans "Back in 2D: 3D covers the Alps for now." %}</span>
+                    {% else %}
+                        <span
+                            data-string="left-coverage"
+                        >{% trans "Back in 2D: 3D covers Switzerland for now." %}</span>
+                    {% endif %}
                     <span data-string="why-device">{% trans "3D is not available on this device" %}</span>
                     <span data-string="why-slow">{% trans "3D is too slow on this device" %}</span>
                     <span data-string="why-webgl">{% trans "3D comes back once the map's graphics have reset" %}</span>

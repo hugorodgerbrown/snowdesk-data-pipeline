@@ -36,6 +36,11 @@
       "name": "map_3d",
       "note": "Gates /map/'s 3D view (SNOW-1449; apps/public/map_shared.py map_3d_view_enabled): MapLibre terrain on the swisstopo winter map, tilted by the 3D roundel or opened by ?view=3d. map_3d alone since SNOW-1451, signed-in readers only (anonymous requests short-circuit), plus anyone holding a route share's 3D grant while its sharer is in this flag (SNOW-1469). Superusers while it is tried out; production opens it to every signed-in reader after release. Outside the flag /map/ ignores ?view=3d and opens flat. The old /map/3d/ page is a redirect to it since SNOW-1450.",
       "superusers": true
+    },
+    {
+      "name": "map_beyond_switzerland",
+      "note": "Gates the swisstopo winter map beyond the Swiss border (SNOW-1460; apps/public/map_shared.py map_beyond_switzerland_enabled): OpenStreetMap vector tiles restyled with the winter style's own layers and clipped to outside the swisstopo extent, our relief from the DEM tiles past swisstopo's detail, and swisstopo's scree pattern on OSM scree, in 2D and 3D. With map_3d too, the 3D gate widens from Switzerland to the Alps. Signed-in readers only (anonymous requests short-circuit). Released on its own schedule, separate from map_3d; superusers while it is tried out. Off, the map is exactly as before.",
+      "superusers": true
     }
   ]
 }

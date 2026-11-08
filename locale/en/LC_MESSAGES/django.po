@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-07 16:21+0000\n"
+"POT-Creation-Date: 2026-11-08 08:05+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -2504,10 +2504,16 @@ msgstr ""
 msgid "3D needs a connection or a downloaded area"
 msgstr ""
 
+msgid "3D covers the Alps for now"
+msgstr ""
+
 msgid "3D covers Switzerland for now"
 msgstr ""
 
 msgid "Back in 2D: offline, 3D works only in a downloaded area."
+msgstr ""
+
+msgid "Back in 2D: 3D covers the Alps for now."
 msgstr ""
 
 msgid "Back in 2D: 3D covers Switzerland for now."
@@ -3216,6 +3222,30 @@ msgstr ""
 msgid "What this shows"
 msgstr ""
 
+msgid "Connection"
+msgstr ""
+
+msgid "Open it"
+msgstr ""
+
+msgid ""
+"Green when you are online. Tap it to go offline on purpose, or to reconnect."
+msgstr ""
+
+msgid "Your trips and settings, and sign out."
+msgstr ""
+
+msgid "Admin"
+msgstr ""
+
+msgid ""
+"Staff tools: the admin, the component library and the resort and location "
+"editors."
+msgstr ""
+
+msgid "Sign in to keep your pins, routes and observations."
+msgstr ""
+
 msgid "Open the region"
 msgstr ""
 
@@ -3250,6 +3280,28 @@ msgid "Day shown"
 msgstr ""
 
 msgid "Open the calendar"
+msgstr ""
+
+msgid ""
+"The map shows one day at a time. The arrows step a day; tap the date for a "
+"calendar, coloured by the selected region’s danger."
+msgstr ""
+
+msgid "Bring the map back to today."
+msgstr ""
+
+msgid "Switch"
+msgstr ""
+
+msgid ""
+"Take the day’s danger and weather off the map, to read the ground itself. "
+"Tap the date to come back to the day’s conditions."
+msgstr ""
+
+msgid "Open today"
+msgstr ""
+
+msgid "Your pinned regions and resorts, and their danger today."
 msgstr ""
 
 msgid "Use it"

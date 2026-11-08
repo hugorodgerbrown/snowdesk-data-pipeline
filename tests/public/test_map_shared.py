@@ -6,6 +6,8 @@ the map, the home page, ``/offline/`` and the nav's wordmark all read it.
 Since SNOW-1451 it is the ``map_3d`` flag alone, for signed-in readers; a
 signed-out request with no route share 3D grant (SNOW-1469) makes no query.
 The grant's own rules are tested in tests/routes/test_map_3d_grant.py.
+``map_beyond_switzerland_enabled`` (SNOW-1460) has the same anonymous
+short-circuit.
 """
 
 from __future__ import annotations
@@ -19,7 +21,11 @@ from django.http import HttpRequest, HttpResponse
 from django.test import RequestFactory
 from waffle.testutils import override_flag
 
-from apps.public.map_shared import map_3d_view_enabled, map_modes_enabled
+from apps.public.map_shared import (
+    map_3d_view_enabled,
+    map_beyond_switzerland_enabled,
+    map_modes_enabled,
+)
 from apps.routes.services.map_3d_grant import GRANT_SESSION_KEY
 from tests.factories import RouteShareFactory, UserFactory
 
@@ -128,3 +134,28 @@ def test_the_answer_is_kept_on_the_request(
         assert map_3d_view_enabled(request) is True
         with django_assert_num_queries(0):
             assert map_3d_view_enabled(request) is True
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("flag", [True, False])
+def test_beyond_switzerland_follows_its_flag_when_signed_in(
+    rf: RequestFactory, flag: bool
+) -> None:
+    """SNOW-1460: signed in, the winter map past the border is the flag's answer."""
+    request = _request(rf, signed_in=True)
+    with override_flag("map_beyond_switzerland", active=flag):
+        assert map_beyond_switzerland_enabled(request) is flag
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("flag", [True, False])
+def test_beyond_switzerland_is_off_and_free_when_signed_out(
+    rf: RequestFactory, django_assert_num_queries: Any, flag: bool
+) -> None:
+    """SNOW-1460: signed out it is always False, and asks waffle nothing."""
+    request = _request(rf, signed_in=False)
+    with (
+        override_flag("map_beyond_switzerland", active=flag),
+        django_assert_num_queries(0),
+    ):
+        assert map_beyond_switzerland_enabled(request) is False

@@ -3721,3 +3721,134 @@ def test_the_frame_terrain_line_names_3d_data_only_with_the_3d_view() -> None:
         == "Terrain and 3D data: up to %(mb)s MB more"
     )
     assert 'data-string="frame-terrain-up-to-3d"' not in without
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1460 — the winter map beyond Switzerland, behind its own flag
+# ---------------------------------------------------------------------------
+
+_BEYOND_SCRIPTS = (
+    "js/swisstopo_extent.js",
+    "js/beyond_switzerland_core.js",
+    "js/osm_clip_core.js",
+    "js/alpine_relief_core.js",
+    "js/map_beyond_switzerland.js",
+)
+
+
+def _beyond_map(*, beyond: bool, map_3d: bool = False) -> str:
+    """Return /map/'s HTML for a signed-in reader with the flags as given."""
+    client = Client()
+    client.force_login(UserFactory.create())
+    with (
+        override_flag("map_beyond_switzerland", active=beyond),
+        override_flag("map_3d", active=map_3d),
+    ):
+        return client.get(reverse("public:map")).content.decode()
+
+
+def _map_div(content: str) -> str:
+    """Return the opening tag of ``#map``."""
+    start = content.index('id="map"')
+    return content[content.rindex("<", 0, start) : content.index(">", start) + 1]
+
+
+@pytest.mark.django_db
+def test_map_beyond_switzerland_carries_its_attributes_behind_the_flag() -> None:
+    """``#map`` names both workers, the kit and cores they import, the
+    TileJSON and the DEM tiles.
+    """
+    tag = _map_div(_beyond_map(beyond=True))
+    assert 'data-map-beyond-switzerland="true"' in tag
+    assert re.search(r'data-osm-clip-worker-url="[^"]*/js/osm_clip_worker\.js"', tag)
+    assert re.search(
+        r'data-alpine-relief-worker-url="[^"]*/js/alpine_relief_worker\.js"', tag
+    )
+    assert re.search(
+        r'data-vector-tile-kit-url="[^"]*/js/vector_tile_kit\.min\.js"', tag
+    )
+    assert re.search(r'data-osm-clip-core-url="[^"]*/js/osm_clip_core\.js"', tag)
+    assert re.search(
+        r'data-alpine-relief-core-url="[^"]*/js/alpine_relief_core\.js"', tag
+    )
+    assert f'data-osm-style-url="{settings.OPENFREEMAP_STYLE_URL}"' in tag
+    assert f'data-dem-tile-url="{settings.MAP_3D_DEM_TILE_URL}"' in tag
+
+
+@pytest.mark.django_db
+def test_map_beyond_switzerland_off_renders_none_of_it() -> None:
+    """Off, ``#map`` carries no attribute and the page loads no script."""
+    content = _beyond_map(beyond=False, map_3d=True)
+    tag = _map_div(content)
+    for attribute in (
+        "data-map-beyond-switzerland",
+        "data-osm-clip-worker-url",
+        "data-alpine-relief-worker-url",
+        "data-vector-tile-kit-url",
+        "data-osm-clip-core-url",
+        "data-alpine-relief-core-url",
+        "data-osm-style-url",
+    ):
+        assert attribute not in tag, attribute
+    for script in _BEYOND_SCRIPTS:
+        assert script not in content, script
+    # The Swiss coverage copy stays.
+    assert "3D covers Switzerland for now" in content
+    assert "Back in 2D: 3D covers Switzerland for now." in content
+    assert "3D covers the Alps for now" not in content
+
+
+@pytest.mark.django_db
+def test_map_beyond_switzerland_loads_its_five_scripts_behind_the_flag() -> None:
+    """On, the five scripts render, once each."""
+    content = _beyond_map(beyond=True)
+    tags = re.findall(r'<script[^>]+src="[^"]*/static/(js/[^"]+)"', content)
+    for script in _BEYOND_SCRIPTS:
+        assert tags.count(script) == 1, script
+
+
+@pytest.mark.django_db
+def test_map_beyond_switzerland_is_not_in_any_bundle() -> None:
+    """The bundle manifests list none of the five, so a reader without the
+    flag downloads none of it.
+    """
+    lists = Path(settings.BASE_DIR) / "static" / "js" / "bundles"
+    for manifest in lists.glob("*.txt"):
+        text = manifest.read_text(encoding="utf-8")
+        for script in _BEYOND_SCRIPTS:
+            assert script.removeprefix("js/") not in text, (manifest.name, script)
+        for worker in ("osm_clip_worker.js", "alpine_relief_worker.js"):
+            assert worker not in text, (manifest.name, worker)
+        assert "vector_tile_kit.min.js" not in text, manifest.name
+
+
+@pytest.mark.django_db
+def test_map_beyond_switzerland_says_3d_covers_the_alps() -> None:
+    """With map_3d too, the two coverage lines name the Alps."""
+    content = _beyond_map(beyond=True, map_3d=True)
+    assert "3D covers the Alps for now" in content
+    assert "Back in 2D: 3D covers the Alps for now." in content
+    assert "3D covers Switzerland for now" not in content
+
+
+@pytest.mark.django_db
+def test_map_beyond_switzerland_asks_nothing_for_an_anonymous_reader(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An anonymous /map/ never asks waffle about the flag, and renders none of it."""
+    import waffle
+    from django.http import HttpRequest
+
+    asked: list[str] = []
+    real = waffle.flag_is_active
+
+    def spy(request: HttpRequest, name: str) -> bool:
+        """Record each flag asked for, then answer as waffle would."""
+        asked.append(name)
+        return bool(real(request, name))
+
+    monkeypatch.setattr(waffle, "flag_is_active", spy)
+    with override_flag("map_beyond_switzerland", active=True):
+        content = Client().get(reverse("public:map")).content.decode()
+    assert "map_beyond_switzerland" not in asked
+    assert "js/map_beyond_switzerland.js" not in content

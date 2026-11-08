@@ -46,6 +46,7 @@ from apps.map.problem_terrain import problem_terrain_key
 from apps.observations.models import FieldObservation
 from apps.public.map_shared import (
     map_3d_view_enabled,
+    map_beyond_switzerland_enabled,
     map_modes_enabled,
     trip_url_templates,
 )
@@ -285,6 +286,7 @@ def map_page(request: HttpRequest) -> HttpResponse:
     example = RouteShare.objects.example().only("example_date").first()
     modes_enabled = map_modes_enabled(request)
     map_3d_view = map_3d_view_enabled(request)
+    beyond_switzerland = map_beyond_switzerland_enabled(request)
 
     return render(
         request,
@@ -336,6 +338,16 @@ def map_page(request: HttpRequest) -> HttpResponse:
             "map_3d_test_url": reverse("api:map_3d_test") if map_3d_view else "",
             "map_3d_test_overlays": (
                 " ".join(MAP_3D_TEST_OVERLAYS) if map_3d_view else ""
+            ),
+            # SNOW-1460: the winter map past the Swiss border, in 2D and 3D,
+            # behind its own flag; with the 3D view, 3D opens across the Alps.
+            "map_beyond_switzerland": beyond_switzerland,
+            # The configured OpenFreeMap style, whose vector source the clip
+            # worker resolves to a tile template: a self-hosted deployment
+            # (docs/runbooks/self-hosted-tiles.md) lays its tiles out
+            # differently from the public /planet TileJSON.
+            "osm_style_url": (
+                settings.OPENFREEMAP_STYLE_URL if beyond_switzerland else ""
             ),
         },
     )
