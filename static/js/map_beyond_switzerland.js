@@ -161,23 +161,38 @@
    * @returns {boolean} Whether anything was added.
    */
   function splice() {
-    if (map.getSource(core.OSM_SOURCE_ID)) return false;
-    if (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded()) return false;
+    // No isStyleLoaded() guard: in MapLibre 4.x it stays false until every
+    // source's tiles and the sprite are in, and once the map goes idle no
+    // further styledata is promised, so a guarded splice could never run.
+    // map_view_3d's reinstall works the same way: try, and let a style
+    // mid-swap throw into the catch; the next style.load splices.
     let style;
     try {
       style = map.getStyle();
     } catch (_err) {
-      // A style mid-swap can throw; the next style.load splices.
       return false;
     }
-    const plan = core.plan(style);
+    // plan() refuses a style that already has the OSM source, so it is
+    // planned as if the source were absent; the adds below skip what exists.
+    const sources = Object.assign({}, style && style.sources);
+    delete sources[core.OSM_SOURCE_ID];
+    const plan = core.plan(Object.assign({}, style, { sources }));
     if (!plan) return false;
-    for (const [id, source] of Object.entries(plan.sources)) {
-      if (!map.getSource(id)) map.addSource(id, source);
-    }
-    for (const { layer, beforeId } of plan.layers) {
-      if (map.getLayer(layer.id)) continue;
-      map.addLayer(layer, beforeId && map.getLayer(beforeId) ? beforeId : undefined);
+    const last = plan.layers.length ? plan.layers[plan.layers.length - 1].layer.id : null;
+    // Done once the last planned layer is in, not once the source is: an
+    // add that threw partway leaves the source but not the rest.
+    if (map.getSource(core.OSM_SOURCE_ID) && (!last || map.getLayer(last))) return false;
+    try {
+      for (const [id, source] of Object.entries(plan.sources)) {
+        if (!map.getSource(id)) map.addSource(id, source);
+      }
+      for (const { layer, beforeId } of plan.layers) {
+        if (map.getLayer(layer.id)) continue;
+        map.addLayer(layer, beforeId && map.getLayer(beforeId) ? beforeId : undefined);
+      }
+    } catch (err) {
+      console.warn('[map] SNOW-1460: splice failed; retried on the next style event', err);
+      return false;
     }
     return true;
   }

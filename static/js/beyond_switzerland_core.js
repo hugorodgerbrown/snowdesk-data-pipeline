@@ -422,7 +422,8 @@
       }
     });
     if (reliefAfter < 0) {
-      // No hillshade to sit on: the relief goes under the first layer drawn.
+      // No hillshade to sit on: the relief goes just above the first layer
+      // drawn (the background), under everything else.
       added.unshift({
         layer: { id: RELIEF_LAYER_ID, type: 'raster', source: RELIEF_SOURCE_ID, paint: { 'raster-fade-duration': 0 } },
         beforeId: layers[1] ? layers[1].id : null,

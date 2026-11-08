@@ -232,6 +232,38 @@ describe('the splice', () => {
     expect(map.addSource.mock.calls.filter(([id]) => id === core.OSM_SOURCE_ID)).toHaveLength(2);
   });
 
+  it('splices while isStyleLoaded() is still false, as it is at style.load in MapLibre 4.x', async () => {
+    const { map } = await boot();
+    map.swapStyle();
+    // Tiles and the sprite are still loading: MapLibre says not loaded, and
+    // may never fire another styledata once it goes idle.
+    map.isStyleLoaded = () => false;
+    map.fire('style.load');
+    expect(map.getSource(core.OSM_SOURCE_ID)).toBeTruthy();
+    expect(map.layerIds()).toContain(`${core.LAYER_PREFIX}road_fill`);
+  });
+
+  it('finishes a splice that threw partway on the next style event', async () => {
+    const { map } = await boot();
+    map.swapStyle();
+    const realAdd = map.addLayer.getMockImplementation();
+    let calls = 0;
+    map.addLayer.mockImplementation((layer, beforeId) => {
+      calls += 1;
+      if (calls === 3) throw new Error('mid-swap');
+      realAdd(layer, beforeId);
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(() => map.fire('style.load')).not.toThrow();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+    map.addLayer.mockImplementation(realAdd);
+    map.fire('styledata');
+    const ids = map.layerIds();
+    expect(ids).toContain(`${core.LAYER_PREFIX}road_fill`);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   it('leaves a style that is not the winter one alone', async () => {
     const { map } = await boot();
     map.swapStyle();

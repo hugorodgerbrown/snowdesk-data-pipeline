@@ -488,7 +488,15 @@
       /** @type {Feature[]} */
       const features = [];
       for (const feature of layer.features) {
-        const clipped = clipFeature(feature, local, clipping);
+        // polygon-clipping can throw on a degenerate ring. Dropping that one
+        // feature keeps the rest of the border tile, which would otherwise
+        // fail on every request, since its input never changes.
+        let clipped = null;
+        try {
+          clipped = clipFeature(feature, local, clipping);
+        } catch (_err) {
+          clipped = null;
+        }
         if (clipped) features.push(clipped);
       }
       if (features.length) out[name] = { extent: layerExtent, features };

@@ -48,12 +48,14 @@
    * The tile template, read from the TileJSON once. A failed read is not
    * kept, so the next tile asks again.
    *
-   * @param {AbortSignal} signal
+   * It is fetched with no abort signal: the read is shared by every tile
+   * waiting on it, so one tile's cancel must not fail the others.
+   *
    * @returns {Promise<string>}
    */
-  function tileTemplate(signal) {
+  function tileTemplate() {
     if (!template) {
-      template = fetch(tilejsonUrl, { signal })
+      template = fetch(tilejsonUrl)
         .then((response) => {
           if (!response.ok) throw new Error(`osm_clip: TileJSON ${response.status}`);
           return response.json();
@@ -136,7 +138,7 @@
         reply(id, { data: new ArrayBuffer(0) });
         return;
       }
-      const source = core.tileUrl(await tileTemplate(controller.signal), tile);
+      const source = core.tileUrl(await tileTemplate(), tile);
       const response = await fetch(source, { signal: controller.signal });
       if (!response.ok) throw new Error(`osm_clip: tile ${response.status}`);
       const bytes = await response.arrayBuffer();
