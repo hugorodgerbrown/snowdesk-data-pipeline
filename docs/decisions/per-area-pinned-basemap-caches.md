@@ -2,7 +2,7 @@
 name: per-area-pinned-basemap-caches
 description: One Cache Storage bucket per downloaded basemap area; custom areas are an array with a reserved legacy id (SNOW-635)
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-11-09
 ---
 
 # One pinned Cache Storage bucket per downloaded area
@@ -111,6 +111,14 @@ bbox/template-driven `beforeWarm` (next section) is unaffected — a region
 genuinely is keyed on one fixed id (its `region_id`) for the device's
 whole lifetime, so re-downloading it under a different basemap really is
 the same area, unlike a custom area which can now simply be a new one.
+
+**Amendment (SNOW-1478): one bucket can hold more than one map.** A
+download in Switzerland saves Swisstopo whatever map is on screen, and a
+cross-border one saves Swisstopo plus a foreign map, both in the area's one
+bucket. The record lists them as `basemaps: [{key, template, deps}]`, and
+every completeness reader judges each entry
+([why](swiss-downloads-save-the-swisstopo-map.md)). The bucket is still
+keyed on area id alone, so `sw.js` serves it unchanged.
 
 ## Consequences
 

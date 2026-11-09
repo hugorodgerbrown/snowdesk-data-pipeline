@@ -325,6 +325,8 @@
    *   record's `elevation` stamp, or not at all for a run that pinned none.
    *   Local only, like `deps`: it is what this device's bucket holds, not
    *   something the account can know.
+   * @param {Array<{key: (string|null), template: *, deps: string[]}>} [basemaps]
+   *   SNOW-1478: every map the run saved (`finish`'s `extras.basemaps`).
    * @returns {Promise<void>}
    */
   async function _recordRegionDownload(
@@ -342,6 +344,7 @@
     items,
     verified,
     elevation,
+    basemaps,
   ) {
     if (!z || !window.pwaDb) return;
     try {
@@ -361,6 +364,10 @@
         // and a style that is not loaded cannot be asked what its sprite
         // is. Exactly the reason `template` and `basemapKey` are stored.
         deps: Array.isArray(renderDeps) ? renderDeps : [],
+        // SNOW-1478: every map this run saved, primary first; the three
+        // fields above are the primary entry's, for every reader that asks
+        // only which map the area is on.
+        ...(Array.isArray(basemaps) && basemaps.length > 0 ? { basemaps: basemaps } : {}),
         // SNOW-871: the glyph prefix this run promoted under. Not a url
         // and not a dependency — a HANDLE, and the only one there is on
         // entries MapLibre asked for by unicode range and sw.js copied in
@@ -910,7 +917,22 @@
     const core = self.pwaBasemapDownloadCore;
     const feature = data ? FEATURE_BY_REGION_ID[data.regionId] : null;
     const bbox = core && feature ? core.featureBBox(feature) : null;
-    return terrainClassMbForGround(bbox, data && data.summary ? data.summary.count : undefined);
+    return terrainClassMbForGround(
+      bbox,
+      data && data.summary ? data.summary.count : undefined,
+      _regionKeys(data),
+    );
+  }
+
+  /**
+   * SNOW-1478: the maps a download of this region saves, primary first —
+   * Swisstopo for a Swiss region, whatever is on screen.
+   *
+   * @param {{regionId: string}|null|undefined} data
+   * @returns {string[]|null} Null with no region.
+   */
+  function _regionKeys(data) {
+    return data && data.regionId ? downloadBasemapKeys(regionGround(data.regionId)) : null;
   }
 
   /**
@@ -1034,7 +1056,45 @@
 
     const stored = await _storedRegionRecord(data.regionId);
     if (stored) {
-      if (!stored.template || core.tileSourcesKey(stored.template) === activeKey) {
+      // SNOW-1478: a region saved on the maps its ground needs, none of
+      // them the one on screen — a Swiss region saved on Swisstopo with
+      // OpenFreeMap showing. It is downloaded; it is judged on its own
+      // maps' tiles and recorded documents, and never offered as
+      // 'other-basemap', whose tap would download it again.
+      const runKeys = _regionKeys(data);
+      const ownTemplate = !stored.template || core.tileSourcesKey(stored.template) === activeKey;
+      if (
+        !ownTemplate &&
+        runKeys &&
+        typeof core.recordHoldsBasemaps === 'function' &&
+        core.recordHoldsBasemaps(stored, runKeys)
+      ) {
+        const entries = core
+          .recordBasemaps(stored)
+          .filter((entry) => runKeys.indexOf(entry.key) >= 0 && entry.template);
+        const savedCached =
+          entries.length > 0 &&
+          entries.every((entry) => core.blobFullyCached(entry.template, { z: stored.z }, cached));
+        const savedElevation = areaElevationTileUrls(stored);
+        const savedMissing = savedCached
+          ? [
+              ...core.missingRenderDependencies(
+                [...areaAllRenderDependencyURLs(stored), ...areaTerrainClassTileUrls(stored)],
+                cached,
+              ),
+              ...((await missingFromAreaBucket(core.areaIdForRegion(data.regionId), savedElevation)) ||
+                savedElevation),
+            ]
+          : [];
+        return {
+          done: savedCached && savedMissing.length === 0,
+          missingDeps: savedMissing,
+          otherBasemapKey: null,
+          contentIncomplete: !!stored.contentIncomplete,
+          contentAt: stored.contentAt || null,
+        };
+      }
+      if (ownTemplate) {
         const tilesCached = core.blobFullyCached(tileSources, { z: stored.z }, cached);
         // SNOW-844: tiles are half the answer. This branch is the area's
         // OWN basemap (or a pre-SNOW-632 record with no template, read the
@@ -1357,10 +1417,9 @@
     // passes no summary at all and reads no size, so there is nothing to
     // price for it.
     const rawMb = summary ? summary.mb : undefined;
+    // SNOW-1478: priced on the maps this region's download saves.
     const mb =
-      core && summary
-        ? core.sourceScaledMb(rawMb, activeBasemapTileSources(MAP), summary.count)
-        : rawMb;
+      core && summary ? downloadScaledMb(rawMb, _regionKeys(regionData), summary.count) : rawMb;
     btn.dataset.downloadState = state;
     // SNOW-645: paint the roundel with the ACTIVE basemap's identity colour
     // (map.css's data-basemap-key override) by default — `_probeDone`
@@ -1508,7 +1567,7 @@
     const terrainMb = summary && _runIncludesTerrain() ? _regionTerrainMb(regionData) : 0;
     // SNOW-1453: names 3D data only where the run would pin the elevation
     // tiles, the 3D basemap; the figure follows the same rule.
-    const key = elevationPinnedOn(activeBasemapKey()) && MAP_STRINGS['download-idle-terrain-3d']
+    const key = downloadPinsElevation(_regionKeys(regionData)) && MAP_STRINGS['download-idle-terrain-3d']
       ? 'download-idle-terrain-3d'
       : 'download-idle-terrain';
     if (terrainMb > 0 && MAP_STRINGS[key]) {
@@ -1562,11 +1621,7 @@
     // the control says so before the tap than after it.
     const core = self.pwaBasemapDownloadCore;
     const scaledMb = core
-      ? core.sourceScaledMb(
-          data.summary.mb,
-          activeBasemapTileSources(MAP),
-          data.summary.count,
-        )
+      ? downloadScaledMb(data.summary.mb, _regionKeys(data), data.summary.count)
       : data.summary.mb;
     // The ceiling is the DEVICE's, so `data.summary.over_ceiling`
     // — computed server-side against a constant, because the server cannot
@@ -2103,6 +2158,9 @@
       // SNOW-1137: a region cannot be framed smaller, so a quota/budget
       // refusal reads the region copy.
       kind: 'region',
+      // SNOW-1478: the maps this region's ground needs, which for a Swiss
+      // region is Swisstopo whatever is on screen.
+      basemapKeys: _regionKeys(data),
       mb: data.summary.mb,
       terrain: terrain,
       terrainMb: terrain ? _regionTerrainMb(data) : 0,
@@ -2225,6 +2283,7 @@
           glyphPrefix,
           content,
           elevation,
+          basemaps,
         },
       ) => {
         // "done" (the green offline circle) requires at least one success
@@ -2294,6 +2353,7 @@
             content && content.items,
             verified,
             elevation,
+            basemaps,
           );
           // SNOW-871: and only NOW is the copy this run replaced safe to
           // take. A failed or cancelled run reaches neither line, so the
@@ -2569,7 +2629,7 @@
     if (!summary || !Number.isFinite(summary.mb)) return null;
     const core = self.pwaBasemapDownloadCore;
     const mb = core
-      ? core.sourceScaledMb(summary.mb, activeBasemapTileSources(MAP), summary.count)
+      ? downloadScaledMb(summary.mb, _regionKeys({ regionId: regionId }), summary.count)
       : summary.mb;
     const terrainMb = terrainDataPreferred()
       ? _regionTerrainMb({ regionId: regionId, summary: summary })

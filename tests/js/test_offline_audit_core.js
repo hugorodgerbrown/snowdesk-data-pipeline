@@ -2465,6 +2465,23 @@ describe('agreeing with the Manage downloads sheet (SNOW-1138)', () => {
     expect(areaAnswer(region({ terrain: true, terrainTiles: null })).status).toBe('yes');
   });
 
+  // SNOW-1478: an area holding more than one map is judged on every map.
+  it('reads incomplete while a second map lacks a recorded document', () => {
+    const area = region({
+      basemaps: [
+        { key: 'swisstopo_winter', deps: region().deps },
+        { key: 'openfreemap_liberty', deps: ['https://ofm.example/style.json'] },
+      ],
+    });
+    expect(core.areaState(area).status).toBe('incomplete');
+    area.entries = area.entries.concat(['https://ofm.example/style.json']);
+    expect(core.areaState(area).status).toBe('ready');
+  });
+
+  it('reads a record with no list from its own deps, as before', () => {
+    expect(core.areaState(region({ basemaps: null })).status).toBe(core.areaState(region()).status);
+  });
+
   // SNOW-1453: the elevation tiles ride on the same flag, on the same terms.
   const ELEVATION_TILES = ['https://dem/7/66/45.webp', 'https://dem/10/532/360.webp'];
 

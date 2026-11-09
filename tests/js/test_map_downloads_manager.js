@@ -363,6 +363,8 @@ function installDownloadsBridge(rows, cachesStub) {
         // Absent on a record written before that ticket, and normalised to
         // [] here exactly as map.js's own reader does.
         deps: Array.isArray(entry.deps) ? entry.deps : [],
+        // SNOW-1478: every map the area holds, as the real reader carries it.
+        basemaps: Array.isArray(entry.basemaps) ? entry.basemaps : null,
         // SNOW-932: whether the run that fetched this area fell short of
         // its CONTENT half. A stored fact, unlike SNOW-844's `deps` check
         // above — no cache read can answer it — so the reader carries it
@@ -403,6 +405,8 @@ function installDownloadsBridge(rows, cachesStub) {
         bbox: entry.bbox,
         // SNOW-844: see the region branch above.
         deps: Array.isArray(entry.deps) ? entry.deps : [],
+        // SNOW-1478: every map the area holds, as the real reader carries it.
+        basemaps: Array.isArray(entry.basemaps) ? entry.basemaps : null,
         // SNOW-932: see the region branch above.
         contentIncomplete: !!entry.contentIncomplete,
         // SNOW-1139: see the region branch above.
@@ -543,6 +547,17 @@ function installDownloadsBridge(rows, cachesStub) {
     // `areas()` above is: the sheet depends on the rule and does not own
     // it, and a stub that answered differently would test nothing.
     areaRenderDependencyUrls: vi.fn(renderDependencyUrls),
+    // SNOW-1478: the same rule over every map a row holds, reimplemented on
+    // the real core's `recordBasemaps` for `areaRenderDependencyUrls`'
+    // reason.
+    areaAllRenderDependencyUrls: vi.fn((row) => {
+      const activeKey = window.pwaBasemapDownloads.activeBasemapKey();
+      const entries = getCore().recordBasemaps(row);
+      const urls = entries.flatMap((entry) =>
+        renderDependencyUrls(entry.deps, !!activeKey && entry.key === activeKey),
+      );
+      return [...new Set(urls)];
+    }),
     // SNOW-951: the one control the sheet offers on every row it holds,
     // replacing SNOW-844's `repair` and SNOW-932's `refreshAreaContent`.
     // Reimplemented over the seeded records rather than stubbed to a
@@ -1585,6 +1600,51 @@ describe('an area that cannot render (SNOW-844)', () => {
     expect(row.querySelector('[data-row-meta]').textContent).toBe('Incomplete');
     expect(row.querySelector('[data-downloads-sync]')).toBeNull();
     expect(row.querySelector('[data-downloads-delete]')).not.toBeNull();
+  });
+});
+
+describe('an area holding more than one map (SNOW-1478)', () => {
+  const OFM_STYLE = 'https://tiles.example.invalid/liberty.json';
+  const SWISS_STYLE = 'https://swiss.example.invalid/winter.json';
+
+  /** A custom area across the border, saved on Swisstopo and OpenFreeMap. */
+  function crossBorder() {
+    return [
+      {
+        id: 'custom-x1',
+        ordinal: 1,
+        bbox: [6.0, 46.1, 6.3, 46.3],
+        band: [10, 14],
+        bytes: 40 * MB,
+        savedAt: '2026-08-01T10:00:00.000Z',
+        basemapKey: 'swisstopo_winter',
+        deps: [SWISS_STYLE],
+        basemaps: [
+          { key: 'swisstopo_winter', template: [['s']], deps: [SWISS_STYLE] },
+          { key: 'openfreemap_liberty', template: [['o']], deps: [OFM_STYLE] },
+        ],
+      },
+    ];
+  }
+
+  it('says "Incomplete" when the second map lacks a document', async () => {
+    window.caches.urls = [SWISS_STYLE];
+    seed({ 'basemap.customAreas': crossBorder() });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe('Incomplete');
+  });
+
+  it('leaves it alone once both maps are on disk', async () => {
+    window.caches.urls = [SWISS_STYLE, OFM_STYLE];
+    seed({ 'basemap.customAreas': crossBorder() });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(firstRowElement().querySelector('[data-row-meta]').textContent).not.toBe('Incomplete');
   });
 });
 

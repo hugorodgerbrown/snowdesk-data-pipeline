@@ -2,7 +2,7 @@
 name: one-basemap-per-region-download
 description: A region download holds one basemap's tiles at a time; custom areas can hold the same ground twice (SNOW-864, declined)
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-11-09
 ---
 
 # A region holds one basemap; a custom area can hold the same ground twice
@@ -50,6 +50,13 @@ exists for, failing is not the exotic case. It now asks first, only when
 the record names another basemap and those tiles are still on disk, and
 prunes only after success. What remains is a deliberate limit, not a
 sharp edge.
+
+**Amendment (SNOW-1478).** Which map a download saves now follows its
+ground ([swiss-downloads-save-the-swisstopo-map.md](swiss-downloads-save-the-swisstopo-map.md)).
+A region in Switzerland holds Swisstopo whatever map is on screen, and a
+cross-border region holds Swisstopo plus one foreign map in its one bucket,
+listed in the record's `basemaps`. The rule above still holds per foreign
+map: a second download under a different one replaces the first.
 
 ## Consequences
 

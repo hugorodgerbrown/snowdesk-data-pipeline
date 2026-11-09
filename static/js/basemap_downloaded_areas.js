@@ -340,6 +340,9 @@
           // — normalised to `[]` here, which the sheet reads as UNKNOWN
           // rather than as "nothing needed".
           deps: Array.isArray(entry.deps) ? entry.deps : [],
+          // SNOW-1478: every map the area holds, primary first, when its
+          // download wrote the list (`recordBasemaps` reads either shape).
+          ...(Array.isArray(entry.basemaps) ? { basemaps: entry.basemaps } : {}),
           // SNOW-692: the run's own tile row spans, carried so the
           // overlay tiles this area should hold — the terrain-class tiles
           // since SNOW-1072, as SNOW-692's swisstopo slope tiles were —
@@ -427,6 +430,9 @@
           bbox: custom.bbox,
           // SNOW-844: see the region branch above.
           deps: Array.isArray(custom.deps) ? custom.deps : [],
+          // SNOW-1478: every map the area holds, primary first, when its
+          // download wrote the list (`recordBasemaps` reads either shape).
+          ...(Array.isArray(custom.basemaps) ? { basemaps: custom.basemaps } : {}),
           // SNOW-692: see the region branch above. A custom area has no
           // `z` — its tiles were never server-computed — so the band it
           // was fetched over travels beside `bbox`, and the probe rebuilds

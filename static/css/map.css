@@ -7237,7 +7237,8 @@ body.map-framing #map-legend {
 /* The map's top banners, from includes/_overlay_banner.html: SNOW-1470's
    "3D is experimental" (#map-3d-notice) and the two answers to a locate tap,
    "Off the map" (#offmap-banner) and "Can't find your location"
-   (#locate-failed-banner). The notice stays up for as long as the map is
+   (#locate-failed-banner), and SNOW-1478's offline Swisstopo line
+   (#offline-basemap-banner). The notice stays up for as long as the map is
    in 3D, so it must never cover a control; the locate banners share its
    slot and, coming after it in #map, cover it for their few seconds. Placed inside #map, at every
    width, rather than at the primitive's viewport top-20, which landed on
@@ -7253,6 +7254,7 @@ body.map-framing #map-legend {
    reach that high, so the banner stops one lg roundel and a gap short of
    the right edge rather than being centred across them. */
 #map-3d-notice,
+#offline-basemap-banner,
 #offmap-banner,
 #locate-failed-banner {
     position: absolute;
@@ -7272,6 +7274,7 @@ body.map-framing #map-legend {
    insets and the 8px gap, so the two never meet, even at 640px. */
 @media (min-width: 640px) {
     #map-3d-notice,
+    #offline-basemap-banner,
     #offmap-banner,
     #locate-failed-banner {
         top: calc(env(safe-area-inset-top, 0px) + 12px);

@@ -353,8 +353,12 @@
       return;
     }
     const [minZ, maxZ] = core.MICRO_BAND;
-    const sources = core.tileSourceCount(activeBasemapTileSources(MAP));
     const asked = Math.max(0.1, reticleRadiusKm());
+    // SNOW-1478: priced on the maps a drop here saves — Swisstopo inside
+    // Switzerland, both across the border.
+    const keys = downloadBasemapKeys({ bbox: circleBBox(centre.lat, centre.lon, asked) });
+    const price = downloadTilePrice(keys);
+    const sources = price.sourceCount;
     // The ceiling is the DEVICE's, not a constant: how big a drop may be is
     // a question about what this phone can hold.
     const ceilingMb = basemapDeviceCeilingMb();
@@ -367,10 +371,10 @@
     const terrain = terrainDataPreferred();
     // SNOW-1453: and the elevation tiles' share, where the page pins them.
     const bytesPerTile = core.terrainScaledBytesPerTile(
-      core.bytesPerTileForSources(activeBasemapTileSources(MAP)),
+      price.bytesPerTile,
       sources,
       terrain,
-      elevationPinnedOn(activeBasemapKey())
+      downloadPinsElevation(keys)
     );
     const scale = core.budgetScaleForBBox(
       circleBBox(centre.lat, centre.lon, asked),
@@ -427,13 +431,10 @@
     const core = self.pwaBasemapDownloadCore;
     // SNOW-1072: the readout states what the run will spend, terrain data
     // included.
-    const basemapMb = core.sourceScaledMb(
-      pending.blob.mb,
-      activeBasemapTileSources(MAP),
-      pending.blob.count
-    );
+    const keys = downloadBasemapKeys({ bbox: pending.bbox });
+    const basemapMb = downloadScaledMb(pending.blob.mb, keys, pending.blob.count);
     const mb = pending.terrain
-      ? Math.ceil(basemapMb + terrainClassMbForBlob(pending.blob))
+      ? Math.ceil(basemapMb + terrainClassMbForBlob(pending.blob, keys))
       : basemapMb;
     readoutEl.textContent = self.pwaStrings.interpolate(
       STRINGS[pending.capped ? 'readout-capped' : 'readout'],
@@ -676,11 +677,14 @@
     // with, recorded as decided — as map_custom_download.js does.
     const terrain = !!pending.terrain;
 
+    // SNOW-1478: the maps this circle needs, Swisstopo first where it is Swiss.
+    const basemapKeys = downloadBasemapKeys({ bbox: bbox });
     await runPinnedDownload({
       areaId: areaId,
+      basemapKeys: basemapKeys,
       mb: blob.mb,
       terrain: terrain,
-      terrainMb: terrain ? terrainClassMbForBlob(blob) : 0,
+      terrainMb: terrain ? terrainClassMbForBlob(blob, basemapKeys) : 0,
       // SNOW-868: the tile count the per-basemap price multiplies — see the
       // runner's own `count` note.
       count: blob.count,
@@ -689,7 +693,7 @@
       finish: async (
         result,
         runBlob,
-        { core, progressFill, tileSources, basemapKey, renderDeps, content, elevation },
+        { core, progressFill, tileSources, basemapKey, renderDeps, content, elevation, basemaps },
       ) => {
         const cancelled = !!(result && result.cancelled);
         const ok = core.downloadSucceeded(result);
@@ -723,6 +727,9 @@
             template: tileSources,
             basemapKey: basemapKey || null,
             deps: Array.isArray(renderDeps) ? renderDeps : [],
+            // SNOW-1478: every map the run saved, primary first; the three
+            // fields above are the primary entry's.
+            ...(Array.isArray(basemaps) && basemaps.length > 0 ? { basemaps: basemaps } : {}),
             bytes: Number(result.bytes) || 0,
             // SNOW-924: as map_custom_download.js — a drop zone records
             // an ordinary custom area, so it carries the content stamp

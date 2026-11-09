@@ -423,6 +423,9 @@
         // check itself is not here — it needs Cache Storage, which this
         // module deliberately never touches.
         deps: Array.isArray(area.deps) ? area.deps : [],
+        // SNOW-1478: every map the area holds, when its download wrote the
+        // list; null for a record before it, which reads as one map.
+        basemaps: Array.isArray(area.basemaps) ? area.basemaps : null,
         // SNOW-692: the ground the area covers, carried for the same
         // reason and checked by the same surface — but DERIVED rather than
         // recorded, because a region's ~273 slope tiles would be 27.4 KB
@@ -677,6 +680,9 @@
         // Empty on a record written before that ticket, which the sheet
         // reads as UNKNOWN (skip the check) rather than as "none needed".
         deps: Array.isArray(area.deps) ? area.deps : [],
+        // SNOW-1478: every map the area holds, when its download wrote the
+        // list; null for a record before it, which reads as one map.
+        basemaps: Array.isArray(area.basemaps) ? area.basemaps : null,
         // SNOW-692: the ground the area covers, carried so its slope-angle
         // tiles can be DERIVED rather than recorded. A region has the run's
         // own `z` row spans; a custom area has `bbox` (above) plus `band`.

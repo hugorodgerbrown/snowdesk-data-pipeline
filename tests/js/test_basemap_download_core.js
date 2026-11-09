@@ -101,6 +101,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import '../../static/js/basemap_download_core.js';
+import '../../static/js/swisstopo_extent.js';
 
 const core = self.pwaBasemapDownloadCore;
 
@@ -3000,5 +3001,174 @@ describe('routes and resorts in an area (SNOW-1418)', () => {
       );
       expect(unread.items.routes).toBeUndefined();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SNOW-1478 — which maps a download saves, and from what
+// ---------------------------------------------------------------------------
+
+describe('basemapsForGround (SNOW-1478)', () => {
+  const EXTENT = self.pwaSwisstopoExtent.EXTENT;
+  const COUNTRIES = {
+    openfreemap_liberty: ['ch', 'fr', 'at', 'it'],
+    swisstopo_winter: ['ch'],
+    ign_plan: ['fr'],
+    basemap_at: ['at'],
+  };
+  const box = (lng, lat, d = 0.05) => [lng - d, lat - d, lng + d, lat + d];
+  const VERBIER = box(7.23, 46.1);
+  const CHAMONIX = box(6.87, 45.92);
+  const GENEVA_BORDER = [6.0, 46.1, 6.3, 46.3];
+
+  it('saves Swisstopo for a Swiss region whatever is on screen', () => {
+    for (const active of ['openfreemap_liberty', 'swisstopo_winter', 'ign_plan', null]) {
+      expect(core.basemapsForGround({ country: 'CH' }, active, COUNTRIES, EXTENT)).toEqual([
+        'swisstopo_winter',
+      ]);
+    }
+    expect(core.basemapsForGround({ country: 'li' }, 'ign_plan', COUNTRIES, EXTENT)).toEqual([
+      'swisstopo_winter',
+    ]);
+  });
+
+  it('saves the map on screen for a foreign region it covers', () => {
+    expect(core.basemapsForGround({ country: 'FR' }, 'ign_plan', COUNTRIES, EXTENT)).toEqual([
+      'ign_plan',
+    ]);
+    expect(core.basemapsForGround({ country: 'AT' }, 'basemap_at', COUNTRIES, EXTENT)).toEqual([
+      'basemap_at',
+    ]);
+  });
+
+  it('saves OpenFreeMap for a foreign region the map on screen does not cover', () => {
+    expect(core.basemapsForGround({ country: 'AT' }, 'ign_plan', COUNTRIES, EXTENT)).toEqual([
+      'openfreemap_liberty',
+    ]);
+    // Swisstopo on screen over foreign ground: never empty (Codex, scope review).
+    expect(
+      core.basemapsForGround({ country: 'FR' }, 'swisstopo_winter', COUNTRIES, EXTENT),
+    ).toEqual(['openfreemap_liberty']);
+  });
+
+  it('places drawn ground inside, outside and across the border', () => {
+    expect(core.groundInSwitzerland(VERBIER, EXTENT)).toBe('inside');
+    expect(core.groundInSwitzerland(CHAMONIX, EXTENT)).toBe('outside');
+    expect(core.groundInSwitzerland(GENEVA_BORDER, EXTENT)).toBe('cross');
+    expect(core.groundInSwitzerland(null, EXTENT)).toBeNull();
+    expect(core.groundInSwitzerland([1, 2, 3], EXTENT)).toBeNull();
+    expect(core.groundInSwitzerland(VERBIER, null)).toBeNull();
+  });
+
+  it('saves Swisstopo, then the foreign map, for a box across the border', () => {
+    expect(
+      core.basemapsForGround({ bbox: GENEVA_BORDER }, 'ign_plan', COUNTRIES, EXTENT),
+    ).toEqual(['swisstopo_winter', 'ign_plan']);
+    expect(
+      core.basemapsForGround({ bbox: GENEVA_BORDER }, 'swisstopo_winter', COUNTRIES, EXTENT),
+    ).toEqual(['swisstopo_winter', 'openfreemap_liberty']);
+  });
+
+  it('saves Swisstopo alone for a box inside, and never over a box outside', () => {
+    expect(
+      core.basemapsForGround({ bbox: VERBIER }, 'openfreemap_liberty', COUNTRIES, EXTENT),
+    ).toEqual(['swisstopo_winter']);
+    expect(
+      core.basemapsForGround({ bbox: CHAMONIX }, 'swisstopo_winter', COUNTRIES, EXTENT),
+    ).toEqual(['openfreemap_liberty']);
+  });
+
+  it('keeps the map on screen for ground it cannot place', () => {
+    expect(core.basemapsForGround({}, 'ign_plan', COUNTRIES, EXTENT)).toEqual(['ign_plan']);
+    expect(core.basemapsForGround(null, null, COUNTRIES, EXTENT)).toEqual(['openfreemap_liberty']);
+  });
+});
+
+describe('recordBasemaps (SNOW-1478)', () => {
+  it('reads a legacy record as one entry from its own fields', () => {
+    expect(
+      core.recordBasemaps({ basemapKey: 'openfreemap_liberty', template: 'T', deps: ['d'] }),
+    ).toEqual([{ key: 'openfreemap_liberty', template: 'T', deps: ['d'] }]);
+    expect(core.recordBasemaps({ template: 'T' })).toEqual([{ key: null, template: 'T', deps: [] }]);
+    expect(core.recordBasemaps({})).toEqual([]);
+    expect(core.recordBasemaps(null)).toEqual([]);
+  });
+
+  it('reads the basemaps list first, primary first', () => {
+    const record = {
+      basemapKey: 'swisstopo_winter',
+      template: [['s']],
+      deps: ['sd'],
+      basemaps: [
+        { key: 'swisstopo_winter', template: [['s']], deps: ['sd'] },
+        { key: 'openfreemap_liberty', template: [['o']] },
+      ],
+    };
+    expect(core.recordBasemaps(record)).toEqual([
+      { key: 'swisstopo_winter', template: [['s']], deps: ['sd'] },
+      { key: 'openfreemap_liberty', template: [['o']], deps: [] },
+    ]);
+    expect(core.recordHoldsBasemaps(record, ['swisstopo_winter'])).toBe(true);
+    expect(core.recordHoldsBasemaps(record, ['swisstopo_winter', 'ign_plan'])).toBe(false);
+    expect(core.recordHoldsBasemaps({ basemapKey: 'openfreemap_liberty' }, ['swisstopo_winter'])).toBe(
+      false,
+    );
+  });
+});
+
+describe('a basemap from its documents (SNOW-1478)', () => {
+  const STYLE_URL = 'https://vectortiles.example.invalid/styles/winter/style.json';
+  /** A cut of swisstopo's winter style: two TileJSON-backed sources and a raster. */
+  const style = {
+    version: 8,
+    sprite: 'https://vectortiles.example.invalid/styles/winter/sprite/sprite',
+    glyphs: 'https://vectortiles.example.invalid/fonts/{fontstack}/{range}.pbf',
+    sources: {
+      relief: { type: 'vector', url: '../../tiles/relief/tiles.json' },
+      base: { type: 'vector', url: 'https://vectortiles.example.invalid/tiles/base/tiles.json' },
+      hill: { type: 'raster', tiles: ['https://x.invalid/{z}/{x}/{y}.png'] },
+    },
+    layers: [
+      { id: 'label', type: 'symbol', source: 'base', layout: { 'text-font': ['Frutiger Neue Regular'] } },
+    ],
+  };
+  const tileJsons = {
+    relief: { tiles: ['https://vt0.example.invalid/relief/{z}/{x}/{y}.pbf', 'https://vt1.example.invalid/relief/{z}/{x}/{y}.pbf'] },
+    base: { tiles: ['https://vt0.example.invalid/base/{z}/{x}/{y}.pbf'] },
+  };
+
+  it('reads the tile sources a live map would, one list per vector source in style order', () => {
+    expect(core.tileSourcesFromStyleDocuments(style, tileJsons)).toEqual([
+      tileJsons.relief.tiles,
+      tileJsons.base.tiles,
+    ]);
+    expect(core.tileSourcesFromStyleDocuments(style, {})).toBeNull();
+    expect(core.tileSourcesFromStyleDocuments(null, tileJsons)).toBeNull();
+  });
+
+  it('lists the style document itself first, then sprites, TileJSON and glyphs', () => {
+    const deps = core.renderDependencyUrlsFromStyle(STYLE_URL, style);
+    expect(deps[0]).toBe(STYLE_URL);
+    expect(deps).toContain('https://vectortiles.example.invalid/styles/winter/sprite/sprite@2x.png');
+    expect(deps).toContain('https://vectortiles.example.invalid/tiles/relief/tiles.json');
+    expect(deps).toContain('https://vectortiles.example.invalid/tiles/base/tiles.json');
+    expect(deps.slice(-core.GLYPH_RANGES.length)).toEqual(core.glyphURLs(style));
+    expect(core.renderDependencyUrlsFromStyle('', style)).toEqual([]);
+  });
+
+  it('cuts the glyph prefix at the first placeholder', () => {
+    expect(core.glyphPrefixFromStyle(style)).toBe('https://vectortiles.example.invalid/fonts/');
+    expect(core.glyphPrefixFromStyle({})).toBe('');
+  });
+
+  it('prices a map by key at its own sources and per-tile figure', () => {
+    const swiss = core.basemapScaledMb(1, 'swisstopo_winter', 100);
+    const ofm = core.basemapScaledMb(1, 'openfreemap_liberty', 100);
+    expect(swiss).toBe(
+      Math.ceil((100 * 2 * core.BYTES_PER_TILE_BY_BASEMAP.swisstopo_winter) / (1024 * 1024)) +
+        core.DOWNLOAD_DOCUMENTS_MB,
+    );
+    expect(ofm).toBeLessThan(swiss);
+    expect(core.basemapSourceCount('ign_plan')).toBe(1);
   });
 });

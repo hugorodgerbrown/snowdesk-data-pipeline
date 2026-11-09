@@ -606,7 +606,10 @@
       if (row.orphaned || row.onDevice === false) continue;
       const isActive = !!activeKey && row.basemapKey === activeKey;
       const depURLs = [
-        ...bridge.areaRenderDependencyUrls(row.deps, isActive),
+        // SNOW-1478: over every map the row holds, where the bridge can.
+        ...(typeof bridge.areaAllRenderDependencyUrls === 'function'
+          ? bridge.areaAllRenderDependencyUrls(row)
+          : bridge.areaRenderDependencyUrls(row.deps, isActive)),
         // SNOW-1072: and the terrain-class tiles, for a row whose area
         // includes terrain data. Empty for every other row, so an area
         // downloaded without the opt-in is never judged on them. Derived

@@ -154,6 +154,8 @@
    * @property {string|null} [basemapKey]
    * @property {number} [bytes]
    * @property {string[]} [deps]
+   * @property {Array<{key: (string|null), template: *, deps: string[]}>|null} [basemaps]
+   *   SNOW-1478: every map the area holds, when its download wrote the list.
    * @property {boolean} [bucketPresent]
    * @property {boolean} [bucketReadable] False where the bucket read did
    *   not answer. Distinct from ``bucketPresent: false``, which is a
@@ -1230,7 +1232,7 @@
    */
   function areaState(area) {
     var entries = Array.isArray(area.entries) ? area.entries : [];
-    var deps = Array.isArray(area.deps) ? area.deps : [];
+    var deps = areaDeps(area);
     var missingDeps = missingFrom(deps, entries);
     var terrainTiles = Array.isArray(area.terrainTiles) ? area.terrainTiles : [];
     var missingTerrain = missingFrom(terrainTiles, entries);
@@ -1278,6 +1280,30 @@
       missingDeps: missingDeps,
       tiles: entries.length - supporting,
     };
+  }
+
+  /**
+   * Every render dependency an area recorded, over every map it holds
+   * (SNOW-1478): its `basemaps` entries' lists where the download wrote
+   * them, otherwise its one `deps`.
+   *
+   * @param {AreaReading} area
+   * @returns {string[]}
+   */
+  function areaDeps(area) {
+    var maps = /** @type {any} */ (area).basemaps;
+    if (Array.isArray(maps) && maps.length > 0) {
+      var out = /** @type {string[]} */ ([]);
+      maps.forEach(function (/** @type {any} */ entry) {
+        if (entry && Array.isArray(entry.deps)) {
+          entry.deps.forEach(function (/** @type {string} */ url) {
+            if (out.indexOf(url) < 0) out.push(url);
+          });
+        }
+      });
+      return out;
+    }
+    return Array.isArray(area.deps) ? area.deps : [];
   }
 
   /**

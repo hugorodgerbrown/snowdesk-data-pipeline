@@ -252,6 +252,29 @@ describe('the tile reading', () => {
   });
 });
 
+describe('the tile reading over every map (SNOW-1478)', () => {
+  const recordBasemaps = (a) =>
+    Array.isArray(a.basemaps) ? a.basemaps : a.template ? [{ key: null, template: a.template }] : [];
+
+  it('is Yes only when every map the area holds is in the bucket', () => {
+    const download = {
+      recordBasemaps: vi.fn(recordBasemaps),
+      blobFullyCached: vi.fn((template) => template === 'swiss'),
+    };
+    const both = area({
+      template: 'swiss',
+      basemaps: [
+        { key: 'swisstopo_winter', template: 'swiss' },
+        { key: 'openfreemap_liberty', template: 'ofm' },
+      ],
+    });
+
+    expect(journey.tileReading(both, download)).toBe(false);
+    expect(download.blobFullyCached).toHaveBeenCalledWith('ofm', { z: both.z }, both.entries);
+    expect(journey.tileReading(area({ template: 'swiss' }), download)).toBe(true);
+  });
+});
+
 describe('your things', () => {
   it('is unknown, with no rows, when no sync recorded what to expect', () => {
     const p = panel(readings([area({ items: null })]));
