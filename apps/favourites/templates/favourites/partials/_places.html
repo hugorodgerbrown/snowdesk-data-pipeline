@@ -17,7 +17,10 @@ a pin in, in name order, never by urgency (Hugo, 2 Nov 2026):
     opens the region sheet on the map (map_panel_trail.js, as Today's rows
     do), and a "…" menu of Share and Delete only when the region itself is
     pinned. A region listed only because a resort or a pin of the user's
-    sits in it has nothing of its own to share or delete, so no menu;
+    sits in it has nothing of its own to share or delete, so no menu. Its
+    Delete empties the region's own row only (``place-region-head-<id>``),
+    never the group, so the resorts and pins under it stay until the list
+    is read again;
   * the pinned resorts in it, each with today's weather, a link to the
     resort sheet and the same Share / Delete menu;
   * the dropped pins in it, through the one saved-pin row
@@ -31,9 +34,8 @@ The root names the back pill a followed row leaves on the sheet it opens
 (``data-panel-key="places:now"``), which reopens this list.
 
 Context:
-    places              : Places — from build_places.
-    rename_url_template : str — unused here; the pins' rename is wired by
-                          favourites.js from the roundel's own dataset.
+    places : Places — from build_places. The pins' rename is wired by
+             favourites.js from the roundel's own dataset.
 {% endcomment %}
 {% trans "Places" as places_label %}
 <div data-testid="places-list" data-panel-key="places:now" data-panel-label="{{ places_label }}">
@@ -46,13 +48,14 @@ Context:
             {% for group in places.regions %}
                 {% with region=group.today %}
                     {% firstof "place-region-"|add:region.region_id as region_dom_id %}
+                    {% firstof "place-region-head-"|add:region.region_id as region_head_dom_id %}
                     <li
                         id="{{ region_dom_id }}"
                         class="rounded-card bg-tag"
                         data-testid="places-region"
                         data-region-id="{{ region.region_id }}"
                     >
-                        <div class="flex min-w-0 items-center">
+                        <div id="{{ region_head_dom_id }}" class="flex min-w-0 items-center">
                             <a
                                 href="{{ region.url }}"
                                 data-panel-open="region"
@@ -91,7 +94,7 @@ Context:
                                 {% blocktrans trimmed with name=region.name asvar region_actions_label %}Actions for
                                     {{ name }}{% endblocktrans %}
                                 <span class="flex-none" data-testid="places-region-menu">
-                                    {% include "includes/_overflow_menu.html" with trigger_id="place-actions-"|add:group.pin_uuid menu_id="place-actions-menu-"|add:group.pin_uuid trigger_label=region_actions_label items_template="favourites/partials/_favourite_row_menu_items.html" place_uuid=group.pin_uuid place_share_url=region.url label=region.name row_target="#"|add:region_dom_id %}
+                                    {% include "includes/_overflow_menu.html" with trigger_id="place-actions-"|add:group.pin_uuid menu_id="place-actions-menu-"|add:group.pin_uuid trigger_label=region_actions_label items_template="favourites/partials/_favourite_row_menu_items.html" place_uuid=group.pin_uuid place_share_url=region.url label=region.name row_target="#"|add:region_head_dom_id %}
                                 </span>
                             {% endif %}
                         </div>

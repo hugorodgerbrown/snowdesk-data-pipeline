@@ -97,6 +97,7 @@ from waffle.testutils import override_flag
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.favourites.models import Favourite
 from apps.locations.models import Location
+from apps.regions.models import Resort
 from apps.weather.models import Weather
 from tests.factories import (
     BulletinFactory,
@@ -3103,6 +3104,50 @@ class TestPlacesView:
         ]
         assert f'data-place-share="{region.get_absolute_url()}"' in content
         assert f'hx-post="/favourites/partials/{region_pin.uuid}/delete/"' in content
+
+    def test_a_region_delete_empties_its_own_row_not_the_group(
+        self, client: Client
+    ) -> None:
+        """The resorts and pins under a pinned region outlive its Delete."""
+        user = UserFactory.create()
+        region = MicroRegionFactory.create()
+        region_pin = FavouriteFactory.create(user=user, region=region, region_pin=True)
+        FavouriteFactory.create(
+            user=user, resort=ResortFactory.create(name="Verbier", region=region)
+        )
+        client.force_login(user)
+
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
+
+        head_id = f"place-region-head-{region.region_id}"
+        assert f'id="{head_id}"' in content
+        form = re.search(
+            r'<form[^>]*hx-post="/favourites/partials/%s/delete/"[^>]*>'
+            % region_pin.uuid,
+            content,
+            re.S,
+        )
+        assert form and f'hx-target="#{head_id}"' in form.group(0)
+        head = content.index(f'id="{head_id}"')
+        resorts = content.index('data-testid="places-resort"')
+        # The resort rows sit outside the header row the Delete empties.
+        assert (
+            content.index("</div>", content.index("places-region-menu", head)) < resorts
+        )
+
+    def test_a_resort_with_no_page_has_delete_alone(self, client: Client) -> None:
+        user = UserFactory.create()
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(name="Verbier", region=region)
+        resort_pin = FavouriteFactory.create(user=user, resort=resort)
+        Resort.all_objects.filter(pk=resort.pk).update(slug="")
+        client.force_login(user)
+
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
+
+        assert _menu_items(content, f"place-actions-menu-{resort_pin.uuid}") == [
+            "Delete"
+        ]
 
     def test_nothing_pinned_says_how(self, client: Client) -> None:
         client.force_login(UserFactory.create())

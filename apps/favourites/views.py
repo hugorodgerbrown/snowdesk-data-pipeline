@@ -1225,10 +1225,7 @@ def places(request: HttpRequest) -> HttpResponse:
     response = render(
         request,
         "favourites/partials/_places.html",
-        {
-            "places": listed,
-            "rename_url_template": _rename_url_template(),
-        },
+        {"places": listed},
     )
     return apply_freshness_headers(
         response,

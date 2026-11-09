@@ -93,6 +93,7 @@ from apps.design_system._component_fixtures import (
     RESORT_FORECAST_VARIANTS,
     RESORT_TILE_VARIANTS,
     RESORT_WHY_IT_MATTERS_VARIANTS,
+    ROUTE_ADD_MENU_VARIANTS,
     ROUTE_META_LINE_VARIANTS,
     ROUTE_PROFILE_VARIANTS,
     ROUTE_RAIL_VARIANTS,
@@ -2329,6 +2330,22 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_saved_add_roundel.html",
         variants=SAVED_ADD_ROUNDEL_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="route-add-menu",
+        label="Route add menu",
+        description=(
+            "The routes panel's + roundel beside the × (SNOW-1278; in the "
+            "installed phone app the Routes tab's +, SNOW-1479): a glass "
+            "roundel opening Find a route, Create a route and Upload a GPX, "
+            "least work first, through includes/_overflow_menu.html. Shown "
+            "while the route_drawing flag is on; it replaces the panel's own "
+            "add button."
+        ),
+        kind="components",
+        partial="public/partials/_route_add_menu.html",
+        variants=ROUTE_ADD_MENU_VARIANTS,
         panel_layout="two-col",
     ),
     FoundationCategory(

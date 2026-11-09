@@ -80,7 +80,8 @@ Context:
                  uuid. Set by favourites/partials/_places.html alone; it
                  selects the place menu above, and ``favourite`` is then
                  not read.
-    place_share_url : str — with ``place_uuid``: the place's page.
+    place_share_url : str — with ``place_uuid``: the place's page; "" drops
+                      Share (and its rule), leaving Delete alone.
     favourite  : Favourite — the saved pin this row describes. Read for
                  the uuid, `is_region_pin`, and `w3w_share_text` (hung on
                  the instance by the view; empty when there is no address
@@ -94,20 +95,23 @@ Context:
     {% blocktrans trimmed with name=label asvar place_delete_confirm %}
         Delete {{ name }} from your places? It stays on the map.
     {% endblocktrans %}
-    <li role="none">
-        <button
-            type="button"
-            role="menuitem"
-            data-place-share="{{ place_share_url }}"
-            data-place-share-title="{{ label }}"
-            aria-label="{{ share_aria_label }}"
-            class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
-        >
-            {% include "includes/_icon_share.html" only %}
-            {% trans "Share" %}
-        </button>
-    </li>
-    <li aria-hidden="true" class="my-1 border-t border-border"></li>
+    {# No page to share (a resort with no slug): Delete alone. #}
+    {% if place_share_url %}
+        <li role="none">
+            <button
+                type="button"
+                role="menuitem"
+                data-place-share="{{ place_share_url }}"
+                data-place-share-title="{{ label }}"
+                aria-label="{{ share_aria_label }}"
+                class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+            >
+                {% include "includes/_icon_share.html" only %}
+                {% trans "Share" %}
+            </button>
+        </li>
+        <li aria-hidden="true" class="my-1 border-t border-border"></li>
+    {% endif %}
     <li role="none">
         <form
             data-row-remove

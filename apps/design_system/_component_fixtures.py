@@ -1739,6 +1739,15 @@ SAVED_ADD_ROUNDEL_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# Route add menu --------------------------------------------------------------
+# The routes panel's + (public/partials/_route_add_menu.html): Find / Create /
+# Upload behind a glass roundel. It needs no context; the menu opens on a tap,
+# as overflow_menu.js does it on the map.
+ROUTE_ADD_MENU_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Routes — Find, Create or Upload a route", "context": {}},
+)
+
+
 # Places list -----------------------------------------------------------------
 # SNOW-1479: favourites/partials/_places.html as build_places() hands it over —
 # a pinned region with a resort and a pin, a region listed only for its resort
