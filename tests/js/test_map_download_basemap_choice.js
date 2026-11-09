@@ -473,4 +473,32 @@ describe('a Swiss region with OpenFreeMap on screen (SNOW-1478)', () => {
     await waitFor(() => btn.dataset.downloadState === 'done');
     expect(btn.dataset.downloadState).toBe('done');
   });
+
+  it('with its own map on screen, still judges the second map it holds', async () => {
+    // Codex on PR #1542: a Sync-upgraded area holds Swisstopo first and its
+    // old map second. Swisstopo on screen must not read done while the
+    // second map's tiles are missing.
+    const btn = document.getElementById('map-download-control');
+    switchBasemap('swisstopo_winter', SWISS_TILES[0]);
+    await waitFor(() => btn.dataset.downloadState === 'done');
+    expect(btn.dataset.downloadState).toBe('done');
+
+    const row = await window.pwaDb.get('meta:app', 'basemap.regions');
+    const list = row.value.map((entry) =>
+      entry.region_id === REGION_ID
+        ? {
+            ...entry,
+            basemaps: [
+              ...entry.basemaps,
+              { key: 'openfreemap_liberty', template: [[TEMPLATE_B]], deps: [] },
+            ],
+          }
+        : entry,
+    );
+    await window.pwaDb.put('meta:app', { key: 'basemap.regions', value: list });
+    document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await waitFor(() => btn.dataset.downloadState === 'done', 500);
+    expect(btn.dataset.downloadState).not.toBe('done');
+  });
 });

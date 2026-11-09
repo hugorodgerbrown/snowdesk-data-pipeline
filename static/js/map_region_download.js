@@ -1095,7 +1095,16 @@
         };
       }
       if (ownTemplate) {
-        const tilesCached = core.blobFullyCached(tileSources, { z: stored.z }, cached);
+        // SNOW-1478: a record holding more than one map (a Sync-upgraded
+        // Swiss area keeps its old map second) is judged on every one, not
+        // just the map on screen.
+        const otherEntries = core
+          .recordBasemaps(stored)
+          .filter((entry) => entry.template && core.tileSourcesKey(entry.template) !== activeKey);
+        const otherDeps = [...new Set(otherEntries.flatMap((entry) => entry.deps))];
+        const tilesCached =
+          core.blobFullyCached(tileSources, { z: stored.z }, cached) &&
+          otherEntries.every((entry) => core.blobFullyCached(entry.template, { z: stored.z }, cached));
         // SNOW-844: tiles are half the answer. This branch is the area's
         // OWN basemap (or a pre-SNOW-632 record with no template, read the
         // same way `handleClick`'s `beforeWarm` reads it), so the live
@@ -1120,7 +1129,7 @@
         // repair that fetches four documents and leaves the map blank.
         const missingDeps = tilesCached
           ? [
-              ...core.missingRenderDependencies(depURLs, cached),
+              ...core.missingRenderDependencies([...new Set([...depURLs, ...otherDeps])], cached),
               ...((await missingFromAreaBucket(core.areaIdForRegion(data.regionId), elevationURLs)) ||
                 elevationURLs),
             ]

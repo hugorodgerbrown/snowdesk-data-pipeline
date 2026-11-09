@@ -19,8 +19,11 @@ the map on screen (SNOW-1478). `basemapsForGround`
 | outside | the foreign map |
 | cannot be placed | the map on screen |
 
-The foreign map is the one on screen when it draws that country
-(`BASEMAP_COUNTRIES`), otherwise OpenFreeMap. The answer is never empty.
+The foreign map is the one on screen when it draws every foreign country
+the ground touches (`BASEMAP_COUNTRIES`), otherwise OpenFreeMap. A region
+names its country; a drawn box takes the countries of the regions it
+overlaps (`countriesForBBox`), and a box whose countries are not known
+saves OpenFreeMap. The answer is never empty.
 
 The record keeps every map as `basemaps: [{key, template, deps}]`, primary
 first. The old top-level `basemapKey`, `template` and `deps` stay, as a copy
@@ -36,7 +39,9 @@ Offline with the centre inside an area that holds Swisstopo, a reader on
 another map sees Swisstopo, with one line saying so
 (`#offline-basemap-banner`, `static/js/map_offline_basemap.js`). The
 reader's own choice is never written. Leaving every such area or getting
-signal back restores it. The decision is
+signal back restores it. Only the picker's swap (`source: 'picker'`)
+counts as the reader choosing another map while switched; leaving 3D
+switches to Swisstopo again. The decision is
 `map_offline_basemap_core.js` `offlineDecision`.
 
 **Why.** On 8 Nov 2026 Hugo tested a saved Swiss area in airplane mode.

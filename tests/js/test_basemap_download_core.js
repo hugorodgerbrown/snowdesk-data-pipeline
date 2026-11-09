@@ -3062,7 +3062,12 @@ describe('basemapsForGround (SNOW-1478)', () => {
 
   it('saves Swisstopo, then the foreign map, for a box across the border', () => {
     expect(
-      core.basemapsForGround({ bbox: GENEVA_BORDER }, 'ign_plan', COUNTRIES, EXTENT),
+      core.basemapsForGround(
+        { bbox: GENEVA_BORDER, countries: ['CH', 'fr'] },
+        'ign_plan',
+        COUNTRIES,
+        EXTENT,
+      ),
     ).toEqual(['swisstopo_winter', 'ign_plan']);
     expect(
       core.basemapsForGround({ bbox: GENEVA_BORDER }, 'swisstopo_winter', COUNTRIES, EXTENT),
@@ -3078,9 +3083,58 @@ describe('basemapsForGround (SNOW-1478)', () => {
     ).toEqual(['openfreemap_liberty']);
   });
 
+  it('keeps the map on screen for a box only where it covers every foreign country', () => {
+    // Codex on PR #1542: a drawn box names no country, so IGN over Austria
+    // must not stand.
+    const TYROL = [11.2, 47.1, 11.4, 47.3];
+    expect(
+      core.basemapsForGround({ bbox: TYROL, countries: ['at'] }, 'ign_plan', COUNTRIES, EXTENT),
+    ).toEqual(['openfreemap_liberty']);
+    expect(
+      core.basemapsForGround({ bbox: TYROL, countries: ['at'] }, 'basemap_at', COUNTRIES, EXTENT),
+    ).toEqual(['basemap_at']);
+    expect(core.basemapsForGround({ bbox: TYROL }, 'basemap_at', COUNTRIES, EXTENT)).toEqual([
+      'openfreemap_liberty',
+    ]);
+    expect(
+      core.basemapsForGround(
+        { bbox: GENEVA_BORDER, countries: ['fr', 'it'] },
+        'ign_plan',
+        COUNTRIES,
+        EXTENT,
+      ),
+    ).toEqual(['swisstopo_winter', 'openfreemap_liberty']);
+  });
+
   it('keeps the map on screen for ground it cannot place', () => {
     expect(core.basemapsForGround({}, 'ign_plan', COUNTRIES, EXTENT)).toEqual(['ign_plan']);
     expect(core.basemapsForGround(null, null, COUNTRIES, EXTENT)).toEqual(['openfreemap_liberty']);
+  });
+});
+
+describe('countriesForBBox (SNOW-1478)', () => {
+  const square = (country, w, s, e, n) => ({
+    type: 'Feature',
+    properties: { country },
+    geometry: { type: 'Polygon', coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]] },
+  });
+  const features = [
+    square('CH', 7.0, 46.0, 7.3, 46.2),
+    square('FR', 6.8, 45.9, 7.0, 46.1),
+    square('AT', 11.0, 47.0, 11.5, 47.5),
+    { type: 'Feature', properties: {}, geometry: null },
+  ];
+
+  it('names each country whose regions a box meets, once, lower case', () => {
+    expect(core.countriesForBBox([6.9, 46.0, 7.1, 46.1], features)).toEqual(['ch', 'fr']);
+    expect(core.countriesForBBox([11.2, 47.1, 11.4, 47.3], features)).toEqual(['at']);
+  });
+
+  it('names none for open ground or an unusable box', () => {
+    expect(core.countriesForBBox([1, 1, 2, 2], features)).toEqual([]);
+    expect(core.countriesForBBox(null, features)).toEqual([]);
+    expect(core.countriesForBBox([1, 2, 3], features)).toEqual([]);
+    expect(core.countriesForBBox([6.9, 46.0, 7.1, 46.1], null)).toEqual([]);
   });
 });
 

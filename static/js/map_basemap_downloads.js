@@ -753,14 +753,29 @@ function basemapCountriesByKey() {
 }
 
 /**
+ * The countries of the regions a box overlaps, off the map's region
+ * features (`FEATURE_BY_REGION_ID`, `countriesForBBox`).
+ *
+ * @param {number[]|null|undefined} bbox `[west, south, east, north]`.
+ * @returns {string[]} Empty when the box is unusable or no region is loaded.
+ */
+function groundCountries(bbox) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || typeof core.countriesForBBox !== 'function') return [];
+  const features = typeof FEATURE_BY_REGION_ID === 'object' && FEATURE_BY_REGION_ID ? FEATURE_BY_REGION_ID : {};
+  return core.countriesForBBox(bbox, Object.values(features));
+}
+
+/**
  * The maps a download over this ground saves, primary first.
  *
  * A map the picker does not offer here (no style URL to read it from) is
  * dropped, and with nothing left the map on screen stands, which is the
  * behaviour before SNOW-1478.
  *
- * @param {{country?: string|null, bbox?: number[]|null}} ground A region
- *   names its country; a drawn area or drop zone its box.
+ * @param {{country?: string|null, bbox?: number[]|null, countries?: string[]|null}} ground
+ *   A region names its country; a drawn area or drop zone its box, whose
+ *   countries are read from the regions it overlaps (`groundCountries`).
  * @returns {string[]} Empty only when no map is resolved at all.
  */
 function downloadBasemapKeys(ground) {
@@ -768,8 +783,15 @@ function downloadBasemapKeys(ground) {
   const active = activeBasemapKey();
   if (!core || typeof core.basemapsForGround !== 'function') return active ? [active] : [];
   const extent = self.pwaSwisstopoExtent;
+  const placed = ground || {};
+  // A drawn box names no country: read it off the regions it overlaps,
+  // so the map on screen is kept only where it covers them all.
+  const withCountries =
+    !placed.country && Array.isArray(placed.bbox) && !Array.isArray(placed.countries)
+      ? { ...placed, countries: groundCountries(placed.bbox) }
+      : placed;
   const keys = core.basemapsForGround(
-    ground || {},
+    withCountries,
     active,
     basemapCountriesByKey(),
     extent ? extent.EXTENT : null,

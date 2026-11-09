@@ -85,7 +85,8 @@
  *     ``basemapKeyForTileSources`` for why that matters. The measurements
  *     behind the figures are in ``BYTES_PER_TILE_BY_BASEMAP``'s comment.
  *   basemapsForGround(ground, activeKey, countriesByKey, extent) /
- *   groundInSwitzerland(bbox, extent) / recordBasemaps(record) /
+ *   groundInSwitzerland(bbox, extent) / countriesForBBox(bbox, features) /
+ *   recordBasemaps(record) /
  *   recordHoldsBasemaps(record, keys) / basemapSourceCount(key) /
  *   basemapScaledMb(mb, key, count?) /
  *   tileSourcesFromStyleDocuments(styleJson, tileJsons) /
@@ -4192,23 +4193,50 @@
 
   /**
    * The map a download saves over ground outside Switzerland: the one on
-   * screen when it covers that country, OpenFreeMap otherwise.
+   * screen when it covers every foreign country the ground touches,
+   * OpenFreeMap otherwise.
    *
    * @param {string | null | undefined} activeKey
-   * @param {string | null} country Lower-case ISO code, or null for drawn
-   *   ground, whose foreign country is not known: then a map on screen
-   *   that covers any country beyond Switzerland stands.
+   * @param {string[]} countries The ground's countries beyond Switzerland,
+   *   lower case. Empty when they are not known, and then OpenFreeMap,
+   *   which draws everywhere, is the only safe answer.
    * @param {Object<string, string[]> | null | undefined} countriesByKey
    * @returns {string}
    */
-  function foreignBasemapKey(activeKey, country, countriesByKey) {
+  function foreignBasemapKey(activeKey, countries, countriesByKey) {
     if (!activeKey || activeKey === ELEVATION_BASEMAP_KEY) return FALLBACK_BASEMAP_KEY;
+    if (!countries.length) return FALLBACK_BASEMAP_KEY;
     var covered = (countriesByKey && countriesByKey[activeKey]) || [];
-    if (country) return covered.indexOf(country) >= 0 ? activeKey : FALLBACK_BASEMAP_KEY;
-    var foreign = covered.filter(function (code) {
-      return SWISS_COUNTRIES.indexOf(code) < 0;
+    var all = countries.every(function (code) {
+      return covered.indexOf(code) >= 0;
     });
-    return foreign.length > 0 ? activeKey : FALLBACK_BASEMAP_KEY;
+    return all ? activeKey : FALLBACK_BASEMAP_KEY;
+  }
+
+  /**
+   * The countries of the region features a box overlaps, lower case. Each
+   * feature is judged by its own bounding box, so a box near a border may
+   * name a neighbour it only nearly touches; that errs towards
+   * OpenFreeMap, which draws everywhere (``foreignBasemapKey``).
+   *
+   * @param {number[] | null | undefined} bbox ``[west, south, east, north]``.
+   * @param {Array<Object> | null | undefined} features GeoJSON features
+   *   carrying ``properties.country``.
+   * @returns {string[]} Empty when the box is unusable or nothing meets it.
+   */
+  function countriesForBBox(bbox, features) {
+    if (!Array.isArray(bbox) || bbox.length !== 4 || !Array.isArray(features)) return [];
+    var found = [];
+    features.forEach(function (feature) {
+      var country = feature && feature.properties && feature.properties.country;
+      if (typeof country !== 'string' || !country) return;
+      var box = featureBBox(feature);
+      if (!box) return;
+      var meets = box[0] <= bbox[2] && box[2] >= bbox[0] && box[1] <= bbox[3] && box[3] >= bbox[1];
+      var code = country.toLowerCase();
+      if (meets && found.indexOf(code) < 0) found.push(code);
+    });
+    return found;
   }
 
   /**
@@ -4219,10 +4247,12 @@
    * that map covers its country, and OpenFreeMap otherwise (Hugo, 9 Nov
    * 2026). Ground across the border saves both, Swisstopo first. A region
    * names its country, which settles it; a drawn area or drop zone names a
-   * box, placed against ``extent``. Ground that cannot be placed saves the
+   * box, placed against ``extent``, and the countries of the regions it
+   * overlaps (``countries``). A box whose foreign countries are not known
+   * saves OpenFreeMap there. Ground that cannot be placed saves the
    * map on screen, the behaviour before SNOW-1478.
    *
-   * @param {{country?: string | null, bbox?: number[] | null} | null} ground
+   * @param {{country?: string | null, bbox?: number[] | null, countries?: string[] | null} | null} ground
    * @param {string | null | undefined} activeKey The map on screen.
    * @param {Object<string, string[]> | null | undefined} countriesByKey
    *   Each map's countries, lower case (``BASEMAP_COUNTRIES``).
@@ -4234,14 +4264,29 @@
       ground && typeof ground.country === 'string' && ground.country
         ? ground.country.toLowerCase()
         : null;
+    var listed = country
+      ? [country]
+      : ground && Array.isArray(ground.countries)
+        ? ground.countries
+        : [];
+    var foreign = listed
+      .filter(function (code) {
+        return typeof code === 'string' && code;
+      })
+      .map(function (code) {
+        return code.toLowerCase();
+      })
+      .filter(function (code, index, all) {
+        return SWISS_COUNTRIES.indexOf(code) < 0 && all.indexOf(code) === index;
+      });
     var place;
     if (country) place = SWISS_COUNTRIES.indexOf(country) >= 0 ? 'inside' : 'outside';
     else place = groundInSwitzerland(ground ? ground.bbox : null, extent);
     if (place === 'inside') return [ELEVATION_BASEMAP_KEY];
     if (place === 'cross') {
-      return [ELEVATION_BASEMAP_KEY, foreignBasemapKey(activeKey, null, countriesByKey)];
+      return [ELEVATION_BASEMAP_KEY, foreignBasemapKey(activeKey, foreign, countriesByKey)];
     }
-    if (place === 'outside') return [foreignBasemapKey(activeKey, country, countriesByKey)];
+    if (place === 'outside') return [foreignBasemapKey(activeKey, foreign, countriesByKey)];
     return [activeKey || FALLBACK_BASEMAP_KEY];
   }
 
@@ -4524,6 +4569,7 @@
     SWISS_COUNTRIES: SWISS_COUNTRIES,
     groundInSwitzerland: groundInSwitzerland,
     basemapsForGround: basemapsForGround,
+    countriesForBBox: countriesForBBox,
     recordBasemaps: recordBasemaps,
     recordHoldsBasemaps: recordHoldsBasemaps,
     basemapSourceCount: basemapSourceCount,

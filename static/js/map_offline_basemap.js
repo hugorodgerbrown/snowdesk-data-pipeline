@@ -26,7 +26,9 @@
  * mode in (pwa_offline.js). The areas are this device's own
  * (`pwaBasemapAreas.downloadedAreas({deviceOnly: true})`), read at boot and
  * on `snowdesk:downloads-changed`; the decision runs again on
- * `snowdesk:connectivity-changed` and on `moveend`.
+ * `snowdesk:connectivity-changed`, `snowdesk:map-view-changed` and `moveend`.
+ * Only the picker's swap (`detail.source === 'picker'`) counts as the
+ * reader choosing a map while switched.
  *
  * Loaded after the map bundle (bundles/map.txt): it reads
  * `window.snowdeskMap` at parse time.
@@ -164,15 +166,21 @@
 
   // Another swap — the picker, the 3-D view — supersedes this one. A reader
   // who picks a map while switched has chosen; it stands until the
-  // connection changes.
-  document.addEventListener('snowdesk:basemap-changing', () => {
+  // connection changes. The 3-D view's swap back to the reader's map on
+  // leaving 3-D is not a choice (no `source: 'picker'`), so the flat map
+  // is judged again once the view has changed.
+  document.addEventListener('snowdesk:basemap-changing', (e) => {
     if (dispatching) return;
     guard.next();
     if (switched) {
+      const detail = /** @type {CustomEvent} */ (e).detail;
       switched = false;
-      held = true;
+      if (detail && detail.source === 'picker') held = true;
       paintBanner(false);
     }
+  });
+  document.addEventListener('snowdesk:map-view-changed', () => {
+    evaluate();
   });
   document.addEventListener('snowdesk:connectivity-changed', () => {
     held = false;

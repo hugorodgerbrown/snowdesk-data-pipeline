@@ -799,8 +799,10 @@
       }
       // Notify other consumers (timelapse) to surrender control before
       // we tear down the current style.
+      // `source` tells a reader's own choice from a view's swap: the offline
+      // switch (map_offline_basemap.js) honours only this one (SNOW-1478).
       document.dispatchEvent(new CustomEvent('snowdesk:basemap-changing', {
-        detail: { key, url },
+        detail: { key, url, source: 'picker' },
       }));
       writeStorage(STORAGE_KEY, key);
       // Only update aria-checked on basemap radios — overlay checkboxes
