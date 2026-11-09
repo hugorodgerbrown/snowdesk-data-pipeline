@@ -117,6 +117,10 @@ Context:
     {% if favourite.is_retired_resort %}
         {% trans "No longer listed" as row_meta %}
     {% endif %}
+    {# Places sets the name in the resort rows' size beside them (SNOW-1479). #}
+    {% if in_places %}
+        {% firstof "text-sm" as row_label_size %}
+    {% endif %}
     {% trans "Unnamed pin" as unnamed_pin %}
     {% firstof favourite.name unnamed_pin as row_label %}
     {% trans "Favourite name" as rename_label %}
@@ -136,5 +140,5 @@ Context:
     {# SNOW-800: the pin's page is its location's weather page. #}
     {% firstof favourite.location.get_absolute_url "" as detail_url %}
     {% url 'favourites:card' favourite.uuid as card_url %}
-    {% include "includes/_ugc_panel_row.html" with row_id=row_dom_id row_target="#"|add:row_dom_id label=row_label label_testid="favourite-list-row-label" meta=row_meta renameable=favourite.is_retired_resort|yesno:",True" rename_label=rename_label focus_target=row_focus_target focus_label=row_focus_label actions_template="favourites/partials/_favourite_row_actions.html" disclosure_template=row_disclosure disclosure_href=detail_url disclosure_hx_get=card_url disclosure_panel_id=row_panel_id disclosure_panel_testid="favourite-card-panel" disclosure_label=disclosure_label disclosure_testid="favourite-list-detail-link" %}
+    {% include "includes/_ugc_panel_row.html" with row_id=row_dom_id row_target="#"|add:row_dom_id label=row_label label_testid="favourite-list-row-label" label_size=row_label_size meta=row_meta renameable=favourite.is_retired_resort|yesno:",True" rename_label=rename_label focus_target=row_focus_target focus_label=row_focus_label actions_template="favourites/partials/_favourite_row_actions.html" disclosure_template=row_disclosure disclosure_href=detail_url disclosure_hx_get=card_url disclosure_panel_id=row_panel_id disclosure_panel_testid="favourite-card-panel" disclosure_label=disclosure_label disclosure_testid="favourite-list-detail-link" %}
 {% endwith %}

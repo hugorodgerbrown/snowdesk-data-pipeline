@@ -117,6 +117,9 @@ Parameters (passed via {% include … with … %}):
                 label is then a real link to it rather than an inert span:
                 the Saved tab's Trips list, whose row opens the trip. A row
                 passes this or a focus target, not both.
+  label_size    (string, optional) — the name's type token, `text-label` by
+                default. Places passes `text-sm` (SNOW-1479), so a dropped
+                pin's name matches the resort rows in the same card.
   focus_label   (string, optional) — the focus button's accessible name
                 ("Zoom to Lac de Vaux hike"). Required alongside
                 `focus_target` or `focus_region`: the visible text is
@@ -297,7 +300,7 @@ buildRow still finds its hooks by attribute, not by depth.
                     {% endif %}
                     aria-label="{{ focus_label }}"
                     {% if label_testid %}data-testid="{{ label_testid }}"{% endif %}
-                    class="hover-affordance -mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 text-left text-label font-medium text-text-1"
+                    class="hover-affordance -mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 text-left {{ label_size|default:"text-label" }} font-medium text-text-1"
                 >
                     {{ label }}
                 </button>
@@ -306,13 +309,13 @@ buildRow still finds its hooks by attribute, not by depth.
                     href="{{ label_href }}"
                     data-row-label
                     {% if label_testid %}data-testid="{{ label_testid }}"{% endif %}
-                    class="hover-affordance -mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 text-label font-medium text-text-1"
+                    class="hover-affordance -mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 {{ label_size|default:"text-label" }} font-medium text-text-1"
                 >{{ label }}</a>
             {% else %}
                 <span
                     data-row-label
                     {% if label_testid %}data-testid="{{ label_testid }}"{% endif %}
-                    class="-mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 text-label font-medium text-text-1"
+                    class="-mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 {{ label_size|default:"text-label" }} font-medium text-text-1"
                 >{{ label }}</span>
             {% endif %}
             {% if renameable or js_filled %}
@@ -332,7 +335,7 @@ buildRow still finds its hooks by attribute, not by depth.
                     value="{{ label }}"
                     maxlength="100"
                     aria-label="{{ rename_label }}"
-                    class="-mx-1.5 min-w-0 rounded-pill border border-accent bg-card px-1.5 py-0.5 text-label font-medium text-text-1 focus:outline-none"
+                    class="-mx-1.5 min-w-0 rounded-pill border border-accent bg-card px-1.5 py-0.5 {{ label_size|default:"text-label" }} font-medium text-text-1 focus:outline-none"
                 >
             {% endif %}
             {# MONO, on all four panels (SNOW-830). Every meta line on this   #}

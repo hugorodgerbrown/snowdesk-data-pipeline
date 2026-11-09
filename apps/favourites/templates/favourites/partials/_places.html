@@ -25,7 +25,10 @@ a pin in, in name order, never by urgency (Hugo, 2 Nov 2026):
     resort sheet and the same Share / Delete menu;
   * the dropped pins in it, through the one saved-pin row
     (favourites/partials/_favourite.html) — Share, Rename, Delete as on the
-    Favourites panel — with the pin's height on the meta line.
+    Favourites panel — with the pin's height on the meta line. Its list is
+    inset on the left only (``pl-3``), as the resort rows' links are, so the
+    pin's name and "…" line up with the rows above, and the name takes the
+    resorts' ``text-sm``.
 
 The pins in no region come last, under "Elsewhere". No observation counts
 (SNOW-1479, "Not changing").
@@ -146,7 +149,7 @@ Context:
                         {% endif %}
                         {% if group.pins %}
                             <ul
-                                class="border-t border-border px-3 [&>li:first-child]:border-t-0"
+                                class="border-t border-border pl-3 [&>li:first-child]:border-t-0"
                                 data-testid="places-pins"
                             >
                                 {% for pin in group.pins %}
@@ -162,7 +165,7 @@ Context:
             {% trans "Elsewhere" as elsewhere_label %}
             <div class="mt-4 flex flex-col gap-1" data-testid="places-elsewhere">
                 {% include "includes/_eyebrow.html" with tag="p" text=elsewhere_label class_extra="pb-1 font-medium" %}
-                <ul class="rounded-card bg-tag px-3 [&>li:first-child]:border-t-0">
+                <ul class="rounded-card bg-tag pl-3 [&>li:first-child]:border-t-0">
                     {% for pin in places.elsewhere %}
                         {% include "favourites/partials/_favourite.html" with favourite=pin.favourite pin_height=pin.height in_places=True hide_disclosure=True map_focus=True %}
                     {% endfor %}

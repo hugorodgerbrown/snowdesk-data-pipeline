@@ -3135,6 +3135,32 @@ class TestPlacesView:
             content.index("</div>", content.index("places-region-menu", head)) < resorts
         )
 
+    def test_a_pin_row_lines_up_with_the_resort_rows(self, client: Client) -> None:
+        """Same left inset, same "…" column and same name size (SNOW-1479)."""
+        user = UserFactory.create()
+        region = MicroRegionFactory.create()
+        FavouriteFactory.create(
+            user=user, resort=ResortFactory.create(name="Verbier", region=region)
+        )
+        FavouriteFactory.create(user=user, name="Car park", region=region)
+        client.force_login(user)
+
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
+
+        pins = re.search(r'<ul\s+class="([^"]*)"\s+data-testid="places-pins"', content)
+        assert pins
+        # Inset on the left only: the "…" sits on the card's edge, as the
+        # resort rows' menus do.
+        assert "pl-3" in pins.group(1).split()
+        assert "px-3" not in pins.group(1).split()
+        label = re.search(
+            r'data-testid="favourite-list-row-label"\s+class="([^"]*)"', content
+        )
+        assert label and "text-sm" in label.group(1).split()
+        assert "text-label" not in label.group(1).split()
+        resort = re.search(r'<span\s+class="([^"]*)"\s*>Verbier</span>', content)
+        assert resort and "text-sm" in resort.group(1).split()
+
     def test_a_resort_with_no_page_has_delete_alone(self, client: Client) -> None:
         user = UserFactory.create()
         region = MicroRegionFactory.create()
