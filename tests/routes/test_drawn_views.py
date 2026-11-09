@@ -14,6 +14,7 @@ reading surface whatever the flag says.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 from typing import Any
 from unittest.mock import patch
@@ -419,13 +420,15 @@ class TestMapPageDrawSurface:
         assert "data-ski-tour-find" in body
         assert "Find a route" in body
         assert "Create a route" in body
-        # One row of three one-word buttons, each named in full for a
-        # screen reader, with no line of description under them.
-        assert 'aria-label="Find a route"' in body
-        assert 'aria-label="Create a route"' in body
-        assert 'aria-label="Upload a GPX"' in body
-        assert "Start from a swisstopo / SAC ski tour" not in body
-        assert "A track from a watch or another app" not in body
+        # The three ways sit in a menu behind a + roundel beside the ×,
+        # with their line of description, and the empty foot is hidden so
+        # the list keeps the room.
+        assert 'id="route-add-menu-trigger"' in body
+        assert 'aria-label="Add a route"' in body
+        assert 'id="route-add-menu"' in body
+        assert "Start from a swisstopo / SAC ski tour" in body
+        assert "A track from a watch or another app" in body
+        assert re.search(r"data-panel-foot\s+hidden", body)
         assert 'id="ski-tours-config"' in body
         # SNOW-1306: a tap opens a tour; there is no list sheet.
         assert 'id="ski-tours-sheet"' not in body
@@ -441,7 +444,9 @@ class TestMapPageDrawSurface:
         assert f'data-ski-tours-url="{reverse("api:ski_tours_geojson")}"' in body
         assert f'data-ski-tour-feature-url="{tour_feature}"' in body
         assert f'data-ski-tour-terrain-url="{tour_terrain}"' in body
-        assert "Add a route" not in body
+        # The panel's own add button is gone: "Add a route" names only the
+        # + roundel now.
+        assert body.count("Add a route") == 1
 
     def test_absent_for_an_anonymous_visitor(self, client: Client) -> None:
         """No waffle read and no surface for a visitor with no session."""
@@ -463,5 +468,7 @@ class TestMapPageDrawSurface:
         assert "data-ski-tour-find" not in body
         assert 'id="ski-tours-config"' not in body
         assert "Add a route" in body
+        assert 'id="route-add-menu-trigger"' not in body
+        assert not re.search(r"data-panel-foot\s+hidden", body)
         assert 'data-overlay-key="ski_tours"' not in body
         assert "data-ski-tours-url" not in body

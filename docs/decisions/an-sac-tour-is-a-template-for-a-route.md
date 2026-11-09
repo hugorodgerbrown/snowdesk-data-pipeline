@@ -218,8 +218,10 @@ forecast" Location waits for a second, non-SAC source of places.
   terrain track, because no heights were recorded.
 - The routes panel offers three ways to add a route while `route_drawing`
   is on: Find a route, Create a route and Upload a GPX
-  (`public/partials/_route_add_rows.html`). The rows replace the panel's
-  own add button, and the empty-state sentence names all three.
+  (`public/partials/_route_add_menu.html`). They replace the panel's own
+  add button, and the empty-state sentence names all three. Since 8 Nov
+  2026 they sit in a menu behind a + roundel beside the panel's ×, so the
+  route list keeps the room.
 - The tour panel has the route panel's terrain rows (the "terrain data"
   fold) too, from `routes:ski_tour_terrain` by the tour's uuid
   (SNOW-1282). It reads only the record the tour already holds, so a tour

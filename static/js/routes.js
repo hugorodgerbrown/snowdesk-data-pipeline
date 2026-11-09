@@ -323,8 +323,10 @@
 
     if (!UPLOAD_ELIGIBLE) {
       // Uploading needs an account either way, so the add CTA goes.
+      // With route drawing on it is an item in the header's add menu, so
+      // its <li> goes with it.
       const addButton = sheet.querySelector('[data-panel-add]');
-      if (addButton) addButton.remove();
+      if (addButton) (addButton.closest('li[role="none"]') || addButton).remove();
 
       if (!SHARE_PENDING) {
         const rows = sheet.querySelector('[data-routes-rows]');
@@ -366,6 +368,8 @@
     const foot = sheet.querySelector('[data-panel-foot]');
     const host = foot || sheet.querySelector('[data-routes-rows]');
     if (!host) return;
+    // The foot is rendered hidden when the add menu sits in the header.
+    if (foot) foot.hidden = false;
     host.appendChild(buildSigninCta());
   }
 

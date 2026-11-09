@@ -1,0 +1,38 @@
+{% comment %}
+public/partials/_route_add_menu_item.html — one item of the routes add menu
+(SNOW-1278), included three times by
+public/partials/_route_add_menu_items.html.
+
+A menuitem button: the stroke icon, the title and one line of what it
+starts from.
+
+Parameters:
+  hook     — which way in: "find" (data-ski-tour-find, ski_tours.js),
+             "create" (data-route-draw-start, route_draw.js) or "upload"
+             (data-panel-add, the UGC panel). A fixed choice rather than an
+             attribute passed in, so no template value is ever written into
+             the tag unquoted.
+  title    — the item's label.
+  subtitle — one line under it.
+  icon     — template path of the stroke icon.
+{% endcomment %}
+<li role="none">
+    <button
+        type="button"
+        role="menuitem"
+        {% if hook == "find" %}
+            data-ski-tour-find
+        {% elif hook == "create" %}
+            data-route-draw-start
+        {% else %}
+            data-panel-add
+        {% endif %}
+        class="hover-affordance flex w-full items-start gap-3 px-3 py-2.5 text-left"
+    >
+        <span class="mt-0.5 flex-none text-text-1" aria-hidden="true">{% include icon with size=16 only %}</span>
+        <span class="flex min-w-0 flex-col">
+            <span class="text-label font-semibold text-text-1">{{ title }}</span>
+            <span class="text-sm text-text-3">{{ subtitle }}</span>
+        </span>
+    </button>
+</li>

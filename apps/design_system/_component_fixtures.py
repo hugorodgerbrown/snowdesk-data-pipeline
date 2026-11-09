@@ -1816,6 +1816,22 @@ OVERFLOW_MENU_VARIANTS: tuple[dict[str, Any], ...] = (
             "open": True,
         },
     },
+    {
+        # The routes panel's add menu (8 Nov 2026): a + in a glass roundel
+        # beside the panel's ×, and a wide menu whose items carry a line of
+        # description each.
+        "caption": "Open — roundel + trigger, wide (routes panel's add menu)",
+        "context": {
+            "trigger_id": "component-library-overflow-trigger-add",
+            "menu_id": "component-library-overflow-menu-add",
+            "trigger_label": "Add a route",
+            "trigger_icon": "includes/_icon_plus.html",
+            "roundel": True,
+            "wide": True,
+            "items_template": "public/partials/_route_add_menu_items.html",
+            "open": True,
+        },
+    },
 )
 
 
