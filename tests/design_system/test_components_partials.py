@@ -16,6 +16,8 @@ for partials, test client for full-page templates.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.http import HttpRequest
@@ -536,3 +538,90 @@ class TestComponentLibraryWeatherIcons:
         for bucket in WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT:
             assert weather_icon_filename(bucket, "day") == f"{bucket}-day.svg"
             assert weather_icon_filename(bucket, "night") == f"{bucket}-night.svg"
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1479 — icon segmented options, the Saved tabs and their fixtures
+# ---------------------------------------------------------------------------
+
+
+class TestIconSegmentedOption:
+    """includes/_segmented_option.html with an ``icon_template``."""
+
+    def _render(self, checked: bool) -> str:
+        return render_to_string(
+            "includes/_segmented_option.html",
+            {
+                "name": "saved-tab",
+                "value": "routes",
+                "label": "Routes",
+                "icon_template": "includes/_icon_route.html",
+                "checked": checked,
+            },
+        )
+
+    def test_the_label_is_in_the_accessible_name_on_every_option(self) -> None:
+        """Inside the <label> that wraps the radio, so it names it, checked or not."""
+        for checked in (False, True):
+            html = self._render(checked)
+            assert html.index("<label") < html.index("Routes") < html.index("</label>")
+            assert '<span class="sr-only group-has-checked:not-sr-only">' in html
+
+    def test_the_label_is_shown_only_when_checked(self) -> None:
+        """Visually hidden until its radio is checked; the glyph always shows."""
+        html = self._render(False)
+        assert 'class="group cursor-pointer"' in html
+        assert "<svg" in html
+        assert 'aria-hidden="true"' in html
+
+    def test_a_text_option_is_unchanged(self) -> None:
+        html = render_to_string(
+            "includes/_segmented_option.html",
+            {"name": "theme", "value": "dark", "label": "Dark"},
+        )
+        assert "sr-only group-has-checked" not in html
+        assert 'class="cursor-pointer"' in html
+
+
+class TestSavedTabs:
+    """includes/_saved_tabs.html: four icon tabs, app-only, one checked."""
+
+    def test_four_tabs_and_the_current_one_checked(self) -> None:
+        html = render_to_string("includes/_saved_tabs.html", {"saved_tab": "trips"})
+        values = [
+            v
+            for v in ("places", "routes", "trips", "observations")
+            if f'value="{v}"' in html
+        ]
+        assert values == ["places", "routes", "trips", "observations"]
+        checked = re.findall(r'value="(\w+)"\s+class="peer sr-only"\s+checked', html)
+        assert checked == ["trips"]
+        assert 'class="app-only' in html
+
+    def test_the_preview_is_not_app_only(self) -> None:
+        html = render_to_string(
+            "includes/_saved_tabs.html", {"saved_tab": "places", "preview": True}
+        )
+        assert "app-only" not in html
+
+
+@pytest.mark.django_db
+class TestSnow1479Fixtures:
+    """Every new component's fixtures render in the library."""
+
+    @pytest.mark.parametrize(
+        "slug",
+        [
+            "saved-tabs",
+            "saved-add-roundel",
+            "places-list",
+            "trip-panel-rows",
+            "segmented-option",
+            "overflow-menu",
+        ],
+    )
+    def test_renders(self, admin_client: Client, slug: str) -> None:
+        response = admin_client.get(
+            f"/partials/_components/{slug}/", HTTP_HX_REQUEST="true"
+        )
+        assert response.status_code == 200, slug

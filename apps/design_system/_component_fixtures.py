@@ -1686,15 +1686,173 @@ SEGMENTED_OPTION_VARIANTS: tuple[dict[str, Any], ...] = (
             "checked": True,
         },
     },
+    # SNOW-1479: an icon option, as the Saved tabs draw them — the label is
+    # visually hidden until the option is checked, and in the accessible
+    # name either way.
+    {
+        "caption": "Icon, unselected (label for screen readers only)",
+        "context": {
+            "name": "component-library-segmented-icon-off",
+            "value": "routes",
+            "label": "Routes",
+            "icon_template": "includes/_icon_route.html",
+        },
+    },
+    {
+        "caption": "Icon, selected (label shown)",
+        "context": {
+            "name": "component-library-segmented-icon-on",
+            "value": "places",
+            "label": "Places",
+            "icon_template": "includes/_icon_mountain.html",
+            "checked": True,
+        },
+    },
 )
 
 
-# Saved chips -----------------------------------------------------------------
-# SNOW-1476: the Saved panel's Places / Routes / Observations switch. Drawn
-# only in the installed phone app, so the fixture forces it visible.
-SAVED_CHIPS_VARIANTS: tuple[dict[str, Any], ...] = (
-    {"caption": "Places", "context": {"current": "places", "preview": True}},
-    {"caption": "Routes", "context": {"current": "routes", "preview": True}},
+# Saved tabs ------------------------------------------------------------------
+# SNOW-1479 (the Saved chips of SNOW-1476 before it): the Saved tab's Places /
+# Routes / Trips / Observations icons, the selected one named. Drawn only in
+# the installed phone app, so the fixture forces it visible.
+SAVED_TABS_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Places", "context": {"saved_tab": "places", "preview": True}},
+    {"caption": "Trips", "context": {"saved_tab": "trips", "preview": True}},
+)
+
+
+# Saved add roundel -----------------------------------------------------------
+# SNOW-1479: the + beside the Saved tabs. App-only, so forced visible.
+SAVED_ADD_ROUNDEL_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Places, Routes, Observations — the panel's own add",
+        "context": {"cta_label": "Add a favourite", "preview": True},
+    },
+    {
+        "caption": "Trips — goes to Routes to pick a route",
+        "context": {
+            "cta_label": "Plan a trip",
+            "saved_add_hook": "routes",
+            "preview": True,
+        },
+    },
+)
+
+
+# Places list -----------------------------------------------------------------
+# SNOW-1479: favourites/partials/_places.html as build_places() hands it over —
+# a pinned region with a resort and a pin, a region listed only for its resort
+# (no menu), and a pin in no region under "Elsewhere". A pin is a stand-in
+# with the attributes the one saved-pin row reads.
+def _places_pin(name: str, uuid_int: int, height: float | None) -> Any:
+    """Build one Places pin for the library: a stand-in Favourite and its height."""
+    import uuid as uuid_module
+
+    from apps.favourites.today import TodayPin
+
+    favourite = SimpleNamespace(
+        uuid=uuid_module.UUID(int=uuid_int),
+        name=name,
+        created_at=datetime.datetime(2026, 2, 3, 9, 0, tzinfo=datetime.UTC),
+        region=None,
+        location=SimpleNamespace(latitude=46.1, longitude=7.2, get_absolute_url="#"),
+        is_region_pin=False,
+        is_retired_resort=False,
+        w3w_share_text="",
+    )
+    return TodayPin(favourite=favourite, height=height)  # type: ignore[arg-type]
+
+
+def _places_fixture() -> Any:
+    """Build the library's Places list."""
+    from apps.favourites.today import Places, PlacesRegion
+
+    return Places(
+        regions=[
+            PlacesRegion(
+                today=_today_region(
+                    region_id="CH-4115",
+                    name="Martigny – Verbier",
+                    level="considerable",
+                    rating=SimpleNamespace(
+                        max_rating="considerable", max_subdivision=""
+                    ),
+                    resorts=[
+                        _today_resort(
+                            uuid="00000000-0000-0000-0000-000000000011",
+                            name="Verbier",
+                            slug="verbier",
+                            icon="moderate_snow.svg",
+                            temp_max=-3.0,
+                        )
+                    ],
+                ),
+                pin_uuid="00000000-0000-0000-0000-000000000010",
+                pins=[_places_pin("Car park", 12, 1520.0)],
+            ),
+            PlacesRegion(
+                today=_today_region(
+                    region_id="CH-2211",
+                    name="Südliches Urseren",
+                    level="moderate",
+                    rating=SimpleNamespace(max_rating="moderate", max_subdivision=""),
+                    resorts=[
+                        _today_resort(
+                            uuid="00000000-0000-0000-0000-000000000021",
+                            name="Andermatt",
+                            slug="andermatt",
+                            temp_max=1.0,
+                        )
+                    ],
+                ),
+            ),
+        ],
+        elsewhere=[_places_pin("Chamonix hut", 31, 2310.0)],
+    )
+
+
+PLACES_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Regions with their resorts and pins, then Elsewhere",
+        "solo": True,
+        "context": {"places": _places_fixture()},
+    },
+    {
+        "caption": "Nothing saved yet",
+        "solo": True,
+        "context": {"places": SimpleNamespace(is_empty=True)},
+    },
+)
+
+
+# Trips list ------------------------------------------------------------------
+# SNOW-1479: the Saved tab's Trips rows — an organiser's row with its "…"
+# (Share, Rename, Delete) and a participant's with none.
+def _panel_trip(name: str, uuid_int: int, organises: bool, day: int) -> Any:
+    """Build one trip stand-in for the library's Trips list."""
+    import uuid as uuid_module
+
+    return SimpleNamespace(
+        uuid=uuid_module.UUID(int=uuid_int),
+        display_name=name,
+        date=datetime.date(2026, 11, day),
+        start_time=datetime.time(8, 0),
+        viewer_organises=organises,
+    )
+
+
+TRIP_PANEL_ROWS_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Upcoming soonest first; only an organised trip has a menu",
+        "solo": True,
+        "context": {
+            "trips": [
+                _panel_trip("Rosablanche", 41, True, 14),
+                _panel_trip("Mont Fort with Anna", 42, False, 21),
+            ]
+        },
+    },
+    {"caption": "No trips yet", "solo": True, "context": {"trips": []}},
 )
 
 
@@ -1829,6 +1987,21 @@ OVERFLOW_MENU_VARIANTS: tuple[dict[str, Any], ...] = (
             "roundel": True,
             "wide": True,
             "items_template": "public/partials/_route_add_menu_items.html",
+            "open": True,
+        },
+    },
+    {
+        # SNOW-1479: a field observation's row — a menu of one, the recorded
+        # exception to "one action is a bare icon", so every Saved list's
+        # rows carry the same "…".
+        "caption": "Open — a menu of one (observation row)",
+        "context": {
+            "trigger_id": "component-library-overflow-trigger-observation",
+            "menu_id": "component-library-overflow-menu-observation",
+            "trigger_label": "Actions for Avalanche",
+            "items_template": "observations/partials/_observation_row_menu_items.html",
+            "observation": SimpleNamespace(uuid="00000000-0000-0000-0000-000000000051"),
+            "label": "Avalanche",
             "open": True,
         },
     },
@@ -2884,7 +3057,7 @@ APP_TABBAR_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
     {
-        "caption": "On a legal page — You lit",
+        "caption": "On a legal page — Help lit",
         "context": {
             "preview": True,
             "request": _tabbar_request(
