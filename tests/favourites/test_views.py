@@ -3079,8 +3079,10 @@ class TestPlacesView:
             user=user, resort=ResortFactory.create(name="Verbier", region=region)
         )
         pin = FavouriteFactory.create(user=user, name="Car park", region=region)
-        pin.location.what3words = "filled.count.soap"
-        pin.location.save()
+        location = pin.location
+        assert location is not None
+        location.what3words = "filled.count.soap"
+        location.save()
         client.force_login(user)
 
         with override_flag("what3words", active=True):

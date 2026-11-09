@@ -1146,9 +1146,10 @@ def today(request: HttpRequest) -> HttpResponse:
     generated_at = (
         min(rating.updated_at for rating in present) if present else timezone.now()
     )
-    # SNOW-1476: the installed phone app's Today tab lists the reader's next
-    # trips under their places, soonest first (TripQuerySet.upcoming counts
-    # a trip dated today as upcoming). One query, capped.
+    # SNOW-1476: the Today panel lists the reader's next trips under their
+    # places (added for the app's Today tab, which SNOW-1479 retired),
+    # soonest first (TripQuerySet.upcoming counts a trip dated today as
+    # upcoming). One query, capped.
     upcoming_trips = list(
         Trip.objects.for_user(request.user)
         .upcoming(day)
