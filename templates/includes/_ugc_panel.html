@@ -177,7 +177,7 @@ state should not have to remember to bring its own.
     {# scroll box whose content began at x=17. Hugo: "The favourites name  #}
     {# element is cut off at the left". The design it came from had no     #}
     {# scroll container, which is why it worked there.                     #}
-    <div class="-mx-1.5 flex min-h-0 flex-1 flex-col gap-4.5 overflow-y-auto px-1.5">
+    <div data-panel-scroll class="-mx-1.5 flex min-h-0 flex-1 flex-col gap-4.5 overflow-y-auto px-1.5">
         {# The section label belongs to the list it heads, so the two sit   #}
         {# in one tight group rather than 18px apart at the scroll region's #}
         {# own rhythm. Downloads passes no `section_label`: it has two      #}

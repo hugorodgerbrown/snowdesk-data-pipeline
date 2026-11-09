@@ -428,6 +428,34 @@ class TestTheGate:
         assert "[data-subscriber-menu]" not in gated
         assert "#nav-sign-in" not in gated
 
+    def test_a_tab_panels_list_runs_down_to_its_foot(self) -> None:
+        """No gap and blank card under a long list in the app (SNOW-1479).
+
+        The body's flex gap before "Show on the map" moves inside the scroll
+        area, so the list reaches the switch and scrolls under its own edge.
+        """
+        gated = _gated_blocks(self.map_css)
+        rule = re.search(
+            r"\[data-panel-scroll\]:has\(~ \[data-panel-overlay-toggle\]\)\s*\{([^}]*)\}",
+            gated,
+        )
+        assert rule
+        assert "margin-bottom: -1.125rem" in rule.group(1)
+        assert "padding-bottom: 1.125rem" in rule.group(1)
+        assert "data-panel-scroll" not in self.map_css.replace(gated, "")
+
+    @pytest.mark.django_db
+    def test_the_scroll_area_carries_the_hook(self, client: Client) -> None:
+        client.force_login(UserFactory.create())
+
+        content = client.get(reverse("public:map")).content.decode()
+
+        for template_id in SAVED_SHEETS.values():
+            body = _template(content, template_id)
+            assert re.search(
+                r"<div data-panel-scroll class=\"[^\"]*overflow-y-auto", body
+            )
+
     def test_app_only_is_hidden_by_the_negated_gate(self) -> None:
         negated = "@media not (" + GATE.removeprefix("@media ") + ")"
         start = self.main.index(negated)
