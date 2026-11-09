@@ -30,6 +30,9 @@ accessible name is its label whether or not it is selected. `group-has-checked`
 reads the input's state from the <label>, because the label text sits
 inside the pill rather than beside the input.
 
+SIZE (9 Nov 2026). Each option is 34px tall and fully round, so the track
+(2px padding, 1px border) is 40px: the map roundel's size and shape.
+
 Parameters:
   name          — the radio group's name (required).
   value         — this option's value (required).
@@ -48,14 +51,14 @@ Parameters:
     >
     {% if icon_template %}
         <span
-            class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-pill px-3 text-sm text-text-2 transition-colors peer-hover:text-text-1 peer-checked:bg-accent peer-checked:text-accent-text peer-focus-visible:ring-2 peer-focus-visible:ring-ring-selected"
+            class="inline-flex h-8.5 items-center justify-center gap-1.5 rounded-full px-3 text-sm text-text-2 transition-colors peer-hover:text-text-1 peer-checked:bg-accent peer-checked:text-accent-text peer-focus-visible:ring-2 peer-focus-visible:ring-ring-selected"
         >
             <span class="flex-none" aria-hidden="true">{% include icon_template with size=18 only %}</span>
             <span class="sr-only group-has-checked:not-sr-only">{{ label }}</span>
         </span>
     {% else %}
         <span
-            class="inline-flex items-center justify-center min-h-11 px-4 rounded-pill text-sm text-text-2 transition-colors peer-hover:text-text-1 peer-checked:bg-accent peer-checked:text-accent-text peer-focus-visible:ring-2 peer-focus-visible:ring-ring-selected"
+            class="inline-flex h-8.5 items-center justify-center px-4 rounded-full text-sm text-text-2 transition-colors peer-hover:text-text-1 peer-checked:bg-accent peer-checked:text-accent-text peer-focus-visible:ring-2 peer-focus-visible:ring-ring-selected"
         >
             {{ label }}
         </span>

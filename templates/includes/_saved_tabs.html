@@ -36,10 +36,13 @@ Parameters (passed via {% include … with … %}):
                                  public/partials/_trips_surface.html, renders
                                  on the same condition, and a Trips option
                                  with no sheet would check and do nothing.
+
+SIZE. The row is 40px, the + roundel's size, and `-mt-3` gives it the
+header actions' -12px trim so the two line up (Hugo, 9 Nov 2026).
 {% endcomment %}
-<fieldset class="{% if not preview %}app-only {% endif %}min-w-0 flex-1" data-saved-tabs>
+<fieldset class="{% if not preview %}app-only -mt-3 {% endif %}min-w-0 flex-1" data-saved-tabs>
     <legend class="sr-only">{% trans "Saved" %}</legend>
-    <div class="inline-flex rounded-pill border border-border bg-card p-0.5">
+    <div class="inline-flex rounded-full border border-border bg-card p-0.5">
         {% trans "Places" as places_label %}
         {% trans "Routes" as routes_label %}
         {% trans "Trips" as trips_label %}
