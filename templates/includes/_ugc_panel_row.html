@@ -300,7 +300,7 @@ buildRow still finds its hooks by attribute, not by depth.
                     {% endif %}
                     aria-label="{{ focus_label }}"
                     {% if label_testid %}data-testid="{{ label_testid }}"{% endif %}
-                    class="hover-affordance -mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 text-left {{ label_size|default:"text-label" }} font-medium text-text-1"
+                    class="hover-affordance -mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 text-left {% if label_size %}{{ label_size }}{% else %}text-label{% endif %} font-medium text-text-1"
                 >
                     {{ label }}
                 </button>
@@ -309,13 +309,13 @@ buildRow still finds its hooks by attribute, not by depth.
                     href="{{ label_href }}"
                     data-row-label
                     {% if label_testid %}data-testid="{{ label_testid }}"{% endif %}
-                    class="hover-affordance -mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 {{ label_size|default:"text-label" }} font-medium text-text-1"
+                    class="hover-affordance -mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 {% if label_size %}{{ label_size }}{% else %}text-label{% endif %} font-medium text-text-1"
                 >{{ label }}</a>
             {% else %}
                 <span
                     data-row-label
                     {% if label_testid %}data-testid="{{ label_testid }}"{% endif %}
-                    class="-mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 {{ label_size|default:"text-label" }} font-medium text-text-1"
+                    class="-mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 {% if label_size %}{{ label_size }}{% else %}text-label{% endif %} font-medium text-text-1"
                 >{{ label }}</span>
             {% endif %}
             {% if renameable or js_filled %}
@@ -335,7 +335,7 @@ buildRow still finds its hooks by attribute, not by depth.
                     value="{{ label }}"
                     maxlength="100"
                     aria-label="{{ rename_label }}"
-                    class="-mx-1.5 min-w-0 rounded-pill border border-accent bg-card px-1.5 py-0.5 {{ label_size|default:"text-label" }} font-medium text-text-1 focus:outline-none"
+                    class="-mx-1.5 min-w-0 rounded-pill border border-accent bg-card px-1.5 py-0.5 {% if label_size %}{{ label_size }}{% else %}text-label{% endif %} font-medium text-text-1 focus:outline-none"
                 >
             {% endif %}
             {# MONO, on all four panels (SNOW-830). Every meta line on this   #}
