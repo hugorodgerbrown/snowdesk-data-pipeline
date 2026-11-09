@@ -38,8 +38,9 @@
   const template = document.getElementById('trips-sheet-template');
   if (!found || !(template instanceof HTMLTemplateElement)) return;
   if (!window.MapSheet) return;
-  // A const, so the null check above holds inside the closures below.
+  // Consts, so the checks above hold inside the closures below.
   const sheet = found;
+  const tpl = /** @type {HTMLTemplateElement} */ (template);
 
   var FALLBACKS = {
     error: "Your trips couldn't be loaded — check your connection.",
@@ -104,7 +105,7 @@
 
   /** Fill the sheet from its template and load the trips. */
   function render() {
-    sheet.replaceChildren(template.content.cloneNode(true));
+    sheet.replaceChildren(tpl.content.cloneNode(true));
     loadRows();
   }
 

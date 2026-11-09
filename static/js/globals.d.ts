@@ -393,7 +393,35 @@ interface Window {
   pwaRegionPickCore: any;
   /** static/js/map_region_pick.js — the "Download a region" task: open() / close() / isActive() (SNOW-1414). */
   pwaRegionPick: any;
+  /** static/js/share.js — mint a share link and hand it to the platform (SNOW-887). */
+  pwaShare: {
+    shareOrCopy(value: string, title?: string, kind?: string): Promise<string>;
+    createShare(url: string, csrfToken: string): Promise<string>;
+  };
+  /** static/js/row_rename_commit.js — commit a panel row's inline rename. */
+  pwaRowRenameCommit: {
+    handleClick(event: Event, options: {
+      uuidAttribute: string;
+      urlTemplate: string;
+      csrfToken: () => string;
+      onCommitted?: (response: Response, row: HTMLElement) => void;
+      onFailed?: () => void;
+    }): boolean;
+  };
+  /** static/js/row_removed.js — re-read a list once one of its rows was removed over HTMX. */
+  pwaRowRemoved: {
+    watch(listSelector: string, handler: () => void, actionSelector?: string): void;
+  };
 }
+
+/**
+ * htmx (static/js/htmx.min.js), a classic script loaded before the modules
+ * that use it; read as a bare global, always behind `typeof htmx`.
+ */
+declare const htmx: {
+  ajax(method: string, url: string, options: { target: Element; swap?: string }): Promise<void>;
+  process(element: Element): void;
+};
 
 /**
  * The service worker and several modules publish via `self` rather than
