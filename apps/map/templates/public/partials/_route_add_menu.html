@@ -1,0 +1,23 @@
+{% load i18n %}
+{% comment %}
+public/partials/_route_add_menu.html — the routes panel's three ways to add
+a route, behind a + roundel beside the panel's × (SNOW-1278).
+
+Rendered by includes/_sheet_header.html's ``actions_template``, reached
+through includes/_ugc_panel.html's ``header_actions_template``, only while
+the ``route_drawing`` flag is active for the request — see
+public/partials/_routes_surface.html. It replaces the panel's own add
+button (``foot_replaces_add``).
+
+History: three full-width cards in the panel's foot (SNOW-1278), then one
+row of three buttons (PR 1534). Hugo, 8 Nov 2026: "The list of routes is the
+important thing in this menu ... we're trying to make more space for the
+routes." So the three ways moved into a menu in the header, a glass roundel
+next to the × (a bare + "is just floating"), keeping the cards' own copy.
+
+includes/_overflow_menu.html owns the trigger, the popover and its
+dismissal (static/js/overflow_menu.js); the items are
+public/partials/_route_add_menu_items.html.
+{% endcomment %}
+{% trans "Add a route" as route_add_menu_label %}
+{% include "includes/_overflow_menu.html" with trigger_id="route-add-menu-trigger" menu_id="route-add-menu" trigger_label=route_add_menu_label trigger_icon="includes/_icon_plus.html" roundel=True wide=True items_template="public/partials/_route_add_menu_items.html" %}

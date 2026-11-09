@@ -97,6 +97,7 @@ from waffle.testutils import override_flag
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.favourites.models import Favourite
 from apps.locations.models import Location
+from apps.regions.models import Resort
 from apps.weather.models import Weather
 from tests.factories import (
     BulletinFactory,
@@ -2963,3 +2964,254 @@ class TestRetiredResortFavourites:
         """The FK holds: nothing is lost by retiring."""
         _user, _live, gone = self._setup(client)
         assert Favourite.objects.get(pk=gone.pk).resort is not None
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1479 — the installed phone app's Places list
+# ---------------------------------------------------------------------------
+
+PLACES_URL = "/favourites/partials/places/"
+
+
+def _menu_items(content: str, menu_id: str) -> list[str]:
+    """Return the visible words of a "…" menu's items, in order."""
+    menu = re.search(
+        r'<ul\s+id="%s"\s+role="menu".*?</ul>' % re.escape(menu_id), content, re.S
+    )
+    assert menu, menu_id
+    return [
+        " ".join(re.sub(r"<[^>]+>", " ", item).split())
+        for item in re.findall(
+            r'<(?:button|a)\b[^>]*role="menuitem"[^>]*>(.*?)</(?:button|a)>',
+            menu.group(0),
+            re.S,
+        )
+    ]
+
+
+@pytest.mark.django_db
+class TestPlacesView:
+    """favourites:places — Today's regions with the pins in each."""
+
+    def test_a_visitor_is_refused(self, client: Client) -> None:
+        assert client.get(PLACES_URL, **HTMX_HEADERS).status_code == 403
+
+    def test_htmx_only(self, client: Client) -> None:
+        client.force_login(UserFactory.create())
+        assert client.get(PLACES_URL).status_code == 400
+
+    def test_danger_weather_and_pin_heights(self, client: Client) -> None:
+        user = UserFactory.create()
+        region = MicroRegionFactory.create(name="Martigny-Verbier")
+        RegionDayRatingFactory.create(region=region, max_rating="considerable")
+        FavouriteFactory.create(user=user, region=region, region_pin=True)
+        point = LocationFactory.create(latitude=46.10, longitude=7.40)
+        MicroRegionFactory.create(centroid_location=point)
+        WeatherFactory.create(location=point, temperature_2m_max=-3.0, weather_code=71)
+        FavouriteFactory.create(
+            user=user,
+            latitude=46.10,
+            longitude=7.40,
+            resort=ResortFactory.create(name="Verbier", region=region),
+        )
+        FavouriteFactory.create(
+            user=user, name="Car park", region=region, elevation=2140.0
+        )
+        client.force_login(user)
+
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
+
+        assert content.count('data-testid="places-region"') == 1
+        level = re.search(
+            r'data-testid="places-region-level"\s*>([^<]*)<', content, re.S
+        )
+        assert level and level.group(1).strip() == "3"
+        announce = re.search(
+            r'data-testid="places-region-announce"\s*>(.*?)</span>', content, re.S
+        )
+        assert announce
+        assert " ".join(announce.group(1).split()) == "Danger today: Considerable"
+        forecast = re.search(
+            r'data-testid="places-resort-forecast"\s*>(.*?)</span>', content, re.S
+        )
+        assert forecast and "<img" in forecast.group(1)
+        assert "-3&deg;" in forecast.group(1)
+        assert "Car park" in content
+        assert "2140m · saved" in content
+        assert 'data-panel-key="places:now"' in content
+
+    def test_elsewhere_lists_the_pins_in_no_region_last(self, client: Client) -> None:
+        user = UserFactory.create()
+        FavouriteFactory.create(
+            user=user,
+            region=MicroRegionFactory.create(name="Engelberg"),
+            region_pin=True,
+        )
+        FavouriteFactory.create(user=user, name="Hut", region=None)
+        client.force_login(user)
+
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
+
+        assert 'data-testid="places-elsewhere"' in content
+        assert content.index("Engelberg") < content.index("Elsewhere")
+        assert content.index("Elsewhere") < content.index("Hut")
+
+    def test_a_region_listed_for_a_resort_alone_has_no_menu(
+        self, client: Client
+    ) -> None:
+        user = UserFactory.create()
+        region = MicroRegionFactory.create(name="Südliches Urseren")
+        FavouriteFactory.create(
+            user=user, resort=ResortFactory.create(name="Andermatt", region=region)
+        )
+        client.force_login(user)
+
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
+
+        assert "Südliches Urseren" in content
+        assert 'data-testid="places-region-menu"' not in content
+        assert 'data-testid="places-resort-menu"' in content
+
+    def test_each_kind_of_row_has_its_menu_in_order(self, client: Client) -> None:
+        user = UserFactory.create()
+        region = MicroRegionFactory.create()
+        region_pin = FavouriteFactory.create(user=user, region=region, region_pin=True)
+        resort_pin = FavouriteFactory.create(
+            user=user, resort=ResortFactory.create(name="Verbier", region=region)
+        )
+        pin = FavouriteFactory.create(user=user, name="Car park", region=region)
+        location = pin.location
+        assert location is not None
+        location.what3words = "filled.count.soap"
+        location.save()
+        client.force_login(user)
+
+        with override_flag("what3words", active=True):
+            content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
+
+        assert _menu_items(content, f"place-actions-menu-{region_pin.uuid}") == [
+            "Share",
+            "Delete",
+        ]
+        assert _menu_items(content, f"place-actions-menu-{resort_pin.uuid}") == [
+            "Share",
+            "Delete",
+        ]
+        assert _menu_items(content, f"favourite-actions-menu-{pin.uuid}") == [
+            "Share",
+            "Rename",
+            "Delete",
+        ]
+        assert f'data-place-share="{region.get_absolute_url()}"' in content
+        assert f'hx-post="/favourites/partials/{region_pin.uuid}/delete/"' in content
+
+    def test_a_region_delete_empties_its_own_row_not_the_group(
+        self, client: Client
+    ) -> None:
+        """The resorts and pins under a pinned region outlive its Delete."""
+        user = UserFactory.create()
+        region = MicroRegionFactory.create()
+        region_pin = FavouriteFactory.create(user=user, region=region, region_pin=True)
+        FavouriteFactory.create(
+            user=user, resort=ResortFactory.create(name="Verbier", region=region)
+        )
+        client.force_login(user)
+
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
+
+        head_id = f"place-region-head-{region.region_id}"
+        assert f'id="{head_id}"' in content
+        form = re.search(
+            r'<form[^>]*hx-post="/favourites/partials/%s/delete/"[^>]*>'
+            % region_pin.uuid,
+            content,
+            re.S,
+        )
+        assert form and f'hx-target="#{head_id}"' in form.group(0)
+        head = content.index(f'id="{head_id}"')
+        resorts = content.index('data-testid="places-resort"')
+        # The resort rows sit outside the header row the Delete empties.
+        assert (
+            content.index("</div>", content.index("places-region-menu", head)) < resorts
+        )
+
+    def test_a_pin_row_lines_up_with_the_resort_rows(self, client: Client) -> None:
+        """Same left inset, same "…" column and same name size (SNOW-1479)."""
+        user = UserFactory.create()
+        region = MicroRegionFactory.create()
+        FavouriteFactory.create(
+            user=user, resort=ResortFactory.create(name="Verbier", region=region)
+        )
+        FavouriteFactory.create(user=user, name="Car park", region=region)
+        client.force_login(user)
+
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
+
+        pins = re.search(r'<ul\s+class="([^"]*)"\s+data-testid="places-pins"', content)
+        assert pins
+        # Inset on the left only: the "…" sits on the card's edge, as the
+        # resort rows' menus do.
+        assert "pl-3" in pins.group(1).split()
+        assert "px-3" not in pins.group(1).split()
+        label = re.search(
+            r'data-testid="favourite-list-row-label"\s+class="([^"]*)"', content
+        )
+        assert label and "text-sm" in label.group(1).split()
+        assert "text-label" not in label.group(1).split()
+        resort = re.search(r'<span\s+class="([^"]*)"\s*>Verbier</span>', content)
+        assert resort and "text-sm" in resort.group(1).split()
+
+    def test_a_resort_with_no_page_has_delete_alone(self, client: Client) -> None:
+        user = UserFactory.create()
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(name="Verbier", region=region)
+        resort_pin = FavouriteFactory.create(user=user, resort=resort)
+        Resort.all_objects.filter(pk=resort.pk).update(slug="")
+        client.force_login(user)
+
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
+
+        assert _menu_items(content, f"place-actions-menu-{resort_pin.uuid}") == [
+            "Delete"
+        ]
+
+    def test_nothing_pinned_says_how(self, client: Client) -> None:
+        client.force_login(UserFactory.create())
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
+        assert 'data-testid="places-empty"' in content
+
+    def test_freshness_headers_follow_the_oldest_rating(self, client: Client) -> None:
+        user = UserFactory.create()
+        region = MicroRegionFactory.create()
+        rating = RegionDayRatingFactory.create(region=region, max_rating="low")
+        FavouriteFactory.create(user=user, region=region, region_pin=True)
+        client.force_login(user)
+
+        response = client.get(PLACES_URL, **HTMX_HEADERS)
+
+        assert response["X-Data-Generated-At"] == rating.updated_at.isoformat(
+            timespec="seconds"
+        )
+        assert response["X-Data-Unsafe-After"] == "172800"
+
+    def test_no_rating_carries_no_unsafe_after(self, client: Client) -> None:
+        client.force_login(UserFactory.create())
+        response = client.get(PLACES_URL, **HTMX_HEADERS)
+        assert "X-Data-Generated-At" in response
+        assert "X-Data-Unsafe-After" not in response
+
+    def test_the_favourites_list_is_unchanged(self, client: Client) -> None:
+        """The roundel's panel still lists the dropped pins alone."""
+        user = UserFactory.create()
+        region = MicroRegionFactory.create(name="Engelberg")
+        FavouriteFactory.create(user=user, region=region, region_pin=True)
+        FavouriteFactory.create(user=user, name="Car park", region=region)
+        client.force_login(user)
+
+        content = client.get(
+            "/favourites/partials/list/", **HTMX_HEADERS
+        ).content.decode()
+
+        assert "Car park" in content
+        assert "Engelberg · saved" in content
+        assert 'data-testid="places-region"' not in content

@@ -1,0 +1,48 @@
+{% load i18n %}
+{% comment %}
+observations/partials/_observation_row_menu_items.html — the one item in a
+field observation's "…" menu (SNOW-1479).
+
+includes/_overflow_menu.html's ``items_template`` slot, reached from
+observations/partials/_observation_row_actions.html, so ``observation`` and
+``label`` are in scope. Delete alone: an observation records what was seen
+where, and none of that is renamed or shared after the fact. Why a menu of
+one is a menu at all is in that file's header.
+
+IT SAYS "DELETE" AND IT ASKS FIRST (SNOW-886): observations:delete destroys
+the FieldObservation row, and a field report cannot be re-entered from
+anything but memory. ``hx-confirm`` carries the translated question naming
+the report by its type, and htmx hands it to window.confirm.
+
+``data-row-remove`` (SNOW-752) stays on the FORM: static/js/row_removed.js
+tells the surface owning the list that a row went, so it re-reads the list
+and takes the flag off the community-reports layer. The empty 200 swaps out
+exactly this row (``hx-target`` its own id).
+
+The destructive item carries no ``hover-affordance``: that class paints a
+gradient that would sit over the error fill.
+{% endcomment %}
+{% blocktrans trimmed with kind=label asvar delete_aria_label %}Delete {{ kind }}{% endblocktrans %}
+{% blocktrans trimmed with kind=label asvar delete_confirm %}
+    Delete this {{ kind }} report? It can't be recovered.
+{% endblocktrans %}
+<li role="none">
+    <form
+        data-row-remove
+        hx-post="{% url 'observations:delete' observation.uuid %}"
+        hx-target="#observation-{{ observation.uuid }}"
+        hx-swap="outerHTML"
+        hx-confirm="{{ delete_confirm }}"
+    >
+        {% csrf_token %}
+        <button
+            type="submit"
+            role="menuitem"
+            aria-label="{{ delete_aria_label }}"
+            class="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm text-status-error-text hover:bg-status-error-bg"
+        >
+            {% include "includes/_icon_trash.html" only %}
+            {% trans "Delete" %}
+        </button>
+    </form>
+</li>

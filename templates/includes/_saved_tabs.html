@@ -1,0 +1,70 @@
+{% load i18n %}
+{% comment %}
+templates/includes/_saved_tabs.html — the installed phone app's Saved tabs:
+Places, Routes, Trips, Observations (SNOW-1479; the Saved chips of
+SNOW-1476 before it).
+
+The Saved tab is four existing sheets — the favourites, routes, trips and
+report sheets, each its own surface — and this row, rendered in each one's
+header by includes/_ugc_panel.html (through includes/_sheet_header.html's
+``lead_template``), moves between them. static/js/app_tabbar.js listens for
+the change and closes one sheet as it opens its sibling in the same box, so
+only the content changes.
+
+FOUR ICONS, THE SELECTED ONE NAMED. Each option is
+includes/_segmented_option.html with an ``icon_template``: the glyph of the
+thing the list holds (the design system's own icons), and the label shown
+only beside the checked one. The label is in every radio's accessible name
+all the same. With the + roundel beside them, the tabs are the whole header
+in the app: the sheet's title, context line, section label and × are
+`app-hidden` there.
+
+Drawn only in the installed app on a phone (`app-only`); elsewhere each
+sheet is reached from its own roundel and keeps its own header.
+
+A segmented control, as the theme preference is: four radios, the current
+one checked.
+
+Parameters (passed via {% include … with … %}):
+  saved_tab (string, required) — "places", "routes", "trips" or
+                                 "observations": the sheet this row sits in.
+  preview   (bool, optional)   — draw the row whatever the display mode. For
+                                 the component library only; it also draws
+                                 the Trips option.
+  favourites_eligible (bool, from the map's context) — the reader is signed
+                                 in. Trips is offered only then: its sheet,
+                                 public/partials/_trips_surface.html, renders
+                                 on the same condition, and a Trips option
+                                 with no sheet would check and do nothing.
+{% endcomment %}
+<fieldset class="{% if not preview %}app-only {% endif %}min-w-0 flex-1" data-saved-tabs>
+    <legend class="sr-only">{% trans "Saved" %}</legend>
+    <div class="inline-flex rounded-pill border border-border bg-card p-0.5">
+        {% trans "Places" as places_label %}
+        {% trans "Routes" as routes_label %}
+        {% trans "Trips" as trips_label %}
+        {% trans "Observations" as observations_label %}
+        {% if saved_tab == "places" %}
+            {% include "includes/_segmented_option.html" with name="saved-tab" value="places" label=places_label icon_template="includes/_icon_mountain.html" checked=True %}
+        {% else %}
+            {% include "includes/_segmented_option.html" with name="saved-tab" value="places" label=places_label icon_template="includes/_icon_mountain.html" %}
+        {% endif %}
+        {% if saved_tab == "routes" %}
+            {% include "includes/_segmented_option.html" with name="saved-tab" value="routes" label=routes_label icon_template="includes/_icon_route.html" checked=True %}
+        {% else %}
+            {% include "includes/_segmented_option.html" with name="saved-tab" value="routes" label=routes_label icon_template="includes/_icon_route.html" %}
+        {% endif %}
+        {% if favourites_eligible or preview %}
+            {% if saved_tab == "trips" %}
+                {% include "includes/_segmented_option.html" with name="saved-tab" value="trips" label=trips_label icon_template="includes/_icon_trip.html" checked=True %}
+            {% else %}
+                {% include "includes/_segmented_option.html" with name="saved-tab" value="trips" label=trips_label icon_template="includes/_icon_trip.html" %}
+            {% endif %}
+        {% endif %}
+        {% if saved_tab == "observations" %}
+            {% include "includes/_segmented_option.html" with name="saved-tab" value="observations" label=observations_label icon_template="includes/_icon_observation.html" checked=True %}
+        {% else %}
+            {% include "includes/_segmented_option.html" with name="saved-tab" value="observations" label=observations_label icon_template="includes/_icon_observation.html" %}
+        {% endif %}
+    </div>
+</fieldset>

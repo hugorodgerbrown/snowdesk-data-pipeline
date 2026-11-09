@@ -7298,16 +7298,18 @@ body.map-framing #map-legend {
      floating panels through --map-edge-inset-bottom, the phone detent
      sheets (region, place, weather, route) through their own bottom and
      max-height.
-   - The roundels the bar replaces go: the sun (Today), the "yours" capsule
+   - The roundels the bar replaces go: the sun (Today, folded into Saved →
+     Places by SNOW-1479), the "yours" capsule
      and its collapse toggle (Saved; the downloads sheet opens from the layers menu),
      and the "?" and (i) roundels: the Help tab opens the "?" menu, which
      gains a Map key item for the (i) card.
-   - The tab panels — Today and the Saved sheets — stand at full
-     height, from under the nav to above the bar. A first open rises; a
+   - The tab panels — the four Saved sheets (and Today, reached only by a
+     back pill now, SNOW-1479) — stand at full height, from under the nav
+     to above the bar. A first open rises; a
      swap from one tab's panel to another keeps the card in place and fades
      only its content in, so the map never shows through mid-swap
      (static/js/app_tabbar.js marks them `data-tab-open` / `data-tab-swap`;
-     a Saved chip swaps with no mark, the content simply replaced).
+     a Saved tab swaps with no mark, the content simply replaced).
    Nothing here applies outside the installed app on a phone. */
 @media (display-mode: standalone) and (max-width: 639.98px) {
     :root {
@@ -7347,9 +7349,26 @@ body.map-framing #map-legend {
         padding-bottom: 1rem;
     }
 
-    :is(#today-sheet, #favourite-sheet, #route-sheet, #report-sheet) {
+    :is(#today-sheet, #favourite-sheet, #route-sheet, #trips-sheet, #report-sheet) {
         top: calc(env(safe-area-inset-top, 0px) + 56px);
         max-height: none;
+        /* The bar sits right under the card, so half the web's pb-8. */
+        padding-bottom: 1rem;
+    }
+
+    /* SNOW-1479: the list runs down to just above the foot ("Show on the
+       map"), so a long list scrolls under its own edge rather than stopping
+       mid-card over blank space. Most of the body's flex gap before the
+       foot (1.125rem) moves inside the scroll area as padding, so the last
+       row still scrolls clear; 0.5rem stays, the gap between region cards,
+       so a part-scrolled row clips at a clear edge rather than butting
+       into the switch card. Only where the
+       switch follows: Trips has none, and its list already ends on the
+       card's own padding. */
+    :is(#today-sheet, #favourite-sheet, #route-sheet, #trips-sheet, #report-sheet)
+        [data-panel-scroll]:has(~ [data-panel-overlay-toggle]) {
+        margin-bottom: -0.625rem;
+        padding-bottom: 0.625rem;
     }
 
     [data-tab-open] {

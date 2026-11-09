@@ -276,16 +276,24 @@ interface Window {
   pwaNetworkMode: any;
   /** static/js/map_weather_detail.js — the weather sheet; open/close/point. */
   pwaWeatherDetail: any;
-  /** SNOW-1366: the Today panel (static/js/today_panel.js). */
-  pwaTodayPanel: { open(): void; close(): void; isOpen(): boolean };
-  /** SNOW-1476: the favourites, routes and report sheets' controllers. */
-  pwaFavouritesSheet: { open(): void; close(): void; isOpen(): boolean };
+  /** SNOW-1366: the Today panel (static/js/today_panel.js); SNOW-1479 adds
+   *  toToday, which Saved → Places' rows borrow. */
+  pwaTodayPanel: { open(): void; close(): void; isOpen(): boolean; toToday(): void };
+  /** SNOW-1476: the favourites, routes and report sheets' controllers.
+   *  SNOW-1479: the favourites sheet opens on Places with { list: 'places' }. */
+  pwaFavouritesSheet: {
+    open(options?: { list?: 'pins' | 'places' }): void;
+    close(): void;
+    isOpen(): boolean;
+  };
+  /** SNOW-1479: the Saved tab's Trips sheet (static/js/trips_panel.js). */
+  pwaTripsSheet: { open(): void; close(): void; isOpen(): boolean };
   pwaRoutesSheet: { open(): void; close(): void; isOpen(): boolean };
   pwaReportSheet: { open(): void; close(): void; isOpen(): boolean };
   /** static/js/map_downloads_manager.js — the downloads sheet. */
   pwaDownloadsManager: { open(): void; toggle(): void; refresh(): void };
   /** SNOW-1476: the installed phone app's tab bar (static/js/app_tabbar.js). */
-  pwaAppTabbar: { select(tab: 'map' | 'today' | 'saved' | 'help'): void; light(): void };
+  pwaAppTabbar: { select(tab: 'map' | 'saved' | 'help'): void; light(): void };
   /** static/js/map_sheet.js — the sheet controller; attach/bindDetents/handOff/toast. */
   MapSheet: any;
   /** static/js/route_rail.js — rail one below the map; open/close/cursor. */
@@ -393,7 +401,35 @@ interface Window {
   pwaRegionPickCore: any;
   /** static/js/map_region_pick.js — the "Download a region" task: open() / close() / isActive() (SNOW-1414). */
   pwaRegionPick: any;
+  /** static/js/share.js — mint a share link and hand it to the platform (SNOW-887). */
+  pwaShare: {
+    shareOrCopy(value: string, title?: string, kind?: string): Promise<string>;
+    createShare(url: string, csrfToken: string): Promise<string>;
+  };
+  /** static/js/row_rename_commit.js — commit a panel row's inline rename. */
+  pwaRowRenameCommit: {
+    handleClick(event: Event, options: {
+      uuidAttribute: string;
+      urlTemplate: string;
+      csrfToken: () => string;
+      onCommitted?: (response: Response, row: HTMLElement) => void;
+      onFailed?: () => void;
+    }): boolean;
+  };
+  /** static/js/row_removed.js — re-read a list once one of its rows was removed over HTMX. */
+  pwaRowRemoved: {
+    watch(listSelector: string, handler: () => void, actionSelector?: string): void;
+  };
 }
+
+/**
+ * htmx (static/js/htmx.min.js), a classic script loaded before the modules
+ * that use it; read as a bare global, always behind `typeof htmx`.
+ */
+declare const htmx: {
+  ajax(method: string, url: string, options: { target: Element; swap?: string }): Promise<void>;
+  process(element: Element): void;
+};
 
 /**
  * The service worker and several modules publish via `self` rather than

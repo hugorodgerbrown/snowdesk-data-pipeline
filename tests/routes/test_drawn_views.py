@@ -13,7 +13,9 @@ reading surface whatever the flag says.
 
 from __future__ import annotations
 
+import datetime
 import json
+import re
 from collections.abc import Iterator
 from typing import Any
 from unittest.mock import patch
@@ -28,6 +30,7 @@ from apps.routes.services.gpx import parse_gpx
 from tests.factories import (
     DRIFTING_TRACK,
     RouteFactory,
+    RouteShareFactory,
     UserFactory,
     drifting_track_record,
 )
@@ -348,6 +351,50 @@ class TestRouteGpx:
 
 
 @pytest.mark.django_db
+class TestRowMeta:
+    """SNOW-1479: a recorded route says when; a shared one says "Shared"."""
+
+    def _rows(self, client: Client) -> str:
+        """Render the map panel's rows for the logged-in user."""
+        return client.get(
+            reverse("routes:list") + "?variant=map", HTTP_HX_REQUEST="true"
+        ).content.decode()
+
+    def test_a_recorded_route_leads_with_its_day(self, client: Client) -> None:
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            started_at=datetime.datetime(2026, 2, 3, 8, 0, tzinfo=datetime.UTC),
+            finished_at=datetime.datetime(2026, 2, 3, 12, 15, tzinfo=datetime.UTC),
+        )
+
+        body = self._rows(client)
+
+        assert re.search(r"3 Feb 2026 ·\s+[\d.]+km", body)
+
+    def test_a_drawn_route_has_no_day(self, client: Client) -> None:
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user, started_at=None, finished_at=None)
+
+        meta = re.search(r"data-row-meta[^>]*>(.*?)</span>", self._rows(client), re.S)
+
+        assert meta
+        assert re.match(r"\s*[\d.]+km", meta.group(1))
+
+    def test_a_shared_route_says_shared(self, client: Client) -> None:
+        client.force_login(UserFactory.create())
+        share = RouteShareFactory.create()
+        assert client.get(f"/routes/s/{share.token}/").status_code == 302
+
+        body = self._rows(client)
+
+        assert re.search(r"Shared ·\s", body)
+        assert "Shared with you" not in body
+
+
+@pytest.mark.django_db
 class TestRowMenuDownload:
     """The row's Download GPX item follows the flag."""
 
@@ -419,13 +466,15 @@ class TestMapPageDrawSurface:
         assert "data-ski-tour-find" in body
         assert "Find a route" in body
         assert "Create a route" in body
-        # One row of three one-word buttons, each named in full for a
-        # screen reader, with no line of description under them.
-        assert 'aria-label="Find a route"' in body
-        assert 'aria-label="Create a route"' in body
-        assert 'aria-label="Upload a GPX"' in body
-        assert "Start from a swisstopo / SAC ski tour" not in body
-        assert "A track from a watch or another app" not in body
+        # The three ways sit in a menu behind a + roundel beside the ×,
+        # with their line of description, and the empty foot is hidden so
+        # the list keeps the room.
+        assert 'id="route-add-menu-trigger"' in body
+        assert 'aria-label="Add a route"' in body
+        assert 'id="route-add-menu"' in body
+        assert "Start from a swisstopo / SAC ski tour" in body
+        assert "A track from a watch or another app" in body
+        assert re.search(r"data-panel-foot\s+hidden", body)
         assert 'id="ski-tours-config"' in body
         # SNOW-1306: a tap opens a tour; there is no list sheet.
         assert 'id="ski-tours-sheet"' not in body
@@ -441,7 +490,9 @@ class TestMapPageDrawSurface:
         assert f'data-ski-tours-url="{reverse("api:ski_tours_geojson")}"' in body
         assert f'data-ski-tour-feature-url="{tour_feature}"' in body
         assert f'data-ski-tour-terrain-url="{tour_terrain}"' in body
-        assert "Add a route" not in body
+        # The panel's own add button is gone: "Add a route" names only the
+        # + roundel now.
+        assert body.count("Add a route") == 1
 
     def test_absent_for_an_anonymous_visitor(self, client: Client) -> None:
         """No waffle read and no surface for a visitor with no session."""
@@ -463,5 +514,11 @@ class TestMapPageDrawSurface:
         assert "data-ski-tour-find" not in body
         assert 'id="ski-tours-config"' not in body
         assert "Add a route" in body
+        assert 'id="route-add-menu-trigger"' not in body
+        # The routes panel's own foot: the Trips sheet's (SNOW-1479) is
+        # always hidden, having no add button.
+        panel = body[body.index('<template id="route-list-template">') :]
+        panel = panel[: panel.index("</template>")]
+        assert not re.search(r"data-panel-foot\s+hidden", panel)
         assert 'data-overlay-key="ski_tours"' not in body
         assert "data-ski-tours-url" not in body

@@ -153,6 +153,23 @@ DEMO_ROWS_TEMPLATE = "public/partials/_ugc_panel_demo_rows.html"
 
 _CLASS_RE = re.compile(r"""class=(?:"([^"]*)"|'([^']*)')""")
 
+# SNOW-1479: tokens that say where a part is drawn or how it is trimmed
+# rather than what it is. A Saved panel's title, ×, strip, label and foot
+# carry `app-hidden` (the installed phone app draws its tabs instead), and
+# its × sits in the header's action group, which takes the ×'s own -12px
+# trim. Neither makes the chrome a different chrome.
+_PLACEMENT_TOKENS = frozenset({"app-hidden", "-mt-3", "-mr-3"})
+
+# SNOW-1479: the Saved tabs and the + roundel a Saved panel's header carries
+# for the installed phone app alone (`app-only`). Taken out of a panel's
+# body before it is read, so these guards check the panel every other
+# reader sees: its own glyph, one add control, the five parts in order.
+_APP_ONLY_HEADER_RE = re.compile(
+    r"<fieldset[^>]*data-saved-tabs.*?</fieldset>"
+    r"|<button(?:(?!</button>).)*?data-testid=\"saved-add-roundel\".*?</button>",
+    re.S,
+)
+
 
 def _class_strings(html: str) -> set[str]:
     """Return every ``class`` attribute value in ``html``.
@@ -169,7 +186,10 @@ def _class_strings(html: str) -> set[str]:
         The set of class-attribute values found.
 
     """
-    return {double or single for double, single in _CLASS_RE.findall(html)}
+    return {
+        " ".join(t for t in (double or single).split() if t not in _PLACEMENT_TOKENS)
+        for double, single in _CLASS_RE.findall(html)
+    }
 
 
 def _panel_body(html: str, template_id: str) -> str:
@@ -180,12 +200,16 @@ def _panel_body(html: str, template_id: str) -> str:
         template_id: The template element's DOM id.
 
     Returns:
-        Everything between that element's open and close tags.
+        Everything between that element's open and close tags, less the
+        installed app's Saved tabs and + roundel and its `app-hidden` marks
+        (SNOW-1479).
 
     """
     opener = f'<template id="{template_id}">'
     start = html.index(opener) + len(opener)
-    return html[start : html.index("</template>", start)]
+    body = html[start : html.index("</template>", start)]
+    body = _APP_ONLY_HEADER_RE.sub("", body)
+    return body.replace("app-hidden ", "").replace(" app-hidden", "")
 
 
 @pytest.fixture(scope="module")

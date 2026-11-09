@@ -1,8 +1,8 @@
 ---
 name: today-is-its-own-panel
-description: Why Today is its own panel behind the sun (favourites:today, build_today, today_panel.js); the bell retired
+description: Why Today is its own panel behind the sun (favourites:today, build_today, today_panel.js); bell retired; Saved → Places in the app
 status: current
-last-reviewed: 2026-11-03
+last-reviewed: 2026-11-09
 ---
 
 # Today is its own panel
@@ -67,6 +67,14 @@ shows that same day for those same places.
 
 ## Consequences
 
+- **In the installed phone app Today is Saved → Places (SNOW-1479).** The
+  sun roundel is hidden there and Today has no tab. Places
+  (`favourites:places`, `build_places`) lists the same regions and
+  resorts, by the same rules, and adds the dropped pins under the region
+  they fall in, with their height; pins outside every region sit under
+  "Elsewhere". So "dropped pins only on the Favourites panel" holds on the
+  web, not in the app. `?panel=today` opens Places, and the alert dot sits
+  on the Saved tab. The web keeps this panel unchanged.
 - The panel is online only. A failed load says so, rather than showing
   the empty state.
 - `build_today` runs a fixed number of queries however many places there

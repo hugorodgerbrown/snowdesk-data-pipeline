@@ -2,7 +2,8 @@
 templates/includes/_app_tabbar.html — the installed phone app's bottom tab bar
 (SNOW-1476).
 
-Four tabs: Map, Today, Saved, Help. Rendered on every page that extends
+Three tabs: Map, Saved, Help (SNOW-1479; Today was a fourth until its
+regions and resorts folded into Saved → Places). Rendered on every page that extends
 public/base.html, but drawn ONLY in the installed app on a phone: the bar
 is `display: none` until the `(display-mode: standalone) and
 (max-width: 639.98px)` block in src/css/main.css shows it, and that same
@@ -12,8 +13,9 @@ browser, a tablet and a desktop never see it
 (docs/decisions/the-installed-phone-app-has-a-tab-bar.md).
 
 ON THE MAP the tabs are buttons: static/js/app_tabbar.js opens each tab's
-panel over the map (Today, the Saved sheets, the Help sheet) and lights the
-tab whose panel is open. OFF THE MAP they are links to /map/?panel=…,
+panel over the map (the Saved sheets, the Help sheet) and lights the tab
+whose panel is open. The Saved tab carries the alert dot the Today tab had,
+mirrored from the hidden sun roundel. OFF THE MAP they are links to /map/?panel=…,
 which opens the map as it was left with that panel open.
 
 `{% app_tabbar_state %}` (apps/public/templatetags/app_tabbar.py) decides
@@ -33,7 +35,6 @@ Parameters (passed via {% include … with … %}):
 {% app_tabbar_state as tabbar %}
 {% url 'public:map' as map_url %}
 {% trans "Map" as tab_map %}
-{% trans "Today" as tab_today %}
 {% trans "Saved" as tab_saved %}
 {% trans "Help" as tab_help %}
 <div
@@ -54,13 +55,9 @@ Parameters (passed via {% include … with … %}):
             {% include "includes/_icon_map.html" with size=24 only %}
             <span>{{ tab_map }}</span>
         </button>
-        <button type="button" class="app-tab" data-app-tab="today">
-            {% include "includes/_icon_sun.html" with size=24 only %}
-            <span class="app-tab-dot" data-app-tab-dot hidden></span>
-            <span>{{ tab_today }}</span>
-        </button>
         <button type="button" class="app-tab" data-app-tab="saved">
             {% include "includes/_icon_favourite.html" with size=24 only %}
+            <span class="app-tab-dot" data-app-tab-dot hidden></span>
             <span>{{ tab_saved }}</span>
         </button>
         <button type="button" class="app-tab" data-app-tab="help">
@@ -76,10 +73,6 @@ Parameters (passed via {% include … with … %}):
         >
             {% include "includes/_icon_map.html" with size=24 only %}
             <span>{{ tab_map }}</span>
-        </a>
-        <a href="{{ map_url }}?panel=today" class="app-tab" data-app-tab="today">
-            {% include "includes/_icon_sun.html" with size=24 only %}
-            <span>{{ tab_today }}</span>
         </a>
         <a href="{{ map_url }}?panel=saved" class="app-tab" data-app-tab="saved">
             {% include "includes/_icon_favourite.html" with size=24 only %}

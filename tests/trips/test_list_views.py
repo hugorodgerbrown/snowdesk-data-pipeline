@@ -113,6 +113,19 @@ class TestTripListScope:
         assert response["Location"] == reverse("accounts:sign_in")
 
 
+@pytest.mark.django_db
+class TestTripListMethods:
+    """trips:list answers GET only (SNOW-1479 moved its ``require_GET`` on)."""
+
+    def test_a_post_is_refused(self, client: Client) -> None:
+        """The decorator sat on a helper, so a POST used to render the page."""
+        client.force_login(UserFactory.create())
+
+        response = client.post(reverse("trips:list"))
+
+        assert response.status_code == 405
+
+
 @freeze_time(_TODAY)
 @pytest.mark.django_db
 class TestTripListSplit:

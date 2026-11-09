@@ -41,6 +41,7 @@ from apps.trips.services.trips import (
     delete_trip,
     delete_trip_instance,
     delete_trips_for_user,
+    rename_trip,
     update_trip,
 )
 from tests.factories import (
@@ -472,6 +473,24 @@ class TestDeleteTrip:
         delete_trip(route.user, trip.uuid)
 
         assert TripParticipant.objects.count() == 0
+
+
+@pytest.mark.django_db
+class TestRenameTrip:
+    """SNOW-1479: the label alone, organiser-scoped."""
+
+    def test_writes_the_trimmed_name_and_nothing_else(self) -> None:
+        trip = TripFactory.create(name="Old", description="Bring skins")
+        renamed = rename_trip(trip.created_by, trip.uuid, "  " + "x" * 120)
+        trip.refresh_from_db()
+        assert renamed.pk == trip.pk
+        assert trip.name == "x" * 100
+        assert trip.description == "Bring skins"
+
+    def test_another_users_trip_does_not_exist(self) -> None:
+        trip = TripFactory.create()
+        with pytest.raises(Trip.DoesNotExist):
+            rename_trip(UserFactory.create(), trip.uuid, "Mine")
 
 
 @pytest.mark.django_db

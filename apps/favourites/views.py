@@ -30,12 +30,16 @@ the map page's saved-pins feature (SNOW-413) and the favourite detail card
 - ``favourite_list`` (GET) — the requesting user's own favourites, rendered
   for the map sheet (SNOW-658; the account page that also hosted it went
   in SNOW-803).
+- ``today`` (GET) — the Today panel's pinned regions and resorts (SNOW-1366).
+- ``places`` (GET) — the installed phone app's Places list: Today's regions
+  with each region's dropped pins, and the pins in no region last
+  (SNOW-1479).
 - ``favourites_geojson`` (GET) — a FeatureCollection of the requesting
   user's own favourites, for the map's saved-pins layer. Not
   ``@require_htmx`` — this is consumed by a JS ``fetch()`` call, not an
   HTMX swap.
 
-All nine are authentication-gated (403 for anonymous users).
+All of them are authentication-gated (403 for anonymous users).
 
 ``favourite_card``, ``favourite_detail_redirect``, and ``favourite_rename``/
 ``favourite_delete`` are owner-scoped via ``Favourite.objects.for_user()``
@@ -88,7 +92,13 @@ from apps.favourites.services import (
     delete_favourite,
     delete_region_favourite,
 )
-from apps.favourites.today import build_today, today_region_pks, today_subjects
+from apps.favourites.today import (
+    build_places,
+    build_today,
+    places_region_pks,
+    today_region_pks,
+    today_subjects,
+)
 from apps.locations.services.what3words import what3words_map_url
 from apps.public.bulletin_panels import problem_cards_for_bulletin
 from apps.public.templatetags.snowdesk_time import danger_level_digit
@@ -1136,9 +1146,10 @@ def today(request: HttpRequest) -> HttpResponse:
     generated_at = (
         min(rating.updated_at for rating in present) if present else timezone.now()
     )
-    # SNOW-1476: the installed phone app's Today tab lists the reader's next
-    # trips under their places, soonest first (TripQuerySet.upcoming counts
-    # a trip dated today as upcoming). One query, capped.
+    # SNOW-1476: the Today panel lists the reader's next trips under their
+    # places (added for the app's Today tab, which SNOW-1479 retired),
+    # soonest first (TripQuerySet.upcoming counts a trip dated today as
+    # upcoming). One query, capped.
     upcoming_trips = list(
         Trip.objects.for_user(request.user)
         .upcoming(day)
@@ -1152,6 +1163,69 @@ def today(request: HttpRequest) -> HttpResponse:
             "today_date": day,
             "today_trips": upcoming_trips,
         },
+    )
+    return apply_freshness_headers(
+        response,
+        generated_at,
+        unsafe_after=DEFAULT_UNSAFE_AFTER_SECONDS if present else None,
+    )
+
+
+@require_htmx
+@require_GET
+def places(request: HttpRequest) -> HttpResponse:
+    """Render the Places list: pinned regions, their resorts and pins, today.
+
+    SNOW-1479. The installed phone app's Saved tab opens on Places, which
+    folds the Today panel into the saved places: every region the user
+    pinned, holds a pinned resort in or dropped a pin in, with its danger
+    today; under each, the pinned resorts with today's weather and the
+    dropped pins with their height; and the pins in no region last, under
+    "Elsewhere" (``apps.favourites.today.build_places``). The roundel's
+    Favourites panel (``favourite_list``) and the Today panel (``today``)
+    are unchanged.
+
+    A fixed number of queries however many places there are: every
+    favourite in one, today's ratings for their regions in one, the
+    borrowed forecasts' own, and the ``what3words`` flag read once for the
+    pins' Share. The freshness headers (SNOW-418) are stamped from the
+    oldest rating shown, as ``today``'s are.
+
+    Args:
+        request: The incoming HTMX GET request.
+
+    Returns:
+        Rendered ``_places.html``, or a 403 for a visitor.
+
+    """
+    if not request.user.is_authenticated:
+        return HttpResponse("Authentication required.", status=403)
+
+    favourites = list(
+        Favourite.objects.for_user(request.user).select_related(
+            "region", "location", "resort", "resort__region", "resort__location"
+        )
+    )
+    day = timezone.localdate()
+    ratings_by_region_pk: dict[int, RegionDayRating] = {
+        rating.region_id: rating
+        for rating in RegionDayRating.objects.filter(
+            region_id__in=places_region_pks(favourites), date=day
+        )
+    }
+    listed = build_places(favourites, day, ratings_by_region_pk)
+    pins = [pin.favourite for group in listed.regions for pin in group.pins]
+    pins += [pin.favourite for pin in listed.elsewhere]
+    _attach_share_text(request, pins)
+
+    present = [g.today.rating for g in listed.regions if g.today.rating is not None]
+    generated_at = (
+        min(rating.updated_at for rating in present) if present else timezone.now()
+    )
+    response = render(
+        request,
+        "favourites/partials/_places.html",
+        {"places": listed},
     )
     return apply_freshness_headers(
         response,

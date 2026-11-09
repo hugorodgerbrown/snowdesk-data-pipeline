@@ -49,6 +49,9 @@ Context expected:
 {# every part of it slightly different: a smaller title, its own body wrapper, #}
 {# a whole-sheet scroll. All that is gone; what stays here is the panel's own  #}
 {# strings and its rows template (public/partials/_report_panel_rows.html).    #}
+{# SNOW-1479: in the installed phone app this is Saved → Observations;   #}
+{# its header's + (includes/_saved_add_roundel.html) carries             #}
+{# data-panel-add, so it starts a report as the foot's button does.      #}
 <template id="report-list-template">
     {% trans "Field observations" as report_list_title %}
     {% trans "Report an observation" as report_add_label %}
@@ -57,7 +60,7 @@ Context expected:
     {# so before the user adds another.                                     #}
     {% trans "Reports are shared with the community." as report_context_line %}
     {% trans "Reports" as report_section_label %}
-    {% include "includes/_ugc_panel.html" with title=report_list_title icon_template="includes/_icon_observation.html" context_line=report_context_line section_label=report_section_label rows_template="public/partials/_report_panel_rows.html" cta_label=report_add_label toggle_id="map-community-reports-overlay-toggle" saved_tab="observations" %}
+    {% include "includes/_ugc_panel.html" with title=report_list_title icon_template="includes/_icon_observation.html" context_line=report_context_line section_label=report_section_label rows_template="public/partials/_report_panel_rows.html" cta_label=report_add_label toggle_id="map-community-reports-overlay-toggle" saved_tab="observations" header_actions_template="includes/_saved_add_roundel.html" %}
 </template>
 {# SNOW-620: report.js's toast and ineligible-state copy. The module builds  #}
 {# those states itself, so none of this text has ever passed through a       #}

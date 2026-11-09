@@ -28,6 +28,13 @@
  *     "You have no saved favourites yet." would be a wrong statement about
  *     the user's own data;
  *
+ *   - SNOW-1479: the app's Saved → Places opens the same sheet with
+ *     open({ list: 'places' }), which loads favourites:places (online only,
+ *     no cache); the roundel still loads favourites:list. Places' header +
+ *     carries data-panel-add like the foot's, so it drops a pin. A followed
+ *     region row puts the map on today and closes the sheet; a place's
+ *     Share hands the link to window.pwaShare;
+ *
  *   - SNOW-886: saving a pin SHOWS it. The create rendered a confirmation
  *     card and stopped there — the favourites layer stayed off if that is
  *     how the user had it, so the new pin (and the optimistic marker the
@@ -52,6 +59,7 @@ import '../../static/js/map_sheet.js';
 // As apps.map.views._favourites_context builds it — the map sheet asks for
 // the lean row variant (SNOW-658).
 const LIST_URL = '/favourites/partials/list/?variant=map';
+const PLACES_URL = '/favourites/partials/places/';
 
 document.body.innerHTML = `
   <button id="favourite-add-btn"
@@ -59,11 +67,13 @@ document.body.innerHTML = `
           data-signin-url="/sign-in/"
           data-favourite-create-url="/favourites/partials/create/"
           data-favourite-list-url="${LIST_URL}"
+          data-favourite-places-url="${PLACES_URL}"
           data-favourite-rename-url-template="/favourites/partials/__UUID__/rename/"
           data-favourite-delete-url-template="/favourites/partials/__UUID__/delete/"></button>
   <div id="favourite-sheet" hidden></div>
   <template id="favourite-list-template">
     <div>
+      <button type="button" data-panel-add data-testid="saved-add-roundel">+</button>
       <div data-favourites-rows><p>Loading your favourites…</p></div>
       <button type="button" data-panel-add>Add a favourite</button>
     </div>
@@ -472,5 +482,73 @@ describe('saving a pin shows it on the map (SNOW-886)', () => {
     saveFavourite('46.1', '7.2');
 
     expect(sheet.textContent).toContain('Pin saved!');
+  });
+});
+
+
+describe("the app's Saved → Places (SNOW-1479)", () => {
+  afterEach(() => {
+    delete window.pwaTodayPanel;
+    delete window.pwaShare;
+    if (window.pwaFavouritesSheet.isOpen()) window.pwaFavouritesSheet.close();
+  });
+
+  it('loads favourites:places, straight over HTMX', () => {
+    window.pwaFavouritesSheet.open({ list: 'places' });
+
+    expect(globalThis.htmx.ajax).toHaveBeenCalledTimes(1);
+    const [method, url, opts] = globalThis.htmx.ajax.mock.calls[0];
+    expect(method).toBe('GET');
+    expect(url).toBe(PLACES_URL);
+    expect(opts.target).toBe(rows());
+    expect(rows().dataset.favouritesList).toBe('places');
+  });
+
+  it('leaves the roundel on favourites:list', () => {
+    window.pwaFavouritesSheet.open({ list: 'places' });
+    window.pwaFavouritesSheet.close();
+    globalThis.htmx.ajax.mockClear();
+
+    btn.click();
+
+    expect(globalThis.htmx.ajax.mock.calls[0][1]).toBe(LIST_URL);
+    expect(rows().dataset.favouritesList).toBe('pins');
+  });
+
+  it("starts drop-a-pin from the header's +", () => {
+    window.pwaFavouritesSheet.open({ list: 'places' });
+
+    sheet.querySelector('[data-testid="saved-add-roundel"]').click();
+
+    expect(sheet.querySelector('#favourite-create-form')).not.toBeNull();
+    expect(window.PlacePicker.activate).toHaveBeenCalledTimes(1);
+  });
+
+  it('puts the map on today and steps aside when a region row is followed', () => {
+    window.pwaTodayPanel = { toToday: vi.fn() };
+    window.pwaFavouritesSheet.open({ list: 'places' });
+    rows().innerHTML =
+      '<a href="/region/CH-1/" data-panel-open="region" id="region-row">Valais</a>';
+    const link = document.getElementById('region-row');
+    link.addEventListener('click', (event) => event.preventDefault());
+
+    link.click();
+
+    expect(window.pwaTodayPanel.toToday).toHaveBeenCalledTimes(1);
+    expect(sheet.hidden).toBe(true);
+  });
+
+  it("hands a place's link to the share sheet", async () => {
+    window.pwaShare = { shareOrCopy: vi.fn(() => Promise.resolve('shared')) };
+    window.pwaFavouritesSheet.open({ list: 'places' });
+    rows().innerHTML =
+      '<button data-place-share="/p/abc/" data-place-share-title="Verbier">Share</button>';
+
+    rows().querySelector('[data-place-share]').click();
+
+    expect(window.pwaShare.shareOrCopy).toHaveBeenCalledWith(
+      new URL('/p/abc/', window.location.origin).href,
+      'Verbier',
+    );
   });
 });

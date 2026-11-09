@@ -616,8 +616,10 @@
     const gate = sheet.querySelector('[data-report-gate]');
     const rows = sheet.querySelector('[data-report-rows]');
     if (!IS_ELIGIBLE) {
-      const addButton = sheet.querySelector('[data-panel-add]');
-      if (addButton) addButton.remove();
+      // SNOW-1479: the foot's button and, in the app, the header's +.
+      sheet.querySelectorAll('[data-panel-add]').forEach(function (addButton) {
+        addButton.remove();
+      });
       if (rows) rows.remove();
       // Every value interpolated here is escaped by gateHtml() — the strings
       // are server-translated copy, not user content, but a locale carrying a

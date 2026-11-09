@@ -84,6 +84,7 @@ from apps.design_system._component_fixtures import (
     PLACE_LINK_ROW_VARIANTS,
     PLACE_PIN_VARIANTS,
     PLACE_SHEET_TODAY_ROW_VARIANTS,
+    PLACES_VARIANTS,
     POINT_CARD_VARIANTS,
     RATING_BLOCK_ALBINA_BAND_VARIANTS,
     RATING_BLOCK_VARIANTS,
@@ -92,12 +93,14 @@ from apps.design_system._component_fixtures import (
     RESORT_FORECAST_VARIANTS,
     RESORT_TILE_VARIANTS,
     RESORT_WHY_IT_MATTERS_VARIANTS,
+    ROUTE_ADD_MENU_VARIANTS,
     ROUTE_META_LINE_VARIANTS,
     ROUTE_PROFILE_VARIANTS,
     ROUTE_RAIL_VARIANTS,
     ROW_DISCLOSURE_VARIANTS,
     RUN_STRIP_VARIANTS,
-    SAVED_CHIPS_VARIANTS,
+    SAVED_ADD_ROUNDEL_VARIANTS,
+    SAVED_TABS_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
     SEASON_CELL_VARIANTS,
     SEASON_SCRUBBER_VARIANTS,
@@ -115,6 +118,7 @@ from apps.design_system._component_fixtures import (
     TOAST_BANNER_VARIANTS,
     TOAST_VARIANTS,
     TODAY_VARIANTS,
+    TRIP_PANEL_ROWS_VARIANTS,
     UGC_PANEL_GROUP_VARIANTS,
     UGC_PANEL_ROW_VARIANTS,
     UGC_PANEL_VARIANTS,
@@ -1797,7 +1801,8 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         label="App tab bar",
         description=(
             "The installed phone app's bottom tab bar (SNOW-1476): Map, "
-            "Today, Saved, Help. Drawn only in standalone display mode under "
+            "Saved, Help (Today folded into Saved → Places, SNOW-1479; its "
+            "alert dot is on Saved). Drawn only in standalone display mode under "
             "640px, where it replaces the footer; the avatar menu stays in "
             "the header. On the "
             "map the tabs are buttons that open tab panels over it; elsewhere "
@@ -2286,7 +2291,10 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "(SNOW-1073). The caller writes the fieldset, its legend and the "
             "track, and includes this once per option. Used by the theme "
             "preference. (The terrain filter's mode control used it until "
-            "SNOW-1109 replaced it with two option tiles.)"
+            "SNOW-1109 replaced it with two option tiles.) SNOW-1479 adds an "
+            "optional icon_template: the glyph first, and the label shown "
+            "only beside the checked option — in every radio's accessible "
+            "name all the same. The Saved tabs draw their four that way."
         ),
         kind="components",
         partial="includes/_segmented_option.html",
@@ -2294,17 +2302,81 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         panel_layout="stack",
     ),
     FoundationCategory(
-        slug="saved-chips",
-        label="Saved chips",
+        slug="saved-tabs",
+        label="Saved tabs",
         description=(
-            "The phone app's Saved panel switch — Places, Routes, "
-            "Observations — under each of the three sheets' headers "
-            "(SNOW-1476). A segmented control; drawn only in the installed "
-            "phone app, previewed here."
+            "The phone app's Saved tabs — Places, Routes, Trips, "
+            "Observations — four icons, the selected one named, at the start "
+            "of each of the four sheets' headers (SNOW-1479; the Saved chips "
+            "under the title of SNOW-1476 before it). A segmented control of "
+            "icon options; with the + roundel it is the whole header in the "
+            "installed phone app, where it is drawn alone; previewed here."
         ),
         kind="components",
-        partial="includes/_saved_chips.html",
-        variants=SAVED_CHIPS_VARIANTS,
+        partial="includes/_saved_tabs.html",
+        variants=SAVED_TABS_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="saved-add-roundel",
+        label="Saved add roundel",
+        description=(
+            "The + beside the Saved tabs in the installed phone app "
+            "(SNOW-1479): a glass roundel carrying the panel's own add hook "
+            "(data-panel-add: drop a pin, report, upload) or, on Trips, "
+            'data-saved-go="routes", which switches Saved to Routes to pick '
+            "the route a trip is planned on. App-only; previewed here."
+        ),
+        kind="components",
+        partial="includes/_saved_add_roundel.html",
+        variants=SAVED_ADD_ROUNDEL_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="route-add-menu",
+        label="Route add menu",
+        description=(
+            "The routes panel's + roundel beside the × (SNOW-1278; in the "
+            "installed phone app the Routes tab's +, SNOW-1479): a glass "
+            "roundel opening Find a route, Create a route and Upload a GPX, "
+            "least work first, through includes/_overflow_menu.html. Shown "
+            "while the route_drawing flag is on; it replaces the panel's own "
+            "add button."
+        ),
+        kind="components",
+        partial="public/partials/_route_add_menu.html",
+        variants=ROUTE_ADD_MENU_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="places-list",
+        label="Places list",
+        description=(
+            "The installed phone app's Saved → Places (SNOW-1479): the Today "
+            "panel's regions, each with today's danger and a Share / Delete "
+            "menu when the region itself is pinned, its pinned resorts with "
+            "today's weather, and its dropped pins with their height; pins in "
+            "no region last, under Elsewhere. Built by "
+            "apps/favourites/today.py's build_places."
+        ),
+        kind="components",
+        partial="favourites/partials/_places.html",
+        variants=PLACES_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="trip-panel-rows",
+        label="Trips list",
+        description=(
+            "The installed phone app's Saved → Trips (SNOW-1479): the "
+            "reader's trips, upcoming soonest first and then past, on the "
+            "shared UGC row. The name links to the trip; an organiser's row "
+            "has the \u2026 menu of Share, Rename and Delete, a participant's "
+            "none."
+        ),
+        kind="components",
+        partial="trips/partials/_trip_panel_rows.html",
+        variants=TRIP_PANEL_ROWS_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

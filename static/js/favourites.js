@@ -74,6 +74,24 @@
  *   that vanishes reads as a bug (SNOW-658).
  */
 
+/*
+ * SNOW-1479 — PLACES. The installed phone app's Saved tab opens this same
+ * sheet on Places: ``window.pwaFavouritesSheet.open({ list: 'places' })``
+ * loads favourites:places (Today's regions and resorts with each region's
+ * pins, and "Elsewhere") into the rows instead of favourites:list, and
+ * remembers which list is up so a re-read after a rename or a delete reads
+ * the same one. The roundel, and ``open()`` with no list, still load
+ * favourites:list. In Places:
+ *   - a region or resort row is a link that opens its sheet on the map
+ *     (map_panel_trail.js, back pill "Places"); following one puts the map
+ *     on today first, as the Today panel's rows do (pwaTodayPanel.toToday),
+ *     and closes this sheet;
+ *   - a pinned region's or resort's "…" Share hands over its page
+ *     (data-place-share), and its Delete is a favourites:delete form the
+ *     row-removed watch below re-reads the list after;
+ *   - the header's + carries data-panel-add, so it drops a pin.
+ * Places is online only, as Today is: a failed load says so in its own line.
+ */
 (function () {
   'use strict';
 
@@ -107,6 +125,7 @@
     // the failure line is still JS-rendered copy.
     'rename-failed': "That name couldn't be saved. Try again.",
     'list-failed': "Your favourites couldn't be loaded — check your connection.",
+    'places-failed': "Your places couldn't be loaded — check your connection.",
     // SNOW-887: the two outcomes the share is allowed to speak about. A
     // platform that TOOK the payload says nothing (it showed its own
     // sheet), and a user who dismissed that sheet says nothing either —
@@ -118,6 +137,8 @@
 
   const CREATE_URL = btn.dataset.favouriteCreateUrl;
   const LIST_URL = btn.dataset.favouriteListUrl;
+  // SNOW-1479: the Saved tab's Places list, for open({ list: 'places' }).
+  const PLACES_URL = btn.dataset.favouritePlacesUrl;
   const RENAME_URL_TEMPLATE = btn.dataset.favouriteRenameUrlTemplate;
   const DELETE_URL_TEMPLATE = btn.dataset.favouriteDeleteUrlTemplate;
   const SIGNIN_URL = btn.dataset.signinUrl;
@@ -282,8 +303,11 @@
     window.pwaPanelOverlaySwitch?.sync();
 
     if (!IS_ELIGIBLE) {
-      const addButton = sheet.querySelector('[data-panel-add]');
-      if (addButton) addButton.remove();
+      // Every add control: the foot's button and, in the app, the header's
+      // + roundel (SNOW-1479) both carry the hook.
+      sheet.querySelectorAll('[data-panel-add]').forEach(function (el) {
+        el.remove();
+      });
       const rows = sheet.querySelector('[data-favourites-rows]');
       if (rows) rows.replaceChildren(buildSigninCta());
       return true;
@@ -310,7 +334,15 @@
    */
   function loadRows(fromCache) {
     const rows = sheet.querySelector('[data-favourites-rows]');
-    if (!rows || !LIST_URL || typeof htmx === 'undefined') return;
+    const places = currentList === 'places' && !!PLACES_URL;
+    const url = places ? PLACES_URL : LIST_URL;
+    if (!rows || !url || typeof htmx === 'undefined') return;
+    rows.dataset.favouritesList = places ? 'places' : 'pins';
+    if (places) {
+      // Online only, as Today is: no warm, no cached paint.
+      htmx.ajax('GET', url, { target: rows, swap: 'innerHTML' });
+      return;
+    }
     // SNOW-879: cached rows paint now, favourites:list still gets the last
     // word a round trip later. `cached` is passed only for an OPEN —
     // a re-read that follows a mutation must not flash the pre-mutation
@@ -326,6 +358,19 @@
   // roundel — a second tap on the control that opened the panel closes it.
   // Bound on the button, so it runs before MapSheet's own document-level
   // click-outside handler, which then sees a closed sheet and does nothing.
+  /** @type {'pins'|'places'} Which list the sheet shows: SNOW-1479. */
+  let currentList = 'pins';
+
+  /** Open the sheet on a list.
+   * @param {{list?: 'pins'|'places'}} [options] ``list: 'places'`` for the
+   *   app's Saved → Places; anything else is the roundel's own list.
+   * @returns {void}
+   */
+  function openOn(options) {
+    currentList = options && options.list === 'places' ? 'places' : 'pins';
+    openSheet();
+  }
+
   /** Open the sheet on its list — what a roundel tap does when it is shut.
    * @returns {void}
    */
@@ -344,7 +389,7 @@
       closeSheet();
       return;
     }
-    openSheet();
+    openOn();
   });
 
   // SNOW-803: the sheet-level bridge, read by static/js/map.js to honour a
@@ -354,7 +399,7 @@
   // whatever else is up, exactly as a tap would. Frozen, like every other
   // window.pwa* bridge.
   window.pwaFavouritesSheet = Object.freeze({
-    open: openSheet,
+    open: openOn,
     close: closeSheet,
     isOpen: controller.isOpen,
   });
@@ -400,7 +445,9 @@
     if (!target || !target.closest) return;
     if (handleFocusClick(event)) return;
     if (handleShareClick(event)) return;
+    if (handlePlaceShareClick(event)) return;
     if (handleRenameClick(event)) return;
+    if (handlePlaceFollow(event)) return;
     if (!target.closest('[data-panel-add]')) return;
     event.stopPropagation();
     if (!IS_ELIGIBLE) return;
@@ -461,6 +508,66 @@
 
     return true;
   }
+
+  /**
+   * Handle a click on a pinned region's or resort's Share in Places
+   * (SNOW-1479): hand its page to the platform, made absolute.
+   *
+   * @param {MouseEvent} event
+   * @returns {boolean} Whether this click was a place share.
+   */
+  function handlePlaceShareClick(event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    const control = target.closest('[data-place-share]');
+    if (!control) return false;
+    const href = control.getAttribute('data-place-share');
+    if (!href || !window.pwaShare) return true;
+    let url = href;
+    try {
+      url = new URL(href, window.location.origin).href;
+    } catch (_err) {
+      // Keep it as it is.
+    }
+    window.pwaShare
+      .shareOrCopy(url, control.getAttribute('data-place-share-title') || undefined)
+      .then(function (outcome) {
+        if (outcome === 'copied') showToast(STRINGS['share-copied']);
+        else if (outcome === 'failed') showToast(STRINGS['share-failed']);
+      })
+      .catch(function () {
+        showToast(STRINGS['share-failed']);
+      });
+    return true;
+  }
+
+  /**
+   * A followed Places row (SNOW-1479) hands over to the place it names:
+   * map_panel_trail.js opens its sheet, so this one steps aside — one panel
+   * at a time, as the Today panel does. Never stops the click: the trail's
+   * own document listener opens the place.
+   *
+   * @param {MouseEvent} event
+   * @returns {boolean} Whether this click followed a place row.
+   */
+  function handlePlaceFollow(event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    if (!target.closest('a[data-panel-open]')) return false;
+    closeSheet();
+    return true;
+  }
+
+  // The list is today's, so a followed row first puts the map on today, as
+  // the Today panel's rows do. Capture phase, so it lands before the place's
+  // sheet opens.
+  sheet.addEventListener(
+    'click',
+    function (event) {
+      const target = /** @type {HTMLElement} */ (event.target);
+      if (!target || !target.closest) return;
+      if (target.closest('a[data-panel-open]')) window.pwaTodayPanel?.toToday?.();
+    },
+    true
+  );
 
   /** Handle a click on a row's name, which frames that pin on the map.
    *
@@ -572,7 +679,8 @@
       if (!rows || !event.detail || event.detail.target !== rows) return;
       const p = document.createElement('p');
       p.className = 'text-sm text-text-2';
-      p.textContent = STRINGS['list-failed'];
+      p.textContent =
+        rows.dataset.favouritesList === 'places' ? STRINGS['places-failed'] : STRINGS['list-failed'];
       rows.replaceChildren(p);
     });
   }

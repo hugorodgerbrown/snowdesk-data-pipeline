@@ -1,0 +1,43 @@
+{% load components %}
+{% comment %}
+templates/includes/_saved_add_roundel.html — the + in a Saved tab's header,
+in the installed phone app (SNOW-1479).
+
+includes/_sheet_header.html's ``actions_template``, reached through
+includes/_ugc_panel.html's ``header_actions_template``, beside the Saved
+tabs. In the app the tabs and this + are the whole header, and the panel's
+own add button at its foot is `app-hidden`, so this is how a tab adds to its
+list. Elsewhere it is not drawn (`app-only`) and the foot's add button stays.
+
+A glass roundel, the shape a map sheet's header action takes, as the
+routes panel's add menu trigger is (public/partials/_route_add_menu.html):
+Hugo, 8 Nov 2026, a bare + "is just floating". Its accessible name is the
+panel's own add label ("Add a favourite").
+
+What it adds is the tab's own flow, by hook rather than by script:
+
+  * "panel-add" (the default) — ``data-panel-add``, the hook the panel's
+    add button has always carried: Places drops a pin (favourites.js),
+    Observations reports one (report.js), and Routes, while route drawing
+    is off, uploads a GPX (routes.js). Each module removes every element
+    carrying the hook for a visitor who cannot add.
+  * "routes" — ``data-saved-go="routes"``: Trips. A trip is planned from a
+    route (trips:new needs one of the reader's own), so the + switches
+    Saved to the Routes tab, where each route's menu starts with Plan a
+    trip (static/js/app_tabbar.js).
+
+Context (read from the including template's context):
+  cta_label      — the panel's add label, the roundel's accessible name.
+  saved_add_hook — "panel-add" (default) or "routes".
+  preview        — draw it whatever the display mode. For the component
+                   library only.
+{% endcomment %}
+<button
+    type="button"
+    {% if saved_add_hook == "routes" %}data-saved-go="routes"{% else %}data-panel-add{% endif %}
+    aria-label="{{ cta_label }}"
+    data-testid="saved-add-roundel"
+    class="{% if preview %}{% roundel_classes %}{% else %}{% roundel_classes extra='app-only' %}{% endif %}"
+>
+    {% include "includes/_icon_plus.html" with size=18 only %}
+</button>

@@ -2,7 +2,7 @@
 name: testing-scenarios
 description: Manual test scenarios — bulletin, map, search, accounts, PWA install/update/kill-switch, offline downloads, coverage, end-user offline run
 status: current
-last-reviewed: 2026-11-07
+last-reviewed: 2026-11-09
 ---
 
 # User Testing Scenarios -- Snowdesk
@@ -1130,6 +1130,39 @@ sources, each by a TileJSON document.
 | 6 | Switch to a basemap this area was NOT downloaded under, and open the sheet | Its row is NOT marked incomplete. A record written before SNOW-844 names no dependencies, and a style that is not loaded cannot be asked what its sprite is, so an unanswerable row is left alone rather than accused |
 
 ---
+
+### Scenario P14: The installed app's tab bar and Saved (SNOW-1476, SNOW-1479)
+
+> Manual-only: no browser here runs in standalone display mode, so the
+> gate is asserted from the stylesheets in
+> [tests/public/test_app_tabbar.py](../tests/public/test_app_tabbar.py) and
+> the tabs' behaviour in
+> [tests/js/test_app_tabbar.js](../tests/js/test_app_tabbar.js).
+
+**Goal**: Verify the bar is Map · Saved · Help, and that Saved's four tabs
+and each tab's + do what they say.
+
+**Preconditions**: A phone with the app installed to the home screen,
+signed in, with a pinned region, a pinned resort, a dropped pin (one outside
+every region), a recorded route, a trip you organise and one you only
+joined, and one observation.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Open the app on the map | The bar shows **Map**, **Saved** and **Help**; there is no Today tab |
+| 2 | Tap **Saved** | Saved opens on **Places**. The header is just four icon tabs and a + on the right: no title, subtitle, section label or ×. Only the selected tab shows its name |
+| 3 | Read Places | Every region with a pin shows today's danger; the pinned resort shows its weather under its region; the dropped pin shows its height; the pin outside every region sits under **Elsewhere**. A region listed only because of a resort has no "…" |
+| 4 | Tap the + on Places | Drop-a-pin starts, as the old Add a favourite button did |
+| 5 | Tap the **Routes** tab, then its + | The Find / Create / Upload menu opens. The recorded route's row shows its date; a route you shared says **Shared** |
+| 6 | Tap the **Trips** tab | Upcoming trips, soonest first, then past ones. Your own trip's row has a "…" with Share, Rename and Delete; the joined trip's row has none |
+| 7 | Rename your trip from its "…", then Delete it and confirm | The new name shows at once; after Delete the row goes and the list re-reads |
+| 8 | Tap the + on Trips | Saved switches to **Routes** |
+| 9 | Tap the **Observations** tab | The observation's row has a "…" holding Delete alone; the + starts a report |
+| 10 | On Places, Routes and Observations, find **Show on the map** | The switch is there on each |
+| 11 | Open the avatar menu | Settings and Sign out show; **Trips** does not |
+| 12 | Open `/map/?panel=today` | Saved opens on Places, and the URL loses `panel` |
+| 13 | With a new alert waiting | The alert dot shows on the **Saved** tab |
+| 14 | Open the same pages in a phone browser (not installed) | Nothing above shows: the roundels, the sheet titles and × and the avatar menu's Trips are as before |
 
 ## Offline Downloads (map coverage)
 

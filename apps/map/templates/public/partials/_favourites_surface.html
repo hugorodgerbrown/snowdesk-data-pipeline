@@ -66,7 +66,12 @@ Context expected:
     {# the strip is where each panel says so in its own words.              #}
     {% trans "Favourites are private and not shared." as favourites_context_line %}
     {% trans "Places" as favourites_section_label %}
-    {% include "includes/_ugc_panel.html" with title=favourite_list_title icon_template="includes/_icon_favourite.html" context_line=favourites_context_line section_label=favourites_section_label rows_template="public/partials/_favourites_panel_rows.html" cta_label=favourite_add_label toggle_id="map-favourites-overlay-toggle" saved_tab="places" %}
+    {# SNOW-1479: in the installed phone app this sheet is Saved → Places, #}
+    {# whose header is the Saved tabs and a + that drops a pin             #}
+    {# (includes/_saved_add_roundel.html, data-panel-add); favourites.js   #}
+    {# loads favourites:places into the rows rather than favourites:list   #}
+    {# when the tab opens it.                                              #}
+    {% include "includes/_ugc_panel.html" with title=favourite_list_title icon_template="includes/_icon_favourite.html" context_line=favourites_context_line section_label=favourites_section_label rows_template="public/partials/_favourites_panel_rows.html" cta_label=favourite_add_label toggle_id="map-favourites-overlay-toggle" saved_tab="places" header_actions_template="includes/_saved_add_roundel.html" %}
 </template>
 {# Create-form template — cloned by favourites.js once a pin has been  #}
 {# placed/dragged into position. Carries a real {% csrf_token %} — the  #}
@@ -181,6 +186,8 @@ Context expected:
     {# telling a user they have no pins when the request merely failed is a   #}
     {# wrong statement about their own data.                                  #}
     <span data-string="list-failed">{% trans "Your favourites couldn't be loaded — check your connection." %}</span>
+    {# SNOW-1479: the Saved tab's Places list, online only, as Today is. #}
+    <span data-string="places-failed">{% trans "Your places couldn't be loaded — check your connection." %}</span>
     {# SNOW-887: only the two outcomes the share may speak about. A share #}
     {# the platform took, and one the user dismissed, both say nothing.   #}
     <span data-string="share-copied">{% trans "Copied." %}</span>

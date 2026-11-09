@@ -12,12 +12,15 @@ tests/public/test_nav_partial.py.
 
 Signed-in only: the caller renders it inside its own is_authenticated
 branch.
+
+In the installed phone app Trips is `app-hidden` (SNOW-1479): the trips are
+a tab of Saved there, so the menu would be a second way to the same list.
 {% endcomment %}
 {% load i18n %}
 <a
     role="menuitem"
     href="{% url 'trips:list' %}"
-    class="block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
+    class="app-hidden block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
 >
     {% trans "Trips" %}
 </a>

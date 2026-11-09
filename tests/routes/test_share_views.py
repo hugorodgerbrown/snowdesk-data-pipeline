@@ -541,7 +541,7 @@ class TestRouteShareClaim:
         copy = Route.objects.for_user(claimer).get()
         content = response.content.decode()
         assert f'id="route-{copy.uuid}"' in content
-        assert "Shared with you" not in content
+        assert "Shared ·" not in content
 
     def test_the_token_leaves_the_session(self, client: Client) -> None:
         """The intention has been acted on; re-offering Save would be wrong."""

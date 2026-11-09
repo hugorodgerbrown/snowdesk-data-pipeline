@@ -399,6 +399,35 @@ def update_trip(
     return trip
 
 
+def rename_trip(user: "User", uuid: UUID, name: str) -> Trip:
+    """Rename one of the organiser's own trips (SNOW-1479).
+
+    The Saved tab's Trips list renames a trip in place on its row, as the
+    routes and favourites rows do, so the label is the one field written:
+    the plan form (``update_trip``) would have to be re-sent whole to
+    change it. Blank is allowed and means "use the route's name", which is
+    what ``Trip.display_name`` falls back to.
+
+    Args:
+        user: The authenticated organiser.
+        uuid: The Trip's uuid.
+        name: The new label, trimmed and cut to the column's length.
+
+    Returns:
+        The renamed Trip.
+
+    Raises:
+        Trip.DoesNotExist: When no trip with that uuid was organised by
+            ``user``.
+
+    """
+    trip = Trip.objects.get(uuid=uuid, created_by=user)
+    trip.name = name.strip()[:_NAME_MAX_LENGTH]
+    trip.save(update_fields=["name", "updated_at"])
+    logger.info("Trip renamed: user=%s uuid=%s", user.pk, uuid)
+    return trip
+
+
 # ---------------------------------------------------------------------------
 # Delete
 # ---------------------------------------------------------------------------

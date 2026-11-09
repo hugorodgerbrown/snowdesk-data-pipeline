@@ -37,6 +37,7 @@ document.body.innerHTML = `
       </div>
       <div data-report-gate></div>
       <div data-report-rows><p>Loading your reports…</p></div>
+      <button type="button" data-panel-add data-testid="saved-add-roundel">+</button>
       <button type="button" data-panel-add>Report an observation</button>
     </div>
   </template>
@@ -99,5 +100,9 @@ describe('anonymous tap on Report', () => {
 
   it('carries a dismiss control, so the sheet is not a dead end (SNOW-474)', () => {
     expect(sheet.querySelector('[data-action="dismiss"]')).not.toBeNull();
+  });
+
+  it("removes every add control, the header's + too (SNOW-1479)", () => {
+    expect(sheet.querySelector('[data-panel-add]')).toBeNull();
   });
 });
