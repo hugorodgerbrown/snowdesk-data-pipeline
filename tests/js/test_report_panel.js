@@ -44,6 +44,7 @@ document.body.innerHTML = `
   <div id="map-sheet-toast" class="hidden"><span data-toast-body></span></div>
   <template id="report-list-template">
     <div>
+      <button type="button" data-panel-add data-testid="saved-add-roundel">+</button>
       <div data-report-gate></div>
       <div data-report-rows><p>Loading your reports…</p></div>
       <button type="button" data-panel-add>Report an observation</button>
@@ -147,6 +148,18 @@ describe('tapping the roundel opens the panel, not the location flow', () => {
     expect(seen).toHaveLength(0);
 
     sheet.querySelector('[data-panel-add]').click();
+    expect(seen).toHaveLength(1);
+
+    document.removeEventListener('snowdesk:locate-request', handler);
+  });
+
+  it("starts a report from the app header's + too (SNOW-1479)", () => {
+    const seen = [];
+    const handler = () => seen.push(true);
+    document.addEventListener('snowdesk:locate-request', handler);
+
+    btn.click();
+    sheet.querySelector('[data-testid="saved-add-roundel"]').click();
     expect(seen).toHaveLength(1);
 
     document.removeEventListener('snowdesk:locate-request', handler);

@@ -358,9 +358,6 @@
   // roundel — a second tap on the control that opened the panel closes it.
   // Bound on the button, so it runs before MapSheet's own document-level
   // click-outside handler, which then sees a closed sheet and does nothing.
-  /** Open the sheet on its list — what a roundel tap does when it is shut.
-   * @returns {void}
-   */
   /** @type {'pins'|'places'} Which list the sheet shows: SNOW-1479. */
   let currentList = 'pins';
 
@@ -374,6 +371,9 @@
     openSheet();
   }
 
+  /** Open the sheet on its list — what a roundel tap does when it is shut.
+   * @returns {void}
+   */
   function openSheet() {
     controller.open();
     if (showListPanel()) return;
