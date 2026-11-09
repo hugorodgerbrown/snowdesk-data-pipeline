@@ -29,7 +29,13 @@ Parameters (passed via {% include … with … %}):
   saved_tab (string, required) — "places", "routes", "trips" or
                                  "observations": the sheet this row sits in.
   preview   (bool, optional)   — draw the row whatever the display mode. For
-                                 the component library only.
+                                 the component library only; it also draws
+                                 the Trips option.
+  favourites_eligible (bool, from the map's context) — the reader is signed
+                                 in. Trips is offered only then: its sheet,
+                                 public/partials/_trips_surface.html, renders
+                                 on the same condition, and a Trips option
+                                 with no sheet would check and do nothing.
 {% endcomment %}
 <fieldset class="{% if not preview %}app-only {% endif %}min-w-0 flex-1" data-saved-tabs>
     <legend class="sr-only">{% trans "Saved" %}</legend>
@@ -48,10 +54,12 @@ Parameters (passed via {% include … with … %}):
         {% else %}
             {% include "includes/_segmented_option.html" with name="saved-tab" value="routes" label=routes_label icon_template="includes/_icon_route.html" %}
         {% endif %}
-        {% if saved_tab == "trips" %}
-            {% include "includes/_segmented_option.html" with name="saved-tab" value="trips" label=trips_label icon_template="includes/_icon_trip.html" checked=True %}
-        {% else %}
-            {% include "includes/_segmented_option.html" with name="saved-tab" value="trips" label=trips_label icon_template="includes/_icon_trip.html" %}
+        {% if favourites_eligible or preview %}
+            {% if saved_tab == "trips" %}
+                {% include "includes/_segmented_option.html" with name="saved-tab" value="trips" label=trips_label icon_template="includes/_icon_trip.html" checked=True %}
+            {% else %}
+                {% include "includes/_segmented_option.html" with name="saved-tab" value="trips" label=trips_label icon_template="includes/_icon_trip.html" %}
+            {% endif %}
         {% endif %}
         {% if saved_tab == "observations" %}
             {% include "includes/_segmented_option.html" with name="saved-tab" value="observations" label=observations_label icon_template="includes/_icon_observation.html" checked=True %}

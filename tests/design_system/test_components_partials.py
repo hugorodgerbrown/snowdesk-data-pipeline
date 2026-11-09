@@ -587,7 +587,10 @@ class TestSavedTabs:
     """includes/_saved_tabs.html: four icon tabs, app-only, one checked."""
 
     def test_four_tabs_and_the_current_one_checked(self) -> None:
-        html = render_to_string("includes/_saved_tabs.html", {"saved_tab": "trips"})
+        html = render_to_string(
+            "includes/_saved_tabs.html",
+            {"saved_tab": "trips", "favourites_eligible": True},
+        )
         values = [
             v
             for v in ("places", "routes", "trips", "observations")
@@ -597,6 +600,11 @@ class TestSavedTabs:
         checked = re.findall(r'value="(\w+)"\s+class="peer sr-only"\s+checked', html)
         assert checked == ["trips"]
         assert 'class="app-only' in html
+
+    def test_no_trips_option_for_a_reader_who_is_not_signed_in(self) -> None:
+        html = render_to_string("includes/_saved_tabs.html", {"saved_tab": "places"})
+        assert 'value="trips"' not in html
+        assert 'value="observations"' in html
 
     def test_the_preview_is_not_app_only(self) -> None:
         html = render_to_string(
@@ -614,6 +622,7 @@ class TestSnow1479Fixtures:
         [
             "saved-tabs",
             "saved-add-roundel",
+            "route-add-menu",
             "places-list",
             "trip-panel-rows",
             "segmented-option",
@@ -625,3 +634,14 @@ class TestSnow1479Fixtures:
             f"/partials/_components/{slug}/", HTTP_HX_REQUEST="true"
         )
         assert response.status_code == 200, slug
+
+    def test_the_route_add_menu_shows_its_three_ways(
+        self, admin_client: Client
+    ) -> None:
+        response = admin_client.get(
+            "/partials/_components/route-add-menu/", HTTP_HX_REQUEST="true"
+        )
+        html = response.content.decode()
+        assert 'id="route-add-menu-trigger"' in html
+        for title in ("Find a route", "Create a route", "Upload a GPX"):
+            assert title in html

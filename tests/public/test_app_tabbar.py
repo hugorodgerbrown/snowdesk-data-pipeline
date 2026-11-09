@@ -264,6 +264,52 @@ class TestOnTheMap:
             checked = re.findall(r'value="(\w+)"\s+class="peer sr-only"\s+checked', row)
             assert checked == [current]
 
+    def test_only_the_selected_tab_shows_its_name(self, client: Client) -> None:
+        """Every option carries its name `sr-only`, shown by `group-has-checked`.
+
+        The label is in each radio's accessible name all the same; which one
+        is drawn is CSS (`.group:has(:checked)`), so the markup is what can be
+        pinned: every option is a `group` label with one checked radio among
+        them, and each name is hidden unless its own label holds the check.
+        """
+        client.force_login(UserFactory.create())
+
+        content = client.get(reverse("public:map")).content.decode()
+
+        for current, template_id in SAVED_SHEETS.items():
+            body = _template(content, template_id)
+            [row] = re.findall(
+                r"<fieldset[^>]*data-saved-tabs.*?</fieldset>", body, re.S
+            )
+            options = re.findall(
+                r'<label class="group cursor-pointer">.*?</label>', row, re.S
+            )
+            assert len(options) == 4, current
+            for option in options:
+                value = re.search(r'value="(\w+)"', option)
+                assert value
+                name = re.search(
+                    r'<span class="([^"]*)">[^<]+</span>\s*</span>', option
+                )
+                assert name, option
+                assert name.group(1).split() == [
+                    "sr-only",
+                    "group-has-checked:not-sr-only",
+                ]
+                assert ("checked" in option.split("peer sr-only")[1].split(">")[0]) == (
+                    value.group(1) == current
+                ), (current, value.group(1))
+
+    def test_a_signed_out_reader_gets_no_trips_tab(self, client: Client) -> None:
+        """No #trips-sheet for a visitor, so no Trips option to check."""
+        content = client.get(reverse("public:map")).content.decode()
+
+        rows = re.findall(r"<fieldset[^>]*data-saved-tabs.*?</fieldset>", content, re.S)
+        assert rows
+        for row in rows:
+            values = re.findall(r'name="saved-tab"\s+value="(\w+)"', row)
+            assert values == ["places", "routes", "observations"]
+
     def test_the_tabs_and_plus_are_the_whole_header_in_the_app(
         self, client: Client
     ) -> None:
