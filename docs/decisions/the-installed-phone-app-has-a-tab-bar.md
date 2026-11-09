@@ -1,23 +1,24 @@
 ---
 name: the-installed-phone-app-has-a-tab-bar
-description: Installed phone app tab bar (Map · Today · Saved · Help), standalone under 640px, tab panels, Saved chips, Help opens the ? menu
+description: Installed phone app tab bar (Map · Saved · Help), standalone under 640px, Saved tabs and + roundel, .app-hidden, Help opens ? menu
 status: current
-last-reviewed: 2026-11-08
+last-reviewed: 2026-11-09
 ---
 
 # The installed phone app has a tab bar
 
 **Decision.** In the installed app on a phone — `(display-mode: standalone)
-and (max-width: 639.98px)` — every page carries a bottom tab bar of four
-tabs: **Map · Today · Saved · Help** (SNOW-1476). Everywhere else (a phone
+and (max-width: 639.98px)` — every page carries a bottom tab bar of three
+tabs: **Map · Saved · Help** (SNOW-1476; Today was a fourth until
+SNOW-1479, below). Everywhere else (a phone
 browser, a tablet, a desktop) nothing changes: the bar is rendered but
 `display: none`.
 
 - **Map** closes whatever tab panel is open and gives the map back.
-- **Today** opens the existing Today panel, with the next few trips added.
-- **Saved** opens the favourites, routes or report sheet, whichever was last
-  used; a chip row under each header (`_saved_chips.html`) swaps between
-  them in place: the card stays put and only its content changes.
+- **Saved** opens Places, Routes, Trips or Observations, whichever was last
+  used (Places by default); four icon tabs in each header
+  (`_saved_tabs.html`) swap between them in place: the card stays put and
+  only its content changes. Only the selected tab shows its name.
 - **Help** opens the map's own "?" menu (`_map_help_menu.html`, through
   `window.pwaMapHelpMenu`), the same card as on the web, anchored above the
   bar on the right. In this app only it gains **Map key**, which opens the
@@ -28,18 +29,43 @@ browser, a tablet, a desktop) nothing changes: the bar is rendered but
   Steep terrain's row. The row is the same on the web.
 
 Items shown only in this app carry `.app-only`, which a negated copy of the
-gate hides everywhere else. The account stays in the header's avatar menu,
-unchanged from the web.
+gate hides everywhere else; items hidden only in this app carry
+`.app-hidden`, which the gate itself hides (SNOW-1479). The account stays in
+the header's avatar menu, unchanged from the web except that its Trips
+entry is `.app-hidden`: Trips is a Saved tab here.
 
-Today and Saved are **tab panels**: full height between the header and the
+Saved is a **tab panel**: full height between the header and the
 bar, no detents, opened and closed by their tab. Help is the "?" card,
 which rises over a tab panel rather than cross-fading with it. On the map the tabs are
 buttons (`static/js/app_tabbar.js`); on every other page they are links to
-`/map/?panel=today|saved|help`, which the script opens and strips from the
-URL. In that mode the bar replaces the site footer, the Today roundel, the
+`/map/?panel=saved|help`, which the script opens and strips from the
+URL; an older `?panel=today` opens Saved on Places. In that mode the bar replaces the site footer, the Today roundel, the
 map-control column, and the "?" and (i) roundels, which the tabs and the
-"?" menu make redundant; zoom and compass drop to the bottom row. Signed out all four tabs still show: Today and Saved
-open the favourites sheet's own sign-in prompt.
+"?" menu make redundant; zoom and compass drop to the bottom row. Signed out all three tabs still show: Saved opens
+the favourites sheet's own sign-in prompt.
+
+**Saved's header (SNOW-1479).** In the app a Saved sheet's header is just
+the four tabs and a **+** roundel (`_saved_add_roundel.html`); its title,
+subtitle, section label and × are `.app-hidden`, and so is the foot's add
+button the + replaces. Each + does its list's add: **Places** drops a pin,
+**Routes** opens the Find / Create / Upload menu, **Trips** switches to
+Routes (`data-saved-go="routes"`: a trip is planned from a route), and
+**Observations** starts a report. Places, Routes and Observations keep
+their "Show on the map" switch.
+
+- **Places** (`favourites:places`, `build_places`) is Today folded into
+  Saved: every region with its danger, the pinned resorts under it with
+  their weather, and the dropped pins with their height, pins outside
+  every region under "Elsewhere". A region listed only because of a resort
+  or a pin has no "…", since there is no region pin to share or delete.
+- **Routes**: a recorded route shows its date; a shared one says "Shared".
+- **Trips** (`trips:panel_list`, `trips_panel.js`): upcoming soonest
+  first, then past. An organiser's row has Share, Rename and Delete; a
+  participant's row has no menu.
+- **Observations**: the row's Delete sits behind a "…" alone, an exception
+  to the one-bare-icon rule written in
+  [`docs/design-system.md`](../design-system.md#interaction-principles).
+- The Today alert dot moves to the Saved tab.
 
 **Why.** On a phone the map's lists sat behind a column of roundels that
 read as tools, not places, and the account behind an avatar most visitors
@@ -54,7 +80,12 @@ Help and the legal links. On staging Hugo found it an odd selection of
 You — and moved the avatar back to the header and Help into the bar, with
 the map key in it (8 Nov 2026). A first Help panel of its own was rejected
 the same day for the existing "?" menu: one help surface, not two. Trips
-becomes a Saved chip in its own change. A separate "Offline areas" row
+became a Saved tab in its own change (SNOW-1479).
+
+Today went the same way (SNOW-1479): its regions and resorts were the
+same places as Saved's pins seen for today, so a tab of its own split one
+list in two. Places holds both, and the date row's sun still opens the
+Today panel on the web. A separate "Offline areas" row
 under Downloaded areas named the same thing twice, so the two became one
 row.
 

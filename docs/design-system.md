@@ -2,7 +2,7 @@
 name: design-system
 description: Design handover — editorial and interaction principles, icon vs ellipsis rule, design tokens, the component layer, field guidance
 status: current
-last-reviewed: 2026-11-08
+last-reviewed: 2026-11-09
 ---
 
 
@@ -268,7 +268,15 @@ The consequence worth stating plainly: **a row that gains a second action
 changes shape.** That is not scope creep in the ticket that adds the
 action — it is the rule being applied at the moment it starts to bite.
 
-**One exception: a toast that asks something.** A toast is a single line
+**One exception: the observation row's one-item menu (SNOW-1479).** An
+observation row's only action is Delete, which by the rule above would be a
+bare trash icon. It sits behind a "…" menu holding Delete alone, so that
+every Saved list (Places, Routes, Trips, Observations) carries its actions
+behind the same trigger in the same place, and a destructive control is
+never the one bare icon in a list whose siblings all hide theirs. A row
+with no action at all (a trip the reader only joined) has no menu.
+
+**Another exception: a toast that asks something.** A toast is a single line
 of text, not a row: it has no name for its actions to crowd out, which is
 the reason the rule exists. So when a toast asks the reader to choose, the
 choices sit on its line as text buttons, as many as the question has (two
@@ -292,7 +300,7 @@ differ in side (below).
 | **Object sheet** | Tapping a thing on the map | Full width, slides up from the foot, covers the map controls at half and full | `peek,half,full`, narrowed by content | Its ×, a drag below peek | Region, route, place (resort, saved pin), weather |
 | **Roundel panel** | A map-control roundel | Docked full width at the foot, over the roundel column (SNOW-1106) | None | Its ×, or the roundel that opened it (a toggle) | Pins, observations, routes, downloads, terrain filter |
 | **Form panel** | An action that starts a task | Docked at the foot | None | Submit, cancel, or the shared dismissals (×, Escape, a tap outside, another overlay opening); never a drag | Report, add or rename favourite, sign in |
-| **Tab panel** | A tab of the installed phone app's bar (SNOW-1476) | Full height between the header and the bar | None | Its ×, its tab (a toggle), the Map tab, another tab | Today, Saved (pins, routes, observations); Help opens the "?" menu instead |
+| **Tab panel** | A tab of the installed phone app's bar (SNOW-1476) | Full height between the header and the bar | None | Its tab (a toggle), the Map tab, another tab; no × (SNOW-1479) | Saved (Places, Routes, Trips, Observations); Help opens the "?" menu instead |
 
 **Object sheet.** The reader asked "what is this?" about a place on the
 ground, so the sheet answers in stages and gives the ground back: peek is a
@@ -337,8 +345,18 @@ replaces the roundels that would otherwise open these lists. The tab stays
 in charge, as a roundel does: its tab closes it and another tab swaps it.
 A swap never closes and reopens the card: every tab panel has the same
 box, so the card stays put and only its content changes, fading in on a
-tab and replaced outright on a Saved chip (Hugo, 8 Nov 2026). Object sheets still open over
-the map above the bar. Why:
+tab and replaced outright on a Saved tab (Hugo, 8 Nov 2026). Object sheets still open over
+the map above the bar.
+
+Since SNOW-1479 a Saved tab panel's header is one row: four icon tabs
+(`includes/_saved_tabs.html` — Places, Routes, Trips, Observations; only
+the selected one shows its name) and a + roundel
+(`includes/_saved_add_roundel.html`) on the right. The sheet's own title,
+subtitle, section label and × are `.app-hidden` there, as is the foot's
+add button the + replaces. Each tab's + does that list's add: Places drops
+a pin, Routes opens the Find / Create / Upload menu, Trips switches to
+Routes (a trip is planned from a route), Observations starts a report.
+Why:
 [`docs/decisions/the-installed-phone-app-has-a-tab-bar.md`](decisions/the-installed-phone-app-has-a-tab-bar.md).
 
 A new map panel picks its kind from the "Opened by" column before anything
