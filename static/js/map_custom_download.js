@@ -738,7 +738,11 @@
     // costs two tiles per cell of ground, so the largest box that fits the
     // ceiling under it is smaller — the frame shrinks with the basemap
     // rather than promising a run the budget pre-flight would then refuse.
-    const sourceCount = core.tileSourceCount(activeBasemapTileSources(MAP));
+    // SNOW-1478: priced on the maps a download of this box saves — Swisstopo
+    // inside Switzerland, both across the border.
+    const keys = downloadBasemapKeys({ bbox: naturalBbox });
+    const price = downloadTilePrice(keys);
+    const sourceCount = price.sourceCount;
     // The ceiling is the DEVICE's (map_basemap_downloads.js), not a
     // constant — the frame a user may draw is bounded by what their own
     // phone can hold.
@@ -752,10 +756,10 @@
     // drawn up to the ceiling is over it the moment the readout adds it.
     // SNOW-1453: and the elevation tiles' share, where the page pins them.
     const bytesPerTile = core.terrainScaledBytesPerTile(
-      core.bytesPerTileForSources(activeBasemapTileSources(MAP)),
+      price.bytesPerTile,
       sourceCount,
       _includesTerrain(),
-      elevationPinnedOn(activeBasemapKey()),
+      downloadPinsElevation(keys),
     );
     const scale = core.budgetScaleForBBox(
       naturalBbox,
@@ -822,15 +826,12 @@
     // default basemap's byte figure, and a multi-source style fetches one
     // per cell PER SOURCE, at that basemap's own price. Recomputed from the
     // blob's tile COUNT so the documents allowance is charged once.
-    const scaledMb = core.sourceScaledMb(
-      pendingBlob.mb,
-      activeBasemapTileSources(MAP),
-      pendingBlob.count,
-    );
+    const keys = downloadBasemapKeys({ bbox: pendingBbox });
+    const scaledMb = downloadScaledMb(pendingBlob.mb, keys, pendingBlob.count);
     const ceilingMb = basemapDeviceCeilingMb();
     // SNOW-1072: what terrain data adds — part of what the run spends, so
     // part of what the ceiling judges, and stated on its own line.
-    const terrainMb = _includesTerrain() ? terrainClassMbForBlob(pendingBlob) : 0;
+    const terrainMb = _includesTerrain() ? terrainClassMbForBlob(pendingBlob, keys) : 0;
     const overCeiling = pendingBlob.over_ceiling || scaledMb + terrainMb > ceilingMb;
     _paintTerrainReadout(overCeiling ? 0 : terrainMb);
     const text = overCeiling
@@ -859,7 +860,9 @@
     if (!terrainReadoutEl) return;
     // SNOW-1453: names 3D data only where the frame pins the elevation
     // tiles, the 3D basemap; the figure follows the same rule.
-    const key = elevationPinnedOn(activeBasemapKey()) && MAP_STRINGS['frame-terrain-up-to-3d']
+    const key =
+      downloadPinsElevation(pendingBbox ? downloadBasemapKeys({ bbox: pendingBbox }) : null) &&
+      MAP_STRINGS['frame-terrain-up-to-3d']
       ? 'frame-terrain-up-to-3d'
       : 'frame-terrain-up-to';
     const show = terrainMb > 0 && !!MAP_STRINGS[key];
@@ -1303,11 +1306,14 @@
     // SNOW-1072: decided at the tap, and recorded as decided.
     const terrain = _includesTerrain();
 
+    // SNOW-1478: the maps this box needs, Swisstopo first where it is Swiss.
+    const basemapKeys = downloadBasemapKeys({ bbox: bbox });
     await runPinnedDownload({
       areaId: areaId,
+      basemapKeys: basemapKeys,
       mb: blob.mb,
       terrain: terrain,
-      terrainMb: terrain ? terrainClassMbForBlob(blob) : 0,
+      terrainMb: terrain ? terrainClassMbForBlob(blob, basemapKeys) : 0,
       // SNOW-868: the tile count the per-basemap price multiplies — see the
       // runner's own `count` note.
       count: blob.count,
@@ -1319,7 +1325,7 @@
       finish: async (
         result,
         runBlob,
-        { core, progressFill, tileSources, basemapKey, renderDeps, content, elevation },
+        { core, progressFill, tileSources, basemapKey, renderDeps, content, elevation, basemaps },
       ) => {
         // SNOW-632: a cancelled run is neither success nor failure — the
         // user asked it to stop, not for it to fail — so this is checked
@@ -1384,6 +1390,9 @@
             // rows whose basemap is not the one on screen, and an
             // unloaded style cannot be asked what its sprite is.
             deps: Array.isArray(renderDeps) ? renderDeps : [],
+            // SNOW-1478: every map the run saved, primary first; the three
+            // fields above are the primary entry's.
+            ...(Array.isArray(basemaps) && basemaps.length > 0 ? { basemaps: basemaps } : {}),
             bytes: Number(result.bytes) || 0,
             // SNOW-924: when the bulletins and weather inside this box
             // were last fetched in full. Absent means never — every area
@@ -1682,8 +1691,9 @@
       // `_updateReadout`'s backstop, verbatim: the run's real price at the
       // active basemap, plus terrain data, against the device's ceiling. A
       // box another device could hold may not fit this one.
-      const terrainMb = terrain ? terrainClassMbForBlob(blob) : 0;
-      const scaledMb = core.sourceScaledMb(blob.mb, activeBasemapTileSources(MAP), blob.count);
+      const basemapKeys = downloadBasemapKeys({ bbox: bbox });
+      const terrainMb = terrain ? terrainClassMbForBlob(blob, basemapKeys) : 0;
+      const scaledMb = downloadScaledMb(blob.mb, basemapKeys, blob.count);
       if (blob.over_ceiling || scaledMb + terrainMb > ceilingMb) {
         return { started: false, reason: 'over-ceiling' };
       }
@@ -1702,6 +1712,7 @@
       });
       await runPinnedDownload({
         areaId: areaId,
+        basemapKeys: basemapKeys,
         mb: blob.mb,
         terrain: terrain,
         terrainMb: terrainMb,
@@ -1724,6 +1735,7 @@
             renderDeps,
             content,
             elevation,
+            basemaps,
           },
         ) => {
           const cancelled = !!(result && result.cancelled);
@@ -1746,6 +1758,8 @@
               template: tileSources,
               basemapKey: basemapKey || null,
               deps: Array.isArray(renderDeps) ? renderDeps : [],
+              // SNOW-1478: see `handleConfirm`'s record.
+              ...(Array.isArray(basemaps) && basemaps.length > 0 ? { basemaps: basemaps } : {}),
               bytes: Number(result.bytes) || 0,
               ...(outcome.complete ? { contentAt: new Date().toISOString() } : {}),
               ...(outcome.incomplete ? { contentIncomplete: true } : {}),

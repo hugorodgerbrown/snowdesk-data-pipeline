@@ -286,3 +286,47 @@ def test_stored_tiles_overzoom_past_the_band_and_the_base_layer_holds_below_it(
         f"Reproduce with SNOWDESK_OFFLINE_SEED={subject.seed}.\n  "
         + offline_map_page.diagnostics()
     )
+
+
+@pytest.mark.usefixtures("_load_offline_dataset")
+def test_a_swiss_region_saved_under_another_map_draws_swisstopo_offline(
+    offline_map_page: OfflineMapPage,
+) -> None:
+    """A Swiss download saves Swisstopo whatever map is on screen (SNOW-1478).
+
+    Hugo's airplane-mode test on 8 Nov 2026: the area said it was saved,
+    and the map drew only what browsing had left behind. Here the reader
+    picks OpenFreeMap, downloads a Swiss region, goes offline and looks.
+    The page swaps to the Swisstopo map the download saved, and that map
+    draws at the region's centre.
+    """
+    subject = offline_map_page.subject
+    if not subject.region_id.upper().startswith("CH-"):
+        pytest.skip(f"{subject.region_id} is outside Switzerland")
+    latitude, longitude = subject.centre
+
+    offline_map_page.choose_basemap("openfreemap_liberty")
+    offline_map_page.select_region(subject.region_name)
+    offline_map_page.download_selected_region()
+
+    offline_map_page.discard_passive_basemap_cache()
+    offline_map_page.go_offline()
+    offline_map_page.page.reload()
+    offline_map_page.page.wait_for_load_state("load")
+
+    offline_map_page.jump_to(longitude, latitude, subject.inside_zoom)
+    offline_map_page.page.wait_for_function(
+        "() => window.pwaOfflineBasemap && window.pwaOfflineBasemap.switched()",
+        timeout=20_000,
+    )
+    offline_map_page.wait_for_map_idle()
+    ink = offline_map_page.basemap_ink()
+
+    assert ink >= _DREW, (
+        f"{subject.region_id} ({subject.region_name}) was downloaded with "
+        "OpenFreeMap on screen. Offline, the page switched to Swisstopo, "
+        f"but at z{subject.inside_zoom} it drew only {ink:.1%} of the "
+        "canvas: the Swisstopo tiles were not saved with the area.\n"
+        f"Reproduce with SNOWDESK_OFFLINE_SEED={subject.seed}.\n  "
+        + offline_map_page.diagnostics()
+    )

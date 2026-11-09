@@ -33,7 +33,7 @@
  * geometry have to describe the same ground.
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
 import { loadMapBundle } from './_load_map_bundle.js';
@@ -117,6 +117,19 @@ const WEATHER_GEOJSON = {
 };
 
 const EMPTY_GEOJSON = { type: 'FeatureCollection', features: [] };
+
+// SNOW-1478: the Swisstopo map, as documents, for a sync that adds it to an
+// area in Switzerland downloaded on OpenFreeMap. No sprite and no glyphs, so
+// its render dependencies are the style and its one TileJSON.
+const SWISS_STYLE_URL = 'https://swiss.example.invalid/styles/winter.json';
+const SWISS_TILEJSON_URL = 'https://swiss.example.invalid/tiles/base/tiles.json';
+const SWISS_TILES = ['https://vt.swiss.example.invalid/base/{z}/{x}/{y}.pbf'];
+const SWISS_STYLE = {
+  version: 8,
+  sources: { base: { type: 'vector', url: SWISS_TILEJSON_URL } },
+  layers: [],
+};
+const SWISS_TILEJSON = { tiles: SWISS_TILES };
 
 /** Minimal MapLibre stub — as test_map_download_content.js's. */
 function stubMapLibre() {
@@ -471,6 +484,9 @@ beforeAll(async () => {
       if (href.includes('favourites.geojson')) body = EMPTY_GEOJSON;
       if (href.includes('routes.geojson')) body = EMPTY_GEOJSON;
       if (href.includes('community-reports.geojson')) body = EMPTY_GEOJSON;
+      // SNOW-1478: the Swisstopo map's documents, read when a sync adds it.
+      if (href === SWISS_STYLE_URL) body = SWISS_STYLE;
+      if (href === SWISS_TILEJSON_URL) body = SWISS_TILEJSON;
       return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
     }),
   );
@@ -491,6 +507,8 @@ beforeAll(async () => {
 
   vi.resetModules();
   await import('../../static/js/basemap_download_core.js');
+  // SNOW-1478: Switzerland's outline, which a sync places the area against.
+  await import('../../static/js/swisstopo_extent.js');
   await import('../../static/js/basemap_download_runner.js');
   // SNOW-1072: the class tileset's coverage and band come from here.
   await import('../../static/js/slope_classes_core.js');
@@ -1468,5 +1486,77 @@ describe('the background sync (SNOW-1416)', () => {
     Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
     document.dispatchEvent(new Event('visibilitychange'));
     expect(await waitFor(() => window.pwaWarmCache.mock.calls.length === 1)).toBe(true);
+  });
+});
+
+describe('an area in Switzerland downloaded on another map (SNOW-1478)', () => {
+  /** Offer Swisstopo on the picker, as /map/ does; the fixture offers only OpenFreeMap. */
+  function offerSwisstopo() {
+    const li = document.createElement('li');
+    li.id = 'swiss-row';
+    li.innerHTML = `<button type="button" class="basemap-menu-item"
+      data-basemap-key="swisstopo_winter" data-basemap-url="${SWISS_STYLE_URL}"
+      data-basemap-countries="ch" aria-checked="false">Swisstopo (CH)</button>`;
+    document.getElementById('basemap-menu').appendChild(li);
+  }
+
+  /** Every Swisstopo tile the seeded area's ground implies. */
+  function swissTileUrls() {
+    const core = window.pwaBasemapDownloadCore;
+    return core.rangesToTileURLs([SWISS_TILES], core.buildBlob([7.0, 46.0, 7.2, 46.2], 10, 14));
+  }
+
+  beforeEach(() => offerSwisstopo());
+  afterEach(() => document.getElementById('swiss-row')?.remove());
+
+  it('adds the Swisstopo map, fetching only what the bucket lacks', async () => {
+    const tiles = swissTileUrls();
+    // Browsing on Swisstopo left a few of its tiles here already.
+    holdDependencies([...DEPS, ...tiles.slice(0, 3)]);
+
+    const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect(result.tiles).toBe('ok');
+    expect(warmedUrls(0)).toEqual([SWISS_STYLE_URL, SWISS_TILEJSON_URL, ...tiles.slice(3)]);
+    // Then the content, as every sync.
+    expect(warmedUrls(1)).toContain(BULLETIN_URL);
+  });
+
+  it('records the Swisstopo map first and moves the top-level fields to it', async () => {
+    await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    const record = await storedArea();
+    expect(record.basemaps.map((entry) => entry.key)).toEqual([
+      'swisstopo_winter',
+      'openfreemap_liberty',
+    ]);
+    expect(record.basemapKey).toBe('swisstopo_winter');
+    expect(record.template).toEqual([SWISS_TILES]);
+    expect(record.deps).toEqual([SWISS_STYLE_URL, SWISS_TILEJSON_URL]);
+    // The map it already held stays, as it was.
+    expect(record.basemaps[1]).toEqual({ key: 'openfreemap_liberty', template: TEMPLATE, deps: DEPS });
+    expect(record.bytes).toBe(4096 + 4096);
+  });
+
+  it('adds nothing to an area that already holds it', async () => {
+    await seedArea({
+      basemapKey: 'swisstopo_winter',
+      template: [SWISS_TILES],
+      deps: DEPS,
+    });
+
+    const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect(result.tiles).toBe('none');
+    expect(window.pwaWarmCache).toHaveBeenCalledTimes(1);
+  });
+
+  it('adds nothing to an area outside Switzerland', async () => {
+    await seedArea({ bbox: [6.82, 45.87, 6.92, 45.97] });
+
+    await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect((await storedArea()).basemaps).toBeUndefined();
+    expect(warmedUrls(0)).not.toContain(SWISS_STYLE_URL);
   });
 });

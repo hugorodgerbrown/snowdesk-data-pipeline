@@ -2027,6 +2027,32 @@ formatter behind every cached-copy stamp: `formatStamp` is "HH:MM" today and
 day + "HH:MM" on any other day, and is what the favourites, routes and
 reports panels stamp a cached repaint with.
 
+### Which map a download saves (SNOW-1478)
+
+A download's maps follow its ground, not the map on screen.
+`basemapsForGround` in `basemap_download_core.js` gives Swisstopo winter
+inside Switzerland, Swisstopo plus the foreign map across the border, and
+the foreign map outside: the one on screen when it draws that country,
+otherwise OpenFreeMap. `downloadBasemapKeys` in `map_basemap_downloads.js`
+drops a map the picker does not offer, and `runPinnedDownload` resolves
+each one's tile sources and render dependencies from its style before the
+run (`resolveDownloadBasemap`). The runner's `extraBasemaps` dep fetches
+the second map into the same bucket.
+
+The record lists every map as `basemaps: [{key, template, deps}]`, primary
+first, and keeps the old top-level fields as a copy of the primary entry.
+`recordBasemaps` reads either shape; the downloads sheet, `/offline/` and
+the render check all read every entry.
+
+Sync adds Swisstopo to a Swiss area saved before this, fetching only what
+its bucket lacks (`_addMissingBasemaps`).
+
+Offline inside an area that holds Swisstopo, a reader on another map sees
+Swisstopo, and `#offline-basemap-banner` says so
+(`map_offline_basemap.js`, `window.pwaOfflineBasemap`). Their own choice is
+never written, and leaving the area or getting signal back restores it.
+[Why](decisions/swiss-downloads-save-the-swisstopo-map.md).
+
 ### Download budget and whole-area eviction (SNOW-586)
 
 Both download controls write into their own dedicated Cache Storage

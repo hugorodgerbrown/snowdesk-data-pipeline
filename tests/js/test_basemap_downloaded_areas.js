@@ -84,3 +84,37 @@ describe('downloadedAreas (SNOW-1453)', () => {
     expect(asked).toBe(1);
   });
 });
+
+describe('downloadedAreas (SNOW-1478)', () => {
+  const MAPS = [
+    { key: 'swisstopo_winter', template: [['s']], deps: ['https://s/style.json'] },
+    { key: 'openfreemap_liberty', template: [['o']], deps: ['https://o/style.json'] },
+  ];
+
+  beforeAll(async () => {
+    await import('../../static/js/basemap_manage_core.js');
+  });
+
+  it('carries every map an area holds, region and custom alike, and none for a record before it', async () => {
+    installDb({
+      'basemap.regions': [
+        { region_id: 'CH-4115', name: 'Martigny', basemapKey: 'swisstopo_winter', basemaps: MAPS },
+        { region_id: 'CH-1000', name: 'Valais', basemapKey: 'openfreemap_liberty' },
+      ],
+      'basemap.customAreas': [{ id: 'custom-a1', name: 'Mine', bbox: [7, 46, 7.2, 46.2], basemaps: MAPS }],
+    });
+    window.pwaDownloadsSync = { accountAreas: async () => [] };
+
+    const areas = await window.pwaBasemapAreas.downloadedAreas();
+    const byId = Object.fromEntries(areas.map((a) => [a.id, a]));
+    const core = window.pwaBasemapDownloadCore;
+
+    expect(byId[core.areaIdForRegion('CH-4115')].basemaps).toEqual(MAPS);
+    expect(byId['custom-a1'].basemaps).toEqual(MAPS);
+    expect(byId[core.areaIdForRegion('CH-1000')].basemaps).toBeFalsy();
+    // The legacy record still reads as one map, through the core.
+    expect(core.recordBasemaps(byId[core.areaIdForRegion('CH-1000')]).map((m) => m.key)).toEqual([
+      'openfreemap_liberty',
+    ]);
+  });
+});

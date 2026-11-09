@@ -244,6 +244,13 @@ trip_deeplink_core.js
 # never at parse time, so it sits with the other call-site cores.
 country_load_core.js
 
+# SNOW-1478: Switzerland's outline (window.pwaSwisstopoExtent), which
+# a download over drawn ground is placed against to choose its maps
+# (basemap_download_core.js basemapsForGround). Read at call time only.
+# SNOW-1460 loaded it only for the beyond-Switzerland flag; every reader
+# needs it now.
+swisstopo_extent.js
+
 basemap_download_core.js
 
 # SNOW-1416: what a sync fetches (only what changed) and which areas a
@@ -404,6 +411,14 @@ map_zoom_control.js
 # the map from window.snowdeskMapState (map.js) at parse time, so after the
 # bundle and outside its contiguous run (no bundle module reads it).
 map_compass.js
+
+# SNOW-1478: offline inside a downloaded area saved on Swisstopo, the
+# map shows Swisstopo (window.pwaOfflineBasemap), its pure half first.
+# Reads window.snowdeskMap (map.js) at parse time, so after the bundle and
+# outside its contiguous run (no bundle module reads it).
+map_offline_basemap_core.js
+
+map_offline_basemap.js
 
 # SNOW-1280: the layers menu's zoom-limited rows — dimmed, with
 # "· zoom in" on the name line, while the map is outside their zoom.

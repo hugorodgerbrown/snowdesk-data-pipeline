@@ -84,6 +84,19 @@
  *     HOST rather than the basemap picker — see
  *     ``basemapKeyForTileSources`` for why that matters. The measurements
  *     behind the figures are in ``BYTES_PER_TILE_BY_BASEMAP``'s comment.
+ *   basemapsForGround(ground, activeKey, countriesByKey, extent) /
+ *   groundInSwitzerland(bbox, extent) / countriesForBBox(bbox, features) /
+ *   recordBasemaps(record) /
+ *   recordHoldsBasemaps(record, keys) / basemapSourceCount(key) /
+ *   basemapScaledMb(mb, key, count?) /
+ *   tileSourcesFromStyleDocuments(styleJson, tileJsons) /
+ *   renderDependencyUrlsFromStyle(styleUrl, styleJson) /
+ *   glyphPrefixFromStyle(styleJson)
+ *     SNOW-1478: which maps a download over some ground saves (Swisstopo
+ *     in Switzerland, whatever is on screen), the maps a stored area holds
+ *     (its ``basemaps`` list, or one entry from its legacy fields), and a
+ *     map's tile sources and render dependencies from its documents, for
+ *     a map that is not on screen.
  *   rangesToTileURLs(spec, blob)
  *     Expands a full basemap_download blob's ``z`` tile-index ranges
  *     (as fetched from ``/api/region-basemap-tiles/?id=...`` OR produced
@@ -4083,6 +4096,381 @@
     };
   }
 
+  /* ------------------------------------------------------------------ *
+   * SNOW-1478: which maps a download saves, and from what.
+   *
+   * Until SNOW-1478 a download saved the map on screen and nothing else,
+   * so an area saved on OpenFreeMap and then viewed on Swisstopo drew only
+   * what browsing had left behind (Hugo, airplane mode, 8 Nov 2026). See
+   * docs/decisions/swiss-downloads-save-the-swisstopo-map.md.
+   * ------------------------------------------------------------------ */
+
+  /** The map a download outside Switzerland saves when the one on screen does not cover it. */
+  var FALLBACK_BASEMAP_KEY = 'openfreemap_liberty';
+
+  /** The countries Swisstopo's own data covers (``swisstopo_extent.js``). */
+  var SWISS_COUNTRIES = Object.freeze(['ch', 'li']);
+
+  /** Points per side when a box is placed against Switzerland, corners included. */
+  var GROUND_SAMPLES = 5;
+
+  /**
+   * Even-odd: whether ``[x, y]`` is inside one ring.
+   *
+   * @param {Array} ring
+   * @param {number} x
+   * @param {number} y
+   * @returns {boolean}
+   */
+  function inRing(ring, x, y) {
+    var inside = false;
+    for (var i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+      var xi = ring[i][0];
+      var yi = ring[i][1];
+      var xj = ring[j][0];
+      var yj = ring[j][1];
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+
+  /**
+   * Whether ``[x, y]`` is inside polygons whose first ring is the outer
+   * one and whose others are holes (``swisstopo_extent.js``'s shape).
+   *
+   * @param {Array} polygons
+   * @param {number} x
+   * @param {number} y
+   * @returns {boolean}
+   */
+  function inPolygons(polygons, x, y) {
+    return polygons.some(function (polygon) {
+      if (!inRing(polygon[0], x, y)) return false;
+      return !polygon.slice(1).some(function (hole) {
+        return inRing(hole, x, y);
+      });
+    });
+  }
+
+  /**
+   * Where a box of ground sits against Switzerland.
+   *
+   * Sampled on a five-by-five grid, corners included. A box with no
+   * sample inside is still ``cross`` when a vertex of the border falls
+   * inside it: a small box over a bend in the border.
+   *
+   * @param {number[] | null | undefined} bbox ``[west, south, east, north]``.
+   * @param {Array | null | undefined} extent ``pwaSwisstopoExtent.EXTENT``.
+   * @returns {'inside' | 'outside' | 'cross' | null} Null for a box or an
+   *   extent it cannot read.
+   */
+  function groundInSwitzerland(bbox, extent) {
+    if (!Array.isArray(bbox) || bbox.length !== 4 || !bbox.every(Number.isFinite)) return null;
+    if (!Array.isArray(extent) || extent.length === 0) return null;
+    var west = bbox[0];
+    var south = bbox[1];
+    var east = bbox[2];
+    var north = bbox[3];
+    var inside = 0;
+    var total = 0;
+    for (var i = 0; i < GROUND_SAMPLES; i += 1) {
+      for (var j = 0; j < GROUND_SAMPLES; j += 1) {
+        var x = west + ((east - west) * i) / (GROUND_SAMPLES - 1);
+        var y = south + ((north - south) * j) / (GROUND_SAMPLES - 1);
+        total += 1;
+        if (inPolygons(extent, x, y)) inside += 1;
+      }
+    }
+    if (inside === total) return 'inside';
+    if (inside > 0) return 'cross';
+    var vertexInside = extent.some(function (polygon) {
+      return polygon[0].some(function (point) {
+        return point[0] >= west && point[0] <= east && point[1] >= south && point[1] <= north;
+      });
+    });
+    return vertexInside ? 'cross' : 'outside';
+  }
+
+  /**
+   * The map a download saves over ground outside Switzerland: the one on
+   * screen when it covers every foreign country the ground touches,
+   * OpenFreeMap otherwise.
+   *
+   * @param {string | null | undefined} activeKey
+   * @param {string[]} countries The ground's countries beyond Switzerland,
+   *   lower case. Empty when they are not known, and then OpenFreeMap,
+   *   which draws everywhere, is the only safe answer.
+   * @param {Object<string, string[]> | null | undefined} countriesByKey
+   * @returns {string}
+   */
+  function foreignBasemapKey(activeKey, countries, countriesByKey) {
+    if (!activeKey || activeKey === ELEVATION_BASEMAP_KEY) return FALLBACK_BASEMAP_KEY;
+    if (!countries.length) return FALLBACK_BASEMAP_KEY;
+    var covered = (countriesByKey && countriesByKey[activeKey]) || [];
+    var all = countries.every(function (code) {
+      return covered.indexOf(code) >= 0;
+    });
+    return all ? activeKey : FALLBACK_BASEMAP_KEY;
+  }
+
+  /**
+   * The countries of the region features a box overlaps, lower case. Each
+   * feature is judged by its own bounding box, so a box near a border may
+   * name a neighbour it only nearly touches; that errs towards
+   * OpenFreeMap, which draws everywhere (``foreignBasemapKey``).
+   *
+   * @param {number[] | null | undefined} bbox ``[west, south, east, north]``.
+   * @param {Array<Object> | null | undefined} features GeoJSON features
+   *   carrying ``properties.country``.
+   * @returns {string[]} Empty when the box is unusable or nothing meets it.
+   */
+  function countriesForBBox(bbox, features) {
+    if (!Array.isArray(bbox) || bbox.length !== 4 || !Array.isArray(features)) return [];
+    var found = [];
+    features.forEach(function (feature) {
+      var country = feature && feature.properties && feature.properties.country;
+      if (typeof country !== 'string' || !country) return;
+      var box = featureBBox(feature);
+      if (!box) return;
+      var meets = box[0] <= bbox[2] && box[2] >= bbox[0] && box[1] <= bbox[3] && box[3] >= bbox[1];
+      var code = country.toLowerCase();
+      if (meets && found.indexOf(code) < 0) found.push(code);
+    });
+    return found;
+  }
+
+  /**
+   * The maps a download over this ground saves, primary first.
+   *
+   * Ground in Switzerland saves Swisstopo (``ELEVATION_BASEMAP_KEY``),
+   * whatever is on screen. Ground outside it saves the map on screen when
+   * that map covers its country, and OpenFreeMap otherwise (Hugo, 9 Nov
+   * 2026). Ground across the border saves both, Swisstopo first. A region
+   * names its country, which settles it; a drawn area or drop zone names a
+   * box, placed against ``extent``, and the countries of the regions it
+   * overlaps (``countries``). A box whose foreign countries are not known
+   * saves OpenFreeMap there. Ground that cannot be placed saves the
+   * map on screen, the behaviour before SNOW-1478.
+   *
+   * @param {{country?: string | null, bbox?: number[] | null, countries?: string[] | null} | null} ground
+   * @param {string | null | undefined} activeKey The map on screen.
+   * @param {Object<string, string[]> | null | undefined} countriesByKey
+   *   Each map's countries, lower case (``BASEMAP_COUNTRIES``).
+   * @param {Array | null | undefined} extent ``pwaSwisstopoExtent.EXTENT``.
+   * @returns {string[]} Never empty.
+   */
+  function basemapsForGround(ground, activeKey, countriesByKey, extent) {
+    var country =
+      ground && typeof ground.country === 'string' && ground.country
+        ? ground.country.toLowerCase()
+        : null;
+    var listed = country
+      ? [country]
+      : ground && Array.isArray(ground.countries)
+        ? ground.countries
+        : [];
+    var foreign = listed
+      .filter(function (code) {
+        return typeof code === 'string' && code;
+      })
+      .map(function (code) {
+        return code.toLowerCase();
+      })
+      .filter(function (code, index, all) {
+        return SWISS_COUNTRIES.indexOf(code) < 0 && all.indexOf(code) === index;
+      });
+    var place;
+    if (country) place = SWISS_COUNTRIES.indexOf(country) >= 0 ? 'inside' : 'outside';
+    else place = groundInSwitzerland(ground ? ground.bbox : null, extent);
+    if (place === 'inside') return [ELEVATION_BASEMAP_KEY];
+    if (place === 'cross') {
+      return [ELEVATION_BASEMAP_KEY, foreignBasemapKey(activeKey, foreign, countriesByKey)];
+    }
+    if (place === 'outside') return [foreignBasemapKey(activeKey, foreign, countriesByKey)];
+    return [activeKey || FALLBACK_BASEMAP_KEY];
+  }
+
+  /**
+   * The maps one stored area holds, primary first: its ``basemaps`` list
+   * where a download since SNOW-1478 wrote one, otherwise one entry read
+   * from its top-level ``basemapKey``, ``template`` and ``deps``. Nothing
+   * is migrated in place; every reader that judges completeness asks this.
+   *
+   * @param {Object | null | undefined} record A ``basemap.regions`` /
+   *   ``basemap.customAreas`` entry, or a row normalised from one.
+   * @returns {Array<{key: string | null, template: *, deps: string[]}>}
+   *   Empty for a record that names no map and no template.
+   */
+  function recordBasemaps(record) {
+    if (!record || typeof record !== 'object') return [];
+    if (Array.isArray(record.basemaps) && record.basemaps.length > 0) {
+      return record.basemaps
+        .filter(function (entry) {
+          return entry && typeof entry === 'object';
+        })
+        .map(function (entry) {
+          return {
+            key: typeof entry.key === 'string' && entry.key ? entry.key : null,
+            template: entry.template || null,
+            deps: Array.isArray(entry.deps) ? entry.deps : [],
+          };
+        });
+    }
+    var key = typeof record.basemapKey === 'string' && record.basemapKey ? record.basemapKey : null;
+    if (!key && !record.template) return [];
+    return [
+      {
+        key: key,
+        template: record.template || null,
+        deps: Array.isArray(record.deps) ? record.deps : [],
+      },
+    ];
+  }
+
+  /**
+   * How many vector sources each basemap's style declares, for pricing a
+   * map that is not on screen (the live style counts its own). Swisstopo's
+   * two styles declare relief and base; every other basemap one.
+   */
+  var BASEMAP_SOURCE_COUNTS = Object.freeze({ swisstopo_winter: 2, swisstopo_light: 2 });
+
+  /**
+   * @param {string | null | undefined} key
+   * @returns {number}
+   */
+  function basemapSourceCount(key) {
+    return (key && BASEMAP_SOURCE_COUNTS[key]) || 1;
+  }
+
+  /**
+   * ``sourceScaledMb`` for a basemap named by key rather than by a live
+   * spec: its declared source count at its own per-tile figure.
+   *
+   * @param {number} mb
+   * @param {string | null | undefined} key
+   * @param {number} [count]
+   * @returns {number}
+   */
+  function basemapScaledMb(mb, key, count) {
+    if (!Number.isFinite(mb)) return mb;
+    var sources = basemapSourceCount(key);
+    var bytesPerTile = bytesPerTileForBasemap(key);
+    var bytesPerMb = 1024 * 1024;
+    if (Number.isFinite(count) && count >= 0) {
+      return Math.ceil((count * sources * bytesPerTile) / bytesPerMb) + DOWNLOAD_DOCUMENTS_MB;
+    }
+    var tileMb = Math.max(0, mb - DOWNLOAD_DOCUMENTS_MB);
+    return (
+      Math.ceil((tileMb * sources * bytesPerTile) / WORST_CASE_BYTES_PER_TILE) +
+      DOWNLOAD_DOCUMENTS_MB
+    );
+  }
+
+  /**
+   * Whether a stored area holds every map in ``keys``.
+   *
+   * @param {Object | null | undefined} record
+   * @param {string[]} keys
+   * @returns {boolean}
+   */
+  function recordHoldsBasemaps(record, keys) {
+    var held = recordBasemaps(record).map(function (entry) {
+      return entry.key;
+    });
+    return (keys || []).every(function (key) {
+      return held.indexOf(key) >= 0;
+    });
+  }
+
+  /**
+   * A basemap's tile sources, from its style document and the TileJSON
+   * each vector source's ``url`` names — the shape
+   * ``activeBasemapTileSources`` reads off a live map, for a map that is
+   * not on screen. A source with inline ``tiles`` keeps them, as MapLibre
+   * does.
+   *
+   * @param {Object | null | undefined} styleJson
+   * @param {Object<string, Object> | null | undefined} tileJsons By source id.
+   * @returns {string[][] | null} Null for a style with no vector source
+   *   this can resolve.
+   */
+  function tileSourcesFromStyleDocuments(styleJson, tileJsons) {
+    if (!styleJson || typeof styleJson !== 'object' || !styleJson.sources) return null;
+    var sources = [];
+    Object.keys(styleJson.sources).forEach(function (id) {
+      var source = styleJson.sources[id];
+      if (!source || source.type !== 'vector') return;
+      var doc = tileJsons && tileJsons[id];
+      var tiles = Array.isArray(source.tiles)
+        ? source.tiles
+        : doc && Array.isArray(doc.tiles)
+          ? doc.tiles
+          : null;
+      var urls = (tiles || []).filter(function (url) {
+        return typeof url === 'string' && url;
+      });
+      if (urls.length) sources.push(urls);
+    });
+    return sources.length ? sources : null;
+  }
+
+  /**
+   * Every render dependency of a basemap from its documents — the list
+   * ``activeBasemapRenderDependencyURLs`` reads off a live map: the style
+   * document's own URL, its sprite JSON and PNG at 1x and 2x, each vector
+   * source's TileJSON, and the glyph ranges (``glyphURLs``). Relative URLs
+   * resolve against the style's own.
+   *
+   * @param {string} styleUrl Where ``styleJson`` was fetched from.
+   * @param {Object | null | undefined} styleJson
+   * @returns {string[]} Empty for a style it cannot read, which every
+   *   caller reads as UNKNOWN.
+   */
+  function renderDependencyUrlsFromStyle(styleUrl, styleJson) {
+    if (!styleUrl || !styleJson || typeof styleJson !== 'object') return [];
+    var resolve = function (url) {
+      try {
+        return new URL(url, styleUrl).toString();
+      } catch (_err) {
+        return null;
+      }
+    };
+    var urls = [styleUrl];
+    var sprite = styleJson.sprite;
+    var bases = Array.isArray(sprite)
+      ? sprite.map(function (s) {
+          return s && s.url;
+        })
+      : [sprite];
+    bases.forEach(function (base) {
+      if (typeof base !== 'string' || !base) return;
+      var absolute = resolve(base);
+      if (!absolute) return;
+      urls.push(absolute + '.json', absolute + '.png', absolute + '@2x.json', absolute + '@2x.png');
+    });
+    Object.keys(styleJson.sources || {}).forEach(function (id) {
+      var source = styleJson.sources[id];
+      if (!source || source.type !== 'vector' || typeof source.url !== 'string') return;
+      var absolute = resolve(source.url);
+      if (absolute) urls.push(absolute);
+    });
+    return urls.concat(glyphURLs(styleJson));
+  }
+
+  /**
+   * The prefix every glyph request for a style shares — its ``glyphs``
+   * template cut at the first placeholder; ``''`` when it has none.
+   *
+   * @param {Object | null | undefined} styleJson
+   * @returns {string}
+   */
+  function glyphPrefixFromStyle(styleJson) {
+    var glyphs = styleJson && styleJson.glyphs;
+    if (typeof glyphs !== 'string') return '';
+    var brace = glyphs.indexOf('{');
+    return brace > 0 ? glyphs.slice(0, brace) : '';
+  }
+
   self.pwaBasemapDownloadCore = Object.freeze({
     downloadSucceeded: downloadSucceeded,
     contentOutcome: contentOutcome,
@@ -4176,6 +4564,19 @@
     ELEVATION_PARENT_MIN_ZOOM: ELEVATION_PARENT_MIN_ZOOM,
     ELEVATION_BASEMAP_KEY: ELEVATION_BASEMAP_KEY,
     elevationBasemap: elevationBasemap,
+    // SNOW-1478: which maps a download saves, and from what.
+    FALLBACK_BASEMAP_KEY: FALLBACK_BASEMAP_KEY,
+    SWISS_COUNTRIES: SWISS_COUNTRIES,
+    groundInSwitzerland: groundInSwitzerland,
+    basemapsForGround: basemapsForGround,
+    countriesForBBox: countriesForBBox,
+    recordBasemaps: recordBasemaps,
+    recordHoldsBasemaps: recordHoldsBasemaps,
+    basemapSourceCount: basemapSourceCount,
+    basemapScaledMb: basemapScaledMb,
+    tileSourcesFromStyleDocuments: tileSourcesFromStyleDocuments,
+    renderDependencyUrlsFromStyle: renderDependencyUrlsFromStyle,
+    glyphPrefixFromStyle: glyphPrefixFromStyle,
     STORAGE_HEADROOM_FACTOR: STORAGE_HEADROOM_FACTOR,
     DOWNLOAD_BUDGET_MB: DOWNLOAD_BUDGET_MB,
     PINNED_CACHE_PREFIX: PINNED_CACHE_PREFIX,

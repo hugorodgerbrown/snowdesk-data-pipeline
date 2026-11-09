@@ -1332,6 +1332,9 @@
           // the account the area was stamped for (SNOW-1142), so those
           // things are never named to another account.
           template: record.template || null,
+          // SNOW-1478: every map the area holds, when its download saved
+          // more than one or a sync added Swisstopo; null before that.
+          basemaps: Array.isArray(record.basemaps) ? record.basemaps : null,
           items: record.items || null,
           principal: typeof record.principal === 'string' ? record.principal : null,
         });
@@ -1367,6 +1370,9 @@
           band: Array.isArray(record.band) ? record.band : null,
           // SNOW-1308: see the region branch above.
           template: record.template || null,
+          // SNOW-1478: every map the area holds, when its download saved
+          // more than one or a sync added Swisstopo; null before that.
+          basemaps: Array.isArray(record.basemaps) ? record.basemaps : null,
           items: record.items || null,
           principal: typeof record.principal === 'string' ? record.principal : null,
         });

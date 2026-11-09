@@ -74,6 +74,8 @@
    *     short?: boolean}>,
    *   renderDeps?: function(): string[],
    *   glyphPrefix?: function(): string,
+   *   extraBasemaps?: function(): Array<{key: (string|null), tileSources: string[][],
+   *     renderDeps: string[]}>,
    *   progressGrid: function(Object|null, number): Object,
    *   warmCache: function(string[], Object): (Promise<Object>|null),
    *   isOnline: function(): boolean,
@@ -101,6 +103,12 @@
    *   `elevation` stamp.
    *   SNOW-1379: `contentUrls` is handed the run's `terrain` too, which
    *   decides whether the problem-terrain feed is in the content plan.
+   *   SNOW-1478: `extraBasemaps` is the maps a run saves beside its primary
+   *   one (`tileSources` / `basemapKey` / `renderDeps`): an area across the
+   *   Swiss border saves Swisstopo and a second map. Each one's tiles over
+   *   the same blob and its render dependencies join the URL list, its
+   *   price joins the pre-flights, and `finish` is handed every map as
+   *   `extras.basemaps`, primary first. Absent, a run saves one map.
    * @param {{
    *   areaId: string,
    *   mb: number,
@@ -218,13 +226,23 @@
     // `sourceScaledMb`) and is refused outright a few lines below.
     const basemapMb =
       core && core.sourceScaledMb ? core.sourceScaledMb(mb, tileSources, count) : mb;
+    // SNOW-1478: the maps saved beside the primary one, each priced at its
+    // own per-tile figure over the same ground.
+    const extraBasemaps = (
+      typeof deps.extraBasemaps === 'function' ? deps.extraBasemaps() || [] : []
+    ).filter((entry) => entry && entry.tileSources);
+    const extraMb = extraBasemaps.reduce(
+      (sum, entry) =>
+        sum + (core && core.sourceScaledMb ? core.sourceScaledMb(mb, entry.tileSources, count) : mb),
+      0,
+    );
     // SNOW-1072: terrain data is its own tile family on its own host, so
     // it is not scaled by the basemap's sources — it is added on top.
     const terrainMb =
       terrain && Number.isFinite(options.terrainMb) && options.terrainMb > 0
         ? options.terrainMb
         : 0;
-    const estimateMb = basemapMb + terrainMb;
+    const estimateMb = basemapMb + extraMb + terrainMb;
 
     // Refuse a download that cannot fit in the origin's storage quota
     // before spending a single fetch on it (SNOW-568). Without this the run
@@ -397,10 +415,17 @@
     // from its first download names them on `/offline/` as one synced
     // later does. Null from a bare array or a signed-out plan.
     const contentItems = Array.isArray(contentReply) ? null : contentReply.items || null;
+    const extraUrls = extraBasemaps.flatMap((entry) => [
+      ...(Array.isArray(entry.renderDeps) ? entry.renderDeps : []),
+      ...core.rangesToTileURLs(entry.tileSources, blob),
+    ]);
     const urls = [
       ...contentUrls,
       ...feedUrls,
       ...(gridPlan ? gridPlan.urls : []),
+      // SNOW-1478: the other maps' tiles and documents, after the grid's
+      // own tiles so the grid's offset still holds.
+      ...extraUrls,
       ...terrainUrls,
       ...elevationUrls,
     ];
@@ -476,6 +501,16 @@
         basemapKey,
         renderDeps,
         glyphPrefix,
+        // SNOW-1478: every map this run saved, primary first, as a record's
+        // `basemaps` list stores them.
+        basemaps: [
+          { key: basemapKey || null, template: tileSources, deps: renderDeps },
+          ...extraBasemaps.map((entry) => ({
+            key: entry.key || null,
+            template: entry.tileSources,
+            deps: Array.isArray(entry.renderDeps) ? entry.renderDeps : [],
+          })),
+        ],
         // SNOW-1072: whether this run included terrain data — the flag a
         // caller records, never the URLs it implied.
         terrain,

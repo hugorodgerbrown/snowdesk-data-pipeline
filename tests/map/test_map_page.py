@@ -3723,8 +3723,8 @@ def test_the_frame_terrain_line_names_3d_data_only_with_the_3d_view() -> None:
 # SNOW-1460 — the winter map beyond Switzerland, behind its own flag
 # ---------------------------------------------------------------------------
 
+# SNOW-1478 moved swisstopo_extent.js into the map bundle, for every reader.
 _BEYOND_SCRIPTS = (
-    "js/swisstopo_extent.js",
     "js/beyond_switzerland_core.js",
     "js/osm_clip_core.js",
     "js/alpine_relief_core.js",
@@ -3795,8 +3795,8 @@ def test_map_beyond_switzerland_off_renders_none_of_it() -> None:
 
 
 @pytest.mark.django_db
-def test_map_beyond_switzerland_loads_its_five_scripts_behind_the_flag() -> None:
-    """On, the five scripts render, once each."""
+def test_map_beyond_switzerland_loads_its_four_scripts_behind_the_flag() -> None:
+    """On, the four scripts render, once each."""
     content = _beyond_map(beyond=True)
     tags = re.findall(r'<script[^>]+src="[^"]*/static/(js/[^"]+)"', content)
     for script in _BEYOND_SCRIPTS:
@@ -3805,7 +3805,7 @@ def test_map_beyond_switzerland_loads_its_five_scripts_behind_the_flag() -> None
 
 @pytest.mark.django_db
 def test_map_beyond_switzerland_is_not_in_any_bundle() -> None:
-    """The bundle manifests list none of the five, so a reader without the
+    """The bundle manifests list none of the four, so a reader without the
     flag downloads none of it.
     """
     lists = Path(settings.BASE_DIR) / "static" / "js" / "bundles"
@@ -3914,3 +3914,28 @@ def test_relief_tuning_is_hidden_from_an_anonymous_reader() -> None:
     for mark in _RELIEF_TUNING_MARKS:
         assert mark not in content, mark
     assert "data-relief-tuning" not in _map_div(content)
+
+
+@pytest.mark.django_db
+def test_map_page_renders_the_offline_basemap_banner_and_its_scripts() -> None:
+    """SNOW-1478: the Swisstopo offline banner and its two scripts ship.
+
+    The banner starts hidden; map_offline_basemap.js shows it offline inside
+    a saved area. The script reads the Swiss extent, which now loads for
+    every reader rather than only behind ``map_beyond_switzerland``.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    assert 'id="offline-basemap-banner"' in content
+    scripts = re.findall(r'<script[^>]+src="[^"]*?/static/js/([^"?]+)', content)
+    for name in (
+        "swisstopo_extent.js",
+        "map_offline_basemap_core.js",
+        "map_offline_basemap.js",
+    ):
+        assert name in scripts, name
+    assert scripts.index("swisstopo_extent.js") < scripts.index(
+        "basemap_download_core.js"
+    )
+    assert scripts.index("map_offline_basemap_core.js") < scripts.index(
+        "map_offline_basemap.js"
+    )

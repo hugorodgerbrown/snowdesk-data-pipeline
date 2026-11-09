@@ -230,11 +230,26 @@
   function tileReading(area, download) {
     if (!area || !download || typeof download.blobFullyCached !== 'function') return null;
     if (area.bucketReadable === false || area.orphaned) return null;
-    if (!area.template) return null;
+    // SNOW-1478: every map the area holds, primary first; a record before
+    // that ticket reads as one, from its own `template`.
+    var templates =
+      typeof download.recordBasemaps === 'function'
+        ? download
+            .recordBasemaps(area)
+            .map(function (/** @type {any} */ entry) {
+              return entry.template;
+            })
+            .filter(Boolean)
+        : area.template
+          ? [area.template]
+          : [];
+    if (templates.length === 0) return null;
     try {
       var blob = areaBlob(area, download);
       if (!blob) return null;
-      return !!download.blobFullyCached(area.template, blob, area.entries || []);
+      return templates.every(function (/** @type {any} */ template) {
+        return !!download.blobFullyCached(template, blob, area.entries || []);
+      });
     } catch (_err) {
       return null;
     }

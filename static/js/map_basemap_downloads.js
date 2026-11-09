@@ -428,9 +428,12 @@ function activeTerrainClassTileURLs(blob) {
  * its quota and budget pre-flights.
  *
  * @param {Object|null} blob
+ * @param {string[]} [keys] SNOW-1478: the maps the download saves
+ *   (`downloadBasemapKeys`); elevation is priced where the primary one is
+ *   the 3D map. Omitted, the map on screen.
  * @returns {number} 0 when terrain data is unavailable here.
  */
-function terrainClassMbForBlob(blob) {
+function terrainClassMbForBlob(blob, keys) {
   const core = self.pwaBasemapDownloadCore;
   const terrain = self.pwaTerrainFilterCore;
   if (!core || !terrain || !terrainClassTileTemplate()) return 0;
@@ -439,7 +442,7 @@ function terrainClassMbForBlob(blob) {
   );
   // SNOW-1453: and the elevation tiles, folded into the one terrain figure,
   // where the run would pin them (the 3D basemap).
-  const elevationMb = elevationPinnedOn(activeBasemapKey())
+  const elevationMb = downloadPinsElevation(keys)
     ? core.elevationMb(core.elevationTileCount(blob, terrain.COVERAGE_BOUNDS))
     : 0;
   return classMb + elevationMb;
@@ -458,9 +461,10 @@ function terrainClassMbForBlob(blob) {
  *
  * @param {number[]|null} bbox `[west, south, east, north]`.
  * @param {number} [maxTiles] The download's own tile count, when known.
+ * @param {string[]} [keys] SNOW-1478: the maps the download saves.
  * @returns {number} 0 when terrain data is unavailable here.
  */
-function terrainClassMbForGround(bbox, maxTiles) {
+function terrainClassMbForGround(bbox, maxTiles, keys) {
   const core = self.pwaBasemapDownloadCore;
   const terrain = self.pwaTerrainFilterCore;
   if (!core || !terrain || !terrainClassTileTemplate() || !bbox) return 0;
@@ -470,7 +474,7 @@ function terrainClassMbForGround(bbox, maxTiles) {
     core.tileRangesForBBox(clipped, terrain.MIN_ZOOM, terrain.MAX_ZOOM),
   );
   if (Number.isFinite(maxTiles) && maxTiles >= 0) count = Math.min(count, maxTiles);
-  return core.terrainClassMb(count) + elevationMbForGround(clipped, maxTiles);
+  return core.terrainClassMb(count) + elevationMbForGround(clipped, maxTiles, keys);
 }
 
 /**
@@ -483,12 +487,13 @@ function terrainClassMbForGround(bbox, maxTiles) {
  *
  * @param {number[]} clipped The ground's box, clipped to the coverage.
  * @param {number} [maxTiles] The download's own tile count, when known.
+ * @param {string[]} [keys] SNOW-1478: the maps the download saves.
  * @returns {number} 0 where the page pins no elevation tiles, or the
- *   active basemap is not the 3D one.
+ *   download's primary map is not the 3D one.
  */
-function elevationMbForGround(clipped, maxTiles) {
+function elevationMbForGround(clipped, maxTiles, keys) {
   const core = self.pwaBasemapDownloadCore;
-  if (!core || !elevationPinnedOn(activeBasemapKey())) return 0;
+  if (!core || !downloadPinsElevation(keys)) return 0;
   const [bandMin, bandMax] = core.ELEVATION_BAND;
   let band = core.tileCount(core.tileRangesForBBox(clipped, bandMin, bandMax));
   if (Number.isFinite(maxTiles) && maxTiles >= 0) band = Math.min(band, maxTiles);
@@ -693,6 +698,264 @@ function areaRenderDependencyURLs(recordedDeps, basemapIsActive) {
   return [];
 }
 
+/* -------------------------------------------------------------------- *
+ * SNOW-1478: a download saves the map its ground needs, not only the one
+ * on screen. Ground in Switzerland saves Swisstopo, whatever is on screen;
+ * ground outside saves the map on screen where it covers that country,
+ * OpenFreeMap otherwise (`basemapsForGround`, basemap_download_core.js).
+ * A map that is not on screen is read from its documents — its style and
+ * each vector source's TileJSON — rather than from the live MapLibre
+ * style. See docs/decisions/swiss-downloads-save-the-swisstopo-map.md.
+ * -------------------------------------------------------------------- */
+
+/**
+ * The picker row for one basemap key, or null.
+ *
+ * @param {string|null|undefined} key
+ * @returns {HTMLElement|null}
+ */
+function _basemapPickerRow(key) {
+  if (!key) return null;
+  const rows = document.querySelectorAll('#basemap-menu .basemap-menu-item[data-basemap-key]');
+  for (const row of rows) {
+    if (row.dataset.basemapKey === key) return row;
+  }
+  return null;
+}
+
+/**
+ * A basemap's style URL, off its picker row (`settings.BASEMAP_STYLES`).
+ *
+ * @param {string|null|undefined} key
+ * @returns {string} `''` for a key the picker does not offer.
+ */
+function basemapStyleUrl(key) {
+  const row = _basemapPickerRow(key);
+  return (row && row.dataset.basemapUrl) || '';
+}
+
+/**
+ * Each picker basemap's countries, lower case, off the rows'
+ * `data-basemap-countries` (`settings.BASEMAP_COUNTRIES`).
+ *
+ * @returns {Object<string, string[]>}
+ */
+function basemapCountriesByKey() {
+  const out = {};
+  const rows = document.querySelectorAll('#basemap-menu .basemap-menu-item[data-basemap-key]');
+  for (const row of rows) {
+    out[row.dataset.basemapKey] = (row.dataset.basemapCountries || '')
+      .split(/\s+/)
+      .map((code) => code.toLowerCase())
+      .filter(Boolean);
+  }
+  return out;
+}
+
+/**
+ * The countries of the regions a box overlaps, off the map's region
+ * features (`FEATURE_BY_REGION_ID`, `countriesForBBox`).
+ *
+ * @param {number[]|null|undefined} bbox `[west, south, east, north]`.
+ * @returns {string[]} Empty when the box is unusable or no region is loaded.
+ */
+function groundCountries(bbox) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || typeof core.countriesForBBox !== 'function') return [];
+  const features = typeof FEATURE_BY_REGION_ID === 'object' && FEATURE_BY_REGION_ID ? FEATURE_BY_REGION_ID : {};
+  return core.countriesForBBox(bbox, Object.values(features));
+}
+
+/**
+ * The maps a download over this ground saves, primary first.
+ *
+ * A map the picker does not offer here (no style URL to read it from) is
+ * dropped, and with nothing left the map on screen stands, which is the
+ * behaviour before SNOW-1478.
+ *
+ * @param {{country?: string|null, bbox?: number[]|null, countries?: string[]|null}} ground
+ *   A region names its country; a drawn area or drop zone its box, whose
+ *   countries are read from the regions it overlaps (`groundCountries`).
+ * @returns {string[]} Empty only when no map is resolved at all.
+ */
+function downloadBasemapKeys(ground) {
+  const core = self.pwaBasemapDownloadCore;
+  const active = activeBasemapKey();
+  if (!core || typeof core.basemapsForGround !== 'function') return active ? [active] : [];
+  const extent = self.pwaSwisstopoExtent;
+  const placed = ground || {};
+  // A drawn box names no country: read it off the regions it overlaps,
+  // so the map on screen is kept only where it covers them all.
+  const withCountries =
+    !placed.country && Array.isArray(placed.bbox) && !Array.isArray(placed.countries)
+      ? { ...placed, countries: groundCountries(placed.bbox) }
+      : placed;
+  const keys = core.basemapsForGround(
+    withCountries,
+    active,
+    basemapCountriesByKey(),
+    extent ? extent.EXTENT : null,
+  );
+  const usable = keys.filter((key) => key === active || !!basemapStyleUrl(key));
+  if (usable.length > 0) return usable;
+  return active ? [active] : [];
+}
+
+/**
+ * Whether these keys are just the map on screen — a run that the live
+ * style answers alone, exactly as before SNOW-1478.
+ *
+ * @param {string[]|null|undefined} keys
+ * @returns {boolean}
+ */
+function _onlyActiveBasemap(keys) {
+  return !keys || keys.length === 0 || (keys.length === 1 && keys[0] === activeBasemapKey());
+}
+
+/**
+ * What one tile of a download costs on these maps together: one "source"
+ * at the summed per-cell price, the shape `budgetScaleForBBox` and
+ * `terrainScaledBytesPerTile` take.
+ *
+ * @param {string[]|null|undefined} keys
+ * @returns {{sourceCount: number, bytesPerTile: number}}
+ */
+function downloadTilePrice(keys) {
+  const core = self.pwaBasemapDownloadCore;
+  const live = activeBasemapTileSources(MAP);
+  if (_onlyActiveBasemap(keys)) {
+    return { sourceCount: core.tileSourceCount(live), bytesPerTile: core.bytesPerTileForSources(live) };
+  }
+  const active = activeBasemapKey();
+  let perCell = 0;
+  for (const key of keys) {
+    if (key === active && live) {
+      perCell += core.tileSourceCount(live) * core.bytesPerTileForSources(live);
+    } else {
+      perCell += core.basemapSourceCount(key) * core.bytesPerTileForBasemap(key);
+    }
+  }
+  return { sourceCount: 1, bytesPerTile: perCell };
+}
+
+/**
+ * What a blob costs on these maps, in MB — `sourceScaledMb` summed over
+ * them, each at its own price.
+ *
+ * @param {number} mb The blob's own estimate.
+ * @param {string[]|null|undefined} keys
+ * @param {number} [count] The blob's tile count.
+ * @returns {number}
+ */
+function downloadScaledMb(mb, keys, count) {
+  const core = self.pwaBasemapDownloadCore;
+  const live = activeBasemapTileSources(MAP);
+  if (_onlyActiveBasemap(keys)) return core.sourceScaledMb(mb, live, count);
+  const active = activeBasemapKey();
+  let total = 0;
+  for (const key of keys) {
+    total +=
+      key === active && live ? core.sourceScaledMb(mb, live, count) : core.basemapScaledMb(mb, key, count);
+  }
+  return total;
+}
+
+/**
+ * The map a download over this ground pins elevation tiles on: its
+ * primary one (`activeElevationTileURLs`).
+ *
+ * @param {string[]|null|undefined} keys
+ * @returns {boolean}
+ */
+function downloadPinsElevation(keys) {
+  return elevationPinnedOn(keys && keys.length ? keys[0] : activeBasemapKey());
+}
+
+/**
+ * Fetch one JSON document for a basemap that is not on screen.
+ *
+ * @param {string} url
+ * @returns {Promise<Object>}
+ */
+async function _fetchBasemapDocument(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`basemap document ${response.status}`);
+  return response.json();
+}
+
+/**
+ * One map a run saves, resolved: its tile sources, render dependencies
+ * and glyph prefix. The map on screen answers from the live style, as
+ * every run did before SNOW-1478; any other is read from its documents.
+ *
+ * @param {string} key
+ * @returns {Promise<{key: string, tileSources: string[][], renderDeps: string[],
+ *   glyphPrefix: string}|null>} Null when its documents cannot be read.
+ */
+async function resolveDownloadBasemap(key) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !key) return null;
+  if (key === activeBasemapKey()) {
+    const tileSources = activeBasemapTileSources(MAP);
+    if (!tileSources) return null;
+    return {
+      key: key,
+      tileSources: tileSources,
+      renderDeps: activeBasemapRenderDependencyURLs(MAP),
+      glyphPrefix: activeBasemapGlyphPrefix(MAP),
+    };
+  }
+  const styleUrl = basemapStyleUrl(key);
+  if (!styleUrl) return null;
+  try {
+    const absolute = new URL(styleUrl, window.location.href).toString();
+    const style = await _fetchBasemapDocument(absolute);
+    const tileJsons = {};
+    for (const id of Object.keys((style && style.sources) || {})) {
+      const source = style.sources[id];
+      if (!source || source.type !== 'vector' || Array.isArray(source.tiles)) continue;
+      if (typeof source.url !== 'string' || !source.url) continue;
+      tileJsons[id] = await _fetchBasemapDocument(new URL(source.url, absolute).toString());
+    }
+    const tileSources = core.tileSourcesFromStyleDocuments(style, tileJsons);
+    if (!tileSources) return null;
+    return {
+      key: key,
+      tileSources: tileSources,
+      // The picker's own URL leads the list, as the live reader's does, so
+      // the record names the document the map will ask for.
+      renderDeps: core.renderDependencyUrlsFromStyle(styleUrl, style),
+      glyphPrefix: core.glyphPrefixFromStyle(style),
+    };
+  } catch (_err) {
+    return null;
+  }
+}
+
+/**
+ * Every render dependency one stored area should hold, over every map it
+ * holds (`recordBasemaps`): each entry's recorded list, or the live
+ * style's for an entry on the map on screen that names none — the second
+ * row of `areaRenderDependencyURLs`' rule, applied per map.
+ *
+ * @param {Object|null|undefined} record A record or a sheet row.
+ * @returns {string[]} Empty means UNKNOWN, as `areaRenderDependencyURLs`.
+ */
+function areaAllRenderDependencyURLs(record) {
+  const core = self.pwaBasemapDownloadCore;
+  const active = activeBasemapKey();
+  const entries =
+    core && typeof core.recordBasemaps === 'function'
+      ? core.recordBasemaps(record)
+      : [{ key: record && record.basemapKey, deps: record && record.deps }];
+  if (entries.length === 0) return areaRenderDependencyURLs(record && record.deps, false);
+  const urls = [];
+  for (const entry of entries) {
+    urls.push(...areaRenderDependencyURLs(entry.deps, !!active && entry.key === active));
+  }
+  return [...new Set(urls)];
+}
+
 // SNOW-521: same-origin data-feed + active-basemap-style URL list —
 // everything a basemap download warms besides its own tile ranges.
 // Mirrors SNOW-492/493's assembly (see the removed cacheNowInit for the
@@ -705,8 +968,13 @@ function areaRenderDependencyURLs(recordedDeps, basemapIsActive) {
 // duplicating it — everything it touches (COUNTRY_STATE, RATINGS_URL,
 // computeBasemapSpriteURLs) is already module-scope.
 //
+// SNOW-1478: `renderDeps` is the run's primary map's render dependencies,
+// which need not be the live style's (`resolveDownloadBasemap`). Omitted,
+// the live style's, as before.
+//
+// @param {string[]} [renderDeps]
 // @returns {string[]}
-function assembleBasemapDownloadFeedURLs() {
+function assembleBasemapDownloadFeedURLs(renderDeps) {
   const mapEl = document.getElementById('map');
   const urls = [];
   const enabledCountries = Object.keys(COUNTRY_STATE).filter((code) => COUNTRY_STATE[code]);
@@ -729,7 +997,7 @@ function assembleBasemapDownloadFeedURLs() {
   // TileJSON, from the ONE definition the probe also reads — see
   // `activeBasemapRenderDependencyURLs` for why a second copy of these
   // three pushes here is the exact drift this ticket removes.
-  urls.push(...activeBasemapRenderDependencyURLs(MAP));
+  urls.push(...(Array.isArray(renderDeps) ? renderDeps : activeBasemapRenderDependencyURLs(MAP)));
   return urls;
 }
 
@@ -2851,6 +3119,16 @@ window.pwaBasemapDownloads = Object.freeze({
     areaRenderDependencyURLs(recordedDeps, basemapIsActive),
 
   /**
+   * SNOW-1478: the same rule over every map one row holds
+   * (`areaAllRenderDependencyURLs`), so a row whose second map lacks a
+   * document reads incomplete.
+   *
+   * @param {Object} row A Manage downloads row, or a stored record.
+   * @returns {string[]}
+   */
+  areaAllRenderDependencyUrls: (row) => areaAllRenderDependencyURLs(row),
+
+  /**
    * SNOW-1072: the terrain-class tiles one recorded area should hold —
    * see `areaTerrainClassTileUrls`. Empty unless the record carries
    * `terrain`.
@@ -3878,6 +4156,14 @@ let pinnedRunActive = false;
  * the region copy rather than "frame a smaller area". The runner itself
  * never sees it — only its `revealError` dependency is rebound.
  *
+ * SNOW-1478: `options.basemapKeys` names the maps the run saves, primary
+ * first (`downloadBasemapKeys`). When they are anything but the map on
+ * screen, each is resolved (`resolveDownloadBasemap`) before the runner
+ * starts, and the run's tile sources, render dependencies, glyph prefix
+ * and basemap key are the primary one's, with the rest handed over as
+ * `extraBasemaps`. A map whose documents cannot be read fails the run, as
+ * an unsettled style does. Omitted, the run saves the map on screen.
+ *
  * @param {Object} options
  * @returns {Promise<void>}
  */
@@ -3897,8 +4183,32 @@ async function runPinnedDownload(options) {
   // declined eviction), because then no `finish` will come.
   pinnedRunActive = true;
   let warmStarted = false;
+  let plans = null;
+  if (!_onlyActiveBasemap(options.basemapKeys)) {
+    // The runner paints 'busy' itself, synchronously; reading documents
+    // comes first here, so the roundel is told now.
+    options.paint('busy', 0);
+    plans = await Promise.all(options.basemapKeys.map((key) => resolveDownloadBasemap(key)));
+    if (plans.some((plan) => !plan)) {
+      pinnedRunActive = false;
+      options.paint('error');
+      revealBasemapDownloadError(null, options.kind);
+      return;
+    }
+  }
   const deps = {
     ...PINNED_DOWNLOAD_DEPS,
+    // SNOW-1478: the maps this run saves, when not the one on screen.
+    ...(plans
+      ? {
+          tileSources: () => plans[0].tileSources,
+          basemapKey: () => plans[0].key,
+          renderDeps: () => plans[0].renderDeps,
+          glyphPrefix: () => plans[0].glyphPrefix,
+          feedUrls: () => assembleBasemapDownloadFeedURLs(plans[0].renderDeps),
+          extraBasemaps: () => plans.slice(1),
+        }
+      : {}),
     warmCache: (urls, opts) => {
       warmStarted = true;
       return PINNED_DOWNLOAD_DEPS.warmCache(urls, opts);
@@ -4503,9 +4813,8 @@ async function _missingAreaRenderDependencies(record, areaId) {
   } catch (_e) {
     return null;
   }
-  const activeKey = activeBasemapKey();
-  const isActive = !!activeKey && record.basemapKey === activeKey;
-  const recorded = areaRenderDependencyURLs(record.deps, isActive);
+  // SNOW-1478: over every map the area holds, not only its primary one.
+  const recorded = areaAllRenderDependencyURLs(record);
   const terrain = areaTerrainClassTileUrls(record);
   // SNOW-1453: and the elevation tiles, derived on the same terms, which
   // is how a sync brings an area downloaded before them up to date. Judged
@@ -4604,6 +4913,8 @@ async function _areaTilesHeld(areaId, record) {
     return journey.tileReading(
       {
         template: record.template,
+        // SNOW-1478: every map the area holds is judged.
+        basemaps: record.basemaps,
         z: record.z,
         bbox: record.bbox,
         band: record.band,
@@ -4615,6 +4926,134 @@ async function _areaTilesHeld(areaId, record) {
   } catch (_e) {
     return null;
   }
+}
+
+/**
+ * SNOW-1478: the ground one stored area covers, as `downloadBasemapKeys`
+ * takes it. A region names its country (its feature's `country`, else its
+ * id's prefix: `CH-4115`); a framed area or drop zone its box.
+ *
+ * @param {{record: Object, regionId: (string|null)}} found
+ * @returns {{country?: string, bbox?: number[]}}
+ */
+function _areaGround(found) {
+  if (found.regionId) return regionGround(found.regionId);
+  return { bbox: Array.isArray(found.record.bbox) ? found.record.bbox : null };
+}
+
+/**
+ * SNOW-1478: the ground of one region, for `downloadBasemapKeys`.
+ *
+ * @param {string} regionId
+ * @returns {{country: string|null}}
+ */
+function regionGround(regionId) {
+  const features = typeof FEATURE_BY_REGION_ID === 'object' && FEATURE_BY_REGION_ID ? FEATURE_BY_REGION_ID : {};
+  const feature = features[regionId];
+  const country = feature && feature.properties && feature.properties.country;
+  if (typeof country === 'string' && country) return { country: country };
+  const prefix = /^([A-Za-z]{2})-/.exec(String(regionId || ''));
+  return { country: prefix ? prefix[1] : null };
+}
+
+/**
+ * SNOW-1478: the tile blob one stored area was downloaded over — a
+ * region's own `z`, or a framed area's box and band rebuilt, as
+ * `offline_journey_core.js`'s `areaBlob` rebuilds it.
+ *
+ * @param {Object} record
+ * @returns {Object|null}
+ */
+function _recordBlob(record) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !record) return null;
+  if (record.z) return { z: record.z };
+  const band = Array.isArray(record.band) ? record.band : null;
+  if (!Array.isArray(record.bbox) || !band) return null;
+  if (record.type === 'dropzone' && typeof core.circleBlobForBBox === 'function') {
+    return core.circleBlobForBBox(record.bbox, band[0], band[1]);
+  }
+  return core.buildBlob(record.bbox, band[0], band[1]);
+}
+
+/**
+ * SNOW-1478: add the Swisstopo map to an area downloaded on another map
+ * before Swiss downloads saved it — the half of Sync that makes an old
+ * Swiss area draw offline whichever map is on screen.
+ *
+ * Fetches only what the bucket lacks (`missingFromAreaBucket`): Swisstopo
+ * and the map already held share no tiles, but a reader who browsed the
+ * area on Swisstopo may hold some. The delta is checked against the
+ * budget first, and a sync never evicts another area to make room: a
+ * delta that does not fit is a failed map half, mended by freeing space.
+ * On success the record gains the entry, first, and its top-level
+ * `basemapKey`, `template` and `deps` move to it; the map it already held
+ * stays as a second entry. The glyph prefix is kept: it is the handle on
+ * entries the original run promoted, and every glyph this one needs is
+ * fetched by URL.
+ *
+ * @param {string} areaId
+ * @param {{record: Object, regionId: (string|null)}} found
+ * @returns {Promise<'ok'|'none'|'failed'|'unknown'>} `'none'` when the area
+ *   already holds every map its ground needs, or needs none it lacks.
+ */
+async function _addMissingBasemaps(areaId, found) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || typeof core.recordBasemaps !== 'function') return 'none';
+  const held = core.recordBasemaps(found.record).map((entry) => entry.key);
+  // Only Swisstopo is added. A foreign map the reader has since switched
+  // to is not: Sync is not a re-download onto whatever is on screen.
+  const toAdd = downloadBasemapKeys(_areaGround(found)).filter(
+    (key) => key === core.ELEVATION_BASEMAP_KEY && held.indexOf(key) < 0,
+  );
+  if (toAdd.length === 0) return 'none';
+  const blob = _recordBlob(found.record);
+  if (!blob) return 'unknown';
+  const plans = await Promise.all(toAdd.map((key) => resolveDownloadBasemap(key)));
+  if (plans.some((plan) => !plan)) return 'failed';
+  const urls = [];
+  for (const plan of plans) {
+    urls.push(...plan.renderDeps, ...core.rangesToTileURLs(plan.tileSources, blob));
+  }
+  const missing = await missingFromAreaBucket(areaId, urls);
+  if (missing === null) return 'unknown';
+  let addedBytes = 0;
+  if (missing.length > 0) {
+    const perTile = plans.reduce((most, plan) => Math.max(most, core.bytesPerTileForBasemap(plan.key)), 0);
+    const deltaMb = Math.ceil((missing.length * perTile) / (1024 * 1024));
+    const currentMb = (Number(found.record.bytes) || 0) / (1024 * 1024);
+    const budget = await planBasemapDownloadBudget(areaId, currentMb + deltaMb);
+    if (budget && (budget.impossible || budget.evict.length > 0)) return 'failed';
+    if (!(await basemapDownloadFitsQuota(deltaMb))) return 'failed';
+    const outcome = await new Promise((resolve) => {
+      repairPinnedDownload({
+        areaId: areaId,
+        urls: missing,
+        paint: () => {},
+        finish: async (result, extras) => {
+          const runCore = extras && extras.core;
+          resolve({ ok: !!(runCore && runCore.downloadSucceeded(result)), bytes: (result && result.bytes) || 0 });
+        },
+      });
+    });
+    if (!outcome.ok) return 'failed';
+    addedBytes = Number(outcome.bytes) || 0;
+  }
+  await _rewriteAreaRecord(areaId, found.regionId, (entry) => {
+    const added = plans.map((plan) => ({ key: plan.key, template: plan.tileSources, deps: plan.renderDeps }));
+    const kept = core.recordBasemaps(entry).filter((existing) => toAdd.indexOf(existing.key) < 0);
+    const list = [...added, ...kept];
+    return {
+      ...entry,
+      basemaps: list,
+      basemapKey: list[0].key,
+      template: list[0].template,
+      deps: list[0].deps,
+      bytes: (Number(entry.bytes) || 0) + addedBytes,
+    };
+  });
+  notifyDownloadsChanged();
+  return 'ok';
 }
 
 /**
@@ -4671,7 +5110,7 @@ async function _areaTilesHeld(areaId, record) {
  */
 async function syncArea(areaId, onStage) {
   const tell = typeof onStage === 'function' ? onStage : () => {};
-  const found = await _areaRecordById(areaId);
+  let found = await _areaRecordById(areaId);
   if (!found) return { tiles: 'none', content: false };
   if (!(await _areaBucketOnDevice(areaId))) {
     const gone = { tiles: 'absent', content: false };
@@ -4680,8 +5119,15 @@ async function syncArea(areaId, onStage) {
   }
 
   tell('map');
+  // SNOW-1478: an area in Switzerland downloaded on another map gains the
+  // Swisstopo map first, and the record is read again, so the halves
+  // below judge (and mend) every map it now holds, the Swisstopo
+  // elevation tiles among them.
+  const added = await _addMissingBasemaps(areaId, found);
+  if (added === 'ok') found = (await _areaRecordById(areaId)) || found;
   const missing = await _missingAreaRenderDependencies(found.record, areaId);
   let tiles = missing === null ? 'unknown' : 'none';
+  if (added === 'ok' && tiles === 'none') tiles = 'ok';
   if (missing && missing.length > 0) {
     const repaired = await new Promise((resolve) => {
       repairPinnedDownload({
@@ -4699,6 +5145,9 @@ async function syncArea(areaId, onStage) {
     });
     tiles = repaired ? 'ok' : 'failed';
   }
+  // SNOW-1478: a Swisstopo map that could not be added is a map half that
+  // did not finish, whatever the documents below said.
+  if (added === 'failed') tiles = 'failed';
   // SNOW-1453: every elevation tile the area should hold is in its bucket
   // now (nothing was missing, or the repair fetched it all), so the record
   // takes today's template as its stamp, and 3D may be drawn there

@@ -346,8 +346,16 @@ interface Window {
     /** SNOW-1460: the coverage 3-D opens over, the Alpine ring from map_beyond_switzerland.js. */
     setCoverage: (coverage: ReadonlyArray<number> | ReadonlyArray<ReadonlyArray<number>> | null) => void;
   };
-  /** static/js/swisstopo_extent.js — the swisstopo extent and the detailed-relief outline as frozen rings: EXTENT, EXTENT_BBOX, DETAILED_RELIEF, DETAILED_RELIEF_BBOX (SNOW-1460). */
+  /** static/js/swisstopo_extent.js — the swisstopo extent and the detailed-relief outline as frozen rings: EXTENT, EXTENT_BBOX, DETAILED_RELIEF, DETAILED_RELIEF_BBOX (SNOW-1460; in the map bundle since SNOW-1478). */
   pwaSwisstopoExtent: any;
+  /** static/js/map_offline_basemap_core.js — when the map shows Swisstopo offline in place of the reader's map: offlineDecision, swapGuard, covers, SWISSTOPO_KEY (SNOW-1478). */
+  pwaOfflineBasemapCore: any;
+  /** static/js/map_offline_basemap.js — the offline switch to Swisstopo inside a downloaded area on /map/ (SNOW-1478). */
+  pwaOfflineBasemap?: {
+    switched: () => boolean;
+    evaluate: () => void;
+    refresh: () => Promise<void>;
+  };
   /** static/js/beyond_switzerland_core.js — the winter style's splice past the border: plan, fixLayer, isWinterStyle, isSpliced, osmSource, reliefSource, ALPINE_GATE (SNOW-1460). */
   pwaBeyondSwitzerlandCore: any;
   /** static/js/osm_clip_core.js — OSM tile geometry clipped to outside the swisstopo extent: classifyTile, clipPolygon, cutLine, clipFeature, clipLayers (SNOW-1460). */

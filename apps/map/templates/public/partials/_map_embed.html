@@ -2415,6 +2415,12 @@ Optional context:
     {# static/css/map.css places all three clear of the search pill and  #}
     {# the roundels (Hugo, 8 Nov 2026). They come after it, so an answer #}
     {# to a locate tap covers the notice for its few seconds.            #}
+    {# SNOW-1478: offline inside a downloaded area saved on Swisstopo, the  #}
+    {# map shows Swisstopo in place of the reader's own map, and says so   #}
+    {# here. Shown and hidden by static/js/map_offline_basemap.js; the ×   #}
+    {# is overlays.js's.                                                   #}
+    {% trans "Offline: showing the Swisstopo map saved for this area." as offline_basemap_body %}
+    {% include "includes/_overlay_banner.html" with variant="floating" id="offline-basemap-banner" position="top" body=offline_basemap_body title_id="offline-basemap-banner-title" aria_live="polite" dismissible=True %}
     {# SNOW-324/486: off-map notification. Hidden by default; map.js reveals it #}
     {# when the locate pill is tapped while the user is outside the map's       #}
     {# bounds, and a 7s timeout auto-dismisses. Rendered through the shared     #}
