@@ -1357,19 +1357,19 @@ class TestObservationList:
         assert 'data-row-focus="7.500000,46.100000"' in content
         assert 'aria-label="Zoom to Whumpfing"' in content
 
-    def test_delete_is_a_trash_control_on_the_row(self, client: Client) -> None:
-        """Delete is a visible icon control, not a menu item (SNOW-658/886).
+    def test_delete_is_the_one_item_in_a_menu(self, client: Client) -> None:
+        """The row's "…" holds Delete alone (SNOW-1479).
 
-        The panel rule SNOW-886 states is "more than one action is a '…',
-        exactly one is a bare icon", and this row has exactly one — so
-        where the favourite and route rows collapsed behind a trigger,
-        this one stays a control the user aims at directly. Still a plain
-        HTMX form: the delete endpoint returns an empty 200 and the form
-        targets this row's own id, so no JS is involved.
+        Until SNOW-1479 a lone Delete was a bare trash on the row, by the
+        panel rule "exactly one action is a bare icon". The installed app's
+        Saved tab gives every row the same "…" in the same place, and this
+        row is the recorded exception to that rule (docs/design-system.md).
+        Still a plain HTMX form: the delete endpoint returns an empty 200
+        and the form targets this row's own id, so no JS is involved.
 
         The word is Delete because observations:delete destroys the
-        FieldObservation row (SNOW-886), and it lands in the accessible
-        name because the trash glyph is all this control says out loud.
+        FieldObservation row (SNOW-886), and the item's accessible name
+        names the report it acts on.
         """
         user = _verified_user()
         observation = FieldObservationFactory.create(user=user)
@@ -1378,13 +1378,21 @@ class TestObservationList:
         response = client.get(LIST_URL, **HTMX_HEADERS)
 
         content = response.content.decode()
-        assert 'role="menu"' not in content
-        assert reverse("observations:delete", args=[observation.uuid]) in content
+        menu = re.search(
+            r'<ul\s+id="observation-actions-menu-%s"\s+role="menu".*?</ul>'
+            % observation.uuid,
+            content,
+            re.S,
+        )
+        assert menu
+        items = re.findall(r'role="menuitem"', menu.group(0))
+        assert len(items) == 1
+        assert "Delete" in re.sub(r"<[^>]+>", " ", menu.group(0))
+        assert reverse("observations:delete", args=[observation.uuid]) in menu.group(0)
         assert f'hx-target="#observation-{observation.uuid}"' in content
-        # It names the row it acts on: "Delete" alone names nothing with a
-        # list of reports on screen.
         kind = observation.get_observation_type_display()
         assert f'aria-label="Delete {kind}"' in content
+        assert f'aria-label="Actions for {kind}"' in content
 
     def test_delete_asks_first_through_hx_confirm_naming_the_report(
         self, client: Client

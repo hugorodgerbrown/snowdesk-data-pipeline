@@ -13,6 +13,7 @@ reading surface whatever the flag says.
 
 from __future__ import annotations
 
+import datetime
 import json
 import re
 from collections.abc import Iterator
@@ -29,6 +30,7 @@ from apps.routes.services.gpx import parse_gpx
 from tests.factories import (
     DRIFTING_TRACK,
     RouteFactory,
+    RouteShareFactory,
     UserFactory,
     drifting_track_record,
 )
@@ -346,6 +348,50 @@ class TestRouteGpx:
         route = RouteFactory.create()
 
         assert client.get(reverse("routes:gpx", args=[route.uuid])).status_code == 404
+
+
+@pytest.mark.django_db
+class TestRowMeta:
+    """SNOW-1479: a recorded route says when; a shared one says "Shared"."""
+
+    def _rows(self, client: Client) -> str:
+        """Render the map panel's rows for the logged-in user."""
+        return client.get(
+            reverse("routes:list") + "?variant=map", HTTP_HX_REQUEST="true"
+        ).content.decode()
+
+    def test_a_recorded_route_leads_with_its_day(self, client: Client) -> None:
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            started_at=datetime.datetime(2026, 2, 3, 8, 0, tzinfo=datetime.UTC),
+            finished_at=datetime.datetime(2026, 2, 3, 12, 15, tzinfo=datetime.UTC),
+        )
+
+        body = self._rows(client)
+
+        assert re.search(r"3 Feb 2026 ·\s+[\d.]+km", body)
+
+    def test_a_drawn_route_has_no_day(self, client: Client) -> None:
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user, started_at=None, finished_at=None)
+
+        meta = re.search(r"data-row-meta[^>]*>(.*?)</span>", self._rows(client), re.S)
+
+        assert meta
+        assert re.match(r"\s*[\d.]+km", meta.group(1))
+
+    def test_a_shared_route_says_shared(self, client: Client) -> None:
+        client.force_login(UserFactory.create())
+        share = RouteShareFactory.create()
+        assert client.get(f"/routes/s/{share.token}/").status_code == 302
+
+        body = self._rows(client)
+
+        assert re.search(r"Shared ·\s", body)
+        assert "Shared with you" not in body
 
 
 @pytest.mark.django_db

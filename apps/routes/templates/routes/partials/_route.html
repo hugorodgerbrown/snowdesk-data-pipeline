@@ -47,8 +47,9 @@ A PENDING SHARE RENDERS THROUGH THIS SAME ROW (SNOW-764). Passing
     for the same underlying route (a user who already holds a copy CAN be
     sent the link again);
   * the actions become a single Save (_route_row_actions.html);
-  * the meta line is prefixed "Shared with you · ", so the row is visibly
-    not yet the user's before they read the button.
+  * the meta line is prefixed "Shared · " ("Shared with you · " until
+    SNOW-1479), so the row is visibly not yet the user's before they read
+    the button.
 
 THE ORIGINAL ROUTE'S UUID IS NEVER RENDERED for a pending row. The rename
 and delete endpoints are addressed by uuid and owner-scoped, so putting
@@ -164,7 +165,7 @@ Context:
         {# to cover "with duration" and "without" would put eight near-identical #}
         {# strings in the catalogue for one added segment; a locale that needs   #}
         {# to reorder the halves still can, because the wrapper interpolates     #}
-        {# both. Same pattern the "Shared with you · {{ meta }}" prefix below     #}
+        {# both. Same pattern the "Shared · {{ meta }}" prefix below               #}
         {# already uses, for the same reason.                                    #}
         {#                                                                       #}
         {# The duration phrase itself renders to the msgids                      #}
@@ -190,6 +191,16 @@ Context:
             {% endif %}
             {% blocktrans trimmed with figures=row_meta duration=row_duration asvar row_meta %}
                 {{ figures }} · {{ duration }}
+            {% endblocktrans %}
+        {% endif %}
+        {# SNOW-1479: a RECORDED route says when. ``started_at`` is the first #}
+        {# track point's own time, set only for a recording (a drawn route,  #}
+        {# an SAC tour and a planned <rte> have none), so its presence is the #}
+        {# test. The day leads the line: it is what tells two recordings of  #}
+        {# the same tour apart. One wrapper msgid, as the duration's is.     #}
+        {% if route.started_at %}
+            {% blocktrans trimmed with day=route.started_at|date:"j M Y" figures=row_meta asvar row_meta %}
+                {{ day }} · {{ figures }}
             {% endblocktrans %}
         {% endif %}
         {# SNOW-996: which track of a multi-track upload this is. Only        #}
@@ -230,7 +241,7 @@ Context:
         the pencil's commit posts to routes:rename, which is owner-scoped
         and would 404, and there is nothing yet to rename anyway.
 
-        The "Shared with you" prefix is one msgid with the meta line
+        The "Shared" prefix is one msgid with the meta line
         interpolated into it rather than two strings joined with " · " in
         the template, so a locale can put the qualifier wherever its own
         grammar wants it — including after the figures.
@@ -241,7 +252,8 @@ Context:
                 {% blocktrans trimmed with meta=row_meta asvar shared_meta %}Example route ·
                     {{ meta }}{% endblocktrans %}
             {% else %}
-                {% blocktrans trimmed with meta=row_meta asvar shared_meta %}Shared with you ·
+                {# SNOW-1479: "Shared", one word (was "Shared with you ·"). #}
+                {% blocktrans trimmed with meta=row_meta asvar shared_meta %}Shared ·
                     {{ meta }}{% endblocktrans %}
             {% endif %}
             {% include "includes/_ugc_panel_row.html" with row_id="route-share-"|add:pending_share.token row_target="#route-share-"|add:pending_share.token label=row_label label_testid="route-list-row-label" meta=shared_meta focus_target=row_focus_target focus_label=row_focus_label actions_template="routes/partials/_route_row_actions.html" %}
