@@ -431,8 +431,10 @@ class TestTheGate:
     def test_a_tab_panels_list_runs_down_to_its_foot(self) -> None:
         """No gap and blank card under a long list in the app (SNOW-1479).
 
-        The body's flex gap before "Show on the map" moves inside the scroll
-        area, so the list reaches the switch and scrolls under its own edge.
+        Most of the body's 1.125rem flex gap before "Show on the map" moves
+        inside the scroll area, so the list runs to just above the switch and
+        scrolls under its own edge; 0.5rem stays, the gap between region
+        cards, so a part-scrolled row clips at a clear edge.
         """
         gated = _gated_blocks(self.map_css)
         rule = re.search(
@@ -440,8 +442,9 @@ class TestTheGate:
             gated,
         )
         assert rule
-        assert "margin-bottom: -1.125rem" in rule.group(1)
-        assert "padding-bottom: 1.125rem" in rule.group(1)
+        # 1.125rem gap - 0.625rem pulled back = 0.5rem left above the switch.
+        assert "margin-bottom: -0.625rem" in rule.group(1)
+        assert "padding-bottom: 0.625rem" in rule.group(1)
         assert "data-panel-scroll" not in self.map_css.replace(gated, "")
 
     @pytest.mark.django_db
