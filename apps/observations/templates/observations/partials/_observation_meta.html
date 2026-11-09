@@ -60,11 +60,13 @@ Context:
         {# alone rather than rendering "unknown".                          #}
         <time datetime="{{ iso }}" data-relative-time>{{ age }}</time>
     {% endif %}
-    {# Rendered only when there IS an address. This row never showed a
-       coordinate, so the shared partial's coordinate fallback would be
-       adding noise on failure rather than degrading gracefully — the
-       opposite of the trip and favourite cards, where an address replaces
-       a coordinate that was already on the page. #}
+    {% comment %}
+        Rendered only when there IS an address. This row never showed a
+        coordinate, so the shared partial's coordinate fallback would be
+        adding noise on failure rather than degrading gracefully — the
+        opposite of the trip and favourite cards, where an address replaces
+        a coordinate that was already on the page.
+    {% endcomment %}
     {% if observation.three_word_address %}
         <span
             class="block font-mono text-text-3"

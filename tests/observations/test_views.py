@@ -1156,6 +1156,18 @@ class TestObservationListThreeWordAddress:
         assert "///filled.count.soap" in content
         assert "Martigny-Verbier" in content
 
+    def test_no_template_comment_leaks_into_the_row(self, client: Client) -> None:
+        """A ``{#`` comment spans one line only; a longer one printed as text."""
+        user = _verified_user()
+        client.force_login(user)
+        FieldObservationFactory.create(user=user)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert 'data-testid="observation' in content
+        assert "{#" not in content
+        assert "Rendered only when" not in content
+
     @override_flag("what3words", active=True)
     def test_no_address_leaves_the_meta_line_exactly_as_it_was(
         self, client: Client
