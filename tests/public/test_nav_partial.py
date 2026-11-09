@@ -287,6 +287,29 @@ class TestNavAccountMenuEntries:
             f'action="{reverse("accounts:sign_out")}"'
         )
 
+    def test_trips_is_hidden_in_the_installed_app(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """Trips carries `app-hidden`; Settings does not (SNOW-1479).
+
+        In the installed phone app the trips are a tab of Saved, so the avatar
+        menu would be a second way to the same list. On the web it stays.
+        """
+        html = _render_nav_for(rf, regular_user)
+
+        trips = re.search(
+            r'<a[^>]*href="' + re.escape(reverse("trips:list")) + r'"[^>]*>',
+            html,
+            re.S,
+        )
+        settings = re.search(
+            r'<a[^>]*href="' + re.escape(reverse("accounts:settings")) + r'"[^>]*>',
+            html,
+            re.S,
+        )
+        assert trips and "app-hidden" in trips.group(0)
+        assert settings and "app-hidden" not in settings.group(0)
+
     def test_the_three_list_entries_are_gone(
         self, rf: RequestFactory, regular_user: User
     ) -> None:

@@ -2182,6 +2182,10 @@ def trip_panel_list(request: HttpRequest) -> HttpResponse:
     fields = ("uuid", "name", "route_name", "date", "start_time", "created_by_id")
     trips = Trip.objects.for_user(request.user).only(*fields)
     agenda = list(trips.upcoming(today)) + list(trips.past(today))
+    for trip in agenda:
+        # Hung on the instance for the row, as the list's other per-row
+        # facts are (``_attach_meeting_addresses``): it decides the menu.
+        trip.viewer_organises = trip.created_by_id == request.user.pk  # type: ignore[attr-defined]
     return render(
         request,
         "trips/partials/_trip_panel_rows.html",
@@ -2227,4 +2231,5 @@ def trip_rename(request: HttpRequest, uuid: UUID) -> HttpResponse:
     except Trip.DoesNotExist:
         return HttpResponse("Trip not found.", status=404)
 
+    trip.viewer_organises = True  # type: ignore[attr-defined]
     return render(request, "trips/partials/_trip_panel_row.html", {"trip": trip})

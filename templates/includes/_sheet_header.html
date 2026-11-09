@@ -30,6 +30,16 @@ Parameters (passed via ``{% include … with … %}``):
                            ×, on its left, in one group with it. The routes
                            panel's + roundel and its add menu are the one
                            user (public/partials/_route_add_menu.html).
+  lead_template (string, optional) — template path rendered at the row's
+                           start, before the title (SNOW-1479). The Saved
+                           tabs (includes/_saved_tabs.html), which carry
+                           their own `app-only`.
+  app_tabbed   (bool, optional) — the header of a Saved tab's sheet
+                           (SNOW-1479). In the installed phone app the tabs
+                           and the + are the whole header, so the icon,
+                           the title and the × are `app-hidden` there; the
+                           tab bar closes the sheet. Elsewhere nothing
+                           changes.
   icon_template (string, optional) — Template path for a glyph rendered in
                            a 26×26 box before the title (SNOW-658). The
                            three UGC panels pass the glyph of the ROUNDEL
@@ -99,10 +109,11 @@ browser test written for this header again needs a structural locator
 one keyed to the glyph's text.
 {% endcomment %}
 <div class="flex items-center justify-between gap-4 px-2 pt-1 pb-3">
+    {% if lead_template %}{% include lead_template %}{% endif %}
     {# The icon and the title read as one unit — `min-w-0` so a long title  #}
     {# truncates rather than shoving the × off the row, and the 26×26 box   #}
     {# is `flex-none` so the glyph keeps its size while the title gives.    #}
-    <span class="flex min-w-0 items-center gap-2.5">
+    <span class="{% if app_tabbed %}app-hidden {% endif %}flex min-w-0 items-center gap-2.5">
         {% if icon_template %}
             <span class="flex h-6.5 w-6.5 flex-none items-center justify-center text-text-1" aria-hidden="true">
                 {% include icon_template with size=22 only %}
@@ -123,7 +134,7 @@ one keyed to the glyph's text.
                 type="button"
                 data-action="{{ close_action }}"
                 aria-label="{% trans 'Close' %}"
-                class="{% icon_button_classes %}"
+                class="{% if app_tabbed %}{% icon_button_classes extra='app-hidden' %}{% else %}{% icon_button_classes %}{% endif %}"
             >
                 {% include "includes/_icon_close.html" only %}
             </button>
@@ -133,7 +144,7 @@ one keyed to the glyph's text.
             type="button"
             data-action="{{ close_action }}"
             aria-label="{% trans 'Close' %}"
-            class="{% icon_button_classes extra='-mt-3 -mr-3' %}"
+            class="{% if app_tabbed %}{% icon_button_classes extra='-mt-3 -mr-3 app-hidden' %}{% else %}{% icon_button_classes extra='-mt-3 -mr-3' %}{% endif %}"
         >
             {% include "includes/_icon_close.html" only %}
         </button>

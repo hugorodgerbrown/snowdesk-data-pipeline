@@ -17,16 +17,16 @@ keeps the order every row's has, Share, Rename, Delete
 as the row's ``actions_template``, which receives this include's context.
 
 Context:
-    trip    : Trip — with ``uuid``, ``name``, ``route_name``, ``date``,
-              ``start_time`` and ``created_by_id`` loaded.
-    request : HttpRequest — whose user decides whether the row is theirs.
+    trip : Trip — with ``uuid``, ``name``, ``route_name``, ``date`` and
+           ``start_time`` loaded, and ``viewer_organises`` hung on it by the
+           view: whether the reader organised it, which decides the menu.
 {% endcomment %}
 {% with uuid=trip.uuid|stringformat:"s" %}
     {% firstof "trip-"|add:uuid as row_dom_id %}
     {% blocktrans trimmed with day=trip.date|date:"D j M" time=trip.start_time|time:"H:i" asvar row_meta %}{{ day }} ·
         {{ time }}{% endblocktrans %}
     {% url 'trips:detail' uuid=trip.uuid as trip_url %}
-    {% if trip.created_by_id == request.user.id %}
+    {% if trip.viewer_organises %}
         {% trans "Trip name" as rename_label %}
         {% blocktrans trimmed with name=trip.display_name asvar row_actions_aria_label %}Actions for
             {{ name }}{% endblocktrans %}

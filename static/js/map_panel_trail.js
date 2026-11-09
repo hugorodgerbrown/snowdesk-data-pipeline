@@ -29,7 +29,10 @@
  *   weather — `window.pwaWeatherDetail.open(shortId, dateKey)`;
  *   today   — `window.pwaTodayPanel.open()`, the Today panel (SNOW-1366):
  *             never a row's target, only the back pill's, for a region or
- *             resort reached from it.
+ *             resort reached from it;
+ *   places  — `window.pwaFavouritesSheet.open({ list: 'places' })`, the
+ *             installed phone app's Saved → Places (SNOW-1479), on the same
+ *             terms as Today.
  *
  * A NEW PANEL OPENS AT THE HEIGHT THE OLD ONE HAD. On a phone a row or the
  * back pill tells map_sheet.js (`MapSheet.handOff`) the detent the open
@@ -59,7 +62,9 @@
   // joins only the list a followed row may sit in; its list's root carries
   // `data-panel-key="today:now"`, so the sheet a row opens offers the way
   // back to it (the `today` kind in openKey).
-  var LINK_SHEET_IDS = SHEET_IDS.concat(['today-sheet']);
+  // SNOW-1479: so is the favourites sheet, whose Places list's root carries
+  // `data-panel-key="places:now"` (the `places` kind in openKey).
+  var LINK_SHEET_IDS = SHEET_IDS.concat(['today-sheet', 'favourite-sheet']);
   var found = document.getElementById('panel-trail-back-template');
   if (!(found instanceof HTMLTemplateElement)) return;
   var template = found;
@@ -126,6 +131,8 @@
       }));
     } else if (kind === 'today') {
       if (window.pwaTodayPanel) window.pwaTodayPanel.open();
+    } else if (kind === 'places') {
+      if (window.pwaFavouritesSheet) window.pwaFavouritesSheet.open({ list: 'places' });
     } else if (kind === 'weather') {
       if (window.pwaWeatherDetail) window.pwaWeatherDetail.open(id, dateKey || undefined);
       else if (href) window.location.assign(href);

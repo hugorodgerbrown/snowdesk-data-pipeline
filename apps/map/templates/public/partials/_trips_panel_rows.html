@@ -1,0 +1,23 @@
+{% load i18n %}
+{% comment %}
+public/partials/_trips_panel_rows.html — the Trips sheet's rows container
+(SNOW-1479).
+
+includes/_ugc_panel.html's ``rows_template`` slot, reached from
+public/partials/_trips_surface.html. static/js/trips_panel.js loads
+trips:panel_list into it over HTMX on every open (``data-trips-url``), and
+builds each row's Share and Rename endpoints from the two URL templates. It
+starts with a loading line rather than empty, and a failed load says so
+rather than falling through to "no trips yet", which would be a wrong
+statement about the reader's own data.
+{% endcomment %}
+{# The share and rename endpoints, reversed with the zero uuid that         #}
+{# trips_panel.js swaps for the row's own at click time.                   #}
+<div
+    data-trips-rows
+    data-trips-url="{% url 'trips:panel_list' %}"
+    data-trips-share-url-template="{% url 'trips:share_create' '00000000-0000-0000-0000-000000000000' %}"
+    data-trips-rename-url-template="{% url 'trips:rename' '00000000-0000-0000-0000-000000000000' %}"
+>
+    <p class="text-sm text-text-2">{% trans "Loading your trips…" %}</p>
+</div>

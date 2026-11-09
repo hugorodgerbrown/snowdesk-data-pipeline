@@ -260,7 +260,14 @@ map_downloads_sync_all.js
 
 map_downloads_manager.js
 
+# SNOW-1479: the Saved tab's Trips sheet (window.pwaTripsSheet). Reads
+# window.pwaShare, window.pwaRowRenameCommit and window.pwaRowRemoved at
+# init or click time, all above. Its markup renders only for a signed-in
+# reader; the script returns early without #trips-sheet.
+trips_panel.js
+
 # SNOW-1476: the installed phone app's tab bar. Last, because it drives the
 # panels every module above attaches (today_panel.js, favourites.js,
-# routes.js, report.js) and opens map_downloads_manager.js's sheet.
+# routes.js, trips_panel.js, report.js) and opens map_downloads_manager.js's
+# sheet.
 app_tabbar.js

@@ -515,6 +515,10 @@ class TestMapPageDrawSurface:
         assert 'id="ski-tours-config"' not in body
         assert "Add a route" in body
         assert 'id="route-add-menu-trigger"' not in body
-        assert not re.search(r"data-panel-foot\s+hidden", body)
+        # The routes panel's own foot: the Trips sheet's (SNOW-1479) is
+        # always hidden, having no add button.
+        panel = body[body.index('<template id="route-list-template">') :]
+        panel = panel[: panel.index("</template>")]
+        assert not re.search(r"data-panel-foot\s+hidden", panel)
         assert 'data-overlay-key="ski_tours"' not in body
         assert "data-ski-tours-url" not in body

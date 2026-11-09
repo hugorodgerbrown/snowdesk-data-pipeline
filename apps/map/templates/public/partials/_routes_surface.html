@@ -103,8 +103,13 @@ Context expected:
     {# route — find, create, upload. They sit in a menu behind a + beside  #}
     {# the × and replace the panel's own add button (the upload item       #}
     {# carries its hook), so the foot gives its room to the list.          #}
+    {# SNOW-1479: the menu shows everywhere. Without it the app's Saved  #}
+    {# tab still needs a + in the header (the foot is `app-hidden`      #}
+    {# there), so the panel gets the bare + roundel, which uploads.      #}
     {% if route_drawing_enabled %}
         {% firstof "public/partials/_route_add_menu.html" as route_add_menu_template %}
+    {% else %}
+        {% firstof "includes/_saved_add_roundel.html" as route_add_menu_template %}
     {% endif %}
     {% trans "Add a route" as route_add_label %}
     {# The context strip — where this panel's data lives.                   #}

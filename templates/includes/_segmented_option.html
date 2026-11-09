@@ -21,13 +21,24 @@ the sr-only input comes first inside each label rather than wrapping the text.
 Extracted by SNOW-1073, when the terrain filter's mode control became the
 second user of the shape includes/_theme_preference.html introduced.
 
+ICON OPTIONS (SNOW-1479). Passing ``icon_template`` draws the glyph first
+and keeps the label visually hidden until the option is checked, so a row
+of four reads as four icons with the selected one named — the installed
+phone app's Saved tabs (includes/_saved_tabs.html). The label stays in the
+DOM on every option, `sr-only` rather than removed, so each radio's
+accessible name is its label whether or not it is selected. `group-has-checked`
+reads the input's state from the <label>, because the label text sits
+inside the pill rather than beside the input.
+
 Parameters:
-  name    — the radio group's name (required).
-  value   — this option's value (required).
-  label   — the visible, already-translated text (required).
-  checked — render this option selected (optional, default False).
+  name          — the radio group's name (required).
+  value         — this option's value (required).
+  label         — the visible, already-translated text (required).
+  checked       — render this option selected (optional, default False).
+  icon_template — template path of a glyph drawn before the label
+                  (optional); see above.
 {% endcomment %}
-<label class="cursor-pointer">
+<label class="{% if icon_template %}group {% endif %}cursor-pointer">
     <input
         type="radio"
         name="{{ name }}"
@@ -35,9 +46,18 @@ Parameters:
         class="peer sr-only"
         {% if checked %}checked{% endif %}
     >
-    <span
-        class="inline-flex items-center justify-center min-h-11 px-4 rounded-pill text-sm text-text-2 transition-colors peer-hover:text-text-1 peer-checked:bg-accent peer-checked:text-accent-text peer-focus-visible:ring-2 peer-focus-visible:ring-ring-selected"
-    >
-        {{ label }}
-    </span>
+    {% if icon_template %}
+        <span
+            class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-pill px-3 text-sm text-text-2 transition-colors peer-hover:text-text-1 peer-checked:bg-accent peer-checked:text-accent-text peer-focus-visible:ring-2 peer-focus-visible:ring-ring-selected"
+        >
+            <span class="flex-none" aria-hidden="true">{% include icon_template with size=18 only %}</span>
+            <span class="sr-only group-has-checked:not-sr-only">{{ label }}</span>
+        </span>
+    {% else %}
+        <span
+            class="inline-flex items-center justify-center min-h-11 px-4 rounded-pill text-sm text-text-2 transition-colors peer-hover:text-text-1 peer-checked:bg-accent peer-checked:text-accent-text peer-focus-visible:ring-2 peer-focus-visible:ring-ring-selected"
+        >
+            {{ label }}
+        </span>
+    {% endif %}
 </label>

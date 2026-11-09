@@ -276,16 +276,24 @@ interface Window {
   pwaNetworkMode: any;
   /** static/js/map_weather_detail.js — the weather sheet; open/close/point. */
   pwaWeatherDetail: any;
-  /** SNOW-1366: the Today panel (static/js/today_panel.js). */
-  pwaTodayPanel: { open(): void; close(): void; isOpen(): boolean };
-  /** SNOW-1476: the favourites, routes and report sheets' controllers. */
-  pwaFavouritesSheet: { open(): void; close(): void; isOpen(): boolean };
+  /** SNOW-1366: the Today panel (static/js/today_panel.js); SNOW-1479 adds
+   *  toToday, which Saved → Places' rows borrow. */
+  pwaTodayPanel: { open(): void; close(): void; isOpen(): boolean; toToday(): void };
+  /** SNOW-1476: the favourites, routes and report sheets' controllers.
+   *  SNOW-1479: the favourites sheet opens on Places with { list: 'places' }. */
+  pwaFavouritesSheet: {
+    open(options?: { list?: 'pins' | 'places' }): void;
+    close(): void;
+    isOpen(): boolean;
+  };
+  /** SNOW-1479: the Saved tab's Trips sheet (static/js/trips_panel.js). */
+  pwaTripsSheet: { open(): void; close(): void; isOpen(): boolean };
   pwaRoutesSheet: { open(): void; close(): void; isOpen(): boolean };
   pwaReportSheet: { open(): void; close(): void; isOpen(): boolean };
   /** static/js/map_downloads_manager.js — the downloads sheet. */
   pwaDownloadsManager: { open(): void; toggle(): void; refresh(): void };
   /** SNOW-1476: the installed phone app's tab bar (static/js/app_tabbar.js). */
-  pwaAppTabbar: { select(tab: 'map' | 'today' | 'saved' | 'help'): void; light(): void };
+  pwaAppTabbar: { select(tab: 'map' | 'saved' | 'help'): void; light(): void };
   /** static/js/map_sheet.js — the sheet controller; attach/bindDetents/handOff/toast. */
   MapSheet: any;
   /** static/js/route_rail.js — rail one below the map; open/close/cursor. */

@@ -13,6 +13,10 @@ being rendered, the two facts ``includes/_app_tabbar.html`` needs:
   that open panels in place; elsewhere they are links to
   ``/map/?panel=…``.
 
+The bar has three tabs since SNOW-1479 (Map, Saved, Help); none of them is
+lit by this tag but Map and Help, so the Today tab's removal changed
+nothing here.
+
 A tag and not a context processor, because the bar is the only reader and
 a processor would run for every template render, emails included.
 """
