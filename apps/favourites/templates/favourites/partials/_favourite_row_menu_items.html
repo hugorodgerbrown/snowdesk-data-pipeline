@@ -67,7 +67,20 @@ The destructive item is the one control WITHOUT `hover-affordance` — that
 class paints a background-image gradient, which would sit over the error
 fill.
 
+A PINNED REGION OR RESORT IN THE PLACES LIST (SNOW-1479) takes the same
+menu with Rename dropped: its name is the region's or the resort's, not the
+user's. Share hands over the place's own page (``place_share_url``,
+data-place-share, made absolute by static/js/favourites.js), and Delete
+removes the user's pin on it through favourites:delete — the Favourite row
+is what is destroyed, so it is a Delete by the rule above. The region and
+its bulletin stay, which the confirmation says.
+
 Context:
+    place_uuid : str, optional — the pinned region's or resort's Favourite
+                 uuid. Set by favourites/partials/_places.html alone; it
+                 selects the place menu above, and ``favourite`` is then
+                 not read.
+    place_share_url : str — with ``place_uuid``: the place's page.
     favourite  : Favourite — the saved pin this row describes. Read for
                  the uuid, `is_region_pin`, and `w3w_share_text` (hung on
                  the instance by the view; empty when there is no address
@@ -76,18 +89,17 @@ Context:
     row_target : str — CSS selector for the row this Delete empties.
 {% endcomment %}
 {% blocktrans trimmed with name=label asvar share_aria_label %}Share {{ name }}{% endblocktrans %}
-{% blocktrans trimmed with name=label asvar rename_aria_label %}Rename {{ name }}{% endblocktrans %}
-{% blocktrans trimmed with name=label asvar delete_aria_label %}Delete {{ name }}{% endblocktrans %}
-{% blocktrans trimmed with name=label asvar delete_confirm %}
-    Delete {{ name }}? You'll need to place the pin again to get it back.
-{% endblocktrans %}
-{% if favourite.w3w_share_text %}
+{% if place_uuid %}
+    {% blocktrans trimmed with name=label asvar place_delete_aria_label %}Delete {{ name }}{% endblocktrans %}
+    {% blocktrans trimmed with name=label asvar place_delete_confirm %}
+        Delete {{ name }} from your places? It stays on the map.
+    {% endblocktrans %}
     <li role="none">
         <button
             type="button"
             role="menuitem"
-            data-favourite-share="{{ favourite.uuid }}"
-            data-favourite-share-text="{{ favourite.w3w_share_text }}"
+            data-place-share="{{ place_share_url }}"
+            data-place-share-title="{{ label }}"
             aria-label="{{ share_aria_label }}"
             class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
         >
@@ -95,45 +107,87 @@ Context:
             {% trans "Share" %}
         </button>
     </li>
-    {# The rule between "do something with it" and "manage it", as on the #}
-    {# routes menu. Inert, and hidden from assistive tech: it is a visual #}
-    {# grouping, not an item.                                            #}
     <li aria-hidden="true" class="my-1 border-t border-border"></li>
-{% endif %}
-{# SNOW-802: a region pin has no name of the user's own — its label is the #}
-{# region's — so there is nothing to rename.                               #}
-{% if not favourite.is_region_pin %}
     <li role="none">
-        <button
-            type="button"
-            role="menuitem"
-            data-row-rename
-            data-favourite-rename="{{ favourite.uuid }}"
-            aria-label="{{ rename_aria_label }}"
-            class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+        <form
+            data-row-remove
+            hx-post="{% url 'favourites:delete' place_uuid %}"
+            hx-target="{{ row_target }}"
+            hx-swap="outerHTML"
+            hx-confirm="{{ place_delete_confirm }}"
         >
-            {% include "includes/_icon_pencil.html" only %}
-            {% trans "Rename" %}
-        </button>
+            {% csrf_token %}
+            <button
+                type="submit"
+                role="menuitem"
+                aria-label="{{ place_delete_aria_label }}"
+                class="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm text-status-error-text hover:bg-status-error-bg"
+            >
+                {% include "includes/_icon_trash.html" only %}
+                {% trans "Delete" %}
+            </button>
+        </form>
+    </li>
+{% else %}
+    {% blocktrans trimmed with name=label asvar rename_aria_label %}Rename {{ name }}{% endblocktrans %}
+    {% blocktrans trimmed with name=label asvar delete_aria_label %}Delete {{ name }}{% endblocktrans %}
+    {% blocktrans trimmed with name=label asvar delete_confirm %}
+        Delete {{ name }}? You'll need to place the pin again to get it back.
+    {% endblocktrans %}
+    {% if favourite.w3w_share_text %}
+        <li role="none">
+            <button
+                type="button"
+                role="menuitem"
+                data-favourite-share="{{ favourite.uuid }}"
+                data-favourite-share-text="{{ favourite.w3w_share_text }}"
+                aria-label="{{ share_aria_label }}"
+                class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+            >
+                {% include "includes/_icon_share.html" only %}
+                {% trans "Share" %}
+            </button>
+        </li>
+        {# The rule between "do something with it" and "manage it", as on the #}
+        {# routes menu. Inert, and hidden from assistive tech: it is a visual #}
+        {# grouping, not an item.                                            #}
+        <li aria-hidden="true" class="my-1 border-t border-border"></li>
+    {% endif %}
+    {# SNOW-802: a region pin has no name of the user's own — its label is the #}
+    {# region's — so there is nothing to rename.                               #}
+    {% if not favourite.is_region_pin %}
+        <li role="none">
+            <button
+                type="button"
+                role="menuitem"
+                data-row-rename
+                data-favourite-rename="{{ favourite.uuid }}"
+                aria-label="{{ rename_aria_label }}"
+                class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+            >
+                {% include "includes/_icon_pencil.html" only %}
+                {% trans "Rename" %}
+            </button>
+        </li>
+    {% endif %}
+    <li role="none">
+        <form
+            data-row-remove
+            hx-post="{% url 'favourites:delete' favourite.uuid %}"
+            hx-target="{{ row_target }}"
+            hx-swap="outerHTML"
+            hx-confirm="{{ delete_confirm }}"
+        >
+            {% csrf_token %}
+            <button
+                type="submit"
+                role="menuitem"
+                aria-label="{{ delete_aria_label }}"
+                class="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm text-status-error-text hover:bg-status-error-bg"
+            >
+                {% include "includes/_icon_trash.html" only %}
+                {% trans "Delete" %}
+            </button>
+        </form>
     </li>
 {% endif %}
-<li role="none">
-    <form
-        data-row-remove
-        hx-post="{% url 'favourites:delete' favourite.uuid %}"
-        hx-target="{{ row_target }}"
-        hx-swap="outerHTML"
-        hx-confirm="{{ delete_confirm }}"
-    >
-        {% csrf_token %}
-        <button
-            type="submit"
-            role="menuitem"
-            aria-label="{{ delete_aria_label }}"
-            class="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm text-status-error-text hover:bg-status-error-bg"
-        >
-            {% include "includes/_icon_trash.html" only %}
-            {% trans "Delete" %}
-        </button>
-    </form>
-</li>

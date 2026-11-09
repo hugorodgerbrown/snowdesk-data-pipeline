@@ -88,11 +88,25 @@ Context:
                       frames this pin on the map. Passed by
                       _favourite_list_map.html; the account page passes
                       nothing, having no map to fly.
+    pin_height      : float, optional — the pin's height in metres. Passed
+                      by the app's Places list (favourites/partials/
+                      _places.html, SNOW-1479), which lists each pin under
+                      its region's heading: the meta line then reads
+                      "2140m · saved 3 Feb 2026", the region being the
+                      heading above it rather than repeated on every row.
+    in_places       : bool, optional — the row is in the Places list, which
+                      states the region in its heading. Passed with
+                      ``pin_height``, which may itself be None.
 {% endcomment %}
 {% with uuid=favourite.uuid|stringformat:"s" when=favourite.created_at|date:"j M Y" %}
     {% firstof "favourite-"|add:uuid as row_dom_id %}
     {% blocktrans trimmed with when=when asvar row_meta %}Saved {{ when }}{% endblocktrans %}
-    {% if favourite.region %}
+    {% if in_places %}
+        {% if pin_height is not None %}
+            {% blocktrans trimmed with height=pin_height|floatformat:0 when=when asvar row_meta %}{{ height }}m · saved
+                {{ when }}{% endblocktrans %}
+        {% endif %}
+    {% elif favourite.region %}
         {% blocktrans trimmed with region=favourite.region.name when=when asvar row_meta %}{{ region }} · saved
             {{ when }}{% endblocktrans %}
     {% endif %}

@@ -17,6 +17,8 @@ URL structure:
   favourites/partials/<uuid>/delete/         POST — delete a favourite
   favourites/partials/<uuid>/card/           GET  — detail card (SNOW-415)
   favourites/partials/list/                  GET  — owner's favourites list (SNOW-415)
+  favourites/partials/today/                 GET  — the Today panel (SNOW-1366)
+  favourites/partials/places/                GET  — the app's Places list (SNOW-1479)
   favourites/favourites.geojson              GET  — the user's own pins
   favourites/<uuid>/                         GET  — 301 to the pin's weather
                                              page (SNOW-800; was the SNOW-507
@@ -88,6 +90,13 @@ urlpatterns = [
         "partials/today/",
         views.today,
         name="today",
+    ),
+    # SNOW-1479: the installed phone app's Saved → Places — Today's regions
+    # and resorts with the pins in each, and the pins in no region last.
+    path(
+        "partials/places/",
+        views.places,
+        name="places",
     ),
     path(
         "favourites.geojson",

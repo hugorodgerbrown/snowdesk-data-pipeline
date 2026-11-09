@@ -11,7 +11,11 @@ Covers ``apps.favourites.today``:
   - the resorts' weather and which point it is from; regions borrow none;
   - the order: alphabetical, regions and the resorts in each, never by
     danger;
-  - a fixed number of queries however many places there are.
+  - a fixed number of queries however many places there are;
+  - ``build_places`` (SNOW-1479): the pins nested under their region with
+    their height, a region listed only for its pins or a resort carrying no
+    region pin uuid (so no menu), "Elsewhere" for the pins in no region,
+    alphabetical throughout, and a fixed query count.
 """
 
 from __future__ import annotations
@@ -27,8 +31,11 @@ from django.utils import timezone
 from apps.bulletins.models import RegionDayRating
 from apps.favourites.models import Favourite
 from apps.favourites.today import (
+    Places,
     TodayRegion,
+    build_places,
     build_today,
+    places_region_pks,
     today_region_pks,
     today_subjects,
 )
@@ -272,3 +279,155 @@ class TestQueries:
         assert len(rows) == n
         assert all(len(row.resorts) == 1 for row in rows)
         assert len(queries) == 5
+
+
+def _places(user: User) -> Places:
+    """Build the Places list for a user, today, as the ``places`` view does."""
+    day = timezone.localdate()
+    favourites = _favourites(user)
+    ratings = {
+        r.region_id: r
+        for r in RegionDayRating.objects.filter(
+            region_id__in=places_region_pks(favourites), date=day
+        )
+    }
+    return build_places(favourites, day, ratings)
+
+
+@pytest.mark.django_db
+class TestBuildPlaces:
+    """SNOW-1479: Today's regions, with the user's pins folded in."""
+
+    def test_a_pin_nests_under_its_region_with_its_height(self) -> None:
+        user = UserFactory.create()
+        region = MicroRegionFactory.create(name="Martigny-Verbier")
+        FavouriteFactory.create(user=user, region=region, region_pin=True)
+        pin = FavouriteFactory.create(
+            user=user, name="Car park", region=region, elevation=2140.0
+        )
+
+        places = _places(user)
+
+        [group] = places.regions
+        assert group.today.name == "Martigny-Verbier"
+        assert [p.favourite.pk for p in group.pins] == [pin.pk]
+        assert group.pins[0].height == 2140.0
+        assert places.elsewhere == []
+
+    def test_a_pin_with_no_height_yet_is_none(self) -> None:
+        user = UserFactory.create()
+        FavouriteFactory.create(
+            user=user, region=MicroRegionFactory.create(), elevation=None
+        )
+        [group] = _places(user).regions
+        assert group.pins[0].height is None
+
+    def test_a_pin_in_no_region_is_elsewhere(self) -> None:
+        user = UserFactory.create()
+        pin = FavouriteFactory.create(user=user, name="Hut", region=None)
+
+        places = _places(user)
+
+        assert places.regions == []
+        assert [p.favourite.pk for p in places.elsewhere] == [pin.pk]
+
+    def test_only_a_pinned_region_carries_its_pin_uuid(self) -> None:
+        """A region listed for a resort or a pin alone has no menu."""
+        user = UserFactory.create()
+        pinned = MicroRegionFactory.create(name="A pinned")
+        region_pin = FavouriteFactory.create(user=user, region=pinned, region_pin=True)
+        by_resort = MicroRegionFactory.create(name="B resort only")
+        FavouriteFactory.create(
+            user=user, resort=ResortFactory.create(region=by_resort)
+        )
+        by_pin = MicroRegionFactory.create(name="C pin only")
+        FavouriteFactory.create(user=user, region=by_pin)
+
+        groups = _places(user).regions
+
+        assert [g.today.name for g in groups] == [
+            "A pinned",
+            "B resort only",
+            "C pin only",
+        ]
+        assert [g.pin_uuid for g in groups] == [str(region_pin.uuid), "", ""]
+
+    def test_a_pin_only_region_reads_its_danger_too(self) -> None:
+        user = UserFactory.create()
+        region = MicroRegionFactory.create()
+        _rate(region, R.HIGH)
+        FavouriteFactory.create(user=user, region=region)
+
+        [group] = _places(user).regions
+
+        assert group.today.level == R.HIGH
+        assert group.today.rating is not None
+
+    def test_alphabetical_regions_and_pins(self) -> None:
+        user = UserFactory.create()
+        for name in ("Zermatt", "Arolla"):
+            FavouriteFactory.create(
+                user=user, region=MicroRegionFactory.create(name=name), region_pin=True
+            )
+        region = MicroRegionFactory.create(name="Martigny")
+        for name in ("tête", "Bisse", ""):
+            FavouriteFactory.create(user=user, name=name, region=region)
+        for name in ("Way", "away"):
+            FavouriteFactory.create(user=user, name=name, region=None)
+
+        places = _places(user)
+
+        assert [g.today.name for g in places.regions] == [
+            "Arolla",
+            "Martigny",
+            "Zermatt",
+        ]
+        martigny = places.regions[1]
+        assert [p.favourite.name for p in martigny.pins] == ["Bisse", "tête", ""]
+        assert [p.favourite.name for p in places.elsewhere] == ["away", "Way"]
+
+    def test_a_retired_resort_is_listed_as_a_pin(self) -> None:
+        """SNOW-1404: off the map and search, but still removable here."""
+        user = UserFactory.create()
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region, retired=True)
+        saved = FavouriteFactory.create(user=user, region=region, resort=resort)
+
+        [group] = _places(user).regions
+
+        assert group.today.resorts == []
+        assert [p.favourite.pk for p in group.pins] == [saved.pk]
+
+    @staticmethod
+    def _place_everything(user: User, n: int) -> None:
+        """Pin ``n`` regions, each with a resort, a pin and today's rating."""
+        for i in range(n):
+            region = MicroRegionFactory.create(name=f"Region {i:02d}")
+            _rate(region, R.MODERATE)
+            point = _public_point(45.0 + i * 0.1, 7.0, temp=-2.0)
+            FavouriteFactory.create(user=user, region=region, region_pin=True)
+            FavouriteFactory.create(
+                user=user,
+                latitude=point.latitude,
+                longitude=point.longitude,
+                resort=ResortFactory.create(region=region),
+            )
+            FavouriteFactory.create(user=user, region=region)
+            FavouriteFactory.create(user=user, region=None)
+
+    @pytest.mark.parametrize("n", [1, 20])
+    def test_a_fixed_number_of_queries(
+        self, n: int, django_assert_num_queries: object
+    ) -> None:
+        """One read of the favourites, one of the ratings, then the forecasts."""
+        user = UserFactory.create()
+        self._place_everything(user, n)
+
+        with django_assert_num_queries(7):  # type: ignore[operator]
+            places = _places(user)
+
+        assert len(places.regions) == n
+        assert all(
+            len(g.pins) == 1 and len(g.today.resorts) == 1 for g in places.regions
+        )
+        assert len(places.elsewhere) == n
