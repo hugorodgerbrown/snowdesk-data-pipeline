@@ -1,0 +1,37 @@
+{% load i18n %}
+{% comment %}
+trips/partials/_trip_panel_row.html — one row of the Saved tab's Trips list
+(SNOW-1479).
+
+Looped over by trips/partials/_trip_panel_rows.html, and answered alone by
+apps.trips.views.trip_rename after a rename. The shared UGC row
+(includes/_ugc_panel_row.html): the trip's name is a link to its page, and
+the meta line is its day and start time, "Sat 14 Nov · 08:00".
+
+AN ORGANISER'S ROW HAS THE "…" MENU and a participant's has none. Share,
+Rename and Delete are all organiser-scoped (trips:share_create,
+trips:rename, trips:delete), so a trip someone else organised has nothing
+to put in a menu; its row opens the trip, where Remove lives. The menu
+keeps the order every row's has, Share, Rename, Delete
+(trips/partials/_trip_row_menu_items.html), through includes/_overflow_menu.html
+as the row's ``actions_template``, which receives this include's context.
+
+Context:
+    trip    : Trip — with ``uuid``, ``name``, ``route_name``, ``date``,
+              ``start_time`` and ``created_by_id`` loaded.
+    request : HttpRequest — whose user decides whether the row is theirs.
+{% endcomment %}
+{% with uuid=trip.uuid|stringformat:"s" %}
+    {% firstof "trip-"|add:uuid as row_dom_id %}
+    {% blocktrans trimmed with day=trip.date|date:"D j M" time=trip.start_time|time:"H:i" asvar row_meta %}{{ day }} ·
+        {{ time }}{% endblocktrans %}
+    {% url 'trips:detail' uuid=trip.uuid as trip_url %}
+    {% if trip.created_by_id == request.user.id %}
+        {% trans "Trip name" as rename_label %}
+        {% blocktrans trimmed with name=trip.display_name asvar row_actions_aria_label %}Actions for
+            {{ name }}{% endblocktrans %}
+        {% include "includes/_ugc_panel_row.html" with row_id=row_dom_id row_target="#"|add:row_dom_id label=trip.display_name label_testid="trip-panel-row-label" label_href=trip_url meta=row_meta renameable=True rename_label=rename_label actions_template="includes/_overflow_menu.html" trigger_id="trip-actions-"|add:uuid menu_id="trip-actions-menu-"|add:uuid trigger_label=row_actions_aria_label items_template="trips/partials/_trip_row_menu_items.html" %}
+    {% else %}
+        {% include "includes/_ugc_panel_row.html" with row_id=row_dom_id label=trip.display_name label_testid="trip-panel-row-label" label_href=trip_url meta=row_meta %}
+    {% endif %}
+{% endwith %}

@@ -1,0 +1,26 @@
+{% load i18n %}
+{% comment %}
+trips/partials/_trip_panel_rows.html — the installed phone app's Saved →
+Trips list (SNOW-1479).
+
+Rendered by apps.trips.views.trip_panel_list and swapped into the Trips
+sheet's [data-trips-rows] (public/partials/_trips_surface.html) by
+static/js/trips_panel.js. Upcoming trips first, soonest first (a trip dated
+today is upcoming), then past trips, most recent first — trip_list's
+agenda, as one list. One row each, trips/partials/_trip_panel_row.html.
+
+Context:
+    trips : list[Trip] — the reader's trips, organised or joined, in order.
+{% endcomment %}
+<div data-testid="trip-panel-list">
+    <ul class="flex flex-col">
+        {% for trip in trips %}
+            {% include "trips/partials/_trip_panel_row.html" with trip=trip %}
+        {% endfor %}
+    </ul>
+    {% if not trips %}
+        <p class="py-2 text-sm text-text-2" data-testid="trip-panel-empty">
+            {% trans "No trips yet. Plan one from a route with +." %}
+        </p>
+    {% endif %}
+</div>
