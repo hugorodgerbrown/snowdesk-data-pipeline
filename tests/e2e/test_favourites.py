@@ -57,9 +57,8 @@ def test_signed_in_add_flow_creates_favourite(
     page = favourites_page.page
     _navigate_home(page, favourites_page.live_server_url)
 
-    # SNOW-658: the roundel opens the favourites PANEL; adding is a CTA in it.
+    # SNOW-658/1479: the roundel opens the panel; add via its visible foot CTA.
     page.click("#favourite-add-btn")
-    # SNOW-1479: the header + roundel is app-only; the browser uses the foot CTA.
     page.locator("[data-panel-add]:visible").click()
     page.wait_for_selector("#favourite-create-form")
     page.wait_for_selector("#map-place-pin:not([hidden])")
