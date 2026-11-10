@@ -59,7 +59,7 @@ Context:
     {% if gps_lon is not None %}<input type="hidden" name="gps_lon" value="{{ gps_lon }}">{% endif %}
 
     {% trans "Report" as report_form_title %}
-    {% include "includes/_sheet_header.html" with title=report_form_title close_action="dismiss" %}
+    {% include "includes/_sheet_header.html" with title=report_form_title close_action="dismiss" title_class="text-lg font-semibold" %}
 
     {# SNOW-1295: WHERE, then WHAT. The tiles fill most of a phone, so  #}
     {# while the reporter places the pin (Move pin, or straight away     #}
