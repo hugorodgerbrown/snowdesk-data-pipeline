@@ -489,3 +489,11 @@ class TestTheGate:
         assert "#map-help-menu" in gated
         assert ".map-legend > #map-legend-card" in gated
         assert "--app-tabbar-h" in gated
+
+    def test_placing_a_report_pin_releases_the_sheet_top(self) -> None:
+        """The report sheet hugs its placing line, leaving the map in view."""
+        gated = _gated_blocks(self.map_css)
+        rule = "#report-sheet:has([data-report-placing]:not([hidden])) {"
+        assert rule in gated
+        start = gated.index(rule)
+        assert "top: auto;" in gated[start : gated.index("}", start)]

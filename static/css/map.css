@@ -7356,6 +7356,14 @@ body.map-framing #map-legend {
         padding-bottom: 1rem;
     }
 
+    /* While a report's pin is being placed, the sheet shrinks to its one
+       line and Done (report.js showPlacing), so the map and the pin stay
+       in view. Pinned to the top like the other tabs, it covered both
+       (Hugo, 10 Nov 2026). */
+    #report-sheet:has([data-report-placing]:not([hidden])) {
+        top: auto;
+    }
+
     /* SNOW-1479: the list runs down to just above the foot ("Show on the
        map"), so a long list scrolls under its own edge rather than stopping
        mid-card over blank space. Most of the body's flex gap before the
