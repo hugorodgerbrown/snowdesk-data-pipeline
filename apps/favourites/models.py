@@ -78,30 +78,13 @@ class FavouriteQuerySet(models.QuerySet["Favourite"]):
 
         A retired resort's favourite is kept — the FK holds, nothing is
         lost — but it is not a place the map, search or the Today panel
-        offers any more. The Favourites panel lists it as "No longer
-        listed" (``panel_rows``), so the user can remove it.
+        offers any more.
 
         Returns:
             Filtered queryset.
 
         """
         return self.exclude(resort__retired_at__isnull=False)
-
-    def panel_rows(self) -> "FavouriteQuerySet":
-        """Return what the Favourites panel lists: dropped pins, and the retired.
-
-        The dropped pins (``dropped_pins``), plus a placed favourite whose
-        resort is retired (SNOW-1404): it has left search's "Pinned
-        resorts" and the map, so this panel is the one place left to see
-        and remove it.
-
-        Returns:
-            Filtered queryset.
-
-        """
-        return self.placed().filter(
-            models.Q(resort__isnull=True) | models.Q(resort__retired_at__isnull=False)
-        )
 
     def region_pins(self) -> "FavouriteQuerySet":
         """Return the region pins — rows whose subject is the region itself.
