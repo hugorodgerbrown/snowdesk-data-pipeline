@@ -658,3 +658,33 @@ class TestSnow1479Fixtures:
         assert 'id="trip-route-picker-trigger"' in html
         assert "Plan a trip from" in html
         assert "app-only" not in html
+
+
+class TestMapHoldBar:
+    """includes/_map_hold_bar.html: the hold bar's body (SNOW-1485)."""
+
+    def test_the_line_the_close_and_both_actions(self) -> None:
+        html = render_to_string("includes/_map_hold_bar.html")
+        assert "Move the map to fine-tune." in html
+        assert 'data-action="dismiss"' in html
+        actions = re.findall(r'data-hold-action="([\w-]+)"', html)
+        assert actions == ["save-pin", "report"]
+        assert "Save pin" in html
+        assert "Report" in html
+
+    def test_each_action_carries_its_roundel_glyph(self) -> None:
+        html = render_to_string("includes/_map_hold_bar.html")
+        save, report = re.split(r'data-hold-action="report"', html)
+        # The star is a 24-grid stroke; the binoculars a 512-grid fill.
+        assert 'viewBox="0 0 24 24"' in save.split('data-hold-action="save-pin"')[1]
+        assert 'viewBox="0 0 512' in report
+
+    @pytest.mark.django_db
+    def test_the_library_renders_it(self, admin_client: Client) -> None:
+        response = admin_client.get(
+            "/partials/_components/map-hold-bar/", HTTP_HX_REQUEST="true"
+        )
+        assert response.status_code == 200
+        html = response.content.decode()
+        assert 'data-hold-action="save-pin"' in html
+        assert "Move the map to fine-tune." in html
