@@ -119,6 +119,7 @@ from apps.design_system._component_fixtures import (
     TOAST_VARIANTS,
     TODAY_VARIANTS,
     TRIP_PANEL_ROWS_VARIANTS,
+    TRIP_ROUTE_PICKER_VARIANTS,
     UGC_PANEL_GROUP_VARIANTS,
     UGC_PANEL_ROW_VARIANTS,
     UGC_PANEL_VARIANTS,
@@ -2323,13 +2324,28 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         description=(
             "The + beside the Saved tabs in the installed phone app "
             "(SNOW-1479): a glass roundel carrying the panel's own add hook "
-            "(data-panel-add: drop a pin, report, upload) or, on Trips, "
-            'data-saved-go="routes", which switches Saved to Routes to pick '
-            "the route a trip is planned on. App-only; previewed here."
+            "(data-panel-add: drop a pin, report, upload). Trips has the "
+            "trip route picker instead. App-only; previewed here."
         ),
         kind="components",
         partial="includes/_saved_add_roundel.html",
         variants=SAVED_ADD_ROUNDEL_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="trip-route-picker",
+        label="Trip route picker",
+        description=(
+            "The Trips tab's + in the installed phone app: a glass roundel "
+            "opening a menu headed Plan a trip from, listing the reader's own "
+            "routes with their distance and ascent, each to the trip form for "
+            "that route. With no routes, its one item goes to the Routes tab. "
+            "Filled by trips_panel.js from routes:geojson, so the library "
+            "shows the label alone. App-only; previewed here."
+        ),
+        kind="components",
+        partial="public/partials/_trip_route_picker.html",
+        variants=TRIP_ROUTE_PICKER_VARIANTS,
         panel_layout="two-col",
     ),
     FoundationCategory(

@@ -1728,13 +1728,17 @@ SAVED_ADD_ROUNDEL_VARIANTS: tuple[dict[str, Any], ...] = (
         "caption": "Places, Routes, Observations — the panel's own add",
         "context": {"cta_label": "Add a favourite", "preview": True},
     },
+)
+
+
+# Trip route picker -----------------------------------------------------------
+# The Trips tab's + (public/partials/_trip_route_picker.html): "Plan a trip
+# from" and the reader's own routes, which trips_panel.js fills on the map.
+# App-only, so forced visible; here the menu holds its label alone.
+TRIP_ROUTE_PICKER_VARIANTS: tuple[dict[str, Any], ...] = (
     {
-        "caption": "Trips — goes to Routes to pick a route",
-        "context": {
-            "cta_label": "Plan a trip",
-            "saved_add_hook": "routes",
-            "preview": True,
-        },
+        "caption": "Trips — plan a trip from one of your routes",
+        "context": {"cta_label": "Plan a trip", "preview": True},
     },
 )
 

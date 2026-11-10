@@ -258,6 +258,14 @@ describe('closing on scroll and resize (SNOW-830)', () => {
     expect(trigger('a').getAttribute('aria-expanded')).toBe('false');
   });
 
+  it('stays open while the menu itself scrolls (its own long list)', () => {
+    trigger('a').click();
+
+    menu('a').dispatchEvent(new Event('scroll', { bubbles: false }));
+
+    expect(menu('a').hidden).toBe(false);
+  });
+
   it('closes on a window resize', () => {
     trigger('a').click();
 

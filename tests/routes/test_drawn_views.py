@@ -491,8 +491,9 @@ class TestMapPageDrawSurface:
         assert f'data-ski-tour-feature-url="{tour_feature}"' in body
         assert f'data-ski-tour-terrain-url="{tour_terrain}"' in body
         # The panel's own add button is gone: "Add a route" names only the
-        # + roundel now.
-        assert body.count("Add a route") == 1
+        # + roundel now. (The Trips picker's "Add a route first", for a
+        # reader with no routes, is another label.)
+        assert len(re.findall(r"Add a route(?! first)", body)) == 1
 
     def test_absent_for_an_anonymous_visitor(self, client: Client) -> None:
         """No waffle read and no surface for a visitor with no session."""
