@@ -46,8 +46,12 @@ the favourites sheet's own sign-in prompt.
 
 **Saved's header (SNOW-1479).** In the app a Saved sheet's header is just
 the four tabs and a **+** roundel (`_saved_add_roundel.html`); its title,
-subtitle, section label and × are `.app-hidden`, and so is the foot's add
-button the + replaces. Each + does its list's add: **Places** drops a pin,
+subtitle, section label and the foot's add button the + replaces are
+hidden, and its × is `.app-hidden`. Since SNOW-1481 the same Saved panel
+opens from the star on every other screen
+([`saved-is-one-panel-on-every-screen.md`](saved-is-one-panel-on-every-screen.md)),
+so only the × is app-only, and the Saved logic lives in `saved_panel.js`
+(`pwaSavedPanel`), which `app_tabbar.js` calls. Each + does its list's add: **Places** drops a pin,
 **Routes** opens the Find / Create / Upload menu, **Trips** opens a menu
 headed "Plan a trip from" listing the reader's own routes, each to
 `trips:new?route=<uuid>` (`_trip_route_picker.html`, filled by

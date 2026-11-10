@@ -2,7 +2,7 @@
 name: testing-scenarios
 description: Manual test scenarios — bulletin, map, search, accounts, PWA install/update/kill-switch, offline downloads, coverage, end-user offline run
 status: current
-last-reviewed: 2026-11-09
+last-reviewed: 2026-11-10
 ---
 
 # User Testing Scenarios -- Snowdesk
@@ -1156,13 +1156,38 @@ joined, and one observation.
 | 5 | Tap the **Routes** tab, then its + | The Find / Create / Upload menu opens. The recorded route's row shows its date; a route you shared says **Shared** |
 | 6 | Tap the **Trips** tab | Upcoming trips, soonest first, then past ones. Your own trip's row has a "…" with Share, Rename and Delete; the joined trip's row has none |
 | 7 | Rename your trip from its "…", then Delete it and confirm | The new name shows at once; after Delete the row goes and the list re-reads |
-| 8 | Tap the + on Trips | Saved switches to **Routes** |
+| 8 | Tap the + on Trips | A menu headed **Plan a trip from** lists your routes; each opens the trip form for that route |
 | 9 | Tap the **Observations** tab | The observation's row has a "…" holding Delete alone; the + starts a report |
 | 10 | On Places, Routes and Observations, find **Show on the map** | The switch is there on each |
 | 11 | Open the avatar menu | Settings and Sign out show; **Trips** does not |
 | 12 | Open `/map/?panel=today` | Saved opens on Places, and the URL loses `panel` |
 | 13 | With a new alert waiting | The alert dot shows on the **Saved** tab |
-| 14 | Open the same pages in a phone browser (not installed) | Nothing above shows: the roundels, the sheet titles and × and the avatar menu's Trips are as before |
+| 14 | Open the same pages in a phone browser (not installed) | No bar: the roundels and the avatar menu's Trips are as before, and the star opens Saved (P14b) |
+
+### Scenario P14b: Saved from the star, in a browser (SNOW-1481)
+
+> Manual: the docking and the ¾ cap are layout, asserted from the stylesheet
+> and the rendered sheets in
+> [tests/public/test_app_tabbar.py](../tests/public/test_app_tabbar.py) and
+> [tests/map/test_ugc_panels.py](../tests/map/test_ugc_panels.py); the star
+> and the remembered tab in
+> [tests/js/test_saved_panel.js](../tests/js/test_saved_panel.js).
+
+**Goal**: Verify the star opens the app's Saved panel on a desktop and in a
+phone browser, and the binoculars start a report.
+
+**Preconditions**: Signed in, not installed, with a pin, a route and an
+observation. A desktop browser and a phone browser.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | On a desktop, tap the star | Saved opens on **Places**, docked left under search; the header is the four tabs, a + and the ×. The star is filled |
+| 2 | Tap the **Routes** tab, close Saved, tap the star again | Saved reopens on **Routes**; the star is outline while Saved is shut |
+| 3 | Tap the star while Saved is open | Saved closes |
+| 4 | In a phone browser, tap the star | Saved slides up to at most three quarters of the screen, with no snap heights; the × closes it |
+| 5 | Tap the binoculars | A report starts at once (Finding your location…); there are no Saved tabs on it and the star stays outline |
+| 6 | Go offline and open Saved on Places | It says your places couldn't be loaded; no cached pins show |
+| 7 | Signed out, tap the star | Saved opens on Places with the sign-in prompt |
 
 ## Offline Downloads (map coverage)
 
