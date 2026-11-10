@@ -619,6 +619,11 @@
    * @property {string} at When the reading was taken (ISO).
    * @property {Array<SyncStep>} [steps] SNOW-1487: the steps the last sync
    *   did not finish, failed ones only. Absent when it finished them all.
+   * @property {Array<string>} [ran] SNOW-1487 review: the stages the sync
+   *   reached, by step name — only these replace their step. Read by
+   *   `stampVerifiedRecord`, never stored.
+   * @property {boolean} [cancelled] SNOW-1487 review: the sync was
+   *   stopped, so the stamp does not move `at`. Never stored.
    */
 
   /**
@@ -689,10 +694,13 @@
    * SNOW-1487: the sync's `steps`, the ones it did not finish, are copied
    * on, and an empty list is a claim too: it clears the last sync's. A
    * `content` that is neither true nor false (a sync stopped before it
-   * read the content) stamps no content answer.
+   * read the content) stamps no content answer. SNOW-1487 review: the
+   * stages it reached (`ran`) and whether it was stopped (`cancelled`)
+   * ride along for `stampVerifiedRecord`.
    *
    * @param {{tiles?: string, tilesHeld?: boolean|null, content?: boolean,
-   *   steps?: Array<SyncStep>}|null|undefined} result
+   *   steps?: Array<SyncStep>, ran?: Array<string>,
+   *   cancelled?: boolean}|null|undefined} result
    * @param {string} at
    * @param {string} [principal] The `pwa-user-id` the sync ran as.
    * @returns {Verified|null} Null when the sync claimed nothing.
@@ -722,6 +730,12 @@
     }
     var steps = Array.isArray(result.steps) ? stepsOf(result.steps) : null;
     if (steps) out.steps = steps;
+    if (Array.isArray(result.ran)) {
+      out.ran = result.ran.filter(function (name) {
+        return typeof name === 'string';
+      });
+    }
+    if (result.cancelled) out.cancelled = true;
     return out.map || out.content || steps ? out : null;
   }
 
@@ -761,6 +775,12 @@
    * map-page sync that could not judge the tiles) keeps the map answer an
    * earlier reading gave. A map Yes drops a stale map-No reason.
    *
+   * SNOW-1487 review: `at` is when a reading last finished, which the
+   * Downloads sheet's "Last synced" line reads, so a stopped sync
+   * (`cancelled`) leaves it where it was. And a sync that names the stages
+   * it reached (`ran`) replaces only their steps: the last sync's step for
+   * a stage this one never started is kept.
+   *
    * Synchronous, because every caller runs it inside a `readModifyWrite`
    * mutator, which must not await. Device-only: `downloads_sync.js` sends
    * a whitelist of fields, and this is not one of them.
@@ -773,7 +793,8 @@
   function stampVerifiedRecord(entry, verified) {
     if (!entry || !verified) return entry;
     var prior = entry.verified && typeof entry.verified === 'object' ? entry.verified : {};
-    var next = Object.assign({}, prior, { at: verified.at });
+    var next = Object.assign({}, prior);
+    if (!verified.cancelled) next.at = verified.at;
     if (verified.map) {
       next.map = verified.map;
       if (verified.map === 'no' && verified.reason) next.reason = verified.reason;
@@ -786,7 +807,14 @@
     // SNOW-1487: the last sync's steps replace the one before's; a sync
     // that finished them all clears them.
     if (Array.isArray(verified.steps)) {
-      if (verified.steps.length) next.steps = verified.steps;
+      var ran = Array.isArray(verified.ran) ? verified.ran : null;
+      var kept = ran
+        ? stepsOf(prior.steps).filter(function (entry) {
+            return ran.indexOf(entry.step) < 0;
+          })
+        : [];
+      var steps = kept.concat(verified.steps);
+      if (steps.length) next.steps = steps;
       else delete next.steps;
     }
     return Object.assign({}, entry, { verified: next });

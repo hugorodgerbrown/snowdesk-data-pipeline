@@ -834,6 +834,41 @@ describe('the verified stamp (SNOW-1415)', () => {
       expect(journey.stampVerifiedRecord(entry, { at: AT, steps: [next] }).verified.steps).toEqual([next]);
     });
 
+    it('replaces only the steps of the stages the sync reached', () => {
+      const terrain = { step: 'terrain', reason: 'network', done: 3, total: 10 };
+      const entry = { verified: { at: 'old', map: 'yes', steps: [terrain, STEP] } };
+      const stopped = { ...STEP, reason: 'interrupted' };
+      const stamp = journey.verifiedFromSync(
+        { tiles: 'unknown', steps: [stopped], ran: ['basemap'], cancelled: true },
+        AT,
+        '',
+      );
+      expect(stamp).toMatchObject({ ran: ['basemap'], cancelled: true });
+      expect(journey.stampVerifiedRecord(entry, stamp).verified.steps).toEqual([terrain, stopped]);
+    });
+
+    it('clears a reached stage\'s step and keeps the others', () => {
+      const terrain = { step: 'terrain', reason: 'network', done: 3, total: 10 };
+      const entry = { verified: { at: 'old', map: 'yes', steps: [terrain, STEP] } };
+      const stamp = { at: AT, steps: [], ran: ['basemap'] };
+      expect(journey.stampVerifiedRecord(entry, stamp).verified.steps).toEqual([terrain]);
+    });
+
+    it('never moves the finished time on a stopped sync', () => {
+      const entry = { verified: { at: 'old', map: 'yes' } };
+      const stamp = { at: AT, steps: [], ran: [], cancelled: true };
+      expect(journey.stampVerifiedRecord(entry, stamp).verified.at).toBe('old');
+      expect(journey.stampVerifiedRecord({}, stamp).verified.at).toBeUndefined();
+      expect(journey.stampVerifiedRecord(entry, { at: AT, steps: [] }).verified.at).toBe(AT);
+    });
+
+    it('stores neither the reached stages nor the stop', () => {
+      const stamp = { at: AT, map: 'yes', steps: [], ran: ['basemap'], cancelled: true };
+      const verified = journey.stampVerifiedRecord({}, stamp).verified;
+      expect(verified.ran).toBeUndefined();
+      expect(verified.cancelled).toBeUndefined();
+    });
+
     it('stamps no content answer for a sync stopped before it read the content', () => {
       const stamp = journey.verifiedFromSync(
         { tiles: 'unknown', content: undefined, steps: [{ ...STEP, reason: 'interrupted' }] },
