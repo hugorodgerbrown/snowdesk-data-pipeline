@@ -173,6 +173,17 @@
   }
 
   /**
+   * How many fingers are still down once this touch event has run.
+   *
+   * @param {any} event - A MapLibre touch event.
+   * @returns {number}
+   */
+  function remainingTouches(event) {
+    const touches = event && event.originalEvent && event.originalEvent.touches;
+    return touches ? touches.length : 0;
+  }
+
+  /**
    * Wire the map's touches, gestures and right-click to the detector, once
    * the map exists.
    *
@@ -191,11 +202,11 @@
     map.on('touchmove', function (event) {
       detector.touchMove(pointsOf(event));
     });
-    map.on('touchend', function () {
-      detector.touchEnd();
+    map.on('touchend', function (event) {
+      detector.touchEnd(remainingTouches(event));
     });
-    map.on('touchcancel', function () {
-      detector.touchEnd();
+    map.on('touchcancel', function (event) {
+      detector.touchEnd(remainingTouches(event));
     });
     map.on('dragstart', function () {
       detector.cancel();

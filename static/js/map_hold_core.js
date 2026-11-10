@@ -49,6 +49,12 @@
   var SYNTHETIC_MS = 800;
   /** The click a lifted finger sends lands within this of the lift. */
   var CLICK_GRACE_MS = 400;
+  /**
+   * A touch whose end never reaches the map (its target left the DOM during
+   * the hold, so the touchend did not bubble) would leave the finger "down"
+   * and the post-hold click armed for ever. Both expire after STUCK_MS.
+   */
+  var STUCK_MS = 10000;
 
   /**
    * @typedef {{ x: number, y: number }} Point
@@ -70,7 +76,7 @@
    * @returns {{
    *   touchStart: (points: Point[]) => void,
    *   touchMove: (points: Point[]) => void,
-   *   touchEnd: () => void,
+   *   touchEnd: (remaining?: number) => void,
    *   cancel: () => void,
    *   contextMenu: (point: Point) => boolean,
    *   takeClick: () => boolean,
@@ -90,6 +96,8 @@
     /** @type {Point|null} Where the pending touch went down. */
     var origin = null;
     var fingerDown = false;
+    /** @type {number} When the current finger went down. */
+    var downAt = -Infinity;
     /** @type {number} When the last finger lifted; -Infinity before any. */
     var liftedAt = -Infinity;
     /** Whether the current or last touch fired a hold. */
@@ -111,13 +119,14 @@
       origin = null;
       if (!at) return;
       touchHeld = true;
-      clickUntil = Infinity;
+      clickUntil = now() + STUCK_MS;
       onHold(at, 'touch');
     }
 
     return {
       touchStart: function (points) {
         fingerDown = true;
+        downAt = now();
         if (points.length !== 1) {
           clearPending();
           return;
@@ -140,8 +149,10 @@
         if (Math.sqrt(dx * dx + dy * dy) > tolerancePx) clearPending();
       },
 
-      touchEnd: function () {
+      touchEnd: function (remaining) {
         clearPending();
+        // One finger of a pinch lifting is not the gesture ending.
+        if (remaining) return;
         fingerDown = false;
         liftedAt = now();
         if (touchHeld) clickUntil = liftedAt + CLICK_GRACE_MS;
@@ -152,7 +163,8 @@
       },
 
       contextMenu: function (point) {
-        if (fingerDown || now() - liftedAt < SYNTHETIC_MS) return false;
+        var stillDown = fingerDown && now() - downAt < STUCK_MS;
+        if (stillDown || now() - liftedAt < SYNTHETIC_MS) return false;
         clearPending();
         onHold({ x: point.x, y: point.y }, 'mouse');
         return true;
@@ -175,6 +187,7 @@
     TOLERANCE_PX: TOLERANCE_PX,
     SYNTHETIC_MS: SYNTHETIC_MS,
     CLICK_GRACE_MS: CLICK_GRACE_MS,
+    STUCK_MS: STUCK_MS,
     createDetector: createDetector,
   });
 })();

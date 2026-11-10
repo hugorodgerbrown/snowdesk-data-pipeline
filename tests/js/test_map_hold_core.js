@@ -14,7 +14,9 @@
  *   - a right-click fires at once;
  *   - the synthetic contextmenu a touch screen sends for a long touch is
  *     swallowed, so one hold never fires twice;
- *   - the click after a touch hold is taken once, and a later tap is not.
+ *   - the click after a touch hold is taken once, and a later tap is not;
+ *   - a touch whose end never reaches the map expires after STUCK_MS;
+ *   - one finger of a pinch lifting does not end the gesture.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -145,6 +147,34 @@ describe('the click after a hold', () => {
   it('is not taken after a right-click', () => {
     detector.contextMenu({ x: 1, y: 2 });
     expect(detector.takeClick()).toBe(false);
+  });
+});
+
+describe('a touch whose end never reaches the map', () => {
+  it('stops taking clicks after STUCK_MS', () => {
+    detector.touchStart([{ x: 100, y: 200 }]);
+    vi.advanceTimersByTime(500);
+    vi.advanceTimersByTime(core.STUCK_MS + 1);
+    expect(detector.takeClick()).toBe(false);
+  });
+
+  it('lets a right-click through after STUCK_MS', () => {
+    detector.touchStart([{ x: 100, y: 200 }]);
+    vi.advanceTimersByTime(500);
+    onHold.mockClear();
+    vi.advanceTimersByTime(core.STUCK_MS + 1);
+    expect(detector.contextMenu({ x: 1, y: 2 })).toBe(true);
+    expect(onHold).toHaveBeenCalledWith({ x: 1, y: 2 }, 'mouse');
+  });
+});
+
+describe('one finger of a pinch lifting', () => {
+  it('keeps the finger down, so a contextmenu does not hold', () => {
+    detector.touchStart([{ x: 100, y: 200 }, { x: 160, y: 240 }]);
+    detector.touchEnd(1);
+    vi.advanceTimersByTime(core.SYNTHETIC_MS + 1);
+    expect(detector.contextMenu({ x: 1, y: 2 })).toBe(false);
+    expect(onHold).not.toHaveBeenCalled();
   });
 });
 
