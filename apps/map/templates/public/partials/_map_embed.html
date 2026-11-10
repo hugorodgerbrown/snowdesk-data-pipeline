@@ -2845,6 +2845,16 @@ Optional context:
     {% trans "Sign in" as layers_signin_sheet_title %}
     {% include "includes/_sheet_header.html" with title=layers_signin_sheet_title close_action="dismiss" title_class="text-lg font-semibold" %}
 </template>
+{# SNOW-1485: the hold bar — a finger held on the map (or a right-click)  #}
+{# drops the place pin there and this bar asks what it is for: Save pin   #}
+{# or Report. A form panel (no detents, no drag-to-close), opened and     #}
+{# torn down by static/js/map_hold.js. The body is a template for the     #}
+{# reason the sign-in sheet's is: MapSheet empties the sheet on close.    #}
+{% trans "Pin dropped" as map_hold_bar_aria_label %}
+{% include "includes/_overlay_sheet.html" with id="map-hold-bar" aria_label=map_hold_bar_aria_label %}
+<template id="map-hold-bar-template">
+    {% include "includes/_map_hold_bar.html" %}
+</template>
 {# map.js's season-timelapse transport, search dropdown and custom-area     #}
 {# framing overlay.                                                          #}
 {#                                                                           #}

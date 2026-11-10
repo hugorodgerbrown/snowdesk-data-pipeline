@@ -372,6 +372,43 @@ describe('the sheet-level bridge (SNOW-803)', () => {
   });
 });
 
+describe("createAt, the hold bar's Save pin (SNOW-1485)", () => {
+  it('opens the sheet straight on the create form, not the list', () => {
+    window.pwaFavouritesSheet.createAt(46.25, 7.5);
+
+    expect(sheet.hidden).toBe(false);
+    expect(sheet.querySelector('#favourite-create-form')).not.toBeNull();
+    expect(rows()).toBeNull();
+    expect(globalThis.htmx.ajax).not.toHaveBeenCalled();
+  });
+
+  it('writes lat and lon in that order', () => {
+    window.pwaFavouritesSheet.createAt(46.25, 7.5);
+
+    const form = sheet.querySelector('#favourite-create-form');
+    expect(form.querySelector('input[name="lat"]').value).toBe('46.25');
+    expect(form.querySelector('input[name="lon"]').value).toBe('7.5');
+  });
+
+  it('arms the place-picker on the point, [lon, lat], clear of the sheet', () => {
+    window.pwaFavouritesSheet.createAt(46.25, 7.5);
+
+    expect(window.PlacePicker.activate).toHaveBeenCalledOnce();
+    const opts = window.PlacePicker.activate.mock.calls[0][0];
+    expect(opts.recenterTo).toEqual([7.5, 46.25]);
+    expect(opts.occludedBy).toBe(sheet);
+    // A pan after the hand-off still moves the pin.
+    opts.onChange(46.3, 7.6);
+    expect(sheet.querySelector('input[name="lat"]').value).toBe('46.3');
+    expect(sheet.querySelector('input[name="lon"]').value).toBe('7.6');
+  });
+
+  it('stays on the frozen bridge', () => {
+    expect(Object.isFrozen(window.pwaFavouritesSheet)).toBe(true);
+    expect(typeof window.pwaFavouritesSheet.createAt).toBe('function');
+  });
+});
+
 describe('saving a pin shows it on the map (SNOW-886)', () => {
   /** @type {{point: Function, bounds: Function}} */
   let focus;

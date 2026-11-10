@@ -261,13 +261,16 @@
    * @param {string} locationSource — 'GPS', 'GPS_REFINED', or 'MANUAL'
    * @param {number|null} gpsLat — raw device fix latitude (null on MANUAL path)
    * @param {number|null} gpsLon — raw device fix longitude (null on MANUAL path)
+   * @param {boolean} [placed] — SNOW-1485: the point was placed by a hold on
+   *   the map; sends ``placed=1``, so the form leaves out its Move pin row.
    * @returns {Promise<any>} resolves once the request has completed and the
    *   swap has settled — htmx.ajax()'s own promise. The MANUAL onError
    *   branch chains off this so PlacePicker.activate() only writes into the
    *   form once it actually exists in the DOM.
    */
-  function loadForm(lat, lon, accuracy, locationSource, gpsLat, gpsLon) {
+  function loadForm(lat, lon, accuracy, locationSource, gpsLat, gpsLon, placed) {
     const params = new URLSearchParams({ location_source: locationSource });
+    if (placed) params.set('placed', '1');
     if (lat != null) params.set('lat', lat);
     if (lon != null) params.set('lon', lon);
     if (accuracy != null) params.set('accuracy', accuracy);
@@ -742,11 +745,37 @@
   // SNOW-804, /observations/) redirects to. ``open`` is the roundel's own
   // open path, so it goes through MapSheet.attach's registration with
   // window.pwaMapOverlays. Frozen, like every other window.pwa* bridge.
+  //
+  // SNOW-1485: ``reportAt`` is the hold bar's Report (static/js/map_hold.js).
   window.pwaReportSheet = Object.freeze({
     open: openSheet,
     close: closeSheet,
     isOpen: controller.isOpen,
+    reportAt: reportAt,
   });
+
+  /** Open the report form straight at a point already placed.
+   *
+   * SNOW-1485: Report on the hold bar. The reader held the map and
+   * fine-tuned the spot, so there is no fix to wait for and no placing to
+   * do: the form loads at the point as MANUAL with ``placed=1``, which
+   * leaves out its Move pin row, and opens on the tiles. A visitor who
+   * cannot report gets Saved › Observations and its gate, as the binoculars
+   * give them.
+   *
+   * @param {number} lat
+   * @param {number} lon
+   * @returns {void}
+   */
+  function reportAt(lat, lon) {
+    if (!IS_ELIGIBLE) {
+      openSheet();
+      return;
+    }
+    sheet.setAttribute('data-report-direct', '');
+    controller.open();
+    loadForm(lat, lon, null, 'MANUAL', null, null, true);
+  }
 
   // SNOW-658: "Report an observation" — what the roundel itself used to do.
   // Delegated on the sheet so it survives the body being re-cloned.

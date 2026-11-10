@@ -1,0 +1,48 @@
+{% load i18n components %}
+{% comment %}
+templates/includes/_map_hold_bar.html — the hold bar's body (SNOW-1485).
+
+A finger held on the map (or a right-click) drops the shared place pin
+there, and this bar asks what the spot is for: Save pin or Report. The
+reader pans the map to fine-tune first, as when placing from the panels'
++, so the line says so, and the × cancels and puts the map back as it was.
+
+The bar is a FORM PANEL (docs/design-system.md, rule 6): a task, on
+includes/_overlay_sheet.html with no detents and so no drag-to-close.
+public/partials/_map_embed.html renders that sheet empty
+(``#map-hold-bar``) and this body inside ``<template
+id="map-hold-bar-template">``, because MapSheet's controller empties the
+sheet on every close — the sign-in sheet beside it has the same shape.
+static/js/map_hold.js clones the body on each hold, binds the two buttons
+by ``data-hold-action`` and passes the bar to PlacePicker as ``occludedBy``.
+
+The × is the shared sheet header's, ``data-action="dismiss"``, so
+static/js/overlays.js closes the sheet and map_hold.js's teardown restores
+the camera. The two buttons are the panel add button's outlined shape
+(includes/_panel_add_button.html) with the glyph of the roundel each hands
+over to: the star for Save pin, the binoculars for Report.
+
+No parameters: every string is this partial's own.
+{% endcomment %}
+<div class="flex flex-col gap-3">
+    {% trans "Move the map to fine-tune." as hold_bar_line %}
+    {% include "includes/_sheet_header.html" with title=hold_bar_line close_action="dismiss" title_class="text-sm font-normal" %}
+    <div class="grid grid-cols-2 gap-2">
+        <button
+            type="button"
+            data-hold-action="save-pin"
+            class='{% button_classes variant="secondary" size="compact" full_width=True %} hover-affordance inline-flex h-11.5 items-center justify-center gap-1.5'
+        >
+            {% include "includes/_icon_favourite.html" with size=18 only %}
+            {% trans "Save pin" %}
+        </button>
+        <button
+            type="button"
+            data-hold-action="report"
+            class='{% button_classes variant="secondary" size="compact" full_width=True %} hover-affordance inline-flex h-11.5 items-center justify-center gap-1.5'
+        >
+            {% include "includes/_icon_observation.html" with size=18 only %}
+            {% trans "Report" %}
+        </button>
+    </div>
+</div>

@@ -2903,6 +2903,15 @@ msgstr ""
 msgid "Sign in to upload routes and show them on the map."
 msgstr ""
 
+msgid "Pin dropped"
+msgstr ""
+
+msgid "Move the map to fine-tune."
+msgstr ""
+
+msgid "Save pin"
+msgstr ""
+
 msgid "Bulletins unavailable"
 msgstr ""
 
@@ -4743,7 +4752,7 @@ msgstr ""
 msgid "What's it like?"
 msgstr ""
 
-msgid "Share with everyone here"
+msgid "Observations are visible to other users."
 msgstr ""
 
 #, python-format

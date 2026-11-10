@@ -154,6 +154,17 @@ downloads_sync.js
 # favourites_offline.js, which base.html loads site-wide.
 observations_offline.js
 
+# SNOW-1485: hold on the map to add a pin or report there — the pure
+# detector (window.pwaMapHoldCore), then the binding that owns the hold
+# bar. After place_picker.js, map_sheet.js and map_overlay_exclusivity.js:
+# the binding attaches its bar with MapSheet at parse time, which registers
+# it with window.pwaMapOverlays. Before report.js and favourites.js, whose
+# bridges (reportAt, createAt) it calls only on a press, so the order there
+# is the reading order rather than a load-time need.
+map_hold_core.js
+
+map_hold.js
+
 # SNOW-333: field-report JS — geolocation + HTMX sheet opener.
 # Deferred so it executes in document order after the map assets.
 report.js

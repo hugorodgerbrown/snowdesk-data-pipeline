@@ -732,3 +732,51 @@ describe('placing the pin before saying what it was (SNOW-1295)', () => {
     );
   });
 });
+
+describe("reportAt, the hold bar's Report (SNOW-1485)", () => {
+  it('requests the form at the point, MANUAL and placed=1, with lat then lon', () => {
+    window.pwaReportSheet.reportAt(46.25, 7.5);
+
+    expect(globalThis.htmx.ajax).toHaveBeenCalledOnce();
+    const [method, url, opts] = globalThis.htmx.ajax.mock.calls[0];
+    expect(method).toBe('GET');
+    const query = new URL(url, 'http://test').searchParams;
+    expect(url.startsWith(FORM_URL + '?')).toBe(true);
+    expect(query.get('lat')).toBe('46.25');
+    expect(query.get('lon')).toBe('7.5');
+    expect(query.get('location_source')).toBe('MANUAL');
+    expect(query.get('placed')).toBe('1');
+    expect(query.has('gps_lat')).toBe(false);
+    expect(opts).toEqual({ target: '#report-sheet', swap: 'innerHTML' });
+  });
+
+  it('opens the sheet on the form, not the list, and asks for no fix', () => {
+    const seen = [];
+    const handler = () => seen.push(true);
+    document.addEventListener('snowdesk:locate-request', handler);
+
+    window.pwaReportSheet.reportAt(46.25, 7.5);
+
+    expect(sheet.hidden).toBe(false);
+    expect(sheet.hasAttribute('data-report-direct')).toBe(true);
+    expect(rows()).toBeNull();
+    expect(seen).toHaveLength(0);
+    // Straight to the tiles: no placing row is armed.
+    expect(window.PlacePicker.activate).not.toHaveBeenCalled();
+    document.removeEventListener('snowdesk:locate-request', handler);
+  });
+
+  it('the binoculars path still sends no placed flag', () => {
+    btn.click();
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:geolocate', { detail: { lat: 46.1, lon: 7.2, accuracy: 5 } }),
+    );
+    const url = globalThis.htmx.ajax.mock.calls[0][1];
+    expect(new URL(url, 'http://test').searchParams.has('placed')).toBe(false);
+  });
+
+  it('stays on the frozen bridge', () => {
+    expect(Object.isFrozen(window.pwaReportSheet)).toBe(true);
+    expect(typeof window.pwaReportSheet.reportAt).toBe('function');
+  });
+});

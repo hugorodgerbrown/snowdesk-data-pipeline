@@ -88,3 +88,17 @@ describe('unverified tap on Report', () => {
     expect(sheet.querySelector('[data-action="dismiss"]')).not.toBeNull();
   });
 });
+
+describe('unverified Report from the hold bar (SNOW-1485)', () => {
+  it('gets the same verify-email gate, and loads no form', () => {
+    window.pwaReportSheet.close();
+    globalThis.htmx.ajax.mockClear();
+
+    window.pwaReportSheet.reportAt(46.25, 7.5);
+
+    expect(sheet.hidden).toBe(false);
+    expect(globalThis.htmx.ajax).not.toHaveBeenCalled();
+    expect(sheet.textContent).toContain('Verify your email');
+    expect(sheet.querySelector(`a[href="${SIGNIN_URL}"]`)).toBeNull();
+  });
+});
