@@ -197,6 +197,10 @@
   // _map_embed.html. A pinned resort's dot takes MARKER_FAVOURITE_COLOUR
   // instead (SNOW-1229).
   const RESORT_PIN_COLOUR = '#1a1a1a';
+  // Resort dots start at this zoom (Hugo, 10 Nov 2026): below it 157 dots
+  // bury Switzerland, and search finds any resort. A pinned resort is the
+  // exception and draws at every zoom (resortPinFilter).
+  const RESORT_PIN_MIN_ZOOM = 8;
   // Hoist to module scope so fetchBulletinGroupingsForDate() (defined before
   // the IIFE) can reach the URL that was read from the DOM here.
   BULLETIN_GROUPINGS_URL_MODULE = BULLETIN_GROUPINGS_URL;
@@ -2193,11 +2197,11 @@
   // inherit their parent region's bulletin via click-through). Halo +
   // white stroke keep the pin readable on every basemap and rating fill.
   //
-  // SNOW-543: pin size is the resort's curated ``tier``. Every tier is
-  // drawn at every zoom — the review's framing was to suppress Minor
-  // below a zoom threshold, but the small resorts are frequently the ones
-  // with the most interesting terrain for this product, so hiding them is
-  // backwards. Size does the ranking; nothing disappears.
+  // SNOW-543: pin size is the resort's curated ``tier``. No tier is
+  // hidden before another — the small resorts are frequently the ones
+  // with the most interesting terrain for this product. Below
+  // RESORT_PIN_MIN_ZOOM every resort is hidden alike, bar the pinned
+  // ones (resortPinFilter; docs/decisions/resorts-appear-from-z8.md).
   //
   // Visibility is owned by ``overlayState.resorts`` and applied at
   // install time; toggle clicks (handled in the basemap-picker IIFE)
@@ -2210,6 +2214,7 @@
       id: 'resorts-pin',
       type: 'circle',
       source: 'resorts',
+      filter: resortPinFilter(),
       layout: {
         visibility: overlayState.resorts ? 'visible' : 'none',
       },
@@ -2357,6 +2362,41 @@
     map.getLayoutProperty(layerId, 'visibility') !== 'none';
 
   /**
+   * Which resort dots draw: every one from RESORT_PIN_MIN_ZOOM, and a
+   * pinned one at every zoom.
+   *
+   * Rebuilt with the colour whenever ``favouritedResortIds`` changes. A
+   * filter rather than a layer ``minzoom`` because the pinned dots share
+   * the layer, and rather than a zero opacity so a hidden dot cannot be
+   * tapped. The weather symbols read the same rule (resortsDrawnNow).
+   *
+   * @returns {Array} A MapLibre filter expression.
+   */
+  const resortPinFilter = () => {
+    const fromZoom = ['>=', ['zoom'], RESORT_PIN_MIN_ZOOM];
+    return favouritedResortIds.length
+      ? ['any', ['in', ['get', 'id'], ['literal', favouritedResortIds]], fromZoom]
+      : fromZoom;
+  };
+
+  /**
+   * The resorts whose dots draw at the current zoom, as a
+   * FeatureCollection (or null when there are none to read).
+   *
+   * @param {{type: string, features: Array<Object>}|null} collection
+   * @returns {{type: string, features: Array<Object>}|null}
+   */
+  const resortsDrawnNow = (collection) => {
+    if (!collection || map.getZoom() >= RESORT_PIN_MIN_ZOOM) return collection;
+    return {
+      ...collection,
+      features: collection.features.filter(
+        (feature) => favouritedResortIds.includes(feature.properties && feature.properties.id),
+      ),
+    };
+  };
+
+  /**
    * Paint each pinned resort's dot in the favourites blue (SNOW-1229).
    *
    * A data-driven ``circle-color`` on resorts-pin, rebuilt from
@@ -2369,6 +2409,11 @@
    */
   const applyFavouritedResortColour = () => {
     if (!map.getLayer('resorts-pin')) return;
+    map.setFilter('resorts-pin', resortPinFilter());
+    // Below z8 the pinned set is which dots draw, and so which weather
+    // symbols step aside (resortsDrawnNow): re-project them now, not at the
+    // next pan.
+    refreshWeatherSourceData();
     map.setPaintProperty(
       'resorts-pin',
       'circle-color',
@@ -4591,8 +4636,9 @@
   // carries no weather symbols for a day the visitor never chose.
   //
   // Last, the stations that stand on a resort pin are flagged so the layer
-  // sets their symbol beside the pin rather than over it. Only while the
-  // resort pins are drawn: with the overlay off there is nothing to step
+  // sets their symbol beside the pin rather than over it. Only for the
+  // resort pins actually drawn: with the overlay off, or below the resorts'
+  // zoom for an unpinned one (resortsDrawnNow), there is nothing to step
   // aside for, and the symbol goes back to centring on its own point.
   const weatherDataForCurrentView = () => {
     const collapsed = window.pwaWeatherCore.collapseToLowest(
@@ -4605,7 +4651,7 @@
       readBoolStorage(OVERLAY_STORAGE_KEY.resorts, overlayState.resorts)
       && !!map.getSource('resorts');
     return window.pwaWeatherCore.markResortPins(
-      projected, resortsDrawn ? resortsGeojsonCache : null,
+      projected, resortsDrawn ? resortsDrawnNow(resortsGeojsonCache) : null,
     );
   };
 

@@ -248,3 +248,15 @@ describe('pinned resorts with the favourites overlay off', () => {
     expect(resortPaint(mapStub)).toContain('verbier');
   });
 });
+
+describe('resort dots from z8, pinned ones at every zoom', () => {
+  it('filters every resort to z8 and up, bar the pinned ones', async () => {
+    await waitFor(() => JSON.stringify(mapStub.getFilter('resorts-pin')).includes('verbier'));
+
+    const [any, pinned, fromZoom] = mapStub.getFilter('resorts-pin');
+    expect(any).toBe('any');
+    expect(pinned[0]).toBe('in');
+    expect(pinned[2][1]).toEqual(expect.arrayContaining(['verbier', 'zermatt']));
+    expect(fromZoom).toEqual(['>=', ['zoom'], 8]);
+  });
+});
