@@ -1983,6 +1983,31 @@ describe('what a sync says it is doing, and a failed addition (SNOW-1487)', () =
       expect(result.steps).toEqual([expect.objectContaining({ step: 'content', reason: 'interrupted' })]);
     });
 
+    it('while the content plan is read stamps nothing and keeps the content answer', async () => {
+      const at = '2026-01-01T00:00:00.000Z';
+      await seedArea({ verified: { at: at, map: 'yes', content: 'yes', principal: '' } });
+      const before = await storedArea();
+      const controller = new AbortController();
+      const previousAnswer = areaContentAnswer;
+      // The endpoint is cut off by the stop, so the plan comes back short.
+      areaContentAnswer = () => {
+        controller.abort();
+        return null;
+      };
+      try {
+        const result = await window.pwaBasemapDownloads.syncArea(AREA_ID, undefined, controller.signal);
+
+        expect(result.steps).toEqual([expect.objectContaining({ step: 'content', reason: 'interrupted' })]);
+        expect(result.cancelled).toBe(true);
+        const after = await storedArea();
+        expect(after.contentIncomplete).toBe(before.contentIncomplete);
+        expect(after.contentAt).toBe(before.contentAt);
+        expect(after.verified).toMatchObject({ at: at, content: 'yes' });
+      } finally {
+        areaContentAnswer = previousAnswer;
+      }
+    });
+
     it('before the sync begins fetches nothing and stamps nothing', async () => {
       const controller = new AbortController();
       controller.abort();
@@ -2051,6 +2076,67 @@ describe('what the inventory measures (SNOW-1487)', () => {
       expect(measured.mapBytes).toBe(50 * 1000);
     } finally {
       window.caches.open = real;
+    }
+  });
+
+  it('caches no measurement that a sync wrote into the bucket under', async () => {
+    terrainData(true);
+    await seedArea({ terrain: true });
+    const record = await storedArea();
+    // The measurement reads the bucket's keys as they were before the
+    // sync, and settles after it.
+    const realOpen = cachesStub.open.getMockImplementation();
+    let readKeys = () => {};
+    cachesStub.open.mockImplementationOnce(async (name) => {
+      const cache = await realOpen(name);
+      const snapshot = await cache.keys();
+      return { ...cache, keys: () => new Promise((resolve) => (readKeys = () => resolve(snapshot))) };
+    });
+    const measuring = window.pwaBasemapDownloads.measureAreaInventory(AREA_ID, record);
+    await vi.waitFor(() => expect(cachesStub.open).toHaveBeenCalled());
+
+    await window.pwaBasemapDownloads.syncArea(AREA_ID);
+    expect(warmedUrls(0).some(isClassTile)).toBe(true);
+    readKeys();
+    expect((await measuring).terrainHeld).toBe(false);
+
+    const after = await window.pwaBasemapDownloads.measureAreaInventory(AREA_ID, record);
+    expect(after.terrainHeld).toBe(true);
+  });
+
+  it('caches no measurement taken while a sync writes into the bucket', async () => {
+    terrainData(true);
+    await seedArea({ terrain: true });
+    const record = await storedArea();
+    const bucket = cachesStub.openBucket(PINNED_PREFIX + AREA_ID);
+    /** @type {Array<function(): void>} */
+    const releases = [];
+    const realWarm = window.pwaWarmCache.getMockImplementation();
+    window.pwaWarmCache.mockImplementation(
+      (urls) =>
+        new Promise((resolve) => {
+          releases.push(() => {
+            urls.forEach((url) => bucket.add(url));
+            resolve({ ok: urls.length, failed: 0, bytes: 0, cancelled: false });
+          });
+        }),
+    );
+    try {
+      const syncing = window.pwaBasemapDownloads.syncArea(AREA_ID);
+      await vi.waitFor(() => expect(releases.length).toBe(1));
+      releases[0]();
+      // The content stage, the last write: measured while it runs, the
+      // terrain the first write added is there, and the content is not.
+      await vi.waitFor(() => expect(releases.length).toBe(2));
+      bucket.delete(warmedUrls(0).find(isClassTile));
+      expect((await window.pwaBasemapDownloads.measureAreaInventory(AREA_ID, record)).terrainHeld).toBe(false);
+      bucket.add(warmedUrls(0).find(isClassTile));
+      releases[1]();
+      await syncing;
+
+      expect((await window.pwaBasemapDownloads.measureAreaInventory(AREA_ID, record)).terrainHeld).toBe(true);
+    } finally {
+      window.pwaWarmCache.mockImplementation(realWarm);
     }
   });
 

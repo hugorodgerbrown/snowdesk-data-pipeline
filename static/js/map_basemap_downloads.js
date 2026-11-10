@@ -1749,12 +1749,46 @@ const ORPHAN_BUCKET_BYTES = new Map();
 function forgetPinnedBucketMeasurement(areaId) {
   ORPHAN_BUCKET_BYTES.delete(areaId);
   AREA_INVENTORY_MEASUREMENTS.delete(areaId);
+  AREA_MEASUREMENT_GENERATION.set(areaId, (AREA_MEASUREMENT_GENERATION.get(areaId) || 0) + 1);
 }
 
 // SNOW-1487: the inventory's measurements of one area's bucket, by area
 // id — see `measureAreaInventory`. Forgotten with the orphan figure above,
 // by the same two writers.
 const AREA_INVENTORY_MEASUREMENTS = new Map();
+
+// SNOW-1487 review: a measurement walks the bucket over many awaits, so a
+// write can land while it runs. Each forget bumps the area's generation,
+// and a measurement keeps its answer only when the generation it started
+// under is still current and no write into the bucket is in flight
+// (`AREA_BUCKET_WRITES`). Otherwise it answers once and caches nothing.
+/** @type {Map<string, number>} */
+const AREA_MEASUREMENT_GENERATION = new Map();
+/** @type {Map<string, number>} */
+const AREA_BUCKET_WRITES = new Map();
+
+/**
+ * SNOW-1487 review: mark a write into one area's bucket as begun, and
+ * forget its measurement. The function returned marks it ended, and
+ * forgets the measurement again, since one taken while the write ran saw
+ * a part-written bucket. Calling it twice ends the write once.
+ *
+ * @param {string} areaId
+ * @returns {function(): void}
+ */
+function _beginBucketWrite(areaId) {
+  forgetPinnedBucketMeasurement(areaId);
+  AREA_BUCKET_WRITES.set(areaId, (AREA_BUCKET_WRITES.get(areaId) || 0) + 1);
+  let ended = false;
+  return () => {
+    if (ended) return;
+    ended = true;
+    const left = (AREA_BUCKET_WRITES.get(areaId) || 1) - 1;
+    if (left > 0) AREA_BUCKET_WRITES.set(areaId, left);
+    else AREA_BUCKET_WRITES.delete(areaId);
+    forgetPinnedBucketMeasurement(areaId);
+  };
+}
 
 // SNOW-1487 review: how many bodies one URL class has read, at most,
 // when its entries carry no `Content-Length`. Production tiles are served
@@ -1847,6 +1881,7 @@ async function _classBytes(cache, requests) {
 async function measureAreaInventory(areaId, record) {
   if (AREA_INVENTORY_MEASUREMENTS.has(areaId)) return AREA_INVENTORY_MEASUREMENTS.get(areaId);
   if (!('caches' in window) || !areaId) return null;
+  const generation = AREA_MEASUREMENT_GENERATION.get(areaId) || 0;
   /** @param {string} template */
   const prefixOf = (template) => (template ? template.split('{z}')[0] : '');
   const prefixes = [prefixOf(terrainClassTileTemplate()), prefixOf(elevationTileTemplate())].filter(Boolean);
@@ -1873,7 +1908,8 @@ async function measureAreaInventory(areaId, record) {
   } catch (_e) {
     return null;
   }
-  AREA_INVENTORY_MEASUREMENTS.set(areaId, measured);
+  const current = (AREA_MEASUREMENT_GENERATION.get(areaId) || 0) === generation;
+  if (current && !AREA_BUCKET_WRITES.has(areaId)) AREA_INVENTORY_MEASUREMENTS.set(areaId, measured);
   return measured;
 }
 
@@ -4366,10 +4402,12 @@ let pinnedRunActive = false;
  */
 async function runPinnedDownload(options) {
   // SNOW-612: whatever this run writes changes the bucket's size, so a
-  // measurement taken before it is stale from here on.
-  forgetPinnedBucketMeasurement(options.areaId);
+  // measurement taken before it is stale from here on. SNOW-1487 review:
+  // and one taken while it runs, so the write is ended when it settles.
+  const endWrite = _beginBucketWrite(options.areaId);
   const runner = self.pwaBasemapDownloadRunner;
   if (!runner) {
+    endWrite();
     options.paint('error');
     revealBasemapDownloadError(null);
     return;
@@ -4388,6 +4426,7 @@ async function runPinnedDownload(options) {
     plans = await Promise.all(options.basemapKeys.map((key) => resolveDownloadBasemap(key)));
     if (plans.some((plan) => !plan)) {
       pinnedRunActive = false;
+      endWrite();
       options.paint('error');
       revealBasemapDownloadError(null, options.kind);
       return;
@@ -4424,13 +4463,17 @@ async function runPinnedDownload(options) {
         return await finish(...args);
       } finally {
         pinnedRunActive = false;
+        endWrite();
       }
     },
   };
   try {
     return await runner.run(deps, run);
   } finally {
-    if (!warmStarted) pinnedRunActive = false;
+    if (!warmStarted) {
+      pinnedRunActive = false;
+      endWrite();
+    }
   }
 }
 
@@ -4916,6 +4959,11 @@ async function _refreshAreaContent(areaId, onStage, signal) {
   // reported success on one would clear the very flag it was called to
   // clear. See `assembleAreaContentURLs`.
   const content = await assembleAreaContentURLs(found.record, !!found.record.terrain);
+  // SNOW-1487 review: a stop while the plan was read stamps nothing, so
+  // the area keeps the content answer it had. A plan read while the page
+  // went out of sight may be short only because the request was cut off.
+  const stopped = () => !!(signal && signal.aborted);
+  if (stopped()) return answer(false, 'interrupted');
   if (content.urls.length === 0) {
     // SNOW-932 review: an empty plan is not automatically a failed one. A
     // plan assembled against the WHOLE country set that resolves to no
@@ -4946,6 +4994,7 @@ async function _refreshAreaContent(areaId, onStage, signal) {
 
   // SNOW-1416: only what changed — see `_contentDeltaFor`.
   const delta = await _contentDeltaFor(found.record, content);
+  if (stopped()) return answer(false, 'interrupted');
   if (delta.urls.length === 0) {
     const autosync = self.pwaOfflineAutosyncCore;
     // A fresh, whole area: nothing to fetch, and its `contentAt` must not
@@ -5794,7 +5843,20 @@ async function _stampAreaElevation(areaId, found) {
 async function repairPinnedDownload(options) {
   // The bucket's size changes, so a cached orphan measurement of it is
   // stale from here on — same reason `runPinnedDownload` forgets it.
-  forgetPinnedBucketMeasurement(options.areaId);
+  // SNOW-1487 review: and so is one taken while the repair writes, so the
+  // write is ended (and the measurement forgotten again) when it settles.
+  const endWrite = _beginBucketWrite(options.areaId);
+  const finish = options.finish;
+  const tracked = {
+    ...options,
+    finish: async (/** @type {any[]} */ ...args) => {
+      try {
+        return await finish(...args);
+      } finally {
+        endWrite();
+      }
+    },
+  };
   const runner = self.pwaBasemapDownloadRunner;
   if (!runner || typeof runner.repair !== 'function') {
     options.paint('error');
@@ -5802,10 +5864,15 @@ async function repairPinnedDownload(options) {
     // Settled even here, so a caller awaiting the outcome (the Manage
     // downloads sheet's Repair control) is never left hanging on a
     // promise an older cached shell can never resolve.
-    await options.finish(null, { core: self.pwaBasemapDownloadCore });
+    await tracked.finish(null, { core: self.pwaBasemapDownloadCore });
     return;
   }
-  return runner.repair(PINNED_DOWNLOAD_DEPS, options);
+  try {
+    return await runner.repair(PINNED_DOWNLOAD_DEPS, tracked);
+  } catch (err) {
+    endWrite();
+    throw err;
+  }
 }
 
 /**
