@@ -83,6 +83,10 @@ Parameters (passed via {% include … with … %}):
                  icon button: the shape a map sheet's header action
                  takes. The routes panel's + beside its × (Hugo,
                  8 Nov 2026: a bare + "is just floating").
+  trigger_extra  (string, optional) — classes appended to a roundel
+                 trigger, through roundel_classes' ``extra``. The Trips
+                 tab's route picker passes ``app-only``, as the Saved add
+                 roundel beside the other tabs carries it.
   wide           (bool, optional) — an 18rem menu rather than 11rem, for
                  items that carry a line of description under the label.
   open           (bool, optional) — renders the menu already expanded,
@@ -131,7 +135,7 @@ that is not geometry — the box, the elevation and the stacking order.
         aria-expanded="{% if open %}true{% else %}false{% endif %}"
         aria-controls="{{ menu_id }}"
         aria-label="{{ trigger_label }}"
-        class="{% if roundel %}{% roundel_classes %}{% else %}{% icon_button_classes %}{% endif %}"
+        class="{% if roundel and trigger_extra %}{% roundel_classes extra=trigger_extra %}{% elif roundel %}{% roundel_classes %}{% else %}{% icon_button_classes %}{% endif %}"
     >
         {% if trigger_icon %}
             {% include trigger_icon with size=18 only %}

@@ -15,26 +15,22 @@ Hugo, 8 Nov 2026, a bare + "is just floating". Its accessible name is the
 panel's own add label ("Add a favourite").
 
 What it adds is the tab's own flow, by hook rather than by script:
-
-  * "panel-add" (the default) — ``data-panel-add``, the hook the panel's
-    add button has always carried: Places drops a pin (favourites.js),
-    Observations reports one (report.js), and Routes, while route drawing
-    is off, uploads a GPX (routes.js). Each module removes every element
-    carrying the hook for a visitor who cannot add.
-  * "routes" — ``data-saved-go="routes"``: Trips. A trip is planned from a
-    route (trips:new needs one of the reader's own), so the + switches
-    Saved to the Routes tab, where each route's menu starts with Plan a
-    trip (static/js/app_tabbar.js).
+``data-panel-add``, the hook the panel's add button has always carried.
+Places drops a pin (favourites.js), Observations reports one (report.js),
+and Routes, while route drawing is off, uploads a GPX (routes.js). Each
+module removes every element carrying the hook for a visitor who cannot
+add. Trips has a menu instead, of the routes a trip can be planned from
+(public/partials/_trip_route_picker.html); it used to carry a "routes"
+hook here that switched Saved to the Routes tab.
 
 Context (read from the including template's context):
-  cta_label      — the panel's add label, the roundel's accessible name.
-  saved_add_hook — "panel-add" (default) or "routes".
-  preview        — draw it whatever the display mode. For the component
-                   library only.
+  cta_label — the panel's add label, the roundel's accessible name.
+  preview   — draw it whatever the display mode. For the component
+              library only.
 {% endcomment %}
 <button
     type="button"
-    {% if saved_add_hook == "routes" %}data-saved-go="routes"{% else %}data-panel-add{% endif %}
+    data-panel-add
     aria-label="{{ cta_label }}"
     data-testid="saved-add-roundel"
     class="{% if preview %}{% roundel_classes %}{% else %}{% roundel_classes extra='app-only' %}{% endif %}"

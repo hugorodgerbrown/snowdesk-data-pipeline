@@ -623,6 +623,7 @@ class TestSnow1479Fixtures:
             "saved-tabs",
             "saved-add-roundel",
             "route-add-menu",
+            "trip-route-picker",
             "places-list",
             "trip-panel-rows",
             "segmented-option",
@@ -645,3 +646,14 @@ class TestSnow1479Fixtures:
         assert 'id="route-add-menu-trigger"' in html
         for title in ("Find a route", "Create a route", "Upload a GPX"):
             assert title in html
+
+    def test_the_trip_route_picker_is_previewed_with_its_label(
+        self, admin_client: Client
+    ) -> None:
+        response = admin_client.get(
+            "/partials/_components/trip-route-picker/", HTTP_HX_REQUEST="true"
+        )
+        html = response.content.decode()
+        assert 'id="trip-route-picker-trigger"' in html
+        assert "Plan a trip from" in html
+        assert "app-only" not in html

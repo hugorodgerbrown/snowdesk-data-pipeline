@@ -15,7 +15,8 @@ Covers:
     line, only in the installed app (`app-only`); the layers menu's
     Downloaded areas row opens the downloads sheet; the Saved tabs
     (four icons) and a + roundel head each of the four Saved sheets,
-    `app-only`, and each + carries its tab's hook; the sheets' own titles
+    `app-only`, and each + carries its tab's hook — Trips' + a picker of
+    the reader's routes, with its strings and item template; the sheets' own titles
     and × are `app-hidden`; the Saved tab carries the alert dot.
   - The CSS gate: the bar and the hidden chrome are drawn only under
     ``(display-mode: standalone) and (max-width: 639.98px)``, and
@@ -344,9 +345,56 @@ class TestOnTheMap:
 
         assert "data-panel-add" in plus(SAVED_SHEETS["places"])
         assert "data-panel-add" in plus(SAVED_SHEETS["observations"])
-        assert 'data-saved-go="routes"' in plus(SAVED_SHEETS["trips"])
         # Routes without route drawing: the + uploads, as the foot's button.
         assert "data-panel-add" in plus(SAVED_SHEETS["routes"])
+
+    def test_trips_plus_is_a_picker_of_the_readers_routes(self, client: Client) -> None:
+        """An app-only + named "Plan a trip" opens "Plan a trip from"."""
+        client.force_login(UserFactory.create())
+
+        content = client.get(reverse("public:map")).content.decode()
+
+        body = _template(content, SAVED_SHEETS["trips"])
+        assert 'data-testid="saved-add-roundel"' not in body
+        assert "data-saved-go" not in body
+        trigger = re.search(
+            r'<button[^>]*id="trip-route-picker-trigger"[^>]*>', body, re.S
+        )
+        assert trigger
+        assert "app-only" in trigger.group(0)
+        assert 'aria-label="Plan a trip"' in trigger.group(0)
+        assert 'aria-haspopup="menu"' in trigger.group(0)
+        assert "Plan a trip from" in body
+        slot = re.search(r"<li[^>]*data-trip-route-picker-items[^>]*>", body, re.S)
+        assert slot
+        assert f'data-routes-url="{reverse("routes:geojson")}"' in slot.group(0)
+        assert f'data-trip-new-url="{reverse("trips:new")}"' in slot.group(0)
+
+    def test_trips_picker_strings_and_item_are_on_the_page(
+        self, client: Client
+    ) -> None:
+        """trips_panel.js reads its copy and clones each route from here."""
+        client.force_login(UserFactory.create())
+
+        content = client.get(reverse("public:map")).content.decode()
+
+        strings = _template(content, "trips-strings-template")
+        assert re.search(r'data-string="picker-empty">Add a route first<', strings)
+        assert re.search(
+            r'data-string="picker-error">Your routes couldn(\'|&#x27;)t be loaded\.<',
+            strings,
+        )
+        assert 'data-string="picker-untitled">Untitled route<' in strings
+        assert 'data-string="meta-km">%(km)skm<' in strings
+        assert re.search(
+            r'data-string="meta-ascent">%\(km\)skm · %\(ascent\)sm ↑<', strings
+        )
+        item = _template(content, "trips-route-picker-item-template")
+        assert re.search(r'<a\s+role="menuitem"\s+data-trip-route-picker-item', item)
+        assert "data-trip-route-picker-name" in item
+        assert "data-trip-route-picker-meta" in item
+        assert "text-label font-semibold text-text-1" in item
+        assert "text-sm text-text-3" in item
 
     def test_routes_plus_is_the_add_menu_with_route_drawing(
         self, client: Client

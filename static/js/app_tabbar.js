@@ -18,10 +18,10 @@
  *     list. Help is the map's own "?" menu (window.pwaMapHelpMenu,
  *     public/partials/_map_help_menu.html), whose roundel this app hides;
  *     it gains a Map key item there. Map closes whichever is open.
- *   - TRIPS' + GOES TO ROUTES. A trip is planned from one of the reader's
- *     own routes, so the Trips header's + (`data-saved-go="routes"`,
- *     includes/_saved_add_roundel.html) switches Saved to Routes, as a tab
- *     would.
+ *   - `data-saved-go` SWITCHES SAVED, as a tab would. The Trips header's +
+ *     lists the reader's routes to plan a trip from (trips_panel.js); with
+ *     none, its one item (`data-saved-go="routes"`) goes to Routes, where a
+ *     route is added.
  *   - The downloads sheet, whose roundel this app hides, opens from the
  *     layers menu's Downloaded areas row (map_downloads_manager.js).
  *   - A TAB TOGGLES. Tapping the lit tab closes its panel; tapping another
@@ -329,8 +329,8 @@
     switchSaved(choice);
   });
 
-  // Trips' + (SNOW-1479): a trip is planned from a route, so it goes to
-  // Routes, where each route's menu starts with Plan a trip.
+  // The Trips picker's item for a reader with no routes: a trip is planned
+  // from a route, so it goes to Routes, where one is added.
   document.addEventListener('click', function (event) {
     var target = /** @type {Element|null} */ (event.target instanceof Element ? event.target : null);
     var go = target ? target.closest('[data-saved-go]') : null;

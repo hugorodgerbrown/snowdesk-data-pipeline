@@ -13,7 +13,8 @@
  *   - the four Saved tabs close one sheet as they open its sibling, with no
  *     entrance mark, and Saved reopens on the tab last chosen, Trips
  *     included;
- *   - Trips' + (data-saved-go="routes") switches Saved to Routes;
+ *   - the Trips picker's no-routes item (data-saved-go="routes") switches
+ *     Saved to Routes;
  *   - a panel closed from elsewhere lights Map again;
  *   - Help opens and closes the map's own "?" menu (window.pwaMapHelpMenu),
  *     rising rather than swapping, since it is a card of its own;
@@ -231,16 +232,16 @@ describe('the Saved tabs', () => {
   });
 });
 
-describe("Trips' +", () => {
+describe("the Trips picker's no-routes item", () => {
   it('switches Saved to Routes', async () => {
     await load();
     window.sessionStorage.setItem('snowdesk:app-tab-saved', 'trips');
     tab('saved').click();
     expect($('trips-sheet').hidden).toBe(false);
-    const plus = document.createElement('button');
-    plus.setAttribute('data-saved-go', 'routes');
-    $('trips-sheet').append(plus);
-    plus.click();
+    const item = document.createElement('button');
+    item.setAttribute('data-saved-go', 'routes');
+    $('trips-sheet').append(item);
+    item.click();
     await tick();
     expect($('trips-sheet').hidden).toBe(true);
     expect($('route-sheet').hidden).toBe(false);

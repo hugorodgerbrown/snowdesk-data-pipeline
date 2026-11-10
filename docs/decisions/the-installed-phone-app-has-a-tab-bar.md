@@ -2,7 +2,7 @@
 name: the-installed-phone-app-has-a-tab-bar
 description: Installed phone app tab bar (Map · Saved · Help), standalone under 640px, Saved tabs and + roundel, .app-hidden, Help opens ? menu
 status: current
-last-reviewed: 2026-11-09
+last-reviewed: 2026-11-10
 ---
 
 # The installed phone app has a tab bar
@@ -48,9 +48,13 @@ the favourites sheet's own sign-in prompt.
 the four tabs and a **+** roundel (`_saved_add_roundel.html`); its title,
 subtitle, section label and × are `.app-hidden`, and so is the foot's add
 button the + replaces. Each + does its list's add: **Places** drops a pin,
-**Routes** opens the Find / Create / Upload menu, **Trips** switches to
-Routes (`data-saved-go="routes"`: a trip is planned from a route), and
-**Observations** starts a report. Places, Routes and Observations keep
+**Routes** opens the Find / Create / Upload menu, **Trips** opens a menu
+headed "Plan a trip from" listing the reader's own routes, each to
+`trips:new?route=<uuid>` (`_trip_route_picker.html`, filled by
+`trips_panel.js` from `routes:geojson`), and **Observations** starts a
+report. Trips' + used to switch Saved to Routes, which confused people; the
+picker keeps that only for a reader with no routes, whose one item is
+`data-saved-go="routes"`. Places, Routes and Observations keep
 their "Show on the map" switch.
 
 - **Places** (`favourites:places`, `build_places`) is Today folded into
