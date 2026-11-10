@@ -59,6 +59,9 @@ document.body.innerHTML = `
 `;
 
 const container = document.getElementById('map');
+// jsdom lays nothing out: give the map's container the fake map's size.
+Object.defineProperty(container, 'clientWidth', { configurable: true, value: WIDTH });
+Object.defineProperty(container, 'clientHeight', { configurable: true, value: HEIGHT });
 const canvas = document.getElementById('canvas');
 const bar = document.getElementById('map-hold-bar');
 
@@ -68,21 +71,40 @@ function makeMap() {
     camera: { ...START, center: { ...START.center } },
     padding: { top: 0, right: 0, bottom: 0, left: 0 },
     listeners: {},
+    /** Where the padded viewport's middle sits from the container's, in px. */
+    paddedOffset: () => ({
+      x: ((map.padding.left || 0) - (map.padding.right || 0)) / 2,
+      y: ((map.padding.top || 0) - (map.padding.bottom || 0)) / 2,
+    }),
+    /** Put (lng, lat) in the middle of the padded viewport, as MapLibre does. */
+    centreOnPadded: (lng, lat) => {
+      const d = map.paddedOffset();
+      map.camera.center = { lng: lng - d.x / SCALE, lat: lat + d.y / SCALE };
+    },
     jumpTo: vi.fn((options) => {
       if (options.center) {
         const [lng, lat] = options.center;
-        map.camera.center = { lng, lat };
+        map.centreOnPadded(lng, lat);
       }
       for (const key of ['zoom', 'bearing', 'pitch']) {
         if (options[key] != null) map.camera[key] = options[key];
       }
     }),
     getContainer: () => container,
-    getCenter: () => ({ ...map.camera.center }),
+    getCenter: () => {
+      const d = map.paddedOffset();
+      return map.unproject([WIDTH / 2 + d.x, HEIGHT / 2 + d.y]);
+    },
     setCenter: (coord) => {
-      map.camera.center = { lng: coord[0], lat: coord[1] };
+      map.centreOnPadded(coord[0], coord[1]);
       map.emit('moveend');
     },
+    panBy: vi.fn(([x, y]) => {
+      map.camera.center = {
+        lng: map.camera.center.lng + x / SCALE,
+        lat: map.camera.center.lat - y / SCALE,
+      };
+    }),
     getZoom: () => map.camera.zoom,
     getBearing: () => map.camera.bearing,
     getPitch: () => map.camera.pitch,
@@ -171,7 +193,9 @@ const onCanvasClick = () => objectClicks.push(true);
 
 beforeEach(() => {
   map.camera = { ...START, center: { ...START.center } };
+  map.padding = { top: 0, right: 0, bottom: 0, left: 0 };
   map.jumpTo.mockClear();
+  map.panBy.mockClear();
   focus.enters = 0;
   focus.exits = 0;
   objectClicks = [];
@@ -334,6 +358,34 @@ describe('cancelling puts the map back as it was', () => {
     const deactivate = holdAndPan();
     other.open();
     expectRestored(deactivate);
+  });
+
+  it('when a sheet that padded the map closed as the bar opened', () => {
+    // A detent sheet padded the map's bottom; the bar's opening closes it,
+    // and its teardown drops the padding before the picker arms.
+    map.padding = { top: 0, right: 0, bottom: 300, left: 0 };
+    const activate = window.PlacePicker.activate;
+    const spy = vi.spyOn(window.PlacePicker, 'activate').mockImplementation((options) => {
+      map.padding = { top: 0, right: 0, bottom: 0, left: 0 };
+      return activate.call(window.PlacePicker, options);
+    });
+    hold(300, 200);
+    map.pan(0.5, -0.25);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    spy.mockRestore();
+    // The container's middle is back on the same ground, not half a sheet off.
+    expect(map.camera.center.lng).toBeCloseTo(START.center.lng, 9);
+    expect(map.camera.center.lat).toBeCloseTo(START.center.lat, 9);
+  });
+
+  it('under padding the map still carries, with an instant pan', () => {
+    map.padding = { top: 0, right: 0, bottom: 300, left: 0 };
+    hold(300, 200);
+    map.pan(0.5, -0.25);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(map.panBy).toHaveBeenCalledWith([0, -150], { duration: 0 });
+    expect(map.camera.center.lng).toBeCloseTo(START.center.lng, 9);
+    expect(map.camera.center.lat).toBeCloseTo(START.center.lat, 9);
   });
 
   it('and a second close does nothing more', () => {

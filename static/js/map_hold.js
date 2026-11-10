@@ -12,7 +12,11 @@
  *
  * A hold, in order:
  *   1. the held screen point becomes lng/lat (``map.unproject``);
- *   2. the camera is snapshotted (centre, zoom, bearing, pitch);
+ *   2. the camera is snapshotted (zoom, bearing, pitch, and the point at
+ *      the middle of the map's container — not ``getCenter()``, which is
+ *      the middle of the PADDED viewport: the bar's opening closes any
+ *      detent sheet, whose teardown drops its padding, so a padded centre
+ *      restored under no padding would land the map half a sheet off);
  *   3. the bar opens (a MapSheet, so it takes part in Escape, outside
  *      dismissal and window.pwaMapOverlays' one-overlay-at-a-time), before
  *      the picker arms — the sheets it closes deactivate the picker in their
@@ -101,7 +105,28 @@
     // (layers and padding back) before the camera moves below, and its call
     // back into end() finds no session.
     if (controller.isOpen()) controller.close();
-    if (reason === 'cancel' && boundMap) boundMap.jumpTo(ending.camera);
+    if (reason === 'cancel' && boundMap) restoreCamera(boundMap, ending.camera);
+  }
+
+  /**
+   * Put the camera back so the snapshotted point sits in the middle of the
+   * map's container again, whatever padding the map carries now.
+   *
+   * ``jumpTo`` places ``center`` in the middle of the padded viewport, so
+   * the jump is followed by an instant pan of half the padding's imbalance
+   * — nothing when the map carries no padding.
+   *
+   * @param {any} map
+   * @param {HoldSession['camera']} camera
+   * @returns {void}
+   */
+  function restoreCamera(map, camera) {
+    map.jumpTo(camera);
+    const padding = map.getPadding ? map.getPadding() : null;
+    if (!padding) return;
+    const dx = ((padding.left || 0) - (padding.right || 0)) / 2;
+    const dy = ((padding.top || 0) - (padding.bottom || 0)) / 2;
+    if (dx || dy) map.panBy([dx, dy], { duration: 0 });
   }
 
   /**
@@ -116,7 +141,8 @@
     if (window.PlacePicker && window.PlacePicker.isActive()) return;
 
     const at = map.unproject([point.x, point.y]);
-    const centre = map.getCenter();
+    const box = map.getContainer();
+    const centre = map.unproject([box.clientWidth / 2, box.clientHeight / 2]);
     session = {
       camera: {
         center: [centre.lng, centre.lat],
