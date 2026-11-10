@@ -1919,3 +1919,78 @@ describe('what a sync says it is doing, and a failed addition (SNOW-1487)', () =
     });
   });
 });
+
+// SNOW-1487: the inventory's sizes, measured from the bucket by URL class,
+// and the Swiss map line, read by the rule Sync adds it by.
+describe('what the inventory measures (SNOW-1487)', () => {
+  /** A bucket whose entries carry the given lengths, or a body to read. */
+  function bucketOf(entries) {
+    const real = window.caches.open;
+    window.caches.open = vi.fn(async () => ({
+      keys: async () => Object.keys(entries).map((url) => ({ url })),
+      match: async (request) => {
+        const size = entries[request.url];
+        return {
+          headers: { get: () => (size.length ? String(size.length) : null) },
+          clone: () => ({ blob: async () => ({ size: size.body || 0 }) }),
+        };
+      },
+    }));
+    return () => {
+      window.caches.open = real;
+    };
+  }
+
+  it('splits the bucket into map and terrain by URL class, reading a body with no length', async () => {
+    terrainData(true);
+    const record = await storedArea();
+    const terrain = window.pwaBasemapDownloads.areaTerrainClassTileUrls({ ...record, terrain: true });
+    const entries = { [STYLE_URL]: { length: 1000 }, [TEMPLATE.replace('{z}/{x}/{y}', '10/1/1')]: { body: 3000 } };
+    for (const url of terrain) entries[url] = { length: 10 };
+    const restore = bucketOf(entries);
+    try {
+      const measured = await window.pwaBasemapDownloads.measureAreaInventory('custom-measure', {
+        ...record,
+        terrain: true,
+      });
+      expect(measured).toEqual({ mapBytes: 4000, terrainBytes: 10 * terrain.length, terrainHeld: true });
+    } finally {
+      restore();
+    }
+  });
+
+  it('says the terrain is not all there when one tile is missing', async () => {
+    terrainData(true);
+    const record = await storedArea();
+    const terrain = window.pwaBasemapDownloads.areaTerrainClassTileUrls({ ...record, terrain: true });
+    const entries = {};
+    for (const url of terrain.slice(1)) entries[url] = { length: 10 };
+    const restore = bucketOf(entries);
+    try {
+      const measured = await window.pwaBasemapDownloads.measureAreaInventory('custom-short', {
+        ...record,
+        terrain: true,
+      });
+      expect(measured.terrainHeld).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+
+  it('says a Swiss area on another map is still to gain the Swiss map', async () => {
+    const li = document.createElement('li');
+    li.id = 'swiss-row';
+    li.innerHTML = `<button type="button" class="basemap-menu-item"
+      data-basemap-key="swisstopo_winter" data-basemap-url="${SWISS_STYLE_URL}"
+      data-basemap-countries="ch" aria-checked="false">Swisstopo (CH)</button>`;
+    document.getElementById('basemap-menu').appendChild(li);
+    try {
+      expect(window.pwaBasemapDownloads.swissMapMissing(await storedArea())).toBe(true);
+      await seedArea({ bbox: [6.82, 45.87, 6.92, 45.97] });
+      expect(window.pwaBasemapDownloads.swissMapMissing(await storedArea())).toBe(false);
+      expect(window.pwaBasemapDownloads.swissMapMissing(null)).toBe(false);
+    } finally {
+      li.remove();
+    }
+  });
+});
