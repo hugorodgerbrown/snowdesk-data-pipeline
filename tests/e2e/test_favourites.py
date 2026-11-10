@@ -57,8 +57,7 @@ def test_signed_in_add_flow_creates_favourite(
     page = favourites_page.page
     _navigate_home(page, favourites_page.live_server_url)
 
-    # SNOW-1481: the star opens Saved on Places; its header's + (the one
-    # visible data-panel-add, the foot's being hidden) drops a pin.
+    # SNOW-1481: the star opens Saved › Places; its header + drops a pin.
     page.click("#favourite-add-btn")
     page.locator("[data-panel-add]:visible").click()
     page.wait_for_selector("#favourite-create-form")

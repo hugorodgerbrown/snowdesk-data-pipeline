@@ -30,8 +30,8 @@
  *   today   — `window.pwaTodayPanel.open()`, the Today panel (SNOW-1366):
  *             never a row's target, only the back pill's, for a region or
  *             resort reached from it;
- *   places  — `window.pwaFavouritesSheet.open({ list: 'places' })`, the
- *             installed phone app's Saved → Places (SNOW-1479), on the same
+ *   places  — `window.pwaFavouritesSheet.open()`, Saved → Places
+ *             (SNOW-1479; on every screen since SNOW-1481), on the same
  *             terms as Today.
  *
  * A NEW PANEL OPENS AT THE HEIGHT THE OLD ONE HAD. On a phone a row or the
@@ -132,7 +132,7 @@
     } else if (kind === 'today') {
       if (window.pwaTodayPanel) window.pwaTodayPanel.open();
     } else if (kind === 'places') {
-      if (window.pwaFavouritesSheet) window.pwaFavouritesSheet.open({ list: 'places' });
+      if (window.pwaFavouritesSheet) window.pwaFavouritesSheet.open();
     } else if (kind === 'weather') {
       if (window.pwaWeatherDetail) window.pwaWeatherDetail.open(id, dateKey || undefined);
       else if (href) window.location.assign(href);
