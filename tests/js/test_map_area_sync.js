@@ -1720,9 +1720,11 @@ describe('what a sync says it is doing, and a failed addition (SNOW-1487)', () =
     let cancel = () => {};
     window.pwaWarmCacheCancel = vi.fn(() => cancel());
     window.pwaWarmCache.mockImplementationOnce(
-      () =>
+      (urls, opts) =>
         new Promise((resolve) => {
           cancel = () => resolve({ ok: 0, failed: 0, bytes: 0, cancelled: true });
+          // The run's own first reply, then the stop.
+          opts?.onProgress?.(0, urls.length, 0, 0);
           queueMicrotask(() => controller.abort());
         }),
     );
@@ -1907,6 +1909,80 @@ describe('what a sync says it is doing, and a failed addition (SNOW-1487)', () =
       expect((await storedArea()).verified).toMatchObject({ map: 'yes' });
     });
 
+    it('during the map stage keeps the last sync\'s terrain step and its green map', async () => {
+      offerSwisstopo();
+      terrainData(true);
+      const terrainStep = { step: 'terrain', reason: 'network', done: 3, total: 10 };
+      await seedArea({ verified: { at: '2026-01-01T00:00:00.000Z', map: 'yes', steps: [terrainStep] } });
+      const controller = new AbortController();
+      stopDuringFirstFetch(controller);
+
+      const result = await window.pwaBasemapDownloads.syncArea(AREA_ID, undefined, controller.signal);
+
+      expect(window.pwaWarmCache).toHaveBeenCalledTimes(1);
+      expect(warmedUrls(0).some(isClassTile)).toBe(false);
+      expect(result.steps).toEqual([expect.objectContaining({ step: 'basemap', reason: 'interrupted' })]);
+      const record = await storedArea();
+      expect(record.verified.steps).toEqual([
+        terrainStep,
+        expect.objectContaining({ step: 'basemap', reason: 'interrupted' }),
+      ]);
+      const journey = window.pwaOfflineJourneyCore;
+      const stages = journey.stagesFromRecord(record, new Date(), { terrainExpected: true });
+      expect(stages.map.status).toBe('yes');
+    });
+
+    it('leaves the last finished time where it was', async () => {
+      await seedArea({ verified: { at: '2026-01-01T00:00:00.000Z', map: 'yes' } });
+      holdDependencies([STYLE_URL, SPRITE_URL]);
+      const controller = new AbortController();
+      stopDuringFirstFetch(controller);
+
+      await window.pwaBasemapDownloads.syncArea(AREA_ID, undefined, controller.signal);
+
+      expect((await storedArea()).verified.at).toBe('2026-01-01T00:00:00.000Z');
+    });
+
+    it('that lands after the last fetch settled keeps the finished fetch', async () => {
+      const controller = new AbortController();
+      window.pwaWarmCache.mockImplementationOnce(async (urls) => {
+        controller.abort();
+        return { ok: urls.length, failed: 0, bytes: 0, cancelled: false };
+      });
+
+      const result = await window.pwaBasemapDownloads.syncArea(AREA_ID, undefined, controller.signal);
+
+      expect(warmedUrls(0)).toContain(BULLETIN_URL);
+      expect(result).toMatchObject({ content: true, steps: [] });
+      expect(result.cancelled).toBeUndefined();
+      expect((await storedArea()).contentAt).toBeTruthy();
+    });
+
+    it('waits for the fetch\'s own first reply before cancelling, so a queued run cancels no other', async () => {
+      const controller = new AbortController();
+      let reply = () => {};
+      let cancel = () => {};
+      window.pwaWarmCacheCancel = vi.fn(() => cancel());
+      window.pwaWarmCache.mockImplementationOnce(
+        (urls, opts) =>
+          new Promise((resolve) => {
+            cancel = () => resolve({ ok: 0, failed: 0, bytes: 0, cancelled: true });
+            reply = () => opts.onProgress(0, urls.length, 0, 0);
+            queueMicrotask(() => controller.abort());
+          }),
+      );
+
+      const syncing = window.pwaBasemapDownloads.syncArea(AREA_ID, undefined, controller.signal);
+      await vi.waitFor(() => expect(controller.signal.aborted).toBe(true));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(window.pwaWarmCacheCancel).not.toHaveBeenCalled();
+      reply();
+      const result = await syncing;
+
+      expect(window.pwaWarmCacheCancel).toHaveBeenCalledTimes(1);
+      expect(result.steps).toEqual([expect.objectContaining({ step: 'content', reason: 'interrupted' })]);
+    });
+
     it('before the sync begins fetches nothing and stamps nothing', async () => {
       const controller = new AbortController();
       controller.abort();
@@ -1956,6 +2032,25 @@ describe('what the inventory measures (SNOW-1487)', () => {
       expect(measured).toEqual({ mapBytes: 4000, terrainBytes: 10 * terrain.length, terrainHeld: true });
     } finally {
       restore();
+    }
+  });
+
+  it('reads a bounded sample of bodies on a large bucket with no lengths', async () => {
+    const record = await storedArea();
+    const entries = {};
+    for (let i = 0; i < 1000; i += 1) entries[TEMPLATE.replace('{z}/{x}/{y}', `14/${i}/1`)] = { body: 50 };
+    const real = window.caches.open;
+    const reads = vi.fn(async () => ({ size: 50 }));
+    window.caches.open = vi.fn(async () => ({
+      keys: async () => Object.keys(entries).map((url) => ({ url })),
+      match: async () => ({ headers: { get: () => null }, clone: () => ({ blob: reads }) }),
+    }));
+    try {
+      const measured = await window.pwaBasemapDownloads.measureAreaInventory('custom-large', record);
+      expect(reads.mock.calls.length).toBeLessThanOrEqual(200);
+      expect(measured.mapBytes).toBe(50 * 1000);
+    } finally {
+      window.caches.open = real;
     }
   });
 

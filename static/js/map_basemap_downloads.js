@@ -1756,23 +1756,71 @@ function forgetPinnedBucketMeasurement(areaId) {
 // by the same two writers.
 const AREA_INVENTORY_MEASUREMENTS = new Map();
 
+// SNOW-1487 review: how many bodies one URL class has read, at most,
+// when its entries carry no `Content-Length`. Production tiles are served
+// compressed and carry none (see `measurePinnedBucketBytes`), so reading
+// every body would be thousands of reads on a large area; a sample, spread
+// evenly over the class, is read instead and its mean stands for the rest.
+const INVENTORY_BODY_SAMPLE = 200;
+
 /**
- * SNOW-1487: one cached entry's size — its `Content-Length`, else its
- * body. A tile served compressed carries no length (see
- * `measurePinnedBucketBytes`), so the body is read for it.
+ * SNOW-1487: one cached entry's `Content-Length`, or 0 when it has none.
  *
  * @param {Response|undefined} response
- * @returns {Promise<number>}
+ * @returns {number}
  */
-async function _entryBytes(response) {
+function _entryLength(response) {
   if (!response) return 0;
   const header = Number(response.headers && response.headers.get('Content-Length'));
-  if (Number.isFinite(header) && header > 0) return header;
+  return Number.isFinite(header) && header > 0 ? header : 0;
+}
+
+/**
+ * SNOW-1487: one cached entry's body size, or null when it cannot be read.
+ *
+ * @param {Response|undefined} response
+ * @returns {Promise<number|null>}
+ */
+async function _entryBodyBytes(response) {
+  if (!response) return null;
   try {
     return (await response.clone().blob()).size;
   } catch (_e) {
-    return 0;
+    return null;
   }
+}
+
+/**
+ * SNOW-1487: the bytes one URL class of a bucket holds — the lengths its
+ * entries carry, and for the entries with none, the mean of a bounded,
+ * evenly spread sample of their bodies (`INVENTORY_BODY_SAMPLE`) times
+ * their count.
+ *
+ * @param {Cache} cache
+ * @param {Request[]} requests
+ * @returns {Promise<number>}
+ */
+async function _classBytes(cache, requests) {
+  let known = 0;
+  /** @type {Request[]} */
+  const unsized = [];
+  for (const request of requests) {
+    const length = _entryLength(await cache.match(request));
+    if (length > 0) known += length;
+    else unsized.push(request);
+  }
+  if (unsized.length === 0) return known;
+  const sample = Math.min(unsized.length, INVENTORY_BODY_SAMPLE);
+  let read = 0;
+  let readBytes = 0;
+  for (let k = 0; k < sample; k += 1) {
+    const request = unsized[Math.floor((k * unsized.length) / sample)];
+    const bytes = await _entryBodyBytes(await cache.match(request));
+    if (bytes === null) continue;
+    read += 1;
+    readBytes += bytes;
+  }
+  return known + (read ? Math.round((readBytes / read) * unsized.length) : 0);
 }
 
 /**
@@ -1784,8 +1832,11 @@ async function _entryBytes(response) {
  * by each sync; split by an estimate it read "0 MB" for a map whenever
  * the estimate ran over the total. So the inventory measures instead, by
  * URL class: an entry under the terrain-class or elevation template is
- * terrain data, and everything else in the bucket is the map. Measured
- * once per area per page and forgotten whenever its bucket changes.
+ * terrain data, and everything else in the bucket is the map. An entry's
+ * size is its `Content-Length`; where entries carry none, a bounded sample
+ * of their bodies is read (`_classBytes`), so a large area costs at most
+ * `INVENTORY_BODY_SAMPLE` body reads per class. Measured once per area per
+ * page and forgotten whenever its bucket changes.
  *
  * @param {string} areaId
  * @param {Object|null} record The area's stored record.
@@ -1804,18 +1855,19 @@ async function measureAreaInventory(areaId, record) {
     const cache = await caches.open(BASEMAP_PINNED_CACHE_PREFIX + areaId);
     const requests = await cache.keys();
     const held = new Set();
-    let mapBytes = 0;
-    let terrainBytes = 0;
+    /** @type {Request[]} */
+    const mapRequests = [];
+    /** @type {Request[]} */
+    const terrainRequests = [];
     for (const request of requests) {
       held.add(request.url);
-      const bytes = await _entryBytes(await cache.match(request));
-      if (prefixes.some((prefix) => request.url.startsWith(prefix))) terrainBytes += bytes;
-      else mapBytes += bytes;
+      if (prefixes.some((prefix) => request.url.startsWith(prefix))) terrainRequests.push(request);
+      else mapRequests.push(request);
     }
     const expected = record && record.terrain ? areaTerrainClassTileUrls(record) : [];
     measured = {
-      mapBytes: mapBytes,
-      terrainBytes: terrainBytes,
+      mapBytes: await _classBytes(cache, mapRequests),
+      terrainBytes: await _classBytes(cache, terrainRequests),
       terrainHeld: expected.length ? expected.every((url) => held.has(url)) : null,
     };
   } catch (_e) {
@@ -5260,7 +5312,21 @@ function _repairInto(areaId, urls, options) {
   }
   return new Promise((resolve) => {
     let done = 0;
-    const onAbort = () => window.pwaWarmCacheCancel?.();
+    // The worker runs one warm at a time, queued (`_warmCacheChain` in
+    // sw_register.js), and its cancel stops whichever run holds the slot.
+    // Counts reach `paint` only from this run's own replies, so until one
+    // has, the slot may be another run's (a download, the offline report's
+    // shell warm): a stop then waits for this run's first reply.
+    let running = false;
+    let stopWanted = false;
+    const cancel = () => {
+      stopWanted = false;
+      window.pwaWarmCacheCancel?.();
+    };
+    const onAbort = () => {
+      if (running) cancel();
+      else stopWanted = true;
+    };
     if (signal) signal.addEventListener('abort', onAbort);
     report(0, total);
     repairPinnedDownload({
@@ -5269,16 +5335,22 @@ function _repairInto(areaId, urls, options) {
       // Nothing to paint on a roundel: the caller is told the counts.
       paint: (_state, _pct, _bytes, counts) => {
         if (!counts || !Number.isFinite(counts.done)) return;
+        running = true;
         done = counts.done;
-        report(counts.done, Number.isFinite(counts.total) ? counts.total : total);
+        const of = Number.isFinite(counts.total) ? counts.total : total;
+        report(counts.done, of);
+        if (stopWanted && counts.done < of) cancel();
       },
       finish: async (result, extras) => {
         if (signal) signal.removeEventListener('abort', onAbort);
         const runCore = extras && extras.core;
         const answer = result || {};
+        // The run's own answer, not the signal: a stop that lands after
+        // the last fetch settled leaves a finished fetch finished, and
+        // only keeps the next stage from starting.
         resolve({
           ok: !!(runCore && runCore.downloadSucceeded(result)),
-          cancelled: !!answer.cancelled || !!(signal && signal.aborted),
+          cancelled: !!answer.cancelled,
           done: Number.isFinite(answer.ok) ? Number(answer.ok) : done,
           total: total,
           bytes: Number(answer.bytes) || 0,
@@ -5576,6 +5648,12 @@ async function syncArea(areaId, onStage, signal) {
   }
   /** @type {SyncStep[]} */
   const steps = [];
+  // The stages this sync reached, by step name. Only these answer for
+  // their step: the stamp keeps the last sync's step for a stage this one
+  // never started (`stampVerifiedRecord`), so a stop cannot wipe an
+  // earlier "could not add" notice.
+  /** @type {string[]} */
+  const ran = [];
   /**
    * Stamp what the sync learned before a stop, and say so. The step in
    * flight is already in `steps`, as `interrupted`; a stage that never
@@ -5591,7 +5669,7 @@ async function syncArea(areaId, onStage, signal) {
       steps: steps,
       cancelled: true,
     });
-    await _stampAreaVerified(areaId, Object.assign({}, result, { content: undefined }));
+    await _stampAreaVerified(areaId, Object.assign({}, result, { content: undefined, ran: ran }));
     return result;
   };
   // Stopped before it began: nothing was read, so nothing is stamped.
@@ -5604,6 +5682,7 @@ async function syncArea(areaId, onStage, signal) {
   // below judge (and mend) every map it now holds, the Swisstopo
   // elevation tiles among them.
   const added = await _addMissingBasemaps(areaId, found, { signal: signal, onProgress: mapProgress });
+  ran.push('basemap');
   if (added.status === 'failed') steps.push(_syncStep('basemap', added));
   if (added.status === 'ok') found = (await _areaRecordById(areaId)) || found;
   if (stopped()) return stop({});
@@ -5614,10 +5693,12 @@ async function syncArea(areaId, onStage, signal) {
     signal: signal,
     onProgress: (done, total) => tell('terrain', { done: done, total: total }),
   });
+  ran.push('terrain');
   if (terrainAdded.status === 'failed') steps.push(_syncStep('terrain', terrainAdded));
   if (terrainAdded.status === 'ok') found = (await _areaRecordById(areaId)) || found;
   if (stopped()) return stop({});
   const missing = await _missingAreaRenderDependencies(found.record, areaId);
+  ran.push('deps');
   let tiles = missing === null ? 'unknown' : 'none';
   if ((added.status === 'ok' || terrainAdded.status === 'ok') && tiles === 'none') tiles = 'ok';
   if (missing && missing.length > 0) {
@@ -5652,12 +5733,13 @@ async function syncArea(areaId, onStage, signal) {
   if (stopped()) return stop({ tiles: tiles, tilesHeld: tilesHeld });
 
   const content = await _refreshAreaContent(areaId, tell, signal);
+  ran.push('content');
   if (!content.ok && content.reason) {
     steps.push(_syncStep('content', { reason: content.reason, done: content.done, total: content.total }));
   }
   const result = { tiles: tiles, tilesHeld: tilesHeld, content: content.ok, steps: steps };
   if (content.reason === 'interrupted') return stop({ tiles: tiles, tilesHeld: tilesHeld });
-  await _stampAreaVerified(areaId, result);
+  await _stampAreaVerified(areaId, Object.assign({}, result, { ran: ran }));
   return result;
 }
 
