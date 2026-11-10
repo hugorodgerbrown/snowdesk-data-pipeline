@@ -1642,6 +1642,47 @@ describe('the text form', () => {
   });
 });
 
+// SNOW-1487: what each area's last sync did not finish is in the copy.
+describe('the sync steps in the text form', () => {
+  const area = (name, steps) => ({
+    id: 'custom-' + name,
+    kind: 'custom',
+    name: name,
+    deps: [],
+    verified: { at: '2026-09-11T07:00:00.000Z', map: 'yes', steps: steps },
+  });
+
+  it('lists each step with its reason, its counts and the space it needed', () => {
+    const r = healthy();
+    r.areas = r.areas.concat([
+      area('Verbier', [
+        { step: 'basemap', reason: 'network', done: 212, total: 528, neededMb: 30, freeMb: null },
+        { step: 'terrain', reason: 'budget', done: 0, total: 40, neededMb: 12, freeMb: 3 },
+      ]),
+      area('Zermatt', []),
+    ]);
+    const report = core.buildReport(r, {});
+    const text = core.reportText(report, {});
+
+    expect(report.areaSteps).toEqual([{ name: 'Verbier', steps: expect.any(Array) }]);
+    expect(text).toContain('## sync steps that did not finish');
+    expect(text).toContain('  Verbier: basemap network 212/528 (needs 30 MB)');
+    expect(text).toContain('  Verbier: terrain budget 0/40 (needs 12 MB, 3 MB free)');
+    expect(text).not.toContain('Zermatt:');
+  });
+
+  it('adds no section when every sync finished', () => {
+    const text = core.reportText(core.buildReport(healthy(), {}), {});
+    expect(text).not.toContain('sync steps');
+  });
+
+  it('writes a stopped step with nothing measured as its name and reason', () => {
+    expect(core.stepLine({ step: 'content', reason: 'interrupted', done: 0, total: 0 })).toBe(
+      'content interrupted',
+    );
+  });
+});
+
 describe('the missing line', () => {
   it('lists paths and counts what it leaves out', () => {
     const urls = Array.from({ length: 12 }, (_, i) => `https://snowdesk.info/static/js/m${i}.js`);
