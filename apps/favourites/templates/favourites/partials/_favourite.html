@@ -5,8 +5,8 @@ row: every surface that lists a favourite renders this file (SNOW-711).
 
 Rendered directly by apps.favourites.views.favourite_create,
 favourite_resort_create and favourite_rename after a write, and looped over
-by both list variants (_favourite_list.html on /account/,
-_favourite_list_map.html in the map sheet).
+by the map sheet's Places list (_places.html; the pins list,
+_favourite_list_map.html, until SNOW-1481).
 
 WHAT THIS REPLACED. Until SNOW-711 this row was a bordered box holding an
 always-visible text input and an underlined "Remove", and the map sheet had
@@ -83,11 +83,10 @@ lives. This file is places again, and its callers pass ``placed()``.
 Context:
     favourite       : Favourite — the saved pin to render.
     hide_disclosure : bool, optional — drop the trailing chevron. Passed
-                      by _favourite_list_map.html; see above.
+                      by _places.html; see above.
     map_focus       : bool, optional — render the name as a control that
                       frames this pin on the map. Passed by
-                      _favourite_list_map.html; the account page passes
-                      nothing, having no map to fly.
+                      _places.html.
     pin_height      : float, optional — the pin's height in metres. Passed
                       by the app's Places list (favourites/partials/
                       _places.html, SNOW-1479), which lists each pin under
