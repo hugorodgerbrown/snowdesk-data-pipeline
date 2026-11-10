@@ -266,8 +266,13 @@ map_downloads_manager.js
 # reader; the script returns early without #trips-sheet.
 trips_panel.js
 
+# SNOW-1481: Saved, the one panel of the four sheets above (favourites.js,
+# routes.js, trips_panel.js, report.js), opened by the star roundel and the
+# app's Saved tab (window.pwaSavedPanel). After those four, whose
+# controllers it reads when used, and before app_tabbar.js, which calls it.
+saved_panel.js
+
 # SNOW-1476: the installed phone app's tab bar. Last, because it drives the
-# panels every module above attaches (today_panel.js, favourites.js,
-# routes.js, trips_panel.js, report.js) and opens map_downloads_manager.js's
-# sheet.
+# panels every module above attaches (today_panel.js, saved_panel.js) and
+# opens map_downloads_manager.js's sheet.
 app_tabbar.js

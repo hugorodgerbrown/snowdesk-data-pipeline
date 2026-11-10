@@ -280,18 +280,22 @@ interface Window {
    *  toToday, which Saved → Places' rows borrow. */
   pwaTodayPanel: { open(): void; close(): void; isOpen(): boolean; toToday(): void };
   /** SNOW-1476: the favourites, routes and report sheets' controllers.
-   *  SNOW-1479: the favourites sheet opens on Places with { list: 'places' }. */
-  pwaFavouritesSheet: {
-    open(options?: { list?: 'pins' | 'places' }): void;
-    close(): void;
-    isOpen(): boolean;
-  };
+   *  SNOW-1481: the favourites sheet always lists Places. */
+  pwaFavouritesSheet: { open(): void; close(): void; isOpen(): boolean };
   /** SNOW-1479: the Saved tab's Trips sheet (static/js/trips_panel.js). */
   pwaTripsSheet: { open(): void; close(): void; isOpen(): boolean };
   pwaRoutesSheet: { open(): void; close(): void; isOpen(): boolean };
   pwaReportSheet: { open(): void; close(): void; isOpen(): boolean };
   /** static/js/map_downloads_manager.js — the downloads sheet. */
   pwaDownloadsManager: { open(): void; toggle(): void; refresh(): void };
+  /** SNOW-1481: Saved, the four sheets as one panel (static/js/saved_panel.js). */
+  pwaSavedPanel: {
+    open(): void;
+    close(): void;
+    isOpen(): boolean;
+    toggle(): void;
+    switchTo(choice: 'places' | 'routes' | 'trips' | 'observations'): void;
+  };
   /** SNOW-1476: the installed phone app's tab bar (static/js/app_tabbar.js). */
   pwaAppTabbar: { select(tab: 'map' | 'saved' | 'help'): void; light(): void };
   /** static/js/map_sheet.js — the sheet controller; attach/bindDetents/handOff/toast. */

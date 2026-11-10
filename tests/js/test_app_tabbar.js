@@ -4,17 +4,14 @@
  *
  * static/js/app_tabbar.js against a reduced copy of the bar and the "?" menu,
  * with ``window.MapSheet`` and the panel controllers stubbed — the sheets'
- * own behaviour is tested beside each one. What is pinned here is the bar's:
+ * own behaviour is tested beside each one, and Saved's
+ * (static/js/saved_panel.js, SNOW-1481) in tests/js/test_saved_panel.js.
+ * What is pinned here is the bar's:
  *   - three tabs, Map, Saved and Help; a tab opens its panel and lights;
  *     tapping it again, or Map, closes it;
- *   - another tab swaps one panel for the next, marked for the cross-fade;
- *   - Saved opens the favourites sheet on Places ({ list: 'places' });
- *     signed out, on Places too;
- *   - the four Saved tabs close one sheet as they open its sibling, with no
- *     entrance mark, and Saved reopens on the tab last chosen, Trips
- *     included;
- *   - the Trips picker's no-routes item (data-saved-go="routes") switches
- *     Saved to Routes;
+ *   - Saved is window.pwaSavedPanel: it opens on Places, signed out too,
+ *     and on the Saved tab last chosen, and a Saved tab switch keeps the
+ *     Saved tab lit;
  *   - a panel closed from elsewhere lights Map again;
  *   - Help opens and closes the map's own "?" menu (window.pwaMapHelpMenu),
  *     rising rather than swapping, since it is a card of its own;
@@ -26,6 +23,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const MARKUP = `
+  <button id="favourite-add-btn" data-favourites-eligible="true"></button>
   <button id="map-today-panel-toggle"><span data-today-dot hidden></span></button>
   <div data-app-tabbar data-app-tabbar-on-map>
     <button data-app-tab="map" aria-current="page">Map</button>
@@ -65,6 +63,7 @@ function panel(id) {
 /** Publish every stubbed panel the map would. */
 function stubPanels({ signedIn = true } = {}) {
   window.MapSheet = { attach: vi.fn((el) => panel(el.id)) };
+  $('favourite-add-btn').setAttribute('data-favourites-eligible', String(signedIn));
   if (signedIn) {
     window.pwaTodayPanel = panel('today-sheet');
     window.pwaTripsSheet = panel('trips-sheet');
@@ -84,6 +83,7 @@ async function load({ signedIn = true, url = '/map/' } = {}) {
   stubPanels({ signedIn });
   window.pwaMapHelpMenu = panel('map-help-menu');
   vi.resetModules();
+  await import('../../static/js/saved_panel.js');
   await import('../../static/js/app_tabbar.js');
   await tick();
 }
@@ -104,6 +104,7 @@ afterEach(() => {
   for (const key of [
     'MapSheet', 'pwaTodayPanel', 'pwaFavouritesSheet', 'pwaRoutesSheet',
     'pwaTripsSheet', 'pwaReportSheet', 'pwaAppTabbar', 'pwaMapHelpMenu',
+    'pwaSavedPanel',
   ]) delete window[key];
   vi.restoreAllMocks();
 });
@@ -157,96 +158,35 @@ describe('Saved', () => {
   it('opens the favourites sheet on Places', async () => {
     await load();
     tab('saved').click();
-    expect(window.pwaFavouritesSheet.open).toHaveBeenCalledWith({ list: 'places' });
+    expect(window.pwaFavouritesSheet.open).toHaveBeenCalled();
+    expect($('favourite-sheet').hidden).toBe(false);
   });
 
   it('opens on Places signed out too', async () => {
+    window.sessionStorage.setItem('snowdesk:app-tab-saved', 'routes');
     await load({ signedIn: false });
     tab('saved').click();
     expect($('favourite-sheet').hidden).toBe(false);
-    expect(window.pwaFavouritesSheet.open).toHaveBeenCalledWith({ list: 'places' });
-    expect(lit()).toEqual(['saved']);
-  });
-});
-
-describe('the Saved tabs', () => {
-  /** Put a tab row in the open sheet and choose `value`. */
-  function choose(sheetId, value) {
-    const input = document.createElement('input');
-    input.type = 'radio';
-    input.name = 'saved-tab';
-    input.value = value;
-    $(sheetId).append(input);
-    input.checked = true;
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  }
-
-  it('close one sheet as they open its sibling', async () => {
-    await load();
-    tab('saved').click();
-    choose('favourite-sheet', 'routes');
-    await tick();
-    expect($('favourite-sheet').hidden).toBe(true);
-    expect($('route-sheet').hidden).toBe(false);
+    expect($('route-sheet').hidden).toBe(true);
     expect(lit()).toEqual(['saved']);
   });
 
-  it('open the Trips sheet', async () => {
-    await load();
-    tab('saved').click();
-    choose('favourite-sheet', 'trips');
-    await tick();
-    expect($('favourite-sheet').hidden).toBe(true);
-    expect($('trips-sheet').hidden).toBe(false);
-    expect(lit()).toEqual(['saved']);
-  });
-
-  it('replace the content with no entrance at all', async () => {
-    await load();
-    tab('saved').click();
-    choose('favourite-sheet', 'routes');
-    await tick();
-    expect($('route-sheet').hasAttribute('data-tab-swap')).toBe(false);
-    expect($('route-sheet').hasAttribute('data-tab-open')).toBe(false);
-  });
-
-  it('are remembered: Saved reopens on the last tab', async () => {
-    await load();
-    tab('saved').click();
-    choose('favourite-sheet', 'observations');
-    await tick();
-    tab('map').click();
-    tab('saved').click();
-    expect($('report-sheet').hidden).toBe(false);
-    expect($('favourite-sheet').hidden).toBe(true);
-  });
-
-  it('remember Trips', async () => {
-    await load();
-    tab('saved').click();
-    choose('favourite-sheet', 'trips');
-    await tick();
-    tab('map').click();
-    tab('saved').click();
-    expect($('trips-sheet').hidden).toBe(false);
-  });
-});
-
-describe("the Trips picker's no-routes item", () => {
-  it('switches Saved to Routes', async () => {
-    await load();
+  it('opens on the Saved tab last chosen', async () => {
     window.sessionStorage.setItem('snowdesk:app-tab-saved', 'trips');
+    await load();
     tab('saved').click();
     expect($('trips-sheet').hidden).toBe(false);
-    const item = document.createElement('button');
-    item.setAttribute('data-saved-go', 'routes');
-    $('trips-sheet').append(item);
-    item.click();
+    expect(lit()).toEqual(['saved']);
+  });
+
+  it('stays lit across a Saved tab switch', async () => {
+    await load();
+    tab('saved').click();
+    window.pwaSavedPanel.switchTo('routes');
     await tick();
-    expect($('trips-sheet').hidden).toBe(true);
+    expect($('favourite-sheet').hidden).toBe(true);
     expect($('route-sheet').hidden).toBe(false);
     expect(lit()).toEqual(['saved']);
-    expect(window.sessionStorage.getItem('snowdesk:app-tab-saved')).toBe('routes');
   });
 });
 
@@ -320,7 +260,7 @@ describe('?panel=', () => {
     expect($('favourite-sheet').hidden).toBe(false);
     expect($('route-sheet').hidden).toBe(true);
     expect($('today-sheet').hidden).toBe(true);
-    expect(window.pwaFavouritesSheet.open).toHaveBeenCalledWith({ list: 'places' });
+    expect(window.pwaFavouritesSheet.open).toHaveBeenCalled();
     expect(lit()).toEqual(['saved']);
     expect(window.location.search).toBe('');
   });

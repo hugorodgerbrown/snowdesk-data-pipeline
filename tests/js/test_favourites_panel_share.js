@@ -34,7 +34,7 @@ import '../../static/js/i18n_strings.js';
 import '../../static/js/map_sheet.js';
 import '../../static/js/share.js';
 
-const LIST_URL = '/favourites/partials/list/?variant=map';
+const PLACES_URL = '/favourites/partials/places/';
 const UUID = '11111111-2222-3333-4444-555555555555';
 const SHARE_TEXT = 'Mont Fort - https://w3w.co/filled.count.soap';
 
@@ -43,7 +43,7 @@ document.body.innerHTML = `
           data-favourites-eligible="true"
           data-signin-url="/sign-in/"
           data-favourite-create-url="/favourites/partials/create/"
-          data-favourite-list-url="${LIST_URL}"
+          data-favourite-places-url="${PLACES_URL}"
           data-favourite-rename-url-template="/favourites/partials/__UUID__/rename/"
           data-favourite-delete-url-template="/favourites/partials/__UUID__/delete/"></button>
   <div id="favourite-sheet" hidden></div>
@@ -67,6 +67,7 @@ document.body.innerHTML = `
 globalThis.htmx = { ajax: vi.fn(() => Promise.resolve()), process: vi.fn() };
 
 await import('../../static/js/favourites.js');
+await import('../../static/js/saved_panel.js');
 
 const btn = document.getElementById('favourite-add-btn');
 const sheet = document.getElementById('favourite-sheet');
@@ -88,7 +89,7 @@ function stubNavigator(parts) {
 /**
  * Open the panel and put one shareable row inside it.
  *
- * Stands in for what favourites:list swaps in. The row's real shape is
+ * Stands in for what favourites:places swaps in. The row's real shape is
  * favourites/partials/_favourite_row_menu_items.html's, asserted
  * server-side in tests/favourites/test_views.py — including that the text
  * is the name and the short link.

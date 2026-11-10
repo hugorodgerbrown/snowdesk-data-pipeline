@@ -13,8 +13,9 @@
  *
  * SNOW-658: the roundel opens a PANEL, not the create form. The panel
  * (#favourite-list-template, in _favourites_surface.html) lists the user's
- * own pins — loaded over HTMX from favourites:list, whose
- * row (favourites/partials/_favourite.html) is the shared UGC row:
+ * places — loaded over HTMX from favourites:places (SNOW-1481; it was
+ * favourites:list, the pins alone), whose pin row
+ * (favourites/partials/_favourite.html) is the shared UGC row:
  * a label, a muted meta line, and two icon controls — a pencil and a
  * trash. Remove is that row's own HTMX form and needs nothing here;
  * Rename — the pencil, and only the pencil — puts the row's own label
@@ -29,7 +30,8 @@
  * Flow when eligible (authenticated), using the shared place-picker
  * (SNOW-475 — static/js/place_picker.js) rather than a draggable marker,
  * which on touch screens is occluded by the dragging finger:
- *   1. Tap #favourite-add-btn — opens the sheet on the list panel; tap
+ *   1. Tap #favourite-add-btn — opens Saved on Places (static/js/
+ *      saved_panel.js, which owns the star's click since SNOW-1481); tap
  *      [data-panel-add] inside it to show the create form (cloned from
  *      #favourite-create-template, which carries a real {% csrf_token %}
  *      rendered server-side — there is no per-request form-load endpoint
@@ -75,13 +77,12 @@
  */
 
 /*
- * SNOW-1479 — PLACES. The installed phone app's Saved tab opens this same
- * sheet on Places: ``window.pwaFavouritesSheet.open({ list: 'places' })``
- * loads favourites:places (Today's regions and resorts with each region's
- * pins, and "Elsewhere") into the rows instead of favourites:list, and
- * remembers which list is up so a re-read after a rename or a delete reads
- * the same one. The roundel, and ``open()`` with no list, still load
- * favourites:list. In Places:
+ * SNOW-1479 — PLACES, and SNOW-1481 — ONLY PLACES. The sheet is Saved ›
+ * Places on every screen: ``window.pwaFavouritesSheet.open()`` loads
+ * favourites:places (Today's regions and resorts with each region's pins,
+ * and "Elsewhere") into the rows. The roundel's pins-only list
+ * (favourites:list) is gone, and with it the cached paint of that list. In
+ * Places:
  *   - a region or resort row is a link that opens its sheet on the map
  *     (map_panel_trail.js, back pill "Places"); following one puts the map
  *     on today first, as the Today panel's rows do (pwaTodayPanel.toToday),
@@ -90,7 +91,8 @@
  *     (data-place-share), and its Delete is a favourites:delete form the
  *     row-removed watch below re-reads the list after;
  *   - the header's + carries data-panel-add, so it drops a pin.
- * Places is online only, as Today is: a failed load says so in its own line.
+ * Places is online only, as Today is: a failed load says so in its own
+ * line, never with cached pins.
  */
 (function () {
   'use strict';
@@ -124,7 +126,6 @@
     // rendered by the row template, where makemessages can see it. Only
     // the failure line is still JS-rendered copy.
     'rename-failed': "That name couldn't be saved. Try again.",
-    'list-failed': "Your favourites couldn't be loaded — check your connection.",
     'places-failed': "Your places couldn't be loaded — check your connection.",
     // SNOW-887: the two outcomes the share is allowed to speak about. A
     // platform that TOOK the payload says nothing (it showed its own
@@ -136,20 +137,12 @@
   });
 
   const CREATE_URL = btn.dataset.favouriteCreateUrl;
-  const LIST_URL = btn.dataset.favouriteListUrl;
-  // SNOW-1479: the Saved tab's Places list, for open({ list: 'places' }).
+  // SNOW-1479: the Places list, the sheet's only list since SNOW-1481.
   const PLACES_URL = btn.dataset.favouritePlacesUrl;
   const RENAME_URL_TEMPLATE = btn.dataset.favouriteRenameUrlTemplate;
   const DELETE_URL_TEMPLATE = btn.dataset.favouriteDeleteUrlTemplate;
   const SIGNIN_URL = btn.dataset.signinUrl;
   const IS_ELIGIBLE = btn.dataset.favouritesEligible === 'true';
-
-  // SNOW-879: warm this panel's rows at idle so the FIRST open of a
-  // session is instant too, not just the ones after it. Gated on
-  // IS_ELIGIBLE — the panel loads nothing for an ineligible visitor (it gets the sign-in
-  // CTA instead), so there is nothing to warm for one.
-  // See static/js/panel_rows_cache.js.
-  if (IS_ELIGIBLE && LIST_URL) window.pwaPanelRows?.warm('favourites', LIST_URL);
 
   // SNOW-499: resort star create URL — read from #map's own dataset
   // (not #favourite-add-btn's) since it is emitted alongside the other
@@ -284,7 +277,7 @@
 
   /** Clone #favourite-list-template into the sheet and populate it.
    *
-   * Eligible: the rows load over HTMX from favourites:list. Anonymous: the
+   * Eligible: the rows load over HTMX from favourites:places. Anonymous: the
    * rows and the add CTA are removed and a sign-in CTA takes their place.
    * The "Show on the map" switch stays through both branches, as SNOW-658's
    * did: it is a view control for the map behind the sheet, not a row in a
@@ -312,63 +305,24 @@
       if (rows) rows.replaceChildren(buildSigninCta());
       return true;
     }
-    loadRows(true);
+    loadRows();
     return true;
   }
 
-  /** (Re)load the panel's rows from favourites:list over HTMX.
-   *
-   * The URL is used VERBATIM — the server puts ``?variant=map`` on it so
-   * the sheet gets the lean row template (favourites/partials/
-   * _favourite_list_map.html), and rebuilding the path here would silently
-   * drop it and render the manage page's markup instead.
+  /** (Re)load the panel's rows from favourites:places over HTMX.
    *
    * Called on open, and again after a rename lands — the same
    * re-read-the-truth move map_downloads_manager.js's rename makes when it
    * calls render(), rather than patching the row in place from what we
-   * think we just wrote.
+   * think we just wrote. Online only, as Today is: no warm, no cached
+   * paint (SNOW-1481 retired the pins list that had both).
    *
-   * @param {boolean} [fromCache] True to paint the cached rows first —
-   *   set by the open path only, not by the post-mutation re-reads.
    * @returns {void}
    */
-  function loadRows(fromCache) {
+  function loadRows() {
     const rows = sheet.querySelector('[data-favourites-rows]');
-    const places = currentList === 'places' && !!PLACES_URL;
-    const url = places ? PLACES_URL : LIST_URL;
-    if (!rows || !url || typeof htmx === 'undefined') return;
-    rows.dataset.favouritesList = places ? 'places' : 'pins';
-    if (places) {
-      // Online only, as Today is: no warm, no cached paint.
-      htmx.ajax('GET', url, { target: rows, swap: 'innerHTML' });
-      return;
-    }
-    // SNOW-879: cached rows paint now, favourites:list still gets the last
-    // word a round trip later. `cached` is passed only for an OPEN —
-    // a re-read that follows a mutation must not flash the pre-mutation
-    // list back up. See static/js/panel_rows_cache.js.
-    if (window.pwaPanelRows) {
-      window.pwaPanelRows.load('favourites', LIST_URL, rows, { cached: fromCache });
-      return;
-    }
-    htmx.ajax('GET', LIST_URL, { target: rows, swap: 'innerHTML' });
-  }
-
-  // SNOW-658: the roundel TOGGLES, matching the layers pill and the downloads
-  // roundel — a second tap on the control that opened the panel closes it.
-  // Bound on the button, so it runs before MapSheet's own document-level
-  // click-outside handler, which then sees a closed sheet and does nothing.
-  /** @type {'pins'|'places'} Which list the sheet shows: SNOW-1479. */
-  let currentList = 'pins';
-
-  /** Open the sheet on a list.
-   * @param {{list?: 'pins'|'places'}} [options] ``list: 'places'`` for the
-   *   app's Saved → Places; anything else is the roundel's own list.
-   * @returns {void}
-   */
-  function openOn(options) {
-    currentList = options && options.list === 'places' ? 'places' : 'pins';
-    openSheet();
+    if (!rows || !PLACES_URL || typeof htmx === 'undefined') return;
+    htmx.ajax('GET', PLACES_URL, { target: rows, swap: 'innerHTML' });
   }
 
   /** Open the sheet on its list — what a roundel tap does when it is shut.
@@ -384,13 +338,8 @@
     else sheet.replaceChildren(buildSigninCta());
   }
 
-  btn.addEventListener('click', function () {
-    if (controller.isOpen()) {
-      closeSheet();
-      return;
-    }
-    openOn();
-  });
+  // SNOW-1481: the star's click is static/js/saved_panel.js's, which opens
+  // this sheet through the bridge below when Saved opens on Places.
 
   // SNOW-803: the sheet-level bridge, read by static/js/map.js to honour a
   // ``/?panel=favourites`` arrival — what /account/favourites/ redirects
@@ -399,7 +348,7 @@
   // whatever else is up, exactly as a tap would. Frozen, like every other
   // window.pwa* bridge.
   window.pwaFavouritesSheet = Object.freeze({
-    open: openOn,
+    open: openSheet,
     close: closeSheet,
     isOpen: controller.isOpen,
   });
@@ -658,20 +607,12 @@
 
   // SNOW-658: the list is fetched, and this panel opens offline while its
   // list does not load offline. Say so, rather than leaving the loading line
-  // up forever — and never fall through to favourites:list's own empty state,
-  // which would tell the user they have no pins when the request merely
-  // failed. Both htmx failure events are covered: responseError is a non-2xx
-  // reply, sendError is no reply at all (the offline case).
-  //
-  // This is not the only writer of that element: favourites_offline.js listens
-  // for the same two events and repaints the CACHED favourite cards over this
-  // line (SNOW-418). Cached data winning is the intended outcome — the line
-  // below is the fallback for a user with nothing cached, where
-  // favourites_offline.js returns early and leaves it standing. Two things
-  // produce that order, and breaking either silently inverts it: that module
-  // binds on document.body while this one binds on document (so it runs first
-  // as the event bubbles), and it awaits IndexedDB before writing (so its
-  // write lands after this synchronous one). Pinned by
+  // up forever — and never fall through to an empty state, which would tell
+  // the user they have no places when the request merely failed. Both htmx
+  // failure events are covered: responseError is a non-2xx reply, sendError
+  // is no reply at all (the offline case). SNOW-1481: this line is the only
+  // answer. favourites_offline.js painted cached pin cards over it for the
+  // retired pins list; Places is online only, as Today is. Pinned by
   // tests/js/test_favourites_panel_failed_load.js.
   for (const name of ['htmx:responseError', 'htmx:sendError']) {
     document.addEventListener(name, function (event) {
@@ -679,8 +620,7 @@
       if (!rows || !event.detail || event.detail.target !== rows) return;
       const p = document.createElement('p');
       p.className = 'text-sm text-text-2';
-      p.textContent =
-        rows.dataset.favouritesList === 'places' ? STRINGS['places-failed'] : STRINGS['list-failed'];
+      p.textContent = STRINGS['places-failed'];
       rows.replaceChildren(p);
     });
   }
@@ -778,13 +718,9 @@
   //
   //   the LIST — the row's own swap empties one <li>, so a panel that has
   //     just lost its last pin keeps rendering as a list of none.
-  //     favourites:list's empty state is a server-side
-  //     ``{% if not favourites %}`` clause and only a fresh response can
-  //     carry it. Hugo, deleting the last row: it "doesn't show until you
-  //     refresh the page". The refetch also re-emits the roster sidecar,
-  //     which is what keeps static/js/favourites_offline.js's cached copy
-  //     from holding a deleted pin (see its ``_evictAbsent`` reconcile) —
-  //     until SNOW-752 that only caught up on the panel's NEXT open.
+  //     favourites:places' empty state is server-side and only a fresh
+  //     response can carry it. Hugo, deleting the last row: it "doesn't
+  //     show until you refresh the page".
   //
   //   the MAP — deleting from the pin popup already announced this; deleting
   //     from the panel silently did not, and the pin stayed until a reload.

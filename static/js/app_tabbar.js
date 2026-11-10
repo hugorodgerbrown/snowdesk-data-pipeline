@@ -9,40 +9,24 @@
  * panel it opens is one the map already has.
  *
  *   - THREE TABS (SNOW-1479; Today was a fourth until SNOW-1479 folded it
- *     into Places). Saved is the favourites, routes, trips and report
- *     sheets (window.pwaFavouritesSheet / pwaRoutesSheet / pwaTripsSheet /
- *     pwaReportSheet), one at a time, switched by the icon tabs each
- *     renders in its header (includes/_saved_tabs.html). Places is the
- *     favourites sheet opened on favourites:places
- *     (pwaFavouritesSheet.open({ list: 'places' })), not the roundel's
- *     list. Help is the map's own "?" menu (window.pwaMapHelpMenu,
+ *     into Places). Saved is window.pwaSavedPanel (static/js/saved_panel.js,
+ *     SNOW-1481): the favourites, routes, trips and report sheets, one at a
+ *     time, switched by the tabs each renders in its header, opening on the
+ *     tab last chosen. The star roundel opens the same panel off the app.
+ *     Help is the map's own "?" menu (window.pwaMapHelpMenu,
  *     public/partials/_map_help_menu.html), whose roundel this app hides;
  *     it gains a Map key item there. Map closes whichever is open.
- *   - `data-saved-go` SWITCHES SAVED, as a tab would. The Trips header's +
- *     lists the reader's routes to plan a trip from (trips_panel.js); with
- *     none, its one item (`data-saved-go="routes"`) goes to Routes, where a
- *     route is added.
  *   - The downloads sheet, whose roundel this app hides, opens from the
  *     layers menu's Downloaded areas row (map_downloads_manager.js).
  *   - A TAB TOGGLES. Tapping the lit tab closes its panel; tapping another
- *     swaps it for the next in place. Today's and the Saved panels share
- *     one box, and the old one is hidden and the new one shown in the same
- *     task, so no frame is painted between them: the card stays put and
- *     only its content changes. A tab swap marks the new panel `data-tab-swap`,
- *     whose content (never the card, which would let the map show
- *     through) fades in; a Saved tab swaps with no mark at all, because
- *     the four sheets' headers sit in the same place (Hugo, 8 Nov 2026:
- *     "If a panel exists it should just replace the content"). The "?"
- *     menu is a card of its own, so it rises in and out instead.
+ *     swaps it for the next. A first open rises (`data-tab-open`): Saved
+ *     marks its own sheet, and the "?" menu, a card of its own, is marked
+ *     here.
  *   - THE LIT TAB FOLLOWS THE PANELS. A panel closed by something else —
  *     a Places row handing off to the region or place sheet, Escape —
- *     lights Map again; one reopened by map_panel_trail.js's
- *     back pill lights its tab. Read from the panels' `hidden` attribute.
- *   - SIGNED OUT, Saved opens the favourites sheet, which already invites
- *     a visitor to sign in; the Today and Trips panels are not rendered for
- *     them (public/partials/_today_surface.html, _trips_surface.html).
- *   - SAVED REMEMBERS its tab for the session (sessionStorage), so the tab
- *     reopens the list last shown, trips included; places by default.
+ *     lights Map again; one reopened by map_panel_trail.js's back pill
+ *     lights its tab. Read from the "?" menu's `hidden` attribute and
+ *     saved_panel.js's `snowdesk:saved-panel-change`.
  *   - ?panel=saved|help, which the bar's links carry off the map, opens
  *     that panel once at boot. ?panel=today, from a link made before
  *     SNOW-1479, opens Saved on Places. Any other value is left in the URL
@@ -65,66 +49,31 @@
 
   /** @typedef {{ open(): void, close(): void, isOpen(): boolean }} Panel */
   /** @typedef {'map'|'saved'|'help'} Tab */
-  /** @typedef {'places'|'routes'|'trips'|'observations'} SavedChoice */
 
   var TABS = /** @type {Array<Tab>} */ (['map', 'saved', 'help']);
   var PANEL_PARAM = 'panel';
   var SAVED_KEY = 'snowdesk:app-tab-saved';
   var SWAP_MS = 200;
 
-  /** @type {Record<SavedChoice, string>} */
-  var SAVED_SHEET_IDS = {
-    places: 'favourite-sheet',
-    routes: 'route-sheet',
-    trips: 'trips-sheet',
-    observations: 'report-sheet',
-  };
-
   /**
-   * Places: the favourites sheet, opened on favourites:places. One object,
-   * so comparing controllers stays true to which sheet is which.
+   * Saved: window.pwaSavedPanel (static/js/saved_panel.js), read when used.
+   * One object, so comparing panels stays true to which is which.
    *
    * @type {Panel}
    */
-  var placesPanel = {
+  var savedPanel = {
     open: function () {
-      window.pwaFavouritesSheet?.open({ list: 'places' });
+      window.pwaSavedPanel?.open();
     },
     close: function () {
-      window.pwaFavouritesSheet?.close();
+      window.pwaSavedPanel?.close();
     },
     isOpen: function () {
-      return !!window.pwaFavouritesSheet?.isOpen();
+      return !!window.pwaSavedPanel?.isOpen();
     },
   };
 
-  /**
-   * The controller behind one Saved choice, or null where the map does not
-   * render that surface.
-   *
-   * @param {SavedChoice} choice
-   * @returns {Panel|null}
-   */
-  function savedController(choice) {
-    if (choice === 'routes') return window.pwaRoutesSheet || null;
-    if (choice === 'trips') return window.pwaTripsSheet || null;
-    if (choice === 'observations') return window.pwaReportSheet || null;
-    return window.pwaFavouritesSheet ? placesPanel : null;
-  }
-
-  /** @returns {SavedChoice} The chip Saved opens on. */
-  function savedChoice() {
-    var stored = null;
-    try {
-      stored = window.sessionStorage.getItem(SAVED_KEY);
-    } catch (_err) {
-      // Storage refused (private window): places, every time.
-    }
-    if (stored === 'routes' || stored === 'trips' || stored === 'observations') return stored;
-    return 'places';
-  }
-
-  /** @param {SavedChoice} choice */
+  /** @param {'places'} choice Remember the Saved tab, as saved_panel.js does. */
   function rememberSaved(choice) {
     try {
       window.sessionStorage.setItem(SAVED_KEY, choice);
@@ -160,13 +109,6 @@
   // Tabs → panels.
   // ---------------------------------------------------------------------
 
-  /** True when the Today panel is on the page: a signed-in reader. Today
-   * has no tab (SNOW-1479), but its panel still renders for every
-   * signed-in reader, so it still answers the question. */
-  function signedIn() {
-    return !!window.pwaTodayPanel;
-  }
-
   /**
    * The panel a tab opens now, or null (Map, or a surface not on the page).
    *
@@ -174,24 +116,8 @@
    * @returns {Panel|null}
    */
   function panelFor(tab) {
-    if (tab === 'saved') {
-      return signedIn() ? savedController(savedChoice()) : savedController('places');
-    }
+    if (tab === 'saved') return window.pwaSavedPanel ? savedPanel : null;
     if (tab === 'help') return helpMenu ? helpPanel : null;
-    return null;
-  }
-
-  /**
-   * The element a tab's panel lives in, for the swap attribute.
-   *
-   * @param {Tab} tab
-   * @returns {HTMLElement|null}
-   */
-  function elementFor(tab) {
-    if (tab === 'saved') {
-      return document.getElementById(SAVED_SHEET_IDS[signedIn() ? savedChoice() : 'places']);
-    }
-    if (tab === 'help') return helpMenu;
     return null;
   }
 
@@ -211,11 +137,7 @@
       if (mine && mine.isOpen()) return openedBy;
     }
     if (helpPanel.isOpen()) return 'help';
-    var choices = /** @type {Array<SavedChoice>} */ (['places', 'routes', 'trips', 'observations']);
-    for (var i = 0; i < choices.length; i++) {
-      var controller = savedController(choices[i]);
-      if (controller && controller.isOpen()) return 'saved';
-    }
+    if (savedPanel.isOpen()) return 'saved';
     return null;
   }
 
@@ -233,7 +155,8 @@
   /**
    * Open `panel`, marking `el` for the CSS: `open` rises as a first open,
    * `swap` fades the content in over a card already in place, and null
-   * shows it as it is.
+   * shows it as it is. Saved marks its own sheet (saved_panel.js), so it
+   * passes no element.
    *
    * @param {Panel} panel
    * @param {HTMLElement|null} el
@@ -269,13 +192,10 @@
     }
     var next = panelFor(tab);
     if (!next) return;
-    var swap = !!(currentPanel && currentPanel.isOpen());
     if (currentPanel && currentPanel !== next) currentPanel.close();
     openedBy = tab;
     // The "?" menu is its own card, not the panels' box: it rises.
-    /** @type {'open' | 'swap'} */
-    var kind = swap && tab !== 'help' && current !== 'help' ? 'swap' : 'open';
-    if (!next.isOpen()) openPanel(next, elementFor(tab), kind);
+    if (!next.isOpen()) openPanel(next, tab === 'help' ? helpMenu : null, 'open');
     light();
   }
 
@@ -289,74 +209,12 @@
   });
 
   // ---------------------------------------------------------------------
-  // The Saved tabs: one sheet closes as its sibling opens.
-  // ---------------------------------------------------------------------
-
-  /**
-   * Show another Saved list in the box the current one is in.
-   *
-   * @param {SavedChoice} choice
-   */
-  function switchSaved(choice) {
-    const next = savedController(choice);
-    if (!next) return;
-    var from = /** @type {SavedChoice|null} */ (null);
-    Object.keys(SAVED_SHEET_IDS).forEach(function (key) {
-      var controller = savedController(/** @type {SavedChoice} */ (key));
-      if (controller && controller !== next && controller.isOpen()) {
-        from = /** @type {SavedChoice} */ (key);
-      }
-    });
-    rememberSaved(choice);
-    openedBy = 'saved';
-    // After this event's own dispatch: the sheet the chip sits in is about
-    // to be emptied, and nothing else should read it mid-change.
-    window.setTimeout(function () {
-      if (from) {
-        var previous = savedController(from);
-        if (previous) previous.close();
-      }
-      if (!next.isOpen()) openPanel(next, document.getElementById(SAVED_SHEET_IDS[choice]), null);
-      light();
-    }, 0);
-  }
-
-  document.addEventListener('change', function (event) {
-    var input = event.target;
-    if (!(input instanceof HTMLInputElement) || input.name !== 'saved-tab') return;
-    var choice = /** @type {SavedChoice} */ (input.value);
-    if (!(choice in SAVED_SHEET_IDS)) return;
-    switchSaved(choice);
-  });
-
-  // The Trips picker's item for a reader with no routes: a trip is planned
-  // from a route, so it goes to Routes, where one is added.
-  document.addEventListener('click', function (event) {
-    var target = /** @type {Element|null} */ (event.target instanceof Element ? event.target : null);
-    var go = target ? target.closest('[data-saved-go]') : null;
-    if (!go) return;
-    var choice = /** @type {SavedChoice} */ (go.getAttribute('data-saved-go'));
-    if (!(choice in SAVED_SHEET_IDS)) return;
-    switchSaved(choice);
-  });
-
-  // ---------------------------------------------------------------------
   // Keep the lit tab true to the panels, however they open or close.
   // ---------------------------------------------------------------------
 
-  var watched = ['map-help-menu']
-    .concat(Object.keys(SAVED_SHEET_IDS).map(function (key) {
-      return SAVED_SHEET_IDS[/** @type {SavedChoice} */ (key)];
-    }))
-    .map(function (id) {
-      return document.getElementById(id);
-    })
-    .filter(Boolean);
-  if (typeof MutationObserver === 'function') {
-    var observer = new MutationObserver(light);
-    watched.forEach(function (el) {
-      observer.observe(/** @type {Node} */ (el), { attributes: true, attributeFilter: ['hidden'] });
-    });
+  document.addEventListener('snowdesk:saved-panel-change', light);
+  if (helpMenu && typeof MutationObserver === 'function') {
+    new MutationObserver(light).observe(helpMenu, { attributes: true, attributeFilter: ['hidden'] });
   }
 
   // ---------------------------------------------------------------------

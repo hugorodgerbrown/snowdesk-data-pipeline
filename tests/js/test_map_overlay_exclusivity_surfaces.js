@@ -152,7 +152,7 @@ function buildFixture() {
     <button id="favourite-add-btn"
             data-favourites-eligible="true"
             data-favourite-create-url="/favourites/partials/create/"
-            data-favourite-list-url="/favourites/partials/list/?variant=map"
+            data-favourite-places-url="/favourites/partials/places/"
             data-favourite-rename-url-template="/favourites/partials/__UUID__/rename/"
             data-favourite-delete-url-template="/favourites/partials/__UUID__/delete/"></button>
     <div id="favourite-sheet" hidden tabindex="-1" data-overlay></div>
@@ -270,6 +270,8 @@ async function loadSurfaces() {
   await import('../../static/js/favourites.js');
   await import('../../static/js/report.js');
   await import('../../static/js/routes.js');
+  // SNOW-1481: the star is Saved's (window.pwaSavedPanel), after the sheets.
+  await import('../../static/js/saved_panel.js');
   await import('../../static/js/map_downloads_manager.js');
   await import('../../static/js/map_legend.js');
   await import('../../static/js/map_basemap_picker.js');
@@ -366,6 +368,9 @@ describe('opening one overlay closes every other', () => {
   for (const opened of SURFACE_NAMES) {
     for (const already of SURFACE_NAMES) {
       if (opened === already) continue;
+      // SNOW-1481: the routes sheet is a Saved tab, so the star over it
+      // closes Saved rather than opening Places — the cell below.
+      if (opened === 'favourite-sheet' && already === 'route-sheet') continue;
 
       it(`${opened} closes ${already}`, async () => {
         openSurface(already);
@@ -380,6 +385,20 @@ describe('opening one overlay closes every other', () => {
       });
     }
   }
+});
+
+describe('the star over the routes sheet (SNOW-1481)', () => {
+  it('closes it, the routes sheet being a Saved tab', async () => {
+    openSurface('route-sheet');
+    await settle();
+    expect(isOpen('route-sheet')).toBe(true);
+
+    openSurface('favourite-sheet');
+    await settle();
+
+    expect(isOpen('route-sheet')).toBe(false);
+    expect(isOpen('favourite-sheet')).toBe(false);
+  });
 });
 
 describe('the registry alone closes a surface', () => {

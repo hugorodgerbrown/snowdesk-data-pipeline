@@ -1,12 +1,13 @@
 // @ts-check
 /*
- * static/js/trips_panel.js — the installed phone app's Saved → Trips sheet
+ * static/js/trips_panel.js — the Saved → Trips sheet
  * (SNOW-1479).
  *
  * The fourth Saved sheet (public/partials/_trips_surface.html): the reader's
  * trips, organised or joined, upcoming soonest first and then past. It has
- * no roundel; static/js/app_tabbar.js opens it from the Saved tabs through
- * the bridge this module publishes, window.pwaTripsSheet.
+ * no roundel; static/js/saved_panel.js opens it from the Saved tabs through
+ * the bridge this module publishes, window.pwaTripsSheet (SNOW-1481: on
+ * every screen, not only in the installed app).
  *
  *   - THE LIST LOADS ON EVERY OPEN. The body is re-cloned from
  *     #trips-sheet-template each time, and trips:panel_list answers the rows
@@ -33,7 +34,7 @@
  *     newest first, the routes panel's — as a link to
  *     trips:new?route=<uuid>, cloned from #trips-route-picker-item-template
  *     with route_rail_core.js's meta line (distance and ascent). No routes:
- *     one item, `data-saved-go="routes"`, which app_tabbar.js turns into
+ *     one item, `data-saved-go="routes"`, which saved_panel.js turns into
  *     the Routes tab. A failed read says so in one line. Read on every
  *     open; a reply to an earlier open is dropped. The menu hangs down
  *     from a header trigger, so overflow_menu.js's placement on open still
