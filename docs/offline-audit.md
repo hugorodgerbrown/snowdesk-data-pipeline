@@ -799,6 +799,16 @@ whether it worked.
 same reason `debug_log_panel.js` has a Copy: a phone with no devtools is
 the only place this data exists.
 
+SNOW-1487: the text ends with a `## sync steps that did not finish`
+section, one line per step each area's last sync left in `verified.steps`
+— the step, its reason, how far it got and the space it needed against the
+space there was ("Verbier: basemap network 212/528 (needs 30 MB)"). The
+collector carries each area's `verified` stamp into the readings for it,
+and `buildReport` lists the areas with steps as `areaSteps`. The Downloads
+sheet says these in plain words under the row; the report is where the
+`budget` and `quota` reasons and the MB pair are spelt out
+([`decisions/a-failed-addition-never-hides-a-working-map.md`](decisions/a-failed-addition-never-hides-a-working-map.md)).
+
 ### Copy report from the map (SNOW-1488)
 
 The installed app has no address bar, so its reader cannot reach this page
