@@ -2792,7 +2792,10 @@ def test_terrain_filter_absent_without_tile_url() -> None:
     content = Client().get(reverse("public:map")).content.decode()
 
     assert 'data-terrain-filter-eligible="false"' in content
-    assert "data-terrain-class-tile-url=" not in content
+    # SNOW-1488: the Downloads sheet's hidden report host renders the
+    # attribute EMPTY, as /offline/'s panel does; what must never render
+    # is a template.
+    assert not re.search(r'data-terrain-class-tile-url="[^"]', content)
     assert "data-terrain-filter-open" not in content
     assert 'data-overlay-key="terrain"' not in content
     assert 'id="map-terrain-filter-sheet"' not in content

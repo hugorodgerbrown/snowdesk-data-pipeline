@@ -48,6 +48,7 @@ from apps.public.map_shared import (
     map_3d_view_enabled,
     map_beyond_switzerland_enabled,
     map_modes_enabled,
+    offline_audit_context,
     trip_url_templates,
 )
 from apps.public.season_calendar import (
@@ -331,6 +332,10 @@ def map_page(request: HttpRequest) -> HttpResponse:
             # shared with /offline/'s elevation template. SNOW-1450: the
             # only 3D there is, since /map/3d/ became a redirect here.
             "map_3d_view": map_3d_view,
+            # SNOW-1488: the inputs the offline report reads, rendered on the
+            # Downloads sheet's hidden report host so its Copy report runs
+            # the checks /offline/'s does. No query: reverses and settings.
+            "offline_audit": offline_audit_context(request, map_3d_view=map_3d_view),
             # What the roundel prefetches, so the 3-D terrain is cached first.
             "map_3d_dem_tile_url": settings.MAP_3D_DEM_TILE_URL,
             # SNOW-1456: the 3D test's panel, which renders with the view:

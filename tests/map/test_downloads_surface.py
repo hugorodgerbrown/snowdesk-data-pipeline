@@ -335,3 +335,81 @@ class TestDownloadsSheetAnswersOffline:
             assert f'id="{toast_id}"' in html
         assert "Not enough storage to save this region." in html
         assert "Raise the budget in Manage downloads" in html
+
+
+@pytest.mark.django_db
+class TestDownloadsSheetCopyReport:
+    """SNOW-1488: Copy report in the sheet's header menu.
+
+    The installed app has no address bar, so the menu is how its reader
+    reaches the offline report; /offline/ itself stays unlinked.
+    """
+
+    def _template(self, html: str, template_id: str) -> str:
+        """The inner markup of one ``<template id=…>``."""
+        return html.split(f'<template id="{template_id}">', 1)[1].split(
+            "</template>", 1
+        )[0]
+
+    def _host(self, html: str) -> str:
+        """The hidden report host's opening tag."""
+        match = re.search(r"<div[^>]*data-offline-audit-host[^>]*>", html)
+        assert match is not None, "the report host is not on the page"
+        return match.group(0)
+
+    def test_the_header_menu_offers_copy_report(self, client: Client) -> None:
+        """A "…" roundel beside the ×, holding the one item."""
+        html = client.get(reverse("public:map")).content.decode()
+        body = self._template(html, "map-downloads-body-template")
+
+        assert 'id="downloads-header-menu-trigger"' in body
+        menu = body.split('id="downloads-header-menu"', 1)[1]
+        assert "data-downloads-copy-report" in menu
+        assert "Copy report" in menu
+
+    def test_the_report_host_carries_the_offline_pages_inputs(
+        self, client: Client, settings: Any
+    ) -> None:
+        """The same attributes /offline/'s panel renders, so the same checks."""
+        settings.TERRAIN_CLASS_TILE_URL = "https://terrain.example/{z}/{x}/{y}.png"
+        map_html = client.get(reverse("public:map")).content.decode()
+        offline_html = client.get(reverse("public:offline_page")).content.decode()
+        host = self._host(map_html)
+        panel = re.search(r"<div[^>]*data-offline-audit\s[^>]*>", offline_html)
+        assert panel is not None
+
+        def attrs(tag: str) -> dict[str, str]:
+            return dict(re.findall(r'(data-[a-z-]+)="([^"]*)"', tag))
+
+        expected = attrs(panel.group(0))
+        assert "hidden" in host
+        assert "data-offline-audit " not in host
+        assert attrs(host) | {"data-offline-audit-host": ""} == expected | {
+            "data-offline-audit-host": ""
+        }
+        assert expected["data-terrain-class-tile-url"].startswith("https://terrain")
+
+    def test_both_toasts_are_in_the_strings_template(self, client: Client) -> None:
+        """Rendered words, not JavaScript literals (docs/i18n.md)."""
+        html = client.get(reverse("public:map")).content.decode()
+        strings = self._template(html, "map-downloads-strings-template")
+
+        assert (
+            '<span data-string="report-copied">'
+            "Report copied. Paste it into a message to send it.</span>"
+        ) in strings
+        assert "report-copy-failed" in strings
+
+    def test_the_map_loads_the_report_before_the_manager(self, client: Client) -> None:
+        """The manager calls ``window.pwaOfflineAudit.copyReport`` on a click."""
+        html = client.get(reverse("public:map")).content.decode()
+
+        core = html.index("js/offline_audit_core.js")
+        audit = html.index("js/offline_audit.js")
+        assert core < audit < html.index("map_downloads_manager.js")
+
+    def test_still_no_link_to_the_offline_page(self, client: Client) -> None:
+        """Hugo, 10 Nov 2026: a menu action, not a link to the page."""
+        html = client.get(reverse("public:map")).content.decode()
+
+        assert f'href="{reverse("public:offline_page")}"' not in html

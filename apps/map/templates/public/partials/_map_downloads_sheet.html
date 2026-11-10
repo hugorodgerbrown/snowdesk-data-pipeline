@@ -87,6 +87,16 @@ repeated here, and neither is inline_rename.js (SNOW-658): both this
 panel's custom areas and the favourites panel's pins rename in place on
 the row's own label, so map.html loads that module once for both.
 {% endcomment %}
+{# SNOW-1488: what the offline report reads, for the header menu's Copy   #}
+{# report. The same attributes /offline/'s panel carries, on a host that  #}
+{# is NOT ``[data-offline-audit]`` (offline_audit.js binds those), so the #}
+{# report copied here runs the checks /offline/'s does. Never shown.      #}
+<div
+    hidden
+    data-offline-audit-host
+    {% include "includes/_offline_audit_host_attrs.html" with default_basemap_key=offline_audit.default_basemap_key content_feeds=offline_audit.content_feeds content_countries=offline_audit.content_countries today=offline_audit.today terrain_class_tile_url=offline_audit.terrain_class_tile_url dem_tile_url=offline_audit.dem_tile_url %}
+>
+</div>
 {% trans "Your downloads" as downloads_sheet_aria_label %}
 {# SNOW-645 review: scroll_body=True — this sheet's own header (title,   #}
 {# budget) and foot (CTA, toggle) stay pinned while only the row groups   #}
@@ -122,7 +132,7 @@ the row's own label, so map.html loads that module once for both.
     {# groups there are is DATA (one per basemap this device holds —        #}
     {# SNOW-832), so it renders its own headings from its rows template     #}
     {# rather than taking one fixed heading from the shell.                 #}
-    {% include "includes/_ugc_panel.html" with title=downloads_sheet_title icon_template="includes/_icon_downloads.html" header_template="public/partials/_map_downloads_header.html" rows_template="public/partials/_map_downloads_rows.html" foot_template="public/partials/_map_downloads_add_region.html" cta_label=downloads_add_label toggle_id="map-downloads-overlay-toggle" %}
+    {% include "includes/_ugc_panel.html" with title=downloads_sheet_title icon_template="includes/_icon_downloads.html" header_template="public/partials/_map_downloads_header.html" rows_template="public/partials/_map_downloads_rows.html" foot_template="public/partials/_map_downloads_add_region.html" cta_label=downloads_add_label toggle_id="map-downloads-overlay-toggle" header_actions_template="public/partials/_map_downloads_header_actions.html" %}
 </template>
 {# One basemap group (SNOW-832): the swatch, the heading label, this        #}
 {# device's total for that basemap, the identity rule, and the empty `<ul>` #}
@@ -323,6 +333,9 @@ the row's own label, so map.html loads that module once for both.
     {# can start without a connection, even though listing/deleting what is #}
     {# already stored needs none.                                          #}
     <span data-string="add-offline">{% trans "You're offline — connect to download a new area." %}</span>
+    {# SNOW-1488: the header menu's Copy report, toasted. #}
+    <span data-string="report-copied">{% trans "Report copied. Paste it into a message to send it." %}</span>
+    <span data-string="report-copy-failed">{% trans "The report couldn't be copied." %}</span>
     <span data-string="sync-offline">{% trans "Syncing needs a connection." %}</span>
     {# SNOW-637: the same refusal as a BUTTON LABEL rather than a toast. The #}
     {# toast copy above is phrased as a reply to a tap ("You're offline —"), #}

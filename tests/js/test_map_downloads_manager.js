@@ -105,6 +105,7 @@ function buildFixture() {
       <div>
         <div>
           <div><span>Downloads on this device</span>
+            <button type="button" role="menuitem" data-downloads-copy-report>Copy report</button>
             <button type="button" data-action="dismiss">×</button></div>
           <div>
             <div>
@@ -5080,5 +5081,63 @@ describe('the inventory under a row (SNOW-1418)', () => {
     for (const toggle of toggles) {
       expect(toggle.getAttribute('data-row-disclosure')).not.toBe('');
     }
+  });
+});
+
+describe('Copy report, in the header menu (SNOW-1488)', () => {
+  afterEach(() => {
+    delete window.pwaOfflineAudit;
+    document.querySelector('[data-offline-audit-host]')?.remove();
+  });
+
+  /** The sheet's hidden report host, as _map_downloads_sheet.html renders it. */
+  function mountHost() {
+    const host = document.createElement('div');
+    host.hidden = true;
+    host.setAttribute('data-offline-audit-host', '');
+    host.setAttribute('data-terrain-class-tile-url', 'https://terrain.example/{z}/{x}/{y}.png');
+    document.body.appendChild(host);
+    return host;
+  }
+
+  it('copies the report collected against the hidden host, and says so', async () => {
+    const host = mountHost();
+    const copyReport = vi.fn(async () => true);
+    window.pwaOfflineAudit = { copyReport };
+    await loadModule();
+    openSheet();
+    await settle();
+
+    document.querySelector('#map-downloads-sheet [data-downloads-copy-report]').click();
+    await settle();
+
+    expect(copyReport).toHaveBeenCalledWith(host);
+    expect(window.MapSheet.toast).toHaveBeenCalledWith(
+      'Report copied. Paste it into a message to send it.',
+    );
+  });
+
+  it('says so when the copy fails', async () => {
+    mountHost();
+    window.pwaOfflineAudit = { copyReport: vi.fn(async () => false) };
+    await loadModule();
+    openSheet();
+    await settle();
+
+    document.querySelector('#map-downloads-sheet [data-downloads-copy-report]').click();
+    await settle();
+
+    expect(window.MapSheet.toast).toHaveBeenCalledWith("The report couldn't be copied.");
+  });
+
+  it('says so when the report module is missing', async () => {
+    await loadModule();
+    openSheet();
+    await settle();
+
+    document.querySelector('#map-downloads-sheet [data-downloads-copy-report]').click();
+    await settle();
+
+    expect(window.MapSheet.toast).toHaveBeenCalledWith("The report couldn't be copied.");
   });
 });

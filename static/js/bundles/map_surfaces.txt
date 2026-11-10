@@ -253,6 +253,15 @@ basemap_manage_core.js
 # time, so it only has to precede it.
 downloads_restore_queue_core.js
 
+# SNOW-1488: the offline report (window.pwaOfflineAuditCore and
+# window.pwaOfflineAudit), for the Downloads sheet's Copy report. The
+# report's own cores (calendar_core, slope_classes_core,
+# terrain_filter_core, basemap_download_core) are in map.txt, which loads
+# first. offline_audit.js binds only `[data-offline-audit]` hosts, which
+# the map has none of, so here it is a library the manager calls.
+offline_audit_core.js
+offline_audit.js
+
 # SNOW-1420: each Downloads row's offline answer and the sheet's Sync all
 # (window.pwaDownloadsSyncAll). Read by the manager at render and click
 # time, so it only has to precede it.
