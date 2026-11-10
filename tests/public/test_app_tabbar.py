@@ -545,3 +545,11 @@ class TestTheGate:
         assert rule in gated
         start = gated.index(rule)
         assert "top: auto;" in gated[start : gated.index("}", start)]
+
+    def test_dropping_a_pin_releases_the_sheet_top(self) -> None:
+        """The favourites sheet hugs its create form, leaving the pin in view."""
+        gated = _gated_blocks(self.map_css)
+        rule = "#favourite-sheet:has(#favourite-create-form) {"
+        assert rule in gated
+        start = gated.index(rule)
+        assert "top: auto;" in gated[start : gated.index("}", start)]
