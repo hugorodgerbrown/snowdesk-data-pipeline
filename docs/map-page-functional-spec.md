@@ -315,10 +315,14 @@ users. They are shown as reference, not as authoritative geography.
   per visitor than a large low resort, and piste km would rank them last.
   Colour stays constant, reserved for the orthogonal "kind of resort" axis
   — the map's colour budget is already committed to the danger scale.
-  **Every tier draws at every zoom.** The review proposed suppressing
+  **No tier hides before another.** The review proposed suppressing
   Minor below a zoom threshold; for this product that is backwards, since
   the small resorts are frequently the ones with the most interesting
-  terrain. Size does the ranking; nothing disappears.
+  terrain. Size does the ranking.
+- **Resort dots start at z8.** Below it every resort is hidden alike, and a
+  pinned resort's blue dot is the one exception, drawn at every zoom
+  (`RESORT_PIN_MIN_ZOOM`, `resortPinFilter`;
+  [why](decisions/resorts-appear-from-z8.md)).
 - **Who can use it.** Everyone. The resorts overlay and the search box
   are public. The overlay is **off by default** — a visitor opts in — but
   search does not depend on it: a resort is its own row in the dropdown

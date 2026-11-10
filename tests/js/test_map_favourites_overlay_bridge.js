@@ -197,9 +197,16 @@ function visibilities(map, ids) {
   return ids.map((id) => map.getLayoutProperty(id, 'visibility'));
 }
 
-/** Whether the resorts layers exclude any resort by filter (SNOW-499's way). */
+/**
+ * Whether the resorts filter can drop the pinned resort (SNOW-499's way).
+ * The filter does gate resorts by zoom (resorts-appear-from-z8.md), but a
+ * pinned slug is always its first, inclusive, term.
+ */
 function resortsExcludeAny(map) {
-  return JSON.stringify(map.getFilter('resorts-pin') ?? null).includes('"literal"');
+  const filter = map.getFilter('resorts-pin') ?? null;
+  if (filter === null) return false;
+  const [op, pinned] = filter;
+  return !(op === 'any' && pinned[0] === 'in' && pinned[2][1].includes('verbier'));
 }
 
 /** Whether the resort dot paint singles the favourited resort out. */
