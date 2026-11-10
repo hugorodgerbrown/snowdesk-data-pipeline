@@ -2679,6 +2679,16 @@ PANEL_ADD_BUTTON_VARIANTS: tuple[dict[str, Any], ...] = (
     },
 )
 
+# SNOW-1485: the hold bar's body. It takes no context — every string is the
+# partial's own — so one variant shows it as the map renders it inside
+# #map-hold-bar.
+MAP_HOLD_BAR_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "After a hold on the map: fine-tune, then Save pin or Report",
+        "context": {},
+    },
+)
+
 ROW_DISCLOSURE_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Collapsed — the state every row renders in",

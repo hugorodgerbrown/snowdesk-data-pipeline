@@ -96,3 +96,19 @@ describe('anonymous tap on the favourites roundel', () => {
     expect(sheet.hasAttribute('hidden')).toBe(true);
   });
 });
+
+describe('anonymous Save pin from the hold bar (SNOW-1485)', () => {
+  it('gets the same sign-in CTA, and arms no placement', () => {
+    window.pwaFavouritesSheet.close();
+    window.PlacePicker = { activate: vi.fn(), deactivate: vi.fn() };
+
+    window.pwaFavouritesSheet.createAt(46.25, 7.5);
+
+    expect(sheet.hidden).toBe(false);
+    expect(sheet.querySelector('#favourite-create-form')).toBeNull();
+    expect(sheet.querySelector(`a[href^="${SIGNIN_URL}?next="]`)).not.toBeNull();
+    expect(window.PlacePicker.activate).not.toHaveBeenCalled();
+    expect(Object.isFrozen(window.pwaFavouritesSheet)).toBe(true);
+    delete window.PlacePicker;
+  });
+});

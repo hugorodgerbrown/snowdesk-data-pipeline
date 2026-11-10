@@ -217,6 +217,10 @@ def report_form(request: HttpRequest) -> HttpResponse:
     When coords are present, resolves the point to a MicroRegion (best-effort)
     via ``region_for_point`` and passes it to the template for the region hint.
 
+    SNOW-1485: ``placed=1`` marks a form opened from a hold on the map, whose
+    pin the reader has just placed. ``placed`` is True only for that exact
+    value, and the template then leaves out the Move pin row.
+
     Args:
         request: The incoming HTMX GET request.
 
@@ -251,6 +255,8 @@ def report_form(request: HttpRequest) -> HttpResponse:
     gps_lat: float | None = gps_coords[0] if gps_coords is not None else None
     gps_lon: float | None = gps_coords[1] if gps_coords is not None else None
 
+    placed = request.GET.get("placed") == "1"
+
     return render(
         request,
         "observations/partials/_report_form.html",
@@ -263,6 +269,7 @@ def report_form(request: HttpRequest) -> HttpResponse:
             "location_source": location_source,
             "gps_lat": gps_lat,
             "gps_lon": gps_lon,
+            "placed": placed,
             "families": _form_families(),
             "submit_url": reverse("observations:report_submit"),
         },

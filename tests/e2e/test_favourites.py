@@ -10,7 +10,11 @@ half the screen as the 12px-inset card, its handle takes it to three
 quarters and a drag down closes it, and Help and New pin are as tall as
 their content.
 
-Scenario: P14, P14b
+SNOW-1485: the hold test drops the pin by holding a finger on the map,
+which needs MapLibre's real canvas and real touch events (sent through a
+Chromium CDP session; Playwright's touchscreen only taps).
+
+Scenario: P14, P14b, 12c
 """
 
 from __future__ import annotations
@@ -167,3 +171,38 @@ def test_phone_sheets_are_one_card(favourites_page: FavouritesPage) -> None:
     new_pin = _card_box(page, "#favourite-sheet")
     assert new_pin["height"] < half
     assert new_pin["height"] <= full
+
+
+@pytest.mark.django_db(transaction=True)
+def test_hold_on_the_map_then_save_pin(
+    favourites_page: FavouritesPage, django_db_blocker: Any
+) -> None:
+    """Hold -> the held point under the pin -> pan -> Save pin -> Save."""
+    page = favourites_page.page
+    _navigate_home(page, favourites_page.live_server_url)
+    box = page.locator("#map canvas").bounding_box()
+    assert box is not None
+    x, y = box["width"] / 2 + 60, box["height"] / 3
+    held = page.evaluate(f"() => MAP.unproject([{x}, {y}]).toArray()")
+    cdp = page.context.new_cdp_session(page)
+    cdp.send("Emulation.setTouchEmulationEnabled", {"enabled": True})
+    point = {"x": box["x"] + x, "y": box["y"] + y}
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [point]})
+    page.wait_for_selector("#map-hold-bar:not([hidden])")
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+    centre = page.evaluate("() => MAP.getCenter().toArray()")
+    assert centre == pytest.approx(held, abs=1e-4)
+
+    # Fine-tune, then hand over: the form opens on the panned point.
+    page.evaluate("() => MAP.setCenter([7.6, 46.2])")
+    page.click('#map-hold-bar [data-hold-action="save-pin"]')
+    page.wait_for_selector("#favourite-create-form")
+    page.fill("#favourite-name-input", "Test Peak")
+    page.wait_for_function("() => typeof window.pwaMutationQueue === 'object'")
+    page.click("#favourite-create-form button[type=submit]")
+    page.wait_for_function(_AUTHORITATIVE_PIN_JS)
+
+    with django_db_blocker.unblock():
+        pin = Location.objects.get(favourites__name="Test Peak")
+        assert pin.latitude == pytest.approx(46.2, abs=0.01)
+        assert pin.longitude == pytest.approx(7.6, abs=0.01)

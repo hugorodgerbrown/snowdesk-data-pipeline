@@ -114,6 +114,16 @@ map click dispatcher"). It stops at the first rule that claims the tap:
 A double-click on a region at z10 or below zooms to the region; above z10 it
 is the map's own zoom-in.
 
+**A hold is not a tap** (SNOW-1485). A finger held still for half a second,
+or a right-click on a desktop, reaches none of the rules above: it drops the
+place pin where it was held and opens the hold bar (`#map-hold-bar`, a form
+panel), whose Save pin and Report hand the fine-tuned point to the new-pin
+and report forms and whose × puts the camera back. It works anywhere,
+markers and resort pins included: the click the lifted finger sends is
+swallowed once by a capture-phase listener on `#map`, so the dispatcher
+never sees it. `static/js/map_hold.js` binds it, over the pure detector in
+`static/js/map_hold_core.js` (`window.pwaMapHoldCore`).
+
 ## 3. The four kinds of overlay
 
 Every surface over the map is one of four kinds, and the kind decides how it

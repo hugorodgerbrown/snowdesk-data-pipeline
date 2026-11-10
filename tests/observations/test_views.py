@@ -195,6 +195,64 @@ class TestReportFormPlacing:
 
 
 @pytest.mark.django_db
+class TestReportFormFooter:
+    """SNOW-1485: Save and Cancel sit in a sticky footer, with the disclaimer."""
+
+    def test_the_footer_holds_save_cancel_and_the_disclaimer(
+        self, client: Client
+    ) -> None:
+        """Every form's footer is sticky and reads Save, not the old label."""
+        client.force_login(_verified_user())
+        content = client.get(
+            FORM_URL, {"lat": "46.1", "lon": "7.1"}, **HTMX_HEADERS
+        ).content.decode()
+        footer = re.search(
+            r'<div class="([^"]*)" data-report-footer>(.*?)</p>', content, re.S
+        )
+        assert footer is not None
+        assert "sticky" in footer.group(1).split()
+        assert "bottom-0" in footer.group(1).split()
+        body = footer.group(2)
+        assert re.search(r'type="submit"[^>]*>\s*Save\s*</button>', body)
+        assert re.search(r'data-action="dismiss"\s*>\s*Cancel\s*</button>', body)
+        assert "Observations are visible to other users." in content
+        assert "Share with everyone here" not in content
+
+
+@pytest.mark.django_db
+class TestReportFormPlaced:
+    """SNOW-1485: ``placed=1`` (a hold on the map) leaves out the Move pin row."""
+
+    def test_placed_1_is_true_and_omits_the_move_pin_row(self, client: Client) -> None:
+        """The hold path: the pin was just placed, so there is no where row."""
+        client.force_login(_verified_user())
+        response = client.get(
+            FORM_URL,
+            {"lat": "46.1", "lon": "7.1", "location_source": "MANUAL", "placed": "1"},
+            **HTMX_HEADERS,
+        )
+        assert response.context["placed"] is True
+        content = response.content.decode()
+        assert "data-report-where" not in content
+        assert 'data-action="refine-location"' not in content
+        assert "data-report-what" in content
+
+    @pytest.mark.parametrize("params", [{}, {"placed": "0"}, {"placed": "yes"}])
+    def test_any_other_value_is_false_and_keeps_the_row(
+        self, client: Client, params: dict[str, str]
+    ) -> None:
+        """Absent or any value but ``1``: the binoculars path keeps Move pin."""
+        client.force_login(_verified_user())
+        response = client.get(
+            FORM_URL, {"lat": "46.1", "lon": "7.1", **params}, **HTMX_HEADERS
+        )
+        assert response.context["placed"] is False
+        content = response.content.decode()
+        assert "data-report-where" in content
+        assert 'data-action="refine-location"' in content
+
+
+@pytest.mark.django_db
 class TestReportFormManualInputsPresent:
     """MANUAL-state form always contains lat and lon hidden inputs.
 

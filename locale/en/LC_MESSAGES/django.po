@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-10 17:38+0000\n"
+"POT-Creation-Date: 2026-11-10 18:26+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -2915,6 +2915,9 @@ msgstr ""
 msgid "Sign in to upload routes and show them on the map."
 msgstr ""
 
+msgid "Pin dropped"
+msgstr ""
+
 msgid "Bulletins unavailable"
 msgstr ""
 
@@ -4755,7 +4758,7 @@ msgstr ""
 msgid "What's it like?"
 msgstr ""
 
-msgid "Share with everyone here"
+msgid "Observations are visible to other users."
 msgstr ""
 
 #, python-format
@@ -10104,6 +10107,12 @@ msgid "Updated"
 msgstr ""
 
 msgid "Freezing level is not the snow line; snow can fall below it."
+msgstr ""
+
+msgid "Move the map to fine-tune."
+msgstr ""
+
+msgid "Save pin"
 msgstr ""
 
 msgid ""

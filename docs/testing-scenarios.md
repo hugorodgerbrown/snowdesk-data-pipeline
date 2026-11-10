@@ -557,6 +557,21 @@ pages redirect into the map's sheets.
 | 3 | Type "mille" | "Col de Mille" is listed under "Pinned places"; typing "unnamed" lists no pin |
 | 4 | Pan far away, turn the Favourites panel's "Show on the map" off, then pick "Col de Mille" from search | The stars come back on, the map flies to the pin and its sheet opens, as a tap on the star would |
 
+### Scenario 12c: Hold on the map to add a pin or report there
+
+**Goal**: Verify a hold on the map drops a pin under the finger, the map can fine-tune it, and the bar hands it to the new-pin or report form — or puts the map back (SNOW-1485).
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | On a phone, signed in, hold a finger still on the map for about half a second | A pin drops there; the map slides the spot under the placing pin and clears to the basemap; a bar at the foot reads "Move the map to fine-tune." with ×, **Save pin** and **Report** |
+| 2 | Put a finger down and pan or pinch straight away | The map pans or zooms as normal; no bar |
+| 3 | Hold again, pan the map a little, then press × | The bar closes and the map goes back to exactly where it was before the hold, with its layers |
+| 4 | Hold, pan a little, press **Save pin**, name it and press Save | The new-pin form opens with the spot set; the pin is saved where the placing pin was |
+| 5 | Hold, press **Report** | The report form opens straight on the tiles, with no Move pin row; Save and Cancel sit side by side at the foot, with "Observations are visible to other users." under them |
+| 6 | Hold on a resort's dot, a saved pin or a report | The bar opens; the object's own sheet does NOT open. A plain tap on it still opens its sheet |
+| 7 | On a desktop, right-click the map | The same bar opens at once |
+| 8 | Signed out, hold and press either button | The same sign-in prompt as the star and the binoculars give |
+
 ### Scenario 13: Delete the account from settings
 
 **Goal**: Verify the "Delete account" control hard-deletes the account.

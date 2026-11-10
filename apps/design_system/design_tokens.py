@@ -68,6 +68,7 @@ from apps.design_system._component_fixtures import (
     HOURLY_CHART_VARIANTS,
     MAP_3D_TEST_PANEL_VARIANTS,
     MAP_COMPASS_VARIANTS,
+    MAP_HOLD_BAR_VARIANTS,
     MAP_OVERLAY_TOGGLE_VARIANTS,
     MAP_RELIEF_TUNING_PANEL_VARIANTS,
     MAP_ZOOM_CONTROL_VARIANTS,
@@ -2589,6 +2590,25 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_panel_add_button.html",
         variants=PANEL_ADD_BUTTON_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="map-hold-bar",
+        label="Map hold bar",
+        description=(
+            "What a hold on the map asks (SNOW-1485). A finger held still on "
+            "the map, or a right-click, drops the place pin there; this bar "
+            "says to move the map to fine-tune, offers Save pin and Report, "
+            "and its × cancels and puts the map back. A form panel on the "
+            "overlay sheet (no detents, no drag-to-close): _map_embed.html "
+            "renders #map-hold-bar empty with this body in a template, and "
+            "static/js/map_hold.js clones it on each hold. The buttons are "
+            "the panel add button's outlined shape, each with the glyph of "
+            "the roundel it hands over to."
+        ),
+        kind="components",
+        partial="includes/_map_hold_bar.html",
+        variants=MAP_HOLD_BAR_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(
