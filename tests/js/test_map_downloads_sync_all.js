@@ -151,6 +151,42 @@ describe('verdict', () => {
 
     expect(syncAll.verdict(undefined, TODAY).verdict).toBe('unknown');
   });
+
+  // SNOW-1483: the dot reads terrain, as the inventory's Terrain row does.
+  it('gives terrain as the reason for an area saved without it that should hold it', async () => {
+    const syncAll = await loadModule();
+    window.pwaBasemapDownloads = { terrainExpected: vi.fn(() => true) };
+    const record = readyRecord();
+
+    expect(syncAll.verdict(record, TODAY)).toEqual({ verdict: 'refresh', reason: 'terrain' });
+    expect(window.pwaBasemapDownloads.terrainExpected).toHaveBeenCalledWith(record);
+    // The row's inventory says the same thing, from the same flag.
+    const rows = window.pwaOfflineJourneyCore.inventoryFor(record, TODAY, {
+      terrainAvailable: true,
+      signedIn: true,
+      principal: PRINCIPAL,
+    });
+    expect(rows.find((row) => row.key === 'terrain').status).toBe('missing');
+    expect(rows.find((row) => row.key === 'map').status).toBe('yes');
+  });
+
+  it('says ready for an area with its terrain, or one that should hold none', async () => {
+    const syncAll = await loadModule();
+    window.pwaBasemapDownloads = { terrainExpected: () => true };
+    expect(syncAll.verdict(readyRecord({ terrain: true }), TODAY).verdict).toBe('ready');
+
+    window.pwaBasemapDownloads = { terrainExpected: () => false };
+    expect(syncAll.verdict(readyRecord(), TODAY).verdict).toBe('ready');
+  });
+
+  it('keeps a missing map red whatever its terrain', async () => {
+    const syncAll = await loadModule();
+    window.pwaBasemapDownloads = { terrainExpected: () => true };
+    const record = readyRecord();
+    record.verified = { map: 'no', reason: 'tiles', at: TODAY.toISOString() };
+
+    expect(syncAll.verdict(record, TODAY).verdict).toBe('open-map');
+  });
 });
 
 describe('press — Sync all', () => {

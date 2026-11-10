@@ -2,7 +2,7 @@
 name: offline-audit
 description: /offline/ unlinked debug page panels — offline_audit.js, offline_journey.js, verified stamp, bounded reads, X-SW-Principal, browsedState
 status: current
-last-reviewed: 2026-11-04
+last-reviewed: 2026-11-10
 ---
 
 # The offline-content report (SNOW-907)
@@ -122,6 +122,16 @@ combination. Full account:
 device whose app is saved is working exactly as asked; it is a fault only
 in combination with `app-opens` answering No, and `verdictFor` is the one
 place those two meet.
+
+**Since SNOW-1483 its forced and latched readings are `info`, not No.**
+Being offline on purpose, or with no signal, is the state the page checks
+readiness for, so it is never a fault against it. Hugo's plane test on
+8 Nov 2026 read "13 of 14" and "not everything will be there" over a
+device with everything saved, because Offline mode was the one No. An
+`info` row answers in words (`answer-info-forced`, `answer-info-latched`),
+is coloured neutrally, is left out of the counts line and never lowers the
+verdict. Its sentence stays in the summary. `verdict-forced-lockout` reads
+the reason, not the status, so the trap is still named.
 
 **The downloads are not rows any more (SNOW-1308).** They were the one
 exception to the fixed list — a named row per download under "Map
@@ -813,8 +823,9 @@ what follows is how they meet this module.
 - **The one reading that is not storage.** Whether every basemap tile the
   ground implies is in the bucket — `blobFullyCached` over the bucket's
   listed entries, asked by `offline_journey_core.js`'s `tileReading` of
-  `pwaBasemapDownloadCore` when the page has it. `static/offline.html`
-  does not, so its map stage reads "Can't tell".
+  `pwaBasemapDownloadCore`. `static/offline.html` loads it too since
+  SNOW-1483. Before that its map stage read "Can't tell" on every area
+  (Hugo's plane test, 8 Nov 2026).
 - **The controls.** Sync now and a "tap to fix" verdict call
   `pwaOfflineAudit.syncArea` (or `syncAll` on a `?sync=all` page) —
   `fetchAreaContent` below, unchanged, which now also stamps the items
@@ -834,6 +845,8 @@ shell cache.
 
 SNOW-1308 added the panels' two files and the shared removal to the
 same list, so downloaded areas never vanish from the fallback page.
+SNOW-1483 added `basemap_download_core.js`, so their map stage can be
+read there.
 
 They are in `AUDIT_SCRIPTS` and **not** in `PRECACHE_URLS`, which goes
 through one atomic `cache.addAll` where a single failed entry fails

@@ -184,6 +184,15 @@ class TestStringsTemplate:
         assert "%(name)s map (on screen)" in html
         assert "%s " not in html.replace("%(", "")
 
+    def test_the_network_row_names_its_state(self) -> None:
+        """SNOW-1483: Offline mode and no signal are information, said in words."""
+        html = render_to_string(PARTIAL, {})
+        assert 'data-string="answer-info-forced"' in html
+        assert 'data-string="answer-info-latched"' in html
+        module = MODULE.read_text()
+        assert "'answer-info-forced'" in module
+        assert "'answer-info-latched'" in module
+
     def test_the_browsing_cache_copy_never_blames_the_device(self) -> None:
         """SNOW-1058: the passive cache is trimmed by Snowdesk, not the OS.
 
@@ -278,6 +287,23 @@ class TestOfflineFallbackPage:
         assert 'id="offline-audit-panel"' in html
         assert re.search(r'id="offline-audit-panel"[^>]*\shidden', html)
         assert "window.pwaOfflineAudit" in html
+
+    def test_loads_the_tile_arithmetic_before_the_panels(self) -> None:
+        """SNOW-1483: without it every area's map read "Can't tell" here.
+
+        ``offline_journey_core.js``'s ``tileReading`` needs
+        ``pwaBasemapDownloadCore``; both are deferred, so document order is
+        load order.
+        """
+        html = OFFLINE_PAGE.read_text()
+        core = html.find('"/static/js/basemap_download_core.js"')
+        assert core != -1
+        assert core < html.find('"/static/js/offline_journey_core.js"')
+        assert core < html.find('"/static/js/offline_journey.js"')
+
+    def test_styles_an_info_answer_neutrally(self) -> None:
+        """SNOW-1483: Offline mode is a state, coloured as neither Yes nor No."""
+        assert "[data-audit-status='info']" in OFFLINE_PAGE.read_text()
 
     def test_offers_a_way_to_the_map(self) -> None:
         """The page says the map works offline; it has to offer the map.

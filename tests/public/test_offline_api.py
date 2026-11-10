@@ -130,6 +130,9 @@ def test_offline_fallback_page_loads_only_precached_scripts() -> None:
         # SNOW-1308: the per-area panels above the report, and the
         # removal they offer, so downloaded areas never vanish from here.
         "/static/js/basemap_area_removal.js",
+        # SNOW-1483: the tile arithmetic, so each area's map reads Yes or
+        # No here rather than "Can't tell".
+        "/static/js/basemap_download_core.js",
         "/static/js/offline_journey_core.js",
         "/static/js/offline_journey.js",
     ]

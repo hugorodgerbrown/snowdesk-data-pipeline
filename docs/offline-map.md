@@ -1959,7 +1959,7 @@ Every download pins them wherever the terrain filter is configured
 (`terrainDataPreferred`, which answers `terrainDataAvailable`). Until 4 Nov
 2026 they were an opt-in, the "Terrain data" switch on the downloads sheet;
 Hugo removed it, so terrain comes with every download. An area saved before
-then without terrain keeps reading so until it is downloaded again.
+then without terrain gains it on its next Sync (SNOW-1483, below).
 
 - **What is pinned.** `terrainClassTileURLs` (`basemap_download_core.js`)
   walks the blob's own rows, as SNOW-692's `slopeTileURLs` did for the
@@ -1976,7 +1976,18 @@ then without terrain keeps reading so until it is downloaded again.
 - **What is checked.** An opted-in area missing a class tile is
   `incomplete` on the roundel and the sheet; the repair and "Sync now"
   refetch exactly the missing tiles. An area without the flag is never
-  judged on them.
+  judged on them by the tile check.
+- **What Sync adds (SNOW-1483).** An area without the flag that should
+  hold terrain (`terrainExpected`: the page fetches terrain data and the
+  area's ground meets the tiles' coverage) reads amber on the Downloads
+  sheet, "Terrain not saved", from the same flag as its inventory's
+  Terrain row. Sync's `_addMissingTerrain` fetches the class tiles its
+  bucket lacks, after a budget and quota check that never evicts, then
+  writes `terrain: true` and the bytes and re-pushes the account row. The
+  elevation tiles follow through the ordinary render-dependency repair,
+  once the record carries the flag. An area outside the coverage lists no
+  Terrain row and is never marked down for it. 3D is not part of the
+  verdict.
 - **What it costs.** `TERRAIN_CLASS_BYTES_PER_TILE` (88 KiB) per tile,
   stated on its own: the region roundel's idle label adds "plus up to N MB
   of terrain data", and the framing readout gains a second line. The
