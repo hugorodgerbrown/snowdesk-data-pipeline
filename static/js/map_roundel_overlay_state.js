@@ -1,9 +1,10 @@
 /*
  * static/js/map_roundel_overlay_state.js — "my overlay is on the map" on the
- * four roundels that switch one (SNOW-658; SNOW-687 added the fourth).
+ * roundels that switch one (SNOW-658; SNOW-687 added routes).
  *
- * Downloads, Favourites, Field observations and Routes each open a panel,
- * and each has a layer on the map. Until this module the roundel itself
+ * Downloads, Field observations and Routes each open a panel, and each has
+ * a layer on the map. The favourites star was the fourth until SNOW-1481:
+ * it opens Saved now, four lists and no one layer, so it carries no state. Until this module the roundel itself
  * said nothing about whether that layer was being drawn — and the downloads
  * roundel, the one roundel that DID carry a state, carried a different fact
  * entirely ("this device holds at least one downloaded area"). One roundel,
@@ -25,7 +26,7 @@
  * each panel's own "Show on the map" switch (map_panel_overlay_switch.js)
  * states it for its layer. This module still paints the attribute and the
  * label, because the accessible state is useful on its own — a screen
- * reader hears "Your favourites — shown on the map" — and nothing about it
+ * reader hears "Your routes — shown on the map" — and nothing about it
  * needed a ring. See
  * docs/decisions/map-controls-are-two-groups-without-an-on-map-marker.md.
  *
@@ -77,7 +78,7 @@
   /*
    * The roundels, each with the bridge that answers for its own overlay.
    * Written out one line each rather than resolved from a ``window[name]``
-   * lookup: a literal ``window.pwaFavouritesOverlay`` is
+   * lookup: a literal ``window.pwaRoutesOverlay`` is
    * what bin/js-globals-lint can check against the tree's assignments, and a
    * dynamic lookup would be invisible to it.
    */
@@ -85,10 +86,6 @@
     {
       id: 'map-custom-download-control',
       isVisible: () => !!window.pwaDownloadedOverlay?.isVisible?.(),
-    },
-    {
-      id: 'favourite-add-btn',
-      isVisible: () => !!window.pwaFavouritesOverlay?.isVisible?.(),
     },
     {
       id: 'report-btn',
@@ -125,7 +122,7 @@
    * Paint one roundel from its own overlay's current visibility.
    *
    * The label is composed rather than picked from a pair, so the roundels
-   * keep their own distinct names ("Your favourites", "Manage
+   * keep their own distinct names ("Your field observations", "Manage
    * downloads", "Your routes") and only one translated string states the shared
    * fact. ``title`` follows the label where the roundel already has one —
    * the tooltip and the screen-reader text must not disagree — and is not

@@ -259,7 +259,8 @@ class TestOnTheMap:
             [row] = re.findall(
                 r"<fieldset[^>]*data-saved-tabs.*?</fieldset>", body, re.S
             )
-            assert re.search(r'<fieldset class="app-only', row), current
+            # SNOW-1481: on every screen, not only in the app.
+            assert "app-only" not in row, current
             values = re.findall(r'name="saved-tab"\s+value="(\w+)"', row)
             assert values == ["places", "routes", "trips", "observations"]
             checked = re.findall(r'value="(\w+)"\s+class="peer sr-only"\s+checked', row)
@@ -311,10 +312,12 @@ class TestOnTheMap:
             values = re.findall(r'name="saved-tab"\s+value="(\w+)"', row)
             assert values == ["places", "routes", "observations"]
 
-    def test_the_tabs_and_plus_are_the_whole_header_in_the_app(
-        self, client: Client
-    ) -> None:
-        """Title, ×, context line and section label are `app-hidden`."""
+    def test_the_tabs_and_plus_are_the_whole_header(self, client: Client) -> None:
+        """Title, context line and section label are hidden on every screen.
+
+        SNOW-1481: only the × is `app-hidden` — the app's tab bar closes the
+        sheet, and a phone browser's × does.
+        """
         client.force_login(UserFactory.create())
 
         content = client.get(reverse("public:map")).content.decode()
@@ -322,12 +325,13 @@ class TestOnTheMap:
         for current, template_id in SAVED_SHEETS.items():
             body = _template(content, template_id)
             assert re.search(
-                r'<span class="app-hidden flex min-w-0 items-center gap-2.5">', body
+                r'<span hidden class="flex min-w-0 items-center gap-2.5">', body
             ), current
             close = re.search(r'<button[^>]*data-action="dismiss"[^>]*>', body, re.S)
             assert close and "app-hidden" in close.group(0), current
-            assert re.search(r'<p class="app-hidden -mt-1.5 px-2', body), current
-            assert re.search(r'class="[^"]*app-hidden pb-1 font-medium', body), current
+            assert re.search(r'<p hidden class="-mt-1.5 px-2', body), current
+            assert re.search(r'class="[^"]*hidden pb-1 font-medium', body), current
+            assert body.count("app-hidden") == 1, current
 
     def test_each_tabs_plus_carries_its_hook(self, client: Client) -> None:
         client.force_login(UserFactory.create())
@@ -340,7 +344,7 @@ class TestOnTheMap:
                 r'<button[^>]*data-testid="saved-add-roundel"[^>]*>', body, re.S
             )
             assert match, template_id
-            assert "app-only" in match.group(0)
+            assert "app-only" not in match.group(0)
             return match.group(0)
 
         assert "data-panel-add" in plus(SAVED_SHEETS["places"])
@@ -349,7 +353,7 @@ class TestOnTheMap:
         assert "data-panel-add" in plus(SAVED_SHEETS["routes"])
 
     def test_trips_plus_is_a_picker_of_the_readers_routes(self, client: Client) -> None:
-        """An app-only + named "Plan a trip" opens "Plan a trip from"."""
+        """A + named "Plan a trip" opens "Plan a trip from", on every screen."""
         client.force_login(UserFactory.create())
 
         content = client.get(reverse("public:map")).content.decode()
@@ -361,7 +365,7 @@ class TestOnTheMap:
             r'<button[^>]*id="trip-route-picker-trigger"[^>]*>', body, re.S
         )
         assert trigger
-        assert "app-only" in trigger.group(0)
+        assert "app-only" not in trigger.group(0)
         assert 'aria-label="Plan a trip"' in trigger.group(0)
         assert 'aria-haspopup="menu"' in trigger.group(0)
         assert "Plan a trip from" in body
@@ -409,7 +413,8 @@ class TestOnTheMap:
         assert 'id="route-add-menu-trigger"' in body
         assert 'data-testid="saved-add-roundel"' not in body
 
-    def test_the_foot_add_button_is_app_hidden(self, client: Client) -> None:
+    def test_the_foot_add_button_is_hidden(self, client: Client) -> None:
+        """The header's + adds, so the foot holding only the button is hidden."""
         client.force_login(UserFactory.create())
 
         content = client.get(reverse("public:map")).content.decode()
@@ -417,7 +422,9 @@ class TestOnTheMap:
         for template_id in (SAVED_SHEETS["places"], SAVED_SHEETS["observations"]):
             body = _template(content, template_id)
             foot = re.search(r"<div\s+data-panel-foot[^>]*>", body, re.S)
-            assert foot and "app-hidden" in foot.group(0), template_id
+            assert foot, template_id
+            assert re.search(r"\bhidden\b", foot.group(0)), template_id
+            assert "app-hidden" not in foot.group(0), template_id
 
     def test_the_trips_sheet_is_for_a_signed_in_reader(self, client: Client) -> None:
         content = client.get(reverse("public:map")).content.decode()
@@ -434,6 +441,21 @@ class TestOnTheMap:
         assert "app_tabbar.js" in bundle
         assert "trips_panel.js" in bundle
         assert bundle.index("trips_panel.js") < bundle.index("app_tabbar.js")
+        # SNOW-1481: Saved after the four sheets, before the bar that calls it.
+        scripts = [
+            line.strip()
+            for line in bundle.splitlines()
+            if line.strip() and not line.startswith("#")
+        ]
+        saved = scripts.index("saved_panel.js")
+        for sheet_script in (
+            "favourites.js",
+            "routes.js",
+            "trips_panel.js",
+            "report.js",
+        ):
+            assert scripts.index(sheet_script) < saved
+        assert saved == scripts.index("app_tabbar.js") - 1
 
 
 class TestTheStateTag:
@@ -475,6 +497,43 @@ class TestTheGate:
         # The header's avatar menu and Sign in stay in the app.
         assert "[data-subscriber-menu]" not in gated
         assert "#nav-sign-in" not in gated
+
+    def test_the_saved_sheets_stop_at_three_quarters_in_a_phone_browser(
+        self,
+    ) -> None:
+        """Outside the gate, below 640px, Saved slides up to 75dvh (SNOW-1481).
+
+        The gate's full-height rule still wins in the installed app: it is
+        the same selector, later in the file.
+        """
+        outside = self.map_css.replace(_gated_blocks(self.map_css), "")
+        rule = re.search(
+            r"@media \(max-width: 639\.98px\) \{\s*"
+            r":is\(#favourite-sheet, #route-sheet, #trips-sheet, #report-sheet\) \{"
+            r"\s*max-height: 75dvh;",
+            outside,
+        )
+        assert rule
+        gated = _gated_blocks(self.map_css)
+        assert "max-height: none;" in gated
+        assert "75dvh" not in gated
+        assert self.map_css.index("75dvh") < self.map_css.index(GATE)
+
+    def test_a_first_open_rises_on_every_screen(self) -> None:
+        """The star's open rises as the app's Saved tab does (SNOW-1481)."""
+        outside = self.map_css.replace(_gated_blocks(self.map_css), "")
+        assert re.search(
+            r"^\[data-tab-open\] \{\s*animation: app-tab-panel-rise", outside, re.M
+        )
+        assert "[data-tab-open] {" not in _gated_blocks(self.map_css)
+
+    def test_the_star_is_filled_while_saved_is_open(self) -> None:
+        """Both glyphs are drawn; aria-expanded picks one (SNOW-1481)."""
+        assert re.search(
+            r"#favourite-add-btn\[aria-expanded='true'\] \.map-saved-star--filled \{\s*display: block;",
+            self.map_css,
+        )
+        assert "#favourite-add-btn .map-saved-star--filled," in self.map_css
 
     def test_a_tab_panels_list_runs_down_to_its_foot(self) -> None:
         """No gap and blank card under a long list in the app (SNOW-1479).

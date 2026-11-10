@@ -27,7 +27,8 @@ Context expected:
 {% endcomment %}
 {% if favourites_eligible %}
     {% trans "Trips" as trips_title %}
-    {% include "includes/_overlay_sheet.html" with id="trips-sheet" aria_label=trips_title scroll_body=True %}
+    {# SNOW-1481: a Saved sheet, docked left like the other three. #}
+    {% include "includes/_overlay_sheet.html" with id="trips-sheet" aria_label=trips_title scroll_body=True side="left" %}
     <template id="trips-sheet-template">
         {% trans "Plan a trip" as trips_add_label %}
         {% trans "Trips you organised or joined." as trips_context_line %}

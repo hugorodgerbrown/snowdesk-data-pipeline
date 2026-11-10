@@ -36,7 +36,9 @@ Context expected:
 {# confirmation) therefore carries `min-h-0 flex-1` and owns its own      #}
 {# scroll region; see that partial's docstring for the mechanism.         #}
 {% trans "Field observation report" as report_sheet_aria_label %}
-{% include "includes/_overlay_sheet.html" with id="report-sheet" aria_label=report_sheet_aria_label scroll_body=True %}
+{# SNOW-1481: a Saved sheet, docked left like the other three; the form #}
+{# the binoculars start (report.js) opens in the same place.            #}
+{% include "includes/_overlay_sheet.html" with id="report-sheet" aria_label=report_sheet_aria_label scroll_body=True side="left" %}
 {# SNOW-658: the panel the roundel now opens — the user's own reports, a CTA #}
 {# to add another, and a "Show on the map" switch bound to the layers menu's   #}
 {# "Field observations" row. Cloned by report.js on every open; the           #}
@@ -49,9 +51,10 @@ Context expected:
 {# every part of it slightly different: a smaller title, its own body wrapper, #}
 {# a whole-sheet scroll. All that is gone; what stays here is the panel's own  #}
 {# strings and its rows template (public/partials/_report_panel_rows.html).    #}
-{# SNOW-1479: in the installed phone app this is Saved → Observations;   #}
-{# its header's + (includes/_saved_add_roundel.html) carries             #}
-{# data-panel-add, so it starts a report as the foot's button does.      #}
+{# SNOW-1479: this is Saved → Observations (on every screen since        #}
+{# SNOW-1481, when the binoculars began starting a report directly); its #}
+{# header's + (includes/_saved_add_roundel.html) carries data-panel-add, #}
+{# so it starts a report as the foot's button does.                      #}
 <template id="report-list-template">
     {% trans "Field observations" as report_list_title %}
     {% trans "Report an observation" as report_add_label %}

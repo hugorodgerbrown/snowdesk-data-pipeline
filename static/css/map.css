@@ -1382,6 +1382,18 @@
     justify-content: center;
 }
 
+/* SNOW-1481: the star opens Saved, and is filled while Saved is open
+   (static/js/saved_panel.js sets aria-expanded). Both glyphs are rendered,
+   so the swap needs no script beyond the attribute. */
+#favourite-add-btn .map-saved-star--filled,
+#favourite-add-btn[aria-expanded='true'] .map-saved-star:not(.map-saved-star--filled) {
+    display: none;
+}
+
+#favourite-add-btn[aria-expanded='true'] .map-saved-star--filled {
+    display: block;
+}
+
 
 /* SNOW-686: saved-routes pill — the fourth UGC roundel, identical geometry
    to the favourites pill above. The three declarations are deliberately
@@ -7287,6 +7299,28 @@ body.map-framing #map-legend {
     }
 }
 
+/* —— Saved, on every screen (SNOW-1481) ——————————————————————————————
+   The four Saved sheets — favourites (Places), routes, trips and report —
+   are one panel the star opens (static/js/saved_panel.js). From 640px they
+   dock left under search (includes/_overlay_sheet.html's side="left").
+   Below it, in a phone browser, the panel slides up to at most three
+   quarters of the screen, with no detents, so the map stays in view above
+   it; its × closes it. The installed app's gate below stands them at full
+   height instead, and wins by coming later.
+
+   A first open rises (`data-tab-open`, set by saved_panel.js for the star
+   and the app's Saved tab, and by app_tabbar.js for the "?" menu). A
+   Saved tab switch is not marked: only the content changes. */
+@media (max-width: 639.98px) {
+    :is(#favourite-sheet, #route-sheet, #trips-sheet, #report-sheet) {
+        max-height: 75dvh;
+    }
+}
+
+[data-tab-open] {
+    animation: app-tab-panel-rise 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
 /* —— The installed phone app's tab bar, on the map (SNOW-1476) ————————
    src/css/main.css draws the bar and pads the body by --app-tabbar-h in the
    installed app on a phone; this is the map's half of that one block.
@@ -7308,8 +7342,9 @@ body.map-framing #map-legend {
      to above the bar. A first open rises; a
      swap from one tab's panel to another keeps the card in place and fades
      only its content in, so the map never shows through mid-swap
-     (static/js/app_tabbar.js marks them `data-tab-open` / `data-tab-swap`;
-     a Saved tab swaps with no mark, the content simply replaced).
+     (`data-tab-swap`; the rise, `data-tab-open`, applies on every screen
+     since SNOW-1481 and is above; a Saved tab swaps with no mark, the
+     content simply replaced).
    Nothing here applies outside the installed app on a phone. */
 @media (display-mode: standalone) and (max-width: 639.98px) {
     :root {
@@ -7384,10 +7419,6 @@ body.map-framing #map-legend {
         [data-panel-scroll]:has(~ [data-panel-overlay-toggle]) {
         margin-bottom: -0.625rem;
         padding-bottom: 0.625rem;
-    }
-
-    [data-tab-open] {
-        animation: app-tab-panel-rise 200ms cubic-bezier(0.32, 0.72, 0, 1);
     }
 
     [data-tab-swap] > * {

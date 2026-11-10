@@ -9,21 +9,23 @@ than the pin-placement flow it used to start directly. SNOW-904 took the
 panel's "Display on the map" switch away; the two-capsule control column
 gave it back as "Show on the map", bound to the layers menu's Favourites
 row, so either control draws them. SNOW-1366 added the Today paragraph.
+SNOW-1481: the star opens Saved on Places, with + to add a pin, rather than
+a panel of pins alone.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
     <p class="mb-3 last:mb-0">
         {% blocktrans trimmed %}
             Favourites let you pin specific spots &mdash; a trailhead, a car park, a favourite line &mdash; directly on
-            the map. Sign in, open the star button on the right of the map, and use "Add a favourite": the map moves
-            under a fixed pin, so you place it with one hand.
+            the map. Sign in and tap the star on the right of the map: it opens Saved on Places. Tap + to add a pin: the
+            map moves under a fixed pin, so you place it with one hand.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-favourites-panel">
         {% blocktrans trimmed %}
-            That same panel lists the pins you have dropped. Rename a pin in place, remove one, and use the "Show on the
-            map" switch at the foot to draw them all &mdash; it is the same setting as the Favourites row in the layers
-            menu, so turning one moves the other.
+            Places lists the regions and resorts you follow, with the pins you dropped in each. Saved also holds your
+            routes, trips and observations, one tab each. The "Show on the map" switch at the foot draws your pins, as
+            the Favourites row in the layers menu does.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-favourites-resorts">

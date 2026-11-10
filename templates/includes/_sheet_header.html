@@ -32,14 +32,15 @@ Parameters (passed via ``{% include … with … %}``):
                            user (public/partials/_route_add_menu.html).
   lead_template (string, optional) — template path rendered at the row's
                            start, before the title (SNOW-1479). The Saved
-                           tabs (includes/_saved_tabs.html), which carry
-                           their own `app-only`.
+                           tabs (includes/_saved_tabs.html).
   app_tabbed   (bool, optional) — the header of a Saved tab's sheet
-                           (SNOW-1479). In the installed phone app the tabs
-                           and the + are the whole header, so the icon,
-                           the title and the × are `app-hidden` there; the
-                           tab bar closes the sheet. Elsewhere nothing
-                           changes.
+                           (SNOW-1479). The tabs and the + are the header,
+                           so the icon and the title are `hidden`, on
+                           every screen since SNOW-1481. The × is
+                           `app-hidden`: in the installed phone app the tab
+                           bar closes the sheet, and elsewhere the × is how
+                           a phone browser closes a sheet that covers the
+                           star.
   icon_template (string, optional) — Template path for a glyph rendered in
                            a 26×26 box before the title (SNOW-658). The
                            three UGC panels pass the glyph of the ROUNDEL
@@ -113,7 +114,9 @@ one keyed to the glyph's text.
     {# The icon and the title read as one unit — `min-w-0` so a long title  #}
     {# truncates rather than shoving the × off the row, and the 26×26 box   #}
     {# is `flex-none` so the glyph keeps its size while the title gives.    #}
-    <span class="{% if app_tabbed %}app-hidden {% endif %}flex min-w-0 items-center gap-2.5">
+    {# A Saved tab's header is its tabs and +: the title is `hidden`, on   #}
+    {# every screen (SNOW-1481), and kept in the markup the panels share.  #}
+    <span {% if app_tabbed %}hidden{% endif %} class="flex min-w-0 items-center gap-2.5">
         {% if icon_template %}
             <span class="flex h-6.5 w-6.5 flex-none items-center justify-center text-text-1" aria-hidden="true">
                 {% include icon_template with size=22 only %}

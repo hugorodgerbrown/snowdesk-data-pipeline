@@ -535,14 +535,15 @@ ICON_PARTIALS: tuple[IconPartial, ...] = (
     ),
     _icon(
         "favourite",
-        "Favourite — a star, the favourites roundel",
+        "Favourite — a star, the roundel that opens Saved",
         18,
         parameters=(
             _size(18, "the roundel size; the panel header passes 22"),
             IconParameter(
                 "filled",
                 "bool, optional — solid rather than outline, the on state "
-                "of a star used as a toggle.",
+                "of a star used as a toggle, and the star roundel's while "
+                "Saved is open (SNOW-1481).",
             ),
             _SVG_CLASS,
         ),
@@ -2306,12 +2307,11 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="saved-tabs",
         label="Saved tabs",
         description=(
-            "The phone app's Saved tabs — Places, Routes, Trips, "
-            "Observations — four icons, the selected one named, at the start "
-            "of each of the four sheets' headers (SNOW-1479; the Saved chips "
-            "under the title of SNOW-1476 before it). A segmented control of "
-            "icon options; with the + roundel it is the whole header in the "
-            "installed phone app, where it is drawn alone; previewed here."
+            "The Saved tabs — Places, Routes, Trips, Observations — four "
+            "icons, the selected one named, at the start of each of the four "
+            "Saved sheets' headers (SNOW-1479; on every screen since "
+            "SNOW-1481, where the star opens Saved). A segmented control of "
+            "icon options; with the + roundel it is the whole header."
         ),
         kind="components",
         partial="includes/_saved_tabs.html",
@@ -2322,10 +2322,10 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="saved-add-roundel",
         label="Saved add roundel",
         description=(
-            "The + beside the Saved tabs in the installed phone app "
-            "(SNOW-1479): a glass roundel carrying the panel's own add hook "
+            "The + beside the Saved tabs (SNOW-1479; on every screen since "
+            "SNOW-1481): a glass roundel carrying the panel's own add hook "
             "(data-panel-add: drop a pin, report, upload). Trips has the "
-            "trip route picker instead. App-only; previewed here."
+            "trip route picker instead."
         ),
         kind="components",
         partial="includes/_saved_add_roundel.html",
@@ -2336,12 +2336,13 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="trip-route-picker",
         label="Trip route picker",
         description=(
-            "The Trips tab's + in the installed phone app: a glass roundel "
+            "The Trips tab's + (on every screen since SNOW-1481): a glass "
+            "roundel "
             "opening a menu headed Plan a trip from, listing the reader's own "
             "routes with their distance and ascent, each to the trip form for "
             "that route. With no routes, its one item goes to the Routes tab. "
             "Filled by trips_panel.js from routes:geojson, so the library "
-            "shows the label alone. App-only; previewed here."
+            "shows the label alone."
         ),
         kind="components",
         partial="public/partials/_trip_route_picker.html",

@@ -36,14 +36,16 @@ Context expected:
 {# form, the confirmation) therefore carries `min-h-0 flex-1` and owns    #}
 {# its own scroll region; see that partial's docstring for the mechanism. #}
 {% trans "Favourite" as favourite_sheet_aria_label %}
-{% include "includes/_overlay_sheet.html" with id="favourite-sheet" aria_label=favourite_sheet_aria_label scroll_body=True %}
+{# SNOW-1481: one of the four Saved sheets, a roundel panel (no detents)  #}
+{# docked left under search on a desktop: docs/decisions/saved-is-one-panel-on-every-screen.md. #}
+{% include "includes/_overlay_sheet.html" with id="favourite-sheet" aria_label=favourite_sheet_aria_label scroll_body=True side="left" %}
 {# SNOW-658: the panel the roundel now opens — the user's saved pins, a     #}
 {# CTA to add another, and a "Show on the map" switch bound to the layers   #}
 {# menu's Favourites row. Cloned by favourites.js on every open (so a stale row #}
 {# can never survive a re-open), which then loads the rows themselves over  #}
-{# HTMX from favourites:list at ?variant=map — the same endpoint the manage #}
-{# page uses, and since SNOW-711 the same row too (_favourite.html, minus    #}
-{# its disclosure) — so each row arrives with its Remove form already wired  #}
+{# HTMX from favourites:places (SNOW-1481; favourites:list, the pins alone, #}
+{# before it), whose pins are the shared row (_favourite.html, minus its    #}
+{# disclosure) — so each row arrives with its Remove form already wired     #}
 {# and this file needs no copy of it. Rename is the one action that needs JS: #}
 {# the row's pencil opens the inline editor the row already carries, and      #}
 {# posts what it commits.                                                     #}
@@ -66,11 +68,9 @@ Context expected:
     {# the strip is where each panel says so in its own words.              #}
     {% trans "Favourites are private and not shared." as favourites_context_line %}
     {% trans "Places" as favourites_section_label %}
-    {# SNOW-1479: in the installed phone app this sheet is Saved → Places, #}
-    {# whose header is the Saved tabs and a + that drops a pin             #}
-    {# (includes/_saved_add_roundel.html, data-panel-add); favourites.js   #}
-    {# loads favourites:places into the rows rather than favourites:list   #}
-    {# when the tab opens it.                                              #}
+    {# SNOW-1479: this sheet is Saved → Places (on every screen since      #}
+    {# SNOW-1481), whose header is the Saved tabs and a + that drops a pin #}
+    {# (includes/_saved_add_roundel.html, data-panel-add).                #}
     {% include "includes/_ugc_panel.html" with title=favourite_list_title icon_template="includes/_icon_favourite.html" context_line=favourites_context_line section_label=favourites_section_label rows_template="public/partials/_favourites_panel_rows.html" cta_label=favourite_add_label toggle_id="map-favourites-overlay-toggle" saved_tab="places" header_actions_template="includes/_saved_add_roundel.html" %}
 </template>
 {# Create-form template — cloned by favourites.js once a pin has been  #}
@@ -180,13 +180,11 @@ Context expected:
     {# needs nothing here — but the FAILURE line is written into a toast by #}
     {# favourites.js and does.                                              #}
     <span data-string="rename-failed">{% trans "That name couldn't be saved. Try again." %}</span>
-    {# SNOW-658: the panel's own failure line. Distinct from the empty state  #}
-    {# favourites:list renders ("You have no saved favourites yet.") on       #}
-    {# purpose: this panel opens offline, its list does not load offline, and #}
-    {# telling a user they have no pins when the request merely failed is a   #}
-    {# wrong statement about their own data.                                  #}
-    <span data-string="list-failed">{% trans "Your favourites couldn't be loaded — check your connection." %}</span>
-    {# SNOW-1479: the Saved tab's Places list, online only, as Today is. #}
+    {# SNOW-658: the panel's own failure line, distinct from the list's empty #}
+    {# state on purpose: telling a user they have no places when the request  #}
+    {# merely failed is a wrong statement about their own data. SNOW-1479:    #}
+    {# Places is online only, as Today is; SNOW-1481 retired the pins list's  #}
+    {# own line with that list.                                               #}
     <span data-string="places-failed">{% trans "Your places couldn't be loaded — check your connection." %}</span>
     {# SNOW-887: only the two outcomes the share may speak about. A share #}
     {# the platform took, and one the user dismissed, both say nothing.   #}

@@ -267,6 +267,43 @@ def test_the_control_column_is_two_groups() -> None:
     assert "map-control-group" in inner.split('class="')[1].split('"')[0].split()
 
 
+def _star(content: str) -> str:
+    """Return the star roundel's button, open tag to close tag."""
+    match = re.search(r'<button\s+id="favourite-add-btn".*?</button>', content, re.S)
+    assert match, "no star roundel"
+    return match.group(0)
+
+
+@pytest.mark.django_db
+def test_the_star_is_labelled_saved_with_both_glyphs() -> None:
+    """SNOW-1481: the star opens Saved, and is filled while it is open."""
+    client = Client()
+    client.force_login(UserFactory.create())
+    star = _star(client.get(reverse("public:map")).content.decode())
+
+    assert re.search(r"aria-label=['\"]Saved['\"]", star)
+    assert 'aria-expanded="false"' in star
+    assert star.count("<svg") == 2
+    assert 'class="map-saved-star"' in star
+    assert 'class="map-saved-star map-saved-star--filled"' in star
+    assert 'fill="currentColor"' in star
+    # Four lists, no one layer: no overlay state, and no pins-list URL.
+    assert "data-overlay-shown" not in star
+    assert "data-favourite-list-url" not in star
+    assert f'data-favourite-places-url="{reverse("favourites:places")}"' in star
+
+
+@pytest.mark.django_db
+def test_help_mode_names_the_star_saved() -> None:
+    """SNOW-1481: the help card says what Saved holds, in few words."""
+    content = Client().get(reverse("public:map")).content.decode()
+    card = re.search(r'<li\s+data-control="#favourite-add-btn".*?</li>', content, re.S)
+    assert card
+    assert re.search(r"data-label=['\"]Saved['\"]", card.group(0))
+    assert "Open Saved" in card.group(0)
+    assert "places, routes, trips and observations" in card.group(0)
+
+
 @pytest.mark.django_db
 def test_layers_menu_is_outside_both_groups() -> None:
     """

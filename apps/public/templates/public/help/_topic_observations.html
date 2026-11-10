@@ -6,7 +6,9 @@ body_template parameter of includes/_collapsible_panel.html.
 
 Rewritten to describe the panel the triangle roundel opens (SNOW-658) —
 the user's own reports, the report action, and the "Show on the map"
-switch bound to the layers menu's "Field observations" row. SNOW-1289
+switch bound to the layers menu's "Field observations" row. SNOW-1481: the
+binoculars start a report in one tap, and the list is Saved › Observations.
+SNOW-1289
 widened the report to the three families the form offers
 (FieldObservation.OBSERVATION_FAMILY), any number of types per report.
 {% endcomment %}
@@ -22,9 +24,9 @@ widened the report to the three families the form offers
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-observations-panel">
         {% blocktrans trimmed %}
-            Sign in with a verified email address, then open the triangle button on the right of the map. The panel
-            lists your own reports and offers "Report an observation". The "Show on the map" switch at its foot draws
-            the community's reports; it is the same setting as the "Field observations" row in the layers menu.
+            Sign in with a verified email address, then tap the binoculars on the right of the map to start a report.
+            Your own reports are in Saved, under Observations, whose "Show on the map" switch draws the community's
+            reports, as the "Field observations" row in the layers menu does.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-observations-location">

@@ -89,7 +89,8 @@ Context expected:
 {# scrolls, which is why every body rendered into it carries               #}
 {# `min-h-0 flex-1` and owns its own scroll region.                        #}
 {% trans "Routes" as route_sheet_aria_label %}
-{% include "includes/_overlay_sheet.html" with id="route-sheet" aria_label=route_sheet_aria_label scroll_body=True %}
+{# SNOW-1481: a Saved sheet, docked left like the other three. #}
+{% include "includes/_overlay_sheet.html" with id="route-sheet" aria_label=route_sheet_aria_label scroll_body=True side="left" %}
 {# The panel the roundel opens — the user's saved routes and a CTA to add   #}
 {# another. Cloned by routes.js on every open (so a stale row can never     #}
 {# survive a re-open), which then loads the rows themselves over HTMX from  #}
@@ -103,9 +104,9 @@ Context expected:
     {# route — find, create, upload. They sit in a menu behind a + beside  #}
     {# the × and replace the panel's own add button (the upload item       #}
     {# carries its hook), so the foot gives its room to the list.          #}
-    {# SNOW-1479: the menu shows everywhere. Without it the app's Saved  #}
-    {# tab still needs a + in the header (the foot is `app-hidden`      #}
-    {# there), so the panel gets the bare + roundel, which uploads.      #}
+    {# SNOW-1479: the menu shows everywhere. Without it the Saved tab    #}
+    {# still needs a + in the header (its foot is not drawn), so the     #}
+    {# panel gets the bare + roundel, which uploads.                     #}
     {% if route_drawing_enabled %}
         {% firstof "public/partials/_route_add_menu.html" as route_add_menu_template %}
     {% else %}
