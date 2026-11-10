@@ -3572,9 +3572,8 @@ async function _basemapStaleWhileRevalidate(request) {
 //      ``@never_cache`` (apps/accounts/views.py), and
 //      ``AdminSite.admin_view``, which already applies ``never_cache`` to
 //      every Django admin view and which templates/admin/base_site.html
-//      registers this same worker on. Note that ``manage_view`` is
-//      deliberately NOT in that set: the offline favourites roster reads
-//      it out of this cache, so it relies on guard 2 instead.
+//      registers this same worker on. ``manage_view`` is not in that set
+//      and relies on guard 2 instead.
 //
 //   2. Every cached navigation carries an ``X-SW-Principal`` header naming
 //      the account its HTML was rendered for, and the offline read serves

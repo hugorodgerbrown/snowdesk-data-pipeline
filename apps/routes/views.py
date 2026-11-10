@@ -643,9 +643,8 @@ def route_list(request: HttpRequest) -> HttpResponse:
     gone, the map sheet is this endpoint's only surface, and a parameter
     is ignored.
 
-    No freshness headers and no offline-cache sidecar, both of which
-    ``favourite_list`` carries. A route has no safety-critical constituent
-    to go stale (it is the user's own geometry, not a danger rating), and
+    No freshness headers and no offline-cache sidecar. A route has no
+    safety-critical constituent to go stale (it is the user's own geometry, not a danger rating), and
     no sidecar is needed because the panel's offline read (SNOW-950,
     static/js/routes_offline.js) stores this response's rendered body
     verbatim rather than a record per route. The map layer's own copy is

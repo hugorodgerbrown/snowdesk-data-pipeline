@@ -70,9 +70,7 @@ WHAT THIS SURFACE DOES NOT HAVE, and why each absence is deliberate:
   No offline cache SIDECAR, but the panel does read offline. SNOW-950 gave
   it static/js/routes_offline.js, which stores each list response's rendered
   body verbatim in ``data:panel_rows`` and lets routes.js repaint it over a
-  failed load — the shape SNOW-661 built for the observations panel, and not
-  _favourite_list_map.html's ``roster_payload``, which hands
-  favourites_offline.js a record per row to rebuild. The MAP LAYER caches
+  failed load — the shape SNOW-661 built for the observations panel. The MAP LAYER caches
   separately, as it has since SNOW-687: routes:geojson is write-through
   cached by static/js/map_overlay_offline_cache.js, principal-scoped so one
   account's tracks can never read back into another's session — but that
