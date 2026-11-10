@@ -1514,8 +1514,11 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "opened it: an object sheet (a thing tapped on the map; the only "
             "kind with detents), a roundel panel (a list or setting a "
             "roundel opened and toggles; must not cover the roundels) and "
-            "a form panel (a task; no drag-to-close). See "
-            "docs/design-system.md, Map panels."
+            "a form panel (a task; no drag-to-close). SNOW-1486: on a "
+            "phone the four Saved sheets are the card (card=True): inset, "
+            "half at 50dvh and full at 75dvh, dragged from the handle and "
+            "header only; a form or confirmation in it (data-sheet-fit) is "
+            "as tall as its content. See docs/design-system.md, Map panels."
         ),
         kind="components",
         partial="includes/_overlay_sheet.html",
@@ -2277,7 +2280,11 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "sheet's existing delegated close listener. SNOW-658 adds an "
             "optional icon_template: the three UGC panels put the glyph of "
             "the roundel that opens them before the title, as the panel's "
-            "one identity mark."
+            "one identity mark. SNOW-1486: with lead_template (the Saved "
+            "tabs) it is a Saved sheet's header, one grid in two layouts — "
+            "on a phone the title and × over the tabs with the + beside "
+            "them, from sm one row of tabs, + and × — and handle=True draws "
+            "the phone grab handle the Help menu's header carries."
         ),
         kind="components",
         partial="includes/_sheet_header.html",
@@ -2311,7 +2318,8 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "icons, the selected one named, at the start of each of the four "
             "Saved sheets' headers (SNOW-1479; on every screen since "
             "SNOW-1481, where the star opens Saved). A segmented control of "
-            "icon options; with the + roundel it is the whole header."
+            "icon options, with the + roundel beside it; on a phone under "
+            "the title Saved items and its × (SNOW-1486)."
         ),
         kind="components",
         partial="includes/_saved_tabs.html",

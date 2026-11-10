@@ -614,6 +614,74 @@ class TestSavedTabs:
         assert "app-only" not in html
 
 
+class TestOneSheetDesign:
+    """SNOW-1486: the Saved header's two layouts, the Help handle, the card."""
+
+    def _saved_header(self) -> str:
+        return render_to_string(
+            "includes/_sheet_header.html",
+            {
+                "title": "Saved items",
+                "close_action": "dismiss",
+                "title_class": "text-lg font-semibold",
+                "lead_template": "includes/_saved_tabs.html",
+                "actions_template": "includes/_saved_add_roundel.html",
+                "saved_tab": "places",
+                "cta_label": "Add a favourite",
+            },
+        )
+
+    def test_the_saved_header_is_title_and_close_over_tabs_and_plus(self) -> None:
+        html = self._saved_header()
+        assert "[grid-template-areas:'title_title_close'_'lead_actions_.']" in html
+        assert "sm:[grid-template-areas:'lead_actions_close']" in html
+        assert re.search(
+            r"\[grid-area:title\] sm:hidden[^\"]*\"\s*>\s*Saved items", html
+        )
+        assert html.index("[grid-area:lead]") < html.index("data-saved-tabs")
+        assert html.index("data-saved-tabs") < html.index("[grid-area:actions]")
+        assert html.index("[grid-area:actions]") < html.index(
+            'data-testid="saved-add-roundel"'
+        )
+        close = re.search(r'<button[^>]*data-action="dismiss"[^>]*>', html, re.S)
+        assert close
+        assert "[grid-area:close]" in close.group(0)
+        assert "app-hidden" not in html
+        assert "data-sheet-handle" not in html
+
+    def test_a_plain_header_is_unchanged(self) -> None:
+        """No lead_template: the one row of icon, title and × as before."""
+        html = render_to_string(
+            "includes/_sheet_header.html",
+            {"title": "Report", "close_action": "dismiss"},
+        )
+        assert (
+            '<div class="flex items-center justify-between gap-4 px-2 pt-1 pb-3">'
+            in html
+        )
+        assert '<span class="flex min-w-0 items-center gap-2.5">' in html
+        assert "grid-area" not in html
+        assert "data-sheet-handle" not in html
+        assert "data-sheet-drag" not in html
+
+    def test_the_help_header_draws_a_phone_handle(self) -> None:
+        html = render_to_string(
+            "includes/_sheet_header.html",
+            {"title": "Help", "close_action": "help-menu-close", "handle": True},
+        )
+        handle = re.search(r"<div\s+data-sheet-handle[^>]*>", html, re.S)
+        assert handle
+        assert "sm:hidden" in handle.group(0)
+        assert 'aria-hidden="true"' in handle.group(0)
+        assert html.index("data-sheet-handle") < html.index("Help")
+        assert 'data-action="help-menu-close"' in html
+
+    def test_the_tabs_carry_no_trim_of_their_own(self) -> None:
+        """The header gives the tabs' cell the -12px trim from sm."""
+        html = render_to_string("includes/_saved_tabs.html", {"saved_tab": "places"})
+        assert '<fieldset class="min-w-0 flex-1" data-saved-tabs>' in html
+
+
 @pytest.mark.django_db
 class TestSnow1479Fixtures:
     """Every new component's fixtures render in the library."""
@@ -629,6 +697,8 @@ class TestSnow1479Fixtures:
             "trip-panel-rows",
             "segmented-option",
             "overflow-menu",
+            "sheet-header",
+            "overlay-sheet",
         ],
     )
     def test_renders(self, admin_client: Client, slug: str) -> None:

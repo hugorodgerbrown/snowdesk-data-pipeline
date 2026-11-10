@@ -1590,6 +1590,21 @@ OVERLAY_SHEET_VARIANTS: tuple[dict[str, Any], ...] = (
             "initial": "peek",
         },
     },
+    {
+        # SNOW-1486: the phone card the four Saved sheets are (``card``):
+        # inset, at half (50dvh) or full (75dvh), dragged from its handle
+        # and header. In the static library render the card mark is left
+        # off, so the shell shows as above with its handle.
+        "caption": "Phone card: Saved, half and full",
+        "context": {
+            "id": "component-library-overlay-sheet-card",
+            "aria_label": "Saved",
+            "static": True,
+            "detents": "half,full",
+            "initial": "half",
+            "card": True,
+        },
+    },
 )
 
 
@@ -1614,6 +1629,33 @@ SHEET_HEADER_VARIANTS: tuple[dict[str, Any], ...] = (
             "title": "Your downloads",
             "close_action": "dismiss",
             "title_class": "text-lg font-bold",
+        },
+    },
+    {
+        # SNOW-1486: a Saved sheet's header. On a phone "Saved items" and
+        # the × over the tabs with the + beside them; from `sm` (the width
+        # the library is read at) the one row of tabs, + and ×.
+        "caption": "Saved sheet (tabs and +; titled on a phone)",
+        "context": {
+            "title": "Saved items",
+            "close_action": "dismiss",
+            "title_class": "text-lg font-semibold",
+            "lead_template": "includes/_saved_tabs.html",
+            "actions_template": "includes/_saved_add_roundel.html",
+            "saved_tab": "places",
+            "preview": True,
+            "cta_label": "Add a favourite",
+        },
+    },
+    {
+        # SNOW-1486: the "?" menu's phone header, with its grab handle.
+        # The handle is phone-only, so the library shows the row alone.
+        "caption": "Help, on a phone (handle, title, ×)",
+        "context": {
+            "title": "Help",
+            "close_action": "help-menu-close",
+            "title_class": "text-lg font-semibold",
+            "handle": True,
         },
     },
 )
@@ -1714,7 +1756,7 @@ SEGMENTED_OPTION_VARIANTS: tuple[dict[str, Any], ...] = (
 # Saved tabs ------------------------------------------------------------------
 # SNOW-1479 (the Saved chips of SNOW-1476 before it): the Saved tab's Places /
 # Routes / Trips / Observations icons, the selected one named. ``preview``
-# draws the Trips option whoever is signed in, and drops the header trim.
+# draws the Trips option whoever is signed in.
 SAVED_TABS_VARIANTS: tuple[dict[str, Any], ...] = (
     {"caption": "Places", "context": {"saved_tab": "places", "preview": True}},
     {"caption": "Trips", "context": {"saved_tab": "trips", "preview": True}},
