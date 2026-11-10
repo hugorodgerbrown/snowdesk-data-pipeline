@@ -413,3 +413,146 @@ class TestDownloadsSheetCopyReport:
         html = client.get(reverse("public:map")).content.decode()
 
         assert f'href="{reverse("public:offline_page")}"' not in html
+
+
+@pytest.mark.django_db
+class TestDownloadsSheetSaysWhatSyncIsDoing:
+    """SNOW-1487: Sync all says what it is doing, and a failed step says why.
+
+    The row a sync is on gets its step, its counts and a bar; the rows
+    still to come say they are waiting; a row whose last sync could not add
+    the Swiss map or the terrain data gets a notice with its remedy; the
+    foot gains Stop and the line saying when the areas were last synced.
+    Every word is rendered here (docs/i18n.md).
+    """
+
+    def _template(self, html: str, template_id: str) -> str:
+        """The inner markup of one ``<template id=…>``."""
+        return html.split(f'<template id="{template_id}">', 1)[1].split(
+            "</template>", 1
+        )[0]
+
+    def _words(self, strings: str, key: str) -> str:
+        """One string's words, whitespace collapsed as pwaStrings reads it."""
+        tail = strings.split(f'data-string="{key}"', 1)[1]
+        return " ".join(tail.split(">", 1)[1].split("</span>", 1)[0].split())
+
+    def _page(self, client: Client) -> str:
+        """The map page's markup."""
+        response = client.get(reverse("public:map"))
+        assert response.status_code == 200
+        return response.content.decode()
+
+    def test_every_new_word_is_in_the_strings_template(self, client: Client) -> None:
+        """The toast, the foot line, the row's step and each notice."""
+        strings = self._template(self._page(client), "map-downloads-strings-template")
+
+        for key, words in (
+            ("sync-done-ready", "%(name)s: up to date"),
+            ("sync-done-unfinished", "%(name)s: didn't finish"),
+            ("sync-done-stopped", "%(name)s: stopped"),
+            ("sync-done-absent", "%(name)s: download it again"),
+            ("sync-foot", "Last synced %(when)s"),
+            ("sync-foot-unfinished-one", "Last synced %(when)s · 1 area didn't finish"),
+            (
+                "sync-foot-unfinished",
+                "Last synced %(when)s · %(count)s areas didn't finish",
+            ),
+            ("row-step-map", "Saving the map"),
+            ("row-step-terrain", "Saving terrain"),
+            ("row-step-bulletins", "Saving bulletins"),
+            ("row-step-weather", "Saving weather"),
+            ("row-step-things", "Saving your trips and pins"),
+            ("row-step-counts", "%(done)s of %(total)s"),
+            ("row-waiting", "Waiting"),
+            ("step-part-basemap", "The Swiss map"),
+            ("step-part-terrain", "Terrain"),
+            (
+                "step-notice-network",
+                "%(part)s didn't finish: the connection dropped.",
+            ),
+            ("step-notice-interrupted", "%(part)s stopped part way."),
+            (
+                "step-notice-budget",
+                "%(part)s would take you over your download limit.",
+            ),
+            ("step-notice-quota", "%(part)s won't fit: this phone is nearly full."),
+            ("step-notice-plan", "%(part)s couldn't be reached."),
+            ("step-remedy-network", "Try again"),
+            ("step-remedy-interrupted", "Carry on"),
+            ("step-remedy-plan", "Try again"),
+            ("step-remedy-budget", "Change limit"),
+            ("inventory-swiss", "Swiss map"),
+            ("inventory-not-added", "Not added yet"),
+        ):
+            assert self._words(strings, key) == words, key
+        # SNOW-951's one sentence is gone: the toast names each area now.
+        assert 'data-string="sync-failed"' not in strings
+
+    def test_no_word_names_an_internal(self, client: Client) -> None:
+        """The reader is told about their limit and their phone, not ours."""
+        strings = self._template(self._page(client), "map-downloads-strings-template")
+
+        for internal in ("budget", "quota", "OFM", "OpenFreeMap"):
+            for key in ("step-notice-budget", "step-notice-quota"):
+                assert internal not in self._words(strings, key)
+
+    def test_sync_all_says_how_many_areas_and_names_the_terrain_stage(
+        self, client: Client
+    ) -> None:
+        """The button's "Syncing 2 of 5 areas", and the terrain stage."""
+        strings = self._template(
+            self._page(client), "downloads-sync-all-strings-template"
+        )
+
+        assert self._words(strings, "sync-all-progress") == (
+            "Syncing %(n)s of %(total)s areas"
+        )
+        assert self._words(strings, "sync-stage-terrain") == (
+            "Saving terrain… (%(n)s of %(total)s)"
+        )
+
+    def test_the_row_progress_and_step_notice_templates_render(
+        self, client: Client
+    ) -> None:
+        """Every hook the manager fills, on design tokens."""
+        html = self._page(client)
+        progress = self._template(html, "map-downloads-row-progress-template")
+        notice = self._template(html, "map-downloads-step-notice-template")
+
+        for hook in (
+            "data-row-progress",
+            "data-row-progress-step",
+            "data-row-progress-counts",
+            "data-row-progress-track",
+            "data-row-progress-bar",
+        ):
+            assert hook in progress
+        assert 'role="progressbar"' in progress
+        for hook in (
+            "data-row-step-notice",
+            "data-row-step-notice-text",
+            "data-row-step-remedy",
+        ):
+            assert hook in notice
+        assert "bg-status-warning-bg" in notice
+        assert "text-status-warning-text" in notice
+
+    def test_the_foot_carries_stop_and_the_last_synced_line(
+        self, client: Client
+    ) -> None:
+        """Both hidden until the script has something to say."""
+        body = self._template(self._page(client), "map-downloads-body-template")
+        foot = body.split("data-panel-foot", 1)[1]
+
+        stop = foot.split("data-downloads-sync-stop", 1)[1].split(">", 1)[0]
+        assert "hidden" in stop
+        assert (
+            "Stop"
+            in foot.split("data-downloads-sync-stop", 1)[1].split("</button>", 1)[0]
+        )
+        line = foot.split("data-downloads-sync-foot", 1)[1].split(">", 1)[0]
+        assert "hidden" in line
+        assert foot.index("data-downloads-sync-all") < foot.index(
+            "data-downloads-sync-stop"
+        )

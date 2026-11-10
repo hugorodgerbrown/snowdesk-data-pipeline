@@ -92,18 +92,25 @@ interface Window {
       drain(): unknown;
       waiting(): Promise<number> | number;
       areas: string[];
+      /** SNOW-1487: a stage's counts ride as the second argument; `terrain` joined the stages. */
       syncOne(
         id: string,
-        onStage: (name: 'map' | 'bulletins' | 'weather' | 'things') => void,
+        onStage: (
+          name: 'map' | 'terrain' | 'bulletins' | 'weather' | 'things',
+          counts?: { done: number; total: number },
+        ) => void,
       ): Promise<'ready' | 'partial' | 'absent'> | 'ready' | 'partial' | 'absent';
       onStep?(step: any): void;
       drainTimeoutMs?: number;
       wait?(ms: number): Promise<void>;
+      /** SNOW-1487: once aborted, no further area starts. */
+      signal?: AbortSignal;
     }): Promise<{
       total: number;
       ready: number;
       waiting: number;
       outcomes: Array<{ id: string; outcome: 'ready' | 'partial' | 'absent' }>;
+      skipped: string[];
     }>;
     areaOutcome(result: { tiles?: string; content?: boolean } | null | undefined): 'ready' | 'partial' | 'absent';
     waitingCount(rows: unknown): number;
@@ -121,9 +128,27 @@ interface Window {
       record: Object | undefined,
       now?: Date,
     ): { verdict: 'ready' | 'refresh' | 'open-map' | 'unknown'; reason: '' | 'conditions' | 'things' | 'terrain' };
-    press(areaIds: string[], onChange: () => void): Promise<Object | null>;
-    state(): { running: boolean; current: string; label: string };
-    shortfall(result: Object | null): string;
+    /** SNOW-1487: `onChange({progress: true})` when only a stage's counts moved. */
+    press(areaIds: string[], onChange: (change?: { progress: boolean }) => void): Promise<Object | null>;
+    /** SNOW-1487: the area of how many it is on, its step and counts, and the areas still to come. */
+    state(): {
+      running: boolean;
+      current: string;
+      label: string;
+      index: number;
+      count: number;
+      step: { name: string; done: number | null; total: number | null } | null;
+      pending: string[];
+    };
+    /** SNOW-1487: stops the run in flight; the areas after it are skipped. */
+    stop(): void;
+    /** SNOW-1487: one `syncArea` answer in the closing toast's terms. */
+    outcomeOf(answer: any): 'ready' | 'unfinished' | 'stopped' | 'absent';
+    /** SNOW-1487: every area a run was pressed over, with its outcome, and the queue line. */
+    closing(
+      result: Object | null,
+      areaIds: string[],
+    ): { areas: Array<{ id: string; outcome: string }>; queue: string };
   };
   /** static/js/downloads_restore_queue_core.js — the "Download all" queue's order and stop rules (SNOW-1140). */
   pwaDownloadsRestoreQueueCore: {

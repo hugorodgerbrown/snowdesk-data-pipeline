@@ -33,5 +33,20 @@ because it carries two labels, idle and running, toggled by the script.
     <span data-sync-all-state="idle">{% trans "Sync all" %}</span>
     <span data-sync-all-state="running" class="hidden">{% trans "Syncing…" %}</span>
 </button>
+{% comment %}
+SNOW-1487: Stop, shown while Sync all runs. The area it is on stops where
+it is, and the ones after it are left as they were. Below it, the line the
+records give: when the areas were last synced and how many did not finish.
+{% endcomment %}
+<button
+    type="button"
+    data-downloads-sync-stop
+    data-testid="downloads-sync-stop"
+    hidden
+    class="hover-affordance self-center text-caption font-medium text-text-2 underline"
+>
+    {% trans "Stop" %}
+</button>
+<p data-downloads-sync-foot data-testid="downloads-sync-foot" hidden class="text-center text-caption text-text-3"></p>
 {% trans "Download a region" as add_region_label %}
 {% include "includes/_panel_add_button.html" with label=add_region_label hook="panel-add-region" %}

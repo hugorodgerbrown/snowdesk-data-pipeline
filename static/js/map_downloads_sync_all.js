@@ -221,7 +221,7 @@
    * repaint that one row rather than every row.
    *
    * @param {Array<string>} areaIds Bucket ids, in the sheet's order.
-   * @param {function(Object=): void} onChange
+   * @param {function({progress: boolean}=): void} onChange
    * @returns {Promise<Object|null>} The run's result.
    */
   async function press(areaIds, onChange) {
@@ -265,7 +265,7 @@
           return core.areaOutcome(answer);
         },
         onStep: (/** @type {any} */ step) => {
-          const previous = current.step;
+          const previous = /** @type {any} */ (current.step);
           current.step = step;
           if (step.phase === 'area') current.current = step.id;
           if (step.phase === 'done') current.current = '';
@@ -282,7 +282,8 @@
       current.result = { total: areaIds.length, ready: 0, waiting: 0, outcomes: [], skipped: [] };
     }
     if (contentRun) contentRun.release('user');
-    current.result.answers = current.answers;
+    const settled = /** @type {any} */ (current.result);
+    settled.answers = current.answers;
     current.running = false;
     current.current = '';
     notify();
