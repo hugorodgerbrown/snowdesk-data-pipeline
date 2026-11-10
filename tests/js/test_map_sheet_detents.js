@@ -1073,3 +1073,154 @@ describe('one panel, new content (Hugo, 27 Oct 2026)', () => {
     });
   });
 });
+
+describe('the card variant (SNOW-1486)', () => {
+  /**
+   * A Saved sheet: half and full, opening at half, marked as the card.
+   *
+   * @param {string} [id]
+   * @param {string} [content] Markup after the handle.
+   * @returns {{ sheet: HTMLElement, handle: HTMLElement, controller: any }}
+   */
+  function cardSheet(id = 'card-sheet', content = '') {
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <div id="${id}" data-overlay hidden tabindex="-1" data-detents="half,full"
+           data-detent-initial="half" data-sheet-card>
+        <button type="button" data-sheet-handle aria-label="Resize panel"></button>
+        ${content}
+      </div>`;
+    const sheet = /** @type {HTMLElement} */ (host.firstElementChild);
+    document.body.appendChild(sheet);
+    // Half of jsdom's 768.
+    stubHeight(sheet, 384);
+    const controller = window.MapSheet.attach(sheet);
+    return {
+      sheet,
+      handle: /** @type {HTMLElement} */ (sheet.querySelector('[data-sheet-handle]')),
+      controller,
+    };
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = '<div id="map"></div>';
+  });
+
+  it('opens at half and marks neither the root nor the camera', () => {
+    const jumpTo = vi.fn();
+    const setPadding = vi.fn();
+    globalThis.MAP = {
+      getPadding: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+      setPadding,
+      getContainer: () => ({ clientWidth: 400, clientHeight: 768 }),
+      unproject: ([x, y]) => ({ x, y }),
+      on: () => {},
+      jumpTo,
+    };
+    const { sheet, controller } = cardSheet();
+    controller.open();
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+    expect(document.documentElement.hasAttribute('data-map-sheet')).toBe(false);
+    expect(jumpTo).not.toHaveBeenCalled();
+    expect(setPadding).not.toHaveBeenCalled();
+  });
+
+  it('the handle drags it from half to full, at three quarters', () => {
+    const { sheet, handle, controller } = cardSheet();
+    controller.open();
+    // 384 + 200 = 584: nearest full, 576 (75% of 768), not half's 384.
+    pointer(handle, 'pointerdown', 500, 0);
+    pointer(handle, 'pointermove', 400, 500);
+    pointer(handle, 'pointermove', 300, 1000);
+    pointer(handle, 'pointerup', 300, 1000);
+    expect(sheet.getAttribute('data-detent')).toBe('full');
+  });
+
+  it('a drag down from half closes it', () => {
+    const { sheet, handle, controller } = cardSheet();
+    controller.open();
+    pointer(handle, 'pointerdown', 400, 0);
+    pointer(handle, 'pointermove', 700, 500);
+    pointer(handle, 'pointerup', 700, 500);
+    expect(sheet.hasAttribute('hidden')).toBe(true);
+  });
+
+  it('drags from its header too', () => {
+    const { sheet, controller } = cardSheet('card-sheet', '<div data-sheet-drag><span>Saved items</span></div>');
+    controller.open();
+    const title = /** @type {HTMLElement} */ (sheet.querySelector('[data-sheet-drag] span'));
+    pointer(title, 'pointerdown', 500, 0);
+    pointer(title, 'pointermove', 400, 500);
+    expect(sheet.hasAttribute('data-sheet-dragging')).toBe(true);
+  });
+
+  it('leaves a finger on the list to scroll it', () => {
+    const { sheet, controller } = cardSheet('card-sheet', '<ul><li>Verbier</li></ul>');
+    controller.open();
+    const row = /** @type {HTMLElement} */ (sheet.querySelector('li'));
+    finger(row, 'pointerdown', { y: 500, t: 0 });
+    finger(row, 'pointermove', { y: 350, t: 500 });
+    finger(row, 'pointerup', { y: 350, t: 500 });
+    expect(sheet.hasAttribute('data-sheet-dragging')).toBe(false);
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+  });
+
+  it('a tap on a tab in the header does not step the detent', () => {
+    const { sheet, controller } = cardSheet(
+      'card-sheet',
+      '<div data-sheet-drag><label><input type="radio" name="t"><span>Routes</span></label></div>',
+    );
+    controller.open();
+    /** @type {HTMLElement} */ (sheet.querySelector('label span')).click();
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+  });
+
+  it('a fit content turns the handle inert', () => {
+    const { sheet, handle, controller } = cardSheet('card-sheet', '<form data-sheet-fit><input name="name"></form>');
+    controller.open();
+    handle.click();
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+    pointer(handle, 'pointerdown', 400, 0);
+    pointer(handle, 'pointermove', 700, 500);
+    pointer(handle, 'pointerup', 700, 500);
+    expect(sheet.hasAttribute('data-sheet-dragging')).toBe(false);
+    expect(sheet.hasAttribute('hidden')).toBe(false);
+  });
+
+  it('hands its detent to the next card, not to an object sheet', () => {
+    const a = cardSheet('card-a');
+    const b = cardSheet('card-b');
+    a.controller.open();
+    a.handle.click();
+    expect(a.sheet.getAttribute('data-detent')).toBe('full');
+    window.MapSheet.handOff();
+    a.controller.close();
+    b.controller.open();
+    expect(b.sheet.getAttribute('data-detent')).toBe('full');
+
+    b.handle.click();
+    b.handle.click();
+    expect(b.sheet.getAttribute('data-detent')).toBe('full');
+    const object = document.createElement('div');
+    object.innerHTML = `<div id="object" data-overlay hidden tabindex="-1" data-detents="peek,half,full" data-detent-initial="peek"></div>`;
+    const objectSheet = /** @type {HTMLElement} */ (object.firstElementChild);
+    document.body.appendChild(objectSheet);
+    stubHeight(objectSheet, 160);
+    const controller = window.MapSheet.attach(objectSheet);
+    window.MapSheet.handOff();
+    b.controller.close();
+    controller.open();
+    expect(objectSheet.getAttribute('data-detent')).toBe('peek');
+  });
+
+  it('does not close an open object sheet as it opens', () => {
+    document.body.innerHTML += `<div id="object" data-overlay hidden tabindex="-1" data-detents="peek,half,full"></div>`;
+    const objectSheet = /** @type {HTMLElement} */ (document.getElementById('object'));
+    stubHeight(objectSheet, 160);
+    const object = window.MapSheet.attach(objectSheet);
+    object.open();
+    const card = cardSheet();
+    card.controller.open();
+    expect(objectSheet.hasAttribute('hidden')).toBe(false);
+  });
+});
