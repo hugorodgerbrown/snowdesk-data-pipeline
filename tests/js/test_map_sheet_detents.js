@@ -1136,6 +1136,15 @@ describe('the card variant (SNOW-1486)', () => {
     expect(sheet.getAttribute('data-detent')).toBe('full');
   });
 
+  it('holds the pointer from the handle press, so a pull up off the top edge still drags', () => {
+    const { handle, controller } = cardSheet();
+    controller.open();
+    const captured = vi.fn();
+    handle.setPointerCapture = captured;
+    pointer(handle, 'pointerdown', 500, 0);
+    expect(captured).toHaveBeenCalledWith(1);
+  });
+
   it('a drag down from half closes it', () => {
     const { sheet, handle, controller } = cardSheet();
     controller.open();

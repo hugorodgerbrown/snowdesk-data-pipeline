@@ -152,6 +152,12 @@
     if (target.closest('button, a')) return;
     const el = card();
     if (!el) return;
+    // Hold the pointer so a fast pull that leaves the header still ends here.
+    try {
+      if (target.setPointerCapture) target.setPointerCapture(event.pointerId);
+    } catch (_error) {
+      // A synthetic pointer cannot be captured; the drag still works over the card.
+    }
     drag = {
       id: event.pointerId,
       startY: event.clientY,

@@ -221,6 +221,14 @@ describe('the phone card (SNOW-1486)', () => {
     expect(card.style.transform).toBe('');
   });
 
+  it('holds the pointer from the handle press', () => {
+    const { handle } = openAt300();
+    const captured = vi.fn();
+    handle.setPointerCapture = captured;
+    pointer(handle, 'pointerdown', 400, 0);
+    expect(captured).toHaveBeenCalledWith(1);
+  });
+
   it('springs back from a short drag', () => {
     const { card, handle } = openAt300();
     pointer(handle, 'pointerdown', 400, 0);

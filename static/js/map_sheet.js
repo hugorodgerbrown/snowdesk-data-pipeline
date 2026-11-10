@@ -830,6 +830,22 @@
     }
     observeChildren();
 
+    /**
+     * Route a pointer's later events to `node`, where the browser allows it.
+     *
+     * @param {Element|null} node
+     * @param {number} pointerId
+     */
+    function capture(node, pointerId) {
+      if (!node || !node.setPointerCapture) return;
+      try {
+        node.setPointerCapture(pointerId);
+      } catch (_error) {
+        // A synthetic or already-released pointer cannot be captured; the
+        // drag still works while the pointer stays on the sheet.
+      }
+    }
+
     /** @param {EventTarget|null} target */
     function isDragSurface(target) {
       var node = /** @type {HTMLElement|null} */ (target);
@@ -905,6 +921,12 @@
         if (card || !isBodyDragStart(event)) return;
         body = true;
       }
+      // A handle or header press holds the pointer from the start: the
+      // card's handle sits at its top edge, so the first move of a pull up
+      // leaves the sheet, and an uncaptured mouse would then drag nothing
+      // and click the map behind (SNOW-1486). Capturing on the pressed
+      // node keeps a tap's click on the handle, which steps the detent.
+      if (!body) capture(/** @type {Element|null} */ (event.target), event.pointerId);
       var now = event.timeStamp || Date.now();
       var startHeight = el.getBoundingClientRect().height;
       drag = {
@@ -942,15 +964,7 @@
         // A body drag captures the pointer on the sheet itself, so content
         // with a gesture of its own (the route profile's scrub) stops
         // hearing a finger that is now moving the sheet.
-        var target = /** @type {HTMLElement} */ (drag.body ? el : event.target);
-        if (target && target.setPointerCapture) {
-          try {
-            target.setPointerCapture(event.pointerId);
-          } catch (_error) {
-            // A synthetic or already-released pointer cannot be captured;
-            // the drag still works while the finger stays on the sheet.
-          }
-        }
+        if (drag.body) capture(el, event.pointerId);
         el.setAttribute('data-sheet-dragging', '');
       }
       var height = core.clampHeight(drag.startHeight + dy, fullHeight());
