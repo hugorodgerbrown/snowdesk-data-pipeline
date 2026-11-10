@@ -11,7 +11,8 @@
  *   - Saved opens on the tab last chosen, Places at first; signed out, on
  *     Places always;
  *   - a Saved tab (`saved-tab` radios) and `data-saved-go` close one sheet
- *     as they open its sibling, with no entrance mark; a first open rises;
+ *     as they open its sibling, with no entrance mark, at the same detent
+ *     on a phone (SNOW-1486); a first open rises;
  *   - the report sheet holding the binoculars' own form is not Saved.
  */
 
@@ -187,6 +188,60 @@ describe('a Saved tab', () => {
     expect($('trips-sheet').hidden).toBe(true);
     expect($('route-sheet').hidden).toBe(false);
     expect(window.sessionStorage.getItem('snowdesk:app-tab-saved')).toBe('routes');
+  });
+
+  it('hands the detent off before the old sheet closes (SNOW-1486)', async () => {
+    const order = [];
+    window.MapSheet = { handOff: vi.fn(() => order.push('handOff')) };
+    try {
+      await load();
+      window.pwaFavouritesSheet.close.mockImplementation(() => {
+        order.push('close');
+        $('favourite-sheet').setAttribute('hidden', '');
+      });
+      star().click();
+      choose('favourite-sheet', 'routes');
+      await tick();
+      expect(order).toEqual(['handOff', 'close']);
+    } finally {
+      delete window.MapSheet;
+    }
+  });
+
+  it('keeps the detent across a switch with the real sheets (SNOW-1486)', async () => {
+    vi.resetModules();
+    await import('../../static/js/sheet_detents_core.js');
+    await import('../../static/js/map_sheet.js');
+    const handle = '<button type="button" data-sheet-handle aria-label="Resize panel"></button>';
+    for (const id of ['favourite-sheet', 'route-sheet']) {
+      const el = $(id);
+      el.setAttribute('data-detents', 'half,full');
+      el.setAttribute('data-detent-initial', 'half');
+      el.setAttribute('data-sheet-card', '');
+      el.setAttribute('data-overlay', '');
+      el.innerHTML = handle;
+    }
+    // The star opens Saved itself, so its click is not one outside to close on.
+    const places = window.MapSheet.attach($('favourite-sheet'), { triggerSelector: '#favourite-add-btn' });
+    const routes = window.MapSheet.attach($('route-sheet'), { triggerSelector: '#favourite-add-btn' });
+    try {
+      await load();
+      window.pwaFavouritesSheet = places;
+      window.pwaRoutesSheet = routes;
+      star().click();
+      expect($('favourite-sheet').getAttribute('data-detent')).toBe('half');
+      $('favourite-sheet').querySelector('[data-sheet-handle]').click();
+      expect($('favourite-sheet').getAttribute('data-detent')).toBe('full');
+      choose('favourite-sheet', 'routes');
+      await tick();
+      expect($('favourite-sheet').hidden).toBe(true);
+      expect($('route-sheet').getAttribute('data-detent')).toBe('full');
+    } finally {
+      places.close();
+      routes.close();
+      delete window.MapSheet;
+      delete window.pwaSheetDetentsCore;
+    }
   });
 
   it('ignores a value that is not a Saved tab', async () => {

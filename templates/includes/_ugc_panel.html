@@ -109,11 +109,11 @@ Parameters (passed via {% include … with … %}):
                   (SNOW-1479; the chips under the title block before it,
                   SNOW-1476), on every screen since SNOW-1481. The tabs
                   and the header's + roundel (``header_actions_template``)
-                  are the header: the title, the icon, the context strip,
-                  the section label and the foot, when it holds only the
-                  add button, are rendered ``hidden``.
-                  Only the × is `app-hidden`: the app's tab bar closes the
-                  sheet, and a phone browser's × does. Downloads passes
+                  head the panel, under the title "Saved items" and its ×
+                  on a phone (SNOW-1486; ``title`` and ``icon_template`` are
+                  not drawn): the context strip, the section label and the
+                  foot, when it holds only the add button, are rendered
+                  ``hidden``. The × shows on every screen. Downloads passes
                   none: it is not a Saved list.
   cta_label       (string) — the add-CTA's visible, translated label.
                   Required.
@@ -156,7 +156,8 @@ state should not have to remember to bring its own.
 <div class="flex min-h-0 flex-1 flex-col gap-4.5">
     <div>
         {% if saved_tab %}
-            {% include "includes/_sheet_header.html" with title=title icon_template=icon_template close_action="dismiss" title_class="text-lg font-semibold" actions_template=header_actions_template lead_template="includes/_saved_tabs.html" app_tabbed=True %}
+            {% trans "Saved items" as saved_title %}
+            {% include "includes/_sheet_header.html" with title=saved_title close_action="dismiss" title_class="text-lg font-semibold" actions_template=header_actions_template lead_template="includes/_saved_tabs.html" %}
         {% else %}
             {% include "includes/_sheet_header.html" with title=title icon_template=icon_template close_action="dismiss" title_class="text-lg font-semibold" actions_template=header_actions_template %}
         {% endif %}

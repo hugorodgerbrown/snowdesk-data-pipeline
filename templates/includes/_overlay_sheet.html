@@ -67,10 +67,13 @@ Optional context:
                 and only those it can use. A LIST OPENED FROM A ROUNDEL
                 DECLARES NONE (SNOW-1102, cancelled): at half or full the
                 sheet hides the roundel column, and the roundel is what
-                closes or switches the list. A FORM DECLARES NONE, because a
+                closes or switches the list. The one exception is a
+                ``card`` sheet (below): the four Saved sheets declare
+                ``half,full`` and hide nothing. A FORM DECLARES NONE, because a
                 swipe must never throw away a half-written report — so the
-                report, favourite, sign-in and terrain-filter sheets pass
-                nothing and render byte-identical to before. At ``sm`` and up nothing
+                sign-in and terrain-filter sheets pass nothing and render
+                byte-identical to before, and a form inside a card sheet
+                marks itself ``data-sheet-fit``. At ``sm`` and up nothing
                 here applies (the handle is ``sm:hidden`` and every detent
                 rule in static/css/map.css sits inside a phone media query):
                 the inset panel stays exactly as it was.
@@ -88,6 +91,20 @@ Optional context:
                 it; every other sheet renders byte-identical to before.
   initial     — The detent the sheet opens at; default the lowest declared.
                 Ignored without ``detents``.
+  card        — Bool; default False (SNOW-1486). The phone sheet is the
+                inset card every sheet on a phone shares
+                (docs/decisions/one-sheet-design-on-a-phone.md) rather than
+                the flush, full-width object sheet: the same 12px inset each
+                side, card corners and glass shadow as Help. With
+                ``detents`` its HALF is 50dvh and its FULL 75dvh; it hides
+                none of the roundel column, lifts no camera, and drags from
+                the handle and its header only, so the list scrolls at
+                half. Content that marks ``data-sheet-fit`` (a form, a
+                confirmation) makes the sheet as tall as that content, at
+                most 75dvh, with the handle drawn but inert. The handle is
+                rendered whether or not ``detents`` is given. Renders
+                ``data-sheet-card``. The four Saved sheets pass it. Ignored
+                at ``sm`` and up.
   side        — ``"left"`` docks the DESKTOP panel down the map's left
                 side instead of its right; default the right. Ignored
                 below the ``sm`` breakpoint and when ``static``. The three
@@ -176,8 +193,9 @@ bug in a subtler form.
     {% if reader %}data-reader="{{ reader }}"{% endif %}
     aria-label="{{ aria_label }}"
     {% if detents %}data-detents="{{ detents }}" data-detent-initial="{{ initial|default:'' }}"{% endif %}
+    {% if card and not static %}data-sheet-card{% endif %}
 >
-    {% if detents %}
+    {% if detents or card %}
         <button
             type="button"
             data-sheet-handle

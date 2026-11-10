@@ -6907,11 +6907,17 @@ body.map-framing #map-legend {
    The safe-area inset goes inside it, as padding, so its content clears the
    home indicator while its background runs under it.
 
+   A CARD SHEET (`data-sheet-card`, the Saved sheets, SNOW-1486) is none of
+   that: it keeps the inset card shape, takes its own two heights, holds
+   nothing still and leaves touch-action alone. Its rules are the "One
+   sheet design on a phone" block further down; the rules here that would
+   reach it say `:not([data-sheet-card])`.
+
    During a drag the finger sets the height (--sheet-drag-height) and the
    transition is off, so the sheet follows without lag; on release the
    transition carries it to the detent it settled at. */
 @media (max-width: 639.98px) {
-    [data-detents][data-detent] {
+    [data-detents][data-detent]:not([data-sheet-card]) {
         left: 0;
         right: 0;
         bottom: 0;
@@ -6948,7 +6954,7 @@ body.map-framing #map-legend {
        the old one stood at and resizes, rather than the old one vanishing
        and the new one rising from the foot (map_sheet.js marks it). */
     @starting-style {
-        [data-detents]:not([data-sheet-handover]) {
+        [data-detents]:not([data-sheet-handover]):not([data-sheet-card]) {
             transform: translateY(100%);
         }
     }
@@ -6960,13 +6966,13 @@ body.map-framing #map-legend {
     /* HALF and FULL fit their content (Hugo, 16 Oct): map_sheet.js
        measures it and writes the height, capped at half the screen and at
        the room below the top inset. The fallbacks are the caps. */
-    [data-detents][data-detent='half'] {
+    [data-detents][data-detent='half']:not([data-sheet-card]) {
         height: var(--sheet-half-height, 50dvh);
     }
 
     /* The only detent at which the sheet itself scrolls: at peek and half
        a scroll gesture inside the sheet would fight the drag that grows it. */
-    [data-detents][data-detent='full'] {
+    [data-detents][data-detent='full']:not([data-sheet-card]) {
         height: var(--sheet-full-height, calc(100dvh - var(--map-edge-inset-top)));
         overflow-y: auto;
     }
@@ -6975,8 +6981,8 @@ body.map-framing #map-legend {
        held still too below full: overflow on the sheet clips its own box
        but leaves a descendant's scroller live, and a swipe there would
        scroll the list rather than ask for more room. */
-    [data-detents][data-detent='peek'] .overflow-y-auto,
-    [data-detents][data-detent='half'] .overflow-y-auto {
+    [data-detents][data-detent='peek']:not([data-sheet-card]) .overflow-y-auto,
+    [data-detents][data-detent='half']:not([data-sheet-card]) .overflow-y-auto {
         overflow-y: hidden;
     }
 
@@ -7005,10 +7011,10 @@ body.map-framing #map-legend {
        does not reach through, so they say it too. At FULL the body scrolls
        and map_sheet.js cancels a touch's pan itself when it pulls down
        from the top of the scroll. */
-    [data-detents][data-detent='peek'],
-    [data-detents][data-detent='half'],
-    [data-detents][data-detent='peek'] .overflow-y-auto,
-    [data-detents][data-detent='half'] .overflow-y-auto {
+    [data-detents][data-detent='peek']:not([data-sheet-card]),
+    [data-detents][data-detent='half']:not([data-sheet-card]),
+    [data-detents][data-detent='peek']:not([data-sheet-card]) .overflow-y-auto,
+    [data-detents][data-detent='half']:not([data-sheet-card]) .overflow-y-auto {
         touch-action: pan-x;
     }
 
@@ -7299,21 +7305,106 @@ body.map-framing #map-legend {
     }
 }
 
-/* —— Saved, on every screen (SNOW-1481) ——————————————————————————————
-   The four Saved sheets — favourites (Places), routes, trips and report —
-   are one panel the star opens (static/js/saved_panel.js). From 640px they
-   dock left under search (includes/_overlay_sheet.html's side="left").
-   Below it, in a phone browser, the panel slides up to at most three
-   quarters of the screen, with no detents, so the map stays in view above
-   it; its × closes it. The installed app's gate below stands them at full
-   height instead, and wins by coming later.
+/* —— One sheet design on a phone (SNOW-1486) ———————————————————————
+   Below 640px, in the installed app and in a phone browser alike, the
+   four Saved sheets (favourites (Places), routes, trips and report;
+   `data-sheet-card`, includes/_overlay_sheet.html's `card`) and the "?"
+   menu (#map-help-menu) are one card: the same 12px inset each side
+   (the --map-edge-inset-* tokens, whose bottom one clears the app's tab
+   bar), the card's corners and the glass shadow. Each starts with a grab
+   handle, then its title and × on one row
+   (docs/decisions/one-sheet-design-on-a-phone.md).
+
+   ONE HEIGHT RULE. A Saved sheet opens at HALF (50dvh) so the map stays
+   in view, and its handle takes it to FULL (75dvh); static/js/map_sheet.js
+   drives the two. Content that marks `data-sheet-fit` — the New pin form,
+   the report form (its placing state included) and the saved
+   confirmations — and the "?" menu are as tall as their content, never
+   past 75dvh, and scroll inside past that.
+
+   From 640px none of this applies: Saved docks left under search
+   (side="left") and the "?" menu keeps its corner.
 
    A first open rises (`data-tab-open`, set by saved_panel.js for the star
-   and the app's Saved tab, and by app_tabbar.js for the "?" menu). A
-   Saved tab switch is not marked: only the content changes. */
+   and the app's Saved tab, and by app_tabbar.js for the "?" menu). A Saved
+   tab switch is not marked: only the content changes, at the same height. */
 @media (max-width: 639.98px) {
-    :is(#favourite-sheet, #route-sheet, #trips-sheet, #report-sheet) {
-        max-height: 75dvh;
+    [data-sheet-card],
+    #map-help-menu {
+        left: var(--map-edge-inset-left);
+        right: var(--map-edge-inset-right);
+        bottom: var(--map-edge-inset-bottom);
+    }
+
+    [data-sheet-card],
+    #map-help-menu > .map-tour-offer-card {
+        max-height: min(75dvh, calc(100dvh - var(--map-edge-inset-top) - var(--map-edge-inset-bottom)));
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-card);
+        background: var(--color-card);
+        box-shadow: var(--shadow-glass);
+        padding-bottom: 1rem;
+        outline: none;
+    }
+
+    [data-sheet-card][data-detent='half'] {
+        height: 50dvh;
+    }
+
+    [data-sheet-card][data-detent='full'] {
+        height: 75dvh;
+    }
+
+    /* Tasks fit their content: a form or a confirmation, whatever detent
+       the sheet was opened at. Its handle is drawn but does not drag
+       (map_sheet.js), so a typed name is never lost. */
+    [data-sheet-card]:has([data-sheet-fit]) {
+        height: auto;
+    }
+
+    /* The "?" menu is the same card. It sits inside #map, but is fixed to
+       the viewport so its insets are the sheets'; as tall as its rows and
+       scrolling past 75dvh. Its phone header (handle, "Help", ×) replaces
+       the eyebrow and the small corner ×. */
+    #map-help-menu {
+        position: fixed;
+    }
+
+    #map-help-menu > .map-tour-offer-card {
+        width: auto;
+        overflow-y: auto;
+        padding-top: 4px;
+    }
+
+    #map-help-menu .map-tour-offer-eyebrow,
+    #map-help-menu .map-tour-offer-close {
+        display: none;
+    }
+
+    /* The handle: the compact strip the detent sheets draw (above). The
+       header it heads takes the drag down that closes the menu
+       (map_help_menu.js), so the page does not scroll under it. */
+    #map-help-menu [data-sheet-handle] {
+        height: 16px;
+        margin-top: 0;
+        margin-bottom: 4px;
+    }
+
+    #map-help-menu [data-help-menu-drag] {
+        touch-action: none;
+    }
+
+    /* The list runs down to just above the foot ("Show on the map"), so a
+       long list scrolls under its own edge rather than stopping mid-card
+       over blank space (SNOW-1479). Most of the body's flex gap before the
+       foot (1.125rem) moves inside the scroll area as padding, so the last
+       row still scrolls clear; 0.5rem stays, the gap between region cards,
+       so a part-scrolled row clips at a clear edge rather than butting
+       into the switch card. Only where the switch follows: Trips has none,
+       and its list already ends on the card's own padding. */
+    [data-sheet-card] [data-panel-scroll]:has(~ [data-panel-overlay-toggle]) {
+        margin-bottom: -0.625rem;
+        padding-bottom: 0.625rem;
     }
 }
 
@@ -7337,14 +7428,10 @@ body.map-framing #map-legend {
      and its collapse toggle (Saved; the downloads sheet opens from the layers menu),
      and the "?" and (i) roundels: the Help tab opens the "?" menu, which
      gains a Map key item for the (i) card.
-   - The tab panels — the four Saved sheets (and Today, reached only by a
-     back pill now, SNOW-1479) — stand at full height, from under the nav
-     to above the bar. A first open rises; a
-     swap from one tab's panel to another keeps the card in place and fades
-     only its content in, so the map never shows through mid-swap
-     (`data-tab-swap`; the rise, `data-tab-open`, applies on every screen
-     since SNOW-1481 and is above; a Saved tab swaps with no mark, the
-     content simply replaced).
+   - Today (reached only by a back pill now, SNOW-1479) stands at full
+     height, from under the nav to above the bar. The four Saved sheets and
+     the "?" menu are the phone card on every phone (SNOW-1486, "One sheet
+     design on a phone", above), which the bottom inset lifts above the bar.
    Nothing here applies outside the installed app on a phone. */
 @media (display-mode: standalone) and (max-width: 639.98px) {
     :root {
@@ -7363,66 +7450,32 @@ body.map-framing #map-legend {
         display: none;
     }
 
-    /* The "?" menu opens from the Help tab, so it stands above that tab
-       (a surface opens beside its trigger, docs/design-system.md rule 7). */
-    #map-help-menu {
-        left: auto;
-        right: calc(env(safe-area-inset-right, 0px) + var(--map-edge-gap));
-        bottom: var(--map-edge-gap);
-    }
-
-    /* So does the map key it opens: on the right, beside the roundels. */
+    /* The map key the Help tab's menu opens stands on the right, beside
+       the roundels (a surface opens beside its trigger,
+       docs/design-system.md rule 7). */
     .map-legend > #map-legend-card {
         left: auto;
         right: 0;
         transform-origin: bottom right;
     }
 
-    [data-detents][data-detent] {
+    [data-detents][data-detent]:not([data-sheet-card]) {
         bottom: var(--app-tabbar-h);
         max-height: calc(100dvh - var(--map-edge-inset-top) - var(--app-tabbar-h));
         padding-bottom: 1rem;
     }
 
-    :is(#today-sheet, #favourite-sheet, #route-sheet, #trips-sheet, #report-sheet) {
+    #today-sheet {
         top: calc(env(safe-area-inset-top, 0px) + 56px);
         max-height: none;
         /* The bar sits right under the card, so half the web's pb-8. */
         padding-bottom: 1rem;
     }
 
-    /* While a report's pin is being placed, the sheet shrinks to its one
-       line and Done (report.js showPlacing), so the map and the pin stay
-       in view. Pinned to the top like the other tabs, it covered both
-       (Hugo, 10 Nov 2026). */
-    #report-sheet:has([data-report-placing]:not([hidden])) {
-        top: auto;
-    }
-
-    /* So does Places' + while a pin is dropped: the create form is a few
-       lines, and pinned to the top the sheet covered the map and the
-       centre pin under it (Hugo, 10 Nov 2026). */
-    #favourite-sheet:has(#favourite-create-form) {
-        top: auto;
-    }
-
-    /* SNOW-1479: the list runs down to just above the foot ("Show on the
-       map"), so a long list scrolls under its own edge rather than stopping
-       mid-card over blank space. Most of the body's flex gap before the
-       foot (1.125rem) moves inside the scroll area as padding, so the last
-       row still scrolls clear; 0.5rem stays, the gap between region cards,
-       so a part-scrolled row clips at a clear edge rather than butting
-       into the switch card. Only where the
-       switch follows: Trips has none, and its list already ends on the
-       card's own padding. */
-    :is(#today-sheet, #favourite-sheet, #route-sheet, #trips-sheet, #report-sheet)
-        [data-panel-scroll]:has(~ [data-panel-overlay-toggle]) {
+    /* Its list runs down to the foot, as a Saved card's does (above). */
+    #today-sheet [data-panel-scroll]:has(~ [data-panel-overlay-toggle]) {
         margin-bottom: -0.625rem;
         padding-bottom: 0.625rem;
-    }
-
-    [data-tab-swap] > * {
-        animation: app-tab-panel-swap 120ms ease-out;
     }
 }
 
@@ -7433,15 +7486,8 @@ body.map-framing #map-legend {
     }
 }
 
-@keyframes app-tab-panel-swap {
-    from {
-        opacity: 0;
-    }
-}
-
 @media (prefers-reduced-motion: reduce) {
-    [data-tab-open],
-    [data-tab-swap] > * {
+    [data-tab-open] {
         animation: none;
     }
 }

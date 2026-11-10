@@ -16,12 +16,15 @@ Covers:
     Downloaded areas row opens the downloads sheet; the Saved tabs
     (four icons) and a + roundel head each of the four Saved sheets,
     `app-only`, and each + carries its tab's hook — Trips' + a picker of
-    the reader's routes, with its strings and item template; the sheets' own titles
-    and × are `app-hidden`; the Saved tab carries the alert dot.
+    the reader's routes, with its strings and item template; nothing in a
+    Saved sheet is `app-hidden` (SNOW-1486); the Saved tab carries the
+    alert dot.
   - The CSS gate: the bar and the hidden chrome are drawn only under
     ``(display-mode: standalone) and (max-width: 639.98px)``, and
-    `.app-hidden` hides only inside it. No browser here runs standalone, so
-    the stylesheets are read as text.
+    `.app-hidden` hides only inside it. The Saved sheets' and the "?" menu's
+    card, heights and fit rule sit in the phone query every phone shares,
+    not in the gate (SNOW-1486). No browser here runs standalone, so the
+    stylesheets are read as text.
 """
 
 from __future__ import annotations
@@ -312,11 +315,14 @@ class TestOnTheMap:
             values = re.findall(r'name="saved-tab"\s+value="(\w+)"', row)
             assert values == ["places", "routes", "observations"]
 
-    def test_the_tabs_and_plus_are_the_whole_header(self, client: Client) -> None:
-        """Title, context line and section label are hidden on every screen.
+    def test_the_header_is_saved_items_over_the_tabs_and_plus(
+        self, client: Client
+    ) -> None:
+        """Context line and section label hidden; "Saved items" and × shown.
 
-        SNOW-1481: only the × is `app-hidden` — the app's tab bar closes the
-        sheet, and a phone browser's × does.
+        SNOW-1486: nothing is `app-hidden` — the × closes Saved in the app as
+        in a phone browser — and the title, "Saved items", is drawn on a
+        phone only (from sm the header is the tabs, + and × row).
         """
         client.force_login(UserFactory.create())
 
@@ -324,14 +330,12 @@ class TestOnTheMap:
 
         for current, template_id in SAVED_SHEETS.items():
             body = _template(content, template_id)
-            assert re.search(
-                r'<span hidden class="flex min-w-0 items-center gap-2.5">', body
-            ), current
+            assert "Saved items" in body, current
             close = re.search(r'<button[^>]*data-action="dismiss"[^>]*>', body, re.S)
-            assert close and "app-hidden" in close.group(0), current
+            assert close, current
+            assert "app-hidden" not in body, current
             assert re.search(r'<p hidden class="-mt-1.5 px-2', body), current
             assert re.search(r'class="[^"]*hidden pb-1 font-medium', body), current
-            assert body.count("app-hidden") == 1, current
 
     def test_each_tabs_plus_carries_its_hook(self, client: Client) -> None:
         client.force_login(UserFactory.create())
@@ -498,26 +502,83 @@ class TestTheGate:
         assert "[data-subscriber-menu]" not in gated
         assert "#nav-sign-in" not in gated
 
-    def test_the_saved_sheets_stop_at_three_quarters_in_a_phone_browser(
-        self,
-    ) -> None:
-        """Outside the gate, below 640px, Saved slides up to 75dvh (SNOW-1481).
+    def _phone_card_block(self) -> str:
+        """Return the "One sheet design on a phone" phone-query block."""
+        start = self.map_css.index("/* —— One sheet design on a phone (SNOW-1486)")
+        query = self.map_css.index("@media (max-width: 639.98px) {", start)
+        depth, i = 1, query + len("@media (max-width: 639.98px) {")
+        while depth:
+            depth += {"{": 1, "}": -1}.get(self.map_css[i], 0)
+            i += 1
+        return self.map_css[query:i]
 
-        The gate's full-height rule still wins in the installed app: it is
-        the same selector, later in the file.
+    def test_one_card_on_every_phone(self) -> None:
+        """SNOW-1486: the card, heights and fit rule sit in the phone query.
+
+        Every phone, app or browser: the same insets, corners and shadow for
+        the Saved sheets and the "?" menu, half at 50dvh and full at 75dvh,
+        and a task as tall as its content, capped at 75dvh. None of it is in
+        the standalone gate.
         """
-        outside = self.map_css.replace(_gated_blocks(self.map_css), "")
-        rule = re.search(
-            r"@media \(max-width: 639\.98px\) \{\s*"
-            r":is\(#favourite-sheet, #route-sheet, #trips-sheet, #report-sheet\) \{"
-            r"\s*max-height: 75dvh;",
-            outside,
+        block = self._phone_card_block()
+        assert re.search(
+            r"\[data-sheet-card\],\s*#map-help-menu \{\s*left: var\(--map-edge-inset-left\);",
+            block,
         )
-        assert rule
+        assert re.search(
+            r"\[data-sheet-card\],\s*#map-help-menu > \.map-tour-offer-card \{\s*max-height: min\(75dvh",
+            block,
+        )
+        assert "border-radius: var(--radius-card);" in block
+        assert "box-shadow: var(--shadow-glass);" in block
+        assert re.search(
+            r"\[data-sheet-card\]\[data-detent='half'\] \{\s*height: 50dvh;", block
+        )
+        assert re.search(
+            r"\[data-sheet-card\]\[data-detent='full'\] \{\s*height: 75dvh;", block
+        )
+        assert re.search(
+            r"\[data-sheet-card\]:has\(\[data-sheet-fit\]\) \{\s*height: auto;", block
+        )
+        assert re.search(r"#map-help-menu \{\s*position: fixed;", block)
         gated = _gated_blocks(self.map_css)
-        assert "max-height: none;" in gated
+        assert "data-sheet-card]" not in gated.replace(":not([data-sheet-card])", "")
         assert "75dvh" not in gated
-        assert self.map_css.index("75dvh") < self.map_css.index(GATE)
+        assert "50dvh" not in gated
+
+    def test_the_card_is_not_the_flush_object_sheet(self) -> None:
+        """The detent rules that would reach a card say :not([data-sheet-card])."""
+        for rule in (
+            "[data-detents][data-detent]:not([data-sheet-card]) {\n        left: 0;",
+            "[data-detents]:not([data-sheet-handover]):not([data-sheet-card]) {",
+            "[data-detents][data-detent='half']:not([data-sheet-card]) {",
+            "[data-detents][data-detent='full']:not([data-sheet-card]) {",
+            "[data-detents][data-detent='half']:not([data-sheet-card]) .overflow-y-auto {\n        overflow-y: hidden;",
+            "[data-detents][data-detent='half']:not([data-sheet-card]),",
+        ):
+            assert rule in self.map_css, rule
+
+    def test_the_gate_keeps_only_the_tab_bar_offsets_for_the_sheets(self) -> None:
+        """SNOW-1486: no full-height Saved rule and no right-aligned "?" menu.
+
+        The four Saved sheets lost their `top: …56px` rule and the two
+        `top: auto` releases; the "?" menu its right-hand corner. Only the
+        object sheets keep a bar offset, and Today its own full height.
+        """
+        gated = _gated_blocks(self.map_css)
+        for sheet in (
+            "#favourite-sheet",
+            "#route-sheet",
+            "#trips-sheet",
+            "#report-sheet",
+        ):
+            assert sheet not in gated, sheet
+        assert "#map-help-menu" not in gated
+        assert "top: auto;" not in gated
+        assert (
+            "[data-detents][data-detent]:not([data-sheet-card]) {\n        bottom: var(--app-tabbar-h);"
+            in gated
+        )
 
     def test_a_first_open_rises_on_every_screen(self) -> None:
         """The star's open rises as the app's Saved tab does (SNOW-1481)."""
@@ -536,23 +597,28 @@ class TestTheGate:
         assert "#favourite-add-btn .map-saved-star--filled," in self.map_css
 
     def test_a_tab_panels_list_runs_down_to_its_foot(self) -> None:
-        """No gap and blank card under a long list in the app (SNOW-1479).
+        """No gap and blank card under a long list (SNOW-1479).
 
         Most of the body's 1.125rem flex gap before "Show on the map" moves
         inside the scroll area, so the list runs to just above the switch and
         scrolls under its own edge; 0.5rem stays, the gap between region
-        cards, so a part-scrolled row clips at a clear edge.
+        cards, so a part-scrolled row clips at a clear edge. SNOW-1486: a
+        Saved card's rule is in the phone query every phone shares; Today's
+        stays in the gate.
         """
-        gated = _gated_blocks(self.map_css)
-        rule = re.search(
-            r"\[data-panel-scroll\]:has\(~ \[data-panel-overlay-toggle\]\)\s*\{([^}]*)\}",
-            gated,
-        )
-        assert rule
-        # 1.125rem gap - 0.625rem pulled back = 0.5rem left above the switch.
-        assert "margin-bottom: -0.625rem" in rule.group(1)
-        assert "padding-bottom: 0.625rem" in rule.group(1)
-        assert "data-panel-scroll" not in self.map_css.replace(gated, "")
+        for css, selector in (
+            (self._phone_card_block(), r"\[data-sheet-card\] "),
+            (_gated_blocks(self.map_css), r"#today-sheet "),
+        ):
+            rule = re.search(
+                selector
+                + r"\[data-panel-scroll\]:has\(~ \[data-panel-overlay-toggle\]\)\s*\{([^}]*)\}",
+                css,
+            )
+            assert rule, selector
+            # 1.125rem gap - 0.625rem pulled back = 0.5rem left above the switch.
+            assert "margin-bottom: -0.625rem" in rule.group(1)
+            assert "padding-bottom: 0.625rem" in rule.group(1)
 
     @pytest.mark.django_db
     def test_the_scroll_area_carries_the_hook(self, client: Client) -> None:
@@ -589,26 +655,16 @@ class TestTheGate:
     def test_the_map_hides_its_roundels_only_under_the_gate(self) -> None:
         gated = _gated_blocks(self.map_css)
         assert "#map-today-panel-toggle" in gated
-        assert "#trips-sheet" in gated
         assert "#map-controls-collapsible" in gated
         assert "#map-help-toggle" in gated
         assert "#map-legend-toggle" in gated
-        assert "#map-help-menu" in gated
         assert ".map-legend > #map-legend-card" in gated
         assert "--app-tabbar-h" in gated
 
-    def test_placing_a_report_pin_releases_the_sheet_top(self) -> None:
-        """The report sheet hugs its placing line, leaving the map in view."""
-        gated = _gated_blocks(self.map_css)
-        rule = "#report-sheet:has([data-report-placing]:not([hidden])) {"
-        assert rule in gated
-        start = gated.index(rule)
-        assert "top: auto;" in gated[start : gated.index("}", start)]
-
-    def test_dropping_a_pin_releases_the_sheet_top(self) -> None:
-        """The favourites sheet hugs its create form, leaving the pin in view."""
-        gated = _gated_blocks(self.map_css)
-        rule = "#favourite-sheet:has(#favourite-create-form) {"
-        assert rule in gated
-        start = gated.index(rule)
-        assert "top: auto;" in gated[start : gated.index("}", start)]
+    def test_the_tab_swap_is_gone(self) -> None:
+        """SNOW-1486: no `data-tab-swap` rule or its keyframes remain."""
+        assert "data-tab-swap" not in self.map_css
+        assert "app-tab-panel-swap" not in self.map_css
+        script = Path(settings.BASE_DIR, "static/js/app_tabbar.js").read_text()
+        assert "swap" not in script
+        assert "SWAP_MS" not in script

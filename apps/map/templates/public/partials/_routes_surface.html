@@ -87,8 +87,9 @@ Context expected:
 {# scrolls, which is why every body rendered into it carries               #}
 {# `min-h-0 flex-1` and owns its own scroll region.                        #}
 {% trans "Routes" as route_sheet_aria_label %}
-{# SNOW-1481: a Saved sheet, docked left like the other three. #}
-{% include "includes/_overlay_sheet.html" with id="route-sheet" aria_label=route_sheet_aria_label scroll_body=True side="left" %}
+{# SNOW-1481: a Saved sheet, docked left like the other three; SNOW-1486: #}
+{# the phone card at half or full, as they are.                           #}
+{% include "includes/_overlay_sheet.html" with id="route-sheet" aria_label=route_sheet_aria_label scroll_body=True side="left" detents="half,full" initial="half" card=True %}
 {# The panel the roundel opens — the user's saved routes and a CTA to add   #}
 {# another. Cloned by routes.js on every open (so a stale row can never     #}
 {# survive a re-open), which then loads the rows themselves over HTMX from  #}
@@ -171,7 +172,8 @@ Context expected:
     {# `min-h-0 flex-1 overflow-y-auto` — the sheet is scroll_body=True, so #}
     {# every body rendered into it owns its own scroll region rather than   #}
     {# overflowing the bounded sheet.                                       #}
-    <div class="flex min-h-0 flex-1 flex-col items-center gap-4 overflow-y-auto py-4 text-center">
+    {# SNOW-1486: a confirmation fits its content (`data-sheet-fit`).    #}
+    <div data-sheet-fit class="flex min-h-0 flex-1 flex-col items-center gap-4 overflow-y-auto py-4 text-center">
         <div class="text-4xl text-status-low-text" aria-hidden="true">✓</div>
         <p class="text-base font-medium text-text-1">{% trans "Route saved!" %}</p>
         <p class="text-sm text-text-2">

@@ -36,9 +36,10 @@ Context expected:
 {# form, the confirmation) therefore carries `min-h-0 flex-1` and owns    #}
 {# its own scroll region; see that partial's docstring for the mechanism. #}
 {% trans "Favourite" as favourite_sheet_aria_label %}
-{# SNOW-1481: one of the four Saved sheets, a roundel panel (no detents)  #}
-{# docked left under search on a desktop: docs/decisions/saved-is-one-panel-on-every-screen.md. #}
-{% include "includes/_overlay_sheet.html" with id="favourite-sheet" aria_label=favourite_sheet_aria_label scroll_body=True side="left" %}
+{# SNOW-1481: one of the four Saved sheets, docked left under search on a #}
+{# desktop: docs/decisions/saved-is-one-panel-on-every-screen.md. SNOW-1486: #}
+{# on a phone the inset card, at half or full (one-sheet-design-on-a-phone). #}
+{% include "includes/_overlay_sheet.html" with id="favourite-sheet" aria_label=favourite_sheet_aria_label scroll_body=True side="left" detents="half,full" initial="half" card=True %}
 {# SNOW-658: the panel the roundel now opens — the user's saved pins, a     #}
 {# CTA to add another, and a "Show on the map" switch bound to the layers   #}
 {# menu's Favourites row. Cloned by favourites.js on every open (so a stale row #}
@@ -82,49 +83,40 @@ Context expected:
 {# before the form is shown. ``action`` is a degraded no-JS target      #}
 {# only (the endpoint is @require_htmx, so a native submit 400s).       #}
 <template id="favourite-create-template">
+    {# SNOW-1486: "New pin" is a task, so it fits its content            #}
+    {# (`data-sheet-fit`): on a phone the sheet is only as tall as the   #}
+    {# form and the map and the pin stay in view, its handle drawn but   #}
+    {# inert so a typed name is never lost. The × cancels; there is no   #}
+    {# Cancel. The label is for assistive tech, the placeholder says it. #}
     <form
         id="favourite-create-form"
         method="post"
         action="{{ favourite_create_url }}"
+        data-sheet-fit
         {# SNOW-658: this sheet is scroll_body=True now, so every body    #}
         {# rendered into it is a flex child of a bounded, overflow-hidden #}
         {# column and must own its own scroll region. `min-h-0` is        #}
         {# load-bearing: without it a flex child refuses to shrink below  #}
         {# its content and the form overflows the sheet instead of        #}
         {# scrolling inside it.                                           #}
-        class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-2 py-4"
+        class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-2"
     >
-        {% trans "Add favourite" as favourite_create_title %}
-        {% include "includes/_sheet_header.html" with title=favourite_create_title close_action="dismiss" %}
+        {% trans "New pin" as favourite_create_title %}
+        {% include "includes/_sheet_header.html" with title=favourite_create_title close_action="dismiss" title_class="text-lg font-semibold" %}
         {% csrf_token %}
         <input type="hidden" name="lat">
         <input type="hidden" name="lon">
-        <label class="text-sm text-text-2" for="favourite-name-input">
-            {% trans "Name this pin (optional)" %}
-        </label>
+        <label class="sr-only" for="favourite-name-input">{% trans "Name (optional)" %}</label>
         <input
             id="favourite-name-input"
             type="text"
             name="name"
             maxlength="100"
-            placeholder='{% trans "Unnamed pin" %}'
+            placeholder='{% trans "Name (optional)" %}'
             class="w-full rounded-tag border border-border bg-card px-3 py-2 text-sm text-text-1 placeholder:text-text-3 focus:outline-none"
         >
-        <div class="flex items-center gap-3">
-            <button
-                type="submit"
-                class="flex-1 rounded-pill bg-status-info-bg py-2 text-sm font-medium text-status-info-text"
-            >
-                {% trans "Save" %}
-            </button>
-            <button
-                type="button"
-                data-action="dismiss"
-                class="flex-1 rounded-pill border border-border py-2 text-sm font-medium text-text-2"
-            >
-                {% trans "Cancel" %}
-            </button>
-        </div>
+        {% trans "Save" as favourite_save_label %}
+        {% include "includes/_button.html" with label=favourite_save_label button_type="submit" full_width=True only %}
     </form>
 </template>
 {# Optimistic-confirmation template (SNOW-479) — cloned into            #}
@@ -138,7 +130,8 @@ Context expected:
     {# SNOW-658: `min-h-0 flex-1 overflow-y-auto` — this sheet is         #}
     {# scroll_body=True now, so every body rendered into it owns its own  #}
     {# scroll region rather than overflowing the bounded sheet.           #}
-    <div class="flex min-h-0 flex-1 flex-col items-center gap-4 overflow-y-auto py-4 text-center">
+    {# SNOW-1486: a confirmation fits its content (`data-sheet-fit`).      #}
+    <div data-sheet-fit class="flex min-h-0 flex-1 flex-col items-center gap-4 overflow-y-auto py-4 text-center">
         <div class="text-4xl text-status-low-text" aria-hidden="true">✓</div>
         <p class="text-base font-medium text-text-1">{% trans "Pin saved!" %}</p>
         <p class="text-sm text-text-2">

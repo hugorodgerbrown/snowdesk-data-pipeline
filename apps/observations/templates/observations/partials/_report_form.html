@@ -44,6 +44,10 @@ Context:
     {# sheet instead of scrolling inside it.                              #}
     class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto"
     aria-label='{% trans "Field observation report" %}'
+    {# SNOW-1486: a task, so on a phone the sheet is as tall as the form, #}
+    {# at most 75dvh, and shrinks to the placing row while the pin moves; #}
+    {# its handle is drawn but inert, so a swipe never loses a report.   #}
+    data-sheet-fit
 >
     {% csrf_token %}
     <input type="hidden" name="observed_at" value="">

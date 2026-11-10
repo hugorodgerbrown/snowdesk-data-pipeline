@@ -37,8 +37,9 @@ Context expected:
 {# scroll region; see that partial's docstring for the mechanism.         #}
 {% trans "Field observation report" as report_sheet_aria_label %}
 {# SNOW-1481: a Saved sheet, docked left like the other three; the form #}
-{# the binoculars start (report.js) opens in the same place.            #}
-{% include "includes/_overlay_sheet.html" with id="report-sheet" aria_label=report_sheet_aria_label scroll_body=True side="left" %}
+{# the binoculars start (report.js) opens in the same place. SNOW-1486: #}
+{# the phone card at half or full; the form (data-sheet-fit) fits.      #}
+{% include "includes/_overlay_sheet.html" with id="report-sheet" aria_label=report_sheet_aria_label scroll_body=True side="left" detents="half,full" initial="half" card=True %}
 {# SNOW-658: the panel the roundel now opens — the user's own reports, a CTA #}
 {# to add another, and a "Show on the map" switch bound to the layers menu's   #}
 {# "Field observations" row. Cloned by report.js on every open; the           #}
