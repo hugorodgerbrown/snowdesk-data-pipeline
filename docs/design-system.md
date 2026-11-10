@@ -298,9 +298,9 @@ differ in side (below).
 | Kind | Opened by | On a phone | Detents | Closed by | Today |
 |---|---|---|---|---|---|
 | **Object sheet** | Tapping a thing on the map | Full width, slides up from the foot, covers the map controls at half and full | `peek,half,full`, narrowed by content | Its ×, a drag below peek | Region, route, place (resort, saved pin), weather |
-| **Roundel panel** | A map-control roundel | Docked full width at the foot, over the roundel column (SNOW-1106); Saved rises to at most ¾ of the screen (SNOW-1481) | None | Its ×, or the roundel that opened it (a toggle) | Saved (Places, Routes, Trips, Observations), downloads, terrain filter |
-| **Form panel** | An action that starts a task | Docked at the foot | None | Submit, cancel, or the shared dismissals (×, Escape, a tap outside, another overlay opening); never a drag | Report, add or rename favourite, sign in |
-| **Tab panel** | A tab of the installed phone app's bar (SNOW-1476) | Full height between the header and the bar | None | Its tab (a toggle), the Map tab, another tab; no × (SNOW-1479) | Saved (Places, Routes, Trips, Observations); Help opens the "?" menu instead |
+| **Roundel panel** | A map-control roundel | Docked full width at the foot, over the roundel column (SNOW-1106); Saved is the phone card (SNOW-1486, below) | None; Saved `half,full` as a card | Its ×, or the roundel that opened it (a toggle); Saved also a drag down from half | Saved (Places, Routes, Trips, Observations), downloads, terrain filter |
+| **Form panel** | An action that starts a task | Docked at the foot; in a Saved sheet, the card as tall as the form (`data-sheet-fit`) | None; a Saved card's handle is inert | Submit, cancel, or the shared dismissals (×, Escape, a tap outside, another overlay opening); never a drag | Report, New pin, rename favourite, sign in |
+| **Tab panel** | A tab of the installed phone app's bar (SNOW-1476) | The phone card, above the bar (SNOW-1486) | Saved `half,full` | Its tab (a toggle), the Map tab, another tab, its × | Saved (Places, Routes, Trips, Observations); Help opens the "?" menu, the same card |
 
 **Object sheet.** The reader asked "what is this?" about a place on the
 ground, so the sheet answers in stages and gives the ground back: peek is a
@@ -341,8 +341,19 @@ side panel covers the roundels under it and moves nothing (8 Nov 2026); and a sh
 **One exception to the first rule: Saved docks left (SNOW-1481).** The star
 roundel is on the right, but Saved, the reader's own lists, opens in the
 left column under search, where the installed app's Saved sits on a phone
-(Hugo's call). In a phone browser it slides up to at most ¾ of the screen.
+(Hugo's call). On a phone it is the one sheet card (below).
 Why: [`docs/decisions/saved-is-one-panel-on-every-screen.md`](decisions/saved-is-one-panel-on-every-screen.md).
+
+**One sheet design on a phone (SNOW-1486).** Below 640px, in the app and a
+phone browser, Saved, Help and New pin are one card: the same 12px inset
+each side, the card's corners and the glass shadow; a grab handle, then
+the title and × on one row. Saved opens at half (50dvh) and its handle
+takes it to full (75dvh); a drag down from half closes it. It hides no
+roundel and moves no camera, so at half it may sit over part of the
+right-hand roundels; × closes it. A task (`data-sheet-fit`: New pin, the
+report form, a saved confirmation) and the "?" menu are as tall as their
+content, never past 75dvh; a task's handle does not drag. Why:
+[`docs/decisions/one-sheet-design-on-a-phone.md`](decisions/one-sheet-design-on-a-phone.md).
 Why, and the option declined:
 [`docs/decisions/a-panel-opens-beside-what-opened-it.md`](decisions/a-panel-opens-beside-what-opened-it.md).
 
@@ -350,18 +361,18 @@ Why, and the option declined:
 replaces the roundels that would otherwise open these lists; elsewhere the
 star opens the same Saved panel as a roundel panel (SNOW-1481). The tab stays
 in charge, as a roundel does: its tab closes it and another tab swaps it.
-A swap never closes and reopens the card: every tab panel has the same
-box, so the card stays put and only its content changes, fading in on a
-tab and replaced outright on a Saved tab (Hugo, 8 Nov 2026). Object sheets still open over
-the map above the bar.
+A Saved tab switch keeps the card where it is, at the same height, and
+replaces only its content (Hugo, 8 Nov 2026; the height since SNOW-1486).
+Object sheets still open over the map above the bar.
 
-Since SNOW-1479 a Saved panel's header is one row: four icon tabs
+A Saved panel's header carries four icon tabs
 (`includes/_saved_tabs.html` — Places, Routes, Trips, Observations; only
 the selected one shows its name) and a + roundel
-(`includes/_saved_add_roundel.html`) on the right. The sheet's own title,
-subtitle and section label are hidden, on every screen since SNOW-1481, as
-is the foot's add button the + replaces; the × is `.app-hidden`, kept in a
-phone browser to close the panel. Each tab's + does that list's add: Places
+(`includes/_saved_add_roundel.html`) right beside them (SNOW-1479). From
+640px it is one row of tabs, + and ×; on a phone the title **Saved items**
+and the × come first, with the tabs and + on the row below (SNOW-1486).
+The sheet's subtitle and section label are hidden, as is the foot's add
+button the + replaces; the × shows on every screen. Each tab's + does that list's add: Places
 drops a pin, Routes opens the Find / Create / Upload menu, Trips opens a
 menu of the reader's routes to plan a trip from, Observations starts a
 report.
@@ -371,7 +382,8 @@ Why:
 A new map panel picks its kind from the "Opened by" column before anything
 else. When a row in a roundel panel leads to one thing on the map, that
 thing is shown in its **object sheet**; a roundel panel never grows detents
-to become one. Mechanics, and why phones
+to become one (the Saved card's half and full are a list's heights, not an
+object's). Mechanics, and why phones
 only: [`docs/decisions/sheet-detents-are-phone-only.md`](decisions/sheet-detents-are-phone-only.md).
 
 ## The component layer

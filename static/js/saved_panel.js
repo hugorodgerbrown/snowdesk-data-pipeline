@@ -19,7 +19,9 @@
  *   - A TAB SWITCHES IN PLACE. Choosing another Saved tab (`saved-tab`
  *     radios) closes one sheet as it opens its sibling in the same task, so
  *     only the content changes; `data-saved-go` does the same from a
- *     control (the Trips picker's no-routes item goes to Routes).
+ *     control (the Trips picker's no-routes item goes to Routes). On a
+ *     phone the sibling keeps the height, half or full (SNOW-1486), through
+ *     window.MapSheet.handOff.
  *   - A FIRST OPEN RISES. The sheet is marked `data-tab-open` for the
  *     length of map.css's rise animation; a tab switch is not marked.
  *   - SIGNED OUT, Saved opens Places, whose sheet invites a visitor to sign
@@ -181,6 +183,9 @@
     window.setTimeout(function () {
       if (from && from !== choice) {
         var previous = controllerFor(from);
+        // The sibling opens at the height this one stands at (SNOW-1486):
+        // map_sheet.js hands a card's detent to the next card to open.
+        if (typeof window.MapSheet?.handOff === 'function') window.MapSheet.handOff();
         if (previous) previous.close();
       }
       if (!showing(choice)) next.open();

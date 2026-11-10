@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-10 14:35+0000\n"
+"POT-Creation-Date: 2026-11-10 18:26+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1696,16 +1696,13 @@ msgstr ""
 msgid "Favourites are private and not shared."
 msgstr ""
 
-msgid "Add favourite"
+msgid "New pin"
 msgstr ""
 
-msgid "Name this pin (optional)"
+msgid "Name (optional)"
 msgstr ""
 
 msgid "Save"
-msgstr ""
-
-msgid "Cancel"
 msgstr ""
 
 msgid "Pin saved!"
@@ -1945,6 +1942,12 @@ msgid ""
 "make room — or remove some yourself below."
 msgstr ""
 
+msgid "More actions"
+msgstr ""
+
+msgid "Copy report"
+msgstr ""
+
 msgid "No areas downloaded yet."
 msgstr ""
 
@@ -2116,6 +2119,12 @@ msgid "That area couldn't be forgotten. Try again."
 msgstr ""
 
 msgid "You're offline — connect to download a new area."
+msgstr ""
+
+msgid "Report copied. Paste it into a message to send it."
+msgstr ""
+
+msgid "The report couldn't be copied."
 msgstr ""
 
 msgid "Syncing needs a connection."
@@ -2746,6 +2755,9 @@ msgstr ""
 msgid "Download selected area for offline use."
 msgstr ""
 
+msgid "Cancel"
+msgstr ""
+
 msgid "Download"
 msgstr ""
 
@@ -2904,12 +2916,6 @@ msgid "Sign in to upload routes and show them on the map."
 msgstr ""
 
 msgid "Pin dropped"
-msgstr ""
-
-msgid "Move the map to fine-tune."
-msgstr ""
-
-msgid "Save pin"
 msgstr ""
 
 msgid "Bulletins unavailable"
@@ -10103,7 +10109,10 @@ msgstr ""
 msgid "Freezing level is not the snow line; snow can fall below it."
 msgstr ""
 
-msgid "More actions"
+msgid "Move the map to fine-tune."
+msgstr ""
+
+msgid "Save pin"
 msgstr ""
 
 msgid ""
@@ -10125,9 +10134,6 @@ msgid "Check what this device can show without a signal."
 msgstr ""
 
 msgid "Run the check"
-msgstr ""
-
-msgid "Copy report"
 msgstr ""
 
 msgid "Save the map page"
@@ -10838,6 +10844,9 @@ msgid "Some changes couldn't be saved and won't be retried."
 msgstr ""
 
 msgid "A route drawn offline under another account was discarded."
+msgstr ""
+
+msgid "Saved items"
 msgstr ""
 
 msgid "Show on the map"

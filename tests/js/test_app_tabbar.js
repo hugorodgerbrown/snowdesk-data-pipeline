@@ -208,13 +208,19 @@ describe('Help', () => {
     expect(lit()).toEqual(['help']);
   });
 
-  it('rises in over another panel rather than swapping', async () => {
+  it('rises in over another panel, and drops the mark once risen', async () => {
     await load();
-    tab('saved').click();
-    tab('help').click();
-    expect($('favourite-sheet').hidden).toBe(true);
-    expect($('map-help-menu').hasAttribute('data-tab-open')).toBe(true);
-    expect($('map-help-menu').hasAttribute('data-tab-swap')).toBe(false);
+    vi.useFakeTimers();
+    try {
+      tab('saved').click();
+      tab('help').click();
+      expect($('favourite-sheet').hidden).toBe(true);
+      expect($('map-help-menu').hasAttribute('data-tab-open')).toBe(true);
+      vi.advanceTimersByTime(200);
+      expect($('map-help-menu').hasAttribute('data-tab-open')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('closes on a second tap', async () => {

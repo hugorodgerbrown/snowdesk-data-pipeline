@@ -4,11 +4,17 @@ Smoke test — one user journey, mirroring docs/testing-scenarios.md.
 Read docs/client-side-tests.md before adding anything here: the suite
 is capped, and bin/e2e-lint enforces the cap.
 
-SNOW-1485: the second test drops the pin by holding a finger on the map,
+SNOW-1486 adds the same journey at a phone viewport, where the layout is
+what is under test and only a real browser lays it out: Saved opens at
+half the screen as the 12px-inset card, its handle takes it to three
+quarters and a drag down closes it, and Help and New pin are as tall as
+their content.
+
+SNOW-1485: the hold test drops the pin by holding a finger on the map,
 which needs MapLibre's real canvas and real touch events (sent through a
 Chromium CDP session; Playwright's touchscreen only taps).
 
-Scenario: 12c
+Scenario: P14, P14b, 12c
 """
 
 from __future__ import annotations
@@ -16,7 +22,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from playwright.sync_api import Page
+from playwright.sync_api import Page, ViewportSize
 
 from apps.locations.models import Location
 from tests.e2e.conftest import FavouritesPage
@@ -51,6 +57,47 @@ _AUTHORITATIVE_PIN_JS = """() => {
                && !f.properties.pending,
     );
 }"""
+
+
+# A phone in a browser: the card's heights are fractions of this one.
+_PHONE = ViewportSize(width=390, height=844)
+_INSET = 12
+
+
+def _card_box(page: Page, selector: str, height: float | None = None) -> Any:
+    """Return the card's box once it has settled, at `height` px if given.
+
+    The card's height transitions between detents, so the box is read once
+    two frames agree (and match `height`). Its 12px insets are asserted.
+    """
+    page.wait_for_function(
+        """([s, h]) => new Promise((done) => {
+            const read = () => document.querySelector(s)?.getBoundingClientRect();
+            const a = read();
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                const b = read();
+                done(!!a && !!b && a.height > 0 && Math.abs(a.height - b.height) < 1
+                     && (h === null || Math.abs(b.height - h) < 3));
+            }));
+        })""",
+        arg=[selector, height],
+    )
+    box = page.locator(selector).bounding_box()
+    assert box is not None
+    assert box["x"] == pytest.approx(_INSET, abs=1)
+    assert _PHONE["width"] - box["x"] - box["width"] == pytest.approx(_INSET, abs=1)
+    return box
+
+
+def _drag_handle(page: Page, selector: str, dy: float) -> None:
+    """Drag the sheet's grab handle `dy` px (negative is up)."""
+    handle = page.locator(f"{selector} [data-sheet-handle]").first.bounding_box()
+    assert handle is not None
+    x, y = handle["x"] + handle["width"] / 2, handle["y"] + handle["height"] / 2
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x, y + dy, steps=8)
+    page.mouse.up()
 
 
 @pytest.mark.django_db(transaction=True)
@@ -94,6 +141,36 @@ def test_signed_in_add_flow_creates_favourite(
         )
         assert pin.latitude == pytest.approx(46.2, abs=0.01)
         assert pin.longitude == pytest.approx(7.6, abs=0.01)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_phone_sheets_are_one_card(favourites_page: FavouritesPage) -> None:
+    """Saved at ½ then ¾ and dragged shut; Help and New pin fit their content."""
+    page = favourites_page.page
+    page.set_viewport_size(_PHONE)
+    _navigate_home(page, favourites_page.live_server_url)
+    half, full = _PHONE["height"] * 0.5, _PHONE["height"] * 0.75
+
+    page.click("#favourite-add-btn")
+    _card_box(page, "#favourite-sheet", half)
+    _drag_handle(page, "#favourite-sheet", -250)
+    page.wait_for_selector("#favourite-sheet[data-detent=full]")
+    _card_box(page, "#favourite-sheet", full)
+    _drag_handle(page, "#favourite-sheet", 600)
+    page.wait_for_selector("#favourite-sheet", state="hidden")
+
+    page.click("#map-help-toggle")
+    help_card = _card_box(page, "#map-help-menu > .map-tour-offer-card")
+    assert help_card["height"] < half
+    page.click("#map-help-menu [data-action=help-menu-close]")
+    page.wait_for_selector("#map-help-menu", state="hidden")
+
+    page.click("#favourite-add-btn")
+    page.locator("[data-panel-add]:visible").click()
+    page.wait_for_selector("#favourite-create-form")
+    new_pin = _card_box(page, "#favourite-sheet")
+    assert new_pin["height"] < half
+    assert new_pin["height"] <= full
 
 
 @pytest.mark.django_db(transaction=True)

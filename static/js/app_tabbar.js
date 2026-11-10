@@ -19,9 +19,9 @@
  *   - The downloads sheet, whose roundel this app hides, opens from the
  *     layers menu's Downloaded areas row (map_downloads_manager.js).
  *   - A TAB TOGGLES. Tapping the lit tab closes its panel; tapping another
- *     swaps it for the next. A first open rises (`data-tab-open`): Saved
- *     marks its own sheet, and the "?" menu, a card of its own, is marked
- *     here.
+ *     closes it and opens the next. A first open rises (`data-tab-open`):
+ *     Saved marks its own sheet, and the "?" menu, the same phone card
+ *     (SNOW-1486), is marked here.
  *   - THE LIT TAB FOLLOWS THE PANELS. A panel closed by something else —
  *     a Places row handing off to the region or place sheet, Escape —
  *     lights Map again; one reopened by map_panel_trail.js's back pill
@@ -53,7 +53,8 @@
   var TABS = /** @type {Array<Tab>} */ (['map', 'saved', 'help']);
   var PANEL_PARAM = 'panel';
   var SAVED_KEY = 'snowdesk:app-tab-saved';
-  var SWAP_MS = 200;
+  // The length of map.css's rise (app-tab-panel-rise).
+  var RISE_MS = 200;
 
   /**
    * Saved: window.pwaSavedPanel (static/js/saved_panel.js), read when used.
@@ -153,27 +154,24 @@
   }
 
   /**
-   * Open `panel`, marking `el` for the CSS: `open` rises as a first open,
-   * `swap` fades the content in over a card already in place, and null
-   * shows it as it is. Saved marks its own sheet (saved_panel.js), so it
-   * passes no element.
+   * Open `panel`, marking `el` to rise as a first open (`data-tab-open`);
+   * with no element it opens as it is. Saved marks its own sheet
+   * (saved_panel.js), so it passes none.
    *
    * @param {Panel} panel
    * @param {HTMLElement|null} el
-   * @param {'open'|'swap'|null} kind
    */
-  function openPanel(panel, el, kind) {
-    if (!el || !kind) {
+  function openPanel(panel, el) {
+    if (!el) {
       panel.open();
       return;
     }
     const target = el;
-    const mark = 'data-tab-' + kind;
-    target.setAttribute(mark, '');
+    target.setAttribute('data-tab-open', '');
     panel.open();
     window.setTimeout(function () {
-      target.removeAttribute(mark);
-    }, SWAP_MS);
+      target.removeAttribute('data-tab-open');
+    }, RISE_MS);
   }
 
   /**
@@ -194,8 +192,8 @@
     if (!next) return;
     if (currentPanel && currentPanel !== next) currentPanel.close();
     openedBy = tab;
-    // The "?" menu is its own card, not the panels' box: it rises.
-    if (!next.isOpen()) openPanel(next, tab === 'help' ? helpMenu : null, 'open');
+    // The "?" menu is not one of Saved's sheets, so it is marked here.
+    if (!next.isOpen()) openPanel(next, tab === 'help' ? helpMenu : null);
     light();
   }
 

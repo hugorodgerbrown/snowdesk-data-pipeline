@@ -17,12 +17,13 @@ browser, a tablet, a desktop) nothing changes: the bar is rendered but
 - **Map** closes whatever tab panel is open and gives the map back.
 - **Saved** opens Places, Routes, Trips or Observations, whichever was last
   used (Places by default); four icon tabs in each header
-  (`_saved_tabs.html`) swap between them in place: the card stays put and
-  only its content changes. Only the selected tab shows its name.
+  (`_saved_tabs.html`) swap between them in place: the card stays put, at
+  the same height, and only its content changes. Only the selected tab
+  shows its name.
 - **Help** opens the map's own "?" menu (`_map_help_menu.html`, through
-  `window.pwaMapHelpMenu`), the same card as on the web, anchored above the
-  bar on the right. In this app only it gains **Map key**, which opens the
-  (i) legend card (`window.pwaMapLegend`), and the footer's legal line.
+  `window.pwaMapHelpMenu`), the phone card it is in a browser too
+  (SNOW-1486). In this app only it gains **Map key**, which opens the (i)
+  legend card (`window.pwaMapLegend`), and the footer's legal line.
 - The downloads sheet, whose roundel this app hides, opens from the layers
   menu's **Downloaded areas** row (`_map_layers_downloads_row.html`): its
   left half opens the sheet, its switch shows the areas on the map, as on
@@ -34,9 +35,11 @@ gate hides everywhere else; items hidden only in this app carry
 the header's avatar menu, unchanged from the web except that its Trips
 entry is `.app-hidden`: Trips is a Saved tab here.
 
-Saved is a **tab panel**: full height between the header and the
-bar, no detents, opened and closed by their tab. Help is the "?" card,
-which rises over a tab panel rather than cross-fading with it. On the map the tabs are
+Saved is a **tab panel**, opened and closed by its tab. Since SNOW-1486 it
+is the phone card every phone shares, at half or full above the bar, with
+its × ([`one-sheet-design-on-a-phone.md`](one-sheet-design-on-a-phone.md));
+the gate keeps only the bar's offsets. Help is the "?" card, which rises
+over a tab panel. On the map the tabs are
 buttons (`static/js/app_tabbar.js`); on every other page they are links to
 `/map/?panel=saved|help`, which the script opens and strips from the
 URL; an older `?panel=today` opens Saved on Places. In that mode the bar replaces the site footer, the Today roundel, the
@@ -47,10 +50,11 @@ the favourites sheet's own sign-in prompt.
 **Saved's header (SNOW-1479).** In the app a Saved sheet's header is just
 the four tabs and a **+** roundel (`_saved_add_roundel.html`); its title,
 subtitle, section label and the foot's add button the + replaces are
-hidden, and its × is `.app-hidden`. Since SNOW-1481 the same Saved panel
+hidden, and its × was `.app-hidden` until SNOW-1486 titled it **Saved
+items** and showed the × here too. Since SNOW-1481 the same Saved panel
 opens from the star on every other screen
 ([`saved-is-one-panel-on-every-screen.md`](saved-is-one-panel-on-every-screen.md)),
-so only the × is app-only, and the Saved logic lives in `saved_panel.js`
+and the Saved logic lives in `saved_panel.js`
 (`pwaSavedPanel`), which `app_tabbar.js` calls. Each + does its list's add: **Places** drops a pin,
 **Routes** opens the Find / Create / Upload menu, **Trips** opens a menu
 headed "Plan a trip from" listing the reader's own routes, each to

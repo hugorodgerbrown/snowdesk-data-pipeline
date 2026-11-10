@@ -399,6 +399,8 @@ describe('attach — registration', () => {
   it.each([
     [true, 'data-detents="peek half full"'],
     [false, ''],
+    // SNOW-1486: a Saved card declares detents and is not an object sheet.
+    [false, 'data-detents="half,full" data-sheet-card'],
   ])('registers objectSheet %s for a sheet with %j', (expected, attrs) => {
     const register = vi.fn();
     window.pwaMapOverlays = { register };

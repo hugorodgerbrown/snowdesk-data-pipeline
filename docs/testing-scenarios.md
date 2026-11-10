@@ -317,7 +317,7 @@ came for something in particular (SNOW-1117; made task-led by SNOW-1230).
 | 5 | Clear `localStorage`, reload, and click "Explore the map" (or the "×", or press Escape) when the card appears | The card closes and records the same answer; nothing else opens |
 | 6 | Clear `localStorage` and open http://localhost:8000/map/?resort=verbier | The resort opens and the card never appears: a deep link came for that |
 | 7 | Clear `localStorage`, reload, and tap a region before the card appears | The region sheet opens and the card does not appear over it this visit; `snowdesk.map.tour-offer` is still unset |
-| 8 | Click the "?" roundel in the bottom-left stack | A small "Help" menu opens: "Show me around again", "What is everything on the map?", "Help pages" |
+| 8 | Click the "?" roundel in the bottom-left stack | A small "Help" menu opens: "Show me around again", "What is everything on the map?", "Help pages". On a phone it is the inset card, a handle, "Help" and × (Scenario P14) |
 | 9 | Click "Show me around again" | The welcome card opens again, whatever was recorded |
 | 10 | Click "?", then "What is everything on the map?", then "Tour" on the bar | Help mode names the controls; "Tour" opens the coachmark tour on step 1 (Scenarios MS8, MS9) |
 
@@ -1148,11 +1148,14 @@ sources, each by a TileJSON document.
 
 ### Scenario P14: The installed app's tab bar and Saved (SNOW-1476, SNOW-1479)
 
-> Manual-only: no browser here runs in standalone display mode, so the
-> gate is asserted from the stylesheets in
+> Manual for the app: no browser here runs in standalone display mode, so
+> the gate is asserted from the stylesheets in
 > [tests/public/test_app_tabbar.py](../tests/public/test_app_tabbar.py) and
 > the tabs' behaviour in
-> [tests/js/test_app_tabbar.js](../tests/js/test_app_tabbar.js).
+> [tests/js/test_app_tabbar.js](../tests/js/test_app_tabbar.js). The phone
+> card (SNOW-1486) is the same in a phone browser, which
+> [tests/e2e/test_favourites.py](../tests/e2e/test_favourites.py) walks at
+> 390×844.
 
 **Goal**: Verify the bar is Map · Saved · Help, and that Saved's four tabs
 and each tab's + do what they say.
@@ -1165,9 +1168,10 @@ joined, and one observation.
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Open the app on the map | The bar shows **Map**, **Saved** and **Help**; there is no Today tab |
-| 2 | Tap **Saved** | Saved opens on **Places**. The header is just four icon tabs and a + on the right: no title, subtitle, section label or ×. Only the selected tab shows its name |
+| 2 | Tap **Saved** | Saved opens on **Places** at half the screen, an inset card with 12px either side. The header is a grab handle, then **Saved items** and ×, then the four icon tabs with a + right beside them; no subtitle or section label. Only the selected tab shows its name |
+| 2a | Drag the handle up, switch tab, then drag it down | It rises to three quarters and the next tab opens at three quarters too; dragged down from half it closes |
 | 3 | Read Places | Every region with a pin shows today's danger; the pinned resort shows its weather under its region; the dropped pin shows its height; the pin outside every region sits under **Elsewhere**. A region listed only because of a resort has no "…" |
-| 4 | Tap the + on Places | Drop-a-pin starts, as the old Add a favourite button did |
+| 4 | Tap the + on Places | **New pin** opens, only as tall as its field and Save, so the map and the pin stay in view. There is no Cancel; × cancels. Its handle does not drag |
 | 5 | Tap the **Routes** tab, then its + | The Find / Create / Upload menu opens. The recorded route's row shows its date; a route you shared says **Shared** |
 | 6 | Tap the **Trips** tab | Upcoming trips, soonest first, then past ones. Your own trip's row has a "…" with Share, Rename and Delete; the joined trip's row has none |
 | 7 | Rename your trip from its "…", then Delete it and confirm | The new name shows at once; after Delete the row goes and the list re-reads |
@@ -1177,16 +1181,19 @@ joined, and one observation.
 | 11 | Open the avatar menu | Settings and Sign out show; **Trips** does not |
 | 12 | Open `/map/?panel=today` | Saved opens on Places, and the URL loses `panel` |
 | 13 | With a new alert waiting | The alert dot shows on the **Saved** tab |
+| 13a | Tap **Help** | The "?" menu is the same card, a handle, **Help** and ×, as tall as its rows and never past three quarters. A drag down its handle closes it |
 | 14 | Open the same pages in a phone browser (not installed) | No bar: the roundels and the avatar menu's Trips are as before, and the star opens Saved (P14b) |
 
 ### Scenario P14b: Saved from the star, in a browser (SNOW-1481)
 
-> Manual: the docking and the ¾ cap are layout, asserted from the stylesheet
-> and the rendered sheets in
+> Manual: the docking is layout, asserted from the stylesheet and the
+> rendered sheets in
 > [tests/public/test_app_tabbar.py](../tests/public/test_app_tabbar.py) and
 > [tests/map/test_ugc_panels.py](../tests/map/test_ugc_panels.py); the star
 > and the remembered tab in
-> [tests/js/test_saved_panel.js](../tests/js/test_saved_panel.js).
+> [tests/js/test_saved_panel.js](../tests/js/test_saved_panel.js). The phone
+> card's heights and insets in a browser are walked by
+> [tests/e2e/test_favourites.py](../tests/e2e/test_favourites.py).
 
 **Goal**: Verify the star opens the app's Saved panel on a desktop and in a
 phone browser, and the binoculars start a report.
@@ -1199,7 +1206,8 @@ observation. A desktop browser and a phone browser.
 | 1 | On a desktop, tap the star | Saved opens on **Places**, docked left under search; the header is the four tabs, a + and the ×. The star is filled |
 | 2 | Tap the **Routes** tab, close Saved, tap the star again | Saved reopens on **Routes**; the star is outline while Saved is shut |
 | 3 | Tap the star while Saved is open | Saved closes |
-| 4 | In a phone browser, tap the star | Saved slides up to at most three quarters of the screen, with no snap heights; the × closes it |
+| 4 | In a phone browser, tap the star | Saved opens as the app's card (P14 steps 2–4): at half, three quarters by its handle, closed by a drag down or ×. At half it may sit over part of the right-hand roundels |
+| 4a | In a phone browser, tap the "?" roundel | The "?" menu is the same card as in the app (P14 step 13a) |
 | 5 | Tap the binoculars | A report starts at once (Finding your location…); there are no Saved tabs on it and the star stays outline |
 | 6 | Go offline and open Saved on Places | It says your places couldn't be loaded; no cached pins show |
 | 7 | Signed out, tap the star | Saved opens on Places with the sign-in prompt |

@@ -19,14 +19,15 @@ does: Places · Routes · Trips · Observations, with a + (SNOW-1481).
   `aria-expanded` while Saved is open; `static/css/map.css` then shows the
   filled star. `app_tabbar.js` calls it for its Saved tab.
 - **One header.** The Saved tabs, the + and the Trips route picker draw on
-  every screen. A Saved sheet's title, context line, section label and
-  add-button foot are hidden on every screen; only the × is `.app-hidden`,
-  since in the app the tab bar closes the sheet and in a phone browser the
-  × is how you close a panel that covers the star.
+  every screen. A Saved sheet's context line, section label and add-button
+  foot are hidden on every screen. Since SNOW-1486 the × shows on every
+  screen too, and a phone titles the panel **Saved items**.
 - **Where it opens.** On a desktop Saved docks left under search
-  (`side="left"`); in a phone browser it slides up to at most ¾ of the
-  screen (`75dvh`), with no detents. It is a roundel panel (design-system
-  rule 6). The app's full-height gate is unchanged.
+  (`side="left"`). On a phone, app or browser, it is the one sheet card at
+  half or full since SNOW-1486
+  ([`one-sheet-design-on-a-phone.md`](one-sheet-design-on-a-phone.md)); it
+  was a ¾ slide-up with no detents in a browser and full height in the
+  app before.
 - **One list for Places.** The favourites sheet always lists
   `favourites:places`. The pins-only `favourites:list` is retired, and with
   it the cached paint of that list: offline, Places says it couldn't be
@@ -53,5 +54,5 @@ behind it moved to Saved, where the other lists are.
 - The star carries no `data-overlay-shown`: Saved is four lists and no one
   layer (`map_roundel_overlay_state.js`).
 - A new Saved list joins in three places: `SAVED_SHEET_IDS` in
-  `saved_panel.js`, `_saved_tabs.html`, and the sheet selectors in
-  `map.css`.
+  `saved_panel.js`, `_saved_tabs.html`, and its surface's
+  `_overlay_sheet.html` include (`detents="half,full"`, `card=True`).
