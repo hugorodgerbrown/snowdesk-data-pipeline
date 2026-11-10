@@ -1070,7 +1070,12 @@ async function cacheOverlayFeedsForDownload() {
         const data = await fetch(url).then((r) => (r.ok ? r.json() : null));
         if (!data) return;
         if (resource === 'ski_summits' && !Array.isArray(data.summits)) return;
-        await cache.putOverlay(resource, data);
+        // SNOW-1480: the reports cache is principal-free, so it keeps no
+        // `mine` — as map.js's own write of the same feed.
+        const kept = resource === 'community_reports' && window.pwaCommunityReportsCore
+          ? window.pwaCommunityReportsCore.withoutMine(data)
+          : data;
+        await cache.putOverlay(resource, kept);
         if (resource === 'community_reports') {
           fetched.reports = data;
           fetched.reportsAt = new Date().toISOString();

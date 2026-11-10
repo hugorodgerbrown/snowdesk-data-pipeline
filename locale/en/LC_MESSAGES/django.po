@@ -4637,6 +4637,9 @@ msgstr ""
 msgid "Sign in to report"
 msgstr ""
 
+msgid "You"
+msgstr ""
+
 msgid "Report on the map"
 msgstr ""
 

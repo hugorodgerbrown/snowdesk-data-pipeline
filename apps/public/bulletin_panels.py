@@ -22,7 +22,7 @@ import datetime
 import logging
 from collections import defaultdict
 from collections.abc import Mapping
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import waffle
 from django.http import (
@@ -73,6 +73,10 @@ from apps.weather.services.weather_display import build_point_forecast_panel
 
 from .guidance import load_field_guidance
 from .headlines import headline_for
+
+if TYPE_CHECKING:
+    from django.contrib.auth.base_user import AbstractBaseUser
+    from django.contrib.auth.models import AnonymousUser
 
 logger = logging.getLogger(__name__)
 
@@ -610,6 +614,7 @@ def build_bulletin_body(
     page_date: datetime.date,
     selected: Bulletin | None,
     skipped: Bulletin | None = None,
+    viewer: AbstractBaseUser | AnonymousUser | None = None,
 ) -> dict[str, Any]:
     """
     Build what ``public/partials/_region_body.html`` reads for one bulletin.
@@ -629,6 +634,10 @@ def build_bulletin_body(
         skipped: A newer issue for the same day that could not be shown
             because it did not build (SNOW-1368); the body names both
             issues' times in a notice above the bulletin.
+        viewer: The user whose own field reports the body marks "You"
+            (SNOW-1480), or ``None`` to mark none. Only the map's region
+            sheet, which is sent ``no-store`` when it marks one, passes
+            it; the bulletin page is publicly cached and passes none.
 
     Returns:
         ``bulletin``, ``page_date``, ``is_today`` and ``ground`` (the
@@ -641,7 +650,7 @@ def build_bulletin_body(
     # SNOW-1291: what people found on the ground, in both shapes of the
     # body — a region with no bulletin today (off season, say) can still
     # have reports, and they are worth more then, not less.
-    ground = ground_for_region(region, page_date)
+    ground = ground_for_region(region, page_date, viewer=viewer)
     if selected is None:
         return {
             "bulletin": None,

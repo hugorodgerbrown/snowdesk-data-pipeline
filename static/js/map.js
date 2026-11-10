@@ -4102,6 +4102,17 @@
     ];
   };
 
+  // SNOW-1480: a paint expression — the report's colour: blue
+  // (MINE_COLOUR, --color-accent) for the reader's own, which the server
+  // marks `mine`, else its family's. A payload read back from the offline
+  // cache carries no `mine` (withoutMine), so every pin there reads as
+  // someone else's. Clusters keep the family colours: a cluster is many
+  // people's reports.
+  const communityReportColour = () => ['case',
+    ['boolean', ['get', 'mine'], false], window.pwaCommunityReportsCore.MINE_COLOUR,
+    communityFamilyColour(),
+  ];
+
   // SNOW-419: install the community-reports (shared, anonymised) overlay.
   // The source is clustered (`cluster: true`) so a busy valley does not
   // paint as an unreadable pile at low zoom. A cluster takes the colour of
@@ -4124,7 +4135,11 @@
       }
     }
     const visibility = overlayDrawn('community_reports') ? 'visible' : 'none';
-    const familyColour = communityFamilyColour();
+    // Every pin layer paints in the report's colour — blue for the
+    // reader's own (SNOW-1480): a solid pin is filled with it under a white
+    // mark, a recent ring is stroked with it round a mark drawn in it, and
+    // a live pin's halo and age take it too.
+    const reportColour = communityReportColour();
     map.addSource('community-reports', {
       type: 'geojson',
       data: geojson,
@@ -4179,7 +4194,7 @@
       filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', '_state'], 'live']],
       layout: { visibility },
       paint: {
-        'circle-color': familyColour,
+        'circle-color': reportColour,
         'circle-radius': 18,
         'circle-opacity': 0.22,
       },
@@ -4193,8 +4208,8 @@
       layout: { visibility },
       paint: {
         'circle-radius': 12,
-        'circle-color': ['case', ['==', ['get', '_state'], 'recent'], '#ffffff', familyColour],
-        'circle-stroke-color': ['case', ['==', ['get', '_state'], 'recent'], familyColour, '#ffffff'],
+        'circle-color': ['case', ['==', ['get', '_state'], 'recent'], '#ffffff', reportColour],
+        'circle-stroke-color': ['case', ['==', ['get', '_state'], 'recent'], reportColour, '#ffffff'],
         'circle-stroke-width': ['case', ['==', ['get', '_state'], 'recent'], 2.5, 2],
       },
     });
@@ -4211,7 +4226,7 @@
         'icon-ignore-placement': true,
       },
       paint: {
-        'icon-color': ['case', ['==', ['get', '_state'], 'recent'], familyColour, '#ffffff'],
+        'icon-color': ['case', ['==', ['get', '_state'], 'recent'], reportColour, '#ffffff'],
       },
     });
     // The age of a live report ("12m", "3h"), stamped at fetch and on every
@@ -4231,7 +4246,7 @@
         'text-allow-overlap': true,
       },
       paint: {
-        'text-color': familyColour,
+        'text-color': reportColour,
         'text-halo-color': '#ffffff',
         'text-halo-width': 1.5,
       },
@@ -4271,7 +4286,8 @@
         if (!data || !Array.isArray(data.features)) return false;
         if (dayAsked() !== day) return fetchCommunityReports();
         if (day === null) {
-          window.pwaMapOverlayCache?.putOverlay('community_reports', data);
+          // SNOW-1480: the cache is principal-free, so it keeps no `mine`.
+          window.pwaMapOverlayCache?.putOverlay('community_reports', core.withoutMine(data));
           communityReportsToday = data;
         }
         communityReportsPayload = data;
@@ -10661,9 +10677,21 @@
       // reads the map keeps its age current instead of freezing at the
       // moment it was tapped. Same element, same module, as the panel row.
       const relative = formatRelativeTime(props.observed_at);
-      if (relative || props.region_name) {
+      // SNOW-1480: the reader's own report says so first, "You · <region>
+      // · <age>", as its row in the region panel does. The word is
+      // server-translated (MAP_STRINGS' 'report-mine').
+      const mine = props.mine === true;
+      if (relative || props.region_name || mine) {
         const metaEl = document.createElement('div');
         metaEl.className = 'community-report-popup__meta';
+        if (mine) {
+          const mineEl = document.createElement('span');
+          mineEl.className = 'community-report-popup__mine';
+          mineEl.setAttribute('data-testid', 'community-report-mine');
+          mineEl.textContent = MAP_STRINGS['report-mine'];
+          metaEl.appendChild(mineEl);
+          if (props.region_name || relative) metaEl.append(' · ');
+        }
         if (props.region_name) {
           metaEl.append(props.region_name);
           if (relative) metaEl.append(' · ');

@@ -30,7 +30,8 @@ notice (SNOW-1368), and a newer built one, which a rating not yet
 recomputed can miss, is shown. A day with no rated issue asks the page's
 rule (``resolve_selected_pick``) instead.
 
-The body is the same for every reader but staff (SNOW-1317), so the copy
+The body is the same for every reader but staff (SNOW-1317) and the author
+of a report it lists (SNOW-1480), so the copy
 an area download keeps unstamped (SNOW-1312) is sound to serve to whoever
 opens the sheet offline. "On the ground"'s call to report renders both its
 forms — the report button and the sign-in link — and the sheet's
@@ -39,8 +40,9 @@ forms — the report button and the sign-in link — and the sheet's
 CSS rule. Accepted limit: offline, a signed-in user with no ``Account``
 (``pwa-user-id`` is ``""``; an operator made with ``createsuperuser``) shares
 the worker's anonymous partition, so may get the signed-out map page and see
-"Sign in to report". The one exception is the staff callout; see
-``_renders_staff_callout``.
+"Sign in to report". The exceptions are the staff callout and a report
+marked "You", both sent ``no-store``; see ``_renders_staff_callout`` and
+``_renders_mine``.
 
 The sheet opens on every width since SNOW-1173: a bottom sheet on a phone,
 the inset panel on a desktop. That ticket retired the chip's region panel,
@@ -70,6 +72,7 @@ from apps.map.problem_terrain import (
     bulletin_terrain_rules,
     problem_terrain_key,
 )
+from apps.observations.services.ground import Ground
 from apps.public.bulletin_panels import (
     COUNTRY_NAMES,
     DANGER_PANEL_META,
@@ -213,7 +216,11 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
 
     level_meta = DANGER_PANEL_META.get(day_rating.max_rating) if day_rating else None
 
-    body = build_bulletin_body(request, region, target_date, selected, skipped)
+    # SNOW-1480: the reader's own reports read "You" — a body that marks
+    # one is theirs alone, and is never kept (below).
+    body = build_bulletin_body(
+        request, region, target_date, selected, skipped, viewer=request.user
+    )
     # SNOW-1377: every reader gets the switch wherever the tiles cover the
     # region (SNOW-1374's flag is gone).
     terrain = _problem_terrain_rules(country, selected)
@@ -240,12 +247,15 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
         "terrain_key": problem_terrain_key(terrain or []),
     }
     response = render(request, "public/partials/_region_sheet_body.html", context)
-    if _renders_staff_callout(request, body.get("panel")):
+    if _renders_staff_callout(request, body.get("panel")) or _renders_mine(
+        body.get("ground")
+    ):
         # SNOW-1312: the worker keeps this sheet unstamped and serves it to
         # whoever opens the map offline on this device, so a body carrying
         # the staff-only error callout (admin link, bulletin id, the
         # processing error) must never be kept. ``no-store`` is what the
-        # worker's cache write already refuses.
+        # worker's cache write already refuses. SNOW-1480: so must a body
+        # that marks a report "You", which is true for one reader only.
         patch_cache_control(response, private=True, no_store=True)
         return response
     settled = target_date < timezone.localdate()
@@ -278,6 +288,24 @@ def _renders_staff_callout(request: HttpRequest, panel: dict[str, Any] | None) -
         return False
     render_model = panel.get("render_model") or {}
     return render_model.get("version") == 0
+
+
+def _renders_mine(ground: Ground | None) -> bool:
+    """Whether the sheet marks any of its field reports "You" (SNOW-1480).
+
+    Mirrors ``observations/partials/_on_the_ground_row.html``'s
+    ``report.mine`` branch: a report is marked when the reader wrote it.
+
+    Args:
+        ground: The body's "On the ground" reports, or ``None``.
+
+    Returns:
+        ``True`` when any report in any section is the reader's own.
+
+    """
+    if ground is None:
+        return False
+    return any(r.mine for r in (*ground.live, *ground.recent, *ground.day))
 
 
 @lowercase_region_id

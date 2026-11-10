@@ -39,6 +39,7 @@ from tests.factories import (
     RegionBulletinFactory,
     RegionDayRatingFactory,
     SubRegionFactory,
+    UserFactory,
 )
 
 # ---------------------------------------------------------------------------
@@ -5790,6 +5791,33 @@ class TestOnTheGround:
         assert f'data-observation-submission="{submission}"' in content
         # On the page the call to report goes to the map.
         assert "Report on the map" in content
+
+    def test_the_page_never_says_you(self, client: Client) -> None:
+        """SNOW-1480: the author's own report is not marked on the page.
+
+        The page is publicly cached, so a "You" on it would be served to
+        everyone; it stays public, and the mark is the map sheet's alone.
+        """
+        region = MicroRegionFactory.create(
+            region_id="CH-9106", name="Own Region", slug="own-region"
+        )
+        _make_am_bulletin(region, timezone.localdate())
+        author = UserFactory.create()
+        FieldObservationFactory.create(
+            region=region, user=author, observed_at=timezone.now()
+        )
+        client.force_login(author)
+
+        url = reverse("public:region_root", kwargs={"region_id": "ch-9106"})
+        response = client.get(url)
+        content = response.content.decode()
+
+        assert response.status_code == 200
+        assert 'data-testid="on-the-ground-row"' in content
+        assert 'data-testid="on-the-ground-mine"' not in content
+        cache_control = response["Cache-Control"]
+        assert "public" in cache_control
+        assert "no-store" not in cache_control
 
     def test_empty_today_still_invites_a_report(self, client: Client) -> None:
         """No reports today: one row and a short call to report (SNOW-1296)."""

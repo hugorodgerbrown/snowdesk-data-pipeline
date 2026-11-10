@@ -8,6 +8,9 @@
  * reports are drawn, as DAY pins. Every edge of that is a string compare
  * on YYYY-MM-DD days, which is exactly what gets an off-by-one, so each
  * edge is written down here.
+ *
+ * SNOW-1480: the reader's own reports carry `mine`, drawn in MINE_COLOUR;
+ * the state stamp keeps it, and the offline cache's copy drops it.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -181,5 +184,55 @@ describe('the family table', () => {
       expect(core.FAMILY_COLOURS[family]).toMatch(/^#[0-9a-f]{6}$/);
       expect(core.FAMILY_PATHS[family].length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("the reader's own reports (SNOW-1480)", () => {
+  const now = Date.parse('2026-10-29T12:00:00Z');
+
+  /** A collection whose one report is the reader's own. */
+  function mineCollection(observedOn = TODAY) {
+    const fc = collection(observedOn);
+    fc.features[0].properties.mine = true;
+    return fc;
+  }
+
+  it('exports MINE_COLOUR, frozen on the module', () => {
+    expect(core.MINE_COLOUR).toMatch(/^#[0-9a-f]{6}$/);
+    expect(Object.isFrozen(core)).toBe(true);
+    expect(() => { 'use strict'; core.MINE_COLOUR = '#000000'; }).toThrow();
+    expect(core.MINE_COLOUR).not.toBe('#000000');
+  });
+
+  it('keeps `mine` through withStates, live and recent', () => {
+    const live = core.withStates(mineCollection(), TODAY, TODAY, now);
+    expect(live.features[0].properties.mine).toBe(true);
+    const recent = core.withStates(mineCollection('2026-10-27'), TODAY, TODAY, now);
+    expect(recent.features[0].properties.mine).toBe(true);
+  });
+
+  it('withoutMine drops `mine` from every report and keeps the rest', () => {
+    const payload = mineCollection();
+    const out = core.withoutMine(payload);
+    expect(out.features[0].properties).not.toHaveProperty('mine');
+    expect(out.features[0].properties.family).toBe('SURFACE');
+    expect(out.features[0].properties.observed_on).toBe(TODAY);
+    expect(out.features[0].geometry).toEqual(payload.features[0].geometry);
+    expect(out.type).toBe('FeatureCollection');
+  });
+
+  it('withoutMine never mutates its input', () => {
+    const payload = mineCollection();
+    const before = structuredClone(payload);
+    const out = core.withoutMine(payload);
+    expect(payload).toEqual(before);
+    expect(out).not.toBe(payload);
+    expect(out.features[0].properties).not.toBe(payload.features[0].properties);
+  });
+
+  it('withoutMine hands back anything that is not a collection unchanged', () => {
+    expect(core.withoutMine(null)).toBeNull();
+    const odd = { type: 'FeatureCollection' };
+    expect(core.withoutMine(odd)).toBe(odd);
   });
 });

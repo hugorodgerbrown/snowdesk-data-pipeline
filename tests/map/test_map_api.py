@@ -2270,6 +2270,8 @@ PROPERTY_KEYS = {
     "observed_on",
     "region_id",
     "region_name",
+    # SNOW-1480: whether the reader wrote it — a boolean, never an id.
+    "mine",
 }
 
 
@@ -2607,6 +2609,99 @@ class TestCommunityReportsGeojson:
         response = Client().get(reverse("api:community_reports_geojson"))
         assert response.status_code == 200
         assert "no-store" in response.get("Cache-Control", "")
+
+    # SNOW-1480: the reader's own reports, marked ``mine``.
+
+    @staticmethod
+    def _mine_by_submission(client: Client) -> dict[str, bool]:
+        """Return each feature's ``mine``, keyed by its submission."""
+        response = client.get(reverse("api:community_reports_geojson"))
+        return {
+            f["properties"]["submission"]: f["properties"]["mine"]
+            for f in response.json()["features"]
+        }
+
+    def test_mine_is_true_for_the_author(self) -> None:
+        """The signed-in author's own report is marked mine."""
+        author = UserFactory.create()
+        obs = FieldObservationFactory.create(user=author, observed_at=timezone.now())
+        client = Client()
+        client.force_login(author)
+        assert self._mine_by_submission(client) == {str(obs.submission): True}
+
+    def test_mine_is_false_for_another_user(self) -> None:
+        """Someone else's report is not mine to a signed-in reader."""
+        obs = FieldObservationFactory.create(observed_at=timezone.now())
+        client = Client()
+        client.force_login(UserFactory.create())
+        assert self._mine_by_submission(client) == {str(obs.submission): False}
+
+    def test_mine_is_false_for_an_anonymous_reader(self) -> None:
+        """A signed-out reader owns nothing."""
+        obs = FieldObservationFactory.create(observed_at=timezone.now())
+        assert self._mine_by_submission(Client()) == {str(obs.submission): False}
+
+    def test_mine_is_per_viewer_on_a_mixed_day(self) -> None:
+        """Two authors on one day each see their own report, and only it, as mine.
+
+        The report of two types (two rows, one submission) is one pin, and
+        mine for its author.
+        """
+        alice = UserFactory.create()
+        bob = UserFactory.create()
+        now = timezone.now()
+        alices = FieldObservationFactory.create(user=alice, observed_at=now)
+        FieldObservationFactory.create(
+            user=alice,
+            submission=alices.submission,
+            observed_at=now,
+            observation_type=FieldObservation.OBSERVATION_TYPE.POWDER,
+        )
+        bobs = FieldObservationFactory.create(user=bob, observed_at=now)
+
+        as_alice = Client()
+        as_alice.force_login(alice)
+        as_bob = Client()
+        as_bob.force_login(bob)
+
+        assert self._mine_by_submission(as_alice) == {
+            str(alices.submission): True,
+            str(bobs.submission): False,
+        }
+        assert self._mine_by_submission(as_bob) == {
+            str(alices.submission): False,
+            str(bobs.submission): True,
+        }
+
+    def test_mine_carries_no_user_id_or_name(self) -> None:
+        """The author's own payload names nobody: no id, username or email."""
+        author = UserFactory.create(
+            email="mira.lindqvist@example.com", first_name="Mira", last_name="Q"
+        )
+        FieldObservationFactory.create(user=author, observed_at=timezone.now())
+        client = Client()
+        client.force_login(author)
+        response = client.get(reverse("api:community_reports_geojson"))
+        body = response.content.decode()
+        assert "mira.lindqvist" not in body
+        assert "Mira" not in body
+        assert "user" not in body
+        properties = response.json()["features"][0]["properties"]
+        assert set(properties) == PROPERTY_KEYS
+        assert properties["mine"] is True
+        assert str(author.pk) not in {str(v) for v in properties.values()}
+
+    def test_mine_keeps_the_response_private_and_unstored(self) -> None:
+        """A response that marks a report mine is still private, no-store."""
+        author = UserFactory.create()
+        FieldObservationFactory.create(user=author, observed_at=timezone.now())
+        client = Client()
+        client.force_login(author)
+        response = client.get(reverse("api:community_reports_geojson"))
+        cache_control = response.get("Cache-Control", "")
+        assert "no-store" in cache_control
+        assert "private" in cache_control
+        assert "public" not in cache_control
 
 
 # ---------------------------------------------------------------------------
