@@ -65,20 +65,29 @@
 
   // The stage names a sync may report, in the order it fetches them. A
   // name outside the list is dropped rather than painted as a blank.
-  const STAGES = ['map', 'bulletins', 'weather', 'things'];
+  // SNOW-1487: `terrain` sits between the map and the content, as a sync
+  // adds the terrain data after the map.
+  const STAGES = ['map', 'terrain', 'bulletins', 'weather', 'things'];
 
   /** @typedef {'ready'|'partial'|'absent'} Outcome */
   /** @typedef {{tiles?: string, content?: boolean}} SyncResult */
   /**
+   * SNOW-1487: how far a stage has got — files landed of files needed.
+   *
+   * @typedef {{done: number, total: number}} StageCounts
+   */
+  /**
    * @typedef {{phase: 'queue'} | {phase: 'area', n: number, total: number, id: string}
-   *   | {phase: 'stage', n: number, total: number, id: string, name: StageName}
+   *   | {phase: 'stage', n: number, total: number, id: string, name: StageName,
+   *      counts?: StageCounts}
    *   | {phase: 'done', id: string, outcome: Outcome}} Step
    */
   /**
    * What an area's sync is fetching now (SNOW-1415): the tiles, the
-   * bulletins, the weather or the reader's own things.
+   * terrain data (SNOW-1487), the bulletins, the weather or the reader's
+   * own things.
    *
-   * @typedef {'map'|'bulletins'|'weather'|'things'} StageName
+   * @typedef {'map'|'terrain'|'bulletins'|'weather'|'things'} StageName
    */
   /**
    * @typedef {Object} RunDeps
@@ -86,12 +95,14 @@
    * @property {function(): Promise<number>|number} waiting How many edits
    *   are still waiting once the drain has had its turn.
    * @property {string[]} areas Area ids, in the order to run them.
-   * @property {function(string, function(StageName): void): Promise<Outcome>|Outcome} syncOne
+   * @property {function(string, function(StageName, StageCounts=): void): Promise<Outcome>|Outcome} syncOne
    *   Runs one area. The second argument is told each stage as the area's
-   *   sync starts it (SNOW-1415); a host that cannot name its stages
-   *   ignores it.
+   *   sync starts it (SNOW-1415), and SNOW-1487 its counts as they move;
+   *   a host that cannot name its stages ignores it.
    * @property {function(Step): void} [onStep] Told of every step as it starts
    *   and every area as it settles.
+   * @property {AbortSignal} [signal] SNOW-1487: once aborted, no further
+   *   area is started; the ones left are `skipped`.
    * @property {number} [drainTimeoutMs]
    * @property {function(number): Promise<void>} [wait] Injected timer.
    */
@@ -101,6 +112,7 @@
    * @property {number} ready
    * @property {number} waiting
    * @property {Array<{id: string, outcome: Outcome}>} outcomes
+   * @property {string[]} skipped SNOW-1487: the areas a stop left unsynced.
    */
 
   /**
@@ -176,19 +188,39 @@
 
     /** @type {Array<{id: string, outcome: Outcome}>} */
     const outcomes = [];
+    /** @type {string[]} */
+    const skipped = [];
     let ready = 0;
     for (let index = 0; index < areas.length; index += 1) {
       const id = areas[index];
       const n = index + 1;
+      // SNOW-1487: a stop leaves every area not yet started as it was.
+      if (deps.signal && deps.signal.aborted) {
+        skipped.push(...areas.slice(index));
+        break;
+      }
       onStep({ phase: 'area', n: n, total: areas.length, id: id });
       // A host that reports progress repeats the stage it is on, so only
-      // a change of stage is a step.
+      // a change of stage is a step — or, SNOW-1487, a change of counts
+      // within it, which is how a row says "212 of 528".
       let lastStage = '';
-      /** @param {StageName} name */
-      const onStage = (name) => {
-        if (STAGES.indexOf(name) < 0 || name === lastStage) return;
+      let lastCounts = '';
+      /**
+       * @param {StageName} name
+       * @param {StageCounts} [counts]
+       */
+      const onStage = (name, counts) => {
+        if (STAGES.indexOf(name) < 0) return;
+        const known = !!counts && Number.isFinite(counts.done) && Number.isFinite(counts.total);
+        const key = known ? counts.done + '/' + counts.total : '';
+        if (name === lastStage && key === lastCounts) return;
+        if (name === lastStage && !known) return;
         lastStage = name;
-        onStep({ phase: 'stage', n: n, total: areas.length, id: id, name: name });
+        lastCounts = key;
+        /** @type {Step} */
+        const step = { phase: 'stage', n: n, total: areas.length, id: id, name: name };
+        if (known) step.counts = { done: counts.done, total: counts.total };
+        onStep(step);
       };
       /** @type {Outcome} */
       let outcome = 'partial';
@@ -202,7 +234,7 @@
       outcomes.push({ id: id, outcome: outcome });
       onStep({ phase: 'done', id: id, outcome: outcome });
     }
-    return { total: areas.length, ready: ready, waiting: waiting, outcomes: outcomes };
+    return { total: areas.length, ready: ready, waiting: waiting, outcomes: outcomes, skipped: skipped };
   }
 
   /**
@@ -230,7 +262,8 @@
    * @param {Step|null} step
    * @param {Record<string, string>} strings Carries ``ready-running``,
    *   ``ready-progress`` and, optionally, ``sync-stage-map``,
-   *   ``sync-stage-bulletins``, ``sync-stage-weather`` and ``sync-stage-things``.
+   *   ``sync-stage-terrain``, ``sync-stage-bulletins``,
+   *   ``sync-stage-weather`` and ``sync-stage-things``.
    * @returns {string}
    */
   function progressText(step, strings) {
