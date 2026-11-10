@@ -95,7 +95,8 @@ the row's own label, so map.html loads that module once for both.
     hidden
     data-offline-audit-host
     {% include "includes/_offline_audit_host_attrs.html" with default_basemap_key=offline_audit.default_basemap_key content_feeds=offline_audit.content_feeds content_countries=offline_audit.content_countries today=offline_audit.today terrain_class_tile_url=offline_audit.terrain_class_tile_url dem_tile_url=offline_audit.dem_tile_url %}
-></div>
+>
+</div>
 {% trans "Your downloads" as downloads_sheet_aria_label %}
 {# SNOW-645 review: scroll_body=True — this sheet's own header (title,   #}
 {# budget) and foot (CTA, toggle) stay pinned while only the row groups   #}
