@@ -181,7 +181,7 @@
    */
   function withoutMine(geojson) {
     if (!geojson || !Array.isArray(geojson.features)) return geojson;
-    const features = geojson.features.map((feature) => {
+    const features = geojson.features.map((/** @type {any} */ feature) => {
       const { mine: _mine, ...rest } = (feature && feature.properties) || {};
       return { ...feature, properties: rest };
     });
