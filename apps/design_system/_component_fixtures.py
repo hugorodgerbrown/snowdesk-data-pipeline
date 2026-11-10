@@ -1713,8 +1713,8 @@ SEGMENTED_OPTION_VARIANTS: tuple[dict[str, Any], ...] = (
 
 # Saved tabs ------------------------------------------------------------------
 # SNOW-1479 (the Saved chips of SNOW-1476 before it): the Saved tab's Places /
-# Routes / Trips / Observations icons, the selected one named. Drawn only in
-# the installed phone app, so the fixture forces it visible.
+# Routes / Trips / Observations icons, the selected one named. ``preview``
+# draws the Trips option whoever is signed in, and drops the header trim.
 SAVED_TABS_VARIANTS: tuple[dict[str, Any], ...] = (
     {"caption": "Places", "context": {"saved_tab": "places", "preview": True}},
     {"caption": "Trips", "context": {"saved_tab": "trips", "preview": True}},
@@ -1722,11 +1722,11 @@ SAVED_TABS_VARIANTS: tuple[dict[str, Any], ...] = (
 
 
 # Saved add roundel -----------------------------------------------------------
-# SNOW-1479: the + beside the Saved tabs. App-only, so forced visible.
+# SNOW-1479: the + beside the Saved tabs, on every screen since SNOW-1481.
 SAVED_ADD_ROUNDEL_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Places, Routes, Observations — the panel's own add",
-        "context": {"cta_label": "Add a favourite", "preview": True},
+        "context": {"cta_label": "Add a favourite"},
     },
 )
 
@@ -1734,11 +1734,11 @@ SAVED_ADD_ROUNDEL_VARIANTS: tuple[dict[str, Any], ...] = (
 # Trip route picker -----------------------------------------------------------
 # The Trips tab's + (public/partials/_trip_route_picker.html): "Plan a trip
 # from" and the reader's own routes, which trips_panel.js fills on the map.
-# App-only, so forced visible; here the menu holds its label alone.
+# Here the menu holds its label alone.
 TRIP_ROUTE_PICKER_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Trips — plan a trip from one of your routes",
-        "context": {"cta_label": "Plan a trip", "preview": True},
+        "context": {"cta_label": "Plan a trip"},
     },
 )
 

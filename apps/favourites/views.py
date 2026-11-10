@@ -1,7 +1,7 @@
 """
 apps/favourites/views.py — HTMX endpoints + GeoJSON layer for the favourites app.
 
-Provides five HTMX-only fragment views and one plain-JSON endpoint used by
+Provides HTMX-only fragment views and one plain-JSON endpoint used by
 the map page's saved-pins feature (SNOW-413) and the favourite detail card
 / account-page list (SNOW-415):
 
@@ -27,9 +27,6 @@ the map page's saved-pins feature (SNOW-413) and the favourite detail card
   was the SNOW-507 full page; a favourite is a map pin, not a document,
   so the URL now 301s to the pin's own weather page
   (``/weather/<short_id>/``), which the owner can always open.
-- ``favourite_list`` (GET) — the requesting user's own favourites, rendered
-  for the map sheet (SNOW-658; the account page that also hosted it went
-  in SNOW-803).
 - ``today`` (GET) — the Today panel's pinned regions and resorts (SNOW-1366).
 - ``places`` (GET) — the installed phone app's Places list: Today's regions
   with each region's dropped pins, and the pins in no region last
@@ -65,7 +62,6 @@ from uuid import UUID
 import waffle
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
-from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 from django_ratelimit.decorators import ratelimit
@@ -118,36 +114,9 @@ TODAY_UPCOMING_TRIPS = 3
 # submission is turned into a handled 400 instead of a DB DataError (500).
 _NAME_MAX_LENGTH = 100
 
-# SNOW-711: the dummy uuid the rename URL template is reversed with. See
-# _rename_url_template below.
-_DUMMY_UUID = UUID(int=0)
-
-
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-
-def _rename_url_template() -> str:
-    """Return favourites:rename with ``__UUID__`` where the uuid goes.
-
-    Handed to the account page's list template so
-    ``static/js/account_favourites.js`` can build one row's rename URL at
-    commit time, from the uuid riding on that row's own pencil. The same
-    ``__UUID__`` trick ``apps.map.views._favourites_context`` uses for
-    the map panel: reverse with a dummy uuid, then string-replace.
-
-    Reversed per call rather than once at import — this module is imported
-    by ``apps.favourites.urls``, so reversing at import time would ask the
-    URLconf to resolve itself while it is still being built.
-
-    Returns:
-        The rename URL with the uuid replaced by ``__UUID__``.
-
-    """
-    return reverse("favourites:rename", args=[_DUMMY_UUID]).replace(
-        str(_DUMMY_UUID), "__UUID__"
-    )
 
 
 def _card_freshness(
@@ -198,12 +167,11 @@ def _build_favourite_cache_record(
 ) -> dict[str, Any]:
     """Build the JSON-serialisable client-cache record for one favourite.
 
-    Shared by ``favourite_card`` and ``favourite_list`` so
-    ``static/js/favourites_offline.js`` sees one consistent shape
-    regardless of which endpoint populated ``data:favourites``. Each
-    record carries its own ``generated_at`` / ``unsafe_after_seconds`` so
-    the offline client can classify every cached pin independently
-    (SNOW-418).
+    Used by ``favourite_card`` (``favourite_list`` shared it until SNOW-1481
+    retired that list), so ``static/js/favourites_offline.js`` caches one
+    shape. Each record carries its own ``generated_at`` /
+    ``unsafe_after_seconds`` so the offline client can classify every
+    cached pin independently (SNOW-418).
 
     Args:
         favourite: The Favourite the record describes.
@@ -989,114 +957,6 @@ def region_pin_list(request: HttpRequest) -> HttpResponse:
 
 @require_htmx
 @require_GET
-def favourite_list(request: HttpRequest) -> HttpResponse:
-    """Render the requesting user's own favourites list partial.
-
-    Powers the map sheet's favourites panel, which lazy-loads this endpoint
-    over HTMX. One template, ``_favourite_list_map.html``: until SNOW-803 a
-    ``?variant=`` parameter chose between it and the account page's fuller
-    list (row disclosure, "view on the map" link); that page is gone and a
-    parameter is ignored.
-
-    Batches today's ``RegionDayRating`` lookup for every favourite's
-    region into a single query (never N+1 as the favourite count grows),
-    stamps the freshness headers (SNOW-418) using the oldest present
-    rating's ``updated_at`` (or ``now()`` when none exist), and threads a
-    ``roster_payload`` JSON sidecar into the template context so
-    ``static/js/favourites_offline.js`` can cache the whole list for
-    offline reads.
-
-    Args:
-        request: The incoming HTMX GET request.
-
-    Returns:
-        Rendered ``_favourite_list_map.html``, or an error response.
-
-    """
-    if not request.user.is_authenticated:
-        return HttpResponse("Authentication required.", status=403)
-
-    # ``location`` joined too: each row's chevron links to the pin's weather
-    # page (SNOW-800), and a per-row fetch of the FK would be the N+1 the
-    # batched rating lookup below exists to avoid.
-    #
-    # SNOW-814: ``placed()`` — a region pin is not a place, and its row now
-    # lives in search's "Pinned regions" (``region_pin_list`` above). This
-    # is the same predicate ``favourites_geojson`` has always filtered on.
-    #
-    # SNOW-1229: ``dropped_pins()`` — a favourited resort left this list for
-    # search's "Pinned resorts", as region pins left it for search in
-    # SNOW-814, and the map draws it as a blue resort dot, not a star.
-    #
-    # SNOW-1366: SNOW-1359's "Today" block, which listed every kind above
-    # these rows (and so listed each pin twice), moved out to the Today
-    # panel (``today`` below). This list is the dropped pins and nothing
-    # else.
-    #
-    # SNOW-1404: ``panel_rows()`` — plus a saved resort that was retired. It
-    # has left search and the map, so it is listed here as "No longer
-    # listed", with Remove as its one control.
-    favourites = list(
-        Favourite.objects.for_user(request.user)
-        .panel_rows()
-        .select_related("region", "location", "resort")
-    )
-
-    today = timezone.localdate()
-    region_ids = {f.region_id for f in favourites if f.region_id is not None}
-    ratings_by_region_id: dict[int, RegionDayRating] = {
-        rating.region_id: rating
-        for rating in RegionDayRating.objects.filter(
-            region_id__in=region_ids, date=today
-        )
-    }
-
-    _attach_share_text(request, favourites)
-
-    roster_payload: list[dict[str, Any]] = []
-    present_ratings: list[RegionDayRating] = []
-    for favourite in favourites:
-        day_rating = (
-            ratings_by_region_id.get(favourite.region_id)
-            if favourite.region_id is not None
-            else None
-        )
-        # SNOW-802: a region pin's row shows the day's rating and a dated
-        # bulletin link — that is all a region has — and reads them off
-        # the favourite rather than issuing a query per row.
-        favourite.day_rating = day_rating  # type: ignore[attr-defined]
-        bulletin_url = favourite.region.get_absolute_url() if favourite.region else ""
-        generated_at, unsafe_after = _card_freshness(day_rating)
-        roster_payload.append(
-            _build_favourite_cache_record(
-                favourite, day_rating, bulletin_url, generated_at, unsafe_after
-            )
-        )
-        if day_rating is not None:
-            present_ratings.append(day_rating)
-    response_generated_at = (
-        min(rating.updated_at for rating in present_ratings)
-        if present_ratings
-        else timezone.now()
-    )
-    response_unsafe_after = DEFAULT_UNSAFE_AFTER_SECONDS if present_ratings else None
-
-    response = render(
-        request,
-        "favourites/partials/_favourite_list_map.html",
-        {
-            "favourites": favourites,
-            "roster_payload": roster_payload,
-            "rename_url_template": _rename_url_template(),
-        },
-    )
-    return apply_freshness_headers(
-        response, response_generated_at, unsafe_after=response_unsafe_after
-    )
-
-
-@require_htmx
-@require_GET
 def today(request: HttpRequest) -> HttpResponse:
     """Render the Today panel: the user's pinned regions and resorts today.
 
@@ -1181,9 +1041,9 @@ def places(request: HttpRequest) -> HttpResponse:
     pinned, holds a pinned resort in or dropped a pin in, with its danger
     today; under each, the pinned resorts with today's weather and the
     dropped pins with their height; and the pins in no region last, under
-    "Elsewhere" (``apps.favourites.today.build_places``). The roundel's
-    Favourites panel (``favourite_list``) and the Today panel (``today``)
-    are unchanged.
+    "Elsewhere" (``apps.favourites.today.build_places``). Since SNOW-1481
+    it is the favourites sheet's only list, on every screen: the star opens
+    Saved on Places, and the pins-only ``favourite_list`` is gone.
 
     A fixed number of queries however many places there are: every
     favourite in one, today's ratings for their regions in one, the

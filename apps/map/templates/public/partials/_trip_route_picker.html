@@ -1,7 +1,7 @@
 {% load i18n %}
 {% comment %}
-public/partials/_trip_route_picker.html — the Trips tab's +, in the
-installed phone app: a menu of the reader's own routes to plan a trip from.
+public/partials/_trip_route_picker.html — the Trips tab's +: a menu of the
+reader's own routes to plan a trip from.
 
 includes/_sheet_header.html's ``actions_template``, reached through
 includes/_ugc_panel.html's ``header_actions_template`` from
@@ -18,17 +18,11 @@ dismissal (static/js/overflow_menu.js). The items are
 public/partials/_trip_route_picker_items.html, filled by
 static/js/trips_panel.js on every open.
 
-App-only, as includes/_saved_add_roundel.html is beside the other tabs:
-the trips sheet is reached only from the Saved tabs. Its accessible name
-is the panel's add label ("Plan a trip").
+Drawn on every screen, as includes/_saved_add_roundel.html is beside the
+other tabs (SNOW-1481): the trips sheet is reached only from the Saved
+tabs. Its accessible name is the panel's add label ("Plan a trip").
 
 Context (read from the including template's context):
   cta_label — the panel's add label, the trigger's accessible name.
-  preview   — draw it whatever the display mode. For the component
-              library only.
 {% endcomment %}
-{% if preview %}
-    {% include "includes/_overflow_menu.html" with trigger_id="trip-route-picker-trigger" menu_id="trip-route-picker" trigger_label=cta_label trigger_icon="includes/_icon_plus.html" roundel=True wide=True items_template="public/partials/_trip_route_picker_items.html" %}
-{% else %}
-    {% include "includes/_overflow_menu.html" with trigger_id="trip-route-picker-trigger" menu_id="trip-route-picker" trigger_label=cta_label trigger_icon="includes/_icon_plus.html" trigger_extra="app-only" roundel=True wide=True items_template="public/partials/_trip_route_picker_items.html" %}
-{% endif %}
+{% include "includes/_overflow_menu.html" with trigger_id="trip-route-picker-trigger" menu_id="trip-route-picker" trigger_label=cta_label trigger_icon="includes/_icon_plus.html" roundel=True wide=True items_template="public/partials/_trip_route_picker_items.html" %}

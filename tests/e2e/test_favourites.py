@@ -57,7 +57,7 @@ def test_signed_in_add_flow_creates_favourite(
     page = favourites_page.page
     _navigate_home(page, favourites_page.live_server_url)
 
-    # SNOW-658/1479: the roundel opens the panel; add via its visible foot CTA.
+    # SNOW-1481: the star opens Saved › Places; its header + drops a pin.
     page.click("#favourite-add-btn")
     page.locator("[data-panel-add]:visible").click()
     page.wait_for_selector("#favourite-create-form")

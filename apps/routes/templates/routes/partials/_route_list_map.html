@@ -17,8 +17,7 @@ includes/_ugc_panel_row.html, drawing its own separator via ``border-t``
 rather than sitting in a bordered box of its own — rows are not cards, on
 any of the four panels.
 
-No offline-cache sidecar, unlike _favourite_list_map.html's
-``roster_payload``, and none is needed: SNOW-950 stores THIS RESPONSE's
+No offline-cache sidecar, and none is needed: SNOW-950 stores THIS RESPONSE's
 markup verbatim (static/js/routes_offline.js) and routes.js repaints it
 when a later load fails, so every name and measurement the server wrote
 survives the trip without anything here being rebuilt in JavaScript. The

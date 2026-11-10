@@ -1,12 +1,12 @@
 {% load i18n snowdesk_time weather_icons %}
 {% comment %}
-favourites/partials/_places.html — the installed phone app's Places list
-(SNOW-1479).
+favourites/partials/_places.html — Saved › Places (SNOW-1479; on every
+screen since SNOW-1481).
 
 Rendered by apps.favourites.views.places and swapped into the favourites
-sheet's [data-favourites-rows] by static/js/favourites.js when the Saved
-tab opens it (window.pwaFavouritesSheet.open({ list: "places" })). The
-roundel's Favourites panel loads favourites:list instead and is unchanged.
+sheet's [data-favourites-rows] by static/js/favourites.js whenever the sheet
+opens (window.pwaFavouritesSheet.open()): the star roundel and the app's
+Saved tab both open Saved on Places.
 
 Built by apps.favourites.today.build_places: Today's list
 (favourites/partials/_today.html) with the user's dropped pins folded in.

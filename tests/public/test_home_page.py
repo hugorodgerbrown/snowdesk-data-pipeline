@@ -760,8 +760,9 @@ class TestHomePageFavouritesParity:
         # The layers-menu row (SNOW-904) and the panel's switch bound to it.
         assert 'data-overlay-key="favourites"' in content
         assert 'id="map-favourites-overlay-toggle"' in content
-        # SNOW-803: one list shape — the sheet's — so no variant is asked for.
-        assert f'data-favourite-list-url="{reverse("favourites:list")}"' in content
+        # SNOW-1481: the sheet lists Places alone; the pins list is retired.
+        assert "data-favourite-list-url" not in content
+        assert f'data-favourite-places-url="{reverse("favourites:places")}"' in content
         assert "?variant=" not in content
         assert reverse("favourites:geojson") in content
 

@@ -479,44 +479,36 @@ Optional context:
                 id="map-control-group-yours"
                 data-control-group="yours"
             >
-                {# SNOW-414: "Favourites" control — rendered regardless of              #}
-                {# authentication state, so anonymous visitors see the affordance and  #}
-                {# get a sign-in CTA on tap (favourites.js branches on                 #}
-                {# data-favourites-eligible, mirroring #report-btn's                   #}
-                {# data-report-eligible anon branch).                                  #}
-                {# SNOW-658: it opens a PANEL now — the user's saved pins, an "Add a   #}
-                {# favourite" CTA, and a "Show on the map" switch bound to the layers   #}
-                {# menu's Favourites row — rather than jumping straight into pin        #}
-                {# placement. The id is unchanged (favourites.js binds it by id, and    #}
-                {# map_help.js targets it), but the label is: it manages now.           #}
+                {# SNOW-414: the star — rendered regardless of authentication     #}
+                {# state, so anonymous visitors see the affordance and get a       #}
+                {# sign-in CTA on tap (favourites.js branches on                    #}
+                {# data-favourites-eligible).                                       #}
+                {# SNOW-1481: it opens SAVED — Places, Routes, Trips, Observations #}
+                {# and a +, the panel the installed app's Saved tab opens — on the  #}
+                {# tab last used (static/js/saved_panel.js owns the click). Saved   #}
+                {# is four lists and no one layer, so the star carries no           #}
+                {# data-overlay-shown. aria-expanded is true while Saved is open,   #}
+                {# and static/css/map.css shows the filled star then. The id is    #}
+                {# unchanged: favourites.js reads its data-* and map_help.js        #}
+                {# targets it.                                                      #}
                 <div class="map-utility-pill map-utility-pill--favourite">
                     <button
                         id="favourite-add-btn"
                         type="button"
                         class="map-utility-button hover-affordance"
                         data-favourite-create-url="{{ favourite_create_url }}"
-                        data-favourite-list-url="{{ favourite_list_url }}"
                         data-favourite-places-url="{{ favourite_places_url }}"
                         data-favourite-rename-url-template="{{ favourite_rename_url_template }}"
                         data-favourite-delete-url-template="{{ favourite_delete_url_template }}"
                         data-favourites-eligible="{{ favourites_eligible|yesno:'true,false' }}"
                         data-signin-url="{{ favourites_signin_url }}"
-                        aria-label='{% trans "Your favourites" %}'
-                        {# SNOW-658: "the favourites overlay is on the map right  #}
-                        {# now" — one attribute, one meaning, on all four         #}
-                        {# overlay roundels. Server-rendered false because that   #}
-                        {# is the truth with JS off (nothing draws the overlay);  #}
-                        {# map_roundel_overlay_state.js paints the real answer at #}
-                        {# boot and on every change, into the aria-label. No CSS  #}
-                        {# draws it: the on-map ring was dropped by design.       #}
-                        data-overlay-shown="false"
+                        aria-label='{% trans "Saved" %}'
+                        aria-expanded="false"
                     >
-                        {# SNOW-658: the star's paths live in                    #}
-                        {# includes/_icon_favourite.html — the favourites panel  #}
-                        {# this roundel opens carries the same mark in its       #}
-                        {# header (its only identity mark), and one glyph        #}
-                        {# rendered in two places needs one source.              #}
-                        {% include "includes/_icon_favourite.html" with size=18 only %}
+                        {# The star's paths live in includes/_icon_favourite.html: #}
+                        {# outline while Saved is shut, filled while it is open.   #}
+                        {% include "includes/_icon_favourite.html" with size=18 svg_class="map-saved-star" only %}
+                        {% include "includes/_icon_favourite.html" with size=18 filled=True svg_class="map-saved-star map-saved-star--filled" only %}
                     </button>
                 </div>
                 {# SNOW-333: field-report / observations roundel — folded into the      #}
@@ -2166,13 +2158,12 @@ Optional context:
                 <ul class="map-help-list">
                     <li data-help-names="#favourite-add-btn">
                         {% include "includes/_icon_favourite.html" with size=16 only %}
-                        <span>{% blocktrans trimmed %}<b>Pins</b> places and regions you
-                                follow{% endblocktrans %}</span>
+                        <span>{% blocktrans trimmed %}<b>Saved</b> places, routes, trips and
+                                observations{% endblocktrans %}</span>
                     </li>
                     <li data-help-names="#report-btn">
                         {% include "includes/_icon_observation.html" with size=16 only %}
-                        <span>{% blocktrans trimmed %}<b>Observations</b> field reports, yours and
-                                others’{% endblocktrans %}</span>
+                        <span>{% blocktrans trimmed %}<b>Report</b> what you see{% endblocktrans %}</span>
                     </li>
                     <li data-help-names="#route-add-btn">
                         {% include "includes/_icon_route.html" with size=16 only %}

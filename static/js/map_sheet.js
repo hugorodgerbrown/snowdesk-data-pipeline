@@ -1289,8 +1289,9 @@
       // straight away (Hugo, 25 Oct 2026).
       if (target.closest('[data-panel-open], [data-panel-back]')) return;
       // SNOW-1476: the installed phone app's tab bar and the Saved tabs
-      // open and close the panels themselves (static/js/app_tabbar.js); a
-      // tap there is not a tap outside to close on.
+      // open and close the panels themselves (static/js/app_tabbar.js,
+      // static/js/saved_panel.js); a tap there is not a tap outside to
+      // close on.
       if (target.closest('[data-app-tab], [data-saved-tabs]')) return;
       close();
     });

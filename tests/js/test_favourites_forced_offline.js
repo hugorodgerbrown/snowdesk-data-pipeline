@@ -39,7 +39,7 @@ document.body.innerHTML = `
           data-favourites-eligible="true"
           data-signin-url="/sign-in/"
           data-favourite-create-url="${CREATE_URL}"
-          data-favourite-list-url="/favourites/partials/list/?variant=map"
+          data-favourite-places-url="/favourites/partials/places/"
           data-favourite-rename-url-template="/favourites/__UUID__/rename/"
           data-favourite-delete-url-template="/favourites/__UUID__/delete/"></button>
   <div id="map" data-resort-create-url="${RESORT_CREATE_URL}"></div>

@@ -698,7 +698,7 @@ def _favourites_context(request: HttpRequest) -> dict[str, Any]:
 
     Returns:
         Dict with ``favourites_eligible``, ``favourites_geojson_url``,
-        ``favourite_create_url``, ``favourite_list_url``,
+        ``favourite_create_url``,
         ``favourite_places_url``, ``favourite_rename_url_template``,
         ``favourite_delete_url_template``, and ``favourites_signin_url``.
 
@@ -712,13 +712,8 @@ def _favourites_context(request: HttpRequest) -> dict[str, Any]:
         "favourites_eligible": favourites_eligible,
         "favourites_geojson_url": reverse("favourites:geojson"),
         "favourite_create_url": reverse("favourites:create"),
-        # SNOW-658: the roundel opens a panel listing the user's own pins
-        # before it offers to add one, so the panel needs the list endpoint.
-        # The sheet's lean row template is the endpoint's only shape since
-        # SNOW-803 removed the account page that hosted the fuller one.
-        "favourite_list_url": reverse("favourites:list"),
-        # SNOW-1479: the installed phone app's Saved tab opens the same
-        # sheet on Places instead (favourites.js picks the list it loads).
+        # SNOW-1479: Saved → Places, the sheet's only list since SNOW-1481
+        # retired the pins list (favourites:list) the star used to open.
         "favourite_places_url": reverse("favourites:places"),
         "favourite_rename_url_template": reverse(
             "favourites:rename", args=[dummy_uuid]

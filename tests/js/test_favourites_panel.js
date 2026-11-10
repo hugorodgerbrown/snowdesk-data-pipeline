@@ -9,15 +9,10 @@
  *
  * What is worth asserting, and why:
  *
- *   - the rows come from favourites:list over HTMX, so each arrives with its
- *     own rename/delete wiring rather than a JS-built copy of it;
- *   - the request goes to the URL the surface handed the module VERBATIM,
- *     query string and all. The server appends ``?variant=map`` so the sheet
- *     gets the lean row template (no in-page card panel, no "view on the map"
- *     link); a module that rebuilt the path from the URL name would silently
- *     drop it and the sheet would render the manage page's markup. What that
- *     template contains is asserted server-side, in
- *     tests/favourites/test_views.py::TestFavouriteList;
+ *   - the rows come from favourites:places over HTMX, so each arrives with
+ *     its own rename/delete wiring rather than a JS-built copy of it. The
+ *     star roundel opens the sheet through static/js/saved_panel.js
+ *     (SNOW-1481), loaded here after the module as the map bundle does;
  *   - the add CTA and the switch are DELEGATED on the sheet, because the body
  *     is re-cloned on every open — a per-element listener would be bound to
  *     an element the next open throws away;
@@ -28,9 +23,8 @@
  *     "You have no saved favourites yet." would be a wrong statement about
  *     the user's own data;
  *
- *   - SNOW-1479: the app's Saved → Places opens the same sheet with
- *     open({ list: 'places' }), which loads favourites:places (online only,
- *     no cache); the roundel still loads favourites:list. Places' header +
+ *   - SNOW-1479: Saved → Places loads favourites:places (online only, no
+ *     cache); since SNOW-1481 it is the sheet's only list. Places' header +
  *     carries data-panel-add like the foot's, so it drops a pin. A followed
  *     region row puts the map on today and closes the sheet; a place's
  *     Share hands the link to window.pwaShare;
@@ -56,9 +50,6 @@ import '../../static/js/row_focus.js';
 import '../../static/js/row_removed.js';
 import '../../static/js/map_sheet.js';
 
-// As apps.map.views._favourites_context builds it — the map sheet asks for
-// the lean row variant (SNOW-658).
-const LIST_URL = '/favourites/partials/list/?variant=map';
 const PLACES_URL = '/favourites/partials/places/';
 
 document.body.innerHTML = `
@@ -66,7 +57,6 @@ document.body.innerHTML = `
           data-favourites-eligible="true"
           data-signin-url="/sign-in/"
           data-favourite-create-url="/favourites/partials/create/"
-          data-favourite-list-url="${LIST_URL}"
           data-favourite-places-url="${PLACES_URL}"
           data-favourite-rename-url-template="/favourites/partials/__UUID__/rename/"
           data-favourite-delete-url-template="/favourites/partials/__UUID__/delete/"></button>
@@ -96,6 +86,7 @@ document.body.innerHTML = `
 globalThis.htmx = { ajax: vi.fn(() => Promise.resolve()), process: vi.fn() };
 
 await import('../../static/js/favourites.js');
+await import('../../static/js/saved_panel.js');
 
 const btn = document.getElementById('favourite-add-btn');
 const sheet = document.getElementById('favourite-sheet');
@@ -150,16 +141,13 @@ describe('tapping the roundel opens the panel, not the create form', () => {
     expect(sheet.querySelector('#favourite-create-form')).toBeNull();
   });
 
-  it('loads the rows from favourites:list, into the rows container', () => {
+  it('loads the rows from favourites:places, into the rows container', () => {
     btn.click();
 
     expect(globalThis.htmx.ajax).toHaveBeenCalledTimes(1);
     const [method, url, opts] = globalThis.htmx.ajax.mock.calls[0];
     expect(method).toBe('GET');
-    // Verbatim, query string included — the ?variant=map the server put on
-    // it is what makes the sheet get the lean row template.
-    expect(url).toBe(LIST_URL);
-    expect(url).toContain('variant=map');
+    expect(url).toBe(PLACES_URL);
     expect(opts.target).toBe(rows());
     expect(opts.swap).toBe('innerHTML');
   });
@@ -272,11 +260,9 @@ describe('removing a row from the panel', () => {
   it('re-reads the list, so the empty state arrives with the last row', () => {
     // The row's own hx-swap empties one <li> and nothing else, so a panel
     // that has just lost its last pin keeps rendering as a list of none:
-    // favourites:list's empty state is a server-side clause and only a
-    // fresh response can carry it. Hugo, deleting the last row: it
-    // "doesn't show until you refresh the page". The refetch is also what
-    // re-emits the roster sidecar favourites_offline.js reconciles its
-    // cached copy against.
+    // favourites:places' empty state is server-side and only a fresh
+    // response can carry it. Hugo, deleting the last row: it "doesn't show
+    // until you refresh the page".
     btn.click();
     const container = rows();
     container.innerHTML =
@@ -293,7 +279,7 @@ describe('removing a row from the panel', () => {
     );
 
     expect(globalThis.htmx.ajax).toHaveBeenCalledTimes(1);
-    expect(globalThis.htmx.ajax.mock.calls[0][1]).toBe(LIST_URL);
+    expect(globalThis.htmx.ajax.mock.calls[0][1]).toBe(PLACES_URL);
   });
 
   it('stays quiet for a request that came from outside the rows', () => {
@@ -493,30 +479,21 @@ describe("the app's Saved → Places (SNOW-1479)", () => {
     if (window.pwaFavouritesSheet.isOpen()) window.pwaFavouritesSheet.close();
   });
 
-  it('loads favourites:places, straight over HTMX', () => {
-    window.pwaFavouritesSheet.open({ list: 'places' });
+  it('loads favourites:places straight over HTMX, with no cached paint', () => {
+    window.pwaPanelRows = { load: vi.fn(), warm: vi.fn() };
+    window.pwaFavouritesSheet.open();
 
     expect(globalThis.htmx.ajax).toHaveBeenCalledTimes(1);
     const [method, url, opts] = globalThis.htmx.ajax.mock.calls[0];
     expect(method).toBe('GET');
     expect(url).toBe(PLACES_URL);
     expect(opts.target).toBe(rows());
-    expect(rows().dataset.favouritesList).toBe('places');
-  });
-
-  it('leaves the roundel on favourites:list', () => {
-    window.pwaFavouritesSheet.open({ list: 'places' });
-    window.pwaFavouritesSheet.close();
-    globalThis.htmx.ajax.mockClear();
-
-    btn.click();
-
-    expect(globalThis.htmx.ajax.mock.calls[0][1]).toBe(LIST_URL);
-    expect(rows().dataset.favouritesList).toBe('pins');
+    expect(window.pwaPanelRows.load).not.toHaveBeenCalled();
+    delete window.pwaPanelRows;
   });
 
   it("starts drop-a-pin from the header's +", () => {
-    window.pwaFavouritesSheet.open({ list: 'places' });
+    window.pwaFavouritesSheet.open();
 
     sheet.querySelector('[data-testid="saved-add-roundel"]').click();
 
@@ -526,7 +503,7 @@ describe("the app's Saved → Places (SNOW-1479)", () => {
 
   it('puts the map on today and steps aside when a region row is followed', () => {
     window.pwaTodayPanel = { toToday: vi.fn() };
-    window.pwaFavouritesSheet.open({ list: 'places' });
+    window.pwaFavouritesSheet.open();
     rows().innerHTML =
       '<a href="/region/CH-1/" data-panel-open="region" id="region-row">Valais</a>';
     const link = document.getElementById('region-row');
@@ -540,7 +517,7 @@ describe("the app's Saved → Places (SNOW-1479)", () => {
 
   it("hands a place's link to the share sheet", async () => {
     window.pwaShare = { shareOrCopy: vi.fn(() => Promise.resolve('shared')) };
-    window.pwaFavouritesSheet.open({ list: 'places' });
+    window.pwaFavouritesSheet.open();
     rows().innerHTML =
       '<button data-place-share="/p/abc/" data-place-share-title="Verbier">Share</button>';
 

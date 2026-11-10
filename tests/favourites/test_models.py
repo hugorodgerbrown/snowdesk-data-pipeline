@@ -201,8 +201,8 @@ class TestDroppedPins:
 class TestRetiredResortQuerysets:
     """SNOW-1404: the querysets that read a favourite's resort's retirement."""
 
-    def test_listed_panel_rows_and_alertable(self) -> None:
-        """A retired resort's favourite is panel-only, never listed or alerted."""
+    def test_listed_and_alertable(self) -> None:
+        """A retired resort's favourite is never listed or alerted."""
         user = UserFactory.create()
         live = FavouriteFactory.create(
             user=user, resort=ResortFactory.create(), alerts=True
@@ -218,7 +218,6 @@ class TestRetiredResortQuerysets:
         mine = Favourite.objects.for_user(user)
 
         assert set(mine.listed()) == {live, pin}
-        assert set(mine.panel_rows()) == {gone, pin}
         assert set(mine.alertable()) == {live}
         assert gone.is_retired_resort and not live.is_retired_resort
         assert not pin.is_retired_resort

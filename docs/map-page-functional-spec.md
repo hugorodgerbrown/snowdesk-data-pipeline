@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-11-08
+last-reviewed: 2026-11-10
 ---
 
 # Map page — functional specification
@@ -93,8 +93,8 @@ lists the signed-in reader's dropped pins under "Pinned places" (SNOW-1264
 "Pinned resorts", then the pinned regions as region rows under "Pinned
 regions", the selected region marked with a bar at its left edge. A pinned
 resort row opens that resort, as a typed resort match does. A pinned
-resort is not in the Favourites panel, which lists dropped pins, and is
-drawn on the map as a blue resort dot rather than a star
+resort is listed in Saved › Places under its region (SNOW-1481; the pins-only
+Favourites panel left it out), and is drawn on the map as a blue resort dot rather than a star
 ([why](decisions/a-pinned-resort-is-found-in-search.md)). Typing matches a
 dropped pin by its name, under "Pinned places", and never an unnamed one;
 picking a pin flies to it and opens its sheet, as the
@@ -244,7 +244,7 @@ return to it across sessions. It is the user's own private data.
 - **What it shows.** A `★` marker at the saved point, labelled with the
   user's chosen name. On a desktop, tapping it opens a pinned popup holding
   the name and when it was saved (SNOW-658) — nothing else; the point's
-  weather page is one tap from the favourites panel. On a phone (below
+  weather page is one tap from Saved › Places. On a phone (below
   640px) the tap opens the **place sheet** (SNOW-1100) instead, at peek:
   the region's danger tile, the pin's name over the region's code, level
   and name, the panel row's own "…" menu (Share → Rename → Delete, acting
@@ -259,13 +259,20 @@ return to it across sessions. It is the user's own private data.
   chip's region panel, and SNOW-1173 retired that panel).
 - **Who can use it.** Signed-in users — authentication is the whole gate
   since SNOW-724 retired the rollout flag. Anonymous visitors see the
-  roundel and the panel, get a sign-in prompt inside it, and their
-  browsers never fetch the per-user endpoint.
-- **When / how.** Eligible users get an "Add favourite" control; placing
-  a pin, dragging to refine, and naming it creates the favourite (rate-
-  limited to 10 creates per minute). Renaming, removing and sharing live in
-  the favourites panel's row menu, and on a phone in the place sheet's,
-  never in the desktop popup.
+  star and Saved, get a sign-in prompt inside it, and their browsers never
+  fetch the per-user endpoint.
+- **When / how.** The star roundel opens **Saved** (SNOW-1481): Places,
+  Routes, Trips and Observations, the panel the installed app's Saved tab
+  opens, on the tab last used and Places at first, with the star filled
+  while it is open. On a desktop it docks left under search; in a phone
+  browser it slides up to at most ¾ of the screen, with no snap heights,
+  and its × closes it
+  ([why](decisions/saved-is-one-panel-on-every-screen.md)). Places' + drops
+  a pin: placing it, dragging to refine and naming it creates the
+  favourite (rate-limited to 10 creates per minute). Renaming, removing and
+  sharing live in Places' row menu, and on a phone in the place sheet's,
+  never in the desktop popup. Offline, Places says it couldn't be loaded
+  rather than showing cached pins.
 - **Default on.** Unlike the public overlays, favourites default to
   _visible_ for eligible users and are fetched at load — it is the user's
   own saved data, not a public dataset they must opt into.
@@ -543,7 +550,7 @@ list.
 
 | Surface | Visibility gate | Create/write | Default overlay state | Data class |
 |---------|-----------------|--------------|-----------------------|------------|
-| Favourites | Signed in | Owner only, 10/min | On (eligible users) — switched from the favourites panel, not the layer menu | Private, per-user |
+| Favourites | Signed in | Owner only, 10/min | On (eligible users) — switched from Saved › Places or the layers menu | Private, per-user |
 | Resorts | Public | Superusers, via the `/map/?edit=resorts` editor | Off | Shared reference |
 | Community reports | Public | via Report flow below | Off — switched from the field-observation panel, not the layer menu | Anonymised, public |
 | Routes | Signed in | Owner only, 10/min upload | Off — switched from the routes panel | Private, per-user |
@@ -742,8 +749,8 @@ toggle** (`.map-control-group`; why:
 |---------|---------|------------------------|
 | the map (`#map-control-group-map`) | Locate me (`#locate-toggle`) | **yes** |
 | the map | Layers (`#basemap-pill`) | **yes** |
-| yours (`#map-control-group-yours`) | Favourites (`#favourite-add-btn`) | no |
-| yours | Field observations (`#report-btn`) | no |
+| yours (`#map-control-group-yours`) | Saved, the star (`#favourite-add-btn`, SNOW-1481) | no |
+| yours | Field observations (`#report-btn`) — starts a report in one tap; your reports are in Saved › Observations (SNOW-1481) | no |
 | yours | Routes (`#route-add-btn`, SNOW-686) | no |
 | yours | Downloads (`_map_custom_download_control.html` — opens the downloads sheet, SNOW-634) | no |
 | foot | Expand / collapse toggle (`#map-controls-toggle`) | **yes** |
@@ -887,8 +894,9 @@ needs: how close the camera is to the next whole zoom.
 
 ## 3.7 The overlay panels, and why they differ by viewport
 
-Downloads, Favourites, Field observations and Routes each open a panel from
-their own roundel in the bottom-right stack. The four share one shape — a
+Downloads, Favourites (Saved, since SNOW-1481), Field observations and
+Routes each open a panel from their own roundel in the bottom-right stack
+(the binoculars start a report instead since SNOW-1481). The four share one shape — a
 header carrying the roundel's own mark, a list of what the user has, and an
 "add" call to action — and **two layouts**, chosen by viewport width at the
 `sm` breakpoint (640px). The weather sheet is built on the same
@@ -931,10 +939,21 @@ panel covers it; a reader who wants those controls closes the panel. What
 the roundels open (the legend card, the zoom flyout, the calendar) still
 opens beside the column. The tour offer withdraws for it, and search's
 results drop over it. A region framed from search lands beside the column,
-not under it. The lists and forms — Downloads, Favourites, Field
-observations, Routes, the terrain filter and the layers sign-in — stay
-inset on the **right**, beside the roundel column that opens them, with the
-layers menu. The partial's `side="left"` is what marks a selection sheet.
+not under it. The lists and forms — Downloads, the terrain filter and the
+layers sign-in — stay inset on the **right**, beside the roundel column that
+opens them, with the layers menu. The partial's `side="left"` is what marks
+a selection sheet.
+
+**Saved docks left too (SNOW-1481).** The star opens Saved — the favourites,
+routes, trips and report sheets as one panel — and it docks in the same
+left column under search, though its roundel is on the right: an exception
+to "beside what opened it", Hugo's call, so that Saved sits where the
+installed app's Saved sits and the selection column holds the reader's own
+lists as well as what they picked. Below `sm`, in a phone browser, Saved
+slides up to at most ¾ of the screen (`75dvh`) with no detents, so the map
+stays in view above it, and its × closes it
+([why](decisions/saved-is-one-panel-on-every-screen.md)). The report the
+binoculars start opens in the same sheet.
 
 **This difference is deliberate, and it is not a bug in either direction.**
 "The panel fills the screen on my phone" and "the panel doesn't fill the
@@ -1012,9 +1031,11 @@ than more on one.
 
 ## 3.8 Overlay roundel state — is it on the map right now?
 
-Each of the four roundels — downloads, favourites, field observations and,
-since SNOW-687, routes — states whether **its own** overlay is currently
-drawn, in its accessible label ("Your favourites — shown on the map"). One
+Each of the overlay roundels — downloads, field observations and, since
+SNOW-687, routes — states whether **its own** overlay is currently drawn, in
+its accessible label ("Your routes — shown on the map"). The star did too
+until SNOW-1481: it opens Saved, four lists and no one layer, so it carries
+no overlay state; its `aria-expanded` says whether Saved is open. One
 signal, one meaning, on all of them. **Nothing on the roundel draws it**:
 the coloured rim that used to was removed with the two-capsule column. A
 rim on one roundel inside a shared capsule read as a selected tab, and the

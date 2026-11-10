@@ -2,7 +2,7 @@
 name: design-system
 description: Design handover — editorial and interaction principles, icon vs ellipsis rule, design tokens, the component layer, field guidance
 status: current
-last-reviewed: 2026-11-09
+last-reviewed: 2026-11-10
 ---
 
 
@@ -298,7 +298,7 @@ differ in side (below).
 | Kind | Opened by | On a phone | Detents | Closed by | Today |
 |---|---|---|---|---|---|
 | **Object sheet** | Tapping a thing on the map | Full width, slides up from the foot, covers the map controls at half and full | `peek,half,full`, narrowed by content | Its ×, a drag below peek | Region, route, place (resort, saved pin), weather |
-| **Roundel panel** | A map-control roundel | Docked full width at the foot, over the roundel column (SNOW-1106) | None | Its ×, or the roundel that opened it (a toggle) | Pins, observations, routes, downloads, terrain filter |
+| **Roundel panel** | A map-control roundel | Docked full width at the foot, over the roundel column (SNOW-1106); Saved rises to at most ¾ of the screen (SNOW-1481) | None | Its ×, or the roundel that opened it (a toggle) | Saved (Places, Routes, Trips, Observations), downloads, terrain filter |
 | **Form panel** | An action that starts a task | Docked at the foot | None | Submit, cancel, or the shared dismissals (×, Escape, a tap outside, another overlay opening); never a drag | Report, add or rename favourite, sign in |
 | **Tab panel** | A tab of the installed phone app's bar (SNOW-1476) | Full height between the header and the bar | None | Its tab (a toggle), the Map tab, another tab; no × (SNOW-1479) | Saved (Places, Routes, Trips, Observations); Help opens the "?" menu instead |
 
@@ -333,29 +333,38 @@ against them would be its own ticket.
 object sheet is a **selection**, so it docks in the left column under the
 search pill it was picked from; roundel and form panels inset on the right,
 beside the roundel column that opened them. The left side is what you have
-selected; the right is the map's controls and your own lists. Four rules
+selected; the right is the map's controls. Four rules
 come with it: a surface opens beside its trigger; one object sheet at a
 time, at every width (the route panel shares the column); on a desktop a
 side panel covers the roundels under it and moves nothing (8 Nov 2026); and a sheet takes focus without drawing a ring round itself.
+
+**One exception to the first rule: Saved docks left (SNOW-1481).** The star
+roundel is on the right, but Saved, the reader's own lists, opens in the
+left column under search, where the installed app's Saved sits on a phone
+(Hugo's call). In a phone browser it slides up to at most ¾ of the screen.
+Why: [`docs/decisions/saved-is-one-panel-on-every-screen.md`](decisions/saved-is-one-panel-on-every-screen.md).
 Why, and the option declined:
 [`docs/decisions/a-panel-opens-beside-what-opened-it.md`](decisions/a-panel-opens-beside-what-opened-it.md).
 
 **Tab panel.** Only in the installed app on a phone, where the bar
-replaces the roundels that would otherwise open these lists. The tab stays
+replaces the roundels that would otherwise open these lists; elsewhere the
+star opens the same Saved panel as a roundel panel (SNOW-1481). The tab stays
 in charge, as a roundel does: its tab closes it and another tab swaps it.
 A swap never closes and reopens the card: every tab panel has the same
 box, so the card stays put and only its content changes, fading in on a
 tab and replaced outright on a Saved tab (Hugo, 8 Nov 2026). Object sheets still open over
 the map above the bar.
 
-Since SNOW-1479 a Saved tab panel's header is one row: four icon tabs
+Since SNOW-1479 a Saved panel's header is one row: four icon tabs
 (`includes/_saved_tabs.html` — Places, Routes, Trips, Observations; only
 the selected one shows its name) and a + roundel
 (`includes/_saved_add_roundel.html`) on the right. The sheet's own title,
-subtitle, section label and × are `.app-hidden` there, as is the foot's
-add button the + replaces. Each tab's + does that list's add: Places drops
-a pin, Routes opens the Find / Create / Upload menu, Trips switches to
-Routes (a trip is planned from a route), Observations starts a report.
+subtitle and section label are hidden, on every screen since SNOW-1481, as
+is the foot's add button the + replaces; the × is `.app-hidden`, kept in a
+phone browser to close the panel. Each tab's + does that list's add: Places
+drops a pin, Routes opens the Find / Create / Upload menu, Trips opens a
+menu of the reader's routes to plan a trip from, Observations starts a
+report.
 Why:
 [`docs/decisions/the-installed-phone-app-has-a-tab-bar.md`](decisions/the-installed-phone-app-has-a-tab-bar.md).
 

@@ -584,7 +584,7 @@ class TestIconSegmentedOption:
 
 
 class TestSavedTabs:
-    """includes/_saved_tabs.html: four icon tabs, app-only, one checked."""
+    """includes/_saved_tabs.html: four icon tabs, one checked (SNOW-1479)."""
 
     def test_four_tabs_and_the_current_one_checked(self) -> None:
         html = render_to_string(
@@ -599,7 +599,8 @@ class TestSavedTabs:
         assert values == ["places", "routes", "trips", "observations"]
         checked = re.findall(r'value="(\w+)"\s+class="peer sr-only"\s+checked', html)
         assert checked == ["trips"]
-        assert 'class="app-only' in html
+        # SNOW-1481: drawn on every screen, not the installed app alone.
+        assert "app-only" not in html
 
     def test_no_trips_option_for_a_reader_who_is_not_signed_in(self) -> None:
         html = render_to_string("includes/_saved_tabs.html", {"saved_tab": "places"})

@@ -2,13 +2,17 @@
  * static/js/favourites_offline.js — Offline read cache for favourites
  * (SNOW-418).
  *
- * Caches every favourite the map's pins sheet fetches — the roster
- * (``favourites:list``) and each opened detail card (``favourites:card``)
- * — into the ``data:favourites`` IndexedDB store (SNOW-375's ``db.js``,
- * schema v2), keyed by the favourite's uuid. When either HTMX request
- * fails (offline, or a 5xx from a flaky connection), this script repaints
- * the same target element from the cached record instead of leaving
- * HTMX's own error state in place.
+ * Caches each favourite detail card fetched (``favourites:card``) into the
+ * ``data:favourites`` IndexedDB store (SNOW-375's ``db.js``, schema v2),
+ * keyed by the favourite's uuid. When that HTMX request fails (offline, or
+ * a 5xx from a flaky connection), this script repaints the same target
+ * element from the cached record instead of leaving HTMX's own error state
+ * in place.
+ *
+ * SNOW-1481 retired the roster half: the map sheet's pins list
+ * (``favourites:list``) and its ``favourites-roster-cache`` sidecar are
+ * gone, the sheet lists Places, and Places is online only, as Today is —
+ * offline it says it couldn't be loaded rather than showing cached pins.
  *
  * This is the documented relaxation of the SW "safety data is
  * network-only" rule to "cached, with explicit staleness" — see
@@ -19,25 +23,18 @@
  *
  * Write-through
  * --------------
- * On ``htmx:afterOnLoad`` this reads the ``favourites-roster-cache`` /
- * ``favourite-card-cache`` ``json_script`` sidecars the server renders
- * alongside the swapped HTML (``favourites/views.py``), and upserts each
- * record into ``data:favourites``. A card update merges onto any existing
- * roster record for the same uuid (the card is the more detailed source,
- * so its fields win).
- *
- * The roster sidecar carries the user's whole current list, so the same
- * pass also drops any cached record the roster omits. Deleting a
- * favourite is an online-only ``hx-post`` with no cache-eviction step of
- * its own, so this reconcile is what keeps a deleted pin out of the
- * offline roster below.
+ * On ``htmx:afterOnLoad`` this reads the ``favourite-card-cache``
+ * ``json_script`` sidecar the server renders alongside the swapped HTML
+ * (``favourites/views.py``), and upserts the record into
+ * ``data:favourites``, merged onto any existing record for the same uuid
+ * (the card's fields win).
  *
  * Offline read
  * ------------
  * On ``htmx:sendError`` / ``htmx:responseError`` (network failure or a
- * non-2xx response) this inspects the failed request's path to decide
- * whether it was the roster or a single card, reads the cached
- * record(s), and renders a minimal offline card via
+ * non-2xx response) this inspects the failed request's path, and for a
+ * card request reads the cached record and renders a minimal offline card
+ * via
  * ``renderOfflineCard`` — reusing the existing ``.danger-tile`` CSS +
  * design tokens rather than re-implementing the full card template.
  *
@@ -49,9 +46,8 @@
 
   const STORE = 'data:favourites';
   const RESOURCE = 'favourites';
-  const LIST_PATH_SUFFIX = '/partials/list/';
   const CARD_PATH_SUFFIX = '/card/';
-  // SNOW-722: the ownership prefix. The two suffixes above are matched with
+  // SNOW-722: the ownership prefix. The suffix above is matched with
   // bare ``indexOf``, and this module's error handlers are bound to
   // ``document.body`` — so they see EVERY failed HTMX request on the page,
   // not just the favourites ones. ``/routes/partials/list/`` contains
@@ -111,29 +107,8 @@
   }
 
   /**
-   * Delete every cached record whose uuid is absent from ``keep``.
-   *
-   * ``db.js`` exposes single-key operations only, so this is a second pass
-   * over the store rather than part of the roster's write transaction.
-   * Both passes are idempotent and every later roster swap repeats the
-   * reconcile, so a failure between them self-corrects.
-   *
-   * @param {Set<string>} keep - uuids present in the roster payload.
-   * @returns {Promise<void>}
-   */
-  async function _evictAbsent(keep) {
-    const cached = await window.pwaDb.getAll(STORE);
-    for (const record of cached) {
-      if (record && record.uuid && !keep.has(record.uuid)) {
-        await window.pwaDb.delete(STORE, record.uuid);
-      }
-    }
-  }
-
-  /**
-   * Write-through: upsert the roster + card sidecars found under ``root``
-   * into ``data:favourites``, and reconcile the store against the roster.
-   * Never throws — every failure is swallowed so a broken cache write
+   * Write-through: upsert the card sidecar found under ``root`` into
+   * ``data:favourites``. Never throws — every failure is swallowed so a broken cache write
    * can't break the HTMX swap it rides on.
    *
    * @param {ParentNode} root
@@ -142,25 +117,8 @@
   async function _syncFromDom(root) {
     if (!dbReady()) return;
     try {
-      const roster = _readJsonScript(root, 'favourites-roster-cache');
       const card = _readJsonScript(root, 'favourite-card-cache');
       let wrote = false;
-
-      if (Array.isArray(roster)) {
-        const rosterUuids = new Set();
-        for (const record of roster) {
-          if (record && record.uuid) {
-            rosterUuids.add(record.uuid);
-            await window.pwaDb.put(STORE, record);
-            wrote = true;
-          }
-        }
-        // The roster is the user's full list, so anything cached and not
-        // in it has been deleted since the last swap. A card-only swap
-        // never reaches here — it says nothing about which favourites
-        // exist, so it must not evict.
-        await _evictAbsent(rosterUuids);
-      }
 
       if (card && card.uuid) {
         let merged = card;
@@ -386,8 +344,8 @@
   }
 
   /**
-   * Offline-read fallback: on a failed roster or card request, repaint
-   * the target element from the cached ``data:favourites`` record(s).
+   * Offline-read fallback: on a failed card request, repaint the target
+   * element from the cached ``data:favourites`` record.
    * Leaves HTMX's own failure UI in place when the cache has nothing to
    * offer (not ready, or no matching record).
    *
@@ -399,31 +357,13 @@
     const path = _requestPath(evt);
     if (!path) return;
     // SNOW-722: ownership guard — see _isFavouritesPath. Without it the bare
-    // suffix matches below claim /routes/partials/list/ as well.
+    // suffix match below would claim another app's card path as well.
     if (!_isFavouritesPath(path)) return;
 
     const detail = evt.detail || {};
     const target = detail.target || (detail.elt && detail.elt.parentNode);
 
     try {
-      if (path.indexOf(LIST_PATH_SUFFIX) !== -1) {
-        const records = await window.pwaDb.getAll(STORE);
-        if (!records || records.length === 0 || !target) return;
-        // One endpoint, one outline depth — h2.
-        //
-        // The map sheet swaps this list into [data-favourites-rows], inside
-        // a panel whose title is a <span> (includes/_sheet_header.html), so
-        // a card in it has no section heading to rank under. (It was also
-        // h2 on /account/favourites/, whose only heading above the list was
-        // the page <h1>, until SNOW-803 removed that page; the h3 branch
-        // before that ranked under the account hub's <h2>.)
-        target.textContent = '';
-        records.forEach((record) =>
-          target.appendChild(renderOfflineCard(record, 'h2'))
-        );
-        return;
-      }
-
       if (path.indexOf(CARD_PATH_SUFFIX) !== -1) {
         const uuid = _uuidFromCardPath(path);
         if (!uuid) return;

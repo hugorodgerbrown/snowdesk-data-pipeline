@@ -54,6 +54,7 @@ from django.test import Client
 from django.urls import reverse
 
 from apps.public.templatetags.components import icon_button_classes
+from tests.factories import UserFactory
 
 # The three panel bodies, by the <template> id each surface renders them
 # in, each with the glyph its own roundel carries — one distinctive path
@@ -154,16 +155,17 @@ DEMO_ROWS_TEMPLATE = "public/partials/_ugc_panel_demo_rows.html"
 _CLASS_RE = re.compile(r"""class=(?:"([^"]*)"|'([^']*)')""")
 
 # SNOW-1479: tokens that say where a part is drawn or how it is trimmed
-# rather than what it is. A Saved panel's title, ×, strip, label and foot
-# carry `app-hidden` (the installed phone app draws its tabs instead), and
-# its × sits in the header's action group, which takes the ×'s own -12px
-# trim. Neither makes the chrome a different chrome.
-_PLACEMENT_TOKENS = frozenset({"app-hidden", "-mt-3", "-mr-3"})
+# rather than what it is. A Saved panel's × carries `app-hidden` (the
+# installed phone app's tab bar closes it); its section label is `hidden`
+# on every screen since SNOW-1481, as its title and strip are by the
+# attribute; and its × sits in the header's action group, which takes the
+# ×'s own -12px trim. None makes the chrome a different chrome.
+_PLACEMENT_TOKENS = frozenset({"app-hidden", "hidden", "-mt-3", "-mr-3"})
 
 # SNOW-1479: the Saved tabs and the + roundel a Saved panel's header carries
-# for the installed phone app alone (`app-only`). Taken out of a panel's
-# body before it is read, so these guards check the panel every other
-# reader sees: its own glyph, one add control, the five parts in order.
+# (on every screen since SNOW-1481). Taken out of a panel's body before it
+# is read, so these guards check the skeleton the panels share: its own
+# glyph, one add control, the five parts in order.
 _APP_ONLY_HEADER_RE = re.compile(
     r"<fieldset[^>]*data-saved-tabs.*?</fieldset>"
     r"|<button(?:(?!</button>).)*?data-testid=\"saved-add-roundel\".*?</button>",
@@ -201,15 +203,16 @@ def _panel_body(html: str, template_id: str) -> str:
 
     Returns:
         Everything between that element's open and close tags, less the
-        installed app's Saved tabs and + roundel and its `app-hidden` marks
-        (SNOW-1479).
+        Saved tabs and + roundel and their `app-hidden` and `hidden` class
+        marks (SNOW-1479, SNOW-1481).
 
     """
     opener = f'<template id="{template_id}">'
     start = html.index(opener) + len(opener)
     body = html[start : html.index("</template>", start)]
     body = _APP_ONLY_HEADER_RE.sub("", body)
-    return body.replace("app-hidden ", "").replace(" app-hidden", "")
+    body = body.replace("app-hidden ", "").replace(" app-hidden", "")
+    return re.sub(r'(class="[^"]*?) hidden\b', r"\1", body)
 
 
 @pytest.fixture(scope="module")
@@ -556,6 +559,76 @@ class TestUgcPanelSkeleton:
             body = _panel_body(home_html, template_id)
             assert "text-lg font-semibold text-text-1" in body
             assert "text-sm font-semibold text-text-1" not in body
+
+
+# SNOW-1481: Saved — the four sheets behind the star and the app's Saved tab.
+SAVED_LIST_TEMPLATES = (
+    "favourite-list-template",
+    "route-list-template",
+    "trips-sheet-template",
+    "report-list-template",
+)
+SAVED_SHEET_IDS = ("favourite-sheet", "route-sheet", "trips-sheet", "report-sheet")
+
+
+@pytest.fixture()
+def signed_in_home_html(db: None) -> str:
+    """Return the map page for a signed-in reader, who has the trips sheet.
+
+    Args:
+        db: pytest-django's database fixture.
+
+    Returns:
+        The decoded response body.
+
+    """
+    client = Client(SERVER_NAME="localhost")
+    client.force_login(UserFactory.create())
+    return client.get(reverse("public:map")).content.decode()
+
+
+class TestSavedOnEveryScreen:
+    """SNOW-1481: Saved is one panel on every screen, not the app's alone."""
+
+    @pytest.mark.parametrize("template_id", SAVED_LIST_TEMPLATES)
+    def test_the_tabs_and_plus_are_not_app_only(
+        self, signed_in_home_html: str, template_id: str
+    ) -> None:
+        """The tabs and the header's + draw on a desktop and a phone browser."""
+        opener = f'<template id="{template_id}">'
+        start = signed_in_home_html.index(opener)
+        body = signed_in_home_html[
+            start : signed_in_home_html.index("</template>", start)
+        ]
+        assert "data-saved-tabs" in body
+        assert "app-only" not in body
+
+    @pytest.mark.parametrize("template_id", SAVED_LIST_TEMPLATES)
+    def test_only_the_close_keeps_app_hidden(
+        self, signed_in_home_html: str, template_id: str
+    ) -> None:
+        """In the app the tab bar closes the sheet; elsewhere the × does."""
+        opener = f'<template id="{template_id}">'
+        start = signed_in_home_html.index(opener)
+        body = signed_in_home_html[
+            start : signed_in_home_html.index("</template>", start)
+        ]
+        marked = re.findall(r"<[a-z]+\b[^>]*\bapp-hidden\b[^>]*>", body, re.S)
+        assert len(marked) == 1, marked
+        assert 'data-action="dismiss"' in marked[0]
+
+    @pytest.mark.parametrize("sheet_id", SAVED_SHEET_IDS)
+    def test_each_sheet_docks_left_with_no_detents(
+        self, signed_in_home_html: str, sheet_id: str
+    ) -> None:
+        """A roundel panel under search on a desktop: no peek, half or full."""
+        match = re.search(
+            rf'<div[^>]*\bid="{sheet_id}"[^>]*>', signed_in_home_html, re.S
+        )
+        assert match, sheet_id
+        tag = match.group(0)
+        assert 'data-sheet-side="left"' in tag
+        assert "data-detents" not in tag
 
 
 class TestRowDisclosureSlot:
