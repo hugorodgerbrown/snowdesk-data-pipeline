@@ -807,10 +807,10 @@
     // SNOW-1487: the last sync's steps replace the one before's; a sync
     // that finished them all clears them.
     if (Array.isArray(verified.steps)) {
-      var ran = Array.isArray(verified.ran) ? verified.ran : null;
-      var kept = ran
+      var ran = verified.ran;
+      var kept = Array.isArray(ran)
         ? stepsOf(prior.steps).filter(function (entry) {
-            return ran.indexOf(entry.step) < 0;
+            return /** @type {Array<string>} */ (ran).indexOf(entry.step) < 0;
           })
         : [];
       var steps = kept.concat(verified.steps);
