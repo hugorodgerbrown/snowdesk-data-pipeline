@@ -4743,7 +4743,7 @@ msgstr ""
 msgid "What's it like?"
 msgstr ""
 
-msgid "Share with everyone here"
+msgid "Observations are visible to other users."
 msgstr ""
 
 #, python-format
