@@ -28,7 +28,15 @@
  *
  * A map overlay like the welcome card it shares a corner with, so it
  * registers with window.pwaMapOverlays: opening anything else closes it.
- * Escape and its "×" close it too.
+ * Escape and its "×" close it too: the corner × from 640px
+ * (`data-help-menu-close`), and on a phone the header's
+ * (`data-action="help-menu-close"`, includes/_sheet_header.html).
+ *
+ * ON A PHONE IT IS THE SHEETS' CARD (SNOW-1486), with a grab handle in its
+ * header (`data-help-menu-drag`). A drag down there closes it at the same
+ * distance a Saved sheet closes from half (map_sheet.js's settle, through
+ * window.pwaSheetDetentsCore when it is on the page): the card follows the
+ * finger, and on release it either closes or springs back.
  */
 (function mapHelpMenuInit() {
   'use strict';
@@ -66,7 +74,7 @@
   menu.addEventListener('click', (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
-    if (target.closest('[data-help-menu-close]')) {
+    if (target.closest('[data-help-menu-close], [data-action="help-menu-close"]')) {
       close();
       toggle.focus();
       return;
@@ -91,6 +99,99 @@
       window.setTimeout(() => window.pwaMapLegend?.open(), 0);
     }
   });
+
+  // ---------------------------------------------------------------------
+  // A drag down on the phone header closes it (SNOW-1486).
+  // ---------------------------------------------------------------------
+
+  // The fraction of its height a card must keep to stay open, and the
+  // fling projection: sheet_detents_core.js's, which map_sheet.js uses.
+  const CLOSE_FRACTION_FALLBACK = 0.5;
+  const PROJECTION_MS_FALLBACK = 150;
+  // A pointer that travels less than this is a press, not a drag.
+  const DRAG_SLOP_PX = 4;
+
+  /** @type {{ id: number, startY: number, height: number, moved: boolean, lastY: number, lastT: number, velocity: number }|null} */
+  let drag = null;
+
+  /** @returns {HTMLElement|null} The card that moves under the finger. */
+  const card = () => menu.querySelector('.map-tour-offer-card');
+
+  /**
+   * Whether a drag that leaves the card `height` px tall, moving at
+   * `velocity` px/ms (positive grows it), closes it.
+   *
+   * @param {number} startHeight
+   * @param {number} height
+   * @param {number} velocity
+   * @returns {boolean}
+   */
+  const closes = (startHeight, height, velocity) => {
+    const core = window.pwaSheetDetentsCore;
+    if (core && typeof core.settle === 'function') {
+      return core.settle({
+        detents: ['half'],
+        heights: { half: startHeight },
+        height: height,
+        velocity: velocity,
+      }) === 'close';
+    }
+    const projected = height + velocity * PROJECTION_MS_FALLBACK;
+    return projected < startHeight * CLOSE_FRACTION_FALLBACK;
+  };
+
+  const release = () => {
+    const el = card();
+    if (el) el.style.removeProperty('transform');
+    drag = null;
+  };
+
+  menu.addEventListener('pointerdown', (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target || !target.closest('[data-help-menu-drag]')) return;
+    if (target.closest('button, a')) return;
+    const el = card();
+    if (!el) return;
+    drag = {
+      id: event.pointerId,
+      startY: event.clientY,
+      height: el.getBoundingClientRect().height,
+      moved: false,
+      lastY: event.clientY,
+      lastT: event.timeStamp || Date.now(),
+      velocity: 0,
+    };
+  });
+
+  menu.addEventListener('pointermove', (event) => {
+    if (!drag || event.pointerId !== drag.id) return;
+    const down = Math.max(0, event.clientY - drag.startY);
+    if (!drag.moved && down < DRAG_SLOP_PX) return;
+    drag.moved = true;
+    const now = event.timeStamp || Date.now();
+    const elapsed = now - drag.lastT;
+    // Positive velocity grows the card, as the detent core reads it.
+    if (elapsed > 0) drag.velocity = (drag.lastY - event.clientY) / elapsed;
+    drag.lastY = event.clientY;
+    drag.lastT = now;
+    const el = card();
+    if (el) el.style.transform = 'translateY(' + down + 'px)';
+    event.preventDefault();
+  });
+
+  /** @param {PointerEvent} event */
+  const endDrag = (event) => {
+    if (!drag || event.pointerId !== drag.id) return;
+    const finished = drag;
+    release();
+    if (!finished.moved) return;
+    const down = Math.max(0, event.clientY - finished.startY);
+    const velocity = event.type === 'pointercancel' ? 0 : finished.velocity;
+    if (closes(finished.height, finished.height - down, velocity)) close();
+  };
+
+  menu.addEventListener('pointerup', endDrag);
+  menu.addEventListener('pointercancel', endDrag);
 
   // The installed phone app's Help tab opens this same menu
   // (static/js/app_tabbar.js), where the "?" roundel is hidden.
