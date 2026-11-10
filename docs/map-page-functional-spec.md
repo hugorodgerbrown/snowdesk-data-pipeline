@@ -264,12 +264,13 @@ return to it across sessions. It is the user's own private data.
 - **When / how.** The star roundel opens **Saved** (SNOW-1481): Places,
   Routes, Trips and Observations, the panel the installed app's Saved tab
   opens, on the tab last used and Places at first, with the star filled
-  while it is open. On a desktop it docks left under search; in a phone
-  browser it slides up to at most ¾ of the screen, with no snap heights,
-  and its × closes it
-  ([why](decisions/saved-is-one-panel-on-every-screen.md)). Places' + drops
-  a pin: placing it, dragging to refine and naming it creates the
-  favourite (rate-limited to 10 creates per minute). Renaming, removing and
+  while it is open. On a desktop it docks left under search; on a phone it
+  is the inset card at half the screen, its handle takes it to three
+  quarters, and a drag down or its × closes it
+  ([why](decisions/one-sheet-design-on-a-phone.md)). Places' + opens **New
+  pin**, a card only as tall as its form so the map and the pin stay in
+  view: placing the pin, naming it and Save creates the favourite
+  (rate-limited to 10 creates per minute); the × cancels. Renaming, removing and
   sharing live in Places' row menu, and on a phone in the place sheet's,
   never in the desktop popup. Offline, Places says it couldn't be loaded
   rather than showing cached pins.
@@ -949,15 +950,27 @@ routes, trips and report sheets as one panel — and it docks in the same
 left column under search, though its roundel is on the right: an exception
 to "beside what opened it", Hugo's call, so that Saved sits where the
 installed app's Saved sits and the selection column holds the reader's own
-lists as well as what they picked. Below `sm`, in a phone browser, Saved
-slides up to at most ¾ of the screen (`75dvh`) with no detents, so the map
-stays in view above it, and its × closes it
+lists as well as what they picked
 ([why](decisions/saved-is-one-panel-on-every-screen.md)). The report the
 binoculars start opens in the same sheet.
 
+**One sheet design below `sm` (SNOW-1486).** In the app and a phone
+browser alike, Saved, Help (the "?" menu) and New pin are one card: the
+same 12px inset each side, card corners and glass shadow, and a header of a
+grab handle, then the title and × on one row. Saved is titled **Saved
+items**, its tabs on the row below with the + beside them. It opens at
+half the screen (`50dvh`) so the map stays in view, and its handle takes
+it to three quarters (`75dvh`); a drag down from half, or its ×, closes
+it. It hides no roundel, so at half it may sit over part of the right-hand
+roundels. New pin, the report form and the saved confirmations
+(`data-sheet-fit`) and Help are as tall as their content, never past
+three quarters; New pin's and the report form's handle does not drag, so a
+swipe never loses what was typed. Help closes on a drag down its handle
+([why](decisions/one-sheet-design-on-a-phone.md)).
+
 **This difference is deliberate, and it is not a bug in either direction.**
-"The panel fills the screen on my phone" and "the panel doesn't fill the
-screen on my laptop" are both the intended behaviour. Both layouts are
+"The panel covers the map on my phone" and "the panel sits beside the map
+on my laptop" are both the intended behaviour. Both layouts are
 bounded and scroll internally: a panel never grows past the viewport and
 never pushes its own content off-screen, whatever the list contains.
 
@@ -975,7 +988,8 @@ full width, sits flush on the screen's foot with its top corners rounded,
 and slides up from the foot when it opens. **Nothing on the map moves or
 folds for it**: the sheet covers whatever is under it, and the furniture is
 where it was when the sheet closes. A sheet declares only the detents it
-can use, and only an object you tapped on the map declares any. **A list
+can use, and only an object you tapped on the map declares any, with one
+exception: the Saved card's half and full (above). **Any other list
 opened from a roundel uses none**, because the roundel that opened it
 is what closes or switches it (on a phone the full-width panel covers a
 tall list's roundel and the reader closes it with its ×, by choice,

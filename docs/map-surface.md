@@ -2,7 +2,7 @@
 name: map-surface
 description: Map zoom bands (REGION_SELECT_MAXZOOM), tap priority, overlay kinds, pwaMapOverlays, one bottom sheet, camera padding owner
 status: current
-last-reviewed: 2026-11-08
+last-reviewed: 2026-11-10
 ---
 
 # The map surface: zoom, taps and overlays
@@ -122,15 +122,18 @@ opens, closes and coexists (AGENTS.md, design-system rule 6).
 | Kind | Examples | Opened by | Phone shape | Closed by |
 |---|---|---|---|---|
 | **Object sheet** | region sheet, place sheet, weather sheet, rest zone sheet, route rail | a tap on something on the map | bottom sheet with detents (peek, half, full) | ×, drag below peek, Escape, deselecting, another object sheet |
-| **Roundel panel** | routes, favourites, reports, downloads lists | its roundel | full-width docked panel, no detents | its roundel, its ×, another overlay |
-| **Form panel** | field report, terrain filter | a call to action | docked panel, no detents, no drag-to-close | its own buttons, its × |
+| **Roundel panel** | Saved (routes, favourites, trips, reports), downloads lists | its roundel | full-width docked panel, no detents; Saved is the inset card at half or full (SNOW-1486) | its roundel, its ×, another overlay; Saved a drag down from half |
+| **Form panel** | field report, New pin, terrain filter | a call to action | docked panel, no detents, no drag-to-close; in a Saved sheet the card as tall as the form | its own buttons, its × |
 | **Flyout / card** | layers menu, zoom flyout, calendar, legend card, help coachmark, tour offer, slopes notice (SNOW-1378, shown by the map once per device at z12 over the bulletin's slopes; closes on a map tap too), a saved pin's desktop popup | its toggle | anchored card | a click away, another overlay |
 
 In the installed app on a phone the roundel panels and the Today panel are
-**tab panels** instead (SNOW-1476): the bottom tab bar opens them full
-height, `static/js/app_tabbar.js` lights the tab whose panel is open, and
-the control column is hidden
+**tab panels** instead (SNOW-1476): the bottom tab bar opens them,
+`static/js/app_tabbar.js` lights the tab whose panel is open, and the
+control column is hidden
 ([`the-installed-phone-app-has-a-tab-bar`](decisions/the-installed-phone-app-has-a-tab-bar.md)).
+Saved and the "?" menu are the same inset card there as in a phone browser,
+above the bar (SNOW-1486,
+[`one-sheet-design-on-a-phone`](decisions/one-sheet-design-on-a-phone.md)).
 
 Help mode (SNOW-1119, the "?" roundel) is none of these: it is a layer
 over the whole map that names the controls and keys whichever object sheet
@@ -227,7 +230,7 @@ The other root and `#map` marks, for CSS that needs to know what is up:
 
 | Mark | Set by | Means |
 |---|---|---|
-| `:root[data-map-sheet="peek\|half\|full"]` | `map_sheet.js` | an object sheet is open on a phone, at that detent |
+| `:root[data-map-sheet="peek\|half\|full"]` | `map_sheet.js` | an object sheet is open on a phone, at that detent (never a Saved card, `data-sheet-card`) |
 | `:root[data-region-sheet]` | `map_region_sheet.js` | the region sheet is open |
 | `#map[data-route-rail-open]` | `route_rail.js` | the route rail is open; map.css withdraws the controls a phone does not keep |
 

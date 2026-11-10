@@ -143,9 +143,10 @@ and the bottom edge is where the thumb is), and on a desktop the map is
 large enough that covering it would be the loss. Both layouts are bounded
 and scroll internally — see "Bounded height" below.
 
-Expect "the panel fills the screen on mobile" as a REPORT rather than a
+Expect "the panel covers the map on mobile" as a REPORT rather than a
 bug: it is the intended behaviour, documented in §3.7 of
-docs/map-page-functional-spec.md so it does not get "fixed".
+docs/map-page-functional-spec.md so it does not get "fixed". The Saved
+sheets are the inset ``card`` on a phone instead (SNOW-1486, above).
 
 On mobile the sheet is inset from the viewport edges rather than
 full-bleed, via the shared --map-edge-inset-* tokens (src/css/main.css) —

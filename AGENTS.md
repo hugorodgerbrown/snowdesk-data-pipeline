@@ -208,7 +208,9 @@ No linter holds rules 4–7; reviewers do
 6. **What opened a map panel decides its kind**, all on `_overlay_sheet.html`:
    an **object sheet** (a thing tapped on the map; peek/half/full on phones), a
    **roundel panel** (opened by a roundel; no detents) or a **form panel** (a
-   task; no detents, no drag-to-close).
+   task; no detents, no drag-to-close). On a phone Saved, Help and New pin are
+   one card (`card=True`: half and full; a task marks `data-sheet-fit`)
+   ([why](docs/decisions/one-sheet-design-on-a-phone.md)).
 7. **A surface opens beside its trigger.** On a desktop a selection docks left
    under the search pill (`side="left"`); on a phone it slides up. Right-hand
    roundels open on the right. One object sheet at a time; the date row stays
