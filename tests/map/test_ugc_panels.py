@@ -260,7 +260,7 @@ def saved_skeleton_classes() -> set[str]:
         The Saved skeleton's class-attribute values.
 
     """
-    panel = render_to_string(
+    rendered = render_to_string(
         "includes/_ugc_panel.html",
         {
             "title": "Title",
@@ -274,7 +274,7 @@ def saved_skeleton_classes() -> set[str]:
         },
     )
     panel = re.sub(
-        r'(class="[^"]*?) hidden\b', r"\1", _APP_ONLY_HEADER_RE.sub("", panel)
+        r'(class="[^"]*?) hidden\b', r"\1", _APP_ONLY_HEADER_RE.sub("", rendered)
     )
     rows = render_to_string(DEMO_ROWS_TEMPLATE, {})
     return _class_strings(panel) - _class_strings(rows)
