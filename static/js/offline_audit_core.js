@@ -71,9 +71,12 @@
   'use strict';
 
   /**
-   * @typedef {'yes'|'no'|'blocked'|'unknown'|'pending'} AuditStatus
+   * @typedef {'yes'|'no'|'blocked'|'unknown'|'pending'|'info'} AuditStatus
    *   ``blocked`` is a No on a critical row — the same answer, but the
-   *   reason the verdict is a failure rather than a limitation.
+   *   reason the verdict is a failure rather than a limitation. ``info``
+   *   (SNOW-1483) is a setting or a state, not a capability: Offline mode,
+   *   or the app noticing there is no signal. It is said, never counted,
+   *   and never makes the verdict less than the all-clear.
    */
 
   /**
@@ -1472,15 +1475,19 @@
       // that a reading it could not take is `unknown` rather than a Yes.
       if (r.dbAvailable === false) return { status: 'unknown' };
       var mode = typeof r.networkMode === 'string' ? r.networkMode : 'auto';
+      // SNOW-1483: both are `info`. Being offline on purpose, or with no
+      // signal, is the state this page exists to check readiness FOR, so
+      // it is never a fault against it. The forced-lockout verdict reads
+      // the reason, not the status, so that trap is still named.
       if (mode === 'offline-forced') {
-        return { status: 'no', reason: 'forced', note: s(t, 'note-network-forced') };
+        return { status: 'info', reason: 'forced', note: s(t, 'note-network-forced') };
       }
       if (mode === 'offline') {
         // The worker's own latch, from three read-path timeouts. Told apart
         // from the forced mode because the remedies differ completely: this
         // one lifts itself when a probe finds a route, so there is nothing
         // for the reader to press.
-        return { status: 'no', reason: 'latched', note: s(t, 'note-network-latched') };
+        return { status: 'info', reason: 'latched', note: s(t, 'note-network-latched') };
       }
       return { status: 'yes' };
     }
@@ -1937,11 +1944,17 @@
             // not one capability being unavailable — the log says so with
             // a third colour rather than a fourth word.
             if (status === 'no' && row.critical) status = 'blocked';
+            // An `info` answer names its state ("Offline mode on"), one
+            // string per reason, rather than a Yes or a No.
+            var valueKey =
+              status === 'info'
+                ? 'answer-info-' + resolved.reason
+                : 'answer-' + (status === 'blocked' ? 'no' : status);
             return /** @type {AuditCheck} */ (
               Object.assign({}, resolved, {
                 id: row.id,
                 label: row.label,
-                value: s(t, 'answer-' + (status === 'blocked' ? 'no' : status)),
+                value: s(t, valueKey),
                 status: status,
               })
             );

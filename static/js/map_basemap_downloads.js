@@ -601,8 +601,9 @@ function terrainDataAvailable() {
  * "Terrain data" switch for this on the Downloads sheet, off by default;
  * Hugo removed it (4 Nov 2026), so terrain comes with every download.
  * What a download actually included is still recorded per area
- * (`terrain` on its record and its account row): an area downloaded
- * without terrain keeps reading so until it is downloaded again.
+ * (`terrain` on its record and its account row). An area downloaded
+ * without terrain reads so until a sync adds it (`_addMissingTerrain`,
+ * SNOW-1483).
  *
  * @returns {boolean}
  */
@@ -661,6 +662,22 @@ function areaTerrainClassTileUrls(record) {
     terrain.MIN_ZOOM,
     terrain.MAX_ZOOM,
   );
+}
+
+/**
+ * SNOW-1483: whether ONE recorded area should hold the terrain-class
+ * tiles, whatever its own `terrain` flag says: this page fetches terrain
+ * data (`terrainDataAvailable`) and the area's ground meets the tiles'
+ * coverage, so a download today would save some. An area for which this
+ * is false is never judged on terrain, and lists no Terrain row.
+ *
+ * @param {Object|null} record A `basemap.regions` / `basemap.customAreas`
+ *   entry.
+ * @returns {boolean}
+ */
+function terrainExpected(record) {
+  if (!record || !terrainDataAvailable()) return false;
+  return areaTerrainClassTileUrls({ ...record, terrain: true }).length > 0;
 }
 
 /**
@@ -3168,6 +3185,16 @@ window.pwaBasemapDownloads = Object.freeze({
   terrainDataAvailable: () => terrainDataAvailable(),
   terrainDataPreferred: () => terrainDataPreferred(),
 
+  /**
+   * SNOW-1483: whether one recorded area should hold terrain data — see
+   * `terrainExpected`. Read by the Downloads sheet for a row's dot and
+   * its inventory's Terrain row alike.
+   *
+   * @param {Object|null} record
+   * @returns {boolean}
+   */
+  terrainExpected: (record) => terrainExpected(record),
+
   // SNOW-844's `repair(areaId, urls)` stood here until SNOW-951. It was
   // the Manage downloads sheet's Repair control and nothing else, and
   // that control is gone — one "Sync now" replaced it, and `syncArea`
@@ -5062,6 +5089,80 @@ async function _addMissingBasemaps(areaId, found) {
 }
 
 /**
+ * SNOW-1483: add the terrain data to an area saved without it — the half
+ * of Sync that brings an area downloaded before terrain came with every
+ * download (4 Nov 2026) up to what a download saves today.
+ *
+ * Only for a record without `terrain` that should hold it
+ * (`terrainExpected`). Fetches the terrain-class tiles the area's bucket
+ * lacks, and nothing else: the elevation tiles ride on the same flag, so
+ * once the record carries it the render-dependency repair in `syncArea`
+ * derives and fetches them, as it does for any area synced since
+ * SNOW-1453. The delta is checked against the budget and the quota first,
+ * and a sync never evicts another area to make room, as
+ * `_addMissingBasemaps` does not.
+ *
+ * On success the record gains `terrain: true` and the bytes added, and
+ * the account row is re-pushed with the flag, so another device repeats
+ * it. On failure the record is left as it was: it still reads "Terrain
+ * not saved", which is true.
+ *
+ * @param {string} areaId
+ * @param {{record: Object, regionId: (string|null)}} found
+ * @returns {Promise<'ok'|'none'|'failed'|'unknown'>} `'none'` when the
+ *   area already has terrain data or should not hold any.
+ */
+async function _addMissingTerrain(areaId, found) {
+  const core = self.pwaBasemapDownloadCore;
+  const record = found.record;
+  if (!core || !record || record.terrain || !terrainExpected(record)) return 'none';
+  const urls = areaTerrainClassTileUrls({ ...record, terrain: true });
+  const missing = await missingFromAreaBucket(areaId, urls);
+  if (missing === null) return 'unknown';
+  let addedBytes = 0;
+  if (missing.length > 0) {
+    const deltaMb = core.terrainClassMb(missing.length);
+    const currentMb = (Number(record.bytes) || 0) / (1024 * 1024);
+    const budget = await planBasemapDownloadBudget(areaId, currentMb + deltaMb);
+    if (budget && (budget.impossible || budget.evict.length > 0)) return 'failed';
+    if (!(await basemapDownloadFitsQuota(deltaMb))) return 'failed';
+    const outcome = await new Promise((resolve) => {
+      repairPinnedDownload({
+        areaId: areaId,
+        urls: missing,
+        paint: () => {},
+        finish: async (result, extras) => {
+          const runCore = extras && extras.core;
+          resolve({ ok: !!(runCore && runCore.downloadSucceeded(result)), bytes: (result && result.bytes) || 0 });
+        },
+      });
+    });
+    if (!outcome.ok) return 'failed';
+    addedBytes = Number(outcome.bytes) || 0;
+  }
+  await _rewriteAreaRecord(areaId, found.regionId, (entry) => ({
+    ...entry,
+    terrain: true,
+    bytes: (Number(entry.bytes) || 0) + addedBytes,
+  }));
+  // The flag travels with the definition, as a download's push carries it
+  // (SNOW-1072), and only for the signed-in account's own area (SNOW-1142).
+  const sync = window.pwaDownloadsSync;
+  await sync?.push({
+    areaId: areaId,
+    regionId: found.regionId || '',
+    bbox: found.regionId ? undefined : record.bbox,
+    basemapKey: record.basemapKey,
+    name: record.name || '',
+    terrain: true,
+    type: record.type,
+    principal: record.principal,
+  });
+  notifyDownloadsChanged();
+  return 'ok';
+}
+
+/**
  * SNOW-951: make ONE downloaded area wholly current, in a single press.
  *
  * Three controls could already mend a download and none of them made it
@@ -5130,9 +5231,14 @@ async function syncArea(areaId, onStage) {
   // elevation tiles among them.
   const added = await _addMissingBasemaps(areaId, found);
   if (added === 'ok') found = (await _areaRecordById(areaId)) || found;
+  // SNOW-1483: and an area saved without terrain data gains it, the record
+  // read again so the halves below judge (and stamp) it with its terrain,
+  // its elevation tiles among what they mend.
+  const terrainAdded = await _addMissingTerrain(areaId, found);
+  if (terrainAdded === 'ok') found = (await _areaRecordById(areaId)) || found;
   const missing = await _missingAreaRenderDependencies(found.record, areaId);
   let tiles = missing === null ? 'unknown' : 'none';
-  if (added === 'ok' && tiles === 'none') tiles = 'ok';
+  if ((added === 'ok' || terrainAdded === 'ok') && tiles === 'none') tiles = 'ok';
   if (missing && missing.length > 0) {
     const repaired = await new Promise((resolve) => {
       repairPinnedDownload({
@@ -5152,7 +5258,7 @@ async function syncArea(areaId, onStage) {
   }
   // SNOW-1478: a Swisstopo map that could not be added is a map half that
   // did not finish, whatever the documents below said.
-  if (added === 'failed') tiles = 'failed';
+  if (added === 'failed' || terrainAdded === 'failed') tiles = 'failed';
   // SNOW-1453: every elevation tile the area should hold is in its bucket
   // now (nothing was missing, or the repair fetched it all), so the record
   // takes today's template as its stamp, and 3D may be drawn there

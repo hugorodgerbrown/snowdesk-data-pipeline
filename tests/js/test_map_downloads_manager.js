@@ -270,6 +270,7 @@ function buildFixture() {
       <span data-string="area-status-ready">Works offline</span>
       <span data-string="area-reason-conditions">Bulletins out of date</span>
       <span data-string="area-reason-things">Some trips or pins missing</span>
+      <span data-string="area-reason-terrain">Terrain not saved</span>
       <span data-string="area-status-open-map">Map data missing</span>
       <span data-string="area-status-unknown">Not checked yet</span>
       <span data-string="area-status-running">Syncing…</span>
@@ -4552,6 +4553,18 @@ describe('the offline answer on each row, and Sync all (SNOW-1420)', () => {
     expect(rowNotice().classList.contains('sr-only')).toBe(false);
   });
 
+  it('paints an area missing its terrain amber, with its reason (SNOW-1483)', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    installSyncAll({ [REGION_ID]: { verdict: 'refresh', reason: 'terrain' } });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(rowDot().classList.contains('bg-sync-partial')).toBe(true);
+    expect(rowNotice().textContent).toBe('Terrain not saved');
+    expect(rowNotice().classList.contains('hidden')).toBe(false);
+  });
+
   it('paints missing map data red, and an unchecked area grey', async () => {
     seed({ 'basemap.regions': REGIONS, 'basemap.customAreas': CUSTOM_AREAS });
     installSyncAll({
@@ -4859,7 +4872,7 @@ describe('the inventory under a row (SNOW-1418)', () => {
     seed({ 'basemap.regions': REGIONS });
     await boot({ [REGION_ID]: record({ terrain: true, bytes: 40 * MB }) });
     const bridge = window.pwaBasemapDownloads;
-    bridge.terrainDataAvailable = () => true;
+    bridge.terrainExpected = () => true;
     // 200 class tiles: the same estimate the download was priced at.
     bridge.areaTerrainClassTileUrls = () => Array.from({ length: 200 }, (_v, i) => 'c/' + i);
     toggleOf(firstRowElement()).click();
@@ -4879,7 +4892,7 @@ describe('the inventory under a row (SNOW-1418)', () => {
       [REGION_ID]: record({ terrain: true, elevation: 'https://dem.example.invalid/{z}/{x}/{y}.webp', bytes: 40 * MB }),
     });
     const bridge = window.pwaBasemapDownloads;
-    bridge.terrainDataAvailable = () => true;
+    bridge.terrainExpected = () => true;
     bridge.areaTerrainClassTileUrls = () => Array.from({ length: 200 }, (_v, i) => 'c/' + i);
     bridge.areaElevationTileUrls = vi.fn(() => Array.from({ length: 30 }, (_v, i) => 'e/' + i));
     toggleOf(firstRowElement()).click();
@@ -4906,7 +4919,7 @@ describe('the inventory under a row (SNOW-1418)', () => {
       }),
     });
     const bridge = window.pwaBasemapDownloads;
-    bridge.terrainDataAvailable = () => true;
+    bridge.terrainExpected = () => true;
     bridge.areaTerrainClassTileUrls = () => Array.from({ length: 200 }, (_v, i) => 'c/' + i);
     // The real rule, which a stamp on another basemap does not get past.
     bridge.areaElevationTileUrls = vi.fn((row) =>
@@ -4924,7 +4937,7 @@ describe('the inventory under a row (SNOW-1418)', () => {
     seed({ 'basemap.regions': REGIONS });
     await boot({ [REGION_ID]: record({ terrain: true, bytes: 40 * MB }) });
     const bridge = window.pwaBasemapDownloads;
-    bridge.terrainDataAvailable = () => true;
+    bridge.terrainExpected = () => true;
     bridge.areaTerrainClassTileUrls = () => Array.from({ length: 200 }, (_v, i) => 'c/' + i);
     bridge.areaElevationTileUrls = vi.fn(() => Array.from({ length: 30 }, (_v, i) => 'e/' + i));
     toggleOf(firstRowElement()).click();
@@ -4937,12 +4950,28 @@ describe('the inventory under a row (SNOW-1418)', () => {
   it('says terrain is not saved for an area downloaded without it', async () => {
     seed({ 'basemap.regions': REGIONS });
     await boot({ [REGION_ID]: record() });
-    window.pwaBasemapDownloads.terrainDataAvailable = () => true;
+    window.pwaBasemapDownloads.terrainExpected = () => true;
     toggleOf(firstRowElement()).click();
     await settle();
 
     const listed = items(firstRowElement());
     expect(listed['Terrain']).toEqual({ value: 'Not saved', state: 'missing' });
+    expect(listed['Map'].value).toBe('40.0 MB');
+  });
+
+  it('lists no Terrain row for an area that should hold none (SNOW-1483)', async () => {
+    // Outside the terrain tiles' coverage, or on a page that fetches none:
+    // a row saying "Not saved" would be one no Sync could ever fill.
+    seed({ 'basemap.regions': REGIONS });
+    await boot({ [REGION_ID]: record() });
+    window.pwaBasemapDownloads.terrainDataAvailable = () => true;
+    window.pwaBasemapDownloads.terrainExpected = vi.fn(() => false);
+    toggleOf(firstRowElement()).click();
+    await settle();
+
+    const listed = items(firstRowElement());
+    expect(window.pwaBasemapDownloads.terrainExpected).toHaveBeenCalled();
+    expect(listed['Terrain']).toBeUndefined();
     expect(listed['Map'].value).toBe('40.0 MB');
   });
 

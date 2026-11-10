@@ -548,6 +548,11 @@
             [data-audit-check][data-audit-status='blocked'] [data-audit-value] {
                 color: #cc0000;
             }
+            /* SNOW-1483: a state, not a capability — neutral, the
+               page's own ink at a step down. */
+            [data-audit-check][data-audit-status='info'] [data-audit-value] {
+                opacity: 0.7;
+            }
             [data-audit-check][data-audit-status='unknown'] [data-audit-value],
             [data-audit-check][data-audit-status='pending'] [data-audit-value] {
                 opacity: 0.4;
@@ -761,6 +766,9 @@
         <script src="/static/js/offline_audit_core.js" defer></script>
         <script src="/static/js/offline_audit.js" defer></script>
         <script src="/static/js/basemap_area_removal.js" defer></script>
+        <!-- SNOW-1483: the tile arithmetic, so an area's map reads Yes or No
+             here rather than "Can't tell". -->
+        <script src="/static/js/basemap_download_core.js" defer></script>
         <script src="/static/js/offline_journey_core.js" defer></script>
         <script src="/static/js/offline_journey.js" defer></script>
         <script>

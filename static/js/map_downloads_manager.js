@@ -329,6 +329,7 @@
     'area-status-ready': 'Works offline',
     'area-reason-conditions': 'Bulletins out of date',
     'area-reason-things': 'Some trips or pins missing',
+    'area-reason-terrain': 'Terrain not saved',
     'area-status-open-map': 'Map data missing',
     'area-status-unknown': 'Not checked yet',
     'area-status-running': 'Syncing…',
@@ -1522,7 +1523,7 @@
    * remove both when it has none.
    *
    * The reason's words are the sheet's own strings: "Bulletins out of
-   * date", "Some trips or pins missing", "Map data missing", "Not checked
+   * date", "Some trips or pins missing", "Terrain not saved", "Map data missing", "Not checked
    * yet", "Syncing…". A yes says nothing on screen, and "Works offline" to
    * a screen reader.
    *
@@ -2101,7 +2102,7 @@
    *
    * @param {any} record The area's stored record.
    * @param {string} size The row's formatted total, the fallback.
-   * @param {boolean} terrainAvailable Whether this page fetches terrain.
+   * @param {boolean} terrainAvailable Whether the area should hold terrain data.
    * @returns {{map: string, terrain: string}} `terrain` is '' when no
    *   figure can be given.
    */
@@ -2150,7 +2151,12 @@
     const readings = inventoryReadings.get(id) || {};
     const record = areaRecords.get(id);
     const bridge = window.pwaBasemapDownloads;
-    const terrainAvailable = !!(bridge && bridge.terrainDataAvailable && bridge.terrainDataAvailable());
+    // SNOW-1483: the Terrain row only where the area should hold terrain
+    // data, the same test the row's dot reads, so the two cannot disagree
+    // and an area outside the tiles' coverage lists no row it cannot fill.
+    const terrainAvailable = !!(
+      bridge && typeof bridge.terrainExpected === 'function' && bridge.terrainExpected(record)
+    );
     const sizes = inventorySizes(record, size, terrainAvailable);
     const rows = journey.inventoryFor(record, new Date(), {
       terrainAvailable: terrainAvailable,

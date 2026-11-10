@@ -1078,6 +1078,21 @@ describe('the build', () => {
     expect(row.getAttribute('data-audit-status')).toBe('yes');
     expect(row.querySelector('[data-audit-value]').textContent).toBe('Yes');
   });
+
+  it('paints Offline mode as information, in its own words (SNOW-1483)', async () => {
+    const target = document.createElement('div');
+    const t = { 'answer-pending': '…', 'answer-info-forced': 'Offline mode on' };
+    const report = window.pwaOfflineAuditCore.buildReport(
+      { dbAvailable: true, networkMode: 'offline-forced', areas: [] },
+      t,
+    );
+
+    await audit.build(target, report, t);
+
+    const row = target.querySelector('[data-audit-row="network-use"]');
+    expect(row.getAttribute('data-audit-status')).toBe('info');
+    expect(row.querySelector('[data-audit-value]').textContent).toBe('Offline mode on');
+  });
 });
 
 describe('the Save control (SNOW-912)', () => {

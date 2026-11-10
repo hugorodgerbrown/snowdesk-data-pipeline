@@ -306,6 +306,9 @@
     'answer-no': 'No',
     'answer-unknown': '—',
     'answer-pending': '…',
+    // SNOW-1483: the network row's `info` answers, one per state.
+    'answer-info-forced': 'Offline mode on',
+    'answer-info-latched': 'No signal',
 
     'note-sw-unsupported': 'this browser has no offline mode at all',
     'note-sw-starting': 'offline mode is starting up and will be ready on the next load',

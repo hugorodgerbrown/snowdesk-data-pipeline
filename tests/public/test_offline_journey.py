@@ -181,6 +181,13 @@ class TestServiceWorkerPrecache:
         for name in SCRIPTS:
             assert f"'/static/js/{name}'" in source, name
 
+    def test_warms_the_tile_arithmetic_with_them(self) -> None:
+        """SNOW-1483: the fallback page's map reading needs the download core."""
+        source = SERVICE_WORKER.read_text()
+        start = source.index("const AUDIT_SCRIPTS = [")
+        listing = source[start : source.index("];", start)]
+        assert "'/static/js/basemap_download_core.js'" in listing
+
     def test_they_exist_on_disk(self) -> None:
         """``cache.add`` on a 404 fails."""
         for name in SCRIPTS:

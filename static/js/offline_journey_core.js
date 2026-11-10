@@ -527,7 +527,9 @@
   function verdictFor(stages) {
     var list = [stages.map, stages.conditions];
     if (stages.things) list.push(stages.things);
-    if (stages.map.status === 'no') return 'open-map';
+    // SNOW-1483: a map missing only its terrain data is one Sync mends
+    // (it fetches the terrain tiles alone), so the tap is right here.
+    if (stages.map.status === 'no' && stages.map.reason !== 'terrain') return 'open-map';
     var any = /** @param {StageStatus} status */ function (status) {
       return list.some(function (stage) {
         return stage.status === status;
@@ -753,9 +755,16 @@
    *     (`verified.principal`). Another account's answer is unknown here,
    *     as `thingsStage` treats another account's items on /offline/.
    *
+   * SNOW-1483: `terrainExpected` is whether this area should hold the
+   * terrain-class tiles (the page fetches terrain data and the area's
+   * ground meets their coverage). With it set, a record saved without
+   * `terrain` has a map stage of No, reason `terrain`, in place of a Yes,
+   * so the dot agrees with the inventory's Terrain row. A map No or
+   * unknown keeps its own answer. 3D (elevation) is never read.
+   *
    * @param {any} record A `basemap.regions` or `basemap.customAreas` row.
    * @param {string|Date} [now]
-   * @param {{signedIn?: boolean, principal?: string}} [options]
+   * @param {{signedIn?: boolean, principal?: string, terrainExpected?: boolean}} [options]
    * @returns {{map: Stage, conditions: Stage, things: Stage|null}}
    */
   function stagesFromRecord(record, now, options) {
@@ -768,6 +777,9 @@
     var mapAnswer = v ? answer(v.map) : null;
     if (mapAnswer === 'yes') map = { status: 'yes' };
     else if (mapAnswer === 'no') map = { status: 'no', reason: String(v.reason || 'tiles') };
+    if (map.status === 'yes' && opts.terrainExpected && !r.terrain) {
+      map = { status: 'no', reason: 'terrain' };
+    }
 
     /** @type {Stage} */
     var conditions;
@@ -879,7 +891,9 @@
   function inventoryFor(record, now, options) {
     var opts = options || {};
     var r = record || {};
-    var stages = stagesFromRecord(r, now, opts);
+    // The map row is the map itself: terrain has its own row below, so
+    // the map stage is read without it.
+    var stages = stagesFromRecord(r, now, Object.assign({}, opts, { terrainExpected: false }));
     var items = r.items && typeof r.items === 'object' ? r.items : {};
     var held = opts.held instanceof Set ? opts.held : null;
     var overlays = opts.overlayIds || {};

@@ -683,6 +683,44 @@ describe('the stages from a record alone (SNOW-1415)', () => {
     expect(stages.map.status).toBe('unknown');
     expect(stages.things.status).toBe('unknown');
   });
+
+  // SNOW-1483: the dot reads terrain, as the inventory's Terrain row does.
+  describe('terrain expected', () => {
+    const ready = (extra) => ({ contentAt: TODAY, verified: verified({ map: 'yes' }), ...extra });
+
+    it('reads a verified map saved without terrain as No, and Sync as the fix', () => {
+      const stages = journey.stagesFromRecord(ready(), NOW, { terrainExpected: true });
+      expect(stages.map).toEqual({ status: 'no', reason: 'terrain' });
+      expect(journey.verdictFor(stages)).toBe('refresh');
+    });
+
+    it('leaves the map as it was with terrain saved, or none expected', () => {
+      const withTerrain = journey.stagesFromRecord(ready({ terrain: true }), NOW, { terrainExpected: true });
+      expect(withTerrain.map.status).toBe('yes');
+      expect(journey.verdictFor(withTerrain)).toBe('ready');
+      const notExpected = journey.stagesFromRecord(ready(), NOW, { terrainExpected: false });
+      expect(notExpected.map.status).toBe('yes');
+      expect(journey.stagesFromRecord(ready(), NOW).map.status).toBe('yes');
+    });
+
+    it('keeps an unverified map unknown, and a short map a missing map', () => {
+      const unverified = journey.stagesFromRecord({ contentAt: TODAY }, NOW, { terrainExpected: true });
+      expect(unverified.map.status).toBe('unknown');
+      const short = journey.stagesFromRecord(
+        { contentAt: TODAY, verified: verified({ map: 'no', reason: 'tiles' }) },
+        NOW,
+        { terrainExpected: true },
+      );
+      expect(short.map).toEqual({ status: 'no', reason: 'tiles' });
+      expect(journey.verdictFor(short)).toBe('open-map');
+    });
+
+    it('keeps the inventory\'s Map row the map itself', () => {
+      const rows = journey.inventoryFor(ready(), NOW, { terrainAvailable: true, terrainExpected: true });
+      expect(rows[0]).toEqual({ key: 'map', status: 'yes' });
+      expect(rows[1]).toEqual({ key: 'terrain', status: 'missing' });
+    });
+  });
 });
 
 describe('the verified stamp (SNOW-1415)', () => {

@@ -548,8 +548,23 @@ afterAll(() => {
 let realJourneyCore;
 let tilesHeld;
 
+/**
+ * SNOW-1483: whether the page fetches terrain data. Off by default, so a
+ * suite about another half of Sync is not also a terrain sync: with it on,
+ * the seeded area (saved without terrain, on ground the tiles cover) gains
+ * its terrain on every press. The terrain suites turn it on.
+ *
+ * @param {boolean} on
+ */
+function terrainData(on) {
+  const mapEl = document.getElementById('map');
+  if (on) mapEl.dataset.terrainClassTileUrl = TERRAIN_TEMPLATE;
+  else delete mapEl.dataset.terrainClassTileUrl;
+}
+
 beforeEach(async () => {
   window.pwaWarmCache.mockClear();
+  terrainData(false);
   await seedArea();
   holdDependencies(DEPS);
   realJourneyCore = realJourneyCore || window.pwaOfflineJourneyCore;
@@ -735,19 +750,21 @@ describe('an id nothing on this device carries', () => {
   });
 });
 
+/** The class tiles the seeded area's ground implies, derived as the probe does. */
+function expectedClassTiles() {
+  const core = self.pwaBasemapDownloadCore;
+  const terrain = self.pwaTerrainFilterCore;
+  return core.terrainClassTileURLs(
+    TERRAIN_TEMPLATE,
+    core.buildBlob([7.0, 46.0, 7.2, 46.2], 10, 14),
+    terrain.COVERAGE_BOUNDS,
+    terrain.MIN_ZOOM,
+    terrain.MAX_ZOOM,
+  );
+}
+
 describe('terrain data (SNOW-1072)', () => {
-  /** The class tiles the seeded area's ground implies, derived as the probe does. */
-  function expectedClassTiles() {
-    const core = self.pwaBasemapDownloadCore;
-    const terrain = self.pwaTerrainFilterCore;
-    return core.terrainClassTileURLs(
-      TERRAIN_TEMPLATE,
-      core.buildBlob([7.0, 46.0, 7.2, 46.2], 10, 14),
-      terrain.COVERAGE_BOUNDS,
-      terrain.MIN_ZOOM,
-      terrain.MAX_ZOOM,
-    );
-  }
+  beforeEach(() => terrainData(true));
 
   it('derives the class tiles from the record only when it carries the flag', () => {
     const bridge = window.pwaBasemapDownloads;
@@ -795,13 +812,114 @@ describe('terrain data (SNOW-1072)', () => {
     expect(warmedUrls(0).some(isClassTile)).toBe(false);
   });
 
-  it('never judges an area without the flag on class tiles', async () => {
-    // The default, and every area downloaded before the ticket: no class
-    // tiles on disk, nothing missing, nothing fetched.
+  it('never judges an area without the flag on class tiles where the page has none', async () => {
+    // An area downloaded without terrain, on a page that fetches none: no
+    // class tiles on disk, nothing missing, nothing fetched. (Where the
+    // page does fetch them, Sync adds them: SNOW-1483, below.)
+    terrainData(false);
+
     const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
 
     expect(result.tiles).toBe('none');
     expect(warmedUrls(0).some(isClassTile)).toBe(false);
+    expect((await storedArea()).terrain).toBeUndefined();
+  });
+});
+
+// SNOW-1483: an area saved before terrain came with every download gains
+// it on Sync, fetching only the terrain tiles, rather than reading "Terrain
+// not saved" until it is downloaded again.
+describe('terrain added by Sync (SNOW-1483)', () => {
+  beforeEach(() => terrainData(true));
+
+  it('says an area saved without terrain should hold it', async () => {
+    const record = await storedArea();
+
+    expect(record.terrain).toBeUndefined();
+    expect(window.pwaBasemapDownloads.terrainExpected(record)).toBe(true);
+  });
+
+  it('fetches only the terrain tiles, then records the flag and the bytes', async () => {
+    const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect(result.tiles).toBe('ok');
+    expect(warmedUrls(0)).toEqual(expectedClassTiles());
+    expect(warmedUrls(0).every(isClassTile)).toBe(true);
+    const record = await storedArea();
+    expect(record.terrain).toBe(true);
+    expect(record.bytes).toBe(4096 + 4096);
+  });
+
+  it('fetches only the terrain tiles the bucket lacks', async () => {
+    const all = expectedClassTiles();
+    holdDependencies([...DEPS, ...all.slice(1)]);
+
+    const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect(result.tiles).toBe('ok');
+    expect(warmedUrls(0)).toEqual([all[0]]);
+    expect((await storedArea()).terrain).toBe(true);
+  });
+
+  it('finishes with the map verified Yes, read with its terrain', async () => {
+    await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    const record = await storedArea();
+    const stages = window.pwaOfflineJourneyCore.stagesFromRecord(record, new Date(), {
+      terrainExpected: window.pwaBasemapDownloads.terrainExpected(record),
+    });
+    expect(record.verified.map).toBe('yes');
+    expect(stages.map.status).toBe('yes');
+  });
+
+  it('records the flag on the account row', async () => {
+    const push = vi.fn(async () => true);
+    window.pwaDownloadsSync = { push: push };
+    try {
+      await window.pwaBasemapDownloads.syncArea(AREA_ID);
+    } finally {
+      delete window.pwaDownloadsSync;
+    }
+
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(push.mock.calls[0][0]).toMatchObject({ areaId: AREA_ID, terrain: true });
+  });
+
+  it('adds nothing to an area that already has terrain', async () => {
+    await seedArea({ terrain: true });
+    holdDependencies([...DEPS, ...expectedClassTiles()]);
+
+    const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect(result.tiles).toBe('none');
+    expect(warmedUrls(0).some(isClassTile)).toBe(false);
+  });
+
+  it('adds nothing to an area outside the terrain tiles\' coverage', async () => {
+    await seedArea({ bbox: [-120.2, 30.0, -120.0, 30.2] });
+    const record = await storedArea();
+
+    const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect(window.pwaBasemapDownloads.terrainExpected(record)).toBe(false);
+    expect(result.tiles).toBe('none');
+    expect((await storedArea()).terrain).toBeUndefined();
+  });
+
+  it('leaves the record without terrain when the fetch fails', async () => {
+    window.pwaWarmCache.mockImplementationOnce(async () => ({
+      ok: 0,
+      failed: 1,
+      bytes: 0,
+      cancelled: false,
+    }));
+
+    const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect(result.tiles).toBe('failed');
+    const record = await storedArea();
+    expect(record.terrain).toBeUndefined();
+    expect(record.bytes).toBe(4096);
   });
 });
 
@@ -973,6 +1091,8 @@ describe('elevation tiles (SNOW-1453)', () => {
 });
 
 describe('terrain data in every download (SNOW-1072)', () => {
+  beforeEach(() => terrainData(true));
+
   it('is available here, and on', () => {
     expect(window.pwaBasemapDownloads.terrainDataAvailable()).toBe(true);
     expect(window.pwaBasemapDownloads.terrainDataPreferred()).toBe(true);

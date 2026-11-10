@@ -128,22 +128,29 @@
    *
    * @param {Object|undefined} record
    * @param {Date} [now]
-   * @returns {{verdict: 'ready'|'refresh'|'open-map'|'unknown', reason: ''|'conditions'|'things'}}
+   * SNOW-1483: an area that should hold terrain data and was saved
+   * without it (`pwaBasemapDownloads.terrainExpected`) reads "refresh"
+   * with reason `terrain`, the same flag the inventory's Terrain row reads.
+   *
+   * @returns {{verdict: 'ready'|'refresh'|'open-map'|'unknown', reason: ''|'conditions'|'things'|'terrain'}}
    */
   function verdict(record, now) {
     const journey = /** @type {any} */ (window).pwaOfflineJourneyCore;
     if (!journey || !record) return { verdict: 'unknown', reason: '' };
     const principal = currentPrincipal();
+    const bridge = /** @type {any} */ (window).pwaBasemapDownloads;
     const stages = journey.stagesFromRecord(record, now || new Date(), {
       signedIn: !!principal,
       principal: principal,
+      terrainExpected: !!(bridge && typeof bridge.terrainExpected === 'function' && bridge.terrainExpected(record)),
     });
     if (stages.map.status === 'unknown') return { verdict: 'unknown', reason: '' };
     const answer = journey.verdictFor(stages);
-    /** @type {''|'conditions'|'things'} */
+    /** @type {''|'conditions'|'things'|'terrain'} */
     let reason = '';
     if (answer === 'refresh') {
-      reason = stages.conditions.status === 'no' ? 'conditions' : 'things';
+      if (stages.map.status === 'no') reason = 'terrain';
+      else reason = stages.conditions.status === 'no' ? 'conditions' : 'things';
     }
     return { verdict: answer, reason: reason };
   }

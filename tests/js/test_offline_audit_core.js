@@ -1912,23 +1912,42 @@ describe('the network-use row and the lock-out it diagnoses (SNOW-922)', () => {
   });
 
   it('tells the user’s own mode apart from the worker’s latch', () => {
-    // Two Nos, two remedies: one is a switch to press, the other lifts
+    // Two states, two remedies: one is a switch to press, the other lifts
     // itself when a probe finds a route. They never share a clause.
+    // SNOW-1483: both are information, never a No.
     const forced = core.buildReport(healthy({ networkMode: 'offline-forced' }), {});
-    expect(row(forced, 'network-use').status).toBe('no');
+    expect(row(forced, 'network-use').status).toBe('info');
     expect(row(forced, 'network-use').reason).toBe('forced');
+    expect(row(forced, 'network-use').value).toBe('answer-info-forced');
 
     const latched = core.buildReport(healthy({ networkMode: 'offline' }), {});
-    expect(latched && row(latched, 'network-use').reason).toBe('latched');
+    expect(row(latched, 'network-use').status).toBe('info');
+    expect(row(latched, 'network-use').reason).toBe('latched');
+    expect(row(latched, 'network-use').value).toBe('answer-info-latched');
   });
 
   it('is not critical: a forced mode over a saved app is working as asked', () => {
     // The point of the mode. Someone who turned it on deliberately, on a
     // device whose app is saved, is getting what they wanted — so the
-    // verdict must not call it a failure.
-    const report = core.buildReport(healthy({ networkMode: 'offline-forced' }), {});
-    expect(row(report, 'network-use').status).toBe('no');
-    expect(report.verdict.status).toBe('warn');
+    // verdict must not call it a failure, nor anything short of the
+    // all-clear (SNOW-1483, Hugo's plane test of 8 Nov 2026: "13 of 14").
+    const auto = core.buildReport(healthy({ networkMode: 'auto' }), {});
+    expect(auto.verdict.text).toBe('verdict-ok');
+    for (const mode of ['offline-forced', 'offline']) {
+      const report = core.buildReport(healthy({ networkMode: mode }), {});
+      expect(row(report, 'network-use').status).toBe('info');
+      expect(report.verdict).toEqual(auto.verdict);
+      // Said, never counted: the tally is the one without the row.
+      expect(report.counts).toEqual({ total: auto.counts.total - 1, yes: auto.counts.yes - 1, no: 0 });
+    }
+  });
+
+  it('keeps the mode’s sentence in the summary, as information', () => {
+    const report = core.buildReport(healthy({ networkMode: 'offline-forced' }), {
+      'notes-sentence': 'Also worth knowing: %(notes)s.',
+      'note-network-forced': 'Offline mode is on',
+    });
+    expect(report.summary).toContain('Offline mode is on');
   });
 
   it('names the forced mode as the blocker when the app is not saved either', () => {

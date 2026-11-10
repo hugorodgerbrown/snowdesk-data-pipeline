@@ -120,7 +120,7 @@ interface Window {
     verdict(
       record: Object | undefined,
       now?: Date,
-    ): { verdict: 'ready' | 'refresh' | 'open-map' | 'unknown'; reason: '' | 'conditions' | 'things' };
+    ): { verdict: 'ready' | 'refresh' | 'open-map' | 'unknown'; reason: '' | 'conditions' | 'things' | 'terrain' };
     press(areaIds: string[], onChange: () => void): Promise<Object | null>;
     state(): { running: boolean; current: string; label: string };
     shortfall(result: Object | null): string;
