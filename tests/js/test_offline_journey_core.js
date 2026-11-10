@@ -806,6 +806,63 @@ describe('the verified stamp (SNOW-1415)', () => {
     expect(journey.stampVerifiedRecord(entry, null)).toBe(entry);
     expect(entry.verified.at).toBe('old');
   });
+
+  // SNOW-1487: what a sync did not finish travels with its stamp.
+  describe('the steps a sync did not finish (SNOW-1487)', () => {
+    const STEP = { step: 'basemap', reason: 'network', done: 212, total: 528, neededMb: 30, freeMb: null };
+
+    it('copies the steps on, failed ones only, as they came', () => {
+      const stamp = journey.verifiedFromSync(
+        { tiles: 'none', tilesHeld: true, content: true, steps: [STEP, null, { step: 'x' }] },
+        AT,
+        '42',
+      );
+      expect(stamp.steps).toEqual([STEP]);
+      expect(stamp.map).toBe('yes');
+    });
+
+    it('stamps an empty list, which clears the last sync\'s steps', () => {
+      const stamp = journey.verifiedFromSync({ tiles: 'unknown', steps: [] }, AT, '');
+      expect(stamp).toEqual({ at: AT, steps: [] });
+      const entry = { verified: { at: 'old', map: 'yes', steps: [STEP] } };
+      expect(journey.stampVerifiedRecord(entry, stamp).verified).toEqual({ at: AT, map: 'yes' });
+    });
+
+    it('replaces the last sync\'s steps with this one\'s', () => {
+      const entry = { verified: { at: 'old', map: 'yes', steps: [STEP] } };
+      const next = { step: 'terrain', reason: 'budget', done: 0, total: 40, neededMb: 12, freeMb: 3 };
+      expect(journey.stampVerifiedRecord(entry, { at: AT, steps: [next] }).verified.steps).toEqual([next]);
+    });
+
+    it('stamps no content answer for a sync stopped before it read the content', () => {
+      const stamp = journey.verifiedFromSync(
+        { tiles: 'unknown', content: undefined, steps: [{ ...STEP, reason: 'interrupted' }] },
+        AT,
+        '42',
+      );
+      expect(stamp.content).toBeUndefined();
+      expect(stamp.principal).toBeUndefined();
+    });
+
+    it('never reads a failed addition into the map or the verdict', () => {
+      const TODAY = '2026-09-11T07:00:00.000Z';
+      for (const step of ['basemap', 'terrain']) {
+        const record = {
+          contentAt: TODAY,
+          verified: { at: TODAY, map: 'yes', steps: [{ ...STEP, step: step }] },
+        };
+        // A failed terrain addition is an area that should hold terrain.
+        const stages = journey.stagesFromRecord(record, NOW, { terrainExpected: step === 'terrain' });
+        expect(stages.map).toEqual({ status: 'yes' });
+        expect(journey.verdictFor(stages)).toBe('ready');
+        expect(journey.additionFailed(record, step)).toBe(true);
+      }
+      // Without the step, terrain expected and not saved still reads No.
+      const unsynced = { contentAt: TODAY, verified: { at: TODAY, map: 'yes' } };
+      expect(journey.stagesFromRecord(unsynced, NOW, { terrainExpected: true }).map.status).toBe('no');
+      expect(journey.additionFailed(unsynced, 'terrain')).toBe(false);
+    });
+  });
 });
 
 describe('the Downloads inventory (SNOW-1418)', () => {
@@ -959,6 +1016,29 @@ describe('the Downloads inventory (SNOW-1418)', () => {
   it('counts a resort with no sheet urls by its stage', () => {
     const r = record({}, { resorts: [{ slug: 'verbier', urls: [] }] });
     expect(byKey(inventory(r, { held: new Set() })).resorts.status).toBe('yes');
+  });
+
+  // SNOW-1487: the terrain row reads its own state, never the map's.
+  it('reads the terrain row from its own tiles, whatever the map says', () => {
+    const saved = record({ terrain: true });
+    const terrain = (r, options) =>
+      byKey(inventory(r, { terrainAvailable: true, ...options })).terrain.status;
+    expect(terrain(saved, { terrainHeld: true })).toBe('yes');
+    expect(terrain(saved, { terrainHeld: false })).toBe('partial');
+    expect(terrain(saved, {})).toBe('unknown');
+    // A map that could not be read leaves the terrain row its own answer.
+    const unread = record({ terrain: true, verified: undefined });
+    expect(byKey(inventory(unread)).map.status).toBe('unknown');
+    expect(terrain(unread, { terrainHeld: true })).toBe('yes');
+    // Saved without it, it is missing however full the bucket.
+    expect(terrain(record(), { terrainHeld: true })).toBe('missing');
+  });
+
+  it('adds a Swiss map row, after the map, for an area still to gain it', () => {
+    const rows = inventory(record(), { swissMissing: true, terrainAvailable: true, terrainHeld: true });
+    expect(rows.slice(0, 3).map((row) => row.key)).toEqual(['map', 'swiss', 'terrain']);
+    expect(byKey(rows).swiss.status).toBe('partial');
+    expect(inventory(record()).map((row) => row.key)).not.toContain('swiss');
   });
 
   it('names each stamped url once, absolute', () => {
