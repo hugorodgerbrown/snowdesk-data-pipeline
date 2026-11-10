@@ -916,7 +916,9 @@ describe('terrain added by Sync (SNOW-1483)', () => {
 
     const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
 
-    expect(result.tiles).toBe('failed');
+    // SNOW-1487: a failed addition is a step, not a map fault.
+    expect(result.tiles).toBe('none');
+    expect(result.steps).toEqual([expect.objectContaining({ step: 'terrain', reason: 'network' })]);
     const record = await storedArea();
     expect(record.terrain).toBeUndefined();
     expect(record.bytes).toBe(4096);
@@ -1678,5 +1680,242 @@ describe('an area in Switzerland downloaded on another map (SNOW-1478)', () => {
 
     expect((await storedArea()).basemaps).toBeUndefined();
     expect(warmedUrls(0)).not.toContain(SWISS_STYLE_URL);
+  });
+});
+
+// SNOW-1487: a failed addition never hides a working map, the sync says
+// what it is doing, and a stop stops it.
+describe('what a sync says it is doing, and a failed addition (SNOW-1487)', () => {
+  const MB = 1024 * 1024;
+
+  /** Offer Swisstopo on the picker, as the SNOW-1478 suite does. */
+  function offerSwisstopo() {
+    const li = document.createElement('li');
+    li.id = 'swiss-row';
+    li.innerHTML = `<button type="button" class="basemap-menu-item"
+      data-basemap-key="swisstopo_winter" data-basemap-url="${SWISS_STYLE_URL}"
+      data-basemap-countries="ch" aria-checked="false">Swisstopo (CH)</button>`;
+    document.getElementById('basemap-menu').appendChild(li);
+  }
+
+  /** Every Swisstopo tile the seeded area's ground implies. */
+  function swissTileUrls() {
+    const core = window.pwaBasemapDownloadCore;
+    return core.rangesToTileURLs([SWISS_TILES], core.buildBlob([7.0, 46.0, 7.2, 46.2], 10, 14));
+  }
+
+  /** The first warm-cache run fails outright, as a dropped connection does. */
+  function failFirstFetch() {
+    window.pwaWarmCache.mockImplementationOnce(async () => ({ ok: 0, failed: 1, bytes: 0, cancelled: false }));
+  }
+
+  /**
+   * The first warm-cache run hangs until the worker is told to cancel it,
+   * and the stop arrives while it is in flight, as Stop or a hidden page
+   * does.
+   *
+   * @param {AbortController} controller
+   */
+  function stopDuringFirstFetch(controller) {
+    let cancel = () => {};
+    window.pwaWarmCacheCancel = vi.fn(() => cancel());
+    window.pwaWarmCache.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          cancel = () => resolve({ ok: 0, failed: 0, bytes: 0, cancelled: true });
+          queueMicrotask(() => controller.abort());
+        }),
+    );
+  }
+
+  /** @param {Object} estimate What `navigator.storage.estimate` answers. */
+  function storage(estimate) {
+    Object.defineProperty(navigator, 'storage', {
+      value: { estimate: async () => estimate },
+      configurable: true,
+    });
+  }
+
+  beforeEach(() => offerSwisstopo());
+  afterEach(() => {
+    document.getElementById('swiss-row')?.remove();
+    delete window.pwaWarmCacheCancel;
+    storage({ quota: 10 * 1024 * MB, usage: 0 });
+  });
+
+  describe('a Swisstopo map that cannot be added to an OpenFreeMap area', () => {
+    it('keeps the map it holds, and says the connection dropped', async () => {
+      failFirstFetch();
+
+      const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+      expect(result).toMatchObject({ tiles: 'none', tilesHeld: true, content: true });
+      expect(result.steps).toEqual([
+        expect.objectContaining({ step: 'basemap', reason: 'network', done: 0, total: 2 + swissTileUrls().length }),
+      ]);
+      const record = await storedArea();
+      expect(record.basemapKey).toBe('openfreemap_liberty');
+      expect(record.basemaps).toBeUndefined();
+      expect(record.verified).toMatchObject({ map: 'yes' });
+      expect(record.verified.steps).toEqual(result.steps);
+    });
+
+    it('says it would go over the download limit, and fetches nothing for it', async () => {
+      await seedArea({ bytes: 600 * MB });
+
+      const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+      expect(result.tiles).toBe('none');
+      expect(result.steps).toEqual([expect.objectContaining({ step: 'basemap', reason: 'budget', freeMb: 0 })]);
+      expect(result.steps[0].neededMb).toBeGreaterThan(0);
+      // Only the content was fetched.
+      expect(window.pwaWarmCache).toHaveBeenCalledTimes(1);
+      expect(warmedUrls(0)).not.toContain(SWISS_STYLE_URL);
+    });
+
+    it('says the phone is nearly full', async () => {
+      storage({ quota: 100 * MB, usage: 99 * MB });
+
+      const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+      expect(result.tiles).toBe('none');
+      expect(result.steps).toEqual([expect.objectContaining({ step: 'basemap', reason: 'quota', freeMb: 1 })]);
+    });
+
+    it("says the map's own documents could not be read", async () => {
+      const real = window.fetch.getMockImplementation();
+      window.fetch.mockImplementation((url) =>
+        String(url) === SWISS_STYLE_URL ? Promise.resolve({ ok: false, json: async () => ({}) }) : real(url),
+      );
+      try {
+        const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+        expect(result.tiles).toBe('none');
+        expect(result.steps).toEqual([expect.objectContaining({ step: 'basemap', reason: 'plan' })]);
+      } finally {
+        window.fetch.mockImplementation(real);
+      }
+    });
+
+    it('says it was stopped part way, and fetches nothing after', async () => {
+      const controller = new AbortController();
+      stopDuringFirstFetch(controller);
+
+      const result = await window.pwaBasemapDownloads.syncArea(AREA_ID, undefined, controller.signal);
+
+      expect(window.pwaWarmCacheCancel).toHaveBeenCalled();
+      expect(window.pwaWarmCache).toHaveBeenCalledTimes(1);
+      expect(result.cancelled).toBe(true);
+      expect(result.steps).toEqual([expect.objectContaining({ step: 'basemap', reason: 'interrupted' })]);
+      // Stopped is not a map fault, and no content answer was read.
+      const record = await storedArea();
+      expect(record.verified.map).toBeUndefined();
+      expect(record.verified.content).toBeUndefined();
+      expect(record.verified.steps).toEqual(result.steps);
+    });
+
+    it('keeps what landed before a failure, and the retry asks only for the rest', async () => {
+      const all = [SWISS_STYLE_URL, SWISS_TILEJSON_URL, ...swissTileUrls()];
+      const landed = all.slice(0, 5);
+      window.pwaWarmCache.mockImplementationOnce(async (urls, options) => {
+        const bucket = await window.caches.open(PINNED_PREFIX + options.areaId);
+        for (const url of landed) await bucket.put(url, {});
+        return { ok: landed.length, failed: urls.length - landed.length, bytes: 2048, cancelled: false };
+      });
+
+      const first = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+      expect(first.steps).toEqual([
+        expect.objectContaining({ step: 'basemap', reason: 'network', done: landed.length, total: all.length }),
+      ]);
+      expect((await storedArea()).bytes).toBe(4096 + 2048);
+      for (const url of landed) expect(cachesStub.openBucket(PINNED_PREFIX + AREA_ID).has(url)).toBe(true);
+      window.pwaWarmCache.mockClear();
+
+      const retry = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+      expect(warmedUrls(0)).toEqual(all.slice(5));
+      expect(retry.steps).toEqual([]);
+      const record = await storedArea();
+      expect(record.basemapKey).toBe('swisstopo_winter');
+      expect(record.verified.steps).toBeUndefined();
+    });
+  });
+
+  it('tells each stage the files landed of the files it needs', async () => {
+    const calls = [];
+    await window.pwaBasemapDownloads.syncArea(AREA_ID, (name, counts) => calls.push([name, counts]));
+
+    const total = 2 + swissTileUrls().length;
+    expect(calls).toContainEqual(['map', { done: 0, total: total }]);
+    expect(calls).toContainEqual(['map', { done: total, total: total }]);
+    expect(calls.findIndex(([name]) => name === 'bulletins')).toBeGreaterThan(
+      calls.findIndex(([, counts]) => counts && counts.done === total),
+    );
+  });
+
+  it('tells the terrain stage its own counts', async () => {
+    document.getElementById('swiss-row')?.remove();
+    terrainData(true);
+    const calls = [];
+    await window.pwaBasemapDownloads.syncArea(AREA_ID, (name, counts) => calls.push([name, counts]));
+
+    const terrain = calls.filter(([name]) => name === 'terrain');
+    expect(terrain.length).toBeGreaterThan(0);
+    expect(terrain.at(-1)[1].done).toBe(terrain.at(-1)[1].total);
+    expect(terrain.at(-1)[1].total).toBeGreaterThan(0);
+  });
+
+  describe('a stop', () => {
+    beforeEach(() => document.getElementById('swiss-row')?.remove());
+
+    it('during the terrain tiles starts no later fetch', async () => {
+      terrainData(true);
+      const controller = new AbortController();
+      stopDuringFirstFetch(controller);
+
+      const result = await window.pwaBasemapDownloads.syncArea(AREA_ID, undefined, controller.signal);
+
+      expect(warmedUrls(0).every(isClassTile)).toBe(true);
+      expect(window.pwaWarmCache).toHaveBeenCalledTimes(1);
+      expect(result.steps).toEqual([expect.objectContaining({ step: 'terrain', reason: 'interrupted' })]);
+      expect((await storedArea()).terrain).toBeUndefined();
+    });
+
+    it('during the render-dependency repair starts no later fetch, and is no map fault', async () => {
+      await seedArea({ verified: { at: '2026-01-01T00:00:00.000Z', map: 'yes' } });
+      holdDependencies([STYLE_URL, SPRITE_URL]);
+      const controller = new AbortController();
+      stopDuringFirstFetch(controller);
+
+      const result = await window.pwaBasemapDownloads.syncArea(AREA_ID, undefined, controller.signal);
+
+      expect(warmedUrls(0)).toEqual([TILEJSON_URL]);
+      expect(window.pwaWarmCache).toHaveBeenCalledTimes(1);
+      expect(result.steps).toEqual([expect.objectContaining({ step: 'deps', reason: 'interrupted' })]);
+      expect((await storedArea()).verified.map).toBe('yes');
+    });
+
+    it('during the content records the content step as stopped', async () => {
+      const controller = new AbortController();
+      stopDuringFirstFetch(controller);
+
+      const result = await window.pwaBasemapDownloads.syncArea(AREA_ID, undefined, controller.signal);
+
+      expect(warmedUrls(0)).toContain(BULLETIN_URL);
+      expect(result.steps).toEqual([expect.objectContaining({ step: 'content', reason: 'interrupted' })]);
+      expect((await storedArea()).verified).toMatchObject({ map: 'yes' });
+    });
+
+    it('before the sync begins fetches nothing and stamps nothing', async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      const result = await window.pwaBasemapDownloads.syncArea(AREA_ID, undefined, controller.signal);
+
+      expect(result).toMatchObject({ cancelled: true, steps: [] });
+      expect(window.pwaWarmCache).not.toHaveBeenCalled();
+      expect((await storedArea()).verified).toBeUndefined();
+    });
   });
 });

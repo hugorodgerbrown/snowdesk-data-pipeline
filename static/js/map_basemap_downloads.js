@@ -1748,6 +1748,94 @@ const ORPHAN_BUCKET_BYTES = new Map();
  */
 function forgetPinnedBucketMeasurement(areaId) {
   ORPHAN_BUCKET_BYTES.delete(areaId);
+  AREA_INVENTORY_MEASUREMENTS.delete(areaId);
+}
+
+// SNOW-1487: the inventory's measurements of one area's bucket, by area
+// id — see `measureAreaInventory`. Forgotten with the orphan figure above,
+// by the same two writers.
+const AREA_INVENTORY_MEASUREMENTS = new Map();
+
+/**
+ * SNOW-1487: one cached entry's size — its `Content-Length`, else its
+ * body. A tile served compressed carries no length (see
+ * `measurePinnedBucketBytes`), so the body is read for it.
+ *
+ * @param {Response|undefined} response
+ * @returns {Promise<number>}
+ */
+async function _entryBytes(response) {
+  if (!response) return 0;
+  const header = Number(response.headers && response.headers.get('Content-Length'));
+  if (Number.isFinite(header) && header > 0) return header;
+  try {
+    return (await response.clone().blob()).size;
+  } catch (_e) {
+    return 0;
+  }
+}
+
+/**
+ * SNOW-1487: what one area's bucket holds, measured — the map's bytes,
+ * the terrain data's bytes, and whether every terrain tile the record
+ * implies is there.
+ *
+ * The record keeps one total, written by the run that made it and grown
+ * by each sync; split by an estimate it read "0 MB" for a map whenever
+ * the estimate ran over the total. So the inventory measures instead, by
+ * URL class: an entry under the terrain-class or elevation template is
+ * terrain data, and everything else in the bucket is the map. Measured
+ * once per area per page and forgotten whenever its bucket changes.
+ *
+ * @param {string} areaId
+ * @param {Object|null} record The area's stored record.
+ * @returns {Promise<{mapBytes: number, terrainBytes: number,
+ *   terrainHeld: (boolean|null)}|null>} Null when the bucket cannot be
+ *   read. `terrainHeld` is null for an area with no terrain tiles to hold.
+ */
+async function measureAreaInventory(areaId, record) {
+  if (AREA_INVENTORY_MEASUREMENTS.has(areaId)) return AREA_INVENTORY_MEASUREMENTS.get(areaId);
+  if (!('caches' in window) || !areaId) return null;
+  /** @param {string} template */
+  const prefixOf = (template) => (template ? template.split('{z}')[0] : '');
+  const prefixes = [prefixOf(terrainClassTileTemplate()), prefixOf(elevationTileTemplate())].filter(Boolean);
+  let measured;
+  try {
+    const cache = await caches.open(BASEMAP_PINNED_CACHE_PREFIX + areaId);
+    const requests = await cache.keys();
+    const held = new Set();
+    let mapBytes = 0;
+    let terrainBytes = 0;
+    for (const request of requests) {
+      held.add(request.url);
+      const bytes = await _entryBytes(await cache.match(request));
+      if (prefixes.some((prefix) => request.url.startsWith(prefix))) terrainBytes += bytes;
+      else mapBytes += bytes;
+    }
+    const expected = record && record.terrain ? areaTerrainClassTileUrls(record) : [];
+    measured = {
+      mapBytes: mapBytes,
+      terrainBytes: terrainBytes,
+      terrainHeld: expected.length ? expected.every((url) => held.has(url)) : null,
+    };
+  } catch (_e) {
+    return null;
+  }
+  AREA_INVENTORY_MEASUREMENTS.set(areaId, measured);
+  return measured;
+}
+
+/**
+ * SNOW-1487: whether a stored area's ground wants the Swisstopo map and
+ * the area does not hold it — the inventory's "Swiss map: Not added yet"
+ * line, read by the rule Sync adds it by (`_basemapsToAdd`).
+ *
+ * @param {Object|null} record A `basemap.regions` or `basemap.customAreas` row.
+ * @returns {boolean}
+ */
+function swissMapMissing(record) {
+  if (!record) return false;
+  return _basemapsToAdd({ record: record, regionId: record.region_id || '' }).length > 0;
 }
 
 /**
@@ -3227,10 +3315,35 @@ window.pwaBasemapDownloads = Object.freeze({
    * many surfaces offer them. See `syncArea` for the ordering, the
    * unconditional content refetch, and what the two fields mean.
    *
+   * SNOW-1487: `onStage(step, {done, total})` hears each stage with its
+   * counts, and `signal` stops the sync; `steps` lists what did not
+   * finish.
+   *
    * @param {string} areaId
-   * @returns {Promise<{tiles: 'ok'|'failed'|'none', content: boolean}>}
+   * @param {function(string, Object=): void} [onStage]
+   * @param {AbortSignal|null} [signal]
+   * @returns {Promise<{tiles: 'ok'|'failed'|'none', content: boolean, steps?: Object[]}>}
    */
-  syncArea: (areaId, onStage) => syncArea(areaId, onStage),
+  syncArea: (areaId, onStage, signal) => syncArea(areaId, onStage, signal),
+
+  /**
+   * SNOW-1487: what one area's bucket holds, measured by URL class, for
+   * the Downloads sheet's inventory — see `measureAreaInventory`.
+   *
+   * @param {string} areaId
+   * @param {Object|null} record
+   * @returns {Promise<Object|null>}
+   */
+  measureAreaInventory: (areaId, record) => measureAreaInventory(areaId, record),
+
+  /**
+   * SNOW-1487: whether a stored area should gain the Swisstopo map — see
+   * `swissMapMissing`.
+   *
+   * @param {Object|null} record
+   * @returns {boolean}
+   */
+  swissMapMissing: (record) => swissMapMissing(record),
 
   /**
    * SNOW-844: every URL held across every pinned bucket — see
@@ -4557,7 +4670,8 @@ async function _stampAreaContent(areaId, regionId, complete, expectation, conten
  * it back into stages. Best-effort, like the content stamp beside it.
  *
  * @param {string} areaId
- * @param {{tiles?: string, content?: boolean}} result `syncArea`'s answer.
+ * @param {{tiles?: string, content?: boolean, steps?: Object[]}} result
+ *   `syncArea`'s answer. SNOW-1487: its `steps` are stamped with it.
  * @returns {Promise<void>}
  */
 async function _stampAreaVerified(areaId, result) {
@@ -4711,10 +4825,39 @@ async function _rewriteAreaRecord(areaId, regionId, stamp) {
  *   completion rather than a failure.
  */
 async function refreshAreaContent(areaId, onStage) {
+  return (await _refreshAreaContent(areaId, onStage, null)).ok;
+}
+
+/**
+ * SNOW-1487: `refreshAreaContent`'s whole answer — whether the content
+ * landed and, where it did not, why: the plan was short (`plan`), the
+ * fetch fell short (`network`) or `signal` stopped it (`interrupted`).
+ * `syncArea` keeps the reason as its content step. An area with no
+ * record has no reason: there was nothing to fetch.
+ *
+ * @param {string} areaId
+ * @param {function(string, {done: number, total: number}=): void} [onStage]
+ * @param {AbortSignal|null} [signal]
+ * @returns {Promise<{ok: boolean, reason: ''|'plan'|'network'|'interrupted',
+ *   done: number, total: number}>}
+ */
+async function _refreshAreaContent(areaId, onStage, signal) {
   const tell = typeof onStage === 'function' ? onStage : () => {};
+  /**
+   * @param {boolean} ok
+   * @param {''|'plan'|'network'|'interrupted'} [reason]
+   * @param {number} [done]
+   * @param {number} [total]
+   */
+  const answer = (ok, reason, done, total) => ({
+    ok: ok,
+    reason: ok ? '' : reason || '',
+    done: done || 0,
+    total: total || 0,
+  });
   const found = await _areaRecordById(areaId);
-  if (!found) return false;
-  tell('bulletins');
+  if (!found) return answer(false);
+  tell('bulletins', { done: 0, total: 0 });
 
   // The pair, not a bare list: a plan assembled while a country was
   // unreachable is short however many of its urls land, and a refresh that
@@ -4743,10 +4886,10 @@ async function refreshAreaContent(areaId, onStage) {
     // exactly the message-not-a-state SNOW-932 closed.
     if (content.short) {
       await _stampAreaContent(areaId, found.regionId, false);
-      return false;
+      return answer(false, 'plan');
     }
     await _stampAreaContent(areaId, found.regionId, true, content.items);
-    return true;
+    return answer(true);
   }
 
   // SNOW-1416: only what changed — see `_contentDeltaFor`.
@@ -4756,7 +4899,7 @@ async function refreshAreaContent(areaId, onStage) {
     // A fresh, whole area: nothing to fetch, and its `contentAt` must not
     // move, or it would never come due again.
     const fresh = !!autosync && !autosync.isStale(found.record, new Date());
-    if (fresh && !content.short) return true;
+    if (fresh && !content.short) return answer(true);
     // A short plan is still recorded as one (SNOW-953), even when what it
     // did resolve was all held — keeping a fresh area's `contentAt`.
     await _stampAreaContent(
@@ -4766,33 +4909,25 @@ async function refreshAreaContent(areaId, onStage) {
       content.items,
       fresh ? delta.keepsContentAt : undefined,
     );
-    return !content.short;
+    return answer(!content.short, 'plan');
   }
 
-  return new Promise((resolve) => {
-    repairPinnedDownload({
-      areaId: areaId,
-      urls: delta.urls,
-      // Nothing to paint: the sheet re-renders on the result, and this is
-      // a handful of documents rather than a several-minute download —
-      // the same reasoning the `repair` bridge member above gives.
-      // SNOW-1415: the percentage names the stage, because the plan lists
-      // its urls in stage order (`stageFrom`) and the runner counts them.
-      paint: (_state, pct) => {
-        const done = Number.isFinite(pct) ? Math.floor((pct / 100) * delta.urls.length) : 0;
-        tell(contentStageAt(delta.stageFrom, done));
-      },
-      finish: async (result, extras) => {
-        const runCore = extras && extras.core;
-        const ok = !!(runCore && runCore.downloadSucceeded(result)) && !content.short;
-        // SNOW-1416: a fresh area that only gained what it lacked keeps its
-        // `contentAt` — its held bulletins were not refetched, so the stamp
-        // must not claim they were.
-        await _stampAreaContent(areaId, found.regionId, ok, content.items, delta.keepsContentAt);
-        resolve(ok);
-      },
-    });
+  // SNOW-1415: the counts name the stage, because the plan lists its urls
+  // in stage order (`stageFrom`) and the runner counts them. SNOW-1487:
+  // and they are passed on, so the row can say how far it has got.
+  const fetched = await _repairInto(areaId, delta.urls, {
+    signal: signal,
+    onProgress: (done, total) => tell(contentStageAt(delta.stageFrom, done), { done: done, total: total }),
   });
+  const ok = fetched.ok && !content.short;
+  // A stopped fetch is not a short one: nothing is stamped, so the area
+  // keeps the content answer it had, and the next sync fetches the rest.
+  if (fetched.cancelled) return answer(false, 'interrupted', fetched.done, fetched.total);
+  // SNOW-1416: a fresh area that only gained what it lacked keeps its
+  // `contentAt` — its held bulletins were not refetched, so the stamp
+  // must not claim they were.
+  await _stampAreaContent(areaId, found.regionId, ok, content.items, delta.keepsContentAt);
+  return answer(ok, fetched.ok ? 'plan' : 'network', fetched.done, fetched.total);
 }
 
 /**
@@ -5009,6 +5144,175 @@ function _recordBlob(record) {
 }
 
 /**
+ * SNOW-1487: one addition's answer — `_addMissingBasemaps` and
+ * `_addMissingTerrain` both return it, and `syncArea` turns a failed one
+ * into a step on the `verified` stamp.
+ *
+ * @typedef {Object} AdditionResult
+ * @property {'ok'|'none'|'failed'|'unknown'} status `'none'` when there
+ *   was nothing to add; `'unknown'` when the bucket could not be read.
+ * @property {''|'network'|'interrupted'|'budget'|'quota'|'plan'} reason
+ *   Why a failed addition failed, '' otherwise: the connection dropped
+ *   (`network`), the run was stopped or the page hidden (`interrupted`),
+ *   it would take the downloads over the reader's limit (`budget`), the
+ *   phone has no room (`quota`), or the map's own documents could not be
+ *   read (`plan`).
+ * @property {number} done Files that landed.
+ * @property {number} total Files the addition needed.
+ * @property {number} neededMb What the addition would cost.
+ * @property {number|null} freeMb What room there was, where it was read.
+ */
+
+/**
+ * SNOW-1487: an addition's answer, with every field present.
+ *
+ * @param {'ok'|'none'|'failed'|'unknown'} status
+ * @param {string} [reason]
+ * @param {Object} [extra] Any of `done`, `total`, `neededMb`, `freeMb`.
+ * @returns {AdditionResult}
+ */
+function _additionResult(status, reason, extra) {
+  return /** @type {AdditionResult} */ (Object.assign(
+    { status: status, reason: reason || '', done: 0, total: 0, neededMb: 0, freeMb: null },
+    extra || {},
+  ));
+}
+
+/**
+ * SNOW-1487: whether an addition of `deltaMb` fits, before anything is
+ * fetched. A sync never evicts another area to make room, so a delta that
+ * would need an eviction is a failed addition (`budget`), as is one the
+ * phone's storage cannot take (`quota`).
+ *
+ * @param {string} areaId
+ * @param {Object} record The area's stored record.
+ * @param {number} deltaMb
+ * @param {number} total How many files the addition needs.
+ * @returns {Promise<AdditionResult|null>} Null when it fits.
+ */
+async function _additionRefusal(areaId, record, deltaMb, total) {
+  const mb = 1024 * 1024;
+  const currentBytes = Number(record && record.bytes) || 0;
+  const budget = await planBasemapDownloadBudget(areaId, currentBytes / mb + deltaMb);
+  if (budget && (budget.impossible || budget.evict.length > 0)) {
+    let standing = 0;
+    for (const [id, area] of budget.areasById || new Map()) {
+      if (id !== areaId) standing += Number(area && area.bytes) || 0;
+    }
+    const budgetBytes = await basemapDownloadBudgetBytes();
+    const freeMb = Math.max(0, Math.floor((budgetBytes - standing - currentBytes) / mb));
+    return _additionResult('failed', 'budget', { total: total, neededMb: deltaMb, freeMb: freeMb });
+  }
+  if (!(await basemapDownloadFitsQuota(deltaMb))) {
+    return _additionResult('failed', 'quota', {
+      total: total,
+      neededMb: deltaMb,
+      freeMb: await _storageFreeMb(),
+    });
+  }
+  return null;
+}
+
+/**
+ * SNOW-1487: how much room the phone's storage has left, in MB, or null
+ * where the browser will not say.
+ *
+ * @returns {Promise<number|null>}
+ */
+async function _storageFreeMb() {
+  try {
+    if (!('storage' in navigator) || typeof navigator.storage.estimate !== 'function') return null;
+    const estimate = await navigator.storage.estimate();
+    const quota = Number(estimate && estimate.quota);
+    const usage = Number(estimate && estimate.usage);
+    if (!Number.isFinite(quota) || !Number.isFinite(usage)) return null;
+    return Math.max(0, Math.floor((quota - usage) / (1024 * 1024)));
+  } catch (_e) {
+    return null;
+  }
+}
+
+/**
+ * SNOW-1487: fetch `urls` into an area's own bucket through the repair
+ * path, telling `onProgress` the counts as they land, and stopping when
+ * `signal` aborts.
+ *
+ * Every fetch a sync makes goes through here: the Swisstopo map, the
+ * terrain tiles, the render-dependency repair and the content. A stop is
+ * the worker's own cancel (`pwaWarmCacheCancel`, `cancelWarmCache` in
+ * sw_register.js), whose run settles with `cancelled: true`, so what
+ * landed before the stop stays in the bucket and a later sync fetches
+ * only the rest (`missingFromAreaBucket`). A signal already aborted
+ * fetches nothing.
+ *
+ * @param {string} areaId
+ * @param {string[]} urls
+ * @param {{signal?: AbortSignal|null, onProgress?: function(number, number): void}} [options]
+ * @returns {Promise<{ok: boolean, cancelled: boolean, done: number, total: number, bytes: number}>}
+ */
+function _repairInto(areaId, urls, options) {
+  const opts = options || {};
+  const signal = opts.signal || null;
+  const report = typeof opts.onProgress === 'function' ? opts.onProgress : () => {};
+  const total = urls.length;
+  if (signal && signal.aborted) {
+    return Promise.resolve({ ok: false, cancelled: true, done: 0, total: total, bytes: 0 });
+  }
+  return new Promise((resolve) => {
+    let done = 0;
+    const onAbort = () => window.pwaWarmCacheCancel?.();
+    if (signal) signal.addEventListener('abort', onAbort);
+    report(0, total);
+    repairPinnedDownload({
+      areaId: areaId,
+      urls: urls,
+      // Nothing to paint on a roundel: the caller is told the counts.
+      paint: (_state, _pct, _bytes, counts) => {
+        if (!counts || !Number.isFinite(counts.done)) return;
+        done = counts.done;
+        report(counts.done, Number.isFinite(counts.total) ? counts.total : total);
+      },
+      finish: async (result, extras) => {
+        if (signal) signal.removeEventListener('abort', onAbort);
+        const runCore = extras && extras.core;
+        const answer = result || {};
+        resolve({
+          ok: !!(runCore && runCore.downloadSucceeded(result)),
+          cancelled: !!answer.cancelled || !!(signal && signal.aborted),
+          done: Number.isFinite(answer.ok) ? Number(answer.ok) : done,
+          total: total,
+          bytes: Number(answer.bytes) || 0,
+        });
+      },
+    });
+  });
+}
+
+/**
+ * SNOW-1487: a failed addition's answer from its fetch, and the bytes
+ * that did land counted on the record, since they stay in the bucket.
+ *
+ * @param {string} areaId
+ * @param {string} regionId
+ * @param {{cancelled: boolean, done: number, total: number, bytes: number}} outcome
+ * @param {number} deltaMb
+ * @returns {Promise<AdditionResult>}
+ */
+async function _failedAddition(areaId, regionId, outcome, deltaMb) {
+  if (outcome.bytes > 0) {
+    await _rewriteAreaRecord(areaId, regionId, (entry) => ({
+      ...entry,
+      bytes: (Number(entry.bytes) || 0) + outcome.bytes,
+    }));
+  }
+  return _additionResult('failed', outcome.cancelled ? 'interrupted' : 'network', {
+    done: outcome.done,
+    total: outcome.total,
+    neededMb: deltaMb,
+  });
+}
+
+/**
  * SNOW-1478: add the Swisstopo map to an area downloaded on another map
  * before Swiss downloads saved it — the half of Sync that makes an old
  * Swiss area draw offline whichever map is on screen.
@@ -5017,59 +5321,48 @@ function _recordBlob(record) {
  * and the map already held share no tiles, but a reader who browsed the
  * area on Swisstopo may hold some. The delta is checked against the
  * budget first, and a sync never evicts another area to make room: a
- * delta that does not fit is a failed map half, mended by freeing space.
+ * delta that does not fit is a failed addition, mended by freeing space.
  * On success the record gains the entry, first, and its top-level
  * `basemapKey`, `template` and `deps` move to it; the map it already held
  * stays as a second entry. The glyph prefix is kept: it is the handle on
  * entries the original run promoted, and every glyph this one needs is
  * fetched by URL.
  *
+ * SNOW-1487: a failed addition leaves the map the area already held as it
+ * was, and says why (`AdditionResult`). What landed before a failure
+ * stays in the bucket and on the record's bytes, so a retry fetches only
+ * the rest.
+ *
  * @param {string} areaId
  * @param {{record: Object, regionId: (string|null)}} found
- * @returns {Promise<'ok'|'none'|'failed'|'unknown'>} `'none'` when the area
- *   already holds every map its ground needs, or needs none it lacks.
+ * @param {{signal?: AbortSignal|null, onProgress?: function(number, number): void}} [options]
+ * @returns {Promise<AdditionResult>} `'none'` when the area already holds
+ *   every map its ground needs, or needs none it lacks.
  */
-async function _addMissingBasemaps(areaId, found) {
+async function _addMissingBasemaps(areaId, found, options) {
   const core = self.pwaBasemapDownloadCore;
-  if (!core || typeof core.recordBasemaps !== 'function') return 'none';
-  const held = core.recordBasemaps(found.record).map((entry) => entry.key);
-  // Only Swisstopo is added. A foreign map the reader has since switched
-  // to is not: Sync is not a re-download onto whatever is on screen.
-  const toAdd = downloadBasemapKeys(_areaGround(found)).filter(
-    (key) => key === core.ELEVATION_BASEMAP_KEY && held.indexOf(key) < 0,
-  );
-  if (toAdd.length === 0) return 'none';
+  if (!core || typeof core.recordBasemaps !== 'function') return _additionResult('none');
+  const toAdd = _basemapsToAdd(found);
+  if (toAdd.length === 0) return _additionResult('none');
   const blob = _recordBlob(found.record);
-  if (!blob) return 'unknown';
+  if (!blob) return _additionResult('unknown');
   const plans = await Promise.all(toAdd.map((key) => resolveDownloadBasemap(key)));
-  if (plans.some((plan) => !plan)) return 'failed';
+  if (plans.some((plan) => !plan)) return _additionResult('failed', 'plan');
   const urls = [];
   for (const plan of plans) {
     urls.push(...plan.renderDeps, ...core.rangesToTileURLs(plan.tileSources, blob));
   }
   const missing = await missingFromAreaBucket(areaId, urls);
-  if (missing === null) return 'unknown';
+  if (missing === null) return _additionResult('unknown');
   let addedBytes = 0;
   if (missing.length > 0) {
     const perTile = plans.reduce((most, plan) => Math.max(most, core.bytesPerTileForBasemap(plan.key)), 0);
     const deltaMb = Math.ceil((missing.length * perTile) / (1024 * 1024));
-    const currentMb = (Number(found.record.bytes) || 0) / (1024 * 1024);
-    const budget = await planBasemapDownloadBudget(areaId, currentMb + deltaMb);
-    if (budget && (budget.impossible || budget.evict.length > 0)) return 'failed';
-    if (!(await basemapDownloadFitsQuota(deltaMb))) return 'failed';
-    const outcome = await new Promise((resolve) => {
-      repairPinnedDownload({
-        areaId: areaId,
-        urls: missing,
-        paint: () => {},
-        finish: async (result, extras) => {
-          const runCore = extras && extras.core;
-          resolve({ ok: !!(runCore && runCore.downloadSucceeded(result)), bytes: (result && result.bytes) || 0 });
-        },
-      });
-    });
-    if (!outcome.ok) return 'failed';
-    addedBytes = Number(outcome.bytes) || 0;
+    const refused = await _additionRefusal(areaId, found.record, deltaMb, missing.length);
+    if (refused) return refused;
+    const outcome = await _repairInto(areaId, missing, options);
+    if (!outcome.ok) return _failedAddition(areaId, found.regionId || '', outcome, deltaMb);
+    addedBytes = outcome.bytes;
   }
   await _rewriteAreaRecord(areaId, found.regionId, (entry) => {
     const added = plans.map((plan) => ({ key: plan.key, template: plan.tileSources, deps: plan.renderDeps }));
@@ -5085,7 +5378,28 @@ async function _addMissingBasemaps(areaId, found) {
     };
   });
   notifyDownloadsChanged();
-  return 'ok';
+  return _additionResult('ok', '', { done: missing.length, total: missing.length });
+}
+
+/**
+ * SNOW-1478: the maps a sync would add to one stored area — Swisstopo,
+ * where its ground is Swiss and it does not hold it. A foreign map the
+ * reader has since switched to is not: Sync is not a re-download onto
+ * whatever is on screen.
+ *
+ * SNOW-1487: shared with the Downloads sheet's "Swiss map: Not added yet"
+ * line (`swissMapMissing`), so the line and the sync cannot disagree.
+ *
+ * @param {{record: Object, regionId: (string|null)}} found
+ * @returns {string[]}
+ */
+function _basemapsToAdd(found) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || typeof core.recordBasemaps !== 'function' || !found || !found.record) return [];
+  const held = core.recordBasemaps(found.record).map((entry) => entry.key);
+  return downloadBasemapKeys(_areaGround(found)).filter(
+    (key) => key === core.ELEVATION_BASEMAP_KEY && held.indexOf(key) < 0,
+  );
 }
 
 /**
@@ -5104,41 +5418,31 @@ async function _addMissingBasemaps(areaId, found) {
  *
  * On success the record gains `terrain: true` and the bytes added, and
  * the account row is re-pushed with the flag, so another device repeats
- * it. On failure the record is left as it was: it still reads "Terrain
- * not saved", which is true.
+ * it. On failure the record keeps no flag: it still reads "Terrain not
+ * saved", which is true. SNOW-1487: the bytes that landed are counted,
+ * and the answer says why it failed.
  *
  * @param {string} areaId
  * @param {{record: Object, regionId: (string|null)}} found
- * @returns {Promise<'ok'|'none'|'failed'|'unknown'>} `'none'` when the
- *   area already has terrain data or should not hold any.
+ * @param {{signal?: AbortSignal|null, onProgress?: function(number, number): void}} [options]
+ * @returns {Promise<AdditionResult>} `'none'` when the area already has
+ *   terrain data or should not hold any.
  */
-async function _addMissingTerrain(areaId, found) {
+async function _addMissingTerrain(areaId, found, options) {
   const core = self.pwaBasemapDownloadCore;
   const record = found.record;
-  if (!core || !record || record.terrain || !terrainExpected(record)) return 'none';
+  if (!core || !record || record.terrain || !terrainExpected(record)) return _additionResult('none');
   const urls = areaTerrainClassTileUrls({ ...record, terrain: true });
   const missing = await missingFromAreaBucket(areaId, urls);
-  if (missing === null) return 'unknown';
+  if (missing === null) return _additionResult('unknown');
   let addedBytes = 0;
   if (missing.length > 0) {
     const deltaMb = core.terrainClassMb(missing.length);
-    const currentMb = (Number(record.bytes) || 0) / (1024 * 1024);
-    const budget = await planBasemapDownloadBudget(areaId, currentMb + deltaMb);
-    if (budget && (budget.impossible || budget.evict.length > 0)) return 'failed';
-    if (!(await basemapDownloadFitsQuota(deltaMb))) return 'failed';
-    const outcome = await new Promise((resolve) => {
-      repairPinnedDownload({
-        areaId: areaId,
-        urls: missing,
-        paint: () => {},
-        finish: async (result, extras) => {
-          const runCore = extras && extras.core;
-          resolve({ ok: !!(runCore && runCore.downloadSucceeded(result)), bytes: (result && result.bytes) || 0 });
-        },
-      });
-    });
-    if (!outcome.ok) return 'failed';
-    addedBytes = Number(outcome.bytes) || 0;
+    const refused = await _additionRefusal(areaId, record, deltaMb, missing.length);
+    if (refused) return refused;
+    const outcome = await _repairInto(areaId, missing, options);
+    if (!outcome.ok) return _failedAddition(areaId, found.regionId || '', outcome, deltaMb);
+    addedBytes = outcome.bytes;
   }
   await _rewriteAreaRecord(areaId, found.regionId, (entry) => ({
     ...entry,
@@ -5159,7 +5463,38 @@ async function _addMissingTerrain(areaId, found) {
     principal: record.principal,
   });
   notifyDownloadsChanged();
-  return 'ok';
+  return _additionResult('ok', '', { done: missing.length, total: missing.length });
+}
+
+/**
+ * SNOW-1487: one step of a sync that did not finish, as the `verified`
+ * stamp keeps it.
+ *
+ * @typedef {Object} SyncStep
+ * @property {'basemap'|'terrain'|'deps'|'content'} step
+ * @property {'network'|'interrupted'|'budget'|'quota'|'plan'} reason
+ * @property {number} done
+ * @property {number} total
+ * @property {number} neededMb
+ * @property {number|null} freeMb
+ */
+
+/**
+ * SNOW-1487: a failed addition or fetch as a step.
+ *
+ * @param {'basemap'|'terrain'|'deps'|'content'} step
+ * @param {{reason: string, done?: number, total?: number, neededMb?: number, freeMb?: number|null}} answer
+ * @returns {SyncStep}
+ */
+function _syncStep(step, answer) {
+  return /** @type {SyncStep} */ ({
+    step: step,
+    reason: answer.reason || 'network',
+    done: Number(answer.done) || 0,
+    total: Number(answer.total) || 0,
+    neededMb: Number(answer.neededMb) || 0,
+    freeMb: Number.isFinite(answer.freeMb) ? Number(answer.freeMb) : null,
+  });
 }
 
 /**
@@ -5198,9 +5533,23 @@ async function _addMissingTerrain(areaId, found) {
  * render check and still draws nothing — SNOW-951 review, and see
  * `_areaBucketOnDevice` for where such a record comes from.
  *
+ * SNOW-1487: a failed ADDITION (the Swisstopo map, the terrain data) is
+ * not a map fault. The map the area already held still draws, so its
+ * `tiles` answer is the one the render check gives, and the failure is a
+ * step (`steps`) with its reason, which the Downloads sheet shows under
+ * the row (docs/decisions/a-failed-addition-never-hides-a-working-map.md).
+ * `onStage(step, {done, total})` hears each stage — `map`, `terrain`,
+ * then `bulletins`, `weather` and `things` — with the files landed of
+ * the files it needs. `signal` stops the sync: no later stage starts, the
+ * fetch in flight is cancelled, its step is recorded as `interrupted`
+ * and what the sync learned is stamped.
+ *
  * @param {string} areaId The pinned bucket id.
+ * @param {function(string, {done: number, total: number}=): void} [onStage]
+ * @param {AbortSignal|null} [signal]
  * @returns {Promise<{tiles: 'ok'|'failed'|'none'|'unknown'|'absent'|'incomplete',
- *   tilesHeld?: boolean|null, content: boolean}>} `tiles` is `'incomplete'`
+ *   tilesHeld?: boolean|null, content: boolean, steps?: SyncStep[],
+ *   cancelled?: boolean}>} `tiles` is `'incomplete'`
  *   when the dependencies are here but the tile grid is short
  *   (`_areaTilesHeld`, SNOW-1415 review), which only a re-download mends;
  *   `tilesHeld` is that reading, null where none could be taken.
@@ -5212,10 +5561,12 @@ async function _addMissingTerrain(areaId, found) {
  *   fetched and `content` is `false`. `content` is otherwise
  *   `refreshAreaContent`'s own answer, unchanged, including its
  *   short-plan and empty-plan semantics. `'none'`/`false` for an
- *   id nothing on this device carries.
+ *   id nothing on this device carries. `steps` lists what did not finish,
+ *   failed steps only; `cancelled` is set when `signal` stopped the sync.
  */
-async function syncArea(areaId, onStage) {
+async function syncArea(areaId, onStage, signal) {
   const tell = typeof onStage === 'function' ? onStage : () => {};
+  const stopped = () => !!(signal && signal.aborted);
   let found = await _areaRecordById(areaId);
   if (!found) return { tiles: 'none', content: false };
   if (!(await _areaBucketOnDevice(areaId))) {
@@ -5223,42 +5574,68 @@ async function syncArea(areaId, onStage) {
     await _stampAreaVerified(areaId, gone);
     return gone;
   }
+  /** @type {SyncStep[]} */
+  const steps = [];
+  /**
+   * Stamp what the sync learned before a stop, and say so. The step in
+   * flight is already in `steps`, as `interrupted`; a stage that never
+   * started claims nothing, and no content answer is stamped, because the
+   * content was not read.
+   *
+   * @param {Object} partial The answer so far.
+   * @returns {Promise<Object>}
+   */
+  const stop = async (partial) => {
+    const result = Object.assign({ tiles: 'unknown', tilesHeld: null }, partial, {
+      content: false,
+      steps: steps,
+      cancelled: true,
+    });
+    await _stampAreaVerified(areaId, Object.assign({}, result, { content: undefined }));
+    return result;
+  };
+  // Stopped before it began: nothing was read, so nothing is stamped.
+  if (stopped()) return { tiles: 'unknown', content: false, steps: steps, cancelled: true };
 
-  tell('map');
+  tell('map', { done: 0, total: 0 });
+  const mapProgress = (done, total) => tell('map', { done: done, total: total });
   // SNOW-1478: an area in Switzerland downloaded on another map gains the
   // Swisstopo map first, and the record is read again, so the halves
   // below judge (and mend) every map it now holds, the Swisstopo
   // elevation tiles among them.
-  const added = await _addMissingBasemaps(areaId, found);
-  if (added === 'ok') found = (await _areaRecordById(areaId)) || found;
+  const added = await _addMissingBasemaps(areaId, found, { signal: signal, onProgress: mapProgress });
+  if (added.status === 'failed') steps.push(_syncStep('basemap', added));
+  if (added.status === 'ok') found = (await _areaRecordById(areaId)) || found;
+  if (stopped()) return stop({});
   // SNOW-1483: and an area saved without terrain data gains it, the record
   // read again so the halves below judge (and stamp) it with its terrain,
   // its elevation tiles among what they mend.
-  const terrainAdded = await _addMissingTerrain(areaId, found);
-  if (terrainAdded === 'ok') found = (await _areaRecordById(areaId)) || found;
+  const terrainAdded = await _addMissingTerrain(areaId, found, {
+    signal: signal,
+    onProgress: (done, total) => tell('terrain', { done: done, total: total }),
+  });
+  if (terrainAdded.status === 'failed') steps.push(_syncStep('terrain', terrainAdded));
+  if (terrainAdded.status === 'ok') found = (await _areaRecordById(areaId)) || found;
+  if (stopped()) return stop({});
   const missing = await _missingAreaRenderDependencies(found.record, areaId);
   let tiles = missing === null ? 'unknown' : 'none';
-  if ((added === 'ok' || terrainAdded === 'ok') && tiles === 'none') tiles = 'ok';
+  if ((added.status === 'ok' || terrainAdded.status === 'ok') && tiles === 'none') tiles = 'ok';
   if (missing && missing.length > 0) {
-    const repaired = await new Promise((resolve) => {
-      repairPinnedDownload({
-        areaId: areaId,
-        urls: missing,
-        // Nothing to paint, as `refreshAreaContent` above: the caller
-        // re-renders on the result, and a repair is a handful of
-        // documents rather than a several-minute download.
-        paint: () => {},
-        finish: async (result, extras) => {
-          const runCore = extras && extras.core;
-          resolve(!!(runCore && runCore.downloadSucceeded(result)));
-        },
-      });
-    });
-    tiles = repaired ? 'ok' : 'failed';
+    // The documents the area draws with, on the map stage's counts.
+    const repaired = await _repairInto(areaId, missing, { signal: signal, onProgress: mapProgress });
+    if (!repaired.ok) {
+      steps.push(
+        _syncStep('deps', {
+          reason: repaired.cancelled ? 'interrupted' : 'network',
+          done: repaired.done,
+          total: repaired.total,
+        }),
+      );
+      // A stopped repair is not a map fault: the stamp keeps what it said.
+      if (repaired.cancelled) return stop({});
+    }
+    tiles = repaired.ok ? 'ok' : 'failed';
   }
-  // SNOW-1478: a Swisstopo map that could not be added is a map half that
-  // did not finish, whatever the documents below said.
-  if (added === 'failed' || terrainAdded === 'failed') tiles = 'failed';
   // SNOW-1453: every elevation tile the area should hold is in its bucket
   // now (nothing was missing, or the repair fetched it all), so the record
   // takes today's template as its stamp, and 3D may be drawn there
@@ -5272,9 +5649,14 @@ async function syncArea(areaId, onStage) {
     tilesHeld = await _areaTilesHeld(areaId, found.record);
     if (tilesHeld === false) tiles = 'incomplete';
   }
+  if (stopped()) return stop({ tiles: tiles, tilesHeld: tilesHeld });
 
-  const content = await refreshAreaContent(areaId, tell);
-  const result = { tiles: tiles, tilesHeld: tilesHeld, content: content };
+  const content = await _refreshAreaContent(areaId, tell, signal);
+  if (!content.ok && content.reason) {
+    steps.push(_syncStep('content', { reason: content.reason, done: content.done, total: content.total }));
+  }
+  const result = { tiles: tiles, tilesHeld: tilesHeld, content: content.ok, steps: steps };
+  if (content.reason === 'interrupted') return stop({ tiles: tiles, tilesHeld: tilesHeld });
   await _stampAreaVerified(areaId, result);
   return result;
 }
