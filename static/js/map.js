@@ -2410,6 +2410,10 @@
   const applyFavouritedResortColour = () => {
     if (!map.getLayer('resorts-pin')) return;
     map.setFilter('resorts-pin', resortPinFilter());
+    // Below z8 the pinned set is which dots draw, and so which weather
+    // symbols step aside (resortsDrawnNow): re-project them now, not at the
+    // next pan.
+    refreshWeatherSourceData();
     map.setPaintProperty(
       'resorts-pin',
       'circle-color',
