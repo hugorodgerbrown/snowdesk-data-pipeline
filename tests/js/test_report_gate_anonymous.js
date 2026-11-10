@@ -106,3 +106,18 @@ describe('anonymous tap on Report', () => {
     expect(sheet.querySelector('[data-panel-add]')).toBeNull();
   });
 });
+
+describe("anonymous Report from the hold bar (SNOW-1485)", () => {
+  it('gets the same sign-in gate, and loads no form', () => {
+    window.pwaReportSheet.close();
+    globalThis.htmx.ajax.mockClear();
+
+    window.pwaReportSheet.reportAt(46.25, 7.5);
+
+    expect(sheet.hidden).toBe(false);
+    expect(globalThis.htmx.ajax).not.toHaveBeenCalled();
+    expect(sheet.textContent).toContain('Sign in to submit a field observation.');
+    expect(sheet.querySelector(`a[href^="${SIGNIN_URL}"]`)).not.toBeNull();
+    expect(Object.isFrozen(window.pwaReportSheet)).toBe(true);
+  });
+});

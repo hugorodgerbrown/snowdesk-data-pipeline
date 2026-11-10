@@ -42,6 +42,29 @@ interface Window {
   pwaCalendarCore: any;
   /** static/js/day_nav_core.js — the date row's day steps and empty-day lookup (SNOW-1195). */
   pwaDayNavCore: any;
+  /** static/js/map_hold_core.js — the hold-to-place detector (SNOW-1485). */
+  pwaMapHoldCore: {
+    HOLD_MS: number;
+    TOLERANCE_PX: number;
+    SYNTHETIC_MS: number;
+    CLICK_GRACE_MS: number;
+    createDetector(options: {
+      onHold(point: { x: number; y: number }, source: 'touch' | 'mouse'): void;
+      delayMs?: number;
+      tolerancePx?: number;
+      setTimer?(fn: () => void, ms: number): any;
+      clearTimer?(handle: any): void;
+      now?(): number;
+    }): {
+      touchStart(points: Array<{ x: number; y: number }>): void;
+      touchMove(points: Array<{ x: number; y: number }>): void;
+      touchEnd(): void;
+      cancel(): void;
+      contextMenu(point: { x: number; y: number }): boolean;
+      takeClick(): boolean;
+      dispose(): void;
+    };
+  };
   pwaStaleDayCore: any;
   /** static/js/map_3d_core.js — the 3D map's pure parts (terrain, routeShare3dUrl), the probe's frameStats and /map/'s frame watchdog (frameWindowFails, createFrameWatch; SNOW-1455). */
   pwaMap3dCore: any;
@@ -280,12 +303,24 @@ interface Window {
    *  toToday, which Saved → Places' rows borrow. */
   pwaTodayPanel: { open(): void; close(): void; isOpen(): boolean; toToday(): void };
   /** SNOW-1476: the favourites, routes and report sheets' controllers.
-   *  SNOW-1481: the favourites sheet always lists Places. */
-  pwaFavouritesSheet: { open(): void; close(): void; isOpen(): boolean };
+   *  SNOW-1481: the favourites sheet always lists Places.
+   *  SNOW-1485: createAt opens it on the create form at a held point. */
+  pwaFavouritesSheet: {
+    open(): void;
+    close(): void;
+    isOpen(): boolean;
+    createAt(lat: number, lon: number): void;
+  };
   /** SNOW-1479: the Saved tab's Trips sheet (static/js/trips_panel.js). */
   pwaTripsSheet: { open(): void; close(): void; isOpen(): boolean };
   pwaRoutesSheet: { open(): void; close(): void; isOpen(): boolean };
-  pwaReportSheet: { open(): void; close(): void; isOpen(): boolean };
+  /** SNOW-1485: reportAt opens the report form at a held point. */
+  pwaReportSheet: {
+    open(): void;
+    close(): void;
+    isOpen(): boolean;
+    reportAt(lat: number, lon: number): void;
+  };
   /** static/js/map_downloads_manager.js — the downloads sheet. */
   pwaDownloadsManager: { open(): void; toggle(): void; refresh(): void };
   /** SNOW-1481: Saved, the four sheets as one panel (static/js/saved_panel.js). */

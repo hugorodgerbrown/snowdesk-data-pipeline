@@ -347,11 +347,41 @@
   // MapSheet.attach's registration with window.pwaMapOverlays and closes
   // whatever else is up, exactly as a tap would. Frozen, like every other
   // window.pwa* bridge.
+  //
+  // SNOW-1485: ``createAt`` is the hold bar's Save pin (static/js/map_hold.js).
   window.pwaFavouritesSheet = Object.freeze({
     open: openSheet,
     close: closeSheet,
     isOpen: controller.isOpen,
+    createAt: createAt,
   });
+
+  /** Open the sheet straight on the create form, at a point already chosen.
+   *
+   * SNOW-1485: Save pin on the hold bar. The reader held the map and
+   * fine-tuned the spot, so the list would be a step in the way: the form
+   * opens with the coordinate written, and the place-picker is armed on it,
+   * so a further pan still moves the pin as it does from the panel's +. A
+   * visitor who cannot save gets the panel and its sign-in CTA, exactly as
+   * the star gives them.
+   *
+   * @param {number} lat
+   * @param {number} lon
+   * @returns {void}
+   */
+  function createAt(lat, lon) {
+    if (!IS_ELIGIBLE) {
+      openSheet();
+      return;
+    }
+    controller.open();
+    showCreateForm(lat, lon);
+    window.PlacePicker?.activate({
+      recenterTo: [lon, lat],
+      onChange: writeCreateCoords,
+      occludedBy: sheet,
+    });
+  }
 
   /** Show the create form seeded from the map centre and arm the place-picker.
    * @returns {void}
