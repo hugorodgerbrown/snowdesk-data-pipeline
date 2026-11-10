@@ -2179,6 +2179,8 @@ def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
 
 # SNOW-459: private/no-store, NOT public — CDN/proxy caching of this
 # response is left for SNOW-469 (tracked separately, out of scope here).
+# SNOW-1480: and since each report's ``mine`` is the reader's own answer,
+# the response must never be shared between readers at all.
 @cache_control(private=True, no_store=True)
 def community_reports_geojson(request: HttpRequest) -> JsonResponse:
     """
@@ -2207,6 +2209,13 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
     ``observed_at`` is sent as recorded — with no name anywhere in the
     payload there is nothing for a precise time to identify.
 
+    ``mine`` (SNOW-1480) is whether the signed-in reader wrote the report —
+    true when any of its rows is theirs, always false for an anonymous
+    reader. It is computed here, against ``request.user``, so the payload
+    still carries no user id: the only thing it says about identity is
+    "this one is yours", and only to its author. The map paints those pins
+    blue; the offline cache strips it before keeping the payload.
+
     Response shape::
 
         {
@@ -2223,7 +2232,8 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
                 "observed_at": "2026-07-19T10:15:00+00:00",
                 "observed_on": "2026-07-19",
                 "region_id": "CH-4115",
-                "region_name": "Martigny-Verbier"
+                "region_name": "Martigny-Verbier",
+                "mine": false
               }
             },
             ...
@@ -2252,6 +2262,7 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
             return JsonResponse({"error": "malformed date"}, status=400)
 
     window = report_window(day, today)
+    viewer_id = request.user.pk if request.user.is_authenticated else None
     rows = (
         FieldObservation.objects.in_window(*window)
         # ``location`` joined: each report's coordinate is its Location's,
@@ -2294,9 +2305,13 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
                     "observed_on": timezone.localdate(obs.observed_at).isoformat(),
                     "region_id": obs.region.region_id if obs.region else None,
                     "region_name": obs.region.name if obs.region else None,
+                    "mine": False,
                 },
             }
         report["properties"]["types"].append(obs.observation_type)
+        # A report is the reader's when any of its rows is theirs. An
+        # anonymous reader's ``None`` matches no row: ``user`` is required.
+        report["properties"]["mine"] |= obs.user_id == viewer_id
 
     labels = dict(FieldObservation.OBSERVATION_TYPE.choices)
     features: list[dict[str, Any]] = []

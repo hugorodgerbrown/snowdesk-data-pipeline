@@ -20,14 +20,18 @@
  *   - the short age a live pin carries ("12m", "3h");
  *   - the `?d=` a fetch for the map's day asks with;
  *   - the three family glyphs, as stroke paths on the 24 grid shared with
- *     templates/includes/_icon_observation_family.html.
+ *     templates/includes/_icon_observation_family.html;
+ *   - the colour the reader's own reports are drawn in (SNOW-1480), and
+ *     the copy of a payload the offline cache keeps, with `mine` dropped:
+ *     the cache is shared by whoever opens the map on this device.
  *
  * ## Exports (frozen `self.pwaCommunityReportsCore`)
  *
- *   RECENT_DAYS, FAMILIES, FAMILY_COLOURS, FAMILY_PATHS
+ *   RECENT_DAYS, FAMILIES, FAMILY_COLOURS, FAMILY_PATHS, MINE_COLOUR
  *   addDays(dayKey, n)
  *   reportState(observedOn, displayDate, today)
  *   withStates(geojson, displayDate, today, now)
+ *   withoutMine(geojson)
  *   ageLabel(observedAt, now)
  *   fetchUrl(baseUrl, displayDate, today)
  *   asList(value)
@@ -56,6 +60,14 @@
     SURFACE: '#0369a1',
     TRAIL: '#0f766e',
   });
+
+  /**
+   * The colour the reader's own reports are drawn in, whatever their
+   * family (SNOW-1480): the JS side of --color-accent in src/css/main.css,
+   * for the same reason as FAMILY_COLOURS. Change one, change the other —
+   * tests/observations/test_family_colour_parity.py holds them together.
+   */
+  const MINE_COLOUR = '#2563eb';
 
   /**
    * The family marks as SVG path data on a 24×24 grid, stroked at 2px —
@@ -157,6 +169,26 @@
   }
 
   /**
+   * A copy of the collection with each report's `mine` removed, for the
+   * offline cache (SNOW-1480). The cache is principal-free — it is read
+   * back for whoever opens the map on this device, signed in or not — so
+   * it must not remember whose reports were whose. Read back offline,
+   * every report draws in its family's colours. Never mutates its input:
+   * the live payload still paints the reader's own pins.
+   *
+   * @param {any} geojson
+   * @returns {any}
+   */
+  function withoutMine(geojson) {
+    if (!geojson || !Array.isArray(geojson.features)) return geojson;
+    const features = geojson.features.map((/** @type {any} */ feature) => {
+      const { mine: _mine, ...rest } = (feature && feature.properties) || {};
+      return { ...feature, properties: rest };
+    });
+    return { ...geojson, features };
+  }
+
+  /**
    * The URL a fetch for the map's day asks. Today needs no `?d=` — the
    * bare URL is the live-and-recent window, and keeps the one cache entry
    * the offline read-back has always used.
@@ -199,9 +231,11 @@
     FAMILIES,
     FAMILY_COLOURS,
     FAMILY_PATHS,
+    MINE_COLOUR,
     addDays,
     reportState,
     withStates,
+    withoutMine,
     ageLabel,
     fetchUrl,
     asList,

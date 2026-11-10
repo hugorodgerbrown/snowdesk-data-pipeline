@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal partitioning, Download basemap, custom-area download, overlay offline caches
 status: current
-last-reviewed: 2026-11-04
+last-reviewed: 2026-11-10
 ---
 
 # PWA shell
@@ -814,7 +814,14 @@ the stronger case: a GPX track is a record of where somebody actually
 went. `community_reports` is deliberately **absent** from that set — it is
 public data with no account binding, and a report cached while signed in
 must stay readable after logout (tying it to a principal would wrongly hide
-public data across an account change).
+public data across an account change). Because it is principal-free, the cached copy
+keeps nothing about the reader: the live feed's `mine` (SNOW-1480, the
+reader's own reports, drawn blue) is stripped before every write
+(`pwaCommunityReportsCore.withoutMine`, in `map.js`'s
+`fetchCommunityReports` and `map_basemap_downloads.js`'s
+`cacheOverlayFeedsForDownload`), so offline every report draws in its
+family's colours. For the same reason a region sheet body that marks a
+report "You" is sent `no-store` and never kept.
 
 - **Known gap**: none of these caches expires or gets evicted — a
   favourites/routes/community-reports snapshot can go arbitrarily stale

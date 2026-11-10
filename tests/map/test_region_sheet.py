@@ -19,6 +19,8 @@ Covers:
     test_problem_terrain.py), not the body.
   - SNOW-1291: "On the ground" — signed out, a sign-in link; signed in,
     the button static/js/report.js opens; each row keyed by submission.
+  - SNOW-1480: the reader's own report says "You", to its author only,
+    and a body that says it is sent ``no-store``.
   - TERRAIN MODE (SNOW-1422): the sheet no longer opens in Terrain, so
     the "Select a date…" panel and the ``data-dated`` marks SNOW-1394 gave
     it are gone.
@@ -696,6 +698,54 @@ class TestOnTheGround:
         assert f'data-observation-submission="{report.submission}"' in content
 
 
+@pytest.mark.django_db
+class TestYourOwnReport:
+    """SNOW-1480: the reader's own report says "You", to them alone."""
+
+    MINE = 'data-testid="on-the-ground-mine"'
+
+    def _url_with_report(self) -> tuple[str, Any]:
+        """A region with one report today, and the report's author."""
+        region = MicroRegionFactory.create()
+        author = UserFactory.create()
+        FieldObservationFactory.create(
+            region=region, user=author, observed_at=timezone.now()
+        )
+        return _url(region.region_id.lower()), author
+
+    def test_the_author_reads_you(self, client: Client) -> None:
+        url, author = self._url_with_report()
+        client.force_login(author)
+        content = _get(client, url).content.decode()
+        assert self.MINE in content
+        assert re.search(r'on-the-ground-mine"\s*>\s*You\s*<', content)
+
+    def test_another_reader_does_not(self, client: Client) -> None:
+        url, _author = self._url_with_report()
+        client.force_login(UserFactory.create())
+        assert self.MINE not in _get(client, url).content.decode()
+
+    def test_a_signed_out_reader_does_not(self, client: Client) -> None:
+        url, _author = self._url_with_report()
+        assert self.MINE not in _get(client, url).content.decode()
+
+    def test_a_body_that_says_you_is_never_kept(self, client: Client) -> None:
+        """The worker would serve it to whoever opens the map offline."""
+        url, author = self._url_with_report()
+        client.force_login(author)
+        header = _get(client, url)["Cache-Control"]
+        assert "no-store" in header
+        assert "private" in header
+        assert "max-age" not in header
+
+    def test_a_body_without_you_stays_keepable(self, client: Client) -> None:
+        url, _author = self._url_with_report()
+        client.force_login(UserFactory.create())
+        header = _get(client, url)["Cache-Control"]
+        assert "no-store" not in header
+        assert "max-age=600" in header
+
+
 # SNOW-1317: one call to report's wrapper — the report button for a
 # signed-in reader, the sign-in link for anyone else.
 def _cta(body: str, reader: str) -> str:
@@ -730,7 +780,9 @@ class TestOfflineCopy:
     Since SNOW-1317 it is byte-identical for every reader but the glossary
     popovers' run-on ids: "On the ground"'s call to report carries both its
     forms, and the map page's ``data-reader`` picks one. Anything about the
-    reader reaching the body fails here.
+    reader reaching the body fails here. The one exception is the reader's
+    own report, which says "You" and is never kept (SNOW-1480,
+    ``TestYourOwnReport``); the report here is someone else's.
     """
 
     def _bodies(self, client: Client, django_user_model: Any) -> tuple[str, str]:

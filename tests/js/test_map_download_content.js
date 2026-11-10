@@ -148,7 +148,16 @@ const AREA_ITEMS = {
 
 const FAVOURITES_GEOJSON = { type: 'FeatureCollection', features: [] };
 const ROUTES_GEOJSON = { type: 'FeatureCollection', features: [] };
-const REPORTS_GEOJSON = { type: 'FeatureCollection', features: [] };
+// SNOW-1480: one report of the reader's own, far outside every area, so
+// the stamp still holds none — it is here for the cached copy to drop `mine`.
+const REPORTS_GEOJSON = {
+  type: 'FeatureCollection',
+  features: [{
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [0, 0] },
+    properties: { submission: 'far-away', family: 'TRAIL', mine: true },
+  }],
+};
 // SNOW-1320: search's SAC summit list, which a download stores too.
 const SUMMITS = { summits: [{ key: 'mont-fort', name: 'Mont Fort', lon: 7.3, lat: 46.08 }] };
 /** What /api/ski-summits.json answers on the next call. */
@@ -648,6 +657,14 @@ describe('a download takes the content inside its boundary', () => {
     ]);
     // SNOW-1320: stored as the server sent it, for loadSummits to read back.
     expect(overlayStore.get('ski_summits')).toEqual(SUMMITS);
+  });
+
+  it("caches the reports feed without the reader's `mine` (SNOW-1480)", () => {
+    const cached = overlayStore.get('community_reports');
+    expect(cached.features).toHaveLength(1);
+    expect(cached.features[0].properties).toEqual({ submission: 'far-away', family: 'TRAIL' });
+    // The served payload itself is left alone.
+    expect(REPORTS_GEOJSON.features[0].properties.mine).toBe(true);
   });
 
   it('stamps the record with when its content was fetched', async () => {

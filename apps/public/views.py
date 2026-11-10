@@ -2671,6 +2671,8 @@ def _bulletin_detail_response(
         patch_cache_control(response, public=True, max_age=60)
         return response
 
+    # No ``viewer`` (SNOW-1480): this page is publicly cached, so it marks
+    # nobody's report "You" — only the map's no-store region sheet does.
     body = build_bulletin_body(request, region, page_date, selected, skipped)
     panel = body["panel"]
     next_update_time = body["next_update_time"]
