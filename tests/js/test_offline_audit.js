@@ -2839,4 +2839,54 @@ describe('copyReport — the Downloads sheet’s Copy report (SNOW-1488)', () =>
 
     expect(await audit.copyReport(document.createElement('div'))).toBe(false);
   });
+
+  describe('where ClipboardItem exists (WebKit keeps the tap only until the first await)', () => {
+    /** A ClipboardItem stand-in that keeps what it was built with. */
+    class FakeClipboardItem {
+      constructor(items) {
+        this.items = items;
+      }
+    }
+
+    beforeEach(() => {
+      vi.stubGlobal('ClipboardItem', FakeClipboardItem);
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('asks the clipboard within the tap, then hands it the same report text', async () => {
+      await seedVerbier();
+      const write = vi.fn(async () => {});
+      const writeText = vi.fn(async () => {});
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { write, writeText },
+        configurable: true,
+      });
+      const host = document.createElement('div');
+      host.setAttribute('data-terrain-class-tile-url', TEMPLATE);
+
+      const pending = audit.copyReport(host);
+      // Asked before anything was awaited, so the tap still counts.
+      expect(write).toHaveBeenCalledTimes(1);
+
+      expect(await pending).toBe(true);
+      expect(writeText).not.toHaveBeenCalled();
+      const [[item]] = write.mock.calls[0];
+      const blob = await item.items['text/plain'];
+      expect(blob.type).toBe('text/plain');
+      expect(await blob.text()).toContain('available offline');
+    });
+
+    it('answers false when the clipboard refuses the item', async () => {
+      await seedVerbier();
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { write: vi.fn(async () => Promise.reject(new Error('NotAllowedError'))) },
+        configurable: true,
+      });
+
+      expect(await audit.copyReport(document.createElement('div'))).toBe(false);
+    });
+  });
 });

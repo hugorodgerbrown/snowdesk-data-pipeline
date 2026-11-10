@@ -3362,25 +3362,55 @@
    * template, so they are the English fallbacks there, and the copy is a
    * diagnostic for whoever it is sent to rather than a surface.
    *
+   * The clipboard is asked before the report is taken. Collecting crosses
+   * the service worker, Cache Storage and IndexedDB, and WebKit drops the
+   * tap's user activation across those, refusing a write made afterwards
+   * (https://bugs.webkit.org/show_bug.cgi?id=222262). So where
+   * `ClipboardItem` exists, `clipboard.write` is called within the tap with
+   * an item whose text is a promise the collection resolves. Elsewhere the
+   * text is written once taken, as /offline/'s button does.
+   *
+   * Call it from the click handler, before any `await`.
+   *
    * @param {HTMLElement|null} host
    * @returns {Promise<boolean>} Whether the clipboard took it.
    */
-  async function copyReport(host) {
+  function copyReport(host) {
     var core = self.pwaOfflineAuditCore;
-    if (!core) return false;
-    var readings;
+    if (!core) return Promise.resolve(false);
+    var text = collect(host)
+      .catch(function (err) {
+        return { now: new Date().toISOString(), failure: describeError(err) };
+      })
+      .then(function (readings) {
+        return reportTextFor(core.buildReport(readings, strings()));
+      });
+    var clipboard = navigator.clipboard;
+    var written;
     try {
-      readings = await collect(host);
-    } catch (err) {
-      readings = { now: new Date().toISOString(), failure: describeError(err) };
-    }
-    try {
-      var text = reportTextFor(core.buildReport(readings, strings()));
-      await navigator.clipboard.writeText(text);
-      return true;
+      if (typeof ClipboardItem === 'function' && clipboard && typeof clipboard.write === 'function') {
+        var item = new ClipboardItem({
+          'text/plain': text.then(function (value) {
+            return new Blob([value], { type: 'text/plain' });
+          }),
+        });
+        written = clipboard.write([item]);
+      } else {
+        written = text.then(function (value) {
+          return clipboard.writeText(value);
+        });
+      }
     } catch (_err) {
-      return false;
+      return Promise.resolve(false);
     }
+    return Promise.resolve(written).then(
+      function () {
+        return true;
+      },
+      function () {
+        return false;
+      },
+    );
   }
 
   /**
