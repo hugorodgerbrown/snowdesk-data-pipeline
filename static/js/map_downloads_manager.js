@@ -2595,19 +2595,26 @@
         return null;
       }
     };
-    const [held, routes, reports, measured] = await Promise.all([
+    // The measurement walks the bucket, so it is not waited for: the
+    // panel paints from the other readings, and again once it lands.
+    const measuring = measure();
+    const [held, routes, reports] = await Promise.all([
       urls.length && downloads && typeof downloads.heldContent === 'function'
         ? downloads.heldContent(urls)
         : Promise.resolve(null),
       idsIn('routes', 'uuid'),
       idsIn('community_reports', 'submission'),
-      measure(),
     ]);
-    inventoryReadings.set(id, {
+    const reading = {
       held: held,
       overlayIds: { routes: routes, reports: reports },
-      measured: measured,
-    });
+      measured: /** @type {any} */ (null),
+    };
+    inventoryReadings.set(id, reading);
+    repaintInventory(id);
+    const measured = await measuring;
+    if (!measured || inventoryReadings.get(id) !== reading) return;
+    reading.measured = measured;
     repaintInventory(id);
   }
 

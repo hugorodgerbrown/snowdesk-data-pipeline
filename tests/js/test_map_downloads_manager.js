@@ -5211,6 +5211,25 @@ describe('the inventory under a row (SNOW-1418)', () => {
     for (const item of Object.values(listed)) expect(item.value).not.toMatch(/^0(\.0)? MB$/);
   });
 
+  it('paints the other readings without waiting for the bucket to be measured', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    // Nothing cached: only a reading of the overlay store says so.
+    await boot({ [REGION_ID]: record({ bytes: 40 * MB }) }, { overlay: { geojson: null } });
+    let measuredNow = () => {};
+    window.pwaBasemapDownloads.measureAreaInventory.mockImplementationOnce(
+      () => new Promise((resolve) => (measuredNow = resolve)),
+    );
+    toggleOf(firstRowElement()).click();
+    await settle();
+
+    expect(items(firstRowElement())['Your routes'].state).not.toBe('yes');
+    expect(items(firstRowElement())['Map'].value).toBe('');
+
+    measuredNow({ mapBytes: 35 * MB, terrainBytes: 0, terrainHeld: null });
+    await settle();
+    expect(items(firstRowElement())['Map'].value).toBe('35.0 MB');
+  });
+
   it('shows no size until the bucket has been measured', async () => {
     seed({ 'basemap.regions': REGIONS });
     window.caches.measured = null;
