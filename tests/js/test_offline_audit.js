@@ -2758,3 +2758,85 @@ describe('the verified stamp (SNOW-1415)', () => {
     expect(row.value[0].verified).toBeUndefined();
   });
 });
+
+describe('copyReport — the Downloads sheet’s Copy report (SNOW-1488)', () => {
+  const TEMPLATE = 'https://terrain.example/v1/{z}/{x}/{y}.png';
+  const BBOX = [7.2, 46.08, 7.24, 46.1];
+
+  beforeAll(async () => {
+    await import('../../static/js/basemap_download_core.js');
+    await import('../../static/js/slope_classes_core.js');
+    await import('../../static/js/terrain_filter_core.js');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+  });
+
+  /** Put `writeText` on the clipboard, recording what it is handed. */
+  function stubClipboard(writeText) {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+  }
+
+  async function seedVerbier() {
+    await seedMeta({
+      'basemap.customAreas': [
+        {
+          id: 'custom-c1',
+          name: 'Verbier',
+          bbox: BBOX,
+          band: [10, 14],
+          terrain: true,
+          deps: ['https://t/style.json'],
+        },
+      ],
+    });
+  }
+
+  it('copies the text /offline/’s Copy button gives for the same inputs', async () => {
+    await seedVerbier();
+    const written = [];
+    stubClipboard(vi.fn(async (text) => written.push(text)));
+
+    // /offline/: its panel, run and then copied.
+    document.body.innerHTML = `
+      <div data-offline-audit data-terrain-class-tile-url="${TEMPLATE}">
+        <button data-offline-audit-run></button>
+        <div data-offline-audit-output hidden></div>
+        <button data-offline-audit-copy hidden></button>
+        <p data-offline-audit-status></p>
+      </div>
+    `;
+    audit.init();
+    document.querySelector('[data-offline-audit-run]').click();
+    await vi.waitUntil(() => !document.querySelector('[data-offline-audit-copy]').hidden, {
+      timeout: 5000,
+    });
+    document.querySelector('[data-offline-audit-copy]').click();
+    await vi.waitUntil(() => written.length === 1, { timeout: 5000 });
+
+    // The map: the hidden host the Downloads sheet renders, not a panel.
+    const host = document.createElement('div');
+    host.setAttribute('data-offline-audit-host', '');
+    host.setAttribute('data-terrain-class-tile-url', TEMPLATE);
+    const copied = await audit.copyReport(host);
+
+    expect(copied).toBe(true);
+    expect(written).toHaveLength(2);
+    // Line 2 is the moment each was taken; everything else is the same.
+    const unstamped = (text) => text.split('\n').filter((_line, i) => i !== 1).join('\n');
+    expect(unstamped(written[1])).toBe(unstamped(written[0]));
+    expect(written[1]).toContain('available offline');
+  });
+
+  it('answers false when the clipboard refuses', async () => {
+    await seedVerbier();
+    stubClipboard(vi.fn(async () => Promise.reject(new Error('NotAllowedError'))));
+
+    expect(await audit.copyReport(document.createElement('div'))).toBe(false);
+  });
+});

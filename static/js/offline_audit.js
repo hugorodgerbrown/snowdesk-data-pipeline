@@ -3007,11 +3007,7 @@
     if (copyButton) {
       copyButton.addEventListener('click', async function () {
         if (!lastReport) return;
-        var text = self.pwaOfflineAuditCore.reportText(lastReport, {
-          url: self.location ? self.location.href : '',
-          userAgent: navigator.userAgent,
-          appVersion: appVersion(),
-        });
+        var text = reportTextFor(lastReport);
         try {
           await navigator.clipboard.writeText(text);
           say(t.copied || FALLBACKS.copied);
@@ -3336,6 +3332,58 @@
   }
 
   /**
+   * The text a copied report carries: the report, and the page, browser and
+   * build it was taken on. One helper for /offline/'s Copy button and for
+   * `copyReport`, so the two copies cannot drift (SNOW-1488).
+   *
+   * @param {Object} report `pwaOfflineAuditCore.buildReport`'s answer.
+   * @returns {string}
+   */
+  function reportTextFor(report) {
+    return self.pwaOfflineAuditCore.reportText(report, {
+      url: self.location ? self.location.href : '',
+      userAgent: navigator.userAgent,
+      appVersion: appVersion(),
+    });
+  }
+
+  /**
+   * SNOW-1488: take the report and put it on the clipboard, from a page
+   * with no audit panel — the map's Downloads sheet, whose "…" menu is how
+   * a reader of the installed app (no address bar) reaches the report.
+   *
+   * Collected against `host`, which carries the same inputs `/offline/`'s
+   * `[data-offline-audit]` does (includes/_offline_audit_host_attrs.html),
+   * so the copy holds the same checks. A collection that throws is copied
+   * as the failure report /offline/ paints for it, since a report that
+   * could not be taken is itself the finding.
+   *
+   * Its words come from `strings()`: the map renders no audit strings
+   * template, so they are the English fallbacks there, and the copy is a
+   * diagnostic for whoever it is sent to rather than a surface.
+   *
+   * @param {HTMLElement|null} host
+   * @returns {Promise<boolean>} Whether the clipboard took it.
+   */
+  async function copyReport(host) {
+    var core = self.pwaOfflineAuditCore;
+    if (!core) return false;
+    var readings;
+    try {
+      readings = await collect(host);
+    } catch (err) {
+      readings = { now: new Date().toISOString(), failure: describeError(err) };
+    }
+    try {
+      var text = reportTextFor(core.buildReport(readings, strings()));
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  /**
    * Bind every host present on this page.
    *
    * @returns {void}
@@ -3363,6 +3411,8 @@
     // SNOW-1415: the panels stamp what they read on each record, so the
     // connection panel can answer on pages that cannot read tiles.
     stampVerified: stampAreaVerified,
+    // SNOW-1488: the Downloads sheet's Copy report; see `copyReport`.
+    copyReport: copyReport,
     latest: function (root) {
       var c = controllerFor(root);
       return c ? c.latest() : null;

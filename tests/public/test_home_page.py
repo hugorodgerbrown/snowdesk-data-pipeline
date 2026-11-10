@@ -744,7 +744,10 @@ class TestHomePageFavouritesParity:
         assert "data-signin-url" in content
         assert 'data-overlay-key="favourites"' in content
         assert 'id="map-favourites-overlay-toggle"' in content
-        assert "data-favourites-url" not in content
+        # SNOW-1488: the Downloads sheet's hidden report host carries the
+        # attribute EMPTY for a signed-out reader, as /offline/'s does; no
+        # per-user url renders.
+        assert not re.search(r'data-favourites-url="[^"]', content)
 
     def test_add_control_and_overlay_eligible_for_account(self) -> None:
         """A logged-in account sees the roundel, the layers-menu overlay row,

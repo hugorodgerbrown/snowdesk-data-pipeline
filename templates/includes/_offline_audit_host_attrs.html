@@ -1,0 +1,36 @@
+{% comment %}
+includes/_offline_audit_host_attrs.html — the attributes the offline report
+reads off the element it is collected against (static/js/offline_audit.js's
+``collect``): the default basemap, the content feeds an area's Update
+resolves, the bulletin day, and the terrain-class and elevation tile
+templates an area is judged on.
+
+Rendered inside an opening tag by its two hosts, so both run the same
+checks on the same inputs:
+
+  * includes/_offline_audit_panel.html — ``[data-offline-audit]`` on
+    ``/offline/``;
+  * public/partials/_map_downloads_sheet.html — the hidden
+    ``[data-offline-audit-host]`` the Downloads sheet's Copy report collects
+    against (SNOW-1488).
+
+Context: ``apps.public.map_shared.offline_audit_context``'s keys. Every
+value defaults to empty, which is static/offline.html's case too: there the
+report makes no claim it has no input for.
+{% endcomment %}
+data-default-basemap-key="{{ default_basemap_key|default:'' }}"
+data-regions-url="{{ content_feeds.regions|default:'' }}"
+data-area-content-url="{{ content_feeds.area_content|default:'' }}"
+data-area-items-url="{{ content_feeds.area_items|default:'' }}"
+data-trip-page-url-template="{{ content_feeds.trip_page|default:'' }}"
+data-trip-route-url-template="{{ content_feeds.trip_route|default:'' }}"
+data-weather-url="{{ content_feeds.weather|default:'' }}"
+data-weather-detail-url="{{ content_feeds.weather_detail|default:'' }}"
+data-ratings-url="{{ content_feeds.ratings|default:'' }}"
+data-region-sheet-url="{{ content_feeds.region_sheet|default:'' }}"
+data-resort-sheet-url="{{ content_feeds.resort_sheet|default:'' }}"
+data-favourite-sheet-url="{{ content_feeds.favourite_sheet|default:'' }}"
+data-favourites-url="{{ content_feeds.favourites|default:'' }}" data-routes-url="{{ content_feeds.routes|default:'' }}"
+data-community-reports-url="{{ content_feeds.community_reports|default:'' }}"
+data-content-countries="{{ content_countries|default:'' }}" data-today="{{ today|default:'' }}"
+data-terrain-class-tile-url="{{ terrain_class_tile_url|default:'' }}" data-dem-tile-url="{{ dem_tile_url|default:'' }}"

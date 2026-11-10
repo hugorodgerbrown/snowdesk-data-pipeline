@@ -325,6 +325,9 @@
     // fills it.
     'sync-row-label': 'Sync %(name)s now',
     'sync-failed': "That area couldn't be brought up to date. Try again.",
+    // SNOW-1488: the header menu's Copy report.
+    'report-copied': 'Report copied. Paste it into a message to send it.',
+    'report-copy-failed': "The report couldn't be copied.",
     // SNOW-1420: each row's offline answer — see `paintRowAnswer`.
     'area-status-ready': 'Works offline',
     'area-reason-conditions': 'Bulletins out of date',
@@ -2456,6 +2459,12 @@
       toggleInventory(inventoryToggle);
       return;
     }
+    // SNOW-1488: the header menu's Copy report. Works with no signal: the
+    // report reads only what this device holds.
+    if (target.closest('[data-downloads-copy-report]')) {
+      copyOfflineReport();
+      return;
+    }
     // SNOW-1414: "Download a region" — the same two gates as the custom
     // area below, then the pick task (static/js/map_region_pick.js).
     if (target.closest('[data-panel-add-region]')) {
@@ -2524,6 +2533,24 @@
     if (_handleForgetClick(event)) return;
     _handleDeleteClick(event);
   });
+
+  /**
+   * SNOW-1488: the header menu's Copy report — the offline report
+   * /offline/ gives, on the clipboard, toasted either way. The installed
+   * app has no address bar, so this is how its reader reaches the report.
+   *
+   * Collected against the sheet's hidden `[data-offline-audit-host]`
+   * (`_map_downloads_sheet.html`), which carries the inputs /offline/'s
+   * panel does, so both copies run the same checks.
+   *
+   * @returns {Promise<void>}
+   */
+  async function copyOfflineReport() {
+    const audit = window.pwaOfflineAudit;
+    const host = /** @type {HTMLElement|null} */ (document.querySelector('[data-offline-audit-host]'));
+    const copied = audit && typeof audit.copyReport === 'function' ? await audit.copyReport(host) : false;
+    window.MapSheet?.toast(STRINGS[copied ? 'report-copied' : 'report-copy-failed']);
+  }
 
   /**
    * SNOW-951: "Sync now" — make one area wholly current, both halves, in

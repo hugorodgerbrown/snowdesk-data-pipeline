@@ -799,6 +799,25 @@ whether it worked.
 same reason `debug_log_panel.js` has a Copy: a phone with no devtools is
 the only place this data exists.
 
+### Copy report from the map (SNOW-1488)
+
+The installed app has no address bar, so its reader cannot reach this page
+at all, and Hugo ruled (10 Nov 2026) that the page stays unlinked. The
+Downloads sheet's header "…" menu carries **Copy report** instead
+(`public/partials/_map_downloads_header_actions.html`). It calls
+`pwaOfflineAudit.copyReport(host)`, which takes the same readings, builds
+the same report and assembles the same text as this page's Copy (one
+helper, `reportTextFor`), then toasts the outcome.
+
+`host` is the sheet's hidden `[data-offline-audit-host]`. It carries the
+attributes this page's `[data-offline-audit]` does, from one partial
+(`includes/_offline_audit_host_attrs.html`) over one context helper
+(`apps.public.map_shared.offline_audit_context`), so the two reports run
+the same checks. It is deliberately not `[data-offline-audit]`: `init()`
+binds those, and the map has no panel to bind. The map gets the two audit
+scripts from its `map_surfaces` bundle, which the shell re-warm caches with
+the map, so Copy report works with no signal.
+
 ## The area panels
 
 SNOW-1308. One panel per downloaded area, above the report, on both

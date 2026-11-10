@@ -1,0 +1,24 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_downloads_header_menu_items.html — the Downloads
+sheet's header menu items (SNOW-1488), includes/_overflow_menu.html's
+``items_template`` slot, reached from
+public/partials/_map_downloads_header_actions.html.
+
+  * Copy report — ``data-downloads-copy-report``: the offline report
+    /offline/'s Copy report gives, on the clipboard
+    (``pwaOfflineAudit.copyReport``, static/js/offline_audit.js), collected
+    against the sheet's hidden ``[data-offline-audit-host]``. Handled by
+    static/js/map_downloads_manager.js, which toasts the outcome.
+{% endcomment %}
+<li role="none">
+    <button
+        type="button"
+        role="menuitem"
+        data-downloads-copy-report
+        class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-1"
+    >
+        {% include "includes/_icon_share.html" only %}
+        {% trans "Copy report" %}
+    </button>
+</li>

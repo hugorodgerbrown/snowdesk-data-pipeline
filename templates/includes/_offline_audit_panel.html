@@ -77,25 +77,7 @@ taking a second walk of its own.
 {% endcomment %}
 <div
     data-offline-audit
-    data-default-basemap-key="{{ default_basemap_key|default:'' }}"
-    data-regions-url="{{ content_feeds.regions|default:'' }}"
-    data-area-content-url="{{ content_feeds.area_content|default:'' }}"
-    data-area-items-url="{{ content_feeds.area_items|default:'' }}"
-    data-trip-page-url-template="{{ content_feeds.trip_page|default:'' }}"
-    data-trip-route-url-template="{{ content_feeds.trip_route|default:'' }}"
-    data-weather-url="{{ content_feeds.weather|default:'' }}"
-    data-weather-detail-url="{{ content_feeds.weather_detail|default:'' }}"
-    data-ratings-url="{{ content_feeds.ratings|default:'' }}"
-    data-region-sheet-url="{{ content_feeds.region_sheet|default:'' }}"
-    data-resort-sheet-url="{{ content_feeds.resort_sheet|default:'' }}"
-    data-favourite-sheet-url="{{ content_feeds.favourite_sheet|default:'' }}"
-    data-favourites-url="{{ content_feeds.favourites|default:'' }}"
-    data-routes-url="{{ content_feeds.routes|default:'' }}"
-    data-community-reports-url="{{ content_feeds.community_reports|default:'' }}"
-    data-content-countries="{{ content_countries|default:'' }}"
-    data-today="{{ today|default:'' }}"
-    data-terrain-class-tile-url="{{ terrain_class_tile_url|default:'' }}"
-    data-dem-tile-url="{{ dem_tile_url|default:'' }}"
+    {% include "includes/_offline_audit_host_attrs.html" %}
 >
     {% comment %}
         The row, in the shape every other row in this card takes:
