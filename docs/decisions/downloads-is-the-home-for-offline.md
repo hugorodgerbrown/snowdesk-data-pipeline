@@ -2,7 +2,7 @@
 name: downloads-is-the-home-for-offline
 description: Downloads sheet is the home for offline — row verdict dot, inventory reveal (inventoryFor), Sync all, /offline/ unlinked
 status: current
-last-reviewed: 2026-11-10
+last-reviewed: 2026-11-11
 ---
 
 # The Downloads sheet is the one home for offline
@@ -130,3 +130,14 @@ A download that completes stamps `verified` on its new record
 (`downloadVerified` in `map_basemap_downloads.js`), with the same tile-grid
 reading and content answer `syncArea` stamps. Before this, a new row read
 "Not checked yet" until a Sync that fetched nothing turned it green.
+
+## Two ways in
+
+Hugo, 11 Nov 2026: with a custom area downloaded he could not find the
+sheet. The installed app hides the capsule roundel, so the layers menu's
+"Downloaded areas" row was the only way in, and he looked in the account
+menu first. The account menu now lists Downloads above Settings
+(`templates/includes/_account_menu_items.html`). It links to
+`/map/?downloads=open`, so it works from every page; on the map
+`[data-downloads-open]` opens the sheet in place and closes the menu. The
+layers row stays as the second way in.

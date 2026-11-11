@@ -1,6 +1,6 @@
 {% comment %}
 templates/includes/_account_menu_items.html — the account menu's entries:
-Trips, Settings, then Sign out below a rule (SNOW-1476).
+Trips, Downloads, Settings, then Sign out below a rule (SNOW-1476).
 
 Extracted from includes/nav.html when the installed phone app had a You
 panel that listed them too. That panel is gone (Hugo, 8 Nov 2026): the
@@ -15,6 +15,12 @@ branch.
 
 In the installed phone app Trips is `app-hidden` (SNOW-1479): the trips are
 a tab of Saved there, so the menu would be a second way to the same list.
+
+Downloads (Hugo, 11 Nov 2026) opens the map's Downloads sheet, above
+Settings. He looked here first for it, and the layers menu's Downloaded
+areas row was the only way in. On the map the click opens the sheet in place
+(`[data-downloads-open]`, static/js/map_downloads_manager.js); on any other
+page the link goes to the map with `?downloads=open`, which opens it there.
 {% endcomment %}
 {% load i18n %}
 <a
@@ -23,6 +29,14 @@ a tab of Saved there, so the menu would be a second way to the same list.
     class="app-hidden block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
 >
     {% trans "Trips" %}
+</a>
+<a
+    role="menuitem"
+    href="{% url 'public:map' %}?downloads=open"
+    data-downloads-open
+    class="block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
+>
+    {% trans "Downloads" %}
 </a>
 <a
     role="menuitem"
