@@ -1340,6 +1340,9 @@
           basemaps: Array.isArray(record.basemaps) ? record.basemaps : null,
           items: record.items || null,
           principal: typeof record.principal === 'string' ? record.principal : null,
+          // SNOW-1487: what the last sync learned, its unfinished steps
+          // among it, for the copied report.
+          verified: record.verified && typeof record.verified === 'object' ? record.verified : null,
         });
       });
     }
@@ -1378,6 +1381,9 @@
           basemaps: Array.isArray(record.basemaps) ? record.basemaps : null,
           items: record.items || null,
           principal: typeof record.principal === 'string' ? record.principal : null,
+          // SNOW-1487: what the last sync learned, its unfinished steps
+          // among it, for the copied report.
+          verified: record.verified && typeof record.verified === 'object' ? record.verified : null,
         });
       });
     }

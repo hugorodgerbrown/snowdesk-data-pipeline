@@ -129,6 +129,8 @@
    *   rather than returning readings.
    * @property {boolean} pending True for the skeleton painted before any
    *   reading has landed.
+   * @property {Array<{name: string, steps: Array<any>}>} [areaSteps]
+   *   SNOW-1487: what each area's last sync did not finish.
    */
 
   /**
@@ -2258,9 +2260,52 @@
       failure: r.failure || null,
       sections: sections,
       counts: countChecks(sections),
+      // SNOW-1487: what each area's last sync did not finish.
+      areaSteps: areaSteps(r),
       generatedAt: typeof r.now === 'string' ? r.now : new Date().toISOString(),
       pending: false,
     };
+  }
+
+  /**
+   * SNOW-1487: the steps each area's last sync did not finish
+   * (`verified.steps`, stamped by `syncArea`), for the copied report: a
+   * failed addition shows only as a notice under the row, so the report
+   * is where whoever is sent it can see the cause.
+   *
+   * @param {AuditReadings} r
+   * @returns {Array<{name: string, steps: Array<any>}>} Areas with steps only.
+   */
+  function areaSteps(r) {
+    /** @type {Array<{name: string, steps: Array<any>}>} */
+    var out = [];
+    chosenAreas(r).forEach(function (/** @type {any} */ area) {
+      var steps = area.verified && Array.isArray(area.verified.steps) ? area.verified.steps : [];
+      steps = steps.filter(function (/** @type {any} */ step) {
+        return !!step && typeof step.step === 'string';
+      });
+      if (steps.length) out.push({ name: String(area.name || area.id || ''), steps: steps });
+    });
+    return out;
+  }
+
+  /**
+   * SNOW-1487: one unfinished step as a line of the copied report — the
+   * step, why, how far it got, and the space it needed against the space
+   * there was, where those were read.
+   *
+   * @param {any} step
+   * @returns {string}
+   */
+  function stepLine(step) {
+    var line = step.step + ' ' + step.reason;
+    if (Number(step.total) > 0) line += ' ' + (Number(step.done) || 0) + '/' + step.total;
+    if (Number(step.neededMb) > 0) {
+      line += ' (needs ' + step.neededMb + ' MB';
+      if (Number.isFinite(step.freeMb)) line += ', ' + step.freeMb + ' MB free';
+      line += ')';
+    }
+    return line;
   }
 
   /**
@@ -2320,6 +2365,17 @@
         }
       });
     });
+    // SNOW-1487: and what each area's last sync did not finish.
+    var unfinished = Array.isArray(report.areaSteps) ? report.areaSteps : [];
+    if (unfinished.length) {
+      lines.push('');
+      lines.push('## sync steps that did not finish');
+      unfinished.forEach(function (area) {
+        area.steps.forEach(function (/** @type {any} */ step) {
+          lines.push('  ' + area.name + ': ' + stepLine(step));
+        });
+      });
+    }
     return lines.join('\n');
   }
 
@@ -2359,6 +2415,7 @@
     pendingReport: pendingReport,
     reportText: reportText,
     missingLine: missingLine,
+    stepLine: stepLine,
     shortPrincipal: shortPrincipal,
     composeSummary: composeSummary,
     countChecks: countChecks,

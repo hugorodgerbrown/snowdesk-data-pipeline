@@ -617,7 +617,55 @@
    *   read for (the `pwa-user-id` meta). A content answer is only ever
    *   shown back to that account.
    * @property {string} at When the reading was taken (ISO).
+   * @property {Array<SyncStep>} [steps] SNOW-1487: the steps the last sync
+   *   did not finish, failed ones only. Absent when it finished them all.
+   * @property {Array<string>} [ran] SNOW-1487 review: the stages the sync
+   *   reached, by step name — only these replace their step. Read by
+   *   `stampVerifiedRecord`, never stored.
+   * @property {boolean} [cancelled] SNOW-1487 review: the sync was
+   *   stopped, so the stamp does not move `at`. Never stored.
    */
+
+  /**
+   * SNOW-1487: one step a sync did not finish — `syncArea`'s, as stamped.
+   *
+   * @typedef {Object} SyncStep
+   * @property {'basemap'|'terrain'|'deps'|'content'} step
+   * @property {'network'|'interrupted'|'budget'|'quota'|'plan'} reason
+   * @property {number} [done]
+   * @property {number} [total]
+   * @property {number} [neededMb]
+   * @property {number|null} [freeMb]
+   */
+
+  /**
+   * SNOW-1487: the steps a stamp carries, narrowed to well-formed ones.
+   *
+   * @param {unknown} steps
+   * @returns {Array<SyncStep>}
+   */
+  function stepsOf(steps) {
+    if (!Array.isArray(steps)) return [];
+    return steps.filter(function (/** @type {any} */ entry) {
+      return !!entry && typeof entry.step === 'string' && typeof entry.reason === 'string';
+    });
+  }
+
+  /**
+   * SNOW-1487: whether a record's last sync failed to ADD a map or its
+   * terrain data — a step the verdict never reads
+   * (docs/decisions/a-failed-addition-never-hides-a-working-map.md).
+   *
+   * @param {any} record
+   * @param {'basemap'|'terrain'} step
+   * @returns {boolean}
+   */
+  function additionFailed(record, step) {
+    var v = record && record.verified && typeof record.verified === 'object' ? record.verified : null;
+    return stepsOf(v && v.steps).some(function (entry) {
+      return entry.step === step;
+    });
+  }
 
   /**
    * One stamp answer, narrowed: only Yes and No are claims.
@@ -643,7 +691,16 @@
    * for `principal` and only when there is one (a signed-out sync has no
    * things of its own to answer for).
    *
-   * @param {{tiles?: string, tilesHeld?: boolean|null, content?: boolean}|null|undefined} result
+   * SNOW-1487: the sync's `steps`, the ones it did not finish, are copied
+   * on, and an empty list is a claim too: it clears the last sync's. A
+   * `content` that is neither true nor false (a sync stopped before it
+   * read the content) stamps no content answer. SNOW-1487 review: the
+   * stages it reached (`ran`) and whether it was stopped (`cancelled`)
+   * ride along for `stampVerifiedRecord`.
+   *
+   * @param {{tiles?: string, tilesHeld?: boolean|null, content?: boolean,
+   *   steps?: Array<SyncStep>, ran?: Array<string>,
+   *   cancelled?: boolean}|null|undefined} result
    * @param {string} at
    * @param {string} [principal] The `pwa-user-id` the sync ran as.
    * @returns {Verified|null} Null when the sync claimed nothing.
@@ -667,11 +724,19 @@
     }
     // An absent bucket is never fetched into, so its content answer is
     // no reading of the content at all.
-    if (result.tiles !== 'absent' && principal) {
+    if (result.tiles !== 'absent' && principal && typeof result.content === 'boolean') {
       out.content = result.content ? 'yes' : 'no';
       out.principal = principal;
     }
-    return out.map || out.content ? out : null;
+    var steps = Array.isArray(result.steps) ? stepsOf(result.steps) : null;
+    if (steps) out.steps = steps;
+    if (Array.isArray(result.ran)) {
+      out.ran = result.ran.filter(function (name) {
+        return typeof name === 'string';
+      });
+    }
+    if (result.cancelled) out.cancelled = true;
+    return out.map || out.content || steps ? out : null;
   }
 
   /**
@@ -710,6 +775,12 @@
    * map-page sync that could not judge the tiles) keeps the map answer an
    * earlier reading gave. A map Yes drops a stale map-No reason.
    *
+   * SNOW-1487 review: `at` is when a reading last finished, which the
+   * Downloads sheet's "Last synced" line reads, so a stopped sync
+   * (`cancelled`) leaves it where it was. And a sync that names the stages
+   * it reached (`ran`) replaces only their steps: the last sync's step for
+   * a stage this one never started is kept.
+   *
    * Synchronous, because every caller runs it inside a `readModifyWrite`
    * mutator, which must not await. Device-only: `downloads_sync.js` sends
    * a whitelist of fields, and this is not one of them.
@@ -722,7 +793,8 @@
   function stampVerifiedRecord(entry, verified) {
     if (!entry || !verified) return entry;
     var prior = entry.verified && typeof entry.verified === 'object' ? entry.verified : {};
-    var next = Object.assign({}, prior, { at: verified.at });
+    var next = Object.assign({}, prior);
+    if (!verified.cancelled) next.at = verified.at;
     if (verified.map) {
       next.map = verified.map;
       if (verified.map === 'no' && verified.reason) next.reason = verified.reason;
@@ -731,6 +803,19 @@
     if (verified.content) {
       next.content = verified.content;
       next.principal = verified.principal || '';
+    }
+    // SNOW-1487: the last sync's steps replace the one before's; a sync
+    // that finished them all clears them.
+    if (Array.isArray(verified.steps)) {
+      var ran = verified.ran;
+      var kept = Array.isArray(ran)
+        ? stepsOf(prior.steps).filter(function (entry) {
+            return /** @type {Array<string>} */ (ran).indexOf(entry.step) < 0;
+          })
+        : [];
+      var steps = kept.concat(verified.steps);
+      if (steps.length) next.steps = steps;
+      else delete next.steps;
     }
     return Object.assign({}, entry, { verified: next });
   }
@@ -762,6 +847,12 @@
    * so the dot agrees with the inventory's Terrain row. A map No or
    * unknown keeps its own answer. 3D (elevation) is never read.
    *
+   * SNOW-1487: the steps a sync did not finish (`verified.steps`) are not
+   * read for the map or the verdict when they are ADDITIONS (`basemap`,
+   * `terrain`): a failed addition never hides a working map. A missing
+   * render dependency or a short content fetch already shows in the map
+   * and conditions answers.
+   *
    * @param {any} record A `basemap.regions` or `basemap.customAreas` row.
    * @param {string|Date} [now]
    * @param {{signedIn?: boolean, principal?: string, terrainExpected?: boolean}} [options]
@@ -777,7 +868,10 @@
     var mapAnswer = v ? answer(v.map) : null;
     if (mapAnswer === 'yes') map = { status: 'yes' };
     else if (mapAnswer === 'no') map = { status: 'no', reason: String(v.reason || 'tiles') };
-    if (map.status === 'yes' && opts.terrainExpected && !r.terrain) {
+    // SNOW-1487: a sync that tried to add the terrain data and failed has
+    // a notice of its own under the row, which says why and what to do;
+    // the map it holds still draws, so the dot stays as the map reads.
+    if (map.status === 'yes' && opts.terrainExpected && !r.terrain && !additionFailed(r, 'terrain')) {
       map = { status: 'no', reason: 'terrain' };
     }
 
@@ -817,7 +911,7 @@
 
   /**
    * @typedef {Object} InventoryRow
-   * @property {'map'|'terrain'|'bulletin'|'weather'|'routes'|'trips'|'places'|'tours'|'resorts'|'reports'} key
+   * @property {'map'|'swiss'|'terrain'|'bulletin'|'weather'|'routes'|'trips'|'places'|'tours'|'resorts'|'reports'} key
    * @property {InventoryStatus} status `partial` is what a sync fixes;
    *   `missing` is the map or terrain, which only a fresh download fixes.
    * @property {number} [count] A count row's stamped total.
@@ -878,13 +972,19 @@
    * absolute urls the worker said it would serve offline (SNOW-1416's
    * `held-content`), and `overlayIds`, the route and report ids the
    * map's overlay cache holds. Absent or null, a row follows its stage.
-   * `terrainAvailable` adds the terrain row: the map's status when the
-   * area was saved with terrain data, missing when it was not.
+   * `terrainAvailable` adds the terrain row. SNOW-1487: it reads its own
+   * state, never the map's: missing when the area was saved without
+   * terrain data, and otherwise `terrainHeld` — whether every terrain
+   * tile the record implies is in its bucket (yes, partial when one is
+   * not, unknown when unread). `swissMissing` adds the "Swiss map" row,
+   * partial, for an area whose ground wants the Swisstopo map it does not
+   * hold yet: the next sync adds it.
    *
    * @param {any} record A `basemap.regions` or `basemap.customAreas` row.
    * @param {string|Date} [now]
    * @param {{signedIn?: boolean, principal?: string, origin?: string,
-   *   terrainAvailable?: boolean, held?: Set<string>|null,
+   *   terrainAvailable?: boolean, terrainHeld?: boolean|null,
+   *   swissMissing?: boolean, held?: Set<string>|null,
    *   overlayIds?: {routes?: Set<string>|null, reports?: Set<string>|null}|null}} [options]
    * @returns {InventoryRow[]}
    */
@@ -926,11 +1026,20 @@
     var rows = [
       { key: 'map', status: fromStage(stages.map, true) },
     ];
+    // SNOW-1487: the Swisstopo map a sync has still to add.
+    if (opts.swissMissing) rows.push({ key: 'swiss', status: 'partial' });
     // The terrain-class tiles, on their own row where this page can fetch
-    // them. They ride in the map's bucket and its reading; an area saved
-    // without them lacks them until it is downloaded again.
+    // them, read from their own state: they ride in the map's bucket, but
+    // a map that draws says nothing about them (SNOW-1487).
     if (opts.terrainAvailable) {
-      rows.push({ key: 'terrain', status: r.terrain ? rows[0].status : 'missing' });
+      /** @type {InventoryStatus} */
+      var terrain = 'missing';
+      if (r.terrain) {
+        if (opts.terrainHeld === true) terrain = 'yes';
+        else if (opts.terrainHeld === false) terrain = 'partial';
+        else terrain = 'unknown';
+      }
+      rows.push({ key: 'terrain', status: terrain });
     }
     rows.push(
       { key: 'bulletin', status: conditions, at: at },
@@ -1093,6 +1202,7 @@
     inventoryFor: inventoryFor,
     inventoryUrls: inventoryUrls,
     verifiedFromSync: verifiedFromSync,
+    additionFailed: additionFailed,
     verifiedFromStages: verifiedFromStages,
     stampVerifiedRecord: stampVerifiedRecord,
     mapStage: mapStage,

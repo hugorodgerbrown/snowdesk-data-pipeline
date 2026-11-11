@@ -662,7 +662,7 @@
    * @param {{
    *   areaId: string,
    *   urls: string[],
-   *   paint: function(string, number=, number=): void,
+   *   paint: function(string, number=, number=, {done: number, total: number}=): void,
    *   finish: function(Object|null, Object): Promise<void>,
    * }} options
    *   `areaId` — the pinned bucket to write into. The area's OWN bucket,
@@ -671,7 +671,9 @@
    *   `urls` — the missing documents, and only those
    *     (`pwaBasemapDownloadCore.missingRenderDependencies`). Warming the
    *     whole dependency list instead would refetch what is already there.
-   *   `paint` — the caller's roundel/row painter, same contract as `run`'s.
+   *   `paint` — the caller's roundel/row painter, same contract as `run`'s,
+   *     plus (SNOW-1487) a fourth argument while busy: `{done, total}`,
+   *     the urls settled and the urls posted.
    *   `finish` — called as `(result, {core})` once the warm settles, and
    *     on every early return too, with a `null` result.
    * @returns {Promise<void>} Resolves once the repair has been DISPATCHED,
@@ -703,9 +705,12 @@
       return;
     }
 
+    // SNOW-1487: the counts ride along as a fourth argument, so a caller
+    // can say "212 of 528" where a percentage alone says nothing about
+    // how much is left. Callers that read three arguments are unaffected.
     const onProgress = (done, total, settled, bytes) => {
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-      paint('busy', pct, bytes);
+      paint('busy', pct, bytes, { done: done, total: total });
     };
 
     // `pinned: true` + `areaId` put the documents in the SAME bucket the

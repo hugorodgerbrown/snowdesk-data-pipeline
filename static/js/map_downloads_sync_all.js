@@ -24,6 +24,10 @@
  * --------
  * The queue, then every area on this device, one at a time:
  * `offline_ready_core.js`'s `run`, over `pwaBasemapDownloads.syncArea`.
+ * SNOW-1487: the run says which area of how many it is on, and the step
+ * and counts of that area; Stop, or the page going out of sight, ends it
+ * (`stop`), and the closing toast names every area with its outcome
+ * (`closing`).
  * That core stays loaded by base.html because /offline/'s audit uses it
  * too. The run lives in module state rather than in the DOM, because the
  * sheet re-clones every row on each render and a run in flight must
@@ -46,7 +50,9 @@
     'ready-some': '%(ready)s of %(total)s ready',
     'queue-waiting': '%(n)s changes still waiting to send',
     'queue-waiting-one': '1 change still waiting to send',
+    'sync-all-progress': 'Syncing %(n)s of %(total)s areas',
     'sync-stage-map': 'Checking the map… (%(n)s of %(total)s)',
+    'sync-stage-terrain': 'Saving terrain… (%(n)s of %(total)s)',
     'sync-stage-bulletins': 'Saving bulletins… (%(n)s of %(total)s)',
     'sync-stage-weather': 'Saving weather… (%(n)s of %(total)s)',
     'sync-stage-things': 'Saving your trips and pins… (%(n)s of %(total)s)',
@@ -171,18 +177,51 @@
     }
   }
 
-  // The current Sync all: whether it is running, the area it is on and the
-  // step it reported last, then its result once settled.
-  /** @type {{running: boolean, current: string, step: Object|null, result: Object|null}|null} */
+  /**
+   * The current Sync all.
+   *
+   * @typedef {Object} RunState
+   * @property {boolean} running
+   * @property {string} current The area it is on, '' between areas.
+   * @property {Object|null} step The step it reported last.
+   * @property {Object|null} result Its result, once settled.
+   * @property {string[]} areas The areas it runs over, in order.
+   * @property {AbortController|null} controller Stops it (SNOW-1487).
+   * @property {Map<string, Object>} answers Each area's `syncArea` answer.
+   */
+  /** @type {RunState|null} */
   let run = null;
+
+  /**
+   * SNOW-1487: stop the run in flight. The area it is on stops its fetch
+   * (`syncArea`'s signal), and the areas after it are left as they were.
+   * Nothing to stop is a no-op.
+   *
+   * @returns {void}
+   */
+  function stop() {
+    if (run && run.running && run.controller) run.controller.abort();
+  }
+
+  // SNOW-1487: a page that goes out of sight stops its sync. A phone
+  // locked in a pocket with a run going would otherwise keep fetching on
+  // a radio about to go, and the user would not see it end; the notice
+  // under each row offers Carry on instead.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') stop();
+  });
 
   /**
    * Run Sync all over `areaIds`, calling `onChange` after every step and
    * once more when the run settles. A second press while one is running
    * is ignored and resolves to null.
    *
+   * SNOW-1487: `onChange` is called with `{progress: true}` when all that
+   * moved is the counts of the stage an area is on, so the sheet can
+   * repaint that one row rather than every row.
+   *
    * @param {Array<string>} areaIds Bucket ids, in the sheet's order.
-   * @param {function(): void} onChange
+   * @param {function({progress: boolean}=): void} onChange
    * @returns {Promise<Object|null>} The run's result.
    */
   async function press(areaIds, onChange) {
@@ -194,8 +233,17 @@
     // SNOW-1416: the one content run, taken as 'user' — a background sync
     // finishes the area it is on, then gives way.
     const contentRun = bridge.contentRun;
-    /** @type {{running: boolean, current: string, step: Object|null, result: Object|null}} */
-    const current = { running: true, current: '', step: null, result: null };
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    /** @type {RunState} */
+    const current = {
+      running: true,
+      current: '',
+      step: null,
+      result: null,
+      areas: areaIds.slice(),
+      controller: controller,
+      answers: new Map(),
+    };
     run = current;
     notify();
     if (contentRun && !(await contentRun.take())) {
@@ -204,24 +252,38 @@
       return null;
     }
     const queue = /** @type {any} */ (window).pwaMutationQueue;
+    const signal = controller ? controller.signal : undefined;
     try {
       current.result = await core.run({
         drain: () => (queue && typeof queue.drain === 'function' ? queue.drain() : undefined),
         waiting: waitingMutations,
         areas: areaIds.slice(),
-        syncOne: async (/** @type {string} */ areaId, /** @type {Function} */ onStage) =>
-          core.areaOutcome(await bridge.syncArea(areaId, onStage)),
+        signal: signal,
+        syncOne: async (/** @type {string} */ areaId, /** @type {Function} */ onStage) => {
+          const answer = await bridge.syncArea(areaId, onStage, signal);
+          current.answers.set(areaId, answer);
+          return core.areaOutcome(answer);
+        },
         onStep: (/** @type {any} */ step) => {
+          const previous = /** @type {any} */ (current.step);
           current.step = step;
           if (step.phase === 'area') current.current = step.id;
           if (step.phase === 'done') current.current = '';
-          notify();
+          const countsOnly =
+            step.phase === 'stage' &&
+            !!previous &&
+            previous.phase === 'stage' &&
+            previous.id === step.id &&
+            previous.name === step.name;
+          notify(countsOnly ? { progress: true } : undefined);
         },
       });
     } catch (_err) {
-      current.result = { total: areaIds.length, ready: 0, waiting: 0, outcomes: [] };
+      current.result = { total: areaIds.length, ready: 0, waiting: 0, outcomes: [], skipped: [] };
     }
     if (contentRun) contentRun.release('user');
+    const settled = /** @type {any} */ (current.result);
+    settled.answers = current.answers;
     current.running = false;
     current.current = '';
     notify();
@@ -231,35 +293,100 @@
   /**
    * The run's state, for the painter.
    *
-   * @returns {{running: boolean, current: string, label: string}}
+   * SNOW-1487: `index` and `count` are the area it is on and how many
+   * there are ("Syncing 2 of 5 areas"); `step` the stage that area is on
+   * with its counts; `pending` the areas still to come, which the sheet
+   * says are waiting.
+   *
+   * @returns {{running: boolean, current: string, label: string, index: number,
+   *   count: number, step: ({name: string, done: number|null, total: number|null}|null),
+   *   pending: string[]}}
    */
   function state() {
-    const core = /** @type {any} */ (window).pwaOfflineReadyCore;
     const running = !!(run && run.running);
-    const label = running && core ? core.progressText(run && run.step, strings()) : '';
-    if (!running) {
+    if (!running || !run) {
       // SNOW-1416: the background sync's area shows on its row too.
       const contentRun = /** @type {any} */ (window).pwaBasemapDownloads?.contentRun;
       const auto = contentRun && contentRun.current() === 'auto' ? contentRun.area() : '';
-      return { running: false, current: auto || '', label: '' };
+      return { running: false, current: auto || '', label: '', index: 0, count: 0, step: null, pending: [] };
     }
-    return { running: running, current: run ? run.current : '', label: label };
+    const step = /** @type {any} */ (run.step);
+    const t = strings();
+    const count = run.areas.length;
+    const index = step && (step.phase === 'area' || step.phase === 'stage') ? step.n : 0;
+    const label = index
+      ? fill(t['sync-all-progress'], { n: index, total: count })
+      : fill(t['ready-running'], {});
+    const at = run.current ? run.areas.indexOf(run.current) : -1;
+    const pending = run.areas.slice(at >= 0 ? at + 1 : index);
+    const counts = step && step.phase === 'stage' && step.counts ? step.counts : null;
+    return {
+      running: true,
+      current: run.current,
+      label: label,
+      index: index,
+      count: count,
+      step:
+        step && step.phase === 'stage'
+          ? { name: step.name, done: counts ? counts.done : null, total: counts ? counts.total : null }
+          : null,
+      pending: pending,
+    };
   }
 
   /**
-   * One sentence for a settled run that did not bring every area up to
-   * date, or '' for one that did.
+   * SNOW-1487: one area's outcome, in the closing toast's terms — up to
+   * date, did not finish (a failed fetch or addition), stopped, or no
+   * longer on this device.
    *
-   * @param {Object|null} result
+   * @param {any} answer `syncArea`'s answer, or undefined for an area the
+   *   run never reached.
+   * @returns {'ready'|'unfinished'|'stopped'|'absent'}
+   */
+  function outcomeOf(answer) {
+    const core = /** @type {any} */ (window).pwaOfflineReadyCore;
+    if (!answer) return 'stopped';
+    if (answer.cancelled) return 'stopped';
+    const outcome = core ? core.areaOutcome(answer) : 'partial';
+    if (outcome === 'absent') return 'absent';
+    const steps = Array.isArray(answer.steps) ? answer.steps : [];
+    return outcome === 'ready' && steps.length === 0 ? 'ready' : 'unfinished';
+  }
+
+  /**
+   * SNOW-1487: what the closing toast says — every area the run was
+   * pressed over, in order, with its outcome, and the queue line when
+   * edits were left waiting.
+   *
+   * @param {Object|null} result `press`'s result.
+   * @param {string[]} areaIds The areas it was pressed over.
+   * @returns {{areas: Array<{id: string, outcome: string}>, queue: string}}
+   */
+  function closing(result, areaIds) {
+    const core = /** @type {any} */ (window).pwaOfflineReadyCore;
+    const r = /** @type {any} */ (result || {});
+    const answers = r.answers instanceof Map ? r.answers : new Map();
+    const skipped = Array.isArray(r.skipped) ? r.skipped : [];
+    // An area the run reached with no answer threw: it did not finish.
+    const areas = (areaIds || []).map((id) => ({
+      id: id,
+      outcome: answers.has(id) || skipped.indexOf(id) >= 0 ? outcomeOf(answers.get(id)) : 'unfinished',
+    }));
+    const queue = result && core ? core.describe(result, strings()).queue : '';
+    return { areas: areas, queue: queue };
+  }
+
+  /**
+   * `%(name)s` substitution, by name, as `pwaStrings.interpolate` does.
+   *
+   * @param {string|undefined} template
+   * @param {Record<string, string|number>} values
    * @returns {string}
    */
-  function shortfall(result) {
-    const core = /** @type {any} */ (window).pwaOfflineReadyCore;
-    if (!result || !core) return '';
-    const described = core.describe(result, strings());
-    const r = /** @type {any} */ (result);
-    if (r.ready === r.total && !r.waiting) return '';
-    return [described.summary, described.queue].filter(Boolean).join('. ');
+  function fill(template, values) {
+    return String(template || '').replace(/%\((\w+)\)s/g, (match, key) =>
+      Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : match,
+    );
   }
 
   window.pwaDownloadsSyncAll = Object.freeze({
@@ -267,6 +394,8 @@
     verdict: verdict,
     press: press,
     state: state,
-    shortfall: shortfall,
+    stop: stop,
+    outcomeOf: outcomeOf,
+    closing: closing,
   });
 })();

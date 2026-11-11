@@ -369,6 +369,25 @@ describe('the pinned-bucket probe', () => {
     expect(readings.areas[0].bucketPresent).toBe(true);
     expect(readings.areas[0].entries).toHaveLength(2);
   });
+
+  it("carries each area's last sync, its unfinished steps among it (SNOW-1487)", async () => {
+    installCachesStub({ 'snowdesk-shell-abc': [] });
+    const verified = {
+      at: '2026-09-11T07:00:00.000Z',
+      map: 'yes',
+      steps: [{ step: 'terrain', reason: 'quota', done: 0, total: 40, neededMb: 12, freeMb: 1 }],
+    };
+    await seedMeta({
+      'basemap.regions': [{ region_id: 'CH-4115', name: 'Martigny', bytes: 1, deps: [], verified }],
+      'basemap.customAreas': [{ id: 'custom-a1', bbox: [7, 46, 7.1, 46.1], deps: [] }],
+    });
+
+    const readings = await audit.collect();
+    const byId = Object.fromEntries(readings.areas.map((area) => [area.id, area]));
+
+    expect(byId['region-CH-4115'].verified).toEqual(verified);
+    expect(byId['custom-a1'].verified).toBeNull();
+  });
 });
 
 describe('the browsing-cache probe (SNOW-1058)', () => {

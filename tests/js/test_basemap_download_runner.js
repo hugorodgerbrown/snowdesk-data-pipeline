@@ -598,6 +598,20 @@ describe('repair', () => {
 
     expect(o.finish.mock.calls[0][0]).toEqual({ ok: 1, failed: 0, bytes: 900 });
   });
+
+  it('paints the counts beside the percentage (SNOW-1487)', async () => {
+    const d = deps({
+      warmCache: vi.fn(async (_urls, opts) => {
+        opts.onProgress(212, 528, [0], 4096);
+        return { ok: 528, failed: 0, bytes: 4096 };
+      }),
+    });
+    const o = repairOptions();
+
+    await repairAndSettle(d, o);
+
+    expect(o.paint).toHaveBeenCalledWith('busy', 40, 4096, { done: 212, total: 528 });
+  });
 });
 
 /*

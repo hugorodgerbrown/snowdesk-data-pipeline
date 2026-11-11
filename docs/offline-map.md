@@ -1987,7 +1987,13 @@ then without terrain gains it on its next Sync (SNOW-1483, below).
   elevation tiles follow through the ordinary render-dependency repair,
   once the record carries the flag. An area outside the coverage lists no
   Terrain row and is never marked down for it. 3D is not part of the
-  verdict.
+  verdict. SNOW-1487: an addition that fails leaves the record without
+  the flag but counts the bytes that landed, and records a `terrain` step
+  with its reason on `verified.steps`; the dot then stays as the map reads
+  and an amber notice under the row says why
+  ([`decisions/a-failed-addition-never-hides-a-working-map.md`](decisions/a-failed-addition-never-hides-a-working-map.md)).
+  The inventory's Terrain row reads its own tiles (`terrainHeld` from
+  `measureAreaInventory`), never the map's answer.
 - **What it costs.** `TERRAIN_CLASS_BYTES_PER_TILE` (88 KiB) per tile,
   stated on its own: the region roundel's idle label adds "plus up to N MB
   of terrain data", and the framing readout gains a second line. The
@@ -2377,10 +2383,41 @@ dot and keeps the clause. The verdict is
 read from the stored record and its `verified` stamp through
 `offline_journey_core.js`, so it matches /offline/'s panels. The foot's
 **Sync all** runs `offline_ready_core.run` over every row on the device, in
-the sheet's order; the row it is on shows "Syncing…", the button carries the
-progress and is disabled while it runs or offline, and a run that left any
-area short ends in one toast. The run's state lives in the module, not the
-DOM, because `render()` re-clones every row.
+the sheet's order; the button carries the progress and is disabled while it
+runs or offline. The run's state lives in the module, not the DOM, because
+`render()` re-clones every row.
+
+**A sync says what it is doing (SNOW-1487).** The button reads "Syncing 2
+of 5 areas" (`pwaDownloadsSyncAll.state()`'s `index` and `count`), with a
+**Stop** under it (`stop()`; the page going out of sight stops it too). The
+row it is on shows its step ("Saving the map", "Saving terrain", "Saving
+bulletins"…), "212 of 528" and a bar, cloned from
+`map-downloads-row-progress-template`; a move of the counts alone repaints
+that row in place (`onChange({progress: true})`). Rows still to come say
+"Waiting". The counts come from `syncArea(areaId, onStage, signal)`, whose
+`onStage(step, {done, total})` the runner's repair paint feeds
+(`paint('busy', pct, bytes, {done, total})`), through
+`offline_ready_core.run`, which repeats a stage when its counts move. The
+run ends in one toast naming every area with its outcome ("Verbier: up to
+date. Zermatt: didn't finish"), and a line under Sync all, read from the
+records, says when the areas were last synced and how many did not finish
+(the newest `verified.at`; the count with a non-empty `verified.steps`), so
+it is there after a reload. A row whose last sync could not add the Swiss
+map or the terrain data keeps its dot and gains an amber notice with its
+remedy — Try again, Carry on, Change limit, or nothing for a full phone
+([`decisions/a-failed-addition-never-hides-a-working-map.md`](decisions/a-failed-addition-never-hides-a-working-map.md)).
+A row's own Sync now paints the same step and counts, and toasts the area's
+name when it does not finish.
+
+**The inventory's sizes are measured (SNOW-1487).** Opening a row measures
+its bucket by URL class (`pwaBasemapDownloads.measureAreaInventory`): an
+entry under the terrain-class or elevation template is terrain data,
+everything else the map, each by `Content-Length` or, where a compressed
+tile carries none, its body. Measured once per area per page and forgotten
+with `forgetPinnedBucketMeasurement`. Until it is measured, and for a class
+with nothing in it, no size is shown, never "0 MB". An area in Switzerland
+still to gain the Swiss map lists "Swiss map: Not added yet"
+(`swissMapMissing`, the rule Sync adds it by).
 
 **A row can be listed and still not render (SNOW-844).** The sheet asks
 the same render-dependency question the roundel does (see `incomplete`

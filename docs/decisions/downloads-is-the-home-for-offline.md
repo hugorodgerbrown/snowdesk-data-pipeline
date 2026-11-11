@@ -29,7 +29,11 @@ asks "will this work offline?" and does something about it:
   and syncs every area on the device in the sheet's order
   (`offline_ready_core.run` over `pwaBasemapDownloads.syncArea`). It is
   refused offline, shows its progress as its label, marks the row it is on
-  as syncing, and toasts once if any area fell short.
+  as syncing, and toasts once if any area fell short. SNOW-1487: the label
+  is "Syncing 2 of 5 areas", the row it is on shows its step and counts,
+  the rest say "Waiting", Stop ends it, and the closing toast names every
+  area with its outcome
+  ([a-failed-addition-never-hides-a-working-map.md](a-failed-addition-never-hides-a-working-map.md)).
 
 `static/js/map_downloads_sync_all.js` (`window.pwaDownloadsSyncAll`) owns the
 verdict and the run; `map_downloads_manager.js` paints them on every render.
@@ -104,9 +108,13 @@ resorts and the community reports. Each has a `sync-*` dot and one value.
   mockup. The name keeps its job of framing the area on the map (SNOW-811),
   and the trailing chevron is the system's one row disclosure.
 - **The size lives in the inventory** (Hugo, 4 Nov 2026), split into Map and
-  Terrain. The row's meta line is the kind and the basemap. A run records
-  one total, so the terrain figure is the estimate the download was priced
-  at (`terrainClassMb` over the area's class tiles) and the map is the rest.
+  Terrain. The row's meta line is the kind and the basemap. SNOW-1487: both
+  are measured from the area's bucket by URL class
+  (`pwaBasemapDownloads.measureAreaInventory`), and no size shows until
+  they are; the estimate split this replaced could read "0 MB" for a map.
+  The Terrain line reads its own tiles, and an area in Switzerland still to
+  gain the Swiss map lists "Swiss map: Not added yet"
+  ([a-failed-addition-never-hides-a-working-map.md](a-failed-addition-never-hides-a-working-map.md)).
 
 ## Every download includes terrain data
 
