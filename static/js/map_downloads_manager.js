@@ -3713,14 +3713,46 @@
     document.getElementById(NOTICE_ID)?.classList.add('hidden');
   }
 
-  // The layers menu's Downloaded areas row: its left half opens the sheet
-  // (public/partials/_map_layers_downloads_row.html). The installed phone
-  // app hides the roundel, so this is its way in.
+  // Two openers carry `data-downloads-open`: the layers menu's Downloaded
+  // areas row, whose left half opens the sheet
+  // (public/partials/_map_layers_downloads_row.html), and the account
+  // menu's Downloads link (includes/_account_menu_items.html). The installed
+  // phone app hides the roundel, so these are its way in. The link is an
+  // anchor to `/map/?downloads=open` so it works from every page; here, on
+  // the map, it opens the sheet in place and closes its menu instead.
   document.addEventListener('click', function (event) {
     var target = event.target instanceof Element ? event.target : null;
-    if (!target || !target.closest('[data-downloads-open]')) return;
+    var opener = target ? target.closest('[data-downloads-open]') : null;
+    if (!opener) return;
+    if (opener.tagName === 'A') event.preventDefault();
+    var menu = opener.closest('details');
+    if (menu) menu.removeAttribute('open');
     open();
   });
+
+  /**
+   * Open the sheet when the page was reached with `?downloads=open`, the
+   * account menu's Downloads link from a page other than the map, and drop
+   * the parameter so a reload or a shared link does not reopen it.
+   *
+   * @returns {void}
+   */
+  function _openFromUrl() {
+    var url;
+    try {
+      url = new URL(window.location.href);
+    } catch (_err) {
+      return;
+    }
+    if (url.searchParams.get('downloads') !== 'open') return;
+    url.searchParams.delete('downloads');
+    try {
+      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    } catch (_err) {
+      // A sandboxed frame can refuse; the sheet still opens.
+    }
+    open();
+  }
 
   // The CTA opens the sheet; the × is overlays.js's shared dismiss.
   document.getElementById(NOTICE_ID + '-open')?.addEventListener('click', function () {
@@ -3743,8 +3775,10 @@
   // DOMContentLoaded is the first moment every deferred script has run.
   if (document.readyState === 'complete') {
     _adoptLocalAreas();
+    _openFromUrl();
   } else {
     document.addEventListener('DOMContentLoaded', _adoptLocalAreas);
+    document.addEventListener('DOMContentLoaded', _openFromUrl);
   }
 
   window.pwaDownloadsManager = Object.freeze({

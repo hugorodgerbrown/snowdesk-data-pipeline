@@ -944,6 +944,50 @@ describe('opening the sheet', () => {
     opener.remove();
   });
 
+  it("opens in place from the account menu's Downloads link", async () => {
+    // includes/_account_menu_items.html: an anchor to /map/?downloads=open,
+    // inside the account menu's <details>. On the map it must not navigate.
+    seed({ 'basemap.regions': REGIONS });
+    await loadModule();
+    const menu = document.createElement('details');
+    menu.open = true;
+    menu.innerHTML = '<a href="/map/?downloads=open" data-downloads-open>Downloads</a>';
+    document.body.append(menu);
+
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    menu.querySelector('a').dispatchEvent(event);
+    await settle();
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(menu.open).toBe(false);
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(false);
+    menu.remove();
+  });
+
+  it('opens on load from ?downloads=open and drops the parameter', async () => {
+    // The account menu's link from any page other than the map.
+    window.history.replaceState(null, '', '/map/?downloads=open#here');
+    seed({ 'basemap.regions': REGIONS });
+    await loadModule();
+    await settle();
+
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(false);
+    expect(window.location.search).toBe('');
+    expect(window.location.hash).toBe('#here');
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('stays shut on load without the parameter', async () => {
+    window.history.replaceState(null, '', '/map/?edit=resorts');
+    seed({ 'basemap.regions': REGIONS });
+    await loadModule();
+    await settle();
+
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(true);
+    expect(window.location.search).toBe('?edit=resorts');
+    window.history.replaceState(null, '', '/');
+  });
+
   it('toggles shut when the roundel is tapped a second time', async () => {
     // The roundel's own handler is one line — `pwaDownloadsManager.toggle()`
     // — in map_custom_download.js, which this suite does not load; the
