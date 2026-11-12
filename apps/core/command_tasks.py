@@ -207,7 +207,9 @@ def _take_slot_lock(lock: str) -> bool:
     deadline = time.time() + _SLOT_LOCK_WAIT_S
     while not cache.add(lock, 1, timeout=_SLOT_LOCK_TIMEOUT_S):
         if time.time() >= deadline:
-            logger.warning("command tasks: %s held too long; reserving without it", lock)
+            logger.warning(
+                "command tasks: %s held too long; reserving without it", lock
+            )
             return False
         time.sleep(_SLOT_LOCK_POLL_S)
     return True
