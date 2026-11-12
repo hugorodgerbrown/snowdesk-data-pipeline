@@ -19,11 +19,13 @@ import requests
 from apps.bulletins.models import (
     Bulletin,
     PipelineRun,
+    RegionBulletin,
+    RegionDayRating,
 )
 from apps.bulletins.services.apply import upsert_bulletin
 from apps.bulletins.services.slf_fetcher import run_slf_pipeline
 from apps.ingest.normalise.slf import slf_pdf_url
-from apps.ingest.public import content_hash
+from apps.ingest.public import SourceBulletin, SourceDayRating, content_hash
 from tests.factories import MicroRegionFactory, PipelineRunFactory
 
 # The ``slf_fetcher`` logger, named once rather than spelled out at each
@@ -51,8 +53,10 @@ def _make_raw_bulletin(
     base: dict[str, Any] = {
         "bulletinID": bulletin_id,
         "publicationTime": publication_time,
+        # A day bulletin is valid from its publication; a start a day later
+        # would make it a tendency bulletin (SNOW-1436).
         "validTime": {
-            "startTime": "2025-03-15T17:00:00Z",
+            "startTime": publication_time,
             "endTime": "2025-03-16T17:00:00Z",
         },
         "nextUpdate": "2025-03-16T08:00:00Z",
@@ -68,6 +72,45 @@ def _make_raw_bulletin(
     }
     base.update(overrides)
     return base
+
+
+def _tendency_pair() -> list[dict[str, Any]]:
+    """An evening's day bulletin and SLF's tendency bulletin for the next day.
+
+    Trimmed from SLF's v5 samples (SNOW-1339): both published at 16:00; the
+    day bulletin is valid from then, the tendency bulletin 24 h later, and
+    carries no problem types, which fails the render model.
+    """
+    published = "2025-03-15T16:00:00Z"
+    day = _make_raw_bulletin(
+        "day-1",
+        published,
+        validTime={"startTime": published, "endTime": "2025-03-16T16:00:00Z"},
+        regions=[{"regionID": "CH-4115", "name": "Piz Buin"}],
+        dangerRatings=[{"mainValue": "moderate", "validTimePeriod": "all_day"}],
+    )
+    tendency = _make_raw_bulletin(
+        "tendency-1",
+        published,
+        validTime={
+            "startTime": "2025-03-16T16:00:00Z",
+            "endTime": "2025-03-17T16:00:00Z",
+        },
+        regions=[{"regionID": "CH-4115", "name": "Piz Buin"}],
+        dangerRatings=[{"mainValue": "considerable", "validTimePeriod": "all_day"}],
+        customData={
+            "CH": {
+                "aggregation": [
+                    {
+                        "category": "dry",
+                        "validTimePeriod": "all_day",
+                        "problemTypes": [],
+                    }
+                ]
+            }
+        },
+    )
+    return [day, tendency]
 
 
 @pytest.fixture
@@ -110,6 +153,37 @@ class TestRunPipeline:
         assert run.status == PipelineRun.Status.SUCCESS
         assert run.records_created == 2
         assert Bulletin.objects.count() == 2
+
+    @patch("apps.ingest.sources.slf.fetch_bulletin_page")
+    def test_a_tendency_bulletin_writes_nothing(
+        self, mock_fetch: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """SLF's next-day tendency bulletin leaves every table alone (SNOW-1436).
+
+        The day bulletin beside it is stored and rated as usual; no rating
+        exists for the following day, and the run does not fail.
+        """
+        mock_fetch.return_value = _tendency_pair()
+
+        with caplog.at_level("INFO", logger=_LOGGER_NAME):
+            run = run_slf_pipeline(
+                start=date(2025, 3, 15), end=date(2025, 3, 15), triggered_by="test"
+            )
+
+        assert run.status == PipelineRun.Status.SUCCESS
+        assert run.records_failed == 0
+        assert run.records_created == 1
+        assert not SourceBulletin.objects.filter(bulletin_id="tendency-1").exists()
+        assert not Bulletin.objects.filter(bulletin_id="tendency-1").exists()
+        assert SourceBulletin.objects.filter(bulletin_id="day-1").exists()
+        day = Bulletin.objects.get(bulletin_id="day-1")
+        assert RegionBulletin.objects.filter(bulletin=day).count() == 1
+        assert RegionBulletin.objects.count() == 1
+        assert list(RegionDayRating.objects.values_list("date", flat=True)) == [
+            date(2025, 3, 16)
+        ]
+        assert not SourceDayRating.objects.filter(date=date(2025, 3, 17)).exists()
+        assert "1 skipped_tendency" in caplog.text
 
     @patch("apps.ingest.sources.slf.fetch_bulletin_page")
     def test_all_unknown_regions_increments_records_failed(

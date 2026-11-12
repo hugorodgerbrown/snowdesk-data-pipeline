@@ -42,7 +42,11 @@ from apps.ingest.normalise.meteofrance.translator import (
     MeteoFranceTranslationError,
     parse_dpbra_xml,
 )
-from apps.ingest.normalise.slf import resolve_issued_at, slf_pdf_url
+from apps.ingest.normalise.slf import (
+    is_slf_tendency,
+    resolve_issued_at,
+    slf_pdf_url,
+)
 from apps.ingest.sources import (
     albina as albina_source,
     meteofrance as meteofrance_source,
@@ -60,6 +64,9 @@ PROVIDER_METEOFRANCE = "METEOFRANCE"
 OUTCOME_SKIPPED_NEWER = "skipped_newer"
 OUTCOME_DUPLICATE = "duplicate"
 OUTCOME_DELEGATED = "delegated"
+# SLF's next-day tendency bulletin, held back until it has its own surface
+# (SNOW-1436; SNOW-999 replaces the skip with real handling).
+OUTCOME_SKIPPED_TENDENCY = "skipped_tendency"
 
 _ONE_DAY = timedelta(days=1)
 
@@ -219,9 +226,15 @@ def _slf_item(
         range_start: Window start, inclusive.
         range_end: Window end, exclusive.
 
+    A next-day tendency bulletin (``is_slf_tendency``) in the window is a
+    ``skipped_tendency`` outcome: it writes no row, so tomorrow's forecast
+    never reads as a day rating (SNOW-1436). ``on_item`` has already seen
+    it, so ``--stash`` still archives it.
+
     Returns:
-        The bulletin, a skipped-newer or duplicate outcome, or ``None``
-        once the walk has passed the start of the window and should stop.
+        The bulletin, a skipped-newer, duplicate or skipped-tendency
+        outcome, or ``None`` once the walk has passed the start of the
+        window and should stop.
 
     Raises:
         KeyError: The bulletin has no usable timestamp or id; its JSON is
@@ -241,9 +254,17 @@ def _slf_item(
             logger.info("Passed start boundary at %s, stopping", issued_at.isoformat())
             return None
         bulletin_id: str = raw["bulletinID"]
+        tendency = is_slf_tendency(raw)
     except KeyError:
         _log_unparseable(raw)
         raise
+    if tendency:
+        logger.info(
+            "Skipping SLF tendency bulletin %s for %s",
+            bulletin_id,
+            ", ".join(str(r.get("regionID", "")) for r in raw.get("regions") or []),
+        )
+        return FetchOutcome(OUTCOME_SKIPPED_TENDENCY)
     return NormalisedBulletin(bulletin_id, PROVIDER_SLF, raw, lambda: slf_pdf_url(raw))
 
 
@@ -276,7 +297,9 @@ def iter_slf(
         ``NormalisedBulletin`` for each bulletin in the window,
         ``FetchOutcome(OUTCOME_SKIPPED_NEWER)`` for each one after it, and
         ``FetchOutcome(OUTCOME_DUPLICATE)`` for an identical repeat of one
-        already met — ALBINA's precedent, applied to paging overlap.
+        already met — ALBINA's precedent, applied to paging overlap — and
+        ``FetchOutcome(OUTCOME_SKIPPED_TENDENCY)`` for a next-day tendency
+        bulletin, which is held back (SNOW-1436).
 
     Raises:
         KeyError: A bulletin carries no usable timestamp; its JSON is

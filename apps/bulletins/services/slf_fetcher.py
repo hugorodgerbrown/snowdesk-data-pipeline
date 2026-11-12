@@ -40,6 +40,7 @@ from apps.bulletins.services.apply import (
 from apps.ingest.public import (
     OUTCOME_CREATED,
     OUTCOME_FAILED,
+    OUTCOME_SKIPPED_TENDENCY,
     OUTCOME_UNCHANGED,
     OUTCOME_UPDATED,
     PROVIDER_SLF,
@@ -55,7 +56,8 @@ from apps.ingest.public import (
 logger = logging.getLogger(__name__)
 
 # The SLF pipeline's own outcome: a bulletin already stored and not forced.
-# The walk's outcomes (skipped_newer) come from apps.ingest.public.
+# The walk's outcomes (skipped_newer, skipped_tendency) come from
+# apps.ingest.public.
 _OUTCOME_SKIPPED_EXISTS = "skipped_exists"
 
 
@@ -155,6 +157,8 @@ def run_slf_pipeline(
         OUTCOME_UPDATED: 0,
         _OUTCOME_SKIPPED_EXISTS: 0,
         OUTCOME_FAILED: 0,
+        # Next-day tendency bulletins the walk held back (SNOW-1436).
+        OUTCOME_SKIPPED_TENDENCY: 0,
     }
     stats = FetchStats()
 
@@ -188,13 +192,14 @@ def run_slf_pipeline(
 
     logger.info(
         "Pipeline run %s finished: %d pages, %d created, %d updated, "
-        "%d skipped, %d failed",
+        "%d skipped, %d failed, %d skipped_tendency",
         run.pk,
         stats.requests,
         counts[OUTCOME_CREATED],
         counts[OUTCOME_UPDATED],
         counts[_OUTCOME_SKIPPED_EXISTS],
         counts[OUTCOME_FAILED],
+        counts[OUTCOME_SKIPPED_TENDENCY],
     )
 
     if dry_run:

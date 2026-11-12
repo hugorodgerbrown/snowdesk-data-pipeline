@@ -12,6 +12,8 @@ keeps the HTTP and the database writes:
   resolve_issued_at        a bulletin's publication time, falling back to
                            ``validTime.startTime`` for pre-2024 bulletins.
   slf_pdf_url              the archive PDF a bulletin was published as.
+  is_slf_tendency          whether a bulletin is SLF's next-day tendency
+                           bulletin, by its validity offset (SNOW-1436).
 
 No database, network or settings: each takes what SLF sent and returns a value.
 """
@@ -19,7 +21,7 @@ No database, network or settings: each takes what SLF sent and returns a value.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from apps.ingest.normalise.fetcher_common import normalise_bulletin_response
@@ -278,3 +280,34 @@ def resolve_issued_at(raw: dict[str, Any]) -> datetime:
     if pub_time:
         return parse_dt(pub_time)
     return parse_dt(raw["validTime"]["startTime"])
+
+
+# A day bulletin's validity starts at its publication, or at most a couple of
+# hours after it; SLF's next-day tendency bulletin starts 24 h after. Twelve
+# hours splits the two with room either side (SNOW-1436).
+_TENDENCY_OFFSET = timedelta(hours=12)
+
+
+def is_slf_tendency(raw: dict[str, Any]) -> bool:
+    """
+    Return True when a bulletin is SLF's next-day tendency bulletin.
+
+    From CAAML interface v5 SLF can publish a reduced tendency bulletin for
+    the following day. It carries no marker: SLF confirmed (5 Nov 2026) that
+    it is identified by ``validTime.startTime`` falling 24 h after
+    ``publicationTime``. Any offset of 12 h or more counts. A bulletin with
+    no ``publicationTime`` falls back to its own start time (see
+    :func:`resolve_issued_at`), so it is never a tendency bulletin.
+
+    Args:
+        raw: A single bulletin dict from the SLF CAAML API.
+
+    Returns:
+        True for a tendency bulletin.
+
+    Raises:
+        KeyError: The bulletin has no ``validTime.startTime``.
+
+    """
+    start = parse_dt(raw["validTime"]["startTime"])
+    return start - resolve_issued_at(raw) >= _TENDENCY_OFFSET

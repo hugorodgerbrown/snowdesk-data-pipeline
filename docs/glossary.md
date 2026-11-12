@@ -18,6 +18,7 @@ a code symbol.
 |------|---------|------|
 | CAAML | Open avalanche-bulletin interchange standard ("CAA Markup Language"); this project consumes **CAAML v6 JSON** | consumed throughout `apps/bulletins/` |
 | SLF | Swiss Institute for Snow and Avalanche Research — primary provider | `apps/bulletins/services/slf_fetcher.py` |
+| Tendency bulletin | SLF's reduced next-day bulletin (CAAML v5), valid from 24 h after it is published; held back from ingest until it has its own surface (SNOW-1436, SNOW-999) | `is_slf_tendency` in `apps/ingest/normalise/slf.py`; `OUTCOME_SKIPPED_TENDENCY` in `apps/ingest/runs.py` |
 | ALBINA | EUREGIO (Tyrol/South Tyrol/Trentino) avalanche service | `apps/bulletins/services/albina_fetcher.py` |
 | Météo-France | French provider; serves DPBRA XML, not CAAML | `apps/bulletins/services/meteofrance_fetcher.py` |
 | Ingest | The rehostable unit that fetches and normalises the providers' data, importing no other `apps.*` package; the rest of the project imports it only through its facade | `apps/ingest/`, facade `apps/ingest/public.py`, guard `tests/ingest/test_boundary.py`; `docs/decisions/ingestion-is-a-rehostable-unit.md` |
