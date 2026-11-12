@@ -2,7 +2,7 @@
 name: management-commands
 description: Commands — RegisteredCommand / CommandRun register, fetch_bulletins, fetch_weather, purge_*, prune_command_runs, backfill_*
 status: current
-last-reviewed: 2026-11-05
+last-reviewed: 2026-11-12
 ---
 
 # Management commands
@@ -806,13 +806,18 @@ SNOW-942. Walks `Account.objects.alerting()` with `iterate_rows` and, for
 each account, decides every pinned region and saved resort against its own
 `BulletinAlert` log, builds one message and delivers it. Read-only without
 `--commit`: it prints what each account would get and writes no row.
-`--ignore-night-hold` runs inside 22:00–06:30 (for testing). Tallies
-`accounts`, `messages`, `pushes`, `emails`, `failed`; any failure exits
-non-zero. Rules: [`alerts.md`](alerts.md).
+`--ignore-night-hold` runs inside 22:00–06:30 (for testing). Gated since
+SNOW-1491: only the accounts something changed for since the last
+committed run that evaluated are walked, and with none the run is skipped;
+`--full` walks every alerting account. Tallies `held` (1 inside the night
+hold), `gated` (1 when skipped), `accounts`, `messages`, `pushes`,
+`emails`, `failed`; any failure exits non-zero. Rules:
+[`alerts.md`](alerts.md).
 
 ```bash
-uv run python manage.py send_bulletin_alerts           # preview
-uv run python manage.py send_bulletin_alerts --commit  # send and log
+uv run python manage.py send_bulletin_alerts                  # preview
+uv run python manage.py send_bulletin_alerts --commit         # send and log
+uv run python manage.py send_bulletin_alerts --commit --full  # everyone
 ```
 
 ### `replay_bulletin_alerts` — read a season of alerts before anyone gets one
