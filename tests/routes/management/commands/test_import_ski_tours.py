@@ -4,7 +4,7 @@ tests/routes/management/commands/test_import_ski_tours.py — import_ski_tours (
 The command end to end against a small archive built in the test: a
 preview that writes nothing, a commit that fills the service and this
 instance, a second commit that changes nothing, the download path, and
-the refusals and non-zero exits.
+the refusals and non-zero exits, including an unreadable row (SNOW-1489).
 """
 
 from __future__ import annotations
@@ -69,7 +69,10 @@ def test_a_commit_fills_the_service_and_this_instance(archive: Path) -> None:
     _run("--archive", str(archive), "--commit")
     assert SourceSkiSegment.objects.count() == SkiSegment.objects.count() == 2
     assert SourceSkiTour.objects.count() == SkiTour.objects.count() == 1
-    assert _counts()["failed"] == 0
+    counts = _counts()
+    assert counts["failed"] == 0
+    assert counts["service_ski-network_failed"] == 0
+    assert counts["service_ski-tours_failed"] == 0
     _run("--archive", str(archive), "--commit")
     counts = _counts()
     assert counts["service_ski-network_unchanged"] == 2
@@ -113,3 +116,19 @@ def test_a_failed_apply_exits_non_zero(archive: Path) -> None:
     ):
         with pytest.raises(CommandError, match="1 item"):
             _run("--archive", str(archive), "--commit")
+
+
+def test_an_unreadable_row_is_tallied_and_exits_non_zero(tmp_path: Path) -> None:
+    """The readable rows are kept; the broken one is counted and fails the run."""
+    archive = write_archive(
+        tmp_path / "broken.zip",
+        [segment_row(1), segment_row(2, geom=b"junk-bytes")],
+        [tour_row(5956)],
+    )
+    with pytest.raises(CommandError, match="1 item.*unreadable or failed"):
+        _run("--archive", str(archive), "--commit")
+    counts = _counts()
+    assert counts["service_ski-network_failed"] == 1
+    assert counts["service_ski-tours_failed"] == 0
+    assert counts["failed"] == 1
+    assert SourceSkiSegment.objects.count() == SkiSegment.objects.count() == 1
