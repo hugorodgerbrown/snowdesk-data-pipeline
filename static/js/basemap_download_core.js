@@ -210,6 +210,11 @@
  *     formalises the id a region-download area is keyed under; there was
  *     no such concept before this ticket, region downloads were
  *     identified only by ``region_id`` in the ``basemap.regions`` record.
+ *   regionIdForArea(areaId)
+ *     The inverse: the region id a region download's area id names, or
+ *     ``''`` for any other id. For a bucket a failed run left with no
+ *     record (12 Nov 2026), where the id is all that says which region it
+ *     was.
  *   pinnedCacheName(areaId)
  *     The Cache Storage name for ``areaId``'s pinned bucket
  *     (``PINNED_CACHE_PREFIX + areaId``).
@@ -1346,6 +1351,24 @@
    */
   function areaIdForRegion(regionId) {
     return 'region-' + regionId;
+  }
+
+  /**
+   * The region id ``areaId`` names, or ``''`` when it is not a region's.
+   *
+   * The inverse of ``areaIdForRegion``, kept beside it so the
+   * ``region-<id>`` format is parsed in the one module that writes it. A
+   * download that fails leaves its bucket and no record, and the bucket's
+   * name is then the only thing that says which region it was: the
+   * Downloads sheet reads it to name the row and to complete the download.
+   *
+   * @param {string} areaId
+   * @returns {string}
+   */
+  function regionIdForArea(areaId) {
+    const prefix = 'region-';
+    if (typeof areaId !== 'string' || !areaId.startsWith(prefix)) return '';
+    return areaId.slice(prefix.length);
   }
 
   /**
@@ -4553,6 +4576,7 @@
     areaElevationTileURLs: areaElevationTileURLs,
     elevationAreaBoxes: elevationAreaBoxes,
     areaIdForRegion: areaIdForRegion,
+    regionIdForArea: regionIdForArea,
     generateCustomAreaId: generateCustomAreaId,
     isCustomAreaId: isCustomAreaId,
     areaIdForBaseLayer: areaIdForBaseLayer,

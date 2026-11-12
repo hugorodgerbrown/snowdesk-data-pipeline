@@ -2,7 +2,7 @@
 name: downloads-is-the-home-for-offline
 description: Downloads sheet is the home for offline — row verdict dot, inventory reveal (inventoryFor), Sync all, /offline/ unlinked
 status: current
-last-reviewed: 2026-11-11
+last-reviewed: 2026-11-12
 ---
 
 # The Downloads sheet is the one home for offline
@@ -20,7 +20,7 @@ asks "will this work offline?" and does something about it:
   date", "Some trips or pins missing", "Terrain not saved", "Map data
   missing"), grey for "Not checked yet". Terrain counts (SNOW-1483): an area
   that should hold terrain data and was saved without it is amber, and Sync
-  adds it. 3D does not count. An account-only row and an orphaned bucket have no dot.
+  adds it. 3D does not count. An account-only row has no dot. An orphaned bucket (a download that failed) is amber, with no reason line (Hugo, 12 Nov 2026).
   While a reason line shows, the meta drops its bulletins clause ("Bulletins
   saved 3 Nov", "Bulletins not saved"), so the row states one caveat, not
   two (Hugo, 4 Nov 2026);

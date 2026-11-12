@@ -309,6 +309,16 @@
     // "Incomplete download" shortened to "Incomplete" in a later review
     // pass, matching Hugo's second mock.
     'kind-incomplete': 'Incomplete',
+    // 12 Nov 2026 (Hugo): what the "Incomplete" popover on the row says.
+    'incomplete-title-failed': 'Download failed',
+    'incomplete-body-region':
+      "This area has not been fully downloaded. Choose Retry in the … menu to get the rest.",
+    'incomplete-body-custom':
+      "This area has not been fully downloaded. Remove it and frame the area again.",
+    'incomplete-title-missing': 'Part of the map is missing',
+    'incomplete-body-missing':
+      "This area has not been fully downloaded. Choose Sync now in the … menu to get the rest.",
+    'complete-download-row-label': 'Retry downloading %(name)s',
     // SNOW-832: what KIND of download a row is. It used to be said by the
     // heading the row sat under (SNOW-645's REGIONS / CUSTOM AREAS); the
     // headings now name basemaps, so the kind moved into the row's own
@@ -844,6 +854,51 @@
   }
 
   /**
+   * 12 Nov 2026 (Hugo): the name of a row a failed download left behind.
+   *
+   * Nothing recorded its name, so a region is named from its id by the
+   * region the map holds, and a custom area by its kind. Either falls back
+   * to the kind, never to the bucket id the row used to show.
+   *
+   * @param {{custom: boolean, regionId: string}} orphan
+   * @returns {string}
+   */
+  function orphanAreaLabel(orphan) {
+    const named = orphan && orphan.regionId ? window.pwaRegionDownload?.name?.(orphan.regionId) : '';
+    if (orphan && orphan.regionId && !named) awaitRegionNames();
+    return named || kindLabel(orphan && orphan.custom ? 'custom' : 'region');
+  }
+
+  // The map loads its regions after the sheet can first render — a page
+  // opened at /map/?downloads=open renders before them — so a row named
+  // by its kind is named again once they arrive: once when the map's first
+  // regions are in, and on every later country's `snowdesk:regions-loaded`.
+  var regionNamesMissed = false;
+  var regionNamesWaited = false;
+
+  /**
+   * Note that a row could not be named yet, and render once more when the
+   * map's first regions are loaded. Only once: a region the map still does
+   * not hold then waits for `snowdesk:regions-loaded`.
+   *
+   * @returns {void}
+   */
+  function awaitRegionNames() {
+    regionNamesMissed = true;
+    if (regionNamesWaited) return;
+    const bridge = window.pwaRegionDownload;
+    if (!bridge || typeof bridge.ready !== 'function') return;
+    regionNamesWaited = true;
+    bridge.ready().then(function () {
+      if (regionNamesMissed && !sheet.hidden) render();
+    });
+  }
+
+  document.addEventListener('snowdesk:regions-loaded', function () {
+    if (regionNamesMissed && !sheet.hidden) render();
+  });
+
+  /**
    * A label for an account-only area that has no name.
    *
    * SNOW-1133: an unrenamed custom area's "Custom area N" is built from an
@@ -970,6 +1025,10 @@
       // SNOW-1133: an account-only area with no stored name is named by
       // the day it was saved, rather than by its raw id.
       unnamedLabel: unnamedAreaLabel,
+      // 12 Nov 2026: and an area a failed download left behind is named
+      // too, never by its raw bucket id.
+      regionIdForArea: downloadCore()?.regionIdForArea,
+      orphanLabel: orphanAreaLabel,
     });
   }
 
@@ -1015,6 +1074,7 @@
    * @returns {Promise<void>}
    */
   async function render() {
+    regionNamesMissed = false;
     const core = manageCore();
     if (!core) return;
 
@@ -1653,6 +1713,9 @@
     running: 'bg-accent animate-pulse',
     // SNOW-1487: a row Sync all has still to reach.
     waiting: 'bg-sync-off',
+    // 12 Nov 2026: a download that did not finish. Amber and no reason
+    // line: "Incomplete" on the meta line says it (Hugo).
+    incomplete: 'bg-sync-partial',
   });
 
   // SNOW-1420: the stored area records, keyed by bucket id, as the last
@@ -1671,7 +1734,10 @@
    * @returns {{verdict: string, reason: string}|null}
    */
   function rowAnswer(row) {
-    if (row.onDevice === false || row.orphaned) return null;
+    if (row.onDevice === false) return null;
+    // 12 Nov 2026 (Hugo): a download that failed part way is amber, with
+    // nothing more to say than its meta line's "Incomplete".
+    if (row.orphaned) return { verdict: 'incomplete', reason: '' };
     const syncAll = window.pwaDownloadsSyncAll;
     // A shell cached before SNOW-1420 has no verdict module: no answer,
     // rather than a "Not checked yet" nothing on that page can change.
@@ -1856,11 +1922,62 @@
     let key =
       answer.verdict === 'refresh' ? `area-reason-${answer.reason}` : `area-status-${answer.verdict}`;
     if (answer.verdict === 'waiting') key = 'row-waiting';
-    notice.textContent = STRINGS[key] || '';
+    notice.textContent = answer.verdict === 'incomplete' ? '' : STRINGS[key] || '';
     notice.classList.toggle('hidden', !notice.textContent);
     // A yes has no visible line; a screen reader still hears it.
     notice.classList.toggle('sr-only', answer.verdict === 'ready');
     if (answer.verdict === 'ready') notice.classList.remove('hidden');
+  }
+
+  /**
+   * 12 Nov 2026 (Hugo): the meta line of a row that is not a usable
+   * download — "Region · Incomplete", the word amber and opening a popover
+   * that says what happened and what to do.
+   *
+   * An orphan is a download that failed: a region can be completed, a
+   * custom area cannot. A recorded area that is incomplete is missing a
+   * file, which Sync now fetches. A shell cached before the template
+   * existed keeps the plain word.
+   *
+   * @param {HTMLElement} subtitle The row's `[data-row-meta]`.
+   * @param {{id: string, kind: string, orphaned?: boolean,
+   *   completable?: boolean}} row
+   * @returns {void}
+   */
+  function paintIncompleteMeta(subtitle, row) {
+    const template = /** @type {HTMLTemplateElement|null} */ (
+      document.getElementById('map-downloads-incomplete-template')
+    );
+    if (!template) {
+      subtitle.textContent = STRINGS['kind-incomplete'] || '';
+      return;
+    }
+    const clone = /** @type {DocumentFragment} */ (template.content.cloneNode(true));
+    const kind = clone.querySelector('[data-incomplete-kind]');
+    if (kind) kind.textContent = kindLabel(row.kind);
+    let title = 'incomplete-title-missing';
+    let body = 'incomplete-body-missing';
+    if (row.orphaned) {
+      title = 'incomplete-title-failed';
+      body = row.completable ? 'incomplete-body-region' : 'incomplete-body-custom';
+    }
+    const heading = clone.querySelector('[data-incomplete-title]');
+    if (heading) heading.textContent = STRINGS[title] || '';
+    const words = clone.querySelector('[data-incomplete-body]');
+    if (words) words.textContent = STRINGS[body] || '';
+    // One popover per row: the template's own id is empty, and two rows
+    // sharing one would open the first row's from the second.
+    const popoverId = 'downloads-incomplete-' + row.id;
+    const def = clone.querySelector('[data-incomplete-def]');
+    if (def) def.id = popoverId;
+    const term = clone.querySelector('[data-incomplete-term]');
+    if (term) term.setAttribute('popovertarget', popoverId);
+    subtitle.textContent = '';
+    // The popover sits on the row, not in the meta line: that line is one
+    // truncated line in the mono face, and the popover would inherit both.
+    const item = subtitle.closest('li');
+    if (def && item) item.appendChild(def);
+    subtitle.appendChild(clone);
   }
 
   /**
@@ -1985,7 +2102,7 @@
       // below — there IS a record behind it, and it names exactly what to
       // fetch.
       if (row.orphaned || row.incomplete) {
-        subtitle.textContent = STRINGS['kind-incomplete'] || '';
+        paintIncompleteMeta(subtitle, row);
       } else if (row.onDevice === false) {
         // The kind alone. This row is under a heading that
         // already says these are not here, and it has no size (nothing of
@@ -2083,7 +2200,11 @@
     // see the row-menu partial's own comment. An account-only row that
     // can be fetched here is the same rule again: Download here and
     // Forget.
-    const useMenu = (deletable && (renameable || syncable)) || (forgettable && redownloadable);
+    // 12 Nov 2026 (Hugo): a region a failed download left behind can be
+    // completed, so it has two actions too — Retry and Remove.
+    const completable = !!row.completable && row.onDevice !== false;
+    const useMenu =
+      (deletable && (renameable || syncable || completable)) || (forgettable && redownloadable);
 
     // `useMenu` is also gated on the template ACTUALLY carrying a menu: an
     // older cached shell whose row template predates it would otherwise
@@ -2136,7 +2257,7 @@
         //
         // SNOW-1135: and the account-only row's pair, for the same reason.
         '[data-downloads-delete], [data-downloads-sync], [data-row-rename], ' +
-          '[data-downloads-here], [data-downloads-forget]',
+          '[data-downloads-here], [data-downloads-forget], [data-downloads-complete]',
       )) {
         if (inline.closest('[data-overflow-menu]')) continue;
         inline.remove();
@@ -2219,6 +2340,25 @@
         );
       } else {
         hereBtn.remove();
+      }
+    }
+
+    // 12 Nov 2026 (Hugo): "Retry" — a region a failed
+    // download left behind. It runs the same download "Download here"
+    // does, through the same handler; the run keeps the tiles already
+    // saved and fetches the rest.
+    const completeBtn = fragment.querySelector('[data-downloads-complete]');
+    if (completeBtn) {
+      if (completable) {
+        completeBtn.setAttribute('data-downloads-complete', row.id);
+        completeBtn.setAttribute('data-downloads-region', row.regionId || '');
+        completeBtn.setAttribute('data-downloads-label', row.label || '');
+        completeBtn.setAttribute(
+          'aria-label',
+          interpolate(STRINGS['complete-download-row-label'], { name: row.label }),
+        );
+      } else {
+        completeBtn.remove();
       }
     }
 
@@ -3071,10 +3211,12 @@
   function _handleDownloadHereClick(event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return false;
-    const button = target.closest('[data-downloads-here]');
+    // 12 Nov 2026: "Retry" on a failed region is the same act.
+    const button = target.closest('[data-downloads-here], [data-downloads-complete]');
     if (!button) return false;
 
-    const areaId = button.getAttribute('data-downloads-here');
+    const areaId =
+      button.getAttribute('data-downloads-here') || button.getAttribute('data-downloads-complete');
     if (!areaId) return true;
 
     // Offline-integrity, same as the add-trigger: listing costs nothing,

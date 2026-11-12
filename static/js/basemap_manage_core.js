@@ -279,7 +279,12 @@
    *   onDevice: boolean, synced: boolean, redownloadable: boolean,
    *   bbox: number[]|null, regionId: string, deps: string[],
    *   z: Object|null, band: number[]|null, contentIncomplete: boolean,
-   *   contentAt: string, terrain: boolean, storedName: string}>}
+   *   contentAt: string, terrain: boolean, storedName: string,
+   *   completable: boolean}>}
+   *   12 Nov 2026: ``completable`` marks an orphaned REGION bucket, which
+   *   "Retry" can finish; ``options.regionIdForArea`` gives
+   *   it its region id and ``options.orphanLabel({id, custom, regionId})``
+   *   names any orphan, in place of the raw bucket id.
    *   SNOW-1139: ``contentAt`` is when the area's bulletins were fetched,
    *   '' when never (and always '' for an orphan or account-only row).
    *   SNOW-1072: ``terrain`` is whether the area includes terrain data.
@@ -371,7 +376,21 @@
         !area.name && !onDevice && typeof opts.unnamedLabel === 'function'
           ? opts.unnamedLabel(area)
           : '';
-      var label = area.name || unnamed || id;
+      // 12 Nov 2026 (Hugo): an ORPHAN is named too. A download that fails
+      // leaves its bucket and no record, and the row used to read as the
+      // bucket id ("region-CH-4115"). A region's id still says which
+      // region it was, so the caller names it from that; a custom area's
+      // says nothing, and the caller gives it its kind. The raw id is left
+      // only for a caller that names neither.
+      var orphanRegionId =
+        area.orphaned && !isCustom && typeof opts.regionIdForArea === 'function'
+          ? opts.regionIdForArea(id) || ''
+          : '';
+      var orphanLabel =
+        area.orphaned && !area.name && typeof opts.orphanLabel === 'function'
+          ? opts.orphanLabel({ id: id, custom: isCustom, regionId: orphanRegionId })
+          : '';
+      var label = area.name || unnamed || orphanLabel || id;
 
       var bytes = Number(area.bytes);
       if (!Number.isFinite(bytes) || bytes < 0) bytes = 0;
@@ -417,7 +436,12 @@
         redownloadable:
           !onDevice && (isCustom ? Array.isArray(area.bbox) : !!area.regionId),
         bbox: Array.isArray(area.bbox) ? area.bbox : null,
-        regionId: area.regionId || '',
+        regionId: area.regionId || orphanRegionId,
+        // 12 Nov 2026: a region a failed run left behind can be completed
+        // — "Retry" runs the region's download again, which
+        // keeps the tiles already saved. A custom area's orphan cannot: its
+        // box was never recorded.
+        completable: !!orphanRegionId,
         // SNOW-844: the render dependencies this area recorded, carried
         // onto the row so the sheet can ask whether they are on disk. The
         // check itself is not here — it needs Cache Storage, which this
