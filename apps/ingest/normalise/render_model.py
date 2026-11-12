@@ -192,6 +192,9 @@ logger = logging.getLogger(__name__)
 #
 # v11 (SNOW-1437): a bulletin with no valid ``dangerRatings`` resolves to
 # ``danger.key == "no_rating"`` (number ``"0"``) instead of ``low``.
+# Stored v10 models read as stale until production runs
+# ``rebuild_source_render_models --commit`` then ``rebuild_render_models
+# --commit`` (the Deploy-Step trailers on this change).
 RENDER_MODEL_VERSION: int = 11
 
 # The headline danger key of a bulletin that carries no valid rating — the
