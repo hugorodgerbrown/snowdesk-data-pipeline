@@ -2,7 +2,7 @@
 name: alerts
 description: Bulletin alerts — send_bulletin_alerts, BulletinAlert, notify_when, trip_places, /alerts/<day>/, the Today sun's dot, bulletin_alerts flag
 status: current
-last-reviewed: 2026-11-01
+last-reviewed: 2026-11-12
 ---
 
 # Bulletin alerts
@@ -11,10 +11,10 @@ One message per person per run, naming every place whose bulletin is new
 or has changed. Push first; email when no device can show a notification,
 or always if the person asks. Phase A of the roadmap (SNOW-937).
 
-**Ships dark.** The settings, the region-panel prompt and the since strip
-are behind the `bulletin_alerts` flag (superusers). The scheduled sender
-is behind the `schedule_send_bulletin_alerts` switch, which deploys off.
-See "Going public" before turning either on.
+**Going public (SNOW-1361).** The settings, the region-panel prompt and the
+since strip stay behind the `bulletin_alerts` flag, which is widened in the
+admin rather than in code. The scheduled sender is behind the
+`schedule_send_bulletin_alerts` switch. "Going public" records the order.
 
 ## The pieces
 
@@ -112,17 +112,26 @@ See "Going public" before turning either on.
 
 ## Going public
 
-Before the switch goes on:
+The record of SNOW-1361, in order:
 
-1. Confirm the email provider and SPF, DKIM and DMARC for the alerts@
-   sender in `ALERTS_FROM_EMAIL`.
-2. Read a replayed season (`/_alerts-replay/`, both modes).
-3. Widen the `bulletin_alerts` flag, then turn on
-   `schedule_send_bulletin_alerts`.
-4. In the same change: flip the alerts row on `/compare/` (SNOW-943),
-   change the help page's "Snowdesk sends no bulletin alerts", and narrow
-   `tests/public/test_no_bulletin_alert_claims.py`, which holds every
-   other page to the old truth until then.
+1. **Email (12 Nov 2026).** Hugo confirmed the provider behind
+   `EMAIL_HOST` and SPF, DKIM and DMARC for the `ALERTS_FROM_EMAIL`
+   sender. His condition for the first live sends: he is the only account
+   on production with alerts on.
+2. **Copy (the SNOW-1361 PR).** The help page's accounts topic says
+   alerts exist, what they send and links `/account/settings/`; the
+   `/compare/` alerts row is `YES` (SNOW-943's change, folded in) and the
+   comparison no longer lists alerting as a weakness.
+   `tests/public/test_no_bulletin_alert_claims.py` flipped from "no
+   promise of alerts" to "no denial of alerts", and scans
+   `apps/public/competitor_matrix.py` too.
+3. **Ops, on production after the PR ships** (Hugo):
+   read a replayed season at `/_alerts-replay/` in both modes; widen
+   `bulletin_alerts` in the admin (default: 10% for two days, then
+   everyone); then turn on `schedule_send_bulletin_alerts`.
+4. **Later.** Remove the flag gate from the code once it has held at 100%
+   for a week. `sync_waffle_flags` never re-scopes an existing flag, so the
+   manifest's `superusers: true` stays until then; only its note changed.
 
 Deferred: the NEW tag on
 cards.

@@ -357,6 +357,20 @@ class TestHelpPageFlagGating:
         assert "open the calendar and press Today" in topic
         assert "Show today" not in topic
 
+    def test_the_accounts_topic_says_alerts_exist(self, client: Client) -> None:
+        """SNOW-1361: alerts are public, so the help page says so.
+
+        It no longer says Snowdesk sends no bulletin alerts, and it links
+        the settings page where they are turned on.
+        """
+        content = client.get(reverse("public:help")).content.decode()
+        start = content.index('data-testid="help-accounts-alerts"')
+        paragraph = content[start : content.index("</p>", start)]
+
+        assert "sends no bulletin alerts" not in content
+        assert "when the avalanche bulletin changes" in paragraph
+        assert f'href="{reverse("accounts:settings")}"' in paragraph
+
     def test_downloads_account_paragraphs_are_always_present(
         self, client: Client
     ) -> None:
