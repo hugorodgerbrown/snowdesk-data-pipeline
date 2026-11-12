@@ -71,7 +71,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import Q, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 from django_tasks import task
@@ -993,6 +993,46 @@ def _can_email(account: Account) -> bool:
     )
 
 
+def _claim_still_whole(
+    claimed: QuerySet[BulletinAlert], alert_ids: list[int], account_id: int
+) -> bool:
+    """
+    Return whether a delivery worker still holds every row of its bundle.
+
+    None held: another run settled or re-claimed them, so nothing is sent.
+    Some held: a newer run claimed the others and may already have told the
+    person about those places. The payload was rendered for the whole bundle
+    and cannot be re-worded here, so nothing is sent and the held rows
+    become ``FAILED``, which the next run re-evaluates and re-words
+    (SNOW-1362).
+
+    Args:
+        claimed: The rows still ``PENDING`` under this worker's claim.
+        alert_ids: Every row the bundle was queued with.
+        account_id: The account's pk, for the log.
+
+    Returns:
+        True when the worker should send.
+
+    """
+    held = claimed.count()
+    if held == len(set(alert_ids)):
+        return True
+    if held:
+        claimed.update(outcome=BulletinAlert.Outcome.FAILED, updated_at=timezone.now())
+        logger.info(
+            "Bulletin alert for account %s: part of the bundle claimed again; "
+            "not sent, the rest left to the next run",
+            account_id,
+        )
+    else:
+        logger.info(
+            "Bulletin alert for account %s: rows settled or claimed again; not sent",
+            account_id,
+        )
+    return False
+
+
 @task()
 def _worker_deliver_alert(
     account_id: int,
@@ -1015,7 +1055,9 @@ def _worker_deliver_alert(
     Only rows still ``PENDING`` under this claim (``updated_at`` equal to
     ``claimed_at``) are sent for or touched, so a replayed task never undoes
     a later run's rows, and a worker whose rows went stale and were claimed
-    again by a newer run sends nothing (SNOW-1362). A device or the mail
+    again by a newer run sends nothing (SNOW-1362). If only some of them
+    were claimed again, it sends nothing either and marks the rest
+    ``FAILED``, so the next run re-words the message for them. A device or the mail
     server raising counts as that channel not reaching the person; anything
     else raising still settles the rows from what had already gone, then
     re-raises.
@@ -1036,11 +1078,7 @@ def _worker_deliver_alert(
         outcome=BulletinAlert.Outcome.PENDING,
         updated_at=datetime.datetime.fromisoformat(claimed_at),
     )
-    if not claimed.exists():
-        logger.info(
-            "Bulletin alert for account %s: rows settled or claimed again; not sent",
-            account_id,
-        )
+    if not _claim_still_whole(claimed, alert_ids, account_id):
         return
     pushed = False
     emailed = False

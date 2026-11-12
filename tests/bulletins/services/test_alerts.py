@@ -787,6 +787,32 @@ class TestClaimAndSettle:
         row.refresh_from_db()
         assert row.outcome == BulletinAlert.Outcome.PENDING
 
+    def test_an_old_worker_for_a_partly_reclaimed_bundle_sends_nothing(
+        self, follower: tuple
+    ) -> None:
+        """One row of the bundle claimed again: nothing sent, the rest retried."""
+        account, region = follower
+        other = MicroRegionFactory.create(name="Davos")
+        PushSubscriptionFactory.create(account=account)
+        kept = hold(account, region, "fp-kept")
+        taken = hold(account, other, "fp-taken")
+        claim = kept.updated_at
+        BulletinAlert.objects.filter(pk=kept.pk).update(updated_at=claim)
+        BulletinAlert.objects.filter(pk=taken.pk).update(
+            updated_at=claim + datetime.timedelta(minutes=40)
+        )
+        with patch.object(alerts, "dispatch_push", return_value=OK) as push:
+            alerts._worker_deliver_alert.call(
+                account.pk, [kept.pk, taken.pk], claim.isoformat(), {}, "t", "b", "/"
+            )
+        push.assert_not_called()
+        assert mail.outbox == []
+        kept.refresh_from_db()
+        taken.refresh_from_db()
+        assert kept.outcome == BulletinAlert.Outcome.FAILED
+        assert taken.outcome == BulletinAlert.Outcome.PENDING
+        assert taken.updated_at == claim + datetime.timedelta(minutes=40)
+
 
 @pytest.mark.django_db
 class TestTripDay:
