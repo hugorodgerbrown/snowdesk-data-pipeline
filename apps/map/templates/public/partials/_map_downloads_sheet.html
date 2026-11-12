@@ -274,7 +274,7 @@ the row's own label, so map.html loads that module once for both.
     <span data-string="incomplete-title-failed">{% trans "Download failed" %}</span>
     <span
         data-string="incomplete-body-region"
-    >{% trans "This area has not been fully downloaded. Choose Complete download in the … menu to get the rest." %}</span>
+    >{% trans "This area has not been fully downloaded. Choose Retry in the … menu to get the rest." %}</span>
     <span
         data-string="incomplete-body-custom"
     >{% trans "This area has not been fully downloaded. Remove it and frame the area again." %}</span>
@@ -282,9 +282,7 @@ the row's own label, so map.html loads that module once for both.
     <span
         data-string="incomplete-body-missing"
     >{% trans "This area has not been fully downloaded. Choose Sync now in the … menu to get the rest." %}</span>
-    <span
-        data-string="complete-download-row-label"
-    >{% blocktrans %}Complete the download of %(name)s{% endblocktrans %}</span>
+    <span data-string="complete-download-row-label">{% blocktrans %}Retry downloading %(name)s{% endblocktrans %}</span>
     {# SNOW-832: what KIND of download a row is. The two fixed REGIONS /   #}
     {# CUSTOM AREAS headings are gone — the headings name BASEMAPS now —   #}
     {# so the kind comes down into the row's own meta line. The size moved #}

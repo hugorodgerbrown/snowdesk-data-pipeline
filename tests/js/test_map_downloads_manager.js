@@ -176,7 +176,7 @@ function buildFixture() {
               <li role="none"><button type="button" role="menuitem" data-downloads-here
                                       aria-label="Download here">Download here</button></li>
               <li role="none"><button type="button" role="menuitem" data-downloads-complete
-                                      aria-label="Complete download">Complete download</button></li>
+                                      aria-label="Retry">Retry</button></li>
               <li role="none"><button type="button" role="menuitem" data-downloads-sync
                                       aria-label="Sync now">Sync now</button></li>
               <li role="none"><button type="button" role="menuitem" data-row-rename
@@ -1777,7 +1777,7 @@ describe('a download that did not finish (Hugo, 12 Nov 2026)', () => {
     expect(term.getAttribute('popovertarget')).toBe(def.id);
     expect(term.closest('.text-status-warning-text')).not.toBeNull();
     expect(def.querySelector('[data-incomplete-title]').textContent).toBe('Download failed');
-    expect(def.querySelector('[data-incomplete-body]').textContent).toContain('Complete download');
+    expect(def.querySelector('[data-incomplete-body]').textContent).toContain('Retry');
   });
 
   it('names a region the map does not hold by its kind', async () => {
@@ -1787,7 +1787,7 @@ describe('a download that did not finish (Hugo, 12 Nov 2026)', () => {
     expect(row.querySelector('[data-row-label]').textContent).toBe('Region');
   });
 
-  it('offers Complete download, then Remove, on a region', async () => {
+  it('offers Retry, then Remove, on a region', async () => {
     window.pwaRegionDownload = {
       name: vi.fn(() => 'Martigny-Verbier'),
       start: vi.fn(async () => ({ started: true, reason: '' })),
@@ -1795,13 +1795,13 @@ describe('a download that did not finish (Hugo, 12 Nov 2026)', () => {
     const row = await render([ORPHAN_REGION]);
 
     const items = [...row.querySelectorAll('[data-overflow-menu] [role="menuitem"]')];
-    expect(items.map((item) => item.textContent.trim())).toEqual(['Complete download', 'Remove']);
-    expect(items[0].getAttribute('aria-label')).toBe('Complete the download of Martigny-Verbier');
+    expect(items.map((item) => item.textContent.trim())).toEqual(['Retry', 'Remove']);
+    expect(items[0].getAttribute('aria-label')).toBe('Retry downloading Martigny-Verbier');
     expect(row.querySelector('[data-downloads-sync]')).toBeNull();
     expect(row.querySelector('[data-downloads-here]')).toBeNull();
   });
 
-  it('runs the region download on Complete download', async () => {
+  it('runs the region download on Retry', async () => {
     window.pwaRegionDownload = {
       name: vi.fn(() => 'Martigny-Verbier'),
       start: vi.fn(async () => ({ started: true, reason: '' })),

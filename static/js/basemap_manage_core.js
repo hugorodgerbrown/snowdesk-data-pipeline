@@ -282,7 +282,7 @@
    *   contentAt: string, terrain: boolean, storedName: string,
    *   completable: boolean}>}
    *   12 Nov 2026: ``completable`` marks an orphaned REGION bucket, which
-   *   "Complete download" can finish; ``options.regionIdForArea`` gives
+   *   "Retry" can finish; ``options.regionIdForArea`` gives
    *   it its region id and ``options.orphanLabel({id, custom, regionId})``
    *   names any orphan, in place of the raw bucket id.
    *   SNOW-1139: ``contentAt`` is when the area's bulletins were fetched,
@@ -438,7 +438,7 @@
         bbox: Array.isArray(area.bbox) ? area.bbox : null,
         regionId: area.regionId || orphanRegionId,
         // 12 Nov 2026: a region a failed run left behind can be completed
-        // — "Complete download" runs the region's download again, which
+        // — "Retry" runs the region's download again, which
         // keeps the tiles already saved. A custom area's orphan cannot: its
         // box was never recorded.
         completable: !!orphanRegionId,

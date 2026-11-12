@@ -312,13 +312,13 @@
     // 12 Nov 2026 (Hugo): what the "Incomplete" popover on the row says.
     'incomplete-title-failed': 'Download failed',
     'incomplete-body-region':
-      "This area has not been fully downloaded. Choose Complete download in the … menu to get the rest.",
+      "This area has not been fully downloaded. Choose Retry in the … menu to get the rest.",
     'incomplete-body-custom':
       "This area has not been fully downloaded. Remove it and frame the area again.",
     'incomplete-title-missing': 'Part of the map is missing',
     'incomplete-body-missing':
       "This area has not been fully downloaded. Choose Sync now in the … menu to get the rest.",
-    'complete-download-row-label': 'Complete the download of %(name)s',
+    'complete-download-row-label': 'Retry downloading %(name)s',
     // SNOW-832: what KIND of download a row is. It used to be said by the
     // heading the row sat under (SNOW-645's REGIONS / CUSTOM AREAS); the
     // headings now name basemaps, so the kind moved into the row's own
@@ -2170,7 +2170,7 @@
     // can be fetched here is the same rule again: Download here and
     // Forget.
     // 12 Nov 2026 (Hugo): a region a failed download left behind can be
-    // completed, so it has two actions too — Complete download and Remove.
+    // completed, so it has two actions too — Retry and Remove.
     const completable = !!row.completable && row.onDevice !== false;
     const useMenu =
       (deletable && (renameable || syncable || completable)) || (forgettable && redownloadable);
@@ -2312,7 +2312,7 @@
       }
     }
 
-    // 12 Nov 2026 (Hugo): "Complete download" — a region a failed
+    // 12 Nov 2026 (Hugo): "Retry" — a region a failed
     // download left behind. It runs the same download "Download here"
     // does, through the same handler; the run keeps the tiles already
     // saved and fetches the rest.
@@ -3180,7 +3180,7 @@
   function _handleDownloadHereClick(event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return false;
-    // 12 Nov 2026: "Complete download" on a failed region is the same act.
+    // 12 Nov 2026: "Retry" on a failed region is the same act.
     const button = target.closest('[data-downloads-here], [data-downloads-complete]');
     if (!button) return false;
 

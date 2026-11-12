@@ -2587,8 +2587,8 @@ meta reads "Region · Incomplete" with an amber dot and no reason line.
 "Incomplete" is amber and opens the native popover the EAWS glossary terms
 use (`.glossary-term` / `.glossary-def`, from
 `#map-downloads-incomplete-template`), saying what happened and what to do.
-A region orphan is `completable`: its "…" menu offers **Complete
-download**, then Remove, and the download it runs keeps the tiles already
+A region orphan is `completable`: its "…" menu offers **Retry**
+(Hugo's word, over "Complete download"), then Remove, and the download it runs keeps the tiles already
 saved. A custom-area orphan still has nothing to rebuild from, so it keeps
 the bare Remove. A recorded area that fails the render check gets the same
 amber "Incomplete", whose popover points at Sync now.

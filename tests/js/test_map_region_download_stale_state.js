@@ -513,7 +513,7 @@ describe('"Download here" on an area a failed run left behind (12 Nov 2026)', ()
   });
 });
 
-describe('"Complete download" on a bucket with no record (12 Nov 2026)', () => {
+describe('"Retry" on a bucket with no record (12 Nov 2026)', () => {
   it('names the region from the map', () => {
     expect(window.pwaRegionDownload.name(REGION_A)).toBe('Martigny — Verbier');
     expect(window.pwaRegionDownload.name('CH-0000')).toBe('');
