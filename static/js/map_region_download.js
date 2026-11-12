@@ -2256,6 +2256,22 @@
         // own 'other-basemap' label uses, so the banner and the roundel
         // name the same basemap rather than one of them saying "another
         // basemap".
+        // Hugo, 12 Nov 2026: a Swiss region held on another map is brought
+        // up to date by a Sync, which adds the Swiss map and keeps the
+        // copy there. Offer that instead of replacing it; this run starts
+        // nothing either way, and the Sync runs in the Downloads sheet,
+        // where its progress shows.
+        const areaId = runCore.areaIdForRegion(data.regionId);
+        const bridge = self.pwaBasemapDownloads;
+        if (bridge && typeof bridge.syncAddsSwissMap === 'function' && (await bridge.syncAddsSwissMap(areaId))) {
+          replacing = null;
+          declinedReplace = true;
+          if (await confirmSyncInstead(previous.name || data.regionId)) {
+            window.pwaDownloadsManager?.sync(areaId);
+          }
+          return false;
+        }
+
         const key = previous.basemapKey || (await _basemapKeyForTemplate(previous.template));
         const proceed = await confirmBasemapReplace({
           basemapKey: key || '',

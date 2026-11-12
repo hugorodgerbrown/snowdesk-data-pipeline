@@ -3781,9 +3781,24 @@
     document.addEventListener('DOMContentLoaded', _openFromUrl);
   }
 
+  /**
+   * Hugo, 12 Nov 2026: open the sheet and Sync one area, as its row's Sync
+   * does — the region control's "Sync it to add the Swiss map?" confirm.
+   *
+   * @param {string} areaId
+   * @returns {Promise<void>}
+   */
+  async function syncFromOutside(areaId) {
+    await open();
+    // `syncRow` disables the control it was pressed from; the row's own
+    // re-renders take that from `syncing`, so a detached stand-in is enough.
+    syncRow(areaId, document.createElement('button'));
+  }
+
   window.pwaDownloadsManager = Object.freeze({
     open: open,
     toggle: toggle,
     refresh: render,
+    sync: syncFromOutside,
   });
 })();

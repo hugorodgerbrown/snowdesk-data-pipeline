@@ -289,6 +289,14 @@ function buildFixture() {
       <p id="map-download-replace-confirm-body"></p>
       <button id="map-download-replace-confirm-cta" type="button">Replace and download</button>
       <button type="button" data-action="dismiss">&times;</button>
+    </div>
+    <!-- Hugo, 12 Nov 2026: the confirm a Swiss region held on another map
+         raises instead of the replace one. -->
+    <div id="map-download-sync-instead" class="hidden" data-overlay data-overlay-hide="class">
+      <p id="map-download-sync-instead-title">You already have this area.</p>
+      <p id="map-download-sync-instead-body"></p>
+      <button id="map-download-sync-instead-cta" type="button">Sync</button>
+      <button type="button" data-action="dismiss">&times;</button>
     </div>`;
 }
 
@@ -500,5 +508,95 @@ describe('a Swiss region with OpenFreeMap on screen (SNOW-1478)', () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
     await waitFor(() => btn.dataset.downloadState === 'done', 500);
     expect(btn.dataset.downloadState).not.toBe('done');
+  });
+});
+
+describe('a Swiss region held on OpenFreeMap offers Sync, not replace (Hugo, 12 Nov 2026)', () => {
+  const AREA_ID = 'region-' + REGION_ID;
+  const OLD_TILE = 'https://tiles-a.example.invalid/14/8577/5811.pbf';
+
+  /** A copy saved on OpenFreeMap before SNOW-1478, its tile still on disk. */
+  async function seedOpenFreeMapCopy() {
+    await window.pwaDb.put('meta:app', {
+      key: 'basemap.regions',
+      value: [
+        {
+          region_id: REGION_ID,
+          name: 'Martigny — Verbier',
+          band: [10, 14],
+          z: REGION_BLOB.z,
+          template: TEMPLATE_A,
+          basemapKey: 'openfreemap_liberty',
+          deps: [],
+          bytes: 1024,
+          savedAt: '2026-08-01T10:00:00.000Z',
+        },
+      ],
+    });
+    cachesStub.buckets.set(PINNED_PREFIX + AREA_ID, new Map([[OLD_TILE, {}]]));
+  }
+
+  /** Focus the region and tap its download control. */
+  async function tapDownload() {
+    const btn = document.getElementById('map-download-control');
+    switchBasemap('openfreemap_liberty', TEMPLATE_A);
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:region-selected', {
+        detail: { region_id: REGION_ID, region_name: 'Martigny — Verbier' },
+      }),
+    );
+    await waitFor(() => !!btn.dataset.downloadState && btn.dataset.downloadState !== 'checking', 1000);
+    btn.click();
+  }
+
+  const banner = () => document.getElementById('map-download-sync-instead');
+  const regionWarms = () =>
+    window.pwaWarmCache.mock.calls.filter((call) => call[1] && call[1].areaId === AREA_ID).length;
+
+  it('asks to Sync, naming the area, and the Sync button syncs it in the Downloads sheet', async () => {
+    await seedOpenFreeMapCopy();
+    const sync = vi.fn(async () => {});
+    window.pwaDownloadsManager = { sync: sync };
+    const warmsBefore = regionWarms();
+
+    await tapDownload();
+    await waitFor(() => !banner().classList.contains('hidden'));
+
+    expect(banner().classList.contains('hidden')).toBe(false);
+    expect(document.getElementById('map-download-sync-instead-title').textContent).toBe(
+      'You already have Martigny — Verbier. Sync it to add the Swiss map?',
+    );
+    expect(document.getElementById('map-download-sync-instead-body').textContent).toBe(
+      'Nothing you have saved is removed.',
+    );
+    expect(document.getElementById('map-download-replace-confirm').classList.contains('hidden')).toBe(true);
+
+    document.getElementById('map-download-sync-instead-cta').click();
+    await waitFor(() => sync.mock.calls.length > 0);
+
+    expect(sync).toHaveBeenCalledWith(AREA_ID);
+    // The tap itself downloads nothing and replaces nothing.
+    expect(regionWarms()).toBe(warmsBefore);
+    expect(bucketKeys(cachesStub, AREA_ID)).toContain(OLD_TILE);
+    expect((await recordedRegion()).basemapKey).toBe('openfreemap_liberty');
+    delete window.pwaDownloadsManager;
+  });
+
+  it('closing it does nothing at all', async () => {
+    await seedOpenFreeMapCopy();
+    const sync = vi.fn(async () => {});
+    window.pwaDownloadsManager = { sync: sync };
+    const warmsBefore = regionWarms();
+
+    await tapDownload();
+    await waitFor(() => !banner().classList.contains('hidden'));
+    banner().classList.add('hidden');
+    document.dispatchEvent(new CustomEvent('overlay:dismissed', { detail: { overlay: banner() } }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(regionWarms()).toBe(warmsBefore);
+    expect(bucketKeys(cachesStub, AREA_ID)).toContain(OLD_TILE);
+    delete window.pwaDownloadsManager;
   });
 });
