@@ -56,6 +56,7 @@ def test_a_second_import_of_the_same_release_writes_nothing(tmp_path: Path) -> N
         "updated": 0,
         "deleted": 0,
         "unchanged": 2,
+        "failed": 0,
     }
     assert result[SKI_TOURS]["unchanged"] == 1
 

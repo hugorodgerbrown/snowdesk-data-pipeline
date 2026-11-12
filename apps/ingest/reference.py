@@ -12,6 +12,13 @@ A host hands the service its whole list of one kind of record, and
   tombstoned one that is back is revived. Nothing is ever deleted, so a
   client learns of a removal from the feed.
 
+A host that could not read one of its records hands an ``UnreadableRecord``
+in its place (SNOW-1489). It is counted ``failed`` and writes nothing. When
+it still carries its ``uuid``, that row is kept as it was, neither rewritten
+nor tombstoned. When it does not, the sync cannot tell which stored row it
+was, so no row is tombstoned on that run: a lost identity must not delete a
+row a client still holds.
+
 The service never reads inside a document. What a resort is — its fields,
 its region, its places — belongs to whoever curates it; the service keeps
 and serves it, as it keeps a bulletin's CAAML.
@@ -49,22 +56,48 @@ class DocumentRecord:
     document: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class UnreadableRecord:
+    """A record the host holds but could not read, handed in its place.
+
+    Attributes:
+        uuid: The service's id for the record, when the host could still
+            read it; None when the record's identity is lost too.
+        label: A readable label for the log, such as ``tour 5956``.
+
+    """
+
+    uuid: uuid_module.UUID | None
+    label: str
+
+
 def sync_source_documents(
-    model: type[SourceDocument], records: Iterable[DocumentRecord]
+    model: type[SourceDocument],
+    records: Iterable[DocumentRecord | UnreadableRecord],
 ) -> dict[str, int]:
     """Make the live rows of ``model`` equal ``records``.
 
     Args:
         model: ``SourcePass``, ``SourceResort``, ``SourceSkiSegment`` or
             ``SourceSkiTour``.
-        records: Every record of that kind, as the host holds them now.
+        records: Every record of that kind, as the host holds them now. An
+            ``UnreadableRecord`` keeps its stored row as it was; one with no
+            uuid holds back every tombstone on this run.
 
     Returns:
-        Counts: ``created``, ``updated``, ``deleted``, ``unchanged``.
+        Counts: ``created``, ``updated``, ``deleted``, ``unchanged``,
+        ``failed``.
 
     """
-    counts = {"created": 0, "updated": 0, "deleted": 0, "unchanged": 0}
+    counts = {
+        "created": 0,
+        "updated": 0,
+        "deleted": 0,
+        "unchanged": 0,
+        "failed": 0,
+    }
     seen: set[uuid_module.UUID] = set()
+    identity_lost = False
     # Slim: a document is not read to decide, only its hash; the ski
     # network runs to tens of thousands of lines (SNOW-1276). A deferred
     # row saves only its loaded fields, so ``updated_at`` is loaded for
@@ -79,6 +112,13 @@ def sync_source_documents(
 
     with transaction.atomic():
         for record in records:
+            if isinstance(record, UnreadableRecord):
+                counts["failed"] += 1
+                if record.uuid is None:
+                    identity_lost = True
+                else:
+                    seen.add(record.uuid)
+                continue
             seen.add(record.uuid)
             digest = content_hash(record.document)
             row = existing.get(record.uuid)
@@ -108,16 +148,23 @@ def sync_source_documents(
             row.save()
             counts["updated"] += 1
 
-        gone = [
-            row
-            for key, row in existing.items()
-            if key not in seen and row.deleted_at is None
-        ]
-        now = timezone.now()
-        for row in gone:
-            row.deleted_at = now
-            row.save(update_fields=["deleted_at", "updated_at"])
-        counts["deleted"] = len(gone)
+        if identity_lost:
+            logger.warning(
+                "sync_source_documents: tombstones held back for %s, since "
+                "an unreadable record had no uuid",
+                model.__name__,
+            )
+        else:
+            gone = [
+                row
+                for key, row in existing.items()
+                if key not in seen and row.deleted_at is None
+            ]
+            now = timezone.now()
+            for row in gone:
+                row.deleted_at = now
+                row.save(update_fields=["deleted_at", "updated_at"])
+            counts["deleted"] = len(gone)
 
     logger.info("sync_source_documents(%s): %s", model.__name__, counts)
     return counts
