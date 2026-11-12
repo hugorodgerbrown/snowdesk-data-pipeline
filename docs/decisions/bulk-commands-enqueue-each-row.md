@@ -2,7 +2,7 @@
 name: bulk-commands-enqueue-each-row
 description: Why a bulk command enqueues one task per row via enqueue_each — READY dedupe, run_after pacing, back_off breaker, mcp_runnable guard
 status: current
-last-reviewed: 2026-11-03
+last-reviewed: 2026-11-12
 ---
 
 # A bulk command enqueues each row through one helper
@@ -32,11 +32,17 @@ the rules in one place, and a guard test holds rule 5.
   tasks whose starts passed while the worker was busy or down become due
   together (Codex, on #1435). So an outside task calls
   `wait_for_slot(service, pace)` just before it calls out. That reserves
-  the next free start in the shared cache (`incr` on a millisecond
-  counter) and sleeps until it, so two calls never start closer than
-  `pace`. The reservation is exact for production's one worker. Two
-  workers on the database cache could, rarely, share a slot, because its
-  `incr` is not atomic. `ImmediateBackend` refuses `run_after`, so there
+  the next free start in the shared cache and sleeps until it, so two
+  calls never start closer than `pace`, however many workers run. The
+  reservation is a read and write of the last start under a short
+  per-service lock taken with `cache.add`, which is an atomic insert on
+  the database cache where `incr` is not (SNOW-1477). The next start is
+  the last one plus the larger of the two callers' paces, because
+  services are shared at different paces (weather and elevation both call
+  Open-Meteo). A crashed holder's lock expires after ten seconds and
+  the callers behind it wait that out; none reserves without the lock.
+  The only window left is a live holder stalling longer than that
+  between two cache calls. `ImmediateBackend` refuses `run_after`, so there
   the helper sleeps between enqueues.
 - **Dedupe on waiting tasks.** `run_command` refuses a second run of a
   queued *command*. It cannot see the row tasks a finished command left

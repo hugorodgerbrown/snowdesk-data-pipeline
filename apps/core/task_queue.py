@@ -36,8 +36,9 @@ def task_queue_health(*, now: dt.datetime | None = None) -> dict[str, Any]:
 
     Returns:
         ``backend``, and for the database backend ``by_status``,
-        ``oldest_ready_age_seconds`` and ``recent_failures``; plus
-        ``summary``.
+        ``oldest_ready_age_seconds`` and ``recent_failures`` (the ten
+        biggest groups); plus ``summary``, whose failure count is every
+        failure in the window, not just those ten groups.
 
     """
     backend = settings.TASKS["default"]["BACKEND"]
@@ -57,15 +58,16 @@ def task_queue_health(*, now: dt.datetime | None = None) -> dict[str, Any]:
         .order_by("enqueued_at")
         .values_list("enqueued_at", flat=True)
     ).first()
+    recent = DBTaskResult.objects.failed().filter(finished_at__gte=now - RECENT)
+    # The total counts every failure; the breakdown keeps the ten biggest
+    # groups, so summing it undercounts a day with more kinds (SNOW-1477).
+    failed_24h = recent.count()
     failures = (
-        DBTaskResult.objects.failed()
-        .filter(finished_at__gte=now - RECENT)
-        .values("task_path", "exception_class_path")
+        recent.values("task_path", "exception_class_path")
         .annotate(n=Count("id"))
         .order_by("-n")[:10]
     )
     oldest_age = round((now - oldest).total_seconds()) if oldest else None
-    failed_24h = sum(row["n"] for row in failures)
     return {
         "backend": backend,
         "by_status": by_status,

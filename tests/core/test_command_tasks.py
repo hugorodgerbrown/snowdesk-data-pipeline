@@ -14,10 +14,16 @@ Covers:
   - A list of derived units is walked in order, with a countdown.
   - ``wait_for_slot`` spaces calls ``pace`` apart even when several tasks
     are due at once, and banks no burst across an idle spell.
+  - ``wait_for_slot`` waits for another caller's lock, keeps the larger
+    gap when callers share a service at different paces, reserves without
+    a stale lock once its wait runs out, and leaves no lock behind
+    (SNOW-1477).
+  - ``task_queue_health`` is in tests/core/test_task_queue.py.
 """
 
 from __future__ import annotations
 
+import time
 from datetime import timedelta
 from io import StringIO
 from typing import Any
@@ -34,6 +40,7 @@ from apps.core.command_register import RegisteredCommand
 from apps.core.command_tasks import (
     _OUTSIDE_TASKS,
     _SLOT_KEY,
+    _SLOT_LOCK_KEY,
     BULK_TASK_PRIORITY,
     back_off,
     backing_off,
@@ -50,6 +57,8 @@ pytestmark = pytest.mark.django_db
 DATABASE = {"default": {"BACKEND": "django_tasks_db.DatabaseBackend"}}
 
 _SLEEP = "apps.core.command_tasks.time.sleep"
+
+_LOCK = _SLOT_LOCK_KEY.format("test-service")
 
 SEEN: list[int] = []
 
@@ -78,10 +87,10 @@ def _reset() -> Any:
     """Each test starts with nothing seen and the breaker closed."""
     SEEN.clear()
     clear_back_off("test-service")
-    cache.delete(_SLOT_KEY.format("test-service"))
+    cache.delete_many([_SLOT_KEY.format("test-service"), _LOCK])
     yield
     clear_back_off("test-service")
-    cache.delete(_SLOT_KEY.format("test-service"))
+    cache.delete_many([_SLOT_KEY.format("test-service"), _LOCK])
 
 
 def _command() -> RegisteredCommand:
@@ -344,3 +353,94 @@ def test_no_pace_never_waits() -> None:
     with _with_clock(clock):
         assert wait_for_slot("test-service", 0) == 0.0
     assert cache.get(_SLOT_KEY.format("test-service")) is None
+
+
+def test_a_held_lock_is_waited_for_and_its_slot_respected() -> None:
+    """Worker B holds the lock while it reserves; A waits, then starts after B."""
+    clock = _Clock()
+    cache.add(_LOCK, 1)
+    polls: list[float] = []
+    clock_sleep = clock.sleep
+
+    def b_finishes(seconds: float) -> None:
+        """On A's first poll, B writes its slot (now) and lets the lock go."""
+        polls.append(seconds)
+        if len(polls) == 1:
+            cache.set(_SLOT_KEY.format("test-service"), (int(clock.now * 1000), 2000))
+            cache.delete(_LOCK)
+        clock_sleep(seconds)
+
+    clock.sleep = b_finishes  # type: ignore[method-assign]
+    with _with_clock(clock):
+        b_start = clock.now
+        wait = wait_for_slot("test-service", 2.0)
+    a_start = clock.now
+    assert len(polls) >= 2  # one poll for the lock, then the wait
+    assert a_start - b_start >= 2.0
+    assert wait > 0
+
+
+def test_callers_at_different_paces_keep_the_larger_gap() -> None:
+    """A 0.5 s caller after a 2 s one, and the reverse, both wait 2 s."""
+    clock = _Clock()
+    with _with_clock(clock):
+        start = clock.now
+        assert wait_for_slot("test-service", 2.0) == 0.0
+        clock.now = start
+        assert wait_for_slot("test-service", 0.5) == 2.0
+    cache.delete(_SLOT_KEY.format("test-service"))
+    with _with_clock(clock):
+        start = clock.now
+        assert wait_for_slot("test-service", 0.5) == 0.0
+        clock.now = start
+        assert wait_for_slot("test-service", 2.0) == 2.0
+
+
+def test_a_stale_lock_is_waited_out_never_bypassed() -> None:
+    """A crashed holder's lock is waited out until it expires, then taken."""
+    clock = _Clock()
+    cache.add(_LOCK, 1, timeout=0.2)  # left by a holder that crashed
+    attempts: list[bool] = []
+    real_add = cache.add
+
+    def counting_add(*args: Any, **kwargs: Any) -> bool:
+        """Record each try at the lock."""
+        taken = real_add(*args, **kwargs)
+        attempts.append(taken)
+        return taken
+
+    def poll(seconds: float) -> None:
+        """Let real time pass so the stale lock can expire."""
+        time.sleep(0.05)
+        clock.now += seconds
+
+    clock.sleep = poll  # type: ignore[method-assign]
+    with _with_clock(clock), patch.object(cache, "add", counting_add):
+        assert wait_for_slot("test-service", 2.0) == 0.0
+    # It kept trying while the lock was held and took it only once expired.
+    assert attempts[-1] is True
+    assert not any(attempts[:-1])
+    assert len(attempts) > 1
+    assert cache.get(_LOCK) is None
+
+
+def test_no_lock_is_left_behind() -> None:
+    """After many calls only the slot key remains; the lock is gone."""
+    clock = _Clock()
+    with _with_clock(clock):
+        for _ in range(5):
+            wait_for_slot("test-service", 1.0)
+    assert cache.get(_LOCK) is None
+    assert cache.get(_SLOT_KEY.format("test-service")) is not None
+
+
+def test_an_unexpected_slot_value_is_treated_as_absent() -> None:
+    """A bare int (the old shape) under the key does not break the call."""
+    clock = _Clock()
+    cache.set(_SLOT_KEY.format("test-service"), 123456, timeout=None)
+    with _with_clock(clock):
+        assert wait_for_slot("test-service", 2.0) == 0.0
+    assert cache.get(_SLOT_KEY.format("test-service")) == (
+        int(clock.now * 1000),
+        2000,
+    )
