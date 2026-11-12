@@ -178,3 +178,20 @@ def test_an_unreadable_record_without_a_uuid_holds_back_tombstones(
         "failed": 1,
     }
     assert f"tombstones held back for {model.__name__}" in caplog.text
+
+
+@MODELS
+def test_a_tombstoned_row_whose_record_is_now_unreadable_stays_tombstoned(
+    model: Any,
+) -> None:
+    """An unreadable record keeps a row as it is, so a tombstone stays put."""
+    record = _record()
+    sync_source_documents(model, [record])
+    sync_source_documents(model, [])
+    first = model.objects.get().deleted_at
+    counts = sync_source_documents(
+        model, [UnreadableRecord(uuid=record.uuid, label="back, unreadable")]
+    )
+    assert model.objects.get().deleted_at == first
+    assert counts["failed"] == 1
+    assert counts["updated"] == 0

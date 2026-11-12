@@ -133,6 +133,38 @@ def test_a_tour_without_a_readable_uuid_holds_back_tombstones(
     assert SourceSkiTour.objects.get().deleted_at is None
 
 
+def test_a_segment_without_a_readable_id_holds_back_tombstones(
+    tmp_path: Path,
+) -> None:
+    """A malformed segm_id is counted failed and no segment is tombstoned."""
+    import_ski_archive(_archive(tmp_path))
+    malformed = segment_row(2)
+    malformed["segm_id"] = "not-a-number"
+    result = import_ski_archive(
+        _archive(tmp_path, "b.zip", segments=[segment_row(1), malformed])
+    )
+    assert result[SKI_NETWORK]["failed"] == 1
+    assert result[SKI_NETWORK]["deleted"] == 0
+    assert SourceSkiSegment.objects.get(uuid=segment_uuid(2)).deleted_at is None
+
+
+def test_one_unreadable_and_one_dropped_segment(tmp_path: Path) -> None:
+    """The unreadable line is kept; the line swisstopo dropped is tombstoned."""
+    segments = [segment_row(1), segment_row(2, line=LINE_B), segment_row(3)]
+    import_ski_archive(_archive(tmp_path, segments=segments))
+    result = import_ski_archive(
+        _archive(
+            tmp_path,
+            "b.zip",
+            segments=[segment_row(1), segment_row(2, geom=b"junk-bytes")],
+        )
+    )
+    assert result[SKI_NETWORK]["failed"] == 1
+    assert result[SKI_NETWORK]["deleted"] == 1
+    assert SourceSkiSegment.objects.get(uuid=segment_uuid(2)).deleted_at is None
+    assert SourceSkiSegment.objects.get(uuid=segment_uuid(3)).deleted_at is not None
+
+
 def test_each_unreadable_row_is_logged_at_error(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

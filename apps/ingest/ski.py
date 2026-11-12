@@ -90,7 +90,9 @@ def segment_records(path: Path) -> Iterator[DocumentRecord | UnreadableRecord]:
 
     A segment whose geometry cannot be read is logged at ERROR and yielded
     as an ``UnreadableRecord`` under its uuid rather than failing the
-    import: one broken line must not fail, or tombstone, the rest.
+    import: one broken line must not fail, or tombstone, the rest. One
+    whose ``segm_id`` cannot be read is yielded with no uuid, which holds
+    back the layer's tombstones for that run.
 
     Args:
         path: ``ski_network_2056.gpkg``.
@@ -102,10 +104,16 @@ def segment_records(path: Path) -> Iterator[DocumentRecord | UnreadableRecord]:
     for row in _rows(path, NETWORK_TABLE):
         label = f"segment {row['segm_id']}"
         try:
+            key = segment_uuid(int(row["segm_id"]))
+        except TypeError, ValueError:
+            logger.error("ski import: %s has no readable segm_id", label)
+            yield UnreadableRecord(uuid=None, label=label)
+            continue
+        try:
             document = segment_document(row)
         except GeometryError:
             logger.error("ski import: %s has no readable line", label)
-            yield UnreadableRecord(uuid=segment_uuid(int(row["segm_id"])), label=label)
+            yield UnreadableRecord(uuid=key, label=label)
             continue
         yield DocumentRecord(
             uuid=segment_uuid(document["segment_id"]),
