@@ -2,7 +2,7 @@
 name: alerts
 description: Bulletin alerts — send_bulletin_alerts, BulletinAlert, notify_when, trip_places, /alerts/<day>/, the Today sun's dot, bulletin_alerts flag
 status: current
-last-reviewed: 2026-11-01
+last-reviewed: 2026-11-12
 ---
 
 # Bulletin alerts
@@ -109,6 +109,13 @@ See "Going public" before turning either on.
   nothing reached the person. A `FAILED` row is not counted as told, so the
   next run sends again. With no possible channel at all the rows are
   logged `SKIPPED`, so the state still advances.
+- **Retry and overlap** (SNOW-1362). A device or the mail server raising
+  counts as that channel failing, and a crashed worker still settles its
+  rows from what had gone. A `PENDING` row older than `STALE_PENDING`
+  (30 minutes) is no longer counted as told, so a lost worker's alert is
+  sent again; one a run holds fresh `PENDING` is not claimed by another,
+  so two overlapping runs send it once, and a partly claimed bundle sends
+  only the places this run won.
 
 ## Going public
 

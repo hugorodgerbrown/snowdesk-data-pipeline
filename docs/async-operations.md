@@ -25,7 +25,7 @@ past day's failures.
 | Group | Tasks (module) | Enqueued by | Priority |
 |-------|----------------|-------------|----------|
 | Account email | `_worker_send_account_access_email`, `_worker_send_verification_email`, `_worker_send_password_reset_email`, `_worker_send_email_change_confirmation`, `_worker_send_email_change_notice` (`apps.accounts.services.email`) | the matching public `send_*` function in the account flow | default |
-| Bulletin alerts | `_worker_deliver_alert` (`apps.bulletins.services.alerts`), `_worker_send_alert_email` (`apps.accounts.services.alert_email`) | `send_bulletin_alerts`, scheduled at :10 | default |
+| Bulletin alerts | `_worker_deliver_alert` (`apps.bulletins.services.alerts`) | `send_bulletin_alerts`, scheduled at :10 | default |
 | Web Push | `_worker_dispatch_push` (`apps.accounts.push_service`); `dispatch_push` deletes a row on 404/410 and survives 5xx | `enqueue_push` | default |
 | On-save work | `_worker_prime_location` (`apps.locations.services.prime`, after commit); `_worker_sample_route_slopes` (`apps.routes.services.slope_segments`); `_worker_sample_trip_slopes` (`apps.trips.services.slope`) | saving a location, route or trip | default |
 | Bulk commands, one task per row | the row tasks in `apps.locations.services` (`elevation`, `what3words`, `orphans`), `apps.weather.services.station_tasks`, `apps.routes.services.render_tasks` and `slope_segments`, `apps.trips.services` (`render_tasks`, `slope`) | a command through `apps.core.command_tasks.enqueue_each`, paced by `run_after` and `wait_for_slot` ([why](decisions/bulk-commands-enqueue-each-row.md)) | `BULK_TASK_PRIORITY` (−50) |

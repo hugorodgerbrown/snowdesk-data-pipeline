@@ -1184,7 +1184,9 @@ class BulletinAlert(BaseModel):
     ``outcome`` records why the row exists:
 
     - ``PENDING``: queued; the delivery worker has not settled it yet.
-      Counts as told, so a second run does not queue it again.
+      Counts as told until stale (``STALE_PENDING`` in
+      ``apps.bulletins.services.alerts``), so a second run does not queue
+      it again while its worker may still be running.
     - ``SENT``: the account was told, by push, email or both.
     - ``SKIPPED``: a CHANGES-mode account's establishing issue that moved
       nothing; logged so the next issue compares against it.
