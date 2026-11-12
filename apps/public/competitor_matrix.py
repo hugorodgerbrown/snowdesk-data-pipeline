@@ -295,7 +295,12 @@ FEATURES: tuple[Feature, ...] = (
             skitourenguru=_UNKNOWN,
             whympr=_UNKNOWN,
             opensnow=Cell(Support.YES, _("Snowfall thresholds")),
-            snowdesk=_NO,
+            # SNOW-1361: alerts went public, superseding SNOW-943's plan to
+            # flip this row on its own.
+            snowdesk=Cell(
+                Support.YES,
+                _("Level or problem changes for saved places, by push or email"),
+            ),
         ),
     ),
     Feature(

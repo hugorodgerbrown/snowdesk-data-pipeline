@@ -240,12 +240,12 @@ class TestSnowdeskEntryMatchesTheCode:
         assert "national topographic basemaps" in page
 
     def test_states_the_gaps_that_are_still_real(self, page: str) -> None:
-        """Alerting and station data are genuinely absent; scoring is refused.
+        """Station data is genuinely absent; scoring is refused.
 
-        Alerting and weather stations were re-verified when the page was
-        written — the push endpoints in ``apps/accounts/push_views.py``
-        are all staff-only and ``apps/weather/`` is Open-Meteo forecast
-        only.
+        Weather stations were re-verified when the page was written —
+        ``apps/weather/`` is Open-Meteo forecast only. Alerting left this
+        list when alerts went public (SNOW-1361); the page now says what
+        they send, and must no longer call alerting a gap.
 
         **Per-tour scoring is a different kind of entry and the wording
         has to keep it that way.** SNOW-839 joined a route to the
@@ -256,7 +256,8 @@ class TestSnowdeskEntryMatchesTheCode:
         reworded by SNOW-948, which also names SAC's grade as the one fixed
         fact a tour carries.
         """
-        assert "alerting, which it does not do at all" in page
+        assert "alerting, which it does not do at all" not in page
+        assert "alerts when the bulletin changes for a place you" in page
         assert "no live station network" in page
         assert "deliberately does not do" in page
         assert "nothing rates a tour for the day" in page
@@ -334,16 +335,18 @@ class TestFeatureMatrix:
 
         ours = [feature.cells["snowdesk"].support for feature in FEATURES]
         assert Support.NO in ours, "our column claims everything"
-        # Alerts and station data were verified against the code when the
-        # page was written and are still absent.
+        # Station data was verified against the code when the page was
+        # written and is still absent. Alerts are not since SNOW-1361.
         #
         # ``tour_score`` is back in this list (SNOW-948). SNOW-839 made it a
         # YES for a per-route bulletin reading that SNOW-1062 withdrew; the
         # cell is NO again, and its note names the one tour fact we do
         # show — SAC's grade — without claiming it reads the day.
         by_key = {feature.key: feature.cells["snowdesk"] for feature in FEATURES}
-        for key in ("alerts", "stations", "tour_score"):
+        for key in ("stations", "tour_score"):
             assert by_key[key].support is Support.NO, f"{key} is not a gap any more"
+        assert by_key["alerts"].support is Support.YES
+        assert "push or email" in str(by_key["alerts"].note)
         assert "SAC's grade" in str(by_key["tour_score"].note)
 
     def test_no_competitor_column_is_all_unknown(self) -> None:

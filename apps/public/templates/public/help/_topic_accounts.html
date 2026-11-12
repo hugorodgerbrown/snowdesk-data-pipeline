@@ -9,6 +9,10 @@ region for an email on every new bulletin — a service Snowdesk has never
 run and, since SNOW-7 was cancelled, never will. The RSS feeds are the
 one thing here that does tell a reader when a bulletin lands, so they
 take its place.
+
+SNOW-1361 replaced "Snowdesk sends no bulletin alerts" when alerts went
+public: the sentence now says they exist, what they send and where to
+turn them on.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
@@ -23,8 +27,17 @@ take its place.
         {% blocktrans trimmed %}
             An account holds the things you save: the places and regions you pin, the routes you upload, the trips you
             plan, and the map areas you download to read offline. All of it is private to you, and everything except a
-            field observation stays that way. Snowdesk sends no bulletin alerts &mdash; the only email it will send you
-            is a sign-in link, a password reset, or a confirmation that you changed your address.
+            field observation stays that way.
+        {% endblocktrans %}
+    </p>
+    {% url "accounts:settings" as settings_url %}
+    <p class="mb-3 last:mb-0" data-testid="help-accounts-alerts">
+        {% blocktrans trimmed %}
+            Snowdesk can tell you when the avalanche bulletin changes for a place you have saved: a push notification on
+            a device you allow, with email as the fallback (or always, if you prefer). Alerts are off until you turn
+            them on in <a class="underline" href="{{ settings_url }}">your account settings</a>. Apart from alerts, the
+            only email Snowdesk sends is a sign-in link, a password reset, or a confirmation that you changed your
+            address.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-accounts-feeds">

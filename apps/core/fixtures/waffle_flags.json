@@ -24,7 +24,7 @@
     },
     {
       "name": "bulletin_alerts",
-      "note": "Gates bulletin alerts (SNOW-937): the Alerts group on /account/settings/, its endpoints, the region-pin prompt and the /alerts/<date>/ landing page. A rollout gate: superusers while the send is proven on staging. The send command reads Account.notify_when, not this flag, so an account that opted in keeps its alerts if the flag is narrowed; the flag decides who can turn them on.",
+      "note": "Gates bulletin alerts (SNOW-937): the Alerts group on /account/settings/, its endpoints, the region-pin prompt and the /alerts/<date>/ landing page. A rollout gate, being widened in the admin to everyone (SNOW-1361); the gate itself is removed once it has held at 100% for a week. The send command reads Account.notify_when, not this flag, so an account that opted in keeps its alerts if the flag is narrowed; the flag decides who can turn them on.",
       "superusers": true
     },
     {
