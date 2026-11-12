@@ -71,6 +71,32 @@ class UnreadableRecord:
     label: str
 
 
+def _tombstone_absent(
+    existing: dict[uuid_module.UUID, SourceDocument],
+    seen: set[uuid_module.UUID | None],
+) -> int:
+    """Tombstone every live row whose uuid the host did not hand over.
+
+    Args:
+        existing: The stored rows, by uuid.
+        seen: Every uuid the host handed over, readable or not.
+
+    Returns:
+        How many rows were tombstoned.
+
+    """
+    gone = [
+        row
+        for key, row in existing.items()
+        if key not in seen and row.deleted_at is None
+    ]
+    now = timezone.now()
+    for row in gone:
+        row.deleted_at = now
+        row.save(update_fields=["deleted_at", "updated_at"])
+    return len(gone)
+
+
 def sync_source_documents(
     model: type[SourceDocument],
     records: Iterable[DocumentRecord | UnreadableRecord],
@@ -96,8 +122,9 @@ def sync_source_documents(
         "unchanged": 0,
         "failed": 0,
     }
-    seen: set[uuid_module.UUID] = set()
-    identity_lost = False
+    # An unreadable record with no uuid adds None: the sync then cannot
+    # tell which stored row it was, so it tombstones none.
+    seen: set[uuid_module.UUID | None] = set()
     # Slim: a document is not read to decide, only its hash; the ski
     # network runs to tens of thousands of lines (SNOW-1276). A deferred
     # row saves only its loaded fields, so ``updated_at`` is loaded for
@@ -112,14 +139,10 @@ def sync_source_documents(
 
     with transaction.atomic():
         for record in records:
+            seen.add(record.uuid)
             if isinstance(record, UnreadableRecord):
                 counts["failed"] += 1
-                if record.uuid is None:
-                    identity_lost = True
-                else:
-                    seen.add(record.uuid)
                 continue
-            seen.add(record.uuid)
             digest = content_hash(record.document)
             row = existing.get(record.uuid)
             if row is None:
@@ -148,23 +171,14 @@ def sync_source_documents(
             row.save()
             counts["updated"] += 1
 
-        if identity_lost:
+        if None in seen:
             logger.warning(
                 "sync_source_documents: tombstones held back for %s, since "
                 "an unreadable record had no uuid",
                 model.__name__,
             )
         else:
-            gone = [
-                row
-                for key, row in existing.items()
-                if key not in seen and row.deleted_at is None
-            ]
-            now = timezone.now()
-            for row in gone:
-                row.deleted_at = now
-                row.save(update_fields=["deleted_at", "updated_at"])
-            counts["deleted"] = len(gone)
+            counts["deleted"] = _tombstone_absent(existing, seen)
 
     logger.info("sync_source_documents(%s): %s", model.__name__, counts)
     return counts
