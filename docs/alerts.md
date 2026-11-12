@@ -132,6 +132,14 @@ admin rather than in code. The scheduled sender is behind the
   so two overlapping runs send it once, and a partly claimed bundle sends
   only the places this run won.
 
+## Resending an alert
+
+`resend_bulletin_alert --email <address> --commit` sends an account's last
+delivered message again, by its own channels or by `--channel`, without
+touching the send log (SNOW-1493). It runs from the ops tools, so an
+operator can test delivery or make up for an alert that never showed. See
+[`management-commands.md`](management-commands.md).
+
 ## Going public
 
 The record of SNOW-1361, in order:

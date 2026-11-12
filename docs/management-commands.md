@@ -820,6 +820,26 @@ uv run python manage.py send_bulletin_alerts --commit         # send and log
 uv run python manage.py send_bulletin_alerts --commit --full  # everyone
 ```
 
+### `resend_bulletin_alert` — send someone's last alert again
+
+SNOW-1493. Resends one account's newest delivered message exactly as it
+went: the stored `title`, `body` and `url`, nothing recomposed. Never writes
+the send log, so the hourly run is unaffected. With no arguments it does
+nothing but print its usage: a default listing would put who was sent what
+in the command register (the rule 1 exemption). `--email` alone
+shows the last alert and the channels a resend would use (`would_push`,
+`would_email`). `--commit` sends: by the account's own settings, or by
+`--channel push|email|both`, which overrides `alert_email` but never emails
+an unverified address. Tallies `pushed`, `push_failed`, `emailed` and
+`email_failed`, and exits non-zero when a commit reached no channel.
+`mcp_runnable`.
+
+```bash
+uv run python manage.py resend_bulletin_alert                          # usage only
+uv run python manage.py resend_bulletin_alert --email a@example.com    # preview
+uv run python manage.py resend_bulletin_alert --email a@example.com --commit
+```
+
 ### `replay_bulletin_alerts` — read a season of alerts before anyone gets one
 
 SNOW-949. Replays a provider's committed archive for one region and prints
