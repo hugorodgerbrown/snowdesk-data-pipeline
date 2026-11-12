@@ -1,32 +1,30 @@
 """
 apps/bulletins/services/alert_wording.py — The words of a bulletin alert.
 
-Renders one or more A1 changes (``bulletin_change.py``) into the title,
-body and link of one notification (SNOW-940). The same message is sent as a
-push and, as the fallback, in the alert email; the replay harness (A7)
+Renders the places that fired for one account (``bulletin_change.py``)
+into the title, body and link of one notification (SNOW-940). The same
+message is sent as a push and in the alert email; the replay harness (A7)
 renders a season of them so the copy can be read in sequence.
 
 The rules:
 
-- **The day, the level and what moved (SNOW-1356).** The title names the
-  place and the day the bulletin is for: "Verbier – Thursday bulletin",
-  and a reissue "Verbier – Thursday bulletin update" (so Wednesday's
-  17:00 issue says Thursday). The body is the level and whether it moved,
-  then the forecast new snow when there is some: "Considerable, up from
-  Moderate. 20 cm new snow forecast." / "Moderate, no change." The
-  open-door wording of SNOW-1332 made a quiet week seven identical
-  messages (Hugo, 2026-11-01); the problems, aspects and heights still
-  live only on the page the tap opens.
+- **Cold (Hugo, 2026-11-12).** Every alert reads "New avalanche bulletin",
+  then who released it and when: "Bulletin released at 17:00 by SLF." The
+  time is dropped when the bulletins behind it were released at different
+  times. A reissue reads the same, with its own time. A single place, a
+  bundle and a trip all read alike: the earlier detailed and bundled
+  wordings (SNOW-1332, SNOW-1356) said too little to act on and too much
+  to ignore.
 - **One message per person per run.** :func:`alert_message` takes every
-  place that fired for an account and bundles them; a single place reads as
-  that place, several as their names ("Chamonix, Davos and Verbier, for
-  tomorrow.").
-- **The same words in the email.** The email is the fallback for the same
-  alert, so it carries the same title and body.
-- **The full sentences live on the page.** :func:`change_sentences` writes
-  every move ("Wind slab added on N–E above 2,400 m.") for the since strip
-  and ``/alerts/<day>/``, which have the room. Problem names and level
-  words come from ``day_summary.py`` so they read as the bulletin page does.
+  place that fired for an account and makes one message of them.
+- **Every alert opens the landing page.** ``/alerts/<day>/`` lists every
+  place the person follows with its level, problems and provider, which is
+  where the detail lives.
+- **The full sentences live on the pages.** :func:`change_sentences` writes
+  every move ("Wind slab added on N–E above 2,400 m.") for the since strip,
+  and :func:`trend` the level's move for the landing page. Problem names and
+  level words come from ``day_summary.py`` so they read as the bulletin page
+  does.
 
 Server-side strings, so ``makemessages`` covers them.
 """
@@ -41,7 +39,7 @@ from zoneinfo import ZoneInfo
 
 from django.urls import reverse
 from django.utils import formats, translation
-from django.utils.translation import gettext as _, ngettext
+from django.utils.translation import gettext as _
 
 from apps.bulletins.services.bulletin_change import (
     CLOCKWISE_ASPECTS,
@@ -58,14 +56,19 @@ logger = logging.getLogger(__name__)
 # The clock every alert is written in: the Alps' own.
 ALERT_TZ = ZoneInfo("Europe/Zurich")
 
-# Places listed by name in a bundled body before "and N more".
-MAX_LISTED_PLACES: int = 4
-
-# The least forecast new snow, in cm, a one-place alert names (SNOW-944):
+# The least forecast new snow, in cm, the landing page names (SNOW-944):
 # below it a dusting would read as news.
 NEW_SNOW_MIN_CM: float = 5.0
 
 AlertKind = Literal["new", "update", "season_start"]
+
+
+@dataclass(frozen=True)
+class Release:
+    """One bulletin behind an alert: its provider and when it was issued."""
+
+    source: str
+    issued_at: datetime.datetime | None
 
 
 @dataclass(frozen=True)
@@ -77,27 +80,9 @@ class PlaceAlert:
     target_date: datetime.date
     kind: AlertKind
     change: BulletinChange
-    # The day the comparison was made against (yesterday for a new day,
-    # the same day for an update), for "Same as Friday".
-    compared_to: datetime.date | None = None
-    # Where a one-place alert opens, when not the map: a saved trip's own
-    # page (SNOW-947).
-    url: str = ""
-    # When the bulletin holds from and until (SNOW-1332): the reader's way
-    # to place "this alert" among the day's issues.
-    valid_from: datetime.datetime | None = None
-    valid_until: datetime.datetime | None = None
-    # The new snow forecast for ``target_date`` at the region's weather
-    # point, in cm (SNOW-944), or None when nothing is known.
-    new_snow_cm: float | None = None
-    # How many bulletins the place has for the day: for a trip crossing
-    # several regions (SNOW-945), the regions that have published one,
-    # changed or not, so a region still waiting on its evening issue is
-    # not counted.
-    bulletin_count: int = 1
-    # A trip crossing several regions, whose body names the bulletin count
-    # rather than one region's level, whatever the count (SNOW-945).
-    multi_region: bool = False
+    # The bulletins behind it: one, or one per region for a trip crossing
+    # several regions (SNOW-945).
+    releases: tuple[Release, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -431,27 +416,15 @@ def change_sentences(change: BulletinChange) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# The message: an open door (SNOW-1332)
+# The message: cold (Hugo, 2026-11-12)
 # ---------------------------------------------------------------------------
 
-
-def day_phrase(day: datetime.date, today: datetime.date) -> str:
-    """
-    Name the day a bulletin is for, as it reads after "for".
-
-    Args:
-        day: The bulletin's day.
-        today: The local date the message is sent on.
-
-    Returns:
-        "today", "tomorrow", or the weekday ("Sunday").
-
-    """
-    if day == today:
-        return _("today")
-    if day == today + datetime.timedelta(days=1):
-        return _("tomorrow")
-    return weekday(day)
+# How each provider is named in a message, in the order a message lists them.
+PROVIDER_NAMES: dict[str, str] = {
+    "SLF": "SLF",
+    "ALBINA": "ALBINA",
+    "METEOFRANCE": "Météo-France",
+}
 
 
 def clock(moment: datetime.datetime) -> str:
@@ -476,93 +449,51 @@ def clock(moment: datetime.datetime) -> str:
     return _("%(day)s at %(time)s") % {"day": weekday(local.date()), "time": time}
 
 
-def validity(
-    valid_from: datetime.datetime | None, valid_until: datetime.datetime | None
-) -> str:
+def hhmm(moment: datetime.datetime) -> str:
+    """Return a moment as "17:00" in the Alps' time."""
+    return moment.astimezone(ALERT_TZ).strftime("%H:%M")
+
+
+def provider_name(source: str) -> str:
     """
-    Write when a bulletin holds.
+    Return how a message names a provider.
 
     Args:
-        valid_from: The start of its validity.
-        valid_until: The end of its validity.
+        source: A ``Bulletin.Source`` value.
 
     Returns:
-        "Valid from Friday at 5 pm to Saturday at 5 pm.", or an empty
-        string when either time is unknown.
+        "SLF", "ALBINA", "Météo-France", or the value itself when unknown.
 
     """
-    if valid_from is None or valid_until is None:
-        return ""
-    return _("Valid from %(start)s to %(end)s.") % {
-        "start": clock(valid_from),
-        "end": clock(valid_until),
-    }
+    return PROVIDER_NAMES.get(source, source)
 
 
-def place_title(place: PlaceAlert) -> str:
+def trend(change: BulletinChange) -> str:
     """
-    Write the title for a single place: the place and the day it is for.
+    Write how the level moved, for the landing page beside the level.
 
     Args:
-        place: The place that fired.
+        change: The change between the day before and this day.
 
     Returns:
-        "Verbier – Thursday bulletin", or "Verbier – Thursday bulletin
-        update" for a reissue. The day is the one the bulletin forecasts,
-        so Wednesday's 17:00 issue names Thursday.
-
-    """
-    values = {"place": place.label, "day": weekday(place.target_date)}
-    if place.multi_region and place.bulletin_count != 1:
-        if place.kind == "update":
-            return _("%(place)s – %(day)s bulletins update") % values
-        return _("%(place)s – %(day)s bulletins") % values
-    if place.kind == "update":
-        return _("%(place)s – %(day)s bulletin update") % values
-    return _("%(place)s – %(day)s bulletin") % values
-
-
-def movement(change: BulletinChange) -> str:
-    """
-    Write the level and whether it moved.
-
-    Args:
-        change: The change that fired.
-
-    Returns:
-        "Considerable, up from Moderate.", "Considerable (3+), up from 3−."
-        for a sub-level move, "Moderate, avalanche problems changed." when
-        a problem was added or removed, "Moderate, no change." when
-        nothing did or a problem only shifted its aspects or band,
-        and the bare "Moderate." with nothing to compare against.
+        "up from Moderate", "up from 2−" for a move within a level,
+        "down from …", "no change", or "" with nothing to compare against.
 
     """
     current, previous = change.current, change.previous
-    word = level_word(current)
     if previous is None:
-        return _("%(level)s.") % {"level": word}
-    if change.rating_direction > 0:
-        return _("%(level)s, up from %(previous)s.") % {
-            "level": word,
-            "previous": level_word(previous),
-        }
-    if change.rating_direction < 0:
-        return _("%(level)s, down from %(previous)s.") % {
-            "level": word,
-            "previous": level_word(previous),
-        }
-    if change.subdivision_moved:
-        values = {
-            "level": headline(current),
-            "previous": level_figure(previous) or level_word(previous),
-        }
-        if current.rank > previous.rank:
-            return _("%(level)s, up from %(previous)s.") % values
-        return _("%(level)s, down from %(previous)s.") % values
-    if change.added or change.removed:
-        # A problem shifting its aspects or band is not news (SNOW-1356).
-        return _("%(level)s, avalanche problems changed.") % {"level": word}
-    return _("%(level)s, no change.") % {"level": word}
+        return ""
+    if change.rating_direction:
+        values = {"level": level_word(previous)}
+    elif change.subdivision_moved:
+        values = {"level": level_figure(previous) or level_word(previous)}
+    else:
+        return _("no change")
+    if change.rating_direction > 0 or (
+        not change.rating_direction and current.rank > previous.rank
+    ):
+        return _("up from %(level)s") % values
+    return _("down from %(level)s") % values
 
 
 def new_snow(cm: float | None) -> str:
@@ -581,129 +512,54 @@ def new_snow(cm: float | None) -> str:
     return _("%(cm)d cm new snow forecast.") % {"cm": round(cm)}
 
 
-def place_body(place: PlaceAlert, today: datetime.date) -> str:
+def release_line(releases: list[Release]) -> str:
     """
-    Write the body for a single place: the level, what moved, new snow.
+    Write who released the bulletins an alert is for, and when.
 
     Args:
-        place: The place that fired.
-        today: The local date the message is sent on (unused since the
-            title names the day; kept so every body takes the same pair).
+        releases: Every bulletin behind the alert.
 
     Returns:
-        "Considerable, up from Moderate. 20 cm new snow forecast.", led by
-        "For your trip." for a trip, "First of the season." at season
-        start and "Bulletins are back." after a gap inside it. A trip
-        crossing several regions reads "For your trip. 2 bulletins.": no
-        level and no problems, since one region's would misstate the
-        others, and the trip page lists each (SNOW-945).
+        "Bulletin released at 17:00 by SLF." for one provider at one time;
+        "Bulletins released by SLF and ALBINA." for several providers, and
+        "Bulletins released by SLF." for one provider at several times: the
+        time is named only when every bulletin shares it. "New bulletin."
+        when no provider is known.
 
     """
-    parts: list[str] = []
-    if place.url:
-        parts.append(_("For your trip."))
-    if place.multi_region:
-        count = place.bulletin_count
-        parts.append(
-            ngettext("%(count)d bulletin.", "%(count)d bulletins.", count)
-            % {"count": count}
-        )
-        return " ".join(parts)
-    if place.kind == "season_start":
-        parts.append(_("First of the season."))
-    elif place.kind == "new" and place.change.previous is None:
-        # Bulletins resumed after a gap inside the season (SNOW-1356).
-        parts.append(_("Bulletins are back."))
-    parts.append(movement(place.change))
-    snow = new_snow(place.new_snow_cm)
-    if snow:
-        parts.append(snow)
-    return " ".join(parts)
-
-
-def place_url(place: PlaceAlert) -> str:
-    """
-    Return the link a one-place alert opens.
-
-    Args:
-        place: The place that fired.
-
-    Returns:
-        The place's own ``url`` (a trip page) when it has one, otherwise
-        ``/map/?d=YYYY-MM-DD#<region_id>``, its region panel on its day.
-
-    """
-    if place.url:
-        return place.url
-    return (
-        f"{reverse('public:map')}?d={place.target_date.isoformat()}#{place.region_id}"
-    )
-
-
-def _bundle_title(places: list[PlaceAlert]) -> str:
-    """
-    Write the title for several places.
-
-    Args:
-        places: Every place that fired.
-
-    Returns:
-        "Bulletins for your 3 places", or "Bulletins updated for your 2
-        places" when every one is an update.
-
-    """
-    count = len(places)
-    if all(p.kind == "update" for p in places):
-        return _("Bulletins updated for your %(count)d places") % {"count": count}
-    return _("Bulletins for your %(count)d places") % {"count": count}
-
-
-def _bundle_body(places: list[PlaceAlert], today: datetime.date) -> str:
-    """
-    Write the body for several places: their names, then when.
-
-    Args:
-        places: Every place that fired.
-        today: The local send date.
-
-    Returns:
-        "Chamonix, Davos and Verbier. Valid from Friday at 5 pm to Saturday
-        at 5 pm.", with "and 2 more" past four places. Bulletins that hold
-        for different times fall back to their shared day ("…, for
-        tomorrow."), or the names alone.
-
-    """
-    names = sorted(p.label for p in places)
-    listed = names[:MAX_LISTED_PLACES]
-    extra = len(names) - len(listed)
-    if extra:
-        joined = _("%(head)s and %(count)d more") % {
-            "head": ", ".join(listed),
-            "count": extra,
-        }
+    sources = {r.source for r in releases if r.source}
+    names = [provider_name(s) for s in PROVIDER_NAMES if s in sources]
+    names += sorted(provider_name(s) for s in sources if s not in PROVIDER_NAMES)
+    times = {hhmm(r.issued_at) for r in releases if r.issued_at is not None}
+    if not names:
+        return _("New bulletin.")
+    if len(names) == 1:
+        joined = names[0]
     else:
         joined = _("%(head)s and %(tail)s") % {
-            "head": ", ".join(listed[:-1]),
-            "tail": listed[-1],
+            "head": ", ".join(names[:-1]),
+            "tail": names[-1],
         }
-    times = {(p.valid_from, p.valid_until) for p in places}
+    if len(times) == 1 and len(names) == 1:
+        (time,) = times
+        return _("Bulletin released at %(time)s by %(provider)s.") % {
+            "time": time,
+            "provider": joined,
+        }
     if len(times) == 1:
-        when = validity(*next(iter(times)))
-        if when:
-            return f"{joined}. {when}"
-    days = {p.target_date for p in places}
-    if len(days) > 1:
-        return joined + "."
-    (day,) = days
-    return _("%(places)s, for %(day)s.") % {
-        "places": joined,
-        "day": day_phrase(day, today),
-    }
+        (time,) = times
+        return _("Bulletins released at %(time)s by %(providers)s.") % {
+            "time": time,
+            "providers": joined,
+        }
+    if len(names) == 1:
+        return _("Bulletins released by %(provider)s.") % {"provider": joined}
+    return _("Bulletins released by %(providers)s.") % {"providers": joined}
 
 
-def bundle_url(places: list[PlaceAlert]) -> str:
+def landing_url(places: list[PlaceAlert]) -> str:
     """
-    Return the landing page for several places.
+    Return the page every alert opens.
 
     Args:
         places: Every place that fired.
@@ -720,9 +576,14 @@ def alert_message(places: list[PlaceAlert], today: datetime.date) -> AlertMessag
     """
     Render every place that fired for one account into one message.
 
+    Every alert reads the same, whatever fired: "New avalanche bulletin",
+    then who released it and when. The detail lives on the page it opens
+    (Hugo, 2026-11-12). A reissue says the same, with its own time.
+
     Args:
         places: The places, at least one.
-        today: The local date the message is sent on.
+        today: The local date the message is sent on (unused; kept so
+            callers pass the same pair as before).
 
     Returns:
         The message.
@@ -733,17 +594,10 @@ def alert_message(places: list[PlaceAlert], today: datetime.date) -> AlertMessag
     """
     if not places:
         raise ValueError("alert_message needs at least one place")
-    if len(places) == 1:
-        (place,) = places
-        return AlertMessage(
-            title=place_title(place),
-            body=place_body(place, today),
-            url=place_url(place),
-            places=(place,),
-        )
+    releases = [r for p in places for r in p.releases]
     return AlertMessage(
-        title=_bundle_title(places),
-        body=_bundle_body(places, today),
-        url=bundle_url(places),
+        title=_("New avalanche bulletin"),
+        body=release_line(releases),
+        url=landing_url(places),
         places=tuple(places),
     )

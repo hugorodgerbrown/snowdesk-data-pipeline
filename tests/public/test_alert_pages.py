@@ -8,13 +8,16 @@ Covers:
     bulletin the day before.
   - The region body's one-line alerts prompt: an offer while alerts are
     off, a note when the region is followed.
-  - /alerts/<date>/: sign-in required, one row per followed place, and a
-    row for a saved trip that day linking to the trip (SNOW-947).
+  - /alerts/<date>/: sign-in required, one card per followed place A–Z
+    with nothing merged, each with its level and move, problems, new snow,
+    provider and links; a card for a saved trip that day linking to the
+    trip (SNOW-947).
   - /_alerts-replay/: staff only, a season grouped by week.
 """
 
 from __future__ import annotations
 
+import copy
 import datetime
 from typing import Any
 from unittest.mock import patch
@@ -26,6 +29,7 @@ from django.utils import timezone
 from waffle.testutils import override_flag
 
 from apps.accounts.models import Account
+from apps.bulletins.models import RegionDayRating
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.bulletins.services.replay import ReplayedAlert
 from tests.factories import (
@@ -35,6 +39,7 @@ from tests.factories import (
     MicroRegionFactory,
     RegionBulletinFactory,
     RegionDayRatingFactory,
+    ResortFactory,
     TripFactory,
     UserFactory,
 )
@@ -47,6 +52,8 @@ def _publish(region: Any, day: datetime.date, key: str) -> None:
     rm = _render_model()
     rm["danger"]["key"] = key
     bulletin = BulletinFactory.create(
+        source="SLF",
+        pdf_url="https://www.slf.ch/bulletin.pdf",
         issued_at=start,
         valid_from=start,
         valid_to=start + datetime.timedelta(days=1),
@@ -180,9 +187,108 @@ class TestAlertsDay:
         today = timezone.localdate().isoformat()
         content = client.get(f"/alerts/{today}/").content.decode()
         assert content.count('data-testid="alerts-day-row"') == 2
-        assert "Up from Moderate (2)." in content
+        assert "Considerable · up from Moderate" in content
         assert f"/map/?d={today}#{region.region_id}" in content
         assert "No bulletin for this day." in content
+
+    def test_a_card_carries_the_bulletin(self, client: Client, region: Any) -> None:
+        """The tile, the problems, the provider and its own bulletin."""
+        account = AccountFactory.create()
+        FavouriteFactory.create(user=account.user, region=region, region_pin=True)
+        client.force_login(account.user)
+        today = timezone.localdate()
+        content = client.get(f"/alerts/{today.isoformat()}/").content.decode()
+        assert (
+            'class="danger-tile' in content and 'data-level="considerable"' in content
+        )
+        assert content.count('data-testid="alerts-day-problem"') == 1
+        assert "Wind slab" in content
+        # The band as the bulletin page writes it.
+        assert "N–E · above 2200m" in content
+        assert "<svg" in content  # the aspect rose
+        assert "SLF · released" in content
+        assert 'href="https://www.slf.ch/bulletin.pdf"' in content
+        assert "SLF bulletin" in content
+
+    def test_new_snow_is_named(self, client: Client, region: Any) -> None:
+        """A forecast of five centimetres or more is named on the card."""
+        account = AccountFactory.create()
+        FavouriteFactory.create(user=account.user, region=region, region_pin=True)
+        client.force_login(account.user)
+        today = timezone.localdate()
+        with patch(
+            "apps.bulletins.services.alerts.forecast_new_snow", return_value=20.0
+        ):
+            content = client.get(f"/alerts/{today.isoformat()}/").content.decode()
+        assert "20 cm new snow forecast." in content
+
+    def test_two_names_in_one_region_are_two_cards(
+        self, client: Client, region: Any
+    ) -> None:
+        """Nothing is merged: each name is its own card, A–Z."""
+        account = AccountFactory.create()
+        for name in ("Verbier", "Bruson"):
+            FavouriteFactory.create(
+                user=account.user,
+                region=None,
+                resort=ResortFactory.create(name=name, region=region),
+            )
+        client.force_login(account.user)
+        today = timezone.localdate().isoformat()
+        content = client.get(f"/alerts/{today}/").content.decode()
+        assert content.count('data-testid="alerts-day-row"') == 2
+        assert "Bruson, Verbier" not in content
+        assert content.index("Bruson") < content.index("Verbier")
+
+    def test_a_split_day_keeps_each_period(self, client: Client, db: Any) -> None:
+        """Each period's problem is its own line, named by its period."""
+        today = timezone.localdate()
+        region = MicroRegionFactory.create()
+        _publish(region, today, "considerable")
+        bulletin = RegionDayRating.objects.get(
+            region=region, date=today
+        ).source_bulletin
+        assert bulletin is not None
+        rm = bulletin.render_model
+        (trait,) = rm["traits"]
+        later = copy.deepcopy(trait)
+        trait["time_period"] = trait["problems"][0]["time_period"] = "earlier"
+        later["time_period"] = later["problems"][0]["time_period"] = "later"
+        later["problems"][0]["aspects"] = ["E", "W"]
+        rm["traits"] = [trait, later]
+        bulletin.save(update_fields=["render_model"])
+        account = AccountFactory.create()
+        FavouriteFactory.create(user=account.user, region=region, region_pin=True)
+        client.force_login(account.user)
+        content = client.get(f"/alerts/{today.isoformat()}/").content.decode()
+        assert content.count('data-testid="alerts-day-problem"') == 2
+        assert "Earlier" in content and "Later" in content
+        assert "N–E · above" in content and "E, W · above" in content
+
+    def test_two_trips_in_one_region_open_their_own_pages(
+        self, client: Client, region: Any
+    ) -> None:
+        """Two trips folded into a pin: each card opens its own trip, the pin the map."""
+        account = AccountFactory.create()
+        today = timezone.localdate()
+        FavouriteFactory.create(
+            user=account.user, region=region, region_pin=True, name="Pin"
+        )
+        first = TripFactory.create(created_by=account.user, date=today, name="Alpha")
+        second = TripFactory.create(created_by=account.user, date=today, name="Beta")
+        client.force_login(account.user)
+        with patch(
+            "apps.bulletins.services.alerts.track_regions", return_value=[region]
+        ):
+            content = client.get(f"/alerts/{today.isoformat()}/").content.decode()
+        cards = content.split('data-testid="alerts-day-row"')[1:]
+        assert len(cards) == 3
+        alpha, beta, pin = cards
+        assert (
+            f"/trips/{first.uuid}/" in alpha and f"/trips/{second.uuid}/" not in alpha
+        )
+        assert f"/trips/{second.uuid}/" in beta and f"/trips/{first.uuid}/" not in beta
+        assert "/trips/" not in pin and f"#{region.region_id}" in pin
 
     def test_trip_that_day_is_a_row(self, client: Client, region: Any) -> None:
         """A saved trip on the day is a row that opens the trip."""
@@ -204,11 +310,10 @@ class TestAlertsDay:
     def test_a_trip_across_regions_names_each(
         self, client: Client, region: Any
     ) -> None:
-        """A multi-region trip counts its bulletins and gives each a line.
+        """A multi-region trip is a card per region, each with its own level.
 
-        The second region is unchanged and the first rose, so the card
-        must not read the first region's level as the whole trip, nor say
-        nothing moved (SNOW-945).
+        The second region is unchanged and the first rose, so neither card
+        may read the other's level (SNOW-945).
         """
         account = AccountFactory.create()
         today = timezone.localdate()
@@ -222,12 +327,12 @@ class TestAlertsDay:
             return_value=[region, second],
         ):
             content = client.get(f"/alerts/{today.isoformat()}/").content.decode()
-        assert content.count('data-testid="alerts-day-row"') == 1
-        assert "2 bulletins" in content
-        assert f"{region.name}: Up from Moderate (2)." in content
-        assert "Arolla: " in content
-        assert "No change to the level or the problems." not in content
-        assert f"/trips/{trip.uuid}/" in content
+        assert content.count('data-testid="alerts-day-row"') == 2
+        assert f"Haute · {region.name}" in content
+        assert "Haute · Arolla" in content
+        assert "Considerable · up from Moderate" in content
+        assert "Moderate · no change" in content
+        assert content.count(f"/trips/{trip.uuid}/") == 2
 
     def test_todays_trip_stays_on_tomorrows_page(
         self, client: Client, region: Any
@@ -248,7 +353,7 @@ class TestAlertsDay:
         assert content.count('data-testid="alerts-day-row"') == 1
         assert "Mont Fort ·" in content
         assert f"/map/?d={today.isoformat()}#{region.region_id}" not in content
-        assert "Up from Moderate (2)." in content
+        assert "Considerable · up from Moderate" in content
         # Once the trip's day is past, it is not carried onto later pages.
         assert "Mont Fort" not in past
 

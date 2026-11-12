@@ -99,6 +99,7 @@ from apps.bulletins.services.alert_wording import (
     AlertKind,
     AlertMessage,
     PlaceAlert,
+    Release,
     alert_message,
 )
 from apps.bulletins.services.bulletin_change import (
@@ -179,6 +180,9 @@ class AlertPlace:
     labels: list[str] = field(default_factory=list)
     trip_url: str = ""
     regions: list[MicroRegion] = field(default_factory=list)
+    # Each trip name's own page, so a page listing names one by one opens
+    # the right trip for each (two trips in one region are one place).
+    label_urls: dict[str, str] = field(default_factory=dict)
 
     @property
     def label(self) -> str:
@@ -272,6 +276,7 @@ def trip_places(user: User, day: datetime.date) -> list[AlertPlace]:
         place = by_key.setdefault(candidate.key, candidate)
         if trip.display_name and trip.display_name not in place.labels:
             place.labels.append(trip.display_name)
+            place.label_urls[trip.display_name] = url
         place.trip_url = place.trip_url or url
     return sorted(by_key.values(), key=lambda p: p.label)
 
@@ -293,13 +298,17 @@ def places_on(pins: list[AlertPlace], trips: list[AlertPlace]) -> list[AlertPlac
         The day's places, ordered by label.
 
     """
-    by_key = {p.key: replace(p, labels=list(p.labels)) for p in pins}
+    by_key = {
+        p.key: replace(p, labels=list(p.labels), label_urls=dict(p.label_urls))
+        for p in pins
+    }
     for trip in trips:
         place = by_key.get(trip.key)
         if place is None:
             by_key[trip.key] = trip
             continue
         place.labels.extend(lbl for lbl in trip.labels if lbl not in place.labels)
+        place.label_urls.update(trip.label_urls)
         place.trip_url = trip.trip_url
     return sorted(by_key.values(), key=lambda p: p.label)
 
@@ -495,9 +504,6 @@ class AccountRun:
 
     account: Account
     rows: list[PendingRow] = field(default_factory=list)
-    # How many bulletins each (place, day) has, changed or not: what a
-    # multi-region trip's message counts (SNOW-945).
-    available: dict[tuple[str, datetime.date], int] = field(default_factory=dict)
     message: AlertMessage | None = None
     # The local send date the message was worded for; deliver re-words a
     # partly claimed bundle on the same day (SNOW-1362).
@@ -598,8 +604,6 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
             bulletin = authoritative_bulletin(region, day)
             if bulletin is None or not bulletin.render_model:
                 continue
-            seen = (place.key, day)
-            run.available[seen] = run.available.get(seen, 0) + 1
             # The state and fingerprint the service stored with the model
             # (SNOW-1341); computed only for a model older than version 10.
             current, fingerprint = state_of(bulletin.render_model)
@@ -652,15 +656,11 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
             )
     _one_day_per_place(run.rows)
     if run.sending:
-        run.message = _bundle_message(run.sending, run.available, today)
+        run.message = _bundle_message(run.sending, today)
     return run
 
 
-def _bundle_message(
-    sending: list[PendingRow],
-    available: dict[tuple[str, datetime.date], int],
-    today: datetime.date,
-) -> AlertMessage:
+def _bundle_message(sending: list[PendingRow], today: datetime.date) -> AlertMessage:
     """
     Return the one message for a run's sending rows.
 
@@ -669,39 +669,26 @@ def _bundle_message(
 
     Args:
         sending: The sending rows, at least one.
-        available: How many bulletins each (place, day) has.
         today: The local send date.
 
     Returns:
         The message.
 
     """
-    places = _place_alerts(sending, available)
-    if len(places) == 1 and not places[0].multi_region:
-        row = sending[0]
-        places[0] = replace(
-            places[0],
-            new_snow_cm=forecast_new_snow(row.log_region, row.day, today),
-        )
-    return alert_message(places, today)
+    return alert_message(_place_alerts(sending), today)
 
 
-def _place_alerts(
-    sending: list[PendingRow], available: dict[tuple[str, datetime.date], int]
-) -> list[PlaceAlert]:
+def _place_alerts(sending: list[PendingRow]) -> list[PlaceAlert]:
     """
     Return one ``PlaceAlert`` per place that fired, in the rows' order.
 
     A one-region place is its row. A trip crossing several regions has a
-    row per region that fired and is one alert covering them all: it names
-    how many bulletins it covers rather than one region's level (SNOW-945),
-    and is an update only when every one of its rows is.
+    row per region that fired and is one alert covering them all, carrying
+    each of their bulletins (SNOW-945); it is an update only when every one
+    of its rows is.
 
     Args:
         sending: The run's sending rows.
-        available: How many bulletins each (place, day) has, changed or
-            not; a multi-region trip counts these, not the regions it
-            crosses, so a region yet to publish is not claimed.
 
     Returns:
         The places, at least one.
@@ -725,12 +712,10 @@ def _place_alerts(
                 target_date=first.day,
                 kind=kind,
                 change=first.decision.change,
-                compared_to=first.decision.compared_to,
-                url=first.place.trip_url,
-                valid_from=first.bulletin.valid_from,
-                valid_until=first.bulletin.valid_to,
-                bulletin_count=available.get((first.place.key, first.day), 1),
-                multi_region=len(first.place.covered) > 1,
+                releases=tuple(
+                    Release(source=r.bulletin.source, issued_at=r.bulletin.issued_at)
+                    for r in rows
+                ),
             )
         )
     return alerts
@@ -903,7 +888,7 @@ def _winners_message(
         if (r.log_region.pk, r.day, r.fingerprint or r.state.fingerprint()) in won
     ]
     today = run.today or local_now(claimed_at).date()
-    return _bundle_message(winners, run.available, today)
+    return _bundle_message(winners, today)
 
 
 def _claim_row(

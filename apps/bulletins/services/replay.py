@@ -25,12 +25,16 @@ from __future__ import annotations
 
 import datetime
 import logging
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
 from apps.bulletins.models import SEASON_GAP_DAYS
-from apps.bulletins.services.alert_wording import PlaceAlert, alert_message
+from apps.bulletins.services.alert_wording import (
+    PlaceAlert,
+    Release,
+    alert_message,
+)
 from apps.bulletins.services.alerts import (
     ALERT_TZ,
     NIGHT_ENDS,
@@ -68,12 +72,6 @@ class ReplayedAlert:
 def _parse(value: str) -> datetime.datetime:
     """Return an aware datetime from an ISO string ("Z" accepted)."""
     return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
-
-
-def _valid_until(raw: dict[str, Any]) -> datetime.datetime | None:
-    """Return the end of an issue's validity, or None when it gives none."""
-    end = (raw.get("validTime") or {}).get("endTime")
-    return _parse(end) if end else None
 
 
 def _delivery_time(published: datetime.datetime) -> datetime.datetime:
@@ -154,7 +152,6 @@ def replay_region(
     region_id: str = DEFAULT_REGION,
     mode: str = "NEW_BULLETIN",
     label: str | None = None,
-    new_snow: Mapping[datetime.date, float] | None = None,
 ) -> list[ReplayedAlert]:
     """
     Replay every alert decision for one region across an archive.
@@ -166,9 +163,6 @@ def replay_region(
         mode: ``NEW_BULLETIN`` or ``CHANGES``.
         label: The place's name in the messages (defaults to the region's
             name in the first issue).
-        new_snow: Snowfall in cm per bulletin day, for the new snow line
-            (SNOW-944). The archive carries no weather, so without it the
-            replay names none.
 
     Returns:
         Every decision, sent or not, in delivery order.
@@ -234,10 +228,7 @@ def replay_region(
                     target_date=day,
                     kind=decision.kind,
                     change=decision.change,
-                    compared_to=decision.compared_to,
-                    valid_from=valid_from,
-                    valid_until=_valid_until(raw),
-                    new_snow_cm=(new_snow or {}).get(day),
+                    releases=(Release(source=source, issued_at=published),),
                 )
             ],
             today,

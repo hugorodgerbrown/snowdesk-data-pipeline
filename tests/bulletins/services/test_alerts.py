@@ -266,7 +266,8 @@ class TestEvaluateAndDeliver:
         with patch.object(alerts, "dispatch_push", return_value=OK) as push:
             run = deliver(evaluate_account(account, NOW))
         assert run.message is not None
-        assert run.message.title == "Verbier – Saturday bulletin"
+        assert run.message.title == "New avalanche bulletin"
+        assert run.message.url == "/alerts/2026-01-17/"
         push.assert_called_once()
         # Today fired too (no row, alerts predate it) but one place is named
         # once: today is logged skipped, tomorrow is the message.
@@ -294,7 +295,7 @@ class TestEvaluateAndDeliver:
         (row,) = run.rows
         assert row.decision.kind == "update"
         assert run.message is not None
-        assert run.message.title == "Verbier – Saturday bulletin update"
+        assert run.message.title == "New avalanche bulletin"
 
     def test_a_state_that_recurs_is_told_once(self, follower: tuple) -> None:
         """A, then B, then A again: the return of A sends once, not every run."""
@@ -477,7 +478,7 @@ class TestEvaluateAndDeliver:
         publish(other, TOMORROW, render("considerable"))
         run = evaluate_account(account, NOW)
         assert run.message is not None
-        assert run.message.title == "Bulletins for your 2 places"
+        assert sorted(p.label for p in run.message.places) == ["Davos", "Verbier"]
         assert run.message.url == "/alerts/2026-01-17/"
 
     def test_bulletin_without_render_model_is_ignored(self, follower: tuple) -> None:
@@ -605,11 +606,12 @@ class TestClaimAndSettle:
             patch.object(BulletinAlert.objects, "create", side_effect=racing_create),
             patch.object(alerts, "_worker_deliver_alert", worker),
         ):
-            deliver(run)
-        _, alert_ids, _, push, *_ = worker.enqueue.call_args.args
+            delivered = deliver(run)
+        _, alert_ids, *_ = worker.enqueue.call_args.args
         davos = BulletinAlert.objects.get(account=account, region=other)
         assert alert_ids == [davos.pk]
-        assert "Davos" in push["title"] and "Verbier" not in push["title"]
+        assert delivered.message is not None
+        assert [p.label for p in delivered.message.places] == ["Davos"]
         # The savepoint rolled back only the collision; the run carried on.
         assert not BulletinAlert.objects.filter(region=region).exists()
 
@@ -624,18 +626,18 @@ class TestClaimAndSettle:
         publish(region, TOMORROW, render())
         publish(other, TOMORROW, render("considerable"))
         run = evaluate_account(account, NOW)
-        assert run.message is not None and "2 places" in run.message.title
+        assert run.message is not None and len(run.message.places) == 2
         (verbier,) = [r for r in run.rows if r.log_region == region]
         held = hold(account, region, verbier.fingerprint)
         worker = MagicMock()
         with patch.object(alerts, "_worker_deliver_alert", worker):
-            deliver(run)
-        _, alert_ids, _, push, title, body, _ = worker.enqueue.call_args.args
+            delivered = deliver(run)
+        _, alert_ids, _, _push, title, _body, _ = worker.enqueue.call_args.args
         davos = BulletinAlert.objects.get(account=account, region=other)
         assert alert_ids == [davos.pk]
-        assert "Davos" in push["title"] and "Verbier" not in push["title"]
-        assert "Verbier" not in body
-        assert davos.title == title == run.message.title
+        assert delivered.message is not None
+        assert [p.label for p in delivered.message.places] == ["Davos"]
+        assert davos.title == title == delivered.message.title
         held.refresh_from_db()
         assert held.outcome == BulletinAlert.Outcome.PENDING and held.title == ""
 
@@ -837,7 +839,7 @@ class TestTripDay:
     def test_trip_tomorrow_sends_in_changes_mode(self, traveller: tuple) -> None:
         """The evening before, the trip's day sends even when nothing moved."""
         account, region = traveller
-        trip = TripFactory.create(
+        TripFactory.create(
             created_by=account.user, date=TOMORROW, name="Mont Fort loop"
         )
         BulletinAlertFactory.create(
@@ -856,8 +858,8 @@ class TestTripDay:
         ):
             run = deliver(evaluate_account(account, NOW))
         assert run.message is not None
-        assert run.message.title.startswith("Mont Fort loop")
-        assert run.message.url == f"/trips/{trip.uuid}/"
+        assert run.message.places[0].label == "Mont Fort loop"
+        assert run.message.url == "/alerts/2026-01-17/"
         row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
         assert row.outcome == BulletinAlert.Outcome.SENT
 
@@ -998,9 +1000,7 @@ class TestTripAcrossRegions:
     def test_one_alert_names_both_bulletins(self, crossing: tuple) -> None:
         """One message for the trip, one log row per region."""
         account, first, second = crossing
-        trip = TripFactory.create(
-            created_by=account.user, date=TOMORROW, name="Haute Route"
-        )
+        TripFactory.create(created_by=account.user, date=TOMORROW, name="Haute Route")
         for region in (first, second):
             publish(region, TOMORROW, render("considerable"))
         PushSubscriptionFactory.create(account=account)
@@ -1010,9 +1010,10 @@ class TestTripAcrossRegions:
         ):
             run = deliver(evaluate_account(account, NOW))
         assert run.message is not None
-        assert run.message.title.startswith("Haute Route")
-        assert run.message.body == "For your trip. 2 bulletins."
-        assert run.message.url == f"/trips/{trip.uuid}/"
+        (place,) = run.message.places
+        assert place.label == "Haute Route"
+        assert len(place.releases) == 2
+        assert run.message.url == "/alerts/2026-01-17/"
         logged = BulletinAlert.objects.filter(account=account, target_date=TOMORROW)
         assert {row.region_id for row in logged} == {first.pk, second.pk}
 
@@ -1029,7 +1030,10 @@ class TestTripAcrossRegions:
         with patch.object(alerts, "track_regions", return_value=[first, second]):
             run = evaluate_account(account, NOW)
         assert run.message is not None
-        assert run.message.body == "For your trip. 2 bulletins."
+        (place,) = run.message.places
+        # The release named is the bulletin that moved.
+        assert place.region_id == second.region_id
+        assert len(place.releases) == 1
 
     def test_a_region_yet_to_publish_is_not_counted(self, crossing: tuple) -> None:
         """Only one region has published: the trip names one bulletin."""
@@ -1039,9 +1043,9 @@ class TestTripAcrossRegions:
         with patch.object(alerts, "track_regions", return_value=[first, _second]):
             run = evaluate_account(account, NOW)
         assert run.message is not None
-        assert run.message.title == "Haute Route – Saturday bulletin"
-        assert run.message.body == "For your trip. 1 bulletin."
-        assert "Considerable" not in run.message.body
+        (place,) = run.message.places
+        assert place.label == "Haute Route"
+        assert len(place.releases) == 1
 
     def test_one_region_trip_folds_into_a_pin(self, crossing: tuple) -> None:
         """A trip inside a pinned region is that pin's place, as before."""
@@ -1095,7 +1099,7 @@ class TestTripAcrossRegions:
                 account=account, region=first, target_date=TOMORROW
             )
             assert row.outcome == BulletinAlert.Outcome.SENT
-            assert row.title.startswith("Haute Route")
+            assert row.title == "New avalanche bulletin"
             # Told now: the next run is quiet.
             assert evaluate_account(account, NOW).message is None
 
@@ -1277,20 +1281,6 @@ class TestForecastNewSnow:
         )
         assert forecast_new_snow(region, yesterday, TODAY) is None
 
-    def test_one_place_alert_names_it(self, follower: tuple) -> None:
-        """A one-place alert carries the snow; the body names it."""
-        account, region = follower
-        region.centroid_location = LocationFactory.create()
-        region.save(update_fields=["centroid_location"])
-        WeatherFactory.create(
-            location=region.centroid_location, observed_on=TOMORROW, snowfall_sum=20.0
-        )
-        publish(region, TODAY, render())
-        publish(region, TOMORROW, render("considerable", [WIND_RM]))
-        run = evaluate_account(account, NOW)
-        assert run.message is not None
-        assert run.message.body.endswith("20 cm new snow forecast.")
-
 
 @pytest.mark.django_db
 class TestSeasonGap:
@@ -1327,7 +1317,9 @@ class TestSeasonGap:
         publish(region, TOMORROW, render("low"))
         run = evaluate_account(account, NOW)
         assert run.message is not None
-        assert run.message.body == "Bulletins are back. Low."
+        (row,) = run.sending
+        assert row.decision.kind == "new"
+        assert row.decision.change.previous is None
 
 
 # ---------------------------------------------------------------------------
