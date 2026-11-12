@@ -26,6 +26,7 @@ from apps.ingest.runs import (
     OUTCOME_DELEGATED,
     OUTCOME_DUPLICATE,
     OUTCOME_SKIPPED_NEWER,
+    OUTCOME_SKIPPED_TENDENCY,
     PROVIDER_ALBINA,
     PROVIDER_SLF,
     FetchOutcome,
@@ -97,6 +98,38 @@ class TestSlfWalk:
         assert len(items) == 2
         assert seen == ["new", "in", "old"]
         assert stats.requests == 1
+
+    @patch("apps.ingest.sources.slf.fetch_bulletin_page")
+    def test_a_tendency_bulletin_is_held_back(
+        self, page: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A next-day tendency bulletin is an outcome, not a record (SNOW-1436).
+
+        ``on_item`` still sees it, so ``--stash`` archives it, and the skip is
+        logged at INFO with its id and region.
+        """
+        day = _raw("day", "2026-01-15T16:00:00Z")
+        tendency = _raw("tendency", "2026-01-15T16:00:00Z")
+        tendency["validTime"]["startTime"] = "2026-01-16T16:00:00Z"
+        tendency["regions"] = [{"regionID": "CH-1122", "name": "Gruyère"}]
+        page.return_value = [day, tendency]
+        seen: list[str] = []
+
+        with caplog.at_level("INFO", logger="apps.ingest.runs"):
+            items = list(
+                fetch_bulletins(
+                    PROVIDER_SLF,
+                    DAY,
+                    DAY,
+                    on_item=lambda raw: seen.append(raw["bulletinID"]),
+                )
+            )
+
+        assert isinstance(items[0], NormalisedBulletin)
+        assert items[0].bulletin_id == "day"
+        assert items[1] == FetchOutcome(OUTCOME_SKIPPED_TENDENCY)
+        assert seen == ["day", "tendency"]
+        assert "Skipping SLF tendency bulletin tendency for CH-1122" in caplog.text
 
     @patch("apps.ingest.sources.slf.PAGE_SIZE", 2)
     @patch("apps.ingest.sources.slf.fetch_bulletin_page")

@@ -9,6 +9,7 @@ Moved from tests/bulletins/services/test_slf_fetcher.py with the code
   - resolve_issued_at: publicationTime, with the validTime fallback
   - slf_pdf_url: URL derivation for SLF archive PDFs
   - detect_caaml_shape: aggregated vs per-region (SNOW-900)
+  - is_slf_tendency: the next-day tendency bulletin, by validity offset (SNOW-1436)
 """
 
 import json
@@ -21,6 +22,7 @@ from apps.ingest.normalise.slf import (
     CAAML_SHAPE_PER_REGION,
     CAAML_SHAPE_UNKNOWN,
     detect_caaml_shape,
+    is_slf_tendency,
     normalise_slf_response,
     parse_dt,
     resolve_issued_at,
@@ -450,3 +452,38 @@ class TestDetectCaamlShape:
 
         assert detected.bulletin_count == 3
         assert detected.region_count == 1
+
+
+def _timed(published: str | None, start: str) -> dict[str, Any]:
+    """A bulletin trimmed from SLF's v5 samples to its two timestamps."""
+    raw: dict[str, Any] = {
+        "bulletinID": "x",
+        "validTime": {"startTime": start, "endTime": "2026-11-06T16:00:00Z"},
+    }
+    if published is not None:
+        raw["publicationTime"] = published
+    return raw
+
+
+class TestIsSlfTendency:
+    """is_slf_tendency: a validity start 12 h or more after publication (SNOW-1436)."""
+
+    def test_a_24_hour_offset_is_a_tendency_bulletin(self) -> None:
+        """The v5 tendency sample: published 16:00, valid from 16:00 next day."""
+        raw = _timed("2026-11-04T16:00:00Z", "2026-11-05T16:00:00Z")
+        assert is_slf_tendency(raw) is True
+
+    def test_no_offset_is_a_day_bulletin(self) -> None:
+        """The v5 day bulletins start when they are published."""
+        raw = _timed("2026-11-04T16:00:00Z", "2026-11-04T16:00:00Z")
+        assert is_slf_tendency(raw) is False
+
+    def test_no_publication_time_is_a_day_bulletin(self) -> None:
+        """Without publicationTime the start time stands in for it: no offset."""
+        raw = _timed(None, "2026-11-04T16:00:00Z")
+        assert is_slf_tendency(raw) is False
+
+    def test_an_offset_just_under_12_hours_is_a_day_bulletin(self) -> None:
+        """11 h 59 m is under the threshold."""
+        raw = _timed("2026-11-04T04:01:00Z", "2026-11-04T16:00:00Z")
+        assert is_slf_tendency(raw) is False

@@ -1,8 +1,8 @@
 ---
 name: the-slf-caaml-shape-is-detected-not-assumed-from-the-url
-description: detect_caaml_shape, SLF_API_LEGACY_URL, SlfConflictingBulletinIdError — SLF shape read per response; per-region ingest and storage
+description: detect_caaml_shape, SlfConflictingBulletinIdError, is_slf_tendency — SLF shape per response; per-region storage; tendency held back
 status: current
-last-reviewed: 2026-10-31
+last-reviewed: 2026-11-12
 ---
 
 # The SLF CAAML shape is detected, not assumed from the URL
@@ -189,6 +189,32 @@ block is most of each copy, which is SNOW-1000's to decide what to keep.
 A default feed page of 100 of the largest slice bulletin, render models
 included, serialises to about 2.4 MB, under the 5 MB the feed's ceiling
 assumes.
+
+## Tendency bulletins are recognised and held back (SNOW-1436)
+
+From CAAML interface v5 (switchover in the week of 16–20 Nov 2026) SLF can
+publish a reduced **tendency bulletin** for the following day. It carries no
+marker. SLF confirmed (5 Nov 2026) that it is identified by its validity:
+`validTime.startTime` 24 h after `publicationTime`, where a day bulletin
+starts when it is published. `is_slf_tendency` in
+`apps/ingest/normalise/slf.py` treats an offset of 12 h or more as a tendency
+bulletin.
+
+`_slf_item` in `apps/ingest/runs.py` checks it after the repeat and window
+checks and returns `FetchOutcome(OUTCOME_SKIPPED_TENDENCY)`, logged at INFO
+with the id and region. Nothing is written: no `SourceBulletin`,
+`SourceDayRating`, `Bulletin`, `RegionBulletin` or `RegionDayRating`. Ingested
+as an ordinary bulletin it would be dated to the next day and show a forecast
+as that day's rating, and SLF's v5 sample showed most fail the render model,
+which would make every run partial. `on_item` runs before the decision, so
+`--stash` still archives the raw payload. `run_slf_pipeline` reports the
+count as `skipped_tendency` in its finish line.
+
+SLF currently serves the tendency bulletin only from the single-bulletin
+endpoint (`?activeAt=<future>`), not the list, so this is a safety net for
+the day they change that. Hugo decided (5 Nov 2026) that tomorrow's ratings
+get their own forecast surface; SNOW-999 replaces the skip with real
+handling.
 
 ## Not decided here
 
