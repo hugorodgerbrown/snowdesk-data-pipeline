@@ -29,7 +29,10 @@ Five rules shape it:
    (``DENIED_OPTIONS``), are refused.
 5. **One at a time.** A command already queued or running — from
    ``run_command``, the scheduler or a shell — is not started again
-   (``_already_running``).
+   (``_already_running``). The check and the enqueue run under a short
+   per-command ``Lease`` (SNOW-1490), so two requests that arrive together
+   cannot both pass the check before either has queued its task: the
+   second finds the lease held and is refused the same way.
 
 The run is recorded in the ``CommandRun`` register like any other, as
 ``invoked_via=MCP`` with the staff account as its operator, the reason
@@ -57,7 +60,7 @@ from apps.core.command_register import (
     RemoteInvocation,
     remote_invocation,
 )
-from apps.core.models import CommandRun
+from apps.core.models import CommandRun, Lease
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +97,12 @@ MAX_ARGUMENT_LENGTH: int = 200
 # A RUNNING register row older than this is a run whose process died, not
 # one in progress — prune_command_runs closes such rows at the same age.
 STALE_AFTER: timedelta = timedelta(hours=6)
+
+# The lease enqueue_command holds while it checks and queues a command. It
+# is released as soon as the task is queued; the TTL only frees it after a
+# request that died part-way, and is far longer than a check and an insert.
+_ENQUEUE_LEASE_KEY = "remote-command:{}"
+_ENQUEUE_LEASE_TTL: timedelta = timedelta(seconds=30)
 
 
 class RemoteCommandError(Exception):
@@ -298,7 +307,10 @@ def _already_running(name: str) -> bool:
 def _queued(name: str) -> bool:
     """Return whether a run_command task for ``name`` is waiting or running.
 
-    Only the database backend can be asked; any other answers False.
+    Only the database backend can be asked; any other answers False. This
+    read alone could be passed by two requests at once; ``enqueue_command``
+    asks it under the command's lease, so only one of them reaches the
+    enqueue.
     """
     if not isinstance(run_command_task.get_backend(), DatabaseBackend):
         return False
@@ -331,7 +343,8 @@ def enqueue_command(
 
     Raises:
         RemoteCommandError: The request is refused (see ``check_arguments``),
-            there is no task worker, or the command is already running.
+            there is no task worker, or the command is already queued or
+            running, or another request holds its lease.
 
     """
     argv = check_arguments(name, arguments, commit=commit)
@@ -341,14 +354,24 @@ def enqueue_command(
             "worker), so the command would run inside this request and could "
             "be cut off part-way. Run it from a shell here."
         )
-    if _already_running(name):
-        raise RemoteCommandError(
-            f"{name} is already queued or running; list_command_runs shows "
-            "the run. Wait for it to finish."
-        )
-    result = run_command_task.enqueue(
-        command=name, argv=argv, operator=operator, reason=reason
+    already = RemoteCommandError(
+        f"{name} is already queued or running; list_command_runs shows "
+        "the run. Wait for it to finish."
     )
+    lease = Lease.objects.acquire(
+        _ENQUEUE_LEASE_KEY.format(name), ttl=_ENQUEUE_LEASE_TTL
+    )
+    if lease is None:
+        # Another request is between its check and its enqueue right now.
+        raise already
+    try:
+        if _already_running(name):
+            raise already
+        result = run_command_task.enqueue(
+            command=name, argv=argv, operator=operator, reason=reason
+        )
+    finally:
+        lease.release()
     logger.warning(
         "remote command: %s queued %s %s as task %s: %s",
         operator,

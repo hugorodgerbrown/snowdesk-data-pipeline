@@ -35,14 +35,18 @@ the rules in one place, and a guard test holds rule 5.
   the next free start in the shared cache and sleeps until it, so two
   calls never start closer than `pace`, however many workers run. The
   reservation is a read and write of the last start under a short
-  per-service lock taken with `cache.add`, which is an atomic insert on
-  the database cache where `incr` is not (SNOW-1477). The next start is
-  the last one plus the larger of the two callers' paces, because
-  services are shared at different paces (weather and elevation both call
-  Open-Meteo). A crashed holder's lock expires after ten seconds and
-  the callers behind it wait that out; none reserves without the lock.
-  The only window left is a live holder stalling longer than that
-  between two cache calls. `ImmediateBackend` refuses `run_after`, so there
+  per-service lock (SNOW-1477). The lock is a `Lease` row in the database
+  (SNOW-1490), not a `cache.add` key: every process sees the same table
+  whatever cache it is configured with, and a lease is taken by one
+  atomic insert, or by a conditional update of an expired row that only
+  one claimant can match. The next start is the last one plus the larger
+  of the two callers' paces, because services are shared at different
+  paces (weather and elevation both call Open-Meteo). A crashed holder's
+  lease expires after ten seconds and the callers behind it wait that
+  out; none reserves without the lease. The only window left is a live
+  holder stalling longer than that between two cache calls, and its late
+  release cannot free the lease taken over from it: `release()` deletes
+  the row only while it still carries the holder's token. `ImmediateBackend` refuses `run_after`, so there
   the helper sleeps between enqueues.
 - **Dedupe on waiting tasks.** `run_command` refuses a second run of a
   queued *command*. It cannot see the row tasks a finished command left

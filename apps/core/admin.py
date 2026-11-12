@@ -12,6 +12,10 @@ stuck key; the admin surface makes that possible without shell access.
 
 And ``CommandRun`` — the management command run register (SNOW-1189). Read
 only: a row is a record of what happened, written by the command itself.
+
+And ``Lease`` (SNOW-1490) — the short database leases behind run_command's
+one-at-a-time guard and the outside-call slot lock. Read only: a lease is
+taken and given up by code and expires on its own within seconds.
 """
 
 import logging
@@ -19,7 +23,7 @@ import logging
 from django.contrib import admin
 from django.http import HttpRequest
 
-from .models import CommandRun, IdempotencyRecord, RequestLog
+from .models import CommandRun, IdempotencyRecord, Lease, RequestLog
 
 logger = logging.getLogger(__name__)
 
@@ -161,4 +165,30 @@ class CommandRunAdmin(admin.ModelAdmin):
         self, request: HttpRequest, obj: CommandRun | None = None
     ) -> bool:
         """Refuse: the register is an audit trail; only prune_command_runs trims it."""
+        return False
+
+
+@admin.register(Lease)
+class LeaseAdmin(admin.ModelAdmin):
+    """Admin view for Lease — a read-only list of the leases held now."""
+
+    list_display = ["key", "expires_at", "created_at"]
+    search_fields = ["key"]
+    ordering = ["-created_at"]
+    readonly_fields = ["uuid", "key", "token", "expires_at", "created_at", "updated_at"]
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        """Refuse: a lease is taken by code, never typed in."""
+        return False
+
+    def has_change_permission(
+        self, request: HttpRequest, obj: Lease | None = None
+    ) -> bool:
+        """Refuse: a lease is renewed only by ``Lease.objects.acquire``."""
+        return False
+
+    def has_delete_permission(
+        self, request: HttpRequest, obj: Lease | None = None
+    ) -> bool:
+        """Refuse: a lease is freed by its holder or expires on its own."""
         return False

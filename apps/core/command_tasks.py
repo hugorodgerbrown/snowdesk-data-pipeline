@@ -29,8 +29,9 @@ five rules (3 Nov 2026) the same way:
    was busy or down become due together. So an outside task also calls
    ``wait_for_slot(service, pace)`` before it calls out, which reserves the
    next free start for that service in the shared cache, under a short
-   lock, and sleeps until it: whatever the queue does and however many
-   workers run, two calls are never closer than ``pace``.
+   per-service ``Lease`` in the database (SNOW-1490), and sleeps until it:
+   whatever the queue does and however many workers run, two calls are
+   never closer than ``pace``.
    On a 429 or an outage a task calls ``back_off``; every later task sees
    ``backing_off`` and returns at once, leaving its row a candidate.
 5. **MCP runnable.** ``tests/core/test_command_tasks_guard.py`` fails a
@@ -59,6 +60,7 @@ from django_tasks_db.models import DBTaskResult
 
 from apps.core.command_iteration import countdown, iterate_rows
 from apps.core.command_register import RegisteredCommand
+from apps.core.models import Lease
 
 logger = logging.getLogger(__name__)
 
@@ -75,11 +77,11 @@ _BACKOFF_KEY = "command-tasks:back-off:{}"
 # grew; it is left to lie, so an old worker mid-deploy and a new one never
 # read each other's shape (SNOW-1477).
 _SLOT_KEY = "command-tasks:next-slot-v2:{}"
-# A short lock around reading and writing a service's last slot. It is held
-# for two cache calls, never for the wait; it expires on its own so a
-# crashed holder frees it.
+# The key of the short Lease around reading and writing a service's last
+# slot (SNOW-1490). It is held for two cache calls, never for the wait; it
+# expires on its own so a crashed holder frees it.
 _SLOT_LOCK_KEY = "command-tasks:slot-lock:{}"
-_SLOT_LOCK_TIMEOUT_S = 10
+_SLOT_LOCK_TTL: timedelta = timedelta(seconds=10)
 _SLOT_LOCK_POLL_S = 0.02
 
 
@@ -151,19 +153,20 @@ def wait_for_slot(service: str, pace: float) -> float:
     The execution-time half of the pacing: a task calls this just before it
     calls the outside service. The last reserved start, and the pace it was
     reserved at, sit under one key in the shared cache. A caller takes a
-    short per-service lock with ``cache.add`` (an atomic insert on every
-    backend, unlike ``incr``, which the database cache does as get-then-set),
-    reserves ``max(now, last + the larger of the two paces)``, writes it and
-    lets the lock go, then sleeps until its start outside the lock. Taking
+    short per-service ``Lease`` (a database row, so every process sees the
+    same lock whatever cache it has; SNOW-1490), reserves
+    ``max(now, last + the larger of the two paces)``, writes it and lets the
+    lease go, then sleeps until its start outside the lock. Taking
     the larger pace keeps two callers that share a service at different
     paces (weather and elevation both call Open-Meteo) the wider gap apart.
     So however many workers run, two calls never start closer than ``pace``
     (SNOW-1477).
 
-    A holder that crashes leaves its lock to expire after
-    ``_SLOT_LOCK_TIMEOUT_S``; the callers behind it wait that out rather
-    than reserve without it. The one case left is a live holder stalling
-    longer than that between two cache calls.
+    A holder that crashes leaves its lease to expire after
+    ``_SLOT_LOCK_TTL``; the callers behind it wait that out rather than
+    reserve without it. The one case left is a live holder stalling longer
+    than that between two cache calls; its late release cannot free the
+    lease the next caller took over, because the token no longer matches.
 
     Args:
         service: A short name for the outside service.
@@ -176,9 +179,8 @@ def wait_for_slot(service: str, pace: float) -> float:
     if pace <= 0:
         return 0.0
     key = _SLOT_KEY.format(service)
-    lock = _SLOT_LOCK_KEY.format(service)
     step = int(pace * 1000)
-    _take_slot_lock(lock)
+    lease = _take_slot_lock(_SLOT_LOCK_KEY.format(service))
     try:
         now = int(time.time() * 1000)
         last = cache.get(key)
@@ -190,26 +192,30 @@ def wait_for_slot(service: str, pace: float) -> float:
             slot = max(now, last_start + max(step, last_step))
         cache.set(key, (slot, step), timeout=None)
     finally:
-        cache.delete(lock)
+        lease.release()
     wait = (slot - now) / 1000
     if wait > 0:
         time.sleep(wait)
     return wait
 
 
-def _take_slot_lock(lock: str) -> None:
-    """Take the slot lock for a service, polling while another caller has it.
+def _take_slot_lock(key: str) -> Lease:
+    """Take the slot lease for a service, polling while another caller has it.
 
-    A lock left by a holder that crashed is not broken: it expires after
-    ``_SLOT_LOCK_TIMEOUT_S`` and the next ``add`` succeeds, so a crash costs
-    the callers behind it that wait, never a shared slot.
+    A lease left by a holder that crashed is not broken: it expires after
+    ``_SLOT_LOCK_TTL`` and the next ``acquire`` takes it over, so a crash
+    costs the callers behind it that wait, never a shared slot.
 
     Args:
-        lock: The lock's cache key.
+        key: The lease's key.
+
+    Returns:
+        The lease, for the caller to release.
 
     """
-    while not cache.add(lock, 1, timeout=_SLOT_LOCK_TIMEOUT_S):
+    while (lease := Lease.objects.acquire(key, ttl=_SLOT_LOCK_TTL)) is None:
         time.sleep(_SLOT_LOCK_POLL_S)
+    return lease
 
 
 @dataclass(frozen=True)

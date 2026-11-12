@@ -47,7 +47,7 @@ from apps.bulletins.services.render_model import (
     build_render_model,
     danger_levels_column,
 )
-from apps.core.models import CommandRun, RequestLog
+from apps.core.models import CommandRun, Lease, RequestLog
 from apps.downloads.models import DownloadArea
 from apps.favourites.models import Favourite
 from apps.ingest.models import (
@@ -697,6 +697,21 @@ class CommandRunFactory(factory.django.DjangoModelFactory[CommandRun]):
     environment = "test"
     git_sha = "dev"
     release = "45"
+
+
+class LeaseFactory(factory.django.DjangoModelFactory[Lease]):
+    """Factory for Lease instances — a live lease held for another 30 seconds."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = Lease
+
+    key = factory.Sequence(lambda n: f"test-lease:{n}")
+    token = factory.LazyFunction(uuid.uuid4)
+    expires_at = factory.LazyFunction(
+        lambda: django_timezone.now() + datetime.timedelta(seconds=30)
+    )
 
 
 class RequestLogFactory(factory.django.DjangoModelFactory[RequestLog]):

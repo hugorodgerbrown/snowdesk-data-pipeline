@@ -7,7 +7,9 @@ inline task backend is refused); a dry run unless ``commit`` is passed and
 never ``--commit`` in the arguments; no settings, import path or server
 file; and one run of a command at a time. Then the task itself: the run it
 records is attributed to the staff account, carries the reason and the task
-id, and a command's ``sys.exit`` never takes the worker down.
+id, and a command's ``sys.exit`` never takes the worker down. The
+one-at-a-time check runs under a per-command ``Lease`` (SNOW-1490), so two
+requests arriving together cannot both queue the command.
 """
 
 from __future__ import annotations
@@ -24,14 +26,15 @@ from django_tasks import TaskResultStatus
 from django_tasks_db.models import DBTaskResult
 
 from apps.core import remote_commands
-from apps.core.models import CommandRun
+from apps.core.models import CommandRun, Lease
 from apps.core.remote_commands import RemoteCommandError, check_arguments
-from tests.factories import CommandRunFactory
+from tests.factories import CommandRunFactory, LeaseFactory
 
 pytestmark = pytest.mark.django_db
 
 DUMMY = {"default": {"BACKEND": "django_tasks.backends.dummy.DummyBackend"}}
 DATABASE = {"default": {"BACKEND": "django_tasks_db.DatabaseBackend"}}
+LEASE_KEY = "remote-command:prune_command_runs"
 
 
 def _enqueue(name: str = "prune_command_runs", **kwargs: object) -> object:
@@ -227,6 +230,89 @@ class TestEnqueueCommand:
     def test_only_the_database_backend_is_asked_about_its_queue(self) -> None:
         """Another backend has no queue to ask, so nothing counts as queued."""
         assert not remote_commands._queued("prune_command_runs")
+
+    @override_settings(TASKS=DUMMY)
+    def test_refuses_while_another_request_holds_the_lease(self) -> None:
+        """A live lease on the command means a request is mid-enqueue: refused."""
+        LeaseFactory.create(key=LEASE_KEY)
+        with pytest.raises(RemoteCommandError, match="already queued or running"):
+            _enqueue()
+        assert Lease.objects.filter(key=LEASE_KEY).count() == 1
+
+    @override_settings(TASKS=DUMMY)
+    def test_a_simultaneous_request_is_refused(self) -> None:
+        """A second request arriving between the first's check and enqueue is refused.
+
+        The second call is made from inside the first's ``_already_running``,
+        where both would otherwise have seen nothing queued.
+        """
+        check = remote_commands._already_running
+        refused: list[RemoteCommandError] = []
+
+        def check_then_race(name: str) -> bool:
+            """Run the real check, then a competing request, once."""
+            if not refused:
+                with pytest.raises(RemoteCommandError) as raised:
+                    _enqueue()
+                refused.append(raised.value)
+            return check(name)
+
+        with mock.patch.object(
+            remote_commands, "_already_running", side_effect=check_then_race
+        ):
+            assert _enqueue().task_id  # type: ignore[attr-defined]
+        assert "already queued or running" in str(refused[0])
+
+    @override_settings(TASKS=DUMMY)
+    def test_an_expired_lease_does_not_block(self) -> None:
+        """A lease left by a request that died part-way is taken over."""
+        LeaseFactory.create(
+            key=LEASE_KEY, expires_at=timezone.now() - dt.timedelta(seconds=1)
+        )
+        assert _enqueue().task_id  # type: ignore[attr-defined]
+        assert not Lease.objects.filter(key=LEASE_KEY).exists()
+
+    @override_settings(TASKS=DUMMY)
+    def test_releases_the_lease_after_queueing(self) -> None:
+        """Once the task is queued the lease is gone."""
+        _enqueue()
+        assert not Lease.objects.filter(key=LEASE_KEY).exists()
+
+    @override_settings(TASKS=DUMMY)
+    def test_releases_the_lease_after_an_already_running_refusal(self) -> None:
+        """A refusal by the register check still frees the lease."""
+        run = CommandRunFactory.create(
+            command="prune_command_runs",
+            status=CommandRun.STATUS.RUNNING,
+            finished_at=None,
+        )
+        with pytest.raises(RemoteCommandError, match="already queued or running"):
+            _enqueue()
+        assert not Lease.objects.filter(key=LEASE_KEY).exists()
+        run.status = CommandRun.STATUS.SUCCEEDED
+        run.finished_at = timezone.now()
+        run.save()
+        assert _enqueue().task_id  # type: ignore[attr-defined]
+
+    @override_settings(TASKS=DUMMY)
+    def test_releases_the_lease_when_the_enqueue_raises(self) -> None:
+        """A failed enqueue frees the lease rather than block for its TTL."""
+        # Task is a frozen dataclass, so its enqueue cannot be patched alone.
+        failing = mock.Mock()
+        failing.enqueue.side_effect = RuntimeError("queue down")
+        with (
+            mock.patch.object(remote_commands, "run_command_task", failing),
+            pytest.raises(RuntimeError, match="queue down"),
+        ):
+            _enqueue()
+        assert not Lease.objects.filter(key=LEASE_KEY).exists()
+
+    @override_settings(TASKS=DUMMY)
+    def test_another_commands_lease_does_not_block(self) -> None:
+        """The lease is per command: one held for another leaves this one free."""
+        LeaseFactory.create(key="remote-command:purge_request_logs")
+        assert _enqueue().task_id  # type: ignore[attr-defined]
+        assert Lease.objects.filter(key="remote-command:purge_request_logs").exists()
 
 
 class TestRunCommandTask:

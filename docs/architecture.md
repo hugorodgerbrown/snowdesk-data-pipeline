@@ -2,7 +2,7 @@
 name: architecture
 description: Architecture diagrams and repo map — Render services, Postgres, snowdesk-tiles origin, the nineteen apps, track/, boundaries
 status: current
-last-reviewed: 2026-11-10
+last-reviewed: 2026-11-12
 ---
 
 # Architecture
@@ -56,7 +56,9 @@ apps/            Parent package for the nineteen Django apps (SNOW-557 — moved
   core/          Shared abstractions (BaseModel), HTTP-layer middleware, the
                  monitor_query_counts command, and the command run register —
                  ``CommandRun`` plus ``RegisteredCommand``, the base class
-                 every project command inherits (SNOW-1189)
+                 every project command inherits (SNOW-1189); ``Lease``, the
+                 database lease behind run_command's one-at-a-time guard and
+                 the outside-call slot lock (SNOW-1490)
   locations/     Location — the domain primitive every place reaches (SNOW-700):
                  a resort's village, mid-station and peak, a favourite, an
                  observation, a region centroid. A curated place is simply a
