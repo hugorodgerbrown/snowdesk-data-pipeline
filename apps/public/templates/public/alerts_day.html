@@ -49,7 +49,9 @@ Context: ``rows``, ``heading``, ``target_date``
                                 <!-- nosemgrep: python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
                                 {{ problem.aspects|aspect_rose:32|safe }}
                                 <div class="min-w-0">
-                                    <p class="text-sm text-text-1">{{ problem.name }}</p>
+                                    <p class="text-sm text-text-1">
+                                        {{ problem.name }}{% if problem.period %} · {{ problem.period }}{% endif %}
+                                    </p>
                                     {% if problem.where %}<p class="text-sm text-text-2">
                                             {{ problem.where }}
                                         </p>{% endif %}

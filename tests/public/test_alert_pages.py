@@ -17,6 +17,7 @@ Covers:
 
 from __future__ import annotations
 
+import copy
 import datetime
 from typing import Any
 from unittest.mock import patch
@@ -28,6 +29,7 @@ from django.utils import timezone
 from waffle.testutils import override_flag
 
 from apps.accounts.models import Account
+from apps.bulletins.models import RegionDayRating
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.bulletins.services.replay import ReplayedAlert
 from tests.factories import (
@@ -201,7 +203,8 @@ class TestAlertsDay:
         )
         assert content.count('data-testid="alerts-day-problem"') == 1
         assert "Wind slab" in content
-        assert "N–E · above 2,200 m" in content
+        # The band as the bulletin page writes it.
+        assert "N–E · above 2200m" in content
         assert "<svg" in content  # the aspect rose
         assert "SLF · released" in content
         assert 'href="https://www.slf.ch/bulletin.pdf"' in content
@@ -236,6 +239,56 @@ class TestAlertsDay:
         assert content.count('data-testid="alerts-day-row"') == 2
         assert "Bruson, Verbier" not in content
         assert content.index("Bruson") < content.index("Verbier")
+
+    def test_a_split_day_keeps_each_period(self, client: Client, db: Any) -> None:
+        """Each period's problem is its own line, named by its period."""
+        today = timezone.localdate()
+        region = MicroRegionFactory.create()
+        _publish(region, today, "considerable")
+        bulletin = RegionDayRating.objects.get(
+            region=region, date=today
+        ).source_bulletin
+        assert bulletin is not None
+        rm = bulletin.render_model
+        (trait,) = rm["traits"]
+        later = copy.deepcopy(trait)
+        trait["time_period"] = trait["problems"][0]["time_period"] = "earlier"
+        later["time_period"] = later["problems"][0]["time_period"] = "later"
+        later["problems"][0]["aspects"] = ["E", "W"]
+        rm["traits"] = [trait, later]
+        bulletin.save(update_fields=["render_model"])
+        account = AccountFactory.create()
+        FavouriteFactory.create(user=account.user, region=region, region_pin=True)
+        client.force_login(account.user)
+        content = client.get(f"/alerts/{today.isoformat()}/").content.decode()
+        assert content.count('data-testid="alerts-day-problem"') == 2
+        assert "Earlier" in content and "Later" in content
+        assert "N–E · above" in content and "E, W · above" in content
+
+    def test_two_trips_in_one_region_open_their_own_pages(
+        self, client: Client, region: Any
+    ) -> None:
+        """Two trips folded into a pin: each card opens its own trip, the pin the map."""
+        account = AccountFactory.create()
+        today = timezone.localdate()
+        FavouriteFactory.create(
+            user=account.user, region=region, region_pin=True, name="Pin"
+        )
+        first = TripFactory.create(created_by=account.user, date=today, name="Alpha")
+        second = TripFactory.create(created_by=account.user, date=today, name="Beta")
+        client.force_login(account.user)
+        with patch(
+            "apps.bulletins.services.alerts.track_regions", return_value=[region]
+        ):
+            content = client.get(f"/alerts/{today.isoformat()}/").content.decode()
+        cards = content.split('data-testid="alerts-day-row"')[1:]
+        assert len(cards) == 3
+        alpha, beta, pin = cards
+        assert (
+            f"/trips/{first.uuid}/" in alpha and f"/trips/{second.uuid}/" not in alpha
+        )
+        assert f"/trips/{second.uuid}/" in beta and f"/trips/{first.uuid}/" not in beta
+        assert "/trips/" not in pin and f"#{region.region_id}" in pin
 
     def test_trip_that_day_is_a_row(self, client: Client, region: Any) -> None:
         """A saved trip on the day is a row that opens the trip."""

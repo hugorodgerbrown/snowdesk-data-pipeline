@@ -35,15 +35,14 @@ from apps.bulletins.services import alerts as alerts_service
 from apps.bulletins.services.alert_wording import (
     ALERT_TZ,
     aspect_ranges,
-    elevation_phrase,
     hhmm,
     level_word,
     new_snow,
-    problem_name,
     provider_name,
     trend,
 )
 from apps.bulletins.services.bulletin_change import BulletinState, summarise_change
+from apps.public.bulletin_panels import problem_cards_for_bulletin
 from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
@@ -127,7 +126,10 @@ def _rows(
             label = name if len(regions) == 1 else f"{name} · {region.name}"
             if day_label:
                 label = f"{label} · {date_format(day, 'l')}"
-            out.append(_card(label, region, day, today, place.trip_url))
+            # A name's own trip page, never another name's: two trips in
+            # one region are one place, and a pin beside a trip opens the map.
+            url = place.label_urls.get(name, "")
+            out.append(_card(label, region, day, today, url))
     return out
 
 
@@ -167,24 +169,51 @@ def _card(
         rating=_tile(current),
         level=level_word(current),
         trend=trend(summarise_change(previous, current)) if previous else "",
-        problems=[
-            {
-                "name": problem_name(p.problem_type, capital=True),
-                "aspects": list(p.aspects),
-                "where": " · ".join(
-                    part
-                    for part in (aspect_ranges(p.aspects), elevation_phrase(p))
-                    if part
-                ),
-            }
-            for p in current.problems
-        ],
+        problems=_problems(bulletin),
         new_snow=new_snow(alerts_service.forecast_new_snow(region, day, today)),
         provenance=_provenance(bulletin),
         provider=provider_name(bulletin.source),
         pdf_url=bulletin.pdf_url,
     )
     return card
+
+
+def _problems(bulletin: Bulletin) -> list[dict]:
+    """
+    Return a bulletin's problems as its own page lists them.
+
+    Read from the bulletin page's problem cards, not the alert state, which
+    merges a problem's periods into one zone: a split-day bulletin keeps
+    each period's aspects and band apart, named by its period.
+
+    Args:
+        bulletin: The bulletin.
+
+    Returns:
+        One entry per card: name, aspects, where and period.
+
+    """
+    out = []
+    for card in problem_cards_for_bulletin(bulletin):
+        aspects = list(card.get("aspects") or [])
+        # ElevationBounds: falsy with no bound, ``display`` otherwise.
+        elevation = card.get("elevation")
+        display = str(getattr(elevation, "display", "")) if elevation else ""
+        out.append(
+            {
+                "name": card.get("label", ""),
+                "aspects": aspects,
+                "where": " · ".join(
+                    p for p in (aspect_ranges(tuple(aspects)), display) if p
+                ),
+                "period": (
+                    card.get("time_period_label", "")
+                    if card.get("time_period") not in ("", None, "all_day")
+                    else ""
+                ),
+            }
+        )
+    return out
 
 
 def _tile(state: BulletinState) -> dict:

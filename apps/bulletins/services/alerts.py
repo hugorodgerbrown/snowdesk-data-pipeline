@@ -180,6 +180,9 @@ class AlertPlace:
     labels: list[str] = field(default_factory=list)
     trip_url: str = ""
     regions: list[MicroRegion] = field(default_factory=list)
+    # Each trip name's own page, so a page listing names one by one opens
+    # the right trip for each (two trips in one region are one place).
+    label_urls: dict[str, str] = field(default_factory=dict)
 
     @property
     def label(self) -> str:
@@ -273,6 +276,7 @@ def trip_places(user: User, day: datetime.date) -> list[AlertPlace]:
         place = by_key.setdefault(candidate.key, candidate)
         if trip.display_name and trip.display_name not in place.labels:
             place.labels.append(trip.display_name)
+            place.label_urls[trip.display_name] = url
         place.trip_url = place.trip_url or url
     return sorted(by_key.values(), key=lambda p: p.label)
 
@@ -294,13 +298,17 @@ def places_on(pins: list[AlertPlace], trips: list[AlertPlace]) -> list[AlertPlac
         The day's places, ordered by label.
 
     """
-    by_key = {p.key: replace(p, labels=list(p.labels)) for p in pins}
+    by_key = {
+        p.key: replace(p, labels=list(p.labels), label_urls=dict(p.label_urls))
+        for p in pins
+    }
     for trip in trips:
         place = by_key.get(trip.key)
         if place is None:
             by_key[trip.key] = trip
             continue
         place.labels.extend(lbl for lbl in trip.labels if lbl not in place.labels)
+        place.label_urls.update(trip.label_urls)
         place.trip_url = trip.trip_url
     return sorted(by_key.values(), key=lambda p: p.label)
 

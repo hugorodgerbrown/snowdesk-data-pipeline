@@ -84,11 +84,13 @@ admin rather than in code. The scheduled sender is behind the
   follows a place by, A–Z, nothing merged or summarised. A card shows the
   danger tile, the level and its move since the day before
   (`alert_wording.trend`: "up from Moderate", "up from 2−", "no change"),
-  each problem with its aspect rose and band, the forecast new snow
+  each problem with its aspect rose and band as the bulletin page lists it
+  (`problem_cards_for_bulletin`, so a split day keeps each period apart),
+  the forecast new snow
   ("20 cm new snow forecast." at 5 cm or more, `alerts.forecast_new_snow`
   and `NEW_SNOW_MIN_CM`, SNOW-944), the provider with its release and
-  validity times, and links to the map (or the trip) and the provider's
-  PDF. A trip crossing several regions is a card per region. The full
+  validity times, and links to the map (or that name's own trip,
+  `AlertPlace.label_urls`) and the provider's PDF. A trip crossing several regions is a card per region. The full
   sentences (`change_sentences`) stay for the since strip. A season start
   or a restart inside the season (`had_bulletin_in_season`,
   `SEASON_GAP_DAYS`) is still decided and logged, but no longer worded.
