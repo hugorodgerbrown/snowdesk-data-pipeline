@@ -9,10 +9,12 @@ state, push to every device, email only as the account asks.
 from __future__ import annotations
 
 import datetime
+import smtplib
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from django.core import mail
 
 from apps.accounts.models import Account
 from apps.bulletins.models import BulletinAlert, RegionDayRating
@@ -309,9 +311,8 @@ class TestEvaluateAndDeliver:
         """No push device: the FALLBACK account is emailed."""
         account, region = follower
         publish(region, TOMORROW, render())
-        with patch.object(alerts, "send_alert_email") as email:
-            run = deliver(evaluate_account(account, NOW))
-        email.assert_called_once()
+        run = deliver(evaluate_account(account, NOW))
+        assert len(mail.outbox) == 1
         assert run.emailed
         row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
         assert row.sent_email and not row.sent_push
@@ -322,12 +323,9 @@ class TestEvaluateAndDeliver:
         account, region = follower
         publish(region, TOMORROW, render())
         PushSubscriptionFactory.create(account=account)
-        with (
-            patch.object(alerts, "dispatch_push", return_value=GONE),
-            patch.object(alerts, "send_alert_email") as email,
-        ):
+        with patch.object(alerts, "dispatch_push", return_value=GONE):
             deliver(evaluate_account(account, NOW))
-        email.assert_called_once()
+        assert len(mail.outbox) == 1
         row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
         assert row.outcome == BulletinAlert.Outcome.SENT
         assert row.sent_email and not row.sent_push
@@ -380,7 +378,13 @@ class TestEvaluateAndDeliver:
         )
         with patch.object(alerts, "dispatch_push", return_value=GONE):
             alerts._worker_deliver_alert.call(
-                account.pk, [settled.pk], {}, "t", "b", "/"
+                account.pk,
+                [settled.pk],
+                settled.updated_at.isoformat(),
+                {},
+                "t",
+                "b",
+                "/",
             )
         settled.refresh_from_db()
         assert settled.outcome == BulletinAlert.Outcome.SENT and settled.sent_push
@@ -397,10 +401,14 @@ class TestEvaluateAndDeliver:
             )
             for _ in range(3)
         ]
+        claimed = rows[0].updated_at
+        BulletinAlert.objects.filter(pk__in=[r.pk for r in rows]).update(
+            updated_at=claimed
+        )
         PushSubscriptionFactory.create(account=account)
         with patch.object(alerts, "dispatch_push", return_value=OK):
             alerts._worker_deliver_alert.call(
-                account.pk, [r.pk for r in rows], {}, "t", "b", "/"
+                account.pk, [r.pk for r in rows], claimed.isoformat(), {}, "t", "b", "/"
             )
         stamps = set(
             BulletinAlert.objects.filter(pk__in=[r.pk for r in rows]).values_list(
@@ -414,12 +422,9 @@ class TestEvaluateAndDeliver:
         account, region = follower
         publish(region, TOMORROW, render())
         PushSubscriptionFactory.create(account=account)
-        with (
-            patch.object(alerts, "dispatch_push", return_value=OK),
-            patch.object(alerts, "send_alert_email") as email,
-        ):
+        with patch.object(alerts, "dispatch_push", return_value=OK):
             deliver(evaluate_account(account, NOW))
-        email.assert_not_called()
+        assert mail.outbox == []
 
     def test_always_emails_as_well(self, follower: tuple) -> None:
         """ALWAYS emails alongside push."""
@@ -428,12 +433,11 @@ class TestEvaluateAndDeliver:
         account.save()
         publish(region, TOMORROW, render())
         PushSubscriptionFactory.create(account=account)
-        with (
-            patch.object(alerts, "dispatch_push", return_value=OK),
-            patch.object(alerts, "send_alert_email") as email,
-        ):
+        with patch.object(alerts, "dispatch_push", return_value=OK):
             deliver(evaluate_account(account, NOW))
-        email.assert_called_once()
+        assert len(mail.outbox) == 1
+        row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
+        assert row.sent_push and row.sent_email
 
     def test_unreachable_account_logs_skipped(self, follower: tuple) -> None:
         """NEVER email and no device: the state advances, nothing is sent."""
@@ -474,6 +478,340 @@ class TestEvaluateAndDeliver:
         account, region = follower
         publish(region, TOMORROW, {})
         assert evaluate_account(account, NOW).rows == []
+
+
+def hold(
+    account: Account,
+    region: Any,
+    fingerprint: str,
+    outcome: str = BulletinAlert.Outcome.PENDING,
+    age: datetime.timedelta | None = None,
+) -> BulletinAlert:
+    """Write tomorrow's send-log row for ``fingerprint``, ``age`` old if given."""
+    row = BulletinAlertFactory.create(
+        account=account,
+        region=region,
+        target_date=TOMORROW,
+        fingerprint=fingerprint,
+        outcome=outcome,
+        sent_push=False,
+    )
+    if age is not None:
+        BulletinAlert.objects.filter(pk=row.pk).update(updated_at=NOW - age)
+        row.refresh_from_db()
+    return row
+
+
+def tomorrows_fingerprint(account: Account) -> str:
+    """Return the fingerprint tomorrow's row is evaluated under."""
+    (row,) = [r for r in evaluate_account(account, NOW).rows if r.day == TOMORROW]
+    return row.fingerprint
+
+
+@pytest.mark.django_db
+class TestClaimAndSettle:
+    """SNOW-1362: one alert is sent once, and a failed one is sent again."""
+
+    def test_two_overlapping_runs_send_once(self, follower: tuple) -> None:
+        """Two runs evaluated before either delivers queue one worker."""
+        account, region = follower
+        PushSubscriptionFactory.create(account=account)
+        publish(region, TOMORROW, render())
+        first = evaluate_account(account, NOW)
+        second = evaluate_account(account, NOW)
+        worker = MagicMock()
+        with patch.object(alerts, "_worker_deliver_alert", worker):
+            deliver(first)
+            deliver(second)
+        worker.enqueue.assert_called_once()
+        assert second.message is None
+        with patch.object(alerts, "dispatch_push", return_value=OK) as push:
+            alerts._worker_deliver_alert.call(*worker.enqueue.call_args.args)
+        push.assert_called_once()
+        row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
+        assert row.outcome == BulletinAlert.Outcome.SENT and row.sent_push
+
+    def test_a_run_overtaken_by_a_settled_one_sends_nothing(
+        self, follower: tuple
+    ) -> None:
+        """The first run delivers and settles SENT; the second sends nothing."""
+        account, region = follower
+        PushSubscriptionFactory.create(account=account)
+        publish(region, TOMORROW, render())
+        first = evaluate_account(account, NOW)
+        second = evaluate_account(account, NOW)
+        with patch.object(alerts, "dispatch_push", return_value=OK) as push:
+            # The immediate backend runs the worker inline: SENT at once.
+            deliver(first)
+            row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
+            assert row.outcome == BulletinAlert.Outcome.SENT
+            worker = MagicMock()
+            with patch.object(alerts, "_worker_deliver_alert", worker):
+                deliver(second)
+        push.assert_called_once()
+        worker.enqueue.assert_not_called()
+        assert second.message is None
+        row.refresh_from_db()
+        assert row.outcome == BulletinAlert.Outcome.SENT
+
+    def test_a_recurring_state_written_before_the_run_is_claimed(
+        self, follower: tuple
+    ) -> None:
+        """A SENT row last written before evaluation is still rewritten."""
+        account, region = follower
+        PushSubscriptionFactory.create(account=account)
+        publish(region, TOMORROW, render())
+        run = evaluate_account(account, NOW)
+        held = hold(
+            account,
+            region,
+            run.rows[0].fingerprint,
+            BulletinAlert.Outcome.SENT,
+            datetime.timedelta(hours=1),
+        )
+        worker = MagicMock()
+        with patch.object(alerts, "_worker_deliver_alert", worker):
+            deliver(run)
+        _, alert_ids, *_ = worker.enqueue.call_args.args
+        assert alert_ids == [held.pk]
+
+    def test_a_create_collision_loses_only_that_row(self, follower: tuple) -> None:
+        """Another run creating the row first loses it; the others still go."""
+        account, region = follower
+        other = MicroRegionFactory.create(name="Davos")
+        FavouriteFactory.create(user=account.user, region=other, region_pin=True)
+        PushSubscriptionFactory.create(account=account)
+        publish(region, TOMORROW, render())
+        publish(other, TOMORROW, render("considerable"))
+        run = evaluate_account(account, NOW)
+        create = BulletinAlert.objects.create
+
+        def racing_create(**fields: Any) -> BulletinAlert:
+            """Collide on Verbier's key, as another run's insert would."""
+            if fields["region"] == region:
+                # A real IntegrityError inside the claim's savepoint.
+                create(**fields)
+            return create(**fields)
+
+        worker = MagicMock()
+        with (
+            patch.object(BulletinAlert.objects, "create", side_effect=racing_create),
+            patch.object(alerts, "_worker_deliver_alert", worker),
+        ):
+            deliver(run)
+        _, alert_ids, _, push, *_ = worker.enqueue.call_args.args
+        davos = BulletinAlert.objects.get(account=account, region=other)
+        assert alert_ids == [davos.pk]
+        assert "Davos" in push["title"] and "Verbier" not in push["title"]
+        # The savepoint rolled back only the collision; the run carried on.
+        assert not BulletinAlert.objects.filter(region=region).exists()
+
+    def test_a_partly_claimed_bundle_sends_only_its_winners(
+        self, follower: tuple
+    ) -> None:
+        """One place held fresh PENDING by another run: the message names the rest."""
+        account, region = follower
+        other = MicroRegionFactory.create(name="Davos")
+        FavouriteFactory.create(user=account.user, region=other, region_pin=True)
+        PushSubscriptionFactory.create(account=account)
+        publish(region, TOMORROW, render())
+        publish(other, TOMORROW, render("considerable"))
+        run = evaluate_account(account, NOW)
+        assert run.message is not None and "2 places" in run.message.title
+        (verbier,) = [r for r in run.rows if r.log_region == region]
+        held = hold(account, region, verbier.fingerprint)
+        worker = MagicMock()
+        with patch.object(alerts, "_worker_deliver_alert", worker):
+            deliver(run)
+        _, alert_ids, _, push, title, body, _ = worker.enqueue.call_args.args
+        davos = BulletinAlert.objects.get(account=account, region=other)
+        assert alert_ids == [davos.pk]
+        assert "Davos" in push["title"] and "Verbier" not in push["title"]
+        assert "Verbier" not in body
+        assert davos.title == title == run.message.title
+        held.refresh_from_db()
+        assert held.outcome == BulletinAlert.Outcome.PENDING and held.title == ""
+
+    @pytest.mark.parametrize(
+        ("outcome", "age", "claims"),
+        [
+            (BulletinAlert.Outcome.FAILED, datetime.timedelta(hours=1), True),
+            (BulletinAlert.Outcome.PENDING, datetime.timedelta(hours=1), True),
+            (BulletinAlert.Outcome.PENDING, None, False),
+        ],
+        ids=["failed", "stale-pending", "fresh-pending"],
+    )
+    def test_which_rows_a_run_may_claim(
+        self,
+        follower: tuple,
+        outcome: str,
+        age: datetime.timedelta | None,
+        claims: bool,
+    ) -> None:
+        """FAILED and stale PENDING are claimed again; fresh PENDING is not."""
+        account, region = follower
+        PushSubscriptionFactory.create(account=account)
+        publish(region, TOMORROW, render())
+        run = evaluate_account(account, NOW)
+        held = hold(account, region, run.rows[0].fingerprint, outcome, age)
+        # Off, so only the PENDING-freshness rule decides: ``hold`` writes
+        # the row after evaluation, which the evaluated_at rule would lose.
+        run.evaluated_at = None
+        worker = MagicMock()
+        with patch.object(alerts, "_worker_deliver_alert", worker):
+            deliver(run)
+        assert worker.enqueue.called is claims
+        if claims:
+            _, alert_ids, claimed_at, *_ = worker.enqueue.call_args.args
+            assert alert_ids == [held.pk]
+            held.refresh_from_db()
+            assert held.outcome == BulletinAlert.Outcome.PENDING
+            assert held.updated_at.isoformat() == claimed_at
+
+    def test_a_stale_pending_row_is_sent_again(self, follower: tuple) -> None:
+        """A PENDING row whose worker was lost stops counting as told."""
+        account, region = follower
+        PushSubscriptionFactory.create(account=account)
+        publish(region, TOMORROW, render())
+        fingerprint = tomorrows_fingerprint(account)
+        held = hold(account, region, fingerprint)
+        assert evaluate_account(account, NOW).rows == []
+        BulletinAlert.objects.filter(pk=held.pk).update(
+            updated_at=NOW - alerts.STALE_PENDING - datetime.timedelta(minutes=1)
+        )
+        retry = evaluate_account(account, NOW)
+        assert retry.message is not None
+        with patch.object(alerts, "dispatch_push", return_value=OK) as push:
+            deliver(retry)
+        push.assert_called_once()
+        held.refresh_from_db()
+        assert held.outcome == BulletinAlert.Outcome.SENT
+
+    def test_a_push_raising_after_one_went_still_settles_sent(
+        self, follower: tuple
+    ) -> None:
+        """One device accepted, the next raised: SENT, and not sent again."""
+        account, region = follower
+        PushSubscriptionFactory.create(account=account)
+        PushSubscriptionFactory.create(account=account)
+        publish(region, TOMORROW, render())
+        with patch.object(
+            alerts, "dispatch_push", side_effect=[OK, RuntimeError("boom")]
+        ):
+            deliver(evaluate_account(account, NOW))
+        row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
+        assert row.outcome == BulletinAlert.Outcome.SENT and row.sent_push
+        assert mail.outbox == []
+        assert evaluate_account(account, NOW).rows == []
+
+    def test_every_channel_raising_is_failed_and_retried(self, follower: tuple) -> None:
+        """Push and email both raise: FAILED, and the next run tries again."""
+        account, region = follower
+        PushSubscriptionFactory.create(account=account)
+        publish(region, TOMORROW, render())
+        with (
+            patch.object(alerts, "dispatch_push", side_effect=RuntimeError),
+            patch.object(alerts, "send_alert_email", side_effect=smtplib.SMTPException),
+        ):
+            deliver(evaluate_account(account, NOW))
+        row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
+        assert row.outcome == BulletinAlert.Outcome.FAILED
+        assert not row.sent_push and not row.sent_email
+        assert evaluate_account(account, NOW).message is not None
+
+    @pytest.mark.parametrize(
+        ("push", "outcome"),
+        [(OK, BulletinAlert.Outcome.SENT), (GONE, BulletinAlert.Outcome.FAILED)],
+        ids=["after-a-push", "before-any-channel"],
+    )
+    def test_a_crashing_worker_settles_then_reraises(
+        self, follower: tuple, push: dict, outcome: str
+    ) -> None:
+        """A crash past the channels settles from what went, then re-raises."""
+        account, region = follower
+        account.alert_email = Account.AlertEmail.ALWAYS
+        account.save()
+        PushSubscriptionFactory.create(account=account)
+        publish(region, TOMORROW, render())
+        worker = MagicMock()
+        with patch.object(alerts, "_worker_deliver_alert", worker):
+            deliver(evaluate_account(account, NOW))
+        with (
+            patch.object(alerts, "dispatch_push", return_value=push),
+            patch.object(alerts, "_can_email", side_effect=RuntimeError("boom")),
+            pytest.raises(RuntimeError),
+        ):
+            alerts._worker_deliver_alert.call(*worker.enqueue.call_args.args)
+        row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
+        assert row.outcome == outcome
+        assert row.sent_push is (outcome == BulletinAlert.Outcome.SENT)
+        retried = evaluate_account(account, NOW).message is not None
+        assert retried is (outcome == BulletinAlert.Outcome.FAILED)
+
+    @pytest.mark.parametrize(
+        "email",
+        [{"return_value": False}, {"side_effect": smtplib.SMTPException("down")}],
+        ids=["not-accepted", "smtp-error"],
+    )
+    def test_an_unsent_email_is_failed_and_retried(
+        self, follower: tuple, email: dict
+    ) -> None:
+        """Email the only channel, and it did not go: FAILED, sent again later."""
+        account, region = follower
+        publish(region, TOMORROW, render())
+        with patch.object(alerts, "send_alert_email", **email):
+            deliver(evaluate_account(account, NOW))
+        row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
+        assert row.outcome == BulletinAlert.Outcome.FAILED and not row.sent_email
+        retry = evaluate_account(account, NOW)
+        assert retry.message is not None
+        deliver(retry)
+        sent = BulletinAlert.objects.get(pk=row.pk)
+        assert sent.outcome == BulletinAlert.Outcome.SENT and sent.sent_email
+        assert len(mail.outbox) == 1
+
+    def test_an_old_worker_for_a_reclaimed_row_sends_nothing(
+        self, follower: tuple
+    ) -> None:
+        """A worker whose claim was taken over by a newer run does nothing."""
+        account, region = follower
+        PushSubscriptionFactory.create(account=account)
+        row = hold(account, region, "fp-reclaimed")
+        old_claim = row.updated_at - datetime.timedelta(hours=1)
+        with patch.object(alerts, "dispatch_push", return_value=OK) as push:
+            alerts._worker_deliver_alert.call(
+                account.pk, [row.pk], old_claim.isoformat(), {}, "t", "b", "/"
+            )
+        push.assert_not_called()
+        assert mail.outbox == []
+        row.refresh_from_db()
+        assert row.outcome == BulletinAlert.Outcome.PENDING
+
+    def test_an_old_worker_for_a_partly_reclaimed_bundle_sends_nothing(
+        self, follower: tuple
+    ) -> None:
+        """One row of the bundle claimed again: nothing sent, the rest retried."""
+        account, region = follower
+        other = MicroRegionFactory.create(name="Davos")
+        PushSubscriptionFactory.create(account=account)
+        kept = hold(account, region, "fp-kept")
+        taken = hold(account, other, "fp-taken")
+        claim = kept.updated_at
+        BulletinAlert.objects.filter(pk=kept.pk).update(updated_at=claim)
+        BulletinAlert.objects.filter(pk=taken.pk).update(
+            updated_at=claim + datetime.timedelta(minutes=40)
+        )
+        with patch.object(alerts, "dispatch_push", return_value=OK) as push:
+            alerts._worker_deliver_alert.call(
+                account.pk, [kept.pk, taken.pk], claim.isoformat(), {}, "t", "b", "/"
+            )
+        push.assert_not_called()
+        assert mail.outbox == []
+        kept.refresh_from_db()
+        taken.refresh_from_db()
+        assert kept.outcome == BulletinAlert.Outcome.FAILED
+        assert taken.outcome == BulletinAlert.Outcome.PENDING
+        assert taken.updated_at == claim + datetime.timedelta(minutes=40)
 
 
 @pytest.mark.django_db
@@ -855,8 +1193,7 @@ class TestStoredState:
         (row,) = [r for r in run.rows if r.day == TOMORROW]
         assert row.fingerprint == "from-service"
         assert row.state == stored
-        with patch.object(alerts, "send_alert_email"):
-            deliver(run)
+        deliver(run)
         logged = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
         assert logged.fingerprint == "from-service"
         # The next run compares on the same stored value: nothing new.

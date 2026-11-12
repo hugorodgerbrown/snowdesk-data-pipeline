@@ -2,10 +2,13 @@
 apps/accounts/services/alert_email.py — The bulletin alert email (SNOW-1327).
 
 Email is the alerts fallback: it reaches an account with no push device,
-and anyone who asked for both. ``send_alert_email`` enqueues a django-tasks
-worker (Invariant 3: never an SMTP round-trip on the request path, and the
-send command is not a request but keeps the same shape so the two paths
-cannot drift).
+and anyone who asked for both. ``send_alert_email`` sends synchronously and
+says whether the message went (SNOW-1362): its one caller is the alert
+delivery worker (``apps.bulletins.services.alerts._worker_deliver_alert``),
+already a django-tasks task, which needs the result to settle the send log
+as SENT or FAILED. Invariant 3 holds: no SMTP round-trip on the request
+path, because the send only ever runs on the task runner. SMTP errors
+propagate to that worker, which records the alert as not emailed.
 
 Every message carries ``List-Unsubscribe`` with a signed, never-expiring
 link and ``List-Unsubscribe-Post: List-Unsubscribe=One-Click`` (RFC 8058),
@@ -25,7 +28,6 @@ from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.urls import reverse
-from django_tasks import task
 
 from apps.accounts.logging_utils import mask_email
 from apps.accounts.models import Account
@@ -85,27 +87,29 @@ def unsubscribe_url(account: Account) -> str:
     )
 
 
-@task()
-def _worker_send_alert_email(account_id: int, title: str, body: str, url: str) -> None:
+def send_alert_email(account: Account, title: str, body: str, url: str) -> bool:
     """
-    Background worker: render and send one alert email.
+    Render and send one alert email for ``account``, now.
 
-    Re-reads the account so a person who turned email off between the run
-    and the send is not emailed.
+    Called only from the alert delivery worker, never on a request path.
+    An account that turned email off, never verified or has no address is
+    not emailed. SMTP errors are not caught: the worker records them.
 
     Args:
-        account_id: The account's pk.
+        account: The recipient, with ``user`` loaded.
         title: The alert's title, used as the subject.
         body: The alert's body.
         url: The site-relative link the alert opens.
 
+    Returns:
+        True only when the mail backend accepted the message.
+
     """
-    account = Account.objects.filter(pk=account_id).select_related("user").first()
-    if account is None or account.alert_email == Account.AlertEmail.NEVER:
-        return
+    if account.alert_email == Account.AlertEmail.NEVER:
+        return False
     email = account.user.email.lower()
     if not email or not account.is_verified:
-        return
+        return False
     unsubscribe = unsubscribe_url(account)
     context = {
         "title": title,
@@ -128,18 +132,4 @@ def _worker_send_alert_email(account_id: int, title: str, body: str, url: str) -
         render_to_string("accounts/emails/bulletin_alert.html", context), "text/html"
     )
     logger.info("Sending bulletin alert email to %s", mask_email(email))
-    message.send()
-
-
-def send_alert_email(account: Account, title: str, body: str, url: str) -> None:
-    """
-    Enqueue one alert email for ``account``.
-
-    Args:
-        account: The recipient.
-        title: The alert's title.
-        body: The alert's body.
-        url: The site-relative link the alert opens.
-
-    """
-    _worker_send_alert_email.enqueue(account.pk, title, body, url)
+    return message.send() > 0

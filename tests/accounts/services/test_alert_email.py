@@ -1,13 +1,16 @@
 """
 tests/accounts/services/test_alert_email.py — The bulletin alert email (SNOW-1327).
 
-The worker sends from the alerts sender with RFC 8058 one-click headers,
-and declines an account that turned email off or never verified.
+send_alert_email sends from the alerts sender with RFC 8058 one-click
+headers, says whether it sent (SNOW-1362), declines an account that turned
+email off or never verified, and lets an SMTP failure propagate.
 """
 
 from __future__ import annotations
 
+import smtplib
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from django.core import mail
@@ -24,13 +27,18 @@ from tests.factories import AccountFactory
 
 @pytest.mark.django_db
 class TestSendAlertEmail:
-    """send_alert_email enqueues a worker that runs inline under test."""
+    """send_alert_email sends synchronously and returns whether it went."""
 
     def test_sends_with_one_click_headers(self, settings: Any) -> None:
         """The message carries List-Unsubscribe and the one-click POST header."""
         settings.ALERTS_FROM_EMAIL = "alerts@example.com"
         account = AccountFactory.create()
-        send_alert_email(account, "Verbier · Saturday: Moderate (2)", "Body.", "/map/")
+        assert (
+            send_alert_email(
+                account, "Verbier · Saturday: Moderate (2)", "Body.", "/map/"
+            )
+            is True
+        )
         (message,) = mail.outbox
         assert isinstance(message, EmailMultiAlternatives)
         assert message.from_email == "alerts@example.com"
@@ -46,15 +54,42 @@ class TestSendAlertEmail:
         assert "Open the bulletin" in str(html)
 
     def test_never_is_not_emailed(self) -> None:
-        """An account that stopped alert email is skipped by the worker."""
+        """An account that stopped alert email is not emailed: False."""
         account = AccountFactory.create(alert_email=Account.AlertEmail.NEVER)
-        send_alert_email(account, "t", "b", "/")
+        assert send_alert_email(account, "t", "b", "/") is False
         assert mail.outbox == []
 
     def test_unverified_is_not_emailed(self) -> None:
-        """An unproven address is never emailed."""
+        """An unproven address is never emailed: False."""
         account = AccountFactory.create(is_verified=False)
-        send_alert_email(account, "t", "b", "/")
+        assert send_alert_email(account, "t", "b", "/") is False
+        assert mail.outbox == []
+
+    def test_no_address_is_not_emailed(self) -> None:
+        """An account with no address on file: False, nothing sent."""
+        account = AccountFactory.create()
+        account.user.email = ""
+        assert send_alert_email(account, "t", "b", "/") is False
+        assert mail.outbox == []
+
+    def test_backend_that_sends_nothing_is_false(self) -> None:
+        """A backend that accepts no message: False."""
+        account = AccountFactory.create()
+        with patch.object(EmailMultiAlternatives, "send", return_value=0):
+            assert send_alert_email(account, "t", "b", "/") is False
+
+    def test_smtp_failure_propagates(self) -> None:
+        """An SMTP error is not swallowed: the delivery worker records it."""
+        account = AccountFactory.create()
+        with (
+            patch.object(
+                EmailMultiAlternatives,
+                "send",
+                side_effect=smtplib.SMTPException("down"),
+            ),
+            pytest.raises(smtplib.SMTPException),
+        ):
+            send_alert_email(account, "t", "b", "/")
         assert mail.outbox == []
 
 

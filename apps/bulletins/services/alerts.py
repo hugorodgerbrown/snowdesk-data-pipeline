@@ -50,6 +50,15 @@ row is not "told": the next run compares against the last row that was,
 and sends again. A message with no possible channel at all is logged
 ``SKIPPED`` so the state still advances.
 
+A ``PENDING`` row counts as told only until it is :data:`STALE_PENDING`
+old; after that its worker is presumed lost and the next run sends again
+(SNOW-1362). Each run claims its rows under the send log's unique key and
+one claim time: a row another run holds fresh ``PENDING`` is lost to it,
+so two overlapping runs send one alert once, and the worker sends for and
+settles only rows still carrying its claim. A device or the mail server
+raising is that channel failing; a worker that crashes part-way still
+settles its rows from what had already gone.
+
 Rows are written only with ``commit=True``; without it the run reports what
 it would send.
 """
@@ -61,7 +70,8 @@ import logging
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
+from django.db.models import Q, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 from django_tasks import task
@@ -102,6 +112,11 @@ logger = logging.getLogger(__name__)
 
 NIGHT_STARTS = datetime.time(22, 0)
 NIGHT_ENDS = datetime.time(6, 30)
+
+# A PENDING row older than this has lost its worker (a crash, a deploy, a
+# dropped task): it no longer counts as told, and the next run may claim
+# it again (SNOW-1362). Far longer than any delivery takes.
+STALE_PENDING = datetime.timedelta(minutes=30)
 
 _KIND_TO_ROW: dict[AlertKind, str] = {
     "new": BulletinAlert.Kind.NEW,
@@ -471,6 +486,12 @@ class AccountRun:
     # multi-region trip's message counts (SNOW-945).
     available: dict[tuple[str, datetime.date], int] = field(default_factory=dict)
     message: AlertMessage | None = None
+    # The local send date the message was worded for; deliver re-words a
+    # partly claimed bundle on the same day (SNOW-1362).
+    today: datetime.date | None = None
+    # When the run read the send log, by the wall clock updated_at is
+    # stamped with: a row written after it is another run's (SNOW-1362).
+    evaluated_at: datetime.datetime | None = None
     push_count: int = 0
     emailed: bool = False
 
@@ -547,6 +568,12 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
     run = AccountRun(account=account)
     local = local_now(now)
     today = local.date()
+    run.today = today
+    # timezone.now(), not ``now``: it is compared with rows' updated_at.
+    run.evaluated_at = timezone.now()
+    # ``now``, not timezone.now(): the command passes timezone.now(), so the
+    # two agree in production, and tests can pin the stale window.
+    stale_before = now - STALE_PENDING
     day_start = datetime.datetime.combine(today, datetime.time(0), tzinfo=ALERT_TZ)
     pins = account_places(account.user)
     for day in (today, today + datetime.timedelta(days=1)):
@@ -565,6 +592,7 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
             current, fingerprint = state_of(bulletin.render_model)
             # A FAILED row reached nobody, so it is not what the person was
             # last told: compare against the row before it, and send again.
+            # So with a PENDING row gone stale: its worker never settled it.
             untold = [BulletinAlert.Outcome.FAILED]
             if place.trip_url and day > today:
                 # A trip's evening alert always sends, so a quiet day logged
@@ -573,7 +601,13 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
                 untold.append(BulletinAlert.Outcome.SKIPPED)
             last = (
                 BulletinAlert.objects.for_day(account.pk, region.pk, day)
-                .exclude(outcome__in=untold)
+                .exclude(
+                    Q(outcome__in=untold)
+                    | Q(
+                        outcome=BulletinAlert.Outcome.PENDING,
+                        updated_at__lt=stale_before,
+                    )
+                )
                 .first()
             )
             if last is not None and last.fingerprint == fingerprint:
@@ -605,15 +639,38 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
             )
     _one_day_per_place(run.rows)
     if run.sending:
-        places = _place_alerts(run.sending, run.available)
-        if len(places) == 1 and not places[0].multi_region:
-            row = run.sending[0]
-            places[0] = replace(
-                places[0],
-                new_snow_cm=forecast_new_snow(row.log_region, row.day, today),
-            )
-        run.message = alert_message(places, today)
+        run.message = _bundle_message(run.sending, run.available, today)
     return run
+
+
+def _bundle_message(
+    sending: list[PendingRow],
+    available: dict[tuple[str, datetime.date], int],
+    today: datetime.date,
+) -> AlertMessage:
+    """
+    Return the one message for a run's sending rows.
+
+    Used by :func:`evaluate_account`, and by :func:`deliver` to re-word a
+    bundle of which only some rows were claimed (SNOW-1362).
+
+    Args:
+        sending: The sending rows, at least one.
+        available: How many bulletins each (place, day) has.
+        today: The local send date.
+
+    Returns:
+        The message.
+
+    """
+    places = _place_alerts(sending, available)
+    if len(places) == 1 and not places[0].multi_region:
+        row = sending[0]
+        places[0] = replace(
+            places[0],
+            new_snow_cm=forecast_new_snow(row.log_region, row.day, today),
+        )
+    return alert_message(places, today)
 
 
 def _place_alerts(
@@ -673,17 +730,21 @@ def deliver(run: AccountRun) -> AccountRun:
     The rows and the queued task commit together, so a failed enqueue
     leaves no PENDING row behind to count as told.
 
-    The rows that send are written ``PENDING``; the worker settles them as
-    ``SENT`` or ``FAILED`` once it knows what reached the person. With no
-    possible channel (no active push, and email off or unverified) they are
-    written ``SKIPPED`` and nothing is queued.
+    The rows that send are claimed ``PENDING`` (:func:`_claim_row`); the
+    worker settles them as ``SENT`` or ``FAILED`` once it knows what reached
+    the person. A row another run holds fresh ``PENDING`` is lost to it,
+    so two overlapping runs never both send one alert (SNOW-1362). With no
+    possible channel (no active push, and email off or unverified) the rows
+    are written ``SKIPPED`` and nothing is queued.
 
     Args:
         run: An evaluated run.
 
     Returns:
         The run, with ``push_count`` (devices tried) and ``emailed`` (email
-        planned before any push result) filled in.
+        planned before any push result) filled in, and ``message`` the one
+        actually queued: re-worded when only some rows were claimed, None
+        when none were.
 
     """
     account = run.account
@@ -696,53 +757,205 @@ def deliver(run: AccountRun) -> AccountRun:
         run.emailed = can_email and (
             account.alert_email == Account.AlertEmail.ALWAYS or not subscriptions
         )
+    # One claim time for every row this run wins: the worker sends for, and
+    # settles, only rows still carrying it.
+    claimed_at = timezone.now()
     pending: list[int] = []
+    won: set[tuple[int, datetime.date, str]] = set()
+    lost = False
     with transaction.atomic():
         for row in _one_row_per_log_key(run.rows):
-            outcome = row.decision.outcome
+            fingerprint = row.fingerprint or row.state.fingerprint()
             sends = row.decision.sends and reachable
-            if row.decision.sends:
-                outcome = (
-                    BulletinAlert.Outcome.PENDING
-                    if reachable
-                    else BulletinAlert.Outcome.SKIPPED
+            defaults = {
+                "bulletin": row.bulletin,
+                "state": row.state.to_json(),
+                "kind": _KIND_TO_ROW[row.decision.kind],
+                "sent_push": False,
+                "sent_email": False,
+                "title": "",
+                "body": "",
+                "url": "",
+            }
+            if sends:
+                alert = _claim_row(
+                    account,
+                    row,
+                    fingerprint,
+                    defaults,
+                    claimed_at - STALE_PENDING,
+                    run.evaluated_at,
                 )
+                if alert is None:
+                    lost = True
+                    continue
+                pending.append(alert.pk)
+                won.add((row.log_region.pk, row.day, fingerprint))
+                continue
+            outcome = row.decision.outcome
+            if row.decision.sends:
+                outcome = BulletinAlert.Outcome.SKIPPED
             # update_or_create, not get_or_create: a state that recurs on
             # the same day rewrites its row, which bumps updated_at and so
             # makes it the latest again (BulletinAlertQuerySet.for_day).
-            alert, _ = BulletinAlert.objects.update_or_create(
+            BulletinAlert.objects.update_or_create(
                 account=account,
                 region=row.log_region,
                 target_date=row.day,
-                fingerprint=row.fingerprint or row.state.fingerprint(),
-                defaults={
-                    "bulletin": row.bulletin,
-                    "state": row.state.to_json(),
-                    "kind": _KIND_TO_ROW[row.decision.kind],
-                    "outcome": outcome,
-                    "sent_push": False,
-                    "sent_email": False,
-                    "title": message.title if sends and message else "",
-                    "body": message.body if sends and message else "",
-                    "url": message.url if sends and message else "",
-                },
+                fingerprint=fingerprint,
+                defaults={**defaults, "outcome": outcome},
             )
-            if sends:
-                pending.append(alert.pk)
-        # Inside the transaction: the DatabaseBackend writes its task row on
-        # this connection, so the PENDING rows and the work that settles them
-        # commit together. An enqueue that raises rolls the rows back, and
-        # the next run sees the day as untold and tries again.
-        if message is not None and pending:
-            _worker_deliver_alert.enqueue(
-                account.pk,
-                pending,
-                message.as_push(),
-                message.title,
-                message.body,
-                message.url,
-            )
+        if reachable and message is not None:
+            _queue_claimed(run, message, pending, won, lost, claimed_at)
     return run
+
+
+def _queue_claimed(
+    run: AccountRun,
+    message: AlertMessage,
+    pending: list[int],
+    won: set[tuple[int, datetime.date, str]],
+    lost: bool,
+    claimed_at: datetime.datetime,
+) -> None:
+    """
+    Queue the worker for the rows this run claimed, inside deliver's transaction.
+
+    Nothing claimed: another run holds every row and sends the message, so
+    this run queues nothing and reports no message. Some rows lost: a partly
+    lost bundle sends only the rows this run won; the others are another
+    run's to send, so the message is re-worded without them rather than
+    announce them twice.
+
+    Args:
+        run: The run being delivered, with a channel.
+        message: The run's message, as evaluated.
+        pending: The claimed rows' pks.
+        won: Their (region pk, day, fingerprint) keys.
+        lost: Whether any sending row was lost to another run.
+        claimed_at: The claim time stamped on every claimed row.
+
+    """
+    if not pending:
+        run.message = None
+        run.push_count = 0
+        run.emailed = False
+        return
+    if lost:
+        message = run.message = _winners_message(run, won, claimed_at)
+    # A queryset update, which auto_now does not touch: every claimed row
+    # carries exactly the claim time the worker checks.
+    BulletinAlert.objects.filter(pk__in=pending).update(
+        title=message.title,
+        body=message.body,
+        url=message.url,
+        updated_at=claimed_at,
+    )
+    # Inside the transaction: the DatabaseBackend writes its task row on
+    # this connection, so the PENDING rows and the work that settles them
+    # commit together. An enqueue that raises rolls the rows back, and the
+    # next run sees the day as untold and tries again.
+    _worker_deliver_alert.enqueue(
+        run.account.pk,
+        pending,
+        claimed_at.isoformat(),
+        message.as_push(),
+        message.title,
+        message.body,
+        message.url,
+    )
+
+
+def _winners_message(
+    run: AccountRun,
+    won: set[tuple[int, datetime.date, str]],
+    claimed_at: datetime.datetime,
+) -> AlertMessage:
+    """
+    Return the message re-worded for only the send-log keys this run won.
+
+    Args:
+        run: The run being delivered.
+        won: The (region pk, day, fingerprint) keys it claimed, at least one.
+        claimed_at: The claim time, whose local date stands in for a run
+            evaluated without one.
+
+    Returns:
+        The message naming only the winning places.
+
+    """
+    winners = [
+        r
+        for r in run.sending
+        if (r.log_region.pk, r.day, r.fingerprint or r.state.fingerprint()) in won
+    ]
+    today = run.today or local_now(claimed_at).date()
+    return _bundle_message(winners, run.available, today)
+
+
+def _claim_row(
+    account: Account,
+    row: PendingRow,
+    fingerprint: str,
+    defaults: dict[str, object],
+    stale_before: datetime.datetime,
+    evaluated_at: datetime.datetime | None,
+) -> BulletinAlert | None:
+    """
+    Claim one sending row of the send log for this run, or lose it.
+
+    Locks the row by its unique key (``bulletin_alert_unique_state``). A
+    row another run holds fresh ``PENDING`` is lost: that run sends it. So
+    is a row written since this run was evaluated, whatever its outcome:
+    an overlapping run claimed it and may already have sent it. Any other
+    existing row (FAILED, a stale PENDING, or a state that recurs on the
+    same day, all last written before this run looked) is rewritten
+    ``PENDING``, which bumps ``updated_at`` and
+    so makes it the latest again (BulletinAlertQuerySet.for_day). A missing
+    row is created in a savepoint, and a concurrent create winning the
+    unique key means this run lost it. Must run inside a transaction.
+
+    Args:
+        account: The account.
+        row: The sending row.
+        fingerprint: The send-log key's fingerprint.
+        defaults: The row's fields, bar ``outcome``.
+        stale_before: A PENDING row last written before this is stale.
+        evaluated_at: When the run read the send log; None skips the check.
+
+    Returns:
+        The claimed row, or None when another run holds it.
+
+    """
+    key = {
+        "account": account,
+        "region": row.log_region,
+        "target_date": row.day,
+        "fingerprint": fingerprint,
+    }
+    fields = {**defaults, "outcome": BulletinAlert.Outcome.PENDING}
+    existing = BulletinAlert.objects.select_for_update().filter(**key).first()
+    if existing is not None:
+        if (
+            existing.outcome == BulletinAlert.Outcome.PENDING
+            and existing.updated_at >= stale_before
+        ) or (evaluated_at is not None and existing.updated_at > evaluated_at):
+            return None
+        for name, value in fields.items():
+            setattr(existing, name, value)
+        existing.save()
+        return existing
+    try:
+        with transaction.atomic():
+            return BulletinAlert.objects.create(**key, **fields)
+    except IntegrityError:
+        logger.info(
+            "Bulletin alert row for account %s, region %s, %s claimed by another run",
+            account.pk,
+            row.log_region.pk,
+            row.day,
+        )
+        return None
 
 
 def _one_row_per_log_key(rows: list[PendingRow]) -> list[PendingRow]:
@@ -780,10 +993,51 @@ def _can_email(account: Account) -> bool:
     )
 
 
+def _claim_still_whole(
+    claimed: QuerySet[BulletinAlert], alert_ids: list[int], account_id: int
+) -> bool:
+    """
+    Return whether a delivery worker still holds every row of its bundle.
+
+    None held: another run settled or re-claimed them, so nothing is sent.
+    Some held: a newer run claimed the others and may already have told the
+    person about those places. The payload was rendered for the whole bundle
+    and cannot be re-worded here, so nothing is sent and the held rows
+    become ``FAILED``, which the next run re-evaluates and re-words
+    (SNOW-1362).
+
+    Args:
+        claimed: The rows still ``PENDING`` under this worker's claim.
+        alert_ids: Every row the bundle was queued with.
+        account_id: The account's pk, for the log.
+
+    Returns:
+        True when the worker should send.
+
+    """
+    held = claimed.count()
+    if held == len(set(alert_ids)):
+        return True
+    if held:
+        claimed.update(outcome=BulletinAlert.Outcome.FAILED, updated_at=timezone.now())
+        logger.info(
+            "Bulletin alert for account %s: part of the bundle claimed again; "
+            "not sent, the rest left to the next run",
+            account_id,
+        )
+    else:
+        logger.info(
+            "Bulletin alert for account %s: rows settled or claimed again; not sent",
+            account_id,
+        )
+    return False
+
+
 @task()
 def _worker_deliver_alert(
     account_id: int,
     alert_ids: list[int],
+    claimed_at: str,
     push: dict[str, str],
     title: str,
     body: str,
@@ -796,50 +1050,81 @@ def _worker_deliver_alert(
     follow what actually happened rather than what was queued: FALLBACK
     emails when no push was accepted. The rows become ``SENT`` when either
     channel reached the person and ``FAILED`` when neither did, which the
-    next run retries. Only ``PENDING`` rows are touched, so a replayed task
-    never undoes a later run's rows.
+    next run retries.
+
+    Only rows still ``PENDING`` under this claim (``updated_at`` equal to
+    ``claimed_at``) are sent for or touched, so a replayed task never undoes
+    a later run's rows, and a worker whose rows went stale and were claimed
+    again by a newer run sends nothing (SNOW-1362). If only some of them
+    were claimed again, it sends nothing either and marks the rest
+    ``FAILED``, so the next run re-words the message for them. A device or the mail
+    server raising counts as that channel not reaching the person; anything
+    else raising still settles the rows from what had already gone, then
+    re-raises.
 
     Args:
         account_id: The account's pk.
         alert_ids: The ``BulletinAlert`` rows this message carries.
+        claimed_at: The rows' claim time, ISO 8601, as :func:`deliver`
+            stamped it.
         push: The push payload (``AlertMessage.as_push``).
         title: The email subject.
         body: The email body.
         url: Where the alert lands.
 
     """
-    account = Account.objects.select_related("user").filter(pk=account_id).first()
-    if account is None:
-        logger.info("Bulletin alert for account %s: account gone", account_id)
+    claimed = BulletinAlert.objects.filter(
+        pk__in=alert_ids,
+        outcome=BulletinAlert.Outcome.PENDING,
+        updated_at=datetime.datetime.fromisoformat(claimed_at),
+    )
+    if not _claim_still_whole(claimed, alert_ids, account_id):
         return
     pushed = False
-    for sub in account.push_subscriptions.active():
-        pushed = dispatch_push(sub, push)["ok"] or pushed
     emailed = False
-    wants_email = account.alert_email == Account.AlertEmail.ALWAYS or (
-        account.alert_email == Account.AlertEmail.FALLBACK and not pushed
-    )
-    if wants_email and _can_email(account):
-        send_alert_email(account, title, body, url)
-        emailed = True
-    reached = pushed or emailed
-    if not reached:
-        logger.warning(
-            "Bulletin alert for account %s reached no channel; retrying next run",
-            account_id,
+    try:
+        account = Account.objects.select_related("user").filter(pk=account_id).first()
+        if account is None:
+            logger.info("Bulletin alert for account %s: account gone", account_id)
+            return
+        for sub in account.push_subscriptions.active():
+            try:
+                pushed = dispatch_push(sub, push)["ok"] or pushed
+            except Exception:
+                logger.exception(
+                    "Bulletin alert push to subscription %s raised", sub.pk
+                )
+        wants_email = account.alert_email == Account.AlertEmail.ALWAYS or (
+            account.alert_email == Account.AlertEmail.FALLBACK and not pushed
         )
-    # One updated_at for every row of the message: it is when it went, and
-    # what tells one delivery's rows from another's in recent_alerts.
-    BulletinAlert.objects.filter(
-        pk__in=alert_ids, outcome=BulletinAlert.Outcome.PENDING
-    ).update(
-        outcome=(
-            BulletinAlert.Outcome.SENT if reached else BulletinAlert.Outcome.FAILED
-        ),
-        sent_push=pushed,
-        sent_email=emailed,
-        updated_at=timezone.now(),
-    )
+        if wants_email and _can_email(account):
+            try:
+                emailed = send_alert_email(account, title, body, url)
+            except Exception:
+                logger.exception(
+                    "Bulletin alert email for account %s raised", account_id
+                )
+        if not (pushed or emailed):
+            logger.warning(
+                "Bulletin alert for account %s reached no channel; retrying next run",
+                account_id,
+            )
+    finally:
+        # Settled whatever happened, so a crash after a push went out does
+        # not leave the alert to be sent again once its row goes stale.
+        # One updated_at for every row of the message: it is when it went,
+        # and what tells one delivery's rows from another's in recent_alerts.
+        # If this update itself fails (database gone), the rows stay PENDING
+        # and the next run after STALE_PENDING claims them again.
+        reached = pushed or emailed
+        claimed.update(
+            outcome=(
+                BulletinAlert.Outcome.SENT if reached else BulletinAlert.Outcome.FAILED
+            ),
+            sent_push=pushed,
+            sent_email=emailed,
+            updated_at=timezone.now(),
+        )
 
 
 # ---------------------------------------------------------------------------

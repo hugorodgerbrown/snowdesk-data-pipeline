@@ -109,6 +109,13 @@ admin rather than in code. The scheduled sender is behind the
   nothing reached the person. A `FAILED` row is not counted as told, so the
   next run sends again. With no possible channel at all the rows are
   logged `SKIPPED`, so the state still advances.
+- **Retry and overlap** (SNOW-1362). A device or the mail server raising
+  counts as that channel failing, and a crashed worker still settles its
+  rows from what had gone. A `PENDING` row older than `STALE_PENDING`
+  (30 minutes) is no longer counted as told, so a lost worker's alert is
+  sent again; one a run holds fresh `PENDING` is not claimed by another,
+  so two overlapping runs send it once, and a partly claimed bundle sends
+  only the places this run won.
 
 ## Going public
 
