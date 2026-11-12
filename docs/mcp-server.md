@@ -2,7 +2,7 @@
 name: mcp-server
 description: MCP JSON-RPC at POST /api/mcp/ and staff /api/ops/mcp/ — mcp-auth auth, tools, MCP Apps view, search_docs / read_doc
 status: current
-last-reviewed: 2026-11-05
+last-reviewed: 2026-11-12
 ---
 
 # MCP server
@@ -826,7 +826,9 @@ attribute is the allow-list, pinned by
   after parsing so an abbreviation is caught too.
 - **One at a time.** A command with a `RUNNING` register row younger than
   six hours, from any caller, or a `run_command` task still queued for it,
-  is not started again.
+  is not started again. The check and the enqueue run under a 30-second
+  per-command `Lease`, so two requests arriving together cannot both pass
+  it; the second is refused as already queued (SNOW-1490).
 - **Recorded.** The run is a `CommandRun` row with `invoked_via=MCP`, the
   staff account as operator, the reason and the task id; a run it starts
   through `call_command` keeps `CALL_COMMAND`. The enqueue is a `WARNING`
