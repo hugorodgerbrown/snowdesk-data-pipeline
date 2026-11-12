@@ -2608,7 +2608,17 @@
       }
       if (currentRegionId !== regionId) return { started: false, reason: 'busy' };
       const state = btn.dataset.downloadState;
-      if (state !== 'idle' && state !== 'error' && state !== 'other-basemap') {
+      // 12 Nov 2026: 'incomplete' and 'partial' are taps too — the roundel
+      // repairs or refreshes them (`handleClick`) — so "Download here" on an
+      // area a failed run left behind finishes it rather than answering
+      // "couldn't be started here".
+      if (
+        state !== 'idle' &&
+        state !== 'error' &&
+        state !== 'other-basemap' &&
+        state !== 'incomplete' &&
+        state !== 'partial'
+      ) {
         // SNOW-863: the refused STATE travels back, because "it did not
         // start" and "here is why" are different facts and the caller
         // could only ever say the first. The state that actually reaches a

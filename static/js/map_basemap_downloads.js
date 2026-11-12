@@ -61,19 +61,67 @@
 // The shape is `pwaBasemapDownloadCore.tileSources`' — one array of URL
 // templates per source, in style order — and every consumer of it goes
 // through that module rather than indexing in here.
+//
+// The style must be PARSED, not idle: this reads `map.getStyle()` (which
+// MapLibre answers as soon as the style document is parsed) instead of
+// gating on `map.isStyleLoaded()`. That one is `Style.loaded()`, which is
+// also false while ANY source has a tile in flight, so a tap made while
+// the map was still drawing — or straight after a region was framed —
+// found no basemap and failed the run with "check your connection". The
+// weekly offline suite caught it on 9 Nov 2026 and production on 12 Nov.
+// A vector source still waiting on its TileJSON is the one thing that is
+// genuinely unsettled, and it answers null (not a short list, which would
+// save half a basemap).
+//
+// Only sources the service worker can FETCH are listed. SNOW-1460 splices
+// an `osmclip://` source into the winter style, drawn by a page-side
+// protocol handler; its templates are not URLs, and listing them sent
+// hundreds of unfetchable "tiles" to the worker and left the area
+// Incomplete. What that handler reads (OpenFreeMap's tiles) is saved with
+// the foreign map when the ground needs one (SNOW-1478).
 function activeBasemapTileSources(map) {
-  if (!map || !map.isStyleLoaded()) return null;
-  const style = map.getStyle();
+  const sources = _fetchableBasemapSources(map);
+  if (!sources) return null;
+  const tiles = sources.map((source) => source.urls);
+  return tiles.length ? tiles : null;
+}
+
+/**
+ * The live style's basemap vector sources that the service worker can
+ * fetch, each with its resolved tile templates and runtime source.
+ *
+ * @param {object|null} map The live MapLibre map.
+ * @returns {Array<{id: string, urls: string[], runtime: object}>|null} Null
+ *   while the style is unparsed or a source's TileJSON is still unread.
+ */
+function _fetchableBasemapSources(map) {
+  if (!map || typeof map.getStyle !== 'function') return null;
+  let style;
+  try {
+    style = map.getStyle();
+  } catch (_err) {
+    return null;
+  }
   if (!style || !style.sources) return null;
+  const core = self.pwaBasemapDownloadCore;
   const sources = [];
   for (const sourceId of Object.keys(style.sources)) {
-    if (style.sources[sourceId].type !== 'vector') continue;
+    const spec = style.sources[sourceId];
+    if (!spec || spec.type !== 'vector') continue;
     const runtime = map.getSource(sourceId);
-    if (!runtime || !Array.isArray(runtime.tiles)) continue;
-    const urls = runtime.tiles.filter((url) => typeof url === 'string' && url);
-    if (urls.length) sources.push(urls);
+    const tiles = runtime && Array.isArray(runtime.tiles) ? runtime.tiles : null;
+    if (!tiles) {
+      // Declared through a TileJSON not read yet: unsettled, not absent.
+      if (typeof spec.url === 'string' && spec.url) return null;
+      continue;
+    }
+    const urls = tiles.filter(
+      (url) =>
+        typeof url === 'string' && url && (!core || core.isFetchableTileTemplate(url)),
+    );
+    if (urls.length) sources.push({ id: sourceId, urls: urls, runtime: runtime });
   }
-  return sources.length ? sources : null;
+  return sources;
 }
 
 // SNOW-645: the settings.BASEMAP_STYLES key of the basemap currently
@@ -302,8 +350,9 @@ function activeBasemapGlyphPrefix(map) {
  *   sources all declare their tiles inline (nothing to fetch).
  */
 function activeBasemapSourceDocumentURLs(map) {
-  if (!map || !map.isStyleLoaded()) return [];
-  const style = map.getStyle && map.getStyle();
+  // Parsed, not idle — see `activeBasemapTileSources`.
+  if (!map || typeof map.getStyle !== 'function') return [];
+  const style = map.getStyle();
   if (!style || !style.sources) return [];
   const urls = [];
   for (const sourceId of Object.keys(style.sources)) {
@@ -2039,14 +2088,14 @@ async function _readBaseLayers() {
  *   "unbounded, or nothing to read yet".
  */
 function activeBasemapSourceBounds(map) {
-  if (!map || !map.isStyleLoaded()) return null;
-  const style = map.getStyle();
-  if (!style || !style.sources) return null;
+  // The same sources a download fetches, so a protocol source with no
+  // bounds of its own (SNOW-1460's `osmclip://`) cannot widen the union to
+  // the whole camera.
+  const sources = _fetchableBasemapSources(map);
+  if (!sources || !sources.length) return null;
   let union = null;
-  for (const sourceId of Object.keys(style.sources)) {
-    if (style.sources[sourceId].type !== 'vector') continue;
-    const runtime = map.getSource(sourceId);
-    const bounds = runtime && runtime.bounds;
+  for (const source of sources) {
+    const bounds = source.runtime.bounds;
     // One unbounded source makes the whole union unbounded.
     if (!Array.isArray(bounds) || bounds.length !== 4 || !bounds.every(Number.isFinite)) {
       return null;

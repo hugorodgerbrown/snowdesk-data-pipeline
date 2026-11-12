@@ -46,6 +46,9 @@ const HOSTS = [0, 1, 2, 3, 4].map((n) => `https://vectortiles${n}.geo.admin.ch`)
 const RELIEF = HOSTS.map((h) => `${h}/tiles/ch.swisstopo.relief.vt/v1.0.0/{z}/{x}/{y}.pbf`);
 const BASE = HOSTS.map((h) => `${h}/tiles/ch.swisstopo.base.vt/v1.0.0/{z}/{x}/{y}.pbf`);
 
+/** SNOW-1460's beyond-Switzerland source: a MapLibre protocol, not a URL. */
+const OSM_CLIP = 'osmclip://{z}/{x}/{y}';
+
 /** The style document's own origin — deliberately NOT a tile host. */
 const STYLE_URL = 'https://vectortiles.geo.admin.ch/styles/ch.swisstopo.winter/style.json';
 
@@ -164,6 +167,7 @@ function stubMapLibre() {
     getSource: (id) => {
       if (id === 'relief') return { tiles: [...RELIEF] };
       if (id === 'base') return { tiles: [...BASE] };
+      if (id === 'beyond-osm') return { tiles: [OSM_CLIP] };
       return null;
     },
     addSource: () => {},
@@ -184,6 +188,9 @@ function stubMapLibre() {
       sources: {
         relief: { type: 'vector', url: RELIEF_TILEJSON },
         base: { type: 'vector', url: BASE_TILEJSON },
+        // SNOW-1460: the map beyond the border, drawn through a page-side
+        // protocol the service worker cannot fetch. Never downloaded.
+        'beyond-osm': { type: 'vector', tiles: [OSM_CLIP] },
       },
       glyphs: 'https://vectortiles.geo.admin.ch/fonts/{fontstack}/{range}.pbf',
     }),
@@ -425,9 +432,18 @@ describe('the tile URLs a download fetches', () => {
       }),
     );
     await waitFor(() => btn.dataset.downloadState === 'idle');
-    btn.click();
-    await waitFor(() => btn.dataset.downloadState === 'done', 5000);
+    // A tile still in flight holds MapLibre's `isStyleLoaded()` false. The
+    // style is parsed, so the download must not care (12 Nov 2026: a tap
+    // straight after a fly-to failed with "check your connection").
+    mapStub.isStyleLoaded = () => false;
+    try {
+      btn.click();
+      await waitFor(() => btn.dataset.downloadState === 'done', 5000);
+    } finally {
+      mapStub.isStyleLoaded = () => true;
+    }
     expect(btn.dataset.downloadState).toBe('done');
+    expect(warmedURLs.some((url) => url.startsWith('osmclip:'))).toBe(false);
 
     // Both sources, and the rotated host for each tile — eight URLs for
     // four tiles. The old resolver fetched four, all from `vectortiles0`,

@@ -1,11 +1,11 @@
 ---
 name: offline-assurance
-description: Weekly offline-maps suite — tests/offline/, tox -e offline, RecordingProxy, SNOWDESK_OFFLINE_SEED, #nav-offline-mode watertightness
+description: Offline-maps suite (PR gate + weekly) — tests/offline/, tox -e offline, RecordingProxy, SNOWDESK_OFFLINE_SEED
 status: current
-last-reviewed: 2026-11-01
+last-reviewed: 2026-11-12
 ---
 
-# Offline-maps assurance (weekly)
+# Offline-maps assurance
 
 `tests/offline/` is a fourth test layer, on top of the three in
 [`client-side-tests.md`](client-side-tests.md). It exists for one question
@@ -14,7 +14,7 @@ that none of the other three can answer:
 > If a user downloads a region, switches the network off and opens the map
 > on a mountain, do they see a map?
 
-It runs weekly, off the merge path, with a fuzzed subject. Its per-PR complement is `tests/js/test_offline_warm_serves.js` (SNOW-1314): every url family a download warms must be served offline by the worker's real fetch listener — no tiles, no browser, in the default `js` env.
+It is a required check on every PR that touches the download path, and runs weekly on `main` with a fuzzed subject ([why](decisions/a-real-download-gates-download-prs.md)). `test_martigny_verbier_downloads.py` runs on a fixed subject with every map flag on. Its per-PR complement is `tests/js/test_offline_warm_serves.js` (SNOW-1314): every url family a download warms must be served offline by the worker's real fetch listener — no tiles, no browser, in the default `js` env.
 
 ```bash
 uv run tox -e offline                                  # this ISO week's draw
@@ -153,10 +153,9 @@ measured separation are in the test module's own comment. Drawn states
 sit at 28–57%, blank states at a constant 3.3%; the thresholds sit in the
 middle of that order-of-magnitude gap.
 
-## When the weekly run goes red
+## When a run goes red
 
-It fails loudly and gates nothing (see the header comment in
-`.github/workflows/offline-assurance.yml` for why). The job summary carries
+On a PR it blocks the merge; on the weekly cron it fails loudly on `main`. The job summary carries
 the seed; failures carry the console, the unhandled rejections and
 MapLibre's own errors, because "the map was blank" on its own is not
 actionable.

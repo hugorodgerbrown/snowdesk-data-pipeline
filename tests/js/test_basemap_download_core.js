@@ -3200,6 +3200,27 @@ describe('a basemap from its documents (SNOW-1478)', () => {
     expect(core.tileSourcesFromStyleDocuments(null, tileJsons)).toBeNull();
   });
 
+  it('leaves out a source drawn through a page-side protocol', () => {
+    const withClip = {
+      ...style,
+      sources: { ...style.sources, osm: { type: 'vector', tiles: ['osmclip://{z}/{x}/{y}'] } },
+    };
+    expect(core.tileSourcesFromStyleDocuments(withClip, tileJsons)).toEqual([
+      tileJsons.relief.tiles,
+      tileJsons.base.tiles,
+    ]);
+  });
+
+  it('calls only http(s) and page-relative templates fetchable', () => {
+    expect(core.isFetchableTileTemplate('https://vt0.example.invalid/{z}/{x}/{y}.pbf')).toBe(true);
+    expect(core.isFetchableTileTemplate('HTTP://vt0.example.invalid/{z}/{x}/{y}.pbf')).toBe(true);
+    expect(core.isFetchableTileTemplate('/tiles/{z}/{x}/{y}.pbf')).toBe(true);
+    expect(core.isFetchableTileTemplate('osmclip://{z}/{x}/{y}')).toBe(false);
+    expect(core.isFetchableTileTemplate('alpinerelief://{z}/{x}/{y}')).toBe(false);
+    expect(core.isFetchableTileTemplate('')).toBe(false);
+    expect(core.isFetchableTileTemplate(null)).toBe(false);
+  });
+
   it('lists the style document itself first, then sprites, TileJSON and glyphs', () => {
     const deps = core.renderDependencyUrlsFromStyle(STYLE_URL, style);
     expect(deps[0]).toBe(STYLE_URL);
