@@ -22,6 +22,10 @@ Also provides:
   row per invocation of a project command, dry run or ``--commit``,
   written by ``apps.core.command_register.RegisteredCommand`` and stamped
   with the build it ran on.
+* ``Lease`` — a short, self-expiring, token-checked claim on a named
+  resource (SNOW-1490), held in the database so every process sees it
+  whatever cache it has. ``LeaseManager.acquire()`` takes one;
+  ``Lease.release()`` gives it up.
 """
 
 from __future__ import annotations
@@ -922,3 +926,142 @@ class CommandRun(BaseModel):
         if self.finished_at is None:
             return None
         return self.finished_at - self.started_at
+
+
+# ---------------------------------------------------------------------------
+# Lease (SNOW-1490)
+# ---------------------------------------------------------------------------
+
+
+class LeaseQuerySet(models.QuerySet["Lease"]):
+    """Custom queryset for Lease."""
+
+    def live(self) -> LeaseQuerySet:
+        """Return the leases that have not yet expired."""
+        return self.filter(expires_at__gt=timezone.now())
+
+    def expired(self) -> LeaseQuerySet:
+        """Return the leases whose time is up, free for the next claimant."""
+        return self.filter(expires_at__lte=timezone.now())
+
+
+class LeaseManager(models.Manager["Lease"]):
+    """Manager for Lease with the ``acquire()`` primitive."""
+
+    def get_queryset(self) -> LeaseQuerySet:
+        """Return the custom queryset."""
+        return LeaseQuerySet(self.model, using=self._db)
+
+    def live(self) -> LeaseQuerySet:
+        """Shortcut for ``get_queryset().live()``."""
+        return self.get_queryset().live()
+
+    def expired(self) -> LeaseQuerySet:
+        """Shortcut for ``get_queryset().expired()``."""
+        return self.get_queryset().expired()
+
+    def acquire(self, key: str, ttl: timedelta) -> Lease | None:
+        """Take the lease on ``key`` for ``ttl``, or return None if it is held.
+
+        Follows ``IdempotencyRecordManager.reserve()``: each case is one
+        atomic statement, so there is no read-then-write gap.
+
+        * **Free key** — an ``INSERT`` succeeds and the caller holds it.
+        * **Expired lease** — a conditional ``UPDATE ... WHERE expires_at
+          <= now`` takes the row over with a new token. Of several
+          claimants that all saw it expired, only the first matches; the
+          rest re-evaluate the predicate against the renewed row and match
+          nothing.
+        * **Live lease** — somebody else holds it, and None is returned.
+
+        Args:
+            key: What the lease guards, e.g. ``"remote-command:backfill"``.
+            ttl: How long it is held before another claimant may take it
+                over, so a holder that crashed frees it on its own.
+
+        Returns:
+            The lease, carrying the token that ``release()`` checks, or
+            None when another holder has it.
+
+        """
+        now = timezone.now()
+        token = uuid.uuid4()
+        # A savepoint isolates the INSERT so a unique-key collision does
+        # not poison the caller's transaction.
+        try:
+            with transaction.atomic(using=self._db):
+                return self.create(key=key, token=token, expires_at=now + ttl)
+        except IntegrityError:
+            pass
+
+        taken = self.filter(key=key, expires_at__lte=now).update(
+            token=token, expires_at=now + ttl, updated_at=now
+        )
+        if taken != 1:
+            return None
+        lease = self.filter(key=key).first()
+        if lease is None:
+            # Released between the takeover and this read: nothing to hold.
+            return None
+        # The token this call wrote, not whatever the row holds by now: if
+        # another claimant has taken it over since, release() must miss.
+        lease.token = token
+        return lease
+
+
+class Lease(BaseModel):
+    """A short, self-expiring claim on a named resource (SNOW-1490).
+
+    One row per key, held by whoever inserted it or took it over after it
+    expired. Each claim writes a fresh ``token``, and ``release()`` deletes
+    the row only while it still carries that token, so a holder that
+    overran its ``expires_at`` cannot free a lease somebody else now holds.
+
+    Unlike a ``cache.add`` lock it needs no shared cache: production's web
+    and worker processes see the same database whatever cache each has.
+    Used by ``apps.core.remote_commands.enqueue_command`` (one run_command
+    at a time per command) and ``apps.core.command_tasks.wait_for_slot``
+    (the per-service slot lock).
+    """
+
+    key = models.CharField(
+        max_length=200,
+        unique=True,
+        help_text="What the lease guards, e.g. remote-command:backfill.",
+    )
+    token = models.UUIDField(
+        default=uuid.uuid4,
+        help_text=(
+            "Written afresh by every claim; release() deletes the row only "
+            "while it still carries the holder's token."
+        ),
+    )
+    expires_at = models.DateTimeField(
+        db_index=True,
+        help_text="When another claimant may take the lease over.",
+    )
+
+    objects = LeaseManager()
+
+    class Meta(BaseModel.Meta):
+        """Model metadata."""
+
+        ordering = ["-created_at"]
+
+    def to_string(self) -> str:
+        """Return the key and when the lease expires."""
+        return f"{self.key} until {self.expires_at:%Y-%m-%d %H:%M:%S}"
+
+    def __str__(self) -> str:
+        """Return a human-readable representation."""
+        return self.to_string()
+
+    def release(self) -> bool:
+        """Give the lease up, unless another claimant has taken it over.
+
+        Returns:
+            Whether a row was deleted.
+
+        """
+        deleted, _ = Lease.objects.filter(pk=self.pk, token=self.token).delete()
+        return bool(deleted)
