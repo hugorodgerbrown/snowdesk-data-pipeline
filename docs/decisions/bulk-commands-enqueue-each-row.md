@@ -39,9 +39,10 @@ the rules in one place, and a guard test holds rule 5.
   the database cache where `incr` is not (SNOW-1477). The next start is
   the last one plus the larger of the two callers' paces, because
   services are shared at different paces (weather and elevation both call
-  Open-Meteo). The only window left is a holder stalling for seconds
-  between two cache calls; the next caller then stops waiting for the
-  lock, which expires on its own. `ImmediateBackend` refuses `run_after`, so there
+  Open-Meteo). A crashed holder's lock expires after ten seconds and
+  the callers behind it wait that out; none reserves without the lock.
+  The only window left is a live holder stalling longer than that
+  between two cache calls. `ImmediateBackend` refuses `run_after`, so there
   the helper sleeps between enqueues.
 - **Dedupe on waiting tasks.** `run_command` refuses a second run of a
   queued *command*. It cannot see the row tasks a finished command left

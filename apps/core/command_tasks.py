@@ -80,7 +80,6 @@ _SLOT_KEY = "command-tasks:next-slot-v2:{}"
 # crashed holder frees it.
 _SLOT_LOCK_KEY = "command-tasks:slot-lock:{}"
 _SLOT_LOCK_TIMEOUT_S = 10
-_SLOT_LOCK_WAIT_S = 5.0
 _SLOT_LOCK_POLL_S = 0.02
 
 
@@ -161,9 +160,10 @@ def wait_for_slot(service: str, pace: float) -> float:
     So however many workers run, two calls never start closer than ``pace``
     (SNOW-1477).
 
-    A holder that stalls past ``_SLOT_LOCK_WAIT_S`` between two cache calls
-    is the one case left: the next caller stops waiting and reserves
-    without the lock, and the lock key expires on its own.
+    A holder that crashes leaves its lock to expire after
+    ``_SLOT_LOCK_TIMEOUT_S``; the callers behind it wait that out rather
+    than reserve without it. The one case left is a live holder stalling
+    longer than that between two cache calls.
 
     Args:
         service: A short name for the outside service.
@@ -178,7 +178,7 @@ def wait_for_slot(service: str, pace: float) -> float:
     key = _SLOT_KEY.format(service)
     lock = _SLOT_LOCK_KEY.format(service)
     step = int(pace * 1000)
-    held = _take_slot_lock(lock)
+    _take_slot_lock(lock)
     try:
         now = int(time.time() * 1000)
         last = cache.get(key)
@@ -190,34 +190,26 @@ def wait_for_slot(service: str, pace: float) -> float:
             slot = max(now, last_start + max(step, last_step))
         cache.set(key, (slot, step), timeout=None)
     finally:
-        if held:
-            cache.delete(lock)
+        cache.delete(lock)
     wait = (slot - now) / 1000
     if wait > 0:
         time.sleep(wait)
     return wait
 
 
-def _take_slot_lock(lock: str) -> bool:
+def _take_slot_lock(lock: str) -> None:
     """Take the slot lock for a service, polling while another caller has it.
+
+    A lock left by a holder that crashed is not broken: it expires after
+    ``_SLOT_LOCK_TIMEOUT_S`` and the next ``add`` succeeds, so a crash costs
+    the callers behind it that wait, never a shared slot.
 
     Args:
         lock: The lock's cache key.
 
-    Returns:
-        Whether the lock was taken; False when the wait ran out, in which
-        case the caller reserves without it.
-
     """
-    deadline = time.time() + _SLOT_LOCK_WAIT_S
     while not cache.add(lock, 1, timeout=_SLOT_LOCK_TIMEOUT_S):
-        if time.time() >= deadline:
-            logger.warning(
-                "command tasks: %s held too long; reserving without it", lock
-            )
-            return False
         time.sleep(_SLOT_LOCK_POLL_S)
-    return True
 
 
 @dataclass(frozen=True)

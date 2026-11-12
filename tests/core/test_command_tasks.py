@@ -23,6 +23,7 @@ Covers:
 
 from __future__ import annotations
 
+import time
 from datetime import timedelta
 from io import StringIO
 from typing import Any
@@ -40,7 +41,6 @@ from apps.core.command_tasks import (
     _OUTSIDE_TASKS,
     _SLOT_KEY,
     _SLOT_LOCK_KEY,
-    _SLOT_LOCK_WAIT_S,
     BULK_TASK_PRIORITY,
     back_off,
     backing_off,
@@ -396,17 +396,32 @@ def test_callers_at_different_paces_keep_the_larger_gap() -> None:
         assert wait_for_slot("test-service", 2.0) == 2.0
 
 
-def test_a_stale_lock_is_waited_out_not_forever() -> None:
-    """A lock nobody releases delays the caller by the wait, then it proceeds."""
+def test_a_stale_lock_is_waited_out_never_bypassed() -> None:
+    """A crashed holder's lock is waited out until it expires, then taken."""
     clock = _Clock()
-    cache.add(_LOCK, 1)
-    with _with_clock(clock):
-        start = clock.now
+    cache.add(_LOCK, 1, timeout=0.2)  # left by a holder that crashed
+    attempts: list[bool] = []
+    real_add = cache.add
+
+    def counting_add(*args: Any, **kwargs: Any) -> bool:
+        """Record each try at the lock."""
+        taken = real_add(*args, **kwargs)
+        attempts.append(taken)
+        return taken
+
+    def poll(seconds: float) -> None:
+        """Let real time pass so the stale lock can expire."""
+        time.sleep(0.05)
+        clock.now += seconds
+
+    clock.sleep = poll  # type: ignore[method-assign]
+    with _with_clock(clock), patch.object(cache, "add", counting_add):
         assert wait_for_slot("test-service", 2.0) == 0.0
-    assert clock.now - start >= _SLOT_LOCK_WAIT_S
-    # It did not take a lock it never held, so it did not delete it either.
-    assert cache.get(_LOCK) == 1
-    assert cache.get(_SLOT_KEY.format("test-service")) is not None
+    # It kept trying while the lock was held and took it only once expired.
+    assert attempts[-1] is True
+    assert not any(attempts[:-1])
+    assert len(attempts) > 1
+    assert cache.get(_LOCK) is None
 
 
 def test_no_lock_is_left_behind() -> None:
