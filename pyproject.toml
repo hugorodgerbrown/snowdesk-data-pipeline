@@ -143,6 +143,23 @@ dev = [
 [tool.uv]
 package = false
 default-groups = ["dev"]
+# Security overrides for packages semgrep pins below their fixes. semgrep
+# is the only thing that pulls either in (`sast` group, never runtime), and
+# `uv lock --upgrade-package semgrep` cannot move them, so these replace
+# semgrep's own requirement. `tox -e sast` is the check that semgrep still
+# runs on the newer versions.
+#
+# REMOVAL CONDITION for each line: a semgrep release whose own requirement
+# allows the fixed version. Check with
+# `uv pip install --dry-run "semgrep==<latest>"` against `uv pip show`, or
+# delete the line, run `uv lock --upgrade-package semgrep` and
+# `uv tree --invert --package <pkg>`; if it lands on the fixed version, the
+# override is no longer needed.
+override-dependencies = [
+    # CVE-2026-59951, CVE-2026-116684, CVE-2026-116685, CVE-2026-116686:
+    # fixed in mcp 1.30.0. semgrep 1.181.0 to 1.185.0 pin `mcp==1.29.0`.
+    "mcp>=1.30.0,<2",
+]
 
 [tool.uv.sources]
 mcp-auth = { git = "https://github.com/hugorodgerbrown/mcp-auth", tag = "v0.1.8" }
