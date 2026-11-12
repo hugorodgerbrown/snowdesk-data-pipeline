@@ -15,16 +15,15 @@ Covers:
   - ``wait_for_slot`` spaces calls ``pace`` apart even when several tasks
     are due at once, and banks no burst across an idle spell.
   - ``wait_for_slot`` waits for another caller's lock, keeps the larger
-    gap when callers share a service at different paces, reserves without
-    a stale lock once its wait runs out, and leaves no lock behind
-    (SNOW-1477).
+    gap when callers share a service at different paces, takes a stale
+    lock over only once it has expired, and leaves no lock behind
+    (SNOW-1477). The lock is a database ``Lease`` (SNOW-1490).
   - ``task_queue_health`` is in tests/core/test_task_queue.py.
 """
 
 from __future__ import annotations
 
-import time
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from io import StringIO
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -49,8 +48,9 @@ from apps.core.command_tasks import (
     enqueue_each,
     wait_for_slot,
 )
+from apps.core.models import Lease, LeaseManager
 from apps.regions.models import MicroRegion
-from tests.factories import MicroRegionFactory
+from tests.factories import LeaseFactory, MicroRegionFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -87,10 +87,10 @@ def _reset() -> Any:
     """Each test starts with nothing seen and the breaker closed."""
     SEEN.clear()
     clear_back_off("test-service")
-    cache.delete_many([_SLOT_KEY.format("test-service"), _LOCK])
+    cache.delete(_SLOT_KEY.format("test-service"))
     yield
     clear_back_off("test-service")
-    cache.delete_many([_SLOT_KEY.format("test-service"), _LOCK])
+    cache.delete(_SLOT_KEY.format("test-service"))
 
 
 def _command() -> RegisteredCommand:
@@ -356,18 +356,18 @@ def test_no_pace_never_waits() -> None:
 
 
 def test_a_held_lock_is_waited_for_and_its_slot_respected() -> None:
-    """Worker B holds the lock while it reserves; A waits, then starts after B."""
+    """Worker B holds the lease while it reserves; A waits, then starts after B."""
     clock = _Clock()
-    cache.add(_LOCK, 1)
+    held = LeaseFactory.create(key=_LOCK)
     polls: list[float] = []
     clock_sleep = clock.sleep
 
     def b_finishes(seconds: float) -> None:
-        """On A's first poll, B writes its slot (now) and lets the lock go."""
+        """On A's first poll, B writes its slot (now) and lets the lease go."""
         polls.append(seconds)
         if len(polls) == 1:
             cache.set(_SLOT_KEY.format("test-service"), (int(clock.now * 1000), 2000))
-            cache.delete(_LOCK)
+            held.release()
         clock_sleep(seconds)
 
     clock.sleep = b_finishes  # type: ignore[method-assign]
@@ -397,40 +397,49 @@ def test_callers_at_different_paces_keep_the_larger_gap() -> None:
 
 
 def test_a_stale_lock_is_waited_out_never_bypassed() -> None:
-    """A crashed holder's lock is waited out until it expires, then taken."""
+    """A crashed holder's lease is waited out until it expires, then taken over."""
     clock = _Clock()
-    cache.add(_LOCK, 1, timeout=0.2)  # left by a holder that crashed
+    wall = [datetime(2026, 11, 12, 9, 0, tzinfo=UTC)]
+    # Left by a holder that crashed: it expires 0.2 s from now.
+    stale = LeaseFactory.create(key=_LOCK, expires_at=wall[0] + timedelta(seconds=0.2))
     attempts: list[bool] = []
-    real_add = cache.add
+    real_acquire = LeaseManager.acquire
 
-    def counting_add(*args: Any, **kwargs: Any) -> bool:
-        """Record each try at the lock."""
-        taken = real_add(*args, **kwargs)
-        attempts.append(taken)
-        return taken
+    def counting_acquire(self: LeaseManager, *args: Any, **kwargs: Any) -> Any:
+        """Record each try at the lease."""
+        lease = real_acquire(self, *args, **kwargs)
+        attempts.append(lease is not None)
+        return lease
 
     def poll(seconds: float) -> None:
-        """Let real time pass so the stale lock can expire."""
-        time.sleep(0.05)
+        """Move the database's clock on, so the stale lease can expire."""
+        wall[0] += timedelta(seconds=0.05)
         clock.now += seconds
 
     clock.sleep = poll  # type: ignore[method-assign]
-    with _with_clock(clock), patch.object(cache, "add", counting_add):
+    with (
+        _with_clock(clock),
+        patch("apps.core.models.timezone.now", side_effect=lambda: wall[0]),
+        patch.object(LeaseManager, "acquire", counting_acquire),
+    ):
         assert wait_for_slot("test-service", 2.0) == 0.0
-    # It kept trying while the lock was held and took it only once expired.
+    # It kept trying while the lease was live and took it only once expired.
     assert attempts[-1] is True
     assert not any(attempts[:-1])
-    assert len(attempts) > 1
-    assert cache.get(_LOCK) is None
+    assert len(attempts) == 5  # live at +0, +0.05, +0.1, +0.15; expired at +0.2
+    # The holder that crashed cannot free what was taken over from it, and
+    # the taker released its own: nothing is left.
+    assert stale.release() is False
+    assert not Lease.objects.filter(key=_LOCK).exists()
 
 
 def test_no_lock_is_left_behind() -> None:
-    """After many calls only the slot key remains; the lock is gone."""
+    """After many calls only the slot key remains; the lease is gone."""
     clock = _Clock()
     with _with_clock(clock):
         for _ in range(5):
             wait_for_slot("test-service", 1.0)
-    assert cache.get(_LOCK) is None
+    assert not Lease.objects.filter(key=_LOCK).exists()
     assert cache.get(_SLOT_KEY.format("test-service")) is not None
 
 
