@@ -187,6 +187,7 @@ Read these when working in the relevant area:
 | Map reviews (the map subsystem explained, plus its findings and their tickets) | [`docs/map-reviews/README.md`](map-reviews/README.md) |
 | Async operations (background threads, failure modes) | [`docs/async-operations.md`](async-operations.md) |
 | Bulletin alerts (send_bulletin_alerts, BulletinAlert send log, BulletinState / summarise_change, alert_wording, notify_when / alert_email, Favourite.alerts, a saved trip's day (trip_places, places_on), /alerts/<day>/, the since strip, the bulletin_alerts flag and schedule switch, replay_bulletin_alerts) | [`docs/alerts.md`](alerts.md) |
+| Why the hourly alert run gates itself on what changed since its last evaluating run (last_evaluated_at, accounts_to_evaluate, GATE_OVERLAP, the held and gated tallies, --full; not fetch-triggers-send, to keep the ingest boundary; Bulletin.updated_at survives a deleted RegionDayRating; alerts_enabled_at, not Account.updated_at) | [`docs/decisions/the-alert-run-is-gated-on-change.md`](decisions/the-alert-run-is-gated-on-change.md) |
 | Web Push (VAPID keypair, Render wiring, smoke test) | [`docs/push-notifications.md`](push-notifications.md) |
 | Telemetry pipeline (/api/telemetry receiver, event allowlist, pwa.* signals) | [`docs/telemetry-pipeline.md`](telemetry-pipeline.md) |
 | MCP server (POST /api/mcp/ JSON-RPC tools, the 366-day and per-region cost caps, fuzzy region search; the staff ops catalogue ops_tools — CommandRun register, build_info, ingest and estate health) | [`docs/mcp-server.md`](mcp-server.md) |

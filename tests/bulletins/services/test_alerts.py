@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from django.core import mail
+from freezegun import freeze_time
 
 from apps.accounts.models import Account
 from apps.bulletins.models import BulletinAlert, RegionDayRating
@@ -22,12 +23,14 @@ from apps.bulletins.services import alerts
 from apps.bulletins.services.alerts import (
     ALERT_TZ,
     account_places,
+    accounts_to_evaluate,
     decide,
     deliver,
     evaluate_account,
     forecast_new_snow,
     had_bulletin_in_season,
     in_night_hold,
+    last_evaluated_at,
     places_on,
     recent_alerts,
     since_previous_day,
@@ -38,15 +41,19 @@ from apps.bulletins.services.bulletin_change import (
     ProblemState,
     bulletin_state,
 )
+from apps.core.models import CommandRun
 from apps.ingest.public import build_derived
+from apps.trips.models import Trip
 from tests.factories import (
     AccountFactory,
     BulletinAlertFactory,
     BulletinFactory,
+    CommandRunFactory,
     FavouriteFactory,
     LocationFactory,
     MicroRegionFactory,
     PushSubscriptionFactory,
+    RegionBulletinFactory,
     RegionDayRatingFactory,
     ResortFactory,
     TripFactory,
@@ -1321,3 +1328,369 @@ class TestSeasonGap:
         run = evaluate_account(account, NOW)
         assert run.message is not None
         assert run.message.body == "Bulletins are back. Low."
+
+
+# ---------------------------------------------------------------------------
+# The gate (SNOW-1491)
+# ---------------------------------------------------------------------------
+
+# The previous evaluating run started here; the gate looks back from it.
+SINCE = datetime.datetime(2026, 1, 16, 17, 10, tzinfo=ALERT_TZ)
+# Well before SINCE less GATE_OVERLAP: what the previous run already saw.
+BEFORE = SINCE - datetime.timedelta(hours=1)
+# After SINCE: what changed since.
+AFTER = SINCE + datetime.timedelta(minutes=10)
+
+
+def _alerting(**kwargs: Any) -> Account:
+    """Return an account with alerts on since well before the run."""
+    return AccountFactory.create(
+        notify_when=Account.NotifyWhen.NEW_BULLETIN,
+        alerts_enabled_at=BEFORE - datetime.timedelta(days=7),
+        **kwargs,
+    )
+
+
+class World:
+    """Accounts following region R by every kind of place, and one elsewhere."""
+
+    def __init__(self) -> None:
+        """Build the rows, all written at BEFORE."""
+        self.region = MicroRegionFactory.create(region_id="CH-4115", name="Verbier")
+        self.other = MicroRegionFactory.create(region_id="CH-4116", name="Arolla")
+        self.pinned = _alerting()
+        self.pin = FavouriteFactory.create(
+            user=self.pinned.user, region=self.region, region_pin=True
+        )
+        self.resort_saver = _alerting()
+        FavouriteFactory.create(
+            user=self.resort_saver.user,
+            resort=ResortFactory.create(region=self.region),
+        )
+        self.one_trip = _alerting()
+        TripFactory.create(
+            created_by=self.one_trip.user,
+            date=TOMORROW,
+            crossed_regions=[self.region.region_id],
+        )
+        self.multi_trip = _alerting()
+        self.joiner = _alerting()
+        self.crossing = TripFactory.create(
+            created_by=self.multi_trip.user,
+            date=TOMORROW,
+            crossed_regions=[self.other.region_id, self.region.region_id],
+        )
+        TripParticipantFactory.create(trip=self.crossing, user=self.joiner.user)
+        self.elsewhere = _alerting()
+        FavouriteFactory.create(
+            user=self.elsewhere.user, region=self.other, region_pin=True
+        )
+        self.bulletin = BulletinFactory.create(render_model=render())
+        RegionBulletinFactory.create(bulletin=self.bulletin, region=self.region)
+        RegionDayRatingFactory.create(
+            region=self.region, date=TOMORROW, source_bulletin=self.bulletin
+        )
+
+    @property
+    def followers(self) -> set[int]:
+        """Return every account following R."""
+        return {
+            a.pk
+            for a in (
+                self.pinned,
+                self.resort_saver,
+                self.one_trip,
+                self.multi_trip,
+                self.joiner,
+            )
+        }
+
+
+@pytest.fixture()
+def world(db: Any) -> World:
+    """Return the gate's scenario, written at BEFORE."""
+    with freeze_time(BEFORE):
+        return World()
+
+
+def gate(now: datetime.datetime = NOW) -> set[int]:
+    """Return ``accounts_to_evaluate`` from SINCE."""
+    return accounts_to_evaluate(SINCE, now)
+
+
+class TestAccountsToEvaluate:
+    """Who the gate lets through."""
+
+    def test_nothing_changed(self, world: World) -> None:
+        """With nothing written since the run, nobody is evaluated."""
+        assert gate() == set()
+
+    def test_changed_bulletin_selects_every_place_type(self, world: World) -> None:
+        """A bulletin in R reaches its pin, resort and both trips' people only."""
+        with freeze_time(AFTER):
+            bulletin = BulletinFactory.create(render_model=render("high"))
+            RegionBulletinFactory.create(bulletin=bulletin, region=world.region)
+        assert gate() == world.followers
+
+    def test_updated_bulletin_selects(self, world: World) -> None:
+        """An existing bulletin saved again is a change in its regions."""
+        with freeze_time(AFTER):
+            world.bulletin.save()
+        assert gate() == world.followers
+
+    def test_deleted_rating_still_selects(self, world: World) -> None:
+        """A failed recompute deletes the rating; the bulletin still counts."""
+        with freeze_time(AFTER):
+            world.bulletin.save()
+            RegionDayRating.objects.filter(region=world.region).delete()
+        assert gate() == world.followers
+
+    def test_changed_rating_selects(self, world: World) -> None:
+        """A rating rewritten for tomorrow is a change in its region."""
+        with freeze_time(AFTER):
+            RegionDayRating.objects.get(region=world.region).save()
+        assert gate() == world.followers
+
+    def test_rating_on_another_day_does_not_select(self, world: World) -> None:
+        """A rating written for a day after tomorrow is not looked at."""
+        with freeze_time(AFTER):
+            RegionDayRatingFactory.create(
+                region=world.region, date=TOMORROW + datetime.timedelta(days=1)
+            )
+        assert gate() == set()
+
+    def test_a_day_the_last_run_did_not_cover(self, db: Any) -> None:
+        """The morning after, tomorrow's ratings count, however old."""
+        since = datetime.datetime(2026, 1, 15, 21, 10, tzinfo=ALERT_TZ)
+        morning = datetime.datetime(2026, 1, 16, 6, 30, tzinfo=ALERT_TZ)
+        with freeze_time(since - datetime.timedelta(hours=1)):
+            world = World()
+        # Seen as tomorrow on the 15th: no change.
+        RegionDayRating.objects.filter(region=world.region).update(date=TODAY)
+        assert accounts_to_evaluate(since, morning) == set()
+        # Tomorrow (the 17th) was not a day the run on the 15th looked at.
+        RegionDayRating.objects.filter(region=world.region).update(date=TOMORROW)
+        assert accounts_to_evaluate(since, morning) == world.followers
+
+    def test_trip_on_another_day_is_not_selected(self, world: World) -> None:
+        """A trip dated next week does not reach its people."""
+        Trip.objects.filter(pk=world.crossing.pk).update(
+            date=TODAY + datetime.timedelta(days=7)
+        )
+        with freeze_time(AFTER):
+            world.bulletin.save()
+        assert gate() == world.followers - {world.multi_trip.pk, world.joiner.pk}
+
+    def test_alerts_off_is_never_selected(self, world: World) -> None:
+        """An account with alerts off is not returned whatever changed."""
+        Account.objects.filter(pk=world.pinned.pk).update(
+            notify_when=Account.NotifyWhen.OFF
+        )
+        with freeze_time(AFTER):
+            world.bulletin.save()
+        assert world.pinned.pk not in gate()
+
+    @pytest.mark.parametrize(
+        "outcome", [BulletinAlert.Outcome.FAILED, BulletinAlert.Outcome.PENDING]
+    )
+    def test_undelivered_row_selects(self, world: World, outcome: str) -> None:
+        """A FAILED row, or a PENDING one gone stale, is retried."""
+        with freeze_time(BEFORE):
+            BulletinAlertFactory.create(
+                account=world.elsewhere,
+                region=world.other,
+                target_date=TOMORROW,
+                outcome=outcome,
+            )
+        assert gate() == {world.elsewhere.pk}
+
+    def test_fresh_pending_row_does_not_select(self, world: World) -> None:
+        """A PENDING row its worker may still settle is not retried."""
+        with freeze_time(NOW - datetime.timedelta(minutes=5)):
+            BulletinAlertFactory.create(
+                account=world.elsewhere,
+                region=world.other,
+                target_date=TOMORROW,
+                outcome=BulletinAlert.Outcome.PENDING,
+            )
+        assert gate() == set()
+
+    def test_failed_row_on_another_day_does_not_select(self, world: World) -> None:
+        """A FAILED row for yesterday is not today's or tomorrow's."""
+        with freeze_time(BEFORE):
+            BulletinAlertFactory.create(
+                account=world.elsewhere,
+                region=world.other,
+                target_date=TODAY - datetime.timedelta(days=1),
+                outcome=BulletinAlert.Outcome.FAILED,
+            )
+        assert gate() == set()
+
+    def test_superseded_failure_does_not_select(self, world: World) -> None:
+        """A failure a later send has superseded leaves nothing to retry."""
+        with freeze_time(BEFORE - datetime.timedelta(minutes=30)):
+            BulletinAlertFactory.create(
+                account=world.elsewhere,
+                region=world.other,
+                target_date=TOMORROW,
+                fingerprint="a" * 16,
+                outcome=BulletinAlert.Outcome.FAILED,
+            )
+        with freeze_time(BEFORE):
+            BulletinAlertFactory.create(
+                account=world.elsewhere,
+                region=world.other,
+                target_date=TOMORROW,
+                fingerprint="b" * 16,
+                outcome=BulletinAlert.Outcome.SENT,
+            )
+        assert gate() == set()
+
+    def test_failure_after_a_send_still_selects(self, world: World) -> None:
+        """A failure newer than the last send is still undelivered."""
+        with freeze_time(BEFORE - datetime.timedelta(minutes=30)):
+            BulletinAlertFactory.create(
+                account=world.elsewhere,
+                region=world.other,
+                target_date=TOMORROW,
+                fingerprint="a" * 16,
+                outcome=BulletinAlert.Outcome.SENT,
+            )
+        with freeze_time(BEFORE):
+            BulletinAlertFactory.create(
+                account=world.elsewhere,
+                region=world.other,
+                target_date=TOMORROW,
+                fingerprint="b" * 16,
+                outcome=BulletinAlert.Outcome.FAILED,
+            )
+        assert gate() == {world.elsewhere.pk}
+
+    @pytest.mark.parametrize("extra", [0, 6])
+    def test_trip_queries_do_not_grow_with_trips(
+        self, world: World, extra: int, django_assert_max_num_queries: Any
+    ) -> None:
+        """Stored trips are matched without a query each (Codex, PR #1567)."""
+        with freeze_time(BEFORE):
+            for _ in range(extra):
+                TripFactory.create(
+                    date=TOMORROW, crossed_regions=[world.other.region_id]
+                )
+        with freeze_time(AFTER):
+            world.bulletin.save()
+        with django_assert_max_num_queries(6):
+            assert gate() == world.followers
+
+    def test_new_favourite_selects_its_account(self, world: World) -> None:
+        """A place saved since is evaluated for its owner only."""
+        with freeze_time(AFTER):
+            FavouriteFactory.create(
+                user=world.elsewhere.user,
+                resort=ResortFactory.create(region=world.region),
+            )
+        assert gate() == {world.elsewhere.pk}
+
+    def test_favourite_alerts_toggle_selects(self, world: World) -> None:
+        """Switching a place's alerts is a change for its owner."""
+        with freeze_time(AFTER):
+            world.pin.alerts = not world.pin.alerts
+            world.pin.save()
+        assert gate() == {world.pinned.pk}
+
+    def test_saving_a_shared_trip_selects_the_saver(self, world: World) -> None:
+        """Joining a trip reaches the joiner, not the people already on it."""
+        newcomer = _alerting()
+        with freeze_time(AFTER):
+            TripParticipantFactory.create(trip=world.crossing, user=newcomer.user)
+        assert gate() == {newcomer.pk}
+
+    def test_trip_date_change_selects_its_people(self, world: World) -> None:
+        """A trip moved to today reaches everyone on it."""
+        with freeze_time(AFTER):
+            world.crossing.date = TODAY
+            world.crossing.save()
+        assert gate() == {world.multi_trip.pk, world.joiner.pk}
+
+    def test_alerts_turned_on_selects(self, world: World) -> None:
+        """alerts_enabled_at after the watermark is a reason."""
+        world.elsewhere.alerts_enabled_at = AFTER
+        world.elsewhere.save()
+        assert gate() == {world.elsewhere.pk}
+
+    def test_profile_save_does_not_select(self, world: World) -> None:
+        """A profile edit moves updated_at, which is not a reason."""
+        with freeze_time(AFTER):
+            world.elsewhere.display_name = "Hugo"
+            world.elsewhere.save()
+        assert gate() == set()
+
+    def test_change_just_before_the_watermark_selects(self, world: World) -> None:
+        """A row written inside GATE_OVERLAP before SINCE is still looked at."""
+        with freeze_time(SINCE - alerts.GATE_OVERLAP / 2):
+            world.bulletin.save()
+        assert gate() == world.followers
+
+
+class TestLastEvaluatedAt:
+    """The gate's watermark."""
+
+    COMMAND = "send_bulletin_alerts"
+
+    def _run(self, at: datetime.datetime, **kwargs: Any) -> CommandRun:
+        """Record a run of the alert command starting at ``at``."""
+        fields: dict[str, Any] = {
+            "command": self.COMMAND,
+            "app_label": "bulletins",
+            "arguments": {"commit": True},
+            "counts": {"accounts": 1, "held": 0, "gated": 0},
+            "started_at": at,
+        }
+        fields.update(kwargs)
+        return CommandRunFactory.create(**fields)
+
+    def test_no_runs(self, db: Any) -> None:
+        """With nothing recorded there is no watermark."""
+        assert last_evaluated_at() is None
+
+    def test_latest_evaluating_run(self, db: Any) -> None:
+        """The most recent committed, successful, evaluating run wins."""
+        self._run(SINCE - datetime.timedelta(hours=1))
+        self._run(SINCE)
+        assert last_evaluated_at() == SINCE
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"mode": CommandRun.MODE.DRY_RUN},
+            {"mode": CommandRun.MODE.READ_ONLY},
+            {"status": CommandRun.STATUS.FAILED},
+            {"status": CommandRun.STATUS.PARTIAL},
+            {"status": CommandRun.STATUS.RUNNING},
+            {"counts": {"accounts": 0, "held": 1, "gated": 0}},
+            {"counts": {"accounts": 0, "held": 0, "gated": 1}},
+            # Before SNOW-1491 a night run tallied no ``held``.
+            {"counts": {"accounts": 0}, "started_at": NOW.replace(hour=23)},
+            {"command": "fetch_bulletins"},
+        ],
+    )
+    def test_ignored_runs(self, db: Any, kwargs: dict[str, Any]) -> None:
+        """Runs that did not evaluate everyone are not the watermark."""
+        self._run(SINCE)
+        self._run(kwargs.pop("started_at", NOW), **kwargs)
+        assert last_evaluated_at() == SINCE
+
+    def test_legacy_night_run_told_to_ignore_the_hold(self, db: Any) -> None:
+        """A night run recorded before ``held`` counts if it ignored the hold."""
+        self._run(SINCE)
+        late = NOW.replace(hour=23)
+        self._run(
+            late,
+            counts={"accounts": 1},
+            arguments={"commit": True, "ignore_night_hold": True},
+        )
+        assert last_evaluated_at() == late
+
+    def test_legacy_day_run_counts(self, db: Any) -> None:
+        """A daytime run recorded before ``held`` and ``gated`` evaluated."""
+        self._run(SINCE, counts={"accounts": 1})
+        assert last_evaluated_at() == SINCE

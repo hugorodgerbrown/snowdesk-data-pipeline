@@ -59,6 +59,14 @@ settles only rows still carrying its claim. A device or the mail server
 raising is that channel failing; a worker that crashes part-way still
 settles its rows from what had already gone.
 
+**The gate** (SNOW-1491). Most hourly runs find nothing new, so the
+command evaluates only the accounts :func:`accounts_to_evaluate` names
+since :func:`last_evaluated_at`, the start of the last run that evaluated:
+those following a region whose bulletin changed, those with an alert to
+retry, those who saved or changed a place, and those who turned alerts on.
+With none, the run is skipped. Anyone passed by would have been evaluated
+to the answer they were already given.
+
 Rows are written only with ``commit=True``; without it the run reports what
 it would send.
 """
@@ -71,7 +79,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from django.db import IntegrityError, transaction
-from django.db.models import Q, QuerySet
+from django.db.models import Exists, OuterRef, Q, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 from django_tasks import task
@@ -83,6 +91,7 @@ from apps.bulletins.models import (
     SEASON_GAP_DAYS,
     Bulletin,
     BulletinAlert,
+    RegionBulletin,
     RegionDayRating,
 )
 from apps.bulletins.services.alert_wording import (
@@ -97,16 +106,20 @@ from apps.bulletins.services.bulletin_change import (
     BulletinState,
     summarise_change,
 )
+from apps.core.models import CommandRun
 from apps.favourites.models import Favourite
 from apps.ingest.public import state_of
-from apps.regions.services.track_regions import track_regions
-from apps.trips.models import Trip
+from apps.regions.models import MicroRegion
+from apps.regions.services.track_regions import (
+    resolve_track_regions,
+    track_regions,
+)
+from apps.trips.models import Trip, TripParticipant
 from apps.weather.models import Weather
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
-    from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
 
@@ -1152,6 +1165,228 @@ def since_previous_day(
     if current is None or previous is None:
         return None
     return summarise_change(previous, current), previous_date
+
+
+# ---------------------------------------------------------------------------
+# The gate: who needs evaluating since the last run that did (SNOW-1491)
+# ---------------------------------------------------------------------------
+
+# How many recent successful runs ``last_evaluated_at`` reads to find one
+# that evaluated. Held and gated runs are filtered out in the query, so only
+# the legacy night-time runs (before SNOW-1491 tallied ``held``) are skipped
+# in Python, and a night has at most nine of them.
+WATERMARK_CANDIDATES = 50
+
+# How far before the watermark the gate looks. A row written in a
+# transaction that began before the previous run started, and committed
+# after that run had read, carries an ``updated_at`` before the watermark;
+# looking back this far catches it at the next run. The cost is one extra
+# evaluation of an account whose change has already been told.
+GATE_OVERLAP = datetime.timedelta(minutes=15)
+
+
+def last_evaluated_at(
+    command: str = "send_bulletin_alerts",
+) -> datetime.datetime | None:
+    """
+    Return when the most recent run that evaluated accounts started.
+
+    The watermark of the gate (SNOW-1491): a committed, successful run that
+    was neither held for the night nor gated. A run recorded before the
+    ``held`` tally existed is judged by its start time instead: inside the
+    night hold it evaluated nothing, unless it was told to ignore the hold.
+    A dry run, a failed or partial run, and the run in progress (still
+    ``RUNNING``) never count, so a run that did not tell everyone leaves
+    the next one to look as far back as the last one that did.
+
+    Args:
+        command: The command whose runs are read.
+
+    Returns:
+        The run's ``started_at``, or None when no run has evaluated yet.
+
+    """
+    skipped = Q(counts__has_key="held", counts__held__gt=0) | Q(
+        counts__has_key="gated", counts__gated__gt=0
+    )
+    runs = (
+        CommandRun.objects.filter(
+            command=command,
+            mode=CommandRun.MODE.COMMIT,
+            status=CommandRun.STATUS.SUCCEEDED,
+        )
+        .exclude(skipped)
+        .order_by("-started_at", "-id")
+        .only("started_at", "arguments", "counts")[:WATERMARK_CANDIDATES]
+    )
+    for run in runs:
+        legacy_hold = (
+            "held" not in run.counts
+            and in_night_hold(run.started_at)
+            and not run.arguments.get("ignore_night_hold")
+        )
+        if not legacy_hold:
+            return run.started_at
+    return None
+
+
+def _changed_regions(
+    since: datetime.datetime, window: datetime.datetime, days: list[datetime.date]
+) -> set[int]:
+    """
+    Return the regions whose bulletin for today or tomorrow may have moved.
+
+    A region linked to a bulletin written after ``window``: the bulletin's
+    own ``updated_at`` is the durable marker, because a failed recompute
+    deletes the region's ``RegionDayRating`` rather than updating it. Then
+    a region whose rating for one of ``days`` was written after ``window``,
+    and every rated region on a day the previous run (at ``since``) did not
+    look at, as today and tomorrow move on.
+
+    Args:
+        since: The watermark, the previous evaluating run's start.
+        window: The watermark less :data:`GATE_OVERLAP`.
+        days: Today and tomorrow, local dates.
+
+    Returns:
+        The regions' primary keys.
+
+    """
+    first = local_now(since).date()
+    covered = {first, first + datetime.timedelta(days=1)}
+    uncovered = [day for day in days if day not in covered]
+    linked = RegionBulletin.objects.filter(bulletin__updated_at__gt=window).values_list(
+        "region_id", flat=True
+    )
+    rated = (
+        RegionDayRating.objects.filter(date__in=days)
+        .filter(Q(updated_at__gt=window) | Q(date__in=uncovered))
+        .values_list("region_id", flat=True)
+    )
+    return set(linked) | set(rated)
+
+
+def _trips_crossing(regions: set[int], days: list[datetime.date]) -> list[int]:
+    """
+    Return the trips on ``days`` whose route crosses any of ``regions``.
+
+    The regions are read as ``trip_places`` reads them: a trip's stored
+    ``crossed_regions``, or for one not yet resolved, the regions worked
+    out live from its track (``resolve_track_regions``). The changed
+    regions' region ids are loaded once, so a stored trip costs no
+    query of its own (Codex, PR #1567).
+
+    Args:
+        regions: Region primary keys.
+        days: Today and tomorrow, local dates.
+
+    Returns:
+        The trips' primary keys.
+
+    """
+    wanted = set(
+        MicroRegion.objects.filter(pk__in=regions).values_list("region_id", flat=True)
+    )
+    trips = Trip.objects.filter(date__in=days).only("pk", "points", "crossed_regions")
+    crossing: list[int] = []
+    for trip in trips:
+        ids = (
+            resolve_track_regions(trip.points)
+            if trip.crossed_regions is None
+            else trip.crossed_regions
+        )
+        if wanted.intersection(ids):
+            crossing.append(trip.pk)
+    return crossing
+
+
+def accounts_to_evaluate(since: datetime.datetime, now: datetime.datetime) -> set[int]:
+    """
+    Return the alerting accounts something may have changed for (SNOW-1491).
+
+    Anything not returned would be evaluated to the same answer as at the
+    run that started at ``since``, so the run may pass it by. An account is
+    returned for any of four reasons, everything compared with ``since``
+    less :data:`GATE_OVERLAP`:
+
+    - **A bulletin changed** in a region it follows: a pinned region, a
+      saved resort's region, or a region a trip of today or tomorrow
+      crosses (every participant of that trip).
+    - **An alert is undelivered**: a send-log row for today or tomorrow
+      that is ``FAILED``, or ``PENDING`` and older than
+      :data:`STALE_PENDING`, which ``evaluate_account`` sends again.
+    - **A place was saved or changed**: a favourite, a trip joined, or a
+      trip the account is on edited.
+    - **Alerts were turned on**: ``alerts_enabled_at``, which only turning
+      them on moves, and not ``Account.updated_at``, which any profile
+      save does.
+
+    Over-selecting is safe: an account evaluated with nothing new is
+    told nothing. The queries do not grow with the number of accounts.
+
+    Args:
+        since: The watermark (:func:`last_evaluated_at`).
+        now: The run's time.
+
+    Returns:
+        The accounts' primary keys.
+
+    """
+    today = local_now(now).date()
+    days = [today, today + datetime.timedelta(days=1)]
+    window = since - GATE_OVERLAP
+    wanted = (
+        Q(
+            pk__in=BulletinAlert.objects.filter(target_date__in=days)
+            .filter(
+                Q(outcome=BulletinAlert.Outcome.FAILED)
+                | Q(
+                    outcome=BulletinAlert.Outcome.PENDING,
+                    updated_at__lt=now - STALE_PENDING,
+                )
+            )
+            # A failure a later row has superseded is not undelivered:
+            # evaluate_account reads that later row and has nothing to
+            # retry (Codex, PR #1567).
+            .exclude(
+                Exists(
+                    BulletinAlert.objects.filter(
+                        account_id=OuterRef("account_id"),
+                        region_id=OuterRef("region_id"),
+                        target_date=OuterRef("target_date"),
+                        updated_at__gt=OuterRef("updated_at"),
+                    ).exclude(outcome=BulletinAlert.Outcome.FAILED)
+                )
+            )
+            .values("account_id")
+        )
+        | Q(
+            user_id__in=Favourite.objects.filter(updated_at__gt=window).values(
+                "user_id"
+            )
+        )
+        | Q(
+            user_id__in=TripParticipant.objects.filter(
+                Q(updated_at__gt=window) | Q(trip__updated_at__gt=window)
+            ).values("user_id")
+        )
+        | Q(alerts_enabled_at__gt=window)
+    )
+    regions = _changed_regions(since, window, days)
+    if regions:
+        wanted |= Q(
+            user_id__in=Favourite.objects.alert_places()
+            .filter(Q(region_id__in=regions) | Q(resort__region_id__in=regions))
+            .values("user_id")
+        )
+        trips = _trips_crossing(regions, days)
+        if trips:
+            wanted |= Q(
+                user_id__in=TripParticipant.objects.filter(trip_id__in=trips).values(
+                    "user_id"
+                )
+            )
+    return set(Account.objects.alerting().filter(wanted).values_list("pk", flat=True))
 
 
 # ---------------------------------------------------------------------------
